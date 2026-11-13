@@ -75,12 +75,12 @@ def drive(run: Run, page: Page) -> None:
     # The window Ustawienia on its address opens over the start page, which it hides: only the window is measured.
     since = len(run.log_entries())
     page.goto("about:blank")
-    page.goto(f"{run.url}#/ustawienia/wykonawcy")
-    expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
+    page.goto(f"{run.url}#/ustawienia/wzorce")
+    expect(settings_window(page).get_by_role("list", name="Wzorce")).to_be_visible()
     [window] = _wait_for_timings(run, since, 1, "the cold start of Ustawienia is in the Centrum log")
     run.check(
         (window["widok"], window["strona"]) == ("zimny-start", "ustawienia"),
-        "a cold start on #/ustawienia/wykonawcy logs the window, not the start page it hides",
+        "a cold start on #/ustawienia/wzorce logs the window, not the start page it hides",
     )
     _check_requests(run, window, "ustawienia")
     run.check("getConfiguration:" in window["zapytania"], "the window's entry holds its read of the configuration")
@@ -157,8 +157,8 @@ def drive(run: Run, page: Page) -> None:
     page.route("**/api/configuration", slow)
     since = len(run.log_entries())
     try:
-        page.evaluate("location.hash = '#/ustawienia/wykonawcy'")
-        expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
+        page.evaluate("location.hash = '#/ustawienia/wzorce'")
+        expect(settings_window(page).get_by_role("list", name="Wzorce")).to_be_visible()
         [timing] = _wait_for_timings(run, since, 1, "the opening of Ustawienia with a slow read is in the Centrum log")
     finally:
         page.unroute("**/api/configuration", slow)

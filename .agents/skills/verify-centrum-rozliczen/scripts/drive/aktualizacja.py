@@ -99,11 +99,11 @@ def _contents(directory: Path) -> dict[str, bytes]:
 def _dad_files_kept(run: Run, clone: Path, dad_files: dict[str, str], run_configuration: dict[str, bytes]) -> None:
     run.check(
         {name: read_text(clone / name) for name in dad_files} == dad_files,
-        "Dad's files in the tool's config/ keep exactly their content, the changed konfiguracja wykonawców too",
+        "Dad's files in the tool's config/ keep exactly their content, the changed old Wykonawcy file too",
     )
     run.check(
         _git(clone, "ls-files", "--", WORKER_MAPPING) == "",
-        "the new version no longer tracks the konfiguracja wykonawców that Dad still has",
+        "the new version no longer tracks the old Wykonawcy file that Dad still has",
     )
     run.check(_contents(run.config) == run_configuration, "the run's configuration directory is untouched")
 
@@ -163,7 +163,7 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
         run.check(_head(clone) == first, "the clone stays on the commit Dad had")
         run.check(
             _git(clone, "status", "--porcelain", "--", WORKER_MAPPING) == f"M {WORKER_MAPPING}",
-            "Dad's changed konfiguracja wykonawców is still there, still tracked",
+            "Dad's changed old Wykonawcy file is still there, still tracked",
         )
         run.check(
             _update_entries(run)
@@ -244,7 +244,7 @@ def drive(run: Run, page: Page) -> None:
         run.check(_head(clone) == first, "the run's tool clone stands on the first commit")
         run.check(
             _git(clone, "status", "--porcelain", "--", WORKER_MAPPING) == f"M {WORKER_MAPPING}",
-            "Dad changed the tracked konfiguracja wykonawców in the clone",
+            "Dad changed the tracked old Wykonawcy file in the clone",
         )
         page.goto(run.url + TOOL_SECTION)
         page.reload()

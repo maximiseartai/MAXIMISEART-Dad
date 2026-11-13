@@ -165,7 +165,9 @@ def card_messages(view: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def three_parts(record: dict[str, Any]) -> list[dict[str, str]]:
-    return [{part: message[part] for part in ("what", "where", "action")} for message in record["messages"]]
+    """Komunikaty z Logów tak, jak je pokazuje karta: trzy części i link do sekcji Ustawień, gdy go mają."""
+
+    return [{part: message[part] for part in ("what", "where", "action", "setting") if part in message} for message in record["messages"]]
 
 
 Ran = tuple[AnyCentrum, dict[str, Any]]

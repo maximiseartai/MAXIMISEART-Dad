@@ -35,7 +35,7 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal, Retry
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun
-from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
 from rozliczenia.centrum.stops import StoppedRun, Stops
@@ -119,10 +119,12 @@ class EndedRun:
     ended_at: datetime
     input_copy: InputCopy | None = None
     """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
-    settings: FolderSettings | None = None
+    settings: SettingsSnapshot | None = None
     """Migawka Ustawień Centrum ze startu Uruchomienia (``PreparedRun.settings``), z której Logi biorą pliki procesu."""
     quantity_rules: QuantityRules | None = None
     """Reguły ilości ze startu Uruchomienia (``PreparedRun.quantity_rules``), które Logi zapisują dla odtworzenia."""
+    start_warnings: tuple[Message, ...] = ()
+    """Ostrzeżenia ze startu (``Start.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
 
     @classmethod
     def of(
@@ -136,7 +138,8 @@ class EndedRun:
         started_at: datetime,
     ) -> EndedRun:
         return cls(
-            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings, prepared.quantity_rules
+            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings,
+            prepared.quantity_rules, prepared.warnings
         )
 
     @property
@@ -176,8 +179,16 @@ class EndedRun:
         return () if self.stopped is None else (self.stopped.stop.message,)
 
     @property
+    def result_warnings(self) -> tuple[Message, ...]:
+        """Ostrzeżenia wyniku; przy Zatrzymaniu żadnych."""
+
+        return () if self.shown is None else tuple(self.shown.warnings)
+
+    @property
     def warnings(self) -> tuple[Message, ...]:
-        return () if self.shown is None else self.shown.warnings
+        """Ostrzeżenia ze startu, potem ostrzeżenia wyniku."""
+
+        return self.start_warnings + self.result_warnings
 
     def card(self, view: ProcessView[Any]) -> runs_contract.RunOutcome:
         stopped = self.stopped

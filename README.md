@@ -21,8 +21,8 @@ Instrukcja dla taty jest w
 - Każdy skoroszyt pracownika powstaje z kopii wspólnego Wzorca rozliczenia pracownika.
 - Powstaje dokładnie jeden skoroszyt dla każdego pracownika z konfiguracji.
 - Wykonawca jest odczytywany z kolumny `H=WYKONAWCA`.
-- Identyfikatory wykonawców są mapowane jawnie w `config/worker_mapping.yaml`
-  (zob. [Konfiguracja wykonawców](#konfiguracja-wykonawców)).
+- Identyfikatory wykonawców są mapowane jawnie w Liście Wykonawców
+  `config/wykonawcy.yaml` (zob. [Lista Wykonawców](#lista-wykonawców)).
 - Kopiowane są wartości `A:AT` od wiersza 18, zwarte od wiersza 18.
 - Arkusze, formuły, stawki i formatowanie Wzorca rozliczenia pracownika pozostają zachowane.
 - Pusty szablon pozostaje pusty.
@@ -99,7 +99,8 @@ samego trybu (`RUN` albo `DRY-RUN`).
 Prawdziwa Lista Wykonawców zawiera imiona, nazwiska i adresy pracowników taty,
 więc leży tylko na jego komputerze, tak jak Wzorce: `config/wykonawcy.yaml`
 jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
-z syntetycznymi Wykonawcami, który pokazuje format. Pierwszy start Centrum po
+z syntetycznymi Wykonawcami, który pokazuje format. Tata widzi Listę
+Wykonawców w oknie Ustawienia, w sekcji Wykonawcy. Pierwszy start Centrum po
 Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
 `config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
 Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie
@@ -215,7 +216,7 @@ powstają razem albo żaden.
 - Zatrzymania i ostrzeżenia mają trzy części: co się stało, gdzie, co zrobić.
   Pełna lista z instrukcją postępowania jest w tabeli „komunikat → co zrobić”
   w [`docs/tata-instrukcja.md`](docs/tata-instrukcja.md). Wykonawcy Zleceń
-  skutecznych są sprawdzani w tej samej `config/worker_mapping.yaml` co w
+  skutecznych są sprawdzani w tej samej Liście Wykonawców co w
   Przebiegu rozliczeń.
 
 ### Wzorce
@@ -236,7 +237,7 @@ trafiają zlecenia, nie mogą być scalone; sprawdza to już `Podgląd bez zapis
 ### Uruchomienie
 
 Tata uruchamia proces w Centrum rozliczeń. Rejestr zleceń i folder okresów
-pochodzą z Ustawień taty (`config\centrum-ustawienia.yaml`), a Centrum
+pochodzą z Ustawień Centrum (`config\centrum-ustawienia.yaml`), a Centrum
 proponuje ostatni pełny okres przed dzisiejszą datą.
 
 `Podgląd bez zapisu` wykonuje w całości etapy Sprawdzanie, Odczyt danych i
@@ -262,7 +263,8 @@ puste wiersze i ostrzeżenia.
 `tools/uruchom_proces.py` uruchamia jeden proces bez Centrum, przez ten sam
 rdzeń Uruchomienia procesu. Nie jest wejściem taty. Służy weryfikacji
 end-to-end, straży czasu w CI, benchmarkowi i osobie utrzymującej narzędzie.
-Nie czyta Ustawień taty, nie otwiera okien wyboru i nie pyta o nic: każdą
+Nie bierze Rejestru zleceń ani folderu okresów z Ustawień Centrum, nie otwiera
+okien wyboru i nie pyta o nic: każdą
 Decyzję taty, np. o niepełnym okresie, odrzuca.
 
 ```sh
@@ -279,7 +281,7 @@ Decyzję taty, np. o niepełnym okresie, odrzuca.
 | `--period` | `preparation` | wymagany | Token okresu. |
 | `--internal-template` | `preparation` | `config\Wzorzec rozliczenia wewnętrznego.xlsx` | Wzorzec rozliczenia wewnętrznego. |
 | `--collective-template` | `preparation` | `config\Wzorzec pliku zbiorczego.xlsx` | Wzorzec pliku zbiorczego. |
-| `--config` | oba | `config\worker_mapping.yaml` | Konfiguracja wykonawców. |
+| `--wykonawcy` | oba | `config\wykonawcy.yaml` | Lista Wykonawców. |
 | `--metrics` | oba | plik metryk procesu | Lokalna historia czasów. |
 | `--dry-run` | oba | wyłączony | Podgląd bez zapisu. |
 

@@ -30,11 +30,11 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.reports import NoPreview, ProblemFingerprint, ReportHandle, ReportShown, Reports, StopReport
 from rozliczenia.process_run import Stop
 
-Diagnose = Callable[[common_contract.ProcessKey, str, FolderSettings | None], Diagnosis]
+Diagnose = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Diagnosis]
 """Diagnoza procesu dla tokenu okresu Zatrzymania z migawką Ustawień Centrum ze startu Uruchomienia (``None``:
 Uruchomienie bez migawki, wtedy z bieżącymi), bo Diagnoza wyjaśnia to Uruchomienie."""
 
@@ -62,16 +62,16 @@ class Stops:
 
     @overload
     def ended(
-        self, info: runs_contract.RunInfo, stop: Stop, *, shown: ReportShown, settings: FolderSettings | None
+        self, info: runs_contract.RunInfo, stop: Stop, *, shown: ReportShown, settings: SettingsSnapshot | None
     ) -> StoppedRun: ...
 
     @overload
     def ended(
-        self, info: runs_contract.RunInfo, stop: None, *, shown: ReportShown, settings: FolderSettings | None
+        self, info: runs_contract.RunInfo, stop: None, *, shown: ReportShown, settings: SettingsSnapshot | None
     ) -> None: ...
 
     def ended(
-        self, info: runs_contract.RunInfo, stop: Stop | None, *, shown: ReportShown, settings: FolderSettings | None
+        self, info: runs_contract.RunInfo, stop: Stop | None, *, shown: ReportShown, settings: SettingsSnapshot | None
     ) -> StoppedRun | None:
         """Zatrzymanie zakończonego Uruchomienia; ``shown`` dostaje każdy nowy stan jego Zgłoszenia, a ``settings`` to
         migawka Ustawień Centrum ze startu dla jego Diagnozy."""
@@ -137,7 +137,7 @@ class StoppedRun:
     kind: runs_contract.StopKind
     offer: runs_contract.DiagnosisOffer | None
     report: ReportHandle | None
-    settings: FolderSettings | None = None
+    settings: SettingsSnapshot | None = None
 
 
 def plain(info: runs_contract.RunInfo, stop: Stop) -> StoppedRun:

@@ -106,7 +106,7 @@ def register_unusable(error: WorkbookError, replacement: Replacement) -> Message
 
 
 def register_missing(register: Path, replacement: Replacement) -> Message:
-    """Nie ma INTERMAX pod ścieżką z Ustawień taty."""
+    """Nie ma INTERMAX pod ścieżką z Ustawień Centrum."""
 
     return Message(
         code=f"{replacement.prefix}BRAK_INTERMAX",

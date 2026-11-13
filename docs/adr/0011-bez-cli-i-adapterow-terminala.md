@@ -16,6 +16,9 @@ mają już CLI. Rezygnacja z adaptera VBA z ADR 0003 pozostaje w mocy. Zmienia:
 - [ADR 0010](0010-centrum-jedynym-wejsciem-taty.md): CLI nie zostaje jako
   narzędzie osoby utrzymującej.
 
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Rejestr zleceń
+i folder okresów do Ustawień Centrum.
+
 ## Kontekst
 
 Od ADR 0010 tata pracuje tylko w Centrum rozliczeń. CLI obu procesów zostało

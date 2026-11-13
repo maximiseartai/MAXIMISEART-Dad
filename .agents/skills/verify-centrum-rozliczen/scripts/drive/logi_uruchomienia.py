@@ -70,9 +70,12 @@ def _matches_card(run: Run, record: Json, view: Json, mode: str) -> None:
     )
     shown = [("stop", stop) for stop in result["stops"]] + [("warning", warning) for warning in result["warnings"]]
     run.check(
-        [(message["kind"], {part: message[part] for part in ("what", "where", "action")}) for message in record["messages"]]
+        [
+            (message["kind"], {part: message[part] for part in ("what", "where", "action", "setting") if part in message})
+            for message in record["messages"]
+        ]
         == shown,
-        f"the Logi hold the card's {len(shown)} Komunikaty in three parts, stops before warnings",
+        f"the Logi hold the card's {len(shown)} Komunikaty in three parts with their link to Ustawienia, stops before warnings",
     )
     run.check(
         (record["summary"], record["technical_notes"]) == (result["summary"], result["technical_notes"]),

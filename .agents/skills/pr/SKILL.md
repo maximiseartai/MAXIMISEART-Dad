@@ -248,7 +248,7 @@ A PR that is cheap to roll back is lower risk.
 
 - Dad gets code only through a Wydanie (ADR 0014), so a merge to `main` reaches agents and CI first, and Dad only at the next Wydanie.
   Say when the change reaches him and what he notices then.
-- A change is a one-way door when it changes what lies on Dad's disk and an older version must still read (Ustawienia taty, the metrics file, the queue of Zgłoszenia, Kopie INTERMAX), when it writes Dad's workbooks differently, or when it accepts an ADR.
+- A change is a one-way door when it changes what lies on Dad's disk and an older version must still read (Ustawienia Centrum, the metrics file, the queue of Zgłoszenia, Kopie INTERMAX), when it writes Dad's workbooks differently, or when it accepts an ADR.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR.
 Consider all possibilities: a process and its Komunikaty, Centrum rozliczeń in Dad's browser, Windows only, the CI gate and its time, the tools agents run.

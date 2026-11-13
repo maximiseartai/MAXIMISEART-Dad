@@ -47,7 +47,7 @@ Preconditions:
 
 - Centrum is served for this run with `DOCTOR OK`.
 - `przebieg-rozliczen` ran in this run (`api/przebieg-zapisane.json` exists). Run alone (`--feature logi-uruchomienia`), the drive runs it first, with its Przygotowanie pliku zbiorczego (`needs` in `FEATURES`).
-- `INEA/29_05_10_2026` still has Status okresu `Plik zbiorczy przygotowany`, with a Wykonawca the konfiguracja wykonawców does not know (`fixture.json` → `settlement.needs_check`).
+- `INEA/29_05_10_2026` still has Status okresu `Plik zbiorczy przygotowany`, with a Wykonawca the Lista Wykonawców does not know (`fixture.json` → `settlement.needs_check`).
 
 - **Files of Logi.** The drive reads `<root>/logs/uruchomienia/*.json` before and after each Uruchomienie; exactly one name is new.
 - **Preview.** `#/uruchomienia` → button `Nowe Uruchomienie procesu` → radio `Przebieg rozliczeń` (combobox `Okres` shows `29_05_10_2026`) → button `Podgląd bez zapisu`. Label `Wynik` shows `Podgląd wymaga sprawdzenia · nic nie zapisano`; `GET /api/runs/current` is `api/logi-podglad.json`. The new file has the card's `run.id`, `process`, `period`, `mode: "DRY-RUN"`, the result's `result`, `ending`, `stop_kind`, `summary`, `technical_notes`, its `stops` then `warnings` as `messages` (`kind` `stop`/`warning`, the same `what`, `where`, `action`), codes `[warning BRAK_MAPOWANIA]`, and `tool` `{"wydanie": <the highest Wydanie whose tag in the clone, in `refs/tags/` or `refs/wydania/`, points at that commit, as `0.0.1`; `null` without one>, "commit": <the commit Centrum runs>}`. The page text has no `Logi`, `Logów`, `Logach`, `Logami` or `uruchomienia/`. Capture `160`.

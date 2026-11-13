@@ -2,8 +2,8 @@
 
 ``prepare`` writes, under the run root:
 
-- ``dane/``: the synthetic folder okresów ``INEA``, Rejestr zleceń and Dad's ``config/`` (konfiguracja wykonawców and
-  the three Wzorce) from ``verify-centrum-rozliczen``'s fixture (``create_centrum_fixture.dad_files``);
+- ``dane/``: the synthetic folder okresów ``INEA``, Rejestr zleceń and Dad's ``config/`` (Lista Wykonawców and the
+  three Wzorce) from ``verify-centrum-rozliczen``'s fixture (``create_centrum_fixture.dad_files``);
 - ``wydawca/`` and ``origin.git``: three versions of the tool. ``first`` is this checkout as it is now (tracked and
   untracked files, ignored ones left out), so a run proves the working tree, not the last commit. ``newest`` changes
   ``requirements.txt`` (a comment only, so pip installs nothing new), which makes the update install libraries.

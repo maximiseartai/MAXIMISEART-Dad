@@ -4,7 +4,7 @@ Centrum kopiuje ten moduł razem z ``tool_update`` do swojego katalogu
 tymczasowego, zanim zmieni klon (``prepare``). Po sukcesie uruchamia opiekuna
 odłączonym procesem bez konsoli (``launch``) i samo się zamyka. Opiekun działa
 z kopii sprzed aktualizacji i używa tylko biblioteki standardowej (``main``):
-zapisuje wynik aktualizacji obok Ustawień taty, czeka na zwolnienie portu,
+zapisuje wynik aktualizacji obok Ustawień Centrum, czeka na zwolnienie portu,
 startuje nową wersję jak skrót, tylko bez karty i bez okienek, i czeka, aż
 odpowie w nowym commicie. Wtedy aktualizacja jest skończona, a jej dziennik
 „Aktualizacja w toku” znika (``ToolClone.confirm_update``). Gdy nie odpowie
@@ -79,7 +79,7 @@ _DETACHED: Final = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subproce
 class Restart:
     """Ponowny start po udanej aktualizacji.
 
-    ``root`` to katalog narzędzia, ``result`` plik wyniku obok Ustawień taty,
+    ``root`` to katalog narzędzia, ``result`` plik wyniku obok Ustawień Centrum,
     ``work`` katalog tymczasowy aktualizacji z kopią opiekuna.
     """
 

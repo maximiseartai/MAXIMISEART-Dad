@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rozliczenia.message import Message as ProcessMessage
+from rozliczenia.message import Message as ProcessMessage, SettingsSection
 
 
 class Model(BaseModel):
@@ -35,15 +35,18 @@ class Opened(Model):
 
 
 class Message(Model):
-    """Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu."""
+    """Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
+    Centrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki
+    w Ustawieniach ma dalej trzy części, także w Logach Uruchomienia."""
 
     what: str
     where: str
     action: str
+    setting: SettingsSection | None = Field(default=None, exclude_if=lambda setting: setting is None)
 
     @classmethod
     def of(cls, message: ProcessMessage) -> Message:
-        return cls(what=message.what, where=message.where, action=message.action)
+        return cls(what=message.what, where=message.where, action=message.action, setting=message.setting)
 
 
 # Na co czeka wysyłka taty w Kolejce wysyłki: ``internet`` albo ``key``, czyli Token do Zgłoszeń od Maksa (brak

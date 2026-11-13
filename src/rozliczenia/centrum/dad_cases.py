@@ -131,7 +131,7 @@ Watcher = Callable[[CaseNews], None]
 
 
 class DadCases:
-    """Sprawy taty z tego komputera w pliku stanu obok Ustawień taty."""
+    """Sprawy taty z tego komputera w pliku stanu obok Ustawień Centrum."""
 
     def __init__(self, work: CentrumWork) -> None:
         self.file = StateFile(work.config / DAD_CASES_FILE, work.log, where="stan Spraw taty", pause=work.pause)

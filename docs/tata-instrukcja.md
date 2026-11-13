@@ -48,7 +48,8 @@ Nie zmieniaj ich i nie podmieniaj plikami z poprzedniego tygodnia.
 W tym samym folderze `config` leży też Lista Wykonawców `wykonawcy.yaml`,
 czyli lista Twoich pracowników z ich adresami. Ten plik jest tylko na Twoim
 komputerze, nie w internecie. Plik `wykonawcy.example.yaml` obok to przykład z
-wymyślonymi nazwiskami; narzędzie z niego nie korzysta.
+wymyślonymi nazwiskami; narzędzie z niego nie korzysta. Listę Wykonawców
+widzisz w oknie `Ustawienia`, w sekcji `Wykonawcy`.
 
 ### Foldery tygodni
 
@@ -134,6 +135,7 @@ otwarty w Excelu) albo jednym z tych:
 | „Plik okresu jest otwarty w Excelu” | Zapisz i zamknij wskazany plik w Excelu i uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik zaczynający się od `~$`. |
 | „Plik jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij wskazany plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy ikona chmurki zmieni się w zielony znacznik, uruchom ponownie. |
 | „Lista Wykonawców ma złe ustawienie” | Otwórz `Ustawienia`, sekcję `Wykonawcy`, popraw pole, które wskazuje komunikat, i uruchom ponownie. |
+| „Uruchomienie użyło ostatniej dobrej Listy Wykonawców” | Ostrzeżenie: proces zadziałał na liście sprzed zepsucia pliku. Otwórz `Ustawienia`, sekcję `Wykonawcy`, i popraw pole, które wskazuje komunikat, zanim uruchomisz następny proces. |
 | „Nie można teraz odczytać Listy Wykonawców” | Zamknij program, który może trzymać plik (np. antywirus), i uruchom ponownie. Gdy komunikat wraca, przekaż go osobie utrzymującej narzędzie. |
 
 ### Zgłoszenie do Maksa

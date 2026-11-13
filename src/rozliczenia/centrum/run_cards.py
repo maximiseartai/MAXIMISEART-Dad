@@ -133,7 +133,7 @@ class RunCards:
         )
         messages = {
             kind: [
-                common_contract.Message(what=message.what, where=message.where, action=message.action)
+                message.shown()
                 for message in record.messages
                 if message.kind == kind
             ]

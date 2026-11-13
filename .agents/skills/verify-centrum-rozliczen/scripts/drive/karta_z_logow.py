@@ -126,11 +126,12 @@ def drive(run: Run, page: Page) -> None:
     previous = after["previous"]
     assert isinstance(previous, dict)
     logged = [
-        {part: message[part] for part in ("what", "where", "action")} for message in record["messages"]
+        {part: message[part] for part in ("what", "where", "action", "setting") if part in message}
+        for message in record["messages"]
     ]
     run.check(
         previous["result"]["stops"] + previous["result"]["warnings"] == logged,
-        "the card's Komunikaty are the Komunikaty of the newest file of Logi",
+        "the card's Komunikaty are the Komunikaty of the newest file of Logi, with the link to Ustawienia",
     )
     run.capture(page, "211-karta-po-zamknieciu")
 

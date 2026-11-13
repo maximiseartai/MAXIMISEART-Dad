@@ -77,7 +77,7 @@ def drive(run: Run) -> None:
     for name in facts["dad_config"]:
         shutil.copy2(name, run.config / Path(name).name)
     status = run.git("status", "--porcelain", "--untracked-files=all")
-    run.check(status == "", "Dad's konfiguracja wykonawców and Wzorce in config/ leave the clone clean for Git")
+    run.check(status == "", "Dad's Lista Wykonawców and Wzorce in config/ leave the clone clean for Git")
 
     run.step(FEATURE, "biblioteki")
     run.harness(f"README's {_PIP_LINE!r} runs with this Python, not with the py launcher")

@@ -408,7 +408,7 @@ Assumed, and not checked:
   that lifted that bound; the one exact pin is a test library (`hypothesis`)
   that Centrum does not import. Pip killed between uninstalling and installing
   a library could break this, so the `wylaczenie` model is optimistic.
-- Dad has one file in `config/`. His untracked files (Wzorce, Ustawienia taty,
+- Dad has one file in `config/`. His untracked files (Wzorce, Ustawienia Centrum,
   the Zgłoszenia key, the log, metrics, period files, and in `config/` the
   read Powiadomienia, the Sprawy taty and the outbox addresses) are not
   modelled. Git does not touch them while no Wydanie tracks their path. When

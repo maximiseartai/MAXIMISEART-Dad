@@ -42,7 +42,7 @@ export function RunsPage() {
         }
       />
       <TabsContent value="uruchomienie">
-        {/* Treść montuje się przy gotowych Ustawieniach taty, więc start czyta raz. */}
+        {/* Treść montuje się przy gotowych Ustawieniach Centrum, więc start czyta raz. */}
         {settings.state === "loading" ? <RunsSkeleton /> : <RunsContent />}
       </TabsContent>
       <TabsContent value="historia">
