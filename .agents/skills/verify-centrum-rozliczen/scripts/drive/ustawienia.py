@@ -241,6 +241,7 @@ def drive(run: Run, page: Page) -> None:
     _saved_and_undo(run, page)
     _failure_in_window(run, page)
     _failure_after_window(run, page)
+    _failure_keeps_next_choice(run, page)
     _history(run, page)
     _history_release(run, page)
     _refusal_at_field(run, page)
@@ -356,6 +357,40 @@ def _failure_after_window(run: Run, page: Page) -> None:
         page.unroute(theme)
     expect(page.locator("html")).to_have_class("dark")
     run.check(run.remembered("motyw") == "dark", "the save that failed after the window closed left the theme as it was")
+
+
+def _failure_keeps_next_choice(run: Run, page: Page) -> None:
+    """A failed save of Motyw takes the page back to the theme of the settings file only when it was Dad's last choice:
+    while his next choice still waits for its answer, the page keeps that one (review #1535 r1, D1)."""
+
+    run.step(FEATURE, "ustawienia-blad-zostawia-nastepny-wybor")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    held: list[Route] = []
+    # Harness: the saves are held, as three quick clicks at tata's can wait for their answers together.
+    page.route(theme, lambda route: held.append(route))
+    try:
+        for click in ("Jasny", "Ciemny", "Jasny"):
+            themes.get_by_role("button", name=click, exact=True).click()
+        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        run.check(len(held) == 3, f"each click on Motyw is a save that waits for its answer ({len(held)} requests, held)")
+        held.pop(1).fulfill(status=500, body="")
+        expect(error_toasts(page)).to_have_count(1)
+        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        dark = page.evaluate("document.documentElement.classList.contains('dark')")
+        pressed = themes.get_by_role("button", name="Jasny", exact=True).get_attribute("aria-pressed")
+        run.check(
+            (dark, pressed) == (False, "true"),
+            f"the failed save of Ciemny keeps Dad's next choice Jasny, which still waits (dark={dark}, Jasny={pressed})",
+        )
+    finally:
+        for route in held:
+            route.fulfill(status=500, body="")
+        page.unroute(theme)
+    expect(page.locator("html")).to_have_class("dark")
+    expect(error_toasts(page)).to_have_count(0, timeout=10_000)
+    close_settings(page)
+    run.check(run.remembered("motyw") == "dark", "the failed saves left the theme as it was")
 
 
 def _history(run: Run, page: Page) -> None:

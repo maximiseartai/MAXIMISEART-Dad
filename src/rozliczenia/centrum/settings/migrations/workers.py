@@ -20,7 +20,7 @@ from typing import Final
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, Refuse, ReleaseChange, ReleaseInputs, Waiting
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.file_state import file_state
 from rozliczenia.text import normalize_text
@@ -58,6 +58,13 @@ def propose(inputs: ReleaseInputs[WorkerList]) -> Proposal[WorkerList]:
     if isinstance(built, WorkerListProblem):
         return Refuse(messages.workers_not_moved(OLD_MAPPING_FILE, "Wykonawcy z adresami łamią reguły Listy Wykonawców"))
     return Edit(lambda _current: built, undoable=False)
+
+
+def _old_files(config: Path) -> bool:
+    """Czy w ``config`` jest któryś stary plik Wykonawców, także taki, którego system nie daje teraz czytać; bez Historii
+    Ustawień i bez pamięci zmian z Wydań."""
+
+    return any(file_state(config / name) != "missing" for name in (OLD_MAPPING_FILE, OLD_ADDRESSES_FILE))
 
 
 def _document(path: Path) -> object | None:
@@ -140,8 +147,9 @@ CHANGE: Final = ReleaseChange(
     file=WORKERS,
     propose=propose,
     refused_absent=messages.worker_list_not_created(),
-    waiting_absent=messages.worker_list_waiting(),
+    waiting=Waiting(messages.worker_list_waiting(), _old_files),
 )
 """Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie i
-gdy przeniesienie czeka na stary plik, dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie, a nie
-pustą dobrą listę."""
+gdy przeniesienie przy tym starcie nie doszło do skutku, a stare pliki są (stary plik bez prawa odczytu, Historia
+Ustawień albo pamięć zmian z Wydań nieczytelna), dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie,
+a nie pustą dobrą listę."""
