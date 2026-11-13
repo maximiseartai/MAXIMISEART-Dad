@@ -4,8 +4,18 @@ import type { ApiTiming } from "@/api/generated"
 import { type OperationData, operations } from "@/api/generated/operations.gen"
 import { zProblem, zViewTiming } from "@/api/generated/zod.gen"
 
-/** Odmowa albo awaria z komunikatem, który można pokazać tacie (bez treści błędu technicznego). */
-class CentrumError extends Error {}
+/**
+ * Odmowa albo awaria z komunikatem, który można pokazać tacie (bez treści błędu technicznego). `field`: pole
+ * formularza, którego dotyczy zła wartość (odmowa 422 Ustawień Centrum), żeby zdanie stanęło przy nim.
+ */
+class CentrumError extends Error {
+  readonly field: string | null
+
+  constructor(message: string, field: string | null = null) {
+    super(message)
+    this.field = field
+  }
+}
 
 const UNREACHABLE =
   "Centrum rozliczeń nie odpowiada. Zamknij kartę i uruchom Centrum ponownie."
@@ -15,6 +25,11 @@ export const UNEXPECTED =
 
 export function failureMessage(failure: Error): string {
   return failure instanceof CentrumError ? failure.message : UNEXPECTED
+}
+
+/** Pole, którego dotyczy odmowa serwera; `null` przy odmowie bez pola i przy awarii. */
+export function refusedField(failure: Error): string | null {
+  return failure instanceof CentrumError ? failure.field : null
 }
 
 type Operation = ApiTiming["operation"]
@@ -130,7 +145,7 @@ export async function call<O extends Operation>(operation: O, ...[request]: Requ
   if (!response.ok) {
     const problem = zProblem.safeParse(body)
 
-    throw new CentrumError(problem.success ? problem.data.message : UNEXPECTED)
+    throw problem.success ? new CentrumError(problem.data.message, problem.data.field ?? null) : new CentrumError(UNEXPECTED)
   }
 
   const parsed = schema.safeParse(body)

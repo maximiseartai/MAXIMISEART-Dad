@@ -81,8 +81,8 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
         return saved(lambda current: replace(current, periods_directory=chosen))
 
     @router.put("/theme", operation_id="changeTheme")
-    def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Settings:
-        return saved(lambda current: replace(current, theme=change.theme)).settings
+    def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
+        return saved(lambda current: replace(current, theme=change.theme))
 
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:

@@ -176,4 +176,4 @@ def test_nieudany_zapis_dziennika_nie_zmienia_odpowiedzi_innych_zapytan(tmp_path
 
     assert timing.status_code == 204
     assert (settings.status_code, settings.json()["theme"]) == (200, "dark")
-    assert (theme.status_code, theme.json()["theme"]) == (200, "light")
+    assert (theme.status_code, theme.json()["settings"]["theme"]) == (200, "light")

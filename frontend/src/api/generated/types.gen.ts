@@ -103,8 +103,9 @@ export type CellSource = 'tool' | 'tata' | 'empty';
 /**
  * Choice
  *
- * Ustawienia po natywnym oknie wyboru albo zapisie sekcji: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
- * ``change``: id wiersza Historii Ustawień tej zmiany (do „Cofnij”); ``None``: bez zmiany i bez wiersza.
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
  */
 export type Choice = {
     settings: Settings;
@@ -4798,7 +4799,7 @@ export type ChangeThemeResponses = {
     /**
      * Successful Response
      */
-    200: Settings;
+    200: Choice;
 };
 
 export type ChangeThemeResponse = ChangeThemeResponses[keyof ChangeThemeResponses];

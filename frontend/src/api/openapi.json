@@ -1926,7 +1926,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Settings"
+                  "$ref": "#/components/schemas/Choice"
                 }
               }
             }
@@ -2415,7 +2415,7 @@
           "settings"
         ],
         "title": "Choice",
-        "description": "Ustawienia po natywnym oknie wyboru albo zapisie sekcji: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.\n``change``: id wiersza Historii Ustawień tej zmiany (do „Cofnij”); ``None``: bez zmiany i bez wiersza."
+        "description": "Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,\nanulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);\n``None``: bez zmiany i bez wiersza."
       },
       "ClosedStep": {
         "properties": {
