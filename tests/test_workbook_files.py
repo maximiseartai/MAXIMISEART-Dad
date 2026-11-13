@@ -32,7 +32,6 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
 from rozliczenia.highlights import Highlights
 from rozliczenia.register_columns import TARGET_HEADERS
-from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.workbook_files import (
     DataRow,
     ExcelRow,
@@ -1119,7 +1118,7 @@ def test_plik_zbiorczy_z_kopii_ma_wymiar_arkusza_z_wpisanymi_iloscami_uslug(tmp_
         else data,
     )
     target = tmp_path / "Plik zbiorczy.xlsx"
-    row = replace(_register_row(), quantities={QuantityColumn.AP: 1})
+    row = replace(_register_row(), quantities={"AP": 1})
 
     route = TemplateFile.collective_file(template_path).create(target, [row])
 

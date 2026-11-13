@@ -1,18 +1,28 @@
 """Silnik Reguł ilości (ADR 0033) na swoim interfejsie: ``evaluate``, niezmienniki typów i pliki reguł.
 
-Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdza ich test własności stare = nowe
-(``test_wlasnosci_dopasowania_tekstu.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
-zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem.
+Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdzają ich testy instrukcji taty
+(``test_ilosci_uslug.py``, ``test_ilosci_tylko_dla_inea.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
+zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem. Na
+końcu jeden przebieg procesów pokazuje, że każdy z nich liczy Regułami ilości ze swojego wejścia.
 Oczekiwania pochodzą z ADR 0033 i z docstringów ``quantity_engine``, nie z przebiegu kodu.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, time
+from pathlib import Path
 
+from openpyxl import load_workbook
 import pytest
 import yaml
 
+from rozliczenia import collective_file, quantity_check, tool_files
+from rozliczenia.collective_layout import QUANTITY_COLUMNS, QUANTITY_LETTERS
+from rozliczenia.collective_preparation import PreparationInputs, prepare_collective_file
+from rozliczenia.dad_files import DadFiles
+from rozliczenia.engine import SettlementInputs, run_settlements
+from rozliczenia.order_facts import MissingHeaders
+from rozliczenia.quantities_to_fill import FillKind, RowState, fill_hint, quantities_to_fill
 from rozliczenia.quantity_engine import (
     ActivitiesContain,
     Component,
@@ -50,6 +60,10 @@ from rozliczenia.quantity_rules_file import (
     parse_device_list,
     parse_quantity_rules,
 )
+from rozliczenia.run_context import RunContext
+from atrapy.preparation import PERIOD, cell_values, make_preparation_fixture, register_order
+from atrapy.settlement import worker_list, write_template
+from atrapy.workbooks import active_worksheet
 
 DEVICES = DeviceList(
     (
@@ -264,10 +278,12 @@ def test_kolumny_regul_i_kolumny_wiersza_bez_reguly_wynikaja_z_regul() -> None:
         _rule("z", scope=Scope.KNOWN, action=_fill("Z", 1)),
         _rule("v", scope=Scope.EVERY, action=Fill((Write("V", 1), Write("T", 1)))),
         _rule("inea", action=LeaveEmpty(("AK",))),
+        _rule("inea-2", action=LeaveEmpty(("AE", "AK"))),
     )
 
     assert rules.rule_columns == ("P", "Q", "S", "T", "V", "Z")
     assert rules.without_rule_columns == ("T", "V")
+    assert rules.leave_empty_columns == ("AK", "AE")
 
 
 def test_reguly_z_wydania_licza_dzisiejsze_kolumny_kontroli_ilosci() -> None:
@@ -275,6 +291,7 @@ def test_reguly_z_wydania_licza_dzisiejsze_kolumny_kontroli_ilosci() -> None:
         "N", "O", "P", "Q", "S", "T", "V", "Z", "AE", "AG", "AI", "AK", "AM", "AN", "AO", "AP",
     )  # fmt: skip
     assert DEFAULT_QUANTITY_RULES.without_rule_columns == ("V", "T", "N")
+    assert DEFAULT_QUANTITY_RULES.leave_empty_columns == ("AP", "AK")
 
 
 def _device_list(*components: Component) -> DeviceList:
@@ -303,6 +320,8 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", ContractFirstWord("u 1"))), "reguly[x].jesli[0].slowo", id="umowa-dwa-slowa"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset(), time(1)))), "reguly[x].jesli[0].dni", id="bez-dni"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({7}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-7"),
+        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({True}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-true"),
+        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({False}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-false"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({1}), time(1, 0, 5)))), "reguly[x].jesli[0].od", id="sekundy"),
         pytest.param(lambda: _rules(_rule("x", action=Fill(()))), "reguly[x].to.wpisy", id="wpisz-bez-kolumny"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("M", 1))), "reguly[x].to.wpisy[0].kolumna", id="kolumna-spoza-n-ap"),
@@ -312,6 +331,7 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", action=_fill("Q", 1))), "reguly[x].to.wpisy[0].kolumna", id="kolumna-q"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 0))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-0"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1000))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-1000"),
+        pytest.param(lambda: _rules(_rule("x", action=_fill("Z", True))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-true"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.ONCE, "kabel"))), "reguly[x].to.wpisy[0].skladnik", id="raz-ze-skladnikiem"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.COMPONENT))), "reguly[x].to.wpisy[0].skladnik", id="liczba-bez-skladnika"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.PIECES, "brak"))), "reguly[x].to.wpisy[0].skladnik", id="sztuki-nieznany"),
@@ -474,3 +494,91 @@ def test_plik_listy_urzadzen_z_bledem_daje_pierwszy_problem_z_polem(document: ob
 
     assert isinstance(problem, RulesProblem), problem
     assert problem.field == field
+
+
+# Każdy proces liczy Regułami ilości ze swojego wejścia (ADR 0033, US 14): Przygotowanie Ilości usług, Przebieg Ilości
+# tylko dla INEA, Kontrola ilości regułami swojego Przebiegu, a Uzupełnienie regułami podanymi przy odczycie. Reguły
+# różnią się od Reguł ilości z Wydania w każdej kolumnie, więc proces, który liczy innymi, daje inne komórki.
+OWN_RULES = QuantityRules(
+    (
+        QuantityRule("fut", (ContainsComponent("fut"),), Scope.KNOWN, _fill("AA", 7)),
+        QuantityRule("fut-bez-aa", (DevicesText(TextMode.CONTAINS, "fut"),), Scope.EVERY, LeaveEmpty(("AA",))),
+        QuantityRule("nieznane", (), Scope.UNKNOWN, _fill("T", 1)),
+    ),
+    DEFAULT_QUANTITY_RULES.devices,
+)
+TUESDAY = datetime(2026, 9, 8, 10)
+
+
+def _quantities_in(path: Path, row: int) -> dict[str, object]:
+    [values] = cell_values(path, min_row=row, max_row=row, min_col=QUANTITY_COLUMNS.start, max_col=QUANTITY_COLUMNS.stop - 1)
+    return {letter: value for letter, value in zip(QUANTITY_LETTERS, values, strict=True) if value not in (None, 0)}
+
+
+def _tata_writes(path: Path, cells: dict[str, int]) -> None:
+    workbook = load_workbook(path)
+    try:
+        for reference, value in cells.items():
+            active_worksheet(workbook)[reference] = value
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+
+def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze_swojego_wejscia(tmp_path: Path) -> None:
+    fixture = make_preparation_fixture(
+        tmp_path,
+        [
+            register_order(1, TUESDAY) | {"URZĄDZENIA": "fut"},
+            register_order(2, TUESDAY) | {"URZĄDZENIA": "foo"},
+            register_order(3, TUESDAY) | {"URZĄDZENIA": "prewencja"},
+        ],
+    )
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(worker_template)
+
+    preparation = prepare_collective_file(
+        PreparationInputs(
+            fixture.register_path,
+            fixture.periods_directory,
+            PERIOD,
+            worker_list(),
+            fixture.internal_template_path,
+            fixture.collective_template_path,
+            quantity_rules=OWN_RULES,
+        ),
+        RunContext(),
+    )
+    prepared = [_quantities_in(preparation.collective_file, row) for row in (18, 19, 20)]
+    _tata_writes(preparation.collective_file, {"AA18": 6, "V19": 1})
+    settlement = run_settlements(
+        SettlementInputs(preparation.collective_file, worker_list(), worker_template, quantity_rules=OWN_RULES),
+        RunContext(),
+    )
+    check = quantity_check.check(settlement.orders, settlement.quantity_rules)
+    read = collective_file.read_numbered_orders(preparation.collective_file, DadFiles())
+    assert not isinstance(read, MissingHeaders)
+    to_fill = quantities_to_fill(read.rows, OWN_RULES, settled=False)
+
+    assert prepared == [{"Q": 1, "S": 1, "AA": 7}, {"T": 1}, {"T": 1}], "prewencja nie jest tu z opisu"
+    [worker_file] = (result.output_file for result in settlement.results if result.rows)
+    assert _quantities_in(worker_file, 18) == {"Q": 1, "S": 1}
+    assert dict(settlement.inea_only_cleared) == {"AA": 1}
+    assert isinstance(check, quantity_check.QuantityCheck)
+    assert (check.compared, check.unruled_rows, check.from_description) == (1, 2, 0)
+    assert [(difference.column, difference.rule, difference.tata) for difference in check.differences] == [("AA", 7, 6)]
+    assert dict(check.unruled["foo"].values) == {("V", 1): 1}, "V nie jest kolumną reguł dla składnika spoza listy"
+    assert "AA" not in check.other_columns
+    assert [(kind.kind, [(row.number, row.state) for row in kind.rows]) for kind in to_fill.kinds] == [
+        (FillKind.WITHOUT_RULE, [(19, RowState.DONE), (20, RowState.TO_FILL)]),
+        (FillKind.FROM_DESCRIPTION, []),
+    ]
+    assert fill_hint(FillKind.WITHOUT_RULE, OWN_RULES) == "Dopisz ilości poza T."
+
+
+def test_podpowiedz_wiersza_bez_reguly_wymienia_kolumny_regul_dla_skladnika_spoza_listy() -> None:
+    only_known = _rules(_rule("z", scope=Scope.KNOWN, action=_fill("Z", 1)))
+
+    assert fill_hint(FillKind.WITHOUT_RULE, DEFAULT_QUANTITY_RULES) == "Dopisz ilości poza V, T i N."
+    assert fill_hint(FillKind.WITHOUT_RULE, only_known) == "Dopisz ilości."
+    assert fill_hint(FillKind.FROM_DESCRIPTION, only_known) == "Wpisz ilości według opisu technika."

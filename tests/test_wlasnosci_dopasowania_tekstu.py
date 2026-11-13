@@ -11,25 +11,19 @@ Przykłady są deterministyczne (``derandomize=True``, bez bazy przykładów), w
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 from pathlib import Path
 import re
-import unicodedata
 
 import pytest
 from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
-from rozliczenia import collective_layout, quantity_engine, quantity_rules, tool_files
+from rozliczenia import tool_files
 from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
-from rozliczenia.highlights import PLAIN
-from rozliczenia.inea_only_quantities import without_inea_only
-from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
+from rozliczenia.quantity_engine import OrderContent, RuleResult, WithoutRule, evaluate
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.register_columns import DEVICES
-from rozliczenia.text import normalize_text
-from rozliczenia.workbook_files import DataCell, DataRow
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
 from tests.fixtures.formy_telefonu import MASKED, PHONE
@@ -37,7 +31,7 @@ from atrapy.settlement import CellValue, make_fixture, worker_list, write_quanti
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=100)
 
-# Składniki URZĄDZENIA z instrukcji taty (spec #268) i z docstringu Reguł ilości, w zapisie z Rejestru.
+# Zapisy składników URZĄDZENIA z instrukcji taty (spec #268) i z Listy Urządzeń z Wydania, w zapisie z Rejestru.
 COMPONENTS = (
     "nokia",
     "nokia zte",
@@ -57,14 +51,14 @@ COMPONENTS = (
     "instalacja ręczna",
     "wizja",
 )
-# Litery bez ``x``, bo doklejone ``xg`` znika z URZĄDZENIA (docstring Reguł ilości).
+# Litery bez ``x``, bo doklejone ``xg`` znika z URZĄDZENIA (docstring ``quantity_engine``).
 LETTERS = "abcdefghijklmnopqrstuvwyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWYZĄĆĘŁŃÓŚŹŻ"
 SEPARATORS = (" ", "  ", ",", ", ", " ,", ",,", " , ")
 TUESDAY_MORNING = datetime(2026, 10, 27, 9)
 
 
 def _rules(devices: str, activities: str = "") -> RuleResult:
-    return evaluate(OrderContent.of("", devices, activities, TUESDAY_MORNING))
+    return evaluate(DEFAULT_QUANTITY_RULES, OrderContent.of("", devices, activities, TUESDAY_MORNING))
 
 
 @st.composite
@@ -151,9 +145,9 @@ def test_samo_nokia_z_akt_int_w_dowolnym_miejscu_czynnosci_daje_jedno_o_na_zlece
 
     with_phrase = _rules(devices, before + phrase + after + again)
 
-    assert with_phrase.quantities.get(QuantityColumn.O) == 1, (devices, before + phrase + after + again)
+    assert with_phrase.quantities.get("O") == 1, (devices, before + phrase + after + again)
     assert with_phrase == _rules(devices, "akt int")
-    assert QuantityColumn.O not in _rules(devices, before + after).quantities
+    assert "O" not in _rules(devices, before + after).quantities
 
 
 # Ilości tylko dla INEA (ADR 0018): kolumna → słowo w URZĄDZENIA. Oba słowa mają ``o``, a wypełnienie wiersza nie,
@@ -194,124 +188,6 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
         assert {str(column): count for column, count in preview.inea_only_cleared.items()} == expected, [cells["D"] for cells, _ in rows]
 
     cleared_cells_match_words()
-
-
-# Silnik Reguł ilości z Regułami ilości z Wydania (ADR 0033, „Start bez zmiany wyniku”) daje to samo co dzisiejszy kod:
-# rodzaj wyniku i Ilości usług jak ``quantity_rules.evaluate``, a kolumny do zostawienia pustymi jak Ilości tylko dla
-# INEA (``without_inea_only``) na tym samym Wierszu danych. Test żyje do usunięcia starego kodu (#1471 PR 3).
-RAW_SPELLINGS = (*COMPONENTS, "usterka WEW", "Instalacja Ręczna")
-OUTSIDE_LIST = (
-    "foo", "gniazdo2", "xtechnicolor", "gniazdo/technicolor", "technicolorplus", "0*fut", "*fut", "2*", "nokia 2*zte",
-    "zte", "prewencja", "Niedostępność  usług", "niedostępność usług", "PREWENCJA", "ręczna", "u", "gniaXGzdo",
-    "technicolXGor",
-)  # fmt: skip
-SEPARATORS_ANY = (" ", "  ", ",", ", ", " ", "\t", "\n", " ,")
-MONDAY = datetime(2026, 11, 9)
-EDGE_TIMES = (time(0), time(16, 59), time(17), time(17, 1), time(23, 59))
-
-
-@st.composite
-def _devices_cell(draw: st.DrawFn) -> str | float | None:
-    """Komórka URZĄDZENIA: znane zapisy z ``n*`` i ``xg``, słowa spoza listy, różne separatory, NFD, komórki nietekstowe."""
-
-    if draw(st.integers(0, 19)) == 0:
-        return draw(st.sampled_from(("", " ", ",,", "xg", " XG ", 0, 1.5, None, 3)))
-    pieces = []
-    for _ in range(draw(st.integers(0, 4))):
-        if draw(st.integers(0, 3)) == 0:
-            piece = draw(st.sampled_from(OUTSIDE_LIST))
-        else:
-            count = draw(st.sampled_from(("", "", "", "2*", "3 *", "2* ", "12*")))
-            piece = count + draw(_mixed_case(draw(st.sampled_from(RAW_SPELLINGS))))
-        pieces.append(piece + draw(st.sampled_from(("", "", "", "xg", "XG", " xg"))))
-    text = "".join(piece + draw(st.sampled_from(SEPARATORS_ANY)) for piece in pieces)
-    return unicodedata.normalize("NFD", text) if draw(st.integers(0, 9)) == 0 else text
-
-
-@st.composite
-def _activities_cell(draw: st.DrawFn) -> object:
-    parts = draw(
-        st.lists(
-            st.one_of(
-                st.sampled_from(("akt int", "AKT  int", "xakt intx", "akt\tint", "akt in t", "aktint")),
-                st.sampled_from(("3 szt", "7szt", "0 szt", "12 SZT", "szt", "2 sztuki")),
-                st.text("abcdefghijklmnopqrstuwyząęó ,.-0123456789", max_size=8),
-            ),
-            max_size=3,
-        )
-    )
-    return draw(st.sampled_from((None, 0))) if not parts and draw(st.booleans()) else " ".join(parts)
-
-
-@st.composite
-def _started(draw: st.DrawFn) -> datetime:
-    at = draw(st.one_of(st.sampled_from(EDGE_TIMES), st.times()))
-    return datetime.combine(MONDAY + timedelta(days=draw(st.integers(0, 6))), at)
-
-
-_CONTRACTS = st.one_of(
-    st.sampled_from(("", "u", "U 12", " u ", "u/12", "usługa", "pr", "U", "u\t5")), st.none(), st.text("uU /0123", max_size=4)
-)
-_KINDS = {
-    quantity_rules.ServiceQuantities: quantity_engine.ServiceQuantities,
-    quantity_rules.WithoutRule: quantity_engine.WithoutRule,
-    quantity_rules.FromDescription: quantity_engine.FromDescription,
-}
-# Kolumna URZĄDZENIA w Wierszu danych: Ilości tylko dla INEA szukają jej po nagłówku, więc wystarczy dowolna spoza N:AP.
-_DEVICES_COLUMN = collective_layout.column("D")
-
-
-def _inea_only_cleared(devices: str | float | None) -> frozenset[str]:
-    """Kolumny Ilości tylko dla INEA, które dzisiejszy Przebieg czyści w Wierszu danych z tym URZĄDZENIA."""
-
-    cells = [DataCell(1, PLAIN, "General", None) for _ in range(collective_layout.column("AT"))]
-    cells[_DEVICES_COLUMN - 1] = DataCell(devices, PLAIN, "General", None)
-    [row], _ = without_inea_only({normalize_text(DEVICES.target_header): _DEVICES_COLUMN}, [DataRow(18, tuple(cells))])
-    return frozenset(letter for letter in ("AP", "AK") if row.value(letter) is None)
-
-
-@settings(PROPERTY, max_examples=2000)
-@given(_CONTRACTS, _devices_cell(), _activities_cell(), st.one_of(_started(), st.none()))
-@example("", "", "", MONDAY)
-@example("", " , XG", "", MONDAY)
-@example("", "Prewencja", "", MONDAY)
-@example("", "niedostępność  usług", "", MONDAY)
-@example("u 5", "fut", "", MONDAY)
-@example("U/5", "fut", "", MONDAY)
-@example("", "usterka", "", MONDAY.replace(hour=17))
-@example("", "usterka hurt", "", MONDAY.replace(hour=16, minute=59, second=59))
-@example("", "2*usterka wew", "", MONDAY + timedelta(days=5))
-@example("", "usterka", "", MONDAY + timedelta(days=6, hours=23))
-@example("", "usterka foo", "", MONDAY + timedelta(days=4, hours=20))
-@example("u", "foo", "", MONDAY)
-@example("", "nokia", "akt int", MONDAY)
-@example("", "2*nokia", "x AKT  INTx", MONDAY)
-@example("", "nokia, NOKIA", "akt int", MONDAY)
-@example("", "nokia gateway fut", "akt int", MONDAY)
-@example("", "nokia nokia zte", "akt int", MONDAY)
-@example("", "nokia technicolor", "akt int", MONDAY)
-@example("", "nokia getewayHomeBox 3*fut globo", "", MONDAY)
-@example("", "2*fut stb2", "", MONDAY)
-@example("", "zyxel 2*wifi6extra", "", MONDAY)
-@example("", "gateway wifi6extra 2*gateway", "", MONDAY)
-@example("", "2*wizja instalacja ręczna", "3 szt", MONDAY)
-@example("", "wizja", "", MONDAY)
-@example("", "gniazdo, zmiana instalacji w lokalu abonenta", "", MONDAY)
-@example("", "gniazdo2 technicolorXG", "", MONDAY)
-@example("", "gniazdo/technicolor", "", None)
-@example("", "gniaXGzdo technicolXGor", "", MONDAY)
-@example("", "0*fut *fut", "", MONDAY)
-@example("", 0, None, MONDAY)
-@example(None, None, None, None)
-def test_silnik_z_regulami_ilosci_z_wydania_daje_te_same_ilosci_co_dzisiejszy_kod(
-    contract: object, devices: str | float | None, activities: object, started: datetime | None
-) -> None:
-    new = quantity_engine.evaluate(DEFAULT_QUANTITY_RULES, quantity_engine.OrderContent.of(contract, devices, activities, started))
-
-    assert new.leave_empty == _inea_only_cleared(devices), devices
-    if started is not None:
-        old = quantity_rules.evaluate(quantity_rules.OrderContent.of(contract, devices, activities, started))
-        assert (type(new), dict(new.quantities)) == (_KINDS[type(old)], dict(old.quantities)), (contract, devices, activities)
 
 
 # Kolumny arkusza zleceń INTERMAX w testach rozpoznania: tylko te, które czyta Kolor operatora i Wpis.

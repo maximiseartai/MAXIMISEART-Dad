@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+from typing import Any
 
 import github
 
@@ -38,7 +39,13 @@ def pull(number: int) -> Pull:
         "number,title,state,isDraft,isCrossRepository,baseRefName,headRefOid,statusCheckRollup,comments,reviews,"
         "url,body,closingIssuesReferences"
     )
-    found = json.loads(github.gh("pr", "view", str(number), "--json", fields))
+    return from_view(json.loads(github.gh("pr", "view", str(number), "--json", fields)))
+
+
+def from_view(found: dict[str, Any]) -> Pull:
+    """``Pull`` z pól ``gh pr view --json`` (te same nazwy ma GraphQL GitHuba, z którego czyta ``rejestr_korzeni``);
+    komentarze i recenzje w kolejności utworzenia."""
+
     verdicts = [*found["comments"], *found["reviews"]]
     verdicts.sort(key=lambda verdict: verdict.get("createdAt") or verdict.get("submittedAt") or "")
     repository = "/".join(found["url"].split("/")[3:5])
@@ -48,7 +55,7 @@ def pull(number: int) -> Pull:
         if f"{issue['repository']['owner']['login']}/{issue['repository']['name']}".casefold() == repository.casefold()
     )
     return Pull(
-        number,
+        found["number"],
         found["title"],
         found["headRefOid"],
         found["baseRefName"],

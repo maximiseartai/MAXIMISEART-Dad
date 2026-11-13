@@ -180,8 +180,10 @@ powstają razem albo żaden.
   `AJ`, `AK`, `AL`, `AM`), które uzupełnia tata. Dlatego zapis kończy się
   wynikiem wymagającym sprawdzenia, a podgląd bez zapisu z tymi samymi
   ostrzeżeniami wynikiem OK.
-- Reguły ilości są w `src/rozliczenia/quantity_rules.py`, a
-  `tests/test_ilosci_uslug.py` sprawdza je z każdą linią instrukcji taty.
+- Reguły ilości z Wydania są danymi w `src/rozliczenia/reguly_ilosci_domyslne.yaml`
+  i `src/rozliczenia/lista_urzadzen_domyslna.yaml`, a liczy je silnik
+  `src/rozliczenia/quantity_engine.py`. `tests/test_ilosci_uslug.py` sprawdza je
+  z każdą linią instrukcji taty.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które
   wypełnił tata. Uruchamia go tylko Maks na swoim Macu, a wynik to same liczby
   i teksty `URZĄDZENIA`.

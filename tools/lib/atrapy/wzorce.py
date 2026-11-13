@@ -685,7 +685,7 @@ def write_internal_template(path: Path) -> None:
     )
 
 
-def write_worker_config(path: Path) -> None:
+def write_synthetic_worker_list(path: Path) -> None:
     """Lista Wykonawców z 20 syntetycznymi Wykonawcami (tyle Szablonów pracowników ma tata)."""
 
     names = {f"wykonawca.syntetyczny{number:02d}": f"Wykonawca Syntetyczny {number:02d}" for number in range(1, WORKERS + 1)}
@@ -696,4 +696,4 @@ def write_synthetic_templates(directory: Path, data_rows: int = FULL_DATA_ROWS) 
     write_settlement_template(directory / WORKER_TEMPLATE_NAME, "GODZINA", data_rows, comments=True)
     write_settlement_template(directory / COLLECTIVE_TEMPLATE_NAME, COLLECTIVE_HEADERS[0], data_rows)
     write_internal_template(directory / INTERNAL_TEMPLATE_NAME)
-    write_worker_config(directory / WORKER_LIST_NAME)
+    write_synthetic_worker_list(directory / WORKER_LIST_NAME)

@@ -100,7 +100,7 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
         SettlementInputs(preparation.collective_file, worker_list(), worker_template),
         RunContext(),
     )
-    result = quantity_check.check(settlement.orders)
+    result = quantity_check.check(settlement.orders, settlement.quantity_rules)
 
     assert isinstance(result, quantity_check.QuantityCheck)
     assert (result.rows, result.compared, result.from_description, result.unruled_rows, result.undated) == (

@@ -1,7 +1,7 @@
 """Kontrola ilości po Przebiegu rozliczeń z Centrum: kiedy powstaje i do którego issue okresu idzie (ADR 0013).
 
 Działanie po wyniku Uruchomienia (``runs.AfterRun``). Kontrola powstaje tylko po procesie, którego wpis w katalogu ma
-Zlecenia Kontroli ilości (``ProcessKind.quantity_check``: Przebieg rozliczeń), z zapisem,
+Kontrolę ilości (``ProcessKind.quantity_check``: Przebieg rozliczeń, Regułami ilości swojego Uruchomienia), z zapisem,
 którego wynik karta pokazuje jako zakończony (OK albo wymagający sprawdzenia, decyzja 7); podgląd, Zatrzymanie i
 nieoczekiwany wyjątek jej nie dają, a Skrypt dla maszyn nie ma działań po wyniku. Na wątku Uruchomienia tylko
 przelicza i zapisuje wysyłkę w kolejce; sieć zostaje w wątku kolejki. Tytuł i treść przechodzą przez strażnika
@@ -31,11 +31,11 @@ class QuantityCheckAfterRun:
         self._forbidden = work.forbidden
 
     def run_ended(self, run: EndedRun) -> None:
-        orders = declaration_of(run.info.process).quantity_check
-        if run.info.mode.dry_run or orders is None or run.shown is None:
+        checked = declaration_of(run.info.process).quantity_check
+        if run.info.mode.dry_run or checked is None or run.shown is None:
             return
         period, run_id = run.info.period, run.info.id
-        result = quantity_check.check(orders(run.shown.engine_summary))
+        result = checked(run.shown.engine_summary)
         title = self._forbidden.guard(quantity_check.title(period, result), "tytuł Kontroli ilości")
         blocks = [
             self._forbidden.guard(block, "treść Kontroli ilości")
