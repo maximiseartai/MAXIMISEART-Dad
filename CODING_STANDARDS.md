@@ -35,7 +35,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Rule | Guard |
 |---|---|
 | The import graph of `src/`, tools, tests and skill scripts keeps the boundaries listed in the docstring of its guard: the engine never imports Centrum rozliczeń, the process core never reaches the workbook layer, and only `Catalog.prepared` builds a `PreparedRun`. | `tests/test_granice_importow.py` |
-| Only the process catalog `src/rozliczenia/centrum/catalog.py` imports the process entries `rozliczenia.centrum.processes`; Centrum, tools, tests and skill scripts take an entry from the catalog. | ruff `TID251` (`pyproject.toml`, owner right of `catalog.py` in `per-file-ignores`); an import by a name built at run time (`importlib`) is left to review |
+| Only the process catalog `src/rozliczenia/centrum/catalog.py` imports the process entries `rozliczenia.centrum.processes`; Centrum, tools, tests and skill scripts take an entry from the catalog. | ruff `TID251` (`pyproject.toml`, owner right of `catalog.py` in `per-file-ignores`), `tests/test_zakazy_ruff.py::test_wpisy_procesow_tylko_u_katalogu_procesow_takze_z_noqa`; an import by a name built at run time (`importlib`) is left to review |
 | Code outside `tests/` (`src/`, `tools/` with its libraries, CI scripts and hooks, skill scripts and the Python files in the root) never imports the package `tests`. | `tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow` (boundary: docstring of `_tests_imports`) |
 
 ## Error Ownership

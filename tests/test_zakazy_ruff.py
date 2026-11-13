@@ -327,6 +327,32 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
     )
 
 
+# Wpis procesu z ``noqa`` na linii i z ``noqa`` na cały plik: postaci, które łapało dawne sprawdzenie
+# test_wpisy_procesow_czyta_tylko_katalog_procesow, a zwykły ``ruff check`` przepuszcza (#1652 r1).
+PROCESSES_NOQA = (
+    "from rozliczenia.centrum.processes import efenix  # noqa: TID251 - sonda\nKIND = efenix.KIND\n",
+    "# ruff: noqa: TID251\nimport rozliczenia.centrum.processes.settlement as settlement\n",
+)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_wpisy_procesow_tylko_u_katalogu_procesow_takze_z_noqa() -> None:
+    """``noqa`` przy imporcie ``rozliczenia.centrum.processes`` byłoby drugą drogą do wpisu procesu obok katalogu
+    procesów, więc zakaz biegnie tu z ``--ignore-noqa`` po każdym katalogu, który ruff sprawdza; katalog przechodzi
+    tylko dzięki prawu właściciela w konfiguracji ruff."""
+    found = sorted({name for name, banned in _banned_names(*CHECKED) if banned == PROCESSES})
+
+    assert found == [], "wpis procesu bierz z rozliczenia.centrum.catalog (declaration_of, Catalog.kind), bez noqa"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize("code", PROCESSES_NOQA)
+def test_noqa_nie_zwalnia_z_zakazu_wpisow_procesow(code: str) -> None:
+    probe = ROOT / "tools" / "sonda_zakazu.py"
+
+    assert _banned_names("--stdin-filename", str(probe), "-", code=code) == [("tools/sonda_zakazu.py", PROCESSES)]
+
+
 # Właściciel zegara ściennego w src/: jedyny plik z prawem do nazw zegara (OWNERS).
 CLOCK_OWNER = ROOT / "src" / "rozliczenia" / "wall_clock.py"
 # Zakazy zegara ściennego w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie
