@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import {
+  changeAutostart,
   changeFolders,
   changeTheme,
   chooseOrderRegister,
@@ -31,6 +32,10 @@ type SettingsContextValue = {
   picker: PickedPath | null
   choose: (path: PickedPath) => void
   chooseTheme: (theme: Theme) => void
+  /** Przełącznik startu razem z Windows: zapisuje się od razu, a do odpowiedzi serwera stoi w wybranym położeniu. */
+  switchAutostart: (enabled: boolean) => void
+  /** Położenie przełącznika startu razem z Windows, które czeka na odpowiedź serwera; `null`: nic nie czeka. */
+  autostartPending: boolean | null
   /**
    * Zapis ścieżki wpisanej przez tatę: `true`, gdy się zapisała. Pusta czyści ustawienie, a druga ścieżka sekcji
    * Foldery zostaje bez zmiany.
@@ -227,9 +232,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }))
   })
 
+  // Stan przełącznika podaje serwer z obecności skrótu; do jego odpowiedzi drugie kliknięcie niczego nie wysyła.
+  const autostarting = useAction(async (enabled: boolean) => {
+    await changeAutostart(enabled).then(saved, failed)
+  })
+
   const pick = picking.run
   const type = typing.run
   const picker = picking.running?.[0] ?? null
+  const switchAutostart = autostarting.run
+  const autostartPending = autostarting.running?.[0] ?? null
 
   const value = React.useMemo<SettingsContextValue>(
     () => ({
@@ -242,6 +254,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setChosenTheme(next)
         changeTheme(next).then(saved, failed)
       },
+      switchAutostart: (enabled) => void switchAutostart(enabled),
+      autostartPending,
       typePath: (path, entered) =>
         new Promise<boolean>((resolve) => {
           void type(path, entered, resolve).then(() => resolve(false))
@@ -252,7 +266,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       secretSaved: take,
       changes,
     }),
-    [settings, reload, theme, picker, pick, saved, type, refusal, undone, take, changes]
+    [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changes]
   )
 
   return (

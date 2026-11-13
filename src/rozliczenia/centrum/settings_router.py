@@ -1,6 +1,7 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
 okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania,
-Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma w żadnej odpowiedzi.
+przełącznik startu razem z Windows, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma w żadnej
+odpowiedzi.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
 zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
@@ -21,7 +22,8 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings import inbox
+from rozliczenia.centrum.settings import inbox, messages
+from rozliczenia.centrum.settings.autostart import AUTOSTART, Unsupported
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
@@ -90,6 +92,13 @@ def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: 
     def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
         return saved(lambda current: replace(current, theme=change.theme))
 
+    @router.put("/autostart", operation_id="changeAutostart", responses=_REFUSED)
+    def change_autostart(change: settings_contract.AutostartChange) -> settings_contract.Choice:
+        result = settings.change(AUTOSTART, lambda _: change.enabled)
+        if isinstance(result, NotSaved):
+            raise refusal.autostart_not_changed()
+        return _choice(settings, result)
+
     @router.put("/inbox-password", operation_id="changeInboxPassword", responses=_REFUSED)
     def change_inbox_password(change: settings_contract.InboxPasswordChange) -> settings_contract.InboxPasswordSaved:
         """Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy
@@ -139,6 +148,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
+    autostart = _describe_autostart(view.autostart)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
@@ -149,6 +159,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
                 folders_problem=None,
                 inbox=inbox_setting,
                 inbox_problem=inbox_problem,
+                autostart=autostart,
             )
         case Good(value=folders):
             problem = None
@@ -162,6 +173,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         folders_problem=problem,
         inbox=inbox_setting,
         inbox_problem=inbox_problem,
+        autostart=autostart,
     )
 
 
@@ -186,6 +198,16 @@ def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
     return settings_contract.InboxSetting(
         address=None if address is None else address.shown(), password=found is not None and bool(found.password)
     )
+
+
+def _describe_autostart(autostart: Read[bool] | Unreadable | Unsupported) -> settings_contract.AutostartSetting:
+    match autostart:
+        case Unsupported():
+            return settings_contract.AutostartSetting(state="unsupported", reason=messages.autostart_unsupported())
+        case Unreadable():
+            return settings_contract.AutostartSetting(state="unreadable", reason=messages.autostart_unreadable())
+        case Good(value=enabled) | Bad(usable=enabled):
+            return settings_contract.AutostartSetting(state="on" if enabled else "off", reason=None)
 
 
 def _describe_path(path: Path | None, state: SettingState) -> settings_contract.PathSetting:

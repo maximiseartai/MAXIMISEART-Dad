@@ -808,7 +808,8 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
     check of the drive that passes because nothing opened (``Log.OPENED``) or nothing was refused.
 
     The round trips: ``ScriptedPlatform`` opens a file (logged in ``Log.OPENED``) and answers a picker (logged in
-    ``Log.DIALOGS``, answered from ``File.PICKER_ANSWER``); ``FileReportBox`` gives its outcome for a new issue while
+    ``Log.DIALOGS``, answered from ``File.PICKER_ANSWER``); ``ScriptedAutostart`` writes and removes
+    ``File.AUTOSTART_SHORTCUT`` and is ``unsupported`` while ``Switch.NO_AUTOSTART`` is on; ``FileReportBox`` gives its outcome for a new issue while
     ``Switch.BOX_OFFLINE``, ``Switch.KEY_REFUSED`` or ``rejects`` is on, opens issue 1 with comment 1 and reads the
     comment back from ``issue_file``, and logs a
     question for closed issues in ``Log.REPORT_QUESTIONS``; it gives its outcome for a new Archiwum while
@@ -831,7 +832,14 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
     from harness import File, Log, Switch, archive_file, archive_listing, comment_position, issue_file, last_file_id, rejects
     from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Removed, Sent, Unreachable
     from rozliczenia.centrum.tool_freshness import GitHubReleases
-    from serve_centrum import FileReportBox, ScriptedPlatform, _register_failing_on_hook, _scripted_github, _scripted_onedrive
+    from serve_centrum import (
+        FileReportBox,
+        ScriptedAutostart,
+        ScriptedPlatform,
+        _register_failing_on_hook,
+        _scripted_github,
+        _scripted_onedrive,
+    )
 
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)
@@ -848,6 +856,20 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
             errors.append(f"opening a file is not logged in {Log.OPENED.value}: {records(Log.OPENED)}")
         if records(Log.DIALOGS) != [{"title": "Okno"}] or chosen != root / "wybrany":
             errors.append(f"a picker does not log in {Log.DIALOGS.value} or answer from {File.PICKER_ANSWER.value}")
+
+        autostart = ScriptedAutostart(root)
+        autostart.enable()
+        enabled = (autostart.state(), File.AUTOSTART_SHORTCUT.file(root).exists())
+        autostart.disable()
+        disabled = (autostart.state(), File.AUTOSTART_SHORTCUT.file(root).exists())
+        Switch.NO_AUTOSTART.on(root)
+        unsupported = autostart.state()
+        Switch.NO_AUTOSTART.file(root).unlink()
+        if (enabled, disabled, unsupported) != (("on", True), ("off", False), "unsupported"):
+            errors.append(
+                f"the Autostart does not write {File.AUTOSTART_SHORTCUT.value} or does not read {Switch.NO_AUTOSTART.value}: "
+                f"{enabled}, {disabled}, {unsupported}"
+            )
 
         box = FileReportBox(root)
         scripted = [

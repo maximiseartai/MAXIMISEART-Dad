@@ -10,7 +10,10 @@ boundary answers as the sentence says.
 
 - the native file and folder pickers answer with the path in ``File.PICKER_ANSWER``
   (consumed by the next picker; no file = Dad cancelled) and log each dialog title in ``Log.DIALOGS``;
-- opening a file in Excel or a folder in Explorer is logged in ``Log.OPENED`` instead of launching an application.
+- opening a file in Excel or a folder in Explorer is logged in ``Log.OPENED`` instead of launching an application;
+- the Windows Autostart is the file ``File.AUTOSTART_SHORTCUT``: the switch „Uruchamiaj Centrum razem z Windows”
+  writes or removes it, the drive may remove it by hand, and while ``Switch.NO_AUTOSTART`` is on the computer has no
+  Windows Autostart, like a Mac.
 
 The Diagnoza's two boundaries beyond Dad's files are scripted too, so the
 verification never reaches GitHub and checks OneDrive on every system:
@@ -148,6 +151,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.efenix_chrome import EfenixWindow
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import AutostartState
 from rozliczenia.centrum.report_box import (
     Archive,
     ArchiveOutcome,
@@ -247,6 +251,24 @@ class ScriptedPlatform:
 
     def choose_folder(self, title: str) -> Path | None:
         return self._answer(title)
+
+
+class ScriptedAutostart:
+    """The Windows Autostart as the file ``File.AUTOSTART_SHORTCUT`` of the run root (see the module doc)."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+
+    def state(self) -> AutostartState:
+        if Switch.NO_AUTOSTART.is_on(self._root):
+            return "unsupported"
+        return "on" if File.AUTOSTART_SHORTCUT.file(self._root).exists() else "off"
+
+    def enable(self) -> None:
+        File.AUTOSTART_SHORTCUT.write(self._root, "skrót")
+
+    def disable(self) -> None:
+        File.AUTOSTART_SHORTCUT.file(self._root).unlink(missing_ok=True)
 
 
 class FileReportBox:
@@ -675,6 +697,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     app = create_app(
         config=Path(fixture["settings"]).parent,
         platform=ScriptedPlatform(root),
+        autostart=ScriptedAutostart(root),
         log=log,
         shutdown=shutdown,
         today=lambda: today,
