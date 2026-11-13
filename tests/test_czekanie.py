@@ -102,6 +102,9 @@ CI_LOOPS = (
     "echo { a; until ! gh pr checks 446 | grep -q pending; do sleep 30; done; echo koniec &",
     # ``\&`` to znak, a nie tło.
     "until ! gh pr checks 446 | grep -q pending; do sleep 30; done | sed s/a/\\&/",
+    # ``#`` za ``)`` podstawienia nie zaczyna komentarza, który zakryłby pętlę (sondy przeglądu #1487, runda 1).
+    "echo $(date)#x && until gh pr checks 1 | grep -q pass; do sleep 30; done",
+    "x=$(date)#; until gh pr checks 1 | grep -q pass; do sleep 30; done",
 )
 WATCHES = (
     "timeout 1500 gh pr checks 215 --watch > .audit/swarm-215/lane1-pr-checks.txt 2>&1; echo exit=$?",
@@ -111,6 +114,9 @@ WATCHES = (
     "gh run watch 39930673572 --interval 30 --exit-status > /dev/null 2>&1; echo exit=$?; date -u +%T",
     # Komentarz za poleceniem nie zdejmuje odmowy z samego polecenia.
     "gh run watch 39930673572 --exit-status # do końca runu",
+    # ``#`` za ``)`` podstawienia to dalej to samo słowo, a nie komentarz (sondy przeglądu #1487, runda 1).
+    "x=$(date +%s)#; gh run watch 39930673572",
+    "echo $((1+1))#; gh pr checks 1 --watch",
 )
 PGREP_LOOPS = (
     'until ! pgrep -f "tools/mutacje.py --plik ~/.t3/notes/arch-2026-10-24/K7/mutacje.json" >/dev/null; '
@@ -163,6 +169,28 @@ RERUNS = (
     "echo ${#RUN} $# \\# && gh run rerun 43035692960",
     "gh run list -L 1 # it's red\ngh run rerun 43035692960",
     "cat <<'EOF' > notatka.md\n# Ponowienie\nEOF\ngh run rerun 43035692960",
+    "a=#b; gh run rerun 1",
+    "echo ${x#a}; gh run rerun 1",
+    "echo a\\\n#x; gh run rerun 1",
+    'echo "$(date)"#; gh run rerun 1',
+    # Sondy przeglądu #1487, runda 1: ``#`` za ``)`` i backtickiem jest w słowie, w backtickach komentarz kończy się na
+    # backticku, a cudzysłów w backtickach w ``"…"`` i ukośnik w ``$'…'`` hook czytał inaczej niż bash.
+    "echo $(date +%s)#; gh run rerun 43035692960",
+    "echo `date +%s`#; gh run rerun 43035692960",
+    "echo `#x`; gh run rerun 1",
+    "git log -1 --format=%h $(git rev-parse HEAD)#; gh run rerun 1",
+    'echo "`echo " #"`"; gh run rerun 43035692960',
+    "echo $'\\' #'; gh run rerun 1",
+    # ``#`` po spacji, którego bash nie bierze za komentarz: w ``${…}``, w backtickach, w arytmetyce, w ``[[ =~ ( ]]``,
+    # za ``\ ``, za napisem ``"…"`` z ``${`` i za ``$$'…'``, który nie jest ``$'…'`` (``$[ # ]`` wykonuje zsh agenta na Macu).
+    "echo ${x:- #}; gh run rerun 1",
+    "x=`echo #`; gh run rerun 1",
+    "(( 1 #x )); gh run rerun 1",
+    "echo $[ # ]; gh run rerun 1",
+    "[[ a =~ (a #) ]]; gh run rerun 1",
+    "echo a\\ #x; gh run rerun 1",
+    'echo "${x:-" #"}"; gh run rerun 1',
+    "echo $$'a\\'; gh run rerun 1\necho '",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -241,6 +269,7 @@ PASSING = (
     "gh run list # potem gh pr checks 1 --watch",
     "# gh run watch 123\ngh run list",
     "gh pr checks 1  # until ! gh pr checks 1 | grep -q pending; do sleep 30; done",
+    "x=$(git rev-parse HEAD) $((1+1)) ${x#a} # potem gh run rerun 1",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.
     "(while true; do echo \"$(date +%T) $(pgrep -fl 'serve_centrum|chrome-headless|pytest' | cut -c1-100 | "
     "tr '\\n' ' ')\"; sleep 5; done) > /tmp/wyd165-watch1.log 2>&1 & W=$!; .venv/bin/python "

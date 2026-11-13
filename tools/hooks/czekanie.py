@@ -24,7 +24,8 @@ Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (k
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
 Ciała heredoców (skrypt Pythona, treść commitu), komentarze powłoki (od ``#`` na początku słowa do końca linii, a nie
-``#`` w słowie jak ``issue#12``, ``$#`` i ``${#x}``) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
+``#`` w słowie jak ``issue#12``, ``$(date)#``, ``$#`` i ``${#x}``, ani w nawiasach, ``${…}`` i backtickach) i napisy ze
+spacją w cudzysłowach (opis commitu, wiersz logu)
 hook pomija we wszystkich regułach, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
 ``su -l -s /bin/sh root -c``).
@@ -65,8 +66,12 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 # Polecenia proste po ``_code``: między nimi stoją ``;``, ``&``, ``|``, nowa linia, nawiasy, ``$(`` i backtick.
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
-# Za tymi znakami poza cudzysłowem zaczyna się słowo, więc ``#`` za nimi otwiera komentarz powłoki.
-WORD_BREAKS = frozenset(" \t\n;&|()`")
+# Za tymi znakami zaczyna się słowo, więc ``#`` za nimi otwiera komentarz powłoki. Za ``)`` i backtickiem nie:
+# ``$(date)#`` i ``\`date\`#`` to dalej jedno słowo.
+WORD_BREAKS = frozenset(" \t\n;&|")
+# Pary, w których ``#`` na początku słowa nie zawsze jest komentarzem do końca linii: ``(…)`` z ``$(``, ``$((``,
+# ``((`` i ``[[ =~ ( ]]``, ``${…}``, ``$[…]`` (arytmetyka, w zsh ``$[ # ]`` to liczba) i backticki.
+OPENERS_CLOSERS = frozenset({"()", "{}", "[]", "``"})
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -174,14 +179,30 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     # Napis przyklejony do skryptu ``-c`` to jego dalszy ciąg: w ``bash -c '… perl -e '\''select(…)'\''; done'``
     # ``done`` stoi w trzecim napisie.
     depth, index, script_end = 0, start, -1
-    word_starts = True
+    # Komentarz hook pomija tylko tam, gdzie bash i zsh na pewno go widzą: ``#`` na początku słowa poza parami ``openers``
+    # i poza podstawieniem. Napis ``"…"`` z ``$`` albo backtickiem bash czyta inaczej niż ``_quoted`` (``"${x:-"…"}"``),
+    # więc za nim hook przestaje pomijać komentarze: zostawiony ``#`` kończy się co najwyżej odmową.
+    comments, word_starts = not inside_substitution, True
+    openers: list[str] = []
     while index < len(command):
         char = command[index]
-        if char == "#" and word_starts:
+        if char == "#" and word_starts and comments and not openers:
             newline = command.find("\n", index)
             index = len(command) if newline < 0 else newline
             continue
         word_starts = char in WORD_BREAKS
+        # ``$$`` to numer procesu, więc ``'`` za nim zaczyna zwykły napis, a nie ``$'…'``.
+        if command.startswith(("$$", "${", "$["), index):
+            if command[index + 1] != "$":
+                openers.append(command[index + 1])
+            kept.append(command[index : index + 2])
+            index += 2
+            continue
+        ansi = command.startswith("$'", index)
+        if ansi:
+            kept.append(char)
+            index += 1
+            char = "'"
         if char == "\\":
             kept.append(command[index : index + 2])
             if index == script_end:
@@ -189,7 +210,9 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
             index += 2
             continue
         if char in "'\"":
-            literal, end = _quoted(command, index)
+            literal, end = _quoted(command, index, ansi)
+            if char == '"' and any(sign in command[index:end] for sign in "$`"):
+                comments = False
             script = scripts.is_script(index, end)
             if index == script_end:
                 kept.append(command[index + 1 : end])
@@ -207,17 +230,26 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
             depth -= 1
         elif char == "(":
             depth += 1
+        if char in "(`" and openers[-1:] != ["`"]:
+            openers.append(char)
+        elif openers and openers[-1] + char in OPENERS_CLOSERS:
+            openers.pop()
         kept.append(char)
         index += 1
     return "".join(kept), index
 
 
-def _quoted(command: str, start: int) -> tuple[str, int]:
-    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
+def _quoted(command: str, start: int, ansi: bool = False) -> tuple[str, int]:
+    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``.
+
+    W ``$'…'`` (``ansi``) ukośnik chroni apostrof.
+    """
 
     if command[start] == "'":
-        close = command.find("'", start + 1)
-        end, kept = (len(command) if close < 0 else close + 1), "''"
+        index = start + 1
+        while index < len(command) and command[index] != "'":
+            index += 2 if ansi and command[index] == "\\" else 1
+        end, kept = min(index + 1, len(command)), "''"
     else:
         parts, index = ['"'], start + 1
         while index < len(command):
