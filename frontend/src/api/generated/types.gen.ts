@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -704,6 +704,51 @@ export type InaccessiblePath = {
      * Name
      */
     name: string;
+};
+
+/**
+ * InboxPasswordChange
+ *
+ * Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis).
+ */
+export type InboxPasswordChange = {
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export type InboxPasswordSaved = {
+    settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
+    /**
+     * Login
+     */
+    login: 'accepted' | 'rejected' | 'no_network';
+};
+
+/**
+ * InboxSetting
+ *
+ * Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy.
+ */
+export type InboxSetting = {
+    /**
+     * Address
+     */
+    address: string | null;
+    /**
+     * Password
+     */
+    password: boolean;
 };
 
 /**
@@ -2775,7 +2820,8 @@ export type SettingProblem = {
  * Settings
  *
  * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny.
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła.
  */
 export type Settings = {
     /**
@@ -2811,6 +2857,8 @@ export type Settings = {
      */
     theme: 'dark' | 'light';
     folders_problem: SettingProblem | null;
+    inbox: InboxSetting;
+    inbox_problem: SettingProblem | null;
     autostart: AutostartSetting;
 };
 
@@ -4795,6 +4843,31 @@ export type UndoSettingsChangeResponses = {
 };
 
 export type UndoSettingsChangeResponse = UndoSettingsChangeResponses[keyof UndoSettingsChangeResponses];
+
+export type ChangeInboxPasswordData = {
+    body: InboxPasswordChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/inbox-password';
+};
+
+export type ChangeInboxPasswordErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeInboxPasswordError = ChangeInboxPasswordErrors[keyof ChangeInboxPasswordErrors];
+
+export type ChangeInboxPasswordResponses = {
+    /**
+     * Successful Response
+     */
+    200: InboxPasswordSaved;
+};
+
+export type ChangeInboxPasswordResponse = ChangeInboxPasswordResponses[keyof ChangeInboxPasswordResponses];
 
 export type ChoosePeriodsDirectoryData = {
     body?: never;

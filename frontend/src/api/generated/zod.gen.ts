@@ -15,6 +15,7 @@ export const zApiTiming = z.object({
         'openRegister',
         'choosePeriodsDirectory',
         'changeTheme',
+        'changeInboxPassword',
         'changeFolders',
         'changeAutostart',
         'getSettingsHistory',
@@ -363,6 +364,25 @@ export const zInaccessiblePath = z.object({
     state: z.literal('inaccessible'),
     path: z.string(),
     name: z.string()
+});
+
+/**
+ * InboxPasswordChange
+ *
+ * Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis).
+ */
+export const zInboxPasswordChange = z.object({
+    password: z.string()
+});
+
+/**
+ * InboxSetting
+ *
+ * Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy.
+ */
+export const zInboxSetting = z.object({
+    address: z.string().nullable(),
+    password: z.boolean()
 });
 
 /**
@@ -1691,7 +1711,8 @@ export const zUnreadablePath = z.object({
  * Settings
  *
  * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny.
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła.
  */
 export const zSettings = z.object({
     order_register: z.discriminatedUnion('state', [
@@ -1710,6 +1731,8 @@ export const zSettings = z.object({
     ]),
     theme: z.enum(['dark', 'light']),
     folders_problem: zSettingProblem.nullable(),
+    inbox: zInboxSetting,
+    inbox_problem: zSettingProblem.nullable(),
     autostart: zAutostartSetting
 });
 
@@ -1723,6 +1746,21 @@ export const zSettings = z.object({
 export const zChoice = z.object({
     settings: zSettings,
     change: z.string().nullish()
+});
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export const zInboxPasswordSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    login: z.enum([
+        'accepted',
+        'rejected',
+        'no_network'
+    ])
 });
 
 /**
@@ -2752,6 +2790,13 @@ export const zUndoSettingsChangePath = z.object({
  * Successful Response
  */
 export const zUndoSettingsChangeResponse = zChoice;
+
+export const zChangeInboxPasswordBody = zInboxPasswordChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeInboxPasswordResponse = zInboxPasswordSaved;
 
 /**
  * Successful Response

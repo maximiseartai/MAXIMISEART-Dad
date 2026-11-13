@@ -74,6 +74,10 @@ FEATURES = (
             "331-ustawienia-autostart-waskie",
             "332-ustawienia-autostart-spoza",
             "333-ustawienia-autostart-bez-windows",
+            "319-ustawienia-zle-stare-haslo",
+            "316-ustawienia-haslo-przyjete",
+            "317-ustawienia-historia-hasla",
+            "318-ustawienia-haslo-waskie",
         ),
     ),
     Feature(

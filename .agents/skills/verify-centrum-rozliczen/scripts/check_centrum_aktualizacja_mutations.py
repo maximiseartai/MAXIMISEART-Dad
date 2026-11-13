@@ -43,7 +43,7 @@ MUTATIONS = (
     ),
     Mutation(
         "stan aktualizacji czyta tylko karta przeładowana po ponownym starcie",
-        (Edit(BUILD, "Promise.all([t_(),e?e_():null])", "e&&Promise.all([t_(),e?e_():null])"),),
+        (Edit(BUILD, "Promise.all([o_(),e?a_():null])", "e&&Promise.all([o_(),e?a_():null])"),),
         AKTUALIZACJA,
         "po starcie ze skrótu Okresy nie mówią, że nowa wersja nie wystartowała",
     ),

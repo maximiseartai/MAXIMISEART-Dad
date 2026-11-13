@@ -46,6 +46,8 @@ type SettingsContextValue = {
   dismiss: () => void
   /** Ustawienia po cofnięciu zmiany z Historii Ustawień. */
   undone: (choice: Choice) => void
+  /** Ustawienia po zapisie sekretu (hasło skrzynki): bez „Zapisano · Cofnij”, bo sekretu nie da się cofnąć. */
+  secretSaved: (choice: Choice) => void
   /** Numer przyjętych zmian Ustawień: Historia Ustawień czyta się od nowa przy każdej. */
   changes: number
 }
@@ -261,9 +263,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       refusal,
       dismiss: () => setRefusal(null),
       undone,
+      secretSaved: take,
       changes,
     }),
-    [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, changes]
+    [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changes]
   )
 
   return (

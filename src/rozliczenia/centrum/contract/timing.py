@@ -28,6 +28,7 @@ ApiOperation = Literal[
     "openRegister",
     "choosePeriodsDirectory",
     "changeTheme",
+    "changeInboxPassword",
     "changeFolders",
     "changeAutostart",
     "getSettingsHistory",

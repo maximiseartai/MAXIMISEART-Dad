@@ -38,3 +38,23 @@ def autostart_unsupported() -> str:
 
 def autostart_unreadable() -> str:
     return "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
+
+
+def inbox_not_text() -> str:
+    return "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
+
+
+def inbox_address() -> str:
+    return "Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks."
+
+
+def inbox_no_address() -> str:
+    return "Skrzynka raportów nie ma jeszcze adresu. Adres wpisuje Maks."
+
+
+def inbox_password_text() -> str:
+    return "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
+
+
+def inbox_password_empty() -> str:
+    return "Wpisz nowe hasło aplikacji."
