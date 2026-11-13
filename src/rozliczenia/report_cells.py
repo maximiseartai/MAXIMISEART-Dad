@@ -15,7 +15,8 @@ __all__ = ["CellChange", "OrderAdded", "OrderMove", "OrderRow", "ReportColumn"]
 
 
 class ReportColumn(Enum):
-    """Kolumna, którą Wpisanie raportów zmienia, nazwana nagłówkiem INTERMAX; innej nie zmienia."""
+    """Kolumna, którą Wpisanie raportów zmienia, nazwana nagłówkiem INTERMAX; innej nie zmienia. Wartość to też słowo
+    kolumny w Logach Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia."""
 
     SUCCESSFUL = "SKUTECZNE"
     COMPLETED = "CZYNNOŚCI ZREALIZOWANE"

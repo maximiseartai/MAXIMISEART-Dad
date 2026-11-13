@@ -22,8 +22,8 @@ from typing import Final, final
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
-from rozliczenia.centrum.run_logs import READ_VALUES, LoggedDiagnosis, RunLog
-from rozliczenia.client_data import ForbiddenValues, Guarded
+from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
+from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
