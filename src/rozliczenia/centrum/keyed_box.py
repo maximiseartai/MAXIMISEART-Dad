@@ -302,8 +302,7 @@ class KeyedBox:
         odpowiedzi tego rodzaju sprzed niego, zapisane w pliku ``opening``; ``None``: zapis wstrzymany albo pliku nie da
         się odczytać lub zapisać.
 
-        Identyfikator, a nie chwila, mówi, czyj jest zapis: ``time.monotonic`` na Windows zmienia się co ok. 15 ms, więc
-        dwa zapisy mogą mieć tę samą chwilę.
+        Identyfikator, a nie chwila, mówi, czyj jest zapis, bo dwa zapisy mogą mieć tę samą chwilę zegara.
         """
 
         asked_at = self._clock()
