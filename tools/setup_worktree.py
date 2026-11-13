@@ -10,7 +10,7 @@ Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``) i sterownik s
 
     py -3 tools/setup_worktree.py              # Windows
     python3 tools/setup_worktree.py            # macOS i Linux
-    python3 tools/setup_worktree.py --python 3.12
+    python3 tools/setup_worktree.py --python 3.14
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ import repo
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev,workflowy]"
 HOOKS = "tools/hooks"
-MINIMUM_PYTHON = (3, 11)  # requires-python z pyproject.toml
+MINIMUM_PYTHON = (3, 13)  # requires-python z pyproject.toml
+MINIMUM = ".".join(map(str, MINIMUM_PYTHON))
 SUPPORTED = sys.version_info >= MINIMUM_PYTHON
 
 
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument(
         "--python",
-        default=sys.executable if SUPPORTED else "3.12",
+        default=sys.executable if SUPPORTED else MINIMUM,
         help="Python dla .venv przy użyciu uv (wersja albo ścieżka); domyślnie ten, który uruchomił skrypt.",
     )
     args = parser.parse_args(argv)
@@ -50,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         _run([uv, "venv", "--allow-existing", "--python", args.python, str(VENV)])
         _run([uv, "pip", "install", "--python", str(_venv_python()), "-e", EXTRAS])
     elif not SUPPORTED:
-        print("BŁĄD: bez uv uruchom skrypt Pythonem 3.11 albo nowszym.", file=sys.stderr)
+        print(f"BŁĄD: bez uv uruchom skrypt Pythonem {MINIMUM} albo nowszym.", file=sys.stderr)
         return 1
     else:
         venv.EnvBuilder(with_pip=True, symlinks=sys.platform != "win32").create(VENV)  # jak ``python -m venv``

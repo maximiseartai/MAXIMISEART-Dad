@@ -25,8 +25,8 @@ def _check(root: Path) -> tuple[str, int]:
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"missing fixture root: {root}")
-    if sys.version_info < (3, 11):
-        raise ValueError("Python 3.11 or newer is required")
+    if sys.version_info < (3, 13):
+        raise ValueError("Python 3.13 or newer is required")
 
     source = root / PERIOD / SOURCE_NAME
     folder = PeriodFolder.from_collective_file(source)

@@ -84,7 +84,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - Test a rule that matches text from Dad's files (a word or phrase in `URZĄDZENIA` or `CZYNNOŚCI`, an operator name, a period token) with a Hypothesis property, not only with examples: the text anywhere in the cell, glued to punctuation, in any letter case and with Polish letters, two words of the rule in one cell, and the word inside a longer word.
   Take the expected result from `GLOSSARY.md`, the ADR or the docstring, and keep the examples deterministic with `derandomize=True` and `database=None`, as `tests/test_wlasnosci_dopasowania_tekstu.py` does.
 - A test leaves no thread, process, lock or open file behind, and passes alone and in any order, because the xdist shards on the Mac and in CI hold different neighbours.
-- A test holds on Windows and on Python 3.11: `time.monotonic()` on Windows under Python 3.11 advances in steps of about 15.6 ms, a Windows path inside JSON escapes its backslashes, and the Windows console encodes in cp1252.
+- A test holds on Windows and on Python 3.13, the oldest in `requires-python` and Dad's Python: a Windows path inside JSON escapes its backslashes, and the Windows console encodes in cp1252.
 - A refactor that splits a shared path gives each new branch a test that fails when that branch breaks, because tests that reached it only through the old shared path stop covering it without failing.
 - Prove that a new test or check fails on the broken code it guards with `tools/mutacje.py`, the command line of the repository's one mutation engine (`tools/lib/silnik_mutacji.py`): use it rather than writing another.
   Run it once for each test or check added or changed in a round of work.

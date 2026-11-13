@@ -181,8 +181,8 @@ jobs:
 
   pytest:
     # Tata has Windows; Linux runs the tests Windows skips (POSIX signals, process groups, the pre-push hook). A push to
-    # main runs every test file on Windows 3.11, Windows 3.14 and Linux 3.14. A pull request runs on Windows 3.11 (tata's
-    # oldest Python) and Linux 3.14 only the files tools/szybko.py selects for the change, plus its structure tests; a
+    # main runs every test file on Windows 3.13, Windows 3.14 and Linux 3.14. A pull request runs on Windows 3.13 (tata's
+    # Python) and Linux 3.14 only the files tools/szybko.py selects for the change, plus its structure tests; a
     # change of a path that runs everything in the PR gate (Context.PR_GATE in tools/lib/wplyw_zmiany.py) runs every
     # file (ADR 0020). The plan decides how many jobs each lane runs and which files (or shares of a long file) each
     # takes, so that every job ends near the same time;

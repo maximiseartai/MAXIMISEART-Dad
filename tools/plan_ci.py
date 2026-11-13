@@ -8,7 +8,8 @@ pliki testów na każdym, oraz kroki skilli, które biegną, z powodem. Plan tyl
 torach zakresu, a kroki skilli na torze ``MUTACJE`` (Windows 3.14, zadania Mutation checks), każda podstawa ``ci:`` i
 każdy skrypt mutacji osobno, a krok z częściami ustalonymi przez zakres (nocą każda część każdej liczby części podstawy
 z ``ci-czesci``) każdą z nich. Koszt jednostki to ściana, którą dodaje do zadania: plik waży sumę czasów swoich testów przez
-``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/lib/czasy_ci.py``). Plik albo
+``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/lib/czasy_ci.py``), a toru bez pomiarów, który zastąpił
+inny (``POMIARY_ZASTEPCZE``), czasy tamtego. Plik albo
 krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na torze, a bez żadnych pomiarów wagę z
 ``DOMYSLNIE``: plan to wypisuje i biegnie dalej, bo brak czasów psuje tylko równowagę zadań, nie zbiór pracy.
 
@@ -91,6 +92,11 @@ class Domyslnie:
 
 
 DOMYSLNIE = Domyslnie()
+# Tor windows-3.13 zastąpił 13.11 tor windows-3.11 (ADR 0020). Póki czasy-ci nie mają pomiarów toru, plan waży jego
+# pracę czasami toru, który zastąpił, bo z wag domyślnych dzieli bramkę na więcej zadań (wzorcowy PR L z
+# tests/test_ksztalt_bramki.py: 9 zadań zamiast 6). Usuń 27.11.2026, gdy czasy-ci mają już tylko windows-3.13, razem z
+# przemianowaniem toru w zamrożonych czasach tests/fixtures/ksztalt_bramki/czasy-ci.
+POMIARY_ZASTEPCZE = {"windows-3.13": "windows-3.11"}
 
 
 @dataclass(frozen=True)
@@ -131,13 +137,14 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
     ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
     """
 
-    koszty = czasy.koszty(tor.pomiary)
-    testy = {klucz: czasy.testy(tor.pomiary, klucz) for klucz in (jednostka.pytest(plik) for plik in pliki if "::" not in plik)}
+    pomiary = tor.pomiary if czasy.tory.get(tor.pomiary) else POMIARY_ZASTEPCZE.get(tor.pomiary, tor.pomiary)
+    koszty = czasy.koszty(pomiary)
+    testy = {klucz: czasy.testy(pomiary, klucz) for klucz in (jednostka.pytest(plik) for plik in pliki if "::" not in plik)}
     domyslny = koszty.typowy(DOMYSLNIE.plik_s)
-    kroki = {jednostka.krok(nazwa): czasy.praca(tor.pomiary, jednostka.krok(nazwa)) or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
+    kroki = {jednostka.krok(nazwa): czasy.praca(pomiary, jednostka.krok(nazwa)) or KROKI[nazwa].domyslnie_s for nazwa in tor.kroki}
     wezly = {jednostka.pytest(wezel): min(koszty.s(wezel.partition("::")[0], DOMYSLNIE.plik_s), domyslny) / WORKERY for wezel in pliki if "::" in wezel}
     narzut, pytest = jednostka.narzut(tor.szablon), jednostka.krok("pytest")
-    zadania = [z for z in czasy.zadania(tor.pomiary) if narzut in z]
+    zadania = [z for z in czasy.zadania(pomiary) if narzut in z]
     narzuty = [z[narzut] for z in zadania]
     # Start pytest: ściana pytest zadania ponad sumę jego testów na workerach (start, kolekcja, ogon workerów).
     starty = [z[pytest] - sum(s for k, s in z.items() if jednostka.rodzaj(k) is Rodzaj.PYTEST) / WORKERY for z in zadania if pytest in z]

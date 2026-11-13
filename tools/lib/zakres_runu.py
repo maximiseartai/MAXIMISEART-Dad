@@ -10,12 +10,12 @@ wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LIC
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
 
-Pytest. Na pushu to pełne CI ``main``: trzy tory (``TORY``: Windows 3.11, Windows 3.14, Linux 3.14), na każdym każdy plik
+Pytest. Na pushu to pełne CI ``main``: trzy tory (``TORY``: Windows 3.13, Windows 3.14, Linux 3.14), na każdym każdy plik
 testów ``tests/``, oraz kroki CI (``KROKI``) na swoich torach: E2E na obu Windows, straż czasu na Windows 3.14. Na pull
-request to bramka PR: tory Windows 3.11 (minimum u taty) i Linux 3.14, na każdym pliki z wyboru wpływu zmiany
+request to bramka PR: tory Windows 3.13 (Python taty) i Linux 3.14, na każdym pliki z wyboru wpływu zmiany
 (``tools/lib/wplyw_zmiany.py``) i testy ``STRUCTURE`` (węzeł ``plik::test`` biegnie sam, gdy jego pliku nie ma w
 wyborze). Zmiana ścieżki, która w tabeli reguł wpływu uruchamia wszystko w bramce PR (``Context.PR_GATE``), wybiera
-wszystkie pliki, E2E i straż czasu. Inaczej na Windows 3.11 E2E biegnie przy zmianie pod ``src/``, a straż czasu przy
+wszystkie pliki, E2E i straż czasu. Inaczej na Windows 3.13 E2E biegnie przy zmianie pod ``src/``, a straż czasu przy
 zmianie w domknięciu jej skryptów (``STRAZ``). Noc (workflow ``mutacje-nocne.yml``) nie ma pytest. Plik testów, który
 sięga ``PRZEGLADARKA`` (Atrapa efenix, z którą rozmawia tylko przeglądarka: Chromium testu albo Skryptu dla maszyn),
 potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je instaluje, a nocą część Change mutations,
@@ -142,7 +142,7 @@ class Tor:
 # zadania i tyle mutacji naraz biegnie w części nocy.
 RDZENIE_RUNNERA = 4
 TORY = (
-    Tor("windows-3.11", "pytest", "windows-3.11", "windows-latest", "3.11", ("e2e",), "pytest (Python 3.11, {numer}/{liczba})"),
+    Tor("windows-3.13", "pytest", "windows-3.13", "windows-latest", "3.13", ("e2e",), "pytest (Python 3.13, {numer}/{liczba})"),
     Tor("windows-3.14", "pytest", "windows-3.14", "windows-latest", "3.14", ("e2e", "timing"), "pytest (Python 3.14, {numer}/{liczba})"),
     Tor("linux-3.14", "pytest", "linux-3.14", "ubuntu-latest", "3.14", (), "pytest (Python 3.14, Linux, {numer}/{liczba})"),
 )
@@ -236,7 +236,7 @@ def _pytest(
         case Zdarzenie.PUSH:
             return TORY, tuple(pliki_testow(root)), "wszystkie pliki"
         case Zdarzenie.PULL_REQUEST:
-            windows, linux = (tor for tor in TORY if tor.nazwa in ("windows-3.11", "linux-3.14"))
+            windows, linux = (tor for tor in TORY if tor.nazwa in ("windows-3.13", "linux-3.14"))
             if full := run_all(zmiana, Context.PR_GATE):
                 return (replace(windows, kroki=("e2e", "timing")), linux), tuple(pliki_testow(root)), f"FULL ({', '.join(full)})"
             wybor = repository().impact(zmiana)

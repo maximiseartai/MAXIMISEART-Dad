@@ -31,7 +31,7 @@ Instrukcja dla taty jest w
 
 ## Instalacja lokalna
 
-Wymagany jest Python 3.11 lub nowszy na komputerze taty. Narzędzie to klon
+Wymagany jest Python 3.13 lub nowszy na komputerze taty. Narzędzie to klon
 publicznego repozytorium na gałęzi `main` ustawionej na najnowsze Wydanie
 ([ADR 0014](docs/adr/0014-tata-dostaje-tylko-wydania.md)), bo sam `git clone`
 daje najnowszy `main`, także zmiany, które nie weszły do żadnego Wydania. Wydanie
@@ -388,7 +388,7 @@ Na macOS i Linuksie (bez `py -3`) zestaw developerski instaluje się przez
 [`uv`](https://docs.astral.sh/uv/), a komendy uruchamia z `.venv`:
 
 ```sh
-uv venv -p 3.12 .venv && uv pip install -p .venv -e ".[dev]"
+uv venv -p 3.13 .venv && uv pip install -p .venv -e ".[dev]"
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check
 .venv/bin/python -m mypy

@@ -4,7 +4,8 @@ Agent uruchamia je po każdej zmianie; pełną bramką jest CI na GitHubie. Zmia
 razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie
 ``origin/main``). Kroki ruff i mypy, a przy zmianie w ``.github/`` zizmor i actionlint, to kroki ``tools/ci_lokalnie.py``, a pytest to jego krok z wybranymi
 testami. Gdy ``.venv`` ma Pythona nowszego niż najstarszy z ``requires-python``, który CI też testuje, krok
-``import src pod Pythonem <wersja>`` importuje każdy moduł ``src/`` tym Pythonem przez ``uv`` (bez ``uv`` pada).
+``import src pod Pythonem <wersja>`` importuje każdy moduł ``src/`` tym Pythonem przez ``uv`` (bez ``uv`` pada), a gdy
+starszego, krok ``Python <wersja> albo nowszy`` pada z drogą naprawy (``tools/setup_worktree.py``).
 Kroki biegną naraz, a gdy padnie inny krok, szybko przerywa krok pytest i wypisuje, że go przerwał.
 
 Zmianę, testy dotknięte zmianą i ich odległość od niej liczy ``tools/lib/wplyw_zmiany.py`` z grafu zależności,
@@ -225,7 +226,8 @@ def _failing(root: Path, name: str, why: str) -> Step:
 
 def _imports_on_oldest(root: Path) -> list[Step]:
     """CI testuje też najstarszy Python z ``requires-python``, a ``.venv`` bywa nowszy: kod tylko dla nowszego Pythona
-    pada dopiero w CI. Krok jest pusty, gdy szybko biegnie tym najstarszym albo projekt go nie podaje."""
+    pada dopiero w CI. Krok jest pusty, gdy szybko biegnie tym najstarszym albo projekt go nie podaje, a pada, gdy
+    ``.venv`` jest starszy, bo został po podniesieniu ``requires-python`` (13.11: 3.11 → 3.13)."""
 
     try:
         required = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"]
@@ -235,9 +237,12 @@ def _imports_on_oldest(root: Path) -> list[Step]:
     if oldest is None:
         why = f"requires-python {required!r} nie ma postaci >=X.Y, więc szybko nie zna najstarszego Pythona"
         return [_failing(root, "import src pod najstarszym Pythonem", why)]
-    if sys.version_info[:2] <= (int(oldest[1]), int(oldest[2])):
-        return []
     version = f"{oldest[1]}.{oldest[2]}"
+    if sys.version_info[:2] < (int(oldest[1]), int(oldest[2])):
+        why = f"szybko biegnie Pythonem {sys.version_info[0]}.{sys.version_info[1]}, starszym niż requires-python {required!r}: odtwórz .venv przez python3 tools/setup_worktree.py"
+        return [_failing(root, f"Python {version} albo nowszy", why)]
+    if sys.version_info[:2] == (int(oldest[1]), int(oldest[2])):
+        return []
     name = f"import src pod Pythonem {version}"
     uv = shutil.which("uv")
     if uv is None:

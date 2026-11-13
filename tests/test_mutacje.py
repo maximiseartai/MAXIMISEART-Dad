@@ -960,12 +960,12 @@ def _job(track: str, name: str, *units: str) -> plan_runu.Zadanie:
 PLAN = [
     _job("linux-3.14", LINUX_1, "pytest:tests/test_sasiad.py", "pytest:tests/test_zmieniony.py#1/2"),
     _job("linux-3.14", "pytest (Python 3.14, Linux, 2/2)", "pytest:tests/test_inny.py", "krok:timing"),
-    _job("windows-3.11", "pytest (Python 3.11, 1/1)", "pytest:tests/test_zmieniony.py", "pytest:tests/test_windows.py"),
+    _job("windows-3.13", "pytest (Python 3.13, 1/1)", "pytest:tests/test_zmieniony.py", "pytest:tests/test_windows.py"),
     _job("mutacje", "Mutation checks (1/1)", "skill:verify-x/ci"),
 ]
 CHANGE = ("--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1")
 # Run próbny 42584543040 (9.11.2026) na windows-latest: atrapę ``gh.cmd`` narzędzie znajduje (``tools/lib/github.py``),
-# ale na Windows ``--jak-ci`` wybiera zadania toru windows-3.11, a nie toru linux-3.14 tych planów.
+# ale na Windows ``--jak-ci`` wybiera zadania toru Windows, a nie toru linux-3.14 tych planów.
 ODTWARZA_TOR_LINUX = pytest.mark.skipif(
     sys.platform == "win32", reason="--jak-ci odtwarza zadanie toru systemu, na którym biegnie, a te plany sprawdzają tor Linux"
 )
@@ -1042,7 +1042,7 @@ def test_jak_ci_bez_numeru_bierze_ostatni_run_ci_galezi(tmp_path: Path, tracked:
 def test_jak_ci_bez_zadania_do_odtworzenia_odmawia_z_powodem(
     tmp_path: Path, arguments: tuple[str, ...], runs: list[int], detached: bool, error: str
 ) -> None:
-    other = [_job("windows-3.11", "pytest (Python 3.11, 1/1)", "pytest:tests/test_zmieniony.py"), PLAN[1]]
+    other = [_job("windows-3.13", "pytest (Python 3.13, 1/1)", "pytest:tests/test_zmieniony.py"), PLAN[1]]
     repo, env, _ = _ci_repository(tmp_path, {"456": PLAN, "789": other}, runs)
     if detached:
         git(repo, "checkout", "--quiet", "--detach")
