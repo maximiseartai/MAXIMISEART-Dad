@@ -131,7 +131,10 @@ elif arguments[:2] == ["run", "list"]:
     merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
     print(runs.read_text() if merged and runs.exists() else "[]")
 elif arguments[:2] == ["api", "graphql"] and "label=kolejka-chwastow" in arguments:
-    nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in json.loads((here / "queue.json").read_text())]
+    queue = json.loads((here / "queue.json").read_text())
+    if queue is None:
+        sys.exit("gh: HTTP 502")
+    nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in queue]
     print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
 elif arguments[:2] == ["api", "graphql"] and "label=chwast" in arguments:
     # otwarte issues chwastów: po założeniu issue (weeds_after.json nie null) to issues innej publikacji i każde
@@ -289,7 +292,7 @@ class MergeGitHub(FakeGitHub):
         self.graphql_changes: list[dict[str, object]] = []  # zmiany PR-ów po danej liczbie zapytań GraphQL
         self.weeds: list[dict[str, object]] = []  # otwarte issues z etykietą chwast
         self.weeds_after: list[dict[str, object]] | None = None  # otwarte issues innej publikacji po założeniu issue
-        self.queue = [_queue("pusta")]  # otwarte issues z etykietą kolejka-chwastow
+        self.queue: list[dict[str, object]] | None = [_queue("pusta")]  # otwarte issues z etykietą kolejka-chwastow, None: odmowa GitHuba
         self.labels = ["ready-for-agent"]
         self.permissions: dict[str, str] = {}  # prawo konta do repozytorium z ``gh api …/collaborators/<login>/permission``
         self.written = 0
@@ -2471,7 +2474,7 @@ def _weed(number: int) -> dict[str, object]:
         ("czolo-1519", [], [["chwast", "ready-for-agent"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
         ("czolo-1519", [1521], [["chwast", "ready-for-agent"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
         ("pusta", [1550], [["chwast"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
-        ("z-proza", [], [], f"UWAGA: chwastów nie sprawdzono (kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
+        ("z-proza", [], [], f"CHWAST UWAGA: nie założono „{WEED_TITLE}”, bo kolejki chwastów nie odczytano (kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
     ],
     ids=[
         "pusta-kolejka-nowy-chwast-jest-czolem",
@@ -2681,6 +2684,47 @@ def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_
     else:
         assert lines[:-1] == ["CHWAST | założona etykieta chwast", f"CHWAST | założone #9001 „{WEED_TITLE}”"]
         table = [line for line in str(_sent(github.writes()[1])["body"]).splitlines() if line.startswith("| #")]
+        assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
+
+
+@pytest.mark.parametrize("dry", [True, False], ids=["bez-zapisu", "z-zapisem"])
+@pytest.mark.parametrize(
+    ("queue", "reason"),
+    [
+        ([], "kolejka chwastów: 0 otwartych issues z etykietą kolejka-chwastow, a ma być jedno"),
+        ([_queue("pusta"), _queue("pusta")], "kolejka chwastów: 2 otwartych issues z etykietą kolejka-chwastow, a ma być jedno"),
+        ([_queue("z-proza")], f"kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
+        (None, "returned non-zero exit status 1"),
+    ],
+    ids=["bez-issue-kolejki", "dwa-issues-kolejki", "kolejka-poza-ksztaltem", "odmowa-githuba"],
+)
+def test_bez_odczytanej_kolejki_chwastow_rejestr_uzupelnia_otwarte_issue_chwastu_a_nowego_nie_zaklada(
+    tmp_path: Path, dry: bool, queue: list[dict[str, object]] | None, reason: str
+) -> None:
+    """Kolejka decyduje tylko o założeniu nowego issue chwastu (ADR 0034), więc gdy jej nie da się odczytać, otwarte
+    issue chwastu ``chwasty.CODE`` dostaje nowe wystąpienie, a nowy chwast R-DRUGA-DROGA zostaje bez issue
+    z ostrzeżeniem ``UWAGA``, które podaje powód."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    other = [_node([(FAIL_OTHER_CODE, AFTER_DEPLOYMENT)], number=number) for number in (2, 3)]
+    github.weeds = [{"number": chwasty.WEED_ISSUE, "title": WEED_TITLE, "body": chwasty.ISSUES["w-szablonie"]}]
+    github.queue = queue
+    _registry(github, [MERGED_B, _node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1), *other])
+
+    answered = _chwasty(github, dry=dry)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    lines = answered.stdout.splitlines()
+    assert lines[-1] == f"CHWASTY OK | 4 wystąpień, chwasty: {chwasty.CODE}, R-DRUGA-DROGA", answered.stdout
+    assert len(lines) == 3 and lines[1].startswith("CHWAST | UWAGA: nie założono „Chwast: R-DRUGA-DROGA”, bo kolejki chwastów nie odczytano ("), answered.stdout
+    assert reason in lines[1], answered.stdout
+    if dry:
+        assert lines[0] == f"CHWAST | bez zapisu: zmień treść #{chwasty.WEED_ISSUE} bez komentarza", answered.stdout
+        assert github.writes() == []
+    else:
+        assert lines[0] == f"CHWAST | zmieniona treść #{chwasty.WEED_ISSUE}", answered.stdout
+        assert [(method, path) for method, path, _ in github.writes()] == [("PATCH", f"repos/{{owner}}/{{repo}}/issues/{chwasty.WEED_ISSUE}")]
+        table = [line for line in str(_sent(github.writes()[0])["body"]).splitlines() if line.startswith("| #")]
         assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
 
 
