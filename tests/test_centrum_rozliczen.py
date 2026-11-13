@@ -36,6 +36,7 @@ from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
+from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
@@ -1107,6 +1108,23 @@ def read_only_memory(tool: ToolDirectory) -> Iterator[None]:
         memory.chmod(0o755)
 
 
+@contextmanager
+def unreadable_history(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Do końca bloku system nie daje czytać pliku Historii (jak plik trzymany przez OneDrive), a dopisanie wiersza działa:
+    zmiana z Wydania, która mimo to by weszła, zapisuje się, więc widać ją w motywie i w wierszach Historii."""
+
+    real = history_module.settings_bytes
+
+    def locked(path: Path) -> bytes | None | OSError:
+        if path.name == HISTORY_FILE:
+            return PermissionError(errno.EACCES, "plik trzymany przez system", str(path))
+        return real(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(history_module, "settings_bytes", locked)
+        yield
+
+
 def applied_and_undone(tool: ToolDirectory) -> tuple[dict[str, Any], str]:
     """Start, w którym zmiana z Wydania ``LIGHT_THEME`` wchodzi, a tata ją cofa: jej wiersz Historii i motyw po cofnięciu."""
 
@@ -1135,14 +1153,16 @@ def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu
 
 
 @NO_ACCESS_ON_WINDOWS
-def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tata_cofnal(tmp_path: Path) -> None:
+def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tata_cofnal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Historia, której system przy starcie nie daje czytać, nie jest pustą Historią: zmiana z Wydania, którą tata cofnął,
     a której pamięć nie ma, nie wchodzi drugi raz."""
 
     tool = ToolDirectory(tmp_path)
     with read_only_memory(tool):
         applied_and_undone(tool)
-    with without_access(tool.config / HISTORY_FILE):
+    with unreadable_history(monkeypatch):
         again = started(tool, (LIGHT_THEME,))
     theme = again.get("/api/settings").json()["theme"]
     rows = again.get("/api/settings/history").json()["rows"]
@@ -1152,12 +1172,13 @@ def test_historia_bez_dostepu_przy_starcie_wstrzymuje_zmiane_z_wydania_ktora_tat
     assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-historii" in tool.log_path.read_text(encoding="utf-8")
 
 
-@NO_ACCESS_ON_WINDOWS
-def test_zmiana_z_wydania_wstrzymana_przez_historie_bez_dostepu_wchodzi_przy_nastepnym_starcie(tmp_path: Path) -> None:
+def test_zmiana_z_wydania_wstrzymana_przez_historie_bez_dostepu_wchodzi_przy_nastepnym_starcie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app, _ = with_periods_directory(tmp_path)
     app.client.stop()
 
-    with without_access(app.tool.config / HISTORY_FILE):
+    with unreadable_history(monkeypatch):
         held = started(app.tool, (LIGHT_THEME,))
         held_theme = held.get("/api/settings").json()["theme"]
         held.stop()
