@@ -6,7 +6,8 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
 1. Run, który jeszcze trwa, nie jest ponawiany: GitHub odrzuca wtedy ponowienie („already running”), a T3 budzi wątek
    już po pierwszym padniętym zadaniu. Linia ``PONÓW CZEKA`` mówi, ile zadań biegnie.
 2. Każde padnięte zadanie ostatniej próby runu (``Required CI status`` tylko, gdy padł sam) narzędzie klasyfikuje
-   po jego logu. Awaria to log z sygnaturą z ``SYGNATURY`` i bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
+   po jego logu. Awaria to sygnatura z ``SYGNATURY`` w kroku, który zaczerwienił zadanie (krok z ``continue-on-error``
+   się nie liczy, ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
    z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
    to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
@@ -41,7 +42,7 @@ z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -71,6 +72,8 @@ NAJWIECEJ_TESTOW = 5
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
+_CZAS_LINII = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)[\d.]*Z ")
+_BLAD_KROKU = re.compile(_LINE + r"##\[error\]")
 
 
 @dataclass(frozen=True)
@@ -85,8 +88,10 @@ SYGNATURY = (
     Sygnatura("instalacja przeglądarek", re.compile(_LINE + r"Failed to install browsers"), "41959078147 (5.11, apt)"),
     Sygnatura("pobranie narzędzia TLC", re.compile(_LINE + re.escape(narzedzia_tlc.CHWILOWA_AWARIA)), "42571178441 (9.11, HTTP 504)"),
     Sygnatura("HTTP 5xx serwera", re.compile(_LINE + r"urllib\.error\.HTTPError: HTTP Error 5\d\d"), "42000370217 (5.11, HTTP 504)"),
-    # Komunikat actions/download-artifact i upload-artifact (@actions/artifact): przyczyną chwilową jest tylko błąd sieci
-    # i ponowienia wyczerpane na HTTP 5xx albo 429; brak artefaktu i inne HTTP 4xx są defektem.
+    # Komunikat actions/download-artifact i upload-artifact (@actions/artifact, ``retryableRequest``): przyczyną chwilową
+    # jest błąd sieci z listy ``NetworkError`` (``Unable to make request``) i wyczerpane ponowienia (``Failed to make request
+    # after N attempts``), które dają HTTP 429 i 5xx, odpowiedź, która nie jest JSON-em, przy dowolnym statusie i błąd sieci
+    # z kodem spoza tej listy. Brak artefaktu i inny status z odpowiedzią JSON (``Received non-retryable error``) są defektem.
     Sygnatura(
         "usługa artefaktów GitHuba",
         re.compile(_LINE + r"##\[error\](?:Unable to download artifact\(s\): )?Failed to \w*Artifact\w*: (?:Unable to make request|Failed to make request after \d+ attempts): "),
@@ -139,10 +144,44 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     return Defekt(tuple(zadanie for zadanie in zadania if not zadanie.sygnatury or zadanie.testy))
 
 
-def zadanie(nazwa: str, log: str) -> Zadanie:
+def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
+    """Linie logu zadania z kroków, które je zaczerwieniły (``conclusion: failure`` w API zadań).
+
+    Krok z ``continue-on-error`` też drukuje ``##[error]``, ale ma ``conclusion: success`` (run 43439867902: „Upload the
+    unit times” padł na ``FinalizeArtifact`` po kroku pobrania, który padł), więc jego linia sygnaturą nie jest. Log
+    zadania nie dzieli się na kroki, więc krok to linie od sekundy jego ``started_at`` (API podaje czas ucięty do
+    sekundy) do jego pierwszej linii ``##[error]`` włącznie, a linia bez znacznika czasu należy do kroku linii przed nią.
+    Każdy z 660 kroków z ``failure`` w padniętych próbach runów z 30.10–13.11 ma tę linię przed końcem sekundy
+    ``completed_at``; krok bez niej nie daje linii, a zadanie bez kroku z ``failure`` (timeout, ``startup_failure``)
+    daje pusty log, czyli defekt. Granica: linia kroku, który skończył się w sekundzie startu kroku, który padł, trafia
+    do niego.
+    """
+
+    wybrane: list[str] = []
+    for krok in kroki:
+        if krok.get("conclusion") != "failure":
+            continue
+        od, do = krok["started_at"][:19], krok["completed_at"][:19]
+        sekunda, jego = "", []
+        for linia in log.splitlines(keepends=True):
+            sekunda = found[1] if (found := _CZAS_LINII.match(linia)) else sekunda
+            if sekunda > do:
+                break
+            if sekunda >= od:
+                jego.append(linia)
+                if _BLAD_KROKU.match(linia):
+                    wybrane += jego
+                    break
+    return "".join(wybrane)
+
+
+def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
+    """Sygnatury z kroków, które zaczerwieniły zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
+
+    porazka = log_porazki(log, kroki)
     return Zadanie(
         nazwa,
-        tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(log)),
+        tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(porazka)),
         tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
     )
 
@@ -196,7 +235,10 @@ def _zadania_proby(api: GitHub, run: int, proba: int) -> list[dict[str, Any]]:
 def _werdykt(api: GitHub, run: int, proba: int, flaky: frozenset[str]) -> Werdykt:
     padniete = [job for job in _zadania_proby(api, run, proba) if job["conclusion"] in FAILED_JOB]
     bez_required = [job for job in padniete if job["name"] != github.REQUIRED]
-    zadania = [zadanie(job["name"], api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace")) for job in bez_required or padniete]
+    zadania = [
+        zadanie(job["name"], api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace"), job.get("steps") or ())
+        for job in bez_required or padniete
+    ]
     return klasyfikuj(zadania, flaky)
 
 
