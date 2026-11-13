@@ -2,7 +2,7 @@
 oraz ``tools/ponow_ci.py``, który z tych issue i logów padniętych zadań decyduje o ponowieniu runu CI.
 
 Historia `main` to prawdziwy Git z PR-ami scalonymi merge'em, a GitHub to zapisane odpowiedzi API w kształcie
-odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–11.11.
+odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–13.11.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -758,6 +759,99 @@ CYTAT_503 = (
     "2026-11-07T16:56:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
 )
 
+Krok = tuple[str, str, str]  # nazwa, conclusion w API i log kroku
+
+
+def _wykonany(nazwa: str, wynik: str, log: str) -> Krok:
+    """Wykonany krok zadania: runner zaczyna jego log nagłówkiem ``##[group]Run`` (``uses:`` albo pierwsza linia ``run:``)."""
+
+    czas = re.findall(r"^\S+Z", log)[0]
+    return nazwa, wynik, f"{czas} ##[group]Run {nazwa.removeprefix('Run ')}\n{log}"
+
+
+POBRANIE_ARTEFAKTU = (
+    "2026-11-13T14:09:34.8229570Z ##[error]Unable to download artifact(s): Failed to GetSignedArtifactURL: Unable to make request: ETIMEDOUT\n"
+    "If you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints\n"
+)
+WYSLANIE_ARTEFAKTU = "2026-11-13T14:10:08.0078114Z ##[error]Failed to FinalizeArtifact: Unable to make request: ETIMEDOUT\n"
+# Kroki ci.yml z ``continue-on-error`` po kroku, który padł: drukują ``##[error]``, a zadanie zostaje z jego porażką.
+ZAPIS_CZASOW = _wykonany(
+    "Record the time of each unit of work",
+    "success",
+    "2026-11-13T14:09:38.1673222Z CZASY CI FAIL | junit.xml: FileNotFoundError(2, 'No such file or directory')\n"
+    "2026-11-13T14:09:38.3137312Z ##[error]Process completed with exit code 1.\n",
+)
+WYSLANIE_CZASOW = _wykonany("Upload the unit times", "success", WYSLANIE_ARTEFAKTU)
+# W tej samej sekundzie, w której skończył się krok, który padł: API kroków podaje czas ucięty do sekundy.
+ZAPIS_NARZEDZI_TLC = _wykonany(
+    "Save TLC tools",
+    "success",
+    "2026-11-13T14:09:37.6Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n2026-11-13T14:09:37.7Z ##[error]Process completed with exit code 1.\n",
+)
+# Run 43439867902 (13.11): plan części nie przyszedł przez download-artifact, więc pytest nie wystartował (``skipped``,
+# bez linii w logu), a zapis czasów i wysłanie czasów padły po nim w krokach z ``continue-on-error``. ``Set up job``
+# i kroki ``Post`` nie mają nagłówka ``##[group]Run``.
+RUN_43439867902 = [
+    ("Set up job", "success", "2026-11-13T14:08:35.3633777Z ##[group]Runner Image Provisioner\n"),
+    _wykonany("Install test dependencies", "success", "2026-11-13T14:09:06.8335055Z Resolved 40 packages\n2026-11-13T14:09:12.9Z Installed 40 packages\n"),
+    _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU),
+    ("Run the planned units", "skipped", "2026-11-13T14:09:34Z\n"),
+    ZAPIS_CZASOW,
+    WYSLANIE_CZASOW,
+    ("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-13T14:10:08.0444024Z Post job cleanup.\n"),
+]
+FAIL_SKILLA = (
+    "2026-11-13T14:09:37Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
+    "2026-11-13T14:09:37Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
+    "2026-11-13T14:09:37Z ##[error]Process completed with exit code 1.\n"
+)
+# Mutacje nocne: krok skryptów mutacji ma ``continue-on-error`` i stoi przed krokiem, który może padnąć po nim.
+SKRYPTY_MUTACJI = _wykonany(
+    "Run the planned mutation scripts",
+    "success",
+    "2026-11-13T14:09:30Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n2026-11-13T14:09:30Z ##[error]Process completed with exit code 1.\n",
+)
+FAIL_E2E = "2026-11-13T14:09:37Z FAIL krok:e2e (40 s): kod wyjścia 1\n2026-11-13T14:09:37Z ##[error]Process completed with exit code 1.\n"
+# Wzór komunikatów @actions/artifact w upload-artifact@cf430e0 i download-artifact@9000827, przypiętych w ci.yml.
+ARTEFAKT_HTTP_503 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Failed to make request after 5 attempts: Failed request: (503) Service Unavailable\n"
+ARTEFAKT_HTTP_403 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Received non-retryable error: Failed request: (403) Forbidden\n"
+BRAK_ARTEFAKTU = "2026-11-13T14:09:34Z ##[error]Unable to download artifact(s): Artifact not found for name: plan\n"
+CYTAT_ARTEFAKTU = (
+    "2026-11-13T14:09:40Z Failed to FinalizeArtifact: Unable to make request: ETIMEDOUT\n"
+    "2026-11-13T14:09:41Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
+    "2026-11-13T14:09:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
+)
+# Kroki ``if: failure()`` po kroku, który padł (ci.yml: wysłanie dowodów E2E i bazy mutacji), bez ``continue-on-error``:
+# padają na tej samej awarii usługi artefaktów z ``conclusion: failure``, a zadanie zaczerwienił krok przed nimi.
+DOWODY_E2E = _wykonany("Upload E2E and timing guard evidence on failure", "failure", WYSLANIE_ARTEFAKTU)
+DOWODY_BAZY = _wykonany("Upload baseline evidence on failure", "failure", WYSLANIE_ARTEFAKTU)
+# Krok, który padł, startuje w sekundzie, w której skończył się krok z ``continue-on-error`` przed nim (ZAPIS_NARZEDZI_TLC).
+DOWODY_BAZY_403 = _wykonany(
+    "Upload baseline evidence on failure",
+    "failure",
+    "2026-11-13T14:09:37.9Z ##[error]Failed to CreateArtifact: Received non-retryable error: Failed request: (403) Forbidden\n",
+)
+# Akcja złożona ./.github/actions/chromium: jej podkroki mają swoje nagłówki ``##[group]Run`` między znacznikami runnera.
+CHROMIUM = _wykonany(
+    "Chromium",
+    "success",
+    "2026-11-13T14:09:07.3Z ##[start-action display=Cache Chromium;id=__self.__actions_cache]\n"
+    "2026-11-13T14:09:07.4Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9\n"
+    "2026-11-13T14:09:08.8Z ##[end-action id=__self.__actions_cache;outcome=success;conclusion=success;duration_ms=1400]\n",
+)
+# Wyjście kroku samo drukuje ``::group::Run …``: nagłówków jest więcej niż kroków, więc krok, który padł, jest niepewny.
+GRUPA_Z_WYJSCIA = _wykonany(
+    "Run the planned mutation scripts",
+    "success",
+    "2026-11-13T14:09:30.1Z ##[group]Run skryptu mutacji\n2026-11-13T14:09:30.2Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
+)
+# Krok ``Post`` akcji po krokach zadania zaczyna się linią ``Post job cleanup.`` bez nagłówka ``##[group]Run``.
+PO_KROKACH_503 = (
+    "Post Restore TLC tools",
+    "success",
+    "2026-11-13T14:09:38.0Z Post job cleanup.\n2026-11-13T14:09:38.1Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
+)
+
 
 class Ponowienia:
     """``ponow_ci.Akcje``, które zapisują ponowienia zamiast pisać na GitHubie."""
@@ -780,20 +874,44 @@ def _run_ci(run_id: int, *, status: str = "completed", wynik: str | None = "fail
     }
 
 
-def _proba(run_id: int, proba: int, logi: dict[str, str], *, w_toku: int = 0) -> dict[str, Any]:
-    """Zadania próby runu: padnięte z logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku`` biegnących."""
+def _kroki(kroki: str | list[Krok]) -> list[Krok]:
+    """Sam log to jeden krok, który zaczerwienił zadanie, zakończony jak każdy taki krok w logach runów linią ``##[error]``."""
 
-    padniete = [{"id": run_id * 100 + numer, "name": nazwa, "status": "completed", "conclusion": "failure"} for numer, nazwa in enumerate(logi)]
+    if isinstance(kroki, str):
+        koniec = re.findall(r"(?m)^(\S+Z) ", kroki)[-1]
+        return [_wykonany("Run the planned units", "failure", f"{kroki}{koniec} ##[error]Process completed with exit code 1.\n")]
+    return kroki
+
+
+def _krok(numer: int, krok: Krok) -> dict[str, Any]:
+    """Krok w API zadań: od najwcześniejszej do najpóźniejszej linii jego logu, z czasem uciętym do sekundy, jak w API."""
+
+    nazwa, wynik, log = krok
+    czasy = sorted(re.findall(r"(?m)^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)", log))
+    return {"number": numer, "name": nazwa, "conclusion": wynik, "started_at": f"{czasy[0]}Z", "completed_at": f"{czasy[-1]}Z"}
+
+
+def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0) -> dict[str, Any]:
+    """Zadania próby runu: padnięte z krokami i logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku``
+    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii."""
+
+    kroki = {run_id * 100 + numer: (nazwa, _kroki(log)) for numer, (nazwa, log) in enumerate(logi.items())}
+    kroki[run_id * 100 + 99] = (REQUIRED, [_wykonany("Require every CI check to succeed", "failure", "2026-11-11T14:00:00Z REQUIRED FAIL\n")])
+    padniete = [
+        {"id": id_zadania, "name": nazwa, "status": "completed", "conclusion": "failure", "steps": [_krok(numer, krok) for numer, krok in enumerate(jego, start=1)]}
+        for id_zadania, (nazwa, jego) in kroki.items()
+    ]
     reszta = [
         {"id": run_id * 100 + 90, "name": "Frontend", "status": "completed", "conclusion": "success"},
         *({"id": run_id * 100 + 91 + numer, "name": f"pytest (Python 3.11, {numer + 1}/9)", "status": "in_progress", "conclusion": None} for numer in range(w_toku)),
-        {"id": run_id * 100 + 99, "name": REQUIRED, "status": "completed", "conclusion": "failure"},
     ]
-    zadania = [*padniete, *reszta]
+    zadania = [*padniete[:-1], *reszta, padniete[-1]]
     return {
         f"{REPO}/actions/runs/{run_id}/attempts/{proba}/jobs?per_page=100&page=1": {"total_count": len(zadania), "jobs": zadania},
-        **{f"{REPO}/actions/jobs/{zadanie['id']}/logs": log.encode() for zadanie, log in zip(padniete, logi.values(), strict=True)},
-        f"{REPO}/actions/jobs/{run_id * 100 + 99}/logs": b"2026-11-11T14:00:00Z REQUIRED FAIL\n",
+        **{
+            f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, wynik, log in jego if wynik != "skipped").encode()
+            for id_zadania, (_, jego) in kroki.items()
+        },
     }
 
 
@@ -805,7 +923,7 @@ def _runy_ci(runy: list[dict[str, Any]]) -> dict[str, Any]:
     return {f"{adres}&page={numer}": {"total_count": len(runy), "workflow_runs": strona} for numer, strona in enumerate(strony, start=1)}
 
 
-def _github(run: dict[str, Any], logi: dict[str, str], *, ponowione: tuple[dict[str, Any], ...] = (), flaky: tuple[str, ...] = (), odpowiedzi: dict[str, Any] | None = None) -> Nagrany:
+def _github(run: dict[str, Any], logi: Mapping[str, str | list[Krok]], *, ponowione: tuple[dict[str, Any], ...] = (), flaky: tuple[str, ...] = (), odpowiedzi: dict[str, Any] | None = None) -> Nagrany:
     return Nagrany(
         {
             f"{REPO}/actions/runs/{run['id']}": run,
@@ -854,12 +972,47 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
         ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy,workflowy", False),
+        ({"pytest (Python 3.13, 1/20)": RUN_43439867902}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": WYSLANIE_ARTEFAKTU}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA), ZAPIS_CZASOW, WYSLANIE_CZASOW]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_E2E), ZAPIS_NARZEDZI_TLC]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (6/6)": [SKRYPTY_MUTACJI, _wykonany("Upload the mutation record", "failure", ARTEFAKT_HTTP_403)]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (6/6)": [ZAPIS_NARZEDZI_TLC, DOWODY_BAZY_403]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (1/22)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA), DOWODY_BAZY]}, (), "defekt: Mutation checks (1/22) |", False),
+        ({"pytest (Python 3.13, 1/20)": [_wykonany("Run the planned units", "failure", FAIL_E2E), DOWODY_E2E]}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
+        (
+            {"Mutation checks (1/22)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA.replace("14:09:37Z", "14:09:30Z")), ZAPIS_NARZEDZI_TLC, DOWODY_BAZY_403]},
+            (),
+            "defekt: Mutation checks (1/22) |",
+            False,
+        ),
+        ({"pytest (Python 3.14, Linux, 5/8)": [_wykonany("Install test dependencies (Linux)", "failure", DNS), WYSLANIE_CZASOW]}, (), "awaria: DNS runnera, instalacja przeglądarek |", True),
+        ({"pytest (Python 3.13, 1/20)": [CHROMIUM, _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU)]}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"Mutation checks (6/6)": [GRUPA_Z_WYJSCIA, _wykonany("Upload the mutation record", "failure", ARTEFAKT_HTTP_403)]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_E2E), PO_KROKACH_503]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_503}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_403}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
+        ({"pytest (Python 3.13, 1/20)": BRAK_ARTEFAKTU}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
+        ({"Mutation checks (1/1)": CYTAT_ARTEFAKTU}, (), "defekt: Mutation checks (1/1) |", False),
     ],
-    ids=["dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "znany-flaky-z-wejsciami-pr", "awaria-obok-testu", "mutacje", "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy"],
+    ids=[
+        "dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "znany-flaky-z-wejsciami-pr", "awaria-obok-testu", "mutacje",
+        "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy", "pobranie-artefaktu-etimedout", "wyslanie-artefaktu-etimedout",
+        "defekt-skilla-obok-wyslania-czasow-continue-on-error", "defekt-e2e-obok-http-503-continue-on-error-w-tej-samej-sekundzie", "defekt-po-http-503-continue-on-error",
+        "defekt-po-http-503-continue-on-error-w-sekundzie-startu", "defekt-skilla-przed-wyslaniem-dowodow-if-failure-etimedout",
+        "defekt-e2e-przed-wyslaniem-dowodow-if-failure-etimedout", "defekt-skilla-przed-http-503-i-dowodami-403-w-tej-samej-sekundzie",
+        "awaria-dns-przed-wyslaniem-czasow-continue-on-error", "pobranie-artefaktu-po-akcji-zlozonej", "nadmiarowy-naglowek-z-wyjscia-kroku",
+        "linia-kroku-post-po-kroku-ktory-padl",
+        "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
+    ],
 )
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
-    logi: dict[str, str], flaky: tuple[str, ...], linia: str, ponowiony: bool
+    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool
 ) -> None:
+    """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
+    z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
+    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem."""
+
     run = _run_ci(42435998596)
     ponowienia = Ponowienia()
 

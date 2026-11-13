@@ -11,7 +11,8 @@ Przeszkody kliknięcia (#1232) mają zdania Komunikatów ze speca #1224 (US 44�
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
 import email
 from email.message import EmailMessage
 import email.policy
@@ -23,6 +24,8 @@ import smtplib
 import threading
 from typing import Any
 
+from hypothesis import HealthCheck, Phase, given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils.cell import get_column_letter
 import pytest
@@ -30,14 +33,20 @@ import pytest
 from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.tool_files import (
-    REMINDERS_FOOTER,
     REMINDERS_RESULT,
-    REMINDERS_ROLLOUT,
+    REMINDERS_SCHEDULES,
     REPORT_ENTERING_DECISIONS,
     REPORT_ENTERING_RESULT,
     REPORT_ENTERING_STATE,
 )
+from rozliczenia.centrum import diagnosis_messages
+from rozliczenia.centrum.contract.common import Message
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -46,6 +55,7 @@ from rozliczenia.worker_report_inbox import (
     MailRefused,
     MailSent,
     PasswordRejected,
+    SentReminders,
 )
 from rozliczenia.worker_reports import (
     AddBar,
@@ -69,7 +79,7 @@ from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
-from tests.fixtures.centrum import ROOT, ToolDirectory, run_events, views_until, write_report_key
+from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -179,6 +189,45 @@ def test_mail_spoza_listy_adresow_surowe_zlecenie_dnia_i_zlecenie_sprzed_okna_ni
     assert [problem["kind"] for problem in logs["report_entering"]["problems"]] == ["unknown_sender", "unknown_number"]
     assert isinstance(centrum.inbox, FakeInbox)
     assert centrum.inbox.days == [ENTERING_NOW.date()], "skrzynka czytana od dnia wdrożenia, czyli dziś"
+
+
+def _workers(register: Path) -> dict[int, object]:
+    """``NUMER ZL.`` → ``WYKONAWCA`` każdego wiersza arkusza zleceń z numerem."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    column = FIRST + HEADERS.index("WYKONAWCA")
+    return {
+        cell.value: sheet.cell(cell.row, column).value
+        for row in sheet.iter_rows(min_row=2)
+        for cell in row
+        if isinstance(cell.value, int) and cell.value >= 40000000
+    }
+
+
+def test_raport_wykonawcy_trafia_do_zlecenia_spod_drugiego_loginu_dopisanego_w_ustawieniach(tmp_path: Path) -> None:
+    """US 29 (#1474): tata dopisuje Wykonawcy w Ustawieniach drugi login z INTERMAX. Raport wykonawcy z jego adresu
+    wpisuje się też w zlecenie spod drugiego loginu, które zostaje w miejscu, bez Przeniesienia zlecenia pod pierwszy."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.nowy", 40000005),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak montaż\n40000005 tak wymiana routera")])
+    before, workers_before = _cells(centrum.register), _workers(centrum.register)
+    second = centrum.client.put(
+        "/api/settings/workers/jan.testowy",
+        json={"logins": ["jan.testowy", "jan.nowy"], "name": "Jan Testowy", "addresses": [JAN]},
+    )
+
+    view = _finished(centrum)
+
+    assert second.status_code == 200, second.json()
+    assert view["result"]["summary"]["figures"][0] == {"label": "Wpisane", "value": 2, "unit": "count"}
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "montaż"), 40000005: ("tak", "wymiana routera")}
+    assert _workers(centrum.register) == workers_before
 
 
 def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w_czynnosciach_zamaskowany(
@@ -918,6 +967,23 @@ def test_bez_pliku_hasla_albo_adresow_wykonawcow_karta_mowi_czego_brakuje_a_star
     assert centrum.run_logs() == []
 
 
+def test_klikniecie_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
+    """DESIGN §4.3 dla Wpisania raportów (przegląd #1569 r2, D1): plik Listy Wykonawców dostaje złą treść po odczycie
+    Ustawień, więc kliknięcie wpisuje raporty adresów z ostatniej dobrej listy, a karta mówi o tym ostrzeżeniem startu."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana routera")])
+    assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    view = _finished(centrum)
+
+    warning = Message.of(
+        diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES))
+    ).model_dump()
+    assert (view["result"]["warnings"][:1], warning["setting"]) == ([warning], "wykonawcy")
+    assert _cells(centrum.register)[40000001] == ("tak", "wymiana routera")
+
+
 def test_nieczytelny_plik_hasla_to_nie_brak_pliku_karta_bez_blokady_a_klikniecie_zatrzymuje_do_maksa_bez_odczytu_skrzynki(
     tmp_path: Path,
 ) -> None:
@@ -1050,6 +1116,99 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
     assert _entering(centrum, second)["problems"] == []
     assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
     assert new_address not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+NEW_ADDRESS = "jan.nowy@przyklad.invalid"
+
+
+def _assign(centrum: EnteringCentrum, login: str, address: str) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy u Wykonawcy z loginem ``login``."""
+
+    return centrum.client.post(f"/api/settings/workers/{login}/addresses", json={"address": address})
+
+
+def _addresses(centrum: EnteringCentrum) -> dict[str, list[str]]:
+    """Adresy Wykonawców z sekcji Wykonawcy po pierwszym loginie."""
+
+    workers = centrum.client.get("/api/settings").json()["workers"]["workers"]
+    return {worker["logins"][0]: worker["addresses"] for worker in workers}
+
+
+def _worker_rows(centrum: EnteringCentrum) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
+
+    return [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
+
+
+def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_raportow_rozpoznaje_jego_raport(
+    tmp_path: Path,
+) -> None:
+    """US 25, ADR 0028: Raport z nowego adresu Jana stoi w widoku Raporty jako nieznany nadawca z samym dniem, adresem i
+    powodem, bez tematu i treści maila. Tata przypisuje adres Janowi: adres dopisuje się na Liście Wykonawców, nadawca w
+    widoku Raporty jest przypisany do Jana jeszcze przed następnym kliknięciem, a następne kliknięcie wpisuje ten sam mail
+    bez innej pracy."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    before = _cells(centrum.register)
+    _finished(centrum)
+    first = _view(centrum)
+
+    assigned = _assign(centrum, "jan.testowy", NEW_ADDRESS)
+    shown = _view(centrum)
+    second = _finished(centrum)
+
+    assert first["unknown_senders"] == [
+        {
+            "day": "2026-11-09",
+            "sender": NEW_ADDRESS,
+            "reason": "Raport wykonawcy z 09.11.2026 przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum "
+            "go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze.",
+            "worker": None,
+        }
+    ]
+    shown_first = json.dumps(first, ensure_ascii=False)
+    assert SUBJECT not in shown_first and "wymiana routera" not in shown_first, "widok Raporty bez tematu i treści maila"
+    assert assigned.status_code == 200, assigned.json()
+    assert _addresses(centrum)["jan.testowy"] == [JAN, NEW_ADDRESS]
+    assert [found["worker"] for found in shown["unknown_senders"]] == ["jan.testowy"]
+    assert _entering(centrum, second)["problems"] == []
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+
+
+def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przywraca_nieznanego_nadawce(
+    tmp_path: Path,
+) -> None:
+    """US 25, 28: adresu, który ma już inny Wykonawca, nie da się przypisać: odmowa przy polu adresu, a Lista Wykonawców i
+    Historia zostają bez zmian, tak samo przy Wykonawcy, którego już nie ma; adres, który Wykonawca już ma, niczego nie
+    zmienia. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku Raporty znowu jest
+    nieznany."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    _finished(centrum)
+    listed_before = centrum.tool.worker_list.read_bytes()
+
+    refused = _assign(centrum, "anna.kowalska", JAN.upper())
+    gone = _assign(centrum, "nikt.taki", NEW_ADDRESS)
+    own = _assign(centrum, "jan.testowy", JAN.upper())
+    listed_after_refusal = centrum.tool.worker_list.read_bytes()
+    rows_after_refusal = _worker_rows(centrum)
+    assigned = _assign(centrum, "anna.kowalska", NEW_ADDRESS)
+    [row] = _worker_rows(centrum)
+    undone = centrum.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[1]"},
+    )
+    assert (gone.status_code, gone.json()["message"]) == (422, settings_messages.worker_unknown())
+    assert (own.status_code, own.json()["change"]) == (200, None)
+    assert listed_after_refusal == listed_before
+    assert rows_after_refusal == []
+    assert assigned.status_code == 200, assigned.json()
+    assert (row["id"], row["section"], row["undoable"]) == (assigned.json()["change"], "wykonawcy", True)
+    assert undone.status_code == 200, undone.json()
+    assert _addresses(centrum)["anna.kowalska"] == [ANNA]
+    assert [found["worker"] for found in _view(centrum)["unknown_senders"]] == [None]
 
 
 @pytest.mark.parametrize(
@@ -2775,13 +2934,26 @@ def _report_in_inbox(uid: int, sender: str, subject: str, at: datetime) -> Atrap
     return AtrapaMail(uid, at.astimezone(), bytes(message))
 
 
-def _reminders_set_up(tool: ToolDirectory, *, footer: str | None = "Pozdrawiam\nTata\n") -> None:
-    """Pliki Maksa w ``config``: dostęp do skrzynki raportów, dzień wdrożenia przypomnień 9.11.2026 i stopka taty."""
+def _reminders_form(**changes: object) -> dict[str, object]:
+    """Formularz sekcji Przypomnienia z wartościami domyślnymi z ADR 0030 i zmianami ``changes``."""
 
-    (tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
-    (tool.config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
-    if footer is not None:
-        (tool.config / REMINDERS_FOOTER).write_text(footer, encoding="utf-8")
+    form: dict[str, object] = {
+        "morning": {"start": "08:00", "end": "17:00"},
+        "evening": {"start": "18:00", "end": "22:00"},
+        "first": "08:00",
+        "text": "Poproszę o wysłanie raportu za dzień {dzień}.",
+        "footer": "",
+    }
+    return {**form, **changes}
+
+
+def _reminders_set_up(centrum: EnteringCentrum, *, footer: str = "Pozdrawiam\nTata\n") -> None:
+    """Plik Maksa z dostępem do skrzynki raportów w ``config``, a w Ustawieniach tata włącza przypomnienia w dniu
+    zleceń 9.11.2026 (dzień wdrożenia) i wpisuje stopkę (``""``: bez stopki)."""
+
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    assert centrum.client.put("/api/settings/reminders/enabled", json={"enabled": True}).status_code == 200
+    assert centrum.client.put("/api/settings/reminders", json=_reminders_form(footer=footer)).status_code == 200
 
 
 def _reminder_result(centrum: EnteringCentrum) -> dict[str, Any]:
@@ -2804,7 +2976,7 @@ def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze
             smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
         )
         centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-        _reminders_set_up(centrum.tool)
+        _reminders_set_up(centrum)
         lock = open_in_excel(centrum.register)
         before = centrum.register.read_bytes()
         centrum.moment.append(REMINDER_MORNING)
@@ -2843,12 +3015,14 @@ def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze
     assert not centrum.tool.run_logs.exists() or not list(centrum.tool.run_logs.glob("*.json")), "to nie Uruchomienie"
 
 
-def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopki(tmp_path: Path) -> None:
-    """Bez pliku stopki przypomnienie idzie bez niej, a wynik ostatniego sprawdzenia dla widoku Raporty mówi o tym (US 44)."""
+@pytest.mark.parametrize("footer", ["", "   \n"], ids=["pusta", "same-spacje"])
+def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopki(tmp_path: Path, footer: str) -> None:
+    """Bez stopki w Ustawieniach (także ze stopką z samych spacji) przypomnienie idzie bez niej, a wynik ostatniego
+    sprawdzenia dla widoku Raporty mówi o tym (US 44)."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool, footer=None)
+    _reminders_set_up(centrum, footer=footer)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -2862,30 +3036,659 @@ def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopk
     assert _reminder_result(centrum)["footer"] == "missing"
 
 
-def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_nic_nie_wysyla(tmp_path: Path) -> None:
-    """Bez pliku dnia wdrożenia przypomnień Centrum nie czyta skrzynki i nic nie wysyła; z nim w dniu zleceń czyta
-    skrzynkę raz w porze, ale za ten dzień nic nie wysyła, a w nocy i przed 8:00 dnia następnego nawet nie czyta (US
-    32–33, 41)."""
+@pytest.mark.parametrize(
+    ("login", "switches", "reminded"),
+    [
+        pytest.param("anna.kowalska", {"active": False}, ["jan.testowy"], id="nieaktywny"),
+        pytest.param("jan.testowy", {"reminders": False}, ["anna.kowalska"], id="bez-przypomnien"),
+    ],
+)
+def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_nastepnego_sprawdzenia(
+    tmp_path: Path, login: str, switches: dict[str, bool], reminded: list[str]
+) -> None:
+    """ADR 0032, US 34, 37 (#1474): przełącznik na karcie Wykonawcy w Ustawieniach działa od następnego sprawdzenia
+    przypomnień: Nieaktywny Wykonawca i Wykonawca z wyłączonymi Przypomnieniami o raporcie ich nie dostają, inni tak."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
-    (centrum.tool.config / REMINDERS_ROLLOUT).unlink()
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    switched = centrum.client.put(f"/api/settings/workers/{login}/switches", json=switches)
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert switched.status_code == 200, switched.json()
+    assert [reminder.worker for reminder, _ in mailbox.sends] == reminded
+
+
+def _assigned(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres ``NEW_ADDRESS`` u Wykonawcy ``worker``."""
+
+    return client.post(f"/api/settings/workers/{worker['logins'][0]}/addresses", json={"address": NEW_ADDRESS})
+
+
+def _edited(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """Formularz Wykonawcy ``worker`` z jego loginami, nazwą i adresami, do których tata dopisał ``NEW_ADDRESS``."""
+
+    form = {"logins": worker["logins"], "name": worker["name"], "addresses": [*worker["addresses"], NEW_ADDRESS]}
+    return client.put(f"/api/settings/workers/{worker['logins'][0]}", json=form)
+
+
+@pytest.mark.parametrize("change", [_assigned, _edited], ids=["przypisanie-adresu", "formularz"])
+@pytest.mark.parametrize(
+    ("active", "reminders"),
+    [(False, True), (True, False), (False, False)],
+    ids=["nieaktywny", "bez-przypomnien", "nieaktywny-bez-przypomnien"],
+)
+def test_dopisanie_adresu_przypisaniem_albo_formularzem_zostawia_reszte_wykonawcy_a_przypomnienia_go_omijaja(
+    tmp_path: Path, change: Callable[[CentrumClient, dict[str, Any]], Any], active: bool, reminders: bool
+) -> None:
+    """ADR 0032 (D13), W1 #1650 r1: tata dopisuje Annie adres przyciskiem „Przypisz do Wykonawcy…” albo formularzem.
+    Zmienia się tylko lista adresów: loginy (także drugi), nazwa, pierwsze adresy, Nieaktywny i Przypomnienia o raporcie
+    zostają, więc następne sprawdzenie przypomnień dalej omija Annę, a Jan je dostaje."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    anna = WorkerEntry(["anna.kowalska", "anna.k2"], "Anna Kowalska", [ANNA, "anna.k2@przyklad.invalid"], active, reminders)
+    listed = WorkerList.of([WorkerEntry(["jan.testowy"], "Jan Testowy", [JAN]), anna])
+    assert isinstance(listed, WorkerList), listed
+    write_worker_list(centrum.tool.worker_list, listed)
+    before = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    changed = change(centrum.client, before)
+    after = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200, changed.json()
+    assert after == {**before, "addresses": [*before["addresses"], NEW_ADDRESS]}
+    assert (before["active"], before["reminders"]) == (active, reminders)
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["jan.testowy"]
+
+
+def _listed_worker(client: CentrumClient, login: str) -> dict[str, Any]:
+    """Wykonawca z pierwszym loginem ``login`` z sekcji Wykonawcy w Ustawieniach."""
+
+    [worker] = [worker for worker in client.get("/api/settings").json()["workers"]["workers"] if worker["logins"][0] == login]
+    return dict(worker)
+
+
+# Treść przypomnienia za 9.11 ze stopką „Pozdrawiam / Tata”, jaką Centrum wysyłało przed Ustawieniami (spec #1344).
+TEXT_BEFORE_SETTINGS = """Poproszę o wysłanie raportu za dzień 09.11.2026.
+
+Raport proszę wysłać według tego wzoru:
+Temat maila: Raport 09.11.2026
+Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności
+PRZYKŁAD:
+12345678 tak montaż ONT
+12345679 nie brak klienta
+
+Pozdrawiam
+Tata
+"""
+
+
+@pytest.mark.parametrize(
+    ("rollout", "footer", "text"),
+    [
+        (b"2026-11-09\n", b"Pozdrawiam\nTata\n", TEXT_BEFORE_SETTINGS),
+        (
+            b"\xef\xbb\xbf2026-11-09\r\n",
+            b"\xef\xbb\xbfPozdrawiam\r\nTata\r\n",
+            TEXT_BEFORE_SETTINGS.replace("Pozdrawiam\nTata", "Pozdrawiam\r\nTata"),
+        ),
+    ],
+    ids=["lf", "crlf-z-notatnika"],
+)
+def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_przed_ustawieniami(
+    tmp_path: Path, rollout: bytes, footer: bytes, text: str
+) -> None:
+    """Kryterium #1476: po Aktualizacji tata nic nie zmienia, a pierwszy start przenosi dzień wdrożenia i stopkę z plików
+    Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem i
+    treścią bajt w bajt, a druga minuta pory nie wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF)
+    szła przed Wydaniem z CRLF między liniami i tak samo idzie po nim."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(rollout)
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(footer)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    mailbox.sent = tuple(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in mailbox.sends)
+    centrum.moment.append(datetime(2026, 11, 10, 8, 31))
+    centrum.restart()
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    sent = [(reminder.worker, reminder.recipients, reminder.subject, reminder.text) for reminder, _ in mailbox.sends]
+    assert sent == [
+        (login, (SenderAddress(SENDERS[login]),), "Przypomnienie: raport za dzień 09.11.2026", text)
+        for login in ("anna.kowalska", "jan.testowy")
+    ]
+
+
+def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_sprawdzenia_bez_ponownego_startu(
+    tmp_path: Path,
+) -> None:
+    """Kryterium #1476 (US 49): o 7:30 przypomnienia przy porach z ADR 0030 śpią; tata przesuwa poranną porę na 7:00 i
+    następne sprawdzenie czyta skrzynkę, ale nic nie wysyła, bo pierwsze przypomnienie idzie od 8:00; tata przesuwa je na
+    7:00 i następne sprawdzenie w tej samej porze wysyła przypomnienia, bez ponownego startu Centrum."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(datetime(2026, 11, 10, 7, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    asleep = list(mailbox.days)
+    earlier = _reminders_form(morning={"start": "07:00", "end": "17:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=earlier).status_code == 200
+    for minute in (31, 32):
+        centrum.moment.append(datetime(2026, 11, 10, 7, minute))
+        centrum.rhythm.tick()
+    read_before_first = (list(mailbox.days), list(mailbox.sends))
+    assert centrum.client.put("/api/settings/reminders", json={**earlier, "first": "07:00"}).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 7, 33))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert asleep == []
+    assert read_before_first == ([date(2026, 11, 9)], []), "pora otwarta raz, a 7:32 nie czyta drugi raz"
+    assert [(reminder.worker, reminder.day, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", date(2026, 11, 9), time(7, 33)),
+        ("jan.testowy", date(2026, 11, 9), time(7, 33)),
+    ]
+
+
+@dataclass
+class SentFolderMailbox(FakeMailbox):
+    """Skrzynka przypomnień, której „Wysłane” mają każde przypomnienie wysłane przez nią, z chwilą wysyłki według zegara
+    Gmaila, który odchodzi od zegara laptopa taty o ``gmail_clock``."""
+
+    gmail_clock: timedelta = timedelta()
+
+    def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        return SentReminders(
+            tuple(SentReminder(frozenset(reminder.recipients), reminder.day, at + self.gmail_clock) for reminder, at in self.sends)
+        )
+
+
+@pytest.mark.parametrize(
+    ("sent_at", "later", "checked_at"),
+    [
+        (time(8, 5), {"morning": {"start": "09:00", "end": "17:00"}}, time(9, 1)),
+        (time(18, 5), {"evening": {"start": "19:00", "end": "22:00"}}, time(19, 1)),
+    ],
+    ids=["poranna", "wieczorna"],
+)
+def test_przesuniecie_poczatku_pory_po_wysylce_nie_daje_drugiego_maila_tej_samej_pory(
+    tmp_path: Path, sent_at: time, later: dict[str, object], checked_at: time
+) -> None:
+    """Decyzja W1 (#1568): przypomnienie wysłane w porze zamyka tę nazwaną porę na cały dzień, także gdy tata potem
+    przesunie jej początek za chwilę wysyłki, więc następne sprawdzenie w nowej porze nie wysyła Wykonawcom drugiego."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), sent_at))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    first = [(reminder.worker, at.time()) for reminder, at in mailbox.sends]
+
+    changed = centrum.client.put("/api/settings/reminders", json=_reminders_form(**later, footer="Pozdrawiam\nTata\n"))
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), checked_at))
+    centrum.rhythm.tick()
+    centrum.restart()
+    centrum.client.start()
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), checked_at.replace(minute=30)))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert first == [("anna.kowalska", sent_at), ("jan.testowy", sent_at)]
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == first, "drugi mail tej samej pory"
+
+
+def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_przesunieciem(tmp_path: Path) -> None:
+    """Decyzja W1 (#1568): pory z ADR 0030 obowiązują od sprawdzenia 8.11; 10.11 o 8:05 idzie poranne przypomnienie, a
+    tata przesuwa poranną na 9:00–17:00. Pory sprzed doby dalej mówią, że 8:05 była w porannej, więc o 9:01 drugiego
+    porannego nie ma."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+    for moment in (datetime(2026, 11, 8, 10, 0), datetime(2026, 11, 10, 8, 5)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    later = _reminders_form(morning={"start": "09:00", "end": "17:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 9, 1))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", datetime(2026, 11, 10, 8, 5).astimezone()),
+        ("jan.testowy", datetime(2026, 11, 10, 8, 5).astimezone()),
+    ]
+
+
+def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_od_nastepnego_sprawdzenia(
+    tmp_path: Path,
+) -> None:
+    """Decyzja W1 (#1568): o 13:00 przy porach z ADR 0030 idzie poranne przypomnienie; tata skraca poranną do 12:00 i
+    zaczyna wieczorną o 12:30, więc 13:00 leży teraz w wieczornej, ale mail poszedł w porannej. Wieczorna dziś jeszcze
+    nie poszła, więc następne sprawdzenie ją wysyła, a jeszcze następne nie wysyła drugiej."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(datetime(2026, 11, 10, 13, 0))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    later = _reminders_form(
+        morning={"start": "08:00", "end": "12:00"}, evening={"start": "12:30", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    for moment in (datetime(2026, 11, 10, 13, 30), datetime(2026, 11, 10, 13, 31), datetime(2026, 11, 10, 20, 0)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(13, 0)),
+        ("jan.testowy", time(13, 0)),
+        ("anna.kowalska", time(13, 30)),
+        ("jan.testowy", time(13, 30)),
+    ]
+
+
+@pytest.mark.parametrize(("active", "reminders"), [(False, True), (True, False)], ids=["nieaktywny", "bez-przypomnien"])
+def test_przypomnienia_ida_tylko_do_aktywnych_wykonawcow_z_wlaczonymi_przypomnieniami(
+    tmp_path: Path, active: bool, reminders: bool
+) -> None:
+    """ADR 0032: Nieaktywny Wykonawca i Wykonawca z wyłączonymi przypomnieniami zostają na Liście Wykonawców z adresem,
+    ale Przypomnienia o raporcie dostaje tylko aktywny z włączonymi (przegląd #1568 r4); Jan ma zlecenia dnia tak samo
+    jak Anna."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    listed = WorkerList.of(
+        [
+            WorkerEntry(["jan.testowy"], WORKERS["jan.testowy"], [JAN], active=active, reminders=reminders),
+            WorkerEntry(["anna.kowalska"], WORKERS["anna.kowalska"], [ANNA]),
+        ]
+    )
+    assert isinstance(listed, WorkerList), listed
+    write_worker_list(centrum.tool.worker_list, listed)
+    centrum.moment.append(datetime(2026, 11, 10, 8, 30))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska"]
+
+
+def _old_version_sends(tmp_path: Path, at: datetime) -> list[tuple[Reminder, datetime]]:
+    """Przypomnienia, które stara wersja (stałe pory z ADR 0030) wysłała o ``at`` do Anny i Jana, jak w jej „Wysłanych”."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(at)
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+    return list(mailbox.sends)
+
+
+@pytest.mark.parametrize(
+    ("sent_at", "updated_at", "later", "checked_at"),
+    [
+        (time(8, 5), time(17, 20), {"morning": {"start": "09:00", "end": "17:45"}}, time(17, 21)),
+        (time(18, 5), time(22, 10), {"evening": {"start": "19:00", "end": "23:00"}}, time(22, 11)),
+    ],
+    ids=["poranna", "wieczorna"],
+)
+def test_w_dniu_aktualizacji_zmiana_por_po_wysylce_starej_wersji_nie_daje_drugiego_maila_tej_samej_pory(
+    tmp_path: Path, sent_at: time, updated_at: time, later: dict[str, object], checked_at: time
+) -> None:
+    """Sonda W1 r2 (#1568): stara wersja wysłała przypomnienia przy stałych porach z ADR 0030, a pór z chwili wysyłki nie
+    zapisała. Centrum po Aktualizacji startuje poza porą, tata zmienia w Ustawieniach porę tak, że chwila wysyłki leży
+    już poza nią, a następne sprawdzenie w nowej porze nie wysyła drugiego, bo stara wersja znała tylko pory z ADR 0030."""
+
+    day = date(2026, 11, 10)
+    mailbox = SentFolderMailbox(sends=_old_version_sends(tmp_path / "stara", datetime.combine(day, sent_at)))
+    centrum = entering_centrum(tmp_path / "nowa", INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(b"2026-11-09\n")
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(b"Pozdrawiam\nTata\n")
+    centrum.moment.append(datetime.combine(day, updated_at))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    changed = centrum.client.put("/api/settings/reminders", json=_reminders_form(**later, footer="Pozdrawiam\nTata\n"))
+    centrum.moment.append(datetime.combine(day, checked_at))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", sent_at),
+        ("jan.testowy", sent_at),
+    ], "drugi mail tej samej pory w dniu Aktualizacji"
+
+
+def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
+    sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
+    jeszcze przed zapisem nowych pór. Po ponownym starcie o 9:35 te maile dalej zamykają poranną, choć przy porach sprzed
+    zmiany 9:28:30 leży poza porą."""
+
+    mailbox = SentFolderMailbox(gmail_clock=-timedelta(seconds=90))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    short = _reminders_form(morning={"start": "07:00", "end": "09:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=short).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 7, 30))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    longer = _reminders_form(morning={"start": "07:00", "end": "17:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=longer).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 9, 30))
+    centrum.rhythm.tick()
+    centrum.restart()
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 9, 35))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(9, 30)),
+        ("jan.testowy", time(9, 30)),
+    ]
+
+
+def test_zegar_gmaila_spieszacy_sie_o_poltorej_minuty_nie_gubi_por_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``) w drugą stronę (przegląd #1568 r3, D1): przy porannej 8:00–9:00 i wieczornej
+    9:00–22:00 przypomnienia idą o 8:30 i o 9:29 (wieczorna). Tata przesuwa granicę pór na 9:40, sprawdzenie o 9:30
+    zapisuje nowe pory, a zegar Gmaila spieszy się o półtorej minuty, więc „Wysłane” mają 9:30:30, już po zapisie
+    nowych pór, w których to poranna. Te maile dalej zamykają wieczorną przy porach sprzed zmiany, więc sprawdzenie
+    o 9:45 w nowej wieczornej nie wysyła drugiego."""
+
+    mailbox = SentFolderMailbox(gmail_clock=timedelta(seconds=90))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(
+        morning={"start": "08:00", "end": "09:00"}, evening={"start": "09:00", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    centrum.client.start()
+    for moment in (datetime(2026, 11, 10, 8, 30), datetime(2026, 11, 10, 9, 29)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    later = _reminders_form(
+        morning={"start": "08:00", "end": "09:40"}, evening={"start": "09:40", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    for moment in (datetime(2026, 11, 10, 9, 30), datetime(2026, 11, 10, 9, 45)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(8, 30)),
+        ("jan.testowy", time(8, 30)),
+        ("anna.kowalska", time(9, 29)),
+        ("jan.testowy", time(9, 29)),
+    ], "drugi mail wieczornej"
+
+
+_NAIVE_SCHEDULES = b"""{"schema_version": 1,
+ "przed": [{"poranna": {"od": "08:00", "do": "17:00"}, "wieczorna": {"od": "18:00", "do": "22:00"}, "pierwsze": "08:00"}],
+ "pory": [{"od": "2026-11-10T07:00:00", "poranna": {"od": "08:00", "do": "17:00"},
+  "wieczorna": {"od": "18:00", "do": "22:00"}, "pierwsze": "08:00"}]}
+"""
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [b"{", b'{"schema_version": 1, "przed": [], "pory": []}\n', _NAIVE_SCHEDULES],
+    ids=["urwany", "bez-por-przed", "chwila-bez-strefy"],
+)
+def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_nastepny_start(
+    tmp_path: Path, broken: bytes
+) -> None:
+    """Przy porannej 6:00–17:00 przypomnienia idą o 7:00, poza porami z ADR 0030. Plik pór psuje się, a Centrum
+    startuje znowu o 7:30 i o 7:45: nie wiadomo, przy jakich porach ta wersja wysyłała, więc maile z 7:00 zamykają
+    poranną przy porach z ADR 0030 i przy bieżących, także po starcie, przed którym praca zapisała plik od nowa."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(morning={"start": "06:00", "end": "17:00"}, first="06:00", footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 7, 0))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+    (centrum.tool.config / REMINDERS_SCHEDULES).write_bytes(broken)
+    for minute in (30, 45):
+        centrum.restart()
+        centrum.client.start()
+        centrum.moment.append(datetime(2026, 11, 10, 7, minute))
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(7, 0)),
+        ("jan.testowy", time(7, 0)),
+    ]
+
+
+_HALF_HOURS = st.lists(st.integers(6 * 2, 23 * 2 + 1), min_size=4, max_size=4, unique=True).map(sorted)
+"""Cztery różne pełne albo połówkowe godziny od 6:00 do 23:30, rosnąco: początek i koniec porannej i wieczornej."""
+
+
+@st.composite
+def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
+    """Dobre pory z formularza: poranna przed wieczorną, czasem stykające się (koniec porannej = początek wieczornej)."""
+
+    found = [time(half // 2, 30 * (half % 2)) for half in draw(_HALF_HOURS)]
+    if draw(st.booleans()):
+        found[2] = found[1]
+    return (found[0], found[1]), (found[2], found[3])
+
+
+def test_nieudany_zapis_por_wstrzymuje_wysylke_az_do_zapisu_wiec_ponowny_start_nie_daje_drugiego_maila(
+    tmp_path: Path,
+) -> None:
+    """Przy porannej 6:00–17:00 sprawdzenie o 7:00 nie zapisuje pór (plik tymczasowy zajęty), więc nie wysyła: po
+    ponownym starcie bez pliku pór mail z 7:00 liczyłby się przy porach z ADR 0030, poza porą. Po zwolnieniu pliku
+    następna minuta zapisuje pory i wysyła, a Centrum po ponownym starcie nie wysyła drugiego."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(morning={"start": "06:00", "end": "17:00"}, first="06:00", footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    busy = centrum.tool.config / f"{REMINDERS_SCHEDULES}.tmp"
+    busy.mkdir()
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 7, 0))
+    centrum.rhythm.tick()
+    blocked = (list(mailbox.sends), _reminder_result(centrum)["failure"])
+    busy.rmdir()
+    for minute in (1, 30):
+        centrum.moment.append(datetime(2026, 11, 10, 7, minute))
+        centrum.rhythm.tick()
+        centrum.restart()
+        centrum.client.start()
+    centrum.client.stop()
+
+    assert blocked == ([], "zapis-por")
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(7, 1)),
+        ("jan.testowy", time(7, 1)),
+    ]
+    assert centrum.tool.log_path.read_text(encoding="utf-8").count("przypomnienia-porazka przyczyna=zapis-por") == 1
+
+
+_FIRST_MINUTE, _LAST_MINUTE = 7 * 60, 23 * 60 + 58
+_DAY_MINUTES = st.integers(_FIRST_MINUTE, _LAST_MINUTE)
+_EVENTS = st.lists(
+    st.tuples(_DAY_MINUTES, st.one_of(_pory(), st.just("sprawdzenie"), st.just("restart"))), min_size=1, max_size=12
+)
+"""Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
+Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty. W dniu Aktualizacji test
+ściska minuty zdarzeń za chwilę wysyłki starej wersji."""
+_OLD_VERSION = st.one_of(st.none(), st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1))
+"""Minuta dnia, w której stara wersja wysłała przypomnienia w porze z ADR 0030 przed Aktualizacją (bez pliku pór);
+``None``: dzień bez Aktualizacji."""
+
+
+# Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
+# niż limit testu, a przykład z najwyżej 12 zdarzeniami czyta się i bez niego.
+@settings(
+    derandomize=True,
+    database=None,
+    deadline=None,
+    max_examples=60,
+    phases=[Phase.explicit, Phase.generate],
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(old_version=_OLD_VERSION, events=_EVENTS)
+def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_tej_samej_pory(
+    tmp_path_factory: pytest.TempPathFactory, old_version: int | None, events: list[tuple[int, object]]
+) -> None:
+    """Decyzja W1 (#1568): przy dowolnych zmianach pór w ciągu dnia, sprawdzeniach i ponownych startach Centrum każde
+    przypomnienie idzie w porze obowiązującej w chwili jego sprawdzenia, a Wykonawca dostaje za dzień raportu najwyżej
+    jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia, także w dniu Aktualizacji, gdy
+    „Wysłane” mają już przypomnienia starej wersji, a pliku pór jeszcze nie ma (W1 r2)."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    day = date(2026, 11, 10)
+    in_effect: tuple[tuple[time, time], tuple[time, time]] = ((time(8), time(17)), (time(18), time(22)))
+    named: list[tuple[str, str]] = []
+    if old_version is not None:
+        old_moment = time(old_version // 60, old_version % 60)
+        centrum.moment.append(datetime.combine(day, old_moment))
+        centrum.client.start()
+        centrum.rhythm.tick()
+        centrum.client.stop()
+        (centrum.tool.config / REMINDERS_SCHEDULES).unlink()
+        named += [(reminder.worker, _named_pora(old_moment, in_effect)) for reminder, _ in mailbox.sends]
+        centrum.restart()
+    first = _FIRST_MINUTE if old_version is None else old_version + 1
+    moments: list[tuple[int, object]] = []
+    for minute, event in sorted(events, key=lambda found: found[0]):
+        at = first + (minute - _FIRST_MINUTE) * (_LAST_MINUTE - first) // (_LAST_MINUTE - _FIRST_MINUTE)
+        moments += [(at, event)] if event == "sprawdzenie" else [(at, event), (at + 1, "sprawdzenie")]
+    moments.sort(key=lambda found: found[0])
+    centrum.client.start()
+    try:
+        for minute, event in moments:
+            moment = datetime.combine(day, time(minute // 60, minute % 60))
+            if event == "restart":
+                centrum.restart()
+                centrum.client.start()
+            elif event == "sprawdzenie":
+                centrum.moment.append(moment)
+                before = len(mailbox.sends)
+                centrum.rhythm.tick()
+                pora = _named_pora(moment.time(), in_effect)
+                named += [(reminder.worker, pora) for reminder, _ in mailbox.sends[before:]]
+            else:
+                assert isinstance(event, tuple)
+                (morning_start, morning_end), (evening_start, evening_end) = in_effect = event
+                form = _reminders_form(
+                    morning={"start": f"{morning_start:%H:%M}", "end": f"{morning_end:%H:%M}"},
+                    evening={"start": f"{evening_start:%H:%M}", "end": f"{evening_end:%H:%M}"},
+                    footer="Pozdrawiam\nTata\n",
+                )
+                assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    finally:
+        centrum.client.stop()
+
+    assert "poza porą" not in {pora for _, pora in named}, named
+    assert len(named) == len(set(named)), f"dwa maile tej samej pory: {named}"
+
+
+def _named_pora(moment: time, pory: tuple[tuple[time, time], tuple[time, time]]) -> str:
+    """Nazwana pora chwili przy porach ``pory`` (od początku do końca, bez końca), wprost z ADR 0030."""
+
+    (morning_start, morning_end), (evening_start, evening_end) = pory
+    if morning_start <= moment < morning_end:
+        return "poranna"
+    return "wieczorna" if evening_start <= moment < evening_end else "poza porą"
+
+
+def test_podglad_przypomnienia_pokazuje_temat_tresc_i_stopke_z_formularza_bez_zapisu_i_bez_wysylki(tmp_path: Path) -> None:
+    """Kryterium #1476 (US 47–48): podgląd na przykładowy dzień (wczoraj taty) pokazuje stały temat, pierwsze zdanie
+    taty z dniem, stały wzór Raportu wykonawcy i stopkę z formularza, a niczego nie zapisuje i nie wysyła."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    before = config_files(centrum.tool.config)
+    form = _reminders_form(text="Dzień dobry, czekam na raport za {dzień}.", footer="Pozdrawiam\nTata Testowy\n")
+
+    preview = centrum.client.post("/api/settings/reminders/preview", json=form)
+
+    assert preview.status_code == 200
+    assert preview.json() == {
+        "subject": "Przypomnienie: raport za dzień 08.11.2026",
+        "text": (
+            "Dzień dobry, czekam na raport za 08.11.2026.\n\nRaport proszę wysłać według tego wzoru:\n"
+            "Temat maila: Raport 08.11.2026\n"
+            "Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności\nPRZYKŁAD:\n"
+            "12345678 tak montaż ONT\n12345679 nie brak klienta\n\nPozdrawiam\nTata Testowy\n"
+        ),
+    }
+    assert (config_files(centrum.tool.config), mailbox.sends) == (before, [])
+
+
+def config_files(config: Path) -> dict[str, bytes]:
+    return {path.relative_to(config).as_posix(): path.read_bytes() for path in sorted(config.rglob("*")) if path.is_file()}
+
+
+def test_wylaczone_przypomnienia_nic_nie_wysylaja_a_wlaczone_w_nocy_i_przed_8_dnia_nastepnego_tez_nie(tmp_path: Path) -> None:
+    """Wyłączone w Ustawieniach przypomnienia nie czytają skrzynki, nic nie wysyłają i nie zostawiają śladu; po włączeniu
+    przełącznikiem w dniu zleceń Centrum czyta skrzynkę raz w porze, ale za ten dzień nic nie wysyła, a w nocy i przed
+    8:00 dnia następnego nawet nie czyta (US 32–33, 40–41)."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    assert centrum.client.put("/api/settings/reminders/enabled", json={"enabled": False}).status_code == 200
     centrum.moment.append(datetime(2026, 11, 9, 21, 0))
     centrum.client.start()
 
     centrum.rhythm.tick()
-    assert mailbox.days == [], "bez dnia wdrożenia skrzynka nie jest czytana"
-    assert not (centrum.tool.config / REMINDERS_RESULT).exists(), "bez dnia wdrożenia praca nie pisze do config"
-    (centrum.tool.config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
+    assert mailbox.days == [], "wyłączone przypomnienia nie czytają skrzynki"
+    assert not (centrum.tool.config / REMINDERS_RESULT).exists(), "wyłączone przypomnienia nie piszą do config"
+    switched = centrum.client.put("/api/settings/reminders/enabled", json={"enabled": True})
     for moment in (datetime(2026, 11, 9, 21, 1), datetime(2026, 11, 9, 21, 2), datetime(2026, 11, 9, 23, 0), datetime(2026, 11, 10, 7, 59)):
         centrum.moment.append(moment)
         centrum.rhythm.tick()
     centrum.client.stop()
 
+    assert (switched.status_code, switched.json()["settings"]["reminders"]["since"]) == (200, "2026-11-09")
     assert (mailbox.days, mailbox.sends) == ([date(2026, 11, 9)], [])
     log = centrum.tool.log_path.read_text(encoding="utf-8") if centrum.tool.log_path.exists() else ""
-    assert "przypomnienia-porazka" not in log, "przypomnienia bez dnia wdrożenia są wyłączone, nie zepsute"
+    assert "przypomnienia-porazka" not in log, "wyłączone przypomnienia są wyłączone, nie zepsute"
 
 
 def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_pory_bez_zgloszenia(tmp_path: Path) -> None:
@@ -2896,7 +3699,7 @@ def test_brak_sieci_przy_przypomnieniach_ponawia_w_nastepnej_minucie_tej_samej_p
     surroundings = Surroundings()
     mailbox = FakeMailbox(sent=InboxUnreachable("TimeoutError"))
     centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -2922,7 +3725,7 @@ def test_brak_sieci_przy_odczycie_maili_skrzynki_nie_wysyla_przypomnien_choc_wys
     anna_report = report(ANNA, "Raport 09.11.2026", "40000002 tak montaż")
     mailbox = FakeMailbox(outcome=InboxUnreachable("TimeoutError"))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -2942,7 +3745,7 @@ def test_odmowa_wysylki_przez_gmail_nie_ponawia_wysylki_do_konca_pory(tmp_path: 
 
     mailbox = FakeMailbox(send_outcome=MailRefused("SMTPDataError"))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -2983,7 +3786,7 @@ def test_seria_przypomnien_ktora_wyszla_poza_pore_czeka_z_reszta_na_nastepna_por
     first_send = started + timedelta(seconds=30)
     mailbox = TickingMailbox(during=lambda: centrum.moment.append(first_send))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(started)
     centrum.client.start()
 
@@ -3014,7 +3817,7 @@ def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_be
 
     mailbox = FirstSendPastFive(during=lambda: centrum.moment.append(first_send) if not mailbox.sends else None)
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(started)
     centrum.client.start()
 
@@ -3042,7 +3845,7 @@ def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_por
     surroundings = Surroundings()
     mailbox = FakeMailbox(send_outcome=PasswordRejected())
     centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -3088,7 +3891,7 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
 
     mailbox = FakeMailbox(state="missing" if broken == "dostep" else "ready")
     centrum = entering_centrum(tmp_path, INTERMAX, chosen=broken != "ustawienia", reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     if broken == "okresy":
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
@@ -3125,7 +3928,7 @@ def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie
     centrum = entering_centrum(
         tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana routera")], reminder_mailbox=mailbox
     )
-    _reminders_set_up(centrum.tool)
+    _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
     check = threading.Thread(target=centrum.rhythm.tick, name="test-przypomnienia")
@@ -3148,18 +3951,18 @@ def _reminders_of(view: dict[str, Any], login: str) -> list[datetime]:
     return [datetime.fromisoformat(moment) for moment in _worker(view, login)["reminders"]]
 
 
-def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_dodaniu_pliku(
+def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_jej_wpisaniu(
     tmp_path: Path,
 ) -> None:
     """Kryterium #1351: po pracy przypomnień widok Raporty ma przy dniu 9.11 każdego Wykonawcy chwile wysłanych za ten
     dzień przypomnień do niego, z „Wysłanych” i z tego sprawdzenia, bez przypomnienia za inny dzień i bez przypomnień
-    innego Wykonawcy (Anna przysyła raport po porannym, więc wieczorne idzie tylko do Jana); brak pliku stopki widok mówi
-    do następnego sprawdzenia po dodaniu pliku, a odpowiedź nie ma adresów, tematu ani stopki (US 44–45, ADR 0030)."""
+    innego Wykonawcy (Anna przysyła raport po porannym, więc wieczorne idzie tylko do Jana); brak stopki widok mówi
+    do następnego sprawdzenia po wpisaniu stopki w Ustawieniach, a odpowiedź nie ma adresów, tematu ani stopki (US 44–45, ADR 0030)."""
 
     for_other_day = SentReminder(frozenset({SenderAddress(JAN)}), date(2026, 11, 8), datetime(2026, 11, 9, 8, 0).astimezone())
     mailbox = FakeMailbox(sent=(for_other_day,))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool, footer=None)
+    _reminders_set_up(centrum, footer="")
     centrum.client.start()
     _finished(centrum)
     before = _view(centrum)
@@ -3168,7 +3971,7 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
     centrum.moment.append(REMINDER_MORNING)
     centrum.rhythm.tick()
     after_morning = centrum.client.get("/api/report-entering/view")
-    (centrum.tool.config / REMINDERS_FOOTER).write_text("Pozdrawiam\nTata\n", encoding="utf-8")
+    assert centrum.client.put("/api/settings/reminders", json=_reminders_form(footer="Pozdrawiam\nTata\n")).status_code == 200
     mailbox.sent = (
         for_other_day,
         *(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in mailbox.sends),
@@ -3195,11 +3998,11 @@ def test_widok_raporty_mowi_o_braku_stopki_przed_pierwszym_kliknieciem_a_po_nieu
 ) -> None:
     """Informacja o brakującej stopce stoi w widoku Raporty także przed pierwszym kliknięciem „Wpisz raporty z maili”,
     bo przypomnienia idą bez niego; sprawdzenie, które nie doszło do stopki (brak sieci przy odczycie skrzynki), niczego
-    o stopce nie twierdzi, choć pliku stopki dalej nie ma (#1351, przegląd #1364 r1 Drobne 2)."""
+    o stopce nie twierdzi, choć stopki dalej nie ma (#1351, przegląd #1364 r1 Drobne 2)."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum.tool, footer=None)
+    _reminders_set_up(centrum, footer="")
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 

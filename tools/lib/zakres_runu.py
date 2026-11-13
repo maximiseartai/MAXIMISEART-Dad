@@ -1,8 +1,7 @@
 """Zakres runu CI: co CI uruchamia dla zdarzenia (push, pull request, noc) i zmiany, każda praca z powodem i poleceniem.
 
 Jedyne miejsce polityki „co biegnie” (ADR 0020, ADR 0021); plan runu (``tools/plan_ci.py``) tylko wycenia i pakuje
-wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LICZY NOC``, a
-``tools/ci/wykonaj_zadanie.py --kroki-pushu`` uruchamia kroki skilli pushu:
+wynik, a ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LICZY NOC``:
 
     praca = zakres(Zdarzenie.PULL_REQUEST, changed_since(ROOT, "origin/main"), ROOT)
     praca.tory, praca.pliki, praca.zrodlo        # pytest: tory z krokami CI i pliki testów
@@ -10,8 +9,8 @@ wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LIC
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
 
-Pytest. Na pushu to pełne CI ``main``: trzy tory (``TORY``: Windows 3.13, Windows 3.14, Linux 3.14), na każdym każdy plik
-testów ``tests/``, oraz kroki CI (``KROKI``) na swoich torach: E2E na obu Windows, straż czasu na Windows 3.14. Na pull
+Pytest. Na pushu to pełne CI ``main``: dwa tory (``TORY``: Windows 3.13, czyli Python taty, i Linux 3.14), na każdym
+każdy plik testów ``tests/``, oraz kroki CI (``KROKI``), E2E i straż czasu, na Windows 3.13 (ADR 0020, Z2). Na pull
 request to bramka PR: tory Windows 3.13 (Python taty) i Linux 3.14, na każdym pliki z wyboru wpływu zmiany
 (``tools/lib/wplyw_zmiany.py``) i testy ``STRUCTURE`` (węzeł ``plik::test`` biegnie sam, gdy jego pliku nie ma w
 wyborze). Zmiana ścieżki, która w tabeli reguł wpływu uruchamia wszystko w bramce PR (``Context.PR_GATE``), wybiera
@@ -23,18 +22,20 @@ sięga ``PRZEGLADARKA`` (Atrapa efenix, z którą rozmawia tylko przeglądarka: 
 potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je instaluje, a nocą część Change mutations,
 której mutacje sprawdzają takie testy (``tools/mutacje_nocne.py``).
 
-Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każdy. Na pull request biegnie podstawa ``ci:``, gdy
+Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każda podstawa ``ci:``, a skrypty mutacji tylko nocą
+(ADR 0021, zmiana z 13.11). Na pull request biegnie podstawa ``ci:``, gdy
 zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji modelu TLA+ (``model_watched``: każda
 jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt, sprawdzenie,
 które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
 skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
 moduł, który skrypt importuje (silnik ``tools/lib/silnik_mutacji.py`` i jego zależności), uruchamiacz kroku
-(``LAUNCHER``) albo sprawdzenie, które uruchamiają jego mutacje, i podstawa z ``ci-czesci`` przy tej samej
+(``LAUNCHER``), sprawdzenie, które uruchamiają jego mutacje, moduł, który to sprawdzenie importuje, albo plik, który psuje
+jego mutacja (``Edit.file``, także plik, po który sprawdzenie sięga procesem albo ``pytest.main``), i podstawa z ``ci-czesci`` przy tej samej
 zmianie co na pull request, każdą częścią każdej liczby części od 1 do ``ci-czesci`` (``KrokSkilla.czesci``), bo pull
 request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
 Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju, a skill bez klucza ``pilnuje`` albo z
-kluczem, którego nie da się odczytać, biegnie zawsze. Poza importami samego skryptu mutacji i importami sprawdzeń
-skryptu mutacji modelu importów ani plików, które krok czyta, wybór nie liczy: każdy krok uruchamia pełne CI ``main``. Podstawa, którą wybrany skrypt
+kluczem, którego nie da się odczytać, biegnie zawsze. Innych plików, które krok czyta bez importu, wybór nie
+liczy: każdą podstawę uruchamia pełne CI ``main``, a skrypt mutacji noc, którą uruchomi inna zmiana. Podstawa, którą wybrany skrypt
 mutacji jej skilla i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 
 Polecenia skilla, które CI liczy, to wybrane kroki skilla i wywołania jego skryptów w krokach CI torów runu; nic więcej
@@ -144,8 +145,7 @@ class Tor:
 # zadania i tyle mutacji naraz biegnie w części nocy.
 RDZENIE_RUNNERA = 4
 TORY = (
-    Tor("windows-3.13", "pytest", "windows-3.13", "windows-latest", "3.13", ("e2e",), "pytest (Python 3.13, {numer}/{liczba})"),
-    Tor("windows-3.14", "pytest", "windows-3.14", "windows-latest", "3.14", ("e2e", "timing"), "pytest (Python 3.14, {numer}/{liczba})"),
+    Tor("windows-3.13", "pytest", "windows-3.13", "windows-latest", "3.13", ("e2e", "timing"), "pytest (Python 3.13, {numer}/{liczba})"),
     Tor("linux-3.14", "pytest", "linux-3.14", "ubuntu-latest", "3.14", (), "pytest (Python 3.14, Linux, {numer}/{liczba})"),
 )
 # Drive Centrum potrzebuje Windows (#409: tzdata, strefa, stare Centrum po aktualizacji); skille niezależne od systemu
@@ -208,7 +208,7 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
-    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push w ``tools/ci/wykonaj_zadanie.py --kroki-pushu`` biegnie też poza gitem.
+    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push go nie czyta.
     repository = cache(lambda: Repository.scan(root))
     tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)
@@ -264,7 +264,7 @@ Powod = tuple[bool, str, frozenset[str]]
 def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
     match zdarzenie:
         case Zdarzenie.PUSH:
-            return True, "", frozenset()
+            return (True, "", frozenset()) if step.verdict is None else (False, NIGHTLY, frozenset())
         case Zdarzenie.PULL_REQUEST:
             return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
         case Zdarzenie.NOC:
@@ -315,7 +315,7 @@ def _skrypt(step: Step, zmiana: frozenset[str], repository: Callable[[], Reposit
         return True, reason, files
     if touched:
         return True, _changes(touched), files
-    return False, "zmiany nie dotykają folderu skilla, importów skryptu, uruchamiacza kroku ani sprawdzeń, które uruchamiają mutacje skryptu", files
+    return False, "zmiany nie dotykają folderu skilla, importów skryptu, uruchamiacza kroku ani sprawdzeń, które uruchamiają mutacje skryptu, ich importów ani plików, które psują te mutacje", files
 
 
 def _skrypt_modelu(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:

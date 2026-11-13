@@ -46,6 +46,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.wall_clock import utc_now
 
 _STREAM_POLL_SECONDS: Final = 0.05
@@ -120,6 +121,8 @@ class EndedRun:
     """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
     settings: SettingsSnapshot | None = None
     """Migawka Ustawień Centrum ze startu Uruchomienia (``PreparedRun.settings``), z której Logi biorą pliki procesu."""
+    quantity_rules: QuantityRules | None = None
+    """Reguły ilości ze startu Uruchomienia (``PreparedRun.quantity_rules``), które Logi zapisują dla odtworzenia."""
     start_warnings: tuple[Message, ...] = ()
     """Ostrzeżenia ze startu (``Start.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
 
@@ -135,7 +138,8 @@ class EndedRun:
         started_at: datetime,
     ) -> EndedRun:
         return cls(
-            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings, prepared.warnings
+            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings,
+            prepared.quantity_rules, prepared.warnings
         )
 
     @property

@@ -5,12 +5,14 @@
 Zaakceptowana (decyzje Maksa Q1–Q26 z grilla 13.11.2026 w wątku T3).
 Wdrożenie idzie w pięciu PR-ach (Q24); ten ADR wchodzi w pierwszym z nich.
 Zmienia regułę korzenia z sekcji „Reguły i co ich pilnuje” w `AGENTS.md`: drabina szczebli ma teraz (e) i żyje w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), sekcja „Korzeń i chwast”.
+Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek; każda zmiana obowiązuje od merge'a ticketu, który ADR 0034 przy niej podaje.
 
 ## Kontekst
 
 Regułę „nazwij korzeń i napraw go na najwyższym szczeblu” pilnowały do dziś tylko dwa zdania prozy: w `AGENTS.md` i w kroku recenzenta skilla `przeglad`.
 Nic nie sprawdzało, że Ważne ma korzeń, ani nie liczyło, czy ten sam korzeń wraca w innym PR.
-Ręczny przegląd Ważnych z 28.10–12.11 (`~/.t3/notes/ogrod-2026-11-09/pierwszy-pass/ucieczki/`) przypisał im 41 kodów korzeni, a te same kody wracały w wielu PR-ach: `R-MATCH-KOD` w 14, `R-BEZ-TESTU` w 19, `R-MATCH-TEKST` w 10.
+Ręczny przegląd Ważnych z 28.10–12.11 przypisał im kody korzeni, a te same kody wracały w wielu PR-ach.
+Wystąpienia każdego kodu z co najmniej 2 PR-ów spisał audyt historii (Wdrożenie, punkt 5) w issues z etykietą `chwast`, np. z tego okna `R-MATCH-KOD` w 12 PR-ach (#1541), `R-BEZ-TESTU` w 18 (#1520), `R-MATCH-TEKST` w 6 (#1542); późniejsze werdykty dopisują tam następne PR-y.
 Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne Ważne gdzie indziej.
 
 ## Decyzja
@@ -20,9 +22,10 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 - Główna miara to udział Ważnych z powtórzonym korzeniem: korzeń, który pojawi się drugi raz w innym PR, to porażka (Q1).
 - Pojęcia żyją w skillu `przeglad`, nie w `GLOSSARY.md`, bo ten jest słownikiem domeny taty (Q5):
   - **Korzeń**: to, co skłoniło agenta do błędu, a nie sam błąd; kod z zamkniętej listy obok skilla;
-  - **Chwast**: korzeń, który dał Ważne w co najmniej 2 różnych PR-ach;
-  - **Szczebel**: poziom wyrwania korzenia, (a) druga droga i jeden właściciel, (b) typ albo lint, (c) test zachowania łapiący klasę, (d) zapadka, (e) punkt w „Co jest porażką” skilla `przeglad`.
+  - **Chwast**: korzeń, który dał Ważne w co najmniej 2 różnych PR-ach; [ADR 0034](0034-kod-jest-pamiecia.md) dokłada zapach, którego liczba na `main` rośnie dwa tygodnie z rzędu (#1627);
+  - **Szczebel**: poziom wyrwania korzenia, (a) druga droga i jeden właściciel, (b) typ albo lint, (c) test zachowania łapiący klasę, (d) zapadka, (e) punkt w „Co jest porażką” skilla `przeglad`; [ADR 0034](0034-kod-jest-pamiecia.md) zmienia (d) na regułę deklaratywną w gotowym narzędziu i zakazuje nowej zapadki na regexie linii (#1615).
 - Pytanie o korzeń uruchamia Ważne z przeglądu i czerwony `main` z prawdziwej zmiany (Q4); PR naprawy czerwonego `main` ma tę samą sekcję korzenia, a flaky test nie (Q10).
+  [ADR 0034](0034-kod-jest-pamiecia.md) liczy do źródeł chwastu poprawkę Maksa w wątku, która jest nim już dziś w `AGENTS.md` i skillu `przeglad`, dokłada spis zapachów (#1627), a issue czerwonego `main` kieruje do wątku autora PR, którego merge go zaczerwienił (#1621).
 
 ### Szczebel i dowód
 
@@ -32,9 +35,11 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
   Zapadka (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
   Przy (d) i przy (e) autor pisze jedno zdanie, czemu wyżej się nie da.
   To rozwinięcie decyzji Q7 i Q26 przez koordynatora (13.11.2026), do potwierdzenia przez Maksa.
+  [ADR 0034](0034-kod-jest-pamiecia.md) zastępuje zapadkę (d) regułą deklaratywną w gotowym narzędziu, a nową regułę struktury dopuszcza tylko jako typ, regułę ruff, kontrakt import-linter albo regułę ast-grep (#1612, #1613, #1615).
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja albo cofnięcie), a recenzent jedną sondą sprawdza siostrzaną formę (Q6).
 - Powrót korzenia wymusza szczebel wyżej niż poprzednio; brak wyższego idzie do Maksa (Q11).
 - Mały korzeń (do rozmiaru M) wyrywa się w tym samym PR, większy w osobnym PR korzenia scalanym najpierw, a oba PR-y łączą linki (Q8).
+  [ADR 0034](0034-kod-jest-pamiecia.md): PR, którego Ważne założyło albo uzupełniło issue „Chwast”, zamyka to issue sam, a większy korzeń idzie PR-em korzenia z tego samego wątku (#1619).
 
 ### Kody i werdykt
 
@@ -70,10 +75,12 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
   Oba numery to linki GitHuba, więc GitHub pokazuje je na osi czasu obu PR-ów.
   Granica mechanizmu: rozmiaru ponad M (Q8) bramka nie liczy, bo w jednym PR nie oddzieli linii korzenia od linii funkcji, więc o tym, czy wyrwanie mieści się w PR, czy idzie do PR korzenia, rozstrzyga recenzent według skilla `przeglad`.
 - Zgoda z góry na automatyczne issue „Chwast: R-KOD” z szablonem bez wolnej prozy (Korzeń, Wystąpienia, „Gotowe, gdy”), z etykietami `chwast` i `ready-for-agent`; zamyka je PR z „Korzeń z #issue” (Q12, Q15).
+  [ADR 0034](0034-kod-jest-pamiecia.md): `ready-for-agent` ma tylko chwast z czoła kolejki (#1620), a sierotę bierze ogrodnik, gdy w toku są mniej niż dwa chwasty (#1621).
 - Historyczne korzenie z powtórzeniami, których nic nie wyrwało, dostają issues do naprawy; jednorazowy audyt na `main` odtwarza przypadki kodów z co najmniej 2 PR-ów i zakłada issue tylko tam, gdzie nic dziś ich nie łapie (Q13, Q16).
 - Pomiar co poniedziałek: GitHub Actions o 6:00 aktualizuje issue „Rejestr korzeni” liczbami z szablonu, a zadanie T3 o 8:00 dokłada osąd o kodach i kartę w wątku (Q19, Q23).
   Liczby liczy `tools/rejestr_korzeni_tydzien.py` z rejestru (`rejestr_korzeni.read`): wystąpienie to Ważne albo blok czerwonego `main`, powtórzenie to wystąpienie kodu, który wcześniej wystąpił w innym PR (Q1), a tydzień trwa od poniedziałku 0:00 czasu polskiego.
   Historię tygodni narzędzie liczy od nowa z rejestru przy każdym uruchomieniu, więc treść issue nie jest drugim rejestrem.
+  [ADR 0034](0034-kod-jest-pamiecia.md) dokłada do pomiaru sześć liczb spisu zapachów (#1627) oraz liczbę zgód `ZGODA KORZEŃ` i `ZGODA SZOPA`, merge'y poza `tools/scal_pr.py` i zgód napisanych przez agentów (#1626).
 
 ## Wdrożenie
 

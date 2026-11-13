@@ -3,6 +3,15 @@
 import * as z from 'zod';
 
 /**
+ * ActivitiesCondition
+ */
+export const zActivitiesCondition = z.object({
+    kind: z.literal('activities'),
+    text: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * AddressesNotMoved
  *
  * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
@@ -21,6 +30,12 @@ export const zApiTiming = z.object({
     operation: z.enum([
         'getHealth',
         'getSettings',
+        'addWorker',
+        'changeWorker',
+        'switchWorker',
+        'removeWorker',
+        'getWorkerSuggestions',
+        'assignWorkerAddress',
         'chooseRegister',
         'openRegister',
         'choosePeriodsDirectory',
@@ -28,8 +43,17 @@ export const zApiTiming = z.object({
         'changeInboxPassword',
         'changeFolders',
         'changeAutostart',
+        'changeRemindersEnabled',
+        'changeReminders',
+        'previewReminder',
         'getSettingsHistory',
+        'getQuantityDifferences',
+        'markQuantityException',
         'getQuantityRules',
+        'addQuantityRule',
+        'changeQuantityRule',
+        'removeQuantityRule',
+        'previewQuantityRules',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -182,6 +206,28 @@ export const zCollectiveFileVersion = z.object({
 });
 
 /**
+ * ComponentCondition
+ *
+ * ``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id).
+ */
+export const zComponentCondition = z.object({
+    kind: z.literal('component'),
+    component: z.string(),
+    negated: z.boolean()
+});
+
+/**
+ * ContractCondition
+ *
+ * Pierwsze słowo ``UMOWA`` jest tym słowem.
+ */
+export const zContractCondition = z.object({
+    kind: z.literal('contract'),
+    word: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * Count
  */
 export const zCount = z.object({
@@ -242,6 +288,18 @@ export const zDadNoteText = z.object({
 });
 
 /**
+ * DateCondition
+ *
+ * ``DATA`` przypada w dni tygodnia (0 to poniedziałek) od godziny ``since`` (``GG:MM``).
+ */
+export const zDateCondition = z.object({
+    kind: z.literal('date'),
+    days: z.array(z.int()),
+    since: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * DecisionAnswer
  */
 export const zDecisionAnswer = z.object({
@@ -272,6 +330,22 @@ export const zDeviceComponent = z.object({
         'tv',
         'extender'
     ]).nullable()
+});
+
+/**
+ * DevicesCondition
+ *
+ * ``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty).
+ */
+export const zDevicesCondition = z.object({
+    kind: z.literal('devices'),
+    mode: z.enum([
+        'empty',
+        'exactly',
+        'contains'
+    ]),
+    text: z.string(),
+    negated: z.boolean()
 });
 
 /**
@@ -318,6 +392,19 @@ export const zFoldersChange = z.object({
 });
 
 /**
+ * GroupCondition
+ */
+export const zGroupCondition = z.object({
+    kind: z.literal('group'),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]),
+    negated: z.boolean()
+});
+
+/**
  * Health
  *
  * Tożsamość działającego Centrum.
@@ -353,33 +440,6 @@ export const zHistoryRelease = z.object({
     version: z.string().nullable(),
     commit: z.string().nullable(),
     change: z.string()
-});
-
-/**
- * HistoryRow
- *
- * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
- * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
- * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
- */
-export const zHistoryRow = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    source: z.enum([
-        'tata',
-        'outside',
-        'release'
-    ]),
-    release: zHistoryRelease.nullable(),
-    undoes: z.string().nullable(),
-    file: z.string(),
-    section: z.string().nullable(),
-    changes: z.array(zHistoryChange),
-    secret: z.boolean(),
-    undoable: z.boolean(),
-    refused: z.boolean(),
-    removed: z.boolean(),
-    reason: z.string().nullable()
 });
 
 /**
@@ -471,6 +531,16 @@ export const zKindTableCell = z.object({
         z.int(),
         z.literal('nieliczbowa')
     ])
+});
+
+/**
+ * LeaveEmptyAction
+ *
+ * Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA).
+ */
+export const zLeaveEmptyAction = z.object({
+    kind: z.literal('leave_empty'),
+    columns: z.array(z.string())
 });
 
 /**
@@ -578,6 +648,15 @@ export const zMissingPath = z.object({
  */
 export const zNotSetPath = z.object({
     state: z.literal('not_set')
+});
+
+/**
+ * NothingAction
+ *
+ * Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu.
+ */
+export const zNothingAction = z.object({
+    kind: z.literal('nothing')
 });
 
 /**
@@ -726,6 +805,33 @@ export const zPhaseProgress = z.object({
         'failed'
     ]),
     duration_ms: z.int()
+});
+
+/**
+ * PreviewCell
+ *
+ * Kolumna wiersza w podglądzie: ilość z Reguł ilości teraz (``before``) i po zmianie (``after``) oraz wpis taty
+ * (liczba albo „nieliczbowa”).
+ */
+export const zPreviewCell = z.object({
+    column: z.string(),
+    name: z.string().nullable(),
+    before: z.int(),
+    after: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ])
+});
+
+/**
+ * PreviewFile
+ *
+ * Plik zbiorczy okresu ``period`` po Przebiegu rozliczeń w podglądzie; ``rows``: jego Wiersze danych.
+ */
+export const zPreviewFile = z.object({
+    period: z.string(),
+    rows: z.int()
 });
 
 /**
@@ -979,6 +1085,58 @@ export const zReadyPath = z.object({
  */
 export const zRejected = z.object({
     state: z.literal('rejected')
+});
+
+/**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export const zReminderPreview = z.object({
+    subject: z.string(),
+    text: z.string()
+});
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export const zReminderRange = z.object({
+    start: z.string(),
+    end: z.string()
+});
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export const zRemindersEnabledChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export const zRemindersForm = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string()
+});
+
+/**
+ * RemoveRule
+ */
+export const zRemoveRule = z.object({
+    kind: z.literal('remove'),
+    rule_id: z.string()
 });
 
 /**
@@ -1239,6 +1397,112 @@ export const zQuantitiesToFillReady = z.object({
     settled: z.boolean(),
     kinds: z.array(zKindToFill),
     description_columns: z.array(zDescriptionColumn)
+});
+
+/**
+ * RuleColumn
+ *
+ * Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest
+ * pusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste.
+ */
+export const zRuleColumn = z.object({
+    letter: z.string(),
+    name: z.string().nullable(),
+    writable: z.boolean()
+});
+
+/**
+ * RuleWrite
+ */
+export const zRuleWrite = z.object({
+    column: z.string(),
+    value: z.int(),
+    multiplier: z.enum([
+        'once',
+        'component',
+        'pieces'
+    ]),
+    component: z.string().nullable()
+});
+
+/**
+ * FillAction
+ */
+export const zFillAction = z.object({
+    kind: z.literal('fill'),
+    writes: z.array(zRuleWrite)
+});
+
+/**
+ * RuleForm
+ *
+ * Reguła ilości w edytorze: zakres, warunki („ale nie gdy”: ``negated``) i działanie. ``action`` ``None``: tata nie
+ * wybrał działania, więc zapis to odmowa z polem ``to``.
+ */
+export const zRuleForm = z.object({
+    scope: z.enum([
+        'known',
+        'unknown',
+        'every'
+    ]),
+    conditions: z.array(z.union([
+        zComponentCondition,
+        zDevicesCondition,
+        zActivitiesCondition,
+        zContractCondition,
+        zDateCondition,
+        zGroupCondition
+    ])),
+    action: z.discriminatedUnion('kind', [
+        zFillAction,
+        zNothingAction,
+        zLeaveEmptyAction
+    ]).nullable()
+});
+
+/**
+ * AddRule
+ */
+export const zAddRule = z.object({
+    kind: z.literal('add'),
+    rule: zRuleForm
+});
+
+/**
+ * ChangeRule
+ */
+export const zChangeRule = z.object({
+    kind: z.literal('change'),
+    rule_id: z.string(),
+    rule: zRuleForm
+});
+
+/**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export const zQuantityDifference = z.object({
+    id: z.string(),
+    period: z.string(),
+    row: z.int(),
+    devices: z.string(),
+    activities: z.string(),
+    when: z.string(),
+    column: z.string(),
+    name: z.string().nullable(),
+    rule: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ]),
+    draft: zRuleForm
 });
 
 /**
@@ -1555,9 +1819,62 @@ export const zSentenceText = z.object({
 });
 
 /**
+ * HistoryRuleChange
+ *
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
+ */
+export const zHistoryRuleChange = z.object({
+    key: z.string(),
+    before: z.array(z.union([zSentenceText, zSentenceColumn])).nullable(),
+    after: z.array(z.union([zSentenceText, zSentenceColumn])).nullable()
+});
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export const zHistoryRow = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    source: z.enum([
+        'tata',
+        'outside',
+        'release'
+    ]),
+    release: zHistoryRelease.nullable(),
+    undoes: z.string().nullable(),
+    file: z.string(),
+    section: z.string().nullable(),
+    changes: z.array(zHistoryChange),
+    secret: z.boolean(),
+    undoable: z.boolean(),
+    refused: z.boolean(),
+    removed: z.boolean(),
+    reason: z.string().nullable(),
+    rules: z.array(zHistoryRuleChange)
+});
+
+/**
+ * PreviewWithoutFiles
+ *
+ * Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zPreviewWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods']),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])).nullable()
+});
+
+/**
  * QuantityRuleSentence
  *
- * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako
+ * formularz edytora (``rule``).
  */
 export const zQuantityRuleSentence = z.object({
     id: z.string(),
@@ -1566,7 +1883,8 @@ export const zQuantityRuleSentence = z.object({
         'unknown',
         'every'
     ]),
-    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])),
+    rule: zRuleForm
 });
 
 /**
@@ -1581,6 +1899,52 @@ export const zSettingProblem = z.object({
 });
 
 /**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export const zDifferencesReady = z.object({
+    state: z.literal('ready'),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    differences: z.array(zQuantityDifference),
+    more: z.int(),
+    exceptions: z.int(),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zDifferencesWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods']),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export const zExceptionSaved = z.object({
+    differences: z.discriminatedUnion('state', [
+        zDifferencesReady,
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+    ]),
+    change: z.string().nullable()
+});
+
+/**
  * QuantityRulesSettings
  *
  * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
@@ -1589,8 +1953,43 @@ export const zSettingProblem = z.object({
 export const zQuantityRulesSettings = z.object({
     rules: z.array(zQuantityRuleSentence),
     devices: z.array(zDeviceComponent),
+    columns: z.array(zRuleColumn),
     rules_problem: zSettingProblem.nullable(),
     devices_problem: zSettingProblem.nullable()
+});
+
+/**
+ * QuantityRulesSaved
+ *
+ * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * zapis niczego nie zmienił.
+ */
+export const zQuantityRulesSaved = z.object({
+    quantity_rules: zQuantityRulesSettings,
+    change: z.string().nullable()
+});
+
+/**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export const zRemindersSetting = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string(),
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    enabled: z.boolean(),
+    since: z.iso.date().nullable(),
+    problem: zSettingProblem.nullable()
 });
 
 /**
@@ -1648,6 +2047,68 @@ export const zNotifications = z.object({
         zPricingNotification
     ])),
     message: zMessage.nullable()
+});
+
+/**
+ * SummedRule
+ */
+export const zSummedRule = z.object({
+    id: z.string(),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
+ * PreviewSum
+ *
+ * Kolumna, w którą po zmianie wpisało w tym wierszu kilka reguł, z sumą i tymi regułami („Z = 2, bo reguły A i B”).
+ */
+export const zPreviewSum = z.object({
+    column: z.string(),
+    name: z.string().nullable(),
+    total: z.int(),
+    rules: z.array(zSummedRule)
+});
+
+/**
+ * PreviewRow
+ *
+ * Wiersz danych, w którym po zmianie reguła da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego,
+ * ``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”) i kolumny. Bez adresu, numeru
+ * zlecenia, ``UMOWA`` i daty dziennej.
+ */
+export const zPreviewRow = z.object({
+    period: z.string(),
+    row: z.int(),
+    devices: z.string(),
+    activities: z.string(),
+    when: z.string(),
+    cells: z.array(zPreviewCell),
+    sums: z.array(zPreviewSum)
+});
+
+/**
+ * PreviewReady
+ *
+ * Skutek zmiany Reguł ilości na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+ * rachunkiem co Kontrola ilości.
+ *
+ * ``sentence``: zdanie reguły po zmianie (``None`` przy usunięciu). ``unread``: okresy, których Pliku zbiorczego nie
+ * dało się przeczytać. ``changed``: wiersze, w których zmienią się ilości z Reguł ilości (albo kolumny zostawione
+ * puste), z czego ``changed_as_tata`` będzie tak, jak wpisał tata. ``differences_before`` i ``differences_after``:
+ * różnice Kontroli ilości tych plików teraz i po zmianie. ``rows``: zmienione wiersze z różnicą od taty, najwyżej
+ * ``SHOWN_ROWS``, a ``more`` reszta.
+ */
+export const zPreviewReady = z.object({
+    state: z.literal('ready'),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])).nullable(),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    changed: z.int(),
+    changed_as_tata: z.int(),
+    differences_before: z.int(),
+    differences_after: z.int(),
+    rows: z.array(zPreviewRow),
+    more: z.int()
 });
 
 /**
@@ -1789,12 +2250,15 @@ export const zConfiguration = z.object({
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export const zUnknownReportSender = z.object({
     day: z.iso.date(),
     sender: z.string(),
-    reason: z.string()
+    reason: z.string(),
+    worker: z.string().nullable()
 });
 
 /**
@@ -1804,7 +2268,7 @@ export const zUnknownReportSender = z.object({
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export const zReportsView = z.object({
     clicked_at: z.iso.datetime().nullable(),
@@ -1900,6 +2364,41 @@ export const zWithoutQuantityUnread = z.object({
 });
 
 /**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export const zWorkerAddress = z.object({
+    address: z.string()
+});
+
+/**
+ * WorkerEdit
+ *
+ * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
+ * ``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to.
+ */
+export const zWorkerEdit = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string()),
+    rename_confirmed: z.boolean().optional().default(false)
+});
+
+/**
+ * WorkerForm
+ *
+ * Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu
+ * pracownika i adresy Raportów wykonawcy, tak jak je wpisał tata.
+ */
+export const zWorkerForm = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string())
+});
+
+/**
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
@@ -1945,7 +2444,8 @@ export const zSettings = z.object({
     workers: zWorkerListSetting,
     inbox: zInboxSetting,
     inbox_problem: zSettingProblem.nullable(),
-    autostart: zAutostartSetting
+    autostart: zAutostartSetting,
+    reminders: zRemindersSetting
 });
 
 /**
@@ -1973,6 +2473,19 @@ export const zInboxPasswordSaved = z.object({
         'rejected',
         'no_network'
     ])
+});
+
+/**
+ * WorkerSaved
+ *
+ * Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+ * które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+ * (``rename_confirmed``).
+ */
+export const zWorkerSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    rename_warning: z.string().nullish()
 });
 
 /**
@@ -2227,6 +2740,45 @@ export const zRunEvent = z.object({
  */
 export const zWorkerSettlementRequest = z.object({
     worker: z.string()
+});
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export const zWorkerSuggestion = z.object({
+    login: z.string(),
+    orders: z.int()
+});
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export const zWorkerSuggestions = z.object({
+    state: z.enum([
+        'read',
+        'not_set',
+        'unreadable'
+    ]),
+    suggestions: z.array(zWorkerSuggestion),
+    message: z.string().nullable()
+});
+
+/**
+ * WorkerSwitches
+ *
+ * Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
+ * ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik.
+ */
+export const zWorkerSwitches = z.object({
+    active: z.boolean().nullish(),
+    reminders: z.boolean().nullish()
 });
 
 /**
@@ -2905,6 +3457,73 @@ export const zChoosePeriodsDirectoryResponse = zChoice;
  */
 export const zGetQuantityRulesResponse = zQuantityRulesSettings;
 
+export const zAddQuantityRuleBody = zRuleForm;
+
+/**
+ * Successful Response
+ */
+export const zAddQuantityRuleResponse = zQuantityRulesSaved;
+
+/**
+ * Response Getquantitydifferences
+ *
+ * Successful Response
+ */
+export const zGetQuantityDifferencesResponse = z.discriminatedUnion('state', [
+    zDifferencesReady,
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
+
+export const zMarkQuantityExceptionPath = z.object({
+    difference_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zMarkQuantityExceptionResponse = zExceptionSaved;
+
+/**
+ * Edit
+ */
+export const zPreviewQuantityRulesBody = z.discriminatedUnion('kind', [
+    zAddRule,
+    zChangeRule,
+    zRemoveRule
+]);
+
+/**
+ * Response Previewquantityrules
+ *
+ * Successful Response
+ */
+export const zPreviewQuantityRulesResponse = z.discriminatedUnion('state', [
+    zPreviewReady,
+    zPreviewWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zPreviewWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
+
+export const zRemoveQuantityRulePath = z.object({
+    rule_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveQuantityRuleResponse = zQuantityRulesSaved;
+
+export const zChangeQuantityRuleBody = zRuleForm;
+
+export const zChangeQuantityRulePath = z.object({
+    rule_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeQuantityRuleResponse = zQuantityRulesSaved;
+
 /**
  * Successful Response
  */
@@ -2915,12 +3534,87 @@ export const zChooseRegisterResponse = zChoice;
  */
 export const zOpenRegisterResponse = zOpened;
 
+export const zChangeRemindersBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersResponse = zChoice;
+
+export const zChangeRemindersEnabledBody = zRemindersEnabledChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersEnabledResponse = zChoice;
+
+export const zPreviewReminderBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zPreviewReminderResponse = zReminderPreview;
+
 export const zChangeThemeBody = zThemeChange;
 
 /**
  * Successful Response
  */
 export const zChangeThemeResponse = zChoice;
+
+export const zAddWorkerBody = zWorkerForm;
+
+/**
+ * Successful Response
+ */
+export const zAddWorkerResponse = zChoice;
+
+/**
+ * Successful Response
+ */
+export const zGetWorkerSuggestionsResponse = zWorkerSuggestions;
+
+export const zRemoveWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveWorkerResponse = zChoice;
+
+export const zChangeWorkerBody = zWorkerEdit;
+
+export const zChangeWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeWorkerResponse = zWorkerSaved;
+
+export const zAssignWorkerAddressBody = zWorkerAddress;
+
+export const zAssignWorkerAddressPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zAssignWorkerAddressResponse = zChoice;
+
+export const zSwitchWorkerBody = zWorkerSwitches;
+
+export const zSwitchWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zSwitchWorkerResponse = zChoice;
 
 /**
  * Successful Response

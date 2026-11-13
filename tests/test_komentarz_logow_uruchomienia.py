@@ -78,10 +78,10 @@ from rozliczenia.centrum.logs_disk import (
 from rozliczenia.centrum.outbox import PeriodThread, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
-from rozliczenia.centrum.run_logs import READ_VALUES, RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
+from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, shown
+from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, shown
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
@@ -1503,6 +1503,11 @@ FULL_LOGS: Final[dict[str, Any]] = {
         }
     ],
     "input_copy_notes": ["Syntetyczna uwaga kopii"],
+    "quantity_rules": {
+        "rules": '{"schema_version":1,"reguly":[{"id":"regula-syntetyczna","zakres":"znane","jesli":[{"rodzaj":"czynnosci",'
+        '"tekst":"czynność reguły syntetyczna"}],"to":{"rodzaj":"wpisz","wpisy":[{"kolumna":"AA","wartosc":2,"razy":"raz"}]}}]}',
+        "devices": '{"schema_version":1,"urzadzenia":[{"id":"skladnik-syntetyczny","zapisy":["składnik syntetyczny"]}]}',
+    },
 }
 
 

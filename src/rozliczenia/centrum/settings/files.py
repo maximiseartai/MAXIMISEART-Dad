@@ -7,11 +7,33 @@ wchodzi żadną drogą. Brak pliku to wartość domyślna. Rejestr ``SETTINGS_FI
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Generic, Literal, TypeVar
+import json
+from typing import Generic, Literal, Protocol, TypeVar
+
+import yaml
 
 T = TypeVar("T")
+
+
+class _SettingsDumper(yaml.SafeDumper):
+    """Zapis YAML plików Ustawień: napis ze znakiem NEL (U+0085) w cudzysłowie podwójnym, w którym stoi on jako ``\\N``,
+    bo przy ``allow_unicode`` pakiet yaml pisze go wprost, a przy odczycie czyta jako podział linii ze spacją."""
+
+
+def _text(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style='"' if "\x85" in value else None)
+
+
+_SettingsDumper.add_representer(str, _text)
+
+
+def settings_yaml(document: Mapping[str, object]) -> str:
+    """Treść pliku Ustawień w YAML: klucze w kolejności ``document``, polskie litery wprost, bez łamania długich
+    linii; każdy napis wraca z pliku bez zmian."""
+
+    return yaml.dump(dict(document), Dumper=_SettingsDumper, allow_unicode=True, sort_keys=False, width=1_000_000)
 
 
 FieldName = Literal[
@@ -30,8 +52,36 @@ FieldName = Literal[
     "adresy",
     "aktywny",
     "przypomnienia",
+    # przypomnienia.yaml
+    "wlaczone",
+    "wlaczone_od",
+    "pora_poranna",
+    "pora_wieczorna",
+    "od",
+    "do",
+    "pierwsze_przypomnienie",
+    "tresc",
+    "stopka",
     # przełącznik startu razem z Windows (skrót w folderze Autostart)
     "autostart",
+    # wyjatki-ilosci.yaml (różnice Kontroli ilości oznaczone „To był wyjątek”)
+    "wyjatki",
+    "okres",
+    "wiersz",
+    "tata",
+    "odcisk",
+    # reguła pliku reguly-ilosci.yaml w edytorze Reguł ilości
+    "jesli",
+    "skladnik",
+    "tekst",
+    "slowo",
+    "dni",
+    "od",
+    "to",
+    "wpisy",
+    "kolumna",
+    "wartosc",
+    "kolumny",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
 
@@ -109,6 +159,18 @@ class KeyChange:
     after: str | None
 
 
+RemovedWhat = Literal["worker", "login"]
+"""Co zmiana usuwa z Listy Wykonawców: całego Wykonawcę albo tylko jego login."""
+
+
+@dataclass(frozen=True)
+class RemovedLogins:
+    """Loginy, które zmiana usuwa z Listy Wykonawców, i czy znika z nimi cały Wykonawca (``what``)."""
+
+    logins: frozenset[str]
+    what: RemovedWhat
+
+
 @dataclass(frozen=True)
 class SettingsFile(Generic[T]):
     """Plik Ustawień Centrum w ``config``.
@@ -119,7 +181,9 @@ class SettingsFile(Generic[T]):
     ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged`` klucz dla Logów Centrum, oba bez danych osobowych. Plik
     ``secret`` ma w Historii tylko klucze, bez wartości, i nie da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie
     pamięta, więc ``unchecked`` daje wartość jego treści bez reguł ``parse`` (``None``: treść nie daje wartości): zapis
-    taty na złej treści zaczyna od niej, a ``parse`` zapisu odrzuca to, czego zapis nie naprawił.
+    taty na złej treści zaczyna od niej, a ``parse`` zapisu odrzuca to, czego zapis nie naprawił. ``removed_logins``
+    daje loginy, które zmiana wartości usuwa z Listy Wykonawców (``None``: żadnego): właściciel zapisuje zmianę taty
+    dopiero, gdy żaden z nich nie występuje w okresie (ADR 0032).
     """
 
     name: str
@@ -132,3 +196,58 @@ class SettingsFile(Generic[T]):
     logged: Callable[[str], str] = str
     secret: bool = False
     unchecked: Callable[[bytes | None], T | None] | None = None
+    removed_logins: Callable[[T, T], RemovedLogins | None] | None = None
+
+
+class _Identified(Protocol):
+    @property
+    def id(self) -> str: ...
+
+
+_Entry = TypeVar("_Entry", bound=_Identified)
+
+
+@dataclass(frozen=True)
+class EntriesById(Generic[_Entry]):
+    """Jak porównać i odtworzyć wpisy pliku, który jest listą wpisów z ``id``: klucz Historii ``<sekcja>.<id>``, a wartość
+    to wpis jako JSON (``dumped``) i z powrotem (``parsed``; ``None``: wpisu nie da się odczytać)."""
+
+    section: str
+    dumped: Callable[[_Entry], dict[str, object]]
+    parsed: Callable[[object], _Entry | None]
+
+    def diff(self, before: tuple[_Entry, ...], after: tuple[_Entry, ...]) -> tuple[KeyChange, ...]:
+        old: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in before}
+        new: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in after}
+        return tuple(
+            KeyChange(f"{self.section}.{identifier}", old.get(identifier), new.get(identifier))
+            for identifier in dict.fromkeys((*old, *new))
+            if old.get(identifier) != new.get(identifier)
+        )
+
+    def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
+        """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
+        sekcji albo wpis, którego nie da się odczytać, zostaje bez zmian."""
+
+        entries = list(current)
+        for change in changes:
+            section, _, identifier = change.key.partition(".")
+            if section != self.section:
+                continue
+            kept: list[_Entry] = [entry for entry in entries if entry.id != identifier]
+            if change.before is None:
+                entries = kept
+                continue
+            try:
+                restored = self.parsed(json.loads(change.before))
+            except ValueError:
+                continue
+            if restored is None:
+                continue
+            position: int = next((index for index, entry in enumerate(entries) if entry.id == identifier), len(kept))
+            entries = [*kept[:position], restored, *kept[position:]]
+        return tuple(entries)
+
+
+def _entry_json(entry: dict[str, object]) -> str:
+    return json.dumps(entry, ensure_ascii=False, separators=(", ", ": "))

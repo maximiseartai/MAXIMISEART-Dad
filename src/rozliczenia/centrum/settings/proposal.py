@@ -52,15 +52,26 @@ Proposal = Edit[T] | Nothing | Later | Refuse
 
 
 @dataclass(frozen=True)
+class Waiting:
+    """Złe ustawienie pliku migracji, która przy tym starcie nie doszła do skutku (``Later``, pamięć zmian z Wydań
+    albo Historia Ustawień, których nie da się przeczytać, wyjątek albo nieudany zapis): ``sentence``, dopóki pliku nie
+    ma, a ``old_files`` mówi, że w folderze ``config`` leżą stare pliki, które migracja przenosi. Bez starych plików
+    migracja nie ma czego przenieść, więc brak pliku to wartości domyślne."""
+
+    sentence: str
+    old_files: Callable[[Path], bool]
+
+
+@dataclass(frozen=True)
 class ReleaseChange(Generic[T]):
     """Zmiana jednego pliku Ustawień Centrum; ``id`` w postaci ``rrrr-mm-nazwa`` jest jej pamięcią u taty.
 
     ``refused_absent``: zdanie złego ustawienia, gdy zmiana została odrzucona, a jej pliku dalej nie ma (migracja, bez
-    której plik nie ma danych taty); ``None``: brak pliku po odmowie to wartości domyślne pliku. ``waiting_absent``: tak
-    samo, gdy zmiana przy tym starcie dała ``Later``, więc wróci przy następnym."""
+    której plik nie ma danych taty); ``None``: brak pliku po odmowie to wartości domyślne pliku. ``waiting``: tak samo,
+    gdy zmiana przy tym starcie nie doszła do skutku, więc wróci przy następnym."""
 
     id: str
     file: SettingsFile[T]
     propose: Callable[[ReleaseInputs[T]], Proposal[T]]
     refused_absent: str | None = None
-    waiting_absent: str | None = None
+    waiting: Waiting | None = None

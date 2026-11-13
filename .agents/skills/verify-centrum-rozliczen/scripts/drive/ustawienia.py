@@ -241,6 +241,7 @@ def drive(run: Run, page: Page) -> None:
     _saved_and_undo(run, page)
     _failure_in_window(run, page)
     _failure_after_window(run, page)
+    _failure_keeps_next_choice(run, page)
     _history(run, page)
     _history_release(run, page)
     _refusal_at_field(run, page)
@@ -248,6 +249,7 @@ def drive(run: Run, page: Page) -> None:
     _bad_settings_file(run, page)
     _autostart(run, page)
     _inbox_password(run, page)
+    _reminders(run, page)
 
 
 def _toast(scope: Page | Locator, title: str) -> Locator:
@@ -355,6 +357,40 @@ def _failure_after_window(run: Run, page: Page) -> None:
         page.unroute(theme)
     expect(page.locator("html")).to_have_class("dark")
     run.check(run.remembered("motyw") == "dark", "the save that failed after the window closed left the theme as it was")
+
+
+def _failure_keeps_next_choice(run: Run, page: Page) -> None:
+    """A failed save of Motyw takes the page back to the theme of the settings file only when it was Dad's last choice:
+    while his next choice still waits for its answer, the page keeps that one (review #1535 r1, D1)."""
+
+    run.step(FEATURE, "ustawienia-blad-zostawia-nastepny-wybor")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    held: list[Route] = []
+    # Harness: the saves are held, as three quick clicks at tata's can wait for their answers together.
+    page.route(theme, lambda route: held.append(route))
+    try:
+        for click in ("Jasny", "Ciemny", "Jasny"):
+            themes.get_by_role("button", name=click, exact=True).click()
+        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        run.check(len(held) == 3, f"each click on Motyw is a save that waits for its answer ({len(held)} requests, held)")
+        held.pop(1).fulfill(status=500, body="")
+        expect(error_toasts(page)).to_have_count(1)
+        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        dark = page.evaluate("document.documentElement.classList.contains('dark')")
+        pressed = themes.get_by_role("button", name="Jasny", exact=True).get_attribute("aria-pressed")
+        run.check(
+            (dark, pressed) == (False, "true"),
+            f"the failed save of Ciemny keeps Dad's next choice Jasny, which still waits (dark={dark}, Jasny={pressed})",
+        )
+    finally:
+        for route in held:
+            route.fulfill(status=500, body="")
+        page.unroute(theme)
+    expect(page.locator("html")).to_have_class("dark")
+    expect(error_toasts(page)).to_have_count(0, timeout=10_000)
+    close_settings(page)
+    run.check(run.remembered("motyw") == "dark", "the failed saves left the theme as it was")
 
 
 def _history(run: Run, page: Page) -> None:
@@ -712,6 +748,88 @@ def _inbox_password(run: Run, page: Page) -> None:
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _reminders(run: Run, page: Page) -> None:
+    """Przypomnienia o raporcie: pory that overlap are refused at their field and nothing is saved; the preview shows the
+    fixed subject and the mail with Dad's first sentence and footer before saving; „Zapisz” and the switch save with
+    „Zapisano · Cofnij”, the first switch-on remembers today, and Historia names the change."""
+
+    run.step(FEATURE, "ustawienia-przypomnienia")
+    reminders = run.config / "przypomnienia.yaml"
+    window = open_settings(page, "Przypomnienia")
+    switch = window.get_by_role("switch", name="Przypomnienia o raporcie", exact=True)
+    preview = window.get_by_role("region", name="Podgląd przypomnienia")
+    expect(switch).not_to_be_checked()
+    expect(preview).to_contain_text("Przypomnienie: raport za dzień")
+    expect(preview).to_contain_text("Temat jest stały: po nim Centrum poznaje odpowiedzi Wykonawców.")
+    expect(preview).to_contain_text("Poproszę o wysłanie raportu za dzień")
+    expect(preview).to_contain_text("12345679 nie brak klienta")
+    run.check(not reminders.exists(), "with no file the section shows the values of ADR 0030, switched off")
+
+    morning_end = window.get_by_label("Pora poranna do", exact=True)
+    morning_end.fill("19:00")
+    window.get_by_role("button", name="Zapisz przypomnienia", exact=True).click()
+    evening = window.get_by_role("listitem", name="Pora wieczorna")
+    expect(evening.get_by_role("alert")).to_have_text(
+        "Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna."
+    )
+    expect(window.get_by_label("Pora wieczorna od", exact=True)).to_have_attribute("aria-invalid", "true")
+    run.check(not reminders.exists(), "pory that overlap are refused under Pora wieczorna and nothing is saved")
+    run.capture(page, "360-ustawienia-przypomnienia-odmowa", full_page=False)
+
+    morning_end.fill("12:00")
+    window.get_by_label("Treść przypomnienia", exact=True).fill("Dzień dobry, czekam na raport za {dzień}.")
+    window.get_by_label("Stopka przypomnienia", exact=True).fill("Pozdrawiam\nTata Testowy")
+    expect(evening.get_by_role("alert")).to_have_count(0)
+    expect(preview).to_contain_text("Dzień dobry, czekam na raport za ")
+    expect(preview).to_contain_text("Tata Testowy")
+    run.check(not reminders.exists(), "the preview shows Dad's sentence and footer before anything is saved")
+    preview.scroll_into_view_if_needed()
+    run.capture(page, "361-ustawienia-przypomnienia-podglad", full_page=False)
+
+    window.get_by_role("button", name="Zapisz przypomnienia", exact=True).click()
+    expect(_toast(window, "Zapisano")).to_be_visible()
+    run.wait_for(lambda: reminders.exists() and "'12:00'" in read_text(reminders), "the file has the new morning")
+    switch.click()
+    expect(switch).to_be_checked()
+    settings = run.api("/api/settings", "ustawienia-przypomnienia")
+    shown = settings["reminders"]
+    run.check(
+        isinstance(shown, dict)
+        and shown["enabled"] is True
+        and shown["since"] is not None
+        and shown["morning"] == {"start": "08:00", "end": "12:00"}
+        and shown["footer"] == "Pozdrawiam\nTata Testowy",
+        "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer",
+    )
+    expect(window.get_by_role("listitem", name="Przypomnienia o raporcie")).to_contain_text("Idą od ")
+    run.capture(page, "362-ustawienia-przypomnienia", full_page=False)
+
+    rows = open_settings(page, "Historia").get_by_role("list", name="Zmiany").get_by_role("listitem")
+    expect(rows.first).to_contain_text("Przypomnienia o raporcie")
+    expect(rows.nth(1)).to_contain_text("Pora poranna")
+    expect(rows.nth(1)).to_contain_text("08:00 – 17:00")
+    expect(rows.nth(1)).to_contain_text("08:00 – 12:00")
+    run.check(True, "Historia names the switch and the morning with before → after")
+
+    open_settings(page, "Przypomnienia")
+    page.set_viewport_size(NARROW)
+    try:
+        expect(switch).to_be_checked()
+        run.capture(page, "363-ustawienia-przypomnienia-waskie", full_page=False)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+    # The step leaves the reminders as it found them, switched off: switched on, their work writes to config in its
+    # pora, and a later feature of the same run (aktualizacja) expects config untouched by anything but itself.
+    switch.click()
+    expect(switch).not_to_be_checked()
+    after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
+    run.check(
+        isinstance(after, dict) and after["enabled"] is False,
+        "the step switches the reminders off again, so their work leaves config alone for the rest of the run",
+    )
+    close_settings(page)
 
 
 @contextmanager

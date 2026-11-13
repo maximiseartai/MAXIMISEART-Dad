@@ -38,6 +38,11 @@ Pierwszą instalację robi osoba utrzymująca narzędzie:
    `Uruchamiaj Centrum razem z Windows` w oknie `Ustawienia`, w sekcji
    `Narzędzie`.
 
+   Przypomnienia o raporcie włączasz i wyłączasz w oknie `Ustawienia`, w
+   sekcji `Przypomnienia`. Tam ustawiasz też pory, godzinę pierwszego
+   przypomnienia, pierwsze zdanie i stopkę maila; podgląd pod spodem pokazuje
+   mail tak, jak dostanie go Wykonawca. Zmiana działa od następnej minuty.
+
 Osoba utrzymująca narzędzie umieszcza w folderze `config` narzędzia trzy
 wzorce: `Wzorzec rozliczenia wewnętrznego.xlsx`, `Wzorzec pliku zbiorczego.xlsx`
 i `Wzorzec rozliczenia pracownika.xlsx`. Ten ostatni to pusty plik rozliczenia
@@ -49,7 +54,20 @@ W tym samym folderze `config` leży też Lista Wykonawców `wykonawcy.yaml`,
 czyli lista Twoich pracowników z ich adresami. Ten plik jest tylko na Twoim
 komputerze, nie w internecie. Plik `wykonawcy.example.yaml` obok to przykład z
 wymyślonymi nazwiskami; narzędzie z niego nie korzysta. Listę Wykonawców
-widzisz w oknie `Ustawienia`, w sekcji `Wykonawcy`.
+prowadzisz sam w oknie `Ustawienia`, w sekcji `Wykonawcy`: `Dodaj Wykonawcę`
+dodaje pracownika z loginem z kolumny `WYKONAWCA`, nazwą w jego Rozliczeniu
+pracownika i adresami maili, a `Edytuj` zmienia nazwę, adresy albo dopisuje
+drugi login; zmiana zapisuje się przyciskiem `Zapisz`. Przełącznik
+`Przypomnienia` wyłącza przypomnienia jednemu pracownikowi, np. na urlop.
+Pracownika, który ma zlecenia w Rejestrze zleceń albo w Pliku zbiorczym
+któregoś tygodnia, nie da się usunąć: gdy odchodzi, kliknij
+`Oznacz jako nieaktywnego`, a jego tygodnie dalej się rozliczą.
+Pod listą sekcja podpowiada loginy z kolumny `WYKONAWCA` zleceń bieżącego
+tygodnia i 4 poprzednich, których nie ma na liście: `Dodaj Wykonawcę` przy
+loginie otwiera formularz z wpisanym loginem. Gdy raport przyjdzie z adresu
+spoza listy, widok `Raporty` pokazuje ten adres z przyciskiem
+`Przypisz do Wykonawcy…`: wybierz pracownika, a adres dopisze się od razu i
+następne `Wpisz raporty z maili` wpisze ten raport.
 
 ### Foldery tygodni
 
@@ -498,6 +516,36 @@ zerach. Zielone zostają wiersze, które uzupełniłeś.
 | „Plik zbiorczy jest uszkodzony” | Sprawdź, czy plik otwiera się w Excelu. Jeśli tak, zapisz go w Excelu i odśwież stronę. W innym wypadku przekaż komunikat osobie utrzymującej narzędzie. |
 | „Brakuje nagłówka w Pliku zbiorczym” | Przywróć wskazany nagłówek tak jak w Wzorcu pliku zbiorczego, zapisz plik i odśwież stronę. |
 | „Plik zbiorczy jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy się pobierze, odśwież stronę. |
+
+## Reguły ilości
+
+Reguły ilości zmieniasz sam w oknie `Ustawienia`, w sekcji `Reguły ilości`.
+Działają od następnego Przygotowania pliku zbiorczego, a gotowe Pliki zbiorcze
+zostają bez zmian.
+
+1. Kliknij `Dodaj regułę` albo ołówek przy regule, którą chcesz zmienić.
+2. Wybierz, dla których zleceń reguła działa, dodaj warunki (`Gdy` albo
+   `Ale nie gdy`) i działanie, np. `Wpisz w kolumnę` z kolumną po nazwie z
+   cennika.
+3. Pod spodem `Podgląd na ostatnich okresach` pokazuje, ile wierszy ostatnich
+   rozliczonych Plików zbiorczych się zmieni i w ilu będzie tak, jak wpisałeś,
+   a niżej wiersze, w których reguła da inaczej niż Ty.
+4. Kliknij `Zapisz`, także gdy są różnice. Złą regułę Centrum odrzuci jednym
+   zdaniem przy polu, które trzeba poprawić.
+
+Nad regułami stoi lista `Tu wpisałeś inaczej niż reguła`: wiersze ostatnich
+rozliczonych Plików zbiorczych, w których wpisałeś w kolumnie co innego niż
+reguła. To te same różnice, które Maks dostaje w Kontroli ilości.
+
+- `Popraw regułę` otwiera nową regułę z warunkami z `URZĄDZENIA` tego wiersza.
+  Nic się nie zapisuje, dopóki nie klikniesz `Zapisz`, więc najpierw sprawdź
+  podgląd.
+- `To był wyjątek` mówi, że w tym zleceniu wpisałeś dobrze. Ta różnica już nie
+  wraca na listę; w sekcji `Historia` cofniesz to przyciskiem `Cofnij`.
+
+Zmianę reguły widać w sekcji `Historia` jako zdanie reguły przed i po, a
+`Cofnij` przywraca poprzednie reguły. Regułę usuwasz przyciskiem
+`Usuń regułę` w tym samym oknie.
 
 ## Przebieg rozliczeń
 

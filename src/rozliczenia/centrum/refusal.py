@@ -12,9 +12,10 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldProblem, RemovedWhat
 from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
+from rozliczenia.worker_periods import InPeriod, InRegister, Unchecked
 
 
 @final
@@ -25,16 +26,10 @@ class _Catalog:
 
 
 _CATALOG: Final = _Catalog()
-"""Dowód katalogu odmów: ``Refusal`` bez niego, także przez ``functools.partial(Refusal, 500)``, to błąd mypy (brak
-argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml``) odrzuca ``from … import _CATALOG``
-(także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``
-i ``_refused``, która sama wkłada dowód.
-Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
-``getattr(refusal, "_CATALOG")``, wartości ``Any``, dowodu ani ``_refused`` zaimportowanych z ``# noqa: TID251``,
-odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy wyjętej z argumentów typu (``get_args(…)[0]``).
-``tests/test_komunikaty_expect.py`` łapie w ``src`` każde odwołanie do ``Refusal`` po nazwie poza typem, także
-``Refusal(…, _CATALOG)`` z dowodem z ``noqa``, ale nie ``type(odmowa)(…, _CATALOG)`` ani ``_refused(…)`` z ``noqa``;
-te zostają przeglądowi."""
+"""Dowód katalogu odmów: ``Refusal`` bez niego to błąd mypy, a poza tym modułem dowód, ``_Catalog`` i ``_refused``, która
+sama wkłada dowód, odrzuca ruff (``TID251``). Odwołanie do ``Refusal`` poza typem łapie
+``tests/test_komunikaty_expect.py``, a postacie, których nie łapie żaden z tych mechanizmów, są tam próbkami
+``ZNANE_LUKI``."""
 
 
 @final
@@ -145,6 +140,34 @@ def workers_unusable(problem: FieldProblem | None) -> Refusal:
     )
 
 
+def worker_kept(presence: InRegister | InPeriod | Unchecked, what: RemovedWhat) -> Refusal:
+    """Wykonawcy albo loginu nie da się usunąć (formularzem, „Usuń Wykonawcę” ani „Cofnij”): login ma zlecenia w okresie
+    (Rejestr zleceń, Plik zbiorczy) albo nie da się tego teraz sprawdzić. Odmowa proponuje Nieaktywnego Wykonawcę, który
+    zostaje na liście (ADR 0032)."""
+
+    who = "Wykonawca" if what == "worker" else "Ten login"
+    asked = "Wykonawca" if what == "worker" else "ten login"
+    stays = "zostaje na Liście Wykonawców" if what == "worker" else "zostaje przy Wykonawcy"
+    inactive = "Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą."
+    match presence:
+        case InRegister():
+            found = f"{who} ma zlecenia w Rejestrze zleceń, więc {stays}."
+        case InPeriod(token=token):
+            found = f"{who} ma zlecenia w okresie {token}, więc {stays}."
+        case Unchecked(place="not_set"):
+            found = f"Nie wiadomo, czy {asked} ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów."
+        case Unchecked(place="register"):
+            found = f"Nie da się teraz przeczytać Rejestru zleceń, więc nie wiadomo, czy {asked} ma w nim zlecenia."
+        case Unchecked(place="periods_directory"):
+            found = f"Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy {asked} ma zlecenia w okresach."
+        case Unchecked(token=token):
+            found = (
+                f"Nie da się teraz przeczytać Pliku zbiorczego okresu {token}, więc nie wiadomo, czy {asked} ma w "
+                "nim zlecenia."
+            )
+    return _refused(409, f"{found} {inactive}")
+
+
 def report_entering_without_addresses() -> Refusal:
     """Wpisanie raportów nie startuje, gdy żaden Wykonawca z Listy Wykonawców nie ma adresu: żaden mail nie byłby
     Raportem wykonawcy."""
@@ -154,6 +177,19 @@ def report_entering_without_addresses() -> Refusal:
 
 def settings_change_unknown() -> Refusal:
     return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
+
+
+def quantity_rule_unknown() -> Refusal:
+    """Reguły ilości o tym id nie ma już w regułach, którymi liczy Centrum (np. cofnięta w Historii w innym oknie)."""
+
+    return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
+
+
+def quantity_difference_unknown() -> Refusal:
+    """Różnicy z Kontroli ilości o tym id nie ma już na liście „Tu wpisałeś inaczej niż reguła” (np. tata poprawił Plik
+    zbiorczy albo regułę), więc nie ma czego oznaczyć jako wyjątek."""
+
+    return _refused(404, "Tej różnicy już nie ma na liście. Odśwież okno Ustawień.")
 
 
 def settings_change_not_undoable() -> Refusal:

@@ -16,6 +16,7 @@ import email
 from email.message import EmailMessage
 import email.policy
 import imaplib
+import json
 from pathlib import Path
 import smtplib
 
@@ -23,7 +24,7 @@ import pytest
 import proba_przypomnien
 
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
-from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_ROLLOUT
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -94,12 +95,22 @@ def _klon(tmp_path: Path) -> Klon:
     (config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nabcd efgh ijkl mnop\n", encoding="utf-8")
     names = {"jan.testowy": "Jan Testowy", "anna.probna": "Anna Probna", "bartek.obcy": "Bartek Obcy"}
     write_worker_list(config / WORKERS_FILE, worker_list(names, {"jan.testowy": [JAN], "anna.probna": [ANNA]}))
-    (config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
-    (config / REMINDERS_FOOTER).write_text(STOPKA, encoding="utf-8")
+    _przypomnienia(config)
     (config / SETTINGS_FILE).write_text(
         f"schema_version: 1\nrejestr_zlecen: '{intermax}'\nfolder_okresow: '{okresy}'\n", encoding="utf-8"
     )
     return Klon(config, intermax, okresy)
+
+
+def _przypomnienia(config: Path, *, wlaczone: str = "true", stopka: str = STOPKA, wieczorna: str = "18:00") -> None:
+    """Przypomnienia o raporcie w Ustawieniach Centrum klonu: włączone od 9.11.2026, ze stopką taty i porą wieczorną od
+    ``wieczorna``."""
+
+    (config / REMINDERS_FILE).write_text(
+        f"schema_version: 1\nwlaczone: {wlaczone}\nwlaczone_od: 2026-11-09\n"
+        f"pora_wieczorna: {{od: '{wieczorna}', do: '22:00'}}\nstopka: {json.dumps(stopka)}\n",
+        encoding="utf-8",
+    )
 
 
 @dataclass(frozen=True)
@@ -223,6 +234,21 @@ def test_proba_bez_naleznych_przypomnien_wysyla_przypomnienie_za_wczoraj_na_poda
     assert (recipients, message["To"], message["Subject"]) == ((MAKS,), MAKS, "Przypomnienie: raport za dzień 10.11.2026")
 
 
+def test_proba_liczy_pore_z_ustawien_przypomnien_a_nie_z_dawnych_stalych(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """ADR 0032: o 17:30 przy porze wieczornej od 17:00 z Ustawień próba liczy przypomnienia tej pory, choć przy porach
+    z ADR 0030 to przerwa między porami."""
+
+    klon = _klon(tmp_path)
+    _przypomnienia(klon.config, wieczorna="17:00")
+    with _gmail() as (imap, serwer):
+        code, line = _proba(capsys, klon, imap, serwer, teraz=datetime(2026, 11, 11, 17, 30))
+
+    assert (code, line) == (
+        0,
+        "PROBA PRZYPOMNIEN OK | pora=wieczorna | przypomnienia=3 | wykonawcy=2 | dni=2 | wyslano 1 na podany adres",
+    )
+
+
 def test_proba_odmawia_adresu_wykonawcy_bez_wysylki(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Adres z polecenia, który jest na liście adresów Wykonawców, to pomyłka Maksa: próba nic nie wysyła."""
 
@@ -246,14 +272,14 @@ def test_proba_odmawia_adresu_wykonawcy_bez_wysylki(tmp_path: Path, capsys: pyte
 
 def test_proba_bez_stopki_ma_wlasna_linie_i_nie_wysyla(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     klon = _klon(tmp_path)
-    (klon.config / REMINDERS_FOOTER).unlink()
+    _przypomnienia(klon.config, stopka="")
     with _gmail() as (imap, serwer):
         code, line = _proba(capsys, klon, imap, serwer)
 
     assert (code, line) == (
         1,
         "PROBA PRZYPOMNIEN FAIL | pora=poranna | przypomnienia=3 | wykonawcy=2 | dni=2"
-        f" | brak stopki config/{REMINDERS_FOOTER}, mail nie poszedl",
+        f" | brak stopki w Ustawieniach (config/{REMINDERS_FILE}), mail nie poszedl",
     )
     assert serwer.received == []
 
@@ -295,14 +321,15 @@ def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
 @pytest.mark.parametrize(
     ("zepsuj", "powod"),
     [
-        (_bez_pliku(REMINDERS_ROLLOUT), f"brak dnia wdrozenia przypomnien w config/{REMINDERS_ROLLOUT}"),
+        (_bez_pliku(REMINDERS_FILE), f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"),
+        (lambda klon: _przypomnienia(klon.config, wlaczone="false"), f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"),
         (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
         (_zly_plik(WORKERS_FILE), "zla albo nieczytelna Lista Wykonawcow"),
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),
         (lambda klon: klon.intermax.unlink(), "nieczytelny INTERMAX: WorkbookError"),
     ],
-    ids=["wdrozenie", "ustawienia", "dostep", "adresy", "okresy", "intermax"],
+    ids=["bez-przypomnien", "wylaczone", "ustawienia", "dostep", "adresy", "okresy", "intermax"],
 )
 def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], zepsuj: Callable[[Klon], None], powod: str

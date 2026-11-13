@@ -1,22 +1,69 @@
-import { CircleHelpIcon, RefreshCwIcon } from "lucide-react"
+import * as React from "react"
+import { CircleHelpIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react"
 
-import type { ListedWorker, WorkerListSetting } from "@/api/generated"
+import { addWorker, assignWorkerAddress, changeWorker, getWorkerSuggestions, removeWorker, switchWorker } from "@/api/centrum"
+import { failureMessage, refusedField } from "@/api/client"
+import type { Choice, ListedWorker, WorkerListSetting, WorkerSuggestion } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useSettings } from "@/lib/settings"
+import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
+import { type Href, settingsHref, showSection, useSettingsPath } from "@/lib/address"
+import { plural } from "@/lib/format"
+import { useReloadOnChange, useSettings } from "@/lib/settings"
+import { useUnsavedForm } from "@/lib/unsaved"
+import { useResource } from "@/lib/use-resource"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 
 type Unresolved = WorkerListSetting["unresolved"][number]
 
+/**
+ * Otwarty formularz: zmiana Wykonawcy o loginie `login` albo nowy Wykonawca z loginem i adresami do wpisania; nowy z
+ * wyboru „Przypisz adres” stoi na miejscu wyboru (`assigned`), a każdy inny pod listą.
+ */
+type Editing =
+  | { kind: "worker"; login: string }
+  | { kind: "new"; login: string; addresses: ReadonlyArray<string>; assigned: boolean }
+
+export const WORKERS_SECTION = "wykonawcy"
+
+/** Człon adresu sekcji Wykonawcy z wyborem Wykonawcy dla adresu nieznanego nadawcy. */
+const ASSIGN = "przypisz"
+
+/** Wybór „Nowy Wykonawca” przy przypisaniu adresu; login Wykonawcy nie może być pusty, więc nie myli się z loginem. */
+const NEW_WORKER = ""
+
 const LAST_GOOD = "Ostatnia dobra lista, której używają procesy"
 
+/** Adres okna Ustawień na sekcji Wykonawcy z wyborem Wykonawcy dla adresu nieznanego nadawcy `address` (US 25). */
+export function assignHref(address: string): Href {
+  return settingsHref(WORKERS_SECTION, ASSIGN, address)
+}
+
 /**
- * Lista Wykonawców (ADR 0032) tylko do odczytu: aktywni na górze, każdy z nazwą, loginami i adresami. Nad listą jednym
- * zdaniem to, czego przeniesienie starych plików nie rozstrzygnęło. Zły plik ma zdanie o problemie (z tym, kto poprawia
- * plik) i ostatnią dobrą listę podpisaną jako ostatnia dobra, a bez niej samo zdanie: pusta lista znaczy tylko, że
- * Wykonawców naprawdę nie ma.
+ * Lista Wykonawców (ADR 0032): aktywni na górze, każdy z nazwą, loginami i adresami, przełącznikiem Przypomnień o
+ * raporcie zapisanym od razu i formularzem „Edytuj”, który zapisuje się dopiero przyciskiem „Zapisz”. Tata dodaje
+ * Wykonawcę, zmienia nazwę i adresy, dopisuje drugi login, oznacza Nieaktywnego i usuwa Wykonawcę bez zleceń w okresach.
+ * Każdą regułę sprawdza serwer: zła wartość wraca zdaniem przy polu, a odmowa usunięcia proponuje Nieaktywnego. Nad
+ * listą jednym zdaniem to, czego przeniesienie starych plików nie rozstrzygnęło. Zły plik ma zdanie o problemie i
+ * ostatnią dobrą listę podpisaną jako ostatnia dobra, a bez niej samo zdanie. Pod listą loginy z ostatnich zleceń
+ * Rejestru zleceń, których na niej nie ma, z „Dodaj Wykonawcę”; adres `#/ustawienia/wykonawcy/przypisz/<adres>` (z
+ * „Przypisz do Wykonawcy…” w widoku Raporty) stawia nad listą wybór Wykonawcy dla adresu nieznanego nadawcy.
  */
 export function WorkersSection() {
   const { settings, reload } = useSettings()
@@ -37,6 +84,10 @@ export function WorkersSection() {
 }
 
 function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: () => Promise<void> }) {
+  const [editing, setEditing] = React.useState<Editing | null>(null)
+  const path = useSettingsPath()
+  const assigning = path[0] === ASSIGN && path[1] !== undefined && path[1] !== "" ? path[1] : null
+
   if (setting.state === "unreadable") {
     return (
       <div className="flex flex-col items-start gap-3">
@@ -50,16 +101,56 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
   }
 
   const workers = setting.workers.toSorted((first, second) => Number(second.active) - Number(first.active))
+  const close = () => setEditing(null)
+
+  // Formularz albo wybór z „Przypisz do Wykonawcy…” zamyka cały wybór: adres sekcji wraca do samej sekcji.
+  const closeAssigning = () => {
+    setEditing(null)
+    showSection(WORKERS_SECTION)
+  }
+
+  // Nowy z wyboru „Przypisz adres” stoi na miejscu wyboru, dopóki adres sekcji go ma, a każdy inny pod listą.
+  const atAssign = assigning !== null && editing?.kind === "new" && editing.assigned
+
+  const newForm = (shown: Extract<Editing, { kind: "new" }>, onDone: () => void) => (
+    <div className="rounded-xl border bg-card px-4 py-4">
+      <WorkerForm
+        key={JSON.stringify([shown.login, shown.addresses])}
+        initial={{ logins: [shown.login], name: "", addresses: shown.addresses }}
+        onDone={onDone}
+      />
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-3">
       {setting.problem === null ? null : <FieldSentence>{setting.problem.message}</FieldSentence>}
+      {assigning === null ? null : atAssign && editing?.kind === "new" ? (
+        newForm(editing, closeAssigning)
+      ) : (
+        <AssignAddress
+          key={assigning}
+          address={assigning}
+          workers={workers}
+          onNew={() => setEditing({ kind: "new", login: "", addresses: [assigning], assigned: true })}
+          onDone={closeAssigning}
+        />
+      )}
       {setting.unresolved.length === 0 ? null : (
         <ul aria-label="Do rozstrzygnięcia" className="flex flex-col gap-1.5">
           {setting.unresolved.map((item) => (
             <li key={unresolvedKey(item)} className="flex items-start gap-2 text-sm text-pretty">
               <CircleHelpIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-              <span>{unresolvedSentence(item)}</span>
+              <span className="min-w-0 flex-1">{unresolvedSentence(item)}</span>
+              {item.reason === "login_bez_wykonawcy" ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setEditing({ kind: "new", login: item.login, addresses: item.addresses, assigned: false })}
+                >
+                  Dodaj Wykonawcę
+                </Button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -69,39 +160,486 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
           {setting.state === "bad" ? <p className="text-sm text-muted-foreground">{LAST_GOOD}</p> : null}
           <SettingsPanel label="Wykonawcy">
             {workers.map((worker) => (
-              <WorkerRow key={worker.logins[0]} worker={worker} />
+              <WorkerRow
+                key={firstLogin(worker)}
+                worker={worker}
+                editing={editing?.kind === "worker" && worker.logins.includes(editing.login)}
+                onEdit={() => setEditing({ kind: "worker", login: firstLogin(worker) })}
+                onClose={close}
+              />
             ))}
           </SettingsPanel>
         </div>
       ) : setting.state === "good" ? (
         <p className="text-sm text-muted-foreground">Na liście nie ma jeszcze Wykonawców.</p>
       ) : null}
+      <Suggestions
+        adding={editing?.kind === "new" && !atAssign ? editing.login : null}
+        add={(login) => setEditing({ kind: "new", login, addresses: [], assigned: false })}
+      />
+      {editing?.kind === "new" && !atAssign ? (
+        newForm(editing, editing.assigned ? closeAssigning : close)
+      ) : (
+        <div>
+          <Button variant="outline" size="sm" onClick={() => setEditing({ kind: "new", login: "", addresses: [], assigned: false })}>
+            <PlusIcon aria-hidden />
+            Dodaj Wykonawcę
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
 
-function WorkerRow({ worker }: { worker: ListedWorker }) {
+function WorkerRow({
+  worker,
+  editing,
+  onEdit,
+  onClose,
+}: {
+  worker: ListedWorker
+  editing: boolean
+  onEdit: () => void
+  onClose: () => void
+}) {
+  const { sectionSaved, saveFailed } = useSettings()
+  const [pending, setPending] = React.useState<boolean | null>(null)
+  const login = firstLogin(worker)
+
+  function switchReminders(reminders: boolean) {
+    setPending(reminders)
+    switchWorker(login, { reminders }).then(sectionSaved, saveFailed).finally(() => setPending(null))
+  }
+
   return (
-    <div role="listitem" aria-label={worker.name} className="flex flex-col gap-1 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={worker.active ? "text-sm font-medium" : "text-sm font-medium text-muted-foreground"}>
-          {worker.name}
-        </span>
-        {worker.active ? null : <Badge variant="outline">Nieaktywny</Badge>}
-        {worker.active && !worker.reminders ? <Badge variant="outline">Bez przypomnień</Badge> : null}
+    <div role="listitem" aria-label={worker.name} className="flex flex-col gap-3 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={worker.active ? "text-sm font-medium" : "text-sm font-medium text-muted-foreground"}>
+              {worker.name}
+            </span>
+            {worker.active ? null : <Badge variant="outline">Nieaktywny</Badge>}
+          </div>
+          <span className="text-sm break-words text-muted-foreground">
+            {[...worker.logins, ...worker.addresses].join(" · ")}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <Label className="gap-2 text-sm font-normal text-muted-foreground">
+            Przypomnienia
+            <Switch
+              aria-label={`Przypomnienia: ${worker.name}`}
+              checked={pending ?? worker.reminders}
+              disabled={pending !== null}
+              onCheckedChange={switchReminders}
+            />
+          </Label>
+          {editing ? null : (
+            <Button variant="ghost" size="sm" aria-label={`Edytuj: ${worker.name}`} onClick={onEdit}>
+              Edytuj
+            </Button>
+          )}
+        </div>
       </div>
-      <span className="text-sm break-words text-muted-foreground">
-        {[...worker.logins, ...worker.addresses].join(" · ")}
-      </span>
+      {editing ? <WorkerForm worker={worker} initial={worker} onDone={onClose} /> : null}
     </div>
   )
+}
+
+type FormValues = { logins: ReadonlyArray<string>; name: string; addresses: ReadonlyArray<string> }
+
+/** Odmowa przy polu formularza (`nazwa`, `adresy[1]`, `loginy[0]`) albo bez pola, pod formularzem. */
+type Refusal = { field: string | null; message: string }
+
+/**
+ * Formularz Wykonawcy: zapisane loginy bez pola tekstowego, bo zapisanego loginu nie da się przepisać, tylko usunąć (×)
+ * albo dopisać nowy; nazwa i adresy. „Zapisz” wysyła wszystko naraz. Zmiana nazwy przy Rozliczeniu pracownika ze starą
+ * nazwą pyta najpierw o potwierdzenie zdaniem serwera; niezapisany formularz pyta przy zamknięciu okna Ustawień.
+ */
+function WorkerForm({ worker, initial, onDone }: { worker?: ListedWorker; initial: FormValues; onDone: () => void }) {
+  const { sectionSaved } = useSettings()
+  const saved = worker?.logins ?? []
+  const [kept, setKept] = React.useState<ReadonlyArray<string>>(saved)
+  const [added, setAdded] = React.useState<ReadonlyArray<string>>(worker === undefined ? initial.logins : [])
+  const [name, setName] = React.useState(initial.name)
+  const [addresses, setAddresses] = React.useState<ReadonlyArray<string>>(initial.addresses)
+  const [refusal, setRefusal] = React.useState<Refusal | null>(null)
+  const [warning, setWarning] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState<"save" | "remove" | "active" | null>(null)
+
+  const logins = [...kept, ...added]
+
+  const dirty =
+    worker === undefined
+      ? logins.some((login) => login.trim() !== "") || name.trim() !== "" || addresses.length > 0
+      : kept.length !== saved.length || added.length > 0 || name !== initial.name || addresses.join("\n") !== initial.addresses.join("\n")
+
+  useUnsavedForm(dirty)
+
+  // Każda porażka zapisu stoi zdaniem przy formularzu: przy polu, gdy serwer je wskazał, inaczej pod formularzem.
+  function refused(failure: Error) {
+    setRefusal({ field: refusedField(failure), message: failureMessage(failure) })
+  }
+
+  function done(choice: Choice) {
+    sectionSaved(choice)
+    onDone()
+  }
+
+  function save(renameConfirmed: boolean) {
+    setBusy("save")
+    setRefusal(null)
+
+    const form = { logins, name, addresses: [...addresses] }
+
+    const request =
+      worker === undefined
+        ? addWorker(form).then(done)
+        : changeWorker(firstLogin(worker), { ...form, rename_confirmed: renameConfirmed }).then((answer) => {
+            if (answer.rename_warning === null || answer.rename_warning === undefined) {
+              done(answer)
+            } else {
+              setWarning(answer.rename_warning)
+            }
+          })
+
+    void request.catch(refused).finally(() => setBusy(null))
+  }
+
+  function remove(target: ListedWorker) {
+    setBusy("remove")
+    setRefusal(null)
+    void removeWorker(firstLogin(target)).then(done, refused).finally(() => setBusy(null))
+  }
+
+  function switchActive(target: ListedWorker) {
+    setBusy("active")
+    setRefusal(null)
+    void switchWorker(firstLogin(target), { active: !target.active })
+      .then(sectionSaved, refused)
+      .finally(() => setBusy(null))
+  }
+
+  const at = (field: string) => (refusal?.field === field ? refusal.message : null)
+  const loginRefusal = logins.map((_, index) => at(`loginy[${index}]`)).find((message) => message !== null) ?? at("loginy")
+  const general = refusal !== null && !/^(nazwa|loginy|adresy)/.test(refusal.field ?? "") ? refusal.message : null
+
+  return (
+    <form
+      aria-label={worker === undefined ? "Nowy Wykonawca" : `Wykonawca ${worker.name}`}
+      className={worker === undefined ? "flex flex-col gap-4" : "flex flex-col gap-4 border-t pt-4"}
+      onSubmit={(event) => {
+        event.preventDefault()
+        save(false)
+      }}
+    >
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium">{worker === undefined ? "Login z INTERMAX" : "Loginy"}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {kept.map((login) => (
+            <Badge key={login} variant="secondary" className="gap-1 pr-1">
+              {login}
+              {kept.length + added.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label={`Usuń login ${login}`}
+                  className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => setKept(kept.filter((other) => other !== login))}
+                >
+                  <XIcon className="size-3" aria-hidden />
+                </button>
+              ) : null}
+            </Badge>
+          ))}
+          {added.map((login, index) => (
+            <Input
+              key={index}
+              aria-label={worker === undefined && index === 0 ? "Login" : "Nowy login"}
+              aria-invalid={at(`loginy[${kept.length + index}]`) === null ? undefined : true}
+              className="h-7 w-44"
+              spellCheck={false}
+              value={login}
+              onChange={(event) => setAdded(added.map((other, place) => (place === index ? event.target.value : other)))}
+            />
+          ))}
+          {worker === undefined ? null : (
+            <Button type="button" variant="ghost" size="xs" onClick={() => setAdded([...added, ""])}>
+              <PlusIcon aria-hidden />
+              Dodaj login
+            </Button>
+          )}
+        </div>
+        {loginRefusal === null ? null : <FieldSentence>{loginRefusal}</FieldSentence>}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`nazwa-${saved[0] ?? "nowy"}`}>Nazwa w Rozliczeniu pracownika</Label>
+        <Input
+          id={`nazwa-${saved[0] ?? "nowy"}`}
+          aria-invalid={at("nazwa") === null ? undefined : true}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        {at("nazwa") === null ? null : <FieldSentence>{at("nazwa")}</FieldSentence>}
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium">Adresy</span>
+        {addresses.map((address, index) => (
+          <div key={index} className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <Input
+                type="email"
+                aria-label={`Adres ${index + 1}`}
+                aria-invalid={at(`adresy[${index}]`) === null ? undefined : true}
+                spellCheck={false}
+                value={address}
+                onChange={(event) => setAddresses(addresses.map((other, place) => (place === index ? event.target.value : other)))}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Usuń adres ${index + 1}`}
+                onClick={() => setAddresses(addresses.filter((_, place) => place !== index))}
+              >
+                <XIcon aria-hidden />
+              </Button>
+            </div>
+            {at(`adresy[${index}]`) === null ? null : <FieldSentence>{at(`adresy[${index}]`)}</FieldSentence>}
+          </div>
+        ))}
+        <div>
+          <Button type="button" variant="ghost" size="xs" onClick={() => setAddresses([...addresses, ""])}>
+            <PlusIcon aria-hidden />
+            Dodaj adres
+          </Button>
+        </div>
+      </div>
+      {general === null ? null : <FieldSentence>{general}</FieldSentence>}
+      <div className="flex flex-wrap items-center gap-2">
+        {worker === undefined ? null : (
+          <>
+            <Button type="button" variant="ghost" size="sm" disabled={busy !== null} onClick={() => switchActive(worker)}>
+              {busy === "active" ? <Spinner data-icon="inline-start" /> : null}
+              {worker.active ? "Oznacz jako nieaktywnego" : "Oznacz jako aktywnego"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              disabled={busy !== null}
+              onClick={() => remove(worker)}
+            >
+              {busy === "remove" ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Sprawdzam okresy…
+                </>
+              ) : (
+                "Usuń Wykonawcę"
+              )}
+            </Button>
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+            Anuluj
+          </Button>
+          <Button type="submit" size="sm" disabled={busy !== null || !dirty} aria-label="Zapisz Wykonawcę">
+            {busy === "save" ? <Spinner data-icon="inline-start" /> : null}
+            Zapisz
+          </Button>
+        </div>
+      </div>
+      <AlertDialog open={warning !== null} onOpenChange={(open) => (open ? null : setWarning(null))}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Zmienić nazwę?</AlertDialogTitle>
+            <AlertDialogDescription>{warning}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Wróć</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setWarning(null)
+                save(true)
+              }}
+            >
+              Zmień nazwę
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </form>
+  )
+}
+
+/**
+ * Wybór Wykonawcy dla adresu nieznanego nadawcy z widoku Raporty: wybór Wykonawcy z listy zapisuje adres od razu, jak
+ * każdy pojedynczy wybór Ustawień, z „Zapisano · Cofnij”; „Nowy Wykonawca” otwiera formularz z wpisanym adresem.
+ * Adres, który ma już inny Wykonawca, wraca zdaniem serwera pod wyborem.
+ */
+function AssignAddress({
+  address,
+  workers,
+  onNew,
+  onDone,
+}: {
+  address: string
+  workers: ReadonlyArray<ListedWorker>
+  onNew: () => void
+  onDone: () => void
+}) {
+  const { sectionSaved } = useSettings()
+  const [busy, setBusy] = React.useState(false)
+  const [refusal, setRefusal] = React.useState<string | null>(null)
+
+  const options = [
+    ...workers.map((worker) => ({ value: firstLogin(worker), label: worker.name })),
+    { value: NEW_WORKER, label: "Nowy Wykonawca" },
+  ]
+
+  function choose(login: string) {
+    if (login === NEW_WORKER) {
+      onNew()
+
+      return
+    }
+
+    setBusy(true)
+    setRefusal(null)
+    void assignWorkerAddress(login, address)
+      .then((choice) => {
+        sectionSaved(choice)
+        onDone()
+      }, (failure: Error) => setRefusal(failureMessage(failure)))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div role="group" aria-label="Przypisz adres" className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
+          <span className="text-sm font-medium">Przypisz adres do Wykonawcy</span>
+          <span className="text-sm break-all text-muted-foreground">{address}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {busy ? <Spinner aria-label="Zapisuję" /> : null}
+          <Select
+            items={options}
+            value={null}
+            disabled={busy}
+            onValueChange={(next) => {
+              const chosen = options.find((option) => option.value === next)
+
+              if (chosen !== undefined) {
+                choose(chosen.value)
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Wykonawca" className="w-52 max-w-full">
+              <SelectValue placeholder="Wybierz Wykonawcę" />
+            </SelectTrigger>
+            <SelectContent className="w-auto min-w-(--anchor-width)">
+              <SelectGroup>
+                {options.slice(0, -1).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectGroup className={workers.length === 0 ? undefined : "border-t"}>
+                <SelectItem value={NEW_WORKER}>
+                  <PlusIcon aria-hidden />
+                  Nowy Wykonawca
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" onClick={onDone}>
+            Anuluj
+          </Button>
+        </div>
+      </div>
+      {refusal === null ? null : <FieldSentence>{refusal}</FieldSentence>}
+    </div>
+  )
+}
+
+/**
+ * Loginy z ostatnich zleceń Rejestru zleceń, których nie ma na liście, od najczęstszego, każdy z „Dodaj Wykonawcę”,
+ * które otwiera formularz z wpisanym loginem; po zapisie serwer już go nie podpowiada. Niewskazany albo nieczytelny
+ * Rejestr to zdanie serwera, a bez nowych loginów sekcja niczego nie pokazuje. Czyta się od nowa po każdej zmianie
+ * Ustawień.
+ */
+function Suggestions({ adding, add }: { adding: string | null; add: (login: string) => void }) {
+  const { resource, reload } = useResource(getWorkerSuggestions, [])
+
+  useReloadOnChange(reload)
+
+  if (resource.state !== "ready") {
+    return null
+  }
+
+  const found = resource.data
+
+  switch (found.state) {
+    case "not_set":
+    case "unreadable":
+      return <p className="text-sm text-pretty text-muted-foreground">{found.message}</p>
+    case "read":
+      return found.suggestions.length === 0 ? null : (
+        <section aria-label="Nowe loginy" className="flex flex-col gap-2">
+          <p aria-hidden className="px-1 text-xs font-medium text-muted-foreground">
+            Z ostatnich zleceń, spoza listy
+          </p>
+          <SettingsPanel label="Nowe loginy">
+            {found.suggestions.map((suggestion) => (
+              <SuggestionRow
+                key={suggestion.login}
+                suggestion={suggestion}
+                adding={adding === suggestion.login}
+                add={() => add(suggestion.login)}
+              />
+            ))}
+          </SettingsPanel>
+        </section>
+      )
+    default: {
+      const unhandled: never = found.state
+
+      return unhandled
+    }
+  }
+}
+
+function SuggestionRow({ suggestion, adding, add }: { suggestion: WorkerSuggestion; adding: boolean; add: () => void }) {
+  return (
+    <div role="listitem" aria-label={suggestion.login} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="flex min-w-0 flex-1 basis-40 flex-col gap-0.5">
+        <span className="text-sm font-medium break-all">{suggestion.login}</span>
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {suggestion.orders} {plural(suggestion.orders, { one: "zlecenie", few: "zlecenia", many: "zleceń" })}
+        </span>
+      </div>
+      <Button variant="outline" size="sm" aria-label={`Dodaj Wykonawcę: ${suggestion.login}`} disabled={adding} onClick={add}>
+        Dodaj Wykonawcę
+      </Button>
+    </div>
+  )
+}
+
+/** Login, po którym serwer zna Wykonawcę w adresie zmiany; Lista Wykonawców ma co najmniej jeden login każdego. */
+function firstLogin(worker: ListedWorker): string {
+  return worker.logins[0] ?? ""
 }
 
 function unresolvedKey(item: Unresolved): string {
   return item.reason === "login_bez_wykonawcy" ? item.login : item.message
 }
 
-/** Jedno zdanie o sprawie po przeniesieniu starych plików; rozstrzyga ją tata, gdy sekcja pozwoli edytować listę. */
+/** Jedno zdanie o sprawie po przeniesieniu starych plików; „login bez Wykonawcy” znika, gdy tata doda Wykonawcę z nim. */
 function unresolvedSentence(item: Unresolved): string {
   switch (item.reason) {
     case "login_bez_wykonawcy":

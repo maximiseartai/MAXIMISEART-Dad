@@ -53,7 +53,17 @@ from .file_state import file_state
 from .highlights import Highlights, LookReader
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
 from .row_look import GENERAL
-from .workbook_parts import rows_with_input
+from .workbook_parts import (
+    IrregularSheetData,
+    SharedStrings,
+    UnsupportedShape,
+    active_sheet,
+    column_texts,
+    office_document,
+    package_parts,
+    relationships,
+    rows_with_input,
+)
 from .text import normalize_text
 
 if TYPE_CHECKING:
@@ -461,6 +471,41 @@ def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = Fa
                     )
                 )
     return DataRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, price_list(sheet.header))
+
+
+def collective_workers(path: Path, files: DadFiles) -> frozenset[str]:
+    """Każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez pustych) Wierszy danych Pliku zbiorczego, z XML
+    aktywnego arkusza bez openpyxl; plik otwarty w Excelu to jego ostatnia zapisana wersja (ADR 0016).
+
+    Druga droga obok ``_collective_sheet``, bo pyta tylko o kolumnę H każdego Pliku zbiorczego wszystkich okresów:
+    openpyxl daje 1–2 s na plik, XML jednej kolumny ok. 0,3 s. Wiersz bez wartości w A:K nie jest Wierszem danych, ale nie
+    ma też wartości w H, więc zbiór jest ten sam. Nagłówek WYKONAWCA w H17 sprawdza ``check_worker_header`` jak w
+    ``read_data_rows``. ``WorkbookError``, gdy pliku nie ma, jest niedostępny, nieczytelny albo ma zły układ.
+    """
+
+    file = files.read(path, despite_excel_lock=True)
+    with unreadable_as_error(path), package_parts(file.content) as parts:
+        workbook = office_document(parts)
+        if workbook is None:
+            raise KeyError("officeDocument")
+        try:
+            sheet = active_sheet(parts, workbook)
+            if not sheet.worksheet:
+                raise ValueError("aktywna karta to wykres")
+            strings = next(
+                (rel.target for rel in relationships(parts, workbook).values() if rel.kind.endswith("/sharedStrings")),
+                None,
+            )
+            shared = SharedStrings(parts[strings] if strings else b"<sst/>")
+            texts = dict(column_texts(parts[sheet.part], WORKER_COLUMN, HEADER_ROW, shared))
+        except (UnsupportedShape, IrregularSheetData) as error:
+            raise ValueError(str(error)) from error
+    header: list[object] = [None] * INPUT_COLUMNS[-1]
+    header[WORKER_COLUMN - 1] = texts.pop(HEADER_ROW, None)
+    check_worker_header(path, sheet.title, header)
+    found = {normalize_text(text) for row, text in texts.items() if row >= FIRST_DATA_ROW}
+    found.discard("")
+    return frozenset(found)
 
 
 def price_list(header: Sequence[object]) -> dict[str, str]:

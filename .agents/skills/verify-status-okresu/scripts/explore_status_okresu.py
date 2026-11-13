@@ -63,6 +63,7 @@ from rozliczenia.centrum.platform import NO_AUTOSTART
 from rozliczenia.centrum.settings.folders import FOLDERS
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import check_preparation, check_settlement
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, SavedState, enter_from_mail
@@ -70,6 +71,7 @@ from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.wall_clock import local_now
 from rozliczenia.worker_list import WorkerList
+from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import PasswordRejected
 from rozliczenia.worker_reports import OwnEntries
 import rozjazd_modelu
@@ -235,6 +237,8 @@ class Consumer(enum.Enum):
     KARTA_PRZEBIEGU = "karta startu Przebiegu rozliczeń"
     KARTA_WYCENY = "karta startu Wyceny w efenix"
     UZUPELNIANIE = "Uzupełnienie (quantities-to-fill)"
+    PODGLAD_REGUL = "podgląd zmiany Reguł ilości (quantity-rules/preview)"
+    LISTA_ROZNIC = "lista różnic Kontroli ilości (quantity-rules/differences)"
     WPISANIE_RAPORTOW = "Wpisanie raportów (enter_from_mail)"
     START_PRZYGOTOWANIA = "Sprawdzanie Przygotowania pliku zbiorczego (check_preparation)"
     START_PRZEBIEGU = "Sprawdzanie Przebiegu rozliczeń (check_settlement)"
@@ -255,6 +259,8 @@ ALLOWED: dict[Consumer, Status] = {
     Consumer.KARTA_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.START_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.UZUPELNIANIE: Status.PRZYGOTOWANY,
+    Consumer.PODGLAD_REGUL: Status.GOTOWE,
+    Consumer.LISTA_ROZNIC: Status.GOTOWE,
 }
 
 # Rule TA_SAMA_NAZWA: the consumers that show Dad a Status okresu.
@@ -297,6 +303,9 @@ class Violation:
 UNREADABLE_STOPS = frozenset({"NIEDOSTEPNY_FOLDER", "NIEDOSTEPNY_PLIK_ZBIORCZY", "BLAD_ZAPISU", "RAPORTY_NIEDOSTEPNY_FOLDER_OKRESOW"})
 PASSWORD_REJECTED = "RAPORTY_HASLO_ODRZUCONE"
 FOLDER_UNREADABLE = "Nie udało się odczytać folderu"
+# A rule of the Reguły ilości from the Wydanie, which the preview takes away (copied on purpose: a renamed rule makes the
+# preview refuse with 404 and the check red).
+PREVIEW_RULE = "t-umowa-u"
 NO_COLLECTIVE_FILE = "Nie ma Pliku zbiorczego"
 COLLECTIVE_FILE_UNREADABLE = "Nie można teraz odczytać Pliku zbiorczego"
 # Actions of the steps on the board, the contract the page reads.
@@ -461,9 +470,9 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         # No Historia: the Wycena w efenix of the period was never run.
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
-    CentrumSettings(config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART).change(
-        FOLDERS, lambda folders: replace(folders, periods_directory=periods)
-    )
+    CentrumSettings(
+        config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART, periods=WorkerPeriods(DadFiles())
+    ).change(FOLDERS, lambda folders: replace(folders, periods_directory=periods))
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
 
@@ -539,6 +548,52 @@ def ask_filling(client: TestClient) -> Answer:
     if what.startswith(NO_COLLECTIVE_FILE):
         return Answer(Consumer.UZUPELNIANIE, Act.ODMAWIA, None, what)
     raise Unexpected(f"Uzupełnienie: Komunikat {what!r}")
+
+
+def ask_rules_preview(client: TestClient) -> Answer:
+    """Whether the preview of a Reguły ilości change takes the period: only a period after Przebieg rozliczeń, whose
+    quantities Dad settled; a Plik zbiorczy it takes but cannot read it names among ``unread``."""
+
+    response = client.post(
+        "/api/settings/quantity-rules/preview",
+        json={"kind": "remove", "rule_id": PREVIEW_RULE},
+        headers={"Origin": "http://127.0.0.1"},
+    )
+    if (unreadable := _unreadable_refusal(response)) is not None:
+        return Answer(Consumer.PODGLAD_REGUL, Act.NIE_CZYTA, detail=unreadable)
+    if response.status_code != 200:
+        raise Unexpected(f"podgląd Reguł ilości: HTTP {response.status_code} {response.text[:200]}")
+    preview = response.json()
+    if preview["state"] == "no_settled_periods":
+        return Answer(Consumer.PODGLAD_REGUL, Act.ODMAWIA, detail="nie ma okresu po Przebiegu rozliczeń")
+    if preview["state"] != "ready":
+        raise Unexpected(f"podgląd Reguł ilości: stan {preview['state']!r}")
+    if PERIOD.token in preview["unread"]:
+        return Answer(Consumer.PODGLAD_REGUL, Act.DZIALA, detail="bierze okres, a Pliku zbiorczego nie dało się przeczytać")
+    if [file["period"] for file in preview["files"]] == [PERIOD.token]:
+        return Answer(Consumer.PODGLAD_REGUL, Act.DZIALA, detail="liczy na Pliku zbiorczym okresu")
+    raise Unexpected(f"podgląd Reguł ilości: pliki {preview['files']}, nieprzeczytane {preview['unread']}")
+
+
+def ask_differences(client: TestClient) -> Answer:
+    """Whether the list of Kontrola ilości differences in the Reguły ilości section takes the period: only a period
+    after Przebieg rozliczeń, like the preview; a Plik zbiorczy it takes but cannot read it names among ``unread``."""
+
+    response = client.get("/api/settings/quantity-rules/differences")
+    if (unreadable := _unreadable_refusal(response)) is not None:
+        return Answer(Consumer.LISTA_ROZNIC, Act.NIE_CZYTA, detail=unreadable)
+    if response.status_code != 200:
+        raise Unexpected(f"lista różnic: HTTP {response.status_code} {response.text[:200]}")
+    found = response.json()
+    if found["state"] == "no_settled_periods":
+        return Answer(Consumer.LISTA_ROZNIC, Act.ODMAWIA, detail="nie ma okresu po Przebiegu rozliczeń")
+    if found["state"] != "ready":
+        raise Unexpected(f"lista różnic: stan {found['state']!r}")
+    if PERIOD.token in found["unread"]:
+        return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="bierze okres, a Pliku zbiorczego nie dało się przeczytać")
+    if [file["period"] for file in found["files"]] == [PERIOD.token]:
+        return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="liczy różnice na Pliku zbiorczym okresu")
+    raise Unexpected(f"lista różnic: pliki {found['files']}, nieprzeczytane {found['unread']}")
 
 
 def ask_entering(inputs: Inputs, periods: Path) -> Answer:
@@ -619,6 +674,8 @@ def ask_all(case: Path, state: FolderState, inputs: Inputs) -> list[Answer]:
             *ask_board(client),
             *ask_cards(client),
             ask_filling(client),
+            ask_rules_preview(client),
+            ask_differences(client),
             ask_entering(inputs, periods),
             *ask_starts(inputs, periods),
         ]

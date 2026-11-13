@@ -1,6 +1,16 @@
 import * as React from "react"
 import { XIcon } from "lucide-react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -17,6 +27,7 @@ import {
 } from "@/components/ui/sidebar"
 import { closeSettings, settingsHref, showSection, useSettingsAddress } from "@/lib/address"
 import { SettingsToasts } from "@/lib/settings"
+import { hasUnsavedForm } from "@/lib/unsaved"
 import { useViewTiming } from "@/lib/view-timing"
 import { ConfigurationProvider } from "@/pages/settings/configuration"
 import { sectionOf, SETTINGS_SECTIONS, SHOWN_GROUPS, type SettingsSection } from "@/pages/settings/sections"
@@ -32,6 +43,7 @@ const SECTION_ITEMS = SETTINGS_SECTIONS.map((section) => ({ value: section.id, l
  * Okno Ustawień nad rozmytym Centrum (ADR 0032, wzór: ustawienia T3 Code). Otwiera je adres `#/ustawienia/<sekcja>`,
  * a Esc, ✕ i klik w tło zamykają je bez zmiany strony pod spodem. Po lewej sekcje w grupach, u góry ścieżka
  * „Ustawienia / <sekcja>”; na wąskim oknie przeglądarki okno zajmuje cały ekran, a sekcje są rozwijanym wyborem.
+ * Formularz z niezapisaną zmianą (`useUnsavedForm`) sprawia, że zamknięcie i inna sekcja najpierw pytają (US 15).
  */
 export function SettingsDialog() {
   const address = useSettingsAddress()
@@ -44,12 +56,23 @@ export function SettingsDialog() {
     setShown(section)
   }
 
+  // Zamknięcie albo inna sekcja, które czekają na „Zamknij bez zapisu”, bo formularz ma niezapisaną zmianę.
+  const [leaving, setLeaving] = React.useState<(() => void) | null>(null)
+
+  function leave(then: () => void) {
+    if (hasUnsavedForm()) {
+      setLeaving(() => then)
+    } else {
+      then()
+    }
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next) {
-          closeSettings()
+          leave(closeSettings)
         }
       }}
     >
@@ -77,7 +100,7 @@ export function SettingsDialog() {
                                   aria-current={item.id === section.id ? "page" : undefined}
                                   onClick={(event) => {
                                     event.preventDefault()
-                                    showSection(item.id)
+                                    leave(() => showSection(item.id))
                                   }}
                                 />
                               }
@@ -103,12 +126,18 @@ export function SettingsDialog() {
                   <span aria-hidden>/</span>
                   <span className="truncate font-medium text-foreground">{section.title}</span>
                 </DialogTitle>
-                <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Zamknij Ustawienia" onClick={closeSettings}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-auto"
+                  aria-label="Zamknij Ustawienia"
+                  onClick={() => leave(closeSettings)}
+                >
                   <XIcon />
                 </Button>
               </div>
               <div className="border-b px-4 py-3 md:hidden">
-                <SectionSelect section={section} />
+                <SectionSelect section={section} choose={(id) => leave(() => showSection(id))} />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-10">
                 <div data-slot="settings-section" className="mx-auto flex w-full max-w-2xl flex-col gap-4">
@@ -119,15 +148,37 @@ export function SettingsDialog() {
           </SidebarProvider>
         </ConfigurationProvider>
         <SettingsToasts />
+        <AlertDialog open={leaving !== null} onOpenChange={(next) => (next ? null : setLeaving(null))}>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Zamknąć bez zapisu?</AlertDialogTitle>
+              <AlertDialogDescription>Zmiana w formularzu przepadnie.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Wróć</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  const then = leaving
+
+                  setLeaving(null)
+                  then?.()
+                }}
+              >
+                Zamknij bez zapisu
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   )
 }
 
 /** Wybór sekcji na wąskim oknie przeglądarki, w tych samych grupach co lista po lewej. */
-function SectionSelect({ section }: { section: SettingsSection }) {
+function SectionSelect({ section, choose }: { section: SettingsSection; choose: (id: string) => void }) {
   return (
-    <Select items={SECTION_ITEMS} value={section.id} onValueChange={(value) => (value === null ? null : showSection(value))}>
+    <Select items={SECTION_ITEMS} value={section.id} onValueChange={(value) => (value === null ? null : choose(value))}>
       <SelectTrigger className="w-full" aria-label="Sekcja Ustawień">
         <SelectValue />
       </SelectTrigger>

@@ -12,7 +12,7 @@
     "enter_reports": "653df3ffc92747a7"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "37c9ce8aed01a62b",
+    "enter_from_mail": "427e29f9c8430382",
     "closed_periods": "5b9ce8bf021b5dd9",
     "SavedState": "61cca2a0f5c0d9c4"
   },
@@ -31,8 +31,8 @@
   },
   "src/rozliczenia/centrum/report_entering_run.py": {
     "ReportEnteringEntry.keep": "c20ea2503a531687",
-    "ReportEnteringEntry.view": "dccec4156e2aa3a5",
-    "_view": "2fac76e69159e8ca"
+    "ReportEnteringEntry.view": "8c93b20763ced3a0",
+    "_view": "be3a3d6d989ac742"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "StateFile": "71beaa3fba9d5cdd"

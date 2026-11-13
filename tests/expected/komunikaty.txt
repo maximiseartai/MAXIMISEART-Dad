@@ -1395,6 +1395,24 @@ worker_address_invalid [zdanie]
 worker_address_repeated [zdanie]
   Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy.
 
+worker_unknown [zdanie]
+  Tego Wykonawcy nie ma już na Liście Wykonawców. Zamknij formularz i sprawdź listę.
+
+worker_list_changed [zdanie]
+  Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz.
+
+worker_suggestions_not_set [zdanie]
+  Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń.
+
+worker_suggestions_unreadable [zdanie]
+  Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź Rejestr w sekcji Foldery.
+
+worker_rename_old_files #1 [zdanie]
+  Rozliczenie pracownika ze starą nazwą jest już w okresie 08_14_09_2026. Ten plik zostanie ze starą nazwą, a nowa będzie w plikach następnych Przebiegów rozliczeń.
+
+worker_rename_old_files #2 [zdanie]
+  Rozliczenie pracownika ze starą nazwą jest już w 3 okresach, ostatnio 08_14_09_2026. Ten plik zostanie ze starą nazwą, a nowa będzie w plikach następnych Przebiegów rozliczeń.
+
 workers_not_moved [zdanie]
   Listy Wykonawców nie utworzono ze starego pliku worker_mapping.yaml w folderze config: plik nie jest poprawnym YAML. Dodaj Wykonawców w Ustawieniach.
 
@@ -1410,6 +1428,27 @@ worker_list_unreadable [zdanie]
 addresses_not_moved [zdanie]
   Adresów Wykonawców nie przeniesiono ze starego pliku adresy-wykonawcow.yaml w folderze config: ten sam adres stoi dwa razy. Dopisz je Wykonawcom w Ustawieniach.
 
+reminders_time [zdanie]
+  Wpisz godzinę jako GG:MM, np. 08:00.
+
+reminders_empty_morning [zdanie]
+  Poranna pora musi kończyć się później, niż się zaczyna.
+
+reminders_empty_evening [zdanie]
+  Wieczorna pora musi kończyć się później, niż się zaczyna.
+
+reminders_overlap [zdanie]
+  Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna.
+
+reminders_empty_text [zdanie]
+  Wpisz pierwsze zdanie przypomnienia.
+
+reminders_unknown_field [zdanie]
+  W treści przypomnienia może stać tylko pole {dzień}, bez innych nawiasów klamrowych.
+
+reminders_without_since [zdanie]
+  Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz.
+
 autostart_unsupported [zdanie]
   Start razem z Windows działa tylko na komputerze z Windows.
 
@@ -1418,6 +1457,12 @@ autostart_unreadable [zdanie]
 
 unavailable [zdanie]
   Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
+
+rule_without_action [zdanie]
+  Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą.
+
+rule_hour [zdanie]
+  Godzinę wpisz jako GG:MM, np. 17:00.
 
 needed_by_rules [zdanie]
   Plik lista-urzadzen.yaml w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.
@@ -1466,11 +1511,35 @@ workers_unusable #1 [HTTP 409]
 workers_unusable #2 [HTTP 409]
   Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie.
 
+worker_kept #1 [HTTP 409]
+  Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #2 [HTTP 409]
+  Ten login ma zlecenia w okresie 08_14_09_2026, więc zostaje przy Wykonawcy. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #3 [HTTP 409]
+  Nie wiadomo, czy Wykonawca ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #4 [HTTP 409]
+  Nie da się teraz przeczytać Rejestru zleceń, więc nie wiadomo, czy Wykonawca ma w nim zlecenia. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #5 [HTTP 409]
+  Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy ten login ma zlecenia w okresach. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #6 [HTTP 409]
+  Nie da się teraz przeczytać Pliku zbiorczego okresu 01_07_09_2026, więc nie wiadomo, czy Wykonawca ma w nim zlecenia. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
 report_entering_without_addresses [HTTP 409]
   Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.
 
 settings_change_unknown [HTTP 404]
   Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.
+
+quantity_rule_unknown [HTTP 404]
+  Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.
+
+quantity_difference_unknown [HTTP 404]
+  Tej różnicy już nie ma na liście. Odśwież okno Ustawień.
 
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.

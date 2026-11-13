@@ -34,8 +34,9 @@ from typing import Final
 from .collective_layout import QUANTITY_LETTERS
 from .text import normalize_text
 
-_BUILT_IN_COLUMNS: Final = ("P", "Q", "S")
-"""Kolumny wbudowanych rachunków: reguła taty w nie nie wpisuje."""
+BUILT_IN_COLUMNS: Final = ("P", "Q", "S")
+"""Kolumny wbudowanych rachunków (P i Q z urządzeń TV, S z liczby urządzeń): reguła taty w nie nie wpisuje, może je
+tylko zostawić puste w Rozliczeniu pracownika."""
 DESCRIPTION_COLUMNS: Final = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
 """Kolumny Ilości usług z opisu technika (``CZYNNOŚCI ZREALIZOWANE``), poza słownikiem Reguł ilości (ADR 0033); reguła
 może wpisać w AK i AM tylko część z nich."""
@@ -262,7 +263,7 @@ class QuantityRules:
         """Kolumny, w które Reguły ilości wpisują: kolumny reguł „wpisz” i wbudowane P, Q i S, w kolejności ``N:AP``."""
 
         written = {write.column for rule in self.rules if isinstance(rule.action, Fill) for write in rule.action.writes}
-        return tuple(column for column in QUANTITY_LETTERS if column in written or column in _BUILT_IN_COLUMNS)
+        return tuple(column for column in QUANTITY_LETTERS if column in written or column in BUILT_IN_COLUMNS)
 
     @property
     def leave_empty_columns(self) -> tuple[str, ...]:
@@ -384,6 +385,20 @@ def evaluate(rules: QuantityRules, order: OrderContent) -> RuleResult:
         return WithoutRule(_sum(contributions), leave_empty, contributions, fired)
     contributions += _built_in(facts)
     return ServiceQuantities(_sum(contributions), leave_empty, contributions, fired)
+
+
+@dataclass(frozen=True)
+class DevicesRead:
+    """``URZĄDZENIA`` zlecenia tak, jak je czytają Reguły ilości: składniki Listy Urządzeń w kolejności z tekstu, bez
+    powtórzeń, i czy lista zna każde słowo."""
+
+    components: tuple[str, ...]
+    all_known: bool
+
+
+def devices_read(devices: DeviceList, order: OrderContent) -> DevicesRead:
+    found, all_known = devices.find(_words(order.devices))
+    return DevicesRead(tuple(dict.fromkeys(component.id for component, _ in found)), all_known)
 
 
 _SEPARATORS = re.compile(r"[\s,]+")
@@ -650,7 +665,7 @@ def _check_action(action: Action, components: frozenset[str] | None, path: str) 
 def _check_write(write: Write, components: frozenset[str] | None, path: str) -> None:
     _require(write.column in QUANTITY_LETTERS, f"{path}.kolumna", f"Kolumna „{write.column}” nie jest kolumną Ilości usług N:AP.")
     _require(
-        write.column not in _BUILT_IN_COLUMNS,
+        write.column not in BUILT_IN_COLUMNS,
         f"{path}.kolumna",
         f"Kolumnę {write.column} liczy narzędzie samo: P i Q z urządzeń TV, S z liczby urządzeń.",
     )

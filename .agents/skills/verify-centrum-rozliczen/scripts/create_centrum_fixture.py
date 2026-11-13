@@ -212,7 +212,8 @@ def _configuration(config: Path) -> dict[str, str]:
     workers = WorkerList.of([WorkerEntry([login], name, [f"{login}@przyklad.invalid"]) for login, name in names.items()])
     assert isinstance(workers, WorkerList), workers
     worker_list = config / WORKERS_FILE
-    worker_list.write_text(WORKER_LIST_FILE.dump(workers), encoding="utf-8")
+    # The server writes the list as UTF-8 with LF; write_text would give CRLF on Windows and `wykonawcy` compares bytes.
+    worker_list.write_bytes(WORKER_LIST_FILE.dump(workers).encode("utf-8"))
     _template(config / INTERNAL_TEMPLATE_NAME, 1, INTERNAL_HEADERS)
     _template(config / COLLECTIVE_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS, PRICE_LIST)
     _template(config / WORKER_TEMPLATE_NAME, HEADER_ROW, COLLECTIVE_HEADERS)
@@ -614,6 +615,9 @@ def dad_files(root: Path) -> dict[str, object]:
 
     ready_token = "22_28_09_2026"
     ready = _period_files(periods, ready_token)
+    # The settled period's Plik zbiorczy has the orders of the Wykonawcy whose Rozliczenia pracownika lie beside it, so
+    # the check of the periods before a removal of a Wykonawca reads it (wykonawcy.md).
+    _collective_file(ready / collective_file_name(ready_token), WORKER_IDS[:3])
     workers = ready / worker_settlements_name(ready_token)
     workers.mkdir()
     for worker in WORKERS:

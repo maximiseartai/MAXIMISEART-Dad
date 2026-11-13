@@ -18,14 +18,20 @@ import type {
   GetWithoutQuantityResponse,
   GetToolUpdateResponse,
   OpenRequest,
+  RemindersForm,
   RunEvent,
   RunInfo,
   RunOutcome,
+  PreviewQuantityRulesData,
+  RuleForm,
   RunRequest,
   SendDadNoteResponse,
   Settings,
   ThemeChange,
   ViewTiming,
+  WorkerEdit,
+  WorkerForm,
+  WorkerSwitches,
 } from "@/api/generated"
 import { operations } from "@/api/generated/operations.gen"
 import { zRunEvent } from "@/api/generated/zod.gen"
@@ -125,9 +131,57 @@ export function changeInboxPassword(password: string) {
   return call("changeInboxPassword", { body: { password } })
 }
 
+/** Przełącznik Przypomnień o raporcie; pierwsze włączenie zapisuje dzisiejszy dzień jako dzień wdrożenia. */
+export function changeRemindersEnabled(enabled: boolean) {
+  return call("changeRemindersEnabled", { body: { enabled } })
+}
+
+/** Zapis formularza Przypomnień naraz; zła pora, godzina albo treść to odmowa z polem. */
+export function changeReminders(form: RemindersForm) {
+  return call("changeReminders", { body: form })
+}
+
+/** Przypomnienie z formularza za wczoraj, bez zapisu i bez wysyłki. */
+export function previewReminder(form: RemindersForm) {
+  return call("previewReminder", { body: form })
+}
+
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
 export function changeFolders(folders: FoldersChange) {
   return call("changeFolders", { body: folders })
+}
+
+/** Nowy Wykonawca z formularza sekcji Wykonawcy, aktywny i z Przypomnieniami o raporcie. */
+export function addWorker(form: WorkerForm) {
+  return call("addWorker", { body: form })
+}
+
+/**
+ * Formularz Wykonawcy z loginem `login` naraz; zmiana nazwy przy Rozliczeniu pracownika ze starą nazwą bez
+ * `rename_confirmed` niczego nie zapisuje i niesie ostrzeżenie.
+ */
+export function changeWorker(login: string, edit: WorkerEdit) {
+  return call("changeWorker", { path: { login }, body: edit })
+}
+
+/** Przełącznik Nieaktywnego Wykonawcy albo jego Przypomnień o raporcie, zapisany od razu. */
+export function switchWorker(login: string, switches: WorkerSwitches) {
+  return call("switchWorker", { path: { login }, body: switches })
+}
+
+/** Usuwa Wykonawcę, którego żaden login nie występuje w okresie; inaczej odmowa z propozycją Nieaktywnego. */
+export function removeWorker(login: string) {
+  return call("removeWorker", { path: { login } })
+}
+
+/** Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców albo zdanie, dlaczego ich nie ma. */
+export function getWorkerSuggestions() {
+  return call("getWorkerSuggestions")
+}
+
+/** „Przypisz do Wykonawcy…”: adres nieznanego nadawcy u Wykonawcy z loginem `login`, zapisany od razu. */
+export function assignWorkerAddress(login: string, address: string) {
+  return call("assignWorkerAddress", { path: { login }, body: { address } })
 }
 
 /** Historia Ustawień od najnowszej zmiany. */
@@ -135,9 +189,38 @@ export function getSettingsHistory() {
   return call("getSettingsHistory")
 }
 
+/** Różnice z Kontroli ilości ostatnich okresów, bez oznaczonych jako wyjątek: „Tu wpisałeś inaczej niż reguła”. */
+export function getQuantityDifferences() {
+  return call("getQuantityDifferences")
+}
+
+/** „To był wyjątek”: serwer zapisuje wyjątek różnicy o tym id i oddaje listę różnic po nim. */
+export function markQuantityException(id: string) {
+  return call("markQuantityException", { path: { difference_id: id } })
+}
+
 /** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
 export function getQuantityRules() {
   return call("getQuantityRules")
+}
+
+/** Nowa Reguła ilości z edytora; zła reguła to odmowa z polem formularza (`jesli[0].tekst`, `to.wpisy[1].kolumna`). */
+export function addQuantityRule(rule: RuleForm) {
+  return call("addQuantityRule", { body: rule })
+}
+
+/** Zmieniona Reguła ilości; zostaje na swoim miejscu w regułach. */
+export function changeQuantityRule(id: string, rule: RuleForm) {
+  return call("changeQuantityRule", { path: { rule_id: id }, body: rule })
+}
+
+export function removeQuantityRule(id: string) {
+  return call("removeQuantityRule", { path: { rule_id: id } })
+}
+
+/** Skutek zmiany Reguł ilości na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu. */
+export function previewQuantityRules(edit: PreviewQuantityRulesData["body"]) {
+  return call("previewQuantityRules", { body: edit })
 }
 
 /** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */

@@ -55,3 +55,52 @@ class WorkerListSetting(Model):
     workers: list[ListedWorker]
     unresolved: list[Unresolved]
     problem: SettingProblem | None
+
+
+class WorkerForm(Model):
+    """Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu
+    pracownika i adresy Raportów wykonawcy, tak jak je wpisał tata."""
+
+    logins: list[str]
+    name: str
+    addresses: list[str]
+
+
+class WorkerEdit(WorkerForm):
+    """Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
+    ``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to."""
+
+    rename_confirmed: bool = False
+
+
+class WorkerAddress(Model):
+    """Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+    Wykonawcy…”)."""
+
+    address: str
+
+
+class WorkerSuggestion(Model):
+    """Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+    zleceń ma."""
+
+    login: str
+    orders: int
+
+
+class WorkerSuggestions(Model):
+    """Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+    puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+    obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."""
+
+    state: Literal["read", "not_set", "unreadable"]
+    suggestions: list[WorkerSuggestion]
+    message: str | None
+
+
+class WorkerSwitches(Model):
+    """Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
+    ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik."""
+
+    active: bool | None = None
+    reminders: bool | None = None

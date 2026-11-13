@@ -23,8 +23,8 @@ from drive.common import (
     release_only,
     remove,
     served_version,
+    settings_section,
     settings_title,
-    settings_window,
     version_line,
 )
 from harness import File, Pace, Switch
@@ -197,12 +197,6 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
         run.capture(page, "117-aktualizacja-brak-sieci-bez-przycisku")
 
 
-def _tool_card(page: Page) -> Locator:
-    """The section Narzędzie of Ustawienia, where Dad sees the version and updates the tool."""
-
-    return settings_window(page).locator("[data-slot=settings-section]")
-
-
 def _status(page: Page, text: str) -> Locator:
     return page.get_by_role("status").filter(has_text=text)
 
@@ -248,7 +242,7 @@ def drive(run: Run, page: Page) -> None:
         )
         page.goto(run.url + TOOL_SECTION)
         page.reload()
-        card = _tool_card(page)
+        card = settings_section(page)
         first_commit, first_since = served_version(run)
         expect(card.get_by_text(version_line(first_commit, first_since), exact=True)).to_be_visible()
         expect(card).to_contain_text("Jest nowsza wersja")
@@ -323,7 +317,7 @@ def drive(run: Run, page: Page) -> None:
         run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
         expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
         run.check(True, "the reloaded tab is back on Ustawienia, section Narzędzie, in the new version")
-        card = _tool_card(page)
+        card = settings_section(page)
         updated_commit, since = served_version(run)
         expect(card.get_by_text(version_line(updated_commit, since), exact=True)).to_be_visible()
         expect(card).to_contain_text("Aktualna")
@@ -386,7 +380,7 @@ def drive(run: Run, page: Page) -> None:
         release_only(origin, newest)
         _github_dormant_release(run)
         page.reload()
-        card = _tool_card(page)
+        card = settings_section(page)
         expect(card).to_contain_text("Jest nowsza wersja")
         card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
         expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=20_000)
@@ -428,7 +422,7 @@ def _drive_failed_installation(
     print(f"  harness: each installation of libraries waits {PACING_MS} ms before pip starts", flush=True)
     installation_pacing = Pace.INSTALL.set(run.root, PACING_MS)
     page.reload()
-    card = _tool_card(page)
+    card = settings_section(page)
     expect(card).to_contain_text("Jest nowsza wersja")
     run.check(
         run.api("/api/tool-update", "aktualizacja-instalowanie-przed") == {"state": "idle"},
@@ -491,7 +485,7 @@ def _drive_new_version_not_starting(
     print(f"  harness: the old version, started again, waits {RESTART_PACING_MS} ms before it starts", flush=True)
     restart_pacing = Pace.RESTART.set(run.root, RESTART_PACING_MS)
     page.reload()
-    card = _tool_card(page)
+    card = settings_section(page)
     expect(card).to_contain_text("Jest nowsza wersja")
     before_health = run.api("/api/health", "aktualizacja-nie-wystartowala-health-przed")
     page.evaluate("window.przedPonownymStartem = true")
@@ -550,7 +544,7 @@ def _drive_new_version_not_starting(
     run.capture(page, "136-aktualizacja-nie-wystartowala")
 
     open_settings(page, "Narzędzie")
-    card = _tool_card(page)
+    card = settings_section(page)
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
     expect(card.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)).to_have_count(1)
@@ -585,7 +579,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     print(f"  harness: the old version, started again, waits {OK_ON_OLD_VERSION_PACING_MS} ms before it starts", flush=True)
     restart_pacing = Pace.RESTART.set(run.root, OK_ON_OLD_VERSION_PACING_MS)
     page.reload()
-    card = _tool_card(page)
+    card = settings_section(page)
     expect(card).to_contain_text("Jest nowsza wersja")
     page.evaluate("window.przedPonownymStartem = true")
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
@@ -605,7 +599,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     run.check(not answers(run.url), "the harness put „ok” back before the old version started")
     remove(restart_pacing)
 
-    message = _tool_card(page).get_by_role("alert").filter(has_text=UNEXPECTED)
+    message = settings_section(page).get_by_role("alert").filter(has_text=UNEXPECTED)
     expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)
     run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
     expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
@@ -614,9 +608,9 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
         "Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. "
         "Jeśli komunikat wraca, kliknij „Wyślij do Maksa”."
     )
-    expect(_tool_card(page).get_by_role("button", name=REPORT_BUTTON, exact=True)).to_be_visible()
+    expect(settings_section(page).get_by_role("button", name=REPORT_BUTTON, exact=True)).to_be_visible()
     expect(page.get_by_role("region", name="Notifications").get_by_role("dialog", name=UPDATED)).to_have_count(0)
-    card = _tool_card(page)
+    card = settings_section(page)
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
     run.check(True, "the section Narzędzie shows the failure, no `Zaktualizowano`, and the old version")

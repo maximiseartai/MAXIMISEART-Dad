@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import errno
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -16,20 +18,24 @@ import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, get_args
 import imaplib
 
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from hypothesis import given, settings
+from hypothesis import strategies as st
+import yaml
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
-from rozliczenia import efenix_process
+from rozliczenia import efenix_process, intermax_messages
 from rozliczenia.centrum import app, diagnosis_messages
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
@@ -49,6 +55,7 @@ from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.proposal import (
@@ -62,12 +69,15 @@ from rozliczenia.centrum.settings.proposal import (
 )
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import (
     CENTRUM,
     TOOL_COMMIT,
@@ -80,12 +90,30 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
-from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks, write_dad_quantity_rules
+from tests.fixtures.centrum_processes import (
+    SettlingCentrum,
+    Surroundings,
+    on_register_read,
+    run_to_end,
+    settling_centrum,
+    stopped_for_maks,
+    write_dad_quantity_rules,
+)
 from tests.fixtures.tool_clone import tool_repository
 
-from atrapy.settlement import PERIOD, worker_list, write_worker_list
+from atrapy.pliki_taty import REGISTER_NAME
+from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_list
+from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
+from atrapy.workbooks import rewrite_parts
 from atrapy.skrzynka_raportow import AtrapaImap
-from atrapy.preparation import write_collective_template
+from atrapy.preparation import (
+    OLD_REGISTER_HEADERS,
+    REGISTER_HEADERS,
+    RegisterRow,
+    register_order,
+    write_collective_template,
+    write_register,
+)
 
 import export_openapi
 
@@ -235,6 +263,17 @@ DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
 PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
 NO_INBOX: dict[str, object] = {"inbox": {"address": None, "password": False}, "inbox_problem": None}
+ADR_0030_REMINDERS: dict[str, object] = {
+    "morning": {"start": "08:00", "end": "17:00"},
+    "evening": {"start": "18:00", "end": "22:00"},
+    "first": "08:00",
+    "text": "Poproszę o wysłanie raportu za dzień {dzień}.",
+    "footer": "",
+}
+"""Formularz sekcji Przypomnienia z wartościami z ADR 0030 i speca #1344: pory 8:00–17:00 i 18:00–22:00, pierwsze
+przypomnienie od 8:00 dnia następnego, pierwsze zdanie ze speca, bez stopki."""
+# Sekcja Przypomnienia bez pliku przypomnień: wartości z ADR 0030, wyłączone (DESIGN D2).
+NO_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "state": "good", "enabled": False, "since": None, "problem": None}
 """Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
@@ -251,6 +290,7 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -321,6 +361,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -370,6 +411,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -397,6 +439,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -427,6 +470,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -521,6 +565,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -952,6 +997,307 @@ def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(
     assert list(rule_sentences(app)) == [*others, "t-umowa-u"]
 
 
+# Reguła z edytora: wpisz 2 w AA (pozostała kolumna N:AP), gdy URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI „montaż”.
+EDITOR_RULE: dict[str, Any] = {
+    "scope": "known",
+    "conditions": [
+        {"kind": "component", "component": "gniazdo", "negated": False},
+        {"kind": "activities", "text": "montaż", "negated": False},
+    ],
+    "action": {"kind": "fill", "writes": [{"column": "AA", "value": 2, "multiplier": "once", "component": None}]},
+}
+
+
+def test_regula_dodana_w_edytorze_ma_zdanie_wiersz_historii_ze_zdaniem_a_cofniecie_przywraca_poprzednie_reguly(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert saved.status_code == 200, saved.text
+    sentence = "Jeśli URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI zawierają „montaż”, to wpisz 2 w AA."
+    added = saved.json()["quantity_rules"]["rules"][-1]
+    assert (added["id"], added["rule"], saved.json()["change"]) == ("regula-1", EDITOR_RULE, row["id"])
+    assert (row["source"], row["file"], row["changes"][0]["key"]) == ("tata", RULES_FILE, "reguly.regula-1")
+    assert [(rule["key"], rule["before"], _text(rule["after"])) for rule in row["rules"]] == [
+        ("reguly.regula-1", None, sentence)
+    ]
+    assert undone.status_code == 200, undone.text
+    assert "regula-1" not in rule_sentences(app)
+    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def _text(parts: list[dict[str, Any]] | None) -> str | None:
+    if parts is None:
+        return None
+    return "".join(part["text"] if part["kind"] == "text" else part["letter"] for part in parts)
+
+
+def test_zmiana_reguly_w_edytorze_zostaje_na_jej_miejscu_a_historia_mowi_zdaniem_przed_i_po(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    nokia = next(rule for rule in app.client.get(QUANTITY_RULES_URL).json()["rules"] if rule["id"] == "nokia")
+    changed = json.loads(json.dumps(nokia["rule"]))
+    changed["action"]["writes"][0]["value"] = 2
+
+    saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=changed)
+
+    assert saved.status_code == 200, saved.text
+    assert list(rule_sentences(app)) == [rule.id for rule in DEFAULT_QUANTITY_RULES.rules]
+    [row] = history_rows(app)
+    assert [(rule["key"], _text(rule["before"]), _text(rule["after"])) for rule in row["rules"]] == [
+        (
+            "reguly.nokia",
+            "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z.",
+            "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z.",
+        )
+    ]
+
+
+def test_regula_usunieta_w_edytorze_znika_a_historia_ma_jej_zdanie_przed(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/t-umowa-u")
+
+    assert removed.status_code == 200, removed.text
+    assert "t-umowa-u" not in rule_sentences(app)
+    [row] = history_rows(app)
+    assert [(_text(rule["before"]), rule["after"]) for rule in row["rules"]] == [
+        ("Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.", None)
+    ]
+
+
+def _editor_rule(column: str, value: int) -> dict[str, Any]:
+    """Reguła z edytora: przy „montaż” w CZYNNOŚCIACH wpisz ``value`` w ``column``."""
+
+    return {
+        "scope": "every",
+        "conditions": [{"kind": "activities", "text": "montaż", "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": column, "value": value, "multiplier": "once", "component": None}]},
+    }
+
+
+# Reguły taty z edytora po nazwie w sekwencji: każda ma inne zdanie.
+EDITED = {"A": _editor_rule("AA", 2), "A2": _editor_rule("AA", 4), "B": _editor_rule("AC", 5), "C": _editor_rule("AB", 1)}
+
+
+def _edits(app: Centrum, sequence: tuple[tuple[str, ...], ...]) -> dict[str, str]:
+    """Zapisy taty w edytorze po kolei: ``("dodaj", A)``, ``("zmien", A, A2)``, ``("usun", A)``; daje id reguły po nazwie."""
+
+    ids: dict[str, str] = {}
+    for step in sequence:
+        match step:
+            case ("dodaj", name):
+                response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                ids[name] = response.json()["quantity_rules"]["rules"][-1]["id"]
+            case ("zmien", name, other):
+                response = app.client.put(f"{QUANTITY_RULES_URL}/{ids[name]}", json=EDITED[other])
+                ids[other] = ids[name]
+            case ("usun", name):
+                response = app.client.delete(f"{QUANTITY_RULES_URL}/{ids[name]}")
+            case _:
+                raise AssertionError(step)
+        assert response.status_code == 200, response.text
+    return ids
+
+
+def test_cofniecie_usuniecia_reguly_przywraca_ja_obok_reguly_dodanej_po_niej_a_cofniecie_dodania_jej_nie_rusza(
+    tmp_path: Path,
+) -> None:
+    """Tata dodaje regułę A, usuwa ją i dodaje regułę B: B ma inne id niż usunięta A, więc „Cofnij” usunięcia A
+    przywraca A obok B, a „Cofnij” dodania A zdejmuje tylko A."""
+
+    app = centrum(tmp_path)
+    ids = _edits(app, (("dodaj", "A"), ("usun", "A"), ("dodaj", "B")))
+    added_a, removed_a, _ = reversed(history_rows(app))
+    a = "Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz 2 w AA."
+    b = "Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz 5 w AC."
+
+    restored = app.client.post(f"/api/settings/history/{removed_a['id']}/undo")
+    after_restore = rule_sentences(app)
+    taken_back = app.client.post(f"/api/settings/history/{added_a['id']}/undo")
+
+    assert ids["A"] != ids["B"]
+    assert (restored.status_code, taken_back.status_code) == (200, 200), (restored.text, taken_back.text)
+    assert (after_restore.get(ids["A"]), after_restore.get(ids["B"])) == (a, b)
+    assert {rule: sentence for rule, sentence in rule_sentences(app).items() if rule.startswith("regula-")} == {ids["B"]: b}
+
+
+def test_nowa_regula_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_cofniecie_usuniecia_nie_rusza_reguly_dodanej_potem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tata dodaje regułę A i ją usuwa, a potem dodaje B, gdy system nie daje czytać Historii Ustawień (plik trzyma
+    OneDrive), choć dopisanie wiersza działa. Bez kluczy Historii B mogłaby dostać id usuniętej A i zniknąć po „Cofnij”
+    usunięcia A, więc zapis jest odmową ze zdaniem i nic się nie zapisuje. B dodana, gdy Historia znów się czyta, ma
+    własne id, a „Cofnij” usunięcia A przywraca A obok niej."""
+
+    app = centrum(tmp_path)
+    ids = _edits(app, (("dodaj", "A"), ("usun", "A")))
+    rules_before, rows_before = (app.tool.config / RULES_FILE).read_bytes(), history_rows(app)
+
+    with unreadable_history(monkeypatch):
+        refused = app.client.post(QUANTITY_RULES_URL, json=EDITED["B"])
+    rules_after, rows_after = (app.tool.config / RULES_FILE).read_bytes(), history_rows(app)
+    b = _edits(app, (("dodaj", "B"),))["B"]
+    restored = app.client.post(f"/api/settings/history/{rows_before[0]['id']}/undo")
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (rules_after, rows_after) == (rules_before, rows_before)
+    assert b != ids["A"]
+    assert restored.status_code == 200, restored.text
+    assert {rule: sentence for rule, sentence in rule_sentences(app).items() if rule.startswith("regula-")} == {
+        ids["A"]: _sentence(EDITED["A"]),
+        b: _sentence(EDITED["B"]),
+    }
+
+
+# Krok taty w oknie Ustawień: zapis w edytorze (także nowej reguły, gdy Historii nie da się przeczytać) albo „Cofnij”
+# wiersza Historii; liczba wybiera regułę albo wiersz.
+_STEP = st.one_of(
+    st.tuples(st.just("dodaj"), st.sampled_from(sorted(EDITED))),
+    st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(EDITED))),
+    st.tuples(st.just("usun"), st.integers(0, 9)),
+    st.tuples(st.just("cofnij"), st.integers(0, 9)),
+    st.tuples(st.just("dodaj bez historii"), st.sampled_from(sorted(EDITED))),
+)
+
+
+def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a_cofniecie_zmienia_tylko_regule_wiersza(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Po dowolnych zapisach taty w edytorze i cofnięciach z Historii: nowa reguła dostaje id, którego nie miała żadna
+    reguła przed nią, a „Cofnij” wiersza zmienia tylko regułę tego wiersza (usuwa ją albo przywraca jej zdanie
+    „przed”), każda inna reguła zostaje, jak była; cofnięcie, którego nie da się wykonać, nie zmienia żadnej reguły i
+    mówi zdaniem dlaczego. Nowa reguła, gdy Historii nie da się przeczytać, to odmowa ze zdaniem bez zmiany reguł."""
+
+    examples = itertools.count()
+
+    @settings(derandomize=True, database=None, deadline=None, max_examples=25)
+    @given(st.lists(_STEP, min_size=3, max_size=8))
+    def steps_hold(steps: list[tuple[Any, ...]]) -> None:
+        app = centrum(tmp_path / str(next(examples)))
+        expected: dict[str, str] = {}
+        given_ids: set[str] = set()
+        for step in steps:
+            ids = list(expected)
+            match step:
+                case ("dodaj", name):
+                    response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                    added = response.json()["quantity_rules"]["rules"][-1]["id"]
+                    assert added not in given_ids, f"id {added} usuniętej reguły wróciło do nowej"
+                    given_ids.add(added)
+                    expected[added] = _sentence(EDITED[name])
+                case ("dodaj bez historii", name):
+                    with unreadable_history(monkeypatch):
+                        response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                    assert (response.status_code, response.json()) == (500, {"message": SETTINGS_NOT_SAVED}), steps
+                case ("zmien", index, name) if ids:
+                    rule_id = ids[index % len(ids)]
+                    response = app.client.put(f"{QUANTITY_RULES_URL}/{rule_id}", json=EDITED[name])
+                    expected[rule_id] = _sentence(EDITED[name])
+                case ("usun", index) if ids:
+                    rule_id = ids[index % len(ids)]
+                    response = app.client.delete(f"{QUANTITY_RULES_URL}/{rule_id}")
+                    del expected[rule_id]
+                case ("cofnij", index):
+                    rows = [row for row in history_rows(app) if row["rules"]]
+                    if not rows:
+                        continue
+                    [rule] = rows[index % len(rows)]["rules"]
+                    response = app.client.post(f"/api/settings/history/{rows[index % len(rows)]['id']}/undo")
+                    if response.status_code == 200:
+                        rule_id = rule["key"].removeprefix("reguly.")
+                        expected.pop(rule_id, None)
+                        if rule["before"] is not None:
+                            expected[rule_id] = str(_text(rule["before"]))
+                    else:
+                        assert response.json()["message"], response.text
+                case _:
+                    continue
+            assert response.status_code in (200, 409, 422) or step[0] == "dodaj bez historii", response.text
+            shown = {rule_id: sentence for rule_id, sentence in rule_sentences(app).items() if rule_id.startswith("regula-")}
+            assert shown == expected, steps
+
+    steps_hold()
+
+
+def _sentence(rule: dict[str, Any]) -> str:
+    [write] = rule["action"]["writes"]
+    return f"Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz {write['value']} w {write['column']}."
+
+
+@pytest.mark.parametrize(
+    ("rule", "field", "message"),
+    [
+        ({**EDITOR_RULE, "action": None}, "to", settings_messages.rule_without_action()),
+        (
+            {**EDITOR_RULE, "action": {"kind": "fill", "writes": [{"column": "AT", "value": 1, "multiplier": "once", "component": None}]}},
+            "to.wpisy[0].kolumna",
+            "Kolumna „AT” nie jest kolumną Ilości usług N:AP.",
+        ),
+        (
+            {**EDITOR_RULE, "action": {"kind": "fill", "writes": [{"column": "S", "value": 1, "multiplier": "once", "component": None}]}},
+            "to.wpisy[0].kolumna",
+            "Kolumnę S liczy narzędzie samo: P i Q z urządzeń TV, S z liczby urządzeń.",
+        ),
+        (
+            {**EDITOR_RULE, "action": {"kind": "leave_empty", "columns": ["AU"]}},
+            "to.kolumny",
+            "Kolumna „AU” nie jest kolumną Ilości usług N:AP.",
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "activities", "text": "Akt  Int", "negated": False}]},
+            "jesli[0].tekst",
+            "Tekst wpisz małymi literami, z pojedynczymi spacjami.",
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "date", "days": [0], "since": "17", "negated": False}]},
+            "jesli[0].od",
+            settings_messages.rule_hour(),
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "component", "component": "nie-ma-takiego", "negated": False}]},
+            "jesli[0].skladnik",
+            "Składnika „nie-ma-takiego” nie ma na Liście Urządzeń.",
+        ),
+    ],
+    ids=["bez-dzialania", "kolumna-spoza-n-ap", "kolumna-wbudowana", "pusta-spoza-n-ap", "tekst-nie-malymi", "godzina", "skladnik"],
+)
+def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zdanie(
+    tmp_path: Path, rule: dict[str, Any], field: str, message: str
+) -> None:
+    app = centrum(tmp_path)
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=rule)
+    previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "add", "rule": rule})
+
+    assert (refused.status_code, refused.json()) == (422, {"message": message, "field": field})
+    assert (previewed.status_code, previewed.json()) == (422, {"message": message, "field": field})
+    assert not (app.tool.config / RULES_FILE).exists()
+    assert history_rows(app) == []
+
+
+def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    changed = app.client.put(f"{QUANTITY_RULES_URL}/nie-ma-takiej", json=EDITOR_RULE)
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/nie-ma-takiej")
+
+    unknown = {"message": "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień."}
+    assert [(changed.status_code, changed.json()), (removed.status_code, removed.json())] == [(404, unknown)] * 2
+    assert history_rows(app) == []
+
+
+def test_kolumny_edytora_to_n_ap_z_nazwa_cennika_a_p_q_i_s_regula_tylko_zostawia_puste(tmp_path: Path) -> None:
+    columns = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()["columns"]
+
+    n_to_ap = range(column_index_from_string("N"), column_index_from_string("AP") + 1)
+    assert [column["letter"] for column in columns] == [get_column_letter(index) for index in n_to_ap]
+    assert [column["letter"] for column in columns if not column["writable"]] == ["P", "Q", "S"]
+
+
 @pytest.mark.parametrize(
     ("register", "periods", "problem"),
     [
@@ -1039,6 +1385,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
     assert second.json() == first.json()
@@ -1604,7 +1951,66 @@ def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_p
     assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
 
 
-WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
+@contextmanager
+def held_release_changes(tool: ToolDirectory, monkeypatch: pytest.MonkeyPatch, fault: str) -> Iterator[None]:
+    """Do końca bloku start Centrum wstrzymuje zmiany z Wydania: system nie daje czytać Historii Ustawień
+    (``bez-historii``) albo pamięć zmian z Wydań ma uszkodzoną treść (``bez-pamieci``)."""
+
+    if fault == "bez-pamieci":
+        memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text('{"schema_version": 1, "zmiany": {"2026-11-lista-wyk', encoding="utf-8")
+        yield
+        return
+    with unreadable_history(monkeypatch):
+        yield
+
+
+@pytest.mark.parametrize(
+    ("mapping", "addresses"),
+    [(OLD_MAPPING, OLD_ADDRESSES), (OLD_MAPPING, None), (None, OLD_ADDRESSES)],
+    ids=["oba-stare-pliki", "tylko-wykonawcy", "tylko-adresy"],
+)
+@pytest.mark.parametrize("fault", ["bez-historii", "bez-pamieci"])
+def test_przeniesienie_wstrzymane_przy_starcie_ze_starym_plikiem_wykonawcow_czeka_zamiast_pustej_dobrej_listy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, mapping: str | None, addresses: str | None
+) -> None:
+    """Przegląd #1569 r2, D2: start, który przy pierwszym starcie Wydania z Listą Wykonawców wstrzymuje przeniesienie,
+    bo nie da się przeczytać Historii Ustawień albo pamięci zmian z Wydań, a któryś stary plik Wykonawców leży w
+    ``config``, daje sekcji Wykonawcy to samo złe ustawienie co stary plik bez prawa odczytu, a Przebieg rozliczeń nie
+    startuje na pustej liście."""
+
+    tool = settling_centrum(tmp_path).tool
+    tool.worker_list.unlink()
+    old_files(tool, mapping, addresses)
+    with held_release_changes(tool, monkeypatch, fault):
+        client = started(tool, RELEASE_CHANGES)
+        workers = client.get("/api/settings").json()["workers"]
+        refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+        client.stop()
+
+    assert (tool.worker_list.exists(), workers) == (False, {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING})
+    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
+
+
+@pytest.mark.parametrize("fault", ["bez-historii", "bez-pamieci"])
+def test_przeniesienie_wstrzymane_przy_starcie_bez_starych_plikow_wykonawcow_to_pusta_dobra_lista(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """Bez starych plików Wykonawców przeniesienie nie ma czego przenieść, więc wstrzymane przy starcie nie jest
+    złym ustawieniem: sekcja Wykonawcy ma pustą dobrą listę, jak po przeniesieniu bez starych plików."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    with held_release_changes(tool, monkeypatch, fault):
+        client = started(tool, RELEASE_CHANGES)
+        workers = client.get("/api/settings").json()["workers"]
+        client.stop()
+
+    assert (workers["state"], workers["workers"], workers["problem"]) == ("good", [], None)
+
+
+WORKER ="  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
 
 
 @pytest.mark.parametrize(
@@ -1769,12 +2175,22 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
     tmp_path: Path,
 ) -> None:
+    """„Cofnij” usuwa dopisaną ręcznie Wykonawczynię, bo jej loginu nie ma w Rejestrze zleceń ani w żadnym okresie."""
+
     app = centrum(tmp_path)
     write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}, {"jan.testowy": [JAN]}))
     app.client.get("/api/settings")
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["jan.testowy"])
+    app.platform.chosen_files.append(register)
+    app.platform.chosen_folders.append(tmp_path / "INEA")
+    (tmp_path / "INEA").mkdir()
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
     write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Nowak", "anna.przyklad": "Anna Przykład"}))
 
-    [row] = history_rows(app)
+    [row] = [row for row in history_rows(app) if row["file"] == WORKERS_FILE]
     undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
 
     assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
@@ -1789,6 +2205,592 @@ def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia
     assert "ustawienia-zmiana plik=wykonawcy.yaml klucze=wykonawcy zrodlo=tata" in log
     for secret in ("jan.testowy", "Jan Nowak", "anna.przyklad", JAN):
         assert secret not in log, secret
+
+
+# --- Lista Wykonawców: tata zmienia ją w sekcji Wykonawcy (#1474, ADR 0032) ---------------------------------------------
+
+WORKERS_API = "/api/settings/workers"
+# Syntetyczny Plik zbiorczy okresu ``PERIOD`` ma zlecenia adrian.testowy i dariusz.fikcyjny2; kamil.syntetyczny jest na
+# Liście Wykonawców bez zleceń w tym okresie.
+EARLIER_PERIOD = "01_07_09_2026"
+
+
+def listed_workers(client: CentrumClient) -> dict[str, dict[str, Any]]:
+    """Wykonawcy sekcji Wykonawcy po pierwszym loginie."""
+
+    return {worker["logins"][0]: worker for worker in client.get("/api/settings").json()["workers"]["workers"]}
+
+
+def worker_form(logins: list[str], name: str, addresses: list[str] | None = None) -> dict[str, object]:
+    return {"logins": logins, "name": name, "addresses": addresses or []}
+
+
+def settling_with_register(
+    tmp_path: Path, logins: Sequence[str] | None, surroundings: Surroundings | None = None
+) -> SettlingCentrum:
+    """Centrum ze wskazanym syntetycznym Rejestrem zleceń (``register_of``), w którym zlecenia mają Wykonawców
+    ``logins``; ``None``: tata nie wskazał Rejestru."""
+
+    register = None
+    if logins is not None:
+        register = register_of(tmp_path)
+        register.parent.mkdir()
+        write_orders(register, logins)
+    return settling_centrum(tmp_path, register=register, surroundings=surroundings)
+
+
+def register_of(tmp_path: Path) -> Path:
+    return tmp_path / "Rejestr" / REGISTER_NAME
+
+
+def write_orders(register: Path, logins: Sequence[str], headers: tuple[str, ...] = REGISTER_HEADERS) -> None:
+    """Rejestr zleceń ze zleceniem każdego z ``logins`` w kolumnie ``WYKONAWCA`` i nagłówkami ``headers``."""
+
+    orders: list[RegisterRow] = [
+        register_order(number, datetime(2026, 9, 8, 10), worker=login) for number, login in enumerate(logins, start=1)
+    ]
+    write_register(register, orders, headers=headers)
+
+
+def test_tata_dodaje_wykonawce_a_adres_innego_wykonawcy_i_nazwa_na_ten_sam_plik_sa_odmowa_przy_polu(tmp_path: Path) -> None:
+    """US 23, 28, 30: nowy Wykonawca z loginem, nazwą i adresem trafia na listę jako aktywny z przypomnieniami i ma
+    wiersz Historii; adres, który ma już inny Wykonawca, i nazwa, która daje ten sam plik Rozliczenia pracownika, nie
+    zapisują się, a odmowa wskazuje pole formularza."""
+
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+
+    added = client.post(WORKERS_API, json=worker_form(["Bartek.Nowy"], "Bartek Nowy", [JAN]))
+    file_after_add = centrum_.tool.worker_list.read_bytes()
+    same_address = client.post(WORKERS_API, json=worker_form(["ewa.nowa"], "Ewa Nowa", [JAN.upper()]))
+    same_file = client.post(WORKERS_API, json=worker_form(["ewa.nowa"], "bartek  NOWY"))
+
+    assert added.status_code == 200, added.json()
+    assert listed_workers(client)["bartek.nowy"] == listed(["bartek.nowy"], "Bartek Nowy", [JAN])
+    [row] = history_rows_of(client)
+    assert (row["section"], [change["key"] for change in row["changes"]], row["undoable"]) == (
+        "wykonawcy",
+        ["wykonawcy[bartek.nowy]"],
+        True,
+    )
+    assert (same_address.status_code, same_address.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[0]"},
+    )
+    assert (same_file.status_code, same_file.json()) == (
+        422,
+        {"message": settings_messages.worker_same_file(), "field": "nazwa"},
+    )
+    assert centrum_.tool.worker_list.read_bytes() == file_after_add
+    assert len(history_rows_of(client)) == 1
+
+
+WORKER_SUGGESTIONS_API = f"{WORKERS_API}/suggestions"
+
+
+def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_znika_po_dodaniu_wykonawcy(
+    tmp_path: Path,
+) -> None:
+    """US 24: login z ``WYKONAWCA`` uporządkowanych zleceń bieżącego okresu i 4 poprzednich (okresy, które Tablica okresów
+    pokazuje od razu), którego nie ma żaden Wykonawca, także Nieaktywny i także jako drugi login, ani sprawa „login bez
+    Wykonawcy”, jest podpowiedzią z liczbą tych zleceń, od najczęstszej; login tylko ze starszych zleceń i zlecenie z
+    pustym ``WYKONAWCA`` nie są (D2 #1650 r1). Odpowiedź ma sam login
+    i liczbę, bez treści Rejestru, a odczyt niczego nie zapisuje. Po dodaniu Wykonawcy z loginem podpowiedzi podpowiedź
+    znika."""
+
+    # Dziś (TODAY) jest środa 16.09.2026 w okresie od wtorku 15.09, więc 4 poprzednie okresy zaczynają się we wtorek 18.08.
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    orders = [
+        ("stary.login", datetime(2026, 8, 17, 10)),
+        ("brzeg.okna", datetime(2026, 8, 18, 10)),
+        ("adrian.testowy", datetime(2026, 9, 8, 9)),
+        ("kamil.syntetyczny", datetime(2026, 9, 8, 10)),
+        ("kamil.drugi", datetime(2026, 9, 8, 10, 30)),
+        ("Nowy.Login", datetime(2026, 9, 8, 11)),
+        ("", datetime(2026, 9, 8, 12)),
+        ("sprawa.login", datetime(2026, 9, 9, 9)),
+        ("nowy.login ", datetime(2026, 9, 9, 10)),
+    ]
+    write_register(
+        register, [register_order(number, started, worker=login) for number, (login, started) in enumerate(orders, start=1)]
+    )
+    centrum_ = settling_centrum(tmp_path, register=register)
+    client = centrum_.client
+    address = SenderAddress.of("sprawa@przyklad.invalid")
+    assert address is not None
+    with_case = WorkerList.of(
+        [
+            WorkerEntry([login, "kamil.drugi"] if login == "kamil.syntetyczny" else [login], name)
+            for login, name in SETTLEMENT_WORKERS.items()
+        ],
+        [UnmatchedLogin(Login("sprawa.login"), (address,))],
+    )
+    assert isinstance(with_case, WorkerList), with_case
+    write_worker_list(centrum_.tool.worker_list, with_case)
+    assert client.put(f"{WORKERS_API}/kamil.syntetyczny/switches", json={"active": False}).status_code == 200
+    listed_before = centrum_.tool.worker_list.read_bytes()
+
+    first = client.get(WORKER_SUGGESTIONS_API)
+    listed_after_read = centrum_.tool.worker_list.read_bytes()
+    added = client.post(WORKERS_API, json=worker_form(["nowy.login"], "Nowy Login"))
+    second = client.get(WORKER_SUGGESTIONS_API)
+
+    assert (first.status_code, first.json()) == (
+        200,
+        {
+            "state": "read",
+            "suggestions": [{"login": "nowy.login", "orders": 2}, {"login": "brzeg.okna", "orders": 1}],
+            "message": None,
+        },
+    )
+    assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
+    assert added.status_code == 200, added.json()
+    assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+# Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.
+NO_ORDER_SHEET = intermax_messages.no_order_sheet(Path(REGISTER_NAME)).what
+
+
+def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
+    """Arkusz zleceń, którego wierszy nie da się rozdzielić przy czytaniu od dołu (komentarz pod ostatnim wierszem)."""
+
+    rewrite_parts(
+        register_of(centrum_.tmp_path),
+        lambda name, data: data.replace(b"</sheetData>", b"<!-- x --></sheetData>") if name.startswith("xl/worksheets/") else data,
+    )
+
+
+@pytest.mark.parametrize(
+    ("register", "damage", "state", "message"),
+    [
+        pytest.param(None, None, "not_set", settings_messages.worker_suggestions_not_set(), id="bez-rejestru"),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_of(centrum_.tmp_path).unlink(),
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="rejestru-nie-ma",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_of(centrum_.tmp_path).write_bytes(b"to nie jest skoroszyt"),
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="nie-skoroszyt",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_without_order_sheets(centrum_),
+            "unreadable",
+            NO_ORDER_SHEET,
+            id="rejestr-bez-arkuszy-zlecen",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: write_orders(register_of(centrum_.tmp_path), ["nowy.login"], OLD_REGISTER_HEADERS),
+            "unreadable",
+            NO_ORDER_SHEET,
+            id="starszy-uklad-bez-obszaru-wklejania",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            _register_unreadable_rows,
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="wiersze-nie-do-rozdzielenia",
+        ),
+    ],
+)
+def test_bez_wskazanego_albo_czytelnego_rejestru_sekcja_wykonawcy_mowi_zdaniem_dlaczego_nie_ma_podpowiedzi(
+    tmp_path: Path,
+    register: list[str] | None,
+    damage: Callable[[SettlingCentrum], None] | None,
+    state: str,
+    message: str,
+) -> None:
+    """US 24, W2 #1577 r1: niewskazany Rejestr zleceń albo Rejestr, którego nie da się przeczytać, to zdanie dla taty w
+    sekcji Wykonawcy, a nie pusta lista, która wygląda jak „brak nowych loginów”. Rejestr bez obszaru wklejania (bez
+    arkusza zleceń albo w starszym układzie bez AKCJE i UWAGI, z którego Przebieg czyta loginy) ma zdanie „Co się
+    stało” tego samego Komunikatu, którym zatrzymują się na nim procesy wklejania (D1 #1650 r1)."""
+
+    centrum_ = settling_with_register(tmp_path, register)
+    if damage is not None:
+        damage(centrum_)
+
+    answer = centrum_.client.get(WORKER_SUGGESTIONS_API)
+
+    assert (answer.status_code, answer.json()) == (200, {"state": state, "suggestions": [], "message": message})
+
+
+def history_rows_of(client: CentrumClient) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
+
+    return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
+
+
+def kept(sentence: str) -> str:
+    """Odmowa usunięcia: zdanie, dlaczego Wykonawca albo login zostaje, i propozycja Nieaktywnego."""
+
+    return (
+        f"{sentence} Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy "
+        "dalej się rozliczą."
+    )
+
+
+def earlier_collective_file_damaged(centrum_: SettlingCentrum) -> None:
+    earlier = centrum_.period_parent / EARLIER_PERIOD
+    earlier.mkdir()
+    (earlier / collective_file_name_with(EARLIER_PERIOD)).write_bytes(b"to nie jest skoroszyt")
+
+
+def periods_directory_gone(centrum_: SettlingCentrum) -> None:
+    """Folder okresów, który tata wskazał, zniknął (przeniesiony albo OneDrive odłączony)."""
+
+    centrum_.periods_directory.rename(centrum_.tmp_path / "INEA przeniesione")
+
+
+def register_without_order_sheets(centrum_: SettlingCentrum) -> None:
+    """Rejestr zleceń, którego żaden arkusz nie ma nagłówków zleceń, choć login stoi pod ``WYKONAWCA``."""
+
+    headers = tuple(f"{header} STARY" if header else header for header in REGISTER_HEADERS)
+    write_orders(register_of(centrum_.tmp_path), ["adrian.testowy", "kamil.syntetyczny"], headers)
+
+
+@pytest.mark.parametrize(
+    ("register", "removed", "damage", "answer"),
+    [
+        pytest.param(
+            ["adrian.testowy", "kamil.syntetyczny"],
+            "kamil.syntetyczny",
+            None,
+            kept("Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców."),
+            id="w-rejestrze",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "dariusz.fikcyjny2",
+            None,
+            kept(f"Wykonawca ma zlecenia w okresie {PERIOD}, więc zostaje na Liście Wykonawców."),
+            id="tylko-w-pliku-zbiorczym",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "kamil.syntetyczny",
+            earlier_collective_file_damaged,
+            kept(
+                f"Nie da się teraz przeczytać Pliku zbiorczego okresu {EARLIER_PERIOD}, więc nie wiadomo, czy Wykonawca "
+                "ma w nim zlecenia."
+            ),
+            id="nieczytelny-plik-zbiorczy",
+        ),
+        pytest.param(
+            None,
+            "kamil.syntetyczny",
+            None,
+            kept("Nie wiadomo, czy Wykonawca ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów."),
+            id="bez-rejestru",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "kamil.syntetyczny",
+            register_without_order_sheets,
+            kept("Nie da się teraz przeczytać Rejestru zleceń, więc nie wiadomo, czy Wykonawca ma w nim zlecenia."),
+            id="rejestr-bez-arkuszy-zlecen",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "kamil.syntetyczny",
+            periods_directory_gone,
+            kept("Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy Wykonawca ma zlecenia w okresach."),
+            id="bez-folderu-okresow",
+        ),
+    ],
+)
+def test_usuniecie_wykonawcy_z_loginem_w_okresie_jest_odmowa_z_propozycja_nieaktywnego(
+    tmp_path: Path,
+    register: list[str] | None,
+    removed: str,
+    damage: Callable[[SettlingCentrum], None] | None,
+    answer: str,
+) -> None:
+    """ADR 0032, US 34, 36: Wykonawcy, którego login stoi w Rejestrze zleceń albo w Pliku zbiorczym okresu, nie da się
+    usunąć, tak samo gdy któregoś pliku nie da się przeczytać, Rejestr nie ma arkuszy zleceń, folderu okresów nie ma
+    albo Rejestr nie jest wskazany; odmowa proponuje Nieaktywnego, a lista i Historia zostają bez zmiany. Propozycja
+    działa: Nieaktywny zostaje na liście."""
+
+    centrum_ = settling_with_register(tmp_path, register)
+    if damage is not None:
+        damage(centrum_)
+    before = centrum_.tool.worker_list.read_bytes()
+
+    refused_ = centrum_.client.delete(f"{WORKERS_API}/{removed}")
+    after_refusal = centrum_.tool.worker_list.read_bytes()
+    inactive = centrum_.client.put(f"{WORKERS_API}/{removed}/switches", json={"active": False})
+
+    assert (refused_.status_code, refused_.json()) == (409, {"message": answer})
+    assert after_refusal == before
+    assert inactive.status_code == 200
+    assert listed_workers(centrum_.client)[removed]["active"] is False
+    assert [change["key"] for row in history_rows_of(centrum_.client) for change in row["changes"]] == [
+        f"wykonawcy[{removed}]"
+    ], "odmowa nie ma wiersza Historii, przełącznik ma"
+
+
+@PATH_CHECKS
+@pytest.mark.parametrize(
+    ("folder", "answer"),
+    [
+        pytest.param(
+            lambda centrum_: centrum_.periods_directory,
+            "Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy Wykonawca ma zlecenia w okresach.",
+            id="folder-okresow",
+        ),
+        pytest.param(
+            lambda centrum_: centrum_.period_directory,
+            f"Nie da się teraz przeczytać Pliku zbiorczego okresu {PERIOD}, więc nie wiadomo, czy Wykonawca ma w nim "
+            "zlecenia.",
+            id="folder-okresu",
+        ),
+    ],
+)
+def test_usuniecie_wykonawcy_gdy_folderu_z_okresami_nie_da_sie_wylistowac_jest_odmowa(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path_checks: Callable[[pytest.MonkeyPatch], None],
+    folder: Callable[[SettlingCentrum], Path],
+    answer: str,
+) -> None:
+    """Folder okresów albo Folder okresu, którego system nie daje teraz wylistować (odebrane prawo odczytu, OneDrive,
+    który nie działa), nie znaczy, że loginu w nim nie ma: usunięcie Wykonawcy jest odmową, a lista zostaje."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    before = centrum_.tool.worker_list.read_bytes()
+    path_checks(monkeypatch)
+
+    with without_reading(folder(centrum_)):
+        refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
+
+    assert (refused_.status_code, refused_.json()) == (409, {"message": kept(answer)})
+    assert centrum_.tool.worker_list.read_bytes() == before
+
+
+def test_drugie_usuniecie_widzi_plik_zbiorczy_zmieniony_po_pierwszym(tmp_path: Path) -> None:
+    """Sprawdzenie okresów pamięta Wykonawców przeczytanych Plików zbiorczych, ale nie odpowiada starym stanem: zlecenie,
+    które po pierwszym usunięciu doszło Wykonawcy w Pliku zbiorczym, zatrzymuje usunięcie tego Wykonawcy."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pomylka.login"], "Pomyłka Testowa"))
+    client.post(WORKERS_API, json=worker_form(["andrzej.nieznany2"], "Andrzej Nowy"))
+    first = client.delete(f"{WORKERS_API}/pomylka.login")
+    write_source(centrum_.collective_file, include_unmapped=True)
+
+    second = client.delete(f"{WORKERS_API}/andrzej.nieznany2")
+
+    assert first.status_code == 200, first.json()
+    assert (second.status_code, second.json()) == (
+        409,
+        {"message": kept(f"Wykonawca ma zlecenia w okresie {PERIOD}, więc zostaje na Liście Wykonawców.")},
+    )
+    assert "andrzej.nieznany2" in listed_workers(client)
+
+
+def with_second_login(workers_file: Path, login: str, second: str) -> None:
+    """Ręczna zmiana pliku Listy Wykonawców: Wykonawca z loginem ``login`` dostaje login ``second``."""
+
+    document = yaml.safe_load(workers_file.read_text(encoding="utf-8"))
+    next(entry for entry in document["wykonawcy"] if login in entry["loginy"])["loginy"].append(second)
+    workers_file.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+
+
+def test_login_dopisany_w_trakcie_sprawdzania_okresow_zatrzymuje_usuniecie_wykonawcy(tmp_path: Path) -> None:
+    """Okresy sprawdza się poza blokadą Ustawień, bo pierwsze sprawdzenie czyta Plik zbiorczy każdego okresu. Login,
+    który Wykonawca dostał w tym czasie (tu ręczna zmiana pliku Listy Wykonawców), nie był sprawdzony, więc usunięcie
+    jest odmową, a Wykonawca zostaje z oboma loginami."""
+
+    workers_file = ToolDirectory(tmp_path).worker_list
+    steps: list[str] = []
+
+    def second_login(_register: Path) -> None:
+        if steps == ["usuwanie"]:
+            steps.append("dopisany")
+            with_second_login(workers_file, "kamil.syntetyczny", "kamil.drugi")
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"], Surroundings(source=on_register_read(second_login)))
+    steps.append("usuwanie")
+
+    refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
+
+    assert steps == ["usuwanie", "dopisany"], "login doszedł w trakcie sprawdzania okresów"
+    assert (refused_.status_code, refused_.json()["message"]) == (422, settings_messages.worker_list_changed())
+    assert listed_workers(centrum_.client)["kamil.syntetyczny"]["logins"] == ["kamil.syntetyczny", "kamil.drugi"]
+
+
+def test_wykonawce_bez_loginu_w_zadnym_okresie_tata_usuwa_a_historia_pozwala_go_przywrocic(tmp_path: Path) -> None:
+    """US 36: Wykonawca dodany przez pomyłkę (loginu nie ma w Rejestrze zleceń ani w żadnym Pliku zbiorczym) znika z
+    listy po pełnym sprawdzeniu, a „Cofnij” z Historii przywraca go z adresami."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    centrum_.client.post(WORKERS_API, json=worker_form(["pomylka.login"], "Pomyłka Testowa", [OBCY]))
+
+    removed = centrum_.client.delete(f"{WORKERS_API}/pomylka.login")
+    after_remove = listed_workers(centrum_.client)
+    undone = centrum_.client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert removed.status_code == 200, removed.json()
+    assert "pomylka.login" not in after_remove and "kamil.syntetyczny" in after_remove
+    assert undone.status_code == 200
+    assert listed_workers(centrum_.client)["pomylka.login"] == listed(["pomylka.login"], "Pomyłka Testowa", [OBCY])
+
+
+def settings_files(centrum_: SettlingCentrum) -> dict[str, bytes]:
+    """Lista Wykonawców, Historia Ustawień i pamięć Ustawień, bajt w bajt."""
+
+    config = centrum_.tool.config
+    paths = [config / WORKERS_FILE, config / HISTORY_FILE, *(config / MEMORY_DIRECTORY).rglob("*")]
+    return {path.relative_to(config).as_posix(): path.read_bytes() for path in paths if path.is_file()}
+
+
+@pytest.mark.parametrize(
+    ("register", "change", "answer"),
+    [
+        pytest.param(
+            ["adrian.testowy", "nowy.login"],
+            ("POST", WORKERS_API, worker_form(["nowy.login"], "Nowy Testowy")),
+            kept("Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców."),
+            id="dodanie-wykonawcy",
+        ),
+        pytest.param(
+            ["adrian.testowy", "adrian.drugi"],
+            ("PUT", f"{WORKERS_API}/adrian.testowy", worker_form(["adrian.testowy", "adrian.drugi"], "Adrian Testowy")),
+            kept("Ten login ma zlecenia w Rejestrze zleceń, więc zostaje przy Wykonawcy."),
+            id="dopisanie-loginu",
+        ),
+    ],
+)
+def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
+    tmp_path: Path, register: list[str], change: tuple[str, str, dict[str, object]], answer: str
+) -> None:
+    """ADR 0032: „Cofnij” w Historii i w powiadomieniu „Zapisano · Cofnij” usuwa to, co zmiana dodała, więc przechodzi
+    to samo sprawdzenie okresów co „Usuń Wykonawcę” i formularz: login, który ma już zlecenia w Rejestrze zleceń,
+    zostaje, a odmowa mówi dlaczego i proponuje Nieaktywnego, bez zmiany pliku, Historii i pamięci Ustawień."""
+
+    centrum_ = settling_with_register(tmp_path, register)
+    method, url, form = change
+    saved = centrum_.client.request(method, url, json=form)
+    before = settings_files(centrum_)
+
+    undone = centrum_.client.post(f"/api/settings/history/{saved.json()['change']}/undo")
+
+    assert saved.status_code == 200, saved.json()
+    assert (undone.status_code, undone.json()) == (409, {"message": answer})
+    assert settings_files(centrum_) == before
+    assert [row["undoable"] for row in history_rows_of(centrum_.client)] == [True]
+
+
+def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
+    """US 29, 38: formularz, w którym zapisany login z zleceniami w okresie zastąpiono innym, nie zapisuje się, bo
+    zmieniłby po cichu, czyje zlecenia trafiają do kogo; dopisany drugi login obok zapisanego się zapisuje."""
+
+    centrum_ = settling_with_register(tmp_path, ["kamil.syntetyczny"])
+    before = centrum_.tool.worker_list.read_bytes()
+
+    rewritten = centrum_.client.put(
+        f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.nowy"], "Adrian Testowy")
+    )
+    unchanged = centrum_.tool.worker_list.read_bytes()
+    second = centrum_.client.put(
+        f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.testowy", "Adrian.Nowy"], "Adrian Testowy")
+    )
+
+    assert (rewritten.status_code, rewritten.json()) == (
+        409,
+        {"message": kept(f"Ten login ma zlecenia w okresie {PERIOD}, więc zostaje przy Wykonawcy.")},
+    )
+    assert unchanged == before
+    assert second.status_code == 200, second.json()
+    assert listed_workers(centrum_.client)["adrian.testowy"]["logins"] == ["adrian.testowy", "adrian.nowy"]
+
+
+def test_ostrzezenie_o_starej_nazwie_tylko_gdy_rozliczenie_pracownika_z_nia_lezy_w_okresie(tmp_path: Path) -> None:
+    """US 31–32: zmiana nazwy Wykonawcy, którego Rozliczenie pracownika leży już w Folderze rozliczeń pracowników,
+    niczego nie zapisuje bez potwierdzenia i mówi, że stary plik zostaje; potwierdzona zapisuje nazwę i nie rusza
+    plików taty. Wykonawca bez takiego pliku zmienia nazwę od razu."""
+
+    centrum_ = settling_centrum(tmp_path)
+    folder = write_worker_settlements(centrum_.period_directory, PERIOD, ["Adrian Testowy"])
+    files_before = sorted(path.name for path in folder.iterdir())
+    client = centrum_.client
+
+    asked = client.put(f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.testowy"], "Adrian Nowak"))
+    name_after_ask = listed_workers(client)["adrian.testowy"]["name"]
+    confirmed = client.put(
+        f"{WORKERS_API}/adrian.testowy",
+        json=worker_form(["adrian.testowy"], "Adrian Nowak") | {"rename_confirmed": True},
+    )
+    without_file = client.put(f"{WORKERS_API}/kamil.syntetyczny", json=worker_form(["kamil.syntetyczny"], "Kamil Nowy"))
+
+    assert (asked.status_code, asked.json()["change"], asked.json()["rename_warning"]) == (
+        200,
+        None,
+        settings_messages.worker_rename_old_files((PERIOD,)),
+    )
+    assert name_after_ask == "Adrian Testowy"
+    assert (confirmed.json()["rename_warning"], confirmed.json()["change"] is not None) == (None, True)
+    assert (without_file.json()["rename_warning"], without_file.json()["change"] is not None) == (None, True)
+    assert {login: worker["name"] for login, worker in listed_workers(client).items()} == {
+        "adrian.testowy": "Adrian Nowak",
+        "dariusz.fikcyjny2": "Darek Fikcyjny",
+        "kamil.syntetyczny": "Kamil Nowy",
+    }
+    assert sorted(path.name for path in folder.iterdir()) == files_before
+
+
+def test_wykonawca_dodany_w_ustawieniach_z_drugim_loginem_trafia_do_rozliczenia_pracownika_w_nastepnym_przebiegu(
+    tmp_path: Path,
+) -> None:
+    """US 23, 29: Przebieg rozliczeń zatrzymuje się na loginie spoza Listy Wykonawców; po dodaniu Wykonawcy w
+    Ustawieniach i dopisaniu mu tego loginu jako drugiego następny Przebieg daje jego Rozliczenie pracownika."""
+
+    centrum_ = settling_centrum(tmp_path, include_unmapped=True)
+    stopped = run_to_end(centrum_, dry_run=False)
+    centrum_.client.post(WORKERS_API, json=worker_form(["andrzej.nowy"], "Andrzej Nowy"))
+    centrum_.client.put(
+        f"{WORKERS_API}/andrzej.nowy", json=worker_form(["andrzej.nowy", "andrzej.nieznany2"], "Andrzej Nowy")
+    )
+
+    settled = run_to_end(centrum_, dry_run=False)
+
+    assert stopped["result"]["result"] == "BLAD_KRYTYCZNY"
+    assert settled["result"]["result"] == "OK", settled["result"]
+    folder = PeriodFolder(centrum_.period_parent, parse_period_token(PERIOD))
+    assert folder.worker_settlement("Andrzej Nowy").is_file()
+
+
+def test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_nazwy_ani_adresu(tmp_path: Path) -> None:
+    """Każda zmiana z sekcji Wykonawcy (dodanie, formularz, przełącznik, usunięcie) ma wiersz Historii taty z „Cofnij”,
+    a Zgłoszenie mówi tylko, co się zmieniło, bez loginu, nazwy i adresu (D4 projektu Ustawień)."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form([LEAKED_LOGIN], LEAKED_NAME, [LEAKED_ADDRESS]))
+    client.put(f"{WORKERS_API}/{LEAKED_LOGIN}", json=worker_form([LEAKED_LOGIN], f"{LEAKED_NAME} Drugi", [LEAKED_ADDRESS]))
+    client.put(f"{WORKERS_API}/{LEAKED_LOGIN}/switches", json={"reminders": False})
+    client.delete(f"{WORKERS_API}/{LEAKED_LOGIN}")
+
+    rows = history_rows_of(client)
+    report = client.post(f"/api/runs/{stopped_for_maks(centrum_)}/diagnosis").json()["report"]["body"]
+
+    assert [(row["source"], row["section"], row["undoable"], row["refused"]) for row in rows] == [
+        ("tata", "wykonawcy", True, False)
+    ] * 4
+    for line in ("usunięto Wykonawcę", "zmieniono Wykonawcę (pola: przypomnienia)", "zmieniono Wykonawcę (pola: nazwa)", "dodano Wykonawcę"):
+        assert line in report, line
+    seen = {"Zgłoszenie": report, "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8")}
+    leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
+    assert leaks == []
 
 
 def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
@@ -2089,6 +3091,249 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         time.tzset()
 
     assert row["at"].endswith("Z")
+
+
+# --- Przypomnienia o raporcie (#1476, ADR 0032 zmienia ADR 0030): formularz, przełącznik, przeniesienie z plików Maksa --
+
+def reminders_form(**changes: object) -> dict[str, object]:
+    return {**ADR_0030_REMINDERS, **changes}
+
+
+def test_przypomnienia_bez_pliku_sa_wylaczone_z_porami_i_trescia_z_adr_0030_i_nie_zakladaja_pliku(tmp_path: Path) -> None:
+    """D2 projektu Ustawień: brak pliku przypomnień to dzisiejsze wartości z ADR 0030 jako domyślne, a przypomnienia są
+    wyłączone jak przed Wydaniem bez dnia wdrożenia; odczyt pliku nie zakłada."""
+
+    app = centrum(tmp_path)
+
+    reminders = app.client.get("/api/settings").json()["reminders"]
+
+    assert reminders == NO_REMINDERS
+    assert not (app.tool.config / REMINDERS_FILE).exists()
+
+
+@pytest.mark.parametrize(
+    ("changes", "field", "sentence"),
+    [
+        pytest.param({"morning": {"start": "08:00", "end": "18:30"}}, "pora_wieczorna.od", settings_messages.reminders_overlap(), id="pory-zachodza"),
+        pytest.param({"evening": {"start": "07:00", "end": "07:30"}}, "pora_wieczorna.od", settings_messages.reminders_overlap(), id="wieczorna-przed-poranna"),
+        pytest.param({"morning": {"start": "08:00", "end": "08:00"}}, "pora_poranna.do", settings_messages.reminders_empty_morning(), id="pusta-poranna"),
+        pytest.param({"evening": {"start": "22:00", "end": "18:00"}}, "pora_wieczorna.do", settings_messages.reminders_empty_evening(), id="odwrocona-wieczorna"),
+        pytest.param({"morning": {"start": "", "end": "17:00"}}, "pora_poranna.od", settings_messages.reminders_time(), id="pusta-godzina"),
+        pytest.param({"evening": {"start": "18:00", "end": "24:00"}}, "pora_wieczorna.do", settings_messages.reminders_time(), id="godzina-24"),
+        pytest.param({"first": "7.30"}, "pierwsze_przypomnienie", settings_messages.reminders_time(), id="godzina-z-kropka"),
+        pytest.param({"text": "  \n"}, "tresc", settings_messages.reminders_empty_text(), id="puste-zdanie"),
+        pytest.param({"text": "Raport za {dzien}."}, "tresc", settings_messages.reminders_unknown_field(), id="pole-bez-polskiej-litery"),
+        pytest.param({"text": "Raport za {dzień} od {wykonawca}."}, "tresc", settings_messages.reminders_unknown_field(), id="nieznane-pole"),
+        pytest.param({"text": "Raport za {dzień}}."}, "tresc", settings_messages.reminders_unknown_field(), id="samotny-nawias"),
+    ],
+)
+def test_zla_pora_godzina_albo_tresc_przypomnien_jest_odrzucona_zdaniem_przy_polu_bez_zapisu_i_bez_podgladu(
+    tmp_path: Path, changes: dict[str, object], field: str, sentence: str
+) -> None:
+    """US 44: pory, które na siebie zachodzą albo są puste, godzina inna niż ``GG:MM`` i treść bez zdania albo z polem
+    innym niż ``{dzień}`` dają odmowę z polem i jednym zdaniem; nic się nie zapisuje, a podgląd odmawia tak samo."""
+
+    app = centrum(tmp_path)
+
+    saved = app.client.put("/api/settings/reminders", json=reminders_form(**changes))
+    preview = app.client.post("/api/settings/reminders/preview", json=reminders_form(**changes))
+
+    assert [(response.status_code, response.json()) for response in (saved, preview)] == [
+        (422, {"message": sentence, "field": field})
+    ] * 2
+    assert not (app.tool.config / REMINDERS_FILE).exists()
+    assert history_rows(app) == []
+
+
+def test_pory_stykajace_sie_godzina_i_tresc_z_polem_dnia_zapisuja_sie_od_razu(tmp_path: Path) -> None:
+    """Poranna pora może kończyć się dokładnie wtedy, gdy zaczyna się wieczorna, a godzina pierwszego przypomnienia nie
+    musi leżeć w porze (D11 projektu Ustawień)."""
+
+    app = centrum(tmp_path)
+    form = reminders_form(
+        morning={"start": "07:00", "end": "15:00"},
+        evening={"start": "15:00", "end": "21:30"},
+        first="06:45",
+        text="Proszę o raport za {dzień}, dziękuję za {dzień}.",
+        footer="Pozdrawiam\nTata Testowy\n",
+    )
+
+    saved = app.client.put("/api/settings/reminders", json=form)
+
+    assert saved.status_code == 200
+    assert saved.json()["settings"]["reminders"] == {**form, "state": "good", "enabled": False, "since": None, "problem": None}
+
+
+def test_godzina_przypomnien_bez_zera_na_poczatku_zapisuje_sie_jako_gg_mm(tmp_path: Path) -> None:
+    """Tata pisze godzinę tak, jak ją mówi („8:00”): przyjmuje ją podgląd i zapis, a sekcja i plik mają ją jako ``GG:MM``."""
+
+    app = centrum(tmp_path)
+    form = reminders_form(morning={"start": "7:30", "end": "15:00"}, first="8:00")
+
+    preview = app.client.post("/api/settings/reminders/preview", json=form)
+    saved = app.client.put("/api/settings/reminders", json=form)
+
+    assert (preview.status_code, saved.status_code) == (200, 200)
+    shown = saved.json()["settings"]["reminders"]
+    assert (shown["morning"], shown["first"]) == ({"start": "07:30", "end": "15:00"}, "08:00")
+    assert yaml.safe_load((app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8"))["pora_poranna"] == {"od": "07:30", "do": "15:00"}
+
+
+def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozenia_a_ponowne_go_zostawia(
+    tmp_path: Path,
+) -> None:
+    """US 40: pierwsze włączenie ustawia dzień wdrożenia na dziś taty, a wyłączenie i ponowne włączenie innego dnia go
+    zostawia, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym (DESIGN §5.1)."""
+
+    first = centrum(tmp_path, today=date(2026, 11, 12))
+    on = first.client.put("/api/settings/reminders/enabled", json={"enabled": True})
+    off = first.client.put("/api/settings/reminders/enabled", json={"enabled": False})
+    first.client.stop()
+    later = centrum(tmp_path, today=date(2026, 11, 20))
+    again = later.client.put("/api/settings/reminders/enabled", json={"enabled": True})
+
+    shown = [(response.json()["settings"]["reminders"]["enabled"], response.json()["settings"]["reminders"]["since"]) for response in (on, off, again)]
+    assert shown == [(True, "2026-11-12"), (False, "2026-11-12"), (True, "2026-11-12")]
+
+
+def test_zmiana_przypomnien_ma_wiersz_historii_z_porami_przed_i_po_a_cofniecie_przywraca_pory(tmp_path: Path) -> None:
+    """US 80–81 dla sekcji Przypomnienia: wiersz Historii ma pory i stopkę przed i po, Logi Centrum tylko klucze, a
+    cofnięcie przywraca poprzednie pory i stopkę."""
+
+    app = centrum(tmp_path)
+    changed = reminders_form(morning={"start": "07:00", "end": "12:00"}, footer="Pozdrawiam\nTata Testowy")
+
+    saved = app.client.put("/api/settings/reminders", json=changed)
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (saved.status_code, saved.json()["change"], row["section"], row["undoable"]) == (200, row["id"], "przypomnienia", True)
+    assert row["changes"] == [
+        {"key": "przypomnienia.pora_poranna", "before": "08:00 – 17:00", "after": "07:00 – 12:00"},
+        {"key": "przypomnienia.stopka", "before": None, "after": "Pozdrawiam\nTata Testowy"},
+    ]
+    assert undone.status_code == 200
+    assert {key: undone.json()["settings"]["reminders"][key] for key in ADR_0030_REMINDERS} == ADR_0030_REMINDERS
+    log = app.tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-zmiana plik=przypomnienia.yaml klucze=przypomnienia.pora_poranna,przypomnienia.stopka zrodlo=tata" in log
+    assert "Tata Testowy" not in log
+
+
+def test_reczny_plik_przypomnien_z_porami_zachodzacymi_to_zle_ustawienie_z_polem_i_ostatnimi_dobrymi_porami(
+    tmp_path: Path,
+) -> None:
+    """US 91: plik przypomnień zmieniony ręcznie z porami, które na siebie zachodzą, nie zatrzymuje Centrum: sekcja ma
+    zdanie przy polu i ostatnie dobre pory, a Historia wiersz odrzuconej zmiany spoza Centrum."""
+
+    app = centrum(tmp_path)
+    app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
+    content = (app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8").replace("'17:00'", "'19:00'")
+    (app.tool.config / REMINDERS_FILE).write_text(content, encoding="utf-8")
+
+    reminders = app.client.get("/api/settings").json()["reminders"]
+
+    assert (reminders["state"], reminders["problem"]) == (
+        "bad",
+        {"field": "pora_wieczorna.od", "message": settings_messages.reminders_overlap()},
+    )
+    assert (reminders["morning"], reminders["first"]) == ({"start": "08:00", "end": "17:00"}, "07:30")
+    assert [(row["source"], row["refused"]) for row in history_rows(app)][:1] == [("outside", True)]
+
+
+def test_zla_wartosc_pola_pliku_przypomnien_kaze_zapisac_ustawienia_a_zapis_taty_ja_naprawia(tmp_path: Path) -> None:
+    """Plik przypomnień tata zmienia w oknie Ustawień, więc zdanie złej wartości pola mówi „Zapisz Ustawienia jeszcze
+    raz.”, a nie „Poprawia go Maks.”, i zapis sekcji przez tatę naprawia plik (przegląd #1568 r4, D1)."""
+
+    app = centrum(tmp_path)
+    app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
+    path = app.tool.config / REMINDERS_FILE
+    content = path.read_text(encoding="utf-8").replace("pora_wieczorna:\n  od: '18:00'\n  do: '22:00'", "pora_wieczorna: wieczorem")
+    path.write_text(content, encoding="utf-8")
+
+    bad = app.client.get("/api/settings").json()["reminders"]
+    saved = app.client.put("/api/settings/reminders", json=reminders_form(first="08:00"))
+    after = app.client.get("/api/settings").json()["reminders"]
+
+    assert (bad["state"], bad["problem"]) == (
+        "bad",
+        {
+            "field": "pora_wieczorna",
+            "message": settings_messages.bad_field(REMINDERS_FILE, FieldPath("pora_wieczorna"), settings_messages.SAVE_AGAIN),
+        },
+    )
+    assert (saved.status_code, after["state"], after["first"]) == (200, "good", "08:00")
+
+
+def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Sekcja Przypomnienia i Historia Ustawień po pierwszym starcie Wydania z Przypomnieniami w Ustawieniach."""
+
+    client = started(tool, RELEASE_CHANGES)
+    reminders = client.get("/api/settings").json()["reminders"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+    return reminders, [row for row in rows if row["file"] == REMINDERS_FILE]
+
+
+@pytest.mark.parametrize(
+    ("rollout", "footer", "enabled", "since", "kept"),
+    [
+        pytest.param(b"2026-11-09\n", "Pozdrawiam\nTata\n".encode(), True, "2026-11-09", "Pozdrawiam\nTata\n", id="oba-pliki"),
+        pytest.param(codecs.BOM_UTF8 + b"2026-11-09\r\n", "Pozdrawiam\r\nTata\r\n".encode("utf-16"), True, "2026-11-09", "Pozdrawiam\r\nTata\r\n", id="notatnik-i-powershell"),
+        pytest.param(b"2026-11-09\n", None, True, "2026-11-09", "", id="bez-stopki"),
+        pytest.param(b"od wtorku\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="zly-dzien-wylacza-jak-dotad"),
+        pytest.param(None, "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="bez-dnia-wdrozenia"),
+        pytest.param(b"2026-11-09\n", b" \n", True, "2026-11-09", "", id="pusta-stopka"),
+        pytest.param(b"2026-11-09\n", "Pozdrawiam\u0085Tata\n".encode(), True, "2026-11-09", "Pozdrawiam\u0085Tata\n", id="stopka-ze-znakiem-nel"),
+        pytest.param(b"2026-11-09\n2026-11-10\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="kilka-dni-wylacza-jak-dotad"),
+    ],
+)
+def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_bez_cofnij_a_stare_pliki_zostaja(
+    tmp_path: Path, rollout: bytes | None, footer: bytes | None, enabled: bool, since: str | None, kept: str
+) -> None:
+    """Po Aktualizacji dzień wdrożenia z ``przypomnienia-od.txt`` włącza przypomnienia od tego dnia, a inna treść albo
+    brak pliku zostawia je wyłączone jak dotąd; stopka przechodzi tekstem bez zmian (także z BOM i w UTF-16), pory i treść
+    to wartości domyślne. Przeniesienie ma wiersz z Wydania bez „Cofnij” (D8), a stare pliki zostają bajt w bajt."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    old = {name: content for name, content in ((OLD_ROLLOUT_FILE, rollout), (OLD_FOOTER_FILE, footer)) if content is not None}
+    for name, content in old.items():
+        (tool.config / name).write_bytes(content)
+
+    reminders, [row] = migrated_reminders(tool)
+    _, again = migrated_reminders(tool)
+
+    assert reminders == {**ADR_0030_REMINDERS, "footer": kept, "state": "good", "enabled": enabled, "since": since, "problem": None}
+    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False)
+    assert len(again) == 1, "przeniesienie wchodzi raz"
+    assert {name: (tool.config / name).read_bytes() for name in old} == old
+
+
+def test_bez_starych_plikow_przypomnien_przeniesienie_nie_zaklada_pliku_ani_wiersza(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+
+    reminders, rows = migrated_reminders(tool)
+
+    assert (reminders["enabled"], rows, (tool.config / REMINDERS_FILE).exists()) == (False, [], False)
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_stary_plik_stopki_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zgubic_stopke(tmp_path: Path) -> None:
+    """Stary plik, którego system nie daje teraz czytać, nie jest ani pusty, ani brakujący: przeniesienie czeka bez
+    pliku przypomnień i bez wiersza, a następny start przenosi stopkę."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    (tool.config / OLD_ROLLOUT_FILE).write_text("2026-11-09\n", encoding="utf-8")
+    (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
+    with without_access(tool.config / OLD_FOOTER_FILE):
+        locked, locked_rows = migrated_reminders(tool)
+        written_while_locked = (tool.config / REMINDERS_FILE).exists()
+
+    reminders, rows = migrated_reminders(tool)
+
+    assert (written_while_locked, locked_rows, locked["enabled"]) == (False, [], False)
+    assert (reminders["enabled"], reminders["footer"], len(rows)) == (True, "Pozdrawiam\n", 1)
 
 
 AUTOSTART_ON = {"key": "narzedzie.autostart", "before": "wylaczony", "after": "wlaczony"}

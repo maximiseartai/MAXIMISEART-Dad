@@ -5,6 +5,35 @@ export type ClientOptions = {
 };
 
 /**
+ * ActivitiesCondition
+ */
+export type ActivitiesCondition = {
+    /**
+     * Kind
+     */
+    kind: 'activities';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Negated
+     */
+    negated: boolean;
+};
+
+/**
+ * AddRule
+ */
+export type AddRule = {
+    /**
+     * Kind
+     */
+    kind: 'add';
+    rule: RuleForm;
+};
+
+/**
  * AddressesNotMoved
  *
  * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
@@ -29,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -147,6 +176,21 @@ export type BoardReady = {
 export type CellSource = 'tool' | 'tata' | 'empty';
 
 /**
+ * ChangeRule
+ */
+export type ChangeRule = {
+    /**
+     * Kind
+     */
+    kind: 'change';
+    /**
+     * Rule Id
+     */
+    rule_id: string;
+    rule: RuleForm;
+};
+
+/**
  * Choice
  *
  * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
@@ -228,6 +272,26 @@ export type CollectiveFileVersion = {
 };
 
 /**
+ * ComponentCondition
+ *
+ * ``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id).
+ */
+export type ComponentCondition = {
+    /**
+     * Kind
+     */
+    kind: 'component';
+    /**
+     * Component
+     */
+    component: string;
+    /**
+     * Negated
+     */
+    negated: boolean;
+};
+
+/**
  * Configuration
  *
  * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
@@ -254,6 +318,26 @@ export type Configuration = {
      * Reports
      */
     reports: 'ready' | 'missing_key' | 'refused_key';
+};
+
+/**
+ * ContractCondition
+ *
+ * Pierwsze słowo ``UMOWA`` jest tym słowem.
+ */
+export type ContractCondition = {
+    /**
+     * Kind
+     */
+    kind: 'contract';
+    /**
+     * Word
+     */
+    word: string;
+    /**
+     * Negated
+     */
+    negated: boolean;
 };
 
 /**
@@ -401,6 +485,30 @@ export type DadNoteText = {
 };
 
 /**
+ * DateCondition
+ *
+ * ``DATA`` przypada w dni tygodnia (0 to poniedziałek) od godziny ``since`` (``GG:MM``).
+ */
+export type DateCondition = {
+    /**
+     * Kind
+     */
+    kind: 'date';
+    /**
+     * Days
+     */
+    days: Array<number>;
+    /**
+     * Since
+     */
+    since: string;
+    /**
+     * Negated
+     */
+    negated: boolean;
+};
+
+/**
  * Decision
  *
  * Pytanie do taty z części decyzji procesu: komunikat w trzech częściach i liczby (np. Zlecenia na dzień).
@@ -465,6 +573,30 @@ export type DeviceComponent = {
 };
 
 /**
+ * DevicesCondition
+ *
+ * ``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty).
+ */
+export type DevicesCondition = {
+    /**
+     * Kind
+     */
+    kind: 'devices';
+    /**
+     * Mode
+     */
+    mode: 'empty' | 'exactly' | 'contains';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Negated
+     */
+    negated: boolean;
+};
+
+/**
  * Diagnosis
  *
  * Wynik Diagnozy Zatrzymania: wyjaśnienie w trzech częściach i każde sprawdzenie po kolei.
@@ -520,6 +652,79 @@ export type DiagnosisCheck = {
 };
 
 /**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export type DifferencesReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Files
+     */
+    files: Array<PreviewFile>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+    /**
+     * Differences
+     */
+    differences: Array<QuantityDifference>;
+    /**
+     * More
+     */
+    more: number;
+    /**
+     * Exceptions
+     */
+    exceptions: number;
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export type DifferencesWithoutFiles = {
+    /**
+     * State
+     */
+    state: 'no_periods_directory' | 'no_settled_periods';
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export type ExceptionSaved = {
+    /**
+     * Differences
+     */
+    differences: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+    /**
+     * Change
+     */
+    change: string | null;
+};
+
+/**
  * Figure
  *
  * Liczba karty Uruchomienia z etykietą; ``unit`` ``ms`` to czas, który przeglądarka pokazuje w sekundach.
@@ -537,6 +742,20 @@ export type Figure = {
      * Unit
      */
     unit: 'count' | 'ms';
+};
+
+/**
+ * FillAction
+ */
+export type FillAction = {
+    /**
+     * Kind
+     */
+    kind: 'fill';
+    /**
+     * Writes
+     */
+    writes: Array<RuleWrite>;
 };
 
 /**
@@ -582,6 +801,24 @@ export type FoldersChange = {
      * Periods Directory
      */
     periods_directory: string | null;
+};
+
+/**
+ * GroupCondition
+ */
+export type GroupCondition = {
+    /**
+     * Kind
+     */
+    kind: 'group';
+    /**
+     * Group
+     */
+    group: 'router' | 'tv' | 'extender';
+    /**
+     * Negated
+     */
+    negated: boolean;
 };
 
 /**
@@ -716,6 +953,32 @@ export type HistoryRow = {
      * Reason
      */
     reason: string | null;
+    /**
+     * Rules
+     */
+    rules: Array<HistoryRuleChange>;
+};
+
+/**
+ * HistoryRuleChange
+ *
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
+ */
+export type HistoryRuleChange = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Before
+     */
+    before: Array<SentenceText | SentenceColumn> | null;
+    /**
+     * After
+     */
+    after: Array<SentenceText | SentenceColumn> | null;
 };
 
 /**
@@ -1062,6 +1325,22 @@ export type KindToFill = {
 };
 
 /**
+ * LeaveEmptyAction
+ *
+ * Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA).
+ */
+export type LeaveEmptyAction = {
+    /**
+     * Kind
+     */
+    kind: 'leave_empty';
+    /**
+     * Columns
+     */
+    columns: Array<string>;
+};
+
+/**
  * ListedWorker
  *
  * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
@@ -1259,6 +1538,18 @@ export type NotSetPath = {
      * State
      */
     state: 'not_set';
+};
+
+/**
+ * NothingAction
+ *
+ * Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu.
+ */
+export type NothingAction = {
+    /**
+     * Kind
+     */
+    kind: 'nothing';
 };
 
 /**
@@ -1615,6 +1906,185 @@ export type PinnableRun = {
      * Ton wyniku (``runs.result_tone``): plakietka w wierszu okna Uwagi i słowo wyniku w stopce Uwagi.
      */
     readonly tone: 'ok' | 'needs_review' | 'stopped' | 'failed';
+};
+
+/**
+ * PreviewCell
+ *
+ * Kolumna wiersza w podglądzie: ilość z Reguł ilości teraz (``before``) i po zmianie (``after``) oraz wpis taty
+ * (liczba albo „nieliczbowa”).
+ */
+export type PreviewCell = {
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Before
+     */
+    before: number;
+    /**
+     * After
+     */
+    after: number;
+    /**
+     * Tata
+     */
+    tata: number | 'nieliczbowa';
+};
+
+/**
+ * PreviewFile
+ *
+ * Plik zbiorczy okresu ``period`` po Przebiegu rozliczeń w podglądzie; ``rows``: jego Wiersze danych.
+ */
+export type PreviewFile = {
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Rows
+     */
+    rows: number;
+};
+
+/**
+ * PreviewReady
+ *
+ * Skutek zmiany Reguł ilości na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+ * rachunkiem co Kontrola ilości.
+ *
+ * ``sentence``: zdanie reguły po zmianie (``None`` przy usunięciu). ``unread``: okresy, których Pliku zbiorczego nie
+ * dało się przeczytać. ``changed``: wiersze, w których zmienią się ilości z Reguł ilości (albo kolumny zostawione
+ * puste), z czego ``changed_as_tata`` będzie tak, jak wpisał tata. ``differences_before`` i ``differences_after``:
+ * różnice Kontroli ilości tych plików teraz i po zmianie. ``rows``: zmienione wiersze z różnicą od taty, najwyżej
+ * ``SHOWN_ROWS``, a ``more`` reszta.
+ */
+export type PreviewReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn> | null;
+    /**
+     * Files
+     */
+    files: Array<PreviewFile>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+    /**
+     * Changed
+     */
+    changed: number;
+    /**
+     * Changed As Tata
+     */
+    changed_as_tata: number;
+    /**
+     * Differences Before
+     */
+    differences_before: number;
+    /**
+     * Differences After
+     */
+    differences_after: number;
+    /**
+     * Rows
+     */
+    rows: Array<PreviewRow>;
+    /**
+     * More
+     */
+    more: number;
+};
+
+/**
+ * PreviewRow
+ *
+ * Wiersz danych, w którym po zmianie reguła da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego,
+ * ``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”) i kolumny. Bez adresu, numeru
+ * zlecenia, ``UMOWA`` i daty dziennej.
+ */
+export type PreviewRow = {
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Devices
+     */
+    devices: string;
+    /**
+     * Activities
+     */
+    activities: string;
+    /**
+     * When
+     */
+    when: string;
+    /**
+     * Cells
+     */
+    cells: Array<PreviewCell>;
+    /**
+     * Sums
+     */
+    sums: Array<PreviewSum>;
+};
+
+/**
+ * PreviewSum
+ *
+ * Kolumna, w którą po zmianie wpisało w tym wierszu kilka reguł, z sumą i tymi regułami („Z = 2, bo reguły A i B”).
+ */
+export type PreviewSum = {
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Rules
+     */
+    rules: Array<SummedRule>;
+};
+
+/**
+ * PreviewWithoutFiles
+ *
+ * Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export type PreviewWithoutFiles = {
+    /**
+     * State
+     */
+    state: 'no_periods_directory' | 'no_settled_periods';
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn> | null;
 };
 
 /**
@@ -1980,9 +2450,65 @@ export type QuantitiesToFillReady = {
 };
 
 /**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export type QuantityDifference = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Devices
+     */
+    devices: string;
+    /**
+     * Activities
+     */
+    activities: string;
+    /**
+     * When
+     */
+    when: string;
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Rule
+     */
+    rule: number;
+    /**
+     * Tata
+     */
+    tata: number | 'nieliczbowa';
+    draft: RuleForm;
+};
+
+/**
  * QuantityRuleSentence
  *
- * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako
+ * formularz edytora (``rule``).
  */
 export type QuantityRuleSentence = {
     /**
@@ -1997,6 +2523,21 @@ export type QuantityRuleSentence = {
      * Sentence
      */
     sentence: Array<SentenceText | SentenceColumn>;
+    rule: RuleForm;
+};
+
+/**
+ * QuantityRulesSaved
+ *
+ * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * zapis niczego nie zmienił.
+ */
+export type QuantityRulesSaved = {
+    quantity_rules: QuantityRulesSettings;
+    /**
+     * Change
+     */
+    change: string | null;
 };
 
 /**
@@ -2014,6 +2555,10 @@ export type QuantityRulesSettings = {
      * Devices
      */
     devices: Array<DeviceComponent>;
+    /**
+     * Columns
+     */
+    columns: Array<RuleColumn>;
     rules_problem: SettingProblem | null;
     devices_problem: SettingProblem | null;
 };
@@ -2137,6 +2682,125 @@ export type ReleaseNotification = {
      * Update Offered
      */
     update_offered: boolean;
+};
+
+/**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export type ReminderPreview = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export type ReminderRange = {
+    /**
+     * Start
+     */
+    start: string;
+    /**
+     * End
+     */
+    end: string;
+};
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export type RemindersEnabledChange = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export type RemindersForm = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+};
+
+/**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export type RemindersSetting = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Since
+     */
+    since: string | null;
+    problem: SettingProblem | null;
+};
+
+/**
+ * RemoveRule
+ */
+export type RemoveRule = {
+    /**
+     * Kind
+     */
+    kind: 'remove';
+    /**
+     * Rule Id
+     */
+    rule_id: string;
 };
 
 /**
@@ -2348,7 +3012,7 @@ export type ReportsProblem = {
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export type ReportsView = {
     /**
@@ -2493,6 +3157,76 @@ export type RowToFill = {
      */
     row: number;
     state: RowState;
+};
+
+/**
+ * RuleColumn
+ *
+ * Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest
+ * pusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste.
+ */
+export type RuleColumn = {
+    /**
+     * Letter
+     */
+    letter: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Writable
+     */
+    writable: boolean;
+};
+
+/**
+ * RuleForm
+ *
+ * Reguła ilości w edytorze: zakres, warunki („ale nie gdy”: ``negated``) i działanie. ``action`` ``None``: tata nie
+ * wybrał działania, więc zapis to odmowa z polem ``to``.
+ */
+export type RuleForm = {
+    /**
+     * Scope
+     */
+    scope: 'known' | 'unknown' | 'every';
+    /**
+     * Conditions
+     */
+    conditions: Array<ComponentCondition | DevicesCondition | ActivitiesCondition | ContractCondition | DateCondition | GroupCondition>;
+    /**
+     * Action
+     */
+    action: ({
+        kind: 'fill';
+    } & FillAction) | ({
+        kind: 'nothing';
+    } & NothingAction) | ({
+        kind: 'leave_empty';
+    } & LeaveEmptyAction) | null;
+};
+
+/**
+ * RuleWrite
+ */
+export type RuleWrite = {
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Value
+     */
+    value: number;
+    /**
+     * Multiplier
+     */
+    multiplier: 'once' | 'component' | 'pieces';
+    /**
+     * Component
+     */
+    component: string | null;
 };
 
 /**
@@ -3007,6 +3741,7 @@ export type Settings = {
     inbox: InboxSetting;
     inbox_problem: SettingProblem | null;
     autostart: AutostartSetting;
+    reminders: RemindersSetting;
 };
 
 /**
@@ -3040,6 +3775,20 @@ export type SolvedCase = {
      * Title
      */
     title: string;
+};
+
+/**
+ * SummedRule
+ */
+export type SummedRule = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn>;
 };
 
 /**
@@ -3216,7 +3965,9 @@ export type ToolVersion = {
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export type UnknownReportSender = {
     /**
@@ -3231,6 +3982,10 @@ export type UnknownReportSender = {
      * Reason
      */
     reason: string;
+    /**
+     * Worker
+     */
+    worker: string | null;
 };
 
 /**
@@ -3359,6 +4114,65 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export type WorkerAddress = {
+    /**
+     * Address
+     */
+    address: string;
+};
+
+/**
+ * WorkerEdit
+ *
+ * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
+ * ``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to.
+ */
+export type WorkerEdit = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * Rename Confirmed
+     */
+    rename_confirmed?: boolean;
+};
+
+/**
+ * WorkerForm
+ *
+ * Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu
+ * pracownika i adresy Raportów wykonawcy, tak jak je wpisał tata.
+ */
+export type WorkerForm = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+};
+
+/**
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
@@ -3378,6 +4192,25 @@ export type WorkerListSetting = {
      */
     unresolved: Array<UnmatchedLogin | AddressesNotMoved>;
     problem: SettingProblem | null;
+};
+
+/**
+ * WorkerSaved
+ *
+ * Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+ * które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+ * (``rename_confirmed``).
+ */
+export type WorkerSaved = {
+    settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
+    /**
+     * Rename Warning
+     */
+    rename_warning?: string | null;
 };
 
 /**
@@ -3414,6 +4247,62 @@ export type WorkerSettlementRequest = {
      * Worker
      */
     worker: string;
+};
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export type WorkerSuggestion = {
+    /**
+     * Login
+     */
+    login: string;
+    /**
+     * Orders
+     */
+    orders: number;
+};
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export type WorkerSuggestions = {
+    /**
+     * State
+     */
+    state: 'read' | 'not_set' | 'unreadable';
+    /**
+     * Suggestions
+     */
+    suggestions: Array<WorkerSuggestion>;
+    /**
+     * Message
+     */
+    message: string | null;
+};
+
+/**
+ * WorkerSwitches
+ *
+ * Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
+ * ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik.
+ */
+export type WorkerSwitches = {
+    /**
+     * Active
+     */
+    active?: boolean | null;
+    /**
+     * Reminders
+     */
+    reminders?: boolean | null;
 };
 
 /**
@@ -4982,6 +5871,10 @@ export type UndoSettingsChangeErrors = {
      */
     404: Problem;
     /**
+     * Conflict
+     */
+    409: Problem;
+    /**
      * Zła wartość Ustawień Centrum z polem i zdaniem
      */
     422: Problem;
@@ -5055,6 +5948,199 @@ export type GetQuantityRulesResponses = {
 
 export type GetQuantityRulesResponse = GetQuantityRulesResponses[keyof GetQuantityRulesResponses];
 
+export type AddQuantityRuleData = {
+    body: RuleForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules';
+};
+
+export type AddQuantityRuleErrors = {
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type AddQuantityRuleError = AddQuantityRuleErrors[keyof AddQuantityRuleErrors];
+
+export type AddQuantityRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type AddQuantityRuleResponse = AddQuantityRuleResponses[keyof AddQuantityRuleResponses];
+
+export type GetQuantityDifferencesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules/differences';
+};
+
+export type GetQuantityDifferencesResponses = {
+    /**
+     * Response Getquantitydifferences
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+};
+
+export type GetQuantityDifferencesResponse = GetQuantityDifferencesResponses[keyof GetQuantityDifferencesResponses];
+
+export type MarkQuantityExceptionData = {
+    body?: never;
+    path: {
+        /**
+         * Difference Id
+         */
+        difference_id: string;
+    };
+    query?: never;
+    url: '/api/settings/quantity-rules/differences/{difference_id}/exception';
+};
+
+export type MarkQuantityExceptionErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MarkQuantityExceptionError = MarkQuantityExceptionErrors[keyof MarkQuantityExceptionErrors];
+
+export type MarkQuantityExceptionResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExceptionSaved;
+};
+
+export type MarkQuantityExceptionResponse = MarkQuantityExceptionResponses[keyof MarkQuantityExceptionResponses];
+
+export type PreviewQuantityRulesData = {
+    /**
+     * Edit
+     */
+    body: ({
+        kind: 'add';
+    } & AddRule) | ({
+        kind: 'change';
+    } & ChangeRule) | ({
+        kind: 'remove';
+    } & RemoveRule);
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules/preview';
+};
+
+export type PreviewQuantityRulesErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewQuantityRulesError = PreviewQuantityRulesErrors[keyof PreviewQuantityRulesErrors];
+
+export type PreviewQuantityRulesResponses = {
+    /**
+     * Response Previewquantityrules
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'ready';
+    } & PreviewReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & PreviewWithoutFiles);
+};
+
+export type PreviewQuantityRulesResponse = PreviewQuantityRulesResponses[keyof PreviewQuantityRulesResponses];
+
+export type RemoveQuantityRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: string;
+    };
+    query?: never;
+    url: '/api/settings/quantity-rules/{rule_id}';
+};
+
+export type RemoveQuantityRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type RemoveQuantityRuleError = RemoveQuantityRuleErrors[keyof RemoveQuantityRuleErrors];
+
+export type RemoveQuantityRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type RemoveQuantityRuleResponse = RemoveQuantityRuleResponses[keyof RemoveQuantityRuleResponses];
+
+export type ChangeQuantityRuleData = {
+    body: RuleForm;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: string;
+    };
+    query?: never;
+    url: '/api/settings/quantity-rules/{rule_id}';
+};
+
+export type ChangeQuantityRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeQuantityRuleError = ChangeQuantityRuleErrors[keyof ChangeQuantityRuleErrors];
+
+export type ChangeQuantityRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type ChangeQuantityRuleResponse = ChangeQuantityRuleResponses[keyof ChangeQuantityRuleResponses];
+
 export type ChooseRegisterData = {
     body?: never;
     path?: never;
@@ -5100,6 +6186,81 @@ export type OpenRegisterResponses = {
 
 export type OpenRegisterResponse = OpenRegisterResponses[keyof OpenRegisterResponses];
 
+export type ChangeRemindersData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders';
+};
+
+export type ChangeRemindersErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersError = ChangeRemindersErrors[keyof ChangeRemindersErrors];
+
+export type ChangeRemindersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersResponse = ChangeRemindersResponses[keyof ChangeRemindersResponses];
+
+export type ChangeRemindersEnabledData = {
+    body: RemindersEnabledChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/enabled';
+};
+
+export type ChangeRemindersEnabledErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersEnabledError = ChangeRemindersEnabledErrors[keyof ChangeRemindersEnabledErrors];
+
+export type ChangeRemindersEnabledResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersEnabledResponse = ChangeRemindersEnabledResponses[keyof ChangeRemindersEnabledResponses];
+
+export type PreviewReminderData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/preview';
+};
+
+export type PreviewReminderErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewReminderError = PreviewReminderErrors[keyof PreviewReminderErrors];
+
+export type PreviewReminderResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReminderPreview;
+};
+
+export type PreviewReminderResponse = PreviewReminderResponses[keyof PreviewReminderResponses];
+
 export type ChangeThemeData = {
     body: ThemeChange;
     path?: never;
@@ -5124,6 +6285,175 @@ export type ChangeThemeResponses = {
 };
 
 export type ChangeThemeResponse = ChangeThemeResponses[keyof ChangeThemeResponses];
+
+export type AddWorkerData = {
+    body: WorkerForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/workers';
+};
+
+export type AddWorkerErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type AddWorkerError = AddWorkerErrors[keyof AddWorkerErrors];
+
+export type AddWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type AddWorkerResponse = AddWorkerResponses[keyof AddWorkerResponses];
+
+export type GetWorkerSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/workers/suggestions';
+};
+
+export type GetWorkerSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkerSuggestions;
+};
+
+export type GetWorkerSuggestionsResponse = GetWorkerSuggestionsResponses[keyof GetWorkerSuggestionsResponses];
+
+export type RemoveWorkerData = {
+    body?: never;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}';
+};
+
+export type RemoveWorkerErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type RemoveWorkerError = RemoveWorkerErrors[keyof RemoveWorkerErrors];
+
+export type RemoveWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type RemoveWorkerResponse = RemoveWorkerResponses[keyof RemoveWorkerResponses];
+
+export type ChangeWorkerData = {
+    body: WorkerEdit;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}';
+};
+
+export type ChangeWorkerErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type ChangeWorkerError = ChangeWorkerErrors[keyof ChangeWorkerErrors];
+
+export type ChangeWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkerSaved;
+};
+
+export type ChangeWorkerResponse = ChangeWorkerResponses[keyof ChangeWorkerResponses];
+
+export type AssignWorkerAddressData = {
+    body: WorkerAddress;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}/addresses';
+};
+
+export type AssignWorkerAddressErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type AssignWorkerAddressError = AssignWorkerAddressErrors[keyof AssignWorkerAddressErrors];
+
+export type AssignWorkerAddressResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type AssignWorkerAddressResponse = AssignWorkerAddressResponses[keyof AssignWorkerAddressResponses];
+
+export type SwitchWorkerData = {
+    body: WorkerSwitches;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}/switches';
+};
+
+export type SwitchWorkerErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type SwitchWorkerError = SwitchWorkerErrors[keyof SwitchWorkerErrors];
+
+export type SwitchWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type SwitchWorkerResponse = SwitchWorkerResponses[keyof SwitchWorkerResponses];
 
 export type CloseCentrumData = {
     body?: never;

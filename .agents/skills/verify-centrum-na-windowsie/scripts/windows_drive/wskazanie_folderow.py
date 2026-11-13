@@ -13,8 +13,9 @@ import time
 from playwright.sync_api import Page, expect
 import yaml
 
-from windows_drive.common import DriveFailure, Run, close_settings, open_settings, same_path, settings_section, settings_title, wait_for
+from windows_drive.common import DriveFailure, Run, same_path, wait_for
 import windows_desktop
+from drive.common import close_settings, open_settings, settings_section, settings_title
 
 FEATURE = "wskazanie-folderow"
 OPENED_FOLDER = "15_21_09_2026"
@@ -76,7 +77,8 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "tablica-okresow")
 
     run.step(FEATURE, "rejestr-zlecen")
-    folders = open_settings(page, "Foldery")
+    open_settings(page, "Foldery")
+    folders = settings_section(page)
     folders.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     _pick(run, REGISTER_DIALOG, register, "rejestr-zlecen")
     row = folders.get_by_role("listitem", name="Rejestr zleceń")

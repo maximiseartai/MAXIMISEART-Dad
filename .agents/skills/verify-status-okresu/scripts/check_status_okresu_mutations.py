@@ -23,6 +23,8 @@ REPORT_ENTERING = Path("src/rozliczenia/report_entering.py")
 INPUT_CHECKS = Path("src/rozliczenia/input_checks.py")
 PREPARATION_FILES = Path("src/rozliczenia/preparation_files.py")
 FILLING = Path("src/rozliczenia/centrum/filling.py")
+QUANTITY_RULES_PREVIEW = Path("src/rozliczenia/centrum/quantity_rules_preview.py")
+QUANTITY_DIFFERENCES = Path("src/rozliczenia/centrum/quantity_differences.py")
 PERIOD_START = Path("src/rozliczenia/centrum/period_start.py")
 SETTLEMENT_KIND = Path("src/rozliczenia/centrum/processes/settlement.py")
 FILE_STATE = Path("src/rozliczenia/file_state.py")
@@ -218,16 +220,43 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "Uzupełnienie po Przebiegu rozliczeń według złego Statusu okresu",
+        "okres po Przebiegu rozliczeń według złego Statusu okresu",
         (
             Edit(
-                FILLING,
-                '    return folder.observe().status == "worker_settlements_ready"\n',
-                '    return folder.observe().status == "collective_file_prepared"\n',
+                PERIOD_FOLDER,
+                '        return self.status == "worker_settlements_ready"\n',
+                '        return self.status == "collective_file_prepared"\n',
             ),
         ),
         EXPLORER,
-        "tata uzupełnia Plik zbiorczy okresu, który już rozliczono, a przed Przebiegiem widzi podgląd bez ilości",
+        "tata uzupełnia Plik zbiorczy okresu, który już rozliczono, a podgląd Reguł ilości liczy na nierozliczonym",
+        NEW,
+    ),
+    Mutation(
+        "Uzupełnienie bez okresu po Przebiegu rozliczeń",
+        (
+            Edit(
+                FILLING,
+                "settled=folder.observe().settled)\n",
+                "settled=False)\n",
+            ),
+        ),
+        EXPLORER,
+        "tata uzupełnia Plik zbiorczy okresu, który już rozliczono",
+        NEW,
+    ),
+    Mutation(
+        "podgląd Reguł ilości bierze okres przed Przebiegiem rozliczeń",
+        (Edit(QUANTITY_RULES_PREVIEW, "        if folder.observe().settled:\n", "        if folder.observe().exists(\"collective_file\"):\n"),),
+        EXPLORER,
+        "podgląd Reguł ilości liczy na ilościach, których tata jeszcze nie rozliczył",
+        NEW,
+    ),
+    Mutation(
+        "lista różnic nie zna okresu, którego Pliku zbiorczego nie dało się przeczytać",
+        (Edit(QUANTITY_DIFFERENCES, "        if not found.files and not found.unread:\n", "        if not found.files:\n"),),
+        EXPLORER,
+        "lista różnic mówi, że nie ma okresu po Przebiegu rozliczeń, zamiast nazwać nieczytelny Plik zbiorczy",
         NEW,
     ),
     Mutation(

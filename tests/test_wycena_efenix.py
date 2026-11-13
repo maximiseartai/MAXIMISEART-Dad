@@ -15,7 +15,7 @@ sprawdza Skrypt dla maszyn (``tests/test_uruchom_proces.py``).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from copy import copy
@@ -87,7 +87,7 @@ from rozliczenia.efenix_window import (
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order, read_results
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
@@ -98,9 +98,11 @@ from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 
 from atrapy.atrapa_efenix import (
+    CHANGE_STATUS,
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,
+    LOGIN_PAGE,
     ORDER_PAGE,
     ORDER_SCRIPT,
     PRICES,
@@ -120,7 +122,7 @@ from atrapy.atrapa_efenix import (
 )
 from atrapy.efenix import ADDRESS, DAY, Order, write_collective_file
 from atrapy.interlocutor import Tata
-from tests.fixtures.okno_w_procesie import okno
+from tests.fixtures.okno_w_procesie import OknoWProcesie, okno
 from tests.fixtures.przegladarka import chromium, page_of
 from atrapy.settlement import PERIOD, worker_list, write_template
 from atrapy.workbooks import active_worksheet, rewrite_parts
@@ -1032,21 +1034,38 @@ def test_znacznik_przekazania_zastepuje_znacznik_efenix_a_znacznik_efenix_nigdy_
     assert _address_fills(source) == {18: FORWARDED_RGB, 19: FORWARDED_RGB}
 
 
-class _Logged:
-    """Okno efenix, które zapisuje w ``log`` nazwę każdego działania przed nim."""
+class _Before:
+    """Okno efenix ``efenix``, w którym ``before`` biegnie tuż przed każdym działaniem okna, pod śladem zlecenia: jego
+    skutek (zamknięta karta, skrypt strony, wyjątek okna) i czas to skutek i czas tego działania; implementuje
+    ``Efenix``."""
 
-    def __init__(self, efenix: Efenix, log: list[str]) -> None:
+    def __init__(self, efenix: Efenix, before: Callable[[WindowAction], None]) -> None:
         self._efenix = efenix
-        self._log = log
+        self._before = before
 
-    def __getattr__(self, name: str) -> object:
-        act = getattr(self._efenix, name)
+    def search(self, number: str) -> Sequence[ListedOrder]:
+        self._before(WindowAction.SEARCH)
+        return self._efenix.search(number)
 
-        def logged(*args: object) -> object:
-            self._log.append(name)
-            return act(*args)
+    def open_order(self, order: ListedOrder) -> OrderPricing:
+        self._before(WindowAction.OPEN)
+        return self._efenix.open_order(order)
 
-        return logged
+    def set_execution_date(self, day: date) -> bool:
+        self._before(WindowAction.DATE)
+        return self._efenix.set_execution_date(day)
+
+    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
+        self._before(WindowAction.EMMETT)
+        return self._efenix.load_emmett(verdict)
+
+    def enter_quantity(self, position: str, quantity: int) -> Decimal:
+        self._before(WindowAction.QUANTITY)
+        return self._efenix.enter_quantity(position, quantity)
+
+    def forward_to_accept(self) -> ForwardRefusal | None:
+        self._before(WindowAction.FORWARD)
+        return self._efenix.forward_to_accept()
 
 
 def test_w_tempie_ludzkim_przekazanie_to_zapis_z_przerwa_a_potwierdzajace_szukanie_idzie_bez_przerwy(tmp_path: Path) -> None:
@@ -1065,12 +1084,12 @@ def test_w_tempie_ludzkim_przekazanie_to_zapis_z_przerwa_a_potwierdzajace_szukan
     @contextmanager
     def logged_window(login: Login) -> Iterator[Efenix]:
         with okno(stan, login) as efenix:
-            yield cast(Efenix, _Logged(efenix, log))
+            yield _Before(efenix, lambda action: log.append(action.name))
 
     outcome = _launched(source, logged_window, pace=Pace(sleep=sleep, clock=clock), mode=PricingMode.FORWARD)
 
     assert outcome.result == "OK"
-    one_order = ["search", "open_order", "przerwa 2 s", "forward_to_accept", "search"]
+    one_order = ["SEARCH", "OPEN", "przerwa 2 s", "FORWARD", "SEARCH"]
     assert log == [*one_order, "przerwa 15 s", *one_order]
 
 
@@ -1439,6 +1458,88 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     assert stopped_at.duration_ms < 2 * timeout_ms, stopped_at
 
 
+def _without_calendar(page: Page) -> Callable[[Efenix], Efenix]:
+    """Pole daty wykonania bez kalendarza pickadate: przed datą wykonania strona ma jQuery bez niego."""
+
+    before = _scripts(page, {WindowAction.DATE: "() => { window.jQuery = () => ({}); }"})
+    return lambda efenix: _Before(efenix, before)
+
+
+def _answering(path: str, answer: Callable[[Route], None]) -> Callable[[Page], Callable[[Efenix], Efenix]]:
+    """Karta, w której efenix odpowiada na każde żądanie ``path`` przez ``answer``."""
+
+    def prepare(page: Page) -> Callable[[Efenix], Efenix]:
+        page.route(f"**/{path}", answer)
+        return lambda efenix: efenix
+
+    return prepare
+
+
+def _to_login(route: Route) -> None:
+    route.fulfill(status=HTTPStatus.FOUND, headers={"Location": LOGIN_PAGE})
+
+
+# Zlecenie w pliku i w efenix, tryb Wyceny i to, czym efenix odpowiada inaczej w działaniu okna, a potem kod
+# Zatrzymania, część strony, przyczyna techniczna z tabeli decyzji ``WindowStop.of`` i działanie okna, które się nie udało.
+_EMPTY = Order("#9511", cells={"O": 1}, amount=_au({"012": 1}))
+_READY = Order("#9512", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+ANSWERED = {
+    "pole-daty-bez-kalendarza": (
+        _EMPTY,
+        _EMPTY.in_efenix("951"),
+        PricingMode.FILL,
+        _without_calendar,
+        ("EFENIX_OKNO_ZATRZYMANE", PagePart.DATE, OtherShape(Shape.NO_CALENDAR), WindowAction.DATE),
+    ),
+    "zapis-ilosci-przekierowany-na-logowanie": (
+        _EMPTY,
+        replace(_EMPTY.in_efenix("951"), execution_date=DAY),
+        PricingMode.FILL,
+        _answering(SAVE_QUANTITY, _to_login),
+        ("EFENIX_WYLOGOWANY", PagePart.QUANTITY, LoginSign.REDIRECT, WindowAction.QUANTITY),
+    ),
+    "przekazanie-bez-odpowiedzi": (
+        _READY,
+        _READY.in_efenix("952"),
+        PricingMode.FORWARD,
+        _answering(CHANGE_STATUS, lambda route: route.abort()),
+        ("EFENIX_OKNO_ZATRZYMANE", PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD),
+    ),
+    "przekazanie-przekierowane-na-logowanie": (
+        _READY,
+        _READY.in_efenix("952"),
+        PricingMode.FORWARD,
+        _answering(CHANGE_STATUS, _to_login),
+        ("EFENIX_WYLOGOWANY", PagePart.FORWARD, LoginSign.REDIRECT, WindowAction.FORWARD),
+    ),
+}
+
+
+@pytest.mark.parametrize(("order", "in_efenix", "mode", "prepare", "stopped"), ANSWERED.values(), ids=ANSWERED.keys())
+def test_dzialanie_okna_bez_kalendarza_bez_odpowiedzi_albo_z_przekierowaniem_na_logowanie_zatrzymuje_wycene_z_przyczyna(
+    tmp_path: Path,
+    page: Page,
+    order: Order,
+    in_efenix: AtrapaOrder,
+    mode: PricingMode,
+    prepare: Callable[[Page], Callable[[Efenix], Efenix]],
+    stopped: tuple[str, PagePart, WindowCause, WindowAction],
+) -> None:
+    """Pole daty bez kalendarza to inna budowa strony, żądanie Przekazania do akceptacji bez odpowiedzi to Zatrzymanie
+    okna, a odpowiedź zapisu ilości albo „Tak” Przekazania przekierowana na stronę logowania to wylogowanie. Fakty
+    Zatrzymania dla Logów Uruchomienia mają część strony, przyczynę techniczną i działanie okna, które się nie udało."""
+
+    with atrapa_efenix([in_efenix]) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, [order]), page, atrapa.url, timeout_ms=3_000, window=prepare(page), mode=mode)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
+    failed = facts.stopped_at.failed
+    assert failed is not None
+    assert (_stop(outcome), facts.part, facts.cause, failed.action) == stopped
+
+
 _DIALOG = '<div id="dialog_emmett">{}</div>'
 _PROPOSAL = '<div id="emmett-propozycja">{}</div>'
 
@@ -1497,6 +1598,44 @@ def test_puste_pole_ilosc_na_stronie_zlecenia_to_ilosc_zero_pozycji(page: Page) 
         OrderPricing(None, Decimal("12.50"), {"012": 0, "019": 3}),
         {"012": "INDEKS_012_078", "019": "INDEKS_019_078"},
     )
+
+
+def _order_page(page: Page, html: str) -> object:
+    page.set_content(html)
+    return read_order(page)
+
+
+_ORDER = '<span id="data_install">{}</span><span id="cena_all2">12.50</span><input class="wycena-ilosc" id="{}" value="1">'
+_RESULTS = (
+    "<table><thead><tr><th>Numer dokumentu</th><th>Status</th><th>Wykonawca (login)</th><th>Dane adresowe</th></tr></thead>"
+    f'<tbody><tr><td></td><td>Do wyceny</td><td>Fikcyjny</td><td><a href="{ORDER_PAGE}?id=951">Otwórz</a></td></tr></tbody></table>'
+)
+# Strona zlecenia albo odpowiedź szukania, której okno nie czyta, jej odczyt, część strony i przyczyna techniczna z
+# tabeli decyzji ``WindowStop.of``.
+UNREAD = {
+    "pole-ilosc-o-id-spoza-indeksu": (_ORDER.format("", "ILOSC_012"), _order_page, PagePart.ORDER, OtherShape(Shape.QUANTITY_ID)),
+    "data-wykonania-dnia-ktorego-nie-ma": (
+        _ORDER.format("2026-02-30", "INDEKS_012_078"),
+        _order_page,
+        PagePart.ORDER,
+        OtherShape(Shape.DATE_TEXT),
+    ),
+    "wiersz-wynikow-bez-numeru": (_RESULTS, read_results, PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY)),
+}
+
+
+@pytest.mark.parametrize(("html", "read", "part", "cause"), UNREAD.values(), ids=UNREAD.keys())
+def test_strona_zlecenia_albo_wiersz_wynikow_w_innej_budowie_to_inna_strona_z_czescia_i_przyczyna(
+    page: Page, html: str, read: Callable[[Page, str], object], part: PagePart, cause: WindowCause
+) -> None:
+    """Pole Ilość o id spoza ``INDEKS_NNN_…``, data wykonania w postaci RRRR-MM-DD dnia, którego nie ma, i wiersz tabeli
+    wyników z linkiem do strony zlecenia, ale bez numeru, to strona w innej budowie (``UnexpectedPage``) z częścią strony
+    i przyczyną dla Logów Uruchomienia."""
+
+    with pytest.raises(UnexpectedPage) as raised:
+        read(page, html)
+
+    assert (raised.value.part, raised.value.cause) == (part, cause)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -1562,43 +1701,16 @@ def _closing_window(page: Page, clock: _FakeTime, at_pause: int) -> Pace:
     return Pace(sleep=sleep, clock=clock)
 
 
-class _ClosingBeforeAction:
-    """Okno efenix ``efenix``, w którym tata zamyka kartę ``page`` tuż przed działaniem okna numer ``at_action`` (od 1, 0:
-    nie zamyka)."""
+def _closing_at(page: Page, number: int) -> Callable[[WindowAction], None]:
+    """Tata zamyka kartę ``page`` tuż przed działaniem okna numer ``number`` (od 1, 0: nie zamyka); dla ``_Before``."""
 
-    def __init__(self, efenix: Efenix, page: Page, at_action: int) -> None:
-        self._efenix = efenix
-        self._page = page
-        self._left = at_action
+    actions = itertools.count(1)
 
-    def search(self, number: str) -> Sequence[ListedOrder]:
-        self._before()
-        return self._efenix.search(number)
+    def close(_action: WindowAction) -> None:
+        if next(actions) == number:
+            page.close()
 
-    def open_order(self, order: ListedOrder) -> OrderPricing:
-        self._before()
-        return self._efenix.open_order(order)
-
-    def set_execution_date(self, day: date) -> bool:
-        self._before()
-        return self._efenix.set_execution_date(day)
-
-    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
-        self._before()
-        return self._efenix.load_emmett(verdict)
-
-    def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        self._before()
-        return self._efenix.enter_quantity(position, quantity)
-
-    def forward_to_accept(self) -> None:
-        self._before()
-        self._efenix.forward_to_accept()
-
-    def _before(self) -> None:
-        self._left -= 1
-        if self._left == 0:
-            self._page.close()
+    return close
 
 
 @pytest.mark.parametrize(
@@ -1633,7 +1745,7 @@ def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe
             page,
             atrapa.url,
             pace=_closing_window(page, clock, in_pause),
-            window=lambda efenix: _ClosingBeforeAction(efenix, page, before_action),
+            window=lambda efenix: _Before(efenix, _closing_at(page, before_action)),
         )
 
     assert isinstance(outcome.ending, Stop)
@@ -1671,7 +1783,7 @@ def test_komunikat_zamknietego_okna_mowi_o_zmianie_w_efenix_po_kazdym_zapisie_a_
     source = write_collective_file(tmp_path, orders)
     in_efenix = [replace(first.in_efenix("971"), execution_date=execution_date), orders[1].in_efenix("972")]
     with atrapa_efenix(in_efenix, today=date(2026, 10, 12)) as atrapa:
-        outcome = _run(source, page, atrapa.url, window=lambda efenix: _ClosingBeforeAction(efenix, page, 4))
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _Before(efenix, _closing_at(page, 4)))
 
     assert isinstance(outcome.ending, Stop)
     assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", kept, marked)
@@ -1796,7 +1908,7 @@ def test_komunikat_zamknietego_okna_mowi_o_zmianie_w_efenix_z_kazdego_zlecenia_p
     source = write_collective_file(tmp_path, orders)
     in_efenix = [replace(orders[0].in_efenix("973"), execution_date=orders[0].day), *(order.in_efenix(f"97{index}") for index, order in enumerate(orders[1:], 4))]
     with atrapa_efenix(in_efenix) as atrapa:
-        outcome = _run(source, page, atrapa.url, window=lambda efenix: _ClosingBeforeAction(efenix, page, 6))
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _Before(efenix, _closing_at(page, 6)))
 
     assert (_stop(outcome), _kept(outcome), _marked(source)) == ("EFENIX_OKNO_ZAMKNIETE", True, [18, 19])
 
@@ -1838,26 +1950,15 @@ def test_cala_przegladarka_zamknieta_w_trakcie_otwierania_strony_zlecenia_to_zam
     )
 
 
-class _ScriptBefore:
-    """Okno efenix, w którego karcie ``page`` biegnie skrypt tuż przed każdym działaniem okna z ``scripts`` (nazwa
-    działania ``Efenix`` → skrypt)."""
+def _scripts(page: Page, scripts: Mapping[WindowAction, str]) -> Callable[[WindowAction], None]:
+    """W karcie ``page`` biegnie skrypt tuż przed każdym działaniem okna z ``scripts`` (działanie → skrypt); dla
+    ``_Before``."""
 
-    def __init__(self, efenix: Efenix, page: Page, scripts: dict[str, str]) -> None:
-        self._efenix = efenix
-        self._page = page
-        self._scripts = scripts
+    def prepare(action: WindowAction) -> None:
+        if (script := scripts.get(action)) is not None:
+            page.evaluate(script)
 
-    def __getattr__(self, name: str) -> object:
-        act = getattr(self._efenix, name)
-        script = self._scripts.get(name)
-        if script is None:
-            return act
-
-        def prepared(*args: object) -> object:
-            self._page.evaluate(script)
-            return act(*args)
-
-        return prepared
+    return prepare
 
 
 # Okno daty, które po kliknięciu zamknięcia znika dopiero po 200 ms, jak okno bootstrapa efenix po animacji ukrycia.
@@ -1892,8 +1993,8 @@ def test_okno_czeka_na_efenix_swoim_czasem_takze_w_karcie_z_krotszym_domyslnym_l
     page.set_default_timeout(1)
     page.set_default_navigation_timeout(1)
     with atrapa_efenix([orders[0].in_efenix("901"), orders[1].in_efenix("902")], today=date(2026, 10, 12)) as atrapa:
-        slow = {"set_execution_date": _SLOW_DATE_CLOSE, "enter_quantity": _SLOW_AMOUNT}
-        outcome = _run(source, page, atrapa.url, window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, slow)))
+        slow = {WindowAction.DATE: _SLOW_DATE_CLOSE, WindowAction.QUANTITY: _SLOW_AMOUNT}
+        outcome = _run(source, page, atrapa.url, window=lambda efenix: _Before(efenix, _scripts(page, slow)))
         pricing = _pricing(atrapa)
 
     assert (outcome.result, _figures(outcome), _errors(outcome)) == (
@@ -1935,7 +2036,7 @@ def test_pole_ilosc_zasloniete_na_stronie_zlecenia_to_zatrzymanie_okna_bez_wpisa
             page,
             atrapa.url,
             timeout_ms=1_000,
-            window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, {"enter_quantity": _COVERED})),
+            window=lambda efenix: _Before(efenix, _scripts(page, {WindowAction.QUANTITY: _COVERED})),
         )
         pricing = _pricing(atrapa)
 
@@ -1962,7 +2063,7 @@ def test_kwota_po_wpisaniu_ilosci_jest_z_odpowiedzi_na_zapis_tej_pozycji_a_nie_i
             write_collective_file(tmp_path, orders),
             page,
             atrapa.url,
-            window=lambda efenix: cast(Efenix, _ScriptBefore(efenix, page, {"enter_quantity": _OTHER_SAVE})),
+            window=lambda efenix: _Before(efenix, _scripts(page, {WindowAction.QUANTITY: _OTHER_SAVE})),
         )
         pricing = _pricing(atrapa)
         requested = atrapa.requested()
@@ -2038,6 +2139,23 @@ def test_strona_bledu_serwera_efenix_na_kazde_zadanie_okna_zatrzymuje_wycene_do_
         part,
         HttpStatus(status),
     )
+
+
+def test_strona_zlecenia_ze_statusem_bledu_ktora_okno_przeczytalo_to_strona_zlecenia_a_zlecenie_jest_gotowe(
+    tmp_path: Path, page: Page
+) -> None:
+    """Status odpowiedzi strony zlecenia okno sprawdza dopiero przy stronie, której nie przeczytało (#808): stronę zlecenia
+    w budowie efenix, którą serwer dał ze statusem 500, czyta jak każdą, więc zlecenie z wyceną zgodną z plikiem jest
+    gotowe."""
+
+    def with_error_status(route: Route) -> None:
+        route.fulfill(response=route.fetch(), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    page.route(lambda url: urlparse(url).path.endswith(f"/{ORDER_PAGE}"), with_error_status)
+    with atrapa_efenix([_READY.in_efenix("952")]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [_READY], timeout_ms=3_000)
+
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 1))
 
 
 def _window_moments(atrapa: AtrapaEfenix, path: str, since: int = 0) -> list[float]:
@@ -3713,35 +3831,6 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
 _TRACE_START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)
 
 
-@dataclass
-class _SlowEfenix:
-    """Okno efenix, w którym każde działanie trwa ``ACTION_S`` udawanego czasu ``time``, a otwarcie zlecenia po nim
-    zgłasza ``UnexpectedPage``."""
-
-    time: _FakeTime
-    ACTION_S = 3.0
-
-    def search(self, number: str) -> Sequence[ListedOrder]:
-        self.time.pause(self.ACTION_S)
-        return [ListedOrder(number, "Nowe", None, "", "1")]
-
-    def open_order(self, order: ListedOrder) -> OrderPricing:
-        self.time.pause(self.ACTION_S)
-        raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
-
-    def set_execution_date(self, day: date) -> bool:
-        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
-
-    def load_emmett(self, verdict: Callable[[EmmettLoad], OrderPricing]) -> OrderPricing:
-        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
-
-    def enter_quantity(self, position: str, quantity: int) -> Decimal:
-        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
-
-    def forward_to_accept(self) -> None:
-        raise AssertionError("ślad nie woła działań, których nie woła przebieg")
-
-
 def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze_tego_ktore_sie_nie_udalo() -> None:
     """Godzina działania w Logach Uruchomienia to jego start, a nie koniec, także działania, przy którym okno stanęło:
     szukanie zaczyna się w chwili 1 s i trwa 3 s, a nieudane otwarcie zlecenia zaczyna się po przerwie w chwili 5 s."""
@@ -3749,7 +3838,14 @@ def test_slad_zlecenia_ma_chwile_rozpoczecia_kazdego_dzialania_okna_efenix_takze
     time = _FakeTime(seconds=1.0)
     trace = efenix_trace.OrderTrace()
     order = CollectiveOrder(18, "9901", "adrian.testowy", "UL. TESTOWA 1", DAY, {}, Decimal(0))
-    window = efenix_trace.traced(_SlowEfenix(time), order, trace, time, lambda: _TRACE_START + timedelta(seconds=time.seconds))
+
+    def slow(action: WindowAction) -> None:
+        time.pause(3.0)
+        if action is WindowAction.OPEN:
+            raise WindowStop.of(PagePart.ORDER, OtherShape(Shape.DATE_TEXT))
+
+    efenix = _Before(OknoWProcesie(StanEfenix([AtrapaOrder("1", "9901", "", "", status="Nowe")])), slow)
+    window = efenix_trace.traced(efenix, order, trace, time, lambda: _TRACE_START + timedelta(seconds=time.seconds))
 
     [listed] = window.search("9901")
     time.pause(1.0)

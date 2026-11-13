@@ -1848,6 +1848,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
             "content": {
@@ -1943,6 +1953,334 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add",
+        "operationId": "addQuantityRule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/differences": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getQuantityDifferences",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DifferencesReady"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DifferencesWithoutFiles"
+                    }
+                  ],
+                  "title": "Response Getquantitydifferences",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "ready": "#/components/schemas/DifferencesReady",
+                      "no_periods_directory": "#/components/schemas/DifferencesWithoutFiles",
+                      "no_settled_periods": "#/components/schemas/DifferencesWithoutFiles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/differences/{difference_id}/exception": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Mark",
+        "description": "„To był wyjątek”: wyjątek różnicy o tym id z różnic policzonych teraz, zapisem właściciela Ustawień.",
+        "operationId": "markQuantityException",
+        "parameters": [
+          {
+            "name": "difference_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Difference Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Change",
+        "description": "Skutek zmiany na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu (``quantity_rules_preview``).",
+        "operationId": "previewQuantityRules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AddRule"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChangeRule"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveRule"
+                  }
+                ],
+                "title": "Edit",
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "add": "#/components/schemas/AddRule",
+                    "change": "#/components/schemas/ChangeRule",
+                    "remove": "#/components/schemas/RemoveRule"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PreviewReady"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PreviewWithoutFiles"
+                    }
+                  ],
+                  "title": "Response Previewquantityrules",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "ready": "#/components/schemas/PreviewReady",
+                      "no_periods_directory": "#/components/schemas/PreviewWithoutFiles",
+                      "no_settled_periods": "#/components/schemas/PreviewWithoutFiles"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/{rule_id}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change",
+        "operationId": "changeQuantityRule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove",
+        "operationId": "removeQuantityRule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/settings/register/choose": {
@@ -2007,6 +2345,132 @@
         }
       }
     },
+    "/api/settings/reminders": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Reminders",
+        "description": "Formularz naraz: pory, godzina pierwszego przypomnienia, pierwsze zdanie i stopka; działa od następnego\nsprawdzenia przypomnień.",
+        "operationId": "changeReminders",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/reminders/enabled": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Reminders Enabled",
+        "description": "Przełącznik: pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia dawny, bo okno dni i tak\nkończy się na okresach z Plikiem zbiorczym.",
+        "operationId": "changeRemindersEnabled",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersEnabledChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/reminders/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Reminder",
+        "description": "Przypomnienie za wczoraj z formularza, bez zapisu i bez wysyłki; zła wartość to ta sama odmowa co przy zapisie.",
+        "operationId": "previewReminder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/theme": {
       "put": {
         "tags": [
@@ -2044,6 +2508,288 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/settings/workers": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add",
+        "operationId": "addWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/workers/suggestions": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Suggestions",
+        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista\nWykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie\no liście, a dodanie zapisuje listę od nowa.",
+        "operationId": "getWorkerSuggestions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerSuggestions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change",
+        "description": "Formularz Wykonawcy naraz. Zła wartość jest odmową, zanim cokolwiek się sprawdza; zmiana nazwy, przy której w\nokresie leży Rozliczenie pracownika ze starą nazwą, bez ``rename_confirmed`` niczego nie zapisuje i daje\nostrzeżenie; usunięty login sprawdza w okresach właściciel.",
+        "operationId": "changeWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerSaved"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove",
+        "description": "Usuwa Wykonawcę; właściciel zapisuje to tylko po pełnym sprawdzeniu okresów, w którym żaden jego login nie\nwystępuje.",
+        "operationId": "removeWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}/addresses": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Assign Address",
+        "description": "„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy na końcu adresów Wykonawcy, zapisany od\nrazu jak pojedynczy wybór (ADR 0032), tą samą drogą i regułami co formularz; loginów nie usuwa.",
+        "operationId": "assignWorkerAddress",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerAddress"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}/switches": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Switch",
+        "operationId": "switchWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerSwitches"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
           }
         }
       }
@@ -2292,6 +3038,50 @@
   },
   "components": {
     "schemas": {
+      "ActivitiesCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "activities",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text",
+          "negated"
+        ],
+        "title": "ActivitiesCondition"
+      },
+      "AddRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "add",
+            "title": "Kind"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule"
+        ],
+        "title": "AddRule"
+      },
       "AddressesNotMoved": {
         "properties": {
           "reason": {
@@ -2320,6 +3110,12 @@
             "enum": [
               "getHealth",
               "getSettings",
+              "addWorker",
+              "changeWorker",
+              "switchWorker",
+              "removeWorker",
+              "getWorkerSuggestions",
+              "assignWorkerAddress",
               "chooseRegister",
               "openRegister",
               "choosePeriodsDirectory",
@@ -2327,8 +3123,17 @@
               "changeInboxPassword",
               "changeFolders",
               "changeAutostart",
+              "changeRemindersEnabled",
+              "changeReminders",
+              "previewReminder",
               "getSettingsHistory",
+              "getQuantityDifferences",
+              "markQuantityException",
               "getQuantityRules",
+              "addQuantityRule",
+              "changeQuantityRule",
+              "removeQuantityRule",
+              "previewQuantityRules",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -2568,6 +3373,30 @@
         "title": "CellSource",
         "description": "Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."
       },
+      "ChangeRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "change",
+            "title": "Kind"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule_id",
+          "rule"
+        ],
+        "title": "ChangeRule"
+      },
       "Choice": {
         "properties": {
           "settings": {
@@ -2690,6 +3519,32 @@
         "title": "CollectiveFileVersion",
         "description": "Znacznik zapisu Pliku zbiorczego (czas zmiany i rozmiar); ``None``, gdy pliku nie widać."
       },
+      "ComponentCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "component",
+            "title": "Kind"
+          },
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "component",
+          "negated"
+        ],
+        "title": "ComponentCondition",
+        "description": "``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id)."
+      },
       "Configuration": {
         "properties": {
           "version": {
@@ -2757,6 +3612,32 @@
         ],
         "title": "Configuration",
         "description": "Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.\n\n``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji\nwzględem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,\nczy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``)."
+      },
+      "ContractCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "contract",
+            "title": "Kind"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "word",
+          "negated"
+        ],
+        "title": "ContractCondition",
+        "description": "Pierwsze słowo ``UMOWA`` jest tym słowem."
       },
       "Count": {
         "properties": {
@@ -2967,6 +3848,40 @@
         "title": "DadNoteText",
         "description": "Tytuł i treść Uwagi taty w trakcie pisania, do podglądu „Maks dostanie”; tytuł może być jeszcze pusty.\n\n``run_id`` to Uruchomienie z Centrum (``ProcessRun.run_id``), do którego tata przypina Uwagę; ``None``: ogólna."
       },
+      "DateCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "date",
+            "title": "Kind"
+          },
+          "days": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "since": {
+            "type": "string",
+            "title": "Since"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "days",
+          "since",
+          "negated"
+        ],
+        "title": "DateCondition",
+        "description": "``DATA`` przypada w dni tygodnia (0 to poniedziałek) od godziny ``since`` (``GG:MM``)."
+      },
       "Decision": {
         "properties": {
           "question": {
@@ -3073,6 +3988,42 @@
         "title": "DeviceComponent",
         "description": "Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna)."
       },
+      "DevicesCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "devices",
+            "title": "Kind"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "exactly",
+              "contains"
+            ],
+            "title": "Mode"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "mode",
+          "text",
+          "negated"
+        ],
+        "title": "DevicesCondition",
+        "description": "``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty)."
+      },
       "Diagnosis": {
         "properties": {
           "explanation": {
@@ -3149,6 +4100,139 @@
         "title": "DiagnosisCheck",
         "description": "Jedno sprawdzenie Diagnozy: co sprawdzono, czy przeszło i krótko dlaczego, bez pełnych ścieżek."
       },
+      "DifferencesReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/QuantityDifference"
+            },
+            "type": "array",
+            "title": "Differences"
+          },
+          "more": {
+            "type": "integer",
+            "title": "More"
+          },
+          "exceptions": {
+            "type": "integer",
+            "title": "Exceptions"
+          },
+          "exceptions_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "files",
+          "unread",
+          "differences",
+          "more",
+          "exceptions",
+          "exceptions_problem"
+        ],
+        "title": "DifferencesReady",
+        "description": "Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,\nod najnowszego okresu, bez różnic oznaczonych jako wyjątek.\n\n``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a\n``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków\n(lista liczy wtedy z ostatnimi dobrymi wyjątkami)."
+      },
+      "DifferencesWithoutFiles": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "no_periods_directory",
+              "no_settled_periods"
+            ],
+            "title": "State"
+          },
+          "exceptions_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "exceptions_problem"
+        ],
+        "title": "DifferencesWithoutFiles",
+        "description": "Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie\nma jeszcze Rozliczeń pracowników (``no_settled_periods``)."
+      },
+      "ExceptionSaved": {
+        "properties": {
+          "differences": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DifferencesReady"
+              },
+              {
+                "$ref": "#/components/schemas/DifferencesWithoutFiles"
+              }
+            ],
+            "title": "Differences",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "no_periods_directory": "#/components/schemas/DifferencesWithoutFiles",
+                "no_settled_periods": "#/components/schemas/DifferencesWithoutFiles",
+                "ready": "#/components/schemas/DifferencesReady"
+              }
+            }
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "differences",
+          "change"
+        ],
+        "title": "ExceptionSaved",
+        "description": "Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta\nróżnica już była wyjątkiem."
+      },
       "Figure": {
         "properties": {
           "label": {
@@ -3177,6 +4261,29 @@
         ],
         "title": "Figure",
         "description": "Liczba karty Uruchomienia z etykietą; ``unit`` ``ms`` to czas, który przeglądarka pokazuje w sekundach."
+      },
+      "FillAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fill",
+            "title": "Kind"
+          },
+          "writes": {
+            "items": {
+              "$ref": "#/components/schemas/RuleWrite"
+            },
+            "type": "array",
+            "title": "Writes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "writes"
+        ],
+        "title": "FillAction"
       },
       "FillKind": {
         "type": "string",
@@ -3250,6 +4357,36 @@
         ],
         "title": "FoldersChange",
         "description": "Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."
+      },
+      "GroupCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "group",
+            "title": "Kind"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "router",
+              "tv",
+              "extender"
+            ],
+            "title": "Group"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "group",
+          "negated"
+        ],
+        "title": "GroupCondition"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3464,6 +4601,13 @@
               }
             ],
             "title": "Reason"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRuleChange"
+            },
+            "type": "array",
+            "title": "Rules"
           }
         },
         "additionalProperties": false,
@@ -3481,10 +4625,84 @@
           "undoable",
           "refused",
           "removed",
-          "reason"
+          "reason",
+          "rules"
         ],
         "title": "HistoryRow",
         "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``; ``removed``: plik usunięty poza Centrum."
+      },
+      "HistoryRuleChange": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "before",
+          "after"
+        ],
+        "title": "HistoryRuleChange",
+        "description": "Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz\n``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie\nbyło."
       },
       "InaccessiblePath": {
         "properties": {
@@ -4015,6 +5233,30 @@
         "title": "KindToFill",
         "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.\n\n``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym."
       },
+      "LeaveEmptyAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "leave_empty",
+            "title": "Kind"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Columns"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "columns"
+        ],
+        "title": "LeaveEmptyAction",
+        "description": "Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA)."
+      },
       "ListedWorker": {
         "properties": {
           "logins": {
@@ -4364,6 +5606,22 @@
         ],
         "title": "NotSetPath",
         "description": "Ścieżka jeszcze niewskazana."
+      },
+      "NothingAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "nothing",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "NothingAction",
+        "description": "Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu."
       },
       "Notifications": {
         "properties": {
@@ -4973,6 +6231,309 @@
         "title": "PinnableRun",
         "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć."
       },
+      "PreviewCell": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "before": {
+            "type": "integer",
+            "title": "Before"
+          },
+          "after": {
+            "type": "integer",
+            "title": "After"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "nieliczbowa"
+              }
+            ],
+            "title": "Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "name",
+          "before",
+          "after",
+          "tata"
+        ],
+        "title": "PreviewCell",
+        "description": "Kolumna wiersza w podglądzie: ilość z Reguł ilości teraz (``before``) i po zmianie (``after``) oraz wpis taty\n(liczba albo „nieliczbowa”)."
+      },
+      "PreviewFile": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "rows"
+        ],
+        "title": "PreviewFile",
+        "description": "Plik zbiorczy okresu ``period`` po Przebiegu rozliczeń w podglądzie; ``rows``: jego Wiersze danych."
+      },
+      "PreviewReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          },
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "changed_as_tata": {
+            "type": "integer",
+            "title": "Changed As Tata"
+          },
+          "differences_before": {
+            "type": "integer",
+            "title": "Differences Before"
+          },
+          "differences_after": {
+            "type": "integer",
+            "title": "Differences After"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "more": {
+            "type": "integer",
+            "title": "More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "sentence",
+          "files",
+          "unread",
+          "changed",
+          "changed_as_tata",
+          "differences_before",
+          "differences_after",
+          "rows",
+          "more"
+        ],
+        "title": "PreviewReady",
+        "description": "Skutek zmiany Reguł ilości na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym\nrachunkiem co Kontrola ilości.\n\n``sentence``: zdanie reguły po zmianie (``None`` przy usunięciu). ``unread``: okresy, których Pliku zbiorczego nie\ndało się przeczytać. ``changed``: wiersze, w których zmienią się ilości z Reguł ilości (albo kolumny zostawione\npuste), z czego ``changed_as_tata`` będzie tak, jak wpisał tata. ``differences_before`` i ``differences_after``:\nróżnice Kontroli ilości tych plików teraz i po zmianie. ``rows``: zmienione wiersze z różnicą od taty, najwyżej\n``SHOWN_ROWS``, a ``more`` reszta."
+      },
+      "PreviewRow": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "devices": {
+            "type": "string",
+            "title": "Devices"
+          },
+          "activities": {
+            "type": "string",
+            "title": "Activities"
+          },
+          "when": {
+            "type": "string",
+            "title": "When"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "sums": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewSum"
+            },
+            "type": "array",
+            "title": "Sums"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "row",
+          "devices",
+          "activities",
+          "when",
+          "cells",
+          "sums"
+        ],
+        "title": "PreviewRow",
+        "description": "Wiersz danych, w którym po zmianie reguła da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego,\n``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”) i kolumny. Bez adresu, numeru\nzlecenia, ``UMOWA`` i daty dziennej."
+      },
+      "PreviewSum": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/SummedRule"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "name",
+          "total",
+          "rules"
+        ],
+        "title": "PreviewSum",
+        "description": "Kolumna, w którą po zmianie wpisało w tym wierszu kilka reguł, z sumą i tymi regułami („Z = 2, bo reguły A i B”)."
+      },
+      "PreviewWithoutFiles": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "no_periods_directory",
+              "no_settled_periods"
+            ],
+            "title": "State"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "sentence"
+        ],
+        "title": "PreviewWithoutFiles",
+        "description": "Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie\nma jeszcze Rozliczeń pracowników (``no_settled_periods``)."
+      },
       "PriceListItem": {
         "properties": {
           "column": {
@@ -5581,6 +7142,85 @@
         "title": "QuantitiesToFillReady",
         "description": "Ilości do uzupełnienia okresu przeliczone z zapisanego Pliku zbiorczego; ``kinds`` ma każdy rodzaj z listą.\n\n``settled``: Przebieg rozliczeń okresu się odbył (Status okresu Rozliczenia pracowników gotowe), więc strona jest\npodglądem bez „Gotowe, rozlicz pracowników”, a wiersz bez wpisu taty jest „bez ilości”."
       },
+      "QuantityDifference": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "devices": {
+            "type": "string",
+            "title": "Devices"
+          },
+          "activities": {
+            "type": "string",
+            "title": "Activities"
+          },
+          "when": {
+            "type": "string",
+            "title": "When"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "rule": {
+            "type": "integer",
+            "title": "Rule"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "nieliczbowa"
+              }
+            ],
+            "title": "Tata"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "period",
+          "row",
+          "devices",
+          "activities",
+          "when",
+          "column",
+          "name",
+          "rule",
+          "tata",
+          "draft"
+        ],
+        "title": "QuantityDifference",
+        "description": "Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,\n``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z\nreguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.\n\n``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z\nwarunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,\nz wpisaniem brakującej ilości."
+      },
       "QuantityRuleSentence": {
         "properties": {
           "id": {
@@ -5616,6 +7256,9 @@
             },
             "type": "array",
             "title": "Sentence"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
           }
         },
         "additionalProperties": false,
@@ -5623,10 +7266,37 @@
         "required": [
           "id",
           "scope",
-          "sentence"
+          "sentence",
+          "rule"
         ],
         "title": "QuantityRuleSentence",
-        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł."
+        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako\nformularz edytora (``rule``)."
+      },
+      "QuantityRulesSaved": {
+        "properties": {
+          "quantity_rules": {
+            "$ref": "#/components/schemas/QuantityRulesSettings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "quantity_rules",
+          "change"
+        ],
+        "title": "QuantityRulesSaved",
+        "description": "Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:\nzapis niczego nie zmienił."
       },
       "QuantityRulesSettings": {
         "properties": {
@@ -5643,6 +7313,13 @@
             },
             "type": "array",
             "title": "Devices"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/RuleColumn"
+            },
+            "type": "array",
+            "title": "Columns"
           },
           "rules_problem": {
             "anyOf": [
@@ -5670,6 +7347,7 @@
         "required": [
           "rules",
           "devices",
+          "columns",
           "rules_problem",
           "devices_problem"
         ],
@@ -5839,6 +7517,186 @@
         ],
         "title": "ReleaseNotification",
         "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty\n(``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum\nproponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
+      },
+      "ReminderPreview": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "text"
+        ],
+        "title": "ReminderPreview",
+        "description": "Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść\nze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła."
+      },
+      "ReminderRange": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "title": "End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ReminderRange",
+        "description": "Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą."
+      },
+      "RemindersEnabledChange": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "RemindersEnabledChange",
+        "description": "Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś."
+      },
+      "RemindersForm": {
+        "properties": {
+          "morning": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "evening": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "first": {
+            "type": "string",
+            "title": "First"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "footer": {
+            "type": "string",
+            "title": "Footer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "morning",
+          "evening",
+          "first",
+          "text",
+          "footer"
+        ],
+        "title": "RemindersForm",
+        "description": "Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem\n``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu."
+      },
+      "RemindersSetting": {
+        "properties": {
+          "morning": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "evening": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "first": {
+            "type": "string",
+            "title": "First"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "footer": {
+            "type": "string",
+            "title": "Footer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "morning",
+          "evening",
+          "first",
+          "text",
+          "footer",
+          "state",
+          "enabled",
+          "since",
+          "problem"
+        ],
+        "title": "RemindersSetting",
+        "description": "Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)\nalbo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;\n``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone)."
+      },
+      "RemoveRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "remove",
+            "title": "Kind"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule_id"
+        ],
+        "title": "RemoveRule"
       },
       "ReportDraft": {
         "properties": {
@@ -6222,7 +8080,7 @@
           "reminders_without_footer"
         ],
         "title": "ReportsView",
-        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy\nalfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców."
+        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy\nalfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców."
       },
       "ReportsWorker": {
         "properties": {
@@ -6399,6 +8257,167 @@
         ],
         "title": "RowToFill",
         "description": "Wiersz Pliku zbiorczego z Ilościami do uzupełnienia: numer wiersza i jego stan (zrobiony, do uzupełnienia, bez ilości)."
+      },
+      "RuleColumn": {
+        "properties": {
+          "letter": {
+            "type": "string",
+            "title": "Letter"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "letter",
+          "name",
+          "writable"
+        ],
+        "title": "RuleColumn",
+        "description": "Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest\npusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste."
+      },
+      "RuleForm": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown",
+              "every"
+            ],
+            "title": "Scope"
+          },
+          "conditions": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ComponentCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/DevicesCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivitiesCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/ContractCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/DateCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/GroupCondition"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "activities": "#/components/schemas/ActivitiesCondition",
+                  "component": "#/components/schemas/ComponentCondition",
+                  "contract": "#/components/schemas/ContractCondition",
+                  "date": "#/components/schemas/DateCondition",
+                  "devices": "#/components/schemas/DevicesCondition",
+                  "group": "#/components/schemas/GroupCondition"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Conditions"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FillAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NothingAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LeaveEmptyAction"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fill": "#/components/schemas/FillAction",
+                    "leave_empty": "#/components/schemas/LeaveEmptyAction",
+                    "nothing": "#/components/schemas/NothingAction"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "conditions",
+          "action"
+        ],
+        "title": "RuleForm",
+        "description": "Reguła ilości w edytorze: zakres, warunki („ale nie gdy”: ``negated``) i działanie. ``action`` ``None``: tata nie\nwybrał działania, więc zapis to odmowa z polem ``to``."
+      },
+      "RuleWrite": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "multiplier": {
+            "type": "string",
+            "enum": [
+              "once",
+              "component",
+              "pieces"
+            ],
+            "title": "Multiplier"
+          },
+          "component": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "value",
+          "multiplier",
+          "component"
+        ],
+        "title": "RuleWrite"
       },
       "RunAwaitingDecision": {
         "properties": {
@@ -7342,6 +9361,9 @@
           },
           "autostart": {
             "$ref": "#/components/schemas/AutostartSetting"
+          },
+          "reminders": {
+            "$ref": "#/components/schemas/RemindersSetting"
           }
         },
         "additionalProperties": false,
@@ -7355,7 +9377,8 @@
           "workers",
           "inbox",
           "inbox_problem",
-          "autostart"
+          "autostart",
+          "reminders"
         ],
         "title": "Settings",
         "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
@@ -7406,6 +9429,42 @@
         ],
         "title": "SolvedCase",
         "description": "Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego\n„Co się stało”."
+      },
+      "SummedRule": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sentence"
+        ],
+        "title": "SummedRule"
       },
       "TemplateProblem": {
         "properties": {
@@ -7690,6 +9749,17 @@
           "reason": {
             "type": "string",
             "title": "Reason"
+          },
+          "worker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker"
           }
         },
         "additionalProperties": false,
@@ -7697,10 +9767,11 @@
         "required": [
           "day",
           "sender",
-          "reason"
+          "reason",
+          "worker"
         ],
         "title": "UnknownReportSender",
-        "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."
+        "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla\ntaty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma\ngo teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany."
       },
       "UnmatchedLogin": {
         "properties": {
@@ -7901,6 +9972,88 @@
         "title": "WithoutQuantityUnread",
         "description": "Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy."
       },
+      "WorkerAddress": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "title": "Address"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "title": "WorkerAddress",
+        "description": "Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do\nWykonawcy…”)."
+      },
+      "WorkerEdit": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "rename_confirmed": {
+            "type": "boolean",
+            "title": "Rename Confirmed",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses"
+        ],
+        "title": "WorkerEdit",
+        "description": "Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.\n``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to."
+      },
+      "WorkerForm": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses"
+        ],
+        "title": "WorkerForm",
+        "description": "Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu\npracownika i adresy Raportów wykonawcy, tak jak je wpisał tata."
+      },
       "WorkerListSetting": {
         "properties": {
           "state": {
@@ -7962,6 +10115,42 @@
         "title": "WorkerListSetting",
         "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty)."
       },
+      "WorkerSaved": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "rename_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rename Warning"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "WorkerSaved",
+        "description": "Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,\nktóre zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy\n(``rename_confirmed``)."
+      },
       "WorkerSettlement": {
         "properties": {
           "worker": {
@@ -8006,6 +10195,96 @@
         ],
         "title": "WorkerSettlementRequest",
         "description": "Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu."
+      },
+      "WorkerSuggestion": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "login",
+          "orders"
+        ],
+        "title": "WorkerSuggestion",
+        "description": "Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych\nzleceń ma."
+      },
+      "WorkerSuggestions": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "read",
+              "not_set",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerSuggestion"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "suggestions",
+          "message"
+        ],
+        "title": "WorkerSuggestions",
+        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim\nobszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."
+      },
+      "WorkerSwitches": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WorkerSwitches",
+        "description": "Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo\n``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik."
       }
     }
   }

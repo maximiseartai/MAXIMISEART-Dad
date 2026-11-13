@@ -1,5 +1,5 @@
 """Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, Lista Wykonawców, start razem
-z Windows i Historia Ustawień."""
+z Windows, Przypomnienia o raporcie i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.quantity_rules import SentencePart
+from rozliczenia.centrum.contract.settings_reminders import RemindersSetting
 from rozliczenia.centrum.contract.settings_workers import SettingProblem, WorkerListSetting
 
 
@@ -85,6 +87,7 @@ class Settings(Model):
     inbox: InboxSetting
     inbox_problem: SettingProblem | None
     autostart: AutostartSetting
+    reminders: RemindersSetting
 
 
 class Choice(Model):
@@ -122,6 +125,14 @@ class InboxPasswordSaved(Choice):
     login: InboxLogin
 
 
+class WorkerSaved(Choice):
+    """Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+    które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+    (``rename_confirmed``)."""
+
+    rename_warning: str | None = None
+
+
 class FoldersChange(Model):
     """Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."""
 
@@ -135,6 +146,16 @@ class HistoryChange(Model):
     key: str
     before: str | None
     after: str | None
+
+
+class HistoryRuleChange(Model):
+    """Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+    ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+    było."""
+
+    key: str
+    before: list[SentencePart] | None
+    after: list[SentencePart] | None
 
 
 HistorySource = Literal["tata", "outside", "release"]
@@ -167,6 +188,9 @@ class HistoryRow(Model):
     refused: bool
     removed: bool
     reason: str | None
+    rules: list[HistoryRuleChange]
+    """Zmienione reguły ilości i wyjątki Kontroli ilości wiersza jako zdania, po jednym na klucz; pusta w wierszu innej
+    sekcji."""
 
 
 class SettingsHistory(Model):

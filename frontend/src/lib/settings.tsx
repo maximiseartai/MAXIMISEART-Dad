@@ -48,6 +48,15 @@ type SettingsContextValue = {
   undone: (choice: Choice) => void
   /** Ustawienia po zapisie sekretu (hasło skrzynki): bez „Zapisano · Cofnij”, bo sekretu nie da się cofnąć. */
   secretSaved: (choice: Choice) => void
+  /**
+   * Zapis sekcji, której odpowiedź nie niesie Ustawień (Reguły ilości): „Zapisano · Cofnij” i Historia od nowa, gdy
+   * zapis ma wiersz Historii (`change`).
+   */
+  changed: (change: string | null) => void
+  /** Ustawienia po zapisie sekcji z własnym formularzem albo przełącznikiem: „Zapisano · Cofnij”, gdy coś się zmieniło. */
+  sectionSaved: (choice: Choice) => void
+  /** Porażka zapisu sekcji bez pola (np. plik, którego nie da się zapisać) jako powiadomienie w oknie Ustawień. */
+  saveFailed: (failure: Error) => void
   /** Numer przyjętych zmian Ustawień: Historia Ustawień czyta się od nowa przy każdej. */
   changes: number
 }
@@ -198,6 +207,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [take, undone]
   )
 
+  const changed = React.useCallback(
+    (change: string | null) => {
+      if (change !== null) {
+        setChanges((count) => count + 1)
+        announce(change, undone)
+      }
+    },
+    [undone]
+  )
+
   // Zła wartość zapisu Folderów (422 z polem) staje przy polu, a nie w powiadomieniu; inna porażka idzie dalej.
   // `true`: zapis się udał.
   const folders = React.useCallback(
@@ -288,9 +307,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       dismiss: () => setRefusal(null),
       undone,
       secretSaved: take,
+      changed,
+      sectionSaved: saved,
+      saveFailed: failed,
       changes,
     }),
-    [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changes]
+    [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changed, changes]
   )
 
   return (
@@ -298,6 +320,22 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       <DadFilesVersion.Provider value={filesVersion}>{children}</DadFilesVersion.Provider>
     </SettingsContext.Provider>
   )
+}
+
+/**
+ * Zasób okna Ustawień, który czyta się od nowa, bez szkieletu, po każdej przyjętej zmianie Ustawień (także „Cofnij” w
+ * powiadomieniu i w Historii): Historia i Reguły ilości.
+ */
+export function useReloadOnChange(reload: () => Promise<void>) {
+  const { changes } = useSettings()
+  const seen = React.useRef(changes)
+
+  React.useEffect(() => {
+    if (seen.current !== changes) {
+      seen.current = changes
+      void reload()
+    }
+  }, [changes, reload])
 }
 
 // Powiadomienie „Zapisano” ostatniej zmiany: następna zmiana je zastępuje, zamiast układać stos przy kilku kliknięciach.

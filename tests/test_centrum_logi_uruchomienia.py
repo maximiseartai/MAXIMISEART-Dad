@@ -58,8 +58,10 @@ from rozliczenia.workbook_files import ByteSource
 from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, collective_file_name_with
 from rozliczenia.register_file import OrderSheets
+from rozliczenia.report_cells import ReportColumn
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.worker_reports import AddBar, MoveBar, SubjectFault, VerdictFault
 
 from atrapy.atrapa_efenix import (
     CATALOG,
@@ -130,7 +132,7 @@ KEYS = {
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
     "diagnosis",
-    "dad_actions", "interruption", "input_copy", "input_copy_notes",
+    "dad_actions", "interruption", "input_copy", "input_copy_notes", "quantity_rules",
 }
 
 
@@ -498,6 +500,125 @@ def test_karta_wraca_z_logow_sprzed_liczby_ilosci_tylko_dla_inea(tmp_path: Path)
 
     current = centrum.client.get("/api/runs/current").json()
     assert current == {"state": "idle", "previous": restored(live, record["started_at"])}
+
+
+VERDICT_FAULT_WORDS: Final = {
+    "missing": VerdictFault.MISSING,
+    "letter_yes": VerdictFault.LETTER_YES,
+    "letter_no": VerdictFault.LETTER_NO,
+    "word_yes": VerdictFault.WORD_YES,
+    "word_no": VerdictFault.WORD_NO,
+}
+SUBJECT_FAULT_WORDS: Final = {
+    "no_date": SubjectFault.NO_DATE,
+    "other_text": SubjectFault.OTHER_TEXT,
+    "no_year": SubjectFault.NO_YEAR,
+    "date_form": SubjectFault.DATE_FORM,
+    "separator": SubjectFault.SEPARATOR,
+    "year_digits": SubjectFault.YEAR_DIGITS,
+    "not_a_day": SubjectFault.NOT_A_DAY,
+}
+ADD_BAR_WORDS: Final = {
+    "in_intermax": AddBar.IN_INTERMAX,
+    "before_window": AddBar.BEFORE_WINDOW,
+    "form": AddBar.FORM,
+    "mistaken_subject": AddBar.MISTAKEN_SUBJECT,
+    "not_ordered": AddBar.NOT_ORDERED,
+}
+MOVE_BAR_WORDS: Final = {
+    "not_ordered": MoveBar.NOT_ORDERED,
+    "other_sheet": MoveBar.OTHER_SHEET,
+    "closed_target": MoveBar.CLOSED_TARGET,
+    "closed_source": MoveBar.CLOSED_SOURCE,
+    "after_today": MoveBar.AFTER_TODAY,
+}
+COLUMN_WORDS: Final = {"SKUTECZNE": ReportColumn.SUCCESSFUL, "CZYNNOŚCI ZREALIZOWANE": ReportColumn.COMPLETED}
+
+
+def _entering_words(entering: dict[str, Any]) -> list[object]:
+    """Powody i kolumny Logów Wpisania raportów po kolei: Wpisy maila, maile z nieczytelnym tematem, problemy, zmiany."""
+
+    [report, *unreadable] = entering["mails"]
+    return [
+        *(entry["fault"] for entry in report["entries"]),
+        *(mail["fault"] for mail in unreadable),
+        *(problem["bar"] for problem in entering["problems"]),
+        *(change["column"] for change in entering["changes"]),
+    ]
+
+
+def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszych_wydan_czytaja_sie_dalej() -> None:
+    """Plik Logów Wpisania raportów z każdym słowem powodu i kolumny, które zapisały wcześniejsze Wydania, czyta się do
+    tego samego powodu i tej samej kolumny, a zapisuje z powrotem tymi samymi słowami: te pliki czytają karta z Logów,
+    Historia i odtworzenie. ``not_ordered`` przy ``unknown_number`` to powód, dla którego Centrum nie dopisało
+    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia."""
+
+    day, arrived, worker = "2026-11-09", "2026-11-09T18:00:00Z", "jan.testowy"
+    entering = {
+        "today": day,
+        "rollout_before": None,
+        "rollout": day,
+        "skipped": 0,
+        "mails": [
+            {
+                "kind": "report",
+                "mail": "a" * 16,
+                "arrived": arrived,
+                "worker": worker,
+                "day": day,
+                "entries": [
+                    {"number": "40000001", "verdict": None, "fault": word, "activities": ""} for word in VERDICT_FAULT_WORDS
+                ],
+            },
+            *(
+                {"kind": "unreadable", "mail": "b" * 16, "arrived": arrived, "worker": worker, "fault": word}
+                for word in SUBJECT_FAULT_WORDS
+            ),
+        ],
+        "problems": [
+            {"kind": kind, "worker": worker, "day": day, "number": "40000001", "bar": word}
+            for kind, words in (("unknown_number", ADD_BAR_WORDS), ("refused_move", MOVE_BAR_WORDS))
+            for word in words
+        ],
+        "changes": [{"sheet": "Zlecenia", "row": 2, "column": word, "value": "tak"} for word in COLUMN_WORDS],
+        "memory_before": [],
+        "written": None,
+    }
+    logs = {
+        "run_id": "c" * 32,
+        "process": "report_entering",
+        "mode": "RUN",
+        "period": "10_16_11_2026",
+        "started_at": arrived,
+        "schema_version": 3,
+        "ended_at": arrived,
+        "duration_ms": 10,
+        "tool": {"wydanie": None, "commit": TOOL_COMMIT},
+        "result": "OK",
+        "ending": "finished",
+        "stop_kind": None,
+        "issue_count": 0,
+        "messages": [],
+        "technical_notes": [],
+        "summary": None,
+        "phases": [],
+        "templates": [],
+        "report_entering": entering,
+        "environment": {"system": "Windows-11", "python": "3.13.15", "files": None},
+        "trace": None,
+        "diagnosis": None,
+    }
+
+    record = RunLog.model_validate_json(json.dumps(logs, ensure_ascii=False))
+
+    assert _entering_words(record.model_dump()["report_entering"]) == [
+        *VERDICT_FAULT_WORDS.values(),
+        *SUBJECT_FAULT_WORDS.values(),
+        *ADD_BAR_WORDS.values(),
+        *MOVE_BAR_WORDS.values(),
+        *COLUMN_WORDS.values(),
+    ]
+    assert _entering_words(json.loads(record.text)["report_entering"]) == _entering_words(entering)
 
 
 def test_logi_po_bledzie_samego_adaptera_maja_czas_liczbe_problemow_i_przetworzenia_szablonow_z_rdzenia(

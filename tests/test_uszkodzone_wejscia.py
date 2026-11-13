@@ -21,10 +21,9 @@ import os
 from pathlib import Path, PurePath
 import random
 import shutil
-import subprocess
 import sys
 import zipfile
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi import FastAPI
@@ -44,6 +43,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -56,6 +56,7 @@ from tests.fixtures.centrum import (
     finished_view,
     join_threads_since,
 )
+from tests.fixtures.bez_dostepu import allow_reading, deny_reading
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
 from atrapy.pliki_taty import REGISTER_NAME
@@ -178,26 +179,10 @@ def _file_instead_of_folder(path: Path) -> None:
     path.write_bytes(b"")
 
 
-def _inaccessible(path: Path) -> None:
-    if sys.platform == "win32":  # chmod w Windows zmienia tylko atrybut „tylko do odczytu”
-        subprocess.run(["icacls", str(path), "/deny", f"{os.environ['USERNAME']}:(RD)"], check=True, capture_output=True)
-    else:
-        path.chmod(0)
-    with pytest.raises(PermissionError):
-        list(path.iterdir()) if path.is_dir() else path.open("rb").close()
-
-
 def _open_in_excel(path: Path) -> None:
     """Skoroszyt otwarty w Excelu: plik blokady ``~$…`` obok, jak zostawia go Excel taty."""
 
     path.with_name(f"~${path.name}").write_bytes(b"\x00" * 165)
-
-
-def _readable_again(path: Path) -> None:
-    if sys.platform == "win32":
-        subprocess.run(["icacls", str(path), "/remove:d", os.environ["USERNAME"]], check=True, capture_output=True)
-    else:
-        path.chmod(0o755)
 
 
 DAMAGES: dict[str, tuple[tuple[str, ...], Callable[[Path], None]]] = {
@@ -211,7 +196,7 @@ DAMAGES: dict[str, tuple[tuple[str, ...], Callable[[Path], None]]] = {
     "zip_bez_arkusza": ((XLSX,), _without_sheets),
     "katalog_zamiast_pliku": ((TEXT, LINES, XLSX), _folder_instead_of_file),
     "plik_zamiast_folderu": ((FOLDER,), _file_instead_of_folder),
-    "bez_odczytu": ((TEXT, LINES, XLSX, FOLDER), _inaccessible),
+    "bez_odczytu": ((TEXT, LINES, XLSX, FOLDER), deny_reading),
     "otwarty_w_excelu": ((XLSX,), _open_in_excel),
 }
 
@@ -329,6 +314,14 @@ def _http(response: Any, where: str, seen: Seen) -> Problems:
     return []
 
 
+# Reguła z edytora Reguł ilości: przy składniku „nokia” wpisz 1 w Z.
+EDITOR_RULE: Final[dict[str, object]] = {
+    "scope": "known",
+    "conditions": [{"kind": "component", "component": "nokia", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "Z", "value": 1, "multiplier": "once", "component": None}]},
+}
+
+
 @dataclass(frozen=True)
 class Entry:
     operations: tuple[str, ...]  # operationId kontraktu Centrum, które wejście wywołuje
@@ -393,6 +386,21 @@ def _diagnosis(process: str, period: str, *, report: bool) -> Entry:
         return problems
 
     return Entry((_start_operation(process), "streamRunEvents", "diagnoseRun") + (("reportRun",) if report else ()), call)
+
+
+def _worker_removal() -> Entry:
+    """Usunięcie Wykonawcy dodanego przez pomyłkę: jego loginu nie ma nigdzie, więc sprawdzenie okresów czyta Rejestr
+    zleceń i Plik zbiorczy każdego Folderu okresu do końca."""
+
+    def call(client: TestClient, seen: Seen) -> Problems:
+        form = {"logins": ["pomylka.login"], "name": "Pomyłka Testowa", "addresses": []}
+        added = client.post("/api/settings/workers", json=form)
+        problems = _http(added, "addWorker", seen)
+        if added.status_code != 200:
+            return problems
+        return problems + _http(client.delete("/api/settings/workers/pomylka.login"), "removeWorker", seen)
+
+    return Entry(("addWorker", "removeWorker"), call)
 
 
 def _pinned_dad_note() -> Entry:
@@ -477,7 +485,14 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getMetrics": _route("getMetrics", "GET", "/api/metrics"),
     "getConfiguration": _route("getConfiguration", "GET", "/api/configuration"),
+    "getQuantityDifferences": _route("getQuantityDifferences", "GET", "/api/settings/quantity-rules/differences"),
     "getQuantityRules": _route("getQuantityRules", "GET", "/api/settings/quantity-rules"),
+    "addQuantityRule": _route("addQuantityRule", "POST", "/api/settings/quantity-rules", EDITOR_RULE),
+    "changeQuantityRule": _route("changeQuantityRule", "PUT", "/api/settings/quantity-rules/nokia", EDITOR_RULE),
+    "removeQuantityRule": _route("removeQuantityRule", "DELETE", "/api/settings/quantity-rules/t-umowa-u"),
+    "previewQuantityRules": _route(
+        "previewQuantityRules", "POST", "/api/settings/quantity-rules/preview", {"kind": "add", "rule": EDITOR_RULE}
+    ),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -487,6 +502,8 @@ ENTRIES: dict[str, Entry] = {
     "draftDadNote": _route("draftDadNote", "POST", "/api/dad-notes/draft", DAD_NOTE),
     "sendDadNote": _route("sendDadNote", "POST", "/api/dad-notes", DAD_NOTE),
     "uwaga-przypieta": _pinned_dad_note(),
+    "usuniecie-wykonawcy": _worker_removal(),
+    "getWorkerSuggestions": _route("getWorkerSuggestions", "GET", "/api/settings/workers/suggestions"),
     "podglad[przygotowanie]": _process_run("preparation", PERIOD),
     "podglad[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD),
     "zapis[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD, saving=True),
@@ -511,11 +528,24 @@ NOT_SWEPT: dict[str, str] = {
     "i niedostępny plik Ustawień: test_centrum_rozliczen",
     "changeAutostart": "zakłada albo usuwa skrót w folderze Autostart i oddaje stan ścieżek jak getSettings, bez treści "
     "plików taty; porażka skrótu i Historii: test_centrum_rozliczen",
+    "changeRemindersEnabled": "zapisuje przełącznik Przypomnień o raporcie w config i oddaje stan ścieżek jak getSettings, "
+    "bez treści plików taty: test_centrum_rozliczen",
+    "changeReminders": "zapisuje pory i treść Przypomnień o raporcie w config i oddaje stan ścieżek jak getSettings, bez "
+    "treści plików taty; zła wartość: test_centrum_rozliczen",
+    "previewReminder": "składa przypomnienie z formularza, bez plików taty i bez zapisu: test_centrum_wpisanie_raportow",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
+    "markQuantityException": "zapisuje w config wyjątek różnicy, którą liczy getQuantityDifferences z tych samych plików "
+    "taty; różnicy już bez niej, nieczytelny Plik zbiorczy i zły plik wyjątków: test_centrum_kontrola_ilosci",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",
     "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
     "bez plików taty; zła wartość, zły plik skrzynki i trzy wyniki logowania: test_centrum_rozliczen",
+    "switchWorker": "zapisuje tylko przełącznik w Liście Wykonawców w config, bez plików taty; nieznany Wykonawca i "
+    "przypomnienia po przełączniku: test_centrum_rozliczen, test_centrum_wpisanie_raportow",
+    "changeWorker": "usunięty login sprawdza okresy tą samą drogą co usuniecie-wykonawcy, a ostrzeżenie o starej nazwie "
+    "listuje tylko Foldery rozliczeń pracowników i nieczytelnego folderu nie zgłasza; odmowy: test_centrum_rozliczen",
+    "assignWorkerAddress": "dopisuje tylko adres w Liście Wykonawców w config, bez plików taty; adres innego Wykonawcy i "
+    "cofnięcie: test_centrum_wpisanie_raportow",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
@@ -554,7 +584,12 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
+    "getQuantityDifferences": _BOARD,
     "getQuantityRules": {"wzorzec_zbiorczy"},
+    "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "removeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "previewQuantityRules": _BOARD | {"wzorzec_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
@@ -563,6 +598,8 @@ READS: dict[str, set[str]] = {
     "draftDadNote": set(),
     "sendDadNote": {"dziennik_centrum", "folder_zgloszen", "klucz_zgloszen", "sprawy_taty"},
     "uwaga-przypieta": _METRICS | {"uruchomienia_centrum", "adresy_skrzynki"},
+    "usuniecie-wykonawcy": _SETTINGS | _FOLDERS | {"plik_zbiorczy", "dziennik_centrum"},
+    "getWorkerSuggestions": _OWNER | {"rejestr"},
     "podglad[przygotowanie]": _PREPARATION,
     "podglad[przebieg]": _SETTLEMENT,
     "zapis[przebieg]": _SETTLEMENT,
@@ -686,7 +723,7 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
         problems = ENTRIES[entry].call(client or _remembering_choices(world), seen)
     finally:
         if damage == "bez_odczytu":
-            _readable_again(target)
+            allow_reading(target)
     if damage == "bez_odczytu":
         problems += [
             f"{where}: niedostępny nazwany uszkodzonym albo niepoprawnym"
@@ -781,6 +818,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
+        "wyjatki_kontroli_ilosci": TOOL.config / EXCEPTIONS_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -801,6 +839,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",
+        "wyjatki_kontroli_ilosci": "config/wyjatki-ilosci.yaml",
     }
 
 
@@ -827,7 +866,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
     periods = world.path(folder)
-    _inaccessible(periods)
+    deny_reading(periods)
     try:
         board = client.get("/api/periods")
         preview = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "mode": "DRY-RUN"})
@@ -836,7 +875,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
         run_id = _run_with_diagnosis(client, "preparation", PERIOD)
         diagnosis = client.post(f"/api/runs/{run_id}/diagnosis").json()
     finally:
-        _readable_again(periods)
+        allow_reading(periods)
 
     assert board.status_code == 500
     assert f"folderu {named}." in board.json()["message"]
@@ -855,12 +894,12 @@ def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_w_sekc
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
     listed = world.path("lista_wykonawcow")
-    _inaccessible(listed)
+    deny_reading(listed)
     try:
         section = client.get("/api/settings").json()["workers"]
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
     finally:
-        _readable_again(listed)
+        allow_reading(listed)
 
     assert (started.status_code, started.json()["message"]) == (409, refusal.workers_unusable(None).message)
     assert (section["state"], section["workers"], section["problem"]) == (

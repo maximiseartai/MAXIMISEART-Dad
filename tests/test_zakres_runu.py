@@ -20,10 +20,12 @@ from tests.fixtures.git_repo import repository
 from jednostka import Klucz
 import kroki_skilli
 import setup_worktree
-from wplyw_zmiany import STRUCTURE, Repository
+from wplyw_zmiany import STRUCTURE, Context, Repository
 from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
 
 ROOT = Path(__file__).resolve().parents[1]
+# Pliki, których zmiana uruchamia wszystko w kontekście, z tabeli jej właściciela (tools/lib/wplyw_zmiany.py), nie z kopii.
+EVERY_SKILL_STEP, WHOLE_PR_GATE = (next(path for path in context.paths() if not path.endswith("/")) for context in (Context.SKILL_STEPS, Context.PR_GATE))
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
 CHECKED = "src/pakiet/sprawdzany.py"
@@ -47,7 +49,6 @@ SKILLS = {
     "src/pakiet/routing.py": "Z = 3\n",
     ANCHORS: "X\n",
     "docs/opis.md": "opis\n",
-    "requirements.txt": "pytest\n",
     ".agents/skills/verify-a/SKILL.md": GUARDED,
     ".agents/skills/verify-a/scripts/sprawdz_a.py": "from pakiet import sprawdzany\n",
     ".agents/skills/verify-a/scripts/check_a_mutations.py": WITH_TABLE,
@@ -101,7 +102,7 @@ WINDOWS, LINUX = "windows-3.13", "linux-3.14"
         ("tools/raport.py", "wybór 0 plików", [], ()),
         ("README.md", "wybór 0 plików", [], ()),
         (".github/workflows/ci.yml", "FULL (.github/workflows/ci.yml)", None, ("e2e", "timing")),
-        ("requirements.txt", "FULL (requirements.txt)", None, ("e2e", "timing")),
+        (WHOLE_PR_GATE, f"FULL ({WHOLE_PR_GATE})", None, ("e2e", "timing")),
     ],
     ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "tools", "dokument", "workflow", "plik FULL"],
 )
@@ -155,32 +156,40 @@ def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(
     assert [unit for unit in gate.pliki if unit.startswith(file)] == [file]
 
 
-def test_bramka_pr_na_windows_testuje_najstarszego_pythona_z_requires_python_jak_mypy_ruff_i_setup_worktree(tmp_path: Path) -> None:
-    """Najstarszy Python z ``requires-python`` to Python taty (3.13.15 od 13.11, ADR 0020): bramka PR testuje go na
-    Windows, mypy i ruff sprawdzają kod dla niego, a ``tools/setup_worktree.py`` (systemowy Python, bez ``tomllib``)
-    trzyma jego kopię."""
+def test_ci_na_windows_testuje_tylko_najstarszego_pythona_z_requires_python_jak_mypy_ruff_i_setup_worktree(tmp_path: Path) -> None:
+    """Najstarszy Python z ``requires-python`` to Python taty (3.13.15 od 13.11, ADR 0020): bramka PR i pełne CI
+    ``main`` testują na Windows tylko jego (od 13.11 bez Windows 3.14, Z2), mypy i ruff sprawdzają kod dla niego, a
+    ``tools/setup_worktree.py`` (systemowy Python, bez ``tomllib``) trzyma jego kopię."""
 
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     oldest = re.fullmatch(r">=(\d+)\.(\d+)", pyproject["project"]["requires-python"])
     assert oldest is not None
-    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"README.md"}), repository(tmp_path / "repo", GATE))
+    repo = repository(tmp_path / "repo", GATE)
+    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"README.md"}), repo)
+    main = zakres(Zdarzenie.PUSH, frozenset(), repo)
+
+    def windows(run: ZakresRunu) -> str:
+        return ", ".join(sorted({lane.python for lane in run.tory if lane.os.startswith("windows")}))
 
     assert {
-        "bramka PR na Windows": next(lane.python for lane in gate.tory if lane.os.startswith("windows")),
+        "bramka PR na Windows": windows(gate),
+        "pełne CI main na Windows": windows(main),
         "mypy": pyproject["tool"]["mypy"]["python_version"],
         "ruff": pyproject["tool"]["ruff"]["target-version"].replace("py3", "3."),
         "setup_worktree": ".".join(map(str, setup_worktree.MINIMUM_PYTHON)),
-    } == dict.fromkeys(("bramka PR na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
+    } == dict.fromkeys(("bramka PR na Windows", "pełne CI main na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
 
 
-def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
+def test_push_biegnie_pelne_ci_main_na_windows_z_e2e_i_straza_czasu_i_na_linuksie_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
     repo = repository(tmp_path / "repo", {**GATE, "tests/c_test.py": "def test_c() -> None:\n    pass\n"})
 
     main = zakres(Zdarzenie.PUSH, frozenset({"tests/test_a.py"}), repo)
     night = zakres(Zdarzenie.NOC, frozenset({"src/pakiet/a.py"}), repo)
 
     assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/c_test.py", "tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
-    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.13", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
+    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [(WINDOWS, ("e2e", "timing")), (LINUX, ())], (
+        "pełne CI main biegnie na Windows 3.13 (Python taty) z E2E i strażą czasu i na Linux 3.14, bez Windows 3.14 (ADR 0020, Z2)"
+    )
     assert (night.tory, night.pliki, night.zrodlo) == ((), (), "bez pytest")
 
 
@@ -221,17 +230,18 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         # Trafienie w pilnuje uruchamia podstawę skilla na PR, a skrypt mutacji nie (ADR 0020).
         ("src/pakiet/routing.py", False),
         (".agents/skills/verify-b/SKILL.md", False),
-        # Plik, który mutacje zmieniają, i importy sprawdzenia: pytest bramki i pełne CI main, nie skrypt mutacji nocą.
-        (CHECKED, False),
-        (ANCHORS, False),
-        ("src/pakiet/pomocnik.py", False),
+        # Kod, który sprawdzenie importuje, wprost albo dalej: push go już nie mutuje, więc skrypt biegnie nocą (Z1, 13.11).
+        (CHECKED, True),
+        ("src/pakiet/pomocnik.py", True),
+        # Plik, który mutacja psuje, choć sprawdzenie go nie importuje (proces, ``pytest.main``, plik danych).
+        (ANCHORS, True),
         # Polityka zakresu i samo narzędzie z wiersza poleceń (z jego odmową ciężkiego CI) nie biegną w procesie skryptu.
         ("tools/lib/zakres_runu.py", False),
         ("tools/mutacje.py", False),
         ("tools/lib/ciezkie_ci.py", False),
         (".agents/skills/verify-a/scripts/sprawdz_a.py", True),
         (".agents/skills/verify-a/SKILL.md", True),
-        ("requirements.txt", True),
+        (EVERY_SKILL_STEP, True),
         # Uruchamiacz kroku i silnik mutacji, który skrypt importuje, z każdym modułem, do którego silnik dochodzi.
         ("tools/ci/wykonaj_zadanie.py", True),
         ("tools/lib/kroki_skilli.py", True),
@@ -275,12 +285,32 @@ def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_
     assert (SCRIPT_A in _runs(praca), "verify-b/check_b_mutations.py" in _runs(praca)) == (False, True)
 
 
+def test_noca_zmiana_pliku_ktory_psuje_mutacja_skilla_uruchamia_jej_skrypt_w_katalogu_repozytorium() -> None:
+    """Skrypt mutacji biegnie tylko nocą (ADR 0021, Z1), więc zmiana pliku, który psuje jego mutacja, musi go nocą
+    wybrać, także gdy sprawdzenie sięga pliku procesem Centrum, ``pytest.main`` albo ścieżką, a nie importem (#1575 r1:
+    13 z 28 skryptów). Jeden zakres nocy z każdym takim plikiem: zmienione pliki, które uruchamiają wybrany skrypt
+    (``KrokSkilla.pliki``), obejmują każdy plik jego mutacji."""
+
+    katalog = kroki_skilli.Katalog.skanuj(ROOT)
+    psute = {
+        step.key: {edit.file.as_posix() for mutation in kroki_skilli._mutations(step.root / step.command[0]) for edit in mutation.edits}
+        for step in katalog.kroki
+        if step.verdict is not None
+    }
+
+    praca = zakres(Zdarzenie.NOC, frozenset().union(*psute.values()), ROOT)
+
+    uruchamiaja = {w.krok.key: w.pliki for w in praca.wybrane}
+    assert len(psute) >= 28
+    assert {key: sorted(files - uruchamiaja.get(key, frozenset())) for key, files in psute.items()} == {key: [] for key in psute}
+
+
 @pytest.mark.parametrize(
     ("event", "runs"),
-    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [SCRIPT_A, "verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"])],
+    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [])],
     ids=["noc", "push"],
 )
-def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_biegnie_wszystko(
+def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_pomija_kazdy_skrypt_mutacji(
     tmp_path: Path, event: Zdarzenie, runs: list[str]
 ) -> None:
     repo = repository(tmp_path / "repo", SKILLS)
@@ -288,7 +318,6 @@ def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_bieg
     praca = zakres(event, frozenset(), repo)
 
     assert sorted(_runs(praca)) == runs
-    assert ({w.powod for w in praca.wybrane} == {""}) == (event is Zdarzenie.PUSH)
 
 
 @pytest.mark.parametrize(
@@ -407,6 +436,8 @@ def test_reguly_kroku_skilla_licza_od_korzenia_checkoutu_skilla(tmp_path: Path) 
         "tools/lib/z.py",
         *kroki_skilli.LAUNCHER,
         BASELINE_K,
+        ANCHORS,
+        CHECKED,
     )
     assert kroki_skilli.ci_command(skill / "SKILL.md") == (BASELINE_K,)
 
@@ -456,7 +487,7 @@ def _model_skill(name: str, edited: tuple[str, ...]) -> dict[str, str]:
         (".agents/skills/verify-m/model-notatki.md", False),
         (".agents/skills/verify-m/modele/M.tla", False),
         ("tools/lib/silnik_mutacji.py", False),
-        ("requirements.txt", False),
+        (EVERY_SKILL_STEP, False),
         ("src/pakiet/routing.py", False),
     ],
 )
@@ -500,7 +531,7 @@ BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
         # Import sprawdzenia spoza pilnuje nie uruchamia podstawy na PR (ADR 0020): pełne CI main ją uruchamia.
         ("src/pakiet/pomocnik.py", False),
         (".agents/skills/verify-d/SKILL.md", True),
-        ("requirements.txt", True),
+        (EVERY_SKILL_STEP, True),
         ("tools/ci/wykonaj_zadanie.py", False),
     ],
 )
@@ -541,11 +572,13 @@ def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostal
     ("event", "baseline", "script"),
     [
         (Zdarzenie.PULL_REQUEST, (True, "zmienione: "), (False, "skrypt mutacji biegnie nocą")),
+        # Na pushu do main każda podstawa, bez względu na zmianę, a skrypt mutacji tylko nocą (Z1, 13.11).
+        (Zdarzenie.PUSH, (True, ""), (False, "skrypt mutacji biegnie nocą")),
         (Zdarzenie.NOC, (False, "podstawa biegnie na pull request, nie nocą"), (True, "zmienione: ")),
     ],
-    ids=["pull-request", "noc"],
+    ids=["pull-request", "push", "noc"],
 )
-def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
+def test_na_pull_request_i_pushu_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
     tmp_path: Path, event: Zdarzenie, baseline: tuple[bool, str], script: tuple[bool, str]
 ) -> None:
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
@@ -557,11 +590,29 @@ def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
     assert decisions["verify-a/ci"][1].startswith(baseline[1]) and decisions[SCRIPT_A][1].startswith(script[1]), decisions
 
 
+@pytest.mark.parametrize(("event", "runs"), [(Zdarzenie.PULL_REQUEST, False), (Zdarzenie.PUSH, True)], ids=["pull-request", "push"])
+def test_zmiana_samego_requirements_nie_wybiera_podstawy_na_pull_request_a_push_do_main_ja_uruchamia(
+    tmp_path: Path, event: Zdarzenie, runs: bool
+) -> None:
+    """Granica Z9 w ``tests/test_zadania_ci.py`` zna tylko część dróg, którymi ``requirements.txt`` mógłby trafić do
+    środowiska kroku skilla, a droga spoza niej omija tylko wybór na PR, bo push do ``main`` uruchamia podstawę zawsze."""
+
+    command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+
+    decisions = _decisions(zakres(event, frozenset({"requirements.txt"}), repo))
+
+    assert "requirements.txt" not in Context.SKILL_STEPS.paths()
+    assert decisions["verify-a/ci"][0] is runs, decisions
+
+
 @pytest.mark.parametrize(
     ("arguments", "event", "changed", "separately", "script"),
     [
-        ("", Zdarzenie.PUSH, "", False, True),
-        (" --pelny", Zdarzenie.PUSH, "", True, True),
+        # Na pushu skrypt mutacji nie biegnie, więc biegnie podstawa, którą uruchamia bez mutacji.
+        ("", Zdarzenie.PUSH, "", True, False),
+        (" --pelny", Zdarzenie.PUSH, "", True, False),
+        ("", Zdarzenie.NOC, ".agents/skills/verify-a/scripts/sprawdz_a.py", False, True),
         # Na PR biegnie sama podstawa, także przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą.
         ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", True, False),
         ("", Zdarzenie.PULL_REQUEST, ".agents/skills/verify-a/scripts/sprawdz_a.py", True, False),
@@ -601,7 +652,7 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 
-ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", "requirements.txt"
+ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", EVERY_SKILL_STEP
 FOLDER_C = ".agents/skills/verify-c/scripts/check_c_mutations.py"
 # Podstawa w częściach skilla bez pilnuje.
 BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"

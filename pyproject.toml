@@ -163,6 +163,16 @@ extend-select = [
 # Szeroki except w Centrum kończy się unexpected_failure dziennika Centrum albo ponownym rzuceniem; pilnuje tego
 # tests/test_granice_wyjatkow.py zamiast noqa z tym samym powodem w każdej kopii.
 "src/rozliczenia/centrum/**" = ["BLE001"]
+# Prawo właściciela: moduł, któremu komunikat zakazu banned-api kieruje resztę kodu, używa zakazanej nazwy bez noqa.
+# Ruff zwalnia plik z całego TID251, więc tests/test_zakazy_ruff.py (OWNERS) trzyma, które nazwy wolno mu użyć.
+"src/rozliczenia/wall_clock.py" = ["TID251"]
+"src/rozliczenia/centrum/catalog.py" = ["TID251"]
+"src/rozliczenia/dad_files.py" = ["TID251"]
+"src/rozliczenia/register_file.py" = ["TID251"]
+"src/rozliczenia/template_file.py" = ["TID251"]
+"tests/conftest.py" = ["TID251"]
+"tests/fixtures/linie_watkow.py" = ["TID251"]
+".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc
@@ -179,6 +189,7 @@ extend-select = [
 "rozliczenia.centrum.comment_versions._VERSIONS".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
+"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: ForbiddenValues.guard(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię

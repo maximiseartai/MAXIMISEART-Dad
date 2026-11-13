@@ -9,10 +9,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAction } from "@/lib/action"
-import { href, usePagePath } from "@/lib/address"
+import { href, settingsHref, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { dateTime, plural } from "@/lib/format"
+import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
+import { REMINDERS_SECTION } from "@/pages/settings/reminders-section"
 import { type DayState, dayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
 import type { Keep } from "@/pages/worker-reports/day-details"
 import { type DayRange, rangeFromPath } from "@/pages/worker-reports/days"
@@ -26,11 +28,15 @@ import { UnknownSenders } from "@/pages/worker-reports/unknown-senders"
  * Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” jako Mapa cieplna Wykonawców i dni (#1319). Serwer
  * oddaje całe okno z pliku wyniku, nie ze skrzynki; zakres dni z adresu `#/raporty/<od>/<do>` (bez zakresu:
  * poniedziałek poprzedniego tygodnia do niedzieli bieżącego, przycięte do dni okna), stan dnia, wyszukiwarkę i filtr
- * Status liczy przeglądarka. „Zostaw moją” zastępuje widok odpowiedzią serwera, a koniec Wpisania czyta go od nowa.
+ * Status liczy przeglądarka. „Zostaw moją” zastępuje widok odpowiedzią serwera, a koniec Wpisania i każda zmiana
+ * Ustawień (np. adres nadawcy przypisany Wykonawcy) czytają go od nowa.
  */
 export function ReportsPage() {
   const path = usePagePath()
   const { resource: view, reload, replace } = useResource(getReportsView, [], { fromDadFiles: false })
+
+  useReloadOnChange(reload)
+
   const entrance = useContentEntrance(view.state === "loading")
   const entering = useReportEntering(reload)
   const ready = view.state === "ready" && view.data.clicked_at !== null ? view.data : null
@@ -88,12 +94,15 @@ function showRange(range: DayRange) {
   window.location.hash = href("raporty", range.from, range.to)
 }
 
-/** Spokojna informacja, że ostatnie sprawdzenie przypomnień nie znalazło pliku stopki; znika po następnym z plikiem. */
+/** Spokojna informacja, że ostatnie sprawdzenie przypomnień szło bez stopki; znika po następnym ze stopką. */
 function WithoutFooter() {
   return (
     <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
       <BellOffIcon className="size-3.5 shrink-0" aria-hidden />
-      Przypomnienia o raporcie idą bez Twojej stopki, bo brakuje jej pliku. Powiedz o tym Maksowi.
+      Przypomnienia o raporcie idą bez Twojej stopki.
+      <a href={settingsHref(REMINDERS_SECTION)} className="text-foreground underline-offset-4 hover:underline">
+        Wpisz ją w Ustawieniach
+      </a>
     </p>
   )
 }

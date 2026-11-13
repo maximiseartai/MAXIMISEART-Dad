@@ -30,9 +30,7 @@ from rozliczenia.centrum.process_kind import (
     PreparedRun,
     RecentWeeks,
     SettingField,
-    Start,
-    start_warnings,
-    workers_at_start,
+    start_from_settings,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -69,15 +67,10 @@ class PeriodStarts:
         if request.mode.dry_run and kind.start.no_preview is not None:
             raise kind.start.no_preview
         period = requested_period(request.period)
-        start = Start(
-            {need: self._path(need, chosen, period) for need in kind.path_needs},
-            period=period.token,
-            dry_run=request.mode.dry_run,
+        start = start_from_settings(
+            kind, snapshot, {need: self._path(need, chosen, period) for need in kind.path_needs},
+            period=period.token, dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
-            settings=snapshot,
-            quantity_rules=snapshot.quantity_rules,
-            workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
-            warnings=start_warnings(snapshot, kind.needs),
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 

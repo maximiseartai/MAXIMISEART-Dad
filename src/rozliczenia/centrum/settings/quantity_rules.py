@@ -16,16 +16,13 @@ przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz 
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from functools import lru_cache
-import json
-from typing import Final, Generic, Protocol, TypeVar
+from typing import Final
 
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import EntriesById, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.quantity_engine import (
     Component,
     DeviceList,
@@ -50,13 +47,6 @@ RULES_FILE: Final = "reguly-ilosci.yaml"
 DEVICES_FILE: Final = "lista-urzadzen.yaml"
 RULES_SECTION: Final = "reguly"
 DEVICES_SECTION: Final = "urzadzenia"
-
-class _Identified(Protocol):
-    @property
-    def id(self) -> str: ...
-
-
-_Entry = TypeVar("_Entry", bound=_Identified)
 
 
 def _document(file: str, data: bytes) -> object | FieldProblem:
@@ -102,56 +92,21 @@ def _parse_devices(data: bytes | None) -> tuple[Component, ...] | FieldProblem:
 
 
 def _dump(document: dict[str, object]) -> str:
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
-def _entry_json(entry: dict[str, object]) -> str:
-    return json.dumps(entry, ensure_ascii=False, separators=(", ", ": "))
+def _rule(entry: object) -> QuantityRule | None:
+    rule = parse_rule(entry)
+    return None if isinstance(rule, RulesProblem) else rule
 
 
-@dataclass(frozen=True)
-class _Entries(Generic[_Entry]):
-    """Jak porównać i odtworzyć wpisy jednego pliku: sekcja klucza Historii, wpis jako JSON i z powrotem."""
-
-    section: str
-    dumped: Callable[[_Entry], dict[str, object]]
-    parsed: Callable[[object], _Entry | RulesProblem]
-
-    def diff(self, before: tuple[_Entry, ...], after: tuple[_Entry, ...]) -> tuple[KeyChange, ...]:
-        old: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in before}
-        new: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in after}
-        return tuple(
-            KeyChange(f"{self.section}.{identifier}", old.get(identifier), new.get(identifier))
-            for identifier in dict.fromkeys((*old, *new))
-            if old.get(identifier) != new.get(identifier)
-        )
-
-    def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
-        """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
-        sekcji albo wpis, którego nie da się odczytać, zostaje bez zmian."""
-
-        entries = list(current)
-        for change in changes:
-            section, _, identifier = change.key.partition(".")
-            if section != self.section:
-                continue
-            kept: list[_Entry] = [entry for entry in entries if entry.id != identifier]
-            if change.before is None:
-                entries = kept
-                continue
-            try:
-                restored = self.parsed(json.loads(change.before))
-            except ValueError:
-                continue
-            if isinstance(restored, RulesProblem):
-                continue
-            position: int = next((index for index, entry in enumerate(entries) if entry.id == identifier), len(kept))
-            entries = [*kept[:position], restored, *kept[position:]]
-        return tuple(entries)
+def _component(entry: object) -> Component | None:
+    component = parse_component(entry)
+    return None if isinstance(component, RulesProblem) else component
 
 
-_RULE_ENTRIES: Final = _Entries[QuantityRule](RULES_SECTION, dump_rule, parse_rule)
-_DEVICE_ENTRIES: Final = _Entries[Component](DEVICES_SECTION, dump_component, parse_component)
+_RULE_ENTRIES: Final = EntriesById[QuantityRule](RULES_SECTION, dump_rule, _rule)
+_DEVICE_ENTRIES: Final = EntriesById[Component](DEVICES_SECTION, dump_component, _component)
 
 
 def _reported(change: KeyChange) -> str:
@@ -182,6 +137,12 @@ DEVICES: Final = SettingsFile[tuple[Component, ...]](
     reported=_reported,
     default=DEFAULT_QUANTITY_RULES.devices.components,
 )
+
+
+def rule_ids(keys: frozenset[str]) -> frozenset[str]:
+    """Id reguł z kluczy Historii Ustawień pliku reguł (``reguly.<id>``)."""
+
+    return frozenset(key.removeprefix(f"{RULES_SECTION}.") for key in keys if key.startswith(f"{RULES_SECTION}."))
 
 
 def rules_problem(

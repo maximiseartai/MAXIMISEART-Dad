@@ -1,4 +1,4 @@
-"""Wykonanie kroków skilli pushu (``tools/ci/wykonaj_zadanie.py --kroki-pushu``) nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
+"""Wykonanie każdego kroku skilli (``tools/ci/wykonaj_zadanie.py --kroki-skilli``) nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
 (``tools/lib/kroki_skilli.py``) mają polecenie, części i przeglądarkę z frontmattera i skryptów skilla.
 
 Każdy test buduje własne ``.agents/skills`` i uruchamia obok nich kopię narzędzia albo czyta katalog
@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
-OK_LINE = "WYKONANIE OK | kroki skilli pushu"
+OK_LINE = "WYKONANIE OK | kroki skilli"
 CHECKED = "src/pakiet/sprawdzany.py"
 GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 ANCHORS = "src/pakiet/kotwice.txt"
@@ -80,7 +80,7 @@ def _tool(root: Path) -> list[str]:
     """Kopia wykonania zadań CI i ``ci_lokalnie`` w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
 
     copy_files(root, [name for name in with_imports(("tools/ci/wykonaj_zadanie.py", "tools/ci_lokalnie.py")) if not (root / name).exists()])
-    return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-pushu"]
+    return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-skilli"]
 
 
 def _run(root: Path) -> subprocess.CompletedProcess[str]:
@@ -329,6 +329,7 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
 
 POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
     "src/rozliczenia/public_holidays.py": "święta kolumn dni widoku Raporty Centrum; żaden proces ich nie woła (#1319)",
+    "src/rozliczenia/worker_periods.py": "loginy Wykonawców w okresach dla sekcji Wykonawcy Centrum; żaden proces go nie woła (#1474)",
 }
 
 
@@ -463,6 +464,17 @@ def test_podstawa_ci_biegnie_z_argumentami_przed_mutacjami_skilla(tmp_path: Path
     assert lines[-1] == OK_LINE
 
 
+def test_podstawa_ci_ktora_skrypt_mutacji_uruchamia_bez_mutacji_nie_biegnie_drugi_raz(tmp_path: Path) -> None:
+    command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    _tool(tmp_path)
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": WITH_TABLE, "sprawdz_a.py": CHECKED_IN_CI.format(code=0)}, _with_ci("verify-a", command))
+
+    result = _run(tmp_path)
+
+    lines = result.stdout.splitlines()
+    assert ("== skill:verify-a/ci" in lines, "== skill:verify-a/check_a_mutations.py" in lines, lines[-1]) == (False, True, OK_LINE), result.stdout
+
+
 def test_czerwona_podstawa_ci_daje_fail_takze_w_skillu_bez_skryptu_mutacji(tmp_path: Path) -> None:
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": PASSING})
     _skill(tmp_path, "verify-d", {"sprawdz_d.py": CHECKED_IN_CI.format(code=1)}, _with_ci("verify-d", ".agents/skills/verify-d/scripts/sprawdz_d.py"))
@@ -538,12 +550,15 @@ SHAPE_GAPS = ROOT / "tests" / "fixtures" / "granice_ksztaltow.py"
 
 def _shape_gaps(root: Path) -> dict[str, list[str]]:
     """Luki granic kształtów każdego eksploratora skilla ``verify-*`` w ``root``, po ścieżce eksploratora. Kod
-    eksploratora wykonuje własny proces z limitem czasu, nie proces pytest (#651)."""
+    eksploratora wykonuje własny proces z limitem czasu, nie proces pytest (#651); ``-P`` nie kładzie na ``sys.path``
+    katalogu ``tests/fixtures``, którego moduły (``potomne``, ``model_tlc``) przesłoniłyby te z ``tools/lib``."""
 
     gaps = {}
     for explorer in sorted((root / ".agents" / "skills").glob("verify-*/scripts/explore_*.py")):
+        path = os.pathsep.join(str(folder) for folder in (explorer.parent, TOOLS / "lib", TOOLS))
         done = subprocess.run(
-            [sys.executable, "-X", "utf8", str(SHAPE_GAPS), str(TOOLS), str(explorer)],
+            [sys.executable, "-X", "utf8", "-P", str(SHAPE_GAPS), str(explorer)],
+            env=os.environ | {"PYTHONPATH": path},
             cwd=root,
             stdin=subprocess.DEVNULL,
             capture_output=True,

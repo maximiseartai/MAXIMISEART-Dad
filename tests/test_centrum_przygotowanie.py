@@ -771,6 +771,23 @@ def test_przygotowanie_liczy_ostatnia_dobra_para_gdy_lista_urzadzen_zmieniona_po
     assert _quantity(centrum, "Z18") == 3
 
 
+def test_regula_dodana_w_edytorze_daje_swoje_ilosci_w_nastepnym_przygotowaniu_pliku_zbiorczego(tmp_path: Path) -> None:
+    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "nokia zte"}]
+    centrum = preparing_centrum(tmp_path, rows)
+    # Reguła taty: przy routerze Nokia wpisz 3 w AA, kolumnę, której Reguły ilości z Wydania nie wypełniają.
+    rule = {
+        "scope": "known",
+        "conditions": [{"kind": "group", "group": "router", "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": "AA", "value": 3, "multiplier": "once", "component": None}]},
+    }
+
+    saved = centrum.client.post("/api/settings/quantity-rules", json=rule)
+    run_to_end(centrum, dry_run=False)
+
+    assert saved.status_code == 200, saved.text
+    assert (_quantity(centrum, "AA18"), _quantity(centrum, "Z18")) == (3, 1)
+
+
 def _quantity(centrum: PreparingCentrum, cell: str) -> object:
     workbook = load_workbook(centrum.fixture.collective_file_path, read_only=True)
     try:

@@ -317,8 +317,8 @@ Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, któ
 ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu
 wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
 treści i kończy się stopką taty. Idzie w porannej i wieczornej porze z Ustawień
-Centrum (domyślnie 8:00–17:00 i 18:00–22:00), pierwsze w porannej porze
-następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
+Centrum (domyślnie 8:00–17:00 i 18:00–22:00), pierwsze od godziny pierwszego
+przypomnienia następnego dnia (domyślnie 8:00), najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
 dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia
 przypomnień. Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
@@ -927,6 +927,16 @@ musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach
 ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę
 ilości, której tata nie wysyła.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
+
+## Wyjątek Kontroli ilości
+
+Różnica Kontroli ilości w jednej komórce jednego Wiersza danych, przy której
+tata kliknął w podpowiedziach przy Regułach ilości „To był wyjątek”: jego wpis
+jest dobry dla tego zlecenia. Ta różnica nie wraca w podpowiedziach, także
+po zmianie reguły, dopóki tata nie zmieni wpisu ani treści wiersza; cofa ją
+„Cofnij” w Historii Ustawień. Nie zmienia Reguł ilości ani Kontroli ilości w
+Skrzynce Zgłoszeń.
+_Avoid_: wyjątek od reguły (reguła zostaje bez zmian), pominięcie różnicy
 
 ## Powiadomienie
 

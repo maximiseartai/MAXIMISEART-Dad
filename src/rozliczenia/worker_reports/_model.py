@@ -6,11 +6,12 @@ Osobny moduł, żeby pakiet importował moduły prywatne na górze bez cyklu: te
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from email.utils import parseaddr
-from enum import Enum, auto
+from enum import Enum
 import hashlib
+from types import MappingProxyType
 from typing import ClassVar, Final, NewType, assert_never
 
 from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
@@ -102,9 +103,17 @@ class ReportMail:
 
 @dataclass(frozen=True)
 class WorkerAddresses:
-    """Adres nadawcy → login Wykonawcy; buduje go tylko ``WorkerList.addresses`` z Listy Wykonawców."""
+    """Adres nadawcy → login Wykonawcy i każdy login Wykonawcy → login, pod którym rdzeń zna Wykonawcę (``workers``,
+    pierwszy login jego wpisu), więc zlecenie spod drugiego loginu jest zleceniem tego samego Wykonawcy. Buduje go tylko
+    ``WorkerList.addresses`` z Listy Wykonawców."""
 
     logins: Mapping[SenderAddress, Login]
+    workers: Mapping[Login, Login] = field(default_factory=lambda: MappingProxyType({}))
+
+    def worker(self, login: Login) -> Login:
+        """Login, pod którym rdzeń zna Wykonawcę z loginem ``login``; login spoza Listy Wykonawców zostaje sobą."""
+
+        return self.workers.get(login, login)
 
 
 OrderNumber = NewType("OrderNumber", str)
@@ -451,13 +460,14 @@ class Verdict(Enum):
 class VerdictFault(Enum):
     """Dlaczego Wpis raportu nie ma ``tak`` ani ``nie``: brak słowa (``MISSING``), sama litera ``t`` albo ``n``
     (``LETTER_YES``, ``LETTER_NO``) albo ``skuteczne``/``nieskuteczne`` (``WORD_YES``, ``WORD_NO``). Litera i słowo
-    niosą zamiar Wykonawcy (``leaning``), choć Centrum ich nie wpisuje (Decyzja Maksa D13)."""
+    niosą zamiar Wykonawcy (``leaning``), choć Centrum ich nie wpisuje (Decyzja Maksa D13). Wartość to słowo powodu w
+    Logach Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia."""
 
-    MISSING = auto()
-    LETTER_YES = auto()
-    LETTER_NO = auto()
-    WORD_YES = auto()
-    WORD_NO = auto()
+    MISSING = "missing"
+    LETTER_YES = "letter_yes"
+    LETTER_NO = "letter_no"
+    WORD_YES = "word_yes"
+    WORD_NO = "word_no"
 
     @property
     def leaning(self) -> Verdict | None:
@@ -491,15 +501,16 @@ class VerdictFault(Enum):
 class SubjectFault(Enum):
     """Dlaczego temat ze słowem Raportu wykonawcy nie daje dnia zleceń, w kolejności, w jakiej rdzeń to sprawdza: brak
     liczb, inny tekst poza słowem i datą, dwie liczby, liczby nie w postaci dzień.miesiąc.rok, separator inny niż ``.``,
-    ``_`` albo ``/``, rok bez dwóch ani czterech cyfr i data, która nie jest dniem."""
+    ``_`` albo ``/``, rok bez dwóch ani czterech cyfr i data, która nie jest dniem. Wartość to słowo powodu w Logach
+    Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia."""
 
-    NO_DATE = auto()
-    OTHER_TEXT = auto()
-    NO_YEAR = auto()
-    DATE_FORM = auto()
-    SEPARATOR = auto()
-    YEAR_DIGITS = auto()
-    NOT_A_DAY = auto()
+    NO_DATE = "no_date"
+    OTHER_TEXT = "other_text"
+    NO_YEAR = "no_year"
+    DATE_FORM = "date_form"
+    SEPARATOR = "separator"
+    YEAR_DIGITS = "year_digits"
+    NOT_A_DAY = "not_a_day"
 
 
 @dataclass(frozen=True)
@@ -608,13 +619,14 @@ class AddBar(Enum):
     zlecenie dwa razy), a gdy każdy taki wiersz to zlecenie z dniem i ``WYKONAWCA`` z dnia sprzed ``Window.start``,
     którego Centrum nie zmienia (``BEFORE_WINDOW``), numer nie ma postaci numeru z aplikacji firmowej, czyli dokładnie
     ``ADDED_DIGITS`` cyfr (``FORM``), Raport wykonawcy ma pomylony temat (``MISTAKEN_SUBJECT``) albo dzień z tematu nie
-    jest Dniem uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``)."""
+    jest Dniem uporządkowanym w żadnym arkuszu zleceń (``NOT_ORDERED``). Wartość to słowo powodu w Logach Uruchomienia:
+    czytają je stare Logi i odtworzenie, więc się nie zmienia."""
 
-    IN_INTERMAX = auto()
-    BEFORE_WINDOW = auto()
-    FORM = auto()
-    MISTAKEN_SUBJECT = auto()
-    NOT_ORDERED = auto()
+    IN_INTERMAX = "in_intermax"
+    BEFORE_WINDOW = "before_window"
+    FORM = "form"
+    MISTAKEN_SUBJECT = "mistaken_subject"
+    NOT_ORDERED = "not_ordered"
 
 
 ADDED_DIGITS: Final = 8
@@ -657,13 +669,14 @@ class MoveBar(Enum):
     """Dlaczego Wpis raportu nie przenosi zlecenia na inny dzień (ADR 0029): dzień docelowy nie jest Dniem
     uporządkowanym (``NOT_ORDERED``), jest Dniem uporządkowanym tylko w innym arkuszu zleceń (``OTHER_SHEET``), jest w
     okresie z Plikiem zbiorczym (``CLOSED_TARGET``), zlecenie jest w takim okresie (``CLOSED_SOURCE``) albo w dniu po
-    dziś (``AFTER_TODAY``: tata wkleja zlecenia na jutro dzień wcześniej, ADR 0019, a Centrum nie zmienia dni po dziś)."""
+    dziś (``AFTER_TODAY``: tata wkleja zlecenia na jutro dzień wcześniej, ADR 0019, a Centrum nie zmienia dni po dziś).
+    Wartość to słowo powodu w Logach Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia."""
 
-    NOT_ORDERED = auto()
-    OTHER_SHEET = auto()
-    CLOSED_TARGET = auto()
-    CLOSED_SOURCE = auto()
-    AFTER_TODAY = auto()
+    NOT_ORDERED = "not_ordered"
+    OTHER_SHEET = "other_sheet"
+    CLOSED_TARGET = "closed_target"
+    CLOSED_SOURCE = "closed_source"
+    AFTER_TODAY = "after_today"
 
 
 @dataclass(frozen=True)

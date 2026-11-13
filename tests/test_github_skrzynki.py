@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-import sys
 
 import pytest
 
@@ -31,12 +30,11 @@ from rozliczenia.centrum.report_box import (
 
 from atrapy.skrzynka import Archives, Issues
 
-SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
-sys.path.insert(0, str(SKILL / "scripts"))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
+import github_skrzynki
+import github_sprzatanie
+import github_wymiana
 
-import github_skrzynki  # noqa: E402
-import github_sprzatanie  # noqa: E402
-import github_wymiana  # noqa: E402
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 
 TRIAL = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba"
 TRIAL_ARCHIVE = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum"

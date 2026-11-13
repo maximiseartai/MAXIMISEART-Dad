@@ -81,8 +81,8 @@ def _reproduced(root: Path) -> list[tuple[str, Step]]:
         ("actionlint -shellcheck", actionlint),
         ("tools/ci/shellcheck_akcji.py", shellcheck_actions),
         ("tools/ci/wykonaj_zadanie.py", pytest_step(root)),
-        # W CI kroki skilli biegną z planu, w zadaniach Mutation checks; tu tym samym wykonaniem wszystkie kroki pushu po kolei.
-        ("tools/ci/wykonaj_zadanie.py", Step("mutacje skilli", "mutations", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-pushu"), root)),
+        # W CI kroki skilli biegną z planu, w zadaniach Mutation checks i nocą; tu tym samym wykonaniem każdy krok skilli po kolei.
+        ("tools/ci/wykonaj_zadanie.py", Step("mutacje skilli", "mutations", (python, "tools/ci/wykonaj_zadanie.py", "--kroki-skilli"), root)),
         ("npm ci", Step("npm ci", "frontend", (npm, "ci"), frontend)),
         *(
             (f"npm run {script}", Step(f"npm run {script}", "frontend", (npm, "run", script), frontend))

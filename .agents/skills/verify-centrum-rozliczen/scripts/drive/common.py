@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -26,6 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
+from drive.waiting import Budget, TimedOut, until
 from harness import File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -232,14 +233,15 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = 10) -> None:
-        deadline = time.monotonic() + timeout_s
-        while not condition():
-            if time.monotonic() > deadline:
-                check_clock_alarm(self)
-                raise DriveFailure(f"timed out: {message}")
-            time.sleep(0.1)
-        print(f"  ok: {message}", flush=True)
+    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = Budget.SCREEN.value) -> None:
+        """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
+        yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
+
+        try:
+            until(lambda: bool(condition()), message, timeout_s)
+        except TimedOut as timed_out:
+            check_clock_alarm(self)
+            raise DriveFailure(str(timed_out)) from timed_out
 
 
 # The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).
@@ -270,11 +272,23 @@ def settings_title(page: Page) -> Locator:
     return settings_window(page).get_by_role("heading", name=re.compile(r"^Ustawienia "))
 
 
+def settings_section(page: Page) -> Locator:
+    """The open section of Ustawienia; the menu of sections has lists of the same names (its group Narzędzie)."""
+
+    return settings_window(page).locator("[data-slot=settings-section]")
+
+
 def open_settings(page: Page, section: str) -> Locator:
-    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title)."""
+    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title).
+
+    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier feature
+    left open is closing, still visible while it fades out, so the gear waits until it is gone: no feature depends on how
+    the one before it ended (#1589).
+    """
 
     window = settings_window(page)
-    if not window.is_visible():
+    if not _on_settings_address(page):
+        expect(window).to_have_count(0)
         page.get_by_role("link", name="Ustawienia", exact=True).click()
     expect(window).to_be_visible()
     # Below 768 px (`useIsMobile`, Tailwind `md`) the list of sections is hidden and Dad picks from the combobox.
@@ -288,11 +302,50 @@ def open_settings(page: Page, section: str) -> Locator:
     return window
 
 
+def _on_settings_address(page: Page) -> bool:
+    """Whether the page is on the window Ustawienia's address, ``#/ustawienia`` with or without a section."""
+
+    return urlsplit(page.url).fragment.split("/")[1:2] == ["ustawienia"]
+
+
 def close_settings(page: Page) -> None:
     """Dad closes Ustawienia with Esc; the page under it stays."""
 
     page.keyboard.press("Escape")
     expect(settings_window(page)).to_have_count(0)
+
+
+QUANTITY_DIFFERENCES = "/api/settings/quantity-rules/differences"
+"""The list „Tu wpisałeś inaczej niż reguła” above the Reguły ilości: rows of the settled Pliki zbiorcze."""
+ROW_TEXT = "<tekst wiersza>"
+"""What the evidence keeps instead of URZĄDZENIA and CZYNNOŚCI of a synthetic Plik zbiorczy (workbook content)."""
+
+
+def capture_quantity_rules(
+    run: Run, page: Page, name: str, *, full_page: bool = True, texts: tuple[str, ...] = ()
+) -> None:
+    """Screenshot of the section Reguły ilości, whose list of differences of the Kontrola ilości shows URZĄDZENIA and
+    CZYNNOŚCI of the settled Pliki zbiorcze: its ARIA snapshot gets those row texts, and ``texts`` (rows of a preview),
+    replaced (``without_row_texts``), as the saved answers do, or ``centrum_self_test.py`` fails on the fixture's row
+    marker."""
+
+    run.capture(page, name, full_page=full_page)
+    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=10) as response:
+        listed: dict[str, Any] = json.load(response)
+    shown = (*texts, *(difference[key] for difference in listed.get("differences", []) for key in ("devices", "activities")))
+    snapshot = run.evidence / "aria" / f"{name}.txt"
+    snapshot.write_text(without_row_texts(read_text(snapshot), shown), encoding="utf-8")
+
+
+def without_row_texts(text: str, texts: Iterable[str]) -> str:
+    """``text`` with each of ``texts`` (URZĄDZENIA, CZYNNOŚCI of a synthetic Plik zbiorczy) as ``ROW_TEXT``, also in the
+    form the rules read it (small letters, single spaces), as the form „Popraw regułę” has it."""
+
+    shown = {value for value in texts if value}
+    shown |= {" ".join(value.casefold().split()) for value in shown}
+    for value in sorted(shown, key=len, reverse=True):
+        text = text.replace(value, ROW_TEXT)
+    return text
 
 
 def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
@@ -400,7 +453,7 @@ def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
 
     if missing_ok and not folder.exists():
         return
-    while_open(lambda: shutil.rmtree(folder))  # noqa: TID251 - the helper remove_tree itself
+    while_open(lambda: shutil.rmtree(folder))
 
 
 def remove_empty_folder(folder: Path) -> None:
@@ -419,7 +472,7 @@ def replace_file(source: Path, target: Path) -> None:
     """Harness: put ``source`` in place of ``target`` at once, like Excel saving a whole file, even while the server
     reads ``target``."""
 
-    while_open(lambda: os.replace(source, target))  # noqa: TID251 - the helper replace_file itself
+    while_open(lambda: os.replace(source, target))
 
 
 def put_text(path: Path, text: str) -> None:

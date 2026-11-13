@@ -46,7 +46,7 @@ from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia import intermax_copies, settlement_messages
 from rozliczenia.centrum import app
-from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog
@@ -86,6 +86,7 @@ from atrapy.intermax import (
 )
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
+    PERIOD_MONDAY,
     SettlingCentrum,
     Surroundings,
     preparing_centrum,
@@ -96,7 +97,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
-from atrapy.settlement import PERIOD
+from atrapy.settlement import PERIOD, write_quantity_source
 import sys
 
 import odtworz_uruchomienie
@@ -1235,6 +1236,25 @@ LIMITS = {
         "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1): odtworzenie czyta maskę w miejscu wartości taty",
     ),
     "inny_rozmiar_konfiguracji": (_other_config_size, None, 0, _CONFIGURATION),
+    "logi_bez_regul_ilosci": (
+        lambda record: record.update(quantity_rules=None),
+        None,
+        0,
+        "- Logi nie mają Reguł ilości Uruchomienia (Logi sprzed ich zapisu), więc odtworzenie liczy Regułami ilości z "
+        "Wydania tego drzewa",
+    ),
+    "maska_strazinka_w_regulach_ilosci": (
+        lambda record: record["quantity_rules"].update(rules=record["quantity_rules"]["rules"].replace("z-opisu", "[telefon]", 1)),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Reguły ilości w Logach mają maski strażnika reguły danych ([telefon])",
+    ),
+    "reguly_ilosci_innego_zapisu": (
+        lambda record: record["quantity_rules"].update(rules=record["quantity_rules"]["rules"].replace('"schema_version":1', '"schema_version":2')),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Reguł ilości z Logów nie da się odczytać (schema_version: Plik ma inną wersję zapisu niż 1.)",
+    ),
 }
 
 
@@ -1264,6 +1284,100 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     if case == "inny_rozmiar_konfiguracji":
         size = (configuration / WORKERS_FILE).stat().st_size
         assert any(line.endswith(f"inny rozmiar niż u taty: {WORKERS_FILE}: u taty 1 B, tu {size} B") for line in lines)
+
+
+@dataclass(frozen=True)
+class _EditedRulesRun:
+    """Uruchomienie procesu, który liczy Regułami ilości, po regule zapisanej przez tatę w edytorze, i skutek tej reguły
+    w wyniku odtworzenia (``kept``: katalog roboczy odtworzenia), którego Reguły ilości z Wydania nie dają."""
+
+    produced: Produced
+    effect: Callable[[Path], object]
+    expected: object
+
+
+_LEAVE_V_EMPTY_AT_NOKIA = {
+    "scope": "every",
+    "conditions": [{"kind": "devices", "mode": "contains", "text": "nokia", "negated": False}],
+    "action": {"kind": "leave_empty", "columns": ["V"]},
+}
+_AA_3_AT_ROUTER = {
+    "scope": "known",
+    "conditions": [{"kind": "group", "group": "router", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "AA", "value": 3, "multiplier": "once", "component": None}]},
+}
+
+
+def _settlement_with_edited_rule(folder: Path) -> _EditedRulesRun:
+    """Przebieg rozliczeń po regule „zostaw V pustą w Rozliczeniu pracownika” przy „nokia”: V czyści się tylko dla
+    INEA, czego Reguły ilości z Wydania nie robią."""
+
+    centrum = settling_centrum(folder)
+    write_quantity_source(centrum.collective_file, [{"C": "pr", "D": "nokia", "G": datetime(2026, 9, 9, 12), "V": 1, "Z": 1}])
+    write_report_key(ToolDirectory(folder))
+    assert centrum.client.post("/api/settings/quantity-rules", json=_LEAVE_V_EMPTY_AT_NOKIA).status_code == 200
+    run_to_end(centrum, dry_run=True)
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+    assert produced.record["inea_only_cleared"] == {"AK": 0, "AP": 0, "V": 1}
+
+    def cleared(kept: Path) -> object:
+        return json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))["inea_only_cleared"]
+
+    return _EditedRulesRun(produced, cleared, {"AK": 0, "AP": 0, "V": 1})
+
+
+def _preparation_with_edited_rule(folder: Path) -> _EditedRulesRun:
+    """Przygotowanie pliku zbiorczego po regule „przy routerze wpisz 3 w AA”: kolumny AA Reguły ilości z Wydania nie
+    wypełniają."""
+
+    centrum = preparing_centrum(folder, [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "nokia zte"}])
+    write_report_key(ToolDirectory(folder))
+    assert centrum.client.post("/api/settings/quantity-rules", json=_AA_3_AT_ROUTER).status_code == 200
+    run_to_end(centrum, dry_run=False)
+    collective = centrum.fixture.collective_file_path
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+
+    assert _aa18(collective) == 3, "Przygotowanie u taty wpisało regułę z edytora"
+    return _EditedRulesRun(produced, lambda kept: _aa18(kept / "okresy" / collective.parent.name / collective.name), 3)
+
+
+def _aa18(collective: Path) -> object:
+    workbook = load_workbook(collective, read_only=True)
+    try:
+        return workbook.worksheets[0]["AA18"].value
+    finally:
+        workbook.close()
+
+
+# Każdy proces, który liczy Regułami ilości ze startu (``ProcessKind.quantity_rules``), z regułą taty z edytora.
+EDITED_RULES_RUNS: dict[str, Callable[[Path], _EditedRulesRun]] = {
+    "settlement": _settlement_with_edited_rule,
+    "preparation": _preparation_with_edited_rule,
+}
+
+
+def test_kazdy_proces_liczacy_regulami_ilosci_ze_startu_ma_tu_uruchomienie_z_regula_z_edytora() -> None:
+    assert set(EDITED_RULES_RUNS) == {kind.key for kind in KINDS if kind.quantity_rules}
+
+
+@pytest.mark.parametrize("process", EDITED_RULES_RUNS)
+def test_odtworzenie_procesu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+) -> None:
+    """Tata zapisał regułę w edytorze, a proces liczył nią w Uruchomieniu; odtworzenie z Logów liczy Regułami ilości z
+    chwili Uruchomienia, nie regułami z Wydania, więc ma skutek reguły taty, jest zgodne i nie ma granicy o Logach
+    bez Reguł ilości."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    run = EDITED_RULES_RUNS[process](folder)
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, run.produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *run.produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line for line in lines if "Reguł ilości" in line] == []
+    assert run.effect(kept) == run.expected
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
@@ -2017,9 +2131,9 @@ def test_logi_wpisania_raportow_sprzed_dni_zamknietych_bez_pola_closed_odtwarzaj
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
-def _guard_cut_in_mails(record: dict[str, Any]) -> None:
-    record["technical_notes"].append(
-        "Reguła danych: pominięto report_entering.mails[5]: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+def _guard_cut(place: str) -> Callable[[dict[str, Any]], None]:
+    return lambda record: record["technical_notes"].append(
+        f"Reguła danych: pominięto {place}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
     )
 
 
@@ -2050,9 +2164,14 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
         ("NIE DA SIĘ ODTWORZYĆ: pamięć wpisów w Logach ma zlecenie 4000007 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",),
     ),
     "ciecie_straznika_we_wpisach": (
-        _guard_cut_in_mails,
+        _guard_cut("report_entering.mails[5]"),
         3,
         ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.mails[5]",),
+    ),
+    "ciecie_straznika_w_przeniesieniach_przed": (
+        _guard_cut("report_entering.moves_before[0]"),
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.moves_before[0]",),
     ),
     "bez_wpisow_przed_rdzeniem": (
         lambda record: record.update(report_entering=None),
@@ -2073,8 +2192,8 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
 ) -> None:
     """Czego Logi Wpisania raportów nie niosą, raport mówi: maile taty i czynności pod maską są zastrzeżeniem przy każdym
     odtworzeniu, a Logi bez Wpisów i Zatrzymanie przy zapisie u taty zastrzeżeniem przy
-    różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika we Wpisach kończą
-    odtworzenie bez uruchomienia procesu (kod 3)."""
+    różnicy. Numer Wpisu zamaskowany jak telefon, numer pamięci bez Wpisu z nim i cięcie strażnika w dowolnym polu Logów
+    Wpisania raportów kończą odtworzenie bez uruchomienia procesu (kod 3)."""
 
     change, expected_code, expected = ENTERING_LIMITS[case]
     produced = _report_entering(tmp_path / "taty")

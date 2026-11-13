@@ -94,7 +94,7 @@ class Start:
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
     chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania. ``warnings``: ostrzeżenia startu na
-    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_warnings`` z migawki Ustawień, Skrypt dla
+    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
     maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ani ``warnings`` nie mają wartości
     domyślnej, więc każdy gospodarz mówi, skąd je ma.
     """
@@ -120,7 +120,27 @@ class Start:
         return self.period
 
 
-def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
+def start_from_settings(
+    kind: ProcessKind[Any, Any],
+    settings: SettingsSnapshot,
+    paths: Mapping[PathNeed, Path],
+    *,
+    period: str | None,
+    dry_run: bool,
+    pricing: runs_contract.Pricing | None = None,
+) -> Start:
+    """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
+    Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
+    ilości i ostrzeżenia startu. Ścieżki, okres i tryb wybiera gospodarz."""
+
+    return Start(
+        paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
+        workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
+        quantity_rules=settings.quantity_rules, warnings=_start_warnings(settings, kind.needs),
+    )
+
+
+def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
     ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
 
@@ -130,7 +150,7 @@ def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     return found
 
 
-def start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
+def _start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
     """Ostrzeżenia startu Uruchomienia procesu o potrzebach ``needs`` z migawki Ustawień Centrum (``Start.warnings``):
     proces z Listą Wykonawców biegnie na ostatniej dobrej liście, bo plik ma złe ustawienie."""
 
@@ -273,7 +293,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
     ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
-    ``None``: proces bez Kontroli ilości.
+    ``None``: proces bez Kontroli ilości. ``quantity_rules``: proces liczy Regułami ilości ze startu (``Start``), więc
+    jego Uruchomienie ma je w Logach (``PreparedRun.quantity_rules``), a odtworzenie z Logów liczy nimi.
     """
 
     key: common_contract.ProcessKey
@@ -288,6 +309,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     journaled: bool = False
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
     quantity_check: Callable[[SummaryT], CheckResult] | None = None
+    quantity_rules: bool = False
 
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes
@@ -420,7 +442,7 @@ class _Catalog:
 
 _CATALOG: Final = _Catalog()
 """Dowód katalogu procesów: ``PreparedRun`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
-``Catalog.prepared``: poza tym modułem i ``catalog.py`` (jedyny ``noqa``) ruff (``TID251`` w ``pyproject.toml``)
+``Catalog.prepared``: poza tym modułem i ``catalog.py`` (prawo właściciela w ``pyproject.toml``) ruff (``TID251`` w ``pyproject.toml``)
 odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``process_kind._CATALOG``, także przez alias albo
 pełną ścieżkę), tak samo ``_Catalog``.
 
@@ -437,12 +459,25 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
+    ``quantity_rules``: Reguły ilości ze startu (``Start.quantity_rules``) procesu, który nimi liczy
+    (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
     ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
     """
 
-    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings", "warnings")
+    __slots__ = (
+        "context",
+        "engine",
+        "inputs",
+        "kind",
+        "metrics",
+        "period",
+        "pricing",
+        "quantity_rules",
+        "settings",
+        "warnings",
+    )
 
     def __init__(
         self,
@@ -456,6 +491,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         proof: _Catalog,
         settings: SettingsSnapshot | None,
         warnings: tuple[Message, ...],
+        quantity_rules: QuantityRules | None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -466,6 +502,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.engine: Final = engine
         self.settings: Final = settings
         self.warnings: Final = warnings
+        self.quantity_rules: Final = quantity_rules
 
     @property
     def dry_run(self) -> bool:

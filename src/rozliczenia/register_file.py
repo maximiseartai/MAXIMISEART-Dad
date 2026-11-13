@@ -44,9 +44,10 @@ from __future__ import annotations
 import html
 import re
 import zipfile
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import cached_property, lru_cache
 from pathlib import Path
 from types import MappingProxyType
@@ -76,14 +77,15 @@ from .workbook_parts import (
     OFFICE_REL,
     IrregularSheetData,
     RowsFromBottom,
+    SharedStrings,
     SheetCell,
     UnsupportedShape,
+    column_texts,
     office_document,
     relationships,
     row_attributes,
     row_tag,
     rows_dated_between,
-    shared_string_spans,
     sheet_cells,
     unpacked,
 )
@@ -108,7 +110,6 @@ _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
 _HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
-_PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
 
 
 # --- rozpoznanie arkuszy zleceń ----------------------------------------------------------------
@@ -215,6 +216,8 @@ class OrderSheet:
     positions: Mapping[Column, int]
     header: tuple[object, ...] = field(repr=False)
     paste: PasteArea | None
+    part: str = field(repr=False)
+    """Część zip arkusza, z której ``OrderSheets.workers`` czyta kolumnę ``WYKONAWCA``."""
 
     @property
     def look_columns(self) -> frozenset[int]:
@@ -234,9 +237,28 @@ class OrderSheets:
     sheets: tuple[OrderSheet, ...]
     _file: ReadFile = field(repr=False)
     _epoch: datetime = field(repr=False)
+    _parts: Mapping[str, bytes] = field(repr=False)
+    _shared: SharedStrings = field(repr=False)
 
     def paste_areas(self) -> tuple[PasteArea, ...]:
         return tuple(sheet.paste for sheet in self.sheets if sheet.paste is not None)
+
+    def workers(self) -> frozenset[str]:
+        """Każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez pustych) wierszy od 2 każdego arkusza zleceń, z XML
+        arkusza bez openpyxl i bez faktów wierszy: ~42 tys. wierszy Rejestru taty to 1 s zamiast 16 s
+        (``workbook_parts.column_texts``). Czyta kolumnę z nagłówka, więc pierwszy wiersz wklejenia przesunięty o
+        ``raw_orders.SHIFT`` kolumn (Surowe zlecenia przed Uporządkowaniem) daje swój ``WYKONAWCA`` dopiero po
+        Uporządkowaniu. ``UnsupportedShape``, gdy arkusz ma kształt spoza ``workbook_parts.SheetData``."""
+
+        found: set[str] = set()
+        for sheet in self.sheets:
+            try:
+                texts = column_texts(self._parts[sheet.part], sheet.positions[WORKER], 2, self._shared)
+                found.update(normalize_text(text) for _, text in texts)
+            except IrregularSheetData as error:
+                raise UnsupportedShape(str(error)) from error
+        found.discard("")
+        return frozenset(found)
 
     def period_rows(self, period: SettlementPeriod | None) -> tuple[RegisterSheet, ...]:
         """Arkusze zleceń z wierszami od pierwszego do ostatniego, którego data może leżeć w ``period``; bez ``period``
@@ -313,7 +335,7 @@ def read(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> Re
         date1904 = properties is not None and cast(WorkbookProperties, WorkbookProperties.from_tree(cast(Any, properties))).date1904
         values = _Values(
             _ReadStyles.of(parts[styles]),
-            _SharedStrings(parts[strings] if strings else b"<sst/>"),
+            SharedStrings(parts[strings] if strings else b"<sst/>"),
             MAC_EPOCH if date1904 else WINDOWS_EPOCH,
         )
         sheets = [
@@ -335,10 +357,13 @@ def read(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> Re
             sheet.positions,
             tuple(by_name[sheet.name][1]),
             _paste_area(sheet, *by_name[sheet.name], parts, values, file),
+            by_name[sheet.name][0],
         )
         for sheet in recognized
     )
-    return RegisterFile(file.path, file.content, OrderSheets(order_sheets, file, values.epoch), package)
+    return RegisterFile(
+        file.path, file.content, OrderSheets(order_sheets, file, values.epoch, parts, values.shared), package
+    )
 
 
 def _paste_area(
@@ -363,6 +388,20 @@ def _paste_area(
         contract_number=positions[CONTRACT_NUMBER],
     )
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)
+
+
+def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
+    """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
+    pustych), z przeglądu od dołu każdego obszaru wklejania ``areas`` tą samą regułą co zlecenia Wpisania raportów
+    (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy wierszy
+    arkusza nie da się rozdzielić."""
+
+    found: Counter[str] = Counter()
+    for area in areas:
+        for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
+            found[normalize_text(row.value(area.columns.worker))] += 1
+    del found[""]
+    return found
 
 
 class PasteArea:
@@ -580,7 +619,7 @@ def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str
     """Okno każdego arkusza zleceń w openpyxl z bajtów ``content``: wiersze z ``ranges`` (od 2), a arkusz bez zakresu
     od wiersza 2 do końca."""
 
-    with workbook_files.open_workbook(path, content, read_only=True) as workbook:  # noqa: TID251 - okna arkuszy zleceń Rejestru z bajtów, które przeczytał uchwyt
+    with workbook_files.open_workbook(path, content, read_only=True) as workbook:
         windows = []
         for name, columns, look_columns in sheets:
             with workbook_files.unreadable_as_error(path):
@@ -718,36 +757,12 @@ def _is_yellow(fill: ElementTree.Element) -> bool:
     return color is not None and color.get("rgb", "").upper().endswith(DAY_FILL)
 
 
-class _SharedStrings:
-    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
-
-    Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
-    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` daje ``shared_string_spans``: zepsuta część
-    to ``ExpatError``, a tabela w kształcie, którego granic nie zna, ``ValueError``, czyli w obu przypadkach nieczytelny
-    INTERMAX.
-    """
-
-    def __init__(self, xml: bytes) -> None:
-        self._xml = xml
-        try:
-            self._items = shared_string_spans(xml)
-        except UnsupportedShape as error:
-            raise ValueError(str(error)) from error
-        self._texts: dict[int, str] = {}
-
-    def __getitem__(self, index: int) -> str:
-        if index not in self._texts:
-            item = _PHONETIC.sub(b"", self._xml[slice(*self._items[index])])
-            self._texts[index] = html.unescape(b"".join(_TEXT.findall(item)).decode("utf-8"))
-        return self._texts[index]
-
-
 @dataclass(frozen=True)
 class _Values:
     """Wartości i fakty komórek Rejestru: style, teksty wspólne i początek systemu dat skoroszytu."""
 
     styles: _ReadStyles
-    shared: _SharedStrings
+    shared: SharedStrings
     epoch: datetime
 
     def header(self, xml: bytes) -> list[object]:

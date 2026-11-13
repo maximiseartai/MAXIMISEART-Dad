@@ -24,7 +24,7 @@ from typing import Any, Final
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
 # Dowód katalogu procesów (docstring process_kind._CATALOG): tylko ten moduł składa PreparedRun.
-from rozliczenia.centrum.process_kind import _CATALOG  # noqa: TID251
+from rozliczenia.centrum.process_kind import _CATALOG
 from rozliczenia.centrum.processes import efenix, intermax, preparation, report_entering, settlement
 from rozliczenia.process_run import Process, run_process
 from rozliczenia.run_context import RunContext
@@ -122,6 +122,7 @@ class Catalog:
             _CATALOG,
             start.settings,
             start.warnings,
+            start.quantity_rules if kind.quantity_rules else None,
         )
 
 

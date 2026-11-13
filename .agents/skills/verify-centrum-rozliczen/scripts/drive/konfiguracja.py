@@ -8,9 +8,7 @@ import os
 from pathlib import Path
 import re
 
-from playwright.sync_api import Locator, Page, expect
-
-from playwright.sync_api import ViewportSize
+from playwright.sync_api import Locator, Page, ViewportSize, expect
 
 from drive.common import (
     Run,
@@ -20,6 +18,8 @@ from drive.common import (
     read_bytes,
     remove,
     served_version,
+    settings_section,
+    settings_title,
     settings_window,
     unreadable,
     version_line,
@@ -112,7 +112,7 @@ def _narrow_capture(run: Run, page: Page, name: str) -> None:
     with dad_tab(page, viewport=NARROW_VIEWPORT) as narrow:
         # On a phone the menu with the gear is folded away, so Dad comes by the address of the section.
         narrow.goto(run.url + "#/ustawienia/wykonawcy")
-        expect(settings_window(narrow).get_by_role("heading")).to_have_text("Ustawienia/Wykonawcy")
+        expect(settings_title(narrow)).to_have_text("Ustawienia/Wykonawcy")
         width = narrow.evaluate("document.documentElement.scrollWidth")
         run.check(width <= NARROW_VIEWPORT["width"], f"the section Wykonawcy fits {NARROW_VIEWPORT['width']} px without scrolling sideways")
         run.capture(narrow, name)
@@ -181,11 +181,9 @@ def drive(run: Run, page: Page) -> None:
         "the server offers no Aktualizacja narzędzia for the current tool",
     )
     run.capture(page, "11-konfiguracja-tylko-do-odczytu", full_page=False)
-    for section in ("Wzorce", "Wykonawcy"):
-        open_settings(page, section)
-        expect(window.locator("[data-slot=settings-section]").get_by_role("button")).to_have_count(0)
-    run.check(True, "the sections Wzorce and Wykonawcy offer no action on these files: Dad changes them elsewhere")
     open_settings(page, "Wzorce")
+    expect(settings_section(page).get_by_role("button")).to_have_count(0)
+    run.check(True, "the section Wzorce offers no action on the Wzorce: Dad changes them in Excel (Wykonawcy: wykonawcy.md)")
 
     run.step(feature, "konfiguracja-wzorzec-otwarty")
     collective = files["collective_template"]
@@ -268,8 +266,8 @@ def drive(run: Run, page: Page) -> None:
         expect(window.get_by_text("Na liście nie ma jeszcze Wykonawców.")).to_have_count(0)
         expect(window.get_by_text(LAST_GOOD_CAPTION, exact=True)).to_be_visible()
         run.check(
-            "Zapisz Ustawienia" not in window.locator("[data-slot=settings-section]").inner_text(),
-            "the read-only section Wykonawcy never asks to save Ustawienia, which does not rewrite the Lista Wykonawców",
+            "Zapisz Ustawienia" not in settings_section(page).inner_text(),
+            "the section Wykonawcy never asks to save Ustawienia as a whole: only a change of a Wykonawca rewrites the list",
         )
         run.check(
             _listed(window) == run.fixture["workers"],

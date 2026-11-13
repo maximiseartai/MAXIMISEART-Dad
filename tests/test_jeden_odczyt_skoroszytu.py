@@ -13,29 +13,26 @@ tylko świadek arkusza (``dad_files.WitnessedSheet``), więc Kopia nie ma wiersz
 i atrapa wspólna z testami (``tools/lib/atrapy``) podstawiają bajty przez źródło bajtów uchwytu (``DadFiles.source``, w
 Centrum ``create_app(source=...)``), a nie łatają modułu skoroszytu.
 
-Granica ruff: ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` poza ``workbook_files.py`` linię importu i atrybut modułu
-``file_bytes``, ``template_content`` i ``open_workbook`` (``workbook_files.file_bytes``), chyba że linia ma
-``# noqa: TID251 - <powód>``. Nie widzi użycia nazwy, którą moduł już zaimportował z ``noqa`` na linii importu
-(``app.py``, ``template_file.py``), wywołania w samym ``workbook_files.py`` ani nazwy, którą re-eksportuje inny moduł.
-Dlatego te trzy nazwy zostają w ``ONLY``: ich wywołanie po nazwie w takim miejscu łapie ten strażnik.
-
-Granica strażnika: widzi wywołanie po nazwie funkcji (także z aliasem importu ``from … import … as …``) i łatanie
-modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł
-stoi w wywołaniu po nazwie, aliasie importu, jako atrybut (``rozliczenia.workbook_files``) albo jako napis
-``"rozliczenia.workbook_files…"``. Funkcję albo moduł wzięte do zmiennej (``read = file_bytes`` po imporcie z ``noqa``,
-``importlib``, napis złożony w czasie biegu; ``read = workbook_files.file_bytes`` odrzuca ruff), przypisanie wprost
-(``workbook_files.file_bytes = …``), łatkę przez alias łatającego (``patch as p``), ``patch.dict``, ``getattr`` z napisem
-i surowe ``open(path, "rb")`` w ``src`` widzi tylko przegląd.
+Ruff ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` linię importu i atrybut modułu ``file_bytes``,
+``template_content`` i ``open_workbook`` (``workbook_files.file_bytes``), a ten strażnik łapie wywołanie po nazwie z
+``ONLY`` poza jej miejscami, także z aliasem importu ``from … import … as …``, po imporcie z ``noqa``, w samym
+``workbook_files.py``, w pliku z prawem właściciela i po nazwie re-eksportowanej przez inny moduł. W testach i
+atrapach łapie łatanie modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz
+``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w wywołaniu po nazwie, aliasie importu, jako atrybut
+(``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
+Postacie, których nie łapie ani ruff, ani ten strażnik, są próbkami w ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW``.
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 import sys
 
 import pytest
+
+from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -72,8 +69,8 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
     ): "klucz Zgłoszeń to plik tekstowy; bez dostępu jest brakiem klucza",
     (
         "read_bytes",
-        "rozliczenia/centrum/report_reminders.py::_text",
-    ): "dzień wdrożenia i stopka Przypomnień o raporcie to pliki tekstowe Maksa w config, nie pliki taty",
+        "rozliczenia/centrum/settings/migrations/reminders.py::_text",
+    ): "stare pliki dnia wdrożenia i stopki Przypomnień o raporcie to pliki tekstowe Maksa w config, nie pliki taty",
     (
         "read_bytes",
         "rozliczenia/centrum/settings/memory.py::settings_bytes",
@@ -267,8 +264,8 @@ def test_czytnik_wartosci_pliku_taty_z_bajtow_obok_uchwytu_wywraca_straznika() -
 
 
 def test_wywolanie_nazwy_zaimportowanej_z_noqa_ruff_wywraca_straznika() -> None:
-    """Ruff ``TID251`` oznacza tylko linię importu, więc nowe wywołanie nazwy, którą moduł zaimportował z ``noqa`` (jak
-    ``app.py`` i ``template_file.py``), łapie tylko ten strażnik."""
+    """Ruff ``TID251`` oznacza tylko linię importu, więc nowe wywołanie nazwy, którą moduł zaimportował z ``noqa``
+    albo z prawem właściciela (jak ``template_file.py``), łapie tylko ten strażnik."""
     reader = (
         "from .workbook_files import file_bytes, open_workbook, template_content  # noqa: TID251 - sonda\n"
         "def values(path):\n"
@@ -361,3 +358,131 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
     )
 
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
+
+
+# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): opis postaci → moduł src/rozliczenia,
+# który czyta bajty albo wartości pliku taty poza ``ONLY``, a mimo to przechodzi przez ruff z konfiguracją src/ i
+# ``_src_findings``.
+ZNANE_LUKI_SRC = {
+    "funkcja wzięta do zmiennej po imporcie z noqa": """\
+from pathlib import Path
+
+from .workbook_files import file_bytes  # noqa: TID251 - sonda
+
+czytaj = file_bytes
+
+
+def wartosci(path: Path) -> bytes:
+    return czytaj(path)
+""",
+    "getattr modułu z napisem": """\
+from pathlib import Path
+
+from . import workbook_files
+
+
+def wartosci(path: Path) -> bytes:
+    return getattr(workbook_files, "file_bytes")(path)
+""",
+    "surowe open w trybie rb": """\
+from pathlib import Path
+
+
+def wartosci(path: Path) -> bytes:
+    with open(path, "rb") as plik:
+        return plik.read()
+""",
+}
+
+# Znane luki strażnika łatania modułu skoroszytu: opis postaci → moduł testu, który podstawia bajty pliku taty łataniem
+# ``rozliczenia.workbook_files``, a mimo to przechodzi przez ruff z konfiguracją tests/ i ``_patches``.
+ZNANE_LUKI_TESTOW = {
+    "moduł wzięty do zmiennej": """\
+import pytest
+
+from rozliczenia import workbook_files
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    skoroszyty = workbook_files
+    monkeypatch.setattr(skoroszyty, "file_bytes", lambda path: b"")
+""",
+    "moduł z importlib": """\
+import importlib
+
+import pytest
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(importlib.import_module("rozliczenia.workbook_files"), "file_bytes", lambda path: b"")
+""",
+    "napis celu złożony w trakcie działania": """\
+import pytest
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("rozliczenia." + "workbook_files.file_bytes", lambda path: b"")
+""",
+    "przypisanie wprost": """\
+from rozliczenia import workbook_files
+
+
+def test_lata() -> None:
+    workbook_files.file_bytes = lambda path: b""
+""",
+    "łatający pod aliasem": """\
+from unittest.mock import patch as lataj
+
+
+def test_lata() -> None:
+    with lataj("rozliczenia.workbook_files.file_bytes"):
+        pass
+""",
+    "patch.dict na słowniku modułu": """\
+from unittest import mock
+
+from rozliczenia import workbook_files
+
+
+def test_lata() -> None:
+    with mock.patch.dict(workbook_files.__dict__, {"file_bytes": lambda path: b""}):
+        pass
+""",
+    "moduł z getattr pakietu": """\
+import pytest
+
+import rozliczenia
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(getattr(rozliczenia, "workbook_files"), "file_bytes", lambda path: b"")
+""",
+}
+
+
+def _src_reads(source: str) -> list[str]:
+    return _src_findings({"rozliczenia/sonda_luki.py": source})[0]
+
+
+def _test_patches(source: str) -> list[str]:
+    return [f"_patches: linia {line}: {text}" for line, text in _patches(source)]
+
+
+@wymaga_ruff
+@pytest.mark.parametrize(
+    ("nazwa", "probki", "sonda", "straznik"),
+    [
+        ("ZNANE_LUKI_SRC", ZNANE_LUKI_SRC, SRC / "rozliczenia" / "sonda_luki.py", _src_reads),
+        ("ZNANE_LUKI_TESTOW", ZNANE_LUKI_TESTOW, TESTS / "test_sonda_luki.py", _test_patches),
+    ],
+    ids=["odczyt-w-src", "latanie-w-testach"],
+)
+def test_znane_luki_jednej_drogi_odczytu_przechodza_przez_ruff_i_straznika(
+    tmp_path: Path, nazwa: str, probki: dict[str, str], sonda: Path, straznik: Callable[[str], list[str]]
+) -> None:
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff(pliki, sonda)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += straznik(plik.read_text(encoding="utf-8"))
+
+    assert_znane_luki(zgloszenia, f"tests/test_jeden_odczyt_skoroszytu.py ({nazwa})")

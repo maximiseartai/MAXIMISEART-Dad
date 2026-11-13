@@ -10,8 +10,8 @@ from rozliczenia.centrum.settings.files import FieldPath
 SAVE_AGAIN: Final = "Zapisz Ustawienia jeszcze raz."
 """Naprawa złego pliku, który zapis taty w oknie Ustawień pisze od nowa z ostatniej dobrej wartości."""
 MAKS_FIXES: Final = "Poprawia go Maks."
-"""Naprawa złego pliku, którego tata nie zmienia w oknie Ustawień: Lista Wykonawców, dopóki sekcja Wykonawcy jest tylko
-do odczytu (edycja w #1474)."""
+"""Naprawa złego pliku Listy Wykonawców: zła treść bierze się z ręcznej zmiany Maksa w ``config``, a zmiana taty w
+sekcji Wykonawcy zapisałaby plik od nowa z ostatniej dobrej listy (zła treść trafia wtedy do ``odrzucone``)."""
 
 
 def not_text(file: str, repair: str = SAVE_AGAIN) -> str:
@@ -96,6 +96,43 @@ def worker_address_repeated() -> str:
     return "Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy."
 
 
+def worker_unknown() -> str:
+    return "Tego Wykonawcy nie ma już na Liście Wykonawców. Zamknij formularz i sprawdź listę."
+
+
+def worker_list_changed() -> str:
+    return "Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz."
+
+
+def worker_rename_old_files(periods: tuple[str, ...]) -> str:
+    """Ostrzeżenie przed zmianą nazwy: ``periods`` to tokeny okresów (od najnowszego) z Rozliczeniem pracownika o starej
+    nazwie; zdanie podaje ich liczbę i najnowszy."""
+
+    count = len(periods)
+    where = f"w okresie {periods[0]}" if count == 1 else f"w {count} okresach, ostatnio {periods[0]}"
+    return (
+        f"Rozliczenie pracownika ze starą nazwą jest już {where}. Ten plik zostanie ze starą nazwą, a nowa będzie w "
+        "plikach następnych Przebiegów rozliczeń."
+    )
+
+
+def worker_suggestions_not_set() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo tata nie wskazał Rejestru zleceń."""
+
+    return "Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń."
+
+
+def worker_suggestions_unreadable() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo Rejestru zleceń nie da się teraz przeczytać (nie ma go, brak
+    dostępu, nie jest skoroszytem, wierszy nie da się rozdzielić); stan pliku pokazuje sekcja Foldery. Rejestr bez
+    obszaru wklejania ma zamiast tego zdanie Komunikatu procesów (``worker_suggestions``)."""
+
+    return (
+        "Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź "
+        "Rejestr w sekcji Foldery."
+    )
+
+
 def workers_not_moved(old_file: str, reason: str) -> str:
     return (
         f"Listy Wykonawców nie utworzono ze starego pliku {old_file} w folderze config: {reason}. Dodaj Wykonawców w "
@@ -126,6 +163,36 @@ def addresses_not_moved(old_file: str, reason: str) -> str:
         f"Adresów Wykonawców nie przeniesiono ze starego pliku {old_file} w folderze config: {reason}. Dopisz je "
         "Wykonawcom w Ustawieniach."
     )
+
+
+def reminders_time() -> str:
+    return "Wpisz godzinę jako GG:MM, np. 08:00."
+
+
+def reminders_empty_morning() -> str:
+    return "Poranna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_empty_evening() -> str:
+    return "Wieczorna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_overlap() -> str:
+    return "Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna."
+
+
+def reminders_empty_text() -> str:
+    return "Wpisz pierwsze zdanie przypomnienia."
+
+
+def reminders_unknown_field() -> str:
+    return "W treści przypomnienia może stać tylko pole {dzień}, bez innych nawiasów klamrowych."
+
+
+def reminders_without_since() -> str:
+    return "Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz."
+
+
 def autostart_unsupported() -> str:
     return "Start razem z Windows działa tylko na komputerze z Windows."
 
@@ -156,6 +223,18 @@ def quantity_rules_problem(file: str, problem: str) -> str:
     """Zły plik Reguł ilości albo Listy Urządzeń: ``problem`` to zdanie silnika Reguł ilości o pierwszym złym polu."""
 
     return f"Plik {file} w folderze config: {problem}"
+
+
+def rule_without_action() -> str:
+    """Reguła z edytora Reguł ilości bez działania."""
+
+    return "Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą."
+
+
+def rule_hour() -> str:
+    """Godzina warunku DATA z edytora Reguł ilości nie jest godziną z minutą."""
+
+    return "Godzinę wpisz jako GG:MM, np. 17:00."
 
 
 def needed_by_rules(file: str, component: str) -> str:

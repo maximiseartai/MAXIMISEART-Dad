@@ -79,6 +79,10 @@ FEATURES = (
             "316-ustawienia-haslo-przyjete",
             "317-ustawienia-historia-hasla",
             "318-ustawienia-haslo-waskie",
+            "360-ustawienia-przypomnienia-odmowa",
+            "361-ustawienia-przypomnienia-podglad",
+            "362-ustawienia-przypomnienia",
+            "363-ustawienia-przypomnienia-waskie",
         ),
     ),
     Feature(
@@ -137,6 +141,24 @@ FEATURES = (
             "14a-konfiguracja-niedostepna-lista-wykonawcow",
             "14c-konfiguracja-do-rozstrzygniecia",
             "14d-konfiguracja-do-rozstrzygniecia-waski",
+        ),
+    ),
+    # Changes the Lista Wykonawców and brings it back to the fixture's bytes before it ends.
+    Feature(
+        "wykonawcy",
+        (
+            "390-wykonawcy-formularz",
+            "391-wykonawcy-odmowa-przy-polu",
+            "392-wykonawcy-zamkniecie-bez-zapisu",
+            "393-wykonawcy-stara-nazwa",
+            "394-wykonawcy-odmowa-usuniecia",
+            "395-wykonawcy-lista",
+            "396-wykonawcy-formularz-waski",
+            "397-wykonawcy-lista-waska",
+            "410-wykonawcy-podpowiedz",
+            "412-wykonawcy-podpowiedz-waska",
+            "411-wykonawcy-formularz-z-podpowiedzi",
+            "413-wykonawcy-rejestr-nieczytelny",
         ),
     ),
     # Moves the run's tool clone right after Konfiguracja shows it.
@@ -292,6 +314,33 @@ FEATURES = (
             "150-kontrola-w-kolejce",
             "151-kontrola-bez-sieci-po-starcie",
             "152-kontrola-start-bez-czekania",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
+    # Shows the differences of the Kontrola ilości of the period Przebieg rozliczeń settled, opens a rule from one without
+    # saving it and marks one as an exception; ends with no exception (undone in Historia) and the rules unchanged.
+    Feature(
+        "roznice-z-kontroli",
+        (
+            "400-roznice-lista-szerokie",
+            "401-roznice-popraw-regule",
+            "402-roznice-wyjatek",
+            "403-roznice-historia",
+            "404-roznice-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
+    # Edits the Reguły ilości with the preview on the Plik zbiorczy that Przebieg rozliczeń settled; ends with the rules
+    # of the Release again (the change undone in Historia).
+    Feature(
+        "edytor-regul-ilosci",
+        (
+            "380-edytor-podglad-szerokie",
+            "381-edytor-zla-wartosc",
+            "382-edytor-zamkniecie-bez-zapisu",
+            "383-edytor-zapisana",
+            "384-edytor-historia",
+            "385-edytor-waskie",
         ),
         needs=("przebieg-rozliczen",),
     ),
@@ -461,6 +510,10 @@ FEATURES = (
             "285-raporty-blokada",
             "281-raporty-dzien-z-problemami",
             "282-raporty-zostaw-moja",
+            "414-raporty-przypisz",
+            "415-raporty-przypisz-wybor",
+            "417-raporty-przypisz-wybor-waski",
+            "416-raporty-przypisany",
             "283-raporty-dzien-bez-problemow",
             "284-raporty-waski-ekran",
             "287-raporty-w-czasie-innego",

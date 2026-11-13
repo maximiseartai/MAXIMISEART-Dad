@@ -12,9 +12,10 @@ from typing import Final
 from rozliczenia import intermax_messages, report_entering_process
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import TAIL, HostParts, NeededSetting, ProcessKind, Start
-from rozliczenia.centrum.run_logs import LoggedReports, ProcessLogs
+from rozliczenia.centrum.report_entering_logs import LoggedReports
+from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
-from rozliczenia.report_entering import EnteringFacts, EnteringInputs, EnteringSummary
+from rozliczenia.report_entering import EnteringInputs, EnteringSummary
 from rozliczenia.tool_files import REPORT_ENTERING_METRICS
 
 
@@ -32,13 +33,7 @@ def _summary(summary: EnteringSummary, _dry_run: bool) -> runs_contract.RunSumma
 
 
 def _logs(summary: EnteringSummary | None, facts: object) -> ProcessLogs:
-    if summary is not None:
-        return ProcessLogs(report_entering=LoggedReports.of(summary.facts, summary.written))
-    if isinstance(facts, EnteringSummary):
-        return ProcessLogs(report_entering=LoggedReports.of(facts.facts, facts.written))
-    if isinstance(facts, EnteringFacts):
-        return ProcessLogs(report_entering=LoggedReports.of(facts, None))
-    return ProcessLogs()
+    return ProcessLogs(report_entering=LoggedReports.of_run(summary, facts))
 
 
 def _inputs(start: Start, parts: HostParts) -> EnteringInputs:

@@ -25,6 +25,7 @@ import pytest
 from atrapy.dziennik_wyceny import begun_line, journal_path, left_journal
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY, Outbox, PeriodThread, Post
+from rozliczenia.client_data import tool
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_logs import StartFacts
 from rozliczenia.centrum.server import serve
@@ -49,7 +50,7 @@ KONTROLA = Post.of(
     ),
     period="08_14_09_2026",
     run_id="3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c",
-    blocks=["różnice\n"],
+    blocks=[tool("różnice\n")],
     frame=lambda _number, _count, text: text,
 )
 QUEUED = "20261023T101500000000Z-0001-kontrola-ilosci-3f2a9c1b.json"

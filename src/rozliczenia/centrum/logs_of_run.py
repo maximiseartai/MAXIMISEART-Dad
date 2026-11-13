@@ -23,6 +23,7 @@ from rozliczenia.centrum.run_logs import (
     LoggedInputFile,
     LoggedMessage,
     LoggedPhase,
+    LoggedQuantityRules,
     LoggedTemplate,
     RunLog,
     StartFacts,
@@ -76,6 +77,7 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         dad_actions=dad_actions,
         input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
         input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
+        quantity_rules=None if run.quantity_rules is None else LoggedQuantityRules.of(run.quantity_rules),
     )
 
 
