@@ -260,23 +260,22 @@ class MergeGitHub(FakeGitHub):
         Bez ``real_checks`` ``tools/ci_lokalnie.py`` w ``start`` to atrapa ``CHECKS_PASS``: stoi po obu stronach
         scalenia, więc nie zmienia plików zmiany PR ani ``main`` i wyboru testu scalenia."""
 
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("GIT_COMMITTER_DATE", started)
-            super().__init__(
-                tmp_path,
-                {
-                    ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
-                    "pyproject.toml": PYPROJECT,
-                    ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
-                    ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
-                    ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
-                    "tools/sprzatanie.py": CLEANUP,
-                    **({} if real_checks else {"tools/ci_lokalnie.py": CHECKS_PASS}),
-                    **files,
-                },
-                tool="tools/scal_pr.py",
-                gh=FAKE_GH,
-            )
+        super().__init__(
+            tmp_path,
+            {
+                ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
+                "pyproject.toml": PYPROJECT,
+                ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
+                ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
+                ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
+                "tools/sprzatanie.py": CLEANUP,
+                **({} if real_checks else {"tools/ci_lokalnie.py": CHECKS_PASS}),
+                **files,
+            },
+            tool="tools/scal_pr.py",
+            gh=FAKE_GH,
+            started=started,
+        )
         _empty_state(self.bin)
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
