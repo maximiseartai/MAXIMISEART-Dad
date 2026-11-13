@@ -134,8 +134,11 @@ elif arguments[:2] == ["api", "graphql"] and "label=kolejka-chwastow" in argumen
     queue = json.loads((here / "queue.json").read_text())
     if queue is None:
         sys.exit("gh: HTTP 502")
-    nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in queue]
-    print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
+    if isinstance(queue, dict):
+        print(json.dumps({"data": queue}))
+    else:
+        nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in queue]
+        print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
 elif arguments[:2] == ["api", "graphql"] and "label=chwast" in arguments:
     # otwarte issues chwastów: po założeniu issue (weeds_after.json nie null) to issues innej publikacji i każde
     # założone tu
@@ -292,7 +295,8 @@ class MergeGitHub(FakeGitHub):
         self.graphql_changes: list[dict[str, object]] = []  # zmiany PR-ów po danej liczbie zapytań GraphQL
         self.weeds: list[dict[str, object]] = []  # otwarte issues z etykietą chwast
         self.weeds_after: list[dict[str, object]] | None = None  # otwarte issues innej publikacji po założeniu issue
-        self.queue: list[dict[str, object]] | None = [_queue("pusta")]  # otwarte issues z etykietą kolejka-chwastow, None: odmowa GitHuba
+        # otwarte issues z etykietą kolejka-chwastow; None: odmowa GitHuba, słownik: całe ``data`` odpowiedzi GraphQL
+        self.queue: list[dict[str, object]] | dict[str, object] | None = [_queue("pusta")]
         self.labels = ["ready-for-agent"]
         self.permissions: dict[str, str] = {}  # prawo konta do repozytorium z ``gh api …/collaborators/<login>/permission``
         self.written = 0
@@ -2474,7 +2478,7 @@ def _weed(number: int) -> dict[str, object]:
         ("czolo-1519", [], [["chwast", "ready-for-agent"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
         ("czolo-1519", [1521], [["chwast", "ready-for-agent"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
         ("pusta", [1550], [["chwast"]], f"CHWAST założone #9001 „{WEED_TITLE}”"),
-        ("z-proza", [], [], f"CHWAST UWAGA: nie założono „{WEED_TITLE}”, bo kolejki chwastów nie odczytano (kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
+        ("z-proza", [], [], f"CHWAST UWAGA: nie założono „{WEED_TITLE}”, bo kolejki chwastów nie odczytano (ValueError: kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
     ],
     ids=[
         "pusta-kolejka-nowy-chwast-jest-czolem",
@@ -2695,11 +2699,12 @@ def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_
         ([_queue("pusta"), _queue("pusta")], "kolejka chwastów: 2 otwartych issues z etykietą kolejka-chwastow, a ma być jedno"),
         ([_queue("z-proza")], f"kolejka chwastów #{chwasty.QUEUE_ISSUE}: linia „Kolejność chwastów:”"),
         (None, "returned non-zero exit status 1"),
+        ({"repository": None}, "TypeError: 'NoneType' object is not subscriptable"),
     ],
-    ids=["bez-issue-kolejki", "dwa-issues-kolejki", "kolejka-poza-ksztaltem", "odmowa-githuba"],
+    ids=["bez-issue-kolejki", "dwa-issues-kolejki", "kolejka-poza-ksztaltem", "odmowa-githuba", "repozytorium-null"],
 )
 def test_bez_odczytanej_kolejki_chwastow_rejestr_uzupelnia_otwarte_issue_chwastu_a_nowego_nie_zaklada(
-    tmp_path: Path, dry: bool, queue: list[dict[str, object]] | None, reason: str
+    tmp_path: Path, dry: bool, queue: list[dict[str, object]] | dict[str, object] | None, reason: str
 ) -> None:
     """Kolejka decyduje tylko o założeniu nowego issue chwastu (ADR 0034), więc gdy jej nie da się odczytać, otwarte
     issue chwastu ``chwasty.CODE`` dostaje nowe wystąpienie, a nowy chwast R-DRUGA-DROGA zostaje bez issue
@@ -2727,6 +2732,36 @@ def test_bez_odczytanej_kolejki_chwastow_rejestr_uzupelnia_otwarte_issue_chwastu
         table = [line for line in str(_sent(github.writes()[0])["body"]).splitlines() if line.startswith("| #")]
         assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
 
+
+
+class _OdczytKolejki(Exception):
+    """Błąd odczytu kolejki spoza typów GitHuba i treści issue."""
+
+
+def test_kazdy_blad_odczytu_kolejki_wstrzymuje_tylko_zalozenie_nowego_chwastu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Odczyt kolejki to krok najlepiej jak się da (``CODING_STANDARDS.md``, Design): wyjątek dowolnego typu z ``queue``
+    zostaje bez issue nowego chwastu R-INNY z ``UWAGA`` podającą typ, a otwarte issue ``chwasty.CODE`` dostaje treść."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github.weeds = [{"number": chwasty.WEED_ISSUE, "title": WEED_TITLE, "body": chwasty.ISSUES["w-szablonie"]}]
+    github._save()
+    monkeypatch.setenv("PATH", github.environment()["PATH"])
+
+    def unreadable(repository: str, weeds: object = None) -> list[int]:
+        raise _OdczytKolejki("odpowiedź bez repozytorium")
+
+    monkeypatch.setattr(rejestr_korzeni, "queue", unreadable)
+    when = datetime(2026, 11, 1, tzinfo=UTC)
+    found = [rejestr_korzeni.Occurrence(code, pull, "W1 r1", 1, "-", "-", when) for code in (chwasty.CODE, "R-INNY") for pull in (1, 7)]
+
+    lines = rejestr_korzeni.settle(found, {chwasty.CODE, "R-INNY"}, opisy_pr.REPO, "main", write=True)
+
+    assert lines == [
+        f"CHWAST | zmieniona treść #{chwasty.WEED_ISSUE}",
+        "CHWAST | UWAGA: nie założono „Chwast: R-INNY”, bo kolejki chwastów nie odczytano (_OdczytKolejki: odpowiedź bez repozytorium);"
+        " popraw issue z etykietą kolejka-chwastow i uruchom tools/chwasty.py",
+    ]
+    assert [(method, path) for method, path, _ in github.writes()] == [("PATCH", f"repos/{{owner}}/{{repo}}/issues/{chwasty.WEED_ISSUE}")]
 
 def _chwasty(github: MergeGitHub, *, dry: bool) -> subprocess.CompletedProcess[str]:
     return subprocess.run(

@@ -69,9 +69,10 @@ jedna droga dla rejestru i dla ogrodnika. Treść to nagłówek „## Kolejka”
 i nagłówek „## Poza kolejką” z chwastami, których nie bierze się osobno (wyrywa je program); każdy punkt ma jeden link
 do issue tego repozytorium. Kolejka to otwarte chwasty z „Kolejki” w jej kolejności, a po nich otwarte chwasty spoza
 obu list (założone później) w kolejności numerów; czoło to pierwszy. Inna liczba issues kolejki niż jedno albo treść
-poza tym kształtem to ``ValueError``. Kolejkę rejestr czyta tylko wtedy, gdy ma założyć nowe issue: gdy jej nie
-odczyta (także przy błędzie GitHuba), nie zakłada żadnego nowego issue i podaje to ostrzeżeniem ``UWAGA``, a otwarte
-issues chwastów uzupełnia jak zwykle, bo ich zmiana kolejki nie potrzebuje.
+poza tym kształtem to ``ValueError``. Kolejkę rejestr czyta tylko wtedy, gdy ma założyć nowe issue, i to krok
+najlepiej jak się da: przy każdym błędzie odczytu, bez względu na typ wyjątku, nie zakłada żadnego nowego issue
+i podaje to ostrzeżeniem ``UWAGA`` z typem błędu, a otwarte issues chwastów uzupełnia jak zwykle, bo ich zmiana
+kolejki nie potrzebuje.
 """
 
 from __future__ import annotations
@@ -82,7 +83,6 @@ from datetime import UTC, datetime
 from html.parser import HTMLParser
 import json
 import re
-import subprocess
 from typing import Any
 
 import github
@@ -431,7 +431,7 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
     if new:
         try:
             lead = not queue(repository, present)
-        except (subprocess.SubprocessError, OSError, ValueError, KeyError) as error:
+        except Exception as error:  # noqa: BLE001 - odczyt kolejki to krok najlepiej jak się da: każdy błąd wstrzymuje tylko założenie
             unread = error
     described = _descriptions(base)
     actions: list[github.Akcja] = []
@@ -440,7 +440,7 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
         fresh = {(row.pull, row.major): row for row in map(_row, by_code[code])}
         issue = issues.get(TITLE.format(code=code))
         if issue is None and unread is not None:
-            notes.append(f"CHWAST | UWAGA: nie założono „{TITLE.format(code=code)}”, bo kolejki chwastów nie odczytano ({unread}); popraw issue z etykietą {QUEUE} i uruchom tools/chwasty.py")
+            notes.append(f"CHWAST | UWAGA: nie założono „{TITLE.format(code=code)}”, bo kolejki chwastów nie odczytano ({type(unread).__name__}: {unread}); popraw issue z etykietą {QUEUE} i uruchom tools/chwasty.py")
             continue
         if issue is None:
             labels = (WEED, READY) if lead and code == new[0] else (WEED,)
