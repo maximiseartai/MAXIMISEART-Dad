@@ -45,6 +45,13 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   dodany drugi login. Dwa różne wpisy z tą samą nazwą dalej są odrzucane. Wykonawcy z identyfikatorem w
   którymkolwiek okresie nie da się usunąć, tylko oznaczyć jako Nieaktywnego. Zmiana nazwy ostrzega, gdy w okresie
   leży już Rozliczenie pracownika ze starą nazwą; plików taty nic nie przemianowuje.
+- **Zmiana pór nie daje drugiego maila tej samej pory** (decyzja Maksa przy przeglądzie #1568). „Najwyżej jedno w
+  porze” z ADR 0030 liczy się według nazwanej pory, porannej albo wieczornej, przy porach z chwili wysyłki:
+  poranne przypomnienie wysłane o 8:05 zamyka poranną porę tego dnia także po przesunięciu jej na 9:00–17:00.
+  Nowe pory działają od następnego sprawdzenia dla pór, które tego dnia jeszcze nie poszły. Folder „Wysłane” zna
+  tylko chwilę wysyłki, więc praca przypomnień zapisuje w `config/` pory, przy których sprawdzała, i od kiedy
+  (`przypomnienia-pory.json`); to zmienia zdanie ADR 0030, że Centrum nie ma własnego pliku stanu przypomnień.
+  Pamięcią wysłanych zostaje „Wysłane”.
 - **Hasło skrzynki raportów wymienia tata** polem, które nigdy nie pokazuje starej wartości. Token do Zgłoszeń
   zostaje u Maksa; tata widzi jego stan.
 - **Furtka Maksa.** Wydanie zmienia Ustawienia Centrum tylko jawną, nazwaną zmianą. Trafia ona do Historii z

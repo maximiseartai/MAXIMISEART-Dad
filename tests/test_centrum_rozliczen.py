@@ -25,6 +25,7 @@ import imaplib
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+import yaml
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
@@ -2107,6 +2108,21 @@ def test_pory_stykajace_sie_godzina_i_tresc_z_polem_dnia_zapisuja_sie_od_razu(tm
     assert saved.json()["settings"]["reminders"] == {**form, "state": "good", "enabled": False, "since": None, "problem": None}
 
 
+def test_godzina_przypomnien_bez_zera_na_poczatku_zapisuje_sie_jako_gg_mm(tmp_path: Path) -> None:
+    """Tata pisze godzinę tak, jak ją mówi („8:00”): przyjmuje ją podgląd i zapis, a sekcja i plik mają ją jako ``GG:MM``."""
+
+    app = centrum(tmp_path)
+    form = reminders_form(morning={"start": "7:30", "end": "15:00"}, first="8:00")
+
+    preview = app.client.post("/api/settings/reminders/preview", json=form)
+    saved = app.client.put("/api/settings/reminders", json=form)
+
+    assert (preview.status_code, saved.status_code) == (200, 200)
+    shown = saved.json()["settings"]["reminders"]
+    assert (shown["morning"], shown["first"]) == ({"start": "07:30", "end": "15:00"}, "08:00")
+    assert yaml.safe_load((app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8"))["pora_poranna"] == {"od": "07:30", "do": "15:00"}
+
+
 def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozenia_a_ponowne_go_zostawia(
     tmp_path: Path,
 ) -> None:
@@ -2187,6 +2203,8 @@ def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[s
         pytest.param(b"od wtorku\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="zly-dzien-wylacza-jak-dotad"),
         pytest.param(None, "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="bez-dnia-wdrozenia"),
         pytest.param(b"2026-11-09\n", b" \n", True, "2026-11-09", "", id="pusta-stopka"),
+        pytest.param(b"2026-11-09\n", "Pozdrawiam\u0085Tata\n".encode(), True, "2026-11-09", "Pozdrawiam\u0085Tata\n", id="stopka-ze-znakiem-nel"),
+        pytest.param(b"2026-11-09\n2026-11-10\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="kilka-dni-wylacza-jak-dotad"),
     ],
 )
 def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_bez_cofnij_a_stare_pliki_zostaja(

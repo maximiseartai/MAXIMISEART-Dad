@@ -21,7 +21,7 @@ from typing import Final
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
     ReminderProblem,
@@ -46,7 +46,8 @@ FOOTER: Final[FieldName] = "stopka"
 START: Final[FieldName] = "od"
 END: Final[FieldName] = "do"
 _KEYS: Final = (ENABLED, SINCE, MORNING, EVENING, FIRST, TEXT, FOOTER)
-_TIME: Final = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
+_TIME: Final = re.compile(r"(?P<hour>[01]?[0-9]|2[0-3]):(?P<minute>[0-5][0-9])")
+"""Godzina z pliku albo formularza: ``08:00`` i ``8:00`` (tata pisze godzinę bez zera), w pliku zawsze ``GG:MM``."""
 _RANGE: Final = " – "
 """Między początkiem a końcem pory w wartości klucza Historii (``08:00 – 17:00``)."""
 
@@ -120,11 +121,12 @@ _PROBLEMS: Final[Mapping[ReminderProblemKind, tuple[FieldPath, Callable[[], str]
 
 
 def parse_time(value: object, place: FieldPath) -> time | FieldProblem:
-    """Godzina ``GG:MM`` z pliku albo formularza; inna wartość to zdanie przy polu ``place``."""
+    """Godzina ``GG:MM`` (także ``G:MM``) z pliku albo formularza; inna wartość to zdanie przy polu ``place``."""
 
-    if not isinstance(value, str) or _TIME.fullmatch(value.strip()) is None:
+    found = _TIME.fullmatch(value.strip()) if isinstance(value, str) else None
+    if found is None:
         return FieldProblem(place, messages.reminders_time())
-    return time.fromisoformat(value.strip())
+    return time(int(found["hour"]), int(found["minute"]))
 
 
 def parse_range(start: object, end: object, key: FieldName) -> TimeRange | FieldProblem:
@@ -169,7 +171,7 @@ def dump(settings: ReminderSettings) -> str:
         TEXT: settings.text,
         FOOTER: settings.footer,
     }
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
 def _values(settings: ReminderSettings) -> dict[str, str | None]:

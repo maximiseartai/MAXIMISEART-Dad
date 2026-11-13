@@ -7,11 +7,32 @@ wchodzi żadną drogą. Brak pliku to wartość domyślna. Rejestr ``SETTINGS_FI
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
+import yaml
+
 T = TypeVar("T")
+
+
+class _SettingsDumper(yaml.SafeDumper):
+    """Zapis YAML plików Ustawień: napis ze znakiem NEL (U+0085) w cudzysłowie podwójnym, w którym stoi on jako ``\\N``,
+    bo przy ``allow_unicode`` pakiet yaml pisze go wprost, a przy odczycie czyta jako podział linii ze spacją."""
+
+
+def _text(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style='"' if "\x85" in value else None)
+
+
+_SettingsDumper.add_representer(str, _text)
+
+
+def settings_yaml(document: Mapping[str, object]) -> str:
+    """Treść pliku Ustawień w YAML: klucze w kolejności ``document``, polskie litery wprost, bez łamania długich
+    linii; każdy napis wraca z pliku bez zmian."""
+
+    return yaml.dump(dict(document), Dumper=_SettingsDumper, allow_unicode=True, sort_keys=False, width=1_000_000)
 
 
 FieldName = Literal[

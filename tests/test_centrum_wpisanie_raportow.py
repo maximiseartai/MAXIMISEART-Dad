@@ -2860,12 +2860,14 @@ def test_praca_przypomnien_wysyla_przypomnienie_do_atrapy_smtp_raz_w_porze_takze
     assert not centrum.tool.run_logs.exists() or not list(centrum.tool.run_logs.glob("*.json")), "to nie Uruchomienie"
 
 
-def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopki(tmp_path: Path) -> None:
-    """Bez stopki w Ustawieniach przypomnienie idzie bez niej, a wynik ostatniego sprawdzenia dla widoku Raporty mówi o tym (US 44)."""
+@pytest.mark.parametrize("footer", ["", "   \n"], ids=["pusta", "same-spacje"])
+def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopki(tmp_path: Path, footer: str) -> None:
+    """Bez stopki w Ustawieniach (także ze stopką z samych spacji) przypomnienie idzie bez niej, a wynik ostatniego
+    sprawdzenia dla widoku Raporty mówi o tym (US 44)."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
-    _reminders_set_up(centrum, footer="")
+    _reminders_set_up(centrum, footer=footer)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 

@@ -783,9 +783,18 @@ def _reminders(run: Run, page: Page) -> None:
     try:
         expect(switch).to_be_checked()
         run.capture(page, "363-ustawienia-przypomnienia-waskie", full_page=False)
-        close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
+    # The step leaves the reminders as it found them, switched off: switched on, their work writes to config in its
+    # pora, and a later feature of the same run (aktualizacja) expects config untouched by anything but itself.
+    switch.click()
+    expect(switch).not_to_be_checked()
+    after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
+    run.check(
+        isinstance(after, dict) and after["enabled"] is False,
+        "the step switches the reminders off again, so their work leaves config alone for the rest of the run",
+    )
+    close_settings(page)
 
 
 @contextmanager
