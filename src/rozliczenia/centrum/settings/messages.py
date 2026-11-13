@@ -132,10 +132,13 @@ def quantity_rules_problem(file: str, problem: str) -> str:
     return f"Plik {file} w folderze config: {problem}"
 
 
-def needed_by_rules(file: str, problem: str) -> str:
-    """Lista Urządzeń bez składnika, którego potrzebują Reguły ilości: ``problem`` to zdanie silnika o tym składniku."""
+def needed_by_rules(file: str, component: str) -> str:
+    """Lista Urządzeń bez składnika, którego potrzebują Reguły ilości; ``component``: jego nazwa, jak w sekcji Urządzenia."""
 
-    return f"Plik {file} w folderze config: {problem} Potrzebują go Reguły ilości."
+    return (
+        f"Plik {file} w folderze config nie ma składnika „{component}”, którego potrzebują Reguły ilości, "
+        "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
+    )
 
 
 def unavailable(file: str) -> str:

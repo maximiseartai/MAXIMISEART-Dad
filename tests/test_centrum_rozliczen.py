@@ -64,7 +64,7 @@ from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
-from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
@@ -727,8 +727,8 @@ def test_lista_urzadzen_bez_skladnika_regul_ilosci_to_zle_ustawienie_listy_a_pro
         None,
         {
             "field": None,
-            "message": f"Plik {DEVICES_FILE} w folderze config: Składnika „instalacja-reczna” nie ma na Liście Urządzeń. "
-            "Potrzebują go Reguły ilości.",
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują "
+            "Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
         },
     )
     assert "instalacja-reczna" in [device["id"] for device in response["devices"]]
@@ -736,6 +736,23 @@ def test_lista_urzadzen_bez_skladnika_regul_ilosci_to_zle_ustawienie_listy_a_pro
     tools_see = read_snapshot(app.tool.config).quantity_rules
     assert (tools_see.devices, tools_see.rules == DEFAULT_QUANTITY_RULES.rules) == (DEFAULT_QUANTITY_RULES.devices, False)
     assert [(row["file"], row["refused"]) for row in history_rows(app)] == [(DEVICES_FILE, True)]
+
+
+def test_lista_urzadzen_bez_skladnika_taty_z_reguly_nazywa_go_tak_jak_sekcja_urzadzenia(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + "  - {id: ont-x, zapisy: [ont x]}\n")
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: ont-x"))
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["devices_problem"] == {
+        "field": None,
+        "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „ont x”, którego potrzebują Reguły ilości, "
+        "więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
+    }
+    assert {device["id"]: device["name"] for device in response["devices"]}["ont-x"] == "ont x"
 
 
 def test_uszkodzona_lista_urzadzen_to_zle_ustawienie_listy_a_widac_ostatnia_dobra_liste(tmp_path: Path) -> None:
@@ -751,6 +768,44 @@ def test_uszkodzona_lista_urzadzen_to_zle_ustawienie_listy_a_widac_ostatnia_dobr
         {"field": None, "message": f"Plik {DEVICES_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."},
     )
     assert "nowy" in [device["id"] for device in response["devices"]]
+
+
+def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:
+    """Lista Urządzeń taty ze składnikiem spoza listy z Wydania i reguła z tym składnikiem, obie przyjęte; potem lista
+    się psuje, a reguła zmienia wartość: pasuje tylko do ostatniej dobrej listy z pamięci, nie do listy z Wydania."""
+
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    devices.write_text("urzadzenia: [", encoding="utf-8")
+    rule_sentences(app)
+    return write_dad_quantity_rules(
+        app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy").replace("wartosc: 1", "wartosc: 2")
+    )
+
+
+def test_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie_dziala_od_razu(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    _rules_changed_under_damaged_dad_list(app)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["rules_problem"] is None
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nowy” w Z."
+
+
+def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rules = _rules_changed_under_damaged_dad_list(app)
+
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+
+    assert tools_see.rules == RULES.parse(rules.read_bytes())
+    assert "nowy" in [component.id for component in tools_see.devices.components]
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -811,7 +866,10 @@ def test_cofniecie_po_ktorym_regula_ma_skladnik_spoza_listy_urzadzen_jest_odmowa
 
     assert (undone.status_code, undone.json()) == (
         422,
-        {"message": f"Plik {DEVICES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń. Potrzebują go Reguły ilości."},
+        {
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „nowy”, którego potrzebują Reguły ilości, "
+            "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
+        },
     )
     assert (devices.read_bytes(), rules.read_bytes(), history_rows(app)) == (*files, rows)
     assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."

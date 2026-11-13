@@ -413,7 +413,7 @@ class CentrumSettings:
     def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | None:
         """Lista z regułami, którymi liczą procesy: reguły przyjmuje się pierwsze."""
 
-        return devices_problem(devices, _usable(self._observe(RULES), RULES))
+        return devices_problem(devices, _usable(self._observe(RULES), RULES), _last_good_devices(self._memory.read(DEVICES.name)))
 
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
         return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
@@ -584,10 +584,10 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela;
     nie dopisuje Historii ani pamięci."""
 
-    memory = Memory(config, lambda _: None)
+    remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
-    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, memory.read(DEVICES.name)))
-    devices = _read_only(config, DEVICES, lambda value: devices_problem(value, rules))
+    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
+    devices = _read_only(config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices)))
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),
         workers=_read_only_view(config, WORKERS),
@@ -645,8 +645,13 @@ def _rules_problem(
     if isinstance(devices, OSError):
         return rules_problem(rules, None, DEVICES.default)
     now = DEVICES.parse(devices)
-    good = _good_value(remembered.good if isinstance(remembered, Remembered) else None, DEVICES)
-    return rules_problem(rules, None if isinstance(now, FieldProblem) else now, good)
+    return rules_problem(rules, None if isinstance(now, FieldProblem) else now, _last_good_devices(remembered))
+
+
+def _last_good_devices(remembered: Remembered | None | Unreadable) -> tuple[Component, ...]:
+    """Ostatnia dobra Lista Urządzeń z pamięci właściciela, którą procesy liczą przy złej liście; bez niej lista z Wydania."""
+
+    return _good_value(remembered.good if isinstance(remembered, Remembered) else None, DEVICES)
 
 
 def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:

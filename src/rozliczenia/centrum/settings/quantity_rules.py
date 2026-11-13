@@ -196,12 +196,21 @@ def rules_problem(
     return None if problem is None else _problem(RULES_FILE, problem)
 
 
-def devices_problem(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> FieldProblem | None:
+def devices_problem(
+    devices: tuple[Component, ...], rules: tuple[QuantityRule, ...], devices_good: tuple[Component, ...]
+) -> FieldProblem | None:
     """Problem Listy Urządzeń dobrej samej w sobie razem z regułami, którymi liczą procesy (``rules``): składnik, którego
-    reguła potrzebuje, a lista go nie ma."""
+    reguła potrzebuje, a lista go nie ma, nazwany jak w sekcji Urządzenia, która pokazuje wtedy ostatnią dobrą listę
+    (``devices_good``); składnik spoza niej ma tylko swój identyfikator."""
 
-    problem = _refusal(rules, devices)
-    return None if problem is None else FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, problem.message))
+    match _refusal(rules, devices):
+        case None:
+            return None
+        case RulesProblem(component=str() as missing):
+            names = {component.id: component.spellings[0] for component in devices_good}
+            return FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, names.get(missing, missing)))
+        case problem:
+            return _problem(DEVICES_FILE, problem)
 
 
 def quantity_rules(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> QuantityRules:

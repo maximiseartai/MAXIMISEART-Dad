@@ -64,6 +64,8 @@ class RulesProblem:
 
     field: str
     message: str
+    component: str | None = None
+    """Składnik, do którego reguła się odwołuje, a którego Lista Urządzeń nie ma; ``None``: problem innego rodzaju."""
 
 
 class QuantityRulesRefused(ValueError):
@@ -558,9 +560,9 @@ def _is_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _require(holds: bool, path: str, message: str) -> None:
+def _require(holds: bool, path: str, message: str, *, component: str | None = None) -> None:
     if not holds:
-        raise QuantityRulesRefused(RulesProblem(path, message))
+        raise QuantityRulesRefused(RulesProblem(path, message, component))
 
 
 def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
@@ -592,7 +594,7 @@ def _check_component(component: str | None, components: frozenset[str] | None, p
     if components is None:
         _require(component is not None, path, "Wybierz składnik.")
     else:
-        _require(component in components, path, f"Składnika „{component}” nie ma na Liście Urządzeń.")
+        _require(component in components, path, f"Składnika „{component}” nie ma na Liście Urządzeń.", component=component)
 
 
 def _check_condition(condition: Condition, components: frozenset[str] | None, path: str) -> None:
