@@ -2736,24 +2736,6 @@
             "type": "array",
             "title": "Templates"
           },
-          "workers": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/WorkersReady"
-              },
-              {
-                "$ref": "#/components/schemas/WorkersUnreadable"
-              }
-            ],
-            "title": "Workers",
-            "discriminator": {
-              "propertyName": "state",
-              "mapping": {
-                "ready": "#/components/schemas/WorkersReady",
-                "unreadable": "#/components/schemas/WorkersUnreadable"
-              }
-            }
-          },
           "reports": {
             "type": "string",
             "enum": [
@@ -2771,7 +2753,6 @@
           "freshness",
           "update_offered",
           "templates",
-          "workers",
           "reports"
         ],
         "title": "Configuration",
@@ -3844,7 +3825,7 @@
           "last"
         ],
         "title": "IntermaxSetup",
-        "description": "Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania\nINTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania\nINTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
       "KeptCell": {
         "properties": {
@@ -4221,6 +4202,18 @@
           "action": {
             "type": "string",
             "title": "Action"
+          },
+          "setting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "wykonawcy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting"
           }
         },
         "additionalProperties": false,
@@ -4231,7 +4224,7 @@
           "action"
         ],
         "title": "Message",
-        "description": "Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu."
+        "description": "Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień\nCentrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki\nw Ustawieniach ma dalej trzy części, także w Logach Uruchomienia."
       },
       "Metrics": {
         "properties": {
@@ -5916,7 +5909,7 @@
           "last"
         ],
         "title": "ReportEnteringSetup",
-        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
       "ReportNotQueued": {
         "properties": {
@@ -7736,7 +7729,7 @@
           "addresses"
         ],
         "title": "UnmatchedLogin",
-        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców."
+        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``)."
       },
       "UnreadablePath": {
         "properties": {
@@ -7967,7 +7960,7 @@
           "problem"
         ],
         "title": "WorkerListSetting",
-        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku, lista pusta)."
+        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty)."
       },
       "WorkerSettlement": {
         "properties": {
@@ -8013,49 +8006,6 @@
         ],
         "title": "WorkerSettlementRequest",
         "description": "Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu."
-      },
-      "WorkersReady": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "ready",
-            "title": "State"
-          },
-          "names": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Names"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "names"
-        ],
-        "title": "WorkersReady",
-        "description": "Nazwy Wykonawców w kolejności z Listy Wykonawców."
-      },
-      "WorkersUnreadable": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "unreadable",
-            "title": "State"
-          },
-          "message": {
-            "$ref": "#/components/schemas/Message"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "message"
-        ],
-        "title": "WorkersUnreadable"
       }
     }
   }

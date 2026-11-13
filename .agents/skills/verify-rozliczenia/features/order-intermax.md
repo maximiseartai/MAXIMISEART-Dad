@@ -17,8 +17,8 @@ ordered.
 
 ## How to get to it (user POV)
 
-- Dad starts it on the card „Uporządkuj INTERMAX” in Centrum rozliczeń, which takes INTERMAX from Ustawienia taty; `verify-centrum-rozliczen` drives that route.
-- The machine script never reads Ustawienia taty: `py -3 tools\uruchom_proces.py intermax --register <INTERMAX> --copies <folder Kopii> --metrics <metrics>`. Without `--copies` it writes the Kopia INTERMAX to the tool's own folder of Kopie, so always pass one outside Dad's computer.
+- Dad starts it on the card „Uporządkuj INTERMAX” in Centrum rozliczeń, which takes INTERMAX from Ustawienia Centrum; `verify-centrum-rozliczen` drives that route.
+- The machine script never reads Ustawienia Centrum: `py -3 tools\uruchom_proces.py intermax --register <INTERMAX> --copies <folder Kopii> --metrics <metrics>`. Without `--copies` it writes the Kopia INTERMAX to the tool's own folder of Kopie, so always pass one outside Dad's computer.
 
 ## Driving it with PowerShell and the machine script
 

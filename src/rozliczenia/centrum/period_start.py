@@ -2,7 +2,7 @@
 
 Każdy proces z okresem (``process_kind.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a
 start z okresem przechodzi przez te same odmowy dla taty w tej samej kolejności. Co różni procesy (co powstaje, jak
-wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień taty, Folderu okresu i
+wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień Centrum, Folderu okresu i
 Konfiguracji, a Lista Wykonawców z migawki Ustawień Centrum; tata nie wskazuje ich przy starcie.
 """
 
@@ -31,6 +31,7 @@ from rozliczenia.centrum.process_kind import (
     RecentWeeks,
     SettingField,
     Start,
+    start_warnings,
     workers_at_start,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
@@ -73,9 +74,10 @@ class PeriodStarts:
             period=period.token,
             dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
-            settings=folders,
+            settings=snapshot,
             quantity_rules=snapshot.quantity_rules,
             workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
+            warnings=start_warnings(snapshot, kind.needs),
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 
@@ -176,7 +178,7 @@ def _board_choice(
 
 
 def _board_blocker(board: periods_contract.PeriodBoard, rows: list[periods_contract.PeriodRow], chooser: ByStatus) -> str | None:
-    """Czego brakuje w folderze okresów, który Ustawienia taty już wskazują."""
+    """Czego brakuje w folderze okresów, który Ustawienia Centrum już wskazują."""
 
     if board.state == "missing":
         return f"Nie ma już folderu okresów {board.name}. Wskaż go ponownie."

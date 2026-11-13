@@ -1,4 +1,4 @@
-"""Przeniesienie Konfiguracji wykonawców (``worker_mapping.yaml``) i adresów Wykonawców (``adresy-wykonawcow.yaml``) do
+"""Przeniesienie starego pliku Wykonawców (``worker_mapping.yaml``) i adresów Wykonawców (``adresy-wykonawcow.yaml``) do
 Listy Wykonawców (``wykonawcy.yaml``): zmiana z Wydania ``2026-11-lista-wykonawcow`` (ADR 0032).
 
 Czego nie da się pewnie przenieść, nie znika po cichu: adresy przy loginie spoza Konfiguracji i stary plik adresów,
@@ -80,7 +80,7 @@ def _document(path: Path) -> object | None:
 
 
 def _mapping(path: Path) -> dict[Login, str] | str:
-    """Login → nazwa ze starej Konfiguracji wykonawców (pusta, gdy pliku nie ma) albo powód, dla którego nie da się jej
+    """Login → nazwa ze starego pliku Wykonawców (pusta, gdy pliku nie ma) albo powód, dla którego nie da się jej
     użyć, bez nazwy i loginu."""
 
     try:
@@ -106,7 +106,7 @@ def _mapping(path: Path) -> dict[Login, str] | str:
 
 def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
     """Login → adresy ze starego pliku adresów (pusty, gdy pliku nie ma) albo powód, dla którego nie da się go użyć, bez
-    adresu i loginu; login nie musi być w Konfiguracji wykonawców."""
+    adresu i loginu; login nie musi być w starym pliku Wykonawców."""
 
     try:
         document = _document(path)
@@ -135,5 +135,13 @@ def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
     return {login: tuple(addresses) for login, addresses in found.items()}
 
 
-CHANGE: Final = ReleaseChange(id="2026-11-lista-wykonawcow", file=WORKERS, propose=propose)
-"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8)."""
+CHANGE: Final = ReleaseChange(
+    id="2026-11-lista-wykonawcow",
+    file=WORKERS,
+    propose=propose,
+    refused_absent=messages.worker_list_not_created(),
+    waiting_absent=messages.worker_list_waiting(),
+)
+"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie i
+gdy przeniesienie czeka na stary plik, dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie, a nie
+pustą dobrą listę."""

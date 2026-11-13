@@ -57,7 +57,7 @@ KEY_REFUSED = "Skrzynka Zgłoszeń odrzuca Token do Zgłoszeń. Zgłoszenie pocz
 REFUSED_KEY = "github_pat_VERIFY_DIAGNOZA_ODRZUCONY"
 OTHER_MAIN = "e" * 40
 CHECKS = (
-    "Ustawienia taty",
+    "Ustawienia Centrum",
     "Pliki w OneDrive",
     "Rejestr zleceń",
     "Wzorzec rozliczenia wewnętrznego",

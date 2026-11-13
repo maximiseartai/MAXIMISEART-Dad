@@ -28,7 +28,7 @@ stop and problem has three parts.
 - `przebieg-odczyt-po-uruchomieniu`: in the same tab, the Historia tab shows the finished RUN and its preview at the top, and `Nowe Uruchomienie procesu` → `Przebieg rozliczeń` no longer offers the closed period: both are read again after the Uruchomienie procesu.
 - `przebieg-status-okresu`: Tablica okresów shows `Rozliczenia pracowników gotowe` and `Następny krok` shows `Okres zamknięty`.
 - `przebieg-nienadpisywanie`: a second RUN of the closed period (started through the API, since the Okres list no longer offers it) stops in three parts without a full path and leaves the files byte-identical.
-- `przebieg-wymaga-sprawdzenia`: `Podgląd bez zapisu` of `29_05_10_2026`, whose Plik zbiorczy has a Wykonawca missing from the konfiguracja wykonawców, ends `Podgląd wymaga sprawdzenia · nic nie zapisano` with an amber icon, the problem in three parts, and `Uruchom ponownie` instead of `Uruchom`.
+- `przebieg-wymaga-sprawdzenia`: `Podgląd bez zapisu` of `29_05_10_2026`, whose Plik zbiorczy has a Wykonawca missing from the Lista Wykonawców, ends `Podgląd wymaga sprawdzenia · nic nie zapisano` with an amber icon, the problem in three parts, and `Uruchom ponownie` instead of `Uruchom`.
 - `przebieg-nieznany-wykonawca`: `Uruchom` for the same period stops on that Wykonawca, writes nothing, and its `Co zrobić` starts with the advice on column H without sending Dad to `Podgląd bez zapisu` for rows, since the preview's problem names none.
 
 ## How to get to it (user POV)
@@ -43,7 +43,7 @@ Preconditions:
 
 - Centrum is served for this run with `DOCTOR OK`.
 - `INEA/06_12_10_2026` has both period files from `przygotowanie-pliku-zbiorczego`, with one Zlecenie skuteczne per Wykonawca `wykonawca.a/b/c` and none for `wykonawca.d`, whose Szablon pracownika stays empty (`fixture.json` → `settlement.rows_per_worker`). Run alone (`--feature przebieg-rozliczen`), the drive runs Przygotowanie pliku zbiorczego first.
-- `INEA/29_05_10_2026` has a Plik zbiorczy with a Wiersz danych of `wykonawca.a` and one of a Wykonawca the konfiguracja wykonawców does not know (`fixture.json` → `settlement.needs_check`).
+- `INEA/29_05_10_2026` has a Plik zbiorczy with a Wiersz danych of `wykonawca.a` and one of a Wykonawca the Lista Wykonawców does not know (`fixture.json` → `settlement.needs_check`).
 - `serve_centrum.py` paces each Szablon pracownika by the milliseconds in `<root>/pacing/szablony-ms.txt` while that file exists; the drive writes it only for the observed RUN and removes it in `finally`.
 
 - **Gotowość.** The drive fills the Plik zbiorczy with openpyxl (`_fill_readiness`), as Dad would in Excel; the check line names it as simulated. No `~$` file is left.

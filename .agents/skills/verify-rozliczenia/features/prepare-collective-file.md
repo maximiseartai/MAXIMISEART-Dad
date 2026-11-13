@@ -20,8 +20,8 @@ Centrum it runs as `tools/uruchom_proces.py preparation`.
 
 ## How to get to it (user POV)
 
-- Dad starts it in Centrum rozliczeń, which takes the Rejestr and the folder okresów from Ustawienia taty and proposes the period; `verify-centrum-rozliczen` drives that route. In Dad's layout the folder okresów is `Załączniki` and the Folder okresu is found in `Rozliczenia {rok}\{miesiąc}\INEA`; the synthetic fixture uses the flat layout.
-- The machine script never reads Ustawienia taty and requires the Rejestr, the folder okresów, and the period: `py -3 tools\uruchom_proces.py preparation --register <rejestr> --periods-directory <folder okresów> --period 08_14_09_2026 --wykonawcy <wykonawcy.yaml> --internal-template <wzorzec> --collective-template <wzorzec> --metrics <metrics> [--dry-run]`.
+- Dad starts it in Centrum rozliczeń, which takes the Rejestr and the folder okresów from Ustawienia Centrum and proposes the period; `verify-centrum-rozliczen` drives that route. In Dad's layout the folder okresów is `Załączniki` and the Folder okresu is found in `Rozliczenia {rok}\{miesiąc}\INEA`; the synthetic fixture uses the flat layout.
+- The machine script never reads the Rejestr or the folder okresów from Ustawienia Centrum and requires the Rejestr, the folder okresów, and the period: `py -3 tools\uruchom_proces.py preparation --register <rejestr> --periods-directory <folder okresów> --period 08_14_09_2026 --wykonawcy <wykonawcy.yaml> --internal-template <wzorzec> --collective-template <wzorzec> --metrics <metrics> [--dry-run]`.
 
 ## Driving it with PowerShell and the machine script
 

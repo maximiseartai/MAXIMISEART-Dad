@@ -55,6 +55,7 @@ from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from rozliczenia.domain import RunMode
 
 from atrapy.skrzynka import BoxIssue
+from atrapy.workbooks import excel_lock
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
     CentrumClient,
@@ -514,22 +515,24 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     centrum.configuration.worker_template.write_bytes(b"to nie jest skoroszyt")
-    workers = centrum.tool.worker_list
-    workers.write_bytes("wykonawcy: [".encode())
-    not_yaml = diagnose(centrum, run_id)
+    # Pliki okresu Diagnoza czyta na dysku przy każdym pytaniu (Listę Wykonawców bierze z migawki startu, D9).
+    collective = centrum.collective_file.read_bytes()
+    centrum.collective_file.unlink()
+    without_collective_file = diagnose(centrum, run_id)
     sent = [diagnosed_logs(centrum, edits=1)]
 
-    workers.write_bytes("wykonawcy: ż".encode("cp1250"))
-    not_utf8 = diagnose(centrum, run_id)
+    centrum.collective_file.write_bytes(collective)
+    excel_lock(centrum.collective_file).write_bytes(b"")
+    open_in_excel = diagnose(centrum, run_id)
 
     sent.append(diagnosed_logs(centrum, edits=2))
-    label = "Lista Wykonawców"
-    assert [diagnosis["explanation"] for diagnosis in (not_yaml, not_utf8)] == [not_yaml["explanation"]] * 2
-    assert check_detail(not_yaml, label) != check_detail(not_utf8, label)
+    diagnoses = (without_collective_file, open_in_excel)
+    assert [diagnosis["explanation"] for diagnosis in diagnoses] == [without_collective_file["explanation"]] * 2
     logged = [logs["diagnosis"] for logs in sent]
-    checks = [next(check for check in diagnosis["checks"] if check["label"] == label) for diagnosis in logged]
-    assert [(check["code"], check["detail"]) for check in checks] == [
-        ("ZLA_LISTA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
+    failed = [[(check["label"], check["code"]) for check in diagnosis["checks"] if check["state"] == "failed"] for diagnosis in logged]
+    assert [rows[1:] for rows in failed] == [
+        [("Folder okresu", "BRAK_PLIKU_ZBIORCZEGO")],
+        [("Pliki okresu w Excelu", "PLIK_OKRESU_OTWARTY")],
     ]
 
 
@@ -1096,6 +1099,29 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     if process == "efenix":
         actions = {step["action"] for order in record["efenix_orders"] for step in order["steps"]}
         assert actions == {"szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość"}
+
+
+def test_uruchomienie_na_ostatniej_dobrej_liscie_wykonawcow_odtwarza_sie_z_ostrzezeniem_startu_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przebieg rozliczeń, który biegł na ostatniej dobrej Liście Wykonawców, bo plik dostał złą treść po odczycie
+    Ustawień, ma ostrzeżenie startu w Logach jako fakt startu, a odtworzenie bierze je z Logów, bo Ustawień Centrum
+    Logi nie mają: odtworzenie na folderze Konfiguracji z dobrą listą jest zgodne, a nie różne na samym ostrzeżeniu."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
+    good = centrum.tool.worker_list.read_bytes()
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
+    produced = Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    centrum.tool.worker_list.write_bytes(good)
+    logged = [(message["code"], message.get("at_start")) for message in produced.record["messages"]]
+    assert logged == [("LISTA_WYKONAWCOW_OSTATNIA_DOBRA", True)], logged
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
 @pytest.mark.parametrize(

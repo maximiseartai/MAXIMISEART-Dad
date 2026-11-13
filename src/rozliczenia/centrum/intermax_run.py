@@ -1,6 +1,6 @@
-"""Uporządkowanie INTERMAX z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień taty i start.
+"""Uporządkowanie INTERMAX z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień Centrum i start.
 
-INTERMAX to Rejestr zleceń z Ustawień taty, a Kopie INTERMAX trafiają do folderu narzędzia. Proces nie należy do
+INTERMAX to Rejestr zleceń z Ustawień Centrum, a Kopie INTERMAX trafiają do folderu narzędzia. Proces nie należy do
 okresu: okres Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc
 Logi Uruchomienia trafiają do Skrzynki Zgłoszeń przy tym okresie, także przy Zatrzymaniu przed odczytem.
 
@@ -34,7 +34,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
 from rozliczenia.centrum.live_file import saved_version
-from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start
+from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start, start_warnings
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
@@ -97,7 +97,7 @@ class IntermaxEntry:
         )
 
     def days(self) -> intermax_contract.IntermaxDays:
-        """Dni INTERMAX z Ustawień taty ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
+        """Dni INTERMAX z Ustawień Centrum ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
 
         register = self.settings.snapshot().folders.register
         if register is None:
@@ -117,16 +117,16 @@ class IntermaxEntry:
         return intermax_contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień taty; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
+        """Wejście procesu z Ustawień Centrum; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         snapshot = self.settings.snapshot()
-        folders = snapshot.folders
         start = Start(
-            {"register": _register(folders), "copies_directory": self.copies_directory},
+            {"register": _register(snapshot.folders), "copies_directory": self.copies_directory},
             period=None,
             dry_run=False,
-            settings=folders,
+            settings=snapshot,
             quantity_rules=snapshot.quantity_rules,
+            warnings=start_warnings(snapshot, _KIND.needs),
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
@@ -140,7 +140,7 @@ class IntermaxEntry:
         return intermax_contract.IntermaxCopies(copies=[_copy(copy) for copy in listed], problem=None)
 
     def restore(self, name: str) -> intermax_contract.IntermaxRestore:
-        """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień taty; ``Refusal``, gdy go nie wskazano."""
+        """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień Centrum; ``Refusal``, gdy go nie wskazano."""
 
         register = _register(self.settings.snapshot().folders)
         try:

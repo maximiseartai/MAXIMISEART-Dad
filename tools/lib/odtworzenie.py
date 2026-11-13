@@ -1076,6 +1076,7 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
         pricing=record.pricing,
         workers=workers,
         quantity_rules=DEFAULT_QUANTITY_RULES,
+        warnings=record.start_warnings(),
     )
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())

@@ -467,7 +467,7 @@ def test_pomiar_ze_zla_lista_wykonawcow_konczy_sie_zdaniem_wlasciciela_ustawien(
     )
 
     assert measured.returncode == 1
-    reason = settings_messages.other_schema(WORKERS_FILE)
+    reason = settings_messages.other_schema(WORKERS_FILE, settings_messages.MAKS_FIXES)
     assert f"{reason} Plik: {config}" in measured.stderr
     assert not journal.exists()
 

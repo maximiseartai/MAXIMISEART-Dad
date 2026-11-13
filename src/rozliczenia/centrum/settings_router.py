@@ -234,7 +234,8 @@ def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.W
             state, workers = "bad", usable or WorkerList(())
             problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
         case Unreadable():
-            state, workers, problem = "unreadable", WorkerList(()), None
+            state, workers = "unreadable", WorkerList(())
+            problem = settings_workers_contract.SettingProblem(field=None, message=messages.worker_list_unreadable())
     return settings_workers_contract.WorkerListSetting(
         state=state,
         workers=[

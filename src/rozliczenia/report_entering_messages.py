@@ -97,7 +97,7 @@ def conflict_after_save(copy: Path) -> Message:
 
 
 def periods_directory_missing(periods_directory: Path) -> Message:
-    """Folderu okresów z Ustawień taty nie ma: bez niego narzędzie nie wie, które okresy mają już Plik zbiorczy."""
+    """Folderu okresów z Ustawień Centrum nie ma: bez niego narzędzie nie wie, które okresy mają już Plik zbiorczy."""
 
     return Message(
         code="RAPORTY_BRAK_FOLDERU_OKRESOW",

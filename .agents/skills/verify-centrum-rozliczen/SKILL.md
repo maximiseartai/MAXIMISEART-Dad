@@ -229,9 +229,9 @@ Then confirm the evidence directory still exists.
 - `scripts/run_centrum_verification.py`: the one-command orchestrator (above).
 - `scripts/create_centrum_fixture.py --root "$runRoot"`: synthetic folder
   okresów `INEA` (one period per Status okresu, one Plik zbiorczy with a
-  Wykonawca missing from the konfiguracja wykonawców, plus a non-period folder),
-  synthetic Rejestr zleceń, a `config/` with a synthetic konfiguracja
-  wykonawców and the three Wzorce, both metrics files with a synthetic history,
+  Wykonawca missing from the Lista Wykonawców, plus a non-period folder),
+  synthetic Rejestr zleceń, a `config/` with a synthetic Lista Wykonawców
+  and the three Wzorce, both metrics files with a synthetic history,
   `fixture.json` with "today" `2026-10-19`, the expected Tablica okresów, the
   expected Wykonawcy, and the metrics facts the drive checks. `--wariant
   rok-pracy` adds Dad's year of work for `wydajnosc` (52 periods in his layout,

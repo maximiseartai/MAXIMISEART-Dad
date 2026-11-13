@@ -13,6 +13,7 @@ import {
 
 import type { Message } from "@/api/generated"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { settingsHref } from "@/lib/address"
 
 /**
  * Rodzaj banera Komunikatu: `stop` to błąd, `to_fix` Zatrzymanie, które tata poprawia sam, `declined` jego odmowa,
@@ -111,6 +112,7 @@ function Banner({ kind, children }: { kind: MessageKind; children: React.ReactNo
   )
 }
 
+/** Gdzie i Co zrobić; poprawka w oknie Ustawień (`setting`) ma przy „Co zrobić” link do swojej sekcji. */
 export function WhereAndAction({ message }: { message: Message }) {
   return (
     <>
@@ -120,7 +122,20 @@ export function WhereAndAction({ message }: { message: Message }) {
       </span>
       <span className="flex gap-2">
         <WrenchIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Co zrobić" />
-        {message.action}
+        <span>
+          {message.action}
+          {message.setting == null ? null : (
+            <>
+              {" "}
+              <a
+                href={settingsHref(message.setting)}
+                className="font-medium whitespace-nowrap text-foreground underline underline-offset-4"
+              >
+                Otwórz w Ustawieniach
+              </a>
+            </>
+          )}
+        </span>
       </span>
     </>
   )

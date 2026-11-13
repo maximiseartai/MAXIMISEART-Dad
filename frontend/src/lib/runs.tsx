@@ -8,7 +8,7 @@ import { useAction } from "@/lib/action"
 /** Okres i proces wybrane w innym miejscu (np. w Tablicy okresów) do formularza nowego Uruchomienia. */
 export type RunDraft = Pick<RunRequest, "process" | "period">
 
-/** Proces bez okresu, który bierze tylko Ustawienia taty i startuje własną operacją kontraktu. */
+/** Proces bez okresu, który bierze tylko Ustawienia Centrum i startuje własną operacją kontraktu. */
 type ProcessWithoutPeriod = "intermax" | "report_entering"
 
 /** Start Uruchomienia: proces z okresem albo proces bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów). */

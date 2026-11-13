@@ -313,8 +313,8 @@ class Unexpected(Exception):
 
 @dataclass(frozen=True)
 class Inputs:
-    """Synthetic files every consumer reads besides the Folder okresu: Rejestr zleceń, Wzorce, Konfiguracja wykonawców,
-    addresses of the Wykonawcy, and the bytes of a Plik zbiorczy that Uzupełnienie reads."""
+    """Synthetic files every consumer reads besides the Folder okresu: Rejestr zleceń, Wzorce, Lista Wykonawców
+    with the addresses of the Wykonawcy, and the bytes of a Plik zbiorczy that Uzupełnienie reads."""
 
     preparation: PreparationFixture
     worker_template: Path

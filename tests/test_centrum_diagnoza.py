@@ -14,9 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from rozliczenia import preparation_messages
-from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
-from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
@@ -247,7 +245,7 @@ def test_diagnoza_bierze_ustawienia_ze_startu_uruchomienia_a_nie_zmienione_po_za
 
     diagnosis = diagnose(centrum, run_id)
 
-    assert check(diagnosis, "Ustawienia taty") == ("passed", "Rejestr zleceń i folder okresów są na miejscu.")
+    assert check(diagnosis, "Ustawienia Centrum") == ("passed", "Rejestr zleceń i folder okresów są na miejscu.")
 
 
 def chosen_folders(centrum: PreparingCentrum, register: Path, periods: Path) -> None:
@@ -303,7 +301,7 @@ def test_diagnoza_rejestru_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_a_nie_b
     with without_access(folder):
         diagnosis = diagnose(centrum, run_id)
 
-    assert check(diagnosis, "Ustawienia taty") == ("not_checked", "Nie da się teraz odczytać: Rejestr zleceń.")
+    assert check(diagnosis, "Ustawienia Centrum") == ("not_checked", "Nie da się teraz odczytać: Rejestr zleceń.")
     assert check(diagnosis, "Pliki w OneDrive") == (
         "not_checked",
         "Nie da się teraz odczytać plików: 1. Pozostałe są na tym komputerze: 2.",
@@ -328,7 +326,7 @@ def test_diagnoza_folderu_okresow_w_folderze_bez_dostepu_wyjasnia_niedostepnosc_
     with without_access(onedrive):
         diagnosis = diagnose(centrum, run_id)
 
-    assert check(diagnosis, "Ustawienia taty") == ("not_checked", "Nie da się teraz odczytać: folder okresów.")
+    assert check(diagnosis, "Ustawienia Centrum") == ("not_checked", "Nie da się teraz odczytać: folder okresów.")
     assert diagnosis["explanation"] == explanation_of(preparation_messages.folder_inaccessible(periods))
 
 
@@ -575,7 +573,7 @@ def test_diagnoza_przygotowania_sprawdza_po_kolei_ustawienia_onedrive_rejestr_wz
     checks = diagnose(centrum, run_id)["checks"]
 
     assert [(check["label"], check["detail"]) for check in checks] == [
-        ("Ustawienia taty", "Rejestr zleceń i folder okresów są na miejscu."),
+        ("Ustawienia Centrum", "Rejestr zleceń i folder okresów są na miejscu."),
         ("Pliki w OneDrive", "Sprawdzone pliki są na tym komputerze: 3."),
         ("Rejestr zleceń", "Nie jest otwarty w Excelu, otwiera się i ma wymagane nagłówki."),
         ("Wzorzec rozliczenia wewnętrznego", "Wzorzec rozliczenia wewnętrznego.xlsx przechodzi Sprawdzanie."),
@@ -623,12 +621,12 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
     [
         (
             lambda centrum: centrum.fixture.register_path.unlink(),
-            "Ustawienia taty",
+            "Ustawienia Centrum",
             "Nie znaleziono Rejestru zleceń. Nie utworzono żadnego pliku.",
         ),
         (
             lambda centrum: centrum.fixture.periods_directory.rename(centrum.tmp_path / "INEA stary"),
-            "Ustawienia taty",
+            "Ustawienia Centrum",
             "Nie znaleziono folderu okresów. Nie utworzono żadnego pliku.",
         ),
         (
@@ -645,10 +643,12 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             "Rejestr zleceń",
             "W Rejestrze zleceń brakuje wymaganego nagłówka SKUTECZNE. Nie utworzono żadnego pliku.",
         ),
+        # D9: Diagnoza bierze Listę Wykonawców z migawki startu, więc lista zepsuta po Zatrzymaniu nie wyjaśnia
+        # Uruchomienia, które biegło na dobrej; złą listę ze startu sprawdza test_centrum_rozliczen.py.
         (
             lambda centrum: centrum.fixture.config_path.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8"),
             "Lista Wykonawców",
-            diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE)).what,
+            None,
         ),
         (
             lambda centrum: (month_periods_folder(centrum.fixture.periods_directory, "09_Wrzesień_2026") / PERIOD).mkdir(),
@@ -656,7 +656,7 @@ def test_zatrzymanie_do_maksa_bez_wzorca_wyjasnia_brak_wzorca(tmp_path: Path) ->
             None,
         ),
     ],
-    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "zla-lista-wykonawcow", "folder-okresu-w-miesiacu"],
+    ids=["brak-rejestru", "brak-folderu-okresow", "uszkodzony-rejestr", "brak-naglowka", "lista-wykonawcow-zepsuta-po-starcie", "folder-okresu-w-miesiacu"],
 )
 def test_diagnoza_wyjasnia_pierwszym_sprawdzeniem_ktore_nie_przeszlo(
     tmp_path: Path,
@@ -894,7 +894,7 @@ def test_diagnoza_przebiegu_sprawdza_wzorzec_pracownika_i_plik_zbiorczy(tmp_path
     missing = diagnose(centrum, run_id)
 
     assert [(check["label"], check["state"]) for check in passing["checks"]] == [
-        ("Ustawienia taty", "passed"),
+        ("Ustawienia Centrum", "passed"),
         ("Pliki w OneDrive", "passed"),
         ("Wzorzec rozliczenia pracownika", "passed"),
         ("Lista Wykonawców", "passed"),
@@ -1213,7 +1213,7 @@ def test_rejestr_zlecen_tylko_w_chmurze_nie_jest_przyczyna_zatrzymania_przebiegu
     diagnosis = diagnose(centrum, run_id)
 
     assert check(diagnosis, "Pliki w OneDrive") == ("passed", "Sprawdzone pliki są na tym komputerze: 2.")
-    assert check(diagnosis, "Ustawienia taty") == ("passed", "Folder okresów jest na miejscu.")
+    assert check(diagnosis, "Ustawienia Centrum") == ("passed", "Folder okresów jest na miejscu.")
 
 
 def test_pliki_tylko_w_chmurze_sprawdza_tylko_windows(tmp_path: Path) -> None:
