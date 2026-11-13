@@ -1,7 +1,8 @@
 # Coding Standards
 
 Rules for writing and reviewing code and tests in a repository where agents write every line.
-A rule that a check enforces sits in its section's table, one row per rule, beside the check that guards it, only when the check's message does not already say it or the check misses forms that review must catch (its docstring names them); the reviewer does not repeat a check.
+A rule that a check enforces sits in its section's table, one row per rule, beside the check that guards it, only when the check's message does not already say it or the check misses forms that review must catch; the reviewer does not repeat a check.
+A form that a new or changed check misses is a sample in `ZNANE_LUKI` of the check's test, which `tests/fixtures/znane_luki.py` runs through the check's real mechanisms (ruff, mypy, the check itself) and which fails, asking to remove the sample, once the check catches it; the row of that check points to this test, and the other checks keep their boundary in a docstring until #1611 moves it.
 A bullet is a judgement call that no check makes: the reviewer reports a broken bullet as Drobne, and as Ważne only with the behaviour defect it causes, proved as the skill [`przeglad`](.agents/skills/przeglad/SKILL.md) asks.
 
 ## Fixing a Mistake Class
@@ -50,7 +51,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
-| A refusal of a Centrum rozliczeń API request (`Refusal`) is created only in the refusal catalog `src/rozliczenia/centrum/refusal.py`, and every public function of it has a sample. | `test_odmowe_api_centrum_tworzy_tylko_katalog_odmow` and `test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu` in `tests/test_komunikaty_expect.py`, mypy and ruff `TID251` on the proof `refusal._CATALOG` (boundary: docstrings of the first test and of `_CATALOG`) |
+| A refusal of a Centrum rozliczeń API request (`Refusal`) is created only in the refusal catalog `src/rozliczenia/centrum/refusal.py`, and every public function of it has a sample. | `test_odmowe_api_centrum_tworzy_tylko_katalog_odmow` and `test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu` in `tests/test_komunikaty_expect.py`, mypy and ruff `TID251` on the proof `refusal._CATALOG` (known gaps: `ZNANE_LUKI`, run by `test_znane_luki_strazy_katalogu_odmow_przechodza_przez_kazdy_jego_mechanizm` in the same file) |
 | A file or folder of Dad's in a bad state (corrupt, with a BOM, in UTF-16, without access) gives a Komunikat that names it, and a file without access is „niedostępny” in it, never „uszkodzony”: read a workbook through `file_bytes`, a file of Dad's through `DadFiles.read`, and a period folder through `reading`. | `tests/test_uszkodzone_wejscia.py`, ruff `TID251` (`src/ruff.toml`), `tests/test_jeden_odczyt_skoroszytu.py` (boundary: its module docstring) |
 | The place of a bad setting in an Ustawienia Centrum file (`FieldProblem.field`, which reaches the Logi Centrum, the Historia Ustawień and the Zgłoszenie) is a `FieldPath` built only from known field names (`FieldName`) and positions, and an unknown key is named by its position, never by its text: a key in Dad's file can be a login, a name or an address. | mypy on the constructor of `FieldPath` in `src/rozliczenia/centrum/settings/files.py` (boundary: `Any` or `cast` passes mypy, and a sentence factory in `settings/messages.py` that takes `str` is left to review) |
 | Code in `src/` asks whether a file or folder is there only through `src/rozliczenia/file_state.py`. | `tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state` (boundary: docstring of `bare_file_state`) |
