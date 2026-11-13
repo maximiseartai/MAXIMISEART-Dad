@@ -240,3 +240,18 @@ def test_cell_look_daje_kazdej_komorce_kazdego_skoroszytu_styl_jak_przypisanie_p
 
     assert actual == expected
     assert {(resolved[5], resolved[6]) for index, resolved in actual if index == 1} == {(Protection(locked=False), "Good")}
+
+
+def test_wyglad_komorek_z_tym_samym_stylearray_w_dwoch_skoroszytach_bierze_tabele_wlasnego_skoroszytu() -> None:
+    # Numery w StyleArray znaczą co innego w innym skoroszycie, więc pamięć wspólna dla skoroszytów porównywałaby kopię
+    # samą ze sobą (#1455 r1).
+    cells = []
+    for name in ("Czcionka-A", "Czcionka-B"):
+        cell = cast(Worksheet, Workbook().active)["A1"]
+        cell.font = Font(name=name)
+        cells.append(cell)
+
+    looks = [cast(Font, wyglady([cell])["A1"].font).name for cell in cells]
+
+    assert looks == ["Czcionka-A", "Czcionka-B"]
+
