@@ -148,7 +148,7 @@ def _range(value: object, key: FieldName) -> TimeRange | FieldProblem:
 
 
 def _bad(place: FieldPath) -> FieldProblem:
-    return FieldProblem(place, messages.bad_field(REMINDERS_FILE, place))
+    return FieldProblem(place, messages.bad_field(REMINDERS_FILE, place, messages.SAVE_AGAIN))
 
 
 def _shown_time(moment: time) -> str:
