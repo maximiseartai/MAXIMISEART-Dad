@@ -189,6 +189,11 @@ CHANGED = {
     "skrypty-stron-pod-adresem-z-fragmentem": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypty-stron-pod-adresem-z-fragmentem.txt", Unread.SCRIPT_ADDRESSES
     ),
+    # Sam skrypt listy pod adresem spoza listy dozwolonych żądań, a reszta jak w Atrapie: jedyna część niesprawdzona.
+    "skrypt-listy-pod-adresem-z-fragmentem": Variant(
+        ROOT / "tests" / "expected" / "zgodnosc_efenix" / "skrypt-listy-pod-adresem-z-fragmentem.txt",
+        rewrites={LIST_PAGE: _replaced((f'<script src="{LIST_SCRIPT}?v=1">', f'<script src="{LIST_SCRIPT}#v1">'))},
+    ),
     "przekierowanie-strony-zlecenia": Variant(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "przekierowanie-strony-zlecenia.txt", Unread.ORDER_REDIRECT
     ),
