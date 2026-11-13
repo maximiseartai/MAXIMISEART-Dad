@@ -471,6 +471,7 @@ REFUSALS: RefusalSamples = {
     ],
     "settings_change_unknown": [refusal.settings_change_unknown],
     "settings_change_not_undoable": [refusal.settings_change_not_undoable],
+    "autostart_not_changed": [refusal.autostart_not_changed],
     "unknown_period": [refusal.unknown_period],
     "period_folder_lookup": [
         lambda: refusal.period_folder_lookup(PeriodFolderLookupError(DAD_PERIODS, PARSED_PERIOD, ())),

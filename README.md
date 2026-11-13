@@ -439,6 +439,10 @@ wystarczają zależności z `requirements.txt`, bez Node.
   z `--no-browser`: Centrum startuje samo po zalogowaniu taty, bez karty, żeby
   Przypomnienia o raporcie szły bez jego kliknięcia
   ([ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)).
+  Przełącznik „Uruchamiaj Centrum razem z Windows” w Ustawieniach (sekcja
+  Narzędzie) zakłada albo usuwa ten sam skrót (`shortcut.StartupShortcut`), a
+  jego stan to obecność skrótu, więc skrót usunięty ręcznie widać jako
+  wyłączony i jako zmianę spoza Centrum w Historii Ustawień.
   Ponowne kliknięcie rozpoznaje działające Centrum po `/api/health` (tożsamość
   i commit narzędzia, z którego wystartowało) i tylko otwiera kartę, a start z
   `--no-browser` przy działającym Centrum kończy się bez karty. Błąd

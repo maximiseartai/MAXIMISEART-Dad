@@ -68,6 +68,10 @@ FEATURES = (
             "312-ustawienia-zle-pole",
             "313-ustawienia-zly-plik",
             "314-ustawienia-historia-bez-cofniecia",
+            "330-ustawienia-autostart",
+            "331-ustawienia-autostart-waskie",
+            "332-ustawienia-autostart-spoza",
+            "333-ustawienia-autostart-bez-windows",
         ),
     ),
     Feature(

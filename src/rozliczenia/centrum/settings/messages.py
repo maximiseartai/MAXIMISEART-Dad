@@ -30,3 +30,11 @@ def periods_directory_path() -> str:
 
 def unknown_theme() -> str:
     return "Motyw może być tylko ciemny albo jasny."
+
+
+def autostart_unsupported() -> str:
+    return "Start razem z Windows działa tylko na komputerze z Windows."
+
+
+def autostart_unreadable() -> str:
+    return "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."

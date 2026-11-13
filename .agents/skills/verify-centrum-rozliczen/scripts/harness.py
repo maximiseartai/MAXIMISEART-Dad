@@ -64,6 +64,7 @@ class Switch(Enum):
     ARCHIVE_REFUSED = f"{_BOX}/odmawia-archiwum"  # every step of an Archiwum is refused (GitHub's 403)
     GITHUB_OFFLINE = f"{_GITHUB}/brak-sieci"  # GitHub's Wydania are out of reach
     REGISTER_FAULT = "awaria/odczyt-rejestru"  # reading the Rejestr zleceń raises an exception the process does not expect
+    NO_AUTOSTART = "autostart/bez-windows"  # the computer has no Windows Autostart, like a Mac
 
     def file(self, root: Path) -> Path:
         return root / self.value
@@ -119,6 +120,7 @@ class File(Enum):
     CLOCK_MOVE = "zegar/przesuniecie-min.txt"  # the minutes Centrum's clock moved forward
     # The served Centrum writes these, the drive reads them.
     CLOCK_DIED = "zegar/budzik-padl.txt"  # the traceback of the clock's wake-up thread that died
+    AUTOSTART_SHORTCUT = "autostart/Centrum rozliczeń.lnk"  # Centrum's shortcut in the Autostart folder; the drive may remove it
     EFENIX_ADDRESS = f"{_EFENIX}/adres.txt"  # the address of the Atrapa efenix
     SERVER = "server.json"  # the pid and port of the served Centrum
     # The fixture writes this, both sides read it.

@@ -1,5 +1,6 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
-okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, Historia Ustawień i cofnięcie jej wiersza.
+okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, przełącznik startu razem z Windows, Historia Ustawień i
+cofnięcie jej wiersza.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
 zła wartość to 422 z polem, plik, którego nie da się przeczytać albo zapisać, to 500, a wiersz Historii bez „Cofnij”
@@ -20,7 +21,9 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings.files import Bad, Good, Unreadable
+from rozliczenia.centrum.settings import messages
+from rozliczenia.centrum.settings.autostart import AUTOSTART, Unsupported
+from rozliczenia.centrum.settings.files import Bad, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
 from rozliczenia.centrum.settings.history import HistoryRow
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
@@ -84,6 +87,13 @@ def settings_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
     def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
         return saved(lambda current: replace(current, theme=change.theme))
 
+    @router.put("/autostart", operation_id="changeAutostart", responses=_REFUSED)
+    def change_autostart(change: settings_contract.AutostartChange) -> settings_contract.Choice:
+        result = settings.change(AUTOSTART, lambda _: change.enabled)
+        if isinstance(result, NotSaved):
+            raise refusal.autostart_not_changed()
+        return _choice(settings, result)
+
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
@@ -119,11 +129,16 @@ def _path(value: str | None) -> Path | None:
 def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
+    autostart = _describe_autostart(view.autostart)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
             return settings_contract.Settings(
-                order_register=unreadable, periods_directory=unreadable, theme=DEFAULT_THEME, folders_problem=None
+                order_register=unreadable,
+                periods_directory=unreadable,
+                theme=DEFAULT_THEME,
+                folders_problem=None,
+                autostart=autostart,
             )
         case Good(value=folders):
             problem = None
@@ -135,7 +150,18 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
         theme=folders.theme,
         folders_problem=problem,
+        autostart=autostart,
     )
+
+
+def _describe_autostart(autostart: Read[bool] | Unreadable | Unsupported) -> settings_contract.AutostartSetting:
+    match autostart:
+        case Unsupported():
+            return settings_contract.AutostartSetting(state="unsupported", reason=messages.autostart_unsupported())
+        case Unreadable():
+            return settings_contract.AutostartSetting(state="unreadable", reason=messages.autostart_unreadable())
+        case Good(value=enabled) | Bad(usable=enabled):
+            return settings_contract.AutostartSetting(state="on" if enabled else "off", reason=None)
 
 
 def _describe_path(path: Path | None, state: SettingState) -> settings_contract.PathSetting:

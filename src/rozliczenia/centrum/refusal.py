@@ -13,7 +13,7 @@ from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
 from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.message import explorer_check
+from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
 
 
@@ -139,6 +139,17 @@ def settings_change_not_undoable() -> Refusal:
     """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
 
     return _refused(404, "Tej zmiany nie da się cofnąć.")
+
+
+def autostart_not_changed() -> Refusal:
+    """Skrótu Centrum w folderze Autostart nie dało się założyć ani usunąć albo zmiany nie dało się zapisać w Historii
+    Ustawień; skrót zostaje w stanie sprzed przełączenia."""
+
+    return _refused(
+        500,
+        "Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. "
+        + refer_if("Jeśli komunikat wraca", request="przekaż go"),
+    )
 
 
 def unknown_period() -> Refusal:

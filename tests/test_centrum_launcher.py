@@ -18,10 +18,10 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.centrum import launcher, restart_guardian
-from rozliczenia.centrum.shortcut import Folder, Shortcut, shortcuts
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE, Folder, Shortcut, StartupShortcut, shortcuts
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.centrum import ToolDirectory
+from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
 from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, copy_centrum_runtime, free_port, centrum_health
 
@@ -453,3 +453,56 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert health["service"] == "centrum-rozliczen"
     assert address == f"http://127.0.0.1:{port}/"
     assert exit_code == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="The Startup shortcut and pythonw.exe are Windows-only.")
+def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_instalacji_a_usuniety_recznie_widzi_jako_wylaczony(
+    tmp_path: Path,
+) -> None:
+    desktop, from_install, from_settings = tmp_path / "pulpit", tmp_path / "autostart-instalacji", tmp_path / "autostart"
+    for folder in (desktop, from_install, from_settings):
+        folder.mkdir()
+    installed = subprocess.run(
+        [
+            sys.executable,
+            str(REPOSITORY_ROOT / "install_centrum_shortcut.py"),
+            "--folder",
+            str(desktop),
+            "--folder-autostartu",
+            str(from_install),
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=False,
+    )
+    client = CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=StartupShortcut(from_settings)))
+
+    def switch(enabled: bool) -> str:
+        response = client.put("/api/settings/autostart", json={"enabled": enabled})
+        assert response.status_code == 200, response.text
+        state: str = response.json()["settings"]["autostart"]["state"]
+        return state
+
+    switched = [switch(True), switch(True)]
+    created = sorted(from_settings.iterdir())
+    shortcut = _read_shortcut(from_settings / SHORTCUT_FILE)
+    (from_settings / SHORTCUT_FILE).unlink()
+    removed = client.get("/api/settings").json()["autostart"]["state"]
+    outside = client.get("/api/settings/history").json()["rows"][0]
+    switched += [switch(True), switch(False)]
+
+    assert installed.returncode == 0, installed.stdout
+    assert switched == ["on", "on", "on", "off"]
+    # Dwa włączenia nadpisują jeden skrót o nazwie skrótu z instalacji, a nie dokładają drugiego.
+    assert [path.name for path in created] == [SHORTCUT_FILE]
+    assert shortcut == _read_shortcut(from_install / SHORTCUT_FILE)
+    assert (removed, outside["source"], outside["changes"]) == (
+        "off",
+        "outside",
+        [{"key": "narzedzie.autostart", "before": "wlaczony", "after": "wylaczony"}],
+    )
+    assert list(from_settings.iterdir()) == []

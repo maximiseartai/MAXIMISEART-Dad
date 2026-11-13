@@ -1,4 +1,4 @@
-"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw i Historia Ustawień."""
+"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, start razem z Windows i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -52,6 +52,15 @@ PathSetting = Annotated[
 Theme = Literal["dark", "light"]
 
 
+class AutostartSetting(Model):
+    """Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+    Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+    zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``."""
+
+    state: Literal["on", "off", "unsupported", "unreadable"]
+    reason: str | None
+
+
 class SettingProblem(Model):
     """Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
     pliku i zdanie dla taty."""
@@ -68,6 +77,7 @@ class Settings(Model):
     periods_directory: PathSetting
     theme: Theme
     folders_problem: SettingProblem | None
+    autostart: AutostartSetting
 
 
 class Choice(Model):
@@ -81,6 +91,12 @@ class Choice(Model):
 
 class ThemeChange(Model):
     theme: Theme
+
+
+class AutostartChange(Model):
+    """Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa."""
+
+    enabled: bool
 
 
 class FoldersChange(Model):

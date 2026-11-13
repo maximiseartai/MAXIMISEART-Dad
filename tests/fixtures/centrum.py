@@ -28,7 +28,7 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
-from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.platform import Autostart, AutostartState, Platform
 from rozliczenia.centrum.report_reminders import ReminderRhythm
 from rozliczenia.centrum.report_box import (
     REPOSITORY,
@@ -54,6 +54,7 @@ from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
@@ -119,6 +120,37 @@ class FakePlatform:
     def choose_folder(self, title: str) -> Path | None:
         self.dialog_titles.append(title)
         return self.chosen_folders.pop(0)
+
+
+@dataclass
+class FakeAutostart:
+    """Autostart Windows zastąpiony plikiem skrótu w ``folder``: stan to obecność pliku, jak skrótu w folderze Autostart.
+
+    ``enabled`` liczy założenia skrótu, ``failure`` to odmowa systemu przy zakładaniu i usuwaniu skrótu, a ``unreadable``
+    folder Autostart, którego system nie daje teraz sprawdzić.
+    """
+
+    folder: Path
+    enabled: int = 0
+    failure: OSError | None = None
+    unreadable: bool = False
+
+    def state(self) -> AutostartState:
+        if self.unreadable:
+            raise PermissionError(13, "Odmowa dostępu", str(self.folder))
+        return "on" if (self.folder / SHORTCUT_FILE).is_file() else "off"
+
+    def enable(self) -> None:
+        if self.failure is not None:
+            raise self.failure
+        self.folder.mkdir(parents=True, exist_ok=True)
+        (self.folder / SHORTCUT_FILE).write_bytes(b"skrot")
+        self.enabled += 1
+
+    def disable(self) -> None:
+        if self.failure is not None:
+            raise self.failure
+        (self.folder / SHORTCUT_FILE).unlink(missing_ok=True)
 
 
 @dataclass
@@ -547,6 +579,7 @@ def centrum_app(
     tool: ToolDirectory,
     *,
     platform: Platform | None = None,
+    autostart: Autostart | None = None,
     log: CentrumLog | None = None,
     shutdown: Shutdown | None = None,
     today: date = TODAY,
@@ -573,7 +606,7 @@ def centrum_app(
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
     Parametr pominięty daje podróbkę testu, nigdy domyślną wartość produkcyjną ``create_app``: komputer taty
-    (``FakePlatform``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
+    (``FakePlatform``) z Autostartem w folderze ``autostart`` katalogu narzędzia (``FakeAutostart``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
     Skrzynka raportów bez maili (``FakeInbox``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm
@@ -592,6 +625,7 @@ def centrum_app(
     return create_app(
         config=tool.config,
         platform=platform or FakePlatform(),
+        autostart=autostart or FakeAutostart(tool.root / "autostart"),
         log=log,
         shutdown=shutdown or Shutdown(log),
         today=lambda: today,
@@ -699,6 +733,7 @@ class Centrum:
     tool: ToolDirectory
     report_box: FakeReportBox
     clock: ManualClock
+    autostart: FakeAutostart
 
     @property
     def settings_path(self) -> Path:
@@ -749,10 +784,11 @@ def centrum(tmp_path: Path, *, today: date = TODAY) -> Centrum:
 
     tool = ToolDirectory(tmp_path)
     platform = FakePlatform()
+    autostart = FakeAutostart(tmp_path / "autostart")
     clock = ManualClock()
     report_box = FakeReportBox(background=RUN_LOGS_IN_BACKGROUND)
-    app = centrum_app(tool, platform=platform, today=today, report_box=report_box, clock=clock)
-    return Centrum(CentrumClient(app), platform, tool, report_box, clock)
+    app = centrum_app(tool, platform=platform, autostart=autostart, today=today, report_box=report_box, clock=clock)
+    return Centrum(CentrumClient(app), platform, tool, report_box, clock, autostart)
 
 
 def view_timing(**changes: object) -> dict[str, object]:

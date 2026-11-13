@@ -32,6 +32,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -203,7 +204,7 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark", "folders_problem": None}
+    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "theme": "dark", "folders_problem": None, "autostart": AUTOSTART_SHOWN_OFF}
 
 
 def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path) -> None:
@@ -255,6 +256,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "periods_directory": NOT_SET,
         "theme": "dark",
         "folders_problem": {"field": None, "message": DAMAGED},
+        "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -300,6 +302,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "periods_directory": {"state": "inaccessible", "path": str(periods), "name": "INEA"},
             "theme": "dark",
             "folders_problem": None,
+            "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
 
@@ -318,7 +321,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
 
     assert (response.status_code, response.json()) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None, "autostart": AUTOSTART_SHOWN_OFF},
     )
 
 
@@ -339,7 +342,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
 
     assert (response.status_code, response.json()["settings"]) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None},
+        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "theme": "dark", "folders_problem": None, "autostart": AUTOSTART_SHOWN_OFF},
     )
 
 
@@ -396,6 +399,13 @@ SETTINGS_NOT_SAVED = (
     "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
     "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
 )
+AUTOSTART_NOT_CHANGED = (
+    "Nie udało się zmienić startu Centrum razem z Windows. Spróbuj ponownie. "
+    "Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie."
+)
+AUTOSTART_UNSUPPORTED = "Start razem z Windows działa tylko na komputerze z Windows."
+AUTOSTART_SHOWN_OFF = {"state": "off", "reason": None}
+AUTOSTART_UNREADABLE = "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
 
 
 @pytest.mark.parametrize(
@@ -422,6 +432,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "periods_directory": NOT_SET,
         "theme": "light",
         "folders_problem": None,
+        "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -628,6 +639,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "periods_directory": {"state": "ready", "path": str(periods), "name": "INEA"},
             "theme": "dark",
             "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
+            "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
     assert second.json() == first.json()
@@ -899,6 +911,124 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         time.tzset()
 
     assert row["at"].endswith("Z")
+
+
+AUTOSTART_ON = {"key": "narzedzie.autostart", "before": "wylaczony", "after": "wlaczony"}
+AUTOSTART_OFF = {"key": "narzedzie.autostart", "before": "wlaczony", "after": "wylaczony"}
+
+
+def autostart(app: Centrum, enabled: bool) -> Any:
+    return app.client.put("/api/settings/autostart", json={"enabled": enabled})
+
+
+def test_przelacznik_autostartu_dwa_razy_wlaczony_daje_jeden_skrot_a_wylaczony_go_usuwa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    before = app.client.get("/api/settings").json()["autostart"]["state"]
+
+    enabled, again = autostart(app, True), autostart(app, True)
+    shortcuts_after_two = sorted(path.name for path in app.autostart.folder.iterdir())
+    disabled = autostart(app, False)
+    rows = history_rows(app)
+
+    assert before == "off"
+    assert (enabled.json()["settings"]["autostart"]["state"], again.json()["settings"]["autostart"]["state"]) == ("on", "on")
+    assert shortcuts_after_two == [SHORTCUT_FILE]
+    assert (again.json()["change"], app.autostart.enabled) == (None, 1)
+    assert (disabled.json()["settings"]["autostart"]["state"], list(app.autostart.folder.iterdir())) == ("off", [])
+    assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
+        ("tata", "narzedzie", [AUTOSTART_OFF], True),
+        ("tata", "narzedzie", [AUTOSTART_ON], True),
+    ]
+    assert [enabled.json()["change"], disabled.json()["change"]] == [row["id"] for row in rows[::-1]]
+    assert "ustawienia-zmiana plik=autostart klucze=narzedzie.autostart zrodlo=tata" in app.log_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_skrot_autostartu_z_instalacji_jest_stanem_wyjsciowym_a_usuniety_recznie_to_wylaczony_z_wierszem_spoza_centrum(
+    tmp_path: Path,
+) -> None:
+    """Polecenie instalacji założyło skrót przed Wydaniem z Ustawieniami; potem ktoś usuwa go z folderu Autostart."""
+
+    app = centrum(tmp_path)
+    app.autostart.enable()
+    installed = app.client.get("/api/settings").json()["autostart"]["state"]
+    rows_after_install = history_rows(app)
+
+    app.autostart.disable()
+    removed = app.client.get("/api/settings").json()["autostart"]["state"]
+    again = app.client.get("/api/settings").json()["autostart"]["state"]
+    [outside] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{outside['id']}/undo")
+
+    assert (installed, rows_after_install) == ("on", [])
+    assert (removed, again) == ("off", "off")
+    assert (outside["source"], outside["changes"], outside["undoable"], outside["removed"]) == (
+        "outside",
+        [AUTOSTART_OFF],
+        True,
+        False,
+    )
+    assert (undone.json()["settings"]["autostart"]["state"], [path.name for path in app.autostart.folder.iterdir()]) == (
+        "on",
+        [SHORTCUT_FILE],
+    )
+    assert "ustawienia-spoza plik=autostart wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_wlaczenie_autostartu_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zostawia_skrotu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.client.get("/api/settings")
+    history = app.tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+
+    refused = autostart(app, True)
+    history.rmdir()
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (list(app.autostart.folder.iterdir()), app.client.get("/api/settings").json()["autostart"]) == ([], AUTOSTART_SHOWN_OFF)
+    assert history_rows(app) == []
+
+
+def test_skrot_autostartu_ktorego_system_nie_daje_zalozyc_zostawia_stan_bez_zmiany_i_bez_wiersza(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.autostart.failure = PermissionError(errno.EACCES, "Odmowa dostępu")
+
+    refused = autostart(app, True)
+    app.autostart.failure = None
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (app.client.get("/api/settings").json()["autostart"], history_rows(app)) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_folder_autostartu_ktorego_nie_da_sie_sprawdzic_to_zdanie_przy_przelaczniku_a_nie_skrot_usuniety(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    autostart(app, True)
+    app.autostart.unreadable = True
+
+    shown = app.client.get("/api/settings").json()["autostart"]
+    refused = autostart(app, False)
+    app.autostart.unreadable = False
+
+    assert shown == {"state": "unreadable", "reason": AUTOSTART_UNREADABLE}
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert ([path.name for path in app.autostart.folder.iterdir()], len(history_rows(app))) == ([SHORTCUT_FILE], 1)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Autostart Windows jest tylko na Windows; tu komputer bez niego.")
+def test_na_komputerze_bez_windows_przelacznik_autostartu_jest_nieaktywny_z_jednym_zdaniem(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    client = CentrumClient(centrum_app(tool, autostart=system_autostart()))
+
+    shown = client.get("/api/settings").json()["autostart"]
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    history = client.get("/api/settings/history").json()
+
+    assert shown == {"state": "unsupported", "reason": AUTOSTART_UNSUPPORTED}
+    assert (refused.status_code, refused.json()) == (422, {"message": AUTOSTART_UNSUPPORTED, "field": "autostart"})
+    assert (history["rows"], (tool.config / MEMORY_DIRECTORY / "autostart.json").exists()) == ([], False)
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

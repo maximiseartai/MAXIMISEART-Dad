@@ -29,6 +29,7 @@ ApiOperation = Literal[
     "choosePeriodsDirectory",
     "changeTheme",
     "changeFolders",
+    "changeAutostart",
     "getSettingsHistory",
     "undoSettingsChange",
     "getPeriodBoard",

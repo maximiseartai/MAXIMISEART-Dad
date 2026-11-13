@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeFolders' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -22,6 +22,36 @@ export type ApiTiming = {
      * Server Ms
      */
     server_ms: number | null;
+};
+
+/**
+ * AutostartChange
+ *
+ * Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa.
+ */
+export type AutostartChange = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * AutostartSetting
+ *
+ * Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+ * Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+ * zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``.
+ */
+export type AutostartSetting = {
+    /**
+     * State
+     */
+    state: 'on' | 'off' | 'unsupported' | 'unreadable';
+    /**
+     * Reason
+     */
+    reason: string | null;
 };
 
 /**
@@ -2759,6 +2789,7 @@ export type Settings = {
      */
     theme: 'dark' | 'light';
     folders_problem: SettingProblem | null;
+    autostart: AutostartSetting;
 };
 
 /**
@@ -4642,6 +4673,31 @@ export type GetSettingsResponses = {
 };
 
 export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
+
+export type ChangeAutostartData = {
+    body: AutostartChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/autostart';
+};
+
+export type ChangeAutostartErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeAutostartError = ChangeAutostartErrors[keyof ChangeAutostartErrors];
+
+export type ChangeAutostartResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeAutostartResponse = ChangeAutostartResponses[keyof ChangeAutostartResponses];
 
 export type ChangeFoldersData = {
     body: FoldersChange;

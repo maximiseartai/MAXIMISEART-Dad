@@ -115,6 +115,11 @@ export function changeTheme(theme: Theme) {
   return call("changeTheme", { body: { theme } })
 }
 
+/** Przełącznik startu razem z Windows: `true` zakłada skrót Centrum w folderze Autostart, `false` go usuwa. */
+export function changeAutostart(enabled: boolean) {
+  return call("changeAutostart", { body: { enabled } })
+}
+
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
 export function changeFolders(folders: FoldersChange) {
   return call("changeFolders", { body: folders })

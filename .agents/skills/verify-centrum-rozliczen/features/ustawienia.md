@@ -29,10 +29,12 @@ window) is `okno-ustawien.md`.
 - `ustawienia-wpisz-druga-bez-zmiany`: `Wpisz` saves the one path typed, without the quotes Explorer adds, and leaves the other path as it was, for either path.
 - `ustawienia-zle-ustawienie`: a wrong setting in the settings file is the server's sentence (`folders_problem`): under its field for a wrong folder okresów, above the list Foldery for a damaged file.
 - `ustawienia-historia-bez-cofniecia`: a row of Historia that cannot be undone (`Nie przyjęto`, a wrong content of the file) has no `Cofnij`.
+- `ustawienia-autostart`: the switch `Uruchamiaj Centrum razem z Windows` in Narzędzie writes or removes Centrum's shortcut in the Autostart folder and shows `Zapisano` with `Cofnij`; a shortcut removed by hand is the switch off and a row `Start razem z Windows`, `Włączony → Wyłączony`, `spoza Centrum` in Historia, whose `Cofnij` writes it back.
+- `ustawienia-autostart-bez-windows`: on a computer without Windows Autostart (a Mac) the switch is disabled and its row says the server's one sentence why.
 
 ## How to get to it (user POV)
 
-- The gear `Ustawienia` in the menu's footer, section Foldery: `Wskaż`/`Zmień` and `Wpisz` next to `Rejestr zleceń` and `Folder okresów`; section Wygląd: Motyw `Jasny`/`Ciemny`; section Historia: the changes with `Cofnij`.
+- The gear `Ustawienia` in the menu's footer, section Foldery: `Wskaż`/`Zmień` and `Wpisz` next to `Rejestr zleceń` and `Folder okresów`; section Wygląd: Motyw `Jasny`/`Ciemny`; section Narzędzie: the switch `Uruchamiaj Centrum razem z Windows`; section Historia: the changes with `Cofnij`.
 - The toast `Zapisano` after each change, with `Cofnij`.
 - `Ustaw w Ustawieniach` on the empty Okresy and next to an unset file on Uruchomienia (groups `Rejestr zleceń`, `Folder okresów`, `INTERMAX`) and Raporty (group `INTERMAX`) opens `#/ustawienia/foldery`.
 
@@ -58,7 +60,9 @@ Preconditions:
 - **Typed path keeps the other.** Open Foldery. `Wpisz Rejestr zleceń` with the fixture's path in double quotes and `Zapisz Rejestr zleceń`: the textbox closes without an alert, the settings file has the path without quotes and still the `INEA` folder okresów. The same with `Wpisz Folder okresów` and the `INEA` path in quotes: the settings file still has the Rejestr zleceń. Esc.
 - **Wrong settings file.** Open Foldery. Harness: the folder okresów in the settings file becomes the relative `INEA` by hand (`put_text`); reload. `GET /api/settings` (`api/ustawienia-zle-pole.json`) has `folders_problem.field` = `folder_okresow`; list item `Folder okresów` has the alert with its `message`, and it is the only alert in the window; capture `312`. Harness: the settings file becomes `schema_version: [` (a cut-off copy); reload. `folders_problem.field` is `null` (`api/ustawienia-zly-plik.json`); the window's one alert has its `message`, the list `Foldery` has no alert, and the alert ends above the list; capture `313`.
 - **Historia without undo.** Link `Historia`: list `Zmiany` has as many items as `GET /api/settings/history` rows (`api/ustawienia-historia-bez-cofniecia.json`), whose first two are `refused` and not `undoable`. Every refused row reads `Nie przyjęto` and has no button; the newest undoable row has button `Cofnij`; capture `314`. Harness: the good settings file back; link `Foldery`, reload: the Rejestr name and no alert, `folders_problem` is `null` (`api/ustawienia-dobry-plik.json`). Esc.
-- **Proof.** Screenshots `01`–`05`, `18`, `19`, `275`, `276`, and `306`–`314`, and `state/centrum-ustawienia.yaml`.
+- **Start with Windows.** Open Narzędzie: switch `Uruchamiaj Centrum razem z Windows` (exact) in its list item is off. Click it: `autostart/Centrum rozliczeń.lnk` appears in the run root (the scripted Autostart folder), the switch is on, the toast `Zapisano` has `Cofnij`, and `GET /api/settings` has `autostart` = `{"state": "on", "reason": null}` (`api/ustawienia-autostart-wlaczony.json`); capture `330`, then narrow to 420×860 and capture `331`. Harness: remove the shortcut by hand; reload: the switch is off. Link `Historia`: the first row reads `Start razem z Windows`, `Włączony → Wyłączony` and `spoza Centrum`; capture `332`. `Cofnij: Start razem z Windows` on it writes the shortcut back; link `Narzędzie`: the switch is on; click it: the shortcut is gone and the switch is off.
+- **Without Windows.** Harness: `Switch.NO_AUTOSTART` on (`autostart/bez-windows`); reload. `GET /api/settings` has `autostart.state` = `unsupported` (`api/ustawienia-autostart-bez-windows.json`), the switch is disabled and its list item contains `autostart.reason`; capture `333`. Harness: the switch file removed; reload: the switch is enabled again. Esc.
+- **Proof.** Screenshots `01`–`05`, `18`, `19`, `275`, `276`, `306`–`314` and `330`–`333`, and `state/centrum-ustawienia.yaml`.
 
 ## Gotchas
 
@@ -72,3 +76,4 @@ Preconditions:
 - A toast that a newer one replaced stays in the document while it slides out: find the toast on screen with `[data-slot=toast]:not([data-ending-style])`.
 - The sidebar group `Historia` is itself a list named `Historia`; the changes are the list `Zmiany`.
 - The menu with the gear is hidden on a narrow window: open Ustawienia wide, then narrow the viewport.
+- The Autostart of a verification run is never Windows' own: `serve_centrum.py` gives Centrum the file `autostart/Centrum rozliczeń.lnk` of the run root, so the drive runs the same on a Mac and on Windows.

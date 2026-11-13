@@ -4,7 +4,9 @@ import { CircleArrowUpIcon, CircleCheckIcon, CircleDashedIcon } from "lucide-rea
 import type { Configuration } from "@/api/generated"
 import { ToolUpdateAfterRestart, ToolUpdateButton, ToolUpdateStatus } from "@/components/tool-update"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import { fullDate } from "@/lib/format"
+import { useSettings } from "@/lib/settings"
 import { useToolUpdate } from "@/lib/tool-update"
 import { WithConfiguration } from "@/pages/settings/configuration"
 import { SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
@@ -27,16 +29,49 @@ const FRESHNESS: Record<Freshness, { label: string; icon: React.ReactNode }> = {
  */
 export function ToolSection() {
   return (
-    <WithConfiguration>
-      {(configuration, reload) => (
-        <Tool
-          version={configuration.version}
-          freshness={configuration.freshness}
-          offered={configuration.update_offered}
-          onFinished={reload}
+    <>
+      <WithConfiguration>
+        {(configuration, reload) => (
+          <Tool
+            version={configuration.version}
+            freshness={configuration.freshness}
+            offered={configuration.update_offered}
+            onFinished={reload}
+          />
+        )}
+      </WithConfiguration>
+      <Autostart />
+    </>
+  )
+}
+
+const AUTOSTART = "Uruchamiaj Centrum razem z Windows"
+
+/**
+ * Start Centrum razem z Windows: przełącznik zakłada albo usuwa skrót w folderze Autostart, a jego położenie to stan
+ * skrótu z serwera. Gdy przełącznika nie da się zmienić (komputer bez Windows, folder Autostart nieczytelny), jest
+ * nieaktywny, a zdanie dlaczego podaje serwer.
+ */
+function Autostart() {
+  const { settings, switchAutostart, autostartPending } = useSettings()
+
+  if (settings.state !== "ready") {
+    return null
+  }
+
+  const { state, reason } = settings.data.autostart
+
+  return (
+    <SettingsPanel label="Start">
+      <SettingRow title={AUTOSTART} description={reason ?? "Po zalogowaniu Centrum działa w tle, bez otwierania karty."}>
+        <Switch
+          aria-label={AUTOSTART}
+          checked={autostartPending ?? state === "on"}
+          disabled={reason !== null}
+          onCheckedChange={switchAutostart}
         />
-      )}
-    </WithConfiguration>
+      </SettingRow>
+    </SettingsPanel>
   )
 }
 

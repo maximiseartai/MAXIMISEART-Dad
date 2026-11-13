@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.platform import FileTypes
+from rozliczenia.centrum.platform import NO_AUTOSTART, FileTypes
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.tool_files import CONFIG_DIR
 
@@ -51,6 +51,7 @@ def main(*, output: Path = OUTPUT) -> int:
     app = create_app(
         config=CONFIG_DIR,
         platform=_NoPlatform(),
+        autostart=NO_AUTOSTART,
         log=log,
         shutdown=Shutdown(log),
     )

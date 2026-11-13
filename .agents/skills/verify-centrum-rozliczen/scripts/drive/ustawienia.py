@@ -26,7 +26,7 @@ from drive.common import (
     settle,
     unreadable,
 )
-from harness import Log
+from harness import File, Log, Switch
 
 
 FOLDERS = "#/ustawienia/foldery"
@@ -35,6 +35,7 @@ FOLDERS = "#/ustawienia/foldery"
 FEATURE = "ustawienia"
 # The narrow browser window of the window Ustawienia (full screen, sections in a combobox).
 NARROW: ViewportSize = {"width": 420, "height": 860}
+AUTOSTART = "Uruchamiaj Centrum razem z Windows"
 
 
 def drive(run: Run, page: Page) -> None:
@@ -233,6 +234,7 @@ def drive(run: Run, page: Page) -> None:
     _refusal_at_field(run, page)
     _typed_keeps_other(run, page)
     _bad_settings_file(run, page)
+    _autostart(run, page)
 
 
 def _toast(page: Page, title: str) -> Locator:
@@ -435,6 +437,69 @@ def _bad_settings_file(run: Run, page: Page) -> None:
     expect(register.get_by_text(Path(run.fixture["order_register"]).name, exact=True)).to_be_visible()
     expect(window.get_by_role("alert")).to_have_count(0)
     run.check(run.api("/api/settings", "ustawienia-dobry-plik")["folders_problem"] is None, "the good file is back")
+    close_settings(page)
+
+
+def _autostart(run: Run, page: Page) -> None:
+    """The switch in Narzędzie writes or removes Centrum's shortcut in the Autostart folder and shows whether it is
+    there: a shortcut removed by hand is off with a row „spoza Centrum”, and a computer without Windows Autostart shows
+    the switch disabled with the server's one sentence."""
+
+    run.step(FEATURE, "ustawienia-autostart")
+    shortcut = File.AUTOSTART_SHORTCUT.file(run.root)
+    window = open_settings(page, "Narzędzie")
+    row = window.get_by_role("listitem", name=AUTOSTART)
+    switch = row.get_by_role("switch", name=AUTOSTART, exact=True)
+    expect(switch).not_to_be_checked()
+    switch.click()
+    run.wait_for(shortcut.exists, "the switch writes Centrum's shortcut in the Autostart folder")
+    expect(switch).to_be_checked()
+    expect(_toast(page, "Zapisano").get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
+    shown = run.api("/api/settings", "ustawienia-autostart-wlaczony")["autostart"]
+    run.check(shown == {"state": "on", "reason": None}, f"the server says the shortcut is there ({shown})")
+    run.capture(page, "330-ustawienia-autostart", full_page=False)
+    page.set_viewport_size(NARROW)
+    try:
+        expect(switch).to_be_checked()
+        run.capture(page, "331-ustawienia-autostart-waskie", full_page=False)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+
+    # Harness: someone removes the shortcut from the Autostart folder by hand, outside Centrum.
+    shortcut.unlink()
+    page.reload()
+    expect(switch).not_to_be_checked()
+    run.check(True, "a shortcut removed by hand is the switch off")
+    window.get_by_role("link", name="Historia", exact=True).click()
+    outside = window.get_by_role("list", name="Zmiany").get_by_role("listitem").first
+    expect(outside).to_contain_text("Start razem z Windows")
+    expect(outside).to_contain_text("Włączony → Wyłączony")
+    expect(outside).to_contain_text("spoza Centrum")
+    run.check(True, "the removed shortcut is the newest row of Historia, marked „spoza Centrum”")
+    run.capture(page, "332-ustawienia-autostart-spoza", full_page=False)
+    outside.get_by_role("button", name="Cofnij: Start razem z Windows", exact=True).click()
+    run.wait_for(shortcut.exists, "„Cofnij” on that row writes the shortcut back")
+    window.get_by_role("link", name="Narzędzie", exact=True).click()
+    expect(switch).to_be_checked()
+    switch.click()
+    run.wait_for(lambda: not shortcut.exists(), "the switch off removes the shortcut")
+    expect(switch).not_to_be_checked()
+
+    run.step(FEATURE, "ustawienia-autostart-bez-windows")
+    without_windows = Switch.NO_AUTOSTART.on(run.root)
+    try:
+        page.reload()
+        shown = run.api("/api/settings", "ustawienia-autostart-bez-windows")["autostart"]
+        assert isinstance(shown, dict)
+        run.check(shown["state"] == "unsupported", f"a computer without Windows Autostart is unsupported ({shown})")
+        expect(switch).to_be_disabled()
+        expect(row).to_contain_text(shown["reason"])
+        run.check(True, "the switch is disabled with the server's one sentence why")
+        run.capture(page, "333-ustawienia-autostart-bez-windows", full_page=False)
+    finally:
+        without_windows.unlink()
+    page.reload()
+    expect(switch).to_be_enabled()
     close_settings(page)
 
 
