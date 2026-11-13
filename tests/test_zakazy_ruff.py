@@ -228,10 +228,10 @@ SHARED_PROBE = "import os\nsystem = os.name\n"
 
 def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[tuple[str, str]]:
     """``(plik, nazwa)`` każdego ``TID251`` i każdego ``import *`` (``F403``, nazwa ``F403``), które ``ruff check`` z
-    ``--ignore-noqa`` zgłasza w ``cwd``."""
+    ``--ignore-noqa`` zgłasza w ``cwd``. Reguły wybiera konfiguracja jak w CI: ``--select`` z wiersza poleceń zastąpiłby
+    jej ``ignore``, a to też zwolnienie z ``TID251``."""
     result = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--select", f"TID251,{STAR}"]
-        + ["--output-format", "json", *arguments],
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", *arguments],
         input=code,
         capture_output=True,
         text=True,
@@ -246,6 +246,7 @@ def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) ->
             STAR if finding["code"] == STAR else finding["message"].split("`")[1],
         )
         for finding in json.loads(result.stdout)
+        if finding["code"] in ("TID251", STAR)
     ]
 
 
