@@ -12,7 +12,7 @@ from typing import Any, NoReturn
 import pytest
 from _pytest.terminal import TerminalReporter
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))  # noqa: TID251 - conftest kładzie katalogi na sys.path każdego testu
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from fastapi.testclient import TestClient
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -25,10 +25,12 @@ from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.kwarantanna import KWARANTANNA
 from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 
+# Testy skrzynki GitHub importują wprost skrypty skilla verify-github-skrzynki.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".agents/skills/verify-github-skrzynki/scripts"))
 # Testy importują narzędzia tak, jak skrypt z ``tools/`` widzi je na ``sys.path``: narzędzia agenta, biblioteki i CI.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))  # noqa: TID251 - conftest kładzie katalogi na sys.path każdego testu
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))  # noqa: TID251 - conftest kładzie katalogi na sys.path każdego testu
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))  # noqa: TID251 - conftest kładzie katalogi na sys.path każdego testu
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
 
