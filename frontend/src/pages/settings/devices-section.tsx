@@ -12,6 +12,7 @@ import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { useUnsavedForm } from "@/lib/unsaved"
 import { Choice, type Option } from "@/pages/settings/quantity-rule-editor"
+import { UnreadPeriods } from "@/pages/settings/quantity-rule-preview"
 import { useQuantityRulesSave } from "@/pages/settings/quantity-rules-save"
 import { Problem, WithQuantityRules } from "@/pages/settings/quantity-rules-section"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
@@ -252,7 +253,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /**
  * Zapisy z URZĄDZENIA zleceń bez reguły w ostatnich okresach, których Lista Urządzeń nie zna; po dodaniu znikają, bo
- * każda przyjęta zmiana Ustawień czyta je od nowa. Bez podpowiedzi sekcja ich nie pokazuje.
+ * każda przyjęta zmiana Ustawień czyta je od nowa. Okres, którego Pliku zbiorczego nie dało się przeczytać, to zdanie
+ * pod nimi, jak w podglądzie reguły. Bez podpowiedzi i takich okresów sekcja ich nie pokazuje.
  */
 function Suggestions({
   editing,
@@ -267,7 +269,13 @@ function Suggestions({
 
   useReloadOnChange(reload)
 
-  if (resource.state !== "ready" || resource.data.suggestions.length === 0) {
+  if (resource.state !== "ready") {
+    return null
+  }
+
+  const { suggestions, unread } = resource.data
+
+  if (suggestions.length === 0 && unread.length === 0) {
     return null
   }
 
@@ -276,15 +284,18 @@ function Suggestions({
       <p aria-hidden className="px-1 text-xs font-medium text-muted-foreground">
         Z ostatnich okresów, spoza listy
       </p>
-      <SettingsPanel label="Z ostatnich okresów">
-        {resource.data.suggestions.map((suggestion) =>
-          editing === suggestion.spelling ? (
-            <React.Fragment key={suggestion.spelling}>{editor}</React.Fragment>
-          ) : (
-            <SuggestionRow key={suggestion.spelling} suggestion={suggestion} add={() => add(suggestion.spelling)} />
-          )
-        )}
-      </SettingsPanel>
+      {suggestions.length === 0 ? null : (
+        <SettingsPanel label="Z ostatnich okresów">
+          {suggestions.map((suggestion) =>
+            editing === suggestion.spelling ? (
+              <React.Fragment key={suggestion.spelling}>{editor}</React.Fragment>
+            ) : (
+              <SuggestionRow key={suggestion.spelling} suggestion={suggestion} add={() => add(suggestion.spelling)} />
+            )
+          )}
+        </SettingsPanel>
+      )}
+      <UnreadPeriods periods={unread} className="px-1 text-pretty" />
     </section>
   )
 }

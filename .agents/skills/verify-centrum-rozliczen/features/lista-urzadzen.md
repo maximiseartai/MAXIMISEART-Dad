@@ -22,6 +22,9 @@ that rule's sentence. Each change has its row in Historia as the component's sen
 - `lista-urzadzen-historia`: the newest row of Historia reads `Lista Urządzeń` and `Dodano: Składnik „…”`, the next one
   `Po: Składnik „gateway”, też „zyxel”, „nowy router”, grupa router.`; „Cofnij” of both brings the list of the Release
   back.
+- `lista-urzadzen-nieczytelny-plik`: with the settled Plik zbiorczy not a workbook, the region `Z ostatnich okresów`
+  has no item and the sentence `Nie dało się przeczytać Pliku zbiorczego okresu 06_12_10_2026.` (the one of the rule
+  preview), and the server says `unread` with that period; at 420×860 too, without a horizontal scroll.
 - `lista-urzadzen-waskie-okno`: at 420×860 the form of `gateway` wraps without a horizontal scroll.
 
 ## How to get to it (user POV)
@@ -50,10 +53,15 @@ description (row 19); run alone (`--feature lista-urzadzen`) the drive runs `prz
 - **Historia.** `open_settings` on `Historia`: the first item of `Zmiany` has `Lista Urządzeń` and `Dodano: Składnik „`,
   the second the gateway sentence after. Screenshot `375`. `Cofnij: Lista Urządzeń` of the first, then of the third
   item (the gateway change after the new undo row): the server's list equals the one from before.
+- **Unreadable Plik zbiorczy.** The harness overwrites the settled Plik zbiorczy with bytes that are not a workbook;
+  `open_settings` on `Urządzenia`: the region has the sentence and no item, the server `{"suggestions": [], "unread":
+  ["06_12_10_2026"]}`. Screenshot `377`. Viewport 420×860, `goto` `#/ustawienia/urzadzenia`: the region has the
+  sentence, no horizontal scroll. Screenshot `378`. In `finally` the viewport goes back and the file gets its bytes
+  and modification time back.
 - **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/urzadzenia`, the title `Ustawienia/Urządzenia`, the pencil
   `Zmień gateway`: no horizontal scroll. Screenshot `376`. `Anuluj`, then the viewport goes back to 1440×1000 (also in
   `finally`).
-- **Proof.** Screenshots `370`–`376` and the checks in `drive.txt`.
+- **Proof.** Screenshots `370`–`378` and the checks in `drive.txt`.
 
 ## Gotchas
 

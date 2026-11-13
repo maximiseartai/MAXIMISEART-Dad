@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 import urllib.request
 
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, open_settings, read_text, settings_title, settings_window
+from atrapy.scenariusz_centrum import LAST_COMPLETE
+from drive.common import (
+    DAD_VIEWPORT,
+    Run,
+    close_settings,
+    open_settings,
+    period_files,
+    read_text,
+    settings_title,
+    settings_window,
+)
 
 FEATURE = "lista-urzadzen"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -20,20 +31,26 @@ MARKER = re.compile(r"centrum-syn-row\S*", re.IGNORECASE)
 MASK = "<znacznik wiersza>"
 TAKEN = "Zapis „zyxel” ma już składnik „gateway”. Jeden zapis należy do jednego składnika."
 NEEDED = "Składnika „technicolor” potrzebuje reguła: Jeśli URZĄDZENIA zawierają „technicolor”"
+UNREAD = f"Nie dało się przeczytać Pliku zbiorczego okresu {LAST_COMPLETE}."
 
 
 def _masked(text: str) -> str:
     return MARKER.sub(MASK, text)
 
 
-def _suggestions(run: Run, name: str) -> list[dict[str, Any]]:
-    """The server's suggestions; the evidence keeps them with the row markers masked (workbook content)."""
+def _answer(run: Run, name: str) -> dict[str, Any]:
+    """The server's suggestions and unread periods; the evidence keeps them with the row markers masked (workbook
+    content)."""
 
     with urllib.request.urlopen(run.url.rstrip("/") + SUGGESTIONS_URL, timeout=30) as response:
         answer: dict[str, Any] = json.load(response)
     shown = json.dumps(answer, ensure_ascii=False, indent=2)
     (run.evidence / "api" / f"{name}.json").write_text(_masked(shown) + "\n", encoding="utf-8")
-    suggestions = answer["suggestions"]
+    return answer
+
+
+def _suggestions(run: Run, name: str) -> list[dict[str, Any]]:
+    suggestions = _answer(run, name)["suggestions"]
     assert isinstance(suggestions, list)
     return suggestions
 
@@ -139,6 +156,9 @@ def drive(run: Run, page: Page) -> None:
     )
     close_settings(page)
 
+    run.step(FEATURE, "lista-urzadzen-nieczytelny-plik")
+    _unreadable_collective_file(run, page)
+
     run.step(FEATURE, "lista-urzadzen-waskie-okno")
     page.set_viewport_size(NARROW)
     try:
@@ -153,3 +173,40 @@ def drive(run: Run, page: Page) -> None:
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _unreadable_collective_file(run: Run, page: Page) -> None:
+    """The settled Plik zbiorczy that cannot be read: the region says so in one sentence, on a wide and a narrow window.
+    The harness puts the file back byte for byte with its modification time, so the features after this one read it."""
+
+    collective = period_files(run)[1]
+    kept, stat = collective.read_bytes(), collective.stat()
+    print(f"  harness: the Plik zbiorczy of {LAST_COMPLETE} is not a workbook for this step", flush=True)
+    collective.write_bytes(b"to nie jest skoroszyt")
+    try:
+        page.goto(run.url + "#/okresy")
+        window = open_settings(page, "Urządzenia")
+        region = window.get_by_role("region", name="Z ostatnich okresów", exact=True)
+        expect(region).to_contain_text(UNREAD)
+        expect(region.get_by_role("listitem")).to_have_count(0)
+        run.check(
+            _answer(run, "urzadzenia-podpowiedzi-nieczytelny-plik") == {"suggestions": [], "unread": [LAST_COMPLETE]},
+            "a Plik zbiorczy that cannot be read gives no suggestions and one sentence naming its period, as the preview",
+        )
+        region.scroll_into_view_if_needed()
+        _capture(run, page, "377-urzadzenia-nieczytelny-plik")
+        close_settings(page)
+        page.set_viewport_size(NARROW)
+        page.goto(run.url + "#/ustawienia/urzadzenia")
+        expect(settings_title(page)).to_have_text("Ustawienia/Urządzenia")
+        region = settings_window(page).get_by_role("region", name="Z ostatnich okresów", exact=True)
+        expect(region).to_contain_text(UNREAD)
+        region.scroll_into_view_if_needed()
+        page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        run.check(True, "on a narrow window the sentence wraps without a horizontal scroll")
+        _capture(run, page, "378-urzadzenia-nieczytelny-plik-waskie")
+        close_settings(page)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+        collective.write_bytes(kept)
+        os.utime(collective, ns=(stat.st_atime_ns, stat.st_mtime_ns))

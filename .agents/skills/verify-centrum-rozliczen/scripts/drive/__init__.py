@@ -325,6 +325,8 @@ FEATURES = (
             "374-urzadzenia-po-podpowiedzi",
             "375-urzadzenia-historia",
             "376-urzadzenia-waskie",
+            "377-urzadzenia-nieczytelny-plik",
+            "378-urzadzenia-nieczytelny-plik-waskie",
         ),
         needs=("przebieg-rozliczen",),
     ),
