@@ -432,6 +432,9 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
     else:
         try:
             if templates == "synthetic":
+                with zipfile.ZipFile(root / COLLECTIVE_TEMPLATE) as collective_template:
+                    if b"<workbook " not in collective_template.read("xl/workbook.xml"):
+                        errors.append("Wzorzec pliku zbiorczego has a namespace prefix in xl/workbook.xml, unlike Dad's")
                 _check_internal_settlement(period_directory / INTERNAL_SETTLEMENT_NAME, errors)
                 _check_collective_file(period_directory / COLLECTIVE_FILE_NAME, errors)
             else:
