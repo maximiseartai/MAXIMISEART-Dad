@@ -48,7 +48,8 @@ from atrapy.wzorce import write_settlement_template
 
 # Two rows of zeros below the 6 Zlecenia skuteczne prove that Przygotowanie keeps the Wzorzec below its written rows.
 COLLECTIVE_ZERO_ROWS = 8
-# Wzorzec rozliczenia pracownika shaped like Dad's: GODZINA in A17, its own rate and rows 1–16 unlike the Plik zbiorczy.
+# Wzorzec rozliczenia pracownika shaped like Dad's: GODZINA in A17, its own rate and rows 1–16 unlike the Plik zbiorczy;
+# its Stawki sheet beyond the active one proves the Rozliczenie pracownika keeps every other sheet of the Wzorzec.
 WORKER_TEMPLATE_ROWS = 40
 # ADRES of order 4 (row 9): neither yellow nor plain, so the Plik zbiorczy shows it only when it copies the Rejestr.
 REGISTER_HIGHLIGHTS = {
@@ -109,7 +110,7 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
     worker_template = config_directory / WORKER_TEMPLATE_NAME
     if with_worker_template:
         if templates_from is None:
-            write_settlement_template(worker_template, "GODZINA", WORKER_TEMPLATE_ROWS, comments=True)
+            write_settlement_template(worker_template, "GODZINA", WORKER_TEMPLATE_ROWS, comments=True, rates_sheet=True)
         else:
             shutil.copyfile(templates_from / WORKER_TEMPLATE_NAME, worker_template)
     write_worker_list(config_directory / WORKER_LIST_NAME)

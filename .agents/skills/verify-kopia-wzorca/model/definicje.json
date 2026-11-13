@@ -72,14 +72,14 @@
     "cały plik": "ae1d58e00e00de4f"
   },
   "tools/lib/atrapy/wzorce.py": {
-    "cały plik": "77364fcae5fb591f"
+    "cały plik": "ef809e72bb406d9d"
   },
   "tools/lib/atrapy/settlement.py": {
     "write_template": "189c5454d173d42b",
     "WORKER_TEMPLATE_COLUMN_WIDTHS": "dbb22dbcdb7ffbab"
   },
   "tools/lib/atrapy/workbooks.py": {
-    "add_external_link_fixture": "6f308ab01d359bc3",
+    "add_external_link_fixture": "efb47092c20f1e3e",
     "refused_by_copy": "8bacdd43c6977f0c",
     "_rewrite_worksheets": "1cb1b3078f75debd",
     "_REFUSED": "f22739f90ca45b32"

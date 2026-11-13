@@ -454,10 +454,13 @@ class _TemplateSheet:
 # --- części pakietu ---------------------------------------------------------------------------
 
 
-def _content_types(*, linked: bool, comments: bool = False) -> str:
+def _content_types(*, linked: bool, comments: bool = False, sheets: int = 1) -> str:
     overrides = {
         "/xl/workbook.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
-        "/xl/worksheets/sheet1.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+        **{
+            f"/xl/worksheets/sheet{number}.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+            for number in range(1, sheets + 1)
+        },
         "/xl/styles.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
         "/xl/sharedStrings.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
         "/docProps/core.xml": "application/vnd.openxmlformats-package.core-properties+xml",
@@ -519,13 +522,13 @@ def _app(sheet_name: str) -> str:
     )
 
 
-def _workbook(sheet_name: str, filter_range: str, *, linked: bool) -> str:
+def _workbook(sheet_name: str, filter_range: str, *, linked: bool, other_sheets: str = "") -> str:
     external = '<externalReferences><externalReference r:id="rId2"/></externalReferences>' if linked else ""
     return (
         f'{_XML}<workbook xmlns="{_MAIN_NS}" xmlns:r="{_REL_NS}">'
         '<fileVersion appName="xl" lastEdited="7" lowestEdited="6" rupBuild="27928"/><workbookPr/>'
         '<bookViews><workbookView xWindow="0" yWindow="0" windowWidth="29040" windowHeight="15720"/></bookViews>'
-        f'<sheets><sheet name="{sheet_name}" sheetId="1" r:id="rId1"/></sheets>{external}'
+        f'<sheets><sheet name="{sheet_name}" sheetId="1" r:id="rId1"/>{other_sheets}</sheets>{external}'
         f'<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">{filter_range}'
         '</definedName></definedNames><calcPr calcId="191029"/></workbook>'
     )
@@ -566,6 +569,11 @@ _VML_DRAWING = (
     '<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>8, 15, 15, 2, 10, 15, 19, 1</x:Anchor>'
     "<x:AutoFill>False</x:AutoFill><x:Row>16</x:Row><x:Column>7</x:Column></x:ClientData></v:shape></xml>"
 )
+_RATES_SHEET = (
+    f'{_XML}<worksheet xmlns="{_MAIN_NS}"><sheetData><row r="1">'
+    '<c r="A1" t="inlineStr"><is><t>stawka syntetyczna</t></is></c><c r="B1"><v>12</v></c>'
+    "</row></sheetData></worksheet>"
+)
 _SHEET_RELS = _relationships(
     [(f"{_OFFICE}/vmlDrawing", "../drawings/vmlDrawing1.vml"), (f"{_OFFICE}/comments", "../comments1.xml")]
 )
@@ -583,24 +591,28 @@ def _write_package(path: Path, parts: Sequence[tuple[str, str]]) -> None:
 
 
 def write_settlement_template(
-    path: Path, first_header: str, data_rows: int = FULL_DATA_ROWS, *, comments: bool = False
+    path: Path, first_header: str, data_rows: int = FULL_DATA_ROWS, *, comments: bool = False, rates_sheet: bool = False
 ) -> None:
     """Wzorzec z nagłówkami w wierszu 17: rozliczenia pracownika (``GODZINA``) albo pliku zbiorczego (``MIASTO``).
 
     ``comments`` dodaje komentarz komórki H17 z relacjami arkusza, jak we Wzorcu rozliczenia pracownika taty.
+    ``rates_sheet`` dodaje za aktywnym arkusz ``Stawki`` z wartościami, które plik z Wzorca ma zachować.
     """
 
     styles, strings = _Styles(), _SharedStrings()
     sheet_xml, calc_chain_xml = _TemplateSheet(first_header, data_rows, styles, strings).parts(comments=comments)
-    workbook_rels = _relationships(
-        [
-            (f"{_OFFICE}/worksheet", "worksheets/sheet1.xml"),
-            (f"{_OFFICE}/externalLink", "externalLinks/externalLink1.xml"),
-            (f"{_OFFICE}/styles", "styles.xml"),
-            (f"{_OFFICE}/sharedStrings", "sharedStrings.xml"),
-            (f"{_OFFICE}/calcChain", "calcChain.xml"),
-        ]
-    )
+    targets = [
+        (f"{_OFFICE}/worksheet", "worksheets/sheet1.xml"),
+        (f"{_OFFICE}/externalLink", "externalLinks/externalLink1.xml"),
+        (f"{_OFFICE}/styles", "styles.xml"),
+        (f"{_OFFICE}/sharedStrings", "sharedStrings.xml"),
+        (f"{_OFFICE}/calcChain", "calcChain.xml"),
+    ]
+    rates = [("xl/worksheets/sheet2.xml", _RATES_SHEET)] if rates_sheet else []
+    if rates:
+        targets.append((f"{_OFFICE}/worksheet", "worksheets/sheet2.xml"))
+    other_sheets = f'<sheet name="Stawki" sheetId="2" r:id="rId{len(targets)}"/>' if rates else ""
+    workbook_rels = _relationships(targets)
     commented = (
         [
             ("xl/comments1.xml", _COMMENTS),
@@ -613,11 +625,15 @@ def write_settlement_template(
     _write_package(
         path,
         [
-            ("[Content_Types].xml", _content_types(linked=True, comments=comments)),
+            ("[Content_Types].xml", _content_types(linked=True, comments=comments, sheets=1 + len(rates))),
             ("_rels/.rels", _PACKAGE_RELS),
-            ("xl/workbook.xml", _workbook("Sheet1", f"Sheet1!$A${HEADER_ROW}:$AY${HEADER_ROW}", linked=True)),
+            (
+                "xl/workbook.xml",
+                _workbook("Sheet1", f"Sheet1!$A${HEADER_ROW}:$AY${HEADER_ROW}", linked=True, other_sheets=other_sheets),
+            ),
             ("xl/_rels/workbook.xml.rels", workbook_rels),
             ("xl/worksheets/sheet1.xml", sheet_xml),
+            *rates,
             ("xl/styles.xml", styles.xml()),
             ("xl/sharedStrings.xml", strings.xml()),
             ("xl/externalLinks/externalLink1.xml", _EXTERNAL_LINK),
