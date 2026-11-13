@@ -1,4 +1,4 @@
-"""Wskazanie folderów: Dad picks the folder okresów and the Rejestr zleceń in Windows' own windows, then opens a folder.
+"""Wskazanie folderów: in Ustawienia, section Foldery, Dad picks his files in Windows' own windows, then opens a folder.
 
 The pickers are the production tkinter dialogs of ``_TkPlatform``, opened by Centrum in its request thread. The drive
 answers them the way Dad does, by typing the path into the dialog's name box and confirming; Explorer is the real
@@ -13,7 +13,7 @@ import time
 from playwright.sync_api import Page, expect
 import yaml
 
-from windows_drive.common import DriveFailure, Run, same_path, wait_for
+from windows_drive.common import DriveFailure, Run, close_settings, open_settings, same_path, settings_section, settings_window, wait_for
 import windows_desktop
 
 FEATURE = "wskazanie-folderow"
@@ -58,26 +58,34 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "folder-okresow")
     page.goto(run.url)
-    page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
+    page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).first.click()
+    expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    folders = settings_section(page)
+    folders.get_by_role("button", name="Wskaż Folder okresów", exact=True).click()
     _pick(run, PERIODS_DIALOG, periods, "folder-okresow")
+    expect(folders.get_by_role("listitem", name="Folder okresów")).to_contain_text(periods.name, timeout=20_000)
+    run.check(same_path(str(_settings(run).get("folder_okresow")), periods), "the settings file holds the picked folder okresów")
+    run.record("ustawienia-folder", run.get("/api/settings"))
+    close_settings(page)
     table = page.get_by_role("table", name="Tablica okresów")
     expect(table).to_be_visible(timeout=20_000)
     # The last complete period depends on today's date, so only the periods with a folder on disk are checked.
     for token in run.facts["board"]:
         if (periods / token).is_dir():
             expect(table.get_by_role("row").filter(has_text=token)).to_have_count(1)
-    run.check(same_path(str(_settings(run).get("folder_okresow")), periods), "the settings file holds the picked folder okresów")
-    run.record("ustawienia-folder", run.get("/api/settings"))
     run.capture(page, "tablica-okresow")
 
     run.step(FEATURE, "rejestr-zlecen")
-    page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
+    folders = open_settings(page, "Foldery")
+    folders.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     _pick(run, REGISTER_DIALOG, register, "rejestr-zlecen")
-    group = page.get_by_role("group", name="Rejestr zleceń")
-    expect(group).to_contain_text(register.name, timeout=20_000)
+    row = folders.get_by_role("listitem", name="Rejestr zleceń")
+    expect(row).to_contain_text(register.name, timeout=20_000)
+    expect(row.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     run.check(same_path(str(_settings(run).get("rejestr_zlecen")), register), "the settings file holds the picked Rejestr zleceń")
     run.record("ustawienia-rejestr", run.get("/api/settings"))
     run.capture(page, "rejestr-zlecen")
+    close_settings(page)
 
     run.step(FEATURE, "otwarcie-folderu")
     before = {window.handle for window in windows_desktop.visible_windows() if window.cls == windows_desktop.EXPLORER}

@@ -1,8 +1,9 @@
 name: Verify Centrum na Windowsie
 
 # The skill verify-centrum-na-windowsie on a fresh Windows machine: Dad's installation, the shortcut, native windows,
-# and Aktualizacja narzędzia with the restart guardian. It runs on changes to what only Windows can prove, and on
-# demand (`run_on_github.py` in the skill dispatches it and downloads the evidence).
+# and Aktualizacja narzędzia with the restart guardian. It runs on changes to what only Windows can prove or to what
+# the drive clicks (the committed frontend build in static/), and on demand (`run_on_github.py` in the skill dispatches
+# it and downloads the evidence). The paths are the skill's `pilnuje:` (tests/test_skille_dla_zmiany.py).
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,7 @@ on:
       - run_centrum.py
       - install_centrum_shortcut.py
       - frontend/src/lib/tool-update.tsx
+      - src/rozliczenia/centrum/static/**
       - requirements.txt
       - src/rozliczenia/centrum/launcher.py
       - src/rozliczenia/centrum/platform.py
@@ -31,6 +33,8 @@ on:
       - src/rozliczenia/centrum/restart_guardian.py
       - src/rozliczenia/centrum/tool_update.py
       - src/rozliczenia/centrum/tool_updates.py
+      - src/rozliczenia/centrum/tool_freshness.py
+      - src/rozliczenia/centrum/configuration_router.py
       - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
       - tools/lib/atrapy/scenariusz_centrum.py
