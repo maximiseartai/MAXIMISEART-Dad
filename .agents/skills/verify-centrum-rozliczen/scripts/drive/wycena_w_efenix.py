@@ -23,6 +23,7 @@ from drive.common import (
     remove_tree,
     result_of_start,
     run_logs,
+    start_new,
     stop_banner,
 )
 from drive.teksty import BELL_FRESH
@@ -57,6 +58,21 @@ DONE_OK_FORWARDED = "Przekazane do akceptacji"
 # Maks's Mac (seven runs on 11.11.2026, four of them at once), and the default 10 s of Run.wait_for ran out on the
 # Windows runner of CI on main ca200191a (#1296).
 PRICING_S = 60
+# The tab sends the next start request this late, once: the server still shows the Wycena before it, finished, when the
+# drive reads it first, as on the Windows runner of CI on main 5f6940a61 (#1570), and not only there.
+LATE_START_MS = 1500
+LATE_START = """delay => {
+    const send = window.fetch
+    window.fetch = (input, init) => {
+        // Read without new Request(input): it would take the body of a Request passed as input.
+        const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+        if (method !== "POST" || url.pathname !== "/api/runs") return send(input, init)
+        window.fetch = send
+        window.startSentLate = true
+        return new Promise(resolve => setTimeout(resolve, delay)).then(() => send(input, init))
+    }
+}"""
 
 Json = dict[str, Any]
 
@@ -321,18 +337,24 @@ def _forward(run: Run, page: Page, source: Path) -> None:
     confirm = page.get_by_role("alertdialog", name="Uzupełnić i zapisać?")
     expect(confirm).to_contain_text(FORWARD_HINT)
     run.capture(page, "267-efenix-z-zapisem-potwierdzenie")
-    confirm.get_by_role("button", name=FORWARD, exact=True).click()
+    page.evaluate(LATE_START, LATE_START_MS)
+    first = start_new(run, "efenix-z-zapisem", confirm.get_by_role("button", name=FORWARD, exact=True).click)
+    print(f"  harness: the tab sends the start request {LATE_START_MS} ms after the click", flush=True)
     # The window of the first Wycena kept Dad's session in its profile; it asks for the login only when it lost it.
     asks = [False]
 
     def login_or_end() -> bool:
         view = current_run(run, "efenix-z-zapisem-start")
+        # Only another id than the first Wycena's is this one (start_new), so the wait for the end below is its own.
+        if view.get("run", {}).get("id") in (None, first):
+            return False
         progress = view.get("progress")
         step = progress.get("step") if isinstance(progress, dict) else None
         asks[0] = isinstance(step, dict) and step.get("label") == LOGIN
         return asks[0] or view["state"] == "finished" or (isinstance(step, dict) and step.get("total", 0) > 0)
 
     run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=30)
+    run.check(page.evaluate("() => window.startSentLate === true"), "harness: the start request left the tab late")
     if asks[0]:
         _log_in(run)
     result: Json = finished_result(run, "efenix-z-zapisem-wynik", timeout_s=PRICING_S)
