@@ -25,12 +25,16 @@ from drive.common import (
     version_line,
 )
 from drive.teksty import UPDATE_BUTTON
-from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 INACCESSIBLE_TEMPLATE = "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program."
+# The sentences Dad reads in the section Wykonawcy, copied on purpose (docs/agents/skille.md, „Co wyrocznia bierze z src”).
+BROKEN_WORKER_LIST = f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
+INACCESSIBLE_WORKER_LIST = (
+    "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę."
+)
 NARROW_VIEWPORT: ViewportSize = {"width": 390, "height": 844}
 # Synthetic matters left by moving the old Wykonawcy files, as the migration writes them (ADR 0032, DESIGN §4.2).
 UNRESOLVED_LOGIN, UNRESOLVED_ADDRESS = "obcy.login", "obcy.login@przyklad.invalid"
@@ -258,7 +262,7 @@ def drive(run: Run, page: Page) -> None:
         worker_list.write_text("schema_version: 1\nwykonawcy: [niedomknięta lista\n", encoding="utf-8")
         page.reload()
         open_settings(page, "Wykonawcy")
-        sentence = settings_messages.damaged(WORKERS_FILE)
+        sentence = BROKEN_WORKER_LIST
         expect(alerts.filter(has_text=sentence)).to_have_count(1)
         expect(window.get_by_text("Na liście nie ma jeszcze Wykonawców.")).to_have_count(0)
         run.check(
@@ -279,7 +283,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "konfiguracja-niedostepna-lista-wykonawcow")
     with unreadable(worker_list):
         page.reload()
-        message = alerts.filter(has_text=settings_messages.worker_list_unreadable())
+        message = alerts.filter(has_text=INACCESSIBLE_WORKER_LIST)
         expect(message).to_have_count(1)
         run.check(
             all(word not in message.inner_text() for word in ("uszkodzon", "niepoprawn")),
@@ -290,7 +294,7 @@ def drive(run: Run, page: Page) -> None:
         workers = _workers_answer(run, "konfiguracja-niedostepna-lista-wykonawcow")
         run.check(
             (workers["state"], workers["problem"])
-            == ("unreadable", {"field": None, "message": settings_messages.worker_list_unreadable()}),
+            == ("unreadable", {"field": None, "message": INACCESSIBLE_WORKER_LIST}),
             "the server reports the Lista Wykonawców as unreadable, with the sentence the section shows",
         )
         run.capture(page, "14a-konfiguracja-niedostepna-lista-wykonawcow")
