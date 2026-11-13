@@ -79,7 +79,7 @@ from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
-from tests.fixtures.centrum import ROOT, ToolDirectory, run_events, views_until, write_report_key
+from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -3061,6 +3061,61 @@ def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_na
 
     assert switched.status_code == 200, switched.json()
     assert [reminder.worker for reminder, _ in mailbox.sends] == reminded
+
+
+def _assigned(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres ``NEW_ADDRESS`` u Wykonawcy ``worker``."""
+
+    return client.post(f"/api/settings/workers/{worker['logins'][0]}/addresses", json={"address": NEW_ADDRESS})
+
+
+def _edited(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """Formularz Wykonawcy ``worker`` z jego loginami, nazwą i adresami, do których tata dopisał ``NEW_ADDRESS``."""
+
+    form = {"logins": worker["logins"], "name": worker["name"], "addresses": [*worker["addresses"], NEW_ADDRESS]}
+    return client.put(f"/api/settings/workers/{worker['logins'][0]}", json=form)
+
+
+@pytest.mark.parametrize("change", [_assigned, _edited], ids=["przypisanie-adresu", "formularz"])
+@pytest.mark.parametrize(
+    ("active", "reminders"),
+    [(False, True), (True, False), (False, False)],
+    ids=["nieaktywny", "bez-przypomnien", "nieaktywny-bez-przypomnien"],
+)
+def test_dopisanie_adresu_przypisaniem_albo_formularzem_zostawia_reszte_wykonawcy_a_przypomnienia_go_omijaja(
+    tmp_path: Path, change: Callable[[CentrumClient, dict[str, Any]], Any], active: bool, reminders: bool
+) -> None:
+    """ADR 0032 (D13), W1 #1650 r1: tata dopisuje Annie adres przyciskiem „Przypisz do Wykonawcy…” albo formularzem.
+    Zmienia się tylko lista adresów: loginy (także drugi), nazwa, pierwsze adresy, Nieaktywny i Przypomnienia o raporcie
+    zostają, więc następne sprawdzenie przypomnień dalej omija Annę, a Jan je dostaje."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    anna = WorkerEntry(["anna.kowalska", "anna.k2"], "Anna Kowalska", [ANNA, "anna.k2@przyklad.invalid"], active, reminders)
+    listed = WorkerList.of([WorkerEntry(["jan.testowy"], "Jan Testowy", [JAN]), anna])
+    assert isinstance(listed, WorkerList), listed
+    write_worker_list(centrum.tool.worker_list, listed)
+    before = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    changed = change(centrum.client, before)
+    after = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200, changed.json()
+    assert after == {**before, "addresses": [*before["addresses"], NEW_ADDRESS]}
+    assert (before["active"], before["reminders"]) == (active, reminders)
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["jan.testowy"]
+
+
+def _listed_worker(client: CentrumClient, login: str) -> dict[str, Any]:
+    """Wykonawca z pierwszym loginem ``login`` z sekcji Wykonawcy w Ustawieniach."""
+
+    [worker] = [worker for worker in client.get("/api/settings").json()["workers"]["workers"] if worker["logins"][0] == login]
+    return dict(worker)
 
 
 # Treść przypomnienia za 9.11 ze stopką „Pozdrawiam / Tata”, jaką Centrum wysyłało przed Ustawieniami (spec #1344).
