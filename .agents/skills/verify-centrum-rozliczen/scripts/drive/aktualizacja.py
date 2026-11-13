@@ -23,6 +23,7 @@ from drive.common import (
     release_only,
     remove,
     served_version,
+    settings_title,
     settings_window,
     version_line,
 )
@@ -320,7 +321,7 @@ def drive(run: Run, page: Page) -> None:
         expect(toast).to_be_visible(timeout=RESTART_TIMEOUT_MS)
         expect(toast).to_contain_text(f"Centrum działa w wersji {newest[:7]}.")
         run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
-        expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Narzędzie")
+        expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
         run.check(True, "the reloaded tab is back on Ustawienia, section Narzędzie, in the new version")
         card = _tool_card(page)
         updated_commit, since = served_version(run)
@@ -607,7 +608,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     message = _tool_card(page).get_by_role("alert").filter(has_text=UNEXPECTED)
     expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)
     run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
-    expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Narzędzie")
+    expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
     expect(message).to_contain_text("narzędzie na tym komputerze")
     expect(message).to_contain_text(
         "Narzędzie działa dalej w poprzedniej wersji. Kliknij „Zaktualizuj narzędzie” jeszcze raz. "
