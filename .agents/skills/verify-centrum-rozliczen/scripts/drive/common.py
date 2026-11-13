@@ -786,14 +786,22 @@ def finished_result(run: Run, name: str, *, replacing: str | None = None, timeou
     return result
 
 
-def result_of_start(run: Run, name: str, start: Callable[[], object]) -> dict[str, Any]:
-    """The result of the Uruchomienie that ``start`` (Dad's click) starts, once it finished.
+def start_new(run: Run, name: str, start: Callable[[], object]) -> str | None:
+    """Dad's click ``start``, which starts an Uruchomienie; the id of the one shown before it (``api/<name>-przed.json``),
+    ``None`` when none was.
 
-    The Uruchomienie shown before the click (``api/<name>-przed.json``) is not the new one, however soon it is read."""
+    A click does not wait for the tab's start request, so the server can still show that one, even finished, however
+    soon the drive reads it (#1570): only another id is the new Uruchomienie, so pass the id as ``replacing``."""
 
     before = current_run(run, f"{name}-przed")
     start()
-    return finished_result(run, name, replacing=before["run"]["id"] if "run" in before else None)
+    return str(before["run"]["id"]) if "run" in before else None
+
+
+def result_of_start(run: Run, name: str, start: Callable[[], object]) -> dict[str, Any]:
+    """The result of the Uruchomienie that ``start`` (Dad's click) starts, once it finished (``start_new``)."""
+
+    return finished_result(run, name, replacing=start_new(run, name, start))
 
 
 def run_again(run: Run, outcome: Locator, name: str) -> dict[str, Any]:
