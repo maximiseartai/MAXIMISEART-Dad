@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 from rozliczenia.centrum.settings.files import FieldPath
 
@@ -231,6 +231,26 @@ def needed_by_release_rules(component: str) -> str:
     return (
         f"Reguły ilości z Wydania potrzebują składnika „{component}”, którego nie ma na Liście Urządzeń, więc Centrum "
         "bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”."
+    )
+
+
+TakenAction = Literal["zapis", "skladnik", "nazwa"]
+"""Jak tata zwalnia zapis składnika z Wydania: usuwa go ze składnika z innymi zapisami, usuwa cały składnik albo zmienia
+jego nazwę."""
+
+
+def release_component_taken(component: str, owner: str, how: TakenAction) -> str:
+    """Składnik z Listy Urządzeń z Wydania, którego potrzebują Reguły ilości z Wydania, a którego każdy zapis ma składnik z
+    listy taty, więc Centrum liczy bez niego; ``component``: jego pierwszy zapis, który ma składnik ``owner``."""
+
+    action = {
+        "zapis": f"usuń zapis „{component}” ze składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
+        "skladnik": f"usuń składnik „{owner}”: ołówek przy nim, potem „Usuń składnik”",
+        "nazwa": f"zmień nazwę składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
+    }[how]
+    return (
+        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
+        f"Centrum liczy bez niego. Żeby liczyło z nim, {action}."
     )
 
 

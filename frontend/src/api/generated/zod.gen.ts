@@ -1908,7 +1908,9 @@ export const zSettingProblem = z.object({
  * QuantityRulesSettings
  *
  * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
- * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;
+ * ``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania
+ * liczą bez niego.
  */
 export const zQuantityRulesSettings = z.object({
     rules: z.array(zQuantityRuleSentence),

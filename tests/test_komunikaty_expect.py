@@ -27,7 +27,7 @@ import pkgutil
 import re
 from types import ModuleType
 import typing
-from typing import Final
+from typing import Final, get_args
 
 import pytest
 
@@ -182,6 +182,11 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "rule_without_action": [settings_messages.rule_without_action],
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
+            "needed_by_release_rules": [partial(settings_messages.needed_by_release_rules, "wizja")],
+            "release_component_taken": [
+                partial(settings_messages.release_component_taken, "instalacja ręczna", "instalacja ręczna", how)
+                for how in get_args(settings_messages.TakenAction)
+            ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
             ],
@@ -559,6 +564,8 @@ UI_TEXTS: Final = {
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
     "Zostaw moją": "frontend/src/pages/worker-reports/day-details.tsx",
+    "Zapisz": "frontend/src/pages/settings/devices-section.tsx",
+    "Usuń składnik": "frontend/src/pages/settings/devices-section.tsx",
 }
 # Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
 # albo napis UI w postaci, której ``_ui_text`` nie czyta.
@@ -574,6 +581,7 @@ QUOTES_OUTSIDE_UI: Final = {
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
     "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
+    "wizja": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
 }
 
 

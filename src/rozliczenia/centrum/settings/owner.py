@@ -13,8 +13,9 @@ Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_checked``: odczyt,
 zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego nie pasuje, jest zły tak samo jak plik z
 uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
-dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania. Plik, który zaczyna pasować dopiero po zmianie drugiego, ma
-wtedy wiersz ``spoza`` jak zmiana jego treści.
+dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania; składnik,
+którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest dobra (``quantity_rules``). Plik, który zaczyna
+pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści.
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -94,7 +95,14 @@ from rozliczenia.centrum.settings.history import (
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, devices_problem, quantity_rules, rules_problem
+from rozliczenia.centrum.settings.quantity_rules import (
+    DEVICES,
+    RULES,
+    devices_problem,
+    quantity_rules,
+    rules_problem,
+    taken_problem,
+)
 from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
 from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
@@ -128,11 +136,15 @@ class SettingsSnapshot:
 @dataclass(frozen=True)
 class QuantityRulesView:
     """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, i problem każdego pliku (``None``:
-    plik dobry). Plik, który nie pasuje do drugiego, ma problem jak zły plik."""
+    plik dobry). Plik, który nie pasuje do drugiego, ma problem jak zły plik. Lista Urządzeń, której zapisy ma składnik z
+    Listy Urządzeń z Wydania, a Reguły ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim
+    (``taken_problem``). ``source_rules``: reguły z pliku albo z Wydania, z których powstały te liczone; zapis listy
+    uzupełnia ją do nich (``completed_devices``)."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
+    source_rules: tuple[QuantityRule, ...]
 
 
 @dataclass(frozen=True)
@@ -445,8 +457,12 @@ class CentrumSettings:
     def _quantity_rules(self) -> QuantityRulesView:
         rules = self._observe(RULES)
         devices = self._observe(DEVICES)
+        usable_rules, usable_devices = _usable(rules, RULES), _usable(devices, DEVICES)
         return QuantityRulesView(
-            quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)), _problem(rules, RULES), _problem(devices, DEVICES)
+            quantity_rules(usable_rules, usable_devices),
+            _problem(rules, RULES),
+            _problem(devices, DEVICES) or taken_problem(usable_rules, usable_devices),
+            usable_rules,
         )
 
     def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
@@ -657,9 +673,9 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
     rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
-    # Migawka bierze tylko wartości: zdanie problemu listy (``release``) jej nie zmienia.
+    release = settings_bytes(config / RULES.name) is None
     devices = _read_only(
-        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=False)
+        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)
     )
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),

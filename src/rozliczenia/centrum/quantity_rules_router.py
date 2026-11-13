@@ -178,9 +178,11 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         """Zmiana Listy Urządzeń: najpierw formularz i reguły, którymi liczy Centrum (odmowa z polem albo ze zdaniem
         reguły), potem zapis właściciela Ustawień na bieżącej wartości pliku, z id nowego składnika spoza kluczy
         Historii (jak reguła). Lista, w której reguły z Wydania mają składnik z listy z Wydania (``completed_devices``),
-        zapisuje się razem z nim."""
+        zapisuje się razem z nim, uzupełniona przed zmianą i po niej: zmiana, która zwalnia zapis składnika z Wydania,
+        zapisuje go od razu."""
 
-        now = settings.quantity_rules().rules
+        view = settings.quantity_rules()
+        now = view.rules
         # Id nowego składnika nie zmienia ani formularza, ani odmowy, więc sprawdzenie nie czyta Historii; id nadaje zapis.
         after = device_forms.edited(now.devices.components, edit, frozenset())
         if isinstance(after, UnknownComponent):
@@ -192,8 +194,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
             raise refusal.setting_refused(needed)
 
         def applied(current: tuple[Component, ...], keys: frozenset[str]) -> tuple[Component, ...]:
-            changed = device_forms.edited(completed_devices(current, now.rules), edit, device_ids(keys))
-            return changed if isinstance(changed, tuple) else current
+            changed = device_forms.edited(completed_devices(current, view.source_rules), edit, device_ids(keys))
+            return completed_devices(changed, view.source_rules) if isinstance(changed, tuple) else current
 
         match settings.change_with_used_keys(DEVICES, applied):
             case Saved(change=change):

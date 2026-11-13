@@ -9,7 +9,10 @@ Urządzeń (dobrej samej w sobie) albo do ostatniej dobrej, a ``devices_problem`
 procesy. Plik, który do drugiego nie pasuje, to złe ustawienie z ostatnią dobrą wartością, więc procesy liczą ostatnią
 dobrą parą (``quantity_rules``). Reguły ilości z Wydania (tata nie ma pliku reguł) pasować nie muszą: Wydanie mogło je
 zmienić pod Listą Urządzeń taty, więc zła jest wtedy lista, a procesy biorą brakujący składnik z Listy Urządzeń z
-Wydania (``completed_devices``), bez zmiany pliku taty.
+Wydania (``completed_devices``), bez zmiany pliku taty. Zapis taty wygrywa: składnik z Wydania dochodzi tylko z zapisami,
+których lista taty nie ma, a składnik, którego każdy zapis ma lista taty, nie dochodzi wcale. Lista bez takiego składnika
+nie jest zła, a reguły liczą tak, jakby żadne zlecenie go nie miało (``without_components``); sekcja Urządzenia mówi o nim
+zdaniem (``taken_problem``).
 
 Wartością pliku są same krotki reguł i składników, bo cofnięcie (``restore``) może złożyć wartość, której ``parse`` nie
 przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz Historii to ``reguly.<id>`` albo
@@ -19,7 +22,7 @@ przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 import json
 from typing import Final, Generic, Protocol, TypeVar
@@ -35,6 +38,7 @@ from rozliczenia.quantity_engine import (
     QuantityRules,
     QuantityRulesRefused,
     RulesProblem,
+    without_components,
 )
 from rozliczenia.quantity_rules_file import (
     DEFAULT_QUANTITY_RULES,
@@ -221,49 +225,100 @@ def devices_problem(
     """Problem Listy Urządzeń dobrej samej w sobie razem z regułami, którymi liczą procesy (``rules``): składnik, którego
     reguła potrzebuje, a lista go nie ma. Przy regułach z pliku taty nazwany jak w sekcji Urządzenia, która pokazuje
     wtedy ostatnią dobrą listę (``devices_good``; składnik spoza niej ma tylko swój identyfikator). Przy Regułach ilości z
-    Wydania (``release``: tata nie ma pliku reguł) nazwany jak na Liście Urządzeń z Wydania, z której procesy go biorą
-    (``completed_devices``)."""
+    Wydania (``release``: tata nie ma pliku reguł) tylko składnik, który procesy biorą z Listy Urządzeń z Wydania
+    (``completed_devices``), nazwany jak w sekcji: jego pierwszym zapisem spoza listy. Składnik z Wydania, którego każdy
+    zapis ma lista, problemem listy nie jest (``taken_problem``)."""
 
-    match _refusal(rules, devices):
-        case None:
-            return None
-        case RulesProblem(component=str() as missing) if release:
-            return FieldProblem(None, messages.needed_by_release_rules(_name(missing, DEFAULT_QUANTITY_RULES.devices.components)))
-        case RulesProblem(component=str() as missing):
-            return FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, _name(missing, devices_good)))
-        case problem:
-            return _problem(DEVICES_FILE, problem)
+    problem = _refusal(rules, devices)
+    if problem is None:
+        return None
+    completion = _completion(devices, rules) if release else None
+    if completion is not None:
+        joined = completion.joined
+        return FieldProblem(None, messages.needed_by_release_rules(joined[0].spellings[0])) if joined else None
+    if problem.component is not None:
+        return FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, _name(problem.component, devices_good)))
+    return _problem(DEVICES_FILE, problem)
+
+
+def taken_problem(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> FieldProblem | None:
+    """Zdanie sekcji Urządzenia o składniku z Listy Urządzeń z Wydania, którego potrzebują reguły ``rules``, a którego
+    każdy zapis ma lista ``devices``, więc procesy liczą bez niego (``None``: takiego składnika nie ma). Zdanie mówi, jak
+    zwolnić jego pierwszy zapis: usunąć go ze składnika z innymi zapisami, usunąć składnik, którego nie potrzebuje żadna
+    reguła, którą liczą procesy, albo zmienić nazwę składnika, którego taka reguła potrzebuje."""
+
+    completion = _completion(devices, rules)
+    if completion is None or not completion.absent:
+        return None
+    spelling = completion.absent[0].spellings[0]
+    owner = next(component for component in devices if spelling in component.spellings)
+    how: messages.TakenAction
+    if len(owner.spellings) > 1:
+        how = "zapis"
+    elif _refusal(completion.rules, tuple(component for component in completion.devices if component.id != owner.id)) is None:
+        how = "skladnik"
+    else:
+        how = "nazwa"
+    return FieldProblem(None, messages.release_component_taken(spelling, owner.spellings[0], how))
 
 
 def completed_devices(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> tuple[Component, ...]:
     """Lista ``devices`` ze składnikami z Listy Urządzeń z Wydania, których potrzebują reguły ``rules``, a lista ich nie
-    ma, na końcu; lista, która do reguł pasuje albo której tak uzupełnić się nie da, zostaje bez zmian. Tak procesy liczą
-    Regułami ilości z Wydania, gdy Wydanie zmieniło je pod Listą Urządzeń taty, a tata nie ma pliku reguł."""
+    ma, na końcu, każdy tylko z zapisami, których lista nie ma (zapis taty wygrywa); składnik bez takiego zapisu nie
+    dochodzi. Lista, której nie da się tak uzupełnić, zostaje bez zmian. Tak procesy liczą Regułami ilości z Wydania, gdy
+    Wydanie zmieniło je pod Listą Urządzeń taty, a tata nie ma pliku reguł."""
 
-    release = {component.id: component for component in DEFAULT_QUANTITY_RULES.devices.components}
-    completed = devices
-    while (problem := _refusal(rules, completed)) is not None:
-        missing = release.get(problem.component or "")
-        if missing is None or missing in completed:
-            return devices
-        completed = (*completed, missing)
-    try:
-        DeviceList(completed)
-    except QuantityRulesRefused:
-        return devices
-    return completed
+    completion = _completion(devices, rules)
+    return devices if completion is None else completion.devices
 
 
 def quantity_rules(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> QuantityRules:
     """Reguły ilości, którymi liczą procesy: reguły i lista przyjęte razem. Przyjęcie pilnuje, że do siebie pasują, poza
     Regułami ilości z Wydania (tata bez pliku reguł), którym brakujące składniki daje Lista Urządzeń z Wydania
-    (``completed_devices``). Reguły ilości z Wydania z ich Listą Urządzeń zostają tylko bez dobrej pary: listy nie da się
-    teraz przeczytać, a ostatnie dobre reguły taty potrzebują składnika, którego lista z Wydania nie ma."""
+    (``completed_devices``), a bez składnika, którego każdy zapis ma lista taty, liczą tak, jakby żadne zlecenie go nie
+    miało. Reguły ilości z Wydania z ich Listą Urządzeń zostają tylko bez dobrej pary: listy nie da się teraz przeczytać,
+    a ostatnie dobre reguły taty potrzebują składnika, którego lista z Wydania nie ma."""
 
+    completion = _completion(devices, rules)
+    if completion is None:
+        return DEFAULT_QUANTITY_RULES
     try:
-        return QuantityRules(rules, DeviceList(completed_devices(devices, rules)))
+        return QuantityRules(completion.rules, DeviceList(completion.devices))
     except QuantityRulesRefused:
         return DEFAULT_QUANTITY_RULES
+
+
+@dataclass(frozen=True)
+class _Completion:
+    """Lista ``devices`` uzupełniona o składniki z Listy Urządzeń z Wydania z zapisami spoza listy (``joined``) i reguły
+    ``rules`` bez składników z Wydania, których każdy zapis ma lista (``absent``)."""
+
+    devices: tuple[Component, ...]
+    rules: tuple[QuantityRule, ...]
+    joined: tuple[Component, ...]
+    absent: tuple[Component, ...]
+
+
+def _completion(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> _Completion | None:
+    """Uzupełnienie listy ``devices`` do reguł ``rules`` (``completed_devices``); ``None``: reguła potrzebuje składnika,
+    którego nie ma ani na liście, ani na Liście Urządzeń z Wydania."""
+
+    release = {component.id: component for component in DEFAULT_QUANTITY_RULES.devices.components}
+    taken = {spelling for component in devices for spelling in component.spellings}
+    joined: dict[str, Component] = {}
+    absent: dict[str, Component] = {}
+    while (problem := _refusal(without_components(rules, frozenset(absent)), (*devices, *joined.values()))) is not None:
+        missing = release.get(problem.component or "")
+        if missing is None:
+            return None
+        free = tuple(spelling for spelling in missing.spellings if spelling not in taken)
+        if free:
+            joined[missing.id] = replace(missing, spellings=free)
+        else:
+            absent[missing.id] = missing
+    return _Completion(
+        (*devices, *joined.values()), without_components(rules, frozenset(absent)), tuple(joined.values()), tuple(absent.values())
+    )
 
 
 def _name(component: str, devices: tuple[Component, ...]) -> str:

@@ -709,3 +709,11 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     }
     assert added.status_code == 200, added.text
     assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
+
+
+def test_podpowiedzi_listy_urzadzen_przy_pliku_zbiorczym_ktorego_nie_da_sie_przeczytac_maja_jego_okres(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    centrum.collective_file.write_bytes(b"to nie jest skoroszyt")
+
+    assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [], "unread": [PERIOD]}

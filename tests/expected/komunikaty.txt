@@ -1449,6 +1449,18 @@ rule_hour [zdanie]
 needed_by_rules [zdanie]
   Plik lista-urzadzen.yaml w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.
 
+needed_by_release_rules [zdanie]
+  Reguły ilości z Wydania potrzebują składnika „wizja”, którego nie ma na Liście Urządzeń, więc Centrum bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”.
+
+release_component_taken #1 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń zapis „instalacja ręczna” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+
+release_component_taken #2 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, usuń składnik „instalacja ręczna”: ołówek przy nim, potem „Usuń składnik”.
+
+release_component_taken #3 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+
 quantity_rules_problem [zdanie]
   Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
 

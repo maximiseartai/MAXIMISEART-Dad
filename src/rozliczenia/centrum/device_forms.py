@@ -7,7 +7,8 @@ nazwy, zapisu z gwiazdką i zapisu, który ma już inny składnik, nazwany jego 
 potrzebuje reguła, to odmowa ze zdaniem tej reguły (``needed_by``), a resztę niezmienników listy sprawdza silnik
 (``DeviceList``). Przy zapisie właściciel Ustawień sprawdza jeszcze raz listę razem z regułami (``CentrumSettings``).
 
-Nowy składnik dostaje id ze swojej nazwy (spacje na „-”, zajęte z kolejnym numerem) i staje na końcu listy. Zajęte jest
+Nowy składnik dostaje id ze swojej nazwy (każdy ciąg znaków innych niż litery i cyfry na „-”, bo id stoi w adresie jego
+zmiany i usunięcia; zajęte z kolejnym numerem) i staje na końcu listy. Zajęte jest
 id składnika z listy i każde id z wierszy Historii Ustawień listy (``used``), więc „Cofnij” starszego wiersza nie rusza
 składnika dodanego później pod tą samą nazwą. Zmieniony zostaje na swoim miejscu z tym samym id, więc reguły, które go
 potrzebują, działają dalej z nowymi zapisami.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import re
 from typing import Final, assert_never
 
 from rozliczenia.centrum.contract import quantity_rules as contract
@@ -34,6 +36,8 @@ from rozliczenia.quantity_engine import (
 )
 
 _GROUP_OF: Final[Mapping[contract.DeviceGroup, DeviceGroup]] = {shown: group for group, shown in GROUPS.items()}
+_NOT_IN_ID: Final = re.compile(r"[\W_]+")
+"""Znaki, których id składnika nie ma: wszystko poza literami i cyframi („/”, „?”, „#”, „.” psują adres w przeglądarce)."""
 
 
 @dataclass(frozen=True)
@@ -144,10 +148,10 @@ def _component(form: contract.ComponentForm, identifier: str, others: tuple[Comp
 
 
 def _new_id(components: tuple[Component, ...], form: contract.ComponentForm, used: frozenset[str]) -> str:
-    """Id nowego składnika z jego nazwy: ``ont x`` → ``ont-x``, zajęte na liście albo w Historii → ``ont-x-2``; składnik
-    bez nazwy i tak odpada."""
+    """Id nowego składnika z jego nazwy: ``ont x`` → ``ont-x``, ``ont/stb`` → ``ont-stb``, zajęte na liście albo w Historii
+    → ``ont-x-2``; składnik bez nazwy i tak odpada."""
 
-    base = device_spelling(form.name).replace(" ", "-") or "skladnik"
+    base = _NOT_IN_ID.sub("-", device_spelling(form.name)).strip("-") or "skladnik"
     taken = {component.id for component in components} | used
     return next(
         candidate

@@ -611,6 +611,32 @@ def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
     return None
 
 
+def without_components(rules: tuple[QuantityRule, ...], absent: frozenset[str]) -> tuple[QuantityRule, ...]:
+    """Reguły ``rules`` tak, jakby żadne zlecenie nie miało składników ``absent``, bez odwołań do nich: reguła z warunkiem
+    „zawierają” taki składnik nie działa nigdy, więc odpada, warunek „nie zawierają” go zachodzi zawsze, więc odpada sam,
+    a wpis razy liczba albo sztuki takiego składnika jest zerem, więc odpada wpis. Reguła „wpisz”, której nie zostaje żaden
+    wpis, odpada; jedyna różnica od reguły z takim składnikiem nigdy nieznalezionym jest wtedy, gdy jej warunki go nie
+    wymagają: działałaby, wpisując zero (``fired``, a z warunkiem „dokładnie” brałaby zlecenie innym regułom)."""
+
+    if not absent:
+        return rules
+    kept: list[QuantityRule] = []
+    for rule in rules:
+        conditions = tuple(
+            condition for condition in rule.conditions if not (isinstance(condition, ContainsComponent) and condition.component in absent)
+        )
+        if any(isinstance(condition, ContainsComponent) and condition.component in absent and not condition.negated for condition in rule.conditions):
+            continue
+        action = rule.action
+        if isinstance(action, Fill):
+            writes = tuple(write for write in action.writes if write.component not in absent)
+            if not writes:
+                continue
+            action = Fill(writes)
+        kept.append(QuantityRule(rule.id, conditions, rule.scope, action))
+    return tuple(kept)
+
+
 def _check_rules(rules: tuple[QuantityRule, ...], components: frozenset[str] | None) -> None:
     """Niezmienniki reguł; ``components``: identyfikatory składników Listy Urządzeń, ``None``: bez sprawdzania odwołań."""
 
