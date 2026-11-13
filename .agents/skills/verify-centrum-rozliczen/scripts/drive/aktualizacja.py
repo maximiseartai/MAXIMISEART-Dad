@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 import subprocess
 
-from playwright.sync_api import Locator, Page, expect
+from playwright.sync_api import Locator, Page
 
 from drive.common import (
     Run,
@@ -27,6 +27,7 @@ from drive.common import (
     settings_title,
     version_line,
 )
+from drive.waiting import Budget, expect
 from harness import File, Pace, Switch
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
@@ -55,8 +56,6 @@ UPDATE_PACING_MS = 8000
 RESTART_PACING_MS = 3000
 # Long enough for the harness to put „ok” back after the guardian's failure and before the old version reads it.
 OK_ON_OLD_VERSION_PACING_MS = 5000
-# The restart guardian waits up to 60 s for the new Centrum; the tab reloads when it answers.
-RESTART_TIMEOUT_MS = 60_000
 # The read of the configuration (`/api/configuration`) keeps GitHub's answer about the newest Wydanie for 10 minutes of Centrum's clock.
 MAIN_KEPT_MIN = 10
 # A Wydanie GitHub names but the update does not take: the clone and the local origin never had this commit.
@@ -139,7 +138,7 @@ def _drive_no_connection(run: Run, page: Page, card: Locator, clone: Path, first
             page.unroute("**/api/tool-update")
         card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
         message = card.get_by_role("alert", name="Ostrzeżenie")
-        expect(message).to_contain_text(NO_CONNECTION, timeout=20_000)
+        expect(message).to_contain_text(NO_CONNECTION, timeout=Budget.UPDATE.ms)
         expect(_status(page, READ_FAILED)).to_have_count(0)
         expect(message).to_contain_text("narzędzie na tym komputerze")
         expect(message).to_contain_text(RETRY)
@@ -295,7 +294,7 @@ def drive(run: Run, page: Page) -> None:
 
     try:
         run.step(FEATURE, "aktualizacja-ponowny-start")
-        expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
+        expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.UPDATE.ms)
         expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
         # The card shows the restart once the server says it restarts, before the old Centrum closes its port;
         # on Windows the old one still answers then.
@@ -312,7 +311,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         run.step(FEATURE, "aktualizacja-zaktualizowano")
         toast = page.get_by_role("region", name="Notifications").get_by_role("dialog", name=UPDATED)
-        expect(toast).to_be_visible(timeout=RESTART_TIMEOUT_MS)
+        expect(toast).to_be_visible(timeout=Budget.RESTART.ms)
         expect(toast).to_contain_text(f"Centrum działa w wersji {newest[:7]}.")
         run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
         expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
@@ -383,7 +382,7 @@ def drive(run: Run, page: Page) -> None:
         card = settings_section(page)
         expect(card).to_contain_text("Jest nowsza wersja")
         card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
-        expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=20_000)
+        expect(card.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=Budget.UPDATE.ms)
         expect(card.get_by_role("alert")).to_have_count(0)
         run.check(_head(clone) == newest, "after the failed installation the tool is up to date on the newest commit")
         _github_main(run, newest)
@@ -439,7 +438,7 @@ def _drive_failed_installation(
 
     run.step(FEATURE, "aktualizacja-instalacja-nieudana")
     message = card.get_by_role("alert").filter(has_text=LIBRARIES_FAILED)
-    expect(message).to_be_visible(timeout=20_000)
+    expect(message).to_be_visible(timeout=Budget.UPDATE.ms)
     expect(message).to_contain_text("Narzędzie działa dalej w poprzedniej wersji.")
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
@@ -490,7 +489,7 @@ def _drive_new_version_not_starting(
     before_health = run.api("/api/health", "aktualizacja-nie-wystartowala-health-przed")
     page.evaluate("window.przedPonownymStartem = true")
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
-    expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
+    expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.UPDATE.ms)
     expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
     run.wait_for(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
     _entered(_status(page, RESTARTING))
@@ -503,7 +502,7 @@ def _drive_new_version_not_starting(
 
     run.step(FEATURE, "aktualizacja-nie-wystartowala")
     message = page.get_by_role("alert").filter(has_text=NEW_VERSION_FAILED)
-    expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)
+    expect(message).to_be_visible(timeout=Budget.RESTART.ms)
     run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
     expect(page.get_by_role("heading", name="Uruchomienia", exact=True)).to_be_visible()
     run.check(True, "the tab reloaded on Uruchomienia, a page with no button of its own, and shows the Komunikat there")
@@ -583,11 +582,11 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     expect(card).to_contain_text("Jest nowsza wersja")
     page.evaluate("window.przedPonownymStartem = true")
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
-    expect(_status(page, RESTARTING)).to_be_visible(timeout=20_000)
+    expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.UPDATE.ms)
     run.wait_for(
         lambda: result.exists() and read_json(result)["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA",
         "the guardian moved the clone back and wrote the failure",
-        timeout_s=20,
+        timeout_s=Budget.UPDATE,
     )
     print(
         "  harness: the disk refused the guardian both the removal of „ok” and the write of the failure, so „ok” stays",
@@ -600,7 +599,7 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     remove(restart_pacing)
 
     message = settings_section(page).get_by_role("alert").filter(has_text=UNEXPECTED)
-    expect(message).to_be_visible(timeout=RESTART_TIMEOUT_MS)
+    expect(message).to_be_visible(timeout=Budget.RESTART.ms)
     run.check(page.evaluate("window.przedPonownymStartem === undefined"), "the tab reloaded by itself")
     expect(settings_title(page)).to_have_text("Ustawienia/Narzędzie")
     expect(message).to_contain_text("narzędzie na tym komputerze")

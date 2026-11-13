@@ -1,4 +1,5 @@
-"""The drive's one way to wait until a file or a state of the run is ready, and the budgets that limit a wait.
+"""The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
+drive's ``expect`` of Playwright, whose assertions wait a budget too.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -14,6 +15,7 @@ import json
 import time
 from typing import TypeVar
 
+from playwright.sync_api import Expect
 import yaml
 
 # A file of the run in a state the server or the harness has not finished: missing, refused for a moment (Windows,
@@ -33,8 +35,28 @@ POLL_S = 0.1
 class Budget(Enum):
     """The longest a wait may take, in seconds, named by what the drive waits for."""
 
+    # An assertion of ``expect`` sees the state it names on the screen: Playwright's own default, which every assertion
+    # of the drive without ``timeout=`` has waited; a longer one would lengthen each failure of a mutant of the drive.
+    ASSERTION = 5.0
     # Centrum answers on its screen, through its API or in the run's files to what Dad or the harness has just done.
     SCREEN = 10.0
+    # A step of Aktualizacja narzędzia: Git, pip or the guardian of the restart answers after the pacing of the harness.
+    UPDATE = 20.0
+    # Centrum started again by Aktualizacja narzędzia answers: its guardian waits up to 60 s for it, and the tab reloads
+    # when it answers.
+    RESTART = 60.0
+
+    @property
+    def ms(self) -> float:
+        """The budget in milliseconds, the unit of a limit of Playwright."""
+
+        return self.value * 1000
+
+
+# The drive's ``expect``: an assertion without ``timeout=`` waits ``Budget.ASSERTION``. An instance of its own, so that
+# ``expect`` imported straight from Playwright keeps Playwright's default.
+expect = Expect()
+expect.set_options(timeout=Budget.ASSERTION.ms)
 
 
 class TimedOut(Exception):

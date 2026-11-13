@@ -22,11 +22,11 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize, expect
+from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize
 import yaml
 
 from drive import feature
-from drive.waiting import Budget, TimedOut, until
+from drive.waiting import Budget, TimedOut, expect, until
 from harness import File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -233,7 +233,7 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = Budget.SCREEN.value) -> None:
+    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: Budget | float = Budget.SCREEN) -> None:
         """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
         yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
 
@@ -661,7 +661,12 @@ def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touc
 
 @contextmanager
 def dad_tab(
-    page: Page, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False, cpu: int = 1, timeout_ms: int = 10_000
+    page: Page,
+    *,
+    viewport: ViewportSize = DAD_VIEWPORT,
+    touch: bool = False,
+    cpu: int = 1,
+    timeout_ms: float = Budget.SCREEN.ms,
 ) -> Iterator[Page]:
     """A second window of the drive's browser (``dad_context``), its processor ``cpu`` times slower; closed after."""
 
