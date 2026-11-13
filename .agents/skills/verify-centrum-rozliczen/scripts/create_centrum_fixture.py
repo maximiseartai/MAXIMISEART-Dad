@@ -422,6 +422,8 @@ def _dad_layout(root: Path) -> dict[str, object]:
             ["29_05_10_2026", "collective_file_prepared", False],
             ["22_28_09_2026", "no_period_files", False],
         ],
+        # 27_02_11_2026 starts after the fixture's "today", so Tablica okresów never shows it
+        "on_screen": ["13_19_10_2026", LAST_COMPLETE, "29_05_10_2026", "22_28_09_2026"],
     }
 
 

@@ -24,10 +24,10 @@ from rozliczenia.centrum import (
     refusal,
     reminder_messages,
     report_messages,
-    runs,
     start_problems,
     update_messages,
 )
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem
@@ -182,7 +182,7 @@ PREPARATION_SAMPLES: Samples = {
         lambda: messages.incomplete_period_refused(
             PERIOD, "uruchom proces w Centrum rozliczeń i przy decyzji wybierz „Kontynuuj”"
         ),
-        lambda: messages.incomplete_period_refused(PERIOD, runs.CONTINUE_HINT),
+        lambda: messages.incomplete_period_refused(PERIOD, runs_contract.CONTINUE_HINT),
     ],
     "write_failed": [lambda: messages.write_failed(PERIOD_DIRECTORY)],
     "write_failed_with_file_left": [

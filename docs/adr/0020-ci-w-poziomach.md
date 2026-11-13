@@ -8,6 +8,7 @@ ADR 0021 zastępuje też zdanie poziomu 2, że skrypty mutacji skilla biegną na
 Zdanie poziomu 3, że Change mutations na `main` nie biegną, też przestało obowiązywać: biegną nocą na `main` (#564).
 Opisuje stan docelowy, który wchodził krokami, jeden PR na krok; wszystkie kroki weszły 26.10 (#541, #542, #551, #552, #553, #554), więc Kontekst opisuje CI sprzed tego ADR.
 Od #540 (26.10) repozytorium jest w organizacji GitHuba `maximiseartai`, więc odpada powód „wymagają organizacji GitHuba zamiast konta osobistego” przy odrzuconych runnerach Blacksmith; pozostałe powody zostają.
+Od 13.11 (decyzja Maksa) tor Windows 3.13 zastępuje Windows 3.11 na PR i na `main`: tata ma na laptopie Pythona 3.13.15 ([komputer taty](../agents/komputer-taty.md)), a dolnej granicy 3.11 nie ma komputer, na którym narzędzie działa, więc `requires-python` rośnie do 3.13. Windows 3.14 zostaje na `main` jako ostrzeżenie przed aktualizacją Pythona, a liczba torów i zadań się nie zmienia.
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md), według którego tata dostaje tylko Wydanie z commitu `main` z zielonym `Required CI status`.
 
 ## Kontekst
@@ -32,12 +33,12 @@ CI ma cztery poziomy:
 1. **Lokalnie.** `tools/szybko.py` przed pushem.
 2. **Bramka PR.** `Required CI status` na PR, warunek gotowości z `tools/scal_pr.py --help`.
    Ruff, mypy i Frontend biegną zawsze, a E2E przy zmianie `src/`.
-   pytest biegnie tylko na testach wybranych dla zmiany, na Windows 3.11 (minimum u taty) i Linux 3.14.
+   pytest biegnie tylko na testach wybranych dla zmiany, na Windows 3.13 (Python taty i najstarszy z `requires-python`) i Linux 3.14.
    Zmiana `.github/workflows/**` wybiera wszystko.
    Podstawa skilla `verify-*` biegnie, gdy zmiana trafia w jego `pilnuje:`, a jego skrypty mutacji, gdy zmienił się folder skilla.
    Change mutations nie blokuje werdyktu CI. Biegnie po zadaniach bramki, jedna mutacja na zmienioną linię, a każdą przeżytą recenzent omawia w werdykcie.
    `tools/scal_pr.py` nie scala PR, którego `PASS` nie omawia przeżytych mutacji.
-3. **Pełne CI `main`.** Zestaw, który przed tym ADR biegł na pushu do `main`: wszystkie testy na trzech torach, E2E, straż czasu oraz podstawy i skrypty mutacji wszystkich skilli.
+3. **Pełne CI `main`.** Zestaw, który przed tym ADR biegł na pushu do `main`: wszystkie testy na trzech torach (od 13.11 Windows 3.13, Windows 3.14, Linux 3.14), E2E, straż czasu oraz podstawy i skrypty mutacji wszystkich skilli.
    Change mutations mutuje zmienione linie PR, więc na `main` nie biegnie.
    Trwający run `main` się kończy, a nowy merge podmienia tylko run, który czeka.
    Czerwony `main` nie blokuje merge'ów.

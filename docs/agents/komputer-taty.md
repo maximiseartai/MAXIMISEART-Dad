@@ -12,6 +12,8 @@ komputera, a nie do komputera dewelopera.
 - Grafika NVIDIA GeForce RTX 2060 Max-Q (6 GB) oraz zintegrowana Intel UHD.
 - Dysk 954 GB, zajęte 811 GB (około 85%).
 - Ekran dotykowy (10 punktów). Tata może klikać Centrum palcem.
+- Python 3.13.15 (stan z 13.11.2026). To najstarszy Python z `requires-python`, więc bramka PR testuje
+  Windows z Pythonem 3.13 ([ADR 0020](../adr/0020-ci-w-poziomach.md)).
 
 ## Gdzie leżą pliki
 

@@ -62,6 +62,15 @@ FEATURES = (
             "09-tablica-podpowiedz",
         ),
     ),
+    # Adds period folders around the fixture's "today" and removes them again.
+    Feature(
+        "tablica-skrocona",
+        (
+            "297-tablica-skrocona",
+            "298-tablica-rozwinieta",
+            "299-tablica-piec-zaczetych",
+        ),
+    ),
     Feature(
         "uklad-folderow-taty",
         (

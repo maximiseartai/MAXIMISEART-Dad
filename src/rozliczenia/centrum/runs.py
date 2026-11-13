@@ -52,9 +52,6 @@ _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
 RUN_THREAD_PREFIX: Final = "uruchomienie-"
-CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
-"""Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
-odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
 # Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki.
 _RESULT_NOT_SHOWN: Final = Message.to_maintainer(
     code="BLAD_WYNIKU",
@@ -515,7 +512,7 @@ class Run:
 
     @property
     def continue_hint(self) -> str:
-        return CONTINUE_HINT
+        return runs_contract.CONTINUE_HINT
 
     def confirm(self, decision: Decision) -> bool:
         self._decided.clear()

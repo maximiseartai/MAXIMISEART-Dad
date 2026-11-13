@@ -205,7 +205,7 @@ pasted day ordered by Wykonawca and hour and the earlier days unchanged, and
 the metrics record. Route and counts are in `features/order-intermax.md`.
 How the write survives Excel, OneDrive and failures is `verify-zapis-intermax`.
 
-CI runs every CI variant in one command in its E2E step on Windows (Python 3.11 and
+CI runs every CI variant in one command in its E2E step on Windows (Python 3.13 and
 3.14), so run it locally only to reproduce a red E2E step:
 
 ```powershell
@@ -229,7 +229,7 @@ The runner executes the read-only doctor before driving the application,
 except in the `intermax` variant: Uporządkowanie INTERMAX has its own
 Sprawdzanie and no preview, so the fixture is driven directly.
 The result is retained in `doctor.txt` under the printed evidence directory.
-`DOCTOR OK` means Python is at least 3.11, the source name and period folder agree, the source
+`DOCTOR OK` means Python is at least 3.13, the source name and period folder agree, the source
 has `WYKONAWCA` in `H17`, the local mapping and shared Wzorzec rozliczenia pracownika are readable,
 and the target folder does not yet exist.
 

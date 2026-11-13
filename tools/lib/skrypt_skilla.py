@@ -171,10 +171,8 @@ def _remove(path: Path) -> None:
             path.unlink()
         except PermissionError:
             _writable_then_retry(os.unlink, str(path), None)
-    elif sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_writable_then_retry)
     else:
-        shutil.rmtree(path, onerror=_writable_then_retry)
+        shutil.rmtree(path, onexc=_writable_then_retry)
 
 
 def _writable_then_retry(function: Callable[..., Any], path: str, _: object) -> None:

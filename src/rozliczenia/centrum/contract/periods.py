@@ -68,6 +68,11 @@ class BoardFile(Model):
     count: int | None
 
 
+BoardPlace = Literal["recent", "older", "not_started"]
+"""Miejsce okresu na Tablicy okresów: ``recent`` widać od razu (bieżący okres i 4 poprzednie wiersze), ``older`` po
+„Pokaż wszystkie”, ``not_started`` (wtorek po dzisiejszym dniu taty) nigdy."""
+
+
 class PeriodRow(Model):
     """Jeden okres Tablicy okresów, wyliczony przy każdym odczycie z plików i z Historii Wyceny w efenix.
 
@@ -81,6 +86,7 @@ class PeriodRow(Model):
     status_label: str
     files: list[BoardFile]
     last_complete: bool
+    board_place: BoardPlace
     fillable: bool
     """Plik zbiorczy jest przygotowany, więc „Uzupełnij” prowadzi na podsumowanie jego Uzupełnienia."""
     path: list[PathStep]

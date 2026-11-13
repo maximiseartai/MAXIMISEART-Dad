@@ -120,7 +120,7 @@ The runner runs the doctor after creating the fixture; its output is
 .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py status
 ```
 
-`DOCTOR OK` means: macOS, Python 3.11 or newer, Excel installed, Excel's
+`DOCTOR OK` means: macOS, Python 3.13 or newer, Excel installed, Excel's
 container exists, the desk is inside it and empty, the fixture has the Rejestr,
 `worker_mapping.yaml` and `INEA`, both linked Wzorce have an external link used by a formula, the fixture
 has no Folder okresu yet, and a running Excel answers AppleScript with no dialog

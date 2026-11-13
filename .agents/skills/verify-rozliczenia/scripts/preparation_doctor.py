@@ -71,8 +71,8 @@ def _check(root: Path, *, worker_template: bool) -> tuple[str, int, int]:
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"missing fixture root: {root}")
-    if sys.version_info < (3, 11):
-        raise ValueError("Python 3.11 or newer is required")
+    if sys.version_info < (3, 13):
+        raise ValueError("Python 3.13 or newer is required")
 
     period = parse_period_token(PERIOD).token
     register = root / REGISTER_NAME

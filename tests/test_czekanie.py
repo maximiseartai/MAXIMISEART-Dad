@@ -1,7 +1,8 @@
-"""Hook ``tools/hooks/czekanie.py``: agent nie czeka blokująco na CI ani w pętli na ``pgrep -f``.
+"""Hook ``tools/hooks/czekanie.py``: agent nie czeka blokująco na CI ani w pętli na ``pgrep -f`` i nie ponawia runu CI
+z pominięciem ``tools/ponow_ci.py``.
 
-Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), skrócone tylko o
-``cd`` do worktree i o długie ścieżki. Każdy test uruchamia hook tak jak Claude Code: JSON na stdin, a odmowa to
+Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), a ponowienia z 5–11.11
+(recall klasy K1 hillclimbu CI 12.11), skrócone tylko o ``cd`` do worktree, długie ścieżki i dopiski do notatek. Każdy test uruchamia hook tak jak Claude Code: JSON na stdin, a odmowa to
 kod 2 z przyczyną na stderr.
 """
 
@@ -125,6 +126,34 @@ PGREP_LOOPS = (
     "until ! pgrep -l -f mutacje.json >/dev/null; do sleep 5; done",
     "until pgrep -f serve_centrum >/dev/null; do sleep 1; done; curl -s localhost:8765/health",
 )
+# Dziewięć ponowień odbitych „already running” albo „cannot be rerun” (sesje d00be8d7, 41511ae6, e27ed100 ×2,
+# 6bc1a081 ×4, 80f3de41) i partia 13 ponowień naraz w awarii DNS runnerów 11.11 (e27ed100, 22:38).
+RERUNS = (
+    "gh run rerun 41959078147 --job 127020944830 2>&1 | tail -2; echo rerun-requested",
+    'gh run rerun 41940851666 --failed 2>&1 | tail -2; echo "rerun zlecony"',
+    "gh run rerun --job 130564767610 2>&1 | tail -3",
+    "for r in 43037317259 43033018567 43032850682 43034061364; do printf \"$r $(gh run view $r --json status,conclusion "
+    "--jq '\"\\(.status)/\\(.conclusion)\"') \"; gh run rerun $r --failed 2>&1 | tail -1; echo; done",
+    "gh run rerun 42431729670 --failed 2>&1 | tail -1",
+    "gh run view 42431729670 --json status -q .status; gh run rerun 42431729670 --failed 2>&1 | tail -1",
+    "gh run rerun 42435998596 --job 128594886949 2>&1 | tail -3; gh run view 42435998596 --json status,jobs --jq "
+    "'.status, ([.jobs[]|select(.conclusion==\"failure\")|.name]|join(\", \"))'",
+    "for j in 129008722489 129008722741; do gh api --allow-escape-sequences repos/maximiseartai/MAXIMISEART-Dad/actions/jobs/"
+    "$j/logs 2>&1 | grep -E 'BŁĄD POBIERANIA|WYKONANIE FAIL' | head -2; done; gh run rerun 42571178441 --failed 2>&1 | tail -1",
+    "gh run rerun 43035692960 --failed && echo rerun ok",
+    "for r in 43033018567 43035363425 43037317259 43037329237 43037646710 43039417461 43039705347 43042271974 43044422686 "
+    '43046293903 43050742878 43050791629 43052656424; do gh run rerun $r --failed && echo "rerun $r"; done',
+    # Ta sama decyzja inną drogą: opcje ``gh`` przed poleceniem i między ``run`` a ``rerun`` oraz adres ponowienia
+    # w ``gh api`` (sondy przeglądu #1459).
+    "gh -R maximiseartai/MAXIMISEART-Dad run rerun 42003129295 --job 127163220031",
+    "gh run -R maximiseartai/MAXIMISEART-Dad rerun 43035692960",
+    "gh run --repo=maximiseartai/MAXIMISEART-Dad --debug rerun 43035692960",
+    "gh 'run' \"rerun\" 43035692960",
+    "gh api -X POST repos/maximiseartai/MAXIMISEART-Dad/actions/runs/43035189944/rerun-failed-jobs",
+    "gh api --method POST repos/{owner}/{repo}/actions/jobs/130564767610/rerun",
+    "gh api -X POST repos/o/r/actions/runs/1/attempts/1/rerun",
+    'gh api -X POST "repos/o/r/actions/runs/$RUN/rerun-failed-jobs"',
+)
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
     "gh pr checks 405 2>&1 | awk -F'\\t' '{print $1\": \"$2}'; git status --porcelain; git rev-parse HEAD; "
@@ -183,6 +212,16 @@ PASSING = (
     "i=444; while [ $i -le 446 ]; do gh pr view $i --json title; i=$((i + 1)); done",
     "while IFS= read -r id; do sleep 2; gh run view $id --json jobs; done < runy.txt",
     "for id in 39805093290 39772151111; do sleep 2; gh run view $id --json jobs; echo exit=$?; done",
+    # Ponowienie przez narzędzie i ponowienie w prozie: opisie commitu i wzorcu wyszukiwania.
+    ".venv/bin/python tools/ponow_ci.py 1303",
+    "py -3 tools/ponow_ci.py --run 43035692960",
+    'git commit -q -m "docs(agents): nie pisz gh run rerun, tylko tools/ponow_ci.py"',
+    'rg -n "gh run rerun" docs/agents/pr-i-ci.md',
+    "gh api repos/maximiseartai/MAXIMISEART-Dad/actions/runs/43035189944 --jq .run_attempt",
+    "gh api repos/o/r/actions/runs/1 --jq .rerun_url",
+    # Ścieżka ze słowem rerun, która nie jest adresem ponowienia Actions.
+    "gh api repos/maximiseartai/MAXIMISEART-Dad/contents/tools/rerun.py",
+    "gh api repos/maximiseartai/MAXIMISEART-Dad/branches/tools/rerun-ci",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.
     "(while true; do echo \"$(date +%T) $(pgrep -fl 'serve_centrum|chrome-headless|pytest' | cut -c1-100 | "
     "tr '\\n' ' ')\"; sleep 5; done) > /tmp/wyd165-watch1.log 2>&1 & W=$!; .venv/bin/python "
@@ -244,6 +283,16 @@ def test_petla_na_pgrep_dostaje_odmowe_z_powiadomieniem_zadania_w_tle(command: s
     assert "pgrep -f znajduje własną powłokę" in hooked.stderr
     assert "run_in_background: true" in hooked.stderr
     assert "t3_background_wait" in hooked.stderr
+
+
+@pytest.mark.parametrize("in_background", [False, True])
+@pytest.mark.parametrize("command", RERUNS)
+def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe_z_poleceniem_narzedzia(command: str, in_background: bool) -> None:
+    hooked = _bash(command, in_background=in_background)
+
+    assert hooked.returncode == 2, hooked.stderr
+    assert "tools/ponow_ci.py N" in hooked.stderr
+    assert "--run ID" in hooked.stderr
 
 
 @pytest.mark.parametrize("command", PASSING)
