@@ -1,8 +1,8 @@
 """Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości.
 
-Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami: jeden odczyt
-(``collective_file.read_data_rows``), treść po filtrze prywatności (``order_facts``) i kolumny porównania
-(``quantity_check.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy
+Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami i Regułami ilości z
+Wydania (``DEFAULT_QUANTITY_RULES``): jeden odczyt (``collective_file.read_data_rows``), treść po filtrze prywatności
+(``order_facts``), silnik Reguł ilości i kolumny porównania (``quantity_check.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy
 rozbieżności. Wypisuje same liczby i teksty ``URZĄDZENIA``, bez adresów, numerów, umów i opisów technika, więc
 wynik nie niesie danych klientów. Pliki są tylko czytane.
 
@@ -31,21 +31,15 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.collective_layout import HEADER_ROW, QUANTITY_LETTERS
 from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue
 from rozliczenia.quantity_check import compared_columns
-from rozliczenia.quantity_rules import (
-    FromDescription,
-    OrderContent,
-    QuantityColumn,
-    RuleResult,
-    ServiceQuantities,
-    WithoutRule,
-    evaluate,
-)
+from rozliczenia.quantity_engine import FromDescription, OrderContent, RuleResult, ServiceQuantities, WeekTime, WithoutRule, evaluate
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.text import WEEKDAY_LABELS
 
-Difference = tuple[QuantityColumn, int, TataValue]
+Difference = tuple[str, int, TataValue]
 """Kolumna, wartość z reguły, wartość taty."""
 
-_Q = QuantityColumn
+_RULES = DEFAULT_QUANTITY_RULES
+_RULE_COLUMNS = _RULES.rule_columns
 _LATE = time(17)
 _DIGIT = re.compile(r"[0-9]")
 _SHORT_WORD = re.compile(r"[a-ząćęłńóśźż]{1,4}")
@@ -57,10 +51,11 @@ class Row:
 
     order: OrderFacts
     content: OrderContent
+    started: WeekTime
     result: RuleResult
-    compared: tuple[QuantityColumn, ...]
+    compared: tuple[str, ...]
 
-    def ruled(self, column: QuantityColumn) -> int:
+    def ruled(self, column: str) -> int:
         return self.result.quantities.get(column, 0)
 
     def differences(self) -> tuple[Difference, ...]:
@@ -75,8 +70,8 @@ class Row:
 
         return {letter: entry for letter, entry in self.order.quantities.items() if letter not in self.compared}
 
-    def context(self) -> dict[QuantityColumn, str]:
-        started = self.content.started
+    def context(self) -> dict[str, str]:
+        started = self.started
         day = WEEKDAY_LABELS[started.weekday]
         slot = day if started.weekday >= 5 else f"{day} {'od' if started.at >= _LATE else 'przed'} 17:00"
         activities = f"CZYNNOŚCI {'z liczbą' if _DIGIT.search(self.content.activities) else 'bez liczby'}"
@@ -84,31 +79,31 @@ class Row:
         contract = "puste" if not words else words[0] if _SHORT_WORD.fullmatch(words[0]) else "inne"
         last_drop = f"Y taty {'≠' if self.order.quantity('Y') != 0 else '='} 0"
         return {
-            _Q.N: f"DATA {slot}",
-            _Q.V: activities,
-            _Q.AN: activities,
-            _Q.T: f"UMOWA {contract}",
-            _Q.AE: last_drop,
-            _Q.AP: last_drop,
-            _Q.AK: last_drop,
+            "N": f"DATA {slot}",
+            "V": activities,
+            "AN": activities,
+            "T": f"UMOWA {contract}",
+            "AE": last_drop,
+            "AP": last_drop,
+            "AK": last_drop,
         }
 
 
 def rows(path: Path) -> tuple[list[Row], int]:
     """Wiersze danych z wynikiem reguł i liczba wierszy, których ``DATA`` nie ma dnia i godziny."""
 
-    orders = read_data_rows(path, DadFiles()).orders
+    orders = read_data_rows(path, DadFiles(), _RULES).orders
     if isinstance(orders, MissingHeaders):
         raise SystemExit(f"{path.name}: w wierszu {HEADER_ROW} nie ma nagłówka {', '.join(orders.headers)}")
     measured: list[Row] = []
     undated = 0
     for order in orders:
         content = order.content
-        if content is None:
+        if content is None or content.started is None:
             undated += 1
             continue
-        result = evaluate(content)
-        measured.append(Row(order, content, result, compared_columns(result)))
+        result = evaluate(_RULES, content)
+        measured.append(Row(order, content, content.started, result, compared_columns(result, _RULES)))
     return measured, undated
 
 
@@ -121,11 +116,11 @@ def report(name: str, measured: list[Row], undated: int) -> list[str]:
         f"wiersze danych: {len(measured) + undated} | z regułą: {len(service)} | bez reguły: {len(without_rule)}"
         f" | z opisu: {len(from_description)} | DATA nie jest datą: {undated}",
         f"zgodne całe wiersze z regułą (AK, AM tylko gdy reguła ≠ 0): {_share([not row.differences() for row in service])}",
-        f"zgodne całe wiersze z regułą, ściśle we wszystkich {len(QuantityColumn)} kolumnach: {_share([all(row.ruled(column) == row.order.quantity(column) for column in QuantityColumn) for row in service])}",
+        f"zgodne całe wiersze z regułą, ściśle we wszystkich {len(_RULE_COLUMNS)} kolumnach: {_share([all(row.ruled(column) == row.order.quantity(column) for column in _RULE_COLUMNS) for row in service])}",
         f"wiersze bez reguły zgodne w V, T, N: {_share([not row.differences() for row in without_rule])}",
         "-- kolumna: zgodne / porównane | reguła ≠ 0 | tata ≠ 0 (wiersze z regułą; V, T, N także bez reguły)",
     ]
-    for column in QuantityColumn:
+    for column in _RULE_COLUMNS:
         compared = [row for row in measured if column in row.compared]
         lines.append(
             f"{column}: {_share([row.ruled(column) == row.order.quantity(column) for row in compared])}"

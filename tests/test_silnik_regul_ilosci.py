@@ -2,17 +2,26 @@
 
 Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdza ich test własności stare = nowe
 (``test_wlasnosci_dopasowania_tekstu.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
-zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem.
+zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem. Na
+końcu jeden przebieg procesów pokazuje, że każdy z nich liczy Regułami ilości ze swojego wejścia.
 Oczekiwania pochodzą z ADR 0033 i z docstringów ``quantity_engine``, nie z przebiegu kodu.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, time
+from pathlib import Path
 
 import pytest
 import yaml
 
+from rozliczenia import collective_file, quantity_check, tool_files
+from rozliczenia.collective_layout import QUANTITY_COLUMNS, QUANTITY_LETTERS
+from rozliczenia.collective_preparation import PreparationInputs, prepare_collective_file
+from rozliczenia.dad_files import DadFiles
+from rozliczenia.engine import SettlementInputs, run_settlements
+from rozliczenia.order_facts import MissingHeaders
+from rozliczenia.quantities_to_fill import FillKind, fill_hint, quantities_to_fill
 from rozliczenia.quantity_engine import (
     ActivitiesContain,
     Component,
@@ -50,6 +59,9 @@ from rozliczenia.quantity_rules_file import (
     parse_device_list,
     parse_quantity_rules,
 )
+from rozliczenia.run_context import RunContext
+from atrapy.preparation import PERIOD, cell_values, make_preparation_fixture, register_order
+from atrapy.settlement import write_template
 
 DEVICES = DeviceList(
     (
@@ -264,10 +276,12 @@ def test_kolumny_regul_i_kolumny_wiersza_bez_reguly_wynikaja_z_regul() -> None:
         _rule("z", scope=Scope.KNOWN, action=_fill("Z", 1)),
         _rule("v", scope=Scope.EVERY, action=Fill((Write("V", 1), Write("T", 1)))),
         _rule("inea", action=LeaveEmpty(("AK",))),
+        _rule("inea-2", action=LeaveEmpty(("AE", "AK"))),
     )
 
     assert rules.rule_columns == ("P", "Q", "S", "T", "V", "Z")
     assert rules.without_rule_columns == ("T", "V")
+    assert rules.leave_empty_columns == ("AK", "AE")
 
 
 def test_reguly_z_wydania_licza_dzisiejsze_kolumny_kontroli_ilosci() -> None:
@@ -275,6 +289,7 @@ def test_reguly_z_wydania_licza_dzisiejsze_kolumny_kontroli_ilosci() -> None:
         "N", "O", "P", "Q", "S", "T", "V", "Z", "AE", "AG", "AI", "AK", "AM", "AN", "AO", "AP",
     )  # fmt: skip
     assert DEFAULT_QUANTITY_RULES.without_rule_columns == ("V", "T", "N")
+    assert DEFAULT_QUANTITY_RULES.leave_empty_columns == ("AP", "AK")
 
 
 def _device_list(*components: Component) -> DeviceList:
@@ -474,3 +489,65 @@ def test_plik_listy_urzadzen_z_bledem_daje_pierwszy_problem_z_polem(document: ob
 
     assert isinstance(problem, RulesProblem), problem
     assert problem.field == field
+
+
+# Każdy proces liczy Regułami ilości ze swojego wejścia (ADR 0033, US 14): Przygotowanie Ilości usług, Przebieg Ilości
+# tylko dla INEA, Kontrola ilości regułami swojego Przebiegu, a Uzupełnienie regułami podanymi przy odczycie. Reguły
+# różnią się od Reguł ilości z Wydania w każdej kolumnie, więc proces, który liczy innymi, daje inne komórki.
+OWN_RULES = QuantityRules(
+    (
+        QuantityRule("fut", (ContainsComponent("fut"),), Scope.KNOWN, _fill("AA", 7)),
+        QuantityRule("fut-bez-aa", (DevicesText(TextMode.CONTAINS, "fut"),), Scope.EVERY, LeaveEmpty(("AA",))),
+        QuantityRule("nieznane", (), Scope.UNKNOWN, _fill("T", 1)),
+    ),
+    DEFAULT_QUANTITY_RULES.devices,
+)
+TUESDAY = datetime(2026, 9, 8, 10)
+
+
+def _quantities_in(path: Path, row: int) -> dict[str, object]:
+    [values] = cell_values(path, min_row=row, max_row=row, min_col=QUANTITY_COLUMNS.start, max_col=QUANTITY_COLUMNS.stop - 1)
+    return {letter: value for letter, value in zip(QUANTITY_LETTERS, values, strict=True) if value not in (None, 0)}
+
+
+def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze_swojego_wejscia(tmp_path: Path) -> None:
+    fixture = make_preparation_fixture(
+        tmp_path,
+        [register_order(1, TUESDAY) | {"URZĄDZENIA": "fut"}, register_order(2, TUESDAY) | {"URZĄDZENIA": "foo"}],
+    )
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(worker_template)
+
+    preparation = prepare_collective_file(
+        PreparationInputs(
+            fixture.register_path,
+            fixture.periods_directory,
+            PERIOD,
+            fixture.config_path,
+            fixture.internal_template_path,
+            fixture.collective_template_path,
+            quantity_rules=OWN_RULES,
+        ),
+        RunContext(),
+    )
+    settlement = run_settlements(
+        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template, quantity_rules=OWN_RULES),
+        RunContext(),
+    )
+    check = quantity_check.check(settlement.orders, settlement.quantity_rules)
+    read = collective_file.read_numbered_orders(preparation.collective_file, DadFiles())
+    assert not isinstance(read, MissingHeaders)
+    to_fill = quantities_to_fill(read.rows, OWN_RULES, settled=False)
+
+    assert [_quantities_in(preparation.collective_file, row) for row in (18, 19)] == [{"Q": 1, "S": 1, "AA": 7}, {"T": 1}]
+    [worker_file] = (result.output_file for result in settlement.results if result.rows)
+    assert _quantities_in(worker_file, 18) == {"Q": 1, "S": 1}
+    assert dict(settlement.inea_only_cleared) == {"AA": 1}
+    assert isinstance(check, quantity_check.QuantityCheck)
+    assert (check.compared, check.unruled_rows, check.difference_count) == (1, 1, 0)
+    assert "AA" not in check.other_columns
+    assert [(kind.kind, [row.number for row in kind.rows]) for kind in to_fill.kinds] == [
+        (FillKind.WITHOUT_RULE, [19]),
+        (FillKind.FROM_DESCRIPTION, []),
+    ]
+    assert fill_hint(FillKind.WITHOUT_RULE, OWN_RULES) == "Dopisz ilości poza T."

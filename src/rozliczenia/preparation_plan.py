@@ -19,7 +19,7 @@ from .message import StopError
 from .preparation_register import cell_value
 from .register_file import RegisterSheet
 from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
-from .quantity_rules import OrderContent, RuleResult, evaluate
+from .quantity_engine import OrderContent, QuantityRules, RuleResult, evaluate
 from .settlement_period import SettlementPeriod
 from .workbook_files import RegisterRow, cell_datetime, is_blank
 from .text import normalize_text
@@ -53,12 +53,12 @@ class CollectiveRow:
     rule_result: RuleResult
 
     @classmethod
-    def of(cls, order: PeriodOrder) -> CollectiveRow:
+    def of(cls, order: PeriodOrder, rules: QuantityRules) -> CollectiveRow:
         row = order.register_row
         content = OrderContent.of(
             cell_value(row, CONTRACT), cell_value(row, DEVICES), cell_value(row, ACTIVITIES), order.started
         )
-        return cls(order, evaluate(content))
+        return cls(order, evaluate(rules, content))
 
 
 @dataclass(frozen=True)
@@ -103,8 +103,9 @@ def plan_period_orders(
     period: SettlementPeriod,
     config_path: Path,
     worker_mapping: Mapping[str, str],
+    rules: QuantityRules,
 ) -> Plan:
-    """Wybiera zlecenia okresu po dacie, w kolejności Rejestru, sprawdza reguły zleceń i stosuje Reguły ilości."""
+    """Wybiera zlecenia okresu po dacie, w kolejności Rejestru, sprawdza reguły zleceń i stosuje Reguły ilości ``rules``."""
 
     register = _period_sheet(register_path, sheets, period)
     orders: list[PeriodOrder] = []
@@ -126,7 +127,7 @@ def plan_period_orders(
     if unknown_workers:
         raise StopError(messages.unknown_workers(register_path, register.name, config_path, unknown_workers))
     skipped_empty_rows = sum(1 for row in register.empty_rows if first_row < row < last_row)
-    collective_rows = [CollectiveRow.of(order) for order in orders if order.is_successful]
+    collective_rows = [CollectiveRow.of(order, rules) for order in orders if order.is_successful]
     return Plan(period, register.name, orders, collective_rows, skipped_empty_rows)
 
 

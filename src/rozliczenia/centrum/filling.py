@@ -1,7 +1,7 @@
 """Uzupełnienie pliku zbiorczego w Centrum: Ilości do uzupełnienia okresu jako zasób tylko do odczytu (ADR 0016).
 
 Każde żądanie czyta zapisany Plik zbiorczy jedynym odczytem skoroszytu, także gdy trzyma go Excel, i przelicza
-Ilości do uzupełnienia w silniku (``quantities_to_fill``); Centrum nigdy nie zmienia pliku. Na żywo: tani znacznik
+Ilości do uzupełnienia w silniku (``quantities_to_fill``) Regułami ilości z Wydania; Centrum nigdy nie zmienia pliku. Na żywo: tani znacznik
 zapisu i ostatni dobry odczyt (``live_file``, ``FillingReads``).
 Podsumowanie dostaje tylko numery wierszy, stan „zrobione” i liczniki kolumn, a strona rodzaju też teksty
 wiersza, komórki N:AP i nazwy pozycji cennika, nigdy adres, numer zlecenia ani UMOWA. Nieudany odczyt to
@@ -34,6 +34,7 @@ from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import TEXT_COLUMNS, FillKind, KindToFill, fill_hint, quantities_to_fill
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.centrum.settings import SettingsStore
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
@@ -102,7 +103,9 @@ def filling_router(store: SettingsStore, log: CentrumLog, cloud_files: CloudFile
             return found
         settled = _settled(folder)
         [listed] = (
-            listed for listed in quantities_to_fill(found.value.rows, settled=settled).kinds if listed.kind is kind
+            listed
+            for listed in quantities_to_fill(found.value.rows, DEFAULT_QUANTITY_RULES, settled=settled).kinds
+            if listed.kind is kind
         )
         return _table(listed, found, settled=settled)
 
@@ -145,7 +148,7 @@ def _without_quantity(folder: PeriodFolder, files: DadFiles) -> filling_contract
         return filling_contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
         return filling_contract.WithoutQuantityUnread(state="unread")
-    rows = list(quantities_to_fill(found.rows, settled=_settled(folder)).without_quantity)
+    rows = list(quantities_to_fill(found.rows, DEFAULT_QUANTITY_RULES, settled=_settled(folder)).without_quantity)
     return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
 
 
@@ -154,7 +157,7 @@ def _settled(folder: PeriodFolder) -> bool:
 
 
 def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract.QuantitiesToFillReady:
-    found = quantities_to_fill(read.value.rows, settled=settled)
+    found = quantities_to_fill(read.value.rows, DEFAULT_QUANTITY_RULES, settled=settled)
     return filling_contract.QuantitiesToFillReady(
         state="ready",
         read=_stamp(read),
@@ -162,7 +165,7 @@ def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract
         kinds=[
             filling_contract.KindToFill(
                 kind=kind.kind,
-                hint=fill_hint(kind.kind),
+                hint=fill_hint(kind.kind, DEFAULT_QUANTITY_RULES),
                 rows=[filling_contract.RowToFill(row=row.number, state=row.state) for row in kind.rows],
                 done=kind.done,
             )
@@ -179,7 +182,7 @@ def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool)
         state="ready",
         read=_stamp(read),
         settled=settled,
-        hint=fill_hint(listed.kind),
+        hint=fill_hint(listed.kind, DEFAULT_QUANTITY_RULES),
         text_columns=[column.target_header for column in TEXT_COLUMNS],
         columns=[filling_contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
         rows=[

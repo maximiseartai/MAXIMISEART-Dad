@@ -15,7 +15,8 @@ import pytest
 
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, collective_orders, tata_value
-from rozliczenia.quantity_rules import OrderContent, WeekTime
+from rozliczenia.quantity_engine import OrderContent, WeekTime
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.collective_file import read_data_rows
 from tests.fixtures.data_rows import data_row
 from atrapy.settlement import write_quantity_source
@@ -155,7 +156,7 @@ def test_wiersz_danych_bez_wykonawcy_tez_przechodzi_przez_filtr(tmp_path: Path) 
     path = tmp_path / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
     write_quantity_source(path, [{"V": 1}, {"H": None, "V": 2}])
 
-    read = read_data_rows(path, DadFiles())
+    read = read_data_rows(path, DadFiles(), DEFAULT_QUANTITY_RULES)
 
     assert read.without_worker == [19]
     assert isinstance(read.orders, tuple)

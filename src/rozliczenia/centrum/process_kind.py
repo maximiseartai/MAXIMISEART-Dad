@@ -35,7 +35,7 @@ from rozliczenia.efenix_window import OpenEfenix
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
-from rozliczenia.order_facts import CollectiveOrders
+from rozliczenia.quantity_check import CheckResult
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
 from rozliczenia.progress import ProgressSnapshot
@@ -232,8 +232,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
-    ``quantity_check``: Zlecenia z podsumowania, które po zapisie sprawdza Kontrola ilości (ADR 0013); ``None``: proces
-    bez Kontroli ilości.
+    ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
+    ``None``: proces bez Kontroli ilości.
     """
 
     key: common_contract.ProcessKey
@@ -247,7 +247,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     checks: tuple[CheckStep, ...]
     journaled: bool = False
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
-    quantity_check: Callable[[SummaryT], CollectiveOrders] | None = None
+    quantity_check: Callable[[SummaryT], CheckResult] | None = None
 
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes

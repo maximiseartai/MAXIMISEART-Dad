@@ -1,14 +1,12 @@
-"""Reguły ilości: Ilości usług z treści zlecenia (ADR 0012).
+"""Reguły ilości sprzed silnika z danych (ADR 0012): tylko wyrocznia testu własności stare = nowe.
 
-Jedyną operacją jest ``evaluate()``. Moduł nie zna skoroszytów, Komunikatów ani Centrum rozliczeń, bo używają go
-Przygotowanie pliku zbiorczego (Wiersz danych Rejestru zleceń) i Kontrola ilości (Wiersz danych Pliku zbiorczego).
-Oba dają mu wartości komórek, a treść zlecenia robi z nich tylko ``OrderContent.of``, więc świeżo przygotowany
-Plik zbiorczy daje Kontroli ilości te same Ilości usług, które Przygotowanie w nim zapisało (ADR 0013).
+Procesy liczą Ilości usług silnikiem ``quantity_engine`` z Reguł ilości jako danych (ADR 0033). Jego ``evaluate``
+nikt w produkcji nie woła: zostaje, żeby test własności porównał silnik z Regułami ilości z Wydania z dzisiejszym kodem,
+i znika razem z nim po bramie na prawdziwych danych (#1471 PR 3).
 
 ``URZĄDZENIA`` są czytane jako składniki po normalizacji: małe litery, przecinki jak spacje, zwinięte spacje,
 bez ``xg`` (także doklejonego, ``nokia zteXG``). Składnik może mieć krotność ``n*`` (``3*fut``, ``2* fut``).
-Ilości powstają ze złożenia składników, więc nowa kombinacja znanych składników nie wymaga nowej reguły. Nowy
-składnik to nowy wpis w ``_COMPONENTS``. Od składników zależą też liczba sztuk z ``CZYNNOŚCI`` (instalacja ręczna,
+Ilości powstają ze złożenia składników, więc nowa kombinacja znanych składników nie wymaga nowej reguły. Od składników zależą też liczba sztuk z ``CZYNNOŚCI`` (instalacja ręczna,
 wizja), ilości z frazy ``CZYNNOŚCI`` w zleceniu bez routera (samo ``nokia`` z ``akt int``) i dodatek za usterkę po
 godzinach według dnia i godziny ``DATA``.
 """
@@ -45,9 +43,6 @@ class QuantityColumn(StrEnum):
     AO = "AO"
     AP = "AP"
 
-
-# Kolumny Ilości usług z opisu technika (CZYNNOŚCI ZREALIZOWANE); AK i AM Reguły ilości wypełniają tylko częściowo.
-DESCRIPTION_COLUMNS: Final = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
 
 Quantities = Mapping[QuantityColumn, int]
 """Ilości usług zlecenia: kolumna → liczba, tylko różne od zera."""

@@ -24,8 +24,9 @@ from rozliczenia import collective_layout, quantity_engine, quantity_rules, tool
 from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.highlights import PLAIN
-from rozliczenia.inea_only_quantities import without_inea_only
-from rozliczenia.quantity_rules import OrderContent, QuantityColumn, RuleResult, WithoutRule, evaluate
+from rozliczenia.inea_only_quantities import legacy_without_inea_only
+from rozliczenia.quantity_engine import OrderContent, RuleResult, WithoutRule, evaluate
+from rozliczenia.quantity_rules import QuantityColumn
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.register_columns import DEVICES
 from rozliczenia.text import normalize_text
@@ -64,7 +65,7 @@ TUESDAY_MORNING = datetime(2026, 10, 27, 9)
 
 
 def _rules(devices: str, activities: str = "") -> RuleResult:
-    return evaluate(OrderContent.of("", devices, activities, TUESDAY_MORNING))
+    return evaluate(DEFAULT_QUANTITY_RULES, OrderContent.of("", devices, activities, TUESDAY_MORNING))
 
 
 @st.composite
@@ -198,7 +199,7 @@ def test_ilosci_tylko_dla_inea_przy_slowie_w_dowolnym_miejscu_urzadzen_bez_wzgle
 
 # Silnik Reguł ilości z Regułami ilości z Wydania (ADR 0033, „Start bez zmiany wyniku”) daje to samo co dzisiejszy kod:
 # rodzaj wyniku i Ilości usług jak ``quantity_rules.evaluate``, a kolumny do zostawienia pustymi jak Ilości tylko dla
-# INEA (``without_inea_only``) na tym samym Wierszu danych. Test żyje do usunięcia starego kodu (#1471 PR 3).
+# INEA (``legacy_without_inea_only``) na tym samym Wierszu danych. Test żyje do usunięcia starego kodu (#1471 PR 3).
 RAW_SPELLINGS = (*COMPONENTS, "usterka WEW", "Instalacja Ręczna")
 OUTSIDE_LIST = (
     "foo", "gniazdo2", "xtechnicolor", "gniazdo/technicolor", "technicolorplus", "0*fut", "*fut", "2*", "nokia 2*zte",
@@ -266,7 +267,7 @@ def _inea_only_cleared(devices: str | float | None) -> frozenset[str]:
 
     cells = [DataCell(1, PLAIN, "General", None) for _ in range(collective_layout.column("AT"))]
     cells[_DEVICES_COLUMN - 1] = DataCell(devices, PLAIN, "General", None)
-    [row], _ = without_inea_only({normalize_text(DEVICES.target_header): _DEVICES_COLUMN}, [DataRow(18, tuple(cells))])
+    [row], _ = legacy_without_inea_only({normalize_text(DEVICES.target_header): _DEVICES_COLUMN}, [DataRow(18, tuple(cells))])
     return frozenset(letter for letter in ("AP", "AK") if row.value(letter) is None)
 
 
