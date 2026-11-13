@@ -53,7 +53,7 @@ from rozliczenia.period_folder import (
     PeriodFolderLookupError,
     PeriodPlace,
 )
-from rozliczenia.quantity_rules import DESCRIPTION_COLUMNS
+from rozliczenia.quantity_engine import DESCRIPTION_COLUMNS
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.workbook_files import MergedCells, MissingHeader, Problem, WorkbookError
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE, AddressesProblem, UnknownLogin

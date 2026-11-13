@@ -26,7 +26,8 @@ from .message import Message, StopError
 from .phase_runner import PhaseRunner
 from .preparation_files import CollectiveFilePlan
 from .preparation_plan import IncompletePeriod, Plan
-from .quantity_rules import DESCRIPTION_COLUMNS
+from .quantity_engine import DESCRIPTION_COLUMNS, QuantityRules
+from .quantity_rules_file import DEFAULT_QUANTITY_RULES
 from .register_file import RegisterFile
 from .text import day_label
 from .write_routes import RouteCounts
@@ -41,7 +42,10 @@ __all__ = [
 
 @dataclass(frozen=True)
 class PreparationInputs:
-    """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika."""
+    """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika.
+
+    ``quantity_rules``: Reguły ilości tego Uruchomienia, z których Przygotowanie liczy Ilości usług.
+    """
 
     register_path: Path
     periods_directory: Path
@@ -50,6 +54,7 @@ class PreparationInputs:
     internal_template_path: Path
     collective_template_path: Path
     dry_run: bool = False
+    quantity_rules: QuantityRules = DEFAULT_QUANTITY_RULES
 
 
 @dataclass
@@ -173,7 +178,9 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     sheets = phases.read(lambda: preparation_register.period_sheets(register, folder.period))
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
-        plan = preparation_plan.plan_period_orders(register_path, sheets, folder.period, config_path, worker_mapping)
+        plan = preparation_plan.plan_period_orders(
+            register_path, sheets, folder.period, config_path, worker_mapping, inputs.quantity_rules
+        )
         collective = preparation_files.plan_period_files(files, len(plan.orders), plan.collective_rows)
         return plan, collective, _plan_warnings(register_path, files, plan, collective)
 

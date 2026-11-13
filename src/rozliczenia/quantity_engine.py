@@ -36,6 +36,9 @@ from .text import normalize_text
 
 _BUILT_IN_COLUMNS: Final = ("P", "Q", "S")
 """Kolumny wbudowanych rachunków: reguła taty w nie nie wpisuje."""
+DESCRIPTION_COLUMNS: Final = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
+"""Kolumny Ilości usług z opisu technika (``CZYNNOŚCI ZREALIZOWANE``), poza słownikiem Reguł ilości (ADR 0033); reguła
+może wpisać w AK i AM tylko część z nich."""
 MAX_VALUE: Final = 999
 
 
@@ -266,6 +269,14 @@ class QuantityRules:
 
         written = {write.column for rule in self.rules if isinstance(rule.action, Fill) for write in rule.action.writes}
         return tuple(column for column in QUANTITY_LETTERS if column in written or column in _BUILT_IN_COLUMNS)
+
+    @property
+    def leave_empty_columns(self) -> tuple[str, ...]:
+        """Kolumny reguł „zostaw pustą w Rozliczeniu pracownika” (Ilości tylko dla INEA), w kolejności reguł."""
+
+        return tuple(
+            dict.fromkeys(column for rule in self.rules if isinstance(rule.action, LeaveEmpty) for column in rule.action.columns)
+        )
 
     @property
     def without_rule_columns(self) -> tuple[str, ...]:

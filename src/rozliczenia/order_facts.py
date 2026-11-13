@@ -3,7 +3,8 @@
 To jedyny typ z treścią komórek Pliku zbiorczego, który przeżywa silnik Przebiegu rozliczeń, i jedyne miejsce,
 które wylicza dozwolone kolumny: UMOWA, URZĄDZENIA i CZYNNOŚCI (po nagłówku z wiersza 17, pod którym zapisuje je
 Przygotowanie), dzień tygodnia i godzina z DATA oraz N:AP (po literze kolumny). Treść zlecenia
-robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu. Adres, numery
+robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu; tę samą treść,
+także bez daty w DATA, czytają Ilości tylko dla INEA Przebiegu (``order_contents``). Adres, numery
 zlecenia i umowy, Wykonawca, data dzienna, CZYNNOŚCI ZREALIZOWANE i reszta A:AT nie mają pola, więc nie da się ich
 wysłać przez ten typ. Tekst wpisany przez tatę w komórce ilości też nie przechodzi: zostaje z niego „nieliczbowa”.
 """
@@ -19,7 +20,7 @@ from openpyxl.utils import get_column_letter
 
 from .collective_layout import QUANTITY_LETTERS
 from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, Column
-from .quantity_rules import OrderContent
+from .quantity_engine import OrderContent
 from .workbook_files import DataRow, cell_datetime, is_blank
 from .text import normalize_text
 
@@ -35,7 +36,7 @@ class OrderFacts:
     """Wiersz danych po filtrze prywatności."""
 
     content: OrderContent | None
-    """Treść zlecenia dla Reguł ilości; ``None``, gdy ``DATA`` nie jest datą."""
+    """Treść zlecenia dla Reguł ilości, zawsze z datą; ``None``, gdy ``DATA`` nie jest datą."""
     quantities: Mapping[str, TataValue]
     """Litera kolumny N:AP → ilość taty, tylko różna od 0."""
 
@@ -59,15 +60,28 @@ def collective_orders(header: Mapping[str, int], rows: Sequence[DataRow]) -> Col
     ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1.
     """
 
+    contents = order_contents(header, rows)
+    if isinstance(contents, MissingHeaders):
+        return contents
+    return tuple(
+        OrderFacts(None if content.started is None else content, _quantities(row))
+        for content, row in zip(contents, rows, strict=True)
+    )
+
+
+def order_contents(header: Mapping[str, int], rows: Sequence[DataRow]) -> tuple[OrderContent, ...] | MissingHeaders:
+    """Treść zlecenia każdego Wiersza danych, a przy ``DATA``, która nie jest datą, bez pory (``started`` ``None``).
+
+    ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1.
+    """
+
     names = [normalize_text(column.target_header) for column in _INPUTS]
     missing = tuple(column.target_header for column, name in zip(_INPUTS, names, strict=True) if name not in header)
     if missing:
         return MissingHeaders(missing)
     contract, devices, activities, started = (get_column_letter(header[name]) for name in names)
     return tuple(
-        OrderFacts(
-            _content(row.value(contract), row.value(devices), row.value(activities), row.value(started)), _quantities(row)
-        )
+        OrderContent.of(row.value(contract), row.value(devices), row.value(activities), cell_datetime(row.value(started)))
         for row in rows
     )
 
@@ -100,11 +114,6 @@ def _number_text(text: str) -> TataValue:
     except ValueError:
         return NON_NUMERIC
     return int(number) if number.is_integer() else NON_NUMERIC
-
-
-def _content(contract: object, devices: object, activities: object, date_cell: object) -> OrderContent | None:
-    started = cell_datetime(date_cell)
-    return None if started is None else OrderContent.of(contract, devices, activities, started)
 
 
 def _quantities(row: DataRow) -> dict[str, TataValue]:
