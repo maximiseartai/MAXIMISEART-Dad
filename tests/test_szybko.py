@@ -46,6 +46,13 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę outbox.py, której "
         "próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
     ),
+    "tests/test_regula_danych.py::test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
+        "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
+    "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
+    ),
     "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
