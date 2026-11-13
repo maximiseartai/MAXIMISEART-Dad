@@ -312,24 +312,34 @@ def test_pr_ktory_dodaje_tyle_linii_maszynerii_z_testami_ile_usuwa_wymaga_zgody(
     )
 
 
+def _pod_nowy_wpis_weryfikacji(repo: Path) -> None:
+    _przenies(repo, "tools/inna.py", "tools/inna_w.py")
+    _zapisz(repo, {rozmiar_pr.LISTA: _LISTA.replace('"tools/lib/atrapy/" = []', '"tools/lib/atrapy/" = []\n"tools/inna_w.py" = []')})
+
+
+def _do_katalogu_weryfikacji(repo: Path) -> None:
+    _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py")
+
+
+def _test_maszynerii_pod_nazwe_testu_produktu(repo: Path) -> None:
+    _przenies(repo, "tests/test_bramka.py", "tests/test_bramka_inny.py")
+
+
 @pytest.mark.parametrize(
     ("zmiana", "linia"),
     [
         (
-            lambda repo: (
-                _przenies(repo, "tools/inna.py", "tools/inna_w.py"),
-                _zapisz(repo, {rozmiar_pr.LISTA: _LISTA.replace('"tools/lib/atrapy/" = []', '"tools/lib/atrapy/" = []\n"tools/inna_w.py" = []')}),
-            ),
+            _pod_nowy_wpis_weryfikacji,
             "+100 -60, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
             ", zmienia strażnika tools/lib/szopa.toml",
         ),
         (
-            lambda repo: _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py"),
+            _do_katalogu_weryfikacji,
             "+40 -60, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
             ", przenosi tools/inna.py -> tools/lib/atrapy/inna.py (maszyneria -> weryfikacja)",
         ),
         (
-            lambda repo: _przenies(repo, "tests/test_bramka.py", "tests/test_bramka_inny.py"),
+            _test_maszynerii_pod_nazwe_testu_produktu,
             "+40 -10, testy zachowania src / src 15/20 = 0,75, testy szopy / src 0/20 = 0,00"
             ", przenosi tests/test_bramka.py -> tests/test_bramka_inny.py (maszyneria -> produkt)",
         ),
@@ -337,7 +347,7 @@ def test_pr_ktory_dodaje_tyle_linii_maszynerii_z_testami_ile_usuwa_wymaga_zgody(
     ids=["pod-nowy-wpis-weryfikacji-na-liscie-pr", "do-katalogu-weryfikacji-z-listy-bazy", "test-maszynerii-pod-nazwe-testu-produktu"],
 )
 def test_pr_z_nowymi_liniami_maszynerii_i_przeniesieniem_jej_pliku_do_innej_grupy_wymaga_zgody(
-    szopa: Path, zmiana: Callable[[Path], object], linia: str
+    szopa: Path, zmiana: Callable[[Path], None], linia: str
 ) -> None:
     # Bez zgody na przeniesienie 40 nowych linii maszynerii znikałoby w liniach przeniesionego pliku (przegląd #1646 r1).
     _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
@@ -416,14 +426,22 @@ def test_nowe_pliki_testow_narzedzi_i_skilli_bez_wpisu_na_liscie_biora_grupe_z_r
     )
 
 
+def _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji(repo: Path) -> None:
+    _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py", _linie(60, "z"))
+    _zapisz(repo, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
+
+
+def _nowy_test_maszynerii_bez_wpisu(repo: Path) -> None:
+    _zapisz(repo, {"tests/test_inna.py": _linie(20)})
+
+
 # Znane luki licznika szopy (tests/fixtures/znane_luki.py): opis postaci → zmiana PR, która powiększa maszynerię procesu,
 # a mimo to przechodzi przez licznik bez etykiety zgody.
-ZNANE_LUKI: Final[dict[str, Callable[[Path], object]]] = {
-    "plik maszynerii usunięty i napisany od nowa pod ścieżką weryfikacji, czego git nie uznaje za przeniesienie": lambda repo: (
-        _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py", _linie(60, "z")),
-        _zapisz(repo, {"tools/bramka.py": _linie(30) + _linie(40, "y")}),
+ZNANE_LUKI: Final[dict[str, Callable[[Path], None]]] = {
+    "plik maszynerii usunięty i napisany od nowa pod ścieżką weryfikacji, czego git nie uznaje za przeniesienie": (
+        _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji
     ),
-    "nowy test maszynerii bez wpisu na liście liczy się jako test produktu": lambda repo: _zapisz(repo, {"tests/test_inna.py": _linie(20)}),
+    "nowy test maszynerii bez wpisu na liście liczy się jako test produktu": _nowy_test_maszynerii_bez_wpisu,
 }
 
 
