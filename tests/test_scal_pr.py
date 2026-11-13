@@ -2657,24 +2657,29 @@ def test_pr_wymieniony_w_otwartym_issue_chwastu_scala_sie_dopiero_z_linia_korzen
 
 
 @pytest.mark.parametrize(
-    ("body", "setup", "fragments"),
+    ("verdicts", "body", "setup", "fragments"),
     [
-        ("szczebel-c", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED, FIX_BODY]),
-        ("szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")]}, []),
-        ("szczebel-c-zamyka-chwast-innym-kodem", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
-        ("szczebel-c-korzen-z-pr", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
-        ("szczebel-c-korzen-z-w-bloku-kodu", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
-        ("wyrwany", {"weeds": [_weed("zalozone-z-pr-1")], "root": ("MERGED", "ten-kod")}, []),
-        ("szczebel-c", {"weeds": [_weed("z-proza-o-pr-1")]}, [UNCLOSED]),
-        ("szczebel-c", {"weeds": [_weed("w-szablonie")]}, []),
-        ("szczebel-c", {}, []),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED, FIX_BODY]),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")]}, []),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast-innym-kodem", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c-korzen-z-pr", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c-korzen-z-w-bloku-kodu", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "wyrwany", {"weeds": [_weed("zalozone-z-pr-1")], "root": ("MERGED", "ten-kod")}, []),
+        ([FAIL_TWO_SAME], "wyrwany-i-szczebel-c", {"weeds": [_weed("zalozone-z-pr-1")], "root": ("MERGED", "ten-kod")}, [UNCLOSED]),
+        ([FAIL_W1], "inny-kod", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("z-proza-o-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("z-proza-o-pr-1-innego-repo")]}, []),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("w-szablonie")]}, []),
+        ([FAIL_W1], "szczebel-c", {}, []),
         (
+            [FAIL_W1],
             "szczebel-c-zamyka-chwast",
             {"weeds": [_weed("zalozone-z-pr-1", "Chwast R-BEZ-TESTU")]},
             [f"chwast: #{chwasty.WEED_ISSUE} „Chwast R-BEZ-TESTU” z etykietą chwast wymienia ten PR, a ma tytuł inny niż „Chwast: R-KOD”"],
         ),
-        ("szczebel-c", {"weeds": "gh: HTTP 502"}, ["chwast: GitHub nie podał otwartych issues z etykietą chwast (", "uruchom ponownie"]),
-        ("szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")], "render": "gh: HTTP 502"}, ["chwast: GitHub nie wyrenderował opisu PR ("]),
+        ([FAIL_W1], "szczebel-c", {"weeds": "gh: HTTP 502"}, ["chwast: GitHub nie podał otwartych issues z etykietą chwast (", "uruchom ponownie"]),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")], "render": "gh: HTTP 502"}, ["chwast: GitHub nie wyrenderował opisu PR ("]),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("w-szablonie")], "render": "gh: HTTP 502"}, []),
     ],
     ids=[
         "bez-linii",
@@ -2683,18 +2688,22 @@ def test_pr_wymieniony_w_otwartym_issue_chwastu_scala_sie_dopiero_z_linia_korzen
         "linia-korzen-z-numerem-pr",
         "linia-korzen-z-w-bloku-kodu",
         "blok-wyrwany-w-scalonym-pr-korzenia",
+        "jeden-blok-kodu-wyrwany-a-drugi-ze-szczeblem",
+        "bez-bloku-z-kodem-issue",
         "issue-poza-szablonem-z-linkiem-do-pr",
+        "issue-z-linkiem-do-pr-o-tym-numerze-w-innym-repo",
         "issue-bez-linku-do-pr",
         "brak-otwartych-issues-chwastu",
         "tytul-poza-wzorem",
         "blad-githuba-przy-issues",
         "blad-renderera-przy-opisie",
+        "bez-issue-z-linkiem-do-pr-opisu-nie-renderuje",
     ],
 )
 def test_bramka_chwastu_przepuszcza_pr_wymieniony_w_issue_chwastu_tylko_z_linia_ktora_je_zamyka_albo_z_wyrwanym(
-    tmp_path: Path, body: str, setup: dict[str, object], fragments: list[str]
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], fragments: list[str]
 ) -> None:
-    answered = _root_gate(tmp_path, [FAIL_W1], body, setup)
+    answered = _root_gate(tmp_path, verdicts, body, setup)
 
     last = _last_line(answered)
     assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr

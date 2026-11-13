@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 import subprocess
+import re
 from typing import Any
 
 import github
@@ -33,7 +34,7 @@ from szablon_werdyktu import CODE
 import werdykt_pr
 
 MARKER = "tools/lib/bramka_chwastu.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia bramki (werdykt_pr.deployment)
-TITLE_PREFIX = rejestr_korzeni.TITLE.format(code="")
+TITLE = re.compile(re.escape(rejestr_korzeni.TITLE.format(code="")) + f"({CODE.pattern})")
 GITHUB_ERRORS = (subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError)
 
 
@@ -52,7 +53,7 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
         units = szablon_werdyktu.items(github.html_markdownu(pull.body, pull.repository))
     except GITHUB_ERRORS as error:
         return [f"chwast: GitHub nie wyrenderował opisu PR ({error}), uruchom ponownie"]
-    closing = {(link.numer, code) for link, code in rejestr_korzeni.root_lines(units, pull.repository) if link.rodzaj == "issue"}
+    closing = {(link.numer, code) for link, code in rejestr_korzeni.root_lines(units, pull.repository)}
     section = rejestr_korzeni.section(units)
     blocks = section.blocks if section is not None else ()
     found = [problem for issue in weeds if (problem := _unclosed(issue, closing, blocks))]
@@ -62,20 +63,18 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
 
 
 def _names(issue: dict[str, Any], pull: Pull) -> bool:
-    """Czy treść issue ma link GitHuba do ``pull``."""
+    """Czy treść issue ma link GitHuba do ``pull``; issues i PR-y repozytorium mają wspólne numery, więc numer
+    wyznacza PR."""
 
-    return any(
-        link.w(pull.repository) and link.numer == pull.number and link.rodzaj == "pull_request"
-        for item in szablon_werdyktu.items(str(issue["bodyHTML"]))
-        for link in item.links
-    )
+    return any(link.w(pull.repository) and link.numer == pull.number for item in szablon_werdyktu.items(str(issue["bodyHTML"])) for link in item.links)
 
 
 def _unclosed(issue: dict[str, Any], closing: set[tuple[int, str]], blocks: Sequence[Block]) -> str | None:
     number, title = int(issue["number"]), str(issue["title"])
-    code = title.removeprefix(TITLE_PREFIX)
-    if not title.startswith(TITLE_PREFIX) or CODE.fullmatch(code) is None:
-        return f"chwast: #{number} „{title}” z etykietą {rejestr_korzeni.WEED} wymienia ten PR, a ma tytuł inny niż „{TITLE_PREFIX}R-KOD”, więc linia „Korzeń z” go nie zamknie: popraw tytuł issue"
+    titled = TITLE.fullmatch(title)
+    if titled is None:
+        return f"chwast: #{number} „{title}” z etykietą {rejestr_korzeni.WEED} wymienia ten PR, a ma tytuł inny niż „{rejestr_korzeni.TITLE.format(code='R-KOD')}”, więc linia „Korzeń z” go nie zamknie: popraw tytuł issue"
+    code = titled[1]
     if (number, code) in closing:
         return None
     own = [block for block in blocks if block.code == code]

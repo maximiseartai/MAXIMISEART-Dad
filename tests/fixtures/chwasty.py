@@ -58,6 +58,7 @@ OPISY = {
     "szczebel-c-zamyka-chwast-innym-kodem": korzenie_pr.body(korzenie_pr.C_BLOCK, why=f"Korzeń z #{WEED_ISSUE}: R-DRUGA-DROGA"),
     "szczebel-c-korzen-z-pr": korzenie_pr.body(korzenie_pr.C_BLOCK, why=f"Korzeń z #{OTHER}: {CODE}"),
     "szczebel-c-korzen-z-w-bloku-kodu": korzenie_pr.body(korzenie_pr.C_BLOCK, why=_lines("```", f"Korzeń z #{WEED_ISSUE}: {CODE}", "```")),
+    "wyrwany-i-szczebel-c": korzenie_pr.body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{OTHER}"), korzenie_pr.C_BLOCK.replace("W1 r1", "W2 r1")),
 }
 
 
@@ -91,6 +92,7 @@ ISSUES = {
     # issue, które zakłada publikacja werdyktu na PR 1, gdy #1436 ma to samo Ważne ze szczeblem (b)
     "zalozone-z-pr-1": _issue("| #1 | W1 r1 | - | - |", OTHER_ROW),
     "z-proza-o-pr-1": f"{ISSUE}\nWystąpienie w #1 dopisane ręcznie.\n",
+    "z-proza-o-pr-1-innego-repo": f"{ISSUE}\nWystąpienie w cli/cli#1 dopisane ręcznie.\n",
 }
 
 
