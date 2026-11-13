@@ -9,7 +9,7 @@ import shutil
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
-from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove, settings_window
+from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove, settings_title, settings_window
 from atrapy.workbooks import excel_lock
 
 FEATURE = "kopie-intermax"
@@ -48,7 +48,7 @@ def _row(page: Page, name: str) -> Locator:
 def _to_card(run: Run, page: Page) -> None:
     page.goto(run.url + "#/ustawienia/kopie-intermax")
     page.reload()
-    expect(settings_window(page).get_by_role("heading")).to_have_text(f"Ustawienia/{CARD}")
+    expect(settings_title(page)).to_have_text(f"Ustawienia/{CARD}")
     expect(_card(page)).to_be_visible()
 
 

@@ -13,7 +13,7 @@ import time
 from playwright.sync_api import Page, expect
 import yaml
 
-from windows_drive.common import DriveFailure, Run, close_settings, open_settings, same_path, settings_section, settings_window, wait_for
+from windows_drive.common import DriveFailure, Run, close_settings, open_settings, same_path, settings_section, settings_title, wait_for
 import windows_desktop
 
 FEATURE = "wskazanie-folderow"
@@ -59,7 +59,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "folder-okresow")
     page.goto(run.url)
     page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).first.click()
-    expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    expect(settings_title(page)).to_have_text("Ustawienia/Foldery")
     folders = settings_section(page)
     folders.get_by_role("button", name="Wskaż Folder okresów", exact=True).click()
     _pick(run, PERIODS_DIALOG, periods, "folder-okresow")

@@ -29,6 +29,7 @@ from drive.common import (
     remove,
     remove_tree,
     sent_requests,
+    settings_title,
     settings_window,
     settle,
     unreadable,
@@ -122,7 +123,7 @@ def drive(run: Run, page: Page) -> None:
     expect(unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", FOLDERS)
     run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing and links to Foldery")
     unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
-    expect(window.get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    expect(settings_title(page)).to_have_text("Ustawienia/Foldery")
     run.answer_picker(run.fixture["order_register"])
     window.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     expect(register.get_by_text(register_name)).to_be_visible()
@@ -273,6 +274,8 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
             run.check(True, f"the switch shows „Zapisano · Cofnij” ({viewport['width']} px)")
             run.capture(page, capture, full_page=False)
+            # The toast's title is a heading in the window too: the window's own title still reads one path (#1534).
+            open_settings(page, "Wygląd")
             saved.get_by_role("button", name="Cofnij", exact=True).click()
             # „Cofnięto” stands in the window Ustawienia, over its blurred page, like „Zapisano”.
             expect(_toast(settings_window(page), "Cofnięto")).to_be_visible()

@@ -240,6 +240,7 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     assert response.json() == {
         "order_register": NOT_SET,
         "periods_directory": NOT_SET,
+        "periods_all_years": False,
         "theme": "dark",
         "folders_problem": None,
         "workers": NO_WORKERS,
@@ -309,6 +310,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
     assert response.json() == {
         "order_register": NOT_SET,
         "periods_directory": NOT_SET,
+        "periods_all_years": False,
         "theme": "dark",
         "folders_problem": {"field": None, "message": DAMAGED},
         "workers": NO_WORKERS,
@@ -357,6 +359,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
         {
             "order_register": {"state": "inaccessible", "path": str(register), "name": register.name},
             "periods_directory": {"state": "inaccessible", "path": str(periods), "name": "INEA"},
+            "periods_all_years": False,
             "theme": "dark",
             "folders_problem": None,
             "workers": NO_WORKERS,
@@ -383,6 +386,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
         {
             "order_register": UNREADABLE,
             "periods_directory": UNREADABLE,
+            "periods_all_years": False,
             "theme": "dark",
             "folders_problem": None,
             "workers": NO_WORKERS,
@@ -412,6 +416,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
         {
             "order_register": UNREADABLE,
             "periods_directory": UNREADABLE,
+            "periods_all_years": False,
             "theme": "dark",
             "folders_problem": None,
             "workers": NO_WORKERS,
@@ -505,6 +510,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
     assert app.client.get("/api/settings").json() == {
         "order_register": NOT_SET,
         "periods_directory": NOT_SET,
+        "periods_all_years": False,
         "theme": "light",
         "folders_problem": None,
         "workers": NO_WORKERS,
@@ -714,6 +720,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
         {
             "order_register": NOT_SET,
             "periods_directory": {"state": "ready", "path": str(periods), "name": "INEA"},
+            "periods_all_years": False,
             "theme": "dark",
             "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
             "workers": NO_WORKERS,
@@ -2307,16 +2314,23 @@ def with_dad_layout(tmp_path: Path, chosen_month: str | None = None) -> tuple[Ce
     Folder okresów to ``Załączniki`` albo, z ``chosen_month``, folder ``INEA`` tego miesiąca.
     """
 
+    root = dad_layout(tmp_path)
+    app = centrum(tmp_path)
+    app.platform.chosen_folders.append(root if chosen_month is None else inea(root, chosen_month))
+    app.client.post("/api/settings/periods-directory/choose")
+    return app, root
+
+
+def dad_layout(tmp_path: Path) -> Path:
+    """Układ folderów taty ``Załączniki``: Rozliczenia {rok}\\{miesiąc}\\INEA z folderem obok miesięcy."""
+
     root = tmp_path / "Załączniki"
     for month in ("12_Grudzień_2025",):
         (root / "Rozliczenia 2025" / month / "INEA").mkdir(parents=True)
     for month in ("09_Wrzesień_2026", "10_Październik_2026", "11_Listopad_2026"):
         (root / "Rozliczenia 2026" / month / "INEA").mkdir(parents=True)
     (root / "Rozliczenia 2026" / "Nowe rozliczenia wzór od 01_2026" / "Podpisane").mkdir(parents=True)
-    app = centrum(tmp_path)
-    app.platform.chosen_folders.append(root if chosen_month is None else inea(root, chosen_month))
-    app.client.post("/api/settings/periods-directory/choose")
-    return app, root
+    return root
 
 
 def inea(root: Path, month: str, year: int = 2026) -> Path:
@@ -2395,6 +2409,240 @@ def test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany(
         "Zostaw go tylko w jednym."
     }
     assert app.platform.opened == []
+
+
+# Folder wskazany w środku układu folderów taty, względem ``Załączniki`` (#1472).
+INSIDE_DAD_LAYOUT = [
+    pytest.param(("Rozliczenia 2026", "11_Listopad_2026", "INEA", "27_02_11_2026"), id="tydzien"),
+    pytest.param(("Rozliczenia 2026", "10_Październik_2026", "INEA"), id="inea-miesiaca"),
+    pytest.param(("Rozliczenia 2026", "10_Październik_2026"), id="miesiac"),
+    pytest.param(("Rozliczenia 2025",), id="rok"),
+]
+
+
+def choose_periods_directory(app: Centrum, folder: Path, way: str) -> dict[str, Any]:
+    """Ustawienia po wskazaniu ``folder`` oknem wyboru (``okno``) albo ścieżką wpisaną w sekcji Foldery (``wpisana``)."""
+
+    if way == "okno":
+        app.platform.chosen_folders.append(folder)
+        response = app.client.post("/api/settings/periods-directory/choose")
+    else:
+        response = app.client.put("/api/settings/folders", json={"order_register": None, "periods_directory": str(folder)})
+    assert response.status_code == 200
+    return dict(response.json()["settings"])
+
+
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+@pytest.mark.parametrize("inside", INSIDE_DAD_LAYOUT)
+def test_folder_wskazany_w_srodku_ukladu_folderow_taty_zapisuje_sie_jako_zalaczniki_wszystkich_lat(
+    tmp_path: Path, inside: tuple[str, ...], way: str
+) -> None:
+    root = dad_layout(tmp_path)
+    pointed = root.joinpath(*inside)
+    pointed.mkdir(exist_ok=True)
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, way)
+    [row] = app.client.get("/api/settings/history").json()["rows"]
+    after_restart = centrum(tmp_path).client.get("/api/settings").json()
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(root), "name": "Załączniki"},
+        True,
+    )
+    assert after_restart == settings
+    assert row["changes"] == [{"key": "foldery.folder_okresow", "before": None, "after": str(root)}]
+
+
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+@pytest.mark.parametrize("inside", [(), ("22_28_09_2026",)], ids=["folder-okresow", "folder-okresu"])
+def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
+    tmp_path: Path, inside: tuple[str, ...], way: str
+) -> None:
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    write_period_files(periods, "22_28_09_2026")
+    pointed = periods.joinpath(*inside)
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, way)
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(pointed), "name": pointed.name},
+        False,
+    )
+
+
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:
+    """Układu nad folderem bez dostępu nie widać, więc zapisuje się wskazany folder, a nie błąd wyboru."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    app = centrum(tmp_path)
+
+    with without_access(week):
+        settings = choose_periods_directory(app, week, way)
+
+    assert settings["periods_directory"]["path"] == str(week)
+
+
+def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_tygodnia(tmp_path: Path) -> None:
+    """Formularz sekcji odsyła obie ścieżki, więc zapisany już folder okresów zostaje, nawet w środku układu."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+    register.touch()
+    app = centrum(tmp_path)
+    write_folder_settings(app.tool, FolderSettings(periods_directory=week))
+
+    settings = app.client.put(
+        "/api/settings/folders", json={"order_register": str(register), "periods_directory": str(week)}
+    ).json()["settings"]
+
+    assert (settings["order_register"]["path"], settings["periods_directory"]["path"]) == (str(register), str(week))
+
+
+def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
+    """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
+
+    tool.settings.parent.mkdir(parents=True, exist_ok=True)
+    tool.settings.write_text(FOLDERS.dump(folders), encoding="utf-8")
+
+
+PERIODS_FROM_ATTACHMENTS = "2026-11-folder-okresow-od-zalacznikow"
+
+
+@pytest.mark.parametrize("inside", [*INSIDE_DAD_LAYOUT[:3], pytest.param(None, id="tydzien-przeniesiony")])
+def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_jako_zmiana_z_wydania_z_cofnij(
+    tmp_path: Path, inside: tuple[str, ...] | None
+) -> None:
+    repository = tool_repository(tmp_path / "repozytoria")
+    freshness = ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published)
+    root = dad_layout(tmp_path)
+    saved = inea(root, "11_Listopad_2026") / "27_02_11_2026" if inside is None else root.joinpath(*inside)
+    if inside is not None:
+        saved.mkdir(exist_ok=True)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=saved))
+
+    first = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    periods = first.get("/api/settings").json()["periods_directory"]
+    first.stop()
+    after_update = config_bytes(tool.config)
+    second = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    second.stop()
+    unchanged = config_bytes(tool.config)
+    third = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    undone = third.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["periods_directory"]
+    third.stop()
+    fourth = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
+    after_undo = fourth.get("/api/settings").json()["periods_directory"]
+    rows = fourth.get("/api/settings/history").json()["rows"]
+    fourth.stop()
+
+    assert periods == {"state": "ready", "path": str(root), "name": "Załączniki"}
+    assert (applied["source"], applied["release"], applied["changes"], applied["undoable"]) == (
+        "release",
+        {"version": "0.1.0", "commit": repository.head()[:7], "change": PERIODS_FROM_ATTACHMENTS},
+        [{"key": "foldery.folder_okresow", "before": str(saved), "after": str(root)}],
+        True,
+    )
+    assert unchanged == after_update
+    assert (undone["path"], after_undo["path"]) == (str(saved), str(saved))
+    assert [row["source"] for row in rows] == ["tata", "release"]
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        pytest.param(("Załączniki",), id="zalaczniki"),
+        pytest.param(("INEA",), id="uklad-plaski"),
+        pytest.param(("INEA", "22_28_09_2026"), id="folder-okresu-w-ukladzie-plaskim"),
+        pytest.param(None, id="nie-wskazano"),
+    ],
+)
+def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i_bez_zmiany_pliku(
+    tmp_path: Path, saved: tuple[str, ...] | None
+) -> None:
+    dad_layout(tmp_path)
+    (tmp_path / "INEA" / "22_28_09_2026").mkdir(parents=True)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=None if saved is None else tmp_path.joinpath(*saved)))
+    before = tool.settings.read_bytes()
+
+    started(tool, RELEASE_CHANGES).stop()
+    again = started(tool, RELEASE_CHANGES)
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (tool.settings.read_bytes(), rows) == (before, [])
+    assert tool.log_path.read_text(encoding="utf-8").count(f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=bez-zmian") == 1
+
+
+@pytest.mark.parametrize(
+    "obstacle", [pytest.param("bez-dostepu", marks=NO_ACCESS_ON_WINDOWS), "onedrive-nie-oddal-zalacznikow"]
+)
+def test_folder_okresow_nieczytelny_przy_starcie_po_aktualizacji_zamienia_sie_na_zalaczniki_przy_nastepnym(
+    tmp_path: Path, obstacle: str
+) -> None:
+    """Folder bez dostępu albo folder, którego nie ma, a nad nim nie widać układu: zmiana czeka, a nie kończy się
+    „nic do zmiany”, bo wtedy tydzień zostałby zapisany na zawsze."""
+
+    root = tmp_path / "Załączniki"
+    month = inea(root, "10_Październik_2026")
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=month))
+
+    if obstacle == "bez-dostepu":
+        dad_layout(tmp_path)
+        with without_access(root):
+            started(tool, RELEASE_CHANGES).stop()
+    else:
+        started(tool, RELEASE_CHANGES).stop()
+        dad_layout(tmp_path)
+    later = tool.settings.read_bytes()
+    again = started(tool, RELEASE_CHANGES)
+    periods = again.get("/api/settings").json()["periods_directory"]
+    again.stop()
+
+    assert FOLDERS.parse(later) == FolderSettings(periods_directory=month)
+    assert periods["path"] == str(root)
+    assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmiana_wchodzi_po_naprawie(
+    tmp_path: Path,
+) -> None:
+    """Przy złym pliku Centrum zna ostatnią dobrą wartość, ale zmiana z Wydania nie nadpisuje nią pliku taty."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    started(tool, ()).stop()
+    bad = FOLDERS.dump(FolderSettings(periods_directory=week)) + "nieznany_klucz: 1\n"
+    tool.settings.write_text(bad, encoding="utf-8")
+
+    while_bad = started(tool, RELEASE_CHANGES)
+    problem = while_bad.get("/api/settings").json()["folders_problem"]
+    while_bad.stop()
+    after_bad = tool.settings.read_text(encoding="utf-8")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    repaired = started(tool, RELEASE_CHANGES)
+    periods = repaired.get("/api/settings").json()["periods_directory"]
+    repaired.stop()
+
+    assert problem is not None
+    assert after_bad == bad
+    assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+    assert periods["path"] == str(root)
 
 
 def stages(row: dict[str, object]) -> list[str]:
@@ -2847,11 +3095,8 @@ def test_tablica_okresow_bez_folderu_okresow_mowi_o_braku_choc_folder_innego_mie
     year = tmp_path / "Załączniki" / "Rozliczenia 2026"
     (year / "10_Październik_2026" / "INEA").mkdir(parents=True)
     periods = year / "11_Listopad_2026" / "INEA"
-    periods.mkdir(parents=True)
     app = centrum(tmp_path)
-    app.platform.chosen_folders.append(periods)
-    app.client.post("/api/settings/periods-directory/choose")
-    periods.rmdir()
+    write_folder_settings(app.tool, FolderSettings(periods_directory=periods))  # zapis sprzed #1472, w środku układu
 
     with without_access(year / "10_Październik_2026"):
         board = app.client.get("/api/periods")

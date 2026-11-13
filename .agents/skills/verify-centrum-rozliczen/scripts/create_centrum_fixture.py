@@ -399,6 +399,8 @@ def _dad_layout(root: Path) -> dict[str, object]:
     (november / "27_02_11_2026").mkdir()
     return {
         "periods_directory": str(attachments),
+        # a week folder Dad may point to instead of Załączniki; Centrum saves Załączniki (#1472)
+        "week": str(november / "27_02_11_2026"),
         "opened": str(prepared / collective_file_name(LAST_COMPLETE)),
         # token, Status okresu, last complete period
         "board": [

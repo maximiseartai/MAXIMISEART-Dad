@@ -6,6 +6,7 @@ from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
+import re
 import time
 from typing import Any, TypeVar
 import urllib.request
@@ -146,6 +147,13 @@ def settings_window(page: Page) -> Locator:
     return page.get_by_role("dialog", name="Ustawienia")
 
 
+def settings_title(page: Page) -> Locator:
+    """The title of the window Ustawienia, its path ``Ustawienia/<section>``: the heading that names the window, not the
+    title of a notification („Zapisano”, „Cofnięto”), which stands in the window as a heading of its own (#1534)."""
+
+    return settings_window(page).get_by_role("heading", name=re.compile(r"^Ustawienia "))
+
+
 def settings_section(page: Page) -> Locator:
     """The open section of Ustawienia; the menu of sections has lists of the same names (its group Narzędzie)."""
 
@@ -161,7 +169,7 @@ def open_settings(page: Page, section: str) -> Locator:
         page.get_by_role("link", name="Ustawienia", exact=True).click()
     expect(window).to_be_visible()
     window.get_by_role("link", name=section, exact=True).click()
-    expect(window.get_by_role("heading")).to_have_text(f"Ustawienia/{section}")
+    expect(settings_title(page)).to_have_text(f"Ustawienia/{section}")
     return settings_section(page)
 
 

@@ -2,6 +2,9 @@
 
 Zapisana ścieżka jest pełna (Rejestr zleceń to plik ``.xlsx``), a motyw jest ciemny albo jasny. Klucz, którego w pliku
 nie ma, ma wartość domyślną, a klucz spoza schematu to zła treść, tak jak inny schemat albo uszkodzony YAML.
+
+Folder okresów wskazany przez tatę zapisuje się od folderu, od którego Centrum liczy układ folderów taty
+(``periods_directory_root``, ADR 0032), więc ustawienie nie zależy od jednego tygodnia, ``INEA`` ani miesiąca.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import yaml
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
 from rozliczenia.file_state import PathState, path_state
+from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
 SETTINGS_FILE: Final = "centrum-ustawienia.yaml"
 """Plik Rejestru zleceń, folderu okresów i motywu w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
@@ -60,6 +64,29 @@ class FolderSettings:
         """Wskazany folder okresów, którego nie brakuje; niedostępny też, bo o niedostępności mówi dopiero jego odczyt."""
 
         return self.periods_directory if self.periods_directory_state in _TO_READ else None
+
+    @property
+    def periods_directory_all_years(self) -> bool:
+        """Folder okresów jest i jest korzeniem układu folderów taty, czyli Centrum widzi z niego Foldery okresu
+        wszystkich lat w ``Rozliczenia {rok}``."""
+
+        if self.periods_directory is None or self.periods_directory_state != "present":
+            return False
+        try:
+            root = layout_root(self.periods_directory)
+        except PeriodFolderInaccessible:
+            return False
+        return root.by_years and root.directory == self.periods_directory
+
+
+def periods_directory_root(path: Path) -> Path:
+    """Folder okresów, który zapisuje się, gdy tata wskaże ``path``: korzeń układu folderów taty (``layout_root``), w
+    układzie płaskim i w folderze bez dostępu sam ``path``."""
+
+    try:
+        return layout_root(path).directory
+    except PeriodFolderInaccessible:
+        return path
 
 
 _TO_READ: tuple[SettingState, ...] = ("present", "inaccessible")
