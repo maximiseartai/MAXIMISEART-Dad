@@ -502,14 +502,12 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
     (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
 
-    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request wtedy, gdy w pliku testu albo w module,
-    który test importuje, stoi ścieżka tego pliku jako napis albo wyrażenie z samych literałów (``sciezki_w_kodzie``),
-    a ten tekst po zamianie ``\\`` na ``/`` jest równy ścieżce pliku od korzenia repozytorium albo jej końcowi
-    (``_files_named``). Gwarancja obejmuje tylko ten przypadek: przy każdej innej drodze do pliku (``./`` albo ``../`` na
-    początku, ścieżka bezwzględna, fixture z ``tests/conftest.py`` albo z ``pytest_plugins``, które test bierze po nazwie
-    parametru, ścieżka liczona w czasie testu) test może wypaść z wyboru, a łapie go dopiero pełne CI ``main``
-    (ADR 0020). Przykłady takich dróg stoją w ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu``; to
-    próbki, nie pełna lista."""
+    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request tylko wtedy, gdy graf
+    (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring
+    nie wylicza form, które graf widzi: wyznaczają je przypadki ``test_test_widzi_plik_spod_tests_czytany_droga_grafu``
+    (widziane) i ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu`` (przykłady niewidzianych, nie pełna
+    lista). Test czytający plik drogą, której graf nie widzi, wypada z wyboru na pull request, a łapie go pełne CI
+    ``main`` (ADR 0020)."""
 
     packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)

@@ -155,6 +155,28 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
     assert untouched not in Repository.scan(repo).impact(frozenset({changed})).tests
 
 
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests/expected/a.txt').read_text()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests', 'expected', 'a.txt').read_text()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\nA = Path('tests/expected') / 'a.txt'\n\n\ndef test_x() -> None:\n    assert A.read_text()\n"},
+        {
+            "tests/pomoc.py": "from pathlib import Path\n\nA = Path('tests/expected/a.txt')\n",
+            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    assert A.read_text()\n",
+        },
+    ],
+    ids=["napis od korzenia", "Path z kawałków", "stała z operatorem /", "napis w module, który test importuje"],
+)
+def test_test_widzi_plik_spod_tests_czytany_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
+    """Drogi do pliku spod ``tests/``, które graf widzi (granica z docstringu ``_package_data``): zmiana pliku wybiera
+    test, choć pakiet ``tests`` nie ma danych pakietu."""
+
+    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
+
+    assert "tests/test_x.py" in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
+
+
 FIXTURE_READING_EXPECTED = (
     "import pytest\nfrom pathlib import Path\n\n\n@pytest.fixture\ndef oczekiwany() -> str:\n"
     "    return Path('tests/expected/a.txt').read_text()\n"
@@ -191,9 +213,8 @@ TEST_TAKING_FIXTURE = "def test_x(oczekiwany: str) -> None:\n    assert oczekiwa
     ],
 )
 def test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
-    """Próbki dróg do pliku spod ``tests/`` poza gwarancją z docstringu ``_package_data`` (napis albo wyrażenie z samych
-    literałów równe ścieżce od korzenia repozytorium albo jej końcowi, w pliku testu albo w module, który test importuje).
-    To nie pełna lista. Ten test pada, gdy graf zacznie którąś próbkę widzieć; wtedy przenieś ją do
+    """Przykłady dróg do pliku spod ``tests/``, których graf nie widzi (granica z docstringu ``_package_data``); to nie
+    pełna lista. Ten test pada, gdy graf zacznie którąś próbkę widzieć; wtedy przenieś ją do
     ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy``."""
 
     repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
