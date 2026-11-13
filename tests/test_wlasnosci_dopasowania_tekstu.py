@@ -335,7 +335,7 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
 
     guarded = client_data.ForbiddenValues().guard(f"{before}{opening}{written}{closing}{after}", "własność")
 
-    assert guarded == client_data.Guarded(f"{before}{opening}{mask}{closing}{after}", ())
+    assert guarded == client_data.Guarded(client_data.tool(f"{before}{opening}{mask}{closing}{after}"), ())
 
 
 @PROPERTY
@@ -355,6 +355,6 @@ def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_
     guarded = forbidden.guard(f"{before}{written}, dalej", "komórka L6")
 
     assert guarded == client_data.Guarded(
-        f"{before}[adres], dalej", ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
+        client_data.tool(f"{before}[adres], dalej"), ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
     )
     assert forbidden.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"

@@ -24,6 +24,7 @@ import pytest
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, BoxState, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.client_data import tool
 from rozliczenia.centrum.outbox import (
     DRAIN,
     PART_LIMIT,
@@ -71,7 +72,7 @@ def numbered(number: int, count: int, text: str) -> str:
 
 
 def post(blocks: list[str], *, frame: Frame = numbered, run_id: str = RUN_ID) -> Post:
-    return Post.of(THREAD, period="08_14_09_2026", run_id=run_id, blocks=blocks, frame=frame)
+    return Post.of(THREAD, period="08_14_09_2026", run_id=run_id, blocks=[tool(block) for block in blocks], frame=frame)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,7 +160,7 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
             THREAD,
             period="08_14_09_2026",
             run_id=RUN_ID,
-            blocks=["x" * 60_000],
+            blocks=[tool("x" * 60_000)],
             frame=lambda _number, _count, text: "nagłówek " * 1_000 + text,
         )
 
@@ -252,7 +253,7 @@ def test_watek_ktory_zostaje_po_zamknieciu_dostaje_czesci_jako_komentarze_w_zamk
     queue = Queue(tmp_path, box)
 
     queue.outbox.post(
-        Post.of(LOGS, period="08_14_09_2026", run_id=RUN_ID, blocks=["logi\n"], frame=numbered, header="Nagłówek")
+        Post.of(LOGS, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("logi\n")], frame=numbered, header="Nagłówek")
     )
 
     assert queue.box.wait_until(lambda box: bool(closed.comments))
@@ -1035,7 +1036,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
         label="logi-uruchomienia", line="- Logi Uruchomienia okresu: 08_14_09_2026", closed="reuse", title="Logi"
     )
     run_logs = Post.of(
-        logs, period="08_14_09_2026", run_id=RUN_ID, blocks=["podsumowanie\n"], frame=numbered, header="Logi okresu"
+        logs, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("podsumowanie\n")], frame=numbered, header="Logi okresu"
     )
 
     queue.outbox.post(run_logs)
@@ -1060,7 +1061,7 @@ REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRI
 
 
 def report(body: str = REPORT_BODY, *, run_id: str = RUN_ID) -> Post:
-    return Post.of(REPORT, period="08_14_09_2026", run_id=run_id, blocks=[body], frame=unframed)
+    return Post.of(REPORT, period="08_14_09_2026", run_id=run_id, blocks=[tool(body)], frame=unframed)
 
 
 def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path: Path) -> None:

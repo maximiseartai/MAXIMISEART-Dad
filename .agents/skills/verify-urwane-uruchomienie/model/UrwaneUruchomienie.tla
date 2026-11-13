@@ -6,7 +6,7 @@
 (* wysyłki (Outbox.post), obok Logów Wyceny, która doszła do wyniku, i wpisu końca w jej dzienniku, i komentarz       *)
 (* postępu Wyceny (#846: RunComments._progress), który wersja końcowa zamienia w podsumowanie: Logi z wynikiem, a gdy *)
 (* ich kolejka nie przyjęła w pracy Uruchomienia, wersja zastępcza z następnego startu (#910). Każda akcja to jeden    *)
-(* niepodzielny krok kodu z tabeli w SKILL.md skilla verify-urwane-uruchomienie. Kolejka kończy się tu na             *)
+(* niepodzielny krok kodu, który nazywa komentarz nad akcją i nad jej gałęziami. Kolejka kończy się tu na             *)
 (* Outbox.post i najnowszej wersji, którą przyjęła (outbox.py: stopień, potem chwila): co dalej z plikiem kolejki,    *)
 (* sprawdza model skilla verify-kolejka-skrzynki.                                                                     *)
 EXTENDS Naturals, Sequences, FiniteSets
