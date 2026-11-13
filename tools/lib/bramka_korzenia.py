@@ -74,7 +74,7 @@ MAJOR_HEADING = re.compile(rf"(W\d+) r(\d+): ({CODE.pattern})")
 RED_HEADING = re.compile(rf"Czerwony main #(\d+): ({CODE.pattern})")
 UPROOTED = re.compile(r"Wyrwany w #(\d+)")
 HIGHER = re.compile(r"\(([a-e])\) - (\S.*)")
-ROOT_PR_LINE = re.compile(rf"Korzeń z #(\d+): ({CODE.pattern})")
+ROOT_PR_LINE = re.compile(rf"Korzeń z #\d+: ({CODE.pattern})")
 WHY_NOT = "Wyżej nie, bo:"
 EVIDENCE = "Dowód:"
 PULL_REQUEST = "pull_request"
@@ -266,10 +266,11 @@ def _root_pull(block: _Block, line: Item, number: int, pull: Pull) -> list[str]:
 
 
 def _root_line(item: Item, pull: Pull) -> str | None:
-    """Kod z linii ``Korzeń z #N: R-KOD`` opisu PR korzenia, gdy ``#N`` to link GitHuba do ``pull``."""
+    """Kod z linii ``Korzeń z #N: R-KOD`` opisu PR korzenia, gdy ``#N`` to link GitHuba do ``pull``: linia w tej
+    postaci ma jeden numer, więc link do ``pull`` go wyznacza."""
 
     listed = ROOT_PR_LINE.fullmatch(item.text) if item.kind in {"line", "point"} else None
-    return listed[2] if listed and int(listed[1]) == pull.number and _links_to(item, pull, pull.number, None) else None
+    return listed[1] if listed and _links_to(item, pull, pull.number, None) else None
 
 
 def _failure_point(block: _Block, pull: Pull) -> list[str]:
