@@ -18,6 +18,7 @@ from drive.common import (
     Run,
     choose_periods_directory,
     close_settings,
+    error_toasts,
     move,
     open_settings,
     put_text,
@@ -233,6 +234,7 @@ def drive(run: Run, page: Page) -> None:
     close_settings(page)
 
     _saved_and_undo(run, page)
+    _failure_in_window(run, page)
     _history(run, page)
     _refusal_at_field(run, page)
     _typed_keeps_other(run, page)
@@ -269,6 +271,36 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             close_settings(page)
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
+
+
+# Whether the element's centre takes a click: nothing (the blurred page, another window) stands over it.
+ON_TOP = """element => {
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return hit !== null && element.contains(hit)
+}"""
+
+
+def _failure_in_window(run: Run, page: Page) -> None:
+    """A save that fails shows its notification in the window Ustawienia, over its content, not under the blurred page."""
+
+    run.step(FEATURE, "ustawienia-blad-w-oknie")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    page.route(theme, lambda route: route.fulfill(status=500, body=""))
+    try:
+        themes.get_by_role("button", name="Jasny", exact=True).click()
+        failure = settings_window(page).get_by_role("dialog", name="Nie udało się")
+        expect(failure).to_be_visible()
+        expect(error_toasts(page)).to_have_count(1)
+        run.check(failure.evaluate(ON_TOP), "a failed save is a notification in the window Ustawienia that nothing covers")
+        run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
+    finally:
+        page.unroute(theme)
+    close_settings(page)
+    page.reload()
+    expect(page.locator("html")).to_have_class("dark")
+    run.check(run.remembered("motyw") == "dark", "the failed save left the theme as it was")
 
 
 def _history(run: Run, page: Page) -> None:
@@ -475,7 +507,7 @@ def _inbox_password(run: Run, page: Page) -> None:
     save("nowe haslo taty")
     expect(row.get_by_role("status")).to_have_text("Skrzynka przyjęła hasło.")
     run.check(INBOX_PASSWORD in read_text(access), "the password the skrzynka took is in the file")
-    run.capture(page, "315-ustawienia-haslo-przyjete", full_page=False)
+    run.capture(page, "316-ustawienia-haslo-przyjete", full_page=False)
     offline = Switch.INBOX_OFFLINE.on(run.root)
     try:
         save("nowe haslo taty")
@@ -497,7 +529,7 @@ def _inbox_password(run: Run, page: Page) -> None:
     expect(rows.first).to_contain_text("zmieniono")
     expect(rows.first.get_by_role("button")).to_have_count(0)
     run.check(True, "Historia says only that the password changed, without „Cofnij”")
-    run.capture(page, "316-ustawienia-historia-hasla", full_page=False)
+    run.capture(page, "317-ustawienia-historia-hasla", full_page=False)
 
     open_settings(page, "Skrzynka raportów")
     page.set_viewport_size(NARROW)
@@ -508,7 +540,7 @@ def _inbox_password(run: Run, page: Page) -> None:
         expect(row.get_by_role("alert")).to_have_text("Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków.")
         expect(field).to_have_attribute("aria-invalid", "true")
         run.check(INBOX_PASSWORD in read_text(access), "a password with Polish letters is not saved")
-        run.capture(page, "317-ustawienia-haslo-waskie", full_page=False)
+        run.capture(page, "318-ustawienia-haslo-waskie", full_page=False)
         field.press("Escape")
         expect(field).to_be_hidden()
         close_settings(page)
