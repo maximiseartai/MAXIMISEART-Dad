@@ -163,4 +163,5 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
 4. Opublikuj werdykt: `.venv/bin/python tools/scal_pr.py <PR> --werdykt <plik>`.
    Narzędzie sprawdza obie linie, SHA HEAD i szablon, a gdy odmawia, popraw plik według jego komunikatu i wzoru i uruchom je ponownie.
    Gdy HEAD PR zmienił się w trakcie, przejrzyj diff od przejrzanego SHA do nowego HEAD, zanim zmienisz SHA w pliku.
+   Gdy kod Ważnego ma wystąpienie w innym PR, narzędzie zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do otwartego i podaje to w linii `WERDYKT OK` po `| CHWAST`.
    Krok kończy się linią `WERDYKT OK` z adresem komentarza: oddaj wywołującemu ścieżkę pliku i tę linię.

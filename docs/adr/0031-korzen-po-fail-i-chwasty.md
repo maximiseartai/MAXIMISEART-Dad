@@ -56,6 +56,9 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 ### Rejestr i chwasty
 
 - Rejestrem są werdykty i issues na GitHubie; powrót korzenia wykrywa `tools/scal_pr.py --werdykt` przy publikacji (Q22).
+  Wystąpienie kodu to Ważne werdyktu `FAIL` z kodem z ostatniego werdyktu, który go dotyczy (Q25), i blok `### Czerwony main #N: R-KOD` opisu scalonego PR, oba po wdrożeniu szablonu (Q13); czyta je jeden moduł, `tools/lib/rejestr_korzeni.py`.
+  Werdykt z kodem, który ma wystąpienie w innym PR, zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do tabeli otwartego, a linia `WERDYKT OK` podaje to po `| CHWAST`.
+  Gdy wcześniejsze wyrwanie było na (a), zgodę Maksa daje komentarz z linią `ZGODA KORZEŃ: R-KOD` od konta z prawem `admin`; to samo konto piszą agenci, więc bramka sprawdza konto, a nie człowieka.
 - `## Korzeń` w opisie PR jest wymagany tylko po `FAIL` z Ważnym albo przy naprawie czerwonego `main`, z blokiem na każde Ważne: Szczebel, „Wyżej nie, bo”, Dowód (Q17).
   Wzór sekcji stoi w skillu [`pr`](../../.agents/skills/pr/SKILL.md), sekcja „Root section”, a `tools/scal_pr.py` czyta go jako wzór odmowy.
   PR naprawia czerwony `main`, gdy linia „Część #N” albo „Naprawia #N” jego opisu wskazuje issue z etykietą `czerwony-main`; flaky test ma własne issue z etykietą `flaky-test`, więc sekcji nie wymaga.
@@ -75,7 +78,7 @@ Pięć PR-ów w tej kolejności (Q24):
 
 1. Ten ADR, pojęcia i drabina w skillu `przeglad`, lista kodów i szablon werdyktu sprawdzany przez `tools/scal_pr.py --werdykt` (Q3, Q5, Q9, Q18 część „NOWY”, Q21, Q25, Q26).
 2. Zrobione: `## Korzeń` w opisie PR i linie PR korzenia („Korzeń z #N”, „Wyrwany w #M”) sprawdzane przez `tools/scal_pr.py` przy merge'u (`tools/lib/bramka_korzenia.py`), razem z tym, że każdy `NOWY` kod z werdyktów PR stoi na liście na HEAD, i punkt rozstrzygnięcia kodu w werdykcie (Q8, Q10, Q14, Q17, Q18, Q25, Q26).
-3. Wykrycie powrotu korzenia przy publikacji werdyktu i issue „Chwast: R-KOD” (Q11, Q12, Q15, Q22).
+3. Zrobione: wykrycie powrotu korzenia przy publikacji werdyktu i issue „Chwast: R-KOD” (`tools/lib/rejestr_korzeni.py`, `tools/chwasty.py`), szczebel wyżej przy powrocie w bramce korzenia z linią `ZGODA KORZEŃ: R-KOD` po (a) i zamknięcie issue przy merge'u PR z „Korzeń z #issue” (Q11, Q12, Q15, Q22).
 4. Workflow tygodniowy z issue „Rejestr korzeni” i zadanie T3 z kartą (Q18 porządek listy, Q19, Q23).
 5. Audyt historii: przypadki kodów z co najmniej 2 PR-ów odtworzone na `main` i issues tam, gdzie nic ich nie łapie (Q13, Q16).
 

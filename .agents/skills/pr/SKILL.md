@@ -86,6 +86,9 @@ Dowód: <polecenie i wynik>
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
+- A code that another merged PR already uprooted (a block with `Szczebel:` in its `## Korzeń`) needs a rung higher than the highest earlier one, closer to (a).
+  After (a) no higher rung exists, so Maks decides: the merge needs a comment in this PR from an account with `admin` rights on the repository with the line `ZGODA KORZEŃ: R-KOD`.
+- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
 ## Language and length
