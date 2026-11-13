@@ -40,6 +40,7 @@ from rozliczenia.centrum.reports import (
     report_target,
 )
 from rozliczenia.centrum.stops import plain
+from rozliczenia.client_data import tool
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
@@ -479,7 +480,7 @@ def test_ponowne_dostarczenie_tej_samej_sprawy_nie_zmienia_stanu_wyslanych(compu
         period=None,
         run_id="ponowna-wysylka",
         header=None,
-        parts=(body,),
+        parts=(tool(body),),
     )
     assert computer.outbox is not None
 

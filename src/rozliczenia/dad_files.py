@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import workbook_files
-from .client_data import ForbiddenColumn, ForbiddenValues
+from .client_data import ForbiddenColumn, ForbiddenValues, empty_memory
 from .input_copy import InputCopy, SheetCopy, Values, WorkbookCopy
 from .row_positions import UNDER_HEADER, AbovePaste, RowPositions
 from .workbook_files import ByteSource
@@ -37,7 +37,7 @@ class DadFiles:
     """Pliki taty jednej pracy: źródło bajtów, pamięć reguły danych i Kopia wejścia Uruchomienia (``None``: bez Logów)."""
 
     source: ByteSource = workbook_files.file_bytes
-    forbidden: ForbiddenValues = field(default_factory=ForbiddenValues)
+    forbidden: ForbiddenValues = field(default_factory=empty_memory)
     copy: InputCopy | None = None
 
     def for_run(self) -> DadFiles:

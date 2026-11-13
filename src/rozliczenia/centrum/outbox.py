@@ -91,7 +91,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
-from rozliczenia.client_data import Outgoing
+from rozliczenia.client_data import Outgoing, tool
 from rozliczenia.wall_clock import utc_now
 
 if sys.platform == "win32":
@@ -144,7 +144,7 @@ DELIVERY_WAIT_S: Final = 5.0
 # Miejsce (``where``) wyjątku przejścia kolejki w dzienniku Centrum (``CentrumLog.unexpected_failure``).
 DRAIN: Final = "wysyłka do Skrzynki Zgłoszeń"
 
-Frame = Callable[[int, int, str], str]
+Frame = Callable[[int, int, Outgoing], Outgoing]
 """Komentarz części ``k`` z ``n`` z jej tekstu."""
 
 # Foldery kolejki z trwającym przejściem w tym procesie i czy inna kolejka tego folderu prosi o następne. Dwie
@@ -375,8 +375,8 @@ class Post:
     period: str | None
     """Token okresu do dziennika Centrum; ``None``: Uruchomienie bez okresu."""
     run_id: str
-    header: str | None
-    parts: tuple[str, ...]
+    header: Outgoing | None
+    parts: tuple[Outgoing, ...]
     archive: ArchiveFile | None = None
     rank: Rank = Rank.OWN
     state: str | None = None
@@ -408,7 +408,7 @@ class Post:
         run_id: str,
         blocks: Sequence[Outgoing],
         frame: Frame,
-        header: str | None = None,
+        header: Outgoing | None = None,
     ) -> Post:
         """Dzieli ``blocks`` (tekst po strażniku reguły danych, ``Outgoing``) na części mieszczące się w komentarzu
         (``_pack``) i opisuje każdą przez ``frame``.
@@ -596,8 +596,8 @@ def _parse(text: str) -> _Queued | None:
             target,
             _optional_string(document["period"]),
             _string(document["run_id"]),
-            _optional_string(document["header"]),
-            tuple(_string(part) for part in document["parts"]),
+            None if document["header"] is None else tool(_string(document["header"])),
+            tuple(tool(_string(part)) for part in document["parts"]),
             archive,
             _rank(document.get("rank", Rank.OWN.value)),
             _optional_string(document.get("state")),
@@ -687,7 +687,7 @@ def _optional_string(value: object) -> str | None:
     return None if value is None else _string(value)
 
 
-def _pack(blocks: Sequence[str], budget: int) -> tuple[str, ...]:
+def _pack(blocks: Sequence[Outgoing], budget: int) -> tuple[Outgoing, ...]:
     """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony."""
 
     parts: list[str] = []
@@ -706,7 +706,7 @@ def _pack(blocks: Sequence[str], budget: int) -> tuple[str, ...]:
         current = rest
     if current:
         parts.append(current)
-    return tuple(parts)
+    return tuple(tool(part) for part in parts)
 
 
 def _read_addresses(path: Path) -> dict[tuple[str, Label], str | None]:

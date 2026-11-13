@@ -42,6 +42,10 @@ BY_CHANGE_ONLY = {
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
+    "tests/test_regula_danych.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę outbox.py, której "
+        "próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
     "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"

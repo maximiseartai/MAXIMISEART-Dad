@@ -22,7 +22,7 @@ from typing import Final
 
 from fastapi import APIRouter
 
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import ForbiddenValues, Outgoing, tool
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
@@ -56,9 +56,18 @@ class PinnedRun:
     logs: str | None
 
 
+@dataclass(frozen=True)
+class NoteIssue:
+    """Issue Uwagi taty do wysyłki i jego treść w podglądzie „Maks dostanie” (``DadNoteDraft.shown_body``)."""
+
+    title: Outgoing
+    body: Outgoing
+    shown_body: str
+
+
 def note_issue(
     title: str, body: str, commit: str | None, pinned: PinnedRun | None, forbidden: ForbiddenValues
-) -> dad_notes_contract.DadNoteDraft:
+) -> NoteIssue:
     """Issue Uwagi taty: jej tytuł, a w treści jej tekst i stopka (bez tekstu sama stopka).
 
     Stopka Uwagi ogólnej to wersja narzędzia; przypiętej to linia Uruchomienia z wersją i linia jego Logów. Tytuł i
@@ -77,9 +86,7 @@ def note_issue(
         footer = f"Uwaga ogólna · {version}" if pinned is None else _pinned_footer(pinned, version, logs)
         return f"{text}\n\n{footer}" if text else footer
 
-    return dad_notes_contract.DadNoteDraft(
-        title=title_guarded.text, body=with_footer(logs_line), shown_body=with_footer(shown_logs_line)
-    )
+    return NoteIssue(title_guarded.text, tool(with_footer(logs_line)), with_footer(shown_logs_line))
 
 
 def _pinned_footer(pinned: PinnedRun, version: str, logs: Callable[[str, str | None], str]) -> str:
@@ -163,7 +170,8 @@ def dad_notes_router(
 
     @router.post("/draft", operation_id="draftDadNote", responses=refusals)
     def draft(text: dad_notes_contract.DadNoteText) -> dad_notes_contract.DadNoteDraft:
-        return note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs), forbidden)
+        issue = note_issue(text.title, text.body, commit(), _pinned(text.run_id, history, logs), forbidden)
+        return dad_notes_contract.DadNoteDraft.model_validate(issue, from_attributes=True)
 
     @router.post("", operation_id="sendDadNote", responses=refusals)
     def send_note(request: dad_notes_contract.DadNoteRequest) -> common_contract.SendState:

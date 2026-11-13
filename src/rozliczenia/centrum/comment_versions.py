@@ -41,6 +41,7 @@ from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Ta
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
+from rozliczenia.client_data import tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -312,11 +313,11 @@ def post_of(version: CommentVersion) -> LogsPost:
         ),
         period=period,
         run_id=start.run_id,
-        header=(
+        header=tool(
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
             f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
         ),
-        parts=(comment + "\n",),
+        parts=(tool(comment + "\n"),),
         archive=archive,
         rank=rank_of(version),
     )

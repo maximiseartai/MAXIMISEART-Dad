@@ -20,7 +20,7 @@ from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.work import CentrumWork
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import Outgoing, tool
 
 LABEL: Final = "kontrola-ilosci"
 
@@ -45,8 +45,8 @@ class QuantityCheckAfterRun:
         notes = dict.fromkeys(note for guarded in (title, *blocks) for note in guarded.notes)
         tail = [] if not notes else [tool("## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes))]
 
-        def frame(number: int, count: int, text: str) -> str:
-            return text if count == 1 else f"Kontrola ilości, część {number}/{count} (Uruchomienie {run_id})\n\n{text}"
+        def frame(number: int, count: int, text: Outgoing) -> Outgoing:
+            return text if count == 1 else tool(f"Kontrola ilości, część {number}/{count} (Uruchomienie {run_id})\n\n") + text
 
         self._outbox.post(
             Post.of(

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import ForbiddenValues, empty_memory
 
 
 @dataclass(frozen=True)
@@ -25,4 +25,4 @@ class CentrumWork:
     log: CentrumLog
     clock: Clock
     pause: Callable[[float], None]
-    forbidden: ForbiddenValues = field(default_factory=ForbiddenValues)
+    forbidden: ForbiddenValues = field(default_factory=empty_memory)
