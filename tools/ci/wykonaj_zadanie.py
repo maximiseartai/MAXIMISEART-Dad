@@ -25,7 +25,7 @@ Z ``--kroki-skilli`` (zadanie mutations ``tools/ci_lokalnie.py``) wykonuje tak s
 każdego skilla (podstawy jak push, skrypty mutacji jak noc), bez planu i bez części, a FAIL znalezienia kroku (zgubiony
 skrypt mutacji, zły klucz ``ci:`` albo ``ci-czesci:``) drukuje i liczy jako porażkę.
 
-    python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie windows-3.14-2       # albo mutacje-1
+    python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie windows-3.13-2       # albo mutacje-1
     python tools/ci/wykonaj_zadanie.py --kroki-skilli
 """
 

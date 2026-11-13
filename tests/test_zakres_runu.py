@@ -131,32 +131,40 @@ def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(
     assert [unit for unit in gate.pliki if unit.startswith(file)] == [file]
 
 
-def test_bramka_pr_na_windows_testuje_najstarszego_pythona_z_requires_python_jak_mypy_ruff_i_setup_worktree(tmp_path: Path) -> None:
-    """Najstarszy Python z ``requires-python`` to Python taty (3.13.15 od 13.11, ADR 0020): bramka PR testuje go na
-    Windows, mypy i ruff sprawdzają kod dla niego, a ``tools/setup_worktree.py`` (systemowy Python, bez ``tomllib``)
-    trzyma jego kopię."""
+def test_ci_na_windows_testuje_tylko_najstarszego_pythona_z_requires_python_jak_mypy_ruff_i_setup_worktree(tmp_path: Path) -> None:
+    """Najstarszy Python z ``requires-python`` to Python taty (3.13.15 od 13.11, ADR 0020): bramka PR i pełne CI
+    ``main`` testują na Windows tylko jego (od 13.11 bez Windows 3.14, Z2), mypy i ruff sprawdzają kod dla niego, a
+    ``tools/setup_worktree.py`` (systemowy Python, bez ``tomllib``) trzyma jego kopię."""
 
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     oldest = re.fullmatch(r">=(\d+)\.(\d+)", pyproject["project"]["requires-python"])
     assert oldest is not None
-    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"README.md"}), repository(tmp_path / "repo", GATE))
+    repo = repository(tmp_path / "repo", GATE)
+    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"README.md"}), repo)
+    main = zakres(Zdarzenie.PUSH, frozenset(), repo)
+
+    def windows(run: ZakresRunu) -> str:
+        return ", ".join(sorted({lane.python for lane in run.tory if lane.os.startswith("windows")}))
 
     assert {
-        "bramka PR na Windows": next(lane.python for lane in gate.tory if lane.os.startswith("windows")),
+        "bramka PR na Windows": windows(gate),
+        "pełne CI main na Windows": windows(main),
         "mypy": pyproject["tool"]["mypy"]["python_version"],
         "ruff": pyproject["tool"]["ruff"]["target-version"].replace("py3", "3."),
         "setup_worktree": ".".join(map(str, setup_worktree.MINIMUM_PYTHON)),
-    } == dict.fromkeys(("bramka PR na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
+    } == dict.fromkeys(("bramka PR na Windows", "pełne CI main na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
 
 
-def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
+def test_push_biegnie_pelne_ci_main_na_windows_z_e2e_i_straza_czasu_i_na_linuksie_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
     repo = repository(tmp_path / "repo", {**GATE, "tests/c_test.py": "def test_c() -> None:\n    pass\n"})
 
     main = zakres(Zdarzenie.PUSH, frozenset({"tests/test_a.py"}), repo)
     night = zakres(Zdarzenie.NOC, frozenset({"src/pakiet/a.py"}), repo)
 
     assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/c_test.py", "tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
-    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.13", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
+    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [(WINDOWS, ("e2e", "timing")), (LINUX, ())], (
+        "pełne CI main biegnie na Windows 3.13 (Python taty) z E2E i strażą czasu i na Linux 3.14, bez Windows 3.14 (ADR 0020, Z2)"
+    )
     assert (night.tory, night.pliki, night.zrodlo) == ((), (), "bez pytest")
 
 

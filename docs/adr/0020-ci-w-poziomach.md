@@ -11,6 +11,11 @@ Opisuje stan docelowy, który wchodził krokami, jeden PR na krok; wszystkie kro
 Od #540 (26.10) repozytorium jest w organizacji GitHuba `maximiseartai`, więc odpada powód „wymagają organizacji GitHuba zamiast konta osobistego” przy odrzuconych runnerach Blacksmith; pozostałe powody zostają.
 Od 13.11 (decyzja Maksa) tor Windows 3.13 zastępuje Windows 3.11 na PR i na `main`: tata ma na laptopie Pythona 3.13.15 ([komputer taty](../agents/komputer-taty.md)), a dolnej granicy 3.11 nie ma komputer, na którym narzędzie działa, więc `requires-python` rośnie do 3.13. Windows 3.14 zostaje na `main` jako ostrzeżenie przed aktualizacją Pythona, a liczba torów i zadań się nie zmienia.
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md), według którego tata dostaje tylko Wydanie z commitu `main` z zielonym `Required CI status`.
+Zmieniona 13.11 (Z2, zgoda Maksa): pełne CI `main` nie uruchamia już toru Windows 3.14, więc zdanie wyżej, że Windows 3.14 zostaje na `main`, przestało obowiązywać.
+E2E i straż czasu, które biegły na nim, biegną na Windows 3.13, Pythonie taty, a Pythona 3.14 dalej testuje tor Linux; tor Mutation checks na Windows 3.14 się nie zmienia.
+Bramka PR też się nie zmienia, bo Windows 3.14 nigdy na niej nie biegł (poziom 2).
+W runach pushu do `main` od 2.11 do 12.11 (379 runów, pomiar bazy hillclimbu CI) tor Windows 3.14 miał 654 zadania i 149 runner-godzin, a 23 jego zadania padły; 16 runów było czerwonych tylko przez niego, każdy przez jedno zadanie, a tor wracał do zieleni najpóźniej w drugim kolejnym runie `main`.
+Defekt tylko z Windows i Pythonem 3.14 CI pokaże dopiero wtedy, gdy tata przejdzie na 3.14, a z nim tor Windows i `requires-python`.
 
 ## Kontekst
 
@@ -39,7 +44,7 @@ CI ma cztery poziomy:
    Podstawa skilla `verify-*` biegnie, gdy zmiana trafia w jego `pilnuje:`, a jego skrypty mutacji, gdy zmienił się folder skilla.
    Change mutations nie blokuje werdyktu CI. Biegnie po zadaniach bramki, jedna mutacja na zmienioną linię, a każdą przeżytą recenzent omawia w werdykcie.
    `tools/scal_pr.py` nie scala PR, którego `PASS` nie omawia przeżytych mutacji.
-3. **Pełne CI `main`.** Zestaw, który przed tym ADR biegł na pushu do `main`: wszystkie testy na trzech torach (od 13.11 Windows 3.13, Windows 3.14, Linux 3.14), E2E, straż czasu oraz podstawy `ci:` wszystkich skilli; skrypty mutacji skilli od 13.11 tylko nocą (ADR 0021).
+3. **Pełne CI `main`.** Zestaw, który przed tym ADR biegł na pushu do `main`: wszystkie testy na dwóch torach (od 13.11, Z2: Windows 3.13 i Linux 3.14), E2E i straż czasu na Windows 3.13 oraz podstawy `ci:` wszystkich skilli; skrypty mutacji skilli od 13.11 tylko nocą (ADR 0021).
    Change mutations mutuje zmienione linie PR, więc na `main` nie biegnie.
    Trwający run `main` się kończy, a nowy merge podmienia tylko run, który czeka.
    Czerwony `main` nie blokuje merge'ów.
