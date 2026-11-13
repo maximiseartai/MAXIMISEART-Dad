@@ -460,9 +460,10 @@ wystarczają zależności z `requirements.txt`, bez Node.
   OneDrive od wolnej przeglądarki.
 - Ustawienia Centrum (Rejestr zleceń, folder okresów, motyw) są w
   `config/centrum-ustawienia.yaml`, ich Historia w `config/historia-ustawien.jsonl`,
-  a ostatnia przyjęta treść każdego pliku w `config/ustawienia-pamiec/`, wszystko
-  poza gitem. Ręczną zmianę pliku Centrum zapisuje w Historii jako zmianę spoza
-  Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
+  a ostatni przyjęty stan i ostatnia dobra treść każdego pliku w
+  `config/ustawienia-pamiec/`, wszystko poza gitem. Każdą ręczną zmianę pliku
+  (także usunięcie i złą treść) Centrum zapisuje w Historii jednym wierszem
+  spoza Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
 - Metryki czytają przy każdym odczycie oba pliki metryk
   (`.rozliczenia-metrics.jsonl`, `.przygotowanie-pliku-zbiorczego-metrics.jsonl`)
   bez zmiany schematu, więc widać w nich także Uruchomienia spoza Centrum.

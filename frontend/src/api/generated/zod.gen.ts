@@ -293,7 +293,7 @@ export const zHistoryChange = z.object({
  * HistoryRow
  *
  * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
- * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``.
+ * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export const zHistoryRow = z.object({
     id: z.string(),
@@ -306,6 +306,7 @@ export const zHistoryRow = z.object({
     secret: z.boolean(),
     undoable: z.boolean(),
     refused: z.boolean(),
+    removed: z.boolean(),
     reason: z.string().nullable()
 });
 

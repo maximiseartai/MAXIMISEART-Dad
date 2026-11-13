@@ -4,17 +4,23 @@ Na start obejmuje plik Folderów i motywu (``folders``). ``CentrumSettings`` czy
 zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 
-Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania bajtów pliku z pamięcią
-(``memory``). Różne bajty to zmiana spoza Centrum: dobra treść dostaje wiersz Historii ``spoza`` i staje się pamięcią,
-zła treść daje jeden wiersz ``odrzucono`` na tę samą treść, a pamięć zostaje. Pierwszy odczyt bez pamięci przyjmuje
-dobry plik jako stan wyjściowy bez wiersza, więc plik założony ręcznie tam, gdzie Centrum nie pamięta żadnego, też nie
-ma wiersza.
+Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
+bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
+Historii: ``spoza`` z różnicą kluczy od ostatniej dobrej wartości (przy usuniętym pliku z ``removed``) albo
+``odrzucono`` przy złej treści, po którym wartość robocza zostaje ostatnią dobrą. Potem pamięć przyjmuje ten stan, także
+złą treść i brak pliku, więc ten sam stan nie daje drugiego wiersza, a powrót do wcześniejszego stanu daje nowy.
+Pamięci nie ma tylko przed pierwszym odczytem po Wydaniu: wtedy plik, jaki jest (także zły albo żaden), staje się stanem
+wyjściowym bez wiersza, a każda późniejsza zmiana ma już wiersz. Wiersz, którego nie da się dopisać, zostawia pamięć bez
+zmiany, więc następny odczyt próbuje znowu; pamięć, której nie da się zapisać po wierszu, daje najwyżej powtórzony
+wiersz. Pamięci, której system nie daje teraz czytać, odczyt nie porównuje (bez wiersza i bez zapisu), a zapis taty
+odmawia.
 
 Zapis: odczyt z wykryciem zmiany spoza Centrum, zmiana bieżącej wartości (przy złym pliku ostatniej dobrej), ta sama
-reguła ``parse`` co dla pliku, atomowa zamiana pliku, pamięć, wiersz Historii i linia w dzienniku Centrum bez wartości.
-Wiersz, którego nie da się dopisać, przywraca poprzednią treść pliku i pamięci, więc każda zmiana, która weszła, ma
-wiersz. Zgaśnięcie między zamianą pliku a pamięcią daje przy następnym odczycie wiersz ``spoza`` z poprawną różnicą,
-tylko ze złym źródłem. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
+reguła ``parse`` co dla pliku, atomowa zamiana pliku, wiersz Historii, pamięć i linia w dzienniku Centrum bez wartości.
+Wiersz, którego nie da się dopisać, przywraca poprzednią treść pliku, więc każda zmiana, która weszła, ma wiersz.
+Zgaśnięcie po zamianie pliku przed wierszem daje przy następnym odczycie wiersz ``spoza`` z poprawną różnicą, tylko ze
+złym źródłem, a zgaśnięcie po wierszu przed pamięcią do tego jeszcze powtórzony wiersz ``spoza``; zmiany bez wiersza
+nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
 
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
 ``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
@@ -25,7 +31,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import hashlib
 from pathlib import Path
 import threading
 from typing import Final, TypeVar
@@ -36,7 +41,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
 from rozliczenia.centrum.settings.history import History, HistoryRead, HistoryRow, RowChange, RowSource, SourceKind
-from rozliczenia.centrum.settings.memory import Memory, settings_bytes
+from rozliczenia.centrum.settings.memory import Memory, Remembered, settings_bytes
 
 T = TypeVar("T")
 
@@ -98,7 +103,6 @@ class CentrumSettings:
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
-        self._bad_logged: dict[str, bytes] = {}
 
     def snapshot(self) -> SettingsSnapshot:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
@@ -146,13 +150,12 @@ class CentrumSettings:
 
     def _change(self, file: SettingsFile[T], edit: Callable[[T], T], *, undoes: str | None) -> Saved | Refused | NotSaved:
         data = self._bytes_for_change(file)
-        if isinstance(data, Unreadable):
+        if isinstance(data, Unreadable) or isinstance(self._memory.read(file.name), Unreadable):
             self._log.settings_unreadable(cause="dostep")
             return NotSaved()
         observed = self._observed(file, data)
         current = _usable(observed, file)
-        text = file.dump(edit(current))
-        new = text.encode("utf-8")
+        new = file.dump(edit(current)).encode("utf-8")
         edited = file.parse(new)
         if isinstance(edited, FieldProblem):
             return Refused(edited)
@@ -162,35 +165,41 @@ class CentrumSettings:
         if isinstance(observed, Bad) and data is not None:
             self._memory.keep_rejected(file.name, data, self._now())
         row = self._row(file, changes, "tata", undoes=undoes) if changes else None
-        remembered = self._memory.remembered(file.name)
         try:
             replace_atomically(self._config / file.name, new, pause=self._pause)
         except OSError:
             return NotSaved()
-        try:
-            self._memory.remember(file.name, new)
-            if row is not None:
+        if row is not None:
+            try:
                 self._history.append(row)
-        except OSError:
-            self._put_back(file, data, remembered)
-            return NotSaved()
+            except OSError:
+                self._put_back(file, data)
+                return NotSaved()
+        self._remember(file, Remembered(seen=new, good=new))
         if row is None:
             return Saved(change=None)
         self._log.settings_changed(file=file.name, keys=tuple(change.key for change in changes), source="tata")
         return Saved(change=row.id)
 
-    def _put_back(self, file: SettingsFile[T], data: bytes | None, remembered: bytes | None) -> None:
-        """Poprzednia treść pliku i pamięci po zapisie, którego wiersza nie dało się dopisać; to, czego nie da się
-        przywrócić, wyrówna następny odczyt jako zmianę spoza Centrum."""
+    def _put_back(self, file: SettingsFile[T], data: bytes | None) -> None:
+        """Poprzednia treść pliku po zapisie, którego wiersza nie dało się dopisać; pamięć jeszcze jej nie zmieniła.
+        Treść, której nie da się przywrócić, wyrówna następny odczyt jako zmianę spoza Centrum."""
 
         try:
             if data is None:
                 (self._config / file.name).unlink(missing_ok=True)
             else:
                 replace_atomically(self._config / file.name, data, pause=self._pause)
-            self._memory.remember(file.name, remembered)
         except OSError as failure:
             self._log.unexpected_failure(failure, where="przywrócenie Ustawień po nieudanym wierszu Historii")
+
+    def _remember(self, file: SettingsFile[T], remembered: Remembered) -> None:
+        """Pamięć po wierszu Historii; nieudana daje przy następnym odczycie powtórzony wiersz, nie zmianę bez wiersza."""
+
+        try:
+            self._memory.write(file.name, remembered)
+        except OSError as failure:
+            self._log.unexpected_failure(failure, where="pamięć Ustawień")
 
     def _bytes_for_change(self, file: SettingsFile[T]) -> bytes | None | Unreadable:
         """Bajty pliku przed zmianą; plik, którego system nie daje czytać, czyta ponownie po kolejnych przerwach."""
@@ -210,62 +219,44 @@ class CentrumSettings:
         return self._observed(file, data)
 
     def _observed(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
-        """Wartość pliku o bajtach ``data`` po porównaniu z pamięcią (zmiana spoza Centrum, stan wyjściowy)."""
+        """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
+        ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem."""
 
         parsed = file.parse(data)
-        remembered = self._memory.remembered(file.name)
-        if data == remembered:
+        remembered = self._memory.read(file.name)
+        if isinstance(remembered, Unreadable):
             return _read(parsed, None)
-        before = None if remembered is None else file.parse(remembered)
-        if isinstance(before, FieldProblem):
-            before = None
+        if remembered is None:
+            if isinstance(parsed, FieldProblem):
+                self._log.settings_bad(file=file.name, field=parsed.field or "plik")
+            self._remember(file, Remembered(seen=data, good=None if isinstance(parsed, FieldProblem) else data))
+            return _read(parsed, None)
+        before = _good_value(remembered.good, file)
+        if data == remembered.seen:
+            return _read(parsed, before)
+        try:
+            self._history.append(self._outside_row(file, data, parsed, before))
+        except OSError:
+            self._log.settings_external(file=file.name, result="bez-zapisu")
+            return _read(parsed, before)
+        self._remember(file, Remembered(seen=data, good=remembered.good if isinstance(parsed, FieldProblem) else data))
         if isinstance(parsed, FieldProblem):
-            self._outside_bad(file, data, parsed, first=before is None)
+            self._log.settings_bad(file=file.name, field=parsed.field or "plik")
+            self._log.settings_external(file=file.name, result="odrzucono")
             return Bad(parsed, before)
-        if before is None:
-            self._accept(file, data, ())
-        else:
-            self._accept(file, data, file.diff(before, parsed))
+        self._log.settings_external(file=file.name, result="zapisano")
         return Good(parsed)
 
-    def _accept(self, file: SettingsFile[T], data: bytes | None, changes: tuple[KeyChange, ...]) -> None:
-        """Przyjmuje dobrą treść spoza Centrum: wiersz ``spoza`` z różnicą (bez różnicy bez wiersza), potem pamięć."""
+    def _outside_row(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem, before: T) -> HistoryRow:
+        """Wiersz zmiany spoza Centrum: zła treść ``odrzucono`` z powodem, dobra treść albo brak pliku różnica kluczy od
+        ostatniej dobrej wartości (bez różnicy bez „Cofnij”)."""
 
-        try:
-            if changes:
-                self._history.append(self._row(file, changes, "spoza", undoes=None))
-            self._memory.remember(file.name, data)
-        except OSError:
-            self._log.settings_external(file=file.name, result="bez-zapisu")
-            return
-        if changes:
-            self._log.settings_external(file=file.name, result="zapisano")
-
-    def _outside_bad(self, file: SettingsFile[T], data: bytes | None, problem: FieldProblem, *, first: bool) -> None:
-        """Zła treść: linia w dzienniku raz na treść w tej pracy Centrum, a po dobrej pamięci także wiersz ``odrzucono``
-        raz na tę samą treść (porównanie z ostatnim takim wierszem pliku)."""
-
-        content = b"" if data is None else data
-        if self._bad_logged.get(file.name) != content:
-            self._bad_logged[file.name] = content
-            self._log.settings_bad(file=file.name, field=problem.field or "plik")
-        if first:
-            return
-        fingerprint = hashlib.sha256(content).hexdigest()[:16]
-        last = next(
-            (row for row in self._history.read().rows if row.file == file.name and row.result == "odrzucono"), None
-        )
-        if last is not None and last.fingerprint == fingerprint:
-            return
-        row = self._row(file, (), "spoza", undoes=None).model_copy(
-            update={"result": "odrzucono", "reason": problem.sentence, "undoable": False, "fingerprint": fingerprint}
-        )
-        try:
-            self._history.append(row)
-        except OSError:
-            self._log.settings_external(file=file.name, result="bez-zapisu")
-            return
-        self._log.settings_external(file=file.name, result="odrzucono")
+        if isinstance(parsed, FieldProblem):
+            return self._row(file, (), "spoza", undoes=None).model_copy(
+                update={"result": "odrzucono", "reason": parsed.sentence, "undoable": False, "removed": data is None}
+            )
+        row = self._row(file, file.diff(before, parsed), "spoza", undoes=None)
+        return row.model_copy(update={"undoable": row.undoable and bool(row.changes), "removed": data is None})
 
     def _row(
         self, file: SettingsFile[T], changes: tuple[KeyChange, ...], source: SourceKind, *, undoes: str | None
@@ -299,9 +290,17 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     parsed = FOLDERS.parse(data)
     if not isinstance(parsed, FieldProblem):
         return SettingsSnapshot(folders=parsed)
-    remembered = Memory(config, lambda _: None).remembered(FOLDERS.name)
-    usable = None if remembered is None else FOLDERS.parse(remembered)
-    return SettingsSnapshot(folders=FOLDERS.default if usable is None or isinstance(usable, FieldProblem) else usable)
+    remembered = Memory(config, lambda _: None).read(FOLDERS.name)
+    good = remembered.good if isinstance(remembered, Remembered) else None
+    return SettingsSnapshot(folders=_good_value(good, FOLDERS))
+
+
+def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
+    """Wartość ostatniej dobrej treści z pamięci; brak pliku albo treść, której ``parse`` dziś nie przyjmuje, to wartości
+    domyślne pliku."""
+
+    parsed = file.parse(good)
+    return file.default if isinstance(parsed, FieldProblem) else parsed
 
 
 def _read(parsed: T | FieldProblem, usable: T | None) -> Read[T]:
@@ -327,7 +326,8 @@ def _reported(row: HistoryRow) -> str:
     if row.secret or file is None:
         return f"{head} · zmieniono: " + ", ".join(change.key for change in row.changes)
     undo = " · cofnięcie" if row.undoes is not None else ""
-    return f"{head}{undo} · " + "; ".join(
+    removed = " · usunięto plik" if row.removed else ""
+    return f"{head}{undo}{removed} · " + "; ".join(
         f"{change.key}: {file.shown(change.key, change.before)} → {file.shown(change.key, change.after)}"
         for change in row.changes
     )

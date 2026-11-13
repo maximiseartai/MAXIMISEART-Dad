@@ -29,7 +29,8 @@ class Good(Generic[T]):
 
 @dataclass(frozen=True)
 class Bad(Generic[T]):
-    """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela (``None``: nie było żadnej)."""
+    """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela (``None``: nieznana, więc
+    obowiązują wartości domyślne pliku)."""
 
     problem: FieldProblem
     usable: T | None

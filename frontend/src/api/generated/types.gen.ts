@@ -580,7 +580,7 @@ export type HistoryChange = {
  * HistoryRow
  *
  * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
- * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``.
+ * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export type HistoryRow = {
     /**
@@ -623,6 +623,10 @@ export type HistoryRow = {
      * Refused
      */
     refused: boolean;
+    /**
+     * Removed
+     */
+    removed: boolean;
     /**
      * Reason
      */

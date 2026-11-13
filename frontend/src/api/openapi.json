@@ -3198,6 +3198,10 @@
             "type": "boolean",
             "title": "Refused"
           },
+          "removed": {
+            "type": "boolean",
+            "title": "Removed"
+          },
           "reason": {
             "anyOf": [
               {
@@ -3223,10 +3227,11 @@
           "secret",
           "undoable",
           "refused",
+          "removed",
           "reason"
         ],
         "title": "HistoryRow",
-        "description": "Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść\nspoza Centrum, której Centrum nie przyjęło, z powodem ``reason``."
+        "description": "Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść\nspoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum."
       },
       "InaccessiblePath": {
         "properties": {

@@ -1,7 +1,8 @@
 """Historia Ustawień w ``config/historia-ustawien.jsonl``: jeden wiersz JSON na jeden zapis, dopisywany linia po linii.
 
 Wiersz mówi, kiedy, skąd (tata albo zmiana spoza Centrum), który plik i które klucze się zmieniły, z wartością przed
-i po (sekret bez wartości), czy da się go cofnąć i czy zmiana weszła (``zapisano``) albo została odrzucona z powodem.
+i po (sekret bez wartości), czy da się go cofnąć, czy plik usunięto i czy zmiana weszła (``zapisano``) albo została
+odrzucona z powodem.
 Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
 """
 
@@ -50,8 +51,7 @@ class RowChange(_Model):
 
 
 class HistoryRow(_Model):
-    """Wiersz Historii Ustawień. ``fingerprint``: odcisk złej treści spoza Centrum (wiersz ``odrzucono``), żeby ta sama
-    zła treść dała jeden wiersz."""
+    """Wiersz Historii Ustawień. ``removed``: plik usunięty poza Centrum, więc jego klucze wróciły do wartości domyślnych."""
 
     version: Literal[1] = Field(default=_VERSION, validation_alias="v", serialization_alias="v")
     id: str
@@ -65,7 +65,7 @@ class HistoryRow(_Model):
     undoable: bool = Field(validation_alias="cofalny", serialization_alias="cofalny")
     result: RowResult = Field(validation_alias="wynik", serialization_alias="wynik")
     reason: str | None = Field(validation_alias="powod", serialization_alias="powod")
-    fingerprint: str | None = Field(default=None, validation_alias="odcisk", serialization_alias="odcisk")
+    removed: bool = Field(default=False, validation_alias="usunieto", serialization_alias="usunieto")
 
     def key_changes(self) -> tuple[KeyChange, ...]:
         return tuple(change.change() for change in self.changes)

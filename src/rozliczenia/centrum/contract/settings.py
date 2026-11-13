@@ -103,7 +103,7 @@ HistorySource = Literal["tata", "outside"]
 
 class HistoryRow(Model):
     """Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
-    spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``."""
+    spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum."""
 
     id: str
     at: datetime
@@ -115,6 +115,7 @@ class HistoryRow(Model):
     secret: bool
     undoable: bool
     refused: bool
+    removed: bool
     reason: str | None
 
 

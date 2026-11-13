@@ -346,7 +346,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
     [
         CONFIG_DIR / SETTINGS_FILE,
         CONFIG_DIR / HISTORY_FILE,
-        CONFIG_DIR / MEMORY_DIRECTORY / SETTINGS_FILE,
+        CONFIG_DIR / MEMORY_DIRECTORY / f"{SETTINGS_FILE}.json",
         LOG_PATH,
         CONFIG_DIR / CENTRUM_RUNS_FILE,
         CONFIG_DIR / REPORT_KEY_FILE,
@@ -569,9 +569,11 @@ def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_
     app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\nmotyw: light\n", encoding="utf-8")
 
     read = app.client.get("/api/settings")
+    again = app.client.get("/api/settings")
     rows = history_rows(app)
 
     assert (read.status_code, read.json()["periods_directory"]["path"], read.json()["theme"]) == (200, str(other), "light")
+    assert again.json() == read.json()
     assert changes(rows) == [
         (
             "outside",
@@ -616,6 +618,86 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
     assert log.count("ustawienia-zle plik=centrum-ustawienia.yaml pole=folder_okresow") == 1
 
 
+def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
+    """Maks psuje plik, naprawia go innym folderem i psuje tak samo jak za pierwszym razem: Historia mówi o każdym."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    bad = "schema_version: 1\nfolder_okresow: INEA\n"
+    for content in (bad, f"schema_version: 1\nfolder_okresow: '{other}'\n", bad):
+        app.settings_path.write_text(content, encoding="utf-8")
+        view = app.client.get("/api/settings").json()
+    rows = history_rows(app)
+
+    assert (view["periods_directory"]["path"], view["folders_problem"]) == (
+        str(other),
+        {"field": "folder_okresow", "message": PERIODS_PATH},
+    )
+    assert [(row["source"], row["refused"], row["changes"]) for row in rows] == [
+        ("outside", True, []),
+        ("outside", False, [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]),
+        ("outside", True, []),
+        ("tata", False, [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+    ]
+
+
+def test_plik_ustawien_usuniety_i_przywrocony_z_kopii_poza_centrum_ma_dwa_wiersze(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    saved = app.settings_path.read_bytes()
+
+    app.settings_path.unlink()
+    removed = app.client.get("/api/settings").json()
+    app.settings_path.write_bytes(saved)
+    restored = app.client.get("/api/settings").json()
+    rows = history_rows(app)
+
+    assert (removed["periods_directory"], restored["periods_directory"]["path"]) == (NOT_SET, str(periods))
+    assert [(row["source"], row["removed"], row["changes"]) for row in rows[:2]] == [
+        ("outside", False, [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+        ("outside", True, [{"key": "foldery.folder_okresow", "before": str(periods), "after": None}]),
+    ]
+
+
+def test_cofniecie_usuniecia_pliku_ustawien_poza_centrum_przywraca_folder(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.unlink()
+    app.client.get("/api/settings")
+    removal = history_rows(app)[0]
+
+    undone = app.client.post(f"/api/settings/history/{removal['id']}/undo")
+
+    assert (undone.status_code, undone.json()["settings"]["periods_directory"]["path"]) == (200, str(periods))
+    assert [(row["source"], row["undoes"]) for row in history_rows(app)[:2]] == [
+        ("tata", removal["id"]),
+        ("outside", None),
+    ]
+
+
+def test_plik_ustawien_sprzed_wydania_jest_stanem_wyjsciowym_a_pozniejsza_reczna_zmiana_ma_wiersz(
+    tmp_path: Path,
+) -> None:
+    """Pierwszy start wersji z Historią zastaje plik taty bez pamięci: przyjmuje go bez wiersza, a dalej już widzi zmiany."""
+
+    periods = tmp_path / "INEA"
+    other = tmp_path / "Załączniki"
+    periods.mkdir()
+    other.mkdir()
+    app = centrum(tmp_path)
+    app.settings_path.parent.mkdir(parents=True)
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{periods}'\n", encoding="utf-8")
+
+    first = app.client.get("/api/settings").json()
+    rows_after_first = history_rows(app)
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+    app.client.get("/api/settings")
+
+    assert (first["periods_directory"]["path"], rows_after_first) == (str(periods), [])
+    assert changes(history_rows(app)) == [
+        ("outside", [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}])
+    ]
+
+
 def test_zapis_taty_przy_zlej_tresci_pliku_zmienia_ostatnia_dobra_wartosc(tmp_path: Path) -> None:
     app, periods = with_periods_directory(tmp_path)
     app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
@@ -641,7 +723,62 @@ def test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawie
 
     assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
     assert app.settings_path.read_bytes() == saved
+    history.rmdir()
     assert app.client.get("/api/settings").json()["theme"] == "dark"
+    assert history_rows(app) == []
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci(tmp_path: Path) -> None:
+    """Pamięci, której system nie daje czytać, Centrum nie zgaduje: zapis taty czeka, a ręczna zmiana nie ginie."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    memory = app.tool.config / MEMORY_DIRECTORY / f"{SETTINGS_FILE}.json"
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    memory.chmod(0)
+    try:
+        read = app.client.get("/api/settings")
+        refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+    finally:
+        memory.chmod(0o644)
+    app.client.get("/api/settings")
+
+    assert (read.json()["periods_directory"]["path"], refused.status_code) == (str(other), 500)
+    assert changes(history_rows(app)) == [
+        ("outside", [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]),
+        ("tata", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}]),
+    ]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_plik_historii_zajety_na_chwile_przyjmuje_wiersz_po_ponowieniu(tmp_path: Path) -> None:
+    """Antywirus trzyma Historię Ustawień przez chwilę: zmiana taty wchodzi z wierszem, a nie kończy się odmową."""
+
+    tool = ToolDirectory(tmp_path)
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    history = tool.config / HISTORY_FILE
+    pauses: list[float] = []
+
+    def access_back(seconds: float) -> None:
+        pauses.append(seconds)
+        history.chmod(0o644)
+
+    client = CentrumClient(centrum_app(tool, platform=FakePlatform(chosen_folders=[periods]), pause=access_back))
+    client.post("/api/settings/periods-directory/choose")
+    history.chmod(0)
+    try:
+        changed = client.put("/api/settings/theme", json={"theme": "light"})
+    finally:
+        history.chmod(0o644)
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (changed.status_code, changed.json()["theme"]) == (200, "light")
+    assert [row["changes"][0]["key"] for row in rows] == ["wyglad.motyw", "foldery.folder_okresow"]
+    assert len(pauses) == 1
 
 
 def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> None:
