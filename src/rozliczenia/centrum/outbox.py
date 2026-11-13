@@ -91,6 +91,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
+from rozliczenia.client_data import Outgoing
 from rozliczenia.wall_clock import utc_now
 
 if sys.platform == "win32":
@@ -405,11 +406,12 @@ class Post:
         *,
         period: str | None,
         run_id: str,
-        blocks: Sequence[str],
+        blocks: Sequence[Outgoing],
         frame: Frame,
         header: str | None = None,
     ) -> Post:
-        """Dzieli ``blocks`` na części mieszczące się w komentarzu (``_pack``) i opisuje każdą przez ``frame``.
+        """Dzieli ``blocks`` (tekst po strażniku reguły danych, ``Outgoing``) na części mieszczące się w komentarzu
+        (``_pack``) i opisuje każdą przez ``frame``.
 
         Część ponad limit to ``ValueError``.
         """

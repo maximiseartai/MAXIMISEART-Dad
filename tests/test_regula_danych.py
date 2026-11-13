@@ -11,7 +11,7 @@ from datetime import time
 
 import pytest
 
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, free_text
+from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, free_text, tool
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
 from tests.fixtures.wyciek import zawiera_wartosc
 
@@ -27,7 +27,7 @@ def test_wartosc_krotsza_niz_piec_znakow_nie_jest_zakazana_a_piec_znakow_juz_jes
     guarded = forbidden.guard("Lipa kwitnie przy drodze na Lipno", "tekst")
 
     assert MIN_VALUE == 5
-    assert guarded == Guarded("Lipa kwitnie przy drodze na [adres]", (ADDRESS_NOTE,))
+    assert guarded == Guarded(tool("Lipa kwitnie przy drodze na [adres]"), (ADDRESS_NOTE,))
 
 
 def test_z_dwoch_wartosci_od_tego_samego_slowa_maskowana_jest_cala_dluzsza() -> None:
@@ -47,7 +47,7 @@ def test_numer_orange_ktory_excel_czyta_jako_liczbe_ulamkowa_jest_zamaskowany_w_
 
     guarded = forbidden.guard("umowa 4801234567 aktywna", "tekst")
 
-    assert guarded == Guarded("umowa [numer Orange] aktywna", (ORANGE_NOTE,))
+    assert guarded == Guarded(tool("umowa [numer Orange] aktywna"), (ORANGE_NOTE,))
 
 
 def test_liczba_z_czescia_ulamkowa_z_zakazanej_kolumny_jest_zamaskowana_razem_z_czescia_ulamkowa() -> None:
@@ -57,7 +57,7 @@ def test_liczba_z_czescia_ulamkowa_z_zakazanej_kolumny_jest_zamaskowana_razem_z_
 
     guarded = forbidden.guard("umowa 48012.75 aktywna", "tekst")
 
-    assert guarded == Guarded("umowa [numer Orange] aktywna", (ORANGE_NOTE,))
+    assert guarded == Guarded(tool("umowa [numer Orange] aktywna"), (ORANGE_NOTE,))
 
 
 def test_godzina_z_zakazanej_kolumny_nie_jest_zakazana_wartoscia() -> None:
@@ -65,7 +65,7 @@ def test_godzina_z_zakazanej_kolumny_nie_jest_zakazana_wartoscia() -> None:
     forbidden = ForbiddenValues()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, time(8, 30))
 
-    assert forbidden.guard("przyjazd 08:30:00 rano", "tekst") == Guarded("przyjazd 08:30:00 rano", ())
+    assert forbidden.guard("przyjazd 08:30:00 rano", "tekst") == Guarded(tool("przyjazd 08:30:00 rano"), ())
 
 
 def test_wartosc_zapamietana_pod_dwiema_kolumnami_jest_maskowana_jak_pierwsza() -> None:
@@ -73,14 +73,14 @@ def test_wartosc_zapamietana_pod_dwiema_kolumnami_jest_maskowana_jak_pierwsza() 
     forbidden.remember_value(ForbiddenColumn.ORANGE, "SYN-48012")
     forbidden.remember_value(ForbiddenColumn.ADDRESS, "syn 48012")
 
-    assert forbidden.guard("umowa SYN 48012", "tekst") == Guarded("umowa [numer Orange]", (ORANGE_NOTE,))
+    assert forbidden.guard("umowa SYN 48012", "tekst") == Guarded(tool("umowa [numer Orange]"), (ORANGE_NOTE,))
 
 
 def test_kazda_praca_centrum_ma_wlasna_pamiec_zakazanych_wartosci() -> None:
     first, second = ForbiddenValues(), ForbiddenValues()
     first.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
 
-    assert second.guard("Syntetyczna Lipowa 5", "tekst") == Guarded("Syntetyczna Lipowa 5", ())
+    assert second.guard("Syntetyczna Lipowa 5", "tekst") == Guarded(tool("Syntetyczna Lipowa 5"), ())
 
 
 def test_wyrocznia_wycieku_w_testach_widzi_numer_zlecenia_tak_jak_straznik() -> None:
@@ -111,11 +111,11 @@ def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(for
     expected: Guarded | None
     if isinstance(form.value, str):
         text = form.value if form.masked is None else form.masked
-        guarded, expected = forbidden.guard(form.value, "komórka"), Guarded(text, ())
+        guarded, expected = forbidden.guard(form.value, "komórka"), Guarded(tool(text), ())
         in_text = forbidden.guard(f"oddzwonić {form.value}, potem", "tekst")
-        assert in_text == Guarded(f"oddzwonić {text}, potem", ()), "ta sama forma w wolnym tekście"
+        assert in_text == Guarded(tool(f"oddzwonić {text}, potem"), ()), "ta sama forma w wolnym tekście"
     else:
         guarded = forbidden.guard_number(form.value, "komórka")
-        expected = None if form.masked is None else Guarded(form.masked, ())
+        expected = None if form.masked is None else Guarded(tool(form.masked), ())
 
     assert guarded == expected, form.why
