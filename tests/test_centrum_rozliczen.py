@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from pathlib import Path
@@ -589,6 +590,20 @@ def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_
     assert "ustawienia-spoza plik=centrum-ustawienia.yaml wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
 
 
+def test_historia_otwarta_zaraz_po_recznej_zmianie_pliku_ustawien_pokazuje_jej_wiersz(tmp_path: Path) -> None:
+    """Tata otwiera Historię w oknie Ustawień, zanim cokolwiek innego przeczytało Ustawienia po zmianie Maksa."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    assert changes(history_rows(app))[0] == (
+        "outside",
+        [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}],
+    )
+
+
 def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_i_jednym_wierszem_bez_cofniecia(
     tmp_path: Path,
 ) -> None:
@@ -859,6 +874,25 @@ def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> Non
         ["wyglad.motyw", "foldery.folder_okresow"],
         1,
     )
+
+
+def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        app = centrum(tmp_path)
+        app.client.put("/api/settings/theme", json={"theme": "light"})
+        [row] = history_rows(app)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    assert row["at"].endswith("Z")
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

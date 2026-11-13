@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import timezone
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -154,7 +155,8 @@ def _describe_path(path: Path | None, state: SettingState) -> settings_contract.
 def _row(row: HistoryRow) -> settings_contract.HistoryRow:
     return settings_contract.HistoryRow(
         id=row.id,
-        at=row.at,
+        # Chwila taty w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”.
+        at=row.at.astimezone(timezone.utc),
         source="tata" if row.source.kind == "tata" else "outside",
         undoes=row.undoes,
         file=row.file,
