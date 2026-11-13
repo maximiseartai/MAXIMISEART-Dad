@@ -1422,6 +1422,27 @@ worker_list_unreadable [zdanie]
 addresses_not_moved [zdanie]
   Adresów Wykonawców nie przeniesiono ze starego pliku adresy-wykonawcow.yaml w folderze config: ten sam adres stoi dwa razy. Dopisz je Wykonawcom w Ustawieniach.
 
+reminders_time [zdanie]
+  Wpisz godzinę jako GG:MM, np. 08:00.
+
+reminders_empty_morning [zdanie]
+  Poranna pora musi kończyć się później, niż się zaczyna.
+
+reminders_empty_evening [zdanie]
+  Wieczorna pora musi kończyć się później, niż się zaczyna.
+
+reminders_overlap [zdanie]
+  Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna.
+
+reminders_empty_text [zdanie]
+  Wpisz pierwsze zdanie przypomnienia.
+
+reminders_unknown_field [zdanie]
+  W treści przypomnienia może stać tylko pole {dzień}, bez innych nawiasów klamrowych.
+
+reminders_without_since [zdanie]
+  Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz.
+
 autostart_unsupported [zdanie]
   Start razem z Windows działa tylko na komputerze z Windows.
 

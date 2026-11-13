@@ -43,6 +43,10 @@ GRAPH = {
     "tests/test_wzgledny.py": "from pakiet.pod.wzgledny import wartosc\n",
     "tests/skrypty/hak": "#!/usr/bin/env python3\nimport pakiet.a\n",
     "tests/test_hak.py": "HAK = 'tests/skrypty/hak'\n",
+    "tests/fixtures/__init__.py": "",
+    "tests/fixtures/zgloszenia.py": "",
+    "tests/fixtures/uwagi.json": "{}\n",
+    "tests/test_zgloszenia.py": "from tests.fixtures import zgloszenia\n",
 }
 # Pliki, których test nie używa, choć coś w nich przypomina zależność.
 UNUSED = {
@@ -65,6 +69,8 @@ UNUSED = {
     "tests/skrypty/uruchom": "#!/usr/bin/env node\nrequire('src/pakiet/b.py')\n",
     "tests/test_skrypt_node.py": "SKRYPT = 'tests/skrypty/uruchom'\n",
     "tests/expected/test_raport.txt": "raport\n",
+    "tests/__init__.py": "",
+    "tests/expected/komunikaty.txt": "komunikat\n",
 }
 CONFIGURATION_READER = "from pathlib import Path\n\nKONFIGURACJA = Path('pyproject.toml')\n"
 
@@ -91,6 +97,7 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         ("docs/dane/wpis.md", "tests/test_glob_konca.py"),
         ("src/pakiet/a.py", "tests/test_wzgledny.py"),
         ("src/pakiet/a.py", "tests/test_hak.py"),
+        ("tests/fixtures/uwagi.json", "tests/test_zgloszenia.py"),
     ],
     ids=[
         "moduł, który test importuje przez inny moduł",
@@ -103,6 +110,7 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         "plik z globu na katalogu wskazanym końcem ścieżki",
         "moduł z importu względnego modułu, który test importuje",
         "moduł, który importuje skrypt Pythona bez rozszerzenia",
+        "plik danych pakietu tests/fixtures, który czyta fixture testu",
     ],
 )
 def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, changed: str, touched: str) -> None:
@@ -126,6 +134,7 @@ def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, chan
         ("src/pakiet/b.py", "tests/test_skrypt_sh.py"),
         ("src/pakiet/b.py", "tests/test_skrypt_node.py"),
         ("tests/expected/test_raport.txt", "tests/expected/test_raport.txt"),
+        ("tests/expected/komunikaty.txt", "tests/test_posredni.py"),
     ],
     ids=[
         "plik nazwany w danych JSON, które test czyta",
@@ -137,12 +146,80 @@ def test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy(tmp_path: Path, chan
         "skrypt z rozszerzeniem innym niż .py i shebangiem Pythona",
         "skrypt bez rozszerzenia z shebangiem innego języka",
         "plik test_ w tests, który nie jest Pythonem",
+        "plik spod tests/expected, którego test nie nazywa, choć tests jest pakietem",
     ],
 )
 def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, changed: str, untouched: str) -> None:
     repo = _repo(tmp_path, {**GRAPH, **UNUSED})
 
     assert untouched not in Repository.scan(repo).impact(frozenset({changed})).tests
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests/expected/a.txt').read_text()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests', 'expected', 'a.txt').read_text()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\nA = Path('tests/expected') / 'a.txt'\n\n\ndef test_x() -> None:\n    assert A.read_text()\n"},
+        {
+            "tests/pomoc.py": "from pathlib import Path\n\nA = Path('tests/expected/a.txt')\n",
+            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    assert A.read_text()\n",
+        },
+    ],
+    ids=["napis od korzenia", "Path z kawałków", "stała z operatorem /", "napis w module, który test importuje"],
+)
+def test_test_widzi_plik_spod_tests_czytany_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
+    """Drogi do pliku spod ``tests/``, które graf widzi (granica z docstringu ``_package_data``): zmiana pliku wybiera
+    test, choć pakiet ``tests`` nie ma danych pakietu."""
+
+    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
+
+    assert "tests/test_x.py" in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
+
+
+FIXTURE_READING_EXPECTED = (
+    "import pytest\nfrom pathlib import Path\n\n\n@pytest.fixture\ndef oczekiwany() -> str:\n"
+    "    return Path('tests/expected/a.txt').read_text()\n"
+)
+TEST_TAKING_FIXTURE = "def test_x(oczekiwany: str) -> None:\n    assert oczekiwany\n"
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"tests/conftest.py": FIXTURE_READING_EXPECTED, "tests/test_x.py": TEST_TAKING_FIXTURE},
+        {
+            "tests/conftest.py": "pytest_plugins = ['tests.fixtures.wtyczka']\n",
+            "tests/fixtures/__init__.py": "",
+            "tests/fixtures/wtyczka.py": FIXTURE_READING_EXPECTED,
+            "tests/test_x.py": TEST_TAKING_FIXTURE,
+        },
+        {
+            "tests/test_x.py": "import os\nfrom pathlib import Path\n\nEXPECTED = Path(__file__).parent / 'expected'\n\n\n"
+            "def test_x() -> None:\n    assert [pliki for _, _, pliki in os.walk(EXPECTED)]\n"
+        },
+        {
+            "tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    n = 'a'\n"
+            "    assert (Path(__file__).parent / 'expected' / f'{n}.txt').read_text()\n"
+        },
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('./tests/expected/a.txt').read_text()\n"},
+    ],
+    ids=[
+        "fixture z tests/conftest.py",
+        "fixture z modułu w pytest_plugins",
+        "os.walk katalogu",
+        "liczona nazwa pliku po Path(__file__)",
+        "napis z ./ na początku",
+    ],
+)
+def test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
+    """Przykłady dróg do pliku spod ``tests/``, których graf nie widzi (granica z docstringu ``_package_data``); to nie
+    pełna lista. Ten test pada, gdy graf zacznie którąś próbkę widzieć; wtedy przenieś ją do
+    ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy``."""
+
+    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
+
+    assert "tests/test_x.py" not in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
 
 
 def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_modul_pomocniczy_nie(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ from typing import Final, Literal
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.file_state import PathState, path_state
 from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
@@ -145,7 +145,7 @@ def _path(
 
 def dump(settings: FolderSettings) -> str:
     document = {"schema_version": _SCHEMA_VERSION, **_values(settings)}
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
 def _values(settings: FolderSettings) -> dict[str, str | None]:

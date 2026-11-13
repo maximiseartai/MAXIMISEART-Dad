@@ -1,6 +1,7 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), plik dostępu do skrzynki raportów
+Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), Przypomnienia o raporcie
+(``reminders``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
 razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, oraz pliki Reguł
@@ -92,10 +93,12 @@ from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedU
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, devices_problem, quantity_rules, rules_problem
+from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
 from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_report_inbox import InboxState
+from rozliczenia.worker_reports import ReminderSettings
 
 T = TypeVar("T")
 
@@ -109,12 +112,14 @@ _LATER: Final[_Later] = "pozniej"
 
 @dataclass(frozen=True)
 class SettingsSnapshot:
-    """Wartości Ustawień Centrum z jednej chwili. Foldery: dobre, a przy złym pliku ostatnie dobre albo domyślne.
-    Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (``workers_usable``)."""
+    """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
+    dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje
+    (``workers_usable``)."""
 
     folders: FolderSettings
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
+    reminders: ReminderSettings
     quantity_rules: QuantityRules
     """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
     drugiego, ostatnia dobra para."""
@@ -138,6 +143,7 @@ class SettingsView:
     workers: Read[WorkerList] | Unreadable
     inbox: Read[InboxFile] | Unreadable
     autostart: Read[bool] | Unreadable | Unsupported
+    reminders: Read[ReminderSettings] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -222,6 +228,7 @@ class CentrumSettings:
         self._places: Mapping[str, _Place] = {
             FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
             WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
+            REMINDERS.name: _ConfigFile(config / REMINDERS.name, pause),
             INBOX.name: _ConfigFile(config / INBOX.name, pause),
             AUTOSTART.name: AutostartPlace(autostart),
             DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
@@ -236,6 +243,7 @@ class CentrumSettings:
                 folders=_usable(self._observe(FOLDERS), FOLDERS),
                 workers=self._observe(WORKERS),
                 inbox=inbox.state(self._observe(INBOX)),
+                reminders=_usable(self._observe(REMINDERS), REMINDERS),
                 quantity_rules=self._quantity_rules().rules,
             )
 
@@ -253,6 +261,7 @@ class CentrumSettings:
                 workers=self._observe(WORKERS),
                 inbox=self._observe(INBOX),
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
+                reminders=self._observe(REMINDERS),
             )
 
     def change(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> Saved | Refused | NotSaved:
@@ -609,6 +618,7 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     FOLDERS.name: FOLDERS,
     FOLDERS.name: FOLDERS,
     WORKERS.name: WORKERS,
+    REMINDERS.name: REMINDERS,
     AUTOSTART.name: AUTOSTART,
     DEVICES.name: DEVICES,
     RULES.name: RULES,
@@ -632,6 +642,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
         folders=_read_only(config, FOLDERS),
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
+        reminders=_read_only(config, REMINDERS),
         quantity_rules=quantity_rules(rules, devices),
     )
 

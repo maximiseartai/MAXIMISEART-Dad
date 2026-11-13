@@ -1,6 +1,7 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
 okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania,
-przełącznik startu razem z Windows, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma w żadnej
+przełącznik startu razem z Windows, Przypomnienia o raporcie z podglądem maila, Historia Ustawień i cofnięcie jej
+wiersza. Hasła skrzynki nie ma w żadnej
 odpowiedzi.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import timezone
+from datetime import date, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -20,13 +21,14 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
+from rozliczenia.centrum.contract import settings_reminders as reminders_contract
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings import inbox, messages
 from rozliczenia.centrum.settings.autostart import AUTOSTART, Unsupported
-from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, Read, Unreadable
+from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import (
     DEFAULT_THEME,
     FOLDERS,
@@ -37,9 +39,18 @@ from rozliczenia.centrum.settings.folders import (
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
+from rozliczenia.centrum.settings.reminders import EVENING, FIRST, MORNING, REMINDERS, parse_range, parse_time, settings_of
 from rozliczenia.file_state import file_state
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
+from rozliczenia.worker_reports import (
+    DEFAULT_REMINDERS,
+    ReminderSchedule,
+    ReminderSettings,
+    TimeRange,
+    reminder_subject,
+    reminder_text,
+)
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
@@ -51,8 +62,12 @@ _REFUSED: dict[int | str, dict[str, object]] = {
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
 
 
-def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: Callable[[], LoginResult]) -> APIRouter:
-    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu."""
+def settings_router(
+    settings: CentrumSettings, platform: Platform, inbox_login: Callable[[], LoginResult], today: Callable[[], date]
+) -> APIRouter:
+    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu, a ``today`` dzień taty:
+    pierwsze włączenie Przypomnień o raporcie zapisuje go jako dzień wdrożenia, a podgląd pokazuje przypomnienie za dzień
+    przed nim."""
 
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
@@ -128,6 +143,42 @@ def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: 
         saved = _choice(settings, settings.change(INBOX, lambda current: replace(current, password=password)))
         return settings_contract.InboxPasswordSaved(settings=saved.settings, change=saved.change, login=inbox_login())
 
+    @router.put("/reminders/enabled", operation_id="changeRemindersEnabled", responses=_REFUSED)
+    def change_reminders_enabled(change: reminders_contract.RemindersEnabledChange) -> settings_contract.Choice:
+        """Przełącznik: pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia dawny, bo okno dni i tak
+        kończy się na okresach z Plikiem zbiorczym."""
+
+        def switched(current: ReminderSettings) -> ReminderSettings:
+            since = current.since or today() if change.enabled else current.since
+            return replace(current, enabled=change.enabled, since=since)
+
+        return _choice(settings, settings.change(REMINDERS, switched))
+
+    @router.put("/reminders", operation_id="changeReminders", responses=_REFUSED)
+    def change_reminders(form: reminders_contract.RemindersForm) -> settings_contract.Choice:
+        """Formularz naraz: pory, godzina pierwszego przypomnienia, pierwsze zdanie i stopka; działa od następnego
+        sprawdzenia przypomnień."""
+
+        read = _form(form)
+        if isinstance(read, FieldProblem):
+            raise refusal.setting_refused(read)
+        return _choice(
+            settings,
+            settings.change(
+                REMINDERS, lambda current: replace(current, schedule=read.schedule, text=read.text, footer=read.footer)
+            ),
+        )
+
+    @router.post("/reminders/preview", operation_id="previewReminder", responses=_REFUSED)
+    def preview_reminder(form: reminders_contract.RemindersForm) -> reminders_contract.ReminderPreview:
+        """Przypomnienie za wczoraj z formularza, bez zapisu i bez wysyłki; zła wartość to ta sama odmowa co przy zapisie."""
+
+        read = _form(form)
+        if isinstance(read, FieldProblem):
+            raise refusal.setting_refused(read)
+        day = today() - timedelta(days=1)
+        return reminders_contract.ReminderPreview(subject=reminder_subject(day), text=reminder_text(day, read.text, read.footer))
+
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
@@ -158,6 +209,22 @@ def _choice(settings: CentrumSettings, result: Saved | Refused | NotSaved) -> se
             raise refusal.settings_not_saved()
 
 
+def _form(form: reminders_contract.RemindersForm) -> ReminderSettings | FieldProblem:
+    """Formularz Przypomnień tą samą regułą co plik: godziny ``GG:MM``, potem reguły ustawień przypomnień. Przełącznik
+    ma osobny zapis, więc formularz sprawdza się jako wyłączony; zapis bierze z niego tylko pola formularza."""
+
+    morning = parse_range(form.morning.start, form.morning.end, MORNING)
+    if isinstance(morning, FieldProblem):
+        return morning
+    evening = parse_range(form.evening.start, form.evening.end, EVENING)
+    if isinstance(evening, FieldProblem):
+        return evening
+    first = parse_time(form.first, FieldPath(FIRST))
+    if isinstance(first, FieldProblem):
+        return first
+    return settings_of(False, None, ReminderSchedule(morning, evening, first), form.text, form.footer)
+
+
 def _path(value: str | None) -> Path | None:
     return Path(value) if value else None
 
@@ -168,6 +235,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
     workers = _workers(view.workers)
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     autostart = _describe_autostart(view.autostart)
+    reminders = _reminders(view.reminders)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
@@ -181,6 +249,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
                 inbox=inbox_setting,
                 inbox_problem=inbox_problem,
                 autostart=autostart,
+                reminders=reminders,
             )
         case Good(value=folders):
             problem = None
@@ -197,6 +266,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         inbox=inbox_setting,
         inbox_problem=inbox_problem,
         autostart=autostart,
+        reminders=reminders,
     )
 
 
@@ -261,6 +331,38 @@ def _unresolved(item: Unresolved) -> settings_workers_contract.UnmatchedLogin | 
             )
         case AddressesNotMoved(sentence=sentence):
             return settings_workers_contract.AddressesNotMoved(reason="adresy_nieprzeniesione", message=sentence)
+
+
+def _reminders(read: Read[ReminderSettings] | Unreadable) -> reminders_contract.RemindersSetting:
+    """Przypomnienia o raporcie; przy złym pliku ostatnie dobre (bez nich domyślne) i zdanie o problemie."""
+
+    match read:
+        case Good(value=found):
+            state: Literal["good", "bad", "unreadable"] = "good"
+            problem = None
+        case Bad(problem=bad, usable=usable):
+            state, found = "bad", usable or DEFAULT_REMINDERS
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
+        case Unreadable():
+            state, found, problem = "unreadable", DEFAULT_REMINDERS, None
+    schedule = found.schedule
+    return reminders_contract.RemindersSetting(
+        state=state,
+        enabled=found.enabled,
+        since=found.since,
+        morning=_range(schedule.morning),
+        evening=_range(schedule.evening),
+        first=f"{schedule.first:%H:%M}",
+        text=found.text,
+        footer=found.footer,
+        problem=problem,
+    )
+
+
+def _range(found: TimeRange) -> reminders_contract.ReminderRange:
+    return reminders_contract.ReminderRange(start=f"{found.start:%H:%M}", end=f"{found.end:%H:%M}")
+
+
 def _describe_autostart(autostart: Read[bool] | Unreadable | Unsupported) -> settings_contract.AutostartSetting:
     match autostart:
         case Unsupported():

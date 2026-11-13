@@ -527,6 +527,11 @@ NOT_SWEPT: dict[str, str] = {
     "i niedostępny plik Ustawień: test_centrum_rozliczen",
     "changeAutostart": "zakłada albo usuwa skrót w folderze Autostart i oddaje stan ścieżek jak getSettings, bez treści "
     "plików taty; porażka skrótu i Historii: test_centrum_rozliczen",
+    "changeRemindersEnabled": "zapisuje przełącznik Przypomnień o raporcie w config i oddaje stan ścieżek jak getSettings, "
+    "bez treści plików taty: test_centrum_rozliczen",
+    "changeReminders": "zapisuje pory i treść Przypomnień o raporcie w config i oddaje stan ścieżek jak getSettings, bez "
+    "treści plików taty; zła wartość: test_centrum_rozliczen",
+    "previewReminder": "składa przypomnienie z formularza, bez plików taty i bez zapisu: test_centrum_wpisanie_raportow",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",

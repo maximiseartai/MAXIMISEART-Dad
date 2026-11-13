@@ -43,6 +43,7 @@ ReminderFailure = Literal[
     "brak-sieci",
     "haslo-odrzucone",
     "odmowa-wysylki",
+    "zapis-por",
 ]
 # Dlaczego zmiany Ustawień Centrum nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
 # system nie daje go czytać.

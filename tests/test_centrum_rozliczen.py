@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import errno
 import hashlib
 import json
@@ -24,6 +25,7 @@ import imaplib
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+import yaml
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
@@ -49,6 +51,7 @@ from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.proposal import (
@@ -62,6 +65,7 @@ from rozliczenia.centrum.settings.proposal import (
 )
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
@@ -241,6 +245,17 @@ DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
 PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
 NO_INBOX: dict[str, object] = {"inbox": {"address": None, "password": False}, "inbox_problem": None}
+ADR_0030_REMINDERS: dict[str, object] = {
+    "morning": {"start": "08:00", "end": "17:00"},
+    "evening": {"start": "18:00", "end": "22:00"},
+    "first": "08:00",
+    "text": "Poproszę o wysłanie raportu za dzień {dzień}.",
+    "footer": "",
+}
+"""Formularz sekcji Przypomnienia z wartościami z ADR 0030 i speca #1344: pory 8:00–17:00 i 18:00–22:00, pierwsze
+przypomnienie od 8:00 dnia następnego, pierwsze zdanie ze speca, bez stopki."""
+# Sekcja Przypomnienia bez pliku przypomnień: wartości z ADR 0030, wyłączone (DESIGN D2).
+NO_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "state": "good", "enabled": False, "since": None, "problem": None}
 """Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
@@ -257,6 +272,7 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -327,6 +343,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -376,6 +393,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -403,6 +421,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -433,6 +452,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
 
@@ -527,6 +547,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "workers": NO_WORKERS,
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
+        "reminders": NO_REMINDERS,
     }
 
 
@@ -1045,6 +1066,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "workers": NO_WORKERS,
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
+            "reminders": NO_REMINDERS,
         },
     )
     assert second.json() == first.json()
@@ -2359,6 +2381,225 @@ def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze
         time.tzset()
 
     assert row["at"].endswith("Z")
+
+
+# --- Przypomnienia o raporcie (#1476, ADR 0032 zmienia ADR 0030): formularz, przełącznik, przeniesienie z plików Maksa --
+
+def reminders_form(**changes: object) -> dict[str, object]:
+    return {**ADR_0030_REMINDERS, **changes}
+
+
+def test_przypomnienia_bez_pliku_sa_wylaczone_z_porami_i_trescia_z_adr_0030_i_nie_zakladaja_pliku(tmp_path: Path) -> None:
+    """D2 projektu Ustawień: brak pliku przypomnień to dzisiejsze wartości z ADR 0030 jako domyślne, a przypomnienia są
+    wyłączone jak przed Wydaniem bez dnia wdrożenia; odczyt pliku nie zakłada."""
+
+    app = centrum(tmp_path)
+
+    reminders = app.client.get("/api/settings").json()["reminders"]
+
+    assert reminders == NO_REMINDERS
+    assert not (app.tool.config / REMINDERS_FILE).exists()
+
+
+@pytest.mark.parametrize(
+    ("changes", "field", "sentence"),
+    [
+        pytest.param({"morning": {"start": "08:00", "end": "18:30"}}, "pora_wieczorna.od", settings_messages.reminders_overlap(), id="pory-zachodza"),
+        pytest.param({"evening": {"start": "07:00", "end": "07:30"}}, "pora_wieczorna.od", settings_messages.reminders_overlap(), id="wieczorna-przed-poranna"),
+        pytest.param({"morning": {"start": "08:00", "end": "08:00"}}, "pora_poranna.do", settings_messages.reminders_empty_morning(), id="pusta-poranna"),
+        pytest.param({"evening": {"start": "22:00", "end": "18:00"}}, "pora_wieczorna.do", settings_messages.reminders_empty_evening(), id="odwrocona-wieczorna"),
+        pytest.param({"morning": {"start": "", "end": "17:00"}}, "pora_poranna.od", settings_messages.reminders_time(), id="pusta-godzina"),
+        pytest.param({"evening": {"start": "18:00", "end": "24:00"}}, "pora_wieczorna.do", settings_messages.reminders_time(), id="godzina-24"),
+        pytest.param({"first": "7.30"}, "pierwsze_przypomnienie", settings_messages.reminders_time(), id="godzina-z-kropka"),
+        pytest.param({"text": "  \n"}, "tresc", settings_messages.reminders_empty_text(), id="puste-zdanie"),
+        pytest.param({"text": "Raport za {dzien}."}, "tresc", settings_messages.reminders_unknown_field(), id="pole-bez-polskiej-litery"),
+        pytest.param({"text": "Raport za {dzień} od {wykonawca}."}, "tresc", settings_messages.reminders_unknown_field(), id="nieznane-pole"),
+        pytest.param({"text": "Raport za {dzień}}."}, "tresc", settings_messages.reminders_unknown_field(), id="samotny-nawias"),
+    ],
+)
+def test_zla_pora_godzina_albo_tresc_przypomnien_jest_odrzucona_zdaniem_przy_polu_bez_zapisu_i_bez_podgladu(
+    tmp_path: Path, changes: dict[str, object], field: str, sentence: str
+) -> None:
+    """US 44: pory, które na siebie zachodzą albo są puste, godzina inna niż ``GG:MM`` i treść bez zdania albo z polem
+    innym niż ``{dzień}`` dają odmowę z polem i jednym zdaniem; nic się nie zapisuje, a podgląd odmawia tak samo."""
+
+    app = centrum(tmp_path)
+
+    saved = app.client.put("/api/settings/reminders", json=reminders_form(**changes))
+    preview = app.client.post("/api/settings/reminders/preview", json=reminders_form(**changes))
+
+    assert [(response.status_code, response.json()) for response in (saved, preview)] == [
+        (422, {"message": sentence, "field": field})
+    ] * 2
+    assert not (app.tool.config / REMINDERS_FILE).exists()
+    assert history_rows(app) == []
+
+
+def test_pory_stykajace_sie_godzina_i_tresc_z_polem_dnia_zapisuja_sie_od_razu(tmp_path: Path) -> None:
+    """Poranna pora może kończyć się dokładnie wtedy, gdy zaczyna się wieczorna, a godzina pierwszego przypomnienia nie
+    musi leżeć w porze (D11 projektu Ustawień)."""
+
+    app = centrum(tmp_path)
+    form = reminders_form(
+        morning={"start": "07:00", "end": "15:00"},
+        evening={"start": "15:00", "end": "21:30"},
+        first="06:45",
+        text="Proszę o raport za {dzień}, dziękuję za {dzień}.",
+        footer="Pozdrawiam\nTata Testowy\n",
+    )
+
+    saved = app.client.put("/api/settings/reminders", json=form)
+
+    assert saved.status_code == 200
+    assert saved.json()["settings"]["reminders"] == {**form, "state": "good", "enabled": False, "since": None, "problem": None}
+
+
+def test_godzina_przypomnien_bez_zera_na_poczatku_zapisuje_sie_jako_gg_mm(tmp_path: Path) -> None:
+    """Tata pisze godzinę tak, jak ją mówi („8:00”): przyjmuje ją podgląd i zapis, a sekcja i plik mają ją jako ``GG:MM``."""
+
+    app = centrum(tmp_path)
+    form = reminders_form(morning={"start": "7:30", "end": "15:00"}, first="8:00")
+
+    preview = app.client.post("/api/settings/reminders/preview", json=form)
+    saved = app.client.put("/api/settings/reminders", json=form)
+
+    assert (preview.status_code, saved.status_code) == (200, 200)
+    shown = saved.json()["settings"]["reminders"]
+    assert (shown["morning"], shown["first"]) == ({"start": "07:30", "end": "15:00"}, "08:00")
+    assert yaml.safe_load((app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8"))["pora_poranna"] == {"od": "07:30", "do": "15:00"}
+
+
+def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozenia_a_ponowne_go_zostawia(
+    tmp_path: Path,
+) -> None:
+    """US 40: pierwsze włączenie ustawia dzień wdrożenia na dziś taty, a wyłączenie i ponowne włączenie innego dnia go
+    zostawia, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym (DESIGN §5.1)."""
+
+    first = centrum(tmp_path, today=date(2026, 11, 12))
+    on = first.client.put("/api/settings/reminders/enabled", json={"enabled": True})
+    off = first.client.put("/api/settings/reminders/enabled", json={"enabled": False})
+    first.client.stop()
+    later = centrum(tmp_path, today=date(2026, 11, 20))
+    again = later.client.put("/api/settings/reminders/enabled", json={"enabled": True})
+
+    shown = [(response.json()["settings"]["reminders"]["enabled"], response.json()["settings"]["reminders"]["since"]) for response in (on, off, again)]
+    assert shown == [(True, "2026-11-12"), (False, "2026-11-12"), (True, "2026-11-12")]
+
+
+def test_zmiana_przypomnien_ma_wiersz_historii_z_porami_przed_i_po_a_cofniecie_przywraca_pory(tmp_path: Path) -> None:
+    """US 80–81 dla sekcji Przypomnienia: wiersz Historii ma pory i stopkę przed i po, Logi Centrum tylko klucze, a
+    cofnięcie przywraca poprzednie pory i stopkę."""
+
+    app = centrum(tmp_path)
+    changed = reminders_form(morning={"start": "07:00", "end": "12:00"}, footer="Pozdrawiam\nTata Testowy")
+
+    saved = app.client.put("/api/settings/reminders", json=changed)
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (saved.status_code, saved.json()["change"], row["section"], row["undoable"]) == (200, row["id"], "przypomnienia", True)
+    assert row["changes"] == [
+        {"key": "przypomnienia.pora_poranna", "before": "08:00 – 17:00", "after": "07:00 – 12:00"},
+        {"key": "przypomnienia.stopka", "before": None, "after": "Pozdrawiam\nTata Testowy"},
+    ]
+    assert undone.status_code == 200
+    assert {key: undone.json()["settings"]["reminders"][key] for key in ADR_0030_REMINDERS} == ADR_0030_REMINDERS
+    log = app.tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-zmiana plik=przypomnienia.yaml klucze=przypomnienia.pora_poranna,przypomnienia.stopka zrodlo=tata" in log
+    assert "Tata Testowy" not in log
+
+
+def test_reczny_plik_przypomnien_z_porami_zachodzacymi_to_zle_ustawienie_z_polem_i_ostatnimi_dobrymi_porami(
+    tmp_path: Path,
+) -> None:
+    """US 91: plik przypomnień zmieniony ręcznie z porami, które na siebie zachodzą, nie zatrzymuje Centrum: sekcja ma
+    zdanie przy polu i ostatnie dobre pory, a Historia wiersz odrzuconej zmiany spoza Centrum."""
+
+    app = centrum(tmp_path)
+    app.client.put("/api/settings/reminders", json=reminders_form(first="07:30"))
+    content = (app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8").replace("'17:00'", "'19:00'")
+    (app.tool.config / REMINDERS_FILE).write_text(content, encoding="utf-8")
+
+    reminders = app.client.get("/api/settings").json()["reminders"]
+
+    assert (reminders["state"], reminders["problem"]) == (
+        "bad",
+        {"field": "pora_wieczorna.od", "message": settings_messages.reminders_overlap()},
+    )
+    assert (reminders["morning"], reminders["first"]) == ({"start": "08:00", "end": "17:00"}, "07:30")
+    assert [(row["source"], row["refused"]) for row in history_rows(app)][:1] == [("outside", True)]
+
+
+def migrated_reminders(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Sekcja Przypomnienia i Historia Ustawień po pierwszym starcie Wydania z Przypomnieniami w Ustawieniach."""
+
+    client = started(tool, RELEASE_CHANGES)
+    reminders = client.get("/api/settings").json()["reminders"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+    return reminders, [row for row in rows if row["file"] == REMINDERS_FILE]
+
+
+@pytest.mark.parametrize(
+    ("rollout", "footer", "enabled", "since", "kept"),
+    [
+        pytest.param(b"2026-11-09\n", "Pozdrawiam\nTata\n".encode(), True, "2026-11-09", "Pozdrawiam\nTata\n", id="oba-pliki"),
+        pytest.param(codecs.BOM_UTF8 + b"2026-11-09\r\n", "Pozdrawiam\r\nTata\r\n".encode("utf-16"), True, "2026-11-09", "Pozdrawiam\r\nTata\r\n", id="notatnik-i-powershell"),
+        pytest.param(b"2026-11-09\n", None, True, "2026-11-09", "", id="bez-stopki"),
+        pytest.param(b"od wtorku\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="zly-dzien-wylacza-jak-dotad"),
+        pytest.param(None, "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="bez-dnia-wdrozenia"),
+        pytest.param(b"2026-11-09\n", b" \n", True, "2026-11-09", "", id="pusta-stopka"),
+        pytest.param(b"2026-11-09\n", "Pozdrawiam\u0085Tata\n".encode(), True, "2026-11-09", "Pozdrawiam\u0085Tata\n", id="stopka-ze-znakiem-nel"),
+        pytest.param(b"2026-11-09\n2026-11-10\n", "Pozdrawiam\n".encode(), False, None, "Pozdrawiam\n", id="kilka-dni-wylacza-jak-dotad"),
+    ],
+)
+def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_bez_cofnij_a_stare_pliki_zostaja(
+    tmp_path: Path, rollout: bytes | None, footer: bytes | None, enabled: bool, since: str | None, kept: str
+) -> None:
+    """Po Aktualizacji dzień wdrożenia z ``przypomnienia-od.txt`` włącza przypomnienia od tego dnia, a inna treść albo
+    brak pliku zostawia je wyłączone jak dotąd; stopka przechodzi tekstem bez zmian (także z BOM i w UTF-16), pory i treść
+    to wartości domyślne. Przeniesienie ma wiersz z Wydania bez „Cofnij” (D8), a stare pliki zostają bajt w bajt."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    old = {name: content for name, content in ((OLD_ROLLOUT_FILE, rollout), (OLD_FOOTER_FILE, footer)) if content is not None}
+    for name, content in old.items():
+        (tool.config / name).write_bytes(content)
+
+    reminders, [row] = migrated_reminders(tool)
+    _, again = migrated_reminders(tool)
+
+    assert reminders == {**ADR_0030_REMINDERS, "footer": kept, "state": "good", "enabled": enabled, "since": since, "problem": None}
+    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False)
+    assert len(again) == 1, "przeniesienie wchodzi raz"
+    assert {name: (tool.config / name).read_bytes() for name in old} == old
+
+
+def test_bez_starych_plikow_przypomnien_przeniesienie_nie_zaklada_pliku_ani_wiersza(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+
+    reminders, rows = migrated_reminders(tool)
+
+    assert (reminders["enabled"], rows, (tool.config / REMINDERS_FILE).exists()) == (False, [], False)
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_stary_plik_stopki_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zgubic_stopke(tmp_path: Path) -> None:
+    """Stary plik, którego system nie daje teraz czytać, nie jest ani pusty, ani brakujący: przeniesienie czeka bez
+    pliku przypomnień i bez wiersza, a następny start przenosi stopkę."""
+
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    (tool.config / OLD_ROLLOUT_FILE).write_text("2026-11-09\n", encoding="utf-8")
+    (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
+    with without_access(tool.config / OLD_FOOTER_FILE):
+        locked, locked_rows = migrated_reminders(tool)
+        written_while_locked = (tool.config / REMINDERS_FILE).exists()
+
+    reminders, rows = migrated_reminders(tool)
+
+    assert (written_while_locked, locked_rows, locked["enabled"]) == (False, [], False)
+    assert (reminders["enabled"], reminders["footer"], len(rows)) == (True, "Pozdrawiam\n", 1)
 
 
 AUTOSTART_ON = {"key": "narzedzie.autostart", "before": "wylaczony", "after": "wlaczony"}
