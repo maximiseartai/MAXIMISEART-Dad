@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
+import { QuantityDifferences } from "@/pages/settings/quantity-differences"
 import { RuleEditor } from "@/pages/settings/quantity-rule-editor"
 import { Sentence } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
@@ -29,8 +30,8 @@ const GROUPS: Record<NonNullable<DeviceComponent["group"]>, string> = {
 /** Nowa reguła zaczyna bez warunków i bez działania: działanie wybiera tata. */
 const NEW_RULE: RuleForm = { scope: "known", conditions: [], action: null }
 
-/** Reguła w edytorze: `id` `null` to nowa reguła. */
-type Editing = { id: string | null; rule: RuleForm }
+/** Reguła w edytorze: `id` `null` to nowa reguła; `prefilled`: formularz z różnicy („Popraw regułę”), jeszcze niezapisany. */
+type Editing = { id: string | null; rule: RuleForm; prefilled?: boolean }
 
 /**
  * Reguły ilości jako zdania „jeśli … to …”; kolumna ma nazwę pozycji cennika z Wzorca. „Dodaj regułę” i „Zmień”
@@ -49,6 +50,7 @@ export function QuantityRulesSection() {
             key={editing.id ?? "nowa"}
             id={editing.id}
             initial={editing.rule}
+            prefilled={editing.prefilled === true}
             settings={settings}
             close={(next) => {
               if (next !== null) {
@@ -79,6 +81,7 @@ function RuleList({ settings, edit }: { settings: QuantityRulesSettings; edit: (
         </Button>
       </div>
       <Problem problem={rules_problem} />
+      <QuantityDifferences fix={(draft) => edit({ id: null, rule: draft, prefilled: true })} />
       {SCOPES.map(({ scope, title }) => {
         const shown = rules.filter((rule) => rule.scope === scope)
 

@@ -387,6 +387,20 @@ def evaluate(rules: QuantityRules, order: OrderContent) -> RuleResult:
     return ServiceQuantities(_sum(contributions), leave_empty, contributions, fired)
 
 
+@dataclass(frozen=True)
+class DevicesRead:
+    """``URZĄDZENIA`` zlecenia tak, jak je czytają Reguły ilości: składniki Listy Urządzeń w kolejności z tekstu, bez
+    powtórzeń, i czy lista zna każde słowo."""
+
+    components: tuple[str, ...]
+    all_known: bool
+
+
+def devices_read(devices: DeviceList, order: OrderContent) -> DevicesRead:
+    found, all_known = devices.find(_words(order.devices))
+    return DevicesRead(tuple(dict.fromkeys(component.id for component, _ in found)), all_known)
+
+
 _SEPARATORS = re.compile(r"[\s,]+")
 _MULTIPLIER = re.compile(r"\s*\*\s*")
 _COUNTED = re.compile(r"([1-9][0-9]*)\*(.+)")

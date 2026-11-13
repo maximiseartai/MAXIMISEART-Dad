@@ -9,10 +9,11 @@ deklaracji pól to kolejność kluczy w pliku, a pole, którego nie mają Logi z
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Annotated, Literal, assert_never
+from typing import Annotated, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, EnteringSummary
@@ -49,73 +50,13 @@ class _Record(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
-"""Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
-LoggedVerdictFault = Literal["missing", "letter_yes", "letter_no", "word_yes", "word_no"]
-LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
-
-
-def _move_bar(bar: MoveBar) -> LoggedMoveBar:
-    match bar:
-        case MoveBar.NOT_ORDERED:
-            return "not_ordered"
-        case MoveBar.OTHER_SHEET:
-            return "other_sheet"
-        case MoveBar.CLOSED_TARGET:
-            return "closed_target"
-        case MoveBar.CLOSED_SOURCE:
-            return "closed_source"
-        case MoveBar.AFTER_TODAY:
-            return "after_today"
-
-
-def _column(column: ReportColumn) -> LoggedColumn:
-    match column:
-        case ReportColumn.SUCCESSFUL:
-            return "SKUTECZNE"
-        case ReportColumn.COMPLETED:
-            return "CZYNNOŚCI ZREALIZOWANE"
-
-
-def _verdict_fault(fault: VerdictFault) -> LoggedVerdictFault:
-    match fault:
-        case VerdictFault.MISSING:
-            return "missing"
-        case VerdictFault.LETTER_YES:
-            return "letter_yes"
-        case VerdictFault.LETTER_NO:
-            return "letter_no"
-        case VerdictFault.WORD_YES:
-            return "word_yes"
-        case VerdictFault.WORD_NO:
-            return "word_no"
-
-
-def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
-    match fault:
-        case SubjectFault.NO_DATE:
-            return "no_date"
-        case SubjectFault.OTHER_TEXT:
-            return "other_text"
-        case SubjectFault.NO_YEAR:
-            return "no_year"
-        case SubjectFault.DATE_FORM:
-            return "date_form"
-        case SubjectFault.SEPARATOR:
-            return "separator"
-        case SubjectFault.YEAR_DIGITS:
-            return "year_digits"
-        case SubjectFault.NOT_A_DAY:
-            return "not_a_day"
-
-
 class LoggedReportEntry(_Record):
     """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr z rzędu maskuje jak telefon), ``tak``/``nie``
     albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
 
     number: str
     verdict: Literal["tak", "nie"] | None
-    fault: LoggedVerdictFault | None
+    fault: VerdictFault | None
     activities: str
 
     @classmethod
@@ -123,7 +64,7 @@ class LoggedReportEntry(_Record):
         return cls(
             number=entry.number,
             verdict=None if entry.verdict is None else entry.verdict.value,
-            fault=None if entry.fault is None else _verdict_fault(entry.fault),
+            fault=entry.fault,
             activities=entry.activities,
         )
 
@@ -147,7 +88,7 @@ class LoggedUnreadableMail(_Record):
     mail: str
     arrived: datetime
     worker: str
-    fault: LoggedSubjectFault
+    fault: SubjectFault
     numbers: list[str] | None = None
     """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, więc ostrzeżenie zdjęte przez poprawkę wraca w nim jako
@@ -179,7 +120,7 @@ def _mail(read: MailRead) -> LoggedMail:
                 mail=read.mail.digest,
                 arrived=read.arrived,
                 worker=read.worker,
-                fault=_subject_fault(read.fault),
+                fault=read.fault,
                 numbers=sorted(read.numbers),
             )
         case ReadStranger():
@@ -198,7 +139,7 @@ def logged_read(mail: LoggedMail) -> MailRead:
                 ReportEntry(
                     OrderNumber(entry.number),
                     None if entry.verdict is None else Verdict(entry.verdict),
-                    None if entry.fault is None else _verdict_fault_of(entry.fault),
+                    entry.fault,
                     entry.activities,
                 )
                 for entry in mail.entries
@@ -206,37 +147,11 @@ def logged_read(mail: LoggedMail) -> MailRead:
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
             numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), _subject_fault_of(mail.fault), numbers)
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers)
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:
             assert_never(mail)
-
-
-def _verdict_fault_of(fault: LoggedVerdictFault) -> VerdictFault:
-    return {_verdict_fault(member): member for member in VerdictFault}[fault]
-
-
-def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
-    return {_subject_fault(member): member for member in SubjectFault}[fault]
-
-
-LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
-LoggedAddBar = Literal["in_intermax", "before_window", "form", "mistaken_subject", "not_ordered"]
-
-
-def _add_bar(bar: AddBar) -> LoggedAddBar:
-    match bar:
-        case AddBar.IN_INTERMAX:
-            return "in_intermax"
-        case AddBar.BEFORE_WINDOW:
-            return "before_window"
-        case AddBar.FORM:
-            return "form"
-        case AddBar.MISTAKEN_SUBJECT:
-            return "mistaken_subject"
-        case AddBar.NOT_ORDERED:
-            return "not_ordered"
 
 
 class LoggedOrderPlace(_Record):
@@ -266,11 +181,22 @@ class LoggedOrderProblem(_Record):
     worker: str
     day: date
     number: str
-    fault: LoggedVerdictFault | None = None
+    fault: VerdictFault | None = None
     owner: str | None = None
     order_days: list[date] = []
     places: list[LoggedOrderPlace] = []
-    bar: LoggedMoveBar | LoggedAddBar | None = None
+    bar: MoveBar | AddBar | None = None
+
+    @field_validator("bar", mode="before")
+    @classmethod
+    def _bar_of_kind(cls, bar: object, info: ValidationInfo) -> object:
+        """Słowo powodu z pliku to członek enuma rodzaju problemu, bo ``not_ordered`` mają oba."""
+
+        kind = _BARS.get(info.data.get("kind", ""))
+        return kind(bar) if isinstance(bar, str) and kind is not None else bar
+
+
+_BARS: Final[Mapping[str, type[MoveBar] | type[AddBar]]] = {"refused_move": MoveBar, "unknown_number": AddBar}
 
 
 class LoggedConflictProblem(_Record):
@@ -291,7 +217,7 @@ class LoggedSubjectProblem(_Record):
     mail: str
     worker: str
     arrived: datetime
-    fault: LoggedSubjectFault
+    fault: SubjectFault
 
 
 class LoggedSenderProblem(_Record):
@@ -310,12 +236,12 @@ class LoggedOwnEntry(_Record):
     number: int
     day: date
     worker: str
-    column: LoggedColumn
+    column: ReportColumn
     value: str
 
     @classmethod
     def of(cls, key: OrderKey, column: ReportColumn, value: str) -> LoggedOwnEntry:
-        return cls(number=int(key.number), day=key.day, worker=key.worker, column=_column(column), value=value)
+        return cls(number=int(key.number), day=key.day, worker=key.worker, column=column, value=value)
 
 
 class LoggedManualProblem(_Record):
@@ -341,7 +267,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 mail=problem.mail.digest,
                 worker=problem.worker,
                 arrived=problem.arrived,
-                fault=_subject_fault(problem.fault),
+                fault=problem.fault,
             )
         case UnknownSender():
             return LoggedSenderProblem(kind="unknown_sender", mail=problem.mail.digest, day=problem.day)
@@ -351,7 +277,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,
-                fault=_verdict_fault(problem.fault),
+                fault=problem.fault,
             )
         case ConflictingVerdicts():
             return LoggedConflictProblem(
@@ -369,7 +295,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,
-                bar=_add_bar(problem.bar),
+                bar=problem.bar,
             )
         case RepeatedOrder():
             return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
@@ -388,7 +314,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 day=problem.day,
                 number=problem.number,
                 order_days=[problem.order_day],
-                bar=_move_bar(problem.bar),
+                bar=problem.bar,
             )
         case ManualDifference():
             cell = LoggedOwnEntry.of(problem.key, problem.column, problem.reported)
@@ -402,7 +328,7 @@ class LoggedChange(_Record):
 
     sheet: str
     row: int
-    column: LoggedColumn
+    column: ReportColumn
     value: str
 
 
@@ -515,9 +441,7 @@ class LoggedReports(_Record):
             mails=[_mail(read) for read in facts.mails],
             problems=[_problem(problem) for problem in facts.problems],
             changes=[
-                LoggedChange(
-                    sheet=change.order.sheet, row=change.order.row, column=_column(change.column), value=change.value
-                )
+                LoggedChange(sheet=change.order.sheet, row=change.order.row, column=change.column, value=change.value)
                 for change in facts.changes
             ],
             memory_before=[LoggedOwnEntry.of(entry.key, entry.column, entry.value) for entry in facts.memory_before],

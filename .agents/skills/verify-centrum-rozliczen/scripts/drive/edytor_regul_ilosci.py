@@ -9,7 +9,16 @@ import urllib.request
 
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, open_settings, read_text, settings_title, settings_window
+from drive.common import (
+    DAD_VIEWPORT,
+    Run,
+    capture_quantity_rules,
+    close_settings,
+    open_settings,
+    read_text,
+    settings_title,
+    settings_window,
+)
 
 FEATURE = "edytor-regul-ilosci"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -133,7 +142,7 @@ def drive(run: Run, page: Page) -> None:
         [rule["id"] for rule in after] == [*(rule["id"] for rule in before), "regula-1"] and rules_file.exists(),
         "„Zapisz” adds the rule at the end of the server's rules and writes the file of Reguły ilości",
     )
-    run.capture(page, "383-edytor-zapisana")
+    capture_quantity_rules(run, page, "383-edytor-zapisana")
 
     run.step(FEATURE, "edytor-historia")
     window = open_settings(page, "Historia")

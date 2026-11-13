@@ -33,9 +33,8 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder, scan_period_folders
 from rozliczenia.quantities_to_fill import NumberedOrder
-from rozliczenia.quantity_check import QuantityCheck, RowCheck, check, row_check
+from rozliczenia.quantity_check import QuantityCheck, RowCheck, check, row_check, week_hour
 from rozliczenia.quantity_engine import QuantityRule, QuantityRules, RuleResult
-from rozliczenia.text import WEEKDAY_LABELS
 from rozliczenia.workbook_files import WorkbookError
 
 RECENT: Final = 4
@@ -190,7 +189,7 @@ def _row(
         row=numbered.number,
         devices=content.devices,
         activities=content.activities,
-        when=f"{WEEKDAY_LABELS[content.started.weekday]} {content.started.at.hour}",
+        when=week_hour(content.started.weekday, content.started.at.hour),
         cells=[
             contract.PreviewCell(
                 column=column,

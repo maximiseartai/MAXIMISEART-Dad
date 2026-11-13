@@ -65,6 +65,7 @@ from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.workers_router import workers_router
+from rozliczenia.centrum.quantity_differences import quantity_differences_router, with_exception_sentences
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
@@ -208,7 +209,8 @@ def create_app(
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     configuration = configuration_files or ConfigurationFiles.default()
     price_list = PriceList(configuration.collective_template)
-    app.include_router(settings_router(settings, platform, inbox.try_login, today, history_sentences(settings, price_list)))
+    sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
+    app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
@@ -236,7 +238,10 @@ def create_app(
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
     app.include_router(workers_router(settings))
-    app.include_router(quantity_rules_router(settings, price_list, RecentCollectiveFiles(files)))
+    # Ostatnie Pliki zbiorcze po Przebiegu: jeden odczyt dla podglądu zmiany reguł i różnic z Kontroli ilości.
+    recent = RecentCollectiveFiles(files)
+    app.include_router(quantity_rules_router(settings, price_list, recent))
+    app.include_router(quantity_differences_router(settings, price_list, recent))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)

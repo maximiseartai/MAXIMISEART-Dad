@@ -6,7 +6,7 @@ Excel trzyma jako liczbę (strażnik liczby ``ForbiddenValues.guard_number``): f
 więc wpis ``+48600123456`` i ``0048600123456`` to liczba ``48600123456``, a liczbę zapisaną w pliku w notacji E
 (``4.8600123456E10``) openpyxl czyta jako ułamek. ``masked``: tekst po strażniku albo ``None``, gdy wartość wychodzi
 bez zmian. Liczba policzona przez narzędzie (``COMPUTED``) nie przechodzi przez strażnika liczby, bo nie stoi w polu
-z wartościami z komórek (``READ_VALUES`` w ``run_logs``). Wartości są syntetyczne, a „0 w plikach taty” to wynik skanu
+z wartościami z komórek (``READ_VALUES`` w ``client_data``). Wartości są syntetyczne, a „0 w plikach taty” to wynik skanu
 kopii prawdziwych plików w PR #863.
 """
 

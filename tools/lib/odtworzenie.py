@@ -119,7 +119,6 @@ from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.quantity_engine import QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
@@ -1044,8 +1043,8 @@ def _saved(entering: LoggedReports) -> SavedState:
         found = _texts(numbers, logged.number, logged.day, logged.worker)
         return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
 
-    entries = frozenset(OwnEntry(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.memory_before)
-    kept = frozenset(Kept(key(logged), ReportColumn(logged.column), logged.value) for logged in entering.kept)
+    entries = frozenset(OwnEntry(key(logged), logged.column, logged.value) for logged in entering.memory_before)
+    kept = frozenset(Kept(key(logged), logged.column, logged.value) for logged in entering.kept)
     moves = frozenset(
         OwnMove(
             number(logged),
