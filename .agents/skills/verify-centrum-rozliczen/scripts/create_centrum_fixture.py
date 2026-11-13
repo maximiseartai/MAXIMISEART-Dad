@@ -1,6 +1,6 @@
 """Create a synthetic folder okresów, Rejestr zleceń, configuration directory, and metrics files for one Centrum run.
 
-The configuration directory holds what Konfiguracja reads: a synthetic konfiguracja
+The configuration directory holds what the sections of Ustawienia read: a synthetic konfiguracja
 wykonawców and the three Wzorce, valid for the engine's Sprawdzanie. Centrum's
 settings file is written there too, as in Dad's ``config/``. The metrics files
 hold a synthetic history in the metrics schema for Metryki.

@@ -15,6 +15,7 @@ import { SettingsProvider } from "@/lib/settings"
 import { ToolUpdateProvider } from "@/lib/tool-update"
 import { useViewTiming } from "@/lib/view-timing"
 import { useCurrentPage, type Page } from "@/pages"
+import { SettingsDialog } from "@/pages/settings/settings-dialog"
 
 const LAYOUT = {
   "--sidebar-width": "calc(var(--spacing) * 66)",
@@ -46,11 +47,13 @@ export function App() {
                 <CurrentPage value={page}>
                   <page.Content />
                 </CurrentPage>
-                {/* Każdy adres to osobny widok, także w obrębie strony (`#/uzupelnienie/<okres>/<rodzaj>`). */}
+                {/* Każdy adres strony to osobny widok, także w jej obrębie (`#/uzupelnienie/<okres>/<rodzaj>`); okno
+                    Ustawień nad stroną nie zmienia jej adresu i mierzy się samo. */}
                 <ViewTiming key={address} page={page} />
               </div>
             </SidebarInset>
           </SidebarProvider>
+          <SettingsDialog />
           </DadNoteProvider>
           </NotificationsProvider>
           </ToolUpdateProvider>

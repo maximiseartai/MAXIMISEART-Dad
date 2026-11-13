@@ -10,16 +10,17 @@ import urllib.request
 
 from playwright.sync_api import Page, Request, Response, Route, expect
 
-from drive.common import PAGES, REPO_ROOT, Run, ensure_files_set, read_json
+from drive.common import PAGES, REPO_ROOT, Run, close_settings, ensure_files_set, read_json, settings_window
 
 FEATURE = "pomiar-u-taty"
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
 TIMED_REQUEST = re.compile(r"[a-zA-Z]+:\d+/\d+")
 PERIOD_TOKEN = re.compile(r"\d{2}_\d{2}_\d{2}_\d{4}")
-# The cold start before the menu clicks is Konfiguracja, so its data is in the tab's cache when Dad comes back.
-CACHED_IN_ROUTE = "konfiguracja"
+# The cold start before the menu clicks is Metryki, the last page of the menu, so its data is in the tab's cache
+# when Dad comes back.
+CACHED_IN_ROUTE = "metryki"
 # Powiadomienia is a page without a sidebar entry: Dad reaches it with the header bell. Its cold start comes first,
-# so Konfiguracja stays the last one before the menu clicks.
+# so Metryki stays the last one before the menu clicks.
 NOTIFICATIONS = {"powiadomienia": "Powiadomienia"}
 # A skeleton shows only once a read takes about 120 ms (index.css); a read held this long shows it for the rest.
 SLOW_READ_S = 0.6
@@ -71,6 +72,19 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "pomiar-zimny-start")
     page.on("response", remember)
+    # The window Ustawienia on its address opens over the start page, so a cold start measures both.
+    since = len(run.log_entries())
+    page.goto("about:blank")
+    page.goto(f"{run.url}#/ustawienia/wykonawcy")
+    expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
+    both = _wait_for_timings(run, since, 2, "the cold start of Ustawienia over Okresy is in the Centrum log")
+    run.check(
+        sorted((timing["widok"], timing["strona"]) for timing in both)
+        == [("zimny-start", "okresy"), ("zimny-start", "ustawienia")],
+        "a cold start on #/ustawienia/wykonawcy logs the window and the start page under it",
+    )
+    for timing in both:
+        _check_requests(run, timing, timing["strona"])
     for page_id, title in (NOTIFICATIONS | PAGES).items():
         since = len(run.log_entries())
         page.goto("about:blank")
@@ -144,12 +158,13 @@ def drive(run: Run, page: Page) -> None:
     page.route("**/api/configuration", slow)
     since = len(run.log_entries())
     try:
-        page.get_by_role("link", name="Konfiguracja", exact=True).click()
-        expect(page.get_by_role("heading", name="Konfiguracja", level=1)).to_be_visible()
-        expect(page.get_by_role("list", name="Wykonawcy")).to_be_visible()
-        [timing] = _wait_for_timings(run, since, 1, "the menu click with a slow read is in the Centrum log")
+        page.evaluate("location.hash = '#/ustawienia/wykonawcy'")
+        expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
+        [timing] = _wait_for_timings(run, since, 1, "the opening of Ustawienia with a slow read is in the Centrum log")
     finally:
         page.unroute("**/api/configuration", slow)
+    run.check(timing["strona"] == "ustawienia", f"the window measured itself ({timing['strona']})")
+    close_settings(page)
     ready_ms, skeleton = int(timing["gotowe_ms"]), int(timing["szkielet_ms"])
     run.check(
         ready_ms >= SLOW_READ_S * 1000 and 0 < skeleton <= ready_ms - SKELETON_DELAY_MS + 20,
@@ -170,8 +185,8 @@ def drive(run: Run, page: Page) -> None:
             time.sleep(SLOW_READ_S)
         route.continue_()
 
-    # The read that made the view ready is the last one the page got before it sent the measurement: on
-    # Konfiguracja the Kopie INTERMAX card reads only after the configuration, so it is not always that one.
+    # The read that made the view ready is the last one the page got before it sent the measurement, not always the
+    # configuration: every return to the tab reads the settings again too.
     reads: list[str] = []
     measured: list[list[str]] = []
 
@@ -184,7 +199,7 @@ def drive(run: Run, page: Page) -> None:
         if request.method == "POST" and urllib.parse.urlsplit(request.url).path == "/api/view-timings":
             measured.append(list(reads))
 
-    # The tool card reads Aktualizacja narzędzia together with Kopie INTERMAX but shows nothing until it answers, so
+    # The section Narzędzie reads Aktualizacja narzędzia with the configuration but shows nothing until it answers, so
     # the view is ready without it, and its answer could land after the page measured the view but before it sent
     # the measurement. Held until the measurement is logged, it cannot pass for the read that made the view ready.
     tool_updates: list[Route] = []
@@ -198,20 +213,19 @@ def drive(run: Run, page: Page) -> None:
     page.on("request", sent)
     since = len(run.log_entries())
     try:
-        # Dad returns to the tab again and again while Konfiguracja is still reading: every return reads the
+        # Dad returns to the tab again and again while Ustawienia are still reading: every return reads the
         # settings and the configuration again, so the view ends with more requests than one measurement takes.
         page.evaluate(
             """([returns]) => {
               window.addEventListener("hashchange", () => setTimeout(() => {
                 for (let i = 0; i < returns; i++) window.dispatchEvent(new Event("focus"));
               }, 50), { once: true });
-              document.querySelector('a[href="#/konfiguracja"]').click();
+              location.hash = "#/ustawienia/narzedzie";
             }""",
             [MAX_TIMED_REQUESTS + 5],
         )
-        expect(page.get_by_role("heading", name="Konfiguracja", level=1)).to_be_visible()
-        expect(page.get_by_role("list", name="Wykonawcy")).to_be_visible()
-        [timing] = _wait_for_timings(run, since, 1, "the menu click with more requests than one measurement is logged")
+        expect(settings_window(page).get_by_role("listitem", name="Wersja narzędzia")).to_be_visible()
+        [timing] = _wait_for_timings(run, since, 1, "the opening with more requests than one measurement is logged")
     finally:
         page.unroute("**/api/configuration", hold_first)
         for tool_update in tool_updates:
@@ -221,7 +235,7 @@ def drive(run: Run, page: Page) -> None:
         page.remove_listener("request", sent)
     run.check(
         bool(tool_updates),
-        f"Konfiguracja measured itself while its read of Aktualizacja narzędzia was held ({len(tool_updates)} reads, "
+        f"Ustawienia measured themselves while their read of Aktualizacja narzędzia was held ({len(tool_updates)} reads, "
         "harness)",
     )
     requests = timing.get("zapytania", "").split(",")
@@ -234,6 +248,7 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "pomiar-bez-sladu")
+    close_settings(page)
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(page.get_by_role("dialog")).to_have_count(0)
     run.capture(page, "80-pomiar-bez-sladu")

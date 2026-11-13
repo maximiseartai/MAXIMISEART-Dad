@@ -62,6 +62,25 @@ def test_pomiary_widokow_z_przegladarki_trafiaja_do_dziennika_centrum(tmp_path: 
     ]
 
 
+def test_okno_ustawien_mierzy_sie_jak_widok_a_widoku_konfiguracja_juz_nie_ma(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    settings = view_timing(
+        kind="navigation",
+        page="ustawienia",
+        ready_ms=310,
+        fcp_ms=None,
+        skeleton_ms=150,
+        requests=[{"operation": "getConfiguration", "browser_ms": 290, "server_ms": 270}],
+    )
+
+    responses = [app.client.post("/api/view-timings", json=timing) for timing in (settings, view_timing(page="konfiguracja"))]
+
+    assert [response.status_code for response in responses] == [204, 422]
+    assert log_entries(app) == [
+        "pomiar widok=przejscie-w-menu strona=ustawienia gotowe_ms=310 szkielet_ms=150 zapytania=getConfiguration:290/270",
+    ]
+
+
 def test_dziennik_przyjmuje_ograniczona_liczbe_pomiarow_na_jedno_uruchomienie_centrum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
