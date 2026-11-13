@@ -18,6 +18,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from tests.fixtures.centrum import FakeOneDrive, finished_view
 from tests.fixtures.centrum_processes import (
     FILLING_DEVICES,
@@ -25,6 +26,7 @@ from tests.fixtures.centrum_processes import (
     PreparingCentrum,
     Surroundings,
     filling_centrum,
+    write_dad_quantity_rules,
 )
 from atrapy.preparation import COLLECTIVE_FILE_NAME, PERIOD
 from atrapy.settlement import write_template
@@ -95,6 +97,31 @@ def test_po_przygotowaniu_wiersze_bez_reguly_i_z_opisu_czekaja_na_tate(tmp_path:
         "from_description": "Wpisz ilości według opisu technika.",
     }
     assert _description(view) == dict.fromkeys(DESCRIPTION, 0)
+
+
+def test_uzupelnienie_liczy_biezacymi_regulami_ilosci_z_ustawien_a_nie_tymi_z_przygotowania(tmp_path: Path) -> None:
+    centrum = _prepared(tmp_path)
+    write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
+    write_dad_quantity_rules(
+        centrum.tool,
+        RULES_FILE,
+        "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n",
+        "",
+    )
+
+    view = centrum.view(URL)
+    table = centrum.view(f"{URL}/without_rule")
+    window = centrum.view(f"/api/periods/{PERIOD}/without-quantity")
+
+    # „przeniesienie” jest już składnikiem, a T z Przygotowania (reguła usunięta) liczy się jak wpis taty.
+    assert _kinds(view)["without_rule"] == [(22, True)]
+    assert [(row["row"], row["state"]) for row in table["rows"]] == [(22, "done")]
+    assert (_hints(view)["without_rule"], table["hint"]) == ("Dopisz ilości poza V i N.", "Dopisz ilości poza V i N.")
+    assert window["sentence"] == "2 wiersze bez ilości: 20, 21"
+
+
+def _hints(view: dict[str, Any]) -> dict[str, str]:
+    return {kind["kind"]: kind["hint"] for kind in view["kinds"]}
 
 
 def test_ilosc_taty_poza_v_t_i_n_robi_wiersz_bez_reguly_a_dowolna_w_n_ap_wiersz_z_opisu(tmp_path: Path) -> None:

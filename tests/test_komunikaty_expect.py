@@ -58,6 +58,7 @@ from rozliczenia.centrum import (
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
 from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import PeriodFolderError, PeriodFolderInaccessible, PeriodFolderLookupError
 from rozliczenia.workbook_files import WorkbookError
@@ -144,6 +145,10 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "register_path": [settings_messages.register_path],
             "periods_directory_path": [settings_messages.periods_directory_path],
             "unknown_theme": [settings_messages.unknown_theme],
+            "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
+            "quantity_rules_problem": [
+                partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
+            ],
         },
     ),
 }

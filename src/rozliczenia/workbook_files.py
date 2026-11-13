@@ -460,11 +460,17 @@ def read_data_rows(path: Path, files: DadFiles, *, despite_excel_lock: bool = Fa
                         ),
                     )
                 )
-    names = {
-        get_column_letter(column): "" if is_blank(name) else " ".join(str(name).split())
-        for column, name in enumerate(sheet.header[QUANTITY_COLUMNS[0] - 1 :], start=QUANTITY_COLUMNS[0])
+    return DataRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, price_list(sheet.header))
+
+
+def price_list(header: Sequence[object]) -> dict[str, str]:
+    """Nazwy pozycji cennika z wartości wiersza 17 od kolumny A: litera kolumny N:AP → tekst komórki z pojedynczymi
+    spacjami, pusta komórka (także za końcem ``header``) to ``""``."""
+
+    return {
+        get_column_letter(column): "" if column > len(header) or is_blank(header[column - 1]) else " ".join(str(header[column - 1]).split())
+        for column in QUANTITY_COLUMNS
     }
-    return DataRows(header_columns(sheet.header[: INPUT_COLUMNS[-1]]), rows, names)
 
 
 @dataclass(frozen=True)

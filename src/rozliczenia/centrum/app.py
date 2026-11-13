@@ -62,6 +62,7 @@ from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.quantity_rules_router import quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
@@ -190,6 +191,7 @@ def create_app(
     settings = CentrumSettings(config, log=log, now=local_now, pause=pause)
     app.include_router(settings_router(settings, platform))
     configuration = configuration_files or ConfigurationFiles.default()
+    app.include_router(quantity_rules_router(settings, configuration.collective_template))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)

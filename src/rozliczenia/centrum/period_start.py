@@ -61,7 +61,8 @@ class PeriodStarts:
         kind = self.catalog.period_kind(request.process)
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
             raise refusal.no_forwarding(kind.title)
-        folders = self.settings.snapshot().folders
+        snapshot = self.settings.snapshot()
+        folders = snapshot.folders
         chosen = kind.required_paths(folders)
         if request.mode.dry_run and kind.start.no_preview is not None:
             raise kind.start.no_preview
@@ -72,6 +73,7 @@ class PeriodStarts:
             dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
             settings=folders,
+            quantity_rules=snapshot.quantity_rules,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 

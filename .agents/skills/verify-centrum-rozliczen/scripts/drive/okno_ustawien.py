@@ -12,10 +12,20 @@ from playwright.sync_api import Page, Request, ViewportSize, expect
 from drive.common import DAD_VIEWPORT, Run, close_settings, settings_window
 
 FEATURE = "okno-ustawien"
-# The groups of sections in the order of ADR 0032 that have a section now; Ilości has none yet.
-SHOWN_GROUPS = ("Praca", "Pliki", "Połączenia", "Narzędzie", "Historia")
-HIDDEN_GROUPS = ("Ilości",)
-SECTIONS = ("Foldery", "Wykonawcy", "Wzorce", "Kopie INTERMAX", "Zgłoszenia", "Narzędzie", "Wygląd", "Historia")
+# The groups of sections in the order of ADR 0032; each has a section now.
+SHOWN_GROUPS = ("Praca", "Ilości", "Pliki", "Połączenia", "Narzędzie", "Historia")
+SECTIONS = (
+    "Foldery",
+    "Wykonawcy",
+    "Reguły ilości",
+    "Urządzenia",
+    "Wzorce",
+    "Kopie INTERMAX",
+    "Zgłoszenia",
+    "Narzędzie",
+    "Wygląd",
+    "Historia",
+)
 FOLDERS = "#/ustawienia/foldery"
 # Dad's narrow browser window, where the window Ustawienia fills the screen.
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -68,9 +78,6 @@ def drive(run: Run, page: Page) -> None:
         nav = window.get_by_role("list")
         labels = [label.strip() for label in window.locator("[data-slot=sidebar-group-label]").all_inner_texts()]
         run.check(labels == list(SHOWN_GROUPS), f"the groups with a section show in the order of ADR 0032 ({labels})")
-        for group in HIDDEN_GROUPS:
-            expect(window.get_by_text(group, exact=True)).to_have_count(0)
-        run.check(True, "Ilości has no section yet, so it does not show")
         links = [link.strip() for link in nav.get_by_role("link").all_inner_texts()]
         run.check(links == list(SECTIONS), f"the sections stand in their groups ({links})")
         run.capture(page, "301-okno-szerokie", full_page=False)

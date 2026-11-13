@@ -1456,6 +1456,12 @@ periods_directory_path [zdanie]
 unknown_theme [zdanie]
   Motyw może być tylko ciemny albo jasny.
 
+unavailable [zdanie]
+  Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
+
+quantity_rules_problem [zdanie]
+  Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]

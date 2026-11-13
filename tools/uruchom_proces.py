@@ -30,8 +30,9 @@ narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,
 etykiety i Komunikaty co karta Uruchomienia. Bez parametru Konfiguracja
 wykonawców i Wzorce są te z Centrum (``ConfigurationFiles.default()``), a plik
-metryk to plik metryk procesu. Skrypt nie czyta Ustawień taty, nie otwiera okien
-wyboru i nie pyta o nic: każdą Decyzję taty odrzuca, więc nigdy nie czeka.
+metryk to plik metryk procesu. Skrypt nie czyta Ustawień taty (Reguły ilości są
+te z Wydania), nie otwiera okien wyboru i nie pyta o nic: każdą Decyzję taty
+odrzuca, więc nigdy nie czeka.
 
 Na stdout trafia jeden obiekt JSON (UTF-8, ``ProcessResult``):
 
@@ -82,6 +83,7 @@ from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
 from rozliczenia.run_context import RunContext
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 
 from atrapy.skrzynka_raportow import FolderInbox
@@ -239,6 +241,7 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
         period=values.get("period"),
         dry_run=values.get("dry_run", False),
         pricing="z Przekazaniem" if values.get("handover") else None,
+        quantity_rules=DEFAULT_QUANTITY_RULES,
     )
 
 

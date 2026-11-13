@@ -5,7 +5,9 @@ import {
   FolderIcon,
   HistoryIcon,
   InboxIcon,
+  ListChecksIcon,
   PaletteIcon,
+  RouterIcon,
   UsersIcon,
   WrenchIcon,
   type LucideIcon,
@@ -16,6 +18,7 @@ import { AppearanceSection } from "@/pages/settings/appearance-section"
 import { FoldersSection } from "@/pages/settings/folders-section"
 import { HistorySection } from "@/pages/settings/history-section"
 import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
+import { DevicesSection, QuantityRulesSection } from "@/pages/settings/quantity-rules-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"
@@ -33,6 +36,8 @@ type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 export const SETTINGS_SECTIONS = [
   { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection },
   { id: "wykonawcy", title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
+  { id: "reguly-ilosci", title: "Reguły ilości", group: "Ilości", icon: ListChecksIcon, Content: QuantityRulesSection },
+  { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },
   { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection },
   { id: "kopie-intermax", title: "Kopie INTERMAX", group: "Pliki", icon: ArchiveRestoreIcon, Content: IntermaxCopiesSection },
   { id: "zgloszenia", title: "Zgłoszenia", group: "Połączenia", icon: InboxIcon, Content: ReportsSection },

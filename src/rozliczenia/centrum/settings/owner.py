@@ -1,7 +1,8 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Na start obejmuje plik Folderów i motywu (``folders``). ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
-zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
+Obejmuje plik Folderów i motywu (``folders``) oraz pliki Reguł ilości i Listy Urządzeń (``quantity_rules``), które
+sprawdza też razem. ``CentrumSettings`` czyta je przy każdym odczycie od nowa, więc zmiana działa od razu, a proces
+dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
@@ -33,7 +34,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 import threading
-from typing import Final, TypeVar
+from typing import Any, Final, TypeVar
 import uuid
 
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
@@ -42,6 +43,10 @@ from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChang
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
 from rozliczenia.centrum.settings.history import History, HistoryRead, HistoryRow, RowChange, RowSource, SourceKind
 from rozliczenia.centrum.settings.memory import Memory, Remembered, settings_bytes
+from rozliczenia.centrum.settings import messages
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, quantity_rules
+from rozliczenia.quantity_engine import QuantityRules
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 
 T = TypeVar("T")
 
@@ -54,6 +59,19 @@ class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili: dobre, a przy złym pliku ostatnie dobre albo domyślne."""
 
     folders: FolderSettings
+    quantity_rules: QuantityRules
+    """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym albo niespójnym pliku ostatnie dobre
+    albo Reguły ilości z Wydania."""
+
+
+@dataclass(frozen=True)
+class QuantityRulesView:
+    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, i problem każdego pliku (``None``:
+    plik dobry). Reguła ze składnikiem spoza Listy Urządzeń to problem pliku reguł."""
+
+    rules: QuantityRules
+    rules_problem: FieldProblem | None
+    devices_problem: FieldProblem | None
 
 
 @dataclass(frozen=True)
@@ -108,7 +126,13 @@ class CentrumSettings:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
 
         with self._lock:
-            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS))
+            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS), quantity_rules=self._quantity_rules().rules)
+
+    def quantity_rules(self) -> QuantityRulesView:
+        """Reguły ilości i Lista Urządzeń dla okna Ustawień, każdy plik porównany z pamięcią jak przy każdym odczycie."""
+
+        with self._lock:
+            return self._quantity_rules()
 
     def view(self) -> SettingsView:
         with self._lock:
@@ -149,6 +173,14 @@ class CentrumSettings:
         since = self._now() - timedelta(days=days)
         rows = [row for row in self.history().rows if row.at >= since][:REPORTED_CHANGES]
         return tuple(_reported(row) for row in rows)
+
+    def _quantity_rules(self) -> QuantityRulesView:
+        devices = self._observe(DEVICES)
+        rules = self._observe(RULES)
+        combined = quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES))
+        if isinstance(combined, FieldProblem):
+            return QuantityRulesView(DEFAULT_QUANTITY_RULES, _problem(rules, RULES) or combined, _problem(devices, DEVICES))
+        return QuantityRulesView(combined, _problem(rules, RULES), _problem(devices, DEVICES))
 
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
         return self._change(file, lambda current: file.restore(current, changes), undoes=row_id)
@@ -282,22 +314,32 @@ class CentrumSettings:
         )
 
 
-_FILES: Final[dict[str, SettingsFile[FolderSettings]]] = {FOLDERS.name: FOLDERS}
+_FILES: Final[dict[str, SettingsFile[Any]]] = {FOLDERS.name: FOLDERS, DEVICES.name: DEVICES, RULES.name: RULES}
 
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela
     albo wartości domyślne; nie dopisuje Historii ani pamięci."""
 
-    data = settings_bytes(config / FOLDERS.name)
+    combined = quantity_rules(_read_only(config, RULES), _read_only(config, DEVICES))
+    return SettingsSnapshot(
+        folders=_read_only(config, FOLDERS),
+        quantity_rules=DEFAULT_QUANTITY_RULES if isinstance(combined, FieldProblem) else combined,
+    )
+
+
+def _read_only(config: Path, file: SettingsFile[T]) -> T:
+    """Wartość pliku bez zapisu: plik, przy złej treści ostatnia dobra z pamięci właściciela albo wartości domyślne."""
+
+    data = settings_bytes(config / file.name)
     if isinstance(data, OSError):
-        return SettingsSnapshot(folders=FOLDERS.default)
-    parsed = FOLDERS.parse(data)
+        return file.default
+    parsed = file.parse(data)
     if not isinstance(parsed, FieldProblem):
-        return SettingsSnapshot(folders=parsed)
-    remembered = Memory(config, lambda _: None).read(FOLDERS.name)
+        return parsed
+    remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
-    return SettingsSnapshot(folders=_good_value(good, FOLDERS))
+    return _good_value(good, file)
 
 
 def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
@@ -306,6 +348,16 @@ def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
 
     parsed = file.parse(good)
     return file.default if isinstance(parsed, FieldProblem) else parsed
+
+
+def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> FieldProblem | None:
+    match observed:
+        case Good():
+            return None
+        case Bad(problem=problem):
+            return problem
+        case Unreadable():
+            return FieldProblem(None, messages.unavailable(file.name))
 
 
 def _read(parsed: T | FieldProblem, usable: T | None) -> Read[T]:

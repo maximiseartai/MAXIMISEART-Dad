@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.domain import RunMode
@@ -36,6 +37,7 @@ from rozliczenia.workbook_files import ByteSource, file_bytes
 
 from tests.fixtures.centrum import (
     NO_EFENIX,
+    ROOT,
     RUN_LOGS_IN_BACKGROUND,
     STOP_S,
     CentrumClient,
@@ -392,6 +394,25 @@ def preparing_centrum(
         engines,
     )
 
+
+
+# Reguły ilości i Lista Urządzeń z Wydania, z których test robi pliki taty w ``config``.
+_RELEASE_QUANTITY_RULES = {
+    RULES_FILE: ROOT / "src" / "rozliczenia" / "reguly_ilosci_domyslne.yaml",
+    DEVICES_FILE: ROOT / "src" / "rozliczenia" / "lista_urzadzen_domyslna.yaml",
+}
+
+
+def write_dad_quantity_rules(tool: ToolDirectory, file: str, old: str, new: str) -> Path:
+    """Plik ``file`` (Reguły ilości albo Lista Urządzeń) w ``config`` taty: dane z Wydania z ``old`` zamienionym na
+    ``new``, jak po zmianie spoza Centrum."""
+
+    text = _RELEASE_QUANTITY_RULES[file].read_text(encoding="utf-8")
+    assert old in text, old
+    path = tool.config / file
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    return path
 
 
 # Wtorek i poniedziałek okresu ``PERIOD``: okres z ostatnim zleceniem w poniedziałek jest pełny, więc jego

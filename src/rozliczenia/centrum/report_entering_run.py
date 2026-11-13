@@ -100,7 +100,8 @@ class ReportEnteringEntry:
         """Wejście procesu z Ustawień taty i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
         wskazany."""
 
-        settings = self.settings.snapshot().folders
+        snapshot = self.settings.snapshot()
+        settings = snapshot.folders
         if (unchosen := _unchosen(settings)) is not None:
             raise unchosen
         paths: dict[PathNeed, Path] = {
@@ -109,7 +110,7 @@ class ReportEnteringEntry:
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(paths, period=None, dry_run=False, settings=settings)
+        start = Start(paths, period=None, dry_run=False, settings=settings, quantity_rules=snapshot.quantity_rules)
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:

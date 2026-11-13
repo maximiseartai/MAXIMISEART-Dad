@@ -30,3 +30,13 @@ def periods_directory_path() -> str:
 
 def unknown_theme() -> str:
     return "Motyw może być tylko ciemny albo jasny."
+
+
+def quantity_rules_problem(file: str, problem: str) -> str:
+    """Zły plik Reguł ilości albo Listy Urządzeń: ``problem`` to zdanie silnika Reguł ilości o pierwszym złym polu."""
+
+    return f"Plik {file} w folderze config: {problem}"
+
+
+def unavailable(file: str) -> str:
+    return f"Pliku {file} w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania."

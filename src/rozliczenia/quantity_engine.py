@@ -253,15 +253,7 @@ class QuantityRules:
     devices: DeviceList
 
     def __post_init__(self) -> None:
-        ids: set[str] = set()
-        for rule in self.rules:
-            path = f"reguly[{rule.id}]"
-            _require(_is_id(rule.id), f"{path}.id", "Reguła potrzebuje nazwy bez spacji na początku i końcu.")
-            _require(rule.id not in ids, f"{path}.id", f"Reguła „{rule.id}” jest dwa razy.")
-            ids.add(rule.id)
-            for index, condition in enumerate(rule.conditions):
-                _check_condition(condition, self.devices, f"{path}.jesli[{index}]")
-            _check_action(rule.action, self.devices, f"{path}.to")
+        _check_rules(self.rules, self.devices.ids())
 
     @property
     def rule_columns(self) -> tuple[str, ...]:
@@ -571,10 +563,42 @@ def _require(holds: bool, path: str, message: str) -> None:
         raise QuantityRulesRefused(RulesProblem(path, message))
 
 
-def _check_condition(condition: Condition, devices: DeviceList, path: str) -> None:
+def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
+    """Pierwszy problem reguł bez Listy Urządzeń: każdy niezmiennik ``QuantityRules`` poza tym, czy składnik, do którego
+    reguła się odwołuje, jest na liście; ``None``: reguły są dobre same w sobie."""
+
+    try:
+        _check_rules(tuple(rules), None)
+    except QuantityRulesRefused as refused:
+        return refused.problem
+    return None
+
+
+def _check_rules(rules: tuple[QuantityRule, ...], components: frozenset[str] | None) -> None:
+    """Niezmienniki reguł; ``components``: identyfikatory składników Listy Urządzeń, ``None``: bez sprawdzania odwołań."""
+
+    ids: set[str] = set()
+    for rule in rules:
+        path = f"reguly[{rule.id}]"
+        _require(_is_id(rule.id), f"{path}.id", "Reguła potrzebuje nazwy bez spacji na początku i końcu.")
+        _require(rule.id not in ids, f"{path}.id", f"Reguła „{rule.id}” jest dwa razy.")
+        ids.add(rule.id)
+        for index, condition in enumerate(rule.conditions):
+            _check_condition(condition, components, f"{path}.jesli[{index}]")
+        _check_action(rule.action, components, f"{path}.to")
+
+
+def _check_component(component: str | None, components: frozenset[str] | None, path: str) -> None:
+    if components is None:
+        _require(component is not None, path, "Wybierz składnik.")
+    else:
+        _require(component in components, path, f"Składnika „{component}” nie ma na Liście Urządzeń.")
+
+
+def _check_condition(condition: Condition, components: frozenset[str] | None, path: str) -> None:
     match condition:
         case ContainsComponent(component=component):
-            _require(component in devices.ids(), f"{path}.skladnik", f"Składnika „{component}” nie ma na Liście Urządzeń.")
+            _check_component(component, components, f"{path}.skladnik")
         case DevicesText(mode=mode, text=text):
             _check_devices_text(mode, text, f"{path}.tekst")
         case ActivitiesContain(text=text):
@@ -607,12 +631,12 @@ def _check_devices_text(mode: TextMode, text: str, path: str) -> None:
             _require(bool(text) and text == normalize_text(text), path, "Tekst wpisz małymi literami, z pojedynczymi spacjami.")
 
 
-def _check_action(action: Action, devices: DeviceList, path: str) -> None:
+def _check_action(action: Action, components: frozenset[str] | None, path: str) -> None:
     match action:
         case Fill(writes=writes):
             _require(bool(writes), f"{path}.wpisy", "Reguła „wpisz” potrzebuje co najmniej jednej kolumny.")
             for index, write in enumerate(writes):
-                _check_write(write, devices, f"{path}.wpisy[{index}]")
+                _check_write(write, components, f"{path}.wpisy[{index}]")
         case LeaveEmpty(columns=columns):
             _require(bool(columns), f"{path}.kolumny", "Wybierz co najmniej jedną kolumnę.")
             for column in columns:
@@ -621,7 +645,7 @@ def _check_action(action: Action, devices: DeviceList, path: str) -> None:
             pass
 
 
-def _check_write(write: Write, devices: DeviceList, path: str) -> None:
+def _check_write(write: Write, components: frozenset[str] | None, path: str) -> None:
     _require(write.column in QUANTITY_LETTERS, f"{path}.kolumna", f"Kolumna „{write.column}” nie jest kolumną Ilości usług N:AP.")
     _require(
         write.column not in _BUILT_IN_COLUMNS,
@@ -636,8 +660,4 @@ def _check_write(write: Write, devices: DeviceList, path: str) -> None:
     if write.multiplier is Multiplier.ONCE:
         _require(write.component is None, f"{path}.skladnik", "Wartość „raz na zlecenie” nie liczy składnika.")
     else:
-        _require(
-            write.component in devices.ids(),
-            f"{path}.skladnik",
-            f"Składnika „{write.component}” nie ma na Liście Urządzeń.",
-        )
+        _check_component(write.component, components, f"{path}.skladnik")

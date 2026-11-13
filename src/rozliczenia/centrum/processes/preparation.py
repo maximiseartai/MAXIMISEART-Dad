@@ -58,6 +58,7 @@ def _inputs(start: Start, _parts: HostParts) -> PreparationInputs:
         config_path=start.path("worker_config"),
         internal_template_path=start.path("internal_template"),
         collective_template_path=start.path("collective_template"),
+        quantity_rules=start.quantity_rules,
     )
 
 
