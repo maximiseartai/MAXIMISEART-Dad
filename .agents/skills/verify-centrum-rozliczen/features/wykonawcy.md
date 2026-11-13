@@ -36,32 +36,32 @@ Preconditions:
 
 - **Add.** Open Wykonawcy. Button `Dodaj Wykonawcę`, form `Nowy Wykonawca`: textbox `Login` = `wykonawca.e`, label
   `Nazwa w Rozliczeniu pracownika` = `Wykonawca Testowy E`, `Dodaj adres`, textbox `Adres 1` =
-  `wykonawca.e@przyklad.invalid`. Screenshot `380`. Button `Zapisz Wykonawcę`: list item `Wykonawca Testowy E` shows the
+  `wykonawca.e@przyklad.invalid`. Screenshot `390`. Button `Zapisz Wykonawcę`: list item `Wykonawca Testowy E` shows the
   address, the form is gone; `GET /api/settings` (`api/wykonawcy-dodany.json`) has the Wykonawca active with
   Przypomnienia, and `config/wykonawcy.yaml` has the login.
 - **Refused at the field.** `Dodaj Wykonawcę` with login `wykonawca.f`, name `Wykonawca Testowy F` and `Adres 1` =
   `wykonawca.a@przyklad.invalid`; `Zapisz Wykonawcę`: the form's alert reads
   `Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy.`, `Adres 1` is `aria-invalid`, and
-  the file keeps its bytes. Screenshot `381`. `Anuluj`.
+  the file keeps its bytes. Screenshot `391`. `Anuluj`.
 - **Unsaved form.** `Edytuj: Wykonawca Testowy A`, name `Wykonawca Testowy A2`, Esc: alertdialog `Zamknąć bez zapisu?`.
-  Screenshot `382`. `Wróć`: the window stays and the name field still holds `Wykonawca Testowy A2`.
+  Screenshot `392`. `Wróć`: the window stays and the name field still holds `Wykonawca Testowy A2`.
 - **Old name.** `Zapisz Wykonawcę`: alertdialog `Zmienić nazwę?` contains
   `Rozliczenie pracownika ze starą nazwą jest już w okresie 22_28_09_2026.`, and `GET /api/settings`
-  (`api/wykonawcy-przed-potwierdzeniem.json`) still has the old name. Screenshot `383`. `Zmień nazwę`: list item
+  (`api/wykonawcy-przed-potwierdzeniem.json`) still has the old name. Screenshot `393`. `Zmień nazwę`: list item
   `Wykonawca Testowy A2`; the Folder rozliczeń pracowników of `22_28_09_2026` lists the same file names as before.
 - **Removal refused.** `Edytuj: Wykonawca Testowy B`, `Usuń Wykonawcę`: the form's alert contains
   `Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców.` and `Oznacz jako nieaktywnego` is
-  there; B is still listed (`api/wykonawcy-odmowa-usuniecia.json`). Screenshot `384`. `Anuluj`.
+  there; B is still listed (`api/wykonawcy-odmowa-usuniecia.json`). Screenshot `394`. `Anuluj`.
 - **Switches.** `Edytuj: Wykonawca Testowy D`, `Oznacz jako nieaktywnego`: its list item shows `Nieaktywny`; `Anuluj`.
   Switch `Przypomnienia: Wykonawca Testowy C`: unchecked. `GET /api/settings` (`api/wykonawcy-przelaczniki.json`) has D
-  inactive and C without Przypomnienia, and D is the last list item. Screenshot `385`.
+  inactive and C without Przypomnienia, and D is the last list item. Screenshot `395`.
 - **Narrow window.** Viewport 420×860 with the window open: combobox `Sekcja Ustawień` names Wykonawcy;
-  `Edytuj: Wykonawca Testowy E`: no horizontal scroll. Screenshot `386`; `Anuluj`; screenshot `387`. The viewport goes back to 1440×1000 (also in `finally`).
+  `Edytuj: Wykonawca Testowy E`: no horizontal scroll. Screenshot `396`; `Anuluj`; screenshot `397`. The viewport goes back to 1440×1000 (also in `finally`).
 - **Removal and way back.** `Edytuj: Wykonawca Testowy E`, `Usuń Wykonawcę`: the list item is gone
   (`api/wykonawcy-usuniety.json`). Then the same changes the other way: A2 renamed back to A (no question, no file has
   the name A2), D `Oznacz jako aktywnego`, C's switch on; `config/wykonawcy.yaml` has the fixture's bytes again. ✕ (`Zamknij Ustawienia`) closes the window; Esc
   would first close the notification „Zapisano · Cofnij” of the last switch.
-- **Proof.** Screenshots `380`–`387`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
+- **Proof.** Screenshots `390`–`397`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
 
 ## Gotchas
 

@@ -51,7 +51,7 @@ def drive(run: Run, page: Page) -> None:
     form.get_by_label("Nazwa w Rozliczeniu pracownika").fill(NEW_NAME)
     form.get_by_role("button", name="Dodaj adres").click()
     form.get_by_role("textbox", name="Adres 1").fill(NEW_ADDRESS)
-    run.capture(page, "380-wykonawcy-formularz", full_page=False)
+    run.capture(page, "390-wykonawcy-formularz", full_page=False)
     _save(form)
     expect(_row(window, NEW_NAME)).to_contain_text(NEW_ADDRESS)
     expect(form).to_have_count(0)
@@ -74,7 +74,7 @@ def drive(run: Run, page: Page) -> None:
     expect(form.get_by_role("alert")).to_have_text(ADDRESS_TAKEN)
     expect(form.get_by_role("textbox", name="Adres 1")).to_have_attribute("aria-invalid", "true")
     run.check(read_bytes(worker_list) == saved_bytes, "an address of another Wykonawca is not saved")
-    run.capture(page, "381-wykonawcy-odmowa-przy-polu", full_page=False)
+    run.capture(page, "391-wykonawcy-odmowa-przy-polu", full_page=False)
     form.get_by_role("button", name="Anuluj").click()
 
     run.step(FEATURE, "wykonawcy-zamkniecie-bez-zapisu")
@@ -84,7 +84,7 @@ def drive(run: Run, page: Page) -> None:
     page.keyboard.press("Escape")
     question = page.get_by_role("alertdialog", name="Zamknąć bez zapisu?")
     expect(question).to_be_visible()
-    run.capture(page, "382-wykonawcy-zamkniecie-bez-zapisu", full_page=False)
+    run.capture(page, "392-wykonawcy-zamkniecie-bez-zapisu", full_page=False)
     question.get_by_role("button", name="Wróć").click()
     expect(settings_window(page)).to_be_visible()
     expect(form.get_by_label("Nazwa w Rozliczeniu pracownika")).to_have_value(RENAMED)
@@ -95,7 +95,7 @@ def drive(run: Run, page: Page) -> None:
     asked = page.get_by_role("alertdialog", name="Zmienić nazwę?")
     expect(asked).to_contain_text(OLD_NAME)
     run.check(_workers(run, "wykonawcy-przed-potwierdzeniem")[A]["name"] == A, "nothing is saved before Dad confirms")
-    run.capture(page, "383-wykonawcy-stara-nazwa", full_page=False)
+    run.capture(page, "393-wykonawcy-stara-nazwa", full_page=False)
     asked.get_by_role("button", name="Zmień nazwę").click()
     expect(_row(window, RENAMED)).to_be_visible()
     run.check(
@@ -110,7 +110,7 @@ def drive(run: Run, page: Page) -> None:
     expect(form.get_by_role("alert")).to_contain_text(KEPT_IN_REGISTER)
     expect(form.get_by_role("button", name="Oznacz jako nieaktywnego")).to_be_visible()
     run.check(B in _workers(run, "wykonawcy-odmowa-usuniecia"), "a Wykonawca with orders in the Rejestr zleceń stays")
-    run.capture(page, "384-wykonawcy-odmowa-usuniecia", full_page=False)
+    run.capture(page, "394-wykonawcy-odmowa-usuniecia", full_page=False)
     form.get_by_role("button", name="Anuluj").click()
 
     run.step(FEATURE, "wykonawcy-przelaczniki")
@@ -130,7 +130,7 @@ def drive(run: Run, page: Page) -> None:
         "items => items.map((item) => item.getAttribute('aria-label'))"
     )
     run.check(names[-1] == D, f"the Nieaktywny Wykonawca stands below the active ones ({names})")
-    run.capture(page, "385-wykonawcy-lista", full_page=False)
+    run.capture(page, "395-wykonawcy-lista", full_page=False)
 
     run.step(FEATURE, "wykonawcy-waskie-okno")
     page.set_viewport_size(NARROW)
@@ -139,9 +139,9 @@ def drive(run: Run, page: Page) -> None:
         _row(window, NEW_NAME).get_by_role("button", name=f"Edytuj: {NEW_NAME}").click()
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the form fits without a horizontal scroll")
-        run.capture(page, "386-wykonawcy-formularz-waski", full_page=False)
+        run.capture(page, "396-wykonawcy-formularz-waski", full_page=False)
         window.get_by_role("form", name=f"Wykonawca {NEW_NAME}").get_by_role("button", name="Anuluj").click()
-        run.capture(page, "387-wykonawcy-lista-waska", full_page=False)
+        run.capture(page, "397-wykonawcy-lista-waska", full_page=False)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
 

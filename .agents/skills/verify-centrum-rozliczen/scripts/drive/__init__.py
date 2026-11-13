@@ -147,14 +147,14 @@ FEATURES = (
     Feature(
         "wykonawcy",
         (
-            "380-wykonawcy-formularz",
-            "381-wykonawcy-odmowa-przy-polu",
-            "382-wykonawcy-zamkniecie-bez-zapisu",
-            "383-wykonawcy-stara-nazwa",
-            "384-wykonawcy-odmowa-usuniecia",
-            "385-wykonawcy-lista",
-            "386-wykonawcy-formularz-waski",
-            "387-wykonawcy-lista-waska",
+            "390-wykonawcy-formularz",
+            "391-wykonawcy-odmowa-przy-polu",
+            "392-wykonawcy-zamkniecie-bez-zapisu",
+            "393-wykonawcy-stara-nazwa",
+            "394-wykonawcy-odmowa-usuniecia",
+            "395-wykonawcy-lista",
+            "396-wykonawcy-formularz-waski",
+            "397-wykonawcy-lista-waska",
         ),
     ),
     # Moves the run's tool clone right after Konfiguracja shows it.
