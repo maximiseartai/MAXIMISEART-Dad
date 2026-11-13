@@ -7,19 +7,34 @@ Każdy zrzut drive'u idzie przez ``Run.capture``, które przyjmuje tylko zrzut z
 ``FEATURES``, gdzie jeden numer zrzutu należy do jednej funkcji (pliki funkcji i PR-y cytują zrzut po numerze); zrzut
 prosto przez ``screenshot`` tę regułę omijał (#783: zbliżenia 170b i 181b). Test czyta kod drive'u, nie uruchamia go, więc łapie też zrzut z rzadko jeżdżącej ścieżki; nie łapie zrzutu
 wywołanego bez atrybutu ``screenshot`` (``getattr``).
+
+Czekanie drive'u (``until`` z ``drive/waiting.py``, także przez ``Run.wait_for``) przeczekuje plik, który serwer albo
+jego wątek jeszcze pisze: brak pliku, pusty, w połowie zapisany i chwilowo bez prawa odczytu to stan „jeszcze nie”, a
+każdy inny błąd i plik, który po budżecie wciąż nie jest gotowy, kończą przebieg komunikatem (#1651, #1539). Stany
+pliku zmienia sam odczyt warunku, nie zegar.
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+import importlib
 import importlib.util
+import json
 from pathlib import Path
+import threading
+import time
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 from playwright.sync_api import Error as PlaywrightError
 import pytest
+import yaml
+
+from atrapy.pliki_taty import UPDATE_RESULT_FILE
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.tool_files import config_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts"
@@ -118,3 +133,133 @@ def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
     [line] = capsys.readouterr().err.splitlines()
     assert code == 1
     assert line.startswith("DRIVE FAIL | funkcja nie zobaczyła przycisku | zz-failure.png not taken: "), line
+
+
+@pytest.fixture
+def common(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    return importlib.import_module("drive.common")
+
+
+def _run(common: ModuleType, tmp_path: Path) -> Any:
+    """Przebieg drive'u z katalogiem ``config/`` obok pliku Ustawień, jak w przygotowanym folderze okresów."""
+
+    root = tmp_path / "run"
+    config_dir(root).mkdir(parents=True)
+    settings = config_dir(root) / SETTINGS_FILE
+    (root / "fixture.json").write_text(json.dumps({"settings": str(settings)}), encoding="utf-8")
+    return common.Run(root, "http://127.0.0.1:1/", tmp_path / "dowody")
+
+
+def test_czekanie_drive_przeczekuje_wynik_aktualizacji_brakujacy_pusty_w_polowie_zapisany_i_bez_prawa_odczytu(
+    common: ModuleType, tmp_path: Path
+) -> None:
+    """Warunek z ``aktualizacja-ok-przy-starej-wersji`` (``exists()`` i ``read_json`` wyniku Aktualizacji narzędzia,
+    run 43496125209) czyta plik, który opiekun ponownego startu pisze: każdy odczyt warunku przestawia plik w następny
+    stan, a czekanie kończy się dopiero na pełnym wyniku."""
+
+    run = _run(common, tmp_path)
+    result = run.config / UPDATE_RESULT_FILE
+    full = json.dumps({"wynik": "NOWA_WERSJA_NIE_WYSTARTOWALA"})
+    holding: list[threading.Thread] = []
+
+    def refused_for_a_moment() -> None:
+        refusing = threading.Event()
+
+        def hold() -> None:
+            with common.unreadable(result):
+                refusing.set()
+                time.sleep(0.3)
+
+        holding.append(threading.Thread(target=hold))
+        holding[0].start()
+        refusing.wait()
+
+    def written_whole() -> None:
+        holding[0].join()
+        result.write_text(full, encoding="utf-8")
+
+    states = [
+        lambda: None,
+        lambda: result.write_text("", encoding="utf-8"),
+        lambda: result.write_text(full[:12], encoding="utf-8"),
+        refused_for_a_moment,
+        written_whole,
+    ]
+    read: list[int] = []
+
+    def guardian_wrote_the_failure() -> bool:
+        states[len(read)]()
+        read.append(len(read))
+        return bool(result.exists() and common.read_json(result)["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA")
+
+    run.wait_for(guardian_wrote_the_failure, "the guardian moved the clone back and wrote the failure", timeout_s=20)
+
+    assert read == [0, 1, 2, 3, 4]
+
+
+def _refused(path: Path) -> object:
+    """Windows na chwilę odmawia odczytu pliku, który serwer właśnie podmienia (#1087)."""
+
+    raise PermissionError(13, "Permission denied", str(path))
+
+
+@pytest.mark.parametrize(
+    "not_yet",
+    [
+        lambda path: path.read_text(encoding="utf-8"),
+        lambda path: json.loads(""),
+        lambda path: json.loads('{"wynik": "NOWA_'),
+        lambda path: b"\xc5".decode("utf-8"),
+        lambda path: yaml.safe_load("folder_okresow: [C:/okresy,"),
+        _refused,
+    ],
+    ids=["brak-pliku", "pusty-json", "pol-json", "pol-znaku-utf8", "pol-yaml", "bez-prawa-odczytu"],
+)
+def test_czekanie_drive_czyta_jeszcze_raz_po_kazdym_stanie_jeszcze_nie(
+    common: ModuleType, tmp_path: Path, not_yet: Callable[[Path], object]
+) -> None:
+    waiting = importlib.import_module("drive.waiting")
+    reads: list[str] = []
+
+    def ready() -> str:
+        reads.append("odczyt")
+        if len(reads) == 1:
+            not_yet(tmp_path / "brak.json")
+        return "gotowe"
+
+    assert waiting.until(ready, "the file is written") == "gotowe"
+    assert len(reads) == 2
+
+
+def test_plik_trwale_w_polowie_zapisany_konczy_czekanie_po_budzecie_komunikatem_z_jego_stanem(
+    common: ModuleType, tmp_path: Path
+) -> None:
+    run = _run(common, tmp_path)
+    result = run.config / UPDATE_RESULT_FILE
+    result.write_text('{"wynik": "NOWA_', encoding="utf-8")
+
+    with pytest.raises(common.DriveFailure) as failure:
+        run.wait_for(lambda: common.read_json(result)["wynik"] == "ok", "the update wrote its result", timeout_s=0.3)
+
+    assert str(failure.value).startswith(
+        "timed out: the update wrote its result; the last read was not ready: JSONDecodeError: Unterminated string"
+    ), failure.value
+
+
+def test_blad_spoza_stanow_jeszcze_nie_konczy_czekanie_od_razu(common: ModuleType, tmp_path: Path) -> None:
+    """Pełny plik bez oczekiwanego klucza to błąd drive'u albo Centrum, a nie plik w trakcie zapisu."""
+
+    run = _run(common, tmp_path)
+    result = run.config / UPDATE_RESULT_FILE
+    result.write_text(json.dumps({"stan": "ok"}), encoding="utf-8")
+    reads: list[int] = []
+
+    def updated() -> bool:
+        reads.append(1)
+        return bool(common.read_json(result)["wynik"] == "ok")
+
+    with pytest.raises(KeyError, match="wynik"):
+        run.wait_for(updated, "the update wrote its result")
+
+    assert reads == [1]
