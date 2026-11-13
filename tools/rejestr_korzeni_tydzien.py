@@ -1,7 +1,8 @@
 """Tygodniowy pomiar korzeni w issue „Rejestr korzeni”: wystąpienia, powtórzenia, kody i chwasty; biegnie w poniedziałek, ręcznie z --bez-zapisu.
 
 Pomiar z ADR 0031 (decyzje Q1, Q19, Q23): workflow ``.github/workflows/rejestr-korzeni.yml`` uruchamia go
-w poniedziałek o 6:00 czasu polskiego, zanim zadanie T3 o 8:00 dołoży kartę i osąd o kodach. Liczby bierze tylko
+w poniedziałek o 6:17 czasu polskiego, zanim zadanie T3 o 8:00 dołoży kartę i osąd o kodach. Minuta 17, a nie
+pełna godzina, bo GitHub opóźnia, a przy dużym obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze tylko
 z rejestru korzeni (``rejestr_korzeni.read``) od wdrożenia szablonu werdyktu na ``origin/main``:
 
 - wystąpienie to wystąpienie kodu z rejestru: Ważne werdyktu ``FAIL`` albo blok czerwonego `main` scalonego PR,
@@ -22,11 +23,17 @@ z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia, z którego zadanie T3 ry
 od nowa z rejestru przy każdym uruchomieniu, a starej treści issue nie czyta: rozstrzygnięcie kodu (Q25) poprawia też
 minione tygodnie, a issue nie staje się drugim rejestrem. Treść należy do narzędzia, więc uwagi idą w komentarze.
 
-Issue to otwarte issue z etykietą ``chwast`` i tytułem ``TITLE``; gdy go nie ma, pomiar je zakłada, a gdy jest kilka,
-zmienia najstarsze z ostrzeżeniem. Pomiar zmienia tylko treść i nigdy nie komentuje, bo konto ma secondary rate limit.
+Issue to otwarte issue z etykietą ``rejestr-korzeni`` (``rejestr_korzeni.REGISTRY``, osobna od ``chwast``, żeby
+lista chwastów miała same chwasty) i tytułem ``TITLE``; gdy go nie ma, pomiar je zakłada (i brakującą etykietę),
+a gdy jest kilka, zmienia najstarsze z ostrzeżeniem. Pomiar zmienia tylko treść i nigdy nie komentuje, bo konto ma
+secondary rate limit.
+
+Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona GraphQL na każde 19 PR-ów od wdrożenia,
+1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści) i stała liczba żądań: ``gh repo view``, lista
+issues ``chwast`` i ``rejestr-korzeni`` oraz zapis issue (z etykietą przy pierwszym).
 
 Workflow ma dwa crony, bo cron GitHuba biegnie w UTC: ``--cron`` z cronem, który go uruchomił, przepuszcza tylko ten,
-którego godzina jest dziś 6:00 w Warszawie (``on_time``), a drugi kończy się linią ``REJESTR KORZENI POMINIĘTY``.
+którego godzina jest dziś 6 w Warszawie (``on_time``), a drugi kończy się linią ``REJESTR KORZENI POMINIĘTY``.
 Pusty ``--cron`` (``workflow_dispatch``) biegnie zawsze.
 
 Linie wyniku: ``REJESTR KORZENI | …`` na każdą akcję albo ostrzeżenie, z ``--bez-zapisu`` po nich treść issue, a na
@@ -61,7 +68,7 @@ import werdykt_pr
 TITLE = "Rejestr korzeni"
 PREFIX = "REJESTR KORZENI"
 WARSAW = ZoneInfo("Europe/Warsaw")
-HOUR = time(6, 0)
+HOUR = 6
 HISTORY = 26
 CRON = re.compile(r"(\d{1,2}) (\d{1,2}) \* \* 1")
 WEED_TITLE = re.compile(rf"{re.escape(rejestr_korzeni.TITLE.format(code=''))}({szablon_werdyktu.CODE.pattern})")
@@ -102,14 +109,14 @@ def last_full_week(now: datetime) -> date:
 
 
 def on_time(cron: str, now: datetime) -> bool:
-    """Czy cron ``M H * * 1`` (w UTC) wypada w dniu ``now`` (w UTC) o ``HOUR`` czasu polskiego; inna postać to
-    ``ValueError``."""
+    """Czy cron ``M H * * 1`` (w UTC) wypada w dniu ``now`` (w UTC) w godzinie ``HOUR`` czasu polskiego, w dowolnej
+    minucie; inna postać to ``ValueError``."""
 
     found = CRON.fullmatch(cron)
     if found is None:
         raise ValueError(f"cron „{cron}” to nie „M H * * 1”")
     planned = now.astimezone(UTC).replace(hour=int(found[2]), minute=int(found[1]), second=0, microsecond=0)
-    return planned.astimezone(WARSAW).time() == HOUR
+    return planned.astimezone(WARSAW).hour == HOUR
 
 
 def _start(week: date) -> datetime:
@@ -156,11 +163,12 @@ def weeds(issues: Sequence[dict[str, object]]) -> list[tuple[int, str]]:
 
 
 def _action(issues: Sequence[dict[str, object]], text: str) -> tuple[github.Akcja | None, list[str]]:
-    """Akcja na issue ``TITLE`` z nową treścią ``text`` (``None``: treść już taka jest) i ostrzeżenia."""
+    """Akcja na issue ``TITLE`` z nową treścią ``text`` (``None``: treść już taka jest) i ostrzeżenia; ``issues`` to
+    otwarte issues z etykietą ``rejestr_korzeni.REGISTRY``."""
 
     own = sorted((issue for issue in issues if issue["title"] == TITLE), key=lambda issue: int(str(issue["number"])))
     if not own:
-        return github.Zaloz(TITLE, text, (rejestr_korzeni.WEED,)), []
+        return github.Zaloz(TITLE, text, (rejestr_korzeni.REGISTRY,)), []
     numbers = [f"#{issue['number']}" for issue in own]
     notes = [f"{PREFIX} | UWAGA: otwarte issues „{TITLE}” {', '.join(numbers)}, zmieniam najstarsze {numbers[0]}"] if len(own) > 1 else []
     if str(own[0].get("body") or "").replace("\r\n", "\n") == text:
@@ -172,12 +180,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bez-zapisu", action="store_true", help="Niczego nie zapisuj na GitHubie, tylko wydrukuj treść issue.")
     parser.add_argument("--tydzien", type=date.fromisoformat, help="Dzień tygodnia do pomiaru, RRRR-MM-DD (domyślnie ostatni pełny tydzień).")
-    parser.add_argument("--cron", default="", help="Cron, który uruchomił workflow; pomiar biegnie, gdy jego godzina to dziś 6:00 czasu polskiego.")
+    parser.add_argument("--cron", default="", help="Cron, który uruchomił workflow; pomiar biegnie, gdy jego godzina to dziś 6 czasu polskiego.")
     args = parser.parse_args(argv)
     now = datetime.now(UTC)
     try:
         if args.cron and not on_time(args.cron, now):
-            print(f"{PREFIX} POMINIĘTY | cron „{args.cron}” nie wypada dziś o {HOUR:%H:%M} czasu polskiego")
+            print(f"{PREFIX} POMINIĘTY | cron „{args.cron}” nie wypada dziś w godzinie {HOUR} czasu polskiego")
             return 0
         week = last_full_week(now) if args.tydzien is None else week_of(_start(args.tydzien))
         repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{MAIN}:refs/remotes/{REMOTE}/{MAIN}", timeout=github.LIMIT_S).check_returncode()
@@ -187,9 +195,10 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(f"{szablon_werdyktu.ADR} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni nie ma")
         found = rejestr_korzeni.read(repository, deployed)
         api = github.GhApi()
-        issues = github.issues(api, rejestr_korzeni.WEED, "open")
-        text = body(found, weeds(issues), week, deployed)
-        action, lines = _action(issues, text)
+        text = body(found, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed)
+        action, lines = _action(github.issues(api, rejestr_korzeni.REGISTRY, "open"), text)
+        if isinstance(action, github.Zaloz):
+            lines += rejestr_korzeni.create_labels(api, (rejestr_korzeni.REGISTRY,), PREFIX, write=not args.bez_zapisu)
         if action is not None:
             lines += [f"{PREFIX} | bez zapisu: {github.opis(action)}"] if args.bez_zapisu else github.wykonaj(api, [action], PREFIX)
     except (subprocess.SubprocessError, OSError, ValueError, KeyError, github.BladApi) as error:

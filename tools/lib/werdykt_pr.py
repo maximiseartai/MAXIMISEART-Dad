@@ -43,7 +43,7 @@ już mają.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -78,6 +78,7 @@ class Verdict:
     stance: Stance | None
     problems: tuple[str, ...]
     body: str
+    html: str | None = None  # HTML całej treści z pola ``bodyHTML`` GraphQL, gdy werdykt przyszedł stamtąd
 
 
 def read(verdict: dict[str, object], head: str) -> Verdict | None:
@@ -98,7 +99,8 @@ def read(verdict: dict[str, object], head: str) -> Verdict | None:
     author = verdict.get("author")
     login = str(author.get("login", "?")) if isinstance(author, dict) else "?"
     when = str(verdict.get("createdAt") or verdict.get("submittedAt") or "?")
-    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems, str(verdict["body"]))
+    html = verdict.get("bodyHTML")
+    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems, str(verdict["body"]), None if html is None else str(html))
 
 
 def text_lines(body: object) -> list[str]:
@@ -247,14 +249,40 @@ class Round:
     findings: szablon_werdyktu.Findings
 
 
-def rounds(pull: Pull) -> list[Round]:
+Content = Callable[[Verdict], Sequence[szablon_werdyktu.Item]]
+
+
+def rounds(pull: Pull, content: Content) -> list[Round]:
     """Rundy przeglądu ``pull``: werdykty z linią ``WERDYKT:`` od kont z prawem zapisu, jak przy zgodzie na merge.
 
-    Treść każdego czyta renderer GitHuba; błąd renderera to wyjątek."""
+    Jednostki treści każdego pod dwiema pierwszymi liniami daje ``content``: ``rendered`` (bramka korzenia) albo
+    ``from_graphql`` (rejestr korzeni); jego błąd to wyjątek."""
 
     found = [verdict for verdict in (read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None and verdict.decision is not None]
     result = []
     for number, verdict in enumerate(found, start=1):
-        rest, declared = _content(verdict.body)
-        result.append(Round(number, verdict, declared[0] if declared else None, szablon_werdyktu.findings(_html(rest, pull))))
+        declared = _content(verdict.body)[1]
+        result.append(Round(number, verdict, declared[0] if declared else None, szablon_werdyktu.findings(content(verdict))))
     return result
+
+
+def rendered(pull: Pull) -> Content:
+    """Jednostki treści werdyktu ``pull`` pod dwiema pierwszymi liniami z renderera GitHuba, jedno ``POST /markdown``
+    na werdykt; bramka korzenia czyta tak werdykty jednego PR przy merge'u."""
+
+    return lambda verdict: szablon_werdyktu.items(_html(_content(verdict.body)[0], pull))
+
+
+def from_graphql(verdict: Verdict) -> list[szablon_werdyktu.Item]:
+    """Jednostki treści werdyktu pod dwiema pierwszymi liniami z pola ``bodyHTML`` GraphQL, bez wywołania API; rejestr
+    korzeni czyta tak każdy werdykt skanu. ``bodyHTML`` to HTML całej treści, a dwie pierwsze linie werdyktu
+    (``WERDYKT:`` i ``Znaleziska:``) GitHub stawia jako dwie linie akapitu, więc treść pod nimi to jednostki po
+    dwóch pierwszych; tak samo, gdy druga linia to nagłówek albo punkt listy. Te same jednostki co ``rendered`` dały
+    13.11.2026 wszystkie 230 werdyktów i opisów PR-ów z 11–13.11 (``tests/fixtures/body_html.json``). Granica: druga
+    linia, która w akapicie nie stoi sama (podkreślenie nagłówka ``---``, linia ciągnąca punkt listy), daje inne
+    jednostki niż ``rendered``, a werdykt bez linii ``Znaleziska:`` i tak nie przechodzi ``--werdykt``. Werdykt bez
+    ``bodyHTML`` to ``ValueError``."""
+
+    if verdict.html is None:
+        raise ValueError(f"werdykt {verdict.when} {verdict.login} bez bodyHTML z GraphQL")
+    return szablon_werdyktu.items(verdict.html)[2:]

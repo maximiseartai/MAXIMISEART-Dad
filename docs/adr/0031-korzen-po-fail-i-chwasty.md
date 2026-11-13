@@ -82,7 +82,7 @@ Pięć PR-ów w tej kolejności (Q24):
 1. Ten ADR, pojęcia i drabina w skillu `przeglad`, lista kodów i szablon werdyktu sprawdzany przez `tools/scal_pr.py --werdykt` (Q3, Q5, Q9, Q18 część „NOWY”, Q21, Q25, Q26).
 2. Zrobione: `## Korzeń` w opisie PR i linie PR korzenia („Korzeń z #N”, „Wyrwany w #M”) sprawdzane przez `tools/scal_pr.py` przy merge'u (`tools/lib/bramka_korzenia.py`), razem z tym, że każdy `NOWY` kod z werdyktów PR stoi na liście na HEAD, i punkt rozstrzygnięcia kodu w werdykcie (Q8, Q10, Q14, Q17, Q18, Q25, Q26).
 3. Zrobione: wykrycie powrotu korzenia przy publikacji werdyktu i issue „Chwast: R-KOD” (`tools/lib/rejestr_korzeni.py`, `tools/chwasty.py`), szczebel wyżej przy powrocie w bramce korzenia z linią `ZGODA KORZEŃ: R-KOD` po (a) i zamknięcie issue przy merge'u PR z „Korzeń z #issue” (Q11, Q12, Q15, Q22).
-4. Zrobione: workflow tygodniowy `.github/workflows/rejestr-korzeni.yml` w poniedziałek o 6:00 czasu polskiego i `tools/rejestr_korzeni_tydzien.py`, który zmienia treść issue „Rejestr korzeni” (Q19, Q23).
+4. Zrobione: workflow tygodniowy `.github/workflows/rejestr-korzeni.yml` w poniedziałek o 6:17 czasu polskiego (pełną godzinę GitHub opóźnia) i `tools/rejestr_korzeni_tydzien.py`, który zmienia treść issue „Rejestr korzeni” z etykietą `rejestr-korzeni` (Q19, Q23).
    Kartę XmR i propozycje porządku kodów (Q18) daje zadanie T3 o 8:00, bo wymagają osądu modelu; to zadanie zakłada koordynator po merge'u.
 5. Audyt historii: przypadki kodów z co najmniej 2 PR-ów odtworzone na `main` i issues tam, gdzie nic ich nie łapie (Q13, Q16).
 

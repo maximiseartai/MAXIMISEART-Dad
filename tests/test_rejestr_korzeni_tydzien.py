@@ -4,8 +4,9 @@ Q19, Q23) i workflow ``rejestr-korzeni.yml``, który go uruchamia w poniedziałe
 Wymagania bierzemy z ADR 0031 i decyzji Maksa: powtórzenie to wystąpienie kodu, który wystąpił wcześniej w innym PR
 (Q1), tydzień to poniedziałek–niedziela czasu taty i Maksa (``Europe/Warsaw``), a issue zmienia się treścią, bez
 komentarzy. Testy przepływu biegną na prawdziwym Gicie z ``origin`` i atrapie ``gh``, która podaje PR-y z zapytania
-rejestru i HTML treści nagrany z renderera GitHuba (``tests/fixtures/werdykty_szablonu.json``, ``chwasty.json``,
-``korzenie_pr.json``).
+rejestru z HTML treści (``bodyHTML``) złożonym z nagranego HTML renderera GitHuba (``tests/fixtures/body_html.py``),
+a renderowania treści nie zna, bo przebieg ma czytać HTML z tej samej strony GraphQL (W1 r1 #1525: limit
+``GITHUB_TOKEN`` workflowu).
 """
 
 from __future__ import annotations
@@ -19,11 +20,14 @@ import pytest
 import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
+from tests.fixtures.body_html import SAMPLES, body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 
+import rejestr_korzeni
 from rejestr_korzeni import Occurrence
 import rejestr_korzeni_tydzien as tydzien
 import szablon_werdyktu
+import werdykt_pr
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "rejestr-korzeni.yml"
@@ -115,37 +119,47 @@ def test_bez_tygodnia_pomiar_bierze_ostatni_pelny_tydzien_czasu_polskiego(now: s
 
 @pytest.mark.parametrize(
     ("now", "cron"),
-    [("2026-11-16T05:20:00+00:00", "0 5 * * 1"), ("2027-04-05T04:20:00+00:00", "0 4 * * 1"), ("2026-10-19T04:20:00+00:00", "0 4 * * 1")],
+    [("2026-11-16T05:40:00+00:00", "17 5 * * 1"), ("2027-04-05T04:40:00+00:00", "17 4 * * 1"), ("2026-10-19T04:40:00+00:00", "17 4 * * 1")],
     ids=["poniedzialek-czasu-zimowego", "poniedzialek-czasu-letniego", "poniedzialek-przed-zmiana-czasu-na-zimowy"],
 )
-def test_z_cronow_workflowu_pomiar_biegnie_tylko_ten_ktory_jest_6_00_czasu_polskiego(now: str, cron: str) -> None:
+def test_z_cronow_workflowu_pomiar_biegnie_tylko_ten_ktory_jest_6_czasu_polskiego_poza_pelna_godzina(now: str, cron: str) -> None:
+    """GitHub opóźnia i przy dużym obciążeniu porzuca biegi z cronu na początku godziny, więc żaden cron nie stoi
+    na pełnej godzinie ani na jej kwadransie."""
+
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     crons = [entry["cron"] for entry in workflow[True]["schedule"]]
 
     assert [planned for planned in crons if tydzien.on_time(planned, _at(now))] == [cron], crons
+    assert [planned for planned in crons if int(planned.split()[0]) % 15 == 0] == [], crons
 
 
 # Przepływ narzędzia na atrapie GitHuba. Wdrożenie szablonu 1.10.2026 (tydzień od 28.09), pomiar tygodnia 19.10.
 FAIL_W1 = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]  # R-BEZ-TESTU
 FAIL_OTHER = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + chwasty.WERDYKTY["inny-kod"]  # R-DRUGA-DROGA
 OLD = "0" * 40
+# Atrapa gh: wyszukiwanie PR-ów jak GitHub (created:>=, sort:created-asc, first) i zapis każdego wywołania (bez
+# zapytania GraphQL) do calls.jsonl; renderowania treści (api markdown) nie zna.
 FAKE_GH = """\
 import json, pathlib, sys
 
 here = pathlib.Path(sys.argv[0]).parent
 arguments = sys.argv[1:]
 state = json.loads((here / "state.json").read_text(encoding="utf-8"))
+with (here / "calls.jsonl").open("a", encoding="utf-8") as log:
+    log.write(json.dumps([argument for argument in arguments if not argument.startswith("query=")]) + "\\n")
 if arguments[:2] == ["repo", "view"]:
     print(json.dumps({"nameWithOwner": state["repo"]}))
 elif arguments[:2] == ["api", "graphql"]:
-    print(json.dumps({"data": {"search": {"nodes": state["pulls"]}}}))
-elif arguments == ["api", "markdown", "--input", "-"]:
-    request = json.loads(sys.stdin.read())
-    if request["text"] not in state["markdown"]:
-        sys.exit(f"atrapa gh nie zna treści: {request['text']!r}")
-    print(state["markdown"][request["text"]], end="")
+    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
+    since = [term.removeprefix("created:>=") for term in variables["q"].split() if term.startswith("created:>=")]
+    nodes = sorted((node for node in state["pulls"] if all(node["createdAt"] >= moment for moment in since)), key=lambda node: (node["createdAt"], node["number"]))
+    print(json.dumps({"data": {"search": {"nodes": nodes[: int(variables["first"])]}}}))
 elif arguments[:2] == ["api", "repos/{owner}/{repo}/issues?labels=chwast&state=open&per_page=100&page=1"]:
-    print(json.dumps(state["issues"]))
+    print(json.dumps(state["weeds"]))
+elif arguments[:2] == ["api", "repos/{owner}/{repo}/issues?labels=rejestr-korzeni&state=open&per_page=100&page=1"]:
+    print(json.dumps(state["own"]))
+elif arguments[:2] == ["api", "repos/{owner}/{repo}/labels?per_page=100&page=1"]:
+    print(json.dumps([{"name": name} for name in state["labels"]]))
 elif arguments[:2] == ["api", "--method"]:
     with (here / "writes.jsonl").open("a", encoding="utf-8") as log:
         log.write(json.dumps([arguments[2], arguments[3], json.loads(sys.stdin.read())]) + "\\n")
@@ -155,11 +169,22 @@ else:
 """
 
 
-def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merged: str | None = None) -> dict[str, object]:
-    """PR ``number`` z zapytania GraphQL rejestru: komentarze werdyktów (treść i chwila utworzenia), opis i merge."""
+RENDERED = {**werdykty_szablonu.rendered(), **chwasty.rendered(), **korzenie_pr.rendered()}
+
+
+def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merged: str | None = None, created: str = "2026-10-02T00:00:00Z") -> dict[str, object]:
+    """PR ``number`` z zapytania GraphQL rejestru: komentarze werdyktów (treść i chwila utworzenia), opis, merge
+    i chwila założenia, z HTML każdej treści w ``bodyHTML``."""
 
     comments = [
-        {"body": text.format(commit=OLD), "authorAssociation": "OWNER", "createdAt": when, "includesCreatedEdit": False, "author": {"login": "recenzent"}}
+        {
+            "body": text.format(commit=OLD),
+            "bodyHTML": body_html(text.format(commit=OLD), RENDERED),
+            "authorAssociation": "OWNER",
+            "createdAt": when,
+            "includesCreatedEdit": False,
+            "author": {"login": "recenzent"},
+        }
         for text, when in verdicts
     ]
     return {
@@ -172,7 +197,8 @@ def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merge
         "headRefOid": OLD,
         "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
         "body": body,
-        "createdAt": "2026-10-02T00:00:00Z",
+        "bodyHTML": body_html(body, RENDERED),
+        "createdAt": created,
         "updatedAt": "2026-10-27T00:00:00Z",
         "mergedAt": merged,
         "comments": {"pageInfo": {"hasNextPage": False}, "nodes": comments},
@@ -254,20 +280,29 @@ WEEK_19 = """\
 
 
 class RegistryGitHub(FakeGitHub):
-    """Checkout z narzędziem pomiaru, ``origin`` z ADR 0031 wdrożonym 1.10.2026 i atrapa ``gh`` z PR-ami ``PULLS``."""
+    """Checkout z narzędziem pomiaru, ``origin`` z ADR 0031 wdrożonym 1.10.2026 i atrapa ``gh`` z PR-ami ``pulls``,
+    otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own`` i etykietami
+    repozytorium ``labels``."""
 
-    def __init__(self, tmp_path: Path, issues: list[dict[str, object]]) -> None:
+    def __init__(self, tmp_path: Path, own: list[dict[str, object]], *, pulls: list[dict[str, object]] = PULLS, labels: tuple[str, ...] = ("chwast",)) -> None:
         tmp_path.mkdir()
         super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n"}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH)
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", DEPLOYED.isoformat())
             self.push_main({szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"})
-        markdown = {**werdykty_szablonu.rendered(), **chwasty.rendered(), **korzenie_pr.rendered()}
-        state = {"repo": opisy_pr.REPO, "pulls": PULLS, "markdown": markdown, "issues": issues}
+        state = {"repo": opisy_pr.REPO, "pulls": pulls, "weeds": WEEDS, "own": own, "labels": list(labels)}
         (self.bin / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
     def writes(self) -> list[list[object]]:
-        log = self.bin / "writes.jsonl"
+        return self._lines("writes.jsonl")
+
+    def calls(self) -> list[str]:
+        """Każde wywołanie ``gh`` po kolei: ``repo view``, ``graphql``, ``markdown`` albo ścieżka REST."""
+
+        return [" ".join(map(str, call[:2])) if call[0] != "api" else "graphql" if call[1] == "graphql" else str(call[1]) for call in self._lines("calls.jsonl")]
+
+    def _lines(self, name: str) -> list[list[object]]:
+        log = self.bin / name
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
 
@@ -278,16 +313,26 @@ def _measure(github: RegistryGitHub, *arguments: str) -> list[str]:
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
-def test_pierwszy_pomiar_bez_issue_zaklada_rejestr_korzeni_z_etykieta_chwast_a_kolejny_zmienia_jego_tresc_z_historia(tmp_path: Path) -> None:
-    first = RegistryGitHub(tmp_path / "pierwszy", WEEDS)
+def test_pierwszy_pomiar_bez_issue_zaklada_etykiete_i_rejestr_korzeni_z_nia_a_kolejny_zmienia_jego_tresc_z_historia(tmp_path: Path) -> None:
+    """Issue „Rejestr korzeni” ma własną etykietę, żeby lista z etykietą ``chwast`` miała same chwasty."""
+
+    first = RegistryGitHub(tmp_path / "pierwszy", [])
 
     created = _measure(first, "--tydzien", "2026-10-14")
 
-    assert first.writes() == [["POST", "repos/{owner}/{repo}/issues", {"title": "Rejestr korzeni", "body": WEEK_12, "labels": ["chwast"]}]]
-    assert created == ["REJESTR KORZENI | założone #9100 „Rejestr korzeni”", "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powtórzeń, udział -"]
+    label = {"name": "rejestr-korzeni", "color": "5319e7", "description": "Tygodniowy pomiar powtórzeń korzeni (ADR 0031)"}
+    assert first.writes() == [["POST", "repos/{owner}/{repo}/labels", label], ["POST", "repos/{owner}/{repo}/issues", {"title": "Rejestr korzeni", "body": WEEK_12, "labels": ["rejestr-korzeni"]}]]
+    assert created == [
+        "REJESTR KORZENI | założona etykieta rejestr-korzeni",
+        "REJESTR KORZENI | założone #9100 „Rejestr korzeni”",
+        "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powtórzeń, udział -",
+    ]
 
-    issue = {"number": 1600, "title": "Rejestr korzeni", "body": WEEK_12}
-    later = RegistryGitHub(tmp_path / "kolejny", [*WEEDS, issue])
+    labelled = RegistryGitHub(tmp_path / "z-etykieta", [], labels=("chwast", "rejestr-korzeni"))
+    _measure(labelled, "--tydzien", "2026-10-14")
+    assert [write[1] for write in labelled.writes()] == ["repos/{owner}/{repo}/issues"]
+
+    later = RegistryGitHub(tmp_path / "kolejny", [{"number": 1600, "title": "Rejestr korzeni", "body": WEEK_12}])
 
     edited = _measure(later, "--tydzien", "2026-10-25")
 
@@ -297,13 +342,55 @@ def test_pierwszy_pomiar_bez_issue_zaklada_rejestr_korzeni_z_etykieta_chwast_a_k
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_pomiar_z_ta_sama_trescia_niczego_nie_zapisuje_a_bez_zapisu_drukuje_tresc(tmp_path: Path) -> None:
-    same = RegistryGitHub(tmp_path / "ta-sama", [*WEEDS, {"number": 1600, "title": "Rejestr korzeni", "body": WEEK_19.replace("\n", "\r\n")}])
-    dry = RegistryGitHub(tmp_path / "bez-zapisu", WEEDS)
+    same = RegistryGitHub(tmp_path / "ta-sama", [{"number": 1600, "title": "Rejestr korzeni", "body": WEEK_19.replace("\n", "\r\n")}])
+    dry = RegistryGitHub(tmp_path / "bez-zapisu", [])
 
     unchanged = _measure(same, "--tydzien", "2026-10-19")
     printed = _measure(dry, "--tydzien", "2026-10-19", "--bez-zapisu")
 
     assert same.writes() == [] and unchanged[0] == "REJESTR KORZENI | #1600 ma już tę treść", unchanged
     assert dry.writes() == []
-    assert printed[0] == "REJESTR KORZENI | bez zapisu: załóż issue „Rejestr korzeni” z etykietami chwast", printed
-    assert "\n".join(printed[1:-1]) == WEEK_19, printed
+    assert printed[:2] == ["REJESTR KORZENI | bez zapisu: załóż etykietę rejestr-korzeni", "REJESTR KORZENI | bez zapisu: załóż issue „Rejestr korzeni” z etykietami rejestr-korzeni"], printed
+    assert "\n".join(printed[2:-1]) == WEEK_19, printed
+
+
+# Budżet GITHUB_TOKEN workflowu (W1 r1 #1525): 1000 punktów GraphQL i 1000 żądań REST na godzinę na repozytorium.
+@ONLY_FOUND_BY_NAME_ON_POSIX
+@pytest.mark.parametrize(("count", "pages"), [(5, 1), (45, 3)], ids=["jedna-strona", "trzy-strony"])
+def test_przebieg_czyta_werdykty_z_tej_samej_strony_graphql_bez_renderowania_kazdego(tmp_path: Path, count: int, pages: int) -> None:
+    """Każdy PR ma werdykt ``FAIL`` z kodem, a przebieg zużywa stronę GraphQL na każde 19 PR-ów (strona to 20 PR-ów
+    od chwili założenia ostatniego z poprzedniej) i stałą liczbę żądań REST, bez wywołania renderera na werdykt."""
+
+    pulls = [_pull(1000 + index, [(FAIL_W1, f"2026-10-20T10:{index:02d}:00Z")], created=f"2026-10-02T00:{index:02d}:00Z") for index in range(count)]
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls)
+
+    lines = _measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")
+
+    assert lines[-1].startswith(f"REJESTR KORZENI OK | tydzień 2026-10-19: {count} wystąpień, {count - 1} powtórzeń"), lines
+    issues = "repos/{owner}/{repo}/issues?labels={label}&state=open&per_page=100&page=1"
+    rest = [issues.format(owner="{owner}", repo="{repo}", label=label) for label in ("chwast", "rejestr-korzeni")]
+    assert github.calls() == ["repo view", *["graphql"] * pages, *rest, "repos/{owner}/{repo}/labels?per_page=100&page=1"]
+
+
+@pytest.mark.parametrize("sample", ["fail", "pass"])
+def test_werdykt_z_bodyhtml_graphql_daje_te_same_jednostki_co_renderer_tresci_pod_dwiema_pierwszymi_liniami(sample: str) -> None:
+    """Prawdziwe werdykty z GitHuba (``tests/fixtures/body_html.json``): ``bodyHTML`` to HTML całej treści z blokami
+    kodu w osłonie ``snippet-clipboard-content``, a renderer dostaje treść pod dwiema pierwszymi liniami."""
+
+    recorded = SAMPLES[sample]
+    verdict = werdykt_pr.read({"body": recorded["body"], "bodyHTML": recorded["bodyHTML"], "authorAssociation": "OWNER"}, OLD)
+    assert verdict is not None
+
+    rendered = szablon_werdyktu.items(recorded["rendered"])
+    assert werdykt_pr.from_graphql(verdict) == rendered
+    assert szablon_werdyktu.findings(rendered) == szablon_werdyktu.findings(werdykt_pr.from_graphql(verdict)) != szablon_werdyktu.Findings((), ())
+
+
+@pytest.mark.parametrize("sample", ["opis", "issue"])
+def test_opis_pr_i_issue_chwastu_z_bodyhtml_graphql_daja_te_same_jednostki_co_renderer(sample: str) -> None:
+    recorded = SAMPLES[sample]
+
+    units = szablon_werdyktu.items(recorded["bodyHTML"])
+
+    assert units == szablon_werdyktu.items(recorded["rendered"])
+    assert rejestr_korzeni.section(units) == rejestr_korzeni.section(szablon_werdyktu.items(recorded["rendered"]))
