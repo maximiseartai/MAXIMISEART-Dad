@@ -139,7 +139,7 @@ function Row({ row }: { row: HistoryRow }) {
   )
 }
 
-/** Kiedy i skąd: zapis taty bez znacznika, cofnięcie, zmiana spoza Centrum, usunięty plik. */
+/** Kiedy i skąd: zapis taty bez znacznika, cofnięcie, zmiana spoza Centrum albo z Wydania, usunięty plik. */
 function meta(row: HistoryRow): string[] {
   return [
     dateTime(row.at),
@@ -155,6 +155,8 @@ function sourceOf(row: HistoryRow): string[] {
       return []
     case "outside":
       return ["spoza Centrum"]
+    case "release":
+      return [row.release?.version == null ? "Wydanie" : `Wydanie ${row.release.version}`]
     default: {
       const unhandled: never = row.source
 

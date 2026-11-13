@@ -3,8 +3,8 @@ okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, zmiana hasła s
 Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma w żadnej odpowiedzi.
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
-zła wartość to 422 z polem, plik, którego nie da się przeczytać albo zapisać, to 500, a wiersz Historii bez „Cofnij”
-to 404.
+zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
+bez „Cofnij” to 404.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from rozliczenia.centrum.settings import inbox
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
-from rozliczenia.centrum.settings.history import HistoryRow
+from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
 from rozliczenia.worker_report_inbox import LoginResult
@@ -104,6 +104,8 @@ def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: 
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
+        if isinstance(read, Unreadable):
+            raise refusal.settings_history_unreadable()
         return settings_contract.SettingsHistory(rows=[_row(row) for row in read.rows], skipped=read.skipped)
 
     @router.post("/history/{change_id}/undo", operation_id="undoSettingsChange", responses=_NOT_UNDOABLE)
@@ -205,7 +207,8 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
         id=row.id,
         # Chwila taty w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”.
         at=row.at.astimezone(timezone.utc),
-        source="tata" if row.source.kind == "tata" else "outside",
+        source=_source(row),
+        release=_release(row),
         undoes=row.undoes,
         file=row.file,
         section=row.section,
@@ -218,3 +221,19 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
         removed=row.removed,
         reason=row.reason,
     )
+
+
+def _source(row: HistoryRow) -> settings_contract.HistorySource:
+    match row.source:
+        case ByDad():
+            return "tata"
+        case Outside():
+            return "outside"
+        case FromRelease():
+            return "release"
+
+
+def _release(row: HistoryRow) -> settings_contract.HistoryRelease | None:
+    if not isinstance(row.source, FromRelease):
+        return None
+    return settings_contract.HistoryRelease(version=row.source.release, commit=row.source.commit, change=row.source.change)

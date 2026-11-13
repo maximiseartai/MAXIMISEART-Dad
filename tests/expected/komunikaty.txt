@@ -1497,6 +1497,9 @@ settings_change_unknown [HTTP 404]
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.
 
+settings_history_unreadable [HTTP 500]
+  Nie udało się odczytać Historii Ustawień. Odśwież okno Ustawień za chwilę.
+
 unknown_period [HTTP 404]
   Nie ma takiego okresu.
 

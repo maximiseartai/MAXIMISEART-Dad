@@ -64,6 +64,7 @@ FEATURES = (
             "315-ustawienia-blad-w-oknie",
             "308-ustawienia-historia",
             "309-ustawienia-historia-waska",
+            "340-ustawienia-historia-wydanie",
             "310-ustawienia-odmowa-przy-polu",
             "311-ustawienia-odmowa-waska",
             "312-ustawienia-zle-pole",

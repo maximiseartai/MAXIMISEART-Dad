@@ -291,15 +291,32 @@ export const zHistoryChange = z.object({
 });
 
 /**
+ * HistoryRelease
+ *
+ * Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany.
+ */
+export const zHistoryRelease = z.object({
+    version: z.string().nullable(),
+    commit: z.string().nullable(),
+    change: z.string()
+});
+
+/**
  * HistoryRow
  *
- * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
- * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export const zHistoryRow = z.object({
     id: z.string(),
     at: z.iso.datetime(),
-    source: z.enum(['tata', 'outside']),
+    source: z.enum([
+        'tata',
+        'outside',
+        'release'
+    ]),
+    release: zHistoryRelease.nullable(),
     undoes: z.string().nullable(),
     file: z.string(),
     section: z.string().nullable(),

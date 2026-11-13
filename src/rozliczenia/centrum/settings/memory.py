@@ -1,5 +1,6 @@
 """Pamięć właściciela Ustawień Centrum w ``config/ustawienia-pamiec``: dla każdego pliku ostatni stan, który właściciel
-przyjął (``seen``), i ostatnia dobra treść (``good``), a obok kopie złej treści nadpisanej zapisem taty (``odrzucone``).
+przyjął (``seen``), i ostatnia dobra treść (``good``), a obok kopie złej treści nadpisanej zapisem taty (``odrzucone``)
+i zmiany z Wydań, których właściciel już nie stosuje (``zmiany-z-wydan.json``).
 
 Stan pliku to brak pliku (``None``) albo jego bajty. ``seen`` to ostatni przyjęty stan, także brak pliku i zła treść,
 którą Historia już ma; stan pliku różny od ``seen`` to zmiana spoza Centrum. ``good`` daje wartość przed tą zmianą
@@ -10,7 +11,7 @@ Dla pliku z sekretem właściciel zapisuje tu tylko odcisk stanu (``seen``) i ni
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,34 @@ from rozliczenia.file_state import file_state
 
 MEMORY_DIRECTORY: Final = "ustawienia-pamiec"
 _REJECTED: Final = "odrzucone"
+APPLIED_FILE: Final = "zmiany-z-wydan.json"
+"""Pamięć zmian z Wydań, które już nie wracają (``release_changes``), w folderze pamięci."""
+
+AppliedResult = Literal["zastosowano", "bez-zmian", "odrzucono"]
+"""Wynik zmiany z Wydania, po którym już nie wraca: weszła, nie było nic do zmiany albo została odrzucona."""
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+
+
+class Applied(_Model):
+    """Zastosowana zmiana z Wydania: kiedy, z którego Wydania (numer, skrót commitu) i z jakim wynikiem."""
+
+    at: datetime = Field(validation_alias="kiedy", serialization_alias="kiedy")
+    release: str | None = Field(validation_alias="wydanie", serialization_alias="wydanie")
+    commit: str | None
+    result: AppliedResult = Field(validation_alias="wynik", serialization_alias="wynik")
+
+
+class _AppliedFile(_Model):
+    schema_version: Literal[1] = 1
+    changes: dict[str, Applied] = Field(validation_alias="zmiany", serialization_alias="zmiany")
+
+
+@dataclass(frozen=True)
+class AppliedUnknown:
+    """Pamięci zmian z Wydań nie da się przeczytać (system jej nie daje albo jest uszkodzona)."""
 
 
 class Remembered(BaseModel):
@@ -60,6 +89,25 @@ class Memory:
         """Zapamiętuje stan pliku ``name``; ``OSError``, gdy się nie udało."""
 
         replace_atomically(self._path(name), remembered.model_dump_json(by_alias=True).encode("utf-8"), pause=self.pause)
+
+    def applied(self) -> dict[str, Applied] | AppliedUnknown:
+        """Zmiany z Wydań, które już nie wracają, po id; brak pamięci to żadna."""
+
+        data = settings_bytes(self.config / MEMORY_DIRECTORY / APPLIED_FILE)
+        if data is None:
+            return {}
+        if isinstance(data, OSError):
+            return AppliedUnknown()
+        try:
+            return dict(_AppliedFile.model_validate_json(data).changes)
+        except ValidationError:
+            return AppliedUnknown()
+
+    def remember_applied(self, changes: Mapping[str, Applied]) -> None:
+        """Zapamiętuje zmiany z Wydań ``changes`` (wszystkie, nie tylko nową); ``OSError``, gdy się nie udało."""
+
+        document = _AppliedFile(changes=dict(changes)).model_dump_json(by_alias=True, indent=2)
+        replace_atomically(self.config / MEMORY_DIRECTORY / APPLIED_FILE, document.encode("utf-8"), pause=self.pause)
 
     def keep_rejected(self, name: str, data: bytes, at: datetime) -> None:
         """Kopia złej treści pliku ``name`` przed zapisem taty, który ją nadpisuje; nieudana kopia nie zatrzymuje zapisu."""

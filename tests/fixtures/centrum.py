@@ -55,6 +55,7 @@ from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.release_changes import ReleaseChange
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
@@ -571,6 +572,7 @@ def centrum_app(
     worker_report_inbox: WorkerReportInbox | Fake = FAKE,
     reminder_mailbox: ReminderMailbox | Fake = FAKE,
     reminder_rhythm: ReminderRhythm | Fake = FAKE,
+    release_changes: tuple[ReleaseChange[Any], ...] = (),
 ) -> FastAPI:
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
@@ -579,8 +581,9 @@ def centrum_app(
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
     Skrzynka raportów bez maili (``FakeInbox``), skrzynka raportów bez sieci przy próbie logowania po zmianie hasła
-    (``inbox_connect``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm
-    przypomnień, który sprawdza tylko na ``HandRhythm.tick`` testu; prawdziwego Gmaila test nie dostaje nigdy.
+    (``inbox_connect``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm przypomnień, który
+    sprawdza tylko na ``HandRhythm.tick`` testu, a Wydanie bez zmian Ustawień Centrum (produkcyjna lista
+    ``RELEASE_CHANGES`` tylko w teście, który ją podaje); prawdziwego Gmaila test nie dostaje nigdy.
     ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
     narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
     opiekun ponownego startu wywracają test (``tests/conftest.py``).
@@ -618,6 +621,7 @@ def centrum_app(
         worker_report_inbox=FakeInbox() if isinstance(worker_report_inbox, Fake) else worker_report_inbox,
         reminder_mailbox=FakeMailbox() if isinstance(reminder_mailbox, Fake) else reminder_mailbox,
         reminder_rhythm=HandRhythm() if isinstance(reminder_rhythm, Fake) else reminder_rhythm,
+        release_changes=release_changes,
     )
 
 

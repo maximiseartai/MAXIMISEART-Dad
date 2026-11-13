@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 
 import pytest
 
@@ -394,19 +394,47 @@ def test_zgloszenie_ma_zmiane_hasla_skrzynki_samym_kluczem_bez_hasla(tmp_path: P
     assert [word for word in ("haslo maksa", "haslo taty", "haslomaksa", "haslotaty") if word in body] == []
 
 
+def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmiany(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    at = local_now() - timedelta(days=1)
+    with (centrum.tool.config / HISTORY_FILE).open("a", encoding="utf-8") as history:
+        history.write(_history_row(at, "wyglad.motyw", "dark", "light", source=RELEASE_SOURCE))
+    run_id = stopped_for_maks(centrum)
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    assert f"- {at:%Y-%m-%d %H:%M} · Wydanie 0.9.0 (2026-11-motyw-jasny) · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zgloszenie_przy_historii_ustawien_bez_dostepu_mowi_to_zamiast_bez_zmian(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+
+    with without_access(centrum.tool.config / HISTORY_FILE):
+        lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    start = lines.index("## Zmiany Ustawień (30 dni)")
+    assert lines[start : start + 4] == ["## Zmiany Ustawień (30 dni)", "", "- Historii Ustawień nie dało się przeczytać", ""]
+
+
 def _history(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = centrum.client.get("/api/settings/history").json()["rows"]
     return rows
 
 
-def _history_row(at: datetime, key: str, before: str, after: str) -> str:
-    """Wiersz Historii Ustawień zapisany wcześniej, z chwilą ``at``, w formacie pliku ``historia-ustawien.jsonl``."""
+RELEASE_SOURCE: Final = {"rodzaj": "wydanie", "wydanie": "0.9.0", "commit": "abc1234", "zmiana": "2026-11-motyw-jasny"}
+
+
+def _history_row(at: datetime, key: str, before: str, after: str, *, source: dict[str, str] | None = None) -> str:
+    """Wiersz Historii Ustawień zapisany wcześniej, z chwilą ``at`` i źródłem ``source``, w formacie pliku
+    ``historia-ustawien.jsonl``."""
 
     row = {
         "v": 1,
         "id": "wiersz-sprzed-okna",
         "kiedy": at.isoformat(),
-        "zrodlo": {"rodzaj": "tata"},
+        "zrodlo": source or {"rodzaj": "tata"},
         "cofa": None,
         "plik": SETTINGS_FILE,
         "sekcja": key.partition(".")[0],

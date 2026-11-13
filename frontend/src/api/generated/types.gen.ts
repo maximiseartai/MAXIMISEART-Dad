@@ -578,10 +578,31 @@ export type HistoryChange = {
 };
 
 /**
+ * HistoryRelease
+ *
+ * Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany.
+ */
+export type HistoryRelease = {
+    /**
+     * Version
+     */
+    version: string | null;
+    /**
+     * Commit
+     */
+    commit: string | null;
+    /**
+     * Change
+     */
+    change: string;
+};
+
+/**
  * HistoryRow
  *
- * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
- * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export type HistoryRow = {
     /**
@@ -595,7 +616,8 @@ export type HistoryRow = {
     /**
      * Source
      */
-    source: 'tata' | 'outside';
+    source: 'tata' | 'outside' | 'release';
+    release: HistoryRelease | null;
     /**
      * Undoes
      */
