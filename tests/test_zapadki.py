@@ -863,6 +863,8 @@ def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
         ('def f() -> None:\n    """Od gh-1614."""\n', [(2, _HISTORY)]),
         ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [(1, _HISTORY)]),
         ('def f() -> None:\n    """Zob. github.com/o/r/compare/main...feat."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. /pull/77."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. /commit/ABC123."""\n', [(2, _HISTORY)]),
         ('def f() -> None:\n    """Zob. https://www.github.com/o/r/actions/runs/43519817847."""\n', [(2, _HISTORY)]),
         ("async def f() -> None:\n    '''Zob. https://github.com/o/r/pull/77'''\n", [(2, _HISTORY)]),
         ('def f() -> None:\n    """Zob. https://github.com/o/r/commit/abc."""\n', [(2, _HISTORY)]),
