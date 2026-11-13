@@ -33,6 +33,12 @@ Zgaśnięcie po zamianie pliku przed wierszem daje przy następnym odczycie wier
 złym źródłem, a zgaśnięcie po wierszu przed pamięcią do tego jeszcze powtórzony wiersz ``spoza``; zmiany bez wiersza
 nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
 
+Zmiana taty (zapis albo „Cofnij”), która usuwa loginy z Listy Wykonawców (``SettingsFile.removed_logins``), zapisuje się
+dopiero, gdy żaden z nich nie występuje w okresie (``WorkerPeriods``, ADR 0032); inaczej to ``KeptInPeriods`` bez zapisu,
+wiersza i pamięci. Okresy sprawdza się poza blokadą, bo pierwsze sprawdzenie czyta Plik zbiorczy każdego okresu, a zapis
+po nim odmawia, gdy zmiana usuwa wtedy login, którego nie sprawdzono (lista zmieniła się w tym czasie). Zmiany z Wydania
+i zmiany spoza Centrum to zmiany Maksa: okresów nie sprawdzają.
+
 Zmiany z Wydania (``release_changes``) właściciel stosuje przy starcie Centrum, przed pierwszym zapytaniem, tym samym
 zapisem co zmianę taty, tylko ze źródłem ``wydanie``. Co już weszło, mówią dwa źródła: pamięć zmian z Wydań i wiersze
 Historii z id zmiany. Zmiany stosują się tylko wtedy, gdy oba dają się przeczytać: pamięć, której nie da się przeczytać
@@ -75,7 +81,17 @@ from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
 from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
-from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
+from rozliczenia.centrum.settings.files import (
+    Bad,
+    FieldProblem,
+    Good,
+    KeyChange,
+    Read,
+    RemovedLogins,
+    RemovedWhat,
+    SettingsFile,
+    Unreadable,
+)
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
 from rozliczenia.centrum.settings import inbox
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
@@ -98,6 +114,7 @@ from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
 from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
+from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
 from rozliczenia.worker_report_inbox import InboxState
 from rozliczenia.worker_reports import ReminderSettings
 
@@ -165,6 +182,15 @@ class NotSaved:
 
 
 @dataclass(frozen=True)
+class KeptInPeriods:
+    """Zmiana usunęłaby z Listy Wykonawców login, który występuje w okresie albo którego nie da się teraz sprawdzić
+    (``presence``), więc nic się nie zapisało; ``what``: cały Wykonawca albo jego login."""
+
+    presence: InRegister | InPeriod | Unchecked
+    what: RemovedWhat
+
+
+@dataclass(frozen=True)
 class NotUndoable:
     """Wiersza Historii nie da się cofnąć: nie ma go (``known=False``), jest odrzucony albo jest sekretem."""
 
@@ -211,15 +237,17 @@ class CentrumSettings:
         now: Callable[[], datetime],
         pause: Callable[[float], None],
         autostart: Autostart,
+        periods: WorkerPeriods,
     ) -> None:
         """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
         wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
-        trzyma."""
+        trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców."""
 
         self._config = config
         self._log = log
         self._now = now
         self._pause = pause
+        self._periods = periods
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
@@ -263,12 +291,13 @@ class CentrumSettings:
                 reminders=self._observe(REMINDERS),
             )
 
-    def change(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> Saved | Refused | NotSaved:
+    def change(
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]
+    ) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową albo problem
         zmiany (np. pole formularza sekcji Wykonawcy), który jest odmową bez zapisu."""
 
-        with self._lock:
-            return self._change(file, edit, undoes=None, source=ByDad(), undoable=True)
+        return self._by_dad(file, edit, undoes=None)
 
     def change_with_used_keys(
         self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T]
@@ -282,7 +311,9 @@ class CentrumSettings:
             if isinstance(keys, Unreadable):
                 self._log.settings_unreadable(cause="historia")
                 return NotSaved()
-            return self._change(file, lambda current: edit(current, keys), undoes=None, source=ByDad(), undoable=True)
+            return self._change(
+                file, lambda current: edit(current, keys), undoes=None, source=ByDad(), undoable=True, checked=frozenset()
+            )
 
     def used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
         """Klucze, które plik ``file`` ma w wierszach Historii Ustawień, z każdego źródła i wyniku. Linia Historii, której
@@ -297,7 +328,7 @@ class CentrumSettings:
             return history
         return frozenset(change.key for row in history.rows if row.file == file.name for change in row.changes)
 
-    def undo(self, row_id: str) -> Saved | Refused | NotSaved | NotUndoable:
+    def undo(self, row_id: str) -> Saved | Refused | NotSaved | NotUndoable | KeptInPeriods:
         """Cofnięcie wiersza Historii: nowy zapis taty z wartościami sprzed tej zmiany; cofnięcie cofnięcia też."""
 
         with self._lock:
@@ -312,7 +343,7 @@ class CentrumSettings:
             if file is None or not row.undoable or row.result != "zapisano":
                 return NotUndoable(known=True)
             changes = row.key_changes()
-            return self._undo(file, changes, row.id)
+        return self._by_dad(file, lambda current: file.restore(current, changes), undoes=row.id)
 
     def history(self) -> HistoryRead | Unreadable:
         """Historia od najnowszego wiersza; najpierw, jak każdy odczyt, porównanie plików z pamięcią, więc zmiana spoza
@@ -408,7 +439,8 @@ class CentrumSettings:
             case Refuse(sentence=sentence):
                 result = self._refuse(change.file, source, sentence)
             case Edit(edit=edit, undoable=undoable):
-                match self._change(change.file, edit, undoes=None, source=source, undoable=undoable):
+                # Zmiana Maksa z Wydania: okresów nie sprawdza, jak ręczna zmiana w ``config`` (ADR 0032).
+                match self._change(change.file, edit, undoes=None, source=source, undoable=undoable, checked=None):
                     case Saved(change=row):
                         result = "bez-zmian" if row is None else "zastosowano"
                     case Refused(problem=problem):
@@ -472,8 +504,31 @@ class CentrumSettings:
 
         return devices_problem(devices, _usable(self._observe(RULES), RULES), _last_good_devices(self._memory.read(DEVICES.name)))
 
-    def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
-        return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
+    def _by_dad(
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None
+    ) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zmiana taty: loginy, które usuwa z Listy Wykonawców, najpierw poza blokadą sprawdza w okresach, potem zapisuje
+        z nimi jako sprawdzonymi."""
+
+        with self._lock:
+            removed = self._removed_logins(file, edit)
+            if removed is None:
+                return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=frozenset())
+            folders = _usable(self._observe(FOLDERS), FOLDERS)
+        presence = self._periods.find(removed.logins, folders.register, folders.periods_directory)
+        if not isinstance(presence, NotInPeriods):
+            return KeptInPeriods(presence, removed.what)
+        with self._lock:
+            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=removed.logins)
+
+    def _removed_logins(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> RemovedLogins | None:
+        """Loginy, które ``edit`` usunąłby teraz z Listy Wykonawców; ``None`` też przy odmowie, którą da ``_change``."""
+
+        if file.removed_logins is None:
+            return None
+        current = _usable(self._observe(file), file)
+        value = edit(current)
+        return None if isinstance(value, FieldProblem) else file.removed_logins(current, value)
 
     def _change(
         self,
@@ -483,7 +538,11 @@ class CentrumSettings:
         undoes: str | None,
         source: RowSource,
         undoable: bool,
+        checked: frozenset[str] | None,
     ) -> Saved | Refused | NotSaved:
+        """Zapis wartości od ``edit``. ``checked``: loginy, które zmiana może usunąć z Listy Wykonawców, bo sprawdzono je
+        w okresach; usunięcie innego to odmowa. ``None``: zmiana Maksa z Wydania, bez sprawdzenia."""
+
         place = self._places[file.name]
         unsupported = place.unsupported()
         if unsupported is not None:
@@ -503,6 +562,10 @@ class CentrumSettings:
         edited = self._checked(file, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
+        if checked is not None and file.removed_logins is not None:
+            removed = file.removed_logins(current, edited)
+            if removed is not None and not removed.logins <= checked:
+                return Refused(FieldProblem(None, messages.worker_list_changed()))
         changes = file.diff(current, edited)
         if not changes and isinstance(observed, Good):
             return Saved(change=None)

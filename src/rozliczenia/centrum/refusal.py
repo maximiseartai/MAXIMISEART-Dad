@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldProblem, RemovedWhat
 from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
 from rozliczenia.worker_periods import InPeriod, InRegister, Unchecked
@@ -146,17 +146,14 @@ def workers_unusable(problem: FieldProblem | None) -> Refusal:
     )
 
 
-Kept = Literal["worker", "login"]
-"""Czego tata nie może usunąć: Wykonawcy z Listy Wykonawców albo jednego z jego loginów."""
+def worker_kept(presence: InRegister | InPeriod | Unchecked, what: RemovedWhat) -> Refusal:
+    """Wykonawcy albo loginu nie da się usunąć (formularzem, „Usuń Wykonawcę” ani „Cofnij”): login ma zlecenia w okresie
+    (Rejestr zleceń, Plik zbiorczy) albo nie da się tego teraz sprawdzić. Odmowa proponuje Nieaktywnego Wykonawcę, który
+    zostaje na liście (ADR 0032)."""
 
-
-def worker_kept(presence: InRegister | InPeriod | Unchecked, kept: Kept) -> Refusal:
-    """Wykonawcy albo loginu nie da się usunąć: login ma zlecenia w okresie (Rejestr zleceń, Plik zbiorczy) albo nie da
-    się tego teraz sprawdzić. Odmowa proponuje Nieaktywnego Wykonawcę, który zostaje na liście (ADR 0032)."""
-
-    who = "Wykonawca" if kept == "worker" else "Ten login"
-    asked = "Wykonawca" if kept == "worker" else "ten login"
-    stays = "zostaje na Liście Wykonawców" if kept == "worker" else "zostaje przy Wykonawcy"
+    who = "Wykonawca" if what == "worker" else "Ten login"
+    asked = "Wykonawca" if what == "worker" else "ten login"
+    stays = "zostaje na Liście Wykonawców" if what == "worker" else "zostaje przy Wykonawcy"
     inactive = "Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą."
     match presence:
         case InRegister():

@@ -21,7 +21,15 @@ from typing import Final, Literal, assert_never
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile, settings_yaml
+from rozliczenia.centrum.settings.files import (
+    FieldName,
+    FieldPath,
+    FieldProblem,
+    KeyChange,
+    RemovedLogins,
+    SettingsFile,
+    settings_yaml,
+)
 from rozliczenia.worker_list import (
     AddressesNotMoved,
     UnmatchedLogin,
@@ -307,17 +315,13 @@ def added(current: WorkerList, form: WorkerForm) -> WorkerList | FieldProblem:
     return _with(current, None, WorkerEntry(form.logins, form.name, form.addresses))
 
 
-def edited(current: WorkerList, login: str, form: WorkerForm, seen: frozenset[str]) -> WorkerList | FieldProblem:
-    """Lista z Wykonawcą, który ma login ``login``, zmienionym według formularza; przełączniki zostają. ``seen``: loginy
-    Wykonawcy, od których liczono usunięte loginy sprawdzone w okresach; inne loginy (lista zmieniła się w trakcie) to
-    odmowa."""
+def edited(current: WorkerList, login: str, form: WorkerForm) -> WorkerList | FieldProblem:
+    """Lista z Wykonawcą, który ma login ``login``, zmienionym według formularza; przełączniki zostają."""
 
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
     worker = current.workers[index]
-    if frozenset(worker.logins) != seen:
-        return FieldProblem(None, messages.worker_list_changed())
     return _with(current, index, WorkerEntry(form.logins, form.name, form.addresses, worker.active, worker.reminders))
 
 
@@ -343,17 +347,26 @@ def switched(current: WorkerList, login: str, *, active: bool | None, reminders:
     )
 
 
-def removed(current: WorkerList, login: str, checked: frozenset[str]) -> WorkerList | FieldProblem:
-    """Lista bez Wykonawcy z loginem ``login``, gdy ma dokładnie loginy ``checked``, które sprawdzono w okresach przed
-    zapisem; inne loginy (lista zmieniła się w trakcie sprawdzania) to odmowa."""
+def removed(current: WorkerList, login: str) -> WorkerList | FieldProblem:
+    """Lista bez Wykonawcy z loginem ``login``."""
 
     index = _index(current, login)
     if index is None:
         return FieldProblem(None, messages.worker_unknown())
-    if frozenset(current.workers[index].logins) != checked:
-        return FieldProblem(None, messages.worker_list_changed())
     built = WorkerList.of([_as_entry(worker) for at, worker in enumerate(current.workers) if at != index], current.unresolved)
     return _problem(built) if isinstance(built, WorkerListProblem) else built
+
+
+def removed_logins(before: WorkerList, after: WorkerList) -> RemovedLogins | None:
+    """Loginy Wykonawców z ``before``, których w ``after`` nie ma u żadnego Wykonawcy (``None``: żadnego), z ``worker``,
+    gdy lista ma po zmianie mniej Wykonawców: tak usuwa formularz, „Usuń Wykonawcę” i „Cofnij” dodania albo dopisania
+    loginu."""
+
+    staying = {login for worker in after.workers for login in worker.logins}
+    logins = frozenset(login for worker in before.workers for login in worker.logins if login not in staying)
+    if not logins:
+        return None
+    return RemovedLogins(logins, "worker" if len(after.workers) < len(before.workers) else "login")
 
 
 def worker_of(workers: WorkerList, login: str) -> Worker | None:
@@ -423,4 +436,5 @@ WORKERS: Final = SettingsFile(
     reported=reported,
     logged=logged,
     default=WorkerList(()),
+    removed_logins=removed_logins,
 )

@@ -196,9 +196,13 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
+    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX i sprawdzenie okresów przy usunięciu
+    # loginu z Listy Wykonawców czytają nim pliki taty ze źródła bajtów ``source``, a jego pamięć to pamięć reguły danych
+    # pracy.
+    files = DadFiles(source=source, forbidden=work.forbidden)
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
     # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
-    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart)
+    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart, periods=WorkerPeriods(files))
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
@@ -231,11 +235,7 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródła
-    # bajtów ``source``, a jego pamięć to pamięć reguły danych pracy.
-    files = DadFiles(source=source, forbidden=work.forbidden)
-    # Sekcja Wykonawcy: usunięcie Wykonawcy albo loginu sprawdza okresy tym samym uchwytem plików taty.
-    app.include_router(workers_router(settings, WorkerPeriods(files)))
+    app.include_router(workers_router(settings))
     app.include_router(quantity_rules_router(settings, price_list, RecentCollectiveFiles(files)))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))

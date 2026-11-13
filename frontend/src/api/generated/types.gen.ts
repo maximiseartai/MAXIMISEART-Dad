@@ -5684,6 +5684,10 @@ export type UndoSettingsChangeErrors = {
      */
     404: Problem;
     /**
+     * Conflict
+     */
+    409: Problem;
+    /**
      * Zła wartość Ustawień Centrum z polem i zdaniem
      */
     422: Problem;

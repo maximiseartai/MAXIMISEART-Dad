@@ -21,7 +21,6 @@ import os
 from pathlib import Path, PurePath
 import random
 import shutil
-import subprocess
 import sys
 import zipfile
 from typing import Any, Final
@@ -56,6 +55,7 @@ from tests.fixtures.centrum import (
     finished_view,
     join_threads_since,
 )
+from tests.fixtures.bez_dostepu import allow_reading, deny_reading
 from tests.fixtures.centrum_processes import Engines
 from tests.fixtures.linie_watkow import new_line, threads_since
 from atrapy.pliki_taty import REGISTER_NAME
@@ -178,26 +178,10 @@ def _file_instead_of_folder(path: Path) -> None:
     path.write_bytes(b"")
 
 
-def _inaccessible(path: Path) -> None:
-    if sys.platform == "win32":  # chmod w Windows zmienia tylko atrybut „tylko do odczytu”
-        subprocess.run(["icacls", str(path), "/deny", f"{os.environ['USERNAME']}:(RD)"], check=True, capture_output=True)
-    else:
-        path.chmod(0)
-    with pytest.raises(PermissionError):
-        list(path.iterdir()) if path.is_dir() else path.open("rb").close()
-
-
 def _open_in_excel(path: Path) -> None:
     """Skoroszyt otwarty w Excelu: plik blokady ``~$…`` obok, jak zostawia go Excel taty."""
 
     path.with_name(f"~${path.name}").write_bytes(b"\x00" * 165)
-
-
-def _readable_again(path: Path) -> None:
-    if sys.platform == "win32":
-        subprocess.run(["icacls", str(path), "/remove:d", os.environ["USERNAME"]], check=True, capture_output=True)
-    else:
-        path.chmod(0o755)
 
 
 DAMAGES: dict[str, tuple[tuple[str, ...], Callable[[Path], None]]] = {
@@ -211,7 +195,7 @@ DAMAGES: dict[str, tuple[tuple[str, ...], Callable[[Path], None]]] = {
     "zip_bez_arkusza": ((XLSX,), _without_sheets),
     "katalog_zamiast_pliku": ((TEXT, LINES, XLSX), _folder_instead_of_file),
     "plik_zamiast_folderu": ((FOLDER,), _file_instead_of_folder),
-    "bez_odczytu": ((TEXT, LINES, XLSX, FOLDER), _inaccessible),
+    "bez_odczytu": ((TEXT, LINES, XLSX, FOLDER), deny_reading),
     "otwarty_w_excelu": ((XLSX,), _open_in_excel),
 }
 
@@ -730,7 +714,7 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
         problems = ENTRIES[entry].call(client or _remembering_choices(world), seen)
     finally:
         if damage == "bez_odczytu":
-            _readable_again(target)
+            allow_reading(target)
     if damage == "bez_odczytu":
         problems += [
             f"{where}: niedostępny nazwany uszkodzonym albo niepoprawnym"
@@ -871,7 +855,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
     periods = world.path(folder)
-    _inaccessible(periods)
+    deny_reading(periods)
     try:
         board = client.get("/api/periods")
         preview = client.post("/api/runs", json={"process": "preparation", "period": PERIOD, "mode": "DRY-RUN"})
@@ -880,7 +864,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
         run_id = _run_with_diagnosis(client, "preparation", PERIOD)
         diagnosis = client.post(f"/api/runs/{run_id}/diagnosis").json()
     finally:
-        _readable_again(periods)
+        allow_reading(periods)
 
     assert board.status_code == 500
     assert f"folderu {named}." in board.json()["message"]
@@ -899,12 +883,12 @@ def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_w_sekc
     shutil.copytree(world_template, world.root)
     client = _remembering_choices(world)
     listed = world.path("lista_wykonawcow")
-    _inaccessible(listed)
+    deny_reading(listed)
     try:
         section = client.get("/api/settings").json()["workers"]
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
     finally:
-        _readable_again(listed)
+        allow_reading(listed)
 
     assert (started.status_code, started.json()["message"]) == (409, refusal.workers_unusable(None).message)
     assert (section["state"], section["workers"], section["problem"]) == (
