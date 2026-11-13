@@ -19,6 +19,10 @@ a z biblioteki biorą narzędzia, skille i testy (``_library_reaches_tools`` wyl
 Skrypt, który workflow uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem ze wszystkim, co
 importuje z ``tools/``, używa tylko biblioteki standardowej.
 
+Każdy wpis listy wyjątków dwóch szop (``tools/lib/szopa.toml``, ADR 0034), z której i z reguły katalogu licznik
+w workflow rozmiaru PR liczy linie maszynerii procesu, obejmuje co najmniej jeden plik, a żaden plik nie ma dwóch
+wpisów. Plik bez wpisu ma grupę z reguły katalogu, więc test nie wymaga wpisu dla nowego pliku.
+
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
 tylko przegląd. Importu przez ``importlib`` ani polecenia składanego w czasie biegu strażnik importów nie widzi.
 """
@@ -34,9 +38,11 @@ from typing import get_args
 
 import pytest
 
+import rozmiar_pr
 from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.git_repo import git
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -515,5 +521,25 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
             "Napis, który jedno narzędzie CI pisze, a inne czyta, pisze tylko jego właściciel: weź klucz, część albo "
             "prefiks od właściciela zamiast pisać napis, bo zmiana napisu po jednej stronie zostawiała drugą z cichym "
             "„nieznane”.",
+        ]
+    )
+
+
+def test_kazdy_wpis_listy_dwoch_szop_obejmuje_plik_a_zaden_plik_nie_ma_dwoch_wpisow() -> None:
+    wpisy = rozmiar_pr.wpisy((ROOT / "tools" / "lib" / "szopa.toml").read_text(encoding="utf-8"))
+    pliki = sorted(
+        nazwa
+        for nazwa in set(filter(None, git(ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0")))
+        if (ROOT / nazwa).is_file()
+    )
+    obejmujace = {nazwa: rozmiar_pr.obejmujace(wpisy, nazwa) for nazwa in pliki}
+    bledy = [f"{nazwa}: obejmuje go kilka wpisów ({', '.join(swoje)})" for nazwa, swoje in obejmujace.items() if len(swoje) > 1]
+    bledy += [f"{wpis}: wpis nie obejmuje żadnego pliku" for wpis in wpisy if not any(wpis in swoje for swoje in obejmujace.values())]
+
+    assert bledy == [], "\n".join(
+        [
+            *bledy,
+            f"{rozmiar_pr.LISTA} trzyma tylko wyjątki od reguły katalogu rozmiar_pr.REGULY (ADR 0034): wpis bez pliku "
+            "usuń albo popraw jego ścieżkę, a plik z kilkoma wpisami zostaw w jednym.",
         ]
     )
