@@ -917,13 +917,14 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chromium: Chromium, tmp_p
     assert set(atrapa.requested()) <= READING
 
 
-# Kod 2 narzędzia: z samymi różnicami (części niesprawdzone to tylko te zawsze w wyniku) i z samymi częściami
-# niesprawdzonymi bez różnic, które daje dopiero ``--numer`` numeru, którego efenix nie zna.
+# Kod 2 narzędzia: z samymi różnicami (części niesprawdzone to tylko te zawsze w wyniku), z samymi częściami
+# niesprawdzonymi bez różnic, które daje dopiero ``--numer`` numeru, którego efenix nie zna, i z jednymi i drugimi naraz.
 @pytest.mark.parametrize(
     "variant",
     [
         pytest.param(CHANGED["lista-bez-pola-numer-i-jej-skrypt-z-bledem"], id="same-roznice"),
         pytest.param(CHANGED["szukanie-bez-wynikow"], id="same-niesprawdzone-z-numerem"),
+        pytest.param(CHANGED["wiersz-bez-linku"], id="roznice-i-niesprawdzone"),
     ],
 )
 def test_narzedzie_z_roznica_albo_czescia_niesprawdzona_konczy_sie_kodem_2_z_wynikiem_na_stdout(
@@ -969,11 +970,20 @@ def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odc
     assert set(atrapa.requested()) <= READING | {("POST", FILL_EMMETT)}
 
 
-def test_pomiar_propozycji_emmetta_narzedziem_jak_maks_czyta_okno_z_karty_przed_ostatnia_po_enter(
-    chromium: Chromium, tmp_path: Path
+# Kod narzędzia z ``--emmett`` liczy też pomiar propozycji: 0 przy zgodnej propozycji z okna w pierwszej z dwóch kart
+# zlecenia, które Maks otworzył, zanim narzędzie połączyło się z Chrome, a 2, gdy różnicę albo część niesprawdzoną daje
+# tylko propozycja, bo strony same są zgodne.
+@pytest.mark.parametrize(
+    ("variant", "code"),
+    [
+        pytest.param(EMMETT["druga-karta-bez-okna"], 0, id="zgodna-z-karty-przed-ostatnia"),
+        pytest.param(EMMETT["propozycja-z-innymi-klasami"], 2, id="roznica-tylko-w-propozycji"),
+        pytest.param(EMMETT["bez-enter"], 2, id="niesprawdzona-tylko-propozycja"),
+    ],
+)
+def test_pomiar_propozycji_emmetta_narzedziem_jak_maks_daje_kod_wyjscia_po_propozycji(
+    chromium: Chromium, tmp_path: Path, variant: Emmett, code: int
 ) -> None:
-    # Okno Emmetta jest w pierwszej z dwóch kart zlecenia, które Maks otworzył, zanim narzędzie połączyło się z Chrome.
-    variant = EMMETT["druga-karta-bez-okna"]
     template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
         before: list[Page] = chromium.do(lambda browser: list(browser.contexts[0].pages))
@@ -986,7 +996,8 @@ def test_pomiar_propozycji_emmetta_narzedziem_jak_maks_czyta_okno_z_karty_przed_
         finally:
             chromium.do(lambda browser: _close_new(browser, before))
 
-    assert (checked.code, checked.stderr.splitlines()) == (0, [zgodnosc_efenix.ASK_EMMETT, zgodnosc_efenix.CLOSE_EMMETT]), checked
+    asked = [zgodnosc_efenix.ASK_EMMETT, *([zgodnosc_efenix.CLOSE_EMMETT] if variant.read else [])]
+    assert (checked.code, checked.stderr.splitlines()) == (code, asked), checked
     assert_expected(checked.stdout, variant.expected)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
     assert set(atrapa.requested()[clicked:]) <= READING
