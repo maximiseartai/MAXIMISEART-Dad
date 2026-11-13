@@ -338,7 +338,7 @@ def copies_unreadable(directory: Path) -> Message:
         code="KOPIE_INTERMAX_NIEDOSTEPNE",
         what=f"Nie można teraz odczytać folderu Kopii INTERMAX. {_UNCHANGED}",
         where=folder_label(directory),
-        action=f"Sprawdź za chwilę listę kopii {_COPIES_PLACE}. {IF_ERROR_RETURNS}",
+        action=f"Poczekaj chwilę i odśwież stronę. {IF_ERROR_RETURNS}",
     )
 
 

@@ -7,7 +7,9 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+import time
 from typing import Any, Final, NoReturn
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -414,6 +416,48 @@ def test_zgloszenie_ma_zmiane_hasla_skrzynki_samym_kluczem_bez_hasla(tmp_path: P
     at = f"{datetime.fromisoformat(secret['at']).astimezone():%Y-%m-%d %H:%M}"
     assert f"- {at} · tata · {INBOX_ACCESS_FILE} · zmieniono: skrzynka.haslo" in body.splitlines()
     assert [word for word in ("haslo maksa", "haslo taty", "haslomaksa", "haslotaty") if word in body] == []
+
+
+def test_zgloszenie_ma_reczna_zmiane_pliku_ustawien_sprzed_chwili_jako_zmiane_spoza_centrum(tmp_path: Path) -> None:
+    """Maks zmienia plik Ustawień ręcznie tuż przed Zgłoszeniem i nikt nie czyta Ustawień w międzyczasie: Zgłoszenie
+    i tak ma tę zmianę jako „spoza Centrum” (ADR 0032)."""
+
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    settings = centrum.tool.config / SETTINGS_FILE
+    written = settings.read_text(encoding="utf-8")
+    assert written.count("motyw: dark\n") == 1
+    settings.write_text(written.replace("motyw: dark\n", "motyw: light\n"), encoding="utf-8")
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    [outside] = [row for row in _history(centrum) if row["source"] == "outside"]
+    at = f"{datetime.fromisoformat(outside['at']).astimezone():%Y-%m-%d %H:%M}"
+    assert f"- {at} · spoza Centrum · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
+
+
+def test_zgloszenie_podaje_chwile_zmiany_ustawien_w_strefie_taty_takze_gdy_jego_strefa_nie_jest_utc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tata i Maks czytają chwilę zmiany w Zgłoszeniu w czasie Polski, a runner CI jest w UTC, więc test wymusza strefę
+    taty, w której oba zapisy się różnią."""
+
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        centrum = preparing_centrum(tmp_path)
+        centrum.client.put("/api/settings/theme", json={"theme": "light"})
+        run_id = stopped_for_maks(centrum)
+        lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    [theme] = [row for row in _history(centrum) if row["changes"][0]["key"] == "wyglad.motyw"]
+    at = datetime.fromisoformat(theme["at"]).astimezone(ZoneInfo("Europe/Warsaw"))
+    assert f"- {at:%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE} · wyglad.motyw: dark → light" in lines
 
 
 def test_zgloszenie_podaje_zmiane_ustawien_z_wydania_z_numerem_wydania_i_id_zmiany(tmp_path: Path) -> None:

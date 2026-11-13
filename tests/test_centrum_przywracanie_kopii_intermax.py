@@ -153,7 +153,7 @@ def test_folderu_kopii_ktorego_nie_da_sie_odczytac_konfiguracja_nazywa_a_przywro
         "what": f"Nie można teraz odczytać folderu Kopii INTERMAX. {UNCHANGED}",
         "where": f"folder {tmp_path.name}\\Kopie INTERMAX",
         "action": (
-            "Sprawdź za chwilę listę kopii w Ustawieniach, w sekcji Kopie INTERMAX. "
+            "Poczekaj chwilę i odśwież stronę. "
             "Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie."
         ),
     }

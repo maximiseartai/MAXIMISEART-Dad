@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
+from tests.fixtures.git_repo import built_once, commit, copy_files, git, repository, with_imports
 
 # Atrapa na Windows to ``.cmd``, a ta nie zastępuje programu w dwóch miejscach. CreateProcess dopisuje do nazwy bez
 # rozszerzenia tylko ``.exe``, więc ``subprocess.run(["gh", ...])`` jej nie znajdzie (znajdzie ją ``shutil.which``, jak
@@ -47,9 +47,10 @@ def fake_cli(folder: Path, name: str, script: str) -> Path:
 class FakeGitHub:
     """Checkout na ``main`` z repozytorium bare jako ``origin`` (PR-y w ``refs/pull/N/head`` jak na GitHubie) i atrapa ``gh``.
 
-    ``files`` i kopia narzędzia checkoutu ``tool`` (to, które uruchamia ``run``) z jego importami są w commicie ``start``.
-    Atrapa ``gh`` wykonuje kod ``gh`` i trzyma swój stan w katalogu ``bin``, który ``environment`` stawia na początku
-    ``PATH``.
+    ``files`` i kopia narzędzia checkoutu ``tool`` (to, które uruchamia ``run``) z jego importami są w commicie ``start``
+    z datą ``started`` (domyślnie chwila budowy). Oba repozytoria proces testów buduje raz na ``tool``, ``files`` i
+    ``started``, a test dostaje ich kopię (``built_once``). Atrapa ``gh`` wykonuje kod ``gh`` i trzyma swój stan w
+    katalogu ``bin``, który ``environment`` stawia na początku ``PATH``.
     """
 
     def __init__(
@@ -59,23 +60,25 @@ class FakeGitHub:
         *,
         tool: str,
         gh: str,
+        started: str | None = None,
     ) -> None:
+        def build(template: Path) -> None:
+            git(template, "init", "--quiet", "--bare", "--initial-branch=main", str(template / "origin.git"))
+            checkout = repository(template / "checkout", files)
+            copy_files(checkout, with_imports((tool,)))
+            git(checkout, "checkout", "--quiet", "-b", "main")
+            with pytest.MonkeyPatch.context() as patch:
+                if started is not None:
+                    patch.setenv("GIT_COMMITTER_DATE", started)
+                commit(checkout, "start")
+            git(checkout, "remote", "add", "origin", str(template / "origin.git"))
+            git(checkout, "push", "--quiet", "origin", "main")
+
+        built_once(tmp_path, build, tool, started, *sorted(files.items()))
         self.tool = tool
         self.origin = tmp_path / "origin.git"
-        git(
-            tmp_path,
-            "init",
-            "--quiet",
-            "--bare",
-            "--initial-branch=main",
-            str(self.origin),
-        )
-        self.checkout = repository(tmp_path / "checkout", files)
-        copy_files(self.checkout, with_imports((tool,)))
-        git(self.checkout, "checkout", "--quiet", "-b", "main")
-        self.start = commit(self.checkout, "start")
-        git(self.checkout, "remote", "add", "origin", str(self.origin))
-        git(self.checkout, "push", "--quiet", "origin", "main")
+        self.checkout = tmp_path / "checkout"
+        self.start = git(self.checkout, "rev-parse", "HEAD")
         self.bin = tmp_path / "bin"
         fake_cli(self.bin, "gh", gh)
 
