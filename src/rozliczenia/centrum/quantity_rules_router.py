@@ -29,9 +29,9 @@ from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles, preview
 from rozliczenia.centrum.rule_forms import GROUPS, SCOPES, UnknownRule, checked, edited, edited_id, form_of
 from rozliczenia.centrum.rule_sentences import rule_sentence
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import RULES, RULES_SECTION
+from rozliczenia.centrum.settings.quantity_rules import RULES, RULES_SECTION, rule_ids
 from rozliczenia.collective_layout import QUANTITY_LETTERS
 from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_rule
@@ -116,7 +116,10 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         """Reguły teraz i po zmianie ``edit`` sprawdzone przez silnik oraz id reguły, którą zmiana dodaje albo zmienia."""
 
         now = settings.quantity_rules().rules
-        rules = edited(now.rules, edit)
+        # Historia, której nie da się przeczytać, nie daje id do pominięcia: id nowej reguły w sprawdzeniu i podglądzie
+        # może wtedy być inne niż przy zapisie, ale zapis i tak się wtedy nie uda (``change_with_used_keys``).
+        used = settings.used_keys(RULES)
+        rules = edited(now.rules, edit, frozenset() if isinstance(used, Unreadable) else rule_ids(used))
         if isinstance(rules, UnknownRule):
             raise refusal.quantity_rule_unknown()
         if isinstance(rules, FieldProblem):
@@ -132,11 +135,11 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
         proposed(edit)
 
-        def applied(current: tuple[QuantityRule, ...]) -> tuple[QuantityRule, ...]:
-            changed = edited(current, edit)
+        def applied(current: tuple[QuantityRule, ...], keys: frozenset[str]) -> tuple[QuantityRule, ...]:
+            changed = edited(current, edit, rule_ids(keys))
             return changed if isinstance(changed, tuple) else current
 
-        match settings.change(RULES, applied):
+        match settings.change_with_used_keys(RULES, applied):
             case Saved(change=change):
                 return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
             case Refused(problem=problem):

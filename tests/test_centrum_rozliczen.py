@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import errno
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -25,6 +26,8 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from hypothesis import given, settings
+from hypothesis import strategies as st
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
@@ -1023,6 +1026,131 @@ def test_regula_usunieta_w_edytorze_znika_a_historia_ma_jej_zdanie_przed(tmp_pat
     assert [(_text(rule["before"]), rule["after"]) for rule in row["rules"]] == [
         ("Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.", None)
     ]
+
+
+def _editor_rule(column: str, value: int) -> dict[str, Any]:
+    """Reguła z edytora: przy „montaż” w CZYNNOŚCIACH wpisz ``value`` w ``column``."""
+
+    return {
+        "scope": "every",
+        "conditions": [{"kind": "activities", "text": "montaż", "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": column, "value": value, "multiplier": "once", "component": None}]},
+    }
+
+
+# Reguły taty z edytora po nazwie w sekwencji: każda ma inne zdanie.
+EDITED = {"A": _editor_rule("AA", 2), "A2": _editor_rule("AA", 4), "B": _editor_rule("AC", 5), "C": _editor_rule("AB", 1)}
+
+
+def _edits(app: Centrum, sequence: tuple[tuple[str, ...], ...]) -> dict[str, str]:
+    """Zapisy taty w edytorze po kolei: ``("dodaj", A)``, ``("zmien", A, A2)``, ``("usun", A)``; daje id reguły po nazwie."""
+
+    ids: dict[str, str] = {}
+    for step in sequence:
+        match step:
+            case ("dodaj", name):
+                response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                ids[name] = response.json()["quantity_rules"]["rules"][-1]["id"]
+            case ("zmien", name, other):
+                response = app.client.put(f"{QUANTITY_RULES_URL}/{ids[name]}", json=EDITED[other])
+                ids[other] = ids[name]
+            case ("usun", name):
+                response = app.client.delete(f"{QUANTITY_RULES_URL}/{ids[name]}")
+            case _:
+                raise AssertionError(step)
+        assert response.status_code == 200, response.text
+    return ids
+
+
+def test_cofniecie_usuniecia_reguly_przywraca_ja_obok_reguly_dodanej_po_niej_a_cofniecie_dodania_jej_nie_rusza(
+    tmp_path: Path,
+) -> None:
+    """Tata dodaje regułę A, usuwa ją i dodaje regułę B: B ma inne id niż usunięta A, więc „Cofnij” usunięcia A
+    przywraca A obok B, a „Cofnij” dodania A zdejmuje tylko A."""
+
+    app = centrum(tmp_path)
+    ids = _edits(app, (("dodaj", "A"), ("usun", "A"), ("dodaj", "B")))
+    added_a, removed_a, _ = reversed(history_rows(app))
+    a = "Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz 2 w AA."
+    b = "Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz 5 w AC."
+
+    restored = app.client.post(f"/api/settings/history/{removed_a['id']}/undo")
+    after_restore = rule_sentences(app)
+    taken_back = app.client.post(f"/api/settings/history/{added_a['id']}/undo")
+
+    assert ids["A"] != ids["B"]
+    assert (restored.status_code, taken_back.status_code) == (200, 200), (restored.text, taken_back.text)
+    assert (after_restore.get(ids["A"]), after_restore.get(ids["B"])) == (a, b)
+    assert {rule: sentence for rule, sentence in rule_sentences(app).items() if rule.startswith("regula-")} == {ids["B"]: b}
+
+
+# Krok taty w oknie Ustawień: zapis w edytorze albo „Cofnij” wiersza Historii; liczba wybiera regułę albo wiersz.
+_STEP = st.one_of(
+    st.tuples(st.just("dodaj"), st.sampled_from(sorted(EDITED))),
+    st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(EDITED))),
+    st.tuples(st.just("usun"), st.integers(0, 9)),
+    st.tuples(st.just("cofnij"), st.integers(0, 9)),
+)
+
+
+def test_po_dowolnych_zapisach_edytora_i_cofnieciach_kazda_regula_ma_wlasne_id_a_cofniecie_zmienia_tylko_regule_wiersza(
+    tmp_path: Path,
+) -> None:
+    """Po dowolnych zapisach taty w edytorze i cofnięciach z Historii: nowa reguła dostaje id, którego nie miała żadna
+    reguła przed nią, a „Cofnij” wiersza zmienia tylko regułę tego wiersza (usuwa ją albo przywraca jej zdanie
+    „przed”), każda inna reguła zostaje, jak była; cofnięcie, którego nie da się wykonać, nie zmienia żadnej reguły i
+    mówi zdaniem dlaczego."""
+
+    examples = itertools.count()
+
+    @settings(derandomize=True, database=None, deadline=None, max_examples=25)
+    @given(st.lists(_STEP, min_size=3, max_size=8))
+    def steps_hold(steps: list[tuple[Any, ...]]) -> None:
+        app = centrum(tmp_path / str(next(examples)))
+        expected: dict[str, str] = {}
+        given_ids: set[str] = set()
+        for step in steps:
+            ids = list(expected)
+            match step:
+                case ("dodaj", name):
+                    response = app.client.post(QUANTITY_RULES_URL, json=EDITED[name])
+                    added = response.json()["quantity_rules"]["rules"][-1]["id"]
+                    assert added not in given_ids, f"id {added} usuniętej reguły wróciło do nowej"
+                    given_ids.add(added)
+                    expected[added] = _sentence(EDITED[name])
+                case ("zmien", index, name) if ids:
+                    rule_id = ids[index % len(ids)]
+                    response = app.client.put(f"{QUANTITY_RULES_URL}/{rule_id}", json=EDITED[name])
+                    expected[rule_id] = _sentence(EDITED[name])
+                case ("usun", index) if ids:
+                    rule_id = ids[index % len(ids)]
+                    response = app.client.delete(f"{QUANTITY_RULES_URL}/{rule_id}")
+                    del expected[rule_id]
+                case ("cofnij", index):
+                    rows = [row for row in history_rows(app) if row["rules"]]
+                    if not rows:
+                        continue
+                    [rule] = rows[index % len(rows)]["rules"]
+                    response = app.client.post(f"/api/settings/history/{rows[index % len(rows)]['id']}/undo")
+                    if response.status_code == 200:
+                        rule_id = rule["key"].removeprefix("reguly.")
+                        expected.pop(rule_id, None)
+                        if rule["before"] is not None:
+                            expected[rule_id] = str(_text(rule["before"]))
+                    else:
+                        assert response.json()["message"], response.text
+                case _:
+                    continue
+            assert response.status_code in (200, 409, 422), response.text
+            shown = {rule_id: sentence for rule_id, sentence in rule_sentences(app).items() if rule_id.startswith("regula-")}
+            assert shown == expected, steps
+
+    steps_hold()
+
+
+def _sentence(rule: dict[str, Any]) -> str:
+    [write] = rule["action"]["writes"]
+    return f"Jeśli CZYNNOŚCI zawierają „montaż”, to wpisz {write['value']} w {write['column']}."
 
 
 @pytest.mark.parametrize(
