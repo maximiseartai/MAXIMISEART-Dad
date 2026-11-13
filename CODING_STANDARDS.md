@@ -70,6 +70,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - Test a decision of Wycena w efenix (the execution date, Wycena Emmetta, the completion to the file, the checks of an order, a new Uruchomienie after Dad's change) through the Uruchomienie procesu on the window in process (`_run_in_process` in `tests/test_wycena_efenix.py`, `tests/fixtures/okno_w_procesie.py`), without a browser.
   Keep in Chromium on the Atrapa efenix what only the browser window shows (the page and its build, a failure, a closed window, login, pace) and a few decision runs as smoke tests.
   The window contract in `tests/test_atrapa_efenix.py` shows that both windows give the same run only on its rows, so a new branch of the window in process gets its row there.
+  A new place that stops the window with `WindowStop.of` has a test that reaches it and checks its page part and cause, such as a row of `CHANGED`, `ANSWERED` or `UNREAD` in `tests/test_wycena_efenix.py`.
 - Test Centrum rozliczeń through its HTTP API, the way the browser sees it: responses, the event stream, files on disk, metrics records.
   Prove UI behaviour in the browser with `verify-centrum-rozliczen`, not with component unit tests.
 - Make the Rejestr zleceń or a Wzorzec fail in a test through a failing adapter, not by patching a module attribute: the byte source of Dad's files (`DadFiles.source`, in Centrum `create_app(source=...)`) for the Rejestr, the Sprawdzanie of a Wzorzec (`run_context.TemplateCheck`, in Centrum `create_app(template_check=...)`) for a Wzorzec.

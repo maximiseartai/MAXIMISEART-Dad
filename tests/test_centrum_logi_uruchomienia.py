@@ -2045,8 +2045,8 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
 
 
 # Zatrzymanie okna efenix przy wierszu 19, gdy wiersz 18 jest już gotowy (Zgłoszenia #19 i #20 z
-# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna, którą Logi mają podać. Hipotezy B–E z tabeli
-# decyzji (``tests/test_tabela_zatrzyman_efenix.py``); hipoteza A od #819 nie jest Zatrzymaniem.
+# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna z tabeli decyzji ``WindowStop.of``, którą Logi
+# mają podać. Hipoteza A od #819 nie jest Zatrzymaniem.
 STOPPED_AT_SECOND = [PRICED[0], Order("#ZLQX07", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})))]
 HYPOTHESES = {
     "B-ilosc-niecalkowita": (
@@ -2165,7 +2165,7 @@ def test_logi_zatrzymania_okna_efenix_na_elemencie_strony_nie_dokladnie_raz_maja
 
 @dataclass(frozen=True)
 class StartPath:
-    """Droga startu okna efenix, która kończy Wycenę Zatrzymaniem (tabela w ``tests/test_tabela_zatrzyman_efenix.py``):
+    """Droga startu okna efenix, która kończy Wycenę Zatrzymaniem (przyczyna z tabeli decyzji ``WindowStop.of``):
     jak test ją wywołuje i co mówią o niej Logi Uruchomienia.
 
     ``driver``: sterownik Playwrighta pod adresem, pod którym go nie ma; ``profile_file``: folder profilu przeglądarki

@@ -1397,8 +1397,8 @@ def test_wylogowanie_w_odpowiedzi_na_date_wykonania_zatrzymuje_wycene_bez_ponown
 
 TIMEOUT = "playwright._impl._errors.TimeoutError"
 # Część strony, której zabrakło przy każdej zmianie budowy Atrapy (lista, tabela wyników, strona zlecenia, okno daty
-# wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
-# okna, które się nie udało.
+# wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji ``WindowStop.of`` i działanie okna, które się nie
+# udało.
 CHANGED: dict[Changed, tuple[PagePart, WindowCause, WindowAction]] = {
     Changed.STATUS_HEADER: (PagePart.RESULTS, OtherShape(Shape.COLUMNS), WindowAction.SEARCH),
     Changed.ORDER_LINK: (PagePart.RESULTS, OtherShape(Shape.ROW_CELLS), WindowAction.SEARCH),
