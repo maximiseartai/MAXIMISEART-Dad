@@ -28,6 +28,7 @@ from typing import Any, Final, NoReturn, cast
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
+from pydantic import ValidationError
 import pytest
 
 from rozliczenia import settlement_messages, workbook_files
@@ -551,7 +552,8 @@ def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszyc
     """Plik Logów Wpisania raportów z każdym słowem powodu i kolumny, które zapisały wcześniejsze Wydania, czyta się do
     tego samego powodu i tej samej kolumny, a zapisuje z powrotem tymi samymi słowami: te pliki czytają karta z Logów,
     Historia i odtworzenie. ``not_ordered`` przy ``unknown_number`` to powód, dla którego Centrum nie dopisało
-    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia."""
+    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia. Słowo spoza powodów odmowy Przeniesienia przy
+    ``refused_move`` (``form``) się nie czyta, bo żadne Wydanie go tam nie zapisało."""
 
     day, arrived, worker = "2026-11-09", "2026-11-09T18:00:00Z", "jan.testowy"
     entering = {
@@ -619,6 +621,11 @@ def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszyc
         *COLUMN_WORDS.values(),
     ]
     assert _entering_words(json.loads(record.text)["report_entering"]) == _entering_words(entering)
+    refused_form = {"kind": "refused_move", "worker": worker, "day": day, "number": "40000001", "bar": "form"}
+    with pytest.raises(ValidationError, match=r"refused_move\.bar"):
+        RunLog.model_validate_json(
+            json.dumps({**logs, "report_entering": {**entering, "problems": [refused_form]}}, ensure_ascii=False)
+        )
 
 
 def test_logi_po_bledzie_samego_adaptera_maja_czas_liczbe_problemow_i_przetworzenia_szablonow_z_rdzenia(

@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import gzip
 import hashlib
@@ -49,10 +49,31 @@ from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
+from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, Unreplayable
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from rozliczenia.domain import RunMode
+from rozliczenia.report_cells import ReportColumn
+from rozliczenia.report_entering import EnteringFacts, Orderless, SavedState
+from rozliczenia.worker_reports import (
+    Kept,
+    Login,
+    MailId,
+    OrderKey,
+    OrderNumber,
+    OwnEntries,
+    OwnEntry,
+    OwnMove,
+    ReadReport,
+    ReadStranger,
+    ReadUnreadable,
+    ReportEntry,
+    SenderAddress,
+    SubjectFault,
+    UnknownSender,
+)
+from rozliczenia.worker_reports import Verdict as Intent
 
 from atrapy.skrzynka import BoxIssue
 from atrapy.workbooks import excel_lock
@@ -2137,6 +2158,13 @@ def _guard_cut(place: str) -> Callable[[dict[str, Any]], None]:
     )
 
 
+def _emptied_by_guard(record: dict[str, Any]) -> None:
+    record["report_entering"] = None
+    record["technical_notes"].append(
+        "Reguła danych: pole report_entering jest puste: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+    )
+
+
 def _stopped_at_saving(record: dict[str, Any]) -> None:
     record.update(ending="stop", stop_kind="for_tata", result=None)
     record["report_entering"]["written"] = None
@@ -2173,6 +2201,11 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
         3,
         ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.moves_before[0]",),
     ),
+    "ciecie_straznika_calego_pola": (
+        _emptied_by_guard,
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych zostawił puste w Logach report_entering ",),
+    ),
     "bez_wpisow_przed_rdzeniem": (
         lambda record: record.update(report_entering=None),
         1,
@@ -2208,6 +2241,112 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
     else:
         granice = lines[lines.index("Granice:") + 1 :]
         assert all(any(line.startswith(text) for line in granice) for text in expected), granice
+
+
+CLICK_DAY: Final = date(2026, 11, 9)
+JAN, ANNA = Login("jan.testowy"), Login("anna.testowa")
+
+
+def _entering_facts() -> EnteringFacts:
+    """Fakty kliknięcia z numerem z zerem na początku we Wpisie (pamięć wpisów, pamięć zlecenia z innego dnia i od
+    innego Wykonawcy, numer bez zlecenia), decyzją „Zostaw moją”, mailem z nieczytelnym tematem i trzema mailami spoza
+    listy adresów, z których dwa mają ten sam Message-ID i różne adresy."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    zero, plain = OrderNumber("040000001"), OrderNumber("40000002")
+    twice, once = MailId("c" * 16), MailId("d" * 16)
+    entries = (ReportEntry(zero, Intent.YES, None, "montaż"), ReportEntry(plain, Intent.NO, None, "brak klienta"))
+    return EnteringFacts(
+        today=CLICK_DAY,
+        rollout_before=date(2026, 11, 2),
+        rollout=date(2026, 11, 2),
+        closed=("2_8_11_2026",),
+        memory_before=(OwnEntry(OrderKey(zero, CLICK_DAY, JAN), ReportColumn.SUCCESSFUL, "tak"),),
+        kept=(Kept(OrderKey(plain, CLICK_DAY, JAN), ReportColumn.COMPLETED, "brak klienta"),),
+        skipped=2,
+        mails=(
+            ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
+            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.NO_DATE, frozenset({plain})),
+            ReadStranger(twice, arrived, CLICK_DAY),
+            ReadStranger(twice, arrived, CLICK_DAY),
+            ReadStranger(once, arrived, CLICK_DAY),
+        ),
+        problems=(
+            UnknownSender(twice, SenderAddress("pierwszy@obcy.invalid"), CLICK_DAY),
+            UnknownSender(twice, SenderAddress("drugi@obcy.invalid"), CLICK_DAY),
+            UnknownSender(once, SenderAddress("trzeci@obcy.invalid"), CLICK_DAY),
+        ),
+        changes=(),
+        moves_before=(OwnMove(zero, date(2026, 11, 10), ANNA, CLICK_DAY, JAN, "Jan Testowy", arrived, True, False),),
+        orderless=(Orderless("Zlecenia", zero, None),),
+    )
+
+
+def _logged_reports(facts: EnteringFacts) -> dict[str, Any]:
+    logged = LoggedReports.of_run(None, facts)
+    assert logged is not None
+    loaded: dict[str, Any] = json.loads(logged.model_dump_json())
+    return loaded
+
+
+def test_wpisanie_raportow_z_logow_wraca_jako_te_same_fakty_klikniecia_z_numerem_z_zerem_z_wpisu() -> None:
+    """Logi mają numer pamięci wpisów, pamięci zleceń i numeru bez zlecenia tylko jako liczbę, a odczyt wejścia
+    kliknięcia z pliku Logów daje te same pamięć, decyzje „Zostaw moją”, maile i numery bez zlecenia co kliknięcie, z
+    zerem na początku z Wpisu. Mail spoza listy adresów dostaje po kolei jeden z różnych adresów jego Message-ID."""
+
+    facts = _entering_facts()
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved == SavedState(
+        facts.rollout_before, OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept)
+    )
+    assert [mail.read for mail in replayed.mails] == list(facts.mails)
+    assert [mail.sender for mail in replayed.mails] == [JAN, ANNA, 0, 1, 0]
+    assert replayed.orderless == facts.orderless
+    assert (replayed.today, replayed.closed, replayed.skipped, replayed.reservations) == (
+        facts.today,
+        facts.closed,
+        facts.skipped,
+        (),
+    )
+
+
+def _second_form(entering: dict[str, Any]) -> None:
+    entering["mails"][0]["entries"].append({"number": "0040000002", "verdict": "nie", "fault": None, "activities": ""})
+
+
+# Zmiana Logów Wpisania raportów z ``_entering_facts`` i początek powodu, dla którego odtworzenie nie ma wejścia.
+UNREPLAYABLE: Final[dict[str, tuple[Callable[[dict[str, Any]], None], str]]] = {
+    "numer_wpisu_z_maska": (
+        lambda entering: entering["mails"][0]["entries"][1].update(number="[telefon]"),
+        "Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]: 9 cyfr",
+    ),
+    "pamiec_bez_wpisu": (
+        lambda entering: entering["memory_before"][0].update(number=40000009),
+        "pamięć wpisów w Logach ma zlecenie 40000009 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę, a jego numeru "
+        "nie ma w dokładnie jednym Wpisie",
+    ),
+    "zostaw_moja_z_dwiema_postaciami_numeru": (
+        _second_form,
+        "decyzje „Zostaw moją” w Logach ma zlecenie 40000002 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", UNREPLAYABLE)
+def test_logi_wpisania_raportow_bez_numeru_zlecenia_nie_daja_wejscia_klikniecia(case: str) -> None:
+    """Numer Wpisu z maską strażnika i numer pamięci albo decyzji „Zostaw moją”, którego postaci nie wyznacza dokładnie
+    jeden Wpis, nie dają wejścia kliknięcia, tylko powód."""
+
+    change, reason = UNREPLAYABLE[case]
+    entering = _logged_reports(_entering_facts())
+    change(entering)
+
+    replayed = LoggedReports.model_validate(entering).replay()
+
+    assert isinstance(replayed, Unreplayable) and replayed.reason.startswith(reason), replayed
 
 
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(
