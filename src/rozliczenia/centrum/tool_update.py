@@ -63,6 +63,7 @@ import tempfile
 import time
 from typing import IO, Final, Literal, TypeGuard
 
+from rozliczenia.centrum.platform import NO_CONSOLE_WINDOW, run_console_program
 from rozliczenia.file_state import file_state, path_taken
 from rozliczenia.tool_files import REPOSITORY_URL, TOOL_ROOT, config_dir
 from rozliczenia.wall_clock import epoch_s
@@ -296,15 +297,8 @@ def pip_install(requirements: Path) -> bool:
 
     command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--quiet"]
     try:
-        result = subprocess.run(
-            [*command, "-r", str(requirements)],
-            cwd=requirements.parent,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=_INSTALL_TIMEOUT_S,
-            check=False,
-            creationflags=_NO_WINDOW,
+        result = run_console_program(
+            [*command, "-r", str(requirements)], cwd=requirements.parent, timeout_s=_INSTALL_TIMEOUT_S
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -821,10 +815,6 @@ class _Git:
 # Git bez pytań kończy tak, gdy serwer prosi o logowanie (GitHub także przy repozytorium, którego nie widzi).
 _LOGIN_SIGNS: Final = ("terminal prompts disabled", "could not read username", "could not read password", "authentication failed")
 
-# Pod pythonw każde polecenie konsolowe otworzyłoby w Windows własne okno konsoli.
-_NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-
-
 def _text_of(file: IO[bytes]) -> str:
     file.seek(0)
     return file.read().decode("utf-8", errors="replace")
@@ -872,7 +862,7 @@ if sys.platform == "win32":
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
-                creationflags=_NO_WINDOW | _CREATE_SUSPENDED,
+                creationflags=NO_CONSOLE_WINDOW | _CREATE_SUSPENDED,
             )
             try:
                 _join(job, process.pid)

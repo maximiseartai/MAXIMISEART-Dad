@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -18,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.centrum import launcher, restart_guardian
+from rozliczenia.centrum.platform import run_console_program
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, Folder, Shortcut, StartupShortcut, shortcuts
 
 from tests.fixtures.fake_cli import fake_cli
@@ -367,7 +370,28 @@ def test_centrum_od_opiekuna_ponownego_startu_nie_ma_konsoli_a_w_terminalu_i_z_p
     assert seen == {"opiekun": _NO_CONSOLE, "terminal": _CONSOLE, "potok": _CONSOLE}
 
 
+def test_program_konsolowy_z_centrum_ktory_sie_nie_konczy_jest_przerwany_po_limicie_czasu(tmp_path: Path) -> None:
+    alive = tmp_path / "zyje.txt"
+    # Kończy się sam po 15 s, więc bez limitu czasu test pada na braku TimeoutExpired, a nie wisi.
+    hanging = f"import pathlib, time\nfor _ in range(300):\n    pathlib.Path({str(alive)!r}).write_text('tak')\n    time.sleep(0.05)\n"
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_console_program([sys.executable, "-c", hanging], timeout_s=2)
+    alive.unlink(missing_ok=True)
+
+    assert not wait_for(alive.exists, 1, every=0.05), "Program konsolowy żyje po limicie czasu."
+
+
 def _read_shortcut(link: Path) -> dict[str, str]:
+    """Pola skrótu z WScript.Shell, który czyta ścieżkę w stronie kodowej ANSI: czyta kopię pod nazwą ASCII."""
+
+    with tempfile.TemporaryDirectory() as directory:
+        copy = Path(directory) / "skrot.lnk"
+        shutil.copyfile(link, copy)
+        return _read_ascii_shortcut(copy)
+
+
+def _read_ascii_shortcut(link: Path) -> dict[str, str]:
     script = (
         "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "
         "$l = (New-Object -ComObject WScript.Shell).CreateShortcut($env:SKROT); "
@@ -422,8 +446,8 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert (installed.returncode, installed_again.returncode) == (0, 0), installed.stdout + installed_again.stdout
     # Jeden skrót w każdym folderze, o tej samej nazwie: ponowny krok nadpisuje, a nie dokłada.
     on_desktop, in_startup = list(desktop.iterdir()), list(startup.iterdir())
-    assert len(on_desktop) == len(in_startup) == 1, (on_desktop, in_startup)
-    assert on_desktop[0].name == in_startup[0].name and on_desktop[0].suffix == ".lnk"
+    # Nazwa, którą tata widzi na pulpicie, w każdej stronie kodowej Windows (runner CI ma 1252 bez „ń”).
+    assert [path.name for path in on_desktop + in_startup] == ["Centrum rozliczeń.lnk"] * 2
     shortcut = _read_shortcut(on_desktop[0])
     from_startup = _read_shortcut(in_startup[0])
     target = Path(shortcut["TargetPath"])
@@ -455,9 +479,30 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert exit_code == 0
 
 
+# Flaga CREATE_NO_WINDOW z dokumentacji Windows (Process Creation Flags), wpisana tu, a nie wzięta z kodu Centrum.
+_CREATE_NO_WINDOW = 0x08000000
+
+
+@contextmanager
+def _started_programs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[int]]:
+    """Flagi ``creationflags`` każdego programu, który ten proces uruchomi w bloku."""
+
+    flags: list[int] = []
+    real_popen = subprocess.Popen
+
+    class RecordingPopen(real_popen):  # type: ignore[valid-type, misc]
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            flags.append(int(kwargs.get("creationflags") or 0))  # type: ignore[call-overload]
+            super().__init__(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "Popen", RecordingPopen)
+        yield flags
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="The Startup shortcut and pythonw.exe are Windows-only.")
 def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_instalacji_a_usuniety_recznie_widzi_jako_wylaczony(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     desktop, from_install, from_settings = tmp_path / "pulpit", tmp_path / "autostart-instalacji", tmp_path / "autostart"
     for folder in (desktop, from_install, from_settings):
@@ -481,8 +526,12 @@ def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_ins
     )
     client = CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=StartupShortcut(from_settings)))
 
+    launched: list[int] = []
+
     def switch(enabled: bool) -> str:
-        response = client.put("/api/settings/autostart", json={"enabled": enabled})
+        with _started_programs(monkeypatch) as flags:
+            response = client.put("/api/settings/autostart", json={"enabled": enabled})
+        launched.extend(flags)
         assert response.status_code == 200, response.text
         state: str = response.json()["settings"]["autostart"]["state"]
         return state
@@ -497,6 +546,8 @@ def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_ins
 
     assert installed.returncode == 0, installed.stdout
     assert switched == ["on", "on", "on", "off"]
+    # Centrum ze skrótu działa pod pythonw: PowerShell każdego włączenia startuje bez okna konsoli, które mignęłoby tacie.
+    assert launched == [_CREATE_NO_WINDOW] * 3
     # Dwa włączenia nadpisują jeden skrót o nazwie skrótu z instalacji, a nie dokładają drugiego.
     assert [path.name for path in created] == [SHORTCUT_FILE]
     assert shortcut == _read_shortcut(from_install / SHORTCUT_FILE)

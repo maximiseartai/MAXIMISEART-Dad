@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Final, Literal, Protocol, TextIO
@@ -72,6 +72,44 @@ class _NoAutostart:
 
 
 NO_AUTOSTART: Final[Autostart] = _NoAutostart()
+
+NO_CONSOLE_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+"""Flaga Windows, z którą program konsolowy uruchomiony z Centrum nie otwiera tacie okna konsoli; poza Windows 0.
+
+Centrum ze skrótu działa pod ``pythonw``, bez konsoli, więc każdy program konsolowy (PowerShell, pip, Git) dostałby
+od Windows własne okno, które mignie tacie i zabierze fokus przeglądarce. Programy czekające na wynik Centrum
+uruchamia przez ``run_console_program``, a ``Popen`` z innymi flagami dokłada do nich tę."""
+
+
+class ConsoleRun(Protocol):
+    def __call__(
+        self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Uruchamia program konsolowy i czeka na niego; ``subprocess.TimeoutExpired`` po ``timeout_s``."""
+
+
+def run_console_program(
+    command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Program konsolowy bez okna konsoli i bez wejścia, z wyjściem jako tekst UTF-8; wynik czyta wołający po kodzie.
+
+    Po ``timeout_s`` zabija program i rzuca ``subprocess.TimeoutExpired``, więc zawieszony program nie trzyma
+    wołającego (np. blokady Ustawień) bez końca.
+    """
+
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8-sig",
+        errors="replace",
+        timeout=timeout_s,
+        check=False,
+        creationflags=NO_CONSOLE_WINDOW,
+    )
 
 
 def has_console() -> bool:

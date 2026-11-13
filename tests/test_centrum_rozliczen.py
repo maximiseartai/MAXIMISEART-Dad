@@ -10,7 +10,8 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+import unicodedata
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, get_args
@@ -32,7 +33,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
-from rozliczenia.centrum.shortcut import SHORTCUT_FILE, system_autostart
+from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -1015,6 +1016,70 @@ def test_folder_autostartu_ktorego_nie_da_sie_sprawdzic_to_zdanie_przy_przelaczn
     assert shown == {"state": "unreadable", "reason": AUTOSTART_UNREADABLE}
     assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
     assert ([path.name for path in app.autostart.folder.iterdir()], len(history_rows(app))) == ([SHORTCUT_FILE], 1)
+
+
+class PowerShellWithCodePage1252:
+    """PowerShell z WScript.Shell na Windows ze stroną kodową ANSI 1252 (angielski Windows, runner CI): zapisuje skrót
+    pod nazwą przepuszczoną przez tę stronę kodową, w której nie ma „ń”, więc ``ń`` zostaje ``n``.
+
+    ``hangs``: PowerShell zapisuje skrót, ale nie kończy w limicie czasu, więc uruchomienie programu konsolowego
+    rzuca ``TimeoutExpired`` jak ``platform.run_console_program``.
+    """
+
+    def __init__(self) -> None:
+        self.hangs = False
+
+    def __call__(
+        self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        assert env is not None
+        link = Path(env["CENTRUM_SKROT_PLIK"])
+        in_code_page = unicodedata.normalize("NFKD", link.name).encode("cp1252", errors="ignore").decode("cp1252")
+        (link.parent / in_code_page).write_bytes(b"skrot")
+        if self.hangs:
+            raise subprocess.TimeoutExpired(list(command), timeout_s)
+        return subprocess.CompletedProcess(list(command), 0, "", "")
+
+
+def startup_shortcut(tmp_path: Path, powershell: PowerShellWithCodePage1252) -> tuple[CentrumClient, Path]:
+    folder, windowless_python = tmp_path / "autostart", tmp_path / "pythonw.exe"
+    folder.mkdir()
+    windowless_python.write_bytes(b"")
+    autostart = StartupShortcut(folder, program=windowless_python, run=powershell)
+    return CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=autostart)), folder
+
+
+def test_przelacznik_autostartu_zaklada_skrot_centrum_rozliczen_lnk_takze_gdy_strona_kodowa_windows_nie_ma_litery_n(
+    tmp_path: Path,
+) -> None:
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+    after_enable = sorted(path.name for path in folder.iterdir())
+    disabled = client.put("/api/settings/autostart", json={"enabled": False})
+
+    assert (enabled.status_code, enabled.json()["settings"]["autostart"]["state"]) == (200, "on"), enabled.text
+    assert after_enable == ["Centrum rozliczeń.lnk"]
+    assert (disabled.json()["settings"]["autostart"]["state"], list(folder.iterdir())) == ("off", [])
+
+
+def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrotu_a_ustawienia_dalej_odpowiadaja(
+    tmp_path: Path,
+) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.hangs = True
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+    powershell.hangs = False
+    after_refusal = list(folder.iterdir())
+    shown = client.get("/api/settings").json()["autostart"]
+    enabled = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (shown, after_refusal) == (AUTOSTART_SHOWN_OFF, [])
+    assert enabled.json()["settings"]["autostart"]["state"] == "on"
+    assert [path.name for path in folder.iterdir()] == ["Centrum rozliczeń.lnk"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Autostart Windows jest tylko na Windows; tu komputer bez niego.")
