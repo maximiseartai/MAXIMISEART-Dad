@@ -25,7 +25,7 @@ from typing import Final, Generic, Protocol, TypeVar
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.quantity_engine import (
     Component,
     DeviceList,
@@ -102,7 +102,7 @@ def _parse_devices(data: bytes | None) -> tuple[Component, ...] | FieldProblem:
 
 
 def _dump(document: dict[str, object]) -> str:
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
 def _entry_json(entry: dict[str, object]) -> str:

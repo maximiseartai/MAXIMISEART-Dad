@@ -3,9 +3,10 @@
 Narzędzie dla Maksa, poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypomnień o raporcie CI sprawdza tylko na
 ``AtrapaImap`` i ``AtrapaSmtp``, więc prawdziwy Gmail, INTERMAX taty, treść i stopkę sprawdza ta próba. Czyta to samo
 i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_reminders.due_reminders``): z folderu
-``--config`` dzień wdrożenia przypomnień (``przypomnienia-od.txt``), Ustawienia taty (``centrum-ustawienia.yaml``:
-INTERMAX i folder okresów), plik dostępu do skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców
-(``wykonawcy.yaml``) i stopkę taty (``stopka-przypomnien.txt``), potem Pliki zbiorcze okresów, INTERMAX tylko do
+``--config`` Przypomnienia o raporcie z Ustawień Centrum (``przypomnienia.yaml``: czy idą, dzień wdrożenia, pory,
+treść i stopka taty), Ustawienia taty (``centrum-ustawienia.yaml``: INTERMAX i folder okresów), plik dostępu do
+skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców (``wykonawcy.yaml``) i pory, przy których sprawdzała
+praca przypomnień (``przypomnienia-pory.json``: z nich pory „Wysłanych”), potem Pliki zbiorcze okresów, INTERMAX tylko do
 odczytu (także otwarty w Excelu), skrzynkę i jej „Wysłane” tylko do odczytu, i pyta rdzeń raportów, które
 przypomnienia należą się w tej chwili.
 
@@ -15,17 +16,19 @@ pierwsze należne przypomnienie (najstarszy dzień) z adresatami zamienionymi na
 Wykonawca. Na adres z listy adresów Wykonawców narzędzie nie wysyła nigdy: taki adres w ``--do`` to odmowa bez
 wysyłki. Odmowa porównuje cały adres bez względu na wielkość liter, więc inny adres tej samej skrzynki
 Wykonawcy (w Gmailu z ``+…`` albo z kropkami w części przed ``@``) przechodzi i mail do niego dojdzie: ``--do`` to
-zawsze własny adres Maksa. Bez pliku stopki narzędzie też nie wysyła, bo przypomnienie Wykonawcy poszłoby bez stopki.
+zawsze własny adres Maksa. Bez stopki w Ustawieniach narzędzie też nie wysyła, bo przypomnienie Wykonawcy poszłoby bez
+niej. Plik przypomnień zakłada start Centrum po Aktualizacji (zmiana z Wydania ``2026-11-przypomnienia``), a próba
+niczego nie zapisuje, więc w klonie przed pierwszym startem nowej wersji przypomnienia są dla niej wyłączone.
 
 Wynik (stdout) to jedna linia z samymi liczbami, bez adresów, loginów, nazw Wykonawców i numerów zleceń, i same znaki
 ASCII (polskie słowa bez polskich liter, jak próba IMAP ``tools/proba_skrzynki_raportow.py``):
 
     PROBA PRZYPOMNIEN OK | pora=<p> | przypomnienia=<n> | wykonawcy=<n> | dni=<n> | wyslano 1 na podany adres
 
-``pora`` to ``poranna`` (8:00–17:00), ``wieczorna`` (18:00–22:00) albo ``brak`` (17:00–18:00 i noc 22:00–8:00: wtedy
-przypomnienia nie idą i liczby to zera), ``przypomnienia`` to liczba przypomnień, które praca Centrum wysłałaby teraz, ``wykonawcy`` liczba ich
+``pora`` to ``poranna`` albo ``wieczorna`` według pór z Ustawień (domyślnie 8:00–17:00 i 18:00–22:00), albo ``brak``
+(poza porami, domyślnie 17:00–18:00 i noc 22:00–8:00: wtedy przypomnienia nie idą i liczby to zera), ``przypomnienia`` to liczba przypomnień, które praca Centrum wysłałaby teraz, ``wykonawcy`` liczba ich
 Wykonawców, a ``dni`` liczba dni, za które są. Porażka to ``PROBA PRZYPOMNIEN FAIL | <powód>`` (kod 1), każda z
-własnym powodem: brak pliku dnia wdrożenia, Ustawień taty, pliku dostępu albo adresów, nieczytelny folder okresów albo
+własnym powodem: przypomnienia wyłączone w Ustawieniach, brak Ustawień taty, pliku dostępu albo adresów, nieczytelny folder okresów albo
 INTERMAX (nazwa typu błędu), odrzucone hasło aplikacji albo niedostępna skrzynka przy odczycie skrzynki. Porażka po
 policzeniu przypomnień ma przed powodem te same liczby: brak stopki, adres Wykonawcy w ``--do``, odrzucone hasło
 aplikacji, sieć (nazwa typu błędu) albo inna odmowa Gmaila przy wysyłce. Hasła nie ma w wyniku ani wyjątkach: zna je
@@ -51,8 +54,9 @@ from typing import Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
-from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders
+from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
@@ -66,6 +70,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.worker_reports import (
     Login,
     Reminder,
+    ReminderSettings,
     SenderAddress,
     reminder_pora,
     reminder_subject,
@@ -80,7 +85,8 @@ _NOT_SENT: Final = "mail nie poszedl"
 def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) -> str:
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
-    read = due_reminders(now, read_snapshot(config), config, inbox, DadFiles())
+    snapshot = read_snapshot(config)
+    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, snapshot.reminders.schedule))
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"
@@ -88,7 +94,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
             return f"{FAIL} | {_unreachable(read, 'odczycie skrzynki')}"
         case DueReminders():
             pass
-    pora = reminder_pora(now)
+    pora = reminder_pora(now, snapshot.reminders.schedule)
     counts = (
         f"pora={'brak' if pora is None else pora.value} | przypomnienia={len(read.due)}"
         f" | wykonawcy={len({reminder.worker for reminder in read.due})} | dni={len({reminder.day for reminder in read.due})}"
@@ -96,8 +102,8 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     if target in read.addresses.logins:
         return f"{FAIL} | {counts} | podany adres jest na liscie adresow Wykonawcow, {_NOT_SENT}"
     if read.footer is None:
-        return f"{FAIL} | {counts} | brak stopki config/{tool_files.REMINDERS_FOOTER}, {_NOT_SENT}"
-    sent = inbox.send(_sample(read, now, target), now)
+        return f"{FAIL} | {counts} | brak stopki w Ustawieniach (config/{REMINDERS_FILE}), {_NOT_SENT}"
+    sent = inbox.send(_sample(read, snapshot.reminders, now, target), now)
     match sent:
         case MailSent():
             return f"{OK} | {counts} | wyslano 1 na podany adres"
@@ -107,19 +113,20 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
             return f"{FAIL} | {counts} | {_unreachable(sent, 'wysylce')}"
 
 
-def _sample(read: DueReminders, now: datetime, target: SenderAddress) -> Reminder:
+def _sample(read: DueReminders, reminders: ReminderSettings, now: datetime, target: SenderAddress) -> Reminder:
     """Pierwsze należne przypomnienie z jedynym adresatem ``target``, a bez należnych przypomnienie za wczoraj."""
 
     if read.due:
         return replace(read.due[0], recipients=(target,))
     yesterday = now.date() - timedelta(days=1)
-    return Reminder(Login("proba"), (target,), yesterday, reminder_subject(yesterday), reminder_text(yesterday, read.footer))
+    text = reminder_text(yesterday, reminders.text, reminders.footer)
+    return Reminder(Login("proba"), (target,), yesterday, reminder_subject(yesterday), text)
 
 
 def _not_read(read: NotRead) -> str:
     match read.cause:
         case "bez-wdrozenia":
-            return f"brak dnia wdrozenia przypomnien w config/{tool_files.REMINDERS_ROLLOUT}"
+            return f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"
         case "bez-ustawien":
             return "brak INTERMAX albo folderu okresow w Ustawieniach taty"
         case "bez-dostepu":
