@@ -9,11 +9,15 @@ grupy ``maszyneria``, bez prozy (``*.md``), którą spis zapachów liczy w słow
 wpis tylko przypisuje grupę liniom innego pliku.
 Grupę pliku daje wpis listy, który go nazywa albo jest jego katalogiem (wpis z ``/`` na końcu), a plik bez wpisu ma
 grupę z reguły katalogu ``REGULY``; plik spoza niej nie należy do żadnej grupy. Lista trzyma więc tylko wyjątki, a nowy
-plik bez wpisu nie wymaga zmiany listy. Plik, który istnieje w bazie scalenia, bierze grupę z listy bazy, a nowy plik
-z listy głowy, więc PR nie przenosi istniejącej maszynerii do weryfikacji własną listą.
-Granica: nowy test maszynerii bez wpisu liczy się jako test produktu, dopóki ktoś go nie dopisze do listy.
-PR, który dodaje linie maszynerii procesu i nie usuwa ich więcej, niż dodaje, wymaga zgody.
-Licznik drukuje też dwa stosunki na drzewie głowy według jej listy: linie testów zachowania ``src`` (pliki ``tests/``
+plik bez wpisu nie wymaga zmiany listy. Każdy plik, także nowy, bierze grupę z listy bazy PR: lista głowy nie zmienia
+liczenia PR, który ją zmienia.
+PR wymaga zgody, gdy dodaje linie maszynerii procesu i nie usuwa ich więcej, niż dodaje, gdy zmienia strażnika
+``STRAZNIK`` (listę, ten licznik albo jego workflow), bez względu na linie, i gdy przenosi plik, który git uznaje za
+przeniesiony (``git diff -M``), pod ścieżkę innej grupy niż jego stara ścieżka.
+Granica: licznik nie łapie maszynerii, która opuszcza grupę bez przeniesienia w oczach gita (plik usunięty i napisany od
+nowa pod ścieżką innej grupy) ani nowego testu maszynerii bez wpisu, który liczy się jako test produktu; obie postacie
+są próbkami ``ZNANE_LUKI`` w ``tests/test_rozmiar_pr.py``.
+Licznik drukuje też dwa stosunki na drzewie głowy według listy bazy: linie testów zachowania ``src`` (pliki ``tests/``
 grupy ``produkt``) do linii ``src`` i linie testów szopy (pozostałe pliki ``tests/``) do linii ``src``; testy produktu
 dostają tylko tę liczbę.
 
@@ -24,7 +28,7 @@ z prawem ``admin`` do repozytorium; PR bez tej potrzeby albo ze zgodą traci tę
 rozmiar i licznik. Niczego nie blokuje: etykiety to informacja dla autora, recenzenta i Maksa, nie warunek merge'u.
 
 Workflow biegnie na ``pull_request_target`` i na komentarzu z ``ZGODA SZOPA`` z kodem ``main`` i tylko czyta commity
-PR jako dane gita: nie uruchamia ich kodu, a listę głowy czyta jako TOML.
+PR jako dane gita: nie uruchamia ich kodu i nie czyta ich listy.
 
     .venv/bin/python tools/ci/rozmiar_pr.py --baza origin/main --glowa HEAD
 """
@@ -69,6 +73,8 @@ ETYKIETY = (*(etykieta for _, etykieta in PROGI), XXL)
 TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec.*")
 
 LISTA = "tools/lib/szopa.toml"
+# Konfiguracja licznika: PR, który zmienia któryś z tych plików, wymaga zgody bez względu na linie.
+STRAZNIK = (LISTA, "tools/ci/rozmiar_pr.py", ".github/workflows/rozmiar-pr.yml")
 PRODUKT = "produkt"
 WERYFIKACJA = "weryfikacja"
 MASZYNERIA = "maszyneria"
@@ -89,7 +95,7 @@ SLOWA_ZGODY = "ZGODA SZOPA"
 ZGODA = Etykieta(
     "wymaga ZGODA SZOPA",
     "5319e7",
-    "Dodaje linie maszynerii procesu i nie usuwa więcej (ADR 0034); zdejmuje ją ZGODA SZOPA od admina",
+    "Powiększa maszynerię procesu albo zmienia jej granicę (ADR 0034); zdejmuje ją ZGODA SZOPA od admina",
 )
 
 
@@ -204,24 +210,27 @@ def _stosunek(licznik: int, mianownik: int) -> str:
 
 @dataclass(frozen=True)
 class Szopa:
-    """Licznik szopy PR: linie maszynerii procesu z jej testami dodane i usunięte od bazy scalenia oraz linie ``src``,
-    testów zachowania ``src`` i testów szopy na drzewie głowy."""
+    """Licznik szopy PR: linie maszynerii procesu z jej testami dodane i usunięte od bazy scalenia, linie ``src``,
+    testów zachowania ``src`` i testów szopy na drzewie głowy oraz zmiany strażnika i grup plików, każda jednym
+    zdaniem."""
 
     dodane: int
     usuniete: int
     src: int
     testy_src: int
     testy_szopy: int
+    zmiany: tuple[str, ...] = ()
 
     @property
     def wymaga_zgody(self) -> bool:
-        return self.dodane > 0 and self.usuniete <= self.dodane
+        return bool(self.zmiany) or (self.dodane > 0 and self.usuniete <= self.dodane)
 
     def opis(self) -> str:
         return (
             f"maszyneria procesu z testami +{self.dodane} -{self.usuniete}"
             f", testy zachowania src / src {self.testy_src}/{self.src} = {_stosunek(self.testy_src, self.src)}"
             f", testy szopy / src {self.testy_szopy}/{self.src} = {_stosunek(self.testy_szopy, self.src)}"
+            + "".join(f", {zmiana}" for zmiana in self.zmiany)
         )
 
     def stan(self, zgoda: str | None) -> str:
@@ -232,18 +241,34 @@ class Szopa:
         return f"{SLOWA_ZGODY} od {zgoda}" if zgoda else f"wymaga {SLOWA_ZGODY}"
 
 
+def _zmiany(root: Path, lista: Mapping[str, str], baza: str, glowa: str) -> tuple[str, ...]:
+    """Zmiany strażnika ``STRAZNIK`` i pliki, które git uznaje za przeniesione pod ścieżkę innej grupy według ``lista``."""
+
+    zakres = f"{baza}...{glowa}"
+    straznik = repo.git(root, "diff", "--name-only", "-z", "--no-renames", zakres, "--", *STRAZNIK).split("\0")
+    pola = repo.git(root, "diff", "--name-status", "-z", "-M", "--diff-filter=R", zakres).split("\0")
+    grupy = ((pola[numer + 1], pola[numer + 2]) for numer in range(0, len(pola) - 1, 3))
+    return (
+        *(f"zmienia strażnika {sciezka}" for sciezka in straznik if sciezka),
+        *(
+            f"przenosi {stara} -> {nowa} ({_grupa(lista, stara) or 'poza szopą'} -> {_grupa(lista, nowa) or 'poza szopą'})"
+            for stara, nowa in grupy
+            if _grupa(lista, stara) != _grupa(lista, nowa)
+        ),
+    )
+
+
 def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
-    lista_bazy, lista_glowy = _lista(root, baza), _lista(root, glowa)
-    nowe = set(repo.git(root, "diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", f"{baza}...{glowa}").split("\0"))
+    lista = _lista(root, baza)
     dodane = usuniete = 0
     for sciezka, plus, minus in _pliki(root, "--ignore-all-space", "--ignore-blank-lines", f"{baza}...{glowa}"):
-        if sciezka != LISTA and _grupa(lista_glowy if sciezka in nowe else lista_bazy, sciezka) == MASZYNERIA:
+        if sciezka != LISTA and _grupa(lista, sciezka) == MASZYNERIA:
             dodane, usuniete = dodane + plus, usuniete + minus
     linie = {SRC: 0, PRODUKT: 0, MASZYNERIA: 0}
     for sciezka, plus, _ in _pliki(root, PUSTE_DRZEWO, glowa, "--", SRC, "tests/"):
-        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa(lista_glowy, sciezka) == PRODUKT else MASZYNERIA
+        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa(lista, sciezka) == PRODUKT else MASZYNERIA
         linie[rodzaj] += plus
-    return Szopa(dodane, usuniete, linie[SRC], linie[PRODUKT], linie[MASZYNERIA])
+    return Szopa(dodane, usuniete, linie[SRC], linie[PRODUKT], linie[MASZYNERIA], _zmiany(root, lista, baza, glowa))
 
 
 def zgoda(github: GitHub, pr: int, html: Callable[[str], str]) -> str | None:
