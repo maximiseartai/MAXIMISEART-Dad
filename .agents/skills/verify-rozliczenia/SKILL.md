@@ -207,8 +207,8 @@ pasted day ordered by Wykonawca and hour and the earlier days unchanged, and
 the metrics record. Route and counts are in `features/order-intermax.md`.
 How the write survives Excel, OneDrive and failures is `verify-zapis-intermax`.
 
-CI runs every CI variant in one command in its E2E step on Windows (Python 3.13 and
-3.14), so run it locally only to reproduce a red E2E step:
+CI runs every CI variant in one command in its E2E step on Windows (Python 3.13,
+tata's Python), so run it locally only to reproduce a red E2E step:
 
 ```powershell
 py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant all

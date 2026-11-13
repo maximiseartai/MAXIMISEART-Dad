@@ -125,7 +125,7 @@ def test_kazdy_plik_testow_biegnie_raz_na_kazdym_torze_a_udzialy_dlugiego_pliku_
         assert shares == [f"pytest:{LONG}#{share}/{count}" for share in range(1, count + 1)], shares
         # Cały plik albo jego udziały, a cały tylko wtedy, gdy zmieścił się w celu ściany.
         assert (f"pytest:{LONG}" in units) == (count == 0) == (1100 / plan_ci.WORKERY < longest <= plan.cel_s), (lane, plan.cel_s)
-    assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != "windows-3.14"]
+    assert [job.id for job in plan.zadania if "krok:timing" in job.jednostki] != [] == [job for job in plan.zadania if "krok:timing" in job.jednostki and job.tor != WINDOWS]
 
 
 def test_dlugi_plik_dzieli_sie_najwyzej_na_tyle_udzialow_ile_testow_policzyly_mu_runy_main_a_bez_tej_liczby_po_czasie(tmp_path: Path) -> None:
@@ -166,14 +166,14 @@ def test_sciana_pliku_testow_w_planie_to_jego_czas_na_czterech_vcpu_runnera_gith
         assert plan_ci.wycen(lane, [FILES[0]], _times(60.0)).podzielne == {f"pytest:{FILES[0]}": 15.0}, lane
 
 
-@pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_MAIN")])
+@pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_NOCY")])
 def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(skills: bool, event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     czasy = _with_skill_times(_times(per_file_s=150.0))
     steps = _skill_steps(list(SKILL_STEPS)) if skills else None
-    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
+    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN", "ZADANIA_RUNU_NOCY"):
         monkeypatch.setattr(plan_ci, name, 1000)
     unlimited = _plan(czasy, [*FILES, LONG], steps, event)
-    # Limit tego zdarzenia mieści połowę zadań runu bez limitu, a limit drugiego zdarzenia zostaje 1000.
+    # Limit tego zdarzenia mieści połowę zadań runu bez limitu, a limity pozostałych zdarzeń zostają 1000.
     jobs = plan_ci.STALE_ZADANIA + len(unlimited.zadania) // 2
     monkeypatch.setattr(plan_ci, limit, jobs)
     plan = _plan(czasy, [*FILES, LONG], steps, event)
@@ -192,9 +192,22 @@ def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(sk
     assert bool(plan.macierz("mutations")) == skills
 
 
-@pytest.mark.parametrize(("event", "limit"), [(Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN")])
+def test_push_do_main_bierze_25_zadan_runu_a_noc_20_ze_slotow_organizacji_dzielonych_z_runami_pull_request() -> None:
+    """Organizacja ma 60 zadań naraz: run pull request bierze najwyżej 40, push do ``main`` 25, żeby pełne CI ``main``
+    dawało werdykt szybciej (ADR 0020, Z6), a noc zostaje przy 20 (ADR 0021). Pracy jest tu więcej, niż mieści każdy z
+    tych limitów, więc każdy run wypełnia swój limit."""
+
+    czasy = _with_skill_times(_times(per_file_s=150.0))
+    steps = _skill_steps(list(SKILL_STEPS))
+
+    jobs = {event: _run_jobs(_plan(czasy, [*FILES, LONG], steps, event)) for event in Zdarzenie}
+
+    assert jobs == {Zdarzenie.PULL_REQUEST: 40, Zdarzenie.PUSH: 25, Zdarzenie.NOC: 20}
+
+
+@pytest.mark.parametrize(("event", "limit"), [(Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (Zdarzenie.NOC, "ZADANIA_RUNU_NOCY")])
 def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_i_podaje_ten_limit(event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
+    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN", "ZADANIA_RUNU_NOCY"):
         monkeypatch.setattr(plan_ci, name, 1000)
     # Trzy tory z pracą, a limit zdarzenia zostawia planowi jedno zadanie.
     monkeypatch.setattr(plan_ci, limit, plan_ci.STALE_ZADANIA + 1)
@@ -208,17 +221,17 @@ def test_kazdy_wybrany_krok_skilla_biegnie_raz_a_skrypt_dluzszy_od_zadania_w_cze
     plan = _plan(_with_skill_times(_times()), [*FILES, LONG], steps=_skill_steps(chosen))
     jobs = [job for job in plan.zadania if job.tor == MUTACJE.nazwa]
     units = Counter(unit for job in jobs for unit in job.jednostki)
-    parts = {key: sorted(unit for unit in units if unit.partition("#")[0] == f"skill:{key}") for key in SKILL_STEPS}
+    parts = {key: {unit for unit in units if unit.partition("#")[0] == f"skill:{key}"} for key in SKILL_STEPS}
 
     assert set(units.values()) == {1}
-    assert parts["verify-d/check_d_mutations.py"] == []
+    assert parts["verify-d/check_d_mutations.py"] == set()
     for key in chosen:
-        count = len(parts[key]) if "#" in parts[key][0] else 0
-        assert parts[key] == ([f"skill:{key}#{part}/{count}" for part in range(1, count + 1)] or [f"skill:{key}"]), parts[key]
+        count = sum("#" in unit for unit in parts[key])
+        assert parts[key] == ({f"skill:{key}#{part}/{count}" for part in range(1, count + 1)} or {f"skill:{key}"}), parts[key]
         assert count <= SKILL_STEPS[key][1], key
     # Podstawy się nie dzieli; skrypt dłuższy od zadania tak, ale nie na więcej części, niż ma mutacji.
     capacity = plan.cel_s - 43.0 - plan_ci.DOMYSLNIE.koniec_s
-    assert parts["verify-a/ci"] == ["skill:verify-a/ci"]
+    assert parts["verify-a/ci"] == {"skill:verify-a/ci"}
     assert len(parts["verify-a/check_a_mutations.py"]) == math.ceil(900.0 / capacity) > 1
     assert len(parts["verify-b/check_b_mutations.py"]) == 2 < 1100.0 / capacity
     # Części jednego skryptu biegną w różnych zadaniach, bo każda waży tyle, że dwie przekroczyłyby cel.
@@ -348,7 +361,7 @@ def test_tor_bez_pracy_nie_ma_zadan_a_bez_zadnej_pracy_macierz_jest_pusta(monkey
     empty = _plan(czasy_ci.Czasy((), {}), [], steps=[], tory=tuple(dataclasses.replace(lane, kroki=()) for lane in TORY))
     skipped = {"plan": "success", "pytest": "skipped", "mutations": "skipped"}
 
-    assert {job.tor for job in with_steps.zadania} == {"windows-3.13", "windows-3.14"}
+    assert {job.tor for job in with_steps.zadania} == {WINDOWS}
     assert (empty.macierz("pytest"), empty.macierz("mutations"), with_steps.macierz("mutations")) == ([], [], [])
     assert werdykt_required.werdykt(empty, skipped, []) == []
     assert werdykt_required.werdykt(with_steps, skipped, []) == [
@@ -402,7 +415,7 @@ def test_required_czerwienieje_gdy_jednostka_zadania_padla_w_ostatniej_probie_a_
 def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_ponowienie(event: Zdarzenie, minutes: int) -> None:
     """Zadania CI wykonują plan wczytany z ``plan.json``; zdarzenie z pliku rządzi ponowieniem i limitem zadania."""
 
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
     loaded = plan_runu.Plan.z_json(plan_runu.Plan(event, plan_ci.CEL_S, (), (job,)).do_json())
 
     assert (loaded.zdarzenie is event, loaded.limit_zadania_min(job)) == (True, minutes)
@@ -416,7 +429,7 @@ def test_plan_z_jednostka_spoza_postaci_klucza_jest_nieczytelny_zanim_zadanie_co
     """Zadanie i Required czytają jednostki planu tylko w postaci klucza ``<rodzaj>:<nazwa>[#k/n]``, więc plan z inną
     jednostką to ``ValueError`` przy wczytaniu, jak plan w innej wersji, a nie krok uruchomiony pod złą nazwą."""
 
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", unit), 401.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py", unit), 401.0)
 
     with pytest.raises(ValueError, match=re.escape(repr(unit.partition("#")[2]) if "#" in unit else repr(unit))):
         plan_runu.Plan.z_json(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)).do_json())
@@ -534,7 +547,7 @@ def test_zadanie_wykonuje_kroki_po_czerwonym_pytest_przerywa_krok_po_limicie_i_z
     quick = Krok("szybki", ("{python} zapisuje.py biegl",), (60.0,), 1.0)
     hung = Krok("wiszacy", ("{python} wisi.py", "{python} zapisuje.py nie-biegnie"), (1.0, 60.0), 1.0)
     monkeypatch.setattr(wykonaj_zadanie, "KROKI", {step.nazwa: step for step in (quick, hung)})
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_mini.py", "krok:wiszacy", "krok:szybki"), 1.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_mini.py", "krok:wiszacy", "krok:szybki"), 1.0)
     plan = plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,))
     (mini_repo / "plan.json").write_text(plan.do_json(), encoding="utf-8")
 
@@ -569,7 +582,7 @@ def test_zawieszony_test_konczy_krok_pytest_po_limicie_z_linia_limitu_a_nie_po_g
 
 @pytest.mark.parametrize(("sciana_s", "limit_s"), [(90.0, 600.0), (411.0, 1233.0)], ids=["krótkie zadanie: 10 min", "długie: 3 ściany"])
 def test_limit_kroku_pytest_to_trzy_sciany_zadania_z_planu_a_najmniej_dziesiec_minut(sciana_s: float, limit_s: float) -> None:
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py",), sciana_s)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py",), sciana_s)
 
     assert plan_runu.limit_pytest_s(job) == limit_s
 
@@ -577,7 +590,7 @@ def test_limit_kroku_pytest_to_trzy_sciany_zadania_z_planu_a_najmniej_dziesiec_m
 @pytest.mark.parametrize(("event", "minutes"), [(Zdarzenie.PULL_REQUEST, 106), (Zdarzenie.PUSH, 96), (Zdarzenie.NOC, 96)])
 def test_github_zabija_zadanie_pytest_dopiero_po_limitach_wszystkich_jego_krokow(event: Zdarzenie, minutes: int) -> None:
     # 401 s ściany: pytest 1203 s, tylko na pull request ponowienie 600 s, E2E 900 s, straż czasu 3000 s, narzut 600 s; w górę do minuty.
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py", "krok:e2e", "krok:timing"), 401.0)
     plan = plan_runu.Plan(event, plan_ci.CEL_S, (), (job,))
 
     assert [entry["limit_minut"] for entry in plan.macierz("pytest")] == [minutes]
@@ -662,7 +675,7 @@ def test_zadanie_zapisuje_wynik_testow_z_kwarantanny_xfail_to_porazka_a_xpass_pr
         f"        item.user_properties.append(({niestabilne_testy.WLASNOSC!r}, '#1 do 2026-11-01'))\n",
         encoding="utf-8",
     )
-    job = plan_runu.Zadanie("windows-3.14-1", "windows-3.14", "pytest (Python 3.14, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
 
     wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo)
     record = niestabilne_testy.kwarantanna_z_json(niestabilne_testy.KWARANTANNA.read_text(encoding="utf-8"))

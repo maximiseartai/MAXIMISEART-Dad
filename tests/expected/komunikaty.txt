@@ -1395,6 +1395,18 @@ worker_address_invalid [zdanie]
 worker_address_repeated [zdanie]
   Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy.
 
+worker_unknown [zdanie]
+  Tego Wykonawcy nie ma już na Liście Wykonawców. Zamknij formularz i sprawdź listę.
+
+worker_list_changed [zdanie]
+  Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz.
+
+worker_rename_old_files #1 [zdanie]
+  Rozliczenie pracownika ze starą nazwą jest już w okresie 08_14_09_2026. Ten plik zostanie ze starą nazwą, a nowa będzie w plikach następnych Przebiegów rozliczeń.
+
+worker_rename_old_files #2 [zdanie]
+  Rozliczenie pracownika ze starą nazwą jest już w 3 okresach, ostatnio 08_14_09_2026. Ten plik zostanie ze starą nazwą, a nowa będzie w plikach następnych Przebiegów rozliczeń.
+
 workers_not_moved [zdanie]
   Listy Wykonawców nie utworzono ze starego pliku worker_mapping.yaml w folderze config: plik nie jest poprawnym YAML. Dodaj Wykonawców w Ustawieniach.
 
@@ -1492,6 +1504,24 @@ workers_unusable #1 [HTTP 409]
 
 workers_unusable #2 [HTTP 409]
   Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie.
+
+worker_kept #1 [HTTP 409]
+  Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #2 [HTTP 409]
+  Ten login ma zlecenia w okresie 08_14_09_2026, więc zostaje przy Wykonawcy. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #3 [HTTP 409]
+  Nie wiadomo, czy Wykonawca ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #4 [HTTP 409]
+  Nie da się teraz przeczytać Rejestru zleceń, więc nie wiadomo, czy Wykonawca ma w nim zlecenia. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #5 [HTTP 409]
+  Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy ten login ma zlecenia w okresach. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
+
+worker_kept #6 [HTTP 409]
+  Nie da się teraz przeczytać Pliku zbiorczego okresu 01_07_09_2026, więc nie wiadomo, czy Wykonawca ma w nim zlecenia. Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą.
 
 report_entering_without_addresses [HTTP 409]
   Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.

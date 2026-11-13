@@ -39,7 +39,15 @@ from rozliczenia.centrum.settings.folders import (
 )
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
+from rozliczenia.centrum.settings.owner import (
+    CentrumSettings,
+    KeptInPeriods,
+    NotSaved,
+    NotUndoable,
+    Refused,
+    Saved,
+    SettingsView,
+)
 from rozliczenia.centrum.settings.reminders import EVENING, FIRST, MORNING, REMINDERS, parse_range, parse_time, settings_of
 from rozliczenia.file_state import file_state
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
@@ -56,11 +64,16 @@ from rozliczenia.worker_reports import (
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
-# Odmowy w OpenAPI: zła wartość (422) i wiersz Historii bez „Cofnij” (404), obie jako ``Problem``.
+# Odmowy w OpenAPI: zła wartość (422), wiersz Historii bez „Cofnij” (404) i „Cofnij”, które usunęłoby z Listy Wykonawców
+# login z okresu (409), wszystkie jako ``Problem``.
 _REFUSED: dict[int | str, dict[str, object]] = {
     422: {"model": common_contract.Problem, "description": "Zła wartość Ustawień Centrum z polem i zdaniem"}
 }
-_NOT_UNDOABLE: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
+_NOT_UNDOABLE: dict[int | str, dict[str, object]] = {
+    404: {"model": common_contract.Problem},
+    409: {"model": common_contract.Problem},
+    **_REFUSED,
+}
 
 
 def settings_router(
@@ -78,7 +91,7 @@ def settings_router(
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     def saved(edit: Callable[[FolderSettings], FolderSettings]) -> settings_contract.Choice:
-        return _choice(settings, settings.change(FOLDERS, edit))
+        return choice(settings, settings.change(FOLDERS, edit))
 
     @router.get("", operation_id="getSettings")
     def read() -> settings_contract.Settings:
@@ -136,7 +149,7 @@ def settings_router(
         result = settings.change(AUTOSTART, lambda _: change.enabled)
         if isinstance(result, NotSaved):
             raise refusal.autostart_not_changed()
-        return _choice(settings, result)
+        return choice(settings, result)
 
     @router.put("/inbox-password", operation_id="changeInboxPassword", responses=_REFUSED)
     def change_inbox_password(change: settings_contract.InboxPasswordChange) -> settings_contract.InboxPasswordSaved:
@@ -146,7 +159,7 @@ def settings_router(
         password = inbox.new_password(settings.view().inbox, change.password)
         if isinstance(password, FieldProblem):
             raise refusal.setting_refused(password)
-        saved = _choice(settings, settings.change(INBOX, lambda current: replace(current, password=password)))
+        saved = choice(settings, settings.change(INBOX, lambda current: replace(current, password=password)))
         return settings_contract.InboxPasswordSaved(settings=saved.settings, change=saved.change, login=inbox_login())
 
     @router.put("/reminders/enabled", operation_id="changeRemindersEnabled", responses=_REFUSED)
@@ -158,7 +171,7 @@ def settings_router(
             since = current.since or today() if change.enabled else current.since
             return replace(current, enabled=change.enabled, since=since)
 
-        return _choice(settings, settings.change(REMINDERS, switched))
+        return choice(settings, settings.change(REMINDERS, switched))
 
     @router.put("/reminders", operation_id="changeReminders", responses=_REFUSED)
     def change_reminders(form: reminders_contract.RemindersForm) -> settings_contract.Choice:
@@ -168,7 +181,7 @@ def settings_router(
         read = _form(form)
         if isinstance(read, FieldProblem):
             raise refusal.setting_refused(read)
-        return _choice(
+        return choice(
             settings,
             settings.change(
                 REMINDERS, lambda current: replace(current, schedule=read.schedule, text=read.text, footer=read.footer)
@@ -198,14 +211,15 @@ def settings_router(
         undone = settings.undo(change_id)
         if isinstance(undone, NotUndoable):
             raise refusal.settings_change_not_undoable() if undone.known else refusal.settings_change_unknown()
-        return _choice(settings, undone)
+        return choice(settings, undone)
 
     return router
 
 
-def _choice(settings: CentrumSettings, result: Saved | Refused | NotSaved) -> settings_contract.Choice:
-    """Ustawienia po zapisie z id wiersza Historii; zła wartość to odmowa z polem, a plik, którego nie da się
-    przeczytać albo zapisać, to odmowa z własnym tekstem."""
+def choice(settings: CentrumSettings, result: Saved | Refused | NotSaved | KeptInPeriods) -> settings_contract.Choice:
+    """Ustawienia po zapisie z id wiersza Historii; zła wartość to odmowa z polem, plik, którego nie da się przeczytać
+    albo zapisać, to odmowa z własnym tekstem, a usunięcie loginu z okresu z Listy Wykonawców to 409 z propozycją
+    Nieaktywnego."""
 
     match result:
         case Saved(change=change):
@@ -214,6 +228,8 @@ def _choice(settings: CentrumSettings, result: Saved | Refused | NotSaved) -> se
             raise refusal.setting_refused(problem)
         case NotSaved():
             raise refusal.settings_not_saved()
+        case KeptInPeriods(presence=presence, what=what):
+            raise refusal.worker_kept(presence, what)
 
 
 def _form(form: reminders_contract.RemindersForm) -> ReminderSettings | FieldProblem:

@@ -25,8 +25,9 @@ skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez ni
 każdego toru po podziale: poniżej niej ściana zadania nie zejdzie.
 Zadanie Mutation checks instaluje Chromium tylko wtedy, gdy ma krok skilla, którego skrypty importują Playwright, a
 zadanie pytest tylko wtedy, gdy ma plik testów, który sięga Chromium dla testów (``PRZEGLADARKA``). Gdy
-run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby ``ZADANIA_RUNU`` na pull request albo
-``ZADANIA_RUNU_MAIN`` na pushu i nocą, cel wszystkich torów rośnie co ``KROK_CELU_S``.
+run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby limit zadań swojego zdarzenia
+(``ZADANIA_RUNU`` na pull request, ``ZADANIA_RUNU_MAIN`` na pushu, ``ZADANIA_RUNU_NOCY`` nocą), cel wszystkich torów
+rośnie co ``KROK_CELU_S``.
 
 Plan (``tools/lib/plan_runu.py``) zapisuje się w pliku ``--wyjscie``, a macierze zadań w ``GITHUB_OUTPUT``: każde zadanie
 wykonuje swoje jednostki (``tools/ci/wykonaj_zadanie.py``), a ``Required CI status`` sprawdza je wobec planu
@@ -70,9 +71,11 @@ WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 CEL_S = 90.0
 KROK_CELU_S = 5.0
 # Organizacja ma 60 zadań naraz ze wszystkich workflowów (plan Team od 26.10): run pull request bierze najwyżej 40, a
-# run na main (push i noc) 20, więc największy run PR i pełne CI main startują razem bez kolejki.
+# noc 20 (ADR 0021). Push do main bierze 25 (ADR 0020, Z6): krótszy run main skraca czas od merge'a do werdyktu, a
+# największy run PR i pełne CI main razem przekraczają 60 tylko o 5 zadań, rzadko i krótko.
 ZADANIA_RUNU = 40
-ZADANIA_RUNU_MAIN = 20
+ZADANIA_RUNU_MAIN = 25
+ZADANIA_RUNU_NOCY = 20
 # Zadania ci.yml o stałej liczbie (plan, Frontend, Ruff i mypy, Required).
 STALE_ZADANIA = 4
 
@@ -226,12 +229,13 @@ def _kolejnosc(praca: Jednostka) -> tuple[bool, float, str, bool, str]:
 
 
 def _limit_runu(zdarzenie: Zdarzenie) -> int:
-    return ZADANIA_RUNU if zdarzenie is Zdarzenie.PULL_REQUEST else ZADANIA_RUNU_MAIN
+    return {Zdarzenie.PULL_REQUEST: ZADANIA_RUNU, Zdarzenie.PUSH: ZADANIA_RUNU_MAIN, Zdarzenie.NOC: ZADANIA_RUNU_NOCY}[zdarzenie]
 
 
 def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = ()) -> Plan:
-    """Najmniej zadań na tor przy celu ``CEL_S``; gdy run przekroczyłby limit zadań zdarzenia (``ZADANIA_RUNU`` albo
-    ``ZADANIA_RUNU_MAIN``), cel wszystkich torów rośnie o ``KROK_CELU_S``. Tor bez pracy nie ma zadań."""
+    """Najmniej zadań na tor przy celu ``CEL_S``; gdy run przekroczyłby limit zadań zdarzenia (``ZADANIA_RUNU``,
+    ``ZADANIA_RUNU_MAIN`` albo ``ZADANIA_RUNU_NOCY``), cel wszystkich torów rośnie o ``KROK_CELU_S``. Tor bez pracy nie
+    ma zadań."""
 
     limit = _limit_runu(zdarzenie) - STALE_ZADANIA
     if limit < sum(bool(wycena.podzielne or wycena.niepodzielne) for wycena in wyceny):

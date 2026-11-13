@@ -181,11 +181,9 @@ def drive(run: Run, page: Page) -> None:
         "the server offers no Aktualizacja narzędzia for the current tool",
     )
     run.capture(page, "11-konfiguracja-tylko-do-odczytu", full_page=False)
-    for section in ("Wzorce", "Wykonawcy"):
-        open_settings(page, section)
-        expect(window.locator("[data-slot=settings-section]").get_by_role("button")).to_have_count(0)
-    run.check(True, "the sections Wzorce and Wykonawcy offer no action on these files: Dad changes them elsewhere")
     open_settings(page, "Wzorce")
+    expect(window.locator("[data-slot=settings-section]").get_by_role("button")).to_have_count(0)
+    run.check(True, "the section Wzorce offers no action on the Wzorce: Dad changes them in Excel (Wykonawcy: wykonawcy.md)")
 
     run.step(feature, "konfiguracja-wzorzec-otwarty")
     collective = files["collective_template"]
@@ -269,7 +267,7 @@ def drive(run: Run, page: Page) -> None:
         expect(window.get_by_text(LAST_GOOD_CAPTION, exact=True)).to_be_visible()
         run.check(
             "Zapisz Ustawienia" not in window.locator("[data-slot=settings-section]").inner_text(),
-            "the read-only section Wykonawcy never asks to save Ustawienia, which does not rewrite the Lista Wykonawców",
+            "the section Wykonawcy never asks to save Ustawienia as a whole: only a change of a Wykonawca rewrites the list",
         )
         run.check(
             _listed(window) == run.fixture["workers"],
