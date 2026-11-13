@@ -4647,7 +4647,7 @@ export type ChangeFoldersData = {
 
 export type ChangeFoldersErrors = {
     /**
-     * Unprocessable Entity
+     * Zła wartość Ustawień Centrum z polem i zdaniem
      */
     422: Problem;
 };
@@ -4697,7 +4697,7 @@ export type UndoSettingsChangeErrors = {
      */
     404: Problem;
     /**
-     * Unprocessable Entity
+     * Zła wartość Ustawień Centrum z polem i zdaniem
      */
     422: Problem;
 };

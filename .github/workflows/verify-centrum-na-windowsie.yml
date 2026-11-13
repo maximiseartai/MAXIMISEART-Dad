@@ -22,7 +22,7 @@ on:
       - src/rozliczenia/centrum/platform.py
       - src/rozliczenia/centrum/shortcut.py
       - src/rozliczenia/centrum/centrum-rozliczen.ico
-      - src/rozliczenia/centrum/settings.py
+      - src/rozliczenia/centrum/settings/*.py
       - src/rozliczenia/centrum/settings_router.py
       - src/rozliczenia/centrum/server.py
       - src/rozliczenia/centrum/shutdown.py

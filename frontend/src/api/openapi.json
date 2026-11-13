@@ -1735,7 +1735,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
             "content": {
               "application/json": {
                 "schema": {
@@ -1808,14 +1808,14 @@
             "description": "Not Found"
           },
           "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
               }
-            },
-            "description": "Unprocessable Entity"
+            }
           }
         }
       }

@@ -29,7 +29,9 @@ _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
 # Odmowy w OpenAPI: zła wartość (422) i wiersz Historii bez „Cofnij” (404), obie jako ``Problem``.
-_REFUSED: dict[int | str, dict[str, object]] = {422: {"model": common_contract.Problem}}
+_REFUSED: dict[int | str, dict[str, object]] = {
+    422: {"model": common_contract.Problem, "description": "Zła wartość Ustawień Centrum z polem i zdaniem"}
+}
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
 
 
