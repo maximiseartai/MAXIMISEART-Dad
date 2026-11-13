@@ -90,7 +90,7 @@ def new_password(read: Read[InboxFile] | Unreadable, typed: str) -> str | FieldP
 
 def dump(inbox: InboxFile) -> str:
     lines = (inbox.address_line, inbox.password, *inbox.rest)
-    return ("﻿" if inbox.bom else "") + "".join(line + inbox.newline for line in lines)
+    return ("\ufeff" if inbox.bom else "") + "".join(line + inbox.newline for line in lines)
 
 
 def diff(before: InboxFile, after: InboxFile) -> tuple[KeyChange, ...]:

@@ -56,6 +56,12 @@ class Pace(Enum):
             time.sleep(int(path.read_text(encoding="utf-8")) / 1000)
 
 
+INBOX_ADDRESS = "raporty@przyklad.invalid"
+INBOX_PASSWORD = "nowehaslotaty"
+"""The skrzynka raportów the served Centrum logs in to (an ``AtrapaImap``, never Dad's Gmail) and the one password it
+accepts."""
+
+
 class Switch(Enum):
     """A failure the served Centrum scripts while this file exists; the drive turns it off by removing the file."""
 
@@ -64,6 +70,7 @@ class Switch(Enum):
     ARCHIVE_REFUSED = f"{_BOX}/odmawia-archiwum"  # every step of an Archiwum is refused (GitHub's 403)
     GITHUB_OFFLINE = f"{_GITHUB}/brak-sieci"  # GitHub's Wydania are out of reach
     REGISTER_FAULT = "awaria/odczyt-rejestru"  # reading the Rejestr zleceń raises an exception the process does not expect
+    INBOX_OFFLINE = "skrzynka-raportow/brak-sieci"  # the skrzynka raportów (its atrapa IMAP) is out of reach
 
     def file(self, root: Path) -> Path:
         return root / self.value
