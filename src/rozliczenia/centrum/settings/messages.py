@@ -263,15 +263,30 @@ def release_component_taken(component: str, owner: str, how: TakenAction) -> str
     """Składnik z Listy Urządzeń z Wydania, którego potrzebują Reguły ilości z Wydania, a którego każdy zapis ma składnik z
     listy taty, więc Centrum liczy bez niego; ``component``: jego pierwszy zapis, który ma składnik ``owner``."""
 
-    action = {
+    return (
+        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
+        f"Centrum liczy bez niego. Żeby liczyło z nim, {_freed(component, owner, how)}."
+    )
+
+
+def rules_wait_for_release_component(component: str, owner: str, how: TakenAction) -> str:
+    """Sekcja Reguły ilości i odmowa pierwszego zapisu reguł taty w miejsce Reguł ilości z Wydania, które mają składnik
+    z Listy Urządzeń z Wydania, a każdy jego zapis ma składnik ``owner`` z listy taty: plik reguł taty musi pasować do
+    jego listy, więc zapisze się dopiero, gdy tata zwolni zapis ``component`` w sekcji Urządzenia."""
+
+    return (
+        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
+        "Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia "
+        f"{_freed(component, owner, how)}."
+    )
+
+
+def _freed(component: str, owner: str, how: TakenAction) -> str:
+    return {
         "zapis": f"usuń zapis „{component}” ze składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
         "skladnik": f"usuń składnik „{owner}”: ołówek przy nim, potem „Usuń składnik”",
         "nazwa": f"zmień nazwę składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
     }[how]
-    return (
-        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
-        f"Centrum liczy bez niego. Żeby liczyło z nim, {action}."
-    )
 
 
 def needed_by_rules(file: str, component: str) -> str:

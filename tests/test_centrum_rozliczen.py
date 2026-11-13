@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
@@ -1204,6 +1205,39 @@ def test_lista_taty_zapisana_po_wydaniu_z_nowym_skladnikiem_regul_ma_go_i_znow_p
     assert [change["key"] for change in history_rows(app)[0]["changes"]] == ["urzadzenia.instalacja-reczna"]
 
 
+def _dad_list(app: Centrum) -> tuple[Component, ...] | None:
+    """Lista Urządzeń z pliku taty; ``None``: tata nie ma pliku."""
+
+    data = settings_bytes(app.tool.config / DEVICES_FILE)
+    if not isinstance(data, bytes):
+        return None
+    dad_list = DEVICES.parse(data)
+    assert isinstance(dad_list, tuple)
+    return dad_list
+
+
+def test_skladnik_wydania_zmieniony_w_sekcji_przed_zapisaniem_na_liscie_taty_zapisuje_sie_ze_zmiana(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Składnik z Wydania, którego lista taty jeszcze nie ma, sekcja pokazuje na liście, więc tata zmienia go jak każdy
+    inny: dopisany zapis trafia na listę taty razem ze składnikiem i liczy się w procesach."""
+
+    app = centrum(tmp_path)
+    nokia = device_form(app, "nokia")
+    assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
+    release_without_manual_installation()
+    form = device_form(app, "instalacja-reczna")
+
+    saved = app.client.put(f"{DEVICES_URL}/instalacja-reczna", json={**form, "other_spellings": [*form["other_spellings"], "ont x"]})
+
+    assert saved.status_code == 200, saved.text
+    dad_list = _dad_list(app)
+    assert dad_list is not None and Component("instalacja-reczna", ("instalacja ręczna", "wizja", "ont x")) in dad_list
+    assert [component.id for component, _ in read_snapshot(app.tool.config).quantity_rules.devices.find(["ont", "x"])[0]] == [
+        "instalacja-reczna"
+    ]
+
+
 def _collective_cell(centrum: PreparingCentrum, cell: str) -> object:
     workbook = load_workbook(centrum.fixture.collective_file_path, read_only=True)
     try:
@@ -1294,6 +1328,128 @@ def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_
     assert "ont-x" in read_snapshot(app.tool.config).quantity_rules.devices.ids()
 
 
+@pytest.mark.parametrize("others", [["wizja"], []], ids=["oba-zapisy-u-taty", "jeden-zapis-u-taty"])
+def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skladnikowi_wydania_jego_zapisy(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
+) -> None:
+    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez), a następne Wydanie daje te zapisy nowemu
+    składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: składnik taty znika, a składnik z Wydania dostaje
+    oba zapisy, w pliku taty i w procesach, i sekcja nie ma już zdania."""
+
+    app = centrum(tmp_path)
+    app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
+    [added] = history_rows(app)
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{added['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None
+    dad_list = _dad_list(app)
+    assert dad_list is not None and [component.spellings for component in dad_list if "instalacja ręczna" in component.spellings] == [
+        ("instalacja ręczna", "wizja")
+    ]
+    counted = read_snapshot(app.tool.config).quantity_rules
+    assert counted.devices.find(["instalacja", "ręczna"]) == ([(Component("instalacja-reczna", ("instalacja ręczna", "wizja")), 1)], True)
+    assert counted.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def _nokia_rule(app: Centrum, value: int) -> dict[str, Any]:
+    """Formularz reguły „nokia” z sekcji Reguły ilości z wartością ``value``: zmiana, której nic nie łączy ze składnikiem
+    z Wydania."""
+
+    rule = next(rule for rule in app.client.get(QUANTITY_RULES_URL).json()["rules"] if rule["id"] == "nokia")["rule"]
+    assert isinstance(rule, dict)
+    return {**rule, "action": {**rule["action"], "writes": [{**rule["action"]["writes"][0], "value": value}]}}
+
+
+def test_zmiana_reguly_przy_skladniku_wydania_ktorego_zapisy_ma_tata_czeka_na_zwolniony_zapis_tak_samo_w_podgladzie(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Tata ma oba zapisy nowego składnika następnego Wydania w swoim składniku, więc reguły z Wydania liczą bez niego.
+    Sekcja Reguły ilości mówi, że zmiana reguł czeka na zwolniony zapis, a zapis i podgląd zmiany reguły odmawiają tym
+    samym zdaniem, bez pliku reguł. Po działaniu ze zdania zmiana reguły się zapisuje, a sekcja ma regułę składnika z
+    Wydania."""
+
+    app = centrum(tmp_path)
+    added = app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": ["wizja"], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    release_without_manual_installation()
+    rule = _nokia_rule(app, 2)
+    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "zapis")
+
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
+    previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "change", "rule_id": "nokia", "rule": rule})
+
+    assert shown["rules_problem"] == {"field": None, "message": waiting}
+    assert "instalacja-reczna" not in [shown_rule["id"] for shown_rule in shown["rules"]]
+    assert (saved.status_code, saved.json()["message"]) == (422, waiting)
+    assert (previewed.status_code, previewed.json()["message"]) == (422, waiting)
+    assert settings_bytes(app.tool.config / RULES_FILE) is None
+    freed = app.client.put(f"{DEVICES_URL}/{own}", json={"name": "instalacja ręczna", "other_spellings": [], "group": None})
+    assert freed.status_code == 200, freed.text
+    saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["rules_problem"] is None
+    assert "instalacja-reczna" in [shown_rule["id"] for shown_rule in saved.json()["quantity_rules"]["rules"]]
+
+
+@pytest.mark.parametrize("others", [["wizja"], []], ids=["zderzenie", "skladnik-do-dodania"])
+def test_cofniecie_zmiany_reguly_po_usunieciu_pliku_regul_przy_skladniku_wydania_idzie_ta_sama_droga_co_zapis_reguly(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
+) -> None:
+    """Tata zmienił regułę dwa razy, Maks usunął jego plik reguł, a Wydanie daje nowy składnik reguł. „Cofnij” drugiej
+    zmiany zapisuje pierwszy plik reguł taty tak jak edytor: przy zderzeniu odmawia tym samym zdaniem bez zmiany plików,
+    a przy składniku z Wydania z wolnym zapisem zapisuje go najpierw na liście taty."""
+
+    app = centrum(tmp_path)
+    app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
+    for value in (2, 3):
+        assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, value)).status_code == 200
+    [second, *_] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    (app.tool.config / RULES_FILE).unlink()
+    release_without_manual_installation()
+    devices_before = settings_bytes(app.tool.config / DEVICES_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{second['id']}/undo")
+
+    if others:
+        waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "zapis")
+        assert (undone.status_code, undone.json()["message"]) == (422, waiting)
+        assert (settings_bytes(app.tool.config / RULES_FILE), settings_bytes(app.tool.config / DEVICES_FILE)) == (None, devices_before)
+    else:
+        assert undone.status_code == 200, undone.text
+        assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+        dad_list = _dad_list(app)
+        assert dad_list is not None and Component("instalacja-reczna", ("wizja",)) in dad_list
+
+
+def test_zmiana_reguly_przy_skladniku_wydania_spoza_listy_taty_zapisuje_go_na_liscie_taty_osobnym_wierszem(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Lista taty bez nowego składnika następnego Wydania (procesy biorą go z listy z Wydania). Pierwsza zmiana reguły
+    taty zapisuje się z listą, do której pasuje: najpierw składnik z Wydania na liście taty (wiersz jak „ołówek, Zapisz”
+    przy nim), potem reguła; podgląd tej zmiany przechodzi tak samo."""
+
+    app = centrum(tmp_path)
+    nokia = device_form(app, "nokia")
+    assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
+    release_without_manual_installation()
+    rule = _nokia_rule(app, 2)
+
+    previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "change", "rule_id": "nokia", "rule": rule})
+    saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=rule)
+
+    assert previewed.status_code == 200, previewed.text
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["quantity_rules"]["rules_problem"], saved.json()["quantity_rules"]["devices_problem"]) == (None, None)
+    assert [(row["file"], [change["key"] for change in row["changes"]]) for row in history_rows(app)[:2]] == [
+        (RULES_FILE, ["reguly.nokia"]),
+        (DEVICES_FILE, ["urzadzenia.instalacja-reczna"]),
+    ]
+
+
 # Zapisy, które tata daje w sekcji Urządzenia przed Wydaniem: oba zapisy składnika „instalacja ręczna”, który daje dopiero
 # następne Wydanie, i zapisy spoza obu list.
 _DAD_SPELLINGS = ("instalacja ręczna", "wizja", "ont nokia", "ont x")
@@ -1326,23 +1482,63 @@ def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | No
     raise AssertionError(f"zdanie bez działania: {message}")
 
 
-def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_jej_zapis_a_kazde_zdanie_sekcji_przechodzi(
+def _holds_dad_spellings(app: Centrum, context: object) -> None:
+    """Każdy zapis listy taty należy w procesach do składnika, któremu dał go tata: nigdy cała para z Wydania."""
+
+    counted = read_snapshot(app.tool.config).quantity_rules
+    for component in _dad_list(app) or ():
+        for spelling in component.spellings:
+            assert counted.devices.find(spelling.split()) == ([(component, 1)], True), (context, spelling)
+
+
+def _undo_holds(app: Centrum, row: dict[str, Any], context: object) -> None:
+    """„Cofnij” wiersza Listy Urządzeń przechodzi albo odmawia bez zmiany pliku zdaniem, które jest prawdą: przywrócony
+    składnik ma zapis, który ma już inny składnik listy taty (każdy zapis należy do jednego składnika)."""
+
+    before = settings_bytes(app.tool.config / DEVICES_FILE)
+    restored = {component.id: component.spellings for component in _dad_list(app) or ()}
+    for change in row["changes"]:
+        identifier = change["key"].removeprefix(f"{DEVICES_SECTION}.")
+        restored.pop(identifier, None)
+        if change["before"] is not None:
+            restored[identifier] = tuple(json.loads(change["before"])["zapisy"])
+    owners = Counter(spelling for spellings in restored.values() for spelling in spellings)
+    shared = sorted(spelling for spelling, count in owners.items() if count > 1)
+
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    if undone.status_code == 200:
+        return
+    assert undone.status_code == 422 and shared, (context, undone.text)
+    assert any(f"Zapis „{spelling}” ma już składnik" in undone.json()["message"] for spelling in shared), (context, undone.text)
+    assert settings_bytes(app.tool.config / DEVICES_FILE) == before, context
+
+
+def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_jej_zapis_a_zdanie_sekcji_i_cofniecie_przechodza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Tata zmienia Listę Urządzeń, także zapisami składnika, który daje dopiero następne Wydanie, a potem Wydanie daje
-    reguły z tym składnikiem. Każdy zapis listy taty należy w procesach dalej do składnika, któremu dał go tata (nigdy cała
-    para z Wydania), a działanie, które sekcja Urządzenia proponuje zdaniem, przechodzi; po tych działaniach liczą się
-    wszystkie Reguły ilości z Wydania."""
+    reguły z tym składnikiem i tata cofa w Historii swoje zmiany listy. Każdy zapis listy taty należy w procesach dalej do
+    składnika, któremu dał go tata (nigdy cała para z Wydania). „Cofnij” przechodzi albo odmawia bez zmiany zdaniem, które
+    jest prawdą, a działanie, które sekcja Urządzenia proponuje zdaniem, przechodzi i zmienia listę; po tych działaniach
+    liczą się wszystkie Reguły ilości z Wydania."""
 
     examples = itertools.count()
 
     @settings(derandomize=True, database=None, deadline=None, max_examples=30)
-    @given(st.lists(_DAD_LIST_STEP, min_size=1, max_size=4))
-    @example([("dodaj", ["instalacja ręczna"])])
-    @example([("dodaj", ["instalacja ręczna", "wizja"])])
-    @example([("dodaj", ["instalacja ręczna"]), ("dodaj", ["wizja"])])
-    @example([("zastap", "fut", "instalacja ręczna"), ("dopisz", "nokia", "wizja")])
-    def list_holds(steps: list[tuple[Any, ...]]) -> None:
+    @given(st.lists(_DAD_LIST_STEP, min_size=1, max_size=4), st.lists(st.integers(min_value=0, max_value=4), max_size=3))
+    @example([("dodaj", ["instalacja ręczna"])], [])
+    @example([("dodaj", ["instalacja ręczna", "wizja"])], [])
+    @example([("dodaj", ["instalacja ręczna"]), ("dodaj", ["wizja"])], [])
+    @example([("zastap", "fut", "instalacja ręczna"), ("dopisz", "nokia", "wizja")], [])
+    # Zapis ma składnik, którego potrzebuje reguła: zdanie każe zmienić jego nazwę, nie usunąć go.
+    @example([("zastap", "nokia", "instalacja ręczna"), ("dopisz", "gateway", "wizja")], [])
+    # Sonda recenzenta r2: „Cofnij” dodania własnego składnika taty z zapisami składnika z Wydania i bez jednego z nich.
+    @example([("dodaj", ["instalacja ręczna", "wizja"])], [0])
+    @example([("dodaj", ["instalacja ręczna"])], [0])
+    # „Cofnij” zmiany „fut”, gdy jego dawny zapis ma już nowy składnik taty: odmowa, która jest prawdą.
+    @example([("zastap", "fut", "instalacja ręczna"), ("dodaj", ["fut"])], [1])
+    def list_holds(steps: list[tuple[Any, ...]], undos: list[int]) -> None:
         _released(monkeypatch, _previous_release())
         app = centrum(tmp_path / str(next(examples)))
         for step in steps:
@@ -1356,29 +1552,31 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
                 case _:
                     raise AssertionError(step)
             assert response.status_code in (200, 422), response.text
-        data = settings_bytes(app.tool.config / DEVICES_FILE)
-        if not isinstance(data, bytes):
+        if _dad_list(app) is None:
             return
-        dad_list = DEVICES.parse(data)
-        assert isinstance(dad_list, tuple)
 
         _released(monkeypatch, DEFAULT_QUANTITY_RULES)
         counted = read_snapshot(app.tool.config).quantity_rules
         shown = [device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]]
 
         assert shown == [component.id for component in counted.devices.components], steps
-        for component in dad_list:
-            for spelling in component.spellings:
-                assert counted.devices.find(spelling.split()) == ([(component, 1)], True), (steps, spelling)
-        for _ in range(4):
-            problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
-            if problem is None:
-                break
-            method, url, body = _proposed(app, problem["message"])
-            response = app.client.request(method, url, json=body)
-            assert response.status_code == 200, (steps, problem, response.text)
-        assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None, steps
-        assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules, steps
+        _holds_dad_spellings(app, steps)
+        # „Cofnij” zmian listy sprzed Wydania, potem działania ze zdań sekcji, a drugi raz „Cofnij” także tych działań.
+        for _ in range(2):
+            for undo in undos:
+                rows = [row for row in history_rows(app) if row["file"] == DEVICES_FILE and row["undoable"] and not row["refused"]]
+                _undo_holds(app, rows[undo % len(rows)], (steps, undos))
+                _holds_dad_spellings(app, (steps, undos))
+            for _ in range(4):
+                problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
+                if problem is None:
+                    break
+                method, url, body = _proposed(app, problem["message"])
+                response = app.client.request(method, url, json=body)
+                assert response.status_code == 200, (steps, undos, problem, response.text)
+                assert response.json()["change"] is not None, (steps, undos, problem)
+            assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None, (steps, undos)
+            assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules, (steps, undos)
 
     list_holds()
 

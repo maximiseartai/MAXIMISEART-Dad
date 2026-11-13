@@ -636,3 +636,22 @@ def test_regula_bez_skladnika_traci_tylko_jego_wpis_i_warunek_a_liczy_jak_z_niez
     without = QuantityRules(without_components(rules, frozenset({"kabel"})), DeviceList(DEVICES.components[:3]))
 
     assert evaluate(without, _order(devices)) == evaluate(never_found, _order(devices))
+
+
+@pytest.mark.parametrize("devices", ["ruter", "2*ruter", "ruter dekoder", ""])
+def test_regula_wpisz_tylko_razy_skladnik_bez_niego_odpada_a_reszta_liczy_te_same_ilosci_co_z_nieznalezionym(devices: str) -> None:
+    """Reguła „wpisz”, której jedyny wpis to razy liczba składnika, a warunki go nie wymagają, bez tego składnika nie ma
+    czego wpisać, więc odpada, a reguły bez niego dalej powstają. Ilości i puste kolumny są te same co ze składnikiem
+    nigdy nieznalezionym; różni się tylko lista reguł, które zadziałały (z nim reguła wpisałaby zero)."""
+
+    rules = (
+        _rule("kable-przy-ruterze", ContainsComponent("router"), action=_fill("O", 1, Multiplier.COMPONENT, "kabel")),
+        _rule("ruter", ContainsComponent("router"), action=_fill("N", 1)),
+    )
+    never_found = QuantityRules(rules, DeviceList((*DEVICES.components[:3], Component("kabel", (_NEVER_SPELLED,)))))
+    without = QuantityRules(without_components(rules, frozenset({"kabel"})), DeviceList(DEVICES.components[:3]))
+
+    result, expected = evaluate(without, _order(devices)), evaluate(never_found, _order(devices))
+
+    assert [rule.id for rule in without.rules] == ["ruter"]
+    assert (type(result), result.quantities, result.leave_empty) == (type(expected), expected.quantities, expected.leave_empty)

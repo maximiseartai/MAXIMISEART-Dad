@@ -15,7 +15,10 @@ zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego ni
 uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
 dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania; składnik,
 którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest dobra (``quantity_rules``). Plik, który zaczyna
-pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści.
+pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści. Przy Regułach ilości z Wydania
+każdy zapis taty pary (formularz, „Cofnij”, „Dodaj” z podpowiedzi) idzie przez ``_dad_change``: zmiana listy dostaje
+listę uzupełnioną i zapisuje ją uzupełnioną, a pierwszy plik reguł taty zapisuje najpierw listę, do której pasuje, albo
+odmawia zdaniem o zapisie, który tata musi zwolnić (``quantity_rules.completing``, ``devices_for_dad_rules``).
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -115,6 +118,9 @@ from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, Quantit
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES,
     RULES,
+    DevicesEdit,
+    completing,
+    devices_for_dad_rules,
     devices_problem,
     quantity_rules,
     rules_problem,
@@ -156,8 +162,9 @@ class QuantityRulesView:
     """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, wyjątki Kontroli ilości (przy złym
     pliku ostatnie dobre) i problem każdego pliku (``None``: plik dobry). Plik reguł albo listy, który nie pasuje do
     drugiego, ma problem jak zły plik. Lista Urządzeń, której zapisy ma składnik z Listy Urządzeń z Wydania, a Reguły
-    ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``). ``source_rules``: reguły z
-    pliku albo z Wydania, z których powstały te liczone; zapis listy uzupełnia ją do nich (``completed_devices``)."""
+    ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``), a Reguły ilości zdanie, że
+    ich zmiana zapisze się dopiero ze zwolnionym zapisem (``devices_for_dad_rules``). ``source_rules``: reguły z pliku
+    albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
@@ -329,9 +336,21 @@ class CentrumSettings:
             if isinstance(keys, Unreadable):
                 self._log.settings_unreadable(cause="historia")
                 return NotSaved()
-            return self._change(
-                file, lambda current: edit(current, keys), undoes=None, source=ByDad(), undoable=True, checked=frozenset()
-            )
+            return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
+
+    def devices_for_rules(self, rules: tuple[QuantityRule, ...]) -> tuple[Component, ...] | FieldProblem:
+        """Lista Urządzeń, z którą zapis taty reguł ``rules`` (``change`` pliku reguł) da procesom pasującą parę, albo
+        odmowa tego zapisu, ta sama co w ``_dad_change``: podgląd zmiany reguły sprawdza nią to, co sprawdzi zapis."""
+
+        with self._lock:
+            if not self._release():
+                return self._quantity_rules().rules.devices.components
+            return devices_for_dad_rules(_usable(self._observe(DEVICES), DEVICES), rules, _usable(self._observe(RULES), RULES))
+
+    def _release(self) -> bool:
+        """Procesy liczą Regułami ilości z Wydania: tata nie ma pliku reguł."""
+
+        return self._places[RULES.name].read() is None
 
     def used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
         """Klucze, które plik ``file`` ma w wierszach Historii Ustawień, z każdego źródła i wyniku. Linia Historii, której
@@ -497,9 +516,10 @@ class CentrumSettings:
         devices = self._observe(DEVICES)
         exceptions = self._observe(EXCEPTIONS)
         usable_rules, usable_devices = _usable(rules, RULES), _usable(devices, DEVICES)
+        waiting = devices_for_dad_rules(usable_devices, usable_rules, usable_rules) if self._release() else None
         return QuantityRulesView(
             quantity_rules(usable_rules, usable_devices),
-            _problem(rules, RULES),
+            _problem(rules, RULES) or (waiting if isinstance(waiting, FieldProblem) else None),
             _problem(devices, DEVICES) or taken_problem(usable_rules, usable_devices),
             usable_rules,
             _usable(exceptions, EXCEPTIONS),
@@ -534,7 +554,7 @@ class CentrumSettings:
             devices,
             _usable(self._observe(RULES), RULES),
             _last_good_devices(self._memory.read(DEVICES.name)),
-            release=self._places[RULES.name].read() is None,
+            release=self._release(),
         )
 
     def _by_dad(
@@ -546,13 +566,60 @@ class CentrumSettings:
         with self._lock:
             removed = self._removed_logins(file, edit)
             if removed is None:
-                return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=frozenset())
+                return self._dad_change(file, edit, undoes=undoes, checked=frozenset())
             folders = _usable(self._observe(FOLDERS), FOLDERS)
         presence = self._periods.find(removed.logins, folders.register, folders.periods_directory)
         if not isinstance(presence, NotInPeriods):
             return KeptInPeriods(presence, removed.what)
         with self._lock:
-            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=removed.logins)
+            return self._dad_change(file, edit, undoes=undoes, checked=removed.logins)
+
+    def _dad_change(
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None, checked: frozenset[str]
+    ) -> Saved | Refused | NotSaved:
+        """Zapis taty pod blokadą; jedyna droga, którą zapis taty Listy Urządzeń albo Reguł ilości dostaje uzupełnienie
+        listy przy Regułach ilości z Wydania (tata nie ma pliku reguł). Zmiana listy dostaje listę uzupełnioną i zapisuje
+        ją uzupełnioną (``completing``). Pierwszy plik reguł taty zapisuje najpierw listę, do której pasuje, osobnym
+        wierszem Historii, albo odmawia zdaniem o zapisie, który tata musi zwolnić (``devices_for_dad_rules``)."""
+
+        paired: Mapping[str, Callable[..., Saved | Refused | NotSaved]] = {
+            DEVICES.name: self._dad_devices,
+            RULES.name: self._dad_rules,
+        }
+        write = paired.get(file.name)
+        if write is None or not self._release():
+            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+        return write(edit, undoes=undoes, checked=checked)
+
+    def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+        """Zmiana taty Listy Urządzeń przy Regułach ilości z Wydania: na liście uzupełnionej i zapisana uzupełniona."""
+
+        completed = completing(edit, _usable(self._observe(RULES), RULES))
+        return self._change(DEVICES, completed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+
+    def _dad_rules(
+        self,
+        edit: Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem],
+        *,
+        undoes: str | None,
+        checked: frozenset[str],
+    ) -> Saved | Refused | NotSaved:
+        """Pierwszy plik reguł taty w miejsce Reguł ilości z Wydania: najpierw lista, do której pasuje (osobny wiersz
+        Historii, jak „ołówek, Zapisz” przy składniku z Wydania), albo odmowa, gdy składnika nie da się dodać."""
+
+        release = _usable(self._observe(RULES), RULES)
+        rules = edit(release)
+        if isinstance(rules, FieldProblem):
+            return Refused(rules)
+        devices = _usable(self._observe(DEVICES), DEVICES)
+        needed = devices_for_dad_rules(devices, rules, release)
+        if isinstance(needed, FieldProblem):
+            return Refused(needed)
+        if needed != devices:
+            listed = self._change(DEVICES, lambda _: needed, undoes=None, source=ByDad(), undoable=True, checked=checked)
+            if not isinstance(listed, Saved):
+                return listed
+        return self._change(RULES, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
     def _removed_logins(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> RemovedLogins | None:
         """Loginy, które ``edit`` usunąłby teraz z Listy Wykonawców; ``None`` też przy odmowie, którą da ``_change``."""

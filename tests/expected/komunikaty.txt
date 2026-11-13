@@ -1473,6 +1473,15 @@ release_component_taken #2 [zdanie]
 release_component_taken #3 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego. Żeby liczyło z nim, zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
 
+rules_wait_for_release_component #1 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia usuń zapis „instalacja ręczna” ze składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+
+rules_wait_for_release_component #2 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia usuń składnik „instalacja ręczna”: ołówek przy nim, potem „Usuń składnik”.
+
+rules_wait_for_release_component #3 [zdanie]
+  Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
+
 quantity_rules_problem [zdanie]
   Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
 

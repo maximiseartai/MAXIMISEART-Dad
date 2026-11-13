@@ -42,12 +42,11 @@ from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
     RULES,
     RULES_SECTION,
-    completed_devices,
     device_ids,
     rule_ids,
 )
 from rozliczenia.collective_layout import QUANTITY_LETTERS
-from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, Component, QuantityRule, QuantityRules, RulesProblem
+from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, Component, DeviceList, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
@@ -124,19 +123,25 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         )
 
     def proposed(edit: contract.RuleEdit) -> tuple[QuantityRules, QuantityRules, str | None]:
-        """Reguły teraz i po zmianie ``edit`` sprawdzone przez silnik oraz id reguły, którą zmiana dodaje albo zmienia."""
+        """Reguły teraz i po zmianie ``edit`` sprawdzone przez silnik oraz id reguły, którą zmiana dodaje albo zmienia.
+        Zmiana idzie na reguły, które zmieni zapis (z pliku albo z Wydania), z listą, z którą zapisze je właściciel
+        (``CentrumSettings.devices_for_rules``), więc podgląd odmawia tak samo jak zapis."""
 
-        now = settings.quantity_rules().rules
+        view = settings.quantity_rules()
+        now = view.rules
         # Historia, której nie da się przeczytać, nie daje id do pominięcia: id nowej reguły w sprawdzeniu i podglądzie
         # może wtedy być inne niż przy zapisie, ale zapis i tak się wtedy nie uda (``change_with_used_keys``).
         used = settings.used_keys(RULES)
-        rules = edited(now.rules, edit, frozenset() if isinstance(used, Unreadable) else rule_ids(used))
+        rules = edited(view.source_rules, edit, frozenset() if isinstance(used, Unreadable) else rule_ids(used))
         if isinstance(rules, UnknownRule):
             raise refusal.quantity_rule_unknown()
         if isinstance(rules, FieldProblem):
             raise refusal.setting_refused(rules)
-        rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(now.rules, rules)
-        after = checked(rules, now.devices, rule_id)
+        rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(view.source_rules, rules)
+        devices = settings.devices_for_rules(rules)
+        if isinstance(devices, FieldProblem):
+            raise refusal.setting_refused(devices)
+        after = checked(rules, DeviceList(devices), rule_id)
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(after)
         return now, after, rule_id
@@ -177,12 +182,10 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
     def device_saved(edit: DeviceEdit) -> contract.QuantityRulesSaved:
         """Zmiana Listy Urządzeń: najpierw formularz i reguły, którymi liczy Centrum (odmowa z polem albo ze zdaniem
         reguły), potem zapis właściciela Ustawień na bieżącej wartości pliku, z id nowego składnika spoza kluczy
-        Historii (jak reguła). Lista, w której reguły z Wydania mają składnik z listy z Wydania (``completed_devices``),
-        zapisuje się razem z nim, uzupełniona przed zmianą i po niej: zmiana, która zwalnia zapis składnika z Wydania,
-        zapisuje go od razu."""
+        Historii (jak reguła). Listę uzupełnioną o składniki z Listy Urządzeń z Wydania daje zmianie i zapisuje
+        właściciel, jak przy każdym zapisie taty pary (``CentrumSettings._dad_change``)."""
 
-        view = settings.quantity_rules()
-        now = view.rules
+        now = settings.quantity_rules().rules
         # Id nowego składnika nie zmienia ani formularza, ani odmowy, więc sprawdzenie nie czyta Historii; id nadaje zapis.
         after = device_forms.edited(now.devices.components, edit, frozenset())
         if isinstance(after, UnknownComponent):
@@ -194,8 +197,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
             raise refusal.setting_refused(needed)
 
         def applied(current: tuple[Component, ...], keys: frozenset[str]) -> tuple[Component, ...]:
-            changed = device_forms.edited(completed_devices(current, view.source_rules), edit, device_ids(keys))
-            return completed_devices(changed, view.source_rules) if isinstance(changed, tuple) else current
+            changed = device_forms.edited(current, edit, device_ids(keys))
+            return changed if isinstance(changed, tuple) else current
 
         match settings.change_with_used_keys(DEVICES, applied):
             case Saved(change=change):

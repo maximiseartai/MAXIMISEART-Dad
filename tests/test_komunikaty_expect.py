@@ -193,6 +193,10 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
                 partial(settings_messages.release_component_taken, "instalacja ręczna", "instalacja ręczna", how)
                 for how in get_args(settings_messages.TakenAction)
             ],
+            "rules_wait_for_release_component": [
+                partial(settings_messages.rules_wait_for_release_component, "instalacja ręczna", "instalacja ręczna", how)
+                for how in get_args(settings_messages.TakenAction)
+            ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
             ],
