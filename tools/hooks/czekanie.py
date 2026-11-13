@@ -23,10 +23,8 @@ albo ``api`` z adresem ponowienia Actions (``ADRES_PONOWIENIA``).
 Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (kod 0).
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
-Ciała heredoców (skrypt Pythona, treść commitu), komentarze powłoki (od ``#`` na początku słowa do końca linii, a nie
-``#`` w słowie jak ``issue#12``, ``$(date)#``, ``$#`` i ``${#x}``, ani w nawiasach, ``${…}`` i backtickach) i napisy ze
-spacją w cudzysłowach (opis commitu, wiersz logu)
-hook pomija we wszystkich regułach, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
+Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
+hook pomija, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
 ``su -l -s /bin/sh root -c``).
 
@@ -35,6 +33,9 @@ Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie ur
 wzorca hook nie zna, łapie tylko przegląd. Tak samo ponowienie z ``eval "…"``, z polecenia złożonego ze zmiennych
 (``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
 skrypt albo program inny niż ``gh``.
+Komentarzy powłoki hook nie rozpoznaje, więc zakazane polecenie w komentarzu dostaje odmowę, a zakazane polecenie
+w następnej linii przechodzi, gdy komentarz albo napis ma ``<<EOF`` albo komentarz ma pojedynczy apostrof
+lub cudzysłów (``# it's``, także w backtickach); tak samo za ``\\\\`` na końcu linii.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
 """
@@ -66,12 +67,6 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 # Polecenia proste po ``_code``: między nimi stoją ``;``, ``&``, ``|``, nowa linia, nawiasy, ``$(`` i backtick.
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
-# Za tymi znakami zaczyna się słowo, więc ``#`` za nimi otwiera komentarz powłoki. Za ``)`` i backtickiem nie:
-# ``$(date)#`` i ``\`date\`#`` to dalej jedno słowo.
-WORD_BREAKS = frozenset(" \t\n;&|")
-# Pary, w których ``#`` na początku słowa nie zawsze jest komentarzem do końca linii: ``(…)`` z ``$(``, ``$((``,
-# ``((`` i ``[[ =~ ( ]]``, ``${…}``, ``$[…]`` (arytmetyka, w zsh ``$[ # ]`` to liczba) i backticki.
-OPENERS_CLOSERS = frozenset({"()", "{}", "[]", "``"})
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -168,9 +163,9 @@ def _without_heredocs(command: str) -> str:
 
 
 def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tuple[str, int]:
-    """Polecenie bez komentarzy i tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
+    """Polecenie bez tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
 
-    Proza w komentarzu i w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
+    Proza w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
     Zwraca też indeks za ``)``, która zamyka ``$(`` przy ``inside_substitution``.
     """
 
@@ -179,23 +174,11 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     # Napis przyklejony do skryptu ``-c`` to jego dalszy ciąg: w ``bash -c '… perl -e '\''select(…)'\''; done'``
     # ``done`` stoi w trzecim napisie.
     depth, index, script_end = 0, start, -1
-    # Komentarz hook pomija tylko tam, gdzie bash i zsh na pewno go widzą: ``#`` na początku słowa poza parami ``openers``
-    # i poza podstawieniem. Napis ``"…"`` z ``$`` albo backtickiem bash czyta inaczej niż ``_quoted`` (``"${x:-"…"}"``),
-    # więc za nim hook przestaje pomijać komentarze: zostawiony ``#`` kończy się co najwyżej odmową.
-    comments, word_starts = not inside_substitution, True
-    openers: list[str] = []
     while index < len(command):
         char = command[index]
-        if char == "#" and word_starts and comments and not openers:
-            newline = command.find("\n", index)
-            index = len(command) if newline < 0 else newline
-            continue
-        word_starts = char in WORD_BREAKS
         # ``$$`` to numer procesu, więc ``'`` za nim zaczyna zwykły napis, a nie ``$'…'``.
-        if command.startswith(("$$", "${", "$["), index):
-            if command[index + 1] != "$":
-                openers.append(command[index + 1])
-            kept.append(command[index : index + 2])
+        if command.startswith("$$", index):
+            kept.append("$$")
             index += 2
             continue
         ansi = command.startswith("$'", index)
@@ -211,8 +194,6 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
             continue
         if char in "'\"":
             literal, end = _quoted(command, index, ansi)
-            if char == '"' and any(sign in command[index:end] for sign in "$`"):
-                comments = False
             script = scripts.is_script(index, end)
             if index == script_end:
                 kept.append(command[index + 1 : end])
@@ -230,10 +211,6 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
             depth -= 1
         elif char == "(":
             depth += 1
-        if char in "(`" and openers[-1:] != ["`"]:
-            openers.append(char)
-        elif openers and openers[-1] + char in OPENERS_CLOSERS:
-            openers.pop()
         kept.append(char)
         index += 1
     return "".join(kept), index
