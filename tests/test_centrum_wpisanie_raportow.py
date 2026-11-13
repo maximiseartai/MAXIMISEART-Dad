@@ -39,9 +39,14 @@ from rozliczenia.tool_files import (
     REPORT_ENTERING_RESULT,
     REPORT_ENTERING_STATE,
 )
+from rozliczenia.centrum import diagnosis_messages
+from rozliczenia.centrum.contract.common import Message
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -921,6 +926,23 @@ def test_bez_pliku_hasla_albo_adresow_wykonawcow_karta_mowi_czego_brakuje_a_star
     assert (started.status_code, started.json()) == (409, {"message": sentence})
     assert centrum.fake_inbox.days == []
     assert centrum.run_logs() == []
+
+
+def test_klikniecie_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
+    """DESIGN §4.3 dla Wpisania raportów (przegląd #1569 r2, D1): plik Listy Wykonawców dostaje złą treść po odczycie
+    Ustawień, więc kliknięcie wpisuje raporty adresów z ostatniej dobrej listy, a karta mówi o tym ostrzeżeniem startu."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana routera")])
+    assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    view = _finished(centrum)
+
+    warning = Message.of(
+        diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES))
+    ).model_dump()
+    assert (view["result"]["warnings"][:1], warning["setting"]) == ([warning], "wykonawcy")
+    assert _cells(centrum.register)[40000001] == ("tak", "wymiana routera")
 
 
 def test_nieczytelny_plik_hasla_to_nie_brak_pliku_karta_bez_blokady_a_klikniecie_zatrzymuje_do_maksa_bez_odczytu_skrzynki(
@@ -3077,6 +3099,33 @@ def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_
     ]
 
 
+@pytest.mark.parametrize(("active", "reminders"), [(False, True), (True, False)], ids=["nieaktywny", "bez-przypomnien"])
+def test_przypomnienia_ida_tylko_do_aktywnych_wykonawcow_z_wlaczonymi_przypomnieniami(
+    tmp_path: Path, active: bool, reminders: bool
+) -> None:
+    """ADR 0032: Nieaktywny Wykonawca i Wykonawca z wyłączonymi przypomnieniami zostają na Liście Wykonawców z adresem,
+    ale Przypomnienia o raporcie dostaje tylko aktywny z włączonymi (przegląd #1568 r4); Jan ma zlecenia dnia tak samo
+    jak Anna."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    listed = WorkerList.of(
+        [
+            WorkerEntry(["jan.testowy"], WORKERS["jan.testowy"], [JAN], active=active, reminders=reminders),
+            WorkerEntry(["anna.kowalska"], WORKERS["anna.kowalska"], [ANNA]),
+        ]
+    )
+    assert isinstance(listed, WorkerList), listed
+    write_worker_list(centrum.tool.worker_list, listed)
+    centrum.moment.append(datetime(2026, 11, 10, 8, 30))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska"]
+
+
 def _old_version_sends(tmp_path: Path, at: datetime) -> list[tuple[Reminder, datetime]]:
     """Przypomnienia, które stara wersja (stałe pory z ADR 0030) wysłała o ``at`` do Anny i Jana, jak w jej „Wysłanych”."""
 
@@ -3155,6 +3204,41 @@ def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_s
         ("anna.kowalska", time(9, 30)),
         ("jan.testowy", time(9, 30)),
     ]
+
+
+def test_zegar_gmaila_spieszacy_sie_o_poltorej_minuty_nie_gubi_por_sprzed_zmiany(tmp_path: Path) -> None:
+    """Zapas zegara (``CLOCK_MARGIN``) w drugą stronę (przegląd #1568 r3, D1): przy porannej 8:00–9:00 i wieczornej
+    9:00–22:00 przypomnienia idą o 8:30 i o 9:29 (wieczorna). Tata przesuwa granicę pór na 9:40, sprawdzenie o 9:30
+    zapisuje nowe pory, a zegar Gmaila spieszy się o półtorej minuty, więc „Wysłane” mają 9:30:30, już po zapisie
+    nowych pór, w których to poranna. Te maile dalej zamykają wieczorną przy porach sprzed zmiany, więc sprawdzenie
+    o 9:45 w nowej wieczornej nie wysyła drugiego."""
+
+    mailbox = SentFolderMailbox(gmail_clock=timedelta(seconds=90))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(
+        morning={"start": "08:00", "end": "09:00"}, evening={"start": "09:00", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    centrum.client.start()
+    for moment in (datetime(2026, 11, 10, 8, 30), datetime(2026, 11, 10, 9, 29)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    later = _reminders_form(
+        morning={"start": "08:00", "end": "09:40"}, evening={"start": "09:40", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    for moment in (datetime(2026, 11, 10, 9, 30), datetime(2026, 11, 10, 9, 45)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(8, 30)),
+        ("jan.testowy", time(8, 30)),
+        ("anna.kowalska", time(9, 29)),
+        ("jan.testowy", time(9, 29)),
+    ], "drugi mail wieczornej"
 
 
 _NAIVE_SCHEDULES = b"""{"schema_version": 1,
