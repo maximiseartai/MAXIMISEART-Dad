@@ -35,7 +35,7 @@ from rozliczenia.centrum.tool_update import (
 from rozliczenia import tool_files
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.centrum import ToolDirectory
@@ -105,6 +105,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "SETTINGS": tool_files.CONFIG_DIR / SETTINGS_FILE,
         "SETTINGS_HISTORY": tool_files.CONFIG_DIR / HISTORY_FILE,
         "SETTINGS_MEMORY": tool_files.CONFIG_DIR / MEMORY_DIRECTORY,
+        "SETTINGS_RELEASE_CHANGES": tool_files.CONFIG_DIR / MEMORY_DIRECTORY / APPLIED_FILE,
         "SETTLEMENT_METRICS": tool_files.SETTLEMENT_METRICS,
         "PREPARATION_METRICS": tool_files.PREPARATION_METRICS,
         "INTERMAX_METRICS": tool_files.INTERMAX_METRICS,
@@ -121,6 +122,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "SETTINGS": "config/centrum-ustawienia.yaml",
         "SETTINGS_HISTORY": "config/historia-ustawien.jsonl",
         "SETTINGS_MEMORY": "config/ustawienia-pamiec",
+        "SETTINGS_RELEASE_CHANGES": "config/ustawienia-pamiec/zmiany-z-wydan.json",
         "SETTLEMENT_METRICS": ".rozliczenia-metrics.jsonl",
         "PREPARATION_METRICS": ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
         "INTERMAX_METRICS": ".uporzadkowanie-intermax-metrics.jsonl",

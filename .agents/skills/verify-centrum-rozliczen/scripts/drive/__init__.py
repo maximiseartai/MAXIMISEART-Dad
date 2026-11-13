@@ -64,6 +64,7 @@ FEATURES = (
             "315-ustawienia-blad-w-oknie",
             "308-ustawienia-historia",
             "309-ustawienia-historia-waska",
+            "340-ustawienia-historia-wydanie",
             "310-ustawienia-odmowa-przy-polu",
             "311-ustawienia-odmowa-waska",
             "312-ustawienia-zle-pole",
@@ -74,11 +75,11 @@ FEATURES = (
     Feature(
         "reguly-ilosci",
         (
-            "316-reguly-ilosci-szerokie",
-            "317-reguly-ilosci-bez-wzorca",
-            "318-urzadzenia-szerokie",
-            "319-reguly-ilosci-waskie",
-            "320-urzadzenia-waskie",
+            "350-reguly-ilosci-szerokie",
+            "351-reguly-ilosci-bez-wzorca",
+            "352-urzadzenia-szerokie",
+            "353-reguly-ilosci-waskie",
+            "354-urzadzenia-waskie",
         ),
     ),
     Feature(

@@ -28,14 +28,14 @@ the server shows the Reguły ilości z Wydania, and the fixture's Wzorzec pliku 
 - **Sentences.** `run.api` reads `/api/settings/quantity-rules` (evidence `api/reguly-ilosci.json`). `open_settings`
   on `Reguły ilości`: the sentence about the next Przygotowanie; the regions are named by the three groups in order; the
   count of their list items equals the server's rules, each ending with `.`; the item with the `nokia` sentence
-  contains `Montaż ONT`. Screenshot `316`.
+  contains `Montaż ONT`. Screenshot `350`.
 - **Without the Wzorzec.** `move` the Wzorzec pliku zbiorczego beside itself, reopen the section: the `nokia` item reads
-  exactly `… w Z.`. Screenshot `317`. The Wzorzec goes back in `finally`.
+  exactly `… w Z.`. Screenshot `351`. The Wzorzec goes back in `finally`.
 - **Urządzenia.** `open_settings` on `Urządzenia`: list `Lista Urządzeń` has the server's number of items; item
-  `gateway` contains `Też: zyxel` and `Router`. Screenshot `318`.
+  `gateway` contains `Też: zyxel` and `Router`. Screenshot `352`.
 - **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/reguly-ilosci`, then the combobox to `Urządzenia`: both sections show all items and the page has no horizontal scroll.
-  Screenshots `319`, `320`. The viewport goes back to 1440×1000 (also in `finally`).
-- **Proof.** Screenshots `316`–`320` and the checks in `drive.txt`.
+  Screenshots `353`, `354`. The viewport goes back to 1440×1000 (also in `finally`).
+- **Proof.** Screenshots `350`–`354` and the checks in `drive.txt`.
 
 ## Gotchas
 

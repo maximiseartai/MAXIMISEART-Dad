@@ -53,7 +53,7 @@ def drive(run: Run, page: Page) -> None:
     )
     expect(_nokia(window)).to_contain_text(f"{NOKIA}{Z_NAME}")
     run.check(True, f"column Z shows its price-list name „{Z_NAME}” next to the letter")
-    run.capture(page, "316-reguly-ilosci-szerokie")
+    run.capture(page, "350-reguly-ilosci-szerokie")
 
     run.step(FEATURE, "reguly-bez-wzorca")
     aside = template.with_name(f"{template.stem} (obok){template.suffix}")
@@ -63,7 +63,7 @@ def drive(run: Run, page: Page) -> None:
         window = open_settings(page, "Reguły ilości")
         expect(_nokia(window)).to_have_text(f"{NOKIA}Z.")
         run.check(True, "without a readable Wzorzec pliku zbiorczego the column is its letter alone")
-        run.capture(page, "317-reguly-ilosci-bez-wzorca")
+        run.capture(page, "351-reguly-ilosci-bez-wzorca")
     finally:
         move(aside, template)
     close_settings(page)
@@ -76,7 +76,7 @@ def drive(run: Run, page: Page) -> None:
     expect(gateway).to_contain_text("Też: zyxel")
     expect(gateway).to_contain_text("Router")
     run.check(True, f"the Lista Urządzeń shows its {len(devices)} components with other spellings and group")
-    run.capture(page, "318-urzadzenia-szerokie")
+    run.capture(page, "352-urzadzenia-szerokie")
     close_settings(page)
 
     run.step(FEATURE, "waskie-okno")
@@ -92,10 +92,10 @@ def drive(run: Run, page: Page) -> None:
             "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
         )
         run.check(True, "on a narrow window the sentences wrap without a horizontal scroll")
-        run.capture(page, "319-reguly-ilosci-waskie", full_page=False)
+        run.capture(page, "353-reguly-ilosci-waskie", full_page=False)
         window = open_settings(page, "Urządzenia")
         expect(window.get_by_role("list", name="Lista Urządzeń").get_by_role("listitem")).to_have_count(len(devices))
-        run.capture(page, "320-urzadzenia-waskie", full_page=False)
+        run.capture(page, "354-urzadzenia-waskie", full_page=False)
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
