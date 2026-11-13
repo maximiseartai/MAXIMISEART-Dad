@@ -44,7 +44,7 @@ Plik, któremu PR usunął testy poniżej liczby jego udziałów, wciąż może 
 
 Koszt pliku testów (``KosztyPlikow``) to jego zmierzona praca, a pliku bez pomiaru mediana zmierzonych plików toru:
 tak ważą pliki plan CI, ``tools/szybko.py`` i test scalenia ``tools/scal_pr.py``. Dwa ostatnie liczą pracę pytestu
-na Macu agenta (``lokalne``): tor ``TOR_LOKALNY`` i ``WORKERY_LOKALNE`` workerów xdist. Moduł używa tylko biblioteki standardowej, bo plan CI i zapis czasów
+na Macu agenta (``lokalne``): tor ``TOR_LOKALNY`` i ``workery_lokalne()`` workerów xdist. Moduł używa tylko biblioteki standardowej, bo plan CI i zapis czasów
 biegną systemowym ``python3`` runnera.
 """
 
@@ -56,6 +56,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import io
 import json
+import os
 from pathlib import Path
 import statistics
 import subprocess
@@ -87,6 +88,12 @@ GITHUB = GhApi(limit_s=LIMIT_GH_S)
 # Błędy pobrania, po których odczyt bierze kopię z katalogu: sieć i ``gh`` (``BladApi`` z ``GhApi``, limit czasu),
 # odpowiedź API w innym kształcie i artefakt bez pliku.
 _BLEDY_POBRANIA = (OSError, subprocess.SubprocessError, RuntimeError, ValueError, KeyError, TypeError, zipfile.BadZipFile)
+
+
+def workery_lokalne() -> int:
+    """Workery xdist kroku pytest na Macu agenta: ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a bez niej ``WORKERY_LOKALNE``."""
+
+    return int(os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS") or WORKERY_LOKALNE)
 
 
 @dataclass(frozen=True)

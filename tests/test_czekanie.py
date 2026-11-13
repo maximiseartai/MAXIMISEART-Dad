@@ -106,6 +106,8 @@ CI_LOOPS = (
     "echo $(date)#x && until gh pr checks 1 | grep -q pass; do sleep 30; done",
     "x=$(date)#; until gh pr checks 1 | grep -q pass; do sleep 30; done",
     "echo ${x:-{a} #b}; until gh pr checks 1 | grep -q pass; do sleep 30; done",
+    # Runda 3: ``$'\'`` w komentarzu nie otwiera napisu, więc nie zjada następnej linii.
+    "# $'\\'\nuntil gh pr checks 1 | grep -q pass; do sleep 30; done",
 )
 WATCHES = (
     "timeout 1500 gh pr checks 215 --watch > .audit/swarm-215/lane1-pr-checks.txt 2>&1; echo exit=$?",
@@ -120,6 +122,8 @@ WATCHES = (
     "echo $((1+1))#; gh pr checks 1 --watch",
     "echo ${x:-{a} #b}; gh run watch 1",
     "[[ x =~ x|#b ]] && gh pr checks 1 --watch",
+    # Runda 3: ``$'\'`` w komentarzu nie otwiera napisu, więc nie zjada następnej linii.
+    "# $'\\'\ngh run watch 1",
 )
 PGREP_LOOPS = (
     'until ! pgrep -f "tools/mutacje.py --plik ~/.t3/notes/arch-2026-10-24/K7/mutacje.json" >/dev/null; '
@@ -194,6 +198,12 @@ RERUNS = (
     "a=(5); echo $[ a[1] + ##x ]; gh run rerun 1",
     "echo ${x:-[a] #b}; gh run rerun 1",
     "[[ $v =~ ^(ok|done)$|#x ]]; gh run rerun 1",
+    # Runda 3: ``$'\'`` w komentarzu albo w bashowych backtickach nie otwiera napisu, więc nie zjada reszty polecenia.
+    "# $'\\'\ngh run rerun 1",
+    "# zobacz $'\\' w bashu\ngh run rerun 1",
+    "true # $'\\'\ngh run rerun 1",
+    "echo a #$'\\'\ngh run rerun 1",
+    "echo `echo $'\\'`; gh run rerun 1",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
