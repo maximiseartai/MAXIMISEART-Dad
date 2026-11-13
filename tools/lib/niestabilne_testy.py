@@ -3,8 +3,9 @@
 Zadanie pytest (``tools/ci/wykonaj_zadanie.py``) zapisuje dwa pliki, a dwa narzędzia je czytają z artefaktów runu:
 
 - ``FlakyTest``: test, który w zadaniu pytest bramki albo w przebiegu bez mutacji części nocy
-  (``tools/mutacje_zmiany.py``) padł, a po jednym ponowieniu (``ponow``) przeszedł. W bramce PR test, którego wejścia
-  zmienił ten PR (``plan_runu.Plan.zmienione_wejscia``), ponowienia nie dostaje: jego porażka zostaje porażką (Z7). Lista trafia do ``FLAKY_TESTY``
+  (``tools/mutacje_zmiany.py``) padł, a po jednym ponowieniu (``ponow``) przeszedł. W bramce PR test z pliku testów,
+  który zmienił ten PR (``plan_runu.Plan.zmienione_pliki_testow``), ponowienia nie dostaje: jego porażka zostaje
+  porażką (Z7). Lista trafia do ``FLAKY_TESTY``
   (artefakt ``flaky-testy-<zadanie>-<próba>`` runu CI albo ``flaky-testy-mutacje-<część>`` runu Mutacji nocnych), a
   ``tools/ci/zgloszenia_ci.py`` zakłada z niej issue ``Flaky test: <test>``.
 - ``ZapisKwarantanny``: wynik każdego testu z kwarantanny, który biegł w zadaniu (artefakt ``kwarantanna-<zadanie>-<próba>``
@@ -43,8 +44,8 @@ ETYKIETA_FLAKY = "flaky-test"
 DLUGOSC_W_TYTULE = 200
 # Flaky test trafia w jeden albo dwa testy (Skrzynka w runach 26.10); więcej porażek naraz to defekt albo awaria runnera.
 PONOWIENIE_NAJWIECEJ = 5
-# Koniec linii ``ponow`` o teście, którego wejścia zmienił PR; ``tools/ponow_ci.py`` nie ponawia runu z taką linią.
-ZMIENIONE_WEJSCIA = "ma wejścia zmienione przez ten PR: bez ponowienia"
+# Koniec linii ``ponow`` o teście z pliku testów zmienionego przez PR; ``tools/ponow_ci.py`` nie ponawia runu z taką linią.
+ZMIENIONY_PLIK_TESTU = "z pliku testu zmienionego przez ten PR: bez ponowienia"
 # Własność junit testu z kwarantanny (``tests/conftest.py``), z powodem kwarantanny jako wartością.
 WLASNOSC = "kwarantanna"
 
@@ -197,21 +198,21 @@ def po_ponowieniu(junit: Path, ponowienie: Path, testy: Sequence[str]) -> bool:
 
 
 def ponow(
-    junit: Path, ponowienie: Path, zadanie: str, uruchom: Callable[[tuple[str, ...]], bool], zmienione_wejscia: Collection[str] = ()
+    junit: Path, ponowienie: Path, zadanie: str, uruchom: Callable[[tuple[str, ...]], bool], zmienione_pliki_testow: Collection[str] = ()
 ) -> bool:
     """Jedno ponowienie testów, które padły w ``junit``: czy każdy przeszedł za drugim razem, więc to flaky testy.
 
     ``uruchom`` uruchamia podane testy raz jeszcze z junit ``ponowienie`` i mówi, czy polecenie przeszło. Ponowienie
     biegnie tylko dla najwyżej ``PONOWIENIE_NAJWIECEJ`` testów, z których id każdego da się zgłosić w issue i z których
-    żaden nie stoi w pliku z ``zmienione_wejscia`` (pliki testów, których wejścia zmienił pull request), a gdy każdy
+    żaden nie stoi w pliku z ``zmienione_pliki_testow`` (pliki testów, które zmienił pull request), a gdy każdy
     przejdzie, trafiają do ``FLAKY_TESTY`` z zadaniem ``zadanie`` oraz commitem i runem z ``GITHUB_*``."""
 
     testy = padniete(junit)
     if not testy:
         return False
-    if zmienione := [test for test in testy if test.partition("::")[0] in zmienione_wejscia]:
+    if zmienione := [test for test in testy if test.partition("::")[0] in zmienione_pliki_testow]:
         for test in zmienione:
-            print(f"PONOWIENIE | test {test} {ZMIENIONE_WEJSCIA}", flush=True)
+            print(f"PONOWIENIE | test {test} {ZMIENIONY_PLIK_TESTU}", flush=True)
         return False
     if len(testy) > PONOWIENIE_NAJWIECEJ:
         print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)

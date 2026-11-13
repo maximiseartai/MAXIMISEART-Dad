@@ -12,7 +12,7 @@ ginie razem z zadaniem, choćby zabitym przez SIGKILL.
 
 Na pull request zadanie po porażce pytest uruchamia raz w jednym procesie same testy, które padły
 (``niestabilne_testy.ponow``, najwyżej ``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da
-się zgłosić w issue i żaden nie stoi w pliku testów, którego wejścia zmienił ten PR (``Plan.zmienione_wejscia``, Z7).
+się zgłosić w issue i żaden nie stoi w pliku testów zmienionym przez ten PR (``Plan.zmienione_pliki_testow``, Z7).
 Gdy wszystkie przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga porażka to porażka.
 Każde zadanie z pytest
 zapisuje też wynik swoich testów z kwarantanny.
@@ -175,7 +175,7 @@ def _krok_pytest(root: Path, plan: Plan, zadanie: Zadanie, pliki: Mapping[str, l
     if (
         status != "ok"
         and plan.zdarzenie is Zdarzenie.PULL_REQUEST
-        and niestabilne_testy.ponow(JUNIT, PONOWIENIE, zadanie.nazwa, lambda testy: _ponow(root, testy), plan.zmienione_wejscia)
+        and niestabilne_testy.ponow(JUNIT, PONOWIENIE, zadanie.nazwa, lambda testy: _ponow(root, testy), plan.zmienione_pliki_testow)
     ):
         status = "ok"
     sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))

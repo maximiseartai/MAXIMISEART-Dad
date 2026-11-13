@@ -14,9 +14,9 @@ każdy plik testów ``tests/``, oraz kroki CI (``KROKI``), E2E i straż czasu, n
 request to bramka PR: tory Windows 3.13 (Python taty) i Linux 3.14, na każdym pliki z wyboru wpływu zmiany
 (``tools/lib/wplyw_zmiany.py``) i testy ``STRUCTURE`` (węzeł ``plik::test`` biegnie sam, gdy jego pliku nie ma w
 wyborze). Zmiana ścieżki, która w tabeli reguł wpływu uruchamia wszystko w bramce PR (``Context.PR_GATE``), wybiera
-wszystkie pliki, E2E i straż czasu. Pliki testów, których wejścia zmiana zmienia (``Impact.tests``: plik testu albo plik,
-od którego test zależy w grafie; plik reguły wyboru testów zmienia wejścia każdego), zakres podaje w
-``zmienione_wejscia``, a zadanie pytest nie ponawia ich porażki (ADR 0020, Z7). Inaczej na Windows 3.13 E2E biegnie przy zmianie pod ``src/``, a straż czasu przy
+wszystkie pliki, E2E i straż czasu. Pliki testów, które zmiana sama zmienia (``is_test_file``, bez plików, od których
+test zależy w grafie), zakres podaje w ``zmienione_pliki_testow``, a zadanie pytest nie ponawia porażki ich testów
+(ADR 0020, Z7). Inaczej na Windows 3.13 E2E biegnie przy zmianie pod ``src/``, a straż czasu przy
 zmianie w domknięciu jej skryptów (``STRAZ``). Noc (workflow ``mutacje-nocne.yml``) nie ma pytest. Plik testów, który
 sięga ``PRZEGLADARKA`` (Atrapa efenix, z którą rozmawia tylko przeglądarka: Chromium testu albo Skryptu dla maszyn),
 potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je instaluje, a nocą część Change mutations,
@@ -53,7 +53,7 @@ from pathlib import Path, PurePosixPath
 from jednostka import Czesc
 from kroki_skilli import Katalog, Step, hits, model_watched, repeats, watched
 from repo import ROOT
-from wplyw_zmiany import TEST_FILES, Context, Repository, run_all, with_structure
+from wplyw_zmiany import TEST_FILES, Context, Repository, is_test_file, run_all, with_structure
 
 __all__ = [
     "E2E", "KROKI", "MUTACJE", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow",
@@ -186,8 +186,8 @@ class ZakresRunu:
     pominiete: tuple[tuple[Step, str], ...]
     bledy: tuple[tuple[str, str], ...]
     przegladarka: frozenset[str] = frozenset()  # pliki z ``pliki``, które sięgają ``PRZEGLADARKA``
-    # Na pull request pliki testów, których wejścia zmiana zmieniła (``Impact.tests``): ich porażka nie ma ponowienia (Z7).
-    zmienione_wejscia: frozenset[str] = frozenset()
+    # Na pull request pliki testów ze zmiany (sam plik testu, nie plik, od którego test zależy): bez ponowienia (Z7).
+    zmienione_pliki_testow: frozenset[str] = frozenset()
 
     def kroki_skilla(self, skill: Path) -> list[Step]:
         """Wybrane kroki skilla ``skill`` (folder), w kolejności wyboru."""
@@ -221,7 +221,7 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     )
     pominiete = tuple((step, why[step][1]) for step in katalog.kroki if not why[step][0])
     przegladarka = potrzebuja_chromium(pliki, repository()) if pliki else frozenset()
-    zmienione = frozenset(repository().impact(zmiana).tests) if zdarzenie is Zdarzenie.PULL_REQUEST else frozenset()
+    zmienione = frozenset(filter(is_test_file, zmiana)) if zdarzenie is Zdarzenie.PULL_REQUEST else frozenset()
     return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(katalog.bledy.items())), przegladarka, zmienione)
 
 
