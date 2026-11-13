@@ -1,6 +1,6 @@
 """Uporządkowanie INTERMAX w katalogu procesów: wpis i widok Uruchomienia.
 
-Uporządkowanie porządkuje dzień, nie okres (ADR 0019): czyta tylko INTERMAX z Ustawień taty.
+Uporządkowanie porządkuje dzień, nie okres (ADR 0019): czyta tylko INTERMAX z Ustawień Centrum.
 """
 
 from __future__ import annotations

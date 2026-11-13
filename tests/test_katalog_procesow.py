@@ -66,13 +66,14 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 dry_run=False,
                 workers=WorkerList(()),
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                warnings=(),
             ),
             HostParts(),
             "potrzebuje plików",
         ),
         (
             "settlement",
-            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES),
+            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()),
             HostParts(),
             "potrzebuje Listy Wykonawców",
         ),
@@ -88,12 +89,13 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 period=None,
                 dry_run=True,
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                warnings=(),
             ),
             HostParts(),
             "potrzebuje okresu",
         ),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES), HostParts(), "potrzebuje okna efenix"),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES), _ATRAPA, "nie ma Podglądu bez zapisu"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()), HostParts(), "potrzebuje okna efenix"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()), _ATRAPA, "nie ma Podglądu bez zapisu"),
         (
             "settlement",
             Start(
@@ -103,6 +105,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 pricing="z Przekazaniem",
                 workers=WorkerList(()),
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                warnings=(),
             ),
             HostParts(),
             "nie ma trybu z Przekazaniem",
@@ -133,6 +136,7 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
         dry_run=False,
         pricing=chosen,
         quantity_rules=DEFAULT_QUANTITY_RULES,
+        warnings=(),
     )
 
     prepared = CATALOG.prepared("efenix", start, _ATRAPA, RunContext())
@@ -269,7 +273,7 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     diagnosis = client.post(f"/api/runs/{view['run']['id']}/diagnosis").json()
     labels = [check["label"] for check in diagnosis["checks"]]
 
-    assert labels[:2] == ["Ustawienia taty", "Pliki w OneDrive"]
+    assert labels[:2] == ["Ustawienia Centrum", "Pliki w OneDrive"]
     assert labels[-3:] == ["Aktualność narzędzia", "Token do Zgłoszeń", "Dziennik Centrum rozliczeń"]
     assert ("Folder okresu" in labels) is declaration.reads_period_folder
     assert ("Pliki okresu w Excelu" in labels) is declaration.reads_period_folder

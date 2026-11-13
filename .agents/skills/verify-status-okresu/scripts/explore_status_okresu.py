@@ -235,6 +235,7 @@ class Consumer(enum.Enum):
     KARTA_PRZEBIEGU = "karta startu Przebiegu rozliczeń"
     KARTA_WYCENY = "karta startu Wyceny w efenix"
     UZUPELNIANIE = "Uzupełnienie (quantities-to-fill)"
+    PODGLAD_REGUL = "podgląd zmiany Reguł ilości (quantity-rules/preview)"
     WPISANIE_RAPORTOW = "Wpisanie raportów (enter_from_mail)"
     START_PRZYGOTOWANIA = "Sprawdzanie Przygotowania pliku zbiorczego (check_preparation)"
     START_PRZEBIEGU = "Sprawdzanie Przebiegu rozliczeń (check_settlement)"
@@ -255,6 +256,7 @@ ALLOWED: dict[Consumer, Status] = {
     Consumer.KARTA_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.START_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.UZUPELNIANIE: Status.PRZYGOTOWANY,
+    Consumer.PODGLAD_REGUL: Status.GOTOWE,
 }
 
 # Rule TA_SAMA_NAZWA: the consumers that show Dad a Status okresu.
@@ -297,6 +299,9 @@ class Violation:
 UNREADABLE_STOPS = frozenset({"NIEDOSTEPNY_FOLDER", "NIEDOSTEPNY_PLIK_ZBIORCZY", "BLAD_ZAPISU", "RAPORTY_NIEDOSTEPNY_FOLDER_OKRESOW"})
 PASSWORD_REJECTED = "RAPORTY_HASLO_ODRZUCONE"
 FOLDER_UNREADABLE = "Nie udało się odczytać folderu"
+# A rule of the Reguły ilości from the Wydanie, which the preview takes away (copied on purpose: a renamed rule makes the
+# preview refuse with 404 and the check red).
+PREVIEW_RULE = "t-umowa-u"
 NO_COLLECTIVE_FILE = "Nie ma Pliku zbiorczego"
 COLLECTIVE_FILE_UNREADABLE = "Nie można teraz odczytać Pliku zbiorczego"
 # Actions of the steps on the board, the contract the page reads.
@@ -313,8 +318,8 @@ class Unexpected(Exception):
 
 @dataclass(frozen=True)
 class Inputs:
-    """Synthetic files every consumer reads besides the Folder okresu: Rejestr zleceń, Wzorce, Konfiguracja wykonawców,
-    addresses of the Wykonawcy, and the bytes of a Plik zbiorczy that Uzupełnienie reads."""
+    """Synthetic files every consumer reads besides the Folder okresu: Rejestr zleceń, Wzorce, Lista Wykonawców
+    with the addresses of the Wykonawcy, and the bytes of a Plik zbiorczy that Uzupełnienie reads."""
 
     preparation: PreparationFixture
     worker_template: Path
@@ -541,6 +546,31 @@ def ask_filling(client: TestClient) -> Answer:
     raise Unexpected(f"Uzupełnienie: Komunikat {what!r}")
 
 
+def ask_rules_preview(client: TestClient) -> Answer:
+    """Whether the preview of a Reguły ilości change takes the period: only a period after Przebieg rozliczeń, whose
+    quantities Dad settled; a Plik zbiorczy it takes but cannot read it names among ``unread``."""
+
+    response = client.post(
+        "/api/settings/quantity-rules/preview",
+        json={"kind": "remove", "rule_id": PREVIEW_RULE},
+        headers={"Origin": "http://127.0.0.1"},
+    )
+    if (unreadable := _unreadable_refusal(response)) is not None:
+        return Answer(Consumer.PODGLAD_REGUL, Act.NIE_CZYTA, detail=unreadable)
+    if response.status_code != 200:
+        raise Unexpected(f"podgląd Reguł ilości: HTTP {response.status_code} {response.text[:200]}")
+    preview = response.json()
+    if preview["state"] == "no_settled_periods":
+        return Answer(Consumer.PODGLAD_REGUL, Act.ODMAWIA, detail="nie ma okresu po Przebiegu rozliczeń")
+    if preview["state"] != "ready":
+        raise Unexpected(f"podgląd Reguł ilości: stan {preview['state']!r}")
+    if PERIOD.token in preview["unread"]:
+        return Answer(Consumer.PODGLAD_REGUL, Act.DZIALA, detail="bierze okres, a Pliku zbiorczego nie dało się przeczytać")
+    if [file["period"] for file in preview["files"]] == [PERIOD.token]:
+        return Answer(Consumer.PODGLAD_REGUL, Act.DZIALA, detail="liczy na Pliku zbiorczym okresu")
+    raise Unexpected(f"podgląd Reguł ilości: pliki {preview['files']}, nieprzeczytane {preview['unread']}")
+
+
 def ask_entering(inputs: Inputs, periods: Path) -> Answer:
     """From which day Wpisanie raportów, deployed on the period's Tuesday, reads the Skrzynka raportów (``Window.first``).
 
@@ -619,6 +649,7 @@ def ask_all(case: Path, state: FolderState, inputs: Inputs) -> list[Answer]:
             *ask_board(client),
             *ask_cards(client),
             ask_filling(client),
+            ask_rules_preview(client),
             ask_entering(inputs, periods),
             *ask_starts(inputs, periods),
         ]

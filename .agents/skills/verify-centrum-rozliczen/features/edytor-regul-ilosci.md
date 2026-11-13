@@ -46,19 +46,19 @@ description (row 19); run alone (`--feature edytor-regul-ilosci`) the drive runs
   harness asks the server for the same preview (`POST /api/settings/quantity-rules/preview`, evidence
   `api/edytor-podglad.json` with the row texts replaced): ready, with changed rows; the item `Skutek` has `Zmieni się
   <changed> ` and `różnice z Kontroli ilości: <before> → <after>`, and the item `Wiersz <row>` of the server's first
-  row has the sum with both rules. Screenshot `360` with that row in view.
+  row has the sum with both rules. Screenshot `380` with that row in view.
 - **Bad value.** Empty `Wartość`, `Zapisz`: the item `Kolumna 1` has the alert with the sentence; no
-  `config/reguly-ilosci.yaml`. Screenshot `361`. The value goes back to 2.
-- **Unsaved.** Esc: the alertdialog has `Zamknąć bez zapisu?`; screenshot `362`; `Wróć` keeps `Nowa reguła`.
+  `config/reguly-ilosci.yaml`. Screenshot `381`. The value goes back to 2.
+- **Unsaved.** Esc: the alertdialog has `Zamknąć bez zapisu?`; screenshot `382`; `Wróć` keeps `Nowa reguła`.
 - **Save.** `Zapisz`: the region `Każde zlecenie` has one item with the sentence; `/api/settings/quantity-rules` ends
-  with `regula-1` after the rules from before; the file exists. Screenshot `363`.
+  with `regula-1` after the rules from before; the file exists. Screenshot `383`.
 - **Historia.** `open_settings` on `Historia`: the first item of list `Zmiany` has `Reguła ilości` and `Dodano: …`.
-  Screenshot `364`. Its `Cofnij: Reguła ilości` adds `Usunięto: …` on top, and the server's rule ids are those from
+  Screenshot `384`. Its `Cofnij: Reguła ilości` adds `Usunięto: …` on top, and the server's rule ids are those from
   before.
 - **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/reguly-ilosci`, the button `Zmień regułę` of the item with
   `Wpisz 1 w Dojazd do klienta V.`: `Zmiana reguły`, the preview items `Reguła` and `Skutek`, no horizontal scroll.
-  Screenshot `365`. `Anuluj`, then the viewport goes back to 1440×1000 (also in `finally`).
-- **Proof.** Screenshots `360`–`365` and the checks in `drive.txt`.
+  Screenshot `385`. `Anuluj`, then the viewport goes back to 1440×1000 (also in `finally`).
+- **Proof.** Screenshots `380`–`385` and the checks in `drive.txt`.
 
 ## Gotchas
 

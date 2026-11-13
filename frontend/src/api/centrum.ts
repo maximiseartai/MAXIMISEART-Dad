@@ -18,6 +18,7 @@ import type {
   GetWithoutQuantityResponse,
   GetToolUpdateResponse,
   OpenRequest,
+  RemindersForm,
   RunEvent,
   RunInfo,
   RunOutcome,
@@ -128,6 +129,21 @@ export function changeInboxPassword(password: string) {
   return call("changeInboxPassword", { body: { password } })
 }
 
+/** Przełącznik Przypomnień o raporcie; pierwsze włączenie zapisuje dzisiejszy dzień jako dzień wdrożenia. */
+export function changeRemindersEnabled(enabled: boolean) {
+  return call("changeRemindersEnabled", { body: { enabled } })
+}
+
+/** Zapis formularza Przypomnień naraz; zła pora, godzina albo treść to odmowa z polem. */
+export function changeReminders(form: RemindersForm) {
+  return call("changeReminders", { body: form })
+}
+
+/** Przypomnienie z formularza za wczoraj, bez zapisu i bez wysyłki. */
+export function previewReminder(form: RemindersForm) {
+  return call("previewReminder", { body: form })
+}
+
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
 export function changeFolders(folders: FoldersChange) {
   return call("changeFolders", { body: folders })
@@ -231,7 +247,7 @@ export function startRun(request: RunRequest) {
   return call("startRun", { body: request })
 }
 
-/** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Uporządkowanie z Logów. */
+/** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach Centrum, i ostatnie Uporządkowanie z Logów. */
 export function getIntermaxSetup() {
   return call("getIntermaxSetup")
 }
@@ -241,17 +257,17 @@ export function getIntermaxDays() {
   return call("getIntermaxDays")
 }
 
-/** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
+/** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień Centrum; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startIntermax() {
   return call("startIntermax")
 }
 
-/** Karta „Wpisz raporty z maili”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Wpisanie raportów. */
+/** Karta „Wpisz raporty z maili”: przypomnienie, czego brakuje w Ustawieniach Centrum, i ostatnie Wpisanie raportów. */
 export function getReportEnteringSetup() {
   return call("getReportEnteringSetup")
 }
 
-/** Start Wpisania raportów z INTERMAX z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
+/** Start Wpisania raportów z INTERMAX z Ustawień Centrum; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startReportEntering() {
   return call("startReportEntering")
 }

@@ -33,7 +33,7 @@ export function PeriodsPage() {
 }
 
 /**
- * Tablica okresów i metryki czytają się od razu, razem z Ustawieniami taty, a nie po kolei po nich.
+ * Tablica okresów i metryki czytają się od razu, razem z Ustawieniami Centrum, a nie po kolei po nich.
  * Każdy nieudany odczyt strony pokazuje jeden Komunikat, a jego „Spróbuj ponownie” czyta od nowa wszystkie,
  * które się nie udały: jedno kliknięcie przywraca całą stronę.
  */

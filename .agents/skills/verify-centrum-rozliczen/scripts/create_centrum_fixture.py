@@ -1,7 +1,7 @@
 """Create a synthetic folder okresów, Rejestr zleceń, configuration directory, and metrics files for one Centrum run.
 
-The configuration directory holds what Konfiguracja reads: a synthetic konfiguracja
-wykonawców and the three Wzorce, valid for the engine's Sprawdzanie. Centrum's
+The configuration directory holds a synthetic Lista Wykonawców and the three
+Wzorce, valid for the engine's Sprawdzanie. Centrum's
 settings file is written there too, as in Dad's ``config/``. The metrics files
 hold a synthetic history in the metrics schema for Metryki.
 
@@ -9,7 +9,7 @@ The Rejestr zleceń holds orders of the last complete period ``06_12_10_2026``
 whose last order is on Saturday, so a RUN of Przygotowanie pliku zbiorczego
 asks Dad's decision about the incomplete period. Its order cells carry
 ``ROW_MARKER``. The Plik zbiorczy of ``29_05_10_2026`` has a Wiersz danych of a
-Wykonawca missing from the konfiguracja wykonawców, so a Podgląd bez zapisu of
+Wykonawca missing from the Lista Wykonawców, so a Podgląd bez zapisu of
 Przebieg rozliczeń for that period needs checking.
 
 The tool itself is a synthetic Git clone in ``<root>/aktualizacja/klon`` whose
@@ -18,8 +18,8 @@ ahead of the clone: Aktualizacja narzędzia in this run moves that clone, never
 the checkout the verification runs from, and never reaches GitHub. The clone
 stands on the first version, the Wydanie ``v0.0.1`` (an annotated tag it got
 from the origin, as an install from the README leaves it). The clone's
-``config/`` holds Dad's files, among them his locally changed konfiguracja
-wykonawców, which the newest commit stops tracking. Its
+``config/`` holds Dad's files, among them his locally changed old Wykonawcy file
+(``worker_mapping.yaml``), which the newest commit stops tracking. Its
 ``run_centrum.py``, which the restart guardian starts after an update, is a shim
 that serves this run's scripted Centrum (``serve_centrum.py`` with this run root)
 on the port it is given; while ``<root>/pacing/ponowny-start-ms.txt`` exists, it
@@ -545,8 +545,9 @@ import biblioteka_ktorej_nie_ma  # noqa: F401
 
 # A library no index has: with pip offline (PIP_NO_INDEX in serve_centrum.py) its installation always fails.
 UNINSTALLABLE_REQUIREMENTS = "biblioteka-syntetyczna-nie-do-zainstalowania>=1.0\n"
-# Dad's files in the clone's config/ after the first version: his konfiguracja wykonawców with synthetic
-# "real" names (a local change) and files Git never tracks (Ustawienia taty, the key to Zgłoszenia, a Wzorzec).
+# Dad's files in the clone's config/ after the first version: his old Wykonawcy file (worker_mapping.yaml) with
+# synthetic "real" names (a local change) and files Git never tracks (Ustawienia Centrum, the key to Zgłoszenia,
+# a Wzorzec).
 DAD_FILES = {
     WORKER_MAPPING_FILE: "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n",
     SETTINGS_FILE: "folder_okresow: INEA\n",
@@ -558,7 +559,7 @@ DAD_FILES = {
 def _tool_clone(root: Path) -> dict[str, object]:
     """The run's tool: a clone on the first version (Wydanie v0.0.1) with Dad's files, and a local "origin" one version ahead.
 
-    The newest version stops tracking the konfiguracja wykonawców, which Dad changed locally: the first
+    The newest version stops tracking the old Wykonawcy file (``worker_mapping.yaml``), which Dad changed locally: the first
     update after #161 on Dad's computer. One version later (``libraries``, on the origin's branch
     ``biblioteki`` until the drive makes it the Wydanie) needs a library whose installation fails. Another
     one after the newest (``not_starting``, on the branch ``nie-startuje``) has a Centrum that does not start.
@@ -646,7 +647,7 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
         "order_register": dad["order_register"],
         "settings": str(root / SETTINGS_FILE),
         "metrics": _metrics(root),
-        # Konfiguracja: the files Centrum checks, and the Wykonawcy in the order of the konfiguracja wykonawców
+        # Ustawienia: the Wzorce Centrum checks, and the Wykonawcy in the order of the Lista Wykonawców
         "configuration": dad["configuration"],
         "workers": [*WORKERS, EMPTY_WORKER],
         # Aktualizacja narzędzia: the run's tool clone, its local "origin", both commits, and Dad's files in the clone

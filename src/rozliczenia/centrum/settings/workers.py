@@ -20,7 +20,7 @@ from typing import Final, Literal, assert_never
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.worker_list import (
     AddressesNotMoved,
     UnmatchedLogin,
@@ -67,16 +67,16 @@ def parse(data: bytes | None) -> WorkerList | FieldProblem:
     try:
         document = yaml.safe_load(data.decode("utf-8"))
     except UnicodeDecodeError:
-        return FieldProblem(None, messages.not_text(WORKERS_FILE))
+        return FieldProblem(None, messages.not_text(WORKERS_FILE, messages.MAKS_FIXES))
     except yaml.YAMLError:
-        return FieldProblem(None, messages.damaged(WORKERS_FILE))
+        return FieldProblem(None, messages.damaged(WORKERS_FILE, messages.MAKS_FIXES))
     if not isinstance(document, dict):
-        return FieldProblem(None, messages.damaged(WORKERS_FILE))
+        return FieldProblem(None, messages.damaged(WORKERS_FILE, messages.MAKS_FIXES))
     if document.get("schema_version") != _SCHEMA_VERSION:
-        return FieldProblem(None, messages.other_schema(WORKERS_FILE))
+        return FieldProblem(None, messages.other_schema(WORKERS_FILE, messages.MAKS_FIXES))
     unknown = next((place for place, key in enumerate(document, 1) if key not in _TOP), None)
     if unknown is not None:
-        return FieldProblem(None, messages.unknown_key(WORKERS_FILE, unknown))
+        return FieldProblem(None, messages.unknown_key(WORKERS_FILE, unknown, messages.MAKS_FIXES))
     entries = _entries(document.get(WORKERS_KEY, []))
     if isinstance(entries, FieldProblem):
         return entries
@@ -118,7 +118,7 @@ def _entries(value: object) -> list[WorkerEntry] | FieldProblem:
 
 
 def _bad(place: FieldPath) -> FieldProblem:
-    return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+    return FieldProblem(place, messages.bad_field(WORKERS_FILE, place, messages.MAKS_FIXES))
 
 
 def _texts(value: object, first: FieldName, *rest: FieldName | int) -> list[str] | FieldProblem:
@@ -268,7 +268,7 @@ def _dump(entries: list[Document], unresolved: list[Document]) -> str:
     document: Document = {"schema_version": _SCHEMA_VERSION, WORKERS_KEY: entries}
     if unresolved:
         document[UNRESOLVED_KEY] = unresolved
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
 def _documents(text: str | None) -> list[Document]:

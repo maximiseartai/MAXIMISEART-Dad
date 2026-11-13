@@ -20,7 +20,13 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
   bez adresów Wykonawców i bez treści maili.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia pory, godzinę pierwszego przypomnienia, stopkę i treść maila w
-Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały.
+Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały, a stały blok wzoru z
+przykładem też. Dzień wdrożenia przypomnień i stopka z plików Maksa w `config/` przechodzą przy pierwszym starcie po
+Aktualizacji do Ustawień Centrum (`przypomnienia.yaml`), a przypomnienia włącza i wyłącza tata przełącznikiem. Porę
+przypomnienia z „Wysłanych” liczą pory z chwili jego wysyłki, które praca przypomnień zapisuje w `config/`
+(`przypomnienia-pory.json`). To zmienia zdanie Decyzji, że Centrum nie ma własnego pliku stanu przypomnień: w
+`config/` leżą dwa, wynik ostatniego sprawdzenia dla widoku Raporty (`przypomnienia-wynik.json`) i te pory, a pamięcią
+wysłanych zostaje folder „Wysłane”.
 
 ## Kontekst
 

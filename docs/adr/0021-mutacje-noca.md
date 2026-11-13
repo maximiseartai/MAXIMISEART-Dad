@@ -4,7 +4,7 @@
 
 Zaakceptowana (decyzja Maksa z 29.10: „nie możemy na każdy nowy PR odpalać mutacji”).
 Zastępuje część [ADR 0020](0020-ci-w-poziomach.md) o Change mutations na PR: poziom bramki PR i `tools/scal_pr.py` przestają na nie czekać.
-Zastępuje też część ADR 0020 o skryptach mutacji skilli na PR: biegną nocą na `main` i w pełnym CI `main`.
+Zastępuje też część ADR 0020 o skryptach mutacji skilli na PR, a od 13.11 także w pełnym CI `main`: biegną nocą na `main`.
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md) i ADR 0020, według których granicą bezpieczeństwa taty jest Wydanie, a nie PR.
 Zmieniona 31.10 (#701, zgoda Maksa w wątku T3: „okej zgadzam się na wdrożenie tego”): skrypt mutacji modelu TLA+ skilla biegnie też na PR, który zmienia jego model (sekcja Decyzja).
 Zmieniona 3.11 (cel Maksa w triage 3.11: noc ma znów każdej nocy dawać wynik i zbiegać do zielonego po zaległości): noc ma limit mutacji, a zaległość przechodzi na kolejne noce; część mieści się w limicie czasu także z najdroższymi zmierzonymi mutacjami, a mutacja bez werdyktu po limicie części trafia do issue zamiast zatrzymać noc (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
@@ -12,6 +12,8 @@ Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BL
 Zmieniona 6.11 (przegląd architektury 6.11, decyzja koordynatora w trybie auto Maksa): ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od`, jak części (sekcja Decyzja).
 Zmieniona 12.11 (#1339, bieg issues w trybie auto Maksa): mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS`, trafia do issue z dopiskiem, że noc nie dała jej werdyktu, a nie jako przeżyta; dalej nie jest wykryta (sekcje Decyzja i Odrzucone warianty).
 Zmieniona 12.11 (hillclimb CI, budżet Maksa z 12.11: najwyżej 20 zadań nocy naraz): noc zajmuje najwyżej 17 zadań części i 3 zadania skryptów skilli naraz, a części startują od najdroższej według pracy testów na `main` (sekcje Decyzja i Odrzucone warianty).
+Zmieniona 13.11 (Z4, zgoda Maksa): test, który w części pada bez mutacji, biegnie raz jeszcze jak w bramce PR, a gdy przejdzie, część mutuje dalej, a test dostaje issue `Flaky test:` (sekcje Decyzja i Konsekwencje).
+Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym CI `main`, tylko nocą, a noc uruchamia skrypt także przy zmianie modułu, który importuje sprawdzenie jego mutacji, i pliku, który psuje jego mutacja (sekcje Kontekst, Decyzja, Konsekwencje i Odrzucone warianty).
 
 ## Kontekst
 
@@ -24,6 +26,9 @@ ADR 0020 podaje, że Change mutations nie złapały żadnego defektu produktu, k
 To samo dotyczy skryptów mutacji skilli (`check_*_mutations.py`) w Mutation checks na PR: jedyny unikalny defekt z backtestu ADR 0020 (#438) złapała podstawa skilla (`ci:`, przebieg bez mutacji), a nie mutacja.
 Skrypt mutacji mierzy jakość sprawdzenia skilla, tak jak Change mutations mierzą jakość testów, a w modelu 60 PR z 25–28.10 zajmował 36% runner-minut bramki (45,9 → 29,5 na PR bez nich).
 Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z zielonym pełnym CI `main`.
+Z1 (13.11): na pushu do `main` skrypty mutacji skilli kosztowały 105–114 runner-min na run, ok. 455 runner-h w 10 dniach 2–12.11, czyli 46% kosztu `main` (diagnoza hillclimbu CI 12.11, próbka 38 zielonych runów `main`).
+W księdze czerwonych runów `main` 26.10–12.11 złapały 5 epizodów (#667, #897, #919 i #948, #1127, #1198), każdy to defekt samego sprawdzenia skilla (kotwica, czas sprawdzenia, czas mutacji, eksplorator, rozjazd modelu), a żaden defekt produktu.
+Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez mutacji, a ta zostaje w pełnym CI `main` i na PR.
 
 ## Decyzja
 
@@ -80,8 +85,19 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
 - Część, która nie dała wyniku (testy padają albo nie kończą się w limicie części bez mutacji, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
   Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
+- Test, który w części padł bez mutacji, nie czerwieni jej od razu: testy, które padły, biegną raz jeszcze, tym samym `niestabilne_testy.ponow` co w bramce PR (ADR 0020): najwyżej 5 testów, każdy z id, które da się zgłosić w issue, z zapisem pokrycia jak w pierwszym przebiegu.
+  Gdy każdy przejdzie, część mutuje dalej (druga porażka to część bez wyniku z punktu wyżej), a testy trafiają do artefaktu `flaky-testy-mutacje-<część>`, z którego `zgloszenia.yml` po runie nocy zakłada albo komentuje issue `Flaky test: <test>`, tak jak po runie CI.
+  W nocach 3–8.11 (runy 41601085650, 41793945765, 42185360488, 42351341369, 42459531620) 6 części padło w przebiegu bez mutacji, każda na jednym teście, który okazał się flaky testem albo testem losowo czerwonym (wyścig, termin, uuid4 z numerem, pomiar czasu na wolnym runnerze).
+  Każdą z nich ponowienie by objęło, więc noce 4, 6, 7 i 8.11 byłyby zielone, o ile ten test za drugim razem przeszedł; 3.11 zostałaby czerwona przez 16 części na limicie czasu części.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
-  Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`, a pełne CI `main` dalej uruchamia każdy skrypt.
+  Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja (`Edit.file` z tabeli skryptu), zmienił się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`.
+  Pełne CI `main` od 13.11 (Z1) nie uruchamia żadnego skryptu mutacji skilla, tylko każdą podstawę `ci:`, także tę, którą skrypt uruchamia bez mutacji.
+  Moduły, które sprawdzenie importuje, noc liczy od Z1, bo sama zmiana kodu produktu może spowolnić sprawdzenie albo przesunąć jego mutację, a dotąd przy takiej zmianie skrypt uruchamiało tylko pełne CI `main`.
+  Każdy z 5 epizodów wyżej noc wybrałaby i bez tego, bo jego PR zmieniał folder skilla; #667 zmieniał też `src/rozliczenia/centrum/outbox.py`, który importują sprawdzenia trzech innych skryptów.
+  W 5 dobach `main` przed 13.11 noc wybierałaby 18–28 z 28 skryptów zamiast 11–28, a w 3 z nich już dziś wszystkie 28, więc ściana nocy nie przekracza dzisiejszej najdłuższej.
+  Plik, który psuje mutacja, noc bierze z tej samej tabeli mutacji skryptu, bo 13 z 28 skryptów psuje plik, którego sprawdzenie nie importuje: 11 skryptów Centrum sięga go procesem Centrum, `check_quantity_rules_mutations.py` przez `pytest.main`, a `check_github_skrzynki_mutations.py` psuje plik testu (#1575, przegląd r1).
+  W 5 dobach `main` przed 13.11 te pliki nie dokładają nocy żadnego skryptu, a `tests/test_zakres_runu.py` sprawdza na katalogu skilli, że zmiana każdego z nich wybiera nocą jego skrypt.
+  Kotwicę mutacji, która przestała stać w swoim pliku, pilnuje już na PR pytest (`tests/test_mutacje_skilli.py`, #670).
   Skrypt, który padł, trafia linią `SKRYPT <skrypt>` do issue `Przeżyte mutacje skilli z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił plik zmieniony od bazy, który uruchomił krok (`KrokSkilla.pliki` w `tools/lib/zakres_runu.py`): najpierw plik w folderze skilla, potem inny, a bez takiego pliku ostatni PR nocy; linia trafia tam bez powtórzeń, a zadanie bez zapisu czerwieni przebieg.
   Mutacja skryptu, której polecenie trwało ponad połowę limitu czasu mutacji (`CZAS BLISKO LIMITU`, `tools/mutacje.py`), trafia do tego samego issue linią `CZAS BLISKO LIMITU <skrypt> | <mutacja> | <czas> s z limitu --limit-s <limit> s`, także gdy skrypt przeszedł.
   Trafia tam raz, bo issue porównuje skrypt i mutację bez czasu, który zmienia się co noc, więc rosnący czas mutacji widać w issue, zanim `PRZEKROCZONY CZAS` zaczerwieni skrypt (#911, #935).
@@ -103,7 +119,9 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Luka w testach PR wychodzi najpóźniej następnego dnia, w issue jego PR, a nie przed merge'em.
   PR, który by ją zamknął, jest osobną pracą z kolejki `ready-for-agent`.
 - Recenzent nie omawia już mutacji w `PASS`, a przegląd PR kończy się razem z bramką.
-- PR, który osłabia sprawdzenie skilla tak, że jego mutacja przeżywa, pokaże dopiero pełne CI `main` po merge'u i noc, która przypisze porażkę do issue jego PR.
+- PR, który osłabia sprawdzenie skilla tak, że jego mutacja przeżywa, pokaże dopiero noc, która przypisze porażkę do issue jego PR (od Z1, 13.11, pełne CI `main` już tego nie pokazuje).
+  Noc widzi go, gdy zmienia folder skilla, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja; zmianę innego pliku, który sprawdzenie czyta bez importu, pokaże dopiero noc, którą uruchomi inna zmiana.
+  Wydanie nie czeka na noc: commit z zielonym pełnym CI `main` jest do wydania, choć skrypt mutacji skilla na nim pada, bo taki skrypt mierzy jakość sprawdzenia, a nie produkt, który dostaje tata.
   Wyjątkiem jest zmiana modelu TLA+ skilla ze skryptem mutacji modelu: ta dostaje czerwone Mutation checks na PR.
 - Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie na testach wielu plików; części po plikach trzymają je w limicie czasu części.
 - Część z drogimi mutacjami trzyma runner do 3 h zamiast 1 h, a zwykła część kończy się jak dotąd w kilka minut do godziny (31.10: 4–51 min).
@@ -114,6 +132,8 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
 - Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
 - Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc powtarza jego zakres.
+- Prawdziwa porażka, która przechodzi za drugim razem, nie czerwieni nocy, tylko daje issue `Flaky test:`; pilnuje jej dalej pełne CI `main`, które Wydanie wymaga zielonego.
+  Flaky test zostaje w testach mutacji części, więc jego porażka po mutacji może policzyć mutację jako wykrytą i schować lukę w testach do następnej zmiany tej linii.
 
 ## Odrzucone warianty
 
@@ -132,4 +152,9 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
 - Change mutations na PR, ale bez czekania na nie w `tools/scal_pr.py`. Każdy PR dalej zajmowałby trzy runnery po 15 min, a wynik po merge'u i tak musiałby trafić do issue.
 - Mutacje tylko PR-ów z etykietą albo powyżej rozmiaru zmiany. Luki w testach są w małych zmianach tak samo, a wybór PR-ów to osąd, którego nic nie sprawdza.
 - Każdy skrypt mutacji skilla na PR, który zmienia folder skilla (#701). Skrypty mutacji kodu produktu trwają do 13 min, a błąd z #667, który przeszedł bramkę i przegląd, był zmianą modelu TLA+, której nie widzą podstawa skilla ani pytest.
+- Skrypty mutacji skilli w pełnym CI `main` (do 13.11). Każdy push do `main` uruchamiał każdy skrypt, ok. 46% runner-minut `main`, a od 26.10 do 12.11 złapały tylko defekty samych sprawdzeń, które noc łapie dzień później.
 - Mutacje przy Wydaniu. Wydanie zbiera zmiany wielu dni, więc przebieg byłby długi, a luka wychodziłaby dopiero wtedy, gdy autor PR jest już przy innej pracy.
+- Noc bez części podstawy z `ci-czesci`, gdy ta sama noc uruchamia skrypt mutacji jej skilla (Z10 hillclimbu CI, 13.11). Skrypt mutacji uruchamia bez mutacji tylko polecenia swoich mutacji (`_baseline` w `tools/lib/silnik_mutacji.py`), a nie polecenie `ci:`, i dla żadnej z czterech podstaw te polecenia nie sprawdzają wszystkiego, co podstawa.
+  `verify-centrum-rozliczen` prowadzi `--feature all` przez 27 funkcji, a jego 11 skryptów przez 11 z nich; `verify-kolejka-skrzynki` ma 30 zakresów i konfiguracji, a skrypty 26, bez zakresów `zgloszenie` i `zgloszenie-lista` i konfiguracji `logi` i `postep`; `verify-urwane-uruchomienie` ma 8 konfiguracji, a skrypt 5, bez `wszystko` (ok. 85% podstawy), `odczyt` i `stare-logi` (komentarz `UNITS` jego `sprawdz_urwane_uruchomienie.py`); `verify-wycena-efenix` ma 468 przypadków, a skrypt 93 (`explore_wycena_efenix.py --lista`).
+  Przebieg bez mutacji nie dzieli też podstawy na części żadnego n, a po to noc ją uruchamia.
+  Podstawę, której polecenie `ci:` skrypt jej skilla uruchamia bez mutacji, wybór i tak pomija (`repeats` w `tools/lib/kroki_skilli.py`, dziś 6 skilli: karta-efenix, kopia-wzorca, publikacja-plikow-okresu, rozliczenia, status-okresu, zapis-intermax), ale żadna z czterech podstaw z `ci-czesci` nie ma takiego skryptu.

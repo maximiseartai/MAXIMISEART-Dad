@@ -127,15 +127,6 @@ class _Lines(HTMLParser):
             self._append(NOT_TEXT)  # kod albo przekreślenie przechodzi przez ``<br>`` na początek następnej linii
 
 
-def fixed_issues(body: str, repository: str) -> tuple[int, ...]:
-    """Numery issues ``repository`` z linii „Naprawia” opisu PR ``body`` wyrenderowanego przez GitHuba.
-
-    Rzuca wyjątek, gdy GitHub opisu nie wyrenderował.
-    """
-
-    return listed_issues(github.html_markdownu(body, repository), repository, (FIXES,))
-
-
 def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[int, ...]:
     """Numery issues ``repository`` z list numerów po słowie z ``words`` na początku linii HTML opisu PR z renderera
     GitHuba, według tych samych reguł co „Naprawia” (docstring modułu)."""

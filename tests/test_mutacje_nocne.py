@@ -38,6 +38,7 @@ import czasy_ci
 from jednostka import Czesc
 import mutacje_nocne
 import mutacje_zmiany
+import niestabilne_testy
 import plan_runu
 from silnik_mutacji import NearLimit
 from zakres_runu import Zdarzenie
@@ -407,6 +408,18 @@ def test_krok_czesci_przechodzi_dokladnie_z_kodami_wyjscia_ktorych_zapis_niesie_
     przepuszczone = {int(kod) for kod in re.findall(r"\$\? -eq ([0-9]+)", krok["run"].partition("||")[2])}
 
     assert {0, *przepuszczone} == mutacje_zmiany.KODY_Z_WYNIKIEM
+
+
+def test_flaky_test_z_bazy_czesci_trafia_do_artefaktu_ktory_zgloszenia_ci_czytaja_po_runie_nocy() -> None:
+    """Część zapisuje test, który bez mutacji przeszedł dopiero po ponowieniu, w ``niestabilne_testy.FLAKY_TESTY``
+    (``tools/mutacje_zmiany.py``), a issue ``Flaky test`` zakłada ``zgloszenia.yml`` po runie nocy, jak po runie CI."""
+
+    nocne = _nocne()
+    (wgranie,) = [krok for krok in nocne["jobs"]["change-mutations"]["steps"] if krok.get("with", {}).get("path") == niestabilne_testy.FLAKY_TESTY.as_posix()]
+    zgloszenia = yaml.safe_load((ROOT / ".github" / "workflows" / "zgloszenia.yml").read_text(encoding="utf-8"))
+
+    assert wgranie["with"]["name"].startswith(niestabilne_testy.ARTEFAKT_FLAKY_TESTOW)
+    assert nocne["name"] in zgloszenia[True]["workflow_run"]["workflows"]  # YAML 1.1 czyta klucz „on” jako True
 
 
 @pytest.mark.parametrize(

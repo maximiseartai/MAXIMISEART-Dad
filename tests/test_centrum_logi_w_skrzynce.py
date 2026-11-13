@@ -46,7 +46,7 @@ from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia import intermax_copies, settlement_messages
 from rozliczenia.centrum import app
-from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.run_logs import RunLog
@@ -55,6 +55,7 @@ from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from rozliczenia.domain import RunMode
 
 from atrapy.skrzynka import BoxIssue
+from atrapy.workbooks import excel_lock
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
     CentrumClient,
@@ -85,6 +86,7 @@ from atrapy.intermax import (
 )
 from tests.fixtures.konce_linii_windows import windows_text_writes
 from tests.fixtures.centrum_processes import (
+    PERIOD_MONDAY,
     SettlingCentrum,
     Surroundings,
     preparing_centrum,
@@ -514,22 +516,24 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     centrum.configuration.worker_template.write_bytes(b"to nie jest skoroszyt")
-    workers = centrum.tool.worker_list
-    workers.write_bytes("wykonawcy: [".encode())
-    not_yaml = diagnose(centrum, run_id)
+    # Pliki okresu Diagnoza czyta na dysku przy każdym pytaniu (Listę Wykonawców bierze z migawki startu, D9).
+    collective = centrum.collective_file.read_bytes()
+    centrum.collective_file.unlink()
+    without_collective_file = diagnose(centrum, run_id)
     sent = [diagnosed_logs(centrum, edits=1)]
 
-    workers.write_bytes("wykonawcy: ż".encode("cp1250"))
-    not_utf8 = diagnose(centrum, run_id)
+    centrum.collective_file.write_bytes(collective)
+    excel_lock(centrum.collective_file).write_bytes(b"")
+    open_in_excel = diagnose(centrum, run_id)
 
     sent.append(diagnosed_logs(centrum, edits=2))
-    label = "Lista Wykonawców"
-    assert [diagnosis["explanation"] for diagnosis in (not_yaml, not_utf8)] == [not_yaml["explanation"]] * 2
-    assert check_detail(not_yaml, label) != check_detail(not_utf8, label)
+    diagnoses = (without_collective_file, open_in_excel)
+    assert [diagnosis["explanation"] for diagnosis in diagnoses] == [without_collective_file["explanation"]] * 2
     logged = [logs["diagnosis"] for logs in sent]
-    checks = [next(check for check in diagnosis["checks"] if check["label"] == label) for diagnosis in logged]
-    assert [(check["code"], check["detail"]) for check in checks] == [
-        ("ZLA_LISTA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
+    failed = [[(check["label"], check["code"]) for check in diagnosis["checks"] if check["state"] == "failed"] for diagnosis in logged]
+    assert [rows[1:] for rows in failed] == [
+        [("Folder okresu", "BRAK_PLIKU_ZBIORCZEGO")],
+        [("Pliki okresu w Excelu", "PLIK_OKRESU_OTWARTY")],
     ]
 
 
@@ -1098,6 +1102,29 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
         assert actions == {"szukanie", "otwarcie zlecenia", "data wykonania", "Wycena Emmetta", "ilość"}
 
 
+def test_uruchomienie_na_ostatniej_dobrej_liscie_wykonawcow_odtwarza_sie_z_ostrzezeniem_startu_z_logow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Przebieg rozliczeń, który biegł na ostatniej dobrej Liście Wykonawców, bo plik dostał złą treść po odczycie
+    Ustawień, ma ostrzeżenie startu w Logach jako fakt startu, a odtworzenie bierze je z Logów, bo Ustawień Centrum
+    Logi nie mają: odtworzenie na folderze Konfiguracji z dobrą listą jest zgodne, a nie różne na samym ostrzeżeniu."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    assert centrum.client.get("/api/settings").json()["workers"]["state"] == "good"
+    good = centrum.tool.worker_list.read_bytes()
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
+    produced = Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    centrum.tool.worker_list.write_bytes(good)
+    logged = [(message["code"], message.get("at_start")) for message in produced.record["messages"]]
+    assert logged == [("LISTA_WYKONAWCOW_OSTATNIA_DOBRA", True)], logged
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 @pytest.mark.parametrize(
     ("pricing", "change", "replayed_pricing"),
     [
@@ -1259,30 +1286,98 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
         assert any(line.endswith(f"inny rozmiar niż u taty: {WORKERS_FILE}: u taty 1 B, tu {size} B") for line in lines)
 
 
-def test_odtworzenie_przebiegu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Tata zapisał w edytorze regułę „zostaw V pustą w Rozliczeniu pracownika” przy „nokia”; odtworzenie Przebiegu z
-    Logów liczy regułami z chwili Uruchomienia, nie regułami z Wydania, więc daje te same Ilości tylko dla INEA."""
+@dataclass(frozen=True)
+class _EditedRulesRun:
+    """Uruchomienie procesu, który liczy Regułami ilości, po regule zapisanej przez tatę w edytorze, i skutek tej reguły
+    w wyniku odtworzenia (``kept``: katalog roboczy odtworzenia), którego Reguły ilości z Wydania nie dają."""
 
-    folder = tmp_path / "taty"
-    folder.mkdir()
+    produced: Produced
+    effect: Callable[[Path], object]
+    expected: object
+
+
+_LEAVE_V_EMPTY_AT_NOKIA = {
+    "scope": "every",
+    "conditions": [{"kind": "devices", "mode": "contains", "text": "nokia", "negated": False}],
+    "action": {"kind": "leave_empty", "columns": ["V"]},
+}
+_AA_3_AT_ROUTER = {
+    "scope": "known",
+    "conditions": [{"kind": "group", "group": "router", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "AA", "value": 3, "multiplier": "once", "component": None}]},
+}
+
+
+def _settlement_with_edited_rule(folder: Path) -> _EditedRulesRun:
+    """Przebieg rozliczeń po regule „zostaw V pustą w Rozliczeniu pracownika” przy „nokia”: V czyści się tylko dla
+    INEA, czego Reguły ilości z Wydania nie robią."""
+
     centrum = settling_centrum(folder)
     write_quantity_source(centrum.collective_file, [{"C": "pr", "D": "nokia", "G": datetime(2026, 9, 9, 12), "V": 1, "Z": 1}])
     write_report_key(ToolDirectory(folder))
-    rule = {
-        "scope": "every",
-        "conditions": [{"kind": "devices", "mode": "contains", "text": "nokia", "negated": False}],
-        "action": {"kind": "leave_empty", "columns": ["V"]},
-    }
-    assert centrum.client.post("/api/settings/quantity-rules", json=rule).status_code == 200
+    assert centrum.client.post("/api/settings/quantity-rules", json=_LEAVE_V_EMPTY_AT_NOKIA).status_code == 200
     run_to_end(centrum, dry_run=True)
     produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
-
-    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
-
     assert produced.record["inea_only_cleared"] == {"AK": 0, "AP": 0, "V": 1}
+
+    def cleared(kept: Path) -> object:
+        return json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))["inea_only_cleared"]
+
+    return _EditedRulesRun(produced, cleared, {"AK": 0, "AP": 0, "V": 1})
+
+
+def _preparation_with_edited_rule(folder: Path) -> _EditedRulesRun:
+    """Przygotowanie pliku zbiorczego po regule „przy routerze wpisz 3 w AA”: kolumny AA Reguły ilości z Wydania nie
+    wypełniają."""
+
+    centrum = preparing_centrum(folder, [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "nokia zte"}])
+    write_report_key(ToolDirectory(folder))
+    assert centrum.client.post("/api/settings/quantity-rules", json=_AA_3_AT_ROUTER).status_code == 200
+    run_to_end(centrum, dry_run=False)
+    collective = centrum.fixture.collective_file_path
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+
+    assert _aa18(collective) == 3, "Przygotowanie u taty wpisało regułę z edytora"
+    return _EditedRulesRun(produced, lambda kept: _aa18(kept / "okresy" / collective.parent.name / collective.name), 3)
+
+
+def _aa18(collective: Path) -> object:
+    workbook = load_workbook(collective, read_only=True)
+    try:
+        return workbook.worksheets[0]["AA18"].value
+    finally:
+        workbook.close()
+
+
+# Każdy proces, który liczy Regułami ilości ze startu (``ProcessKind.quantity_rules``), z regułą taty z edytora.
+EDITED_RULES_RUNS: dict[str, Callable[[Path], _EditedRulesRun]] = {
+    "settlement": _settlement_with_edited_rule,
+    "preparation": _preparation_with_edited_rule,
+}
+
+
+def test_kazdy_proces_liczacy_regulami_ilosci_ze_startu_ma_tu_uruchomienie_z_regula_z_edytora() -> None:
+    assert set(EDITED_RULES_RUNS) == {kind.key for kind in KINDS if kind.quantity_rules}
+
+
+@pytest.mark.parametrize("process", EDITED_RULES_RUNS)
+def test_odtworzenie_procesu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], process: str
+) -> None:
+    """Tata zapisał regułę w edytorze, a proces liczył nią w Uruchomieniu; odtworzenie z Logów liczy Regułami ilości z
+    chwili Uruchomienia, nie regułami z Wydania, więc ma skutek reguły taty, jest zgodne i nie ma granicy o Logach
+    bez Reguł ilości."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    run = EDITED_RULES_RUNS[process](folder)
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, run.produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *run.produced.arguments)
+
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line for line in lines if "Reguł ilości" in line] == []
+    assert run.effect(kept) == run.expected
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.

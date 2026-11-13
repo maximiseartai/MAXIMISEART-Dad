@@ -477,6 +477,7 @@ def unknown_workers(
             "Dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców, albo popraw WYKONAWCA we wskazanych "
             "wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie."
         ),
+        setting="wykonawcy",
     )
 
 

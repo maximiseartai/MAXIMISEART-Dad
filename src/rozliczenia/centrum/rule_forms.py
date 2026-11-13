@@ -7,8 +7,12 @@ Formularz niczego nie sprawdza sam. Regułę z niego sprawdza silnik razem z res
 (``_RULE_FIELD``), a każda inna forma to odmowa bez pola, ze zdaniem nad formularzem. Sam formularz odmawia tylko tego,
 czego typ silnika nie wyrazi: reguły bez działania i godziny, która nie jest godziną z minutą.
 
-Nowa reguła dostaje id ``regula-<n>`` z pierwszym wolnym ``n`` od 1 i staje na końcu listy; zmieniona zostaje na swoim
-miejscu, więc kolejność reguł w pliku (od niej zależy kolejność kolumn podpowiedzi Uzupełnienia) się nie zmienia.
+Nowa reguła dostaje id ``regula-<n>`` z najmniejszym ``n`` od 1, którego nie ma żadna reguła teraz ani żaden klucz
+Historii Ustawień pliku reguł (``used``), i staje na końcu listy. Id usuniętej reguły nie wraca więc do nowej, a klucz
+Historii ``reguly.<id>`` zawsze wskazuje jedną regułę: „Cofnij” starego wiersza nie rusza reguły dodanej po nim. Historii
+się nie przycina, więc ``used`` ma każde id, jakie plik reguł kiedykolwiek miał w Historii, także z Wydania i spoza
+Centrum. Zmieniona reguła zostaje na swoim miejscu, więc kolejność reguł w pliku (od niej zależy kolejność kolumn
+podpowiedzi Uzupełnienia) się nie zmienia.
 """
 
 from __future__ import annotations
@@ -81,13 +85,16 @@ def form_of(rule: QuantityRule) -> contract.RuleForm:
     )
 
 
-def edited(rules: tuple[QuantityRule, ...], edit: contract.RuleEdit) -> tuple[QuantityRule, ...] | FieldProblem | UnknownRule:
-    """Reguły ``rules`` po zmianie ``edit``, jeszcze niesprawdzone przez silnik; ``FieldProblem``: formularz, którego typ
-    silnika nie wyrazi, ``UnknownRule``: zmiana albo usunięcie reguły, której nie ma."""
+def edited(
+    rules: tuple[QuantityRule, ...], edit: contract.RuleEdit, used: frozenset[str]
+) -> tuple[QuantityRule, ...] | FieldProblem | UnknownRule:
+    """Reguły ``rules`` po zmianie ``edit``, jeszcze niesprawdzone przez silnik; ``used``: id reguł z kluczy Historii
+    Ustawień, których nowa reguła nie dostanie. ``FieldProblem``: formularz, którego typ silnika nie wyrazi,
+    ``UnknownRule``: zmiana albo usunięcie reguły, której nie ma."""
 
     match edit:
         case contract.AddRule(rule=form):
-            rule = _rule(form, _new_id(rules))
+            rule = _rule(form, _new_id(rules, used))
             return rule if isinstance(rule, FieldProblem) else (*rules, rule)
         case contract.ChangeRule(rule_id=rule_id, rule=form):
             if rule_id not in {rule.id for rule in rules}:
@@ -152,8 +159,8 @@ def _field(place: str) -> FieldPath | None:
     return FieldPath("to", _NAMES[found["action_field"]])
 
 
-def _new_id(rules: tuple[QuantityRule, ...]) -> str:
-    taken = {rule.id for rule in rules}
+def _new_id(rules: tuple[QuantityRule, ...], used: frozenset[str]) -> str:
+    taken = {rule.id for rule in rules} | used
     return next(_NEW_ID.format(number) for number in range(1, len(taken) + 2) if _NEW_ID.format(number) not in taken)
 
 

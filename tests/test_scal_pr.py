@@ -407,14 +407,21 @@ def _empty_state(directory: Path) -> None:
         (directory / name).write_text(empty, encoding="utf-8")
 
 
+def _tool_on_main(github: MergeGitHub, name: str, replaced: tuple[str, str]) -> str:
+    """Commit na ``main`` w ``origin``, który w pliku narzędzia ``name`` zamienia ``replaced``; scalenie i werdykt sądzi
+    kod ``origin/main``, więc zmiana narzędzia tylko w checkoucie by nie zadziałała."""
+
+    tool = github.checkout / name
+    tool.write_text(tool.read_text(encoding="utf-8").replace(*replaced), encoding="utf-8")
+    git(github.checkout, "commit", "--quiet", "--all", "--message", f"{name} po zmianie")
+    git(github.checkout, "push", "--quiet", "origin", "main")
+    return git(github.checkout, "rev-parse", "HEAD")
+
+
 def _short_github_timeout(github: MergeGitHub) -> str:
     """Commit na ``main`` z ``github.LIMIT_S`` równym 3 s, żeby ``gh``, które zawiesza, kończyło się szybko."""
 
-    klient = github.checkout / "tools" / "lib" / "github.py"
-    klient.write_text(klient.read_text(encoding="utf-8").replace("LIMIT_S = 60", "LIMIT_S = 3"), encoding="utf-8")
-    git(github.checkout, "commit", "--quiet", "--all", "--message", "gh po 3 s")
-    git(github.checkout, "push", "--quiet", "origin", "main")
-    return git(github.checkout, "rev-parse", "HEAD")
+    return _tool_on_main(github, "tools/lib/github.py", ("LIMIT_S = 60", "LIMIT_S = 3"))
 
 
 def _repo_view(default_branch: str) -> str:
@@ -959,8 +966,7 @@ def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_
 ) -> None:
     github, head, main = _merge_test_github(tmp_path, pull_files, {"kod/__init__.py": main_sum}, {SUM_TEST_FILE: 1.0})
     if replaced is not None:
-        tool = github.checkout / "tools" / "lib" / "testy_scalenia.py"
-        tool.write_text(tool.read_text(encoding="utf-8").replace(*replaced), encoding="utf-8")
+        main = _tool_on_main(github, "tools/lib/testy_scalenia.py", replaced)
 
     answered = github.run("1")
 
@@ -1213,26 +1219,30 @@ def _render_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(klient_github, "gh", gh)
 
 
+def _fixed_issues(body: str, repository: str) -> tuple[int, ...]:
+    return naprawia.listed_issues(klient_github.html_markdownu(body, repository), repository, (naprawia.FIXES,))
+
+
 @pytest.mark.parametrize(("body", "fixes"), [case[1:] for case in opisy_pr.PRZYPADKI], ids=[case[0] for case in opisy_pr.PRZYPADKI])
 def test_naprawia_wskazuje_issues_tego_repo_tylko_na_poczatku_linii_tekstu_ktory_github_pokazuje(
     monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
 ) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(body, opisy_pr.REPO) == fixes
+    assert _fixed_issues(body, opisy_pr.REPO) == fixes
 
 
 def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(monkeypatch: pytest.MonkeyPatch) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
+    assert _fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
 
 
 @pytest.mark.parametrize(("number", "fixes"), opisy_pr.PRAWDZIWE.items(), ids=[f"pr-{number}" for number in opisy_pr.PRAWDZIWE])
 def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
+    assert _fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
 
 
 def test_kazdy_opis_testow_ma_html_z_renderera_githuba() -> None:
@@ -1243,8 +1253,7 @@ def test_sprzatanie_po_czasie_nie_odwoluje_scalenia(tmp_path: Path) -> None:
     hangs = "import time\n\ntime.sleep(600)\n"
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/sprzatanie.py": hangs})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    tool = github.checkout / "tools" / "scal_pr.py"
-    tool.write_text(tool.read_text(encoding="utf-8").replace("CLEANUP_TIMEOUT_S = 300", "CLEANUP_TIMEOUT_S = 1"), encoding="utf-8")
+    _tool_on_main(github, "tools/scal_pr.py", ("CLEANUP_TIMEOUT_S = 300", "CLEANUP_TIMEOUT_S = 1"))
     github.comment(1, PASS.format(head=head))
 
     answered = github.run("1")
@@ -1890,6 +1899,96 @@ def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dl
         assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
         assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
         assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+
+
+# Reguły werdyktu w checkoucie, który nie jest ``origin/main``: gałąź sprzed wdrożenia szablonu (#1489) go nie zna,
+# a gałąź, która zaostrza regułę, odrzuca każdy werdykt.
+WITHOUT_TEMPLATE = ("tools/lib/szablon_werdyktu.py", (f'ADR = "{szablon_werdyktu.ADR}"', 'ADR = "docs/adr/brak.md"'))
+STRICTER = ("tools/lib/werdykt_pr.py", ("MAX_MINOR = 3", "MAX_MINOR = -1"))
+# Atrapa ruff i mypy scalenia, która pada bez wyniku, gdy dostała znacznik kopii bazy: procesy potomne kopii go nie
+# dziedziczą, bo inaczej test scalenia z testami tego narzędzia odmawiałby w każdym checkoucie poza bazą.
+CHECKS_WITHOUT_COPY_MARKER = "import os\n\nassert 'SCAL_PR_Z_KOPII_BAZY' not in os.environ\nprint('CI LOKALNIE OK')\n"
+
+
+def _checkout_of(github: MergeGitHub, commit: str, tmp_path: Path) -> Path:
+    """Odłączony checkout ``commit`` obok checkoutu ``main``, jak checkout recenzenta na HEAD PR."""
+
+    checkout = tmp_path / "recenzent"
+    git(github.checkout, "worktree", "add", "--quiet", "--detach", str(checkout), commit)
+    return checkout
+
+
+def _run_from(github: MergeGitHub, checkout: Path, *arguments: str, environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(checkout / "tools" / "scal_pr.py"), *arguments],
+        cwd=checkout,
+        env={**github.environment(), **(environment or {})},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("where", "rules", "verdict", "passes"),
+    [
+        ("head-pr", WITHOUT_TEMPLATE, PROSE_PASS, False),
+        ("main-ze-zmiana", WITHOUT_TEMPLATE, PROSE_PASS, False),
+        ("head-pr", STRICTER, SPRAWDZONE_PASS, True),
+    ],
+    ids=["galaz-sprzed-szablonu-jak-1489", "checkout-main-ze-zmiana-regul", "pr-zaostrza-regule"],
+)
+def test_werdykt_i_merge_z_checkoutu_innego_niz_baza_sadzi_kod_bazy_z_origin(
+    tmp_path: Path, where: str, rules: tuple[str, tuple[str, str]], verdict: str, passes: bool
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/ci_lokalnie.py": CHECKS_WITHOUT_COPY_MARKER})
+    _deploy_template(github)
+    main = git(github.origin, "rev-parse", "refs/heads/main")
+    name, replaced = rules
+    tool = github.checkout / name
+    if where == "head-pr":
+        old = tool.read_text(encoding="utf-8")
+        head = github.open_pull(1, {name: old.replace(*replaced), "kod/inne.py": "INNE: int = 1\n"})
+        checkout = _checkout_of(github, head, tmp_path)
+    else:
+        head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+        tool.write_text(tool.read_text(encoding="utf-8").replace(*replaced), encoding="utf-8")
+        checkout = github.checkout
+    path = tmp_path / "runda-1.md"
+    path.write_text(verdict.format(head=head), encoding="utf-8")
+
+    answered = _run_from(github, checkout, "1", "--werdykt", str(path))
+    if not passes:
+        github.comment(1, verdict.format(head=head))
+    checked = _run_from(github, checkout, "1", "--bez-merge")
+
+    here = f"{head[:7]}" if where == "head-pr" else f"{main[:7]} ze zmianami"
+    judge = f"SĘDZIA | #1 | reguły z origin/main {main[:7]}, nie z checkoutu {here}: biegnę z kopii tego commitu"
+    for run in (answered, checked):
+        assert run.stdout.splitlines()[0] == judge, run.stdout + run.stderr
+    assert (answered.returncode == 0) == passes, answered.stdout + answered.stderr
+    assert len(github.published()) == passes
+    assert (checked.returncode == 0) == passes, checked.stdout + checked.stderr
+    if not passes:
+        assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+        assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
+
+
+def test_kopia_bazy_nie_uruchamia_nastepnej_kopii_gdy_baza_przesunela_sie_przed_jej_sprawdzeniem(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    path = tmp_path / "runda-1.md"
+    path.write_text(PASS.format(head=head), encoding="utf-8")
+    checkout = _checkout_of(github, github.start, tmp_path)
+    github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
+
+    answered = _run_from(github, checkout, "1", "--werdykt", str(path), environment={"SCAL_PR_Z_KOPII_BAZY": "1"})
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == ["WERDYKT ODMOWA | #1 | main zmienił się w trakcie sprawdzania, uruchom ponownie"]
+    assert github.published() == []
 
 
 @pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n"], ids=["blad-http", "pusta-odpowiedz"])

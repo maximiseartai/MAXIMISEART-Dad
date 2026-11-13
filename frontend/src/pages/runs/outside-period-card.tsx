@@ -24,7 +24,7 @@ type OutsidePeriodCardProps = {
   icon: ReactNode
   request: RunStart
   skeleton: string
-  /** Treść pod INTERMAX z Ustawień taty, gdy serwer nie podaje blokady (np. dni INTERMAX). */
+  /** Treść pod INTERMAX z Ustawień Centrum, gdy serwer nie podaje blokady (np. dni INTERMAX). */
   unblocked?: ReactNode
   /** Dopisek linii „Ostatnio …” o ostatnim Uruchomieniu, np. liczba uporządkowanych zleceń. */
   lastDetail: (last: RunRestored) => string | undefined
@@ -32,7 +32,7 @@ type OutsidePeriodCardProps = {
 
 /**
  * Karta procesu bez okresu w Uruchomieniach (Uporządkowanie INTERMAX; Wpisanie raportów ma przycisk na ekranie Raporty):
- * proces bierze INTERMAX z Ustawień taty, więc karta ma tylko jeden przycisk, zablokowany, gdy serwer podaje blokadę
+ * proces bierze INTERMAX z Ustawień Centrum, więc karta ma tylko jeden przycisk, zablokowany, gdy serwer podaje blokadę
  * albo INTERMAX otwarty w Excelu.
  */
 export function OutsidePeriodCard(props: OutsidePeriodCardProps) {

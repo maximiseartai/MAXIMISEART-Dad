@@ -66,7 +66,7 @@ _SHOWN_DAYS = 7
 
 @dataclass(frozen=True)
 class OrderingInputs:
-    """Wejście procesu Uporządkowania INTERMAX: INTERMAX z Ustawień taty, folder Kopii i zegar procesu.
+    """Wejście procesu Uporządkowania INTERMAX: INTERMAX z Ustawień Centrum, folder Kopii i zegar procesu.
 
     ``period`` to okres dzisiejszej daty z zegara procesu, ustalony przy tworzeniu wejścia, czyli przy starcie:
     Uruchomienie po północy z poniedziałku na wtorek dalej należy do okresu, w którym wystartowało (ADR 0019).

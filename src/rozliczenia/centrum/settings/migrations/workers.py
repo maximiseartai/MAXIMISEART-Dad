@@ -1,4 +1,4 @@
-"""Przeniesienie Konfiguracji wykonawców (``worker_mapping.yaml``) i adresów Wykonawców (``adresy-wykonawcow.yaml``) do
+"""Przeniesienie starego pliku Wykonawców (``worker_mapping.yaml``) i adresów Wykonawców (``adresy-wykonawcow.yaml``) do
 Listy Wykonawców (``wykonawcy.yaml``): zmiana z Wydania ``2026-11-lista-wykonawcow`` (ADR 0032).
 
 Czego nie da się pewnie przenieść, nie znika po cichu: adresy przy loginie spoza Konfiguracji i stary plik adresów,
@@ -20,7 +20,7 @@ from typing import Final
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, Refuse, ReleaseChange, ReleaseInputs, Waiting
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.file_state import file_state
 from rozliczenia.text import normalize_text
@@ -60,6 +60,13 @@ def propose(inputs: ReleaseInputs[WorkerList]) -> Proposal[WorkerList]:
     return Edit(lambda _current: built, undoable=False)
 
 
+def _old_files(config: Path) -> bool:
+    """Czy w ``config`` jest któryś stary plik Wykonawców, także taki, którego system nie daje teraz czytać; bez Historii
+    Ustawień i bez pamięci zmian z Wydań."""
+
+    return any(file_state(config / name) != "missing" for name in (OLD_MAPPING_FILE, OLD_ADDRESSES_FILE))
+
+
 def _document(path: Path) -> object | None:
     """Treść YAML starego pliku; ``None``: pliku nie ma. ``_Unreadable``, gdy system go nie oddaje, a ``ValueError`` ze
     zdaniem, gdy to nie jest tekst YAML."""
@@ -80,7 +87,7 @@ def _document(path: Path) -> object | None:
 
 
 def _mapping(path: Path) -> dict[Login, str] | str:
-    """Login → nazwa ze starej Konfiguracji wykonawców (pusta, gdy pliku nie ma) albo powód, dla którego nie da się jej
+    """Login → nazwa ze starego pliku Wykonawców (pusta, gdy pliku nie ma) albo powód, dla którego nie da się jej
     użyć, bez nazwy i loginu."""
 
     try:
@@ -106,7 +113,7 @@ def _mapping(path: Path) -> dict[Login, str] | str:
 
 def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
     """Login → adresy ze starego pliku adresów (pusty, gdy pliku nie ma) albo powód, dla którego nie da się go użyć, bez
-    adresu i loginu; login nie musi być w Konfiguracji wykonawców."""
+    adresu i loginu; login nie musi być w starym pliku Wykonawców."""
 
     try:
         document = _document(path)
@@ -135,5 +142,14 @@ def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
     return {login: tuple(addresses) for login, addresses in found.items()}
 
 
-CHANGE: Final = ReleaseChange(id="2026-11-lista-wykonawcow", file=WORKERS, propose=propose)
-"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8)."""
+CHANGE: Final = ReleaseChange(
+    id="2026-11-lista-wykonawcow",
+    file=WORKERS,
+    propose=propose,
+    refused_absent=messages.worker_list_not_created(),
+    waiting=Waiting(messages.worker_list_waiting(), _old_files),
+)
+"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie i
+gdy przeniesienie przy tym starcie nie doszło do skutku, a stare pliki są (stary plik bez prawa odczytu, Historia
+Ustawień albo pamięć zmian z Wydań nieczytelna), dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie,
+a nie pustą dobrą listę."""

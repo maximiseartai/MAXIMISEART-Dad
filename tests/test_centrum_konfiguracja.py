@@ -13,8 +13,7 @@ import pytest
 from openpyxl import load_workbook
 
 from rozliczenia import tool_files
-from rozliczenia.centrum import diagnosis_messages, tool_freshness
-from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum import tool_freshness
 from rozliczenia.centrum.settings import messages as settings_messages
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -359,38 +358,43 @@ def test_centrum_nie_zmienia_zadnego_pliku_konfiguracji_ani_wzorca(tmp_path: Pat
     assert config_directory_snapshot(config) == before
 
 
-def test_wykonawcy_sa_wypisani_w_kolejnosci_z_listy_wykonawcow(tmp_path: Path) -> None:
-    configuration = read_configuration(configured(tmp_path))
-
-    assert configuration["workers"] == {
-        "state": "ready",
-        "names": ["Adrian Testowy", "Darek Fikcyjny", "Kamil Syntetyczny"],
-    }
+def read_workers(app: Configured) -> dict[str, Any]:
+    response = app.client.get("/api/settings")
+    assert response.status_code == 200, response.json()
+    return dict(response.json()["workers"])
 
 
-def test_zla_lista_wykonawcow_jest_komunikatem_w_trzech_czesciach_bez_nazw(tmp_path: Path) -> None:
+def test_sekcja_wykonawcy_ma_liste_wykonawcow_w_kolejnosci_pliku(tmp_path: Path) -> None:
+    workers = read_workers(configured(tmp_path))
+
+    assert [worker["name"] for worker in workers["workers"]] == ["Adrian Testowy", "Darek Fikcyjny", "Kamil Syntetyczny"]
+    assert "workers" not in read_configuration(configured(tmp_path / "drugie"))
+
+
+def test_zla_lista_wykonawcow_jest_zdaniem_z_polem_bez_nazw(tmp_path: Path) -> None:
     app = configured(tmp_path)
     ToolDirectory(tmp_path).worker_list.write_text(
         "schema_version: 1\nwykonawcy:\n  - {nazwa: Ten Sam, loginy: [a]}\n  - {nazwa: ten sam, loginy: [b]}\n",
         encoding="utf-8",
     )
 
-    configuration = read_configuration(app)
+    workers = read_workers(app)
 
-    message = diagnosis_messages.worker_list_bad(settings_messages.worker_same_file())
-    assert configuration["workers"] == {"state": "unreadable", "message": common_contract.Message.of(message).model_dump()}
-    assert "Ten Sam" not in json.dumps(configuration, ensure_ascii=False)
-    assert [template["state"] for template in templates_by_file(configuration).values()] == ["ready"] * 3
+    assert (workers["state"], workers["problem"]) == (
+        "bad",
+        {"field": "wykonawcy[1].nazwa", "message": settings_messages.worker_same_file()},
+    )
+    assert "Ten Sam" not in json.dumps(workers, ensure_ascii=False)
 
 
 def test_nowy_wykonawca_dopisany_do_listy_jest_widoczny_bez_restartu(tmp_path: Path) -> None:
     app = configured(tmp_path)
-    read_configuration(app)
+    read_workers(app)
     write_worker_list(ToolDirectory(tmp_path).worker_list, worker_list({**WORKERS, "nowy.wykonawca": "Nowy Wykonawca"}))
 
-    workers = read_configuration(app)["workers"]
+    workers = read_workers(app)
 
-    assert workers["names"][-1] == "Nowy Wykonawca"
+    assert workers["workers"][-1]["name"] == "Nowy Wykonawca"
 
 
 def test_wersja_narzedzia_to_skrot_commitu_i_dzien_przejscia_na_niego(tmp_path: Path) -> None:

@@ -72,7 +72,7 @@ from rozliczenia.efenix_window import (
 from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
-from rozliczenia.message import Message
+from rozliczenia.message import Message, SettingsSection
 from rozliczenia.process_run import RunResult, StopEnding
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.quantity_engine import QuantityRules, RulesProblem
@@ -168,17 +168,40 @@ LoggedQuantity = int | str
 
 
 class LoggedMessage(_Record):
-    """Komunikat karty w trzech częściach z kodem; ``stop`` to Zatrzymanie, ``warning`` ostrzeżenie wyniku."""
+    """Komunikat karty w trzech częściach z kodem; ``stop`` to Zatrzymanie, ``warning`` ostrzeżenie wyniku.
+    ``setting``: sekcja Ustawień Centrum z linkiem na karcie; bez niej pola nie ma w pliku, jak w Logach sprzed niej.
+    ``at_start``: ostrzeżenie startu (``Start.warnings``), fakt startu, który odtworzenie bierze z Logów zamiast liczyć
+    go z Ustawień, których Logi nie mają; bez niego pola nie ma w pliku."""
 
     kind: Literal["stop", "warning"]
     code: str
     what: str
     where: str
     action: str
+    setting: SettingsSection | None = Field(default=None, exclude_if=lambda setting: setting is None)
+    at_start: bool = Field(default=False, exclude_if=lambda at_start: not at_start)
 
     @classmethod
-    def of(cls, kind: Literal["stop", "warning"], message: Message) -> LoggedMessage:
-        return cls(kind=kind, code=message.code, what=message.what, where=message.where, action=message.action)
+    def of(cls, kind: Literal["stop", "warning"], message: Message, *, at_start: bool = False) -> LoggedMessage:
+        return cls(
+            kind=kind,
+            code=message.code,
+            what=message.what,
+            where=message.where,
+            action=message.action,
+            setting=message.setting,
+            at_start=at_start,
+        )
+
+    def message(self) -> Message:
+        """Komunikat z Logów z tym samym kodem, treścią i sekcją Ustawień; pliku taty Logi nie mają."""
+
+        return Message(code=self.code, what=self.what, where=self.where, action=self.action, setting=self.setting)
+
+    def shown(self) -> common_contract.Message:
+        """Komunikat karty odtworzonej z Logów, z tym samym linkiem do Ustawień co na karcie na żywo."""
+
+        return common_contract.Message(what=self.what, where=self.where, action=self.action, setting=self.setting)
 
 
 class LoggedPhase(_Record):
@@ -1217,6 +1240,11 @@ class RunLog(StartFacts):
                 if isinstance(action, ButtonPressed) and action.mode is not None:
                     entry["mode"] = action.mode.word
         return dumped
+
+    def start_warnings(self) -> tuple[Message, ...]:
+        """Ostrzeżenia startu Uruchomienia (``LoggedMessage.at_start``) dla startu odtworzenia."""
+
+        return tuple(message.message() for message in self.messages if message.at_start)
 
     @classmethod
     def interrupted(

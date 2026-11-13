@@ -1,10 +1,11 @@
 """Przypomnienia o raporcie z Centrum rozliczeń (ADR 0030): wewnętrzna praca co minutę, poza Uruchomieniami procesu.
 
 Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check`` co minutę od startu Centrum do jego
-zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i poza porą przypomnień (``reminder_pora``) nic nie
-robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dzień wdrożenia przypomnień
-(``REMINDERS_ROLLOUT``, bez niego nic nie wysyła), Listę Wykonawców z migawki Ustawień Centrum i stopkę taty
-(``REMINDERS_FOOTER``), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
+zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i na początku migawkę Ustawień Centrum, więc zmiana
+pór, treści albo stopki działa od następnego sprawdzenia, bez ponownego startu Centrum (ADR 0032). Przy wyłączonych
+przypomnieniach i poza porą przypomnień z Ustawień (``reminder_pora``) nic więcej nie robi. W porze bierze z migawki
+INTERMAX i folder okresów, dzień wdrożenia przypomnień, Listę Wykonawców, treść i stopkę taty, potem czyta Pliki
+zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
 której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
@@ -12,35 +13,43 @@ czeka na następną porę, która zna wysłane z „Wysłanych”. Cały odczyt 
 niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
 
 Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
-czyta już niczego. Brak sieci (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje
-znowu, a przypomnienia, które już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
+czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z Ustawień: zmiana pór otwiera porę na jedno
+nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane”. Nazwaną porę przypomnienia z
+„Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa W1 w #1568): poranne wysłane o 8:05 zamyka
+poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego sprawdzenie w porze zapisuje przed wysyłką
+pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
+Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
+plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Dopóki zapis pór się nie
+uda (``zapis-por``), sprawdzenie nie wysyła, a pora zostaje otwarta. Brak sieci
+(``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje znowu, a przypomnienia, które
+już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
 nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty.
 
 Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
 czeka, nie bierze INTERMAX na wyłączność i nie pisze Kopii wejścia ani Logów Uruchomienia. Każda wysyłka i każda
 porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili (ADR 0028); tę samą porażkę dziennik
-dostaje raz, aż przyczyna się zmieni. Wyjątkiem jest brak dnia wdrożenia (``bez-wdrozenia``): przypomnienia są wtedy
-wyłączone, a nie zepsute, więc sprawdzenie nie zostawia śladu ani w dzienniku, ani w ``config``, a pora zostaje
+dostaje raz, aż przyczyna się zmieni. Wyjątkiem są przypomnienia wyłączone w Ustawieniach (``bez-wdrozenia``): są
+wtedy wyłączone, a nie zepsute, więc sprawdzenie nie zostawia śladu ani w dzienniku, ani w ``config``, a pora zostaje
 otwarta. Wynik ostatniego sprawdzenia w porze z dniem wdrożenia leży w ``REMINDERS_RESULT`` dla widoku Raporty:
 ``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to przypomnienia z „Wysłanych” i z tego sprawdzenia przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
-nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` albo ``null`` przed odczytem stopki. Widok Raporty
+nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` (stopka w Ustawieniach pusta) albo ``null``, gdy
+sprawdzenie nie doszło do przypomnień. Widok Raporty
 czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
 ostatnie sprawdzenie nie znalazło stopki (#1351).
 """
 
 from __future__ import annotations
 
-import codecs
 import json
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Final, Literal, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from rozliczenia import register_file
 from rozliczenia.centrum import reminder_messages
@@ -53,7 +62,7 @@ from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import closed_periods, register_orders
-from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_RESULT, REMINDERS_ROLLOUT
+from rozliczenia.tool_files import REMINDERS_RESULT, REMINDERS_SCHEDULES
 from rozliczenia.workbook_files import WorkbookError
 from rozliczenia.worker_report_inbox import (
     InboxUnreachable,
@@ -65,10 +74,15 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
 )
 from rozliczenia.worker_reports import (
+    OLD_VERSION_SCHEDULES,
     Pora,
     Reminder,
     ReminderInputs,
+    ReminderSchedule,
+    SchedulesInEffect,
+    ScheduleSince,
     SentReminder,
+    TimeRange,
     Window,
     WorkerAddresses,
     reminder_pora,
@@ -160,7 +174,6 @@ class ReportReminders:
         reports: Reports,
         now: Callable[[], datetime],
     ) -> None:
-        self._config = work.config
         self._log = work.log
         self._settings = settings
         self._mailbox = mailbox
@@ -171,7 +184,11 @@ class ReportReminders:
             work.config / REMINDERS_RESULT, work.log, where="wynik Przypomnień o raporcie", pause=work.pause
         )
         self._lock = threading.Lock()
-        self._settled: tuple[date, Pora] | None = None
+        self._schedules = StateFile(
+            work.config / REMINDERS_SCHEDULES, work.log, where="pory Przypomnień o raporcie", pause=work.pause
+        )
+        self._in_effect: SchedulesInEffect | None = None
+        self._settled: tuple[date, Pora, ReminderSchedule] | None = None
         self._last_failure: _Failed | None = None
 
     def check(self) -> None:
@@ -201,25 +218,43 @@ class ReportReminders:
 
     def _check(self) -> None:
         now = self._now()
-        pora = reminder_pora(now)
-        if pora is None or self._settled == (now.date(), pora):
+        snapshot = self._settings.snapshot()
+        schedule = snapshot.reminders.schedule
+        pora = reminder_pora(now, schedule)
+        # Wyłączone przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum bez pliku przypomnień i każdy klon
+        # bez ``config`` taty, więc praca nie zostawia śladu ani w dzienniku, ani w ``config``.
+        if pora is None or snapshot.reminders.sends is None or self._settled == (now.date(), pora, schedule):
             return
         found = _Check()
-        self._send(now, found)
+        in_effect = self._checked(now, schedule)
+        if self._schedules.unavailable:
+            found.failed = _Failed("zapis-por")
+        else:
+            self._send(now, snapshot, in_effect, found)
         failed = found.failed
-        # Bez dnia wdrożenia przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum przed Wydaniem i każdy
-        # klon bez ``config`` taty, więc praca nie zostawia śladu ani w dzienniku, ani w ``config``.
-        if failed is not None and failed.cause == "bez-wdrozenia":
-            return
         if failed is None or not failed.retry:
-            self._settled = (now.date(), pora)
+            self._settled = (now.date(), pora, schedule)
         if failed is not None and failed != self._last_failure:
             self._log.reminders_failed(cause=failed.cause, failure=failed.failure)
         self._last_failure = failed
         self._write(now, pora, found)
 
-    def _send(self, now: datetime, found: _Check) -> None:
-        read = due_reminders(now, self._settings.snapshot(), self._config, self._mailbox, self._files)
+    def _checked(self, now: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
+        """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką, a zapis, który
+        czeka w ``StateFile``, ponawia. Dopóki zapis czeka, sprawdzenie nie wysyła: po ponownym starcie Centrum bez
+        pliku pór wysłane liczyłyby pory z ADR 0030, a nie pory z chwili wysyłki."""
+
+        before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path, schedule)
+        self._in_effect = before.checked(now, schedule)
+        if self._in_effect is not before:
+            self._schedules.write(_schedules_document(self._in_effect))
+        else:
+            self._schedules.retry()
+        return self._in_effect
+
+    def _send(self, now: datetime, snapshot: SettingsSnapshot, in_effect: SchedulesInEffect, found: _Check) -> None:
+        schedule = snapshot.reminders.schedule
+        read = due_reminders(now, snapshot, self._mailbox, self._files, in_effect)
         match read:
             case NotRead():
                 found.failed = _Failed(read.cause, read.failure)
@@ -233,12 +268,12 @@ class ReportReminders:
         found.sent = [*_by_worker(read.sent, read.addresses)]
         for reminder in read.due:
             moment = self._now()
-            if (moment.date(), reminder_pora(moment)) != (now.date(), reminder_pora(now)):
+            if (moment.date(), reminder_pora(moment, schedule)) != (now.date(), reminder_pora(now, schedule)):
                 return
             outcome = self._mailbox.send(reminder, moment)
             match outcome:
                 case MailSent():
-                    self._log.reminder_sent(day=reminder.day.isoformat(), pora=_pora(now))
+                    self._log.reminder_sent(day=reminder.day.isoformat(), pora=_pora(now, schedule))
                     found.sent.append((reminder.worker, reminder.day, moment))
                 case MailRefused(cause=cause):
                     found.failed = _Failed("odmowa-wysylki", cause, retry=False)
@@ -279,7 +314,7 @@ NotReadCause = Literal["bez-wdrozenia", "bez-ustawien", "bez-dostepu", "bez-adre
 @dataclass(frozen=True)
 class DueReminders:
     """Odczyt sprawdzenia, które doszło do przypomnień: przypomnienia, które należą się teraz, przypomnienia z
-    „Wysłanych”, adresy Wykonawców i stopka taty (``None``: bez pliku stopki)."""
+    „Wysłanych”, adresy Wykonawców i stopka taty z Ustawień (``None``: stopka pusta)."""
 
     due: tuple[Reminder, ...]
     sent: tuple[SentReminder, ...]
@@ -298,18 +333,20 @@ class NotRead:
 def due_reminders(
     now: datetime,
     snapshot: SettingsSnapshot,
-    config: Path,
     mailbox: ReminderMailbox,
     files: DadFiles,
+    in_effect: SchedulesInEffect,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
-    """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: dzień wdrożenia
-    i stopka z ``config``, Ustawienia taty i Lista Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
-    INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``. Niczego nie wysyła i nie zapisuje: wysyła
+    """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
+    raporcie, Ustawienia Centrum z Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
+    INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
+    (``schedules_in_effect``). Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
     settings = snapshot.folders
-    rollout = _rollout(config / REMINDERS_ROLLOUT)
+    reminders = snapshot.reminders
+    rollout = reminders.sends
     if rollout is None:
         return NotRead("bez-wdrozenia")
     if settings.register is None or settings.periods_directory is None:
@@ -337,14 +374,80 @@ def due_reminders(
     sent = mailbox.sent_reminders(window.first)
     if not isinstance(sent, SentReminders):
         return sent
-    footer = _footer(config / REMINDERS_FOOTER)
-    due = reminders_due(ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), footer))
-    return DueReminders(due, sent.reminders, addresses, footer)
+    due = reminders_due(
+        ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), reminders, in_effect)
+    )
+    return DueReminders(due, sent.reminders, addresses, reminders.footer if reminders.footer.strip() else None)
 
 
 
-def _pora(now: datetime) -> str:
-    pora = reminder_pora(now)
+class _Range(BaseModel):
+    od: time
+    do: time
+
+
+class _Schedule(BaseModel):
+    poranna: _Range
+    wieczorna: _Range
+    pierwsze: time
+
+    def schedule(self) -> ReminderSchedule:
+        return ReminderSchedule(
+            TimeRange(self.poranna.od, self.poranna.do), TimeRange(self.wieczorna.od, self.wieczorna.do), self.pierwsze
+        )
+
+
+class _Since(_Schedule):
+    od: datetime
+
+
+class _Schedules(BaseModel):
+    """Kształt pliku ``REMINDERS_SCHEDULES``, który pisze ``_schedules_document``: pory sprzed pierwszego wpisu
+    (``przed``) i wpisy pór od chwili ich pierwszego sprawdzenia (``pory``)."""
+
+    schema_version: Literal[1]
+    przed: list[_Schedule] = Field(min_length=1)
+    pory: list[_Since]
+
+
+def schedules_in_effect(path: Path, current: ReminderSchedule) -> SchedulesInEffect:
+    """Pory, przy których sprawdzała praca przypomnień, z pliku ``REMINDERS_SCHEDULES``. Bez pliku praca tej wersji
+    jeszcze nie sprawdzała w porze, więc przypomnienia z „Wysłanych” wysłała wersja sprzed Ustawień Centrum przy porach
+    z ADR 0030. Z plikiem nieczytelnym albo z chwilą bez strefy nie wiadomo, przy jakich porach sprawdzała, więc
+    wysłane liczą pory z ADR 0030 i bieżące ``current``: więcej zamkniętych pór, a nie drugi mail tej samej pory."""
+
+    try:
+        found = _Schedules.model_validate_json(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return SchedulesInEffect()
+    except (OSError, UnicodeDecodeError, ValidationError):
+        return SchedulesInEffect(OLD_VERSION_SCHEDULES | {current})
+    if any(entry.od.tzinfo is None for entry in found.pory):
+        return SchedulesInEffect(OLD_VERSION_SCHEDULES | {current})
+    return SchedulesInEffect(
+        frozenset(entry.schedule() for entry in found.przed),
+        tuple(ScheduleSince(entry.od, entry.schedule()) for entry in sorted(found.pory, key=lambda entry: entry.od)),
+    )
+
+
+def _schedules_document(in_effect: SchedulesInEffect) -> str:
+    def shown(schedule: ReminderSchedule) -> dict[str, object]:
+        return {
+            "poranna": {"od": f"{schedule.morning.start:%H:%M}", "do": f"{schedule.morning.end:%H:%M}"},
+            "wieczorna": {"od": f"{schedule.evening.start:%H:%M}", "do": f"{schedule.evening.end:%H:%M}"},
+            "pierwsze": f"{schedule.first:%H:%M}",
+        }
+
+    document = {
+        "schema_version": _RESULT_VERSION,
+        "przed": sorted((shown(schedule) for schedule in in_effect.before), key=lambda found: json.dumps(found)),
+        "pory": [{"od": change.since.isoformat(), **shown(change.schedule)} for change in in_effect.changes],
+    }
+    return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+
+
+def _pora(now: datetime, schedule: ReminderSchedule) -> str:
+    pora = reminder_pora(now, schedule)
     return "" if pora is None else pora.value
 
 
@@ -356,34 +459,3 @@ def _by_worker(sent: tuple[SentReminder, ...], addresses: WorkerAddresses) -> li
         reached = {addresses.logins[address] for address in reminder.recipients if address in addresses.logins}
         found += [(worker, reminder.day, reminder.sent_at) for worker in sorted(reached)]
     return found
-
-
-def _text(path: Path) -> str | None:
-    """Tekst pliku Maksa w ``config`` (BOM UTF-8 z Notatnika, UTF-16 z PowerShell 5.1); ``None`` bez pliku albo
-    gdy pliku nie da się przeczytać."""
-
-    try:
-        content = path.read_bytes()
-    except OSError:
-        return None
-    encoding = "utf-16" if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) else "utf-8-sig"
-    try:
-        return content.decode(encoding)
-    except UnicodeError:
-        return None
-
-
-def _rollout(path: Path) -> date | None:
-    """Dzień wdrożenia przypomnień z pierwszej linii ``rrrr-mm-dd``; ``None`` bez pliku albo przy innej treści."""
-
-    text = _text(path)
-    lines = [] if text is None else text.split()
-    try:
-        return date.fromisoformat(lines[0]) if len(lines) == 1 and len(lines[0]) == len("rrrr-mm-dd") else None
-    except ValueError:
-        return None
-
-
-def _footer(path: Path) -> str | None:
-    text = _text(path)
-    return text if text is not None and text.strip() else None

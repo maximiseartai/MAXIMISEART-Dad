@@ -121,6 +121,7 @@ class Catalog:
             self.engine,
             _CATALOG,
             start.settings,
+            start.warnings,
             start.quantity_rules if kind.quantity_rules else None,
         )
 

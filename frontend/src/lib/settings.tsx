@@ -53,6 +53,10 @@ type SettingsContextValue = {
    * zapis ma wiersz Historii (`change`).
    */
   changed: (change: string | null) => void
+  /** Ustawienia po zapisie sekcji z własnym formularzem albo przełącznikiem: „Zapisano · Cofnij”, gdy coś się zmieniło. */
+  sectionSaved: (choice: Choice) => void
+  /** Porażka zapisu sekcji bez pola (np. plik, którego nie da się zapisać) jako powiadomienie w oknie Ustawień. */
+  saveFailed: (failure: Error) => void
   /** Numer przyjętych zmian Ustawień: Historia Ustawień czyta się od nowa przy każdej. */
   changes: number
 }
@@ -304,6 +308,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       undone,
       secretSaved: take,
       changed,
+      sectionSaved: saved,
+      saveFailed: failed,
       changes,
     }),
     [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changed, changes]

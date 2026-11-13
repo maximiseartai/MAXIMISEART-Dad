@@ -376,9 +376,11 @@ def test_podsumowanie_i_ostrzezenia_w_kolejnosci_etapow_sa_te_same_w_skrypcie_na
     ]
     assert (exit_code, result["result"]) == (2, card["result"])
     assert result["summary"] == card["summary"]
-    assert [{key: value for key, value in warning.items() if key != "code"} for warning in result["warnings"]] == card[
-        "warnings"
+    # Karta ma przy Komunikacie link do sekcji Ustawień (``setting``), którego wynik Skryptu dla maszyn nie potrzebuje.
+    assert [{key: value for key, value in warning.items() if key != "code"} for warning in result["warnings"]] == [
+        {key: value for key, value in warning.items() if key != "setting"} for warning in card["warnings"]
     ]
+    assert {warning.get("setting") for warning in card["warnings"]} == {None, "wykonawcy"}
     assert ("Problemy", 4) in [(figure["label"], figure["value"]) for figure in view["progress"]["figures"]]
     [script_record] = MetricsStore(tmp_path / "metrics-skryptu.jsonl", SETTLEMENT.counter_names).read()
     [card_record] = centrum.metric_records()

@@ -3,33 +3,41 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 from rozliczenia.centrum.settings.files import FieldPath
 
-
-def not_text(file: str) -> str:
-    return f"Plik {file} w folderze config nie jest tekstem UTF-8. Zapisz Ustawienia jeszcze raz."
-
-
-def damaged(file: str) -> str:
-    return f"Plik {file} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
+SAVE_AGAIN: Final = "Zapisz Ustawienia jeszcze raz."
+"""Naprawa złego pliku, który zapis taty w oknie Ustawień pisze od nowa z ostatniej dobrej wartości."""
+MAKS_FIXES: Final = "Poprawia go Maks."
+"""Naprawa złego pliku, którego tata nie zmienia w oknie Ustawień: Lista Wykonawców, dopóki sekcja Wykonawcy jest tylko
+do odczytu (edycja w #1474)."""
 
 
-def other_schema(file: str) -> str:
-    return f"Plik {file} w folderze config zapisała inna wersja narzędzia. Zapisz Ustawienia jeszcze raz."
+def not_text(file: str, repair: str = SAVE_AGAIN) -> str:
+    return f"Plik {file} w folderze config nie jest tekstem UTF-8. {repair}"
 
 
-def unknown_key(file: str, position: int) -> str:
+def damaged(file: str, repair: str = SAVE_AGAIN) -> str:
+    return f"Plik {file} w folderze config ma uszkodzoną treść. {repair}"
+
+
+def other_schema(file: str, repair: str = SAVE_AGAIN) -> str:
+    return f"Plik {file} w folderze config zapisała inna wersja narzędzia. {repair}"
+
+
+def unknown_key(file: str, position: int, repair: str = SAVE_AGAIN) -> str:
     """Nieznane pole na górze pliku po numerze, nie po nazwie: nazwa to tekst z pliku, a zdanie trafia do Zgłoszenia."""
 
-    return f"Plik {file} w folderze config ma nieznane pole ({position}. od góry pliku). Zapisz Ustawienia jeszcze raz."
+    return f"Plik {file} w folderze config ma nieznane pole ({position}. od góry pliku). {repair}"
 
 
 def worker_unknown_key(file: str, worker: int, position: int) -> str:
     """Nieznane pole we wpisie Wykonawcy po numerach: stary kształt wpisu (``login: Nazwa``) ma login w miejscu pola."""
 
     return (
-        f"Plik {file} w folderze config ma nieznane pole we wpisie {worker}. Wykonawcy ({position}. pole wpisu). Zapisz "
-        "Ustawienia jeszcze raz."
+        f"Plik {file} w folderze config ma nieznane pole we wpisie {worker}. Wykonawcy ({position}. pole wpisu). "
+        f"{MAKS_FIXES}"
     )
 
 
@@ -45,8 +53,8 @@ def unknown_theme() -> str:
     return "Motyw może być tylko ciemny albo jasny."
 
 
-def bad_field(file: str, place: FieldPath) -> str:
-    return f"Plik {file} w folderze config ma złą wartość pola {place.text}. Zapisz Ustawienia jeszcze raz."
+def bad_field(file: str, place: FieldPath, repair: str) -> str:
+    return f"Plik {file} w folderze config ma złą wartość pola {place.text}. {repair}"
 
 
 def worker_without_login() -> str:
@@ -95,11 +103,59 @@ def workers_not_moved(old_file: str, reason: str) -> str:
     )
 
 
+def worker_list_unreadable() -> str:
+    return "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę."
+
+
+def worker_list_not_created() -> str:
+    return (
+        "Listy Wykonawców nie ma: nie udało się jej utworzyć ze starych plików Wykonawców w folderze config. Powód jest "
+        "w Historii."
+    )
+
+
+def worker_list_waiting() -> str:
+    return (
+        "Listy Wykonawców jeszcze nie ma: przeniesienie starych plików Wykonawców czeka na dostęp do pliku w folderze "
+        "config i spróbuje znowu przy następnym starcie Centrum."
+    )
+
+
 def addresses_not_moved(old_file: str, reason: str) -> str:
     return (
         f"Adresów Wykonawców nie przeniesiono ze starego pliku {old_file} w folderze config: {reason}. Dopisz je "
         "Wykonawcom w Ustawieniach."
     )
+
+
+def reminders_time() -> str:
+    return "Wpisz godzinę jako GG:MM, np. 08:00."
+
+
+def reminders_empty_morning() -> str:
+    return "Poranna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_empty_evening() -> str:
+    return "Wieczorna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_overlap() -> str:
+    return "Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna."
+
+
+def reminders_empty_text() -> str:
+    return "Wpisz pierwsze zdanie przypomnienia."
+
+
+def reminders_unknown_field() -> str:
+    return "W treści przypomnienia może stać tylko pole {dzień}, bez innych nawiasów klamrowych."
+
+
+def reminders_without_since() -> str:
+    return "Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz."
+
+
 def autostart_unsupported() -> str:
     return "Start razem z Windows działa tylko na komputerze z Windows."
 

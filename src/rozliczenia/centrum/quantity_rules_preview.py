@@ -102,7 +102,7 @@ def _settled(periods_directory: Path) -> list[PeriodFolder]:
     scanned = scan_period_folders(periods_directory)
     settled: list[PeriodFolder] = []
     for folder in sorted(scanned.found(), key=lambda found: found.period.tuesday, reverse=True):
-        if folder.observe().status == "worker_settlements_ready":
+        if folder.observe().settled:
             settled.append(folder)
             if len(settled) == RECENT:
                 break

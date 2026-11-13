@@ -1,12 +1,14 @@
 name: Zgłoszenia CI
 
-# After every CI run: an issue "Flaky test: <test>" for each test that passed only on its retry, and on a push to main one
-# issue for a red main, closed by the next green main (tools/ci/zgloszenia_ci.py, ADR 0020). A red run on main also
-# comments once on each PR whose merge it decides, so the thread that watches its merged PR wakes up.
+# After every CI run and every night of mutations: an issue "Flaky test: <test>" for each test that passed only on its
+# retry, and on a push to main one issue for a red main, closed by the next green main (tools/ci/zgloszenia_ci.py,
+# ADR 0020, ADR 0021). A red run on main also comments once on each PR whose merge it decides, so the thread that
+# watches its merged PR wakes up.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] skips forks, runs main's code, reads only test ids from artifacts
     workflows:
       - CI
+      - Mutacje nocne
     types:
       - completed
 

@@ -138,13 +138,18 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
         settings_messages,
         {
             "not_text": [partial(settings_messages.not_text, SETTINGS_FILE)],
-            "damaged": [partial(settings_messages.damaged, SETTINGS_FILE)],
+            "damaged": [
+                partial(settings_messages.damaged, SETTINGS_FILE),
+                partial(settings_messages.damaged, WORKERS_FILE, settings_messages.MAKS_FIXES),
+            ],
             "other_schema": [partial(settings_messages.other_schema, SETTINGS_FILE)],
             "unknown_key": [partial(settings_messages.unknown_key, SETTINGS_FILE, 2)],
             "register_path": [settings_messages.register_path],
             "periods_directory_path": [settings_messages.periods_directory_path],
             "unknown_theme": [settings_messages.unknown_theme],
-            "bad_field": [partial(settings_messages.bad_field, WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"))],
+            "bad_field": [
+                partial(settings_messages.bad_field, WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"), settings_messages.MAKS_FIXES)
+            ],
             "worker_unknown_key": [partial(settings_messages.worker_unknown_key, WORKERS_FILE, 1, 1)],
             "worker_without_login": [settings_messages.worker_without_login],
             "worker_login_empty": [settings_messages.worker_login_empty],
@@ -158,9 +163,19 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "workers_not_moved": [
                 partial(settings_messages.workers_not_moved, OLD_MAPPING_FILE, "plik nie jest poprawnym YAML")
             ],
+            "worker_list_not_created": [settings_messages.worker_list_not_created],
+            "worker_list_waiting": [settings_messages.worker_list_waiting],
+            "worker_list_unreadable": [settings_messages.worker_list_unreadable],
             "addresses_not_moved": [
                 partial(settings_messages.addresses_not_moved, OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy")
             ],
+            "reminders_time": [settings_messages.reminders_time],
+            "reminders_empty_morning": [settings_messages.reminders_empty_morning],
+            "reminders_empty_evening": [settings_messages.reminders_empty_evening],
+            "reminders_overlap": [settings_messages.reminders_overlap],
+            "reminders_empty_text": [settings_messages.reminders_empty_text],
+            "reminders_unknown_field": [settings_messages.reminders_unknown_field],
+            "reminders_without_since": [settings_messages.reminders_without_since],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],

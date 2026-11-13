@@ -31,7 +31,7 @@ from silnik_mutacji import NearLimit
 import werdykt_required
 import wykonaj_zadanie
 import zapis_czasow
-from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow, zakres
+from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -441,13 +441,13 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
 ) -> None:
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    # Baza HEAD nie ma zmian, więc tylko push, który bazę pomija, wybiera każdy krok (ADR 0014).
+    # Baza HEAD nie ma zmian, więc tylko push, który bazę pomija, wybiera każdą podstawę (ADR 0014).
     code = plan_ci.main(["plan", "--zdarzenie", "push", "--baza", "HEAD", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], github=BEZ_LOGOWANIA)
     out = capsys.readouterr().out.splitlines()
     plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
     output = dict(line.split("=", 1) for line in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
 
-    every_step = {f"skill:{chosen.krok.key}" for chosen in zakres(Zdarzenie.PUSH, frozenset()).wybrane}
+    every_baseline = {f"skill:{step.key}" for step in kroki_skilli.Katalog.skanuj(ROOT).kroki if step.verdict is None}
     planned_steps = {unit.partition("#")[0] for job in plan.zadania if job.tor == MUTACJE.nazwa for unit in job.jednostki}
 
     assert code == 0
@@ -457,8 +457,8 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in pliki_testow()}
     # Plik bez pomiaru waży ``DOMYSLNIE.plik_s``, więc pliki repozytorium nie mieszczą się w jednym zadaniu.
     assert len([job for job in plan.zadania if job.tor == "linux-3.14"]) > 1
-    # Push biegnie każdy krok każdego skilla repozytorium.
-    assert planned_steps == every_step != set()
+    # Push biegnie każdą podstawę ``ci:`` repozytorium, a żadnego skryptu mutacji: te biegną nocą (ADR 0021).
+    assert planned_steps == every_baseline != set()
     assert output == {"pytest": json.dumps(plan.macierz("pytest"), ensure_ascii=False), "mutations": json.dumps(plan.macierz("mutations"), ensure_ascii=False)}
 
 
@@ -853,10 +853,10 @@ MODEL_SKILL = {
     f".agents/skills/verify-m/{rozjazd_modelu.DEFINICJE}": json.dumps({"src/pakiet/a.py": {"a": ""}}),
 }
 # Krok skilla verify-m, który plan zdarzenia wybiera przy zmianie kodu opisanego modelem, i plik, który zostawia krok, gdy
-# ruszył: na pull request podstawa ``ci:``, a na pushu ``main`` (i nocą) tylko skrypt mutacji (ADR 0021).
+# ruszył: na pull request i na pushu ``main`` podstawa ``ci:`` (skrypt mutacji biegnie nocą, ADR 0021).
 MODEL_SKILL_STEPS = {
     "pull_request": ("skill:verify-m/ci", "podstawa-biegla"),
-    "push": ("skill:verify-m/check_m_mutations.py", "skrypt-biegl"),
+    "push": ("skill:verify-m/ci", "podstawa-biegla"),
 }
 
 
@@ -866,8 +866,8 @@ def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_krok_w_m
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model_in_line: bool, event: str
 ) -> None:
     """Zmiana kodu z ``model/definicje.json`` skilla wybiera na pull request jego podstawę (ten sam wybór, którym pyta krok
-    ``rozjazd modelu`` w ``tools/szybko.py``), a na pushu ``main`` jego skrypt mutacji, a wykonanie zadania kończy każdy
-    z tych kroków porażką rozjazdu z krokami naprawy, zanim skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie
+    ``rozjazd modelu`` w ``tools/szybko.py``), a na pushu ``main`` każdą podstawę, a wykonanie zadania kończy
+    taki krok porażką rozjazdu z krokami naprawy, zanim skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie
     sprawdza (#1194 r1, #1201 r1)."""
 
     step, started = MODEL_SKILL_STEPS[event]
