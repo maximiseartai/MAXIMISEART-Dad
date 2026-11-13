@@ -11,7 +11,8 @@ Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w dec
 
 Regułę „nazwij korzeń i napraw go na najwyższym szczeblu” pilnowały do dziś tylko dwa zdania prozy: w `AGENTS.md` i w kroku recenzenta skilla `przeglad`.
 Nic nie sprawdzało, że Ważne ma korzeń, ani nie liczyło, czy ten sam korzeń wraca w innym PR.
-Ręczny przegląd Ważnych z 28.10–12.11 (`~/.t3/notes/ogrod-2026-11-09/pierwszy-pass/ucieczki/`) przypisał im 41 kodów korzeni, a te same kody wracały w wielu PR-ach: `R-MATCH-KOD` w 14, `R-BEZ-TESTU` w 19, `R-MATCH-TEKST` w 10.
+Ręczny przegląd Ważnych z 28.10–12.11 przypisał im kody korzeni, a te same kody wracały w wielu PR-ach.
+Wystąpienia każdego kodu z co najmniej 2 PR-ów spisał audyt historii (Wdrożenie, punkt 5) w issues z etykietą `chwast`, np. `R-MATCH-KOD` w 12 PR-ach (#1541), `R-BEZ-TESTU` w 26 (#1520), `R-MATCH-TEKST` w 6 (#1542).
 Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne Ważne gdzie indziej.
 
 ## Decyzja
@@ -24,7 +25,7 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
   - **Chwast**: korzeń, który dał Ważne w co najmniej 2 różnych PR-ach; [ADR 0034](0034-kod-jest-pamiecia.md) dokłada zapach, którego liczba na `main` rośnie dwa tygodnie z rzędu (#1627);
   - **Szczebel**: poziom wyrwania korzenia, (a) druga droga i jeden właściciel, (b) typ albo lint, (c) test zachowania łapiący klasę, (d) zapadka, (e) punkt w „Co jest porażką” skilla `przeglad`; [ADR 0034](0034-kod-jest-pamiecia.md) zmienia (d) na regułę deklaratywną w gotowym narzędziu i zakazuje nowej zapadki na regexie linii (#1615).
 - Pytanie o korzeń uruchamia Ważne z przeglądu i czerwony `main` z prawdziwej zmiany (Q4); PR naprawy czerwonego `main` ma tę samą sekcję korzenia, a flaky test nie (Q10).
-  [ADR 0034](0034-kod-jest-pamiecia.md) dokłada dwa źródła chwastu: poprawkę Maksa w wątku i spis zapachów (#1627), a issue czerwonego `main` kieruje do wątku autora PR, którego merge go zaczerwienił (#1621).
+  [ADR 0034](0034-kod-jest-pamiecia.md) liczy do źródeł chwastu poprawkę Maksa w wątku, która jest nim już dziś w `AGENTS.md` i skillu `przeglad`, dokłada spis zapachów (#1627), a issue czerwonego `main` kieruje do wątku autora PR, którego merge go zaczerwienił (#1621).
 
 ### Szczebel i dowód
 

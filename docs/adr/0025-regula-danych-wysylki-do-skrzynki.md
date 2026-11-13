@@ -202,8 +202,8 @@ deterministyczną opartą na tym fakcie:
   traktuje go jako zastrzeżenie, nie granicę blokującą.
 
 Sondy przeglądów #917, #952 i #966 (179 przypadków przez HTTP API Centrum, te
-same bajty na `main` b3f1c625a i na tej regule; tabela na Macu Maksa:
-`~/.t3/notes/logi-837/deterministyczna/TABELA.md`):
+same bajty na `main` b3f1c625a i na tej regule; ta sama tabela stoi w opisie
+PR #984, a sondy opisują werdykty tych przeglądów):
 
 | klasa | sond | wyciek na `main` | wyciek na tej regule |
 |---|---|---|---|
