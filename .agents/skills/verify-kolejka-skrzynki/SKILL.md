@@ -15,7 +15,7 @@ pilnuje:
   - tools/lib/narzedzia_tlc.py
   - tools/lib/eksplorator.py
 ci: .agents/skills/verify-kolejka-skrzynki/scripts/sprawdz_kolejke.py
-ci-czesci: 5
+ci-czesci: 6
 ---
 
 # Verify Kolejka Skrzynki Zgłoszeń
@@ -25,10 +25,10 @@ ci-czesci: 5
 CI runs `sprawdz_kolejke.py` (the `ci:` key) in Mutation checks whenever a change touches this skill:
 it runs the checker of the real code (`explore_outbox.py`) and the TLA+ model (`sprawdz_model_kolejki.py`, TLC,
 as the `ci:` of `verify-aktualizacja-narzedzia` does), each to its end. Its units (`UNITS` in
-`sprawdz_kolejke.py`) are five groups of scopes and five groups of model configurations (58–265 s each on Windows CI, run 43290270296, n 1);
-CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
-A part takes units by count, not by time, so their order interleaves heavy and light units: on the unit times of pull
-request run 43290270296 it gives a longest part of 323 s with four or five parts.
+`sprawdz_kolejke.py`) are five groups of scopes and five groups of model configurations (70–236 s each, medians of
+20 Windows CI jobs, 12–13.11); CI runs them in up to `ci-czesci` parts (`MUTACJE_CZESC=k/n`, consecutive units per part).
+A part takes units by count, not by time, so their order interleaves heavy and light units: on those medians it gives a
+longest part of 236 s with six parts (the scope `archiwum-diagnoza` alone), 307 s with five and 333 s with four.
 On Windows CI (8 pull request runs, 5–12.11) the scopes took 699 s and the model 453 s; with the earlier five units in
 three parts the third part (the six scopes of Zgłoszenia and Uwagi with `postep`, and the whole model) took 525–754 s
 against 192–393 s for the first. A

@@ -166,6 +166,7 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
         secret=row.secret,
         undoable=row.undoable and row.result == "zapisano",
         refused=row.result == "odrzucono",
+        removed=row.removed,
         reason=row.reason,
     )
 

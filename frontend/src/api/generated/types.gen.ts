@@ -601,7 +601,7 @@ export type HistoryRelease = {
  *
  * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
  * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
- * z powodem ``reason``.
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export type HistoryRow = {
     /**
@@ -645,6 +645,10 @@ export type HistoryRow = {
      * Refused
      */
     refused: boolean;
+    /**
+     * Removed
+     */
+    removed: boolean;
     /**
      * Reason
      */
@@ -3058,7 +3062,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */

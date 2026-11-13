@@ -29,7 +29,7 @@ wersja`: its note under the heading `Co nowego`, with the intro sentence and eac
 bulleted list (a note without points stays one paragraph), and the list `Rozwiązane sprawy` with the cases
 sent from this computer that it solves (`Uwaga: <tytuł>`, `Zgłoszenie: <Co się
 stało>`). The one Centrum offers the update to (`update_offered`, the same rule
-as Konfiguracja) stands in its own card above the list with `Zaktualizuj
+as the section Narzędzie of Ustawienia) stands in its own card above the list with `Zaktualizuj
 narzędzie`; once Dad is on it, it goes back to the list as history, read and
 without the button. Only that card is new and lights the dot; older Wydania
 are history. A higher Wydanie from outside `main` is no Powiadomienie.

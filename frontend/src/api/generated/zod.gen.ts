@@ -305,7 +305,7 @@ export const zHistoryRelease = z.object({
  *
  * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
  * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
- * z powodem ``reason``.
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
  */
 export const zHistoryRow = z.object({
     id: z.string(),
@@ -323,6 +323,7 @@ export const zHistoryRow = z.object({
     secret: z.boolean(),
     undoable: z.boolean(),
     refused: z.boolean(),
+    removed: z.boolean(),
     reason: z.string().nullable()
 });
 
@@ -1727,7 +1728,7 @@ export const zViewTiming = z.object({
         'okresy',
         'uruchomienia',
         'metryki',
-        'konfiguracja',
+        'ustawienia',
         'powiadomienia',
         'uzupelnienie',
         'raporty'

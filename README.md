@@ -73,9 +73,9 @@ GitHuba token fine-grained (tylko repozytorium
 zapis, ważność do roku) i wpisuje go jako jedyną linię do
 `config\zgloszenia-klucz.txt` na komputerze taty. Plik jest poza Gitem. Bez
 niego Zgłoszenia czekają w Kolejce wysyłki w `config\zgloszenia\kolejka\` i
-wychodzą same, gdy token się pojawi, a Konfiguracja pokazuje „Zgłoszenia: brak
+wychodzą same, gdy token się pojawi, a okno Ustawień w sekcji Zgłoszenia pokazuje „Brak
 tokenu”. Gdy GitHub nie przyjmuje tokenu (wygasł albo nie ma uprawnień),
-Konfiguracja pokazuje „Zgłoszenia: token odrzucony”. W obu przypadkach tata
+pokazuje tam „Token odrzucony”. W obu przypadkach tata
 widzi przy Zgłoszeniu, Uwadze taty i w Powiadomieniach „Token do Zgłoszeń nie
 działa. Skontaktuj się z Maksem.”
 
@@ -460,9 +460,10 @@ wystarczają zależności z `requirements.txt`, bez Node.
   OneDrive od wolnej przeglądarki.
 - Ustawienia Centrum (Rejestr zleceń, folder okresów, motyw) są w
   `config/centrum-ustawienia.yaml`, ich Historia w `config/historia-ustawien.jsonl`,
-  a ostatnia przyjęta treść każdego pliku w `config/ustawienia-pamiec/`, wszystko
-  poza gitem. Ręczną zmianę pliku Centrum zapisuje w Historii jako zmianę spoza
-  Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
+  a ostatni przyjęty stan i ostatnia dobra treść każdego pliku w
+  `config/ustawienia-pamiec/`, wszystko poza gitem. Każdą ręczną zmianę pliku
+  (także usunięcie i złą treść) Centrum zapisuje w Historii jednym wierszem
+  spoza Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
 - Metryki czytają przy każdym odczycie oba pliki metryk
   (`.rozliczenia-metrics.jsonl`, `.przygotowanie-pliku-zbiorczego-metrics.jsonl`)
   bez zmiany schematu, więc widać w nich także Uruchomienia spoza Centrum.
@@ -495,7 +496,7 @@ npm run build      # build do src/rozliczenia/centrum/static/
   wejścia `inputs`, a proces z okresem także karta startu `PeriodStart`),
   jego pozycja w `KINDS` (`centrum/catalog.py`), a procesu z okresem także
   kafelek w `_TILES` (`centrum/period_start.py`). Start, Diagnoza, Logi
-  Uruchomienia, karty z Logów, Metryki i Konfiguracja pytają wpis, więc
+  Uruchomienia, karty z Logów, Metryki i okno Ustawień pytają wpis, więc
   `runs.py` i one się nie zmieniają; czego brakuje, mówi
   `tests/test_katalog_procesow.py`.
 

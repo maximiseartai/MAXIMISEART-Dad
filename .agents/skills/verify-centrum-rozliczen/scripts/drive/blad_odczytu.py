@@ -8,12 +8,32 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Locator, Page, Route, expect
 
-from drive.common import HIDE_TAB, SHOW_TAB, Run, ensure_files_set, sent_requests
+from drive.common import (
+    HIDE_TAB,
+    SHOW_TAB,
+    Run,
+    close_settings,
+    ensure_files_set,
+    open_settings,
+    sent_requests,
+    settings_window,
+)
 from drive.teksty import WRITE
 
 FEATURE = "blad-odczytu"
 RETRY = "Spróbuj ponownie"
 UNREACHABLE = "Centrum rozliczeń nie odpowiada."
+
+
+def _via_settings(page: Page, section: str) -> Callable[[], None]:
+    """Dad opens Ustawienia anew on ``section``: each opening of the window reads the configuration once."""
+
+    def open_section() -> None:
+        if settings_window(page).is_visible():
+            close_settings(page)
+        open_settings(page, section)
+
+    return open_section
 
 
 def _failure(page: Page, what: str) -> Locator:
@@ -106,9 +126,10 @@ def _retry_in_flight(run: Run, page: Page) -> None:
     held: list[Route] = []
     page.route("**/api/configuration", lambda route: route.abort())
     try:
+        close_settings(page)
         page.get_by_role("link", name="Okresy", exact=True).click()
-        page.get_by_role("link", name="Konfiguracja", exact=True).click()
-        failure = _failure(page, "konfiguracji")
+        _via_settings(page, "Wykonawcy")()
+        failure = _failure(page, "ustawień")
         expect(failure).to_contain_text(UNREACHABLE)
         page.unroute("**/api/configuration")
         # Harness: the re-read is held, like an answer that takes its time, then fails as well.
@@ -137,9 +158,9 @@ def _retry_in_flight(run: Run, page: Page) -> None:
             route.abort()
         page.unroute("**/api/configuration")
     failure.get_by_role("button", name=RETRY, exact=True).click()
-    expect(page.get_by_role("list", name="Wykonawcy")).to_be_visible()
+    expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
     expect(failure).to_have_count(0)
-    run.check(True, "the next try reads Konfiguracja")
+    run.check(True, "the next try reads Ustawienia")
 
 
 def _filling_retries(run: Run, page: Page, *, step: str, part: str, content: Locator, shot: str) -> None:
@@ -184,7 +205,7 @@ def _filling_retries(run: Run, page: Page, *, step: str, part: str, content: Loc
 
 
 def _tool_update_unread(run: Run, page: Page, open_page: Callable[[], None]) -> None:
-    """A failed read of Aktualizacja narzędzia on Konfiguracja is said next to its button, not swallowed."""
+    """A failed read of Aktualizacja narzędzia in the section Narzędzie is said next to its button, not swallowed."""
 
     run.step(FEATURE, "blad-odczytu-aktualizacja")
     status = page.get_by_role("status").filter(has_text="Nie udało się odczytać stanu aktualizacji.")
@@ -192,12 +213,12 @@ def _tool_update_unread(run: Run, page: Page, open_page: Callable[[], None]) -> 
     try:
         open_page()
         expect(status).to_contain_text(UNREACHABLE)
-        run.check(True, "a failed read of Aktualizacja narzędzia (unreachable, harness) says so on Konfiguracja")
+        run.check(True, "a failed read of Aktualizacja narzędzia (unreachable, harness) says so in the section Narzędzie")
         run.capture(page, "148b-blad-odczytu-aktualizacja")
     finally:
         page.unroute("**/api/tool-update")
     open_page()
-    expect(page.get_by_role("list", name="Wykonawcy")).to_be_visible()
+    expect(settings_window(page).get_by_role("listitem", name="Wersja narzędzia")).to_be_visible()
     expect(status).to_have_count(0)
     run.check(True, "the next entry reads Aktualizacja narzędzia and the sentence is gone")
 
@@ -279,12 +300,13 @@ def drive(run: Run, page: Page) -> None:
         open_page=via_menu("Metryki"), content=history, shot="145-blad-odczytu-metryki",
     )
     _fails_then_retries(
-        run, page, step="blad-odczytu-konfiguracja", path="/api/configuration", what="konfiguracji",
-        open_page=via_menu("Konfiguracja"), content=page.get_by_role("list", name="Wykonawcy"),
+        run, page, step="blad-odczytu-konfiguracja", path="/api/configuration", what="ustawień",
+        open_page=_via_settings(page, "Wykonawcy"), content=settings_window(page).get_by_role("list", name="Wykonawcy"),
         shot="146-blad-odczytu-konfiguracja",
     )
     _retry_in_flight(run, page)
-    _tool_update_unread(run, page, via_menu("Konfiguracja"))
+    _tool_update_unread(run, page, _via_settings(page, "Narzędzie"))
+    close_settings(page)
 
     def bell() -> None:
         page.get_by_role("button", name="Powiadomienia").click()

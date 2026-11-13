@@ -3248,6 +3248,10 @@
             "type": "boolean",
             "title": "Refused"
           },
+          "removed": {
+            "type": "boolean",
+            "title": "Removed"
+          },
           "reason": {
             "anyOf": [
               {
@@ -3274,10 +3278,11 @@
           "secret",
           "undoable",
           "refused",
+          "removed",
           "reason"
         ],
         "title": "HistoryRow",
-        "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``."
+        "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``; ``removed``: plik usunięty poza Centrum."
       },
       "InaccessiblePath": {
         "properties": {
@@ -7261,7 +7266,7 @@
               "okresy",
               "uruchomienia",
               "metryki",
-              "konfiguracja",
+              "ustawienia",
               "powiadomienia",
               "uzupelnienie",
               "raporty"

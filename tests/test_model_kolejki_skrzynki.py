@@ -108,16 +108,16 @@ def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centru
 
 # Jednostki sprawdzenia kodu i modelu w kolejności ``UNITS``; atrapa sprawdzenia wypisuje pierwszy zakres jednostki.
 ALL = [
-    "explore_outbox.py --scope archiwum-diagnoza",
-    "sprawdz_model_kolejki.py --config archiwum",
-    "explore_outbox.py --scope watek-okresu",
-    "sprawdz_model_kolejki.py --config okres",
-    "explore_outbox.py --scope diagnoza",
-    "sprawdz_model_kolejki.py --config starsza",
     "explore_outbox.py --scope postep",
     "sprawdz_model_kolejki.py --config archiwum-lista",
     "explore_outbox.py --scope archiwum",
+    "explore_outbox.py --scope diagnoza",
     "sprawdz_model_kolejki.py --config postep",
+    "explore_outbox.py --scope archiwum-diagnoza",
+    "sprawdz_model_kolejki.py --config okres",
+    "sprawdz_model_kolejki.py --config archiwum",
+    "sprawdz_model_kolejki.py --config starsza",
+    "explore_outbox.py --scope watek-okresu",
 ]
 
 
@@ -133,11 +133,11 @@ ALL = [
             "KOLEJKA SKRZYNKI: PADŁO explore_outbox.py --scope diagnoza --scope diagnoza-odczyt --scope archiwum-puste-repo",
             1,
         ),
-        ("5/5", "", ALL[8:], "KOLEJKA SKRZYNKI OK", 0),
-        ("1/5", "", ALL[:2], "KOLEJKA SKRZYNKI OK", 0),
+        ("6/6", "", ALL[8:], "KOLEJKA SKRZYNKI OK", 0),
+        ("4/6", "", ALL[5:6], "KOLEJKA SKRZYNKI OK", 0),
         ("11/11", "", [], "KOLEJKA SKRZYNKI: PADŁO (MUTACJE_CZESC to K/N z 1 <= K <= N <= 10, nie '11/11')", 1),
     ],
-    ids=["calosc", "model-pada", "zakres-pada", "czesc-5-z-5", "czesc-1-z-5", "zla-czesc"],
+    ids=["calosc", "model-pada", "zakres-pada", "czesc-6-z-6", "czesc-4-z-6", "zla-czesc"],
 )
 def test_podstawa_ci_uruchamia_jednostki_swojej_czesci_do_konca_i_pada_gdy_padla_ktoras(
     tmp_path: Path, part: str, failing: str, ran: list[str], last: str, returncode: int
