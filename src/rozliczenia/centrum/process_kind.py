@@ -37,6 +37,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
 from rozliczenia.quantity_check import CheckResult
+from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
 from rozliczenia.progress import ProgressSnapshot
@@ -90,6 +91,9 @@ class Start:
     startu, z której Logi Uruchomienia i Diagnoza Zatrzymania biorą pliki procesu; ``None``: gospodarz bez Ustawień
     Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
     Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces jej nie potrzebuje.
+    ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z chwili startu; gospodarz
+    bez Ustawień Centrum podaje Reguły ilości z Wydania. Pole nie ma wartości domyślnej, więc każdy gospodarz mówi, skąd
+    ma reguły.
     """
 
     paths: Mapping[PathNeed, Path]
@@ -98,6 +102,7 @@ class Start:
     pricing: runs_contract.Pricing | None = None
     settings: FolderSettings | None = None
     workers: WorkerList | None = None
+    quantity_rules: QuantityRules = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]

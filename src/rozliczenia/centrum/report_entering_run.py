@@ -123,7 +123,14 @@ class ReportEnteringEntry:
         if not workers.addresses().logins:
             raise refusal.report_entering_without_addresses()
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(paths, period=None, dry_run=False, settings=settings, workers=workers)
+        start = Start(
+            paths,
+            period=None,
+            dry_run=False,
+            settings=settings,
+            workers=workers,
+            quantity_rules=snapshot.quantity_rules,
+        )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:

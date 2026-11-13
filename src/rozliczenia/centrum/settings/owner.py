@@ -3,12 +3,17 @@
 Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), Przypomnienia o raporcie
 (``reminders``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
-tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, i przełącznik startu
-razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``: każde ustawienie
-ma swoje miejsce (``_Place``), z którego właściciel czyta stan i do którego go zapisuje, a reszta drogi jest wspólna.
-``CentrumSettings`` czyta je przy każdym odczycie od nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę
-(``snapshot``) na start Uruchomienia i kończy na jej wartościach.
+tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
+razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, oraz pliki Reguł
+ilości i Listy Urządzeń (``quantity_rules``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
+czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSettings`` czyta je przy każdym odczycie od
+nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
+wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
+Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_checked``: odczyt,
+zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego nie pasuje, jest zły tak samo jak plik z
+uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Plik, który zaczyna pasować dopiero po zmianie drugiego, ma
+wtedy wiersz ``spoza`` jak zmiana jego treści.
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -82,8 +87,11 @@ from rozliczenia.centrum.settings.history import (
 )
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings import messages
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, devices_problem, quantity_rules, rules_problem
 from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
+from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_report_inbox import InboxState
 from rozliczenia.worker_reports import ReminderSettings
@@ -106,6 +114,19 @@ class SettingsSnapshot:
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
     reminders: ReminderSettings
+    quantity_rules: QuantityRules
+    """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
+    drugiego, ostatnia dobra para."""
+
+
+@dataclass(frozen=True)
+class QuantityRulesView:
+    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, i problem każdego pliku (``None``:
+    plik dobry). Plik, który nie pasuje do drugiego, ma problem jak zły plik."""
+
+    rules: QuantityRules
+    rules_problem: FieldProblem | None
+    devices_problem: FieldProblem | None
 
 
 @dataclass(frozen=True)
@@ -203,6 +224,8 @@ class CentrumSettings:
             REMINDERS.name: _ConfigFile(config / REMINDERS.name, pause),
             INBOX.name: _ConfigFile(config / INBOX.name, pause),
             AUTOSTART.name: AutostartPlace(autostart),
+            DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
+            RULES.name: _ConfigFile(config / RULES.name, pause),
         }
 
     def snapshot(self) -> SettingsSnapshot:
@@ -214,7 +237,14 @@ class CentrumSettings:
                 workers=self._observe(WORKERS),
                 inbox=inbox.state(self._observe(INBOX)),
                 reminders=_usable(self._observe(REMINDERS), REMINDERS),
+                quantity_rules=self._quantity_rules().rules,
             )
+
+    def quantity_rules(self) -> QuantityRulesView:
+        """Reguły ilości i Lista Urządzeń dla okna Ustawień, każdy plik porównany z pamięcią jak przy każdym odczycie."""
+
+        with self._lock:
+            return self._quantity_rules()
 
     def view(self) -> SettingsView:
         with self._lock:
@@ -364,6 +394,36 @@ class CentrumSettings:
         rows = [row for row in history.rows if row.at >= since][:REPORTED_CHANGES]
         return tuple(_reported(row) for row in rows)
 
+    def _quantity_rules(self) -> QuantityRulesView:
+        rules = self._observe(RULES)
+        devices = self._observe(DEVICES)
+        return QuantityRulesView(
+            quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)), _problem(rules, RULES), _problem(devices, DEVICES)
+        )
+
+    def _checked(self, file: SettingsFile[T], parsed: T | FieldProblem) -> T | FieldProblem:
+        """Wartość pliku z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój ``parse``."""
+
+        together: Mapping[str, Callable[[Any], FieldProblem | None]] = {
+            RULES.name: self._rules_problem,
+            DEVICES.name: self._devices_problem,
+        }
+        check = together.get(file.name)
+        problem = None if check is None or isinstance(parsed, FieldProblem) else check(parsed)
+        return parsed if problem is None else problem
+
+    def _rules_problem(self, rules: tuple[QuantityRule, ...]) -> FieldProblem | None:
+        """Reguły z bieżącą Listą Urządzeń albo z ostatnią dobrą; listy nie porównuje z pamięcią, bo jej przyjęcie
+        zależy od przyjęcia reguł."""
+
+        data = self._places[DEVICES.name].read()
+        return _rules_problem(rules, data, self._memory.read(DEVICES.name))
+
+    def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | None:
+        """Lista z regułami, którymi liczą procesy: reguły przyjmuje się pierwsze."""
+
+        return devices_problem(devices, _usable(self._observe(RULES), RULES), _last_good_devices(self._memory.read(DEVICES.name)))
+
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
         return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
 
@@ -383,7 +443,7 @@ class CentrumSettings:
             return Refused(observed.problem)
         current = _usable(observed, file)
         new = file.dump(edit(current)).encode("utf-8")
-        edited = file.parse(new)
+        edited = self._checked(file, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
         changes = file.diff(current, edited)
@@ -455,7 +515,7 @@ class CentrumSettings:
 
     def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
 
-        parsed = file.parse(data)
+        parsed = self._checked(file, file.parse(data))
         remembered = self._memory.read(file.name)
         if isinstance(remembered, Unreadable):
             return _read(parsed, None)
@@ -466,7 +526,7 @@ class CentrumSettings:
             return _read(parsed, None)
         good = None if remembered.good is None else _good_value(remembered.good, file)
         before = file.default if good is None else good
-        if _seen(file, data) == remembered.seen:
+        if _seen(file, data) == remembered.seen and (isinstance(parsed, FieldProblem) or file.secret or remembered.good == data):
             return _read(parsed, good)
         try:
             self._history.append(self._outside_row(file, data, parsed, before))
@@ -516,9 +576,12 @@ class CentrumSettings:
 # Każdy plik ma własny typ wartości, a właściciel oddaje wartość tylko temu plikowi, z którego ją wziął.
 _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     FOLDERS.name: FOLDERS,
+    FOLDERS.name: FOLDERS,
     WORKERS.name: WORKERS,
     REMINDERS.name: REMINDERS,
     AUTOSTART.name: AUTOSTART,
+    DEVICES.name: DEVICES,
+    RULES.name: RULES,
 }
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
 _FILES: Final[Mapping[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}
@@ -531,21 +594,35 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela;
     nie dopisuje Historii ani pamięci."""
 
+    remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
+    devices_data = settings_bytes(config / DEVICES.name)
+    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
+    devices = _read_only(config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices)))
     return SettingsSnapshot(
-        folders=_usable(_read_only_view(config, FOLDERS), FOLDERS),
+        folders=_read_only(config, FOLDERS),
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
-        reminders=_usable(_read_only_view(config, REMINDERS), REMINDERS),
+        reminders=_read_only(config, REMINDERS),
+        quantity_rules=quantity_rules(rules, devices),
     )
 
 
-def _read_only_view(config: Path, file: SettingsFile[T]) -> Read[T] | Unreadable:
-    """Wartość pliku bez porównania z pamięcią: zła treść z ostatnią dobrą z pamięci właściciela, gdy ją ma."""
+def _read_only(config: Path, file: SettingsFile[T], together: Callable[[T], FieldProblem | None] | None = None) -> T:
+    return _usable(_read_only_view(config, file, together), file)
+
+
+def _read_only_view(
+    config: Path, file: SettingsFile[T], together: Callable[[T], FieldProblem | None] | None = None
+) -> Read[T] | Unreadable:
+    """Wartość pliku bez porównania z pamięcią: zła treść z ostatnią dobrą z pamięci właściciela, gdy ją ma;
+    ``together``: problem pliku razem z drugim plikiem pary, jak ``CentrumSettings._checked``."""
 
     data = settings_bytes(config / file.name)
     if isinstance(data, OSError):
         return Unreadable()
     parsed = file.parse(data)
+    if not isinstance(parsed, FieldProblem) and together is not None:
+        parsed = together(parsed) or parsed
     if not isinstance(parsed, FieldProblem):
         return Good(parsed)
     remembered = Memory(config, lambda _: None).read(file.name)
@@ -570,12 +647,40 @@ def _seen(file: SettingsFile[T], data: bytes | None) -> bytes | None:
     return hashlib.sha256(data).digest()
 
 
+def _rules_problem(
+    rules: tuple[QuantityRule, ...], devices: bytes | None | OSError, remembered: Remembered | None | Unreadable
+) -> FieldProblem | None:
+    """Reguły z bieżącą Listą Urządzeń (stan ``devices``) albo z jej ostatnią dobrą wartością z pamięci; listę, której
+    system nie daje czytać, procesy biorą z Wydania, więc reguły muszą pasować do niej."""
+
+    if isinstance(devices, OSError):
+        return rules_problem(rules, None, DEVICES.default)
+    now = DEVICES.parse(devices)
+    return rules_problem(rules, None if isinstance(now, FieldProblem) else now, _last_good_devices(remembered))
+
+
+def _last_good_devices(remembered: Remembered | None | Unreadable) -> tuple[Component, ...]:
+    """Ostatnia dobra Lista Urządzeń z pamięci właściciela, którą procesy liczą przy złej liście; bez niej lista z Wydania."""
+
+    return _good_value(remembered.good if isinstance(remembered, Remembered) else None, DEVICES)
+
+
 def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
     """Wartość ostatniej dobrej treści z pamięci; brak pliku albo treść, której ``parse`` dziś nie przyjmuje, to wartości
     domyślne pliku."""
 
     parsed = file.parse(good)
     return file.default if isinstance(parsed, FieldProblem) else parsed
+
+
+def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> FieldProblem | None:
+    match observed:
+        case Good():
+            return None
+        case Bad(problem=problem):
+            return problem
+        case Unreadable():
+            return FieldProblem(None, messages.unavailable(file.name))
 
 
 def _read(parsed: T | FieldProblem, usable: T | None) -> Read[T]:

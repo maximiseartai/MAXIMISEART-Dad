@@ -76,6 +76,7 @@ from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.process_run import Interlocutor
 from rozliczenia.progress import ProgressProjection
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
@@ -504,6 +505,7 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
             period="08_14_09_2026",
             dry_run=False,
             workers=WorkerList(()),
+            quantity_rules=DEFAULT_QUANTITY_RULES,
         ),
         process_kind.HostParts(),
         RunContext(),

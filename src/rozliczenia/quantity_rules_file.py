@@ -43,6 +43,7 @@ from .quantity_engine import (
     TextMode,
     Write,
     WriteNothing,
+    rule_list_problem,
 )
 
 SCHEMA_VERSION: Final = 1
@@ -71,22 +72,59 @@ def parse_device_list(document: object) -> DeviceList | RulesProblem:
 def parse_quantity_rules(document: object, devices: DeviceList) -> QuantityRules | RulesProblem:
     """Reguły ilości z dokumentu pliku ``reguly-ilosci.yaml`` z Listą Urządzeń ``devices`` albo pierwszy problem."""
 
+    rules = parse_rule_list(document)
+    if isinstance(rules, RulesProblem):
+        return rules
     try:
-        body = _document(document, "reguly")
-        rules = tuple(_rule(entry, f"reguly[{index}]") for index, entry in enumerate(_list(body, "reguly")))
         return QuantityRules(rules, devices)
-    except _Malformed as malformed:
-        return malformed.problem
     except QuantityRulesRefused as refused:
         return refused.problem
 
 
+def parse_rule_list(document: object) -> tuple[QuantityRule, ...] | RulesProblem:
+    """Reguły z dokumentu pliku ``reguly-ilosci.yaml`` bez Listy Urządzeń albo pierwszy problem: każdy niezmiennik
+    reguł poza tym, czy składnik, do którego reguła się odwołuje, jest na liście (``rule_list_problem``)."""
+
+    try:
+        body = _document(document, "reguly")
+        rules = tuple(_rule(entry, f"reguly[{index}]") for index, entry in enumerate(_list(body, "reguly")))
+    except _Malformed as malformed:
+        return malformed.problem
+    return rule_list_problem(rules) or rules
+
+
 def dump_device_list(devices: DeviceList) -> dict[str, object]:
-    return {"schema_version": SCHEMA_VERSION, "urzadzenia": [_dump_component(component) for component in devices.components]}
+    return dump_components(devices.components)
+
+
+def dump_components(components: tuple[Component, ...]) -> dict[str, object]:
+    return {"schema_version": SCHEMA_VERSION, "urzadzenia": [dump_component(component) for component in components]}
 
 
 def dump_quantity_rules(rules: QuantityRules) -> dict[str, object]:
-    return {"schema_version": SCHEMA_VERSION, "reguly": [_dump_rule(rule) for rule in rules.rules]}
+    return dump_rule_list(rules.rules)
+
+
+def dump_rule_list(rules: tuple[QuantityRule, ...]) -> dict[str, object]:
+    return {"schema_version": SCHEMA_VERSION, "reguly": [dump_rule(rule) for rule in rules]}
+
+
+def parse_component(entry: object) -> Component | RulesProblem:
+    """Jeden składnik w postaci wpisu pliku (``dump_component``) albo problem jego pól."""
+
+    try:
+        return _component(entry, "urzadzenia[0]")
+    except _Malformed as malformed:
+        return malformed.problem
+
+
+def parse_rule(entry: object) -> QuantityRule | RulesProblem:
+    """Jedna reguła w postaci wpisu pliku (``dump_rule``) albo problem jej pól."""
+
+    try:
+        return _rule(entry, "reguly[0]")
+    except _Malformed as malformed:
+        return malformed.problem
 
 
 def _document(document: object, key: str) -> object:
@@ -187,14 +225,14 @@ def _write(entry: object, path: str) -> Write:
     return Write(_text(fields["kolumna"], f"{path}.kolumna"), value, _choice(fields["razy"], Multiplier, f"{path}.razy"), component)
 
 
-def _dump_component(component: Component) -> dict[str, object]:
+def dump_component(component: Component) -> dict[str, object]:
     dumped: dict[str, object] = {"id": component.id, "zapisy": list(component.spellings)}
     if component.group is not None:
         dumped["grupa"] = str(component.group)
     return dumped
 
 
-def _dump_rule(rule: QuantityRule) -> dict[str, object]:
+def dump_rule(rule: QuantityRule) -> dict[str, object]:
     return {
         "id": rule.id,
         "zakres": str(rule.scope),

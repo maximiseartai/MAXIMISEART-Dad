@@ -86,6 +86,16 @@ FEATURES = (
         ),
     ),
     Feature(
+        "reguly-ilosci",
+        (
+            "350-reguly-ilosci-szerokie",
+            "351-reguly-ilosci-bez-wzorca",
+            "352-urzadzenia-szerokie",
+            "353-reguly-ilosci-waskie",
+            "354-urzadzenia-waskie",
+        ),
+    ),
+    Feature(
         "tablica-okresow",
         (
             "06-tablica-okresow",

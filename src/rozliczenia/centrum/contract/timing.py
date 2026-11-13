@@ -35,6 +35,7 @@ ApiOperation = Literal[
     "changeReminders",
     "previewReminder",
     "getSettingsHistory",
+    "getQuantityRules",
     "undoSettingsChange",
     "getPeriodBoard",
     "openPeriodPath",
