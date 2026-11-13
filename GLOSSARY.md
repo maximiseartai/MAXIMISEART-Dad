@@ -510,9 +510,10 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 ## Lista Urządzeń
 
 Składniki kolumny `URZĄDZENIA`, które znają Reguły ilości, każdy z innymi
-zapisami tej samej rzeczy (np. `zyxel` i `gateway`) i grupą (router, TV,
-extender). Część Ustawień Centrum. Składnik spoza Listy Urządzeń to nieznane
-`URZĄDZENIA`.
+zapisami tej samej rzeczy (np. `zyxel` i `gateway`, albo `usterka`, `usterka
+hurt` i `usterka wew`) i grupą (router, TV, extender). Część Ustawień Centrum.
+Składnik spoza Listy Urządzeń to nieznane `URZĄDZENIA`: działają wtedy tylko
+reguły z zakresem „składnik spoza listy” albo „każde zlecenie”.
 _Avoid_: słownik, aliasy
 
 ## Ilości do uzupełnienia

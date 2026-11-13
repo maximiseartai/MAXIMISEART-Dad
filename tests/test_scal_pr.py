@@ -1,9 +1,10 @@
 """``tools/scal_pr.py``: agent scala PR tylko przy zielonym CI na HEAD, werdykcie PASS dla HEAD, opisie z sekcjami wzoru
 skilla ``pr`` i scaleniu z bieżącą bazą, które przechodzi ruff i mypy.
 
-Testy biegną na prawdziwym Gicie z repozytorium bare jako ``origin`` (z ``refs/pull/N/head`` jak na GitHubie)
-i na prawdziwym ``tools/ci_lokalnie.py --tylko ruff,mypy`` na małym kodzie. Atrapa ``gh`` podaje stan PR i zapisuje
-wywołania ``gh pr merge`` zamiast scalać.
+Testy biegną na prawdziwym Gicie z repozytorium bare jako ``origin`` (z ``refs/pull/N/head`` jak na GitHubie).
+Prawdziwe ``tools/ci_lokalnie.py --tylko ruff,mypy`` na małym kodzie sprawdza scalenie tylko w testach z
+``real_checks``; reszta ma w commicie ``start`` atrapę, która drukuje ``CI LOKALNIE OK``. Atrapa ``gh`` podaje stan PR
+i zapisuje wywołania ``gh pr merge`` zamiast scalać.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ REVIEW = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "przeglad"
 BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
+CHECKS_PASS = "print('CI LOKALNIE OK')\n"
 CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
 FAKE_GH = """\
 import json, os, pathlib, subprocess, sys, time
@@ -181,10 +183,13 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
 
 
 class MergeGitHub(FakeGitHub):
-    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = "2026-11-01T00:00:00Z") -> None:
+    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = "2026-11-01T00:00:00Z", real_checks: bool = False) -> None:
         """Commit ``start`` ma datę ``started``, a z kopią narzędzia dodaje moduł bramki korzenia, więc to chwila jej
         wdrożenia na ``main`` (``bramka_korzenia.MARKER``); domyślnie po werdyktach atrapy (24.10.2026), więc ich wątki
-        kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza."""
+        kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza.
+
+        Bez ``real_checks`` ``tools/ci_lokalnie.py`` w ``start`` to atrapa ``CHECKS_PASS``: stoi po obu stronach
+        scalenia, więc nie zmienia plików zmiany PR ani ``main`` i wyboru testu scalenia."""
 
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", started)
@@ -197,6 +202,7 @@ class MergeGitHub(FakeGitHub):
                     ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
                     ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
                     "tools/sprzatanie.py": CLEANUP,
+                    **({} if real_checks else {"tools/ci_lokalnie.py": CHECKS_PASS}),
                     **files,
                 },
                 tool="tools/scal_pr.py",
@@ -208,6 +214,10 @@ class MergeGitHub(FakeGitHub):
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
         self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
         self.written = 0
+
+    def environment(self) -> dict[str, str]:
+        # Test scalenia biegnie na jednym-dwóch plikach testów, a liczbę workerów brałby z pytesta, który go uruchomił.
+        return {**super().environment(), "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
 
     def open_pull(self, number: int, files: dict[str, str], *, parent: str = "") -> str:
         """HEAD nowego PR z zielonym CI i bez werdyktu: commit ``files`` na ``parent`` (domyślnie commit ``start``)."""
@@ -336,7 +346,7 @@ def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:0
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
     github.comment(1, f"WERDYKT: FAIL {head}\n- krytyczne: brak testu")
@@ -751,7 +761,7 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 def test_pr_ktory_nie_scala_sie_czysto_z_biezacym_main_nie_jest_scalany(
     tmp_path: Path, main_files: dict[str, str], pull_files: dict[str, str], reason: str
 ) -> None:
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'})
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n'}, real_checks=True)
     head = github.open_pull(1, pull_files)
     github.comment(1, PASS.format(head=head))
     main = github.push_main(main_files)
@@ -1524,8 +1534,7 @@ def _git_hanging_on(github: MergeGitHub, subcommand: str) -> None:
 )
 def test_git_ktory_wisi_konczy_sie_linia_fail_po_limicie_githuba(tmp_path: Path, mode: list[str], subcommand: str, label: str) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    # Scalenie z bazą sprawdza tu atrapa ruff i mypy, bo sprawdzenie nie jest celem testu.
-    head = github.open_pull(1, {"tools/ci_lokalnie.py": "print('CI LOKALNIE OK')\n"}, parent=_short_github_timeout(github))
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.comment(1, PASS.format(head=head))
     _git_hanging_on(github, subcommand)
 
