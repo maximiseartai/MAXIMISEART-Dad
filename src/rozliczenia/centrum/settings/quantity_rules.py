@@ -128,6 +128,11 @@ class _Entries(Generic[_Entry]):
             if old.get(identifier) != new.get(identifier)
         )
 
+    def ids(self, keys: frozenset[str]) -> frozenset[str]:
+        """Id wpisów z kluczy Historii Ustawień tej sekcji (``<sekcja>.<id>``)."""
+
+        return frozenset(key.removeprefix(f"{self.section}.") for key in keys if key.startswith(f"{self.section}."))
+
     def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
         """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
         sekcji albo wpis, którego nie da się odczytać, zostaje bez zmian."""
@@ -189,7 +194,13 @@ DEVICES: Final = SettingsFile[tuple[Component, ...]](
 def rule_ids(keys: frozenset[str]) -> frozenset[str]:
     """Id reguł z kluczy Historii Ustawień pliku reguł (``reguly.<id>``)."""
 
-    return frozenset(key.removeprefix(f"{RULES_SECTION}.") for key in keys if key.startswith(f"{RULES_SECTION}."))
+    return _RULE_ENTRIES.ids(keys)
+
+
+def device_ids(keys: frozenset[str]) -> frozenset[str]:
+    """Id składników z kluczy Historii Ustawień Listy Urządzeń (``urzadzenia.<id>``)."""
+
+    return _DEVICE_ENTRIES.ids(keys)
 
 
 def rules_problem(

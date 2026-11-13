@@ -1337,14 +1337,14 @@ def _preparation_with_edited_rule(folder: Path) -> _EditedRulesRun:
     collective = centrum.fixture.collective_file_path
     produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
 
-    assert _aa18(collective) == 3, "Przygotowanie u taty wpisało regułę z edytora"
-    return _EditedRulesRun(produced, lambda kept: _aa18(kept / "okresy" / collective.parent.name / collective.name), 3)
+    assert _quantity(collective, "AA18") == 3, "Przygotowanie u taty wpisało regułę z edytora"
+    return _EditedRulesRun(produced, lambda kept: _quantity(kept / "okresy" / collective.parent.name / collective.name, "AA18"), 3)
 
 
-def _aa18(collective: Path) -> object:
+def _quantity(collective: Path, cell: str) -> object:
     workbook = load_workbook(collective, read_only=True)
     try:
-        return workbook.worksheets[0]["AA18"].value
+        return workbook.worksheets[0][cell].value
     finally:
         workbook.close()
 
@@ -1378,6 +1378,32 @@ def test_odtworzenie_procesu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert [line for line in lines if "Reguł ilości" in line] == []
     assert run.effect(kept) == run.expected
+
+
+def test_odtworzenie_przygotowania_liczy_lista_urzadzen_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tata dopisał zapis „ont nokia” do składnika „nokia” w sekcji Urządzenia, a Przygotowanie wpisało nim Z; odtworzenie
+    z Logów liczy Listą Urządzeń z chwili Uruchomienia, nie listą z Wydania, więc wpisuje to samo i jest zgodne."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    centrum = preparing_centrum(folder, [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "ont nokia"}])
+    write_report_key(ToolDirectory(folder))
+    nokia = next(device for device in centrum.client.get("/api/settings/quantity-rules").json()["devices"] if device["id"] == "nokia")
+    form = {**nokia, "other_spellings": [*nokia["other_spellings"], "ont nokia"]}
+    del form["id"]
+    assert centrum.client.put("/api/settings/devices/nokia", json=form).status_code == 200
+    run_to_end(centrum, dry_run=False)
+    collective = centrum.fixture.collective_file_path
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    assert _quantity(collective, "Z18") == 1, "Przygotowanie u taty liczyło zapisem z sekcji Urządzenia"
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert _quantity(kept / "okresy" / collective.parent.name / collective.name, "Z18") == 1
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.

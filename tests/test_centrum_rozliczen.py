@@ -74,7 +74,7 @@ from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
-from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, RULES, RULES_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
 from rozliczenia.quantity_engine import DeviceList, QuantityRules, QuantityRulesRefused
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -940,6 +940,155 @@ def test_zmiana_albo_usuniecie_skladnika_ktorego_juz_nie_ma_to_odmowa_bez_zapisu
     unknown = {"message": "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień."}
     assert [(changed.status_code, changed.json()), (removed.status_code, removed.json())] == [(404, unknown)] * 2
     assert history_rows(app) == []
+
+
+DEVICE_FORMS: dict[str, dict[str, Any]] = {
+    "X": {"name": "ont x", "other_spellings": ["ont-x2"], "group": None},
+    "X2": {"name": "ont x", "other_spellings": [], "group": "extender"},
+    "Y": {"name": "ont y", "other_spellings": [], "group": None},
+}
+
+
+def _component_sentence(form: dict[str, Any]) -> str:
+    also = "".join(f", też „{spelling}”" if index == 0 else f", „{spelling}”" for index, spelling in enumerate(form["other_spellings"]))
+    group = "" if form["group"] is None else f", grupa {form['group']}"
+    return f"Składnik „{form['name']}”{also}{group}."
+
+
+def new_components(app: Centrum) -> dict[str, str]:
+    """Składniki spoza Listy Urządzeń z Wydania jako zdania, po id."""
+
+    default = {component.id for component in DEFAULT_QUANTITY_RULES.devices.components}
+    return {
+        device["id"]: _component_sentence(device)
+        for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]
+        if device["id"] not in default
+    }
+
+
+def test_skladnik_dodany_znowu_po_usunieciu_ma_nowe_id_a_cofniecie_usuniecia_pierwszego_nie_rusza_nowego(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    first = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X"]).json()["quantity_rules"]["devices"][-1]["id"]
+    assert app.client.delete(f"{DEVICES_URL}/{first}").status_code == 200
+    again = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"])
+    [_, removed, _] = reversed(history_rows(app))
+
+    restored = app.client.post(f"/api/settings/history/{removed['id']}/undo")
+
+    second = again.json()["quantity_rules"]["devices"][-1]["id"]
+    assert first != second
+    # Oba składniki mają zapis „ont x”, więc usunięty nie wraca obok nowego: odmowa ze zdaniem, a nowy zostaje, jak był.
+    assert (restored.status_code, bool(restored.json()["message"])) == (422, True), restored.text
+    assert new_components(app) == {second: _component_sentence(DEVICE_FORMS["X2"])}
+
+
+def test_nowy_skladnik_przy_historii_bez_odczytu_to_odmowa_bez_zapisu_a_dodany_potem_ma_nowe_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tata dodaje składnik i go usuwa, a potem dodaje go znowu, gdy system nie daje czytać Historii Ustawień (plik trzyma
+    OneDrive): bez kluczy Historii nowy dostałby id usuniętego i zniknąłby po „Cofnij” usunięcia, więc zapis jest odmową
+    bez zmian w plikach. Dodany, gdy Historia znów się czyta, ma własne id."""
+
+    app = centrum(tmp_path)
+    first = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X"]).json()["quantity_rules"]["devices"][-1]["id"]
+    assert app.client.delete(f"{DEVICES_URL}/{first}").status_code == 200
+    devices_before, rows_before = (app.tool.config / DEVICES_FILE).read_bytes(), history_rows(app)
+
+    with unreadable_history(monkeypatch):
+        refused = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"])
+    devices_after, rows_after = (app.tool.config / DEVICES_FILE).read_bytes(), history_rows(app)
+    second = app.client.post(DEVICES_URL, json=DEVICE_FORMS["X2"]).json()["quantity_rules"]["devices"][-1]["id"]
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (devices_after, rows_after) == (devices_before, rows_before)
+    assert second != first
+
+
+# Krok taty w sekcji Urządzenia: zapis składnika (także nowego, gdy Historii nie da się przeczytać) albo „Cofnij” wiersza
+# Historii Listy Urządzeń; liczba wybiera składnik albo wiersz.
+_DEVICE_STEP = st.one_of(
+    st.tuples(st.just("dodaj"), st.sampled_from(sorted(DEVICE_FORMS))),
+    st.tuples(st.just("zmien"), st.integers(0, 9), st.sampled_from(sorted(DEVICE_FORMS))),
+    st.tuples(st.just("usun"), st.integers(0, 9)),
+    st.tuples(st.just("cofnij"), st.integers(0, 9)),
+    st.tuples(st.just("dodaj bez historii"), st.sampled_from(sorted(DEVICE_FORMS))),
+)
+
+
+def test_po_dowolnych_zapisach_listy_urzadzen_i_cofnieciach_kazdy_nowy_skladnik_ma_wlasne_id_a_cofniecie_zmienia_tylko_jego(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Po dowolnych zapisach taty w sekcji Urządzenia i cofnięciach z Historii: nowy składnik dostaje id, którego nie
+    miał żaden składnik przed nim, a „Cofnij” wiersza zmienia tylko składnik tego wiersza; cofnięcie, którego nie da się
+    wykonać, nie zmienia żadnego składnika i mówi zdaniem dlaczego. Zapis z zapisem innego składnika to odmowa 422, a
+    nowy składnik, gdy Historii nie da się przeczytać, to odmowa bez zmiany listy."""
+
+    examples = itertools.count()
+    forms = {_component_sentence(form): form for form in DEVICE_FORMS.values()}
+
+    def spellings(form: dict[str, Any]) -> set[str]:
+        return {form["name"], *form["other_spellings"]}
+
+    def taken(expected: dict[str, str], form: dict[str, Any], own: str | None) -> bool:
+        return any(spellings(form) & spellings(forms[sentence]) for device, sentence in expected.items() if device != own)
+
+    @settings(derandomize=True, database=None, deadline=None, max_examples=25)
+    @given(st.lists(_DEVICE_STEP, min_size=3, max_size=8))
+    def steps_hold(steps: list[tuple[Any, ...]]) -> None:
+        app = centrum(tmp_path / str(next(examples)))
+        expected: dict[str, str] = {}
+        given_ids: set[str] = set()
+        for step in steps:
+            ids = list(expected)
+            match step:
+                case ("dodaj", name):
+                    form = DEVICE_FORMS[name]
+                    response = app.client.post(DEVICES_URL, json=form)
+                    if taken(expected, form, None):
+                        assert response.status_code == 422, (steps, response.text)
+                    else:
+                        added = response.json()["quantity_rules"]["devices"][-1]["id"]
+                        assert added not in given_ids, f"id {added} usuniętego składnika wróciło do nowego"
+                        given_ids.add(added)
+                        expected[added] = _component_sentence(form)
+                case ("dodaj bez historii", name):
+                    with unreadable_history(monkeypatch):
+                        response = app.client.post(DEVICES_URL, json=DEVICE_FORMS[name])
+                    assert response.status_code in (422, 500), (steps, response.text)
+                case ("zmien", index, name) if ids:
+                    device = ids[index % len(ids)]
+                    form = DEVICE_FORMS[name]
+                    response = app.client.put(f"{DEVICES_URL}/{device}", json=form)
+                    if taken(expected, form, device):
+                        assert response.status_code == 422, (steps, response.text)
+                    else:
+                        expected[device] = _component_sentence(form)
+                case ("usun", index) if ids:
+                    device = ids[index % len(ids)]
+                    response = app.client.delete(f"{DEVICES_URL}/{device}")
+                    del expected[device]
+                case ("cofnij", index):
+                    rows = [row for row in history_rows(app) if row["section"] == DEVICES_SECTION]
+                    if not rows:
+                        continue
+                    row = rows[index % len(rows)]
+                    [component] = row["rules"]
+                    response = app.client.post(f"/api/settings/history/{row['id']}/undo")
+                    if response.status_code == 200:
+                        device = component["key"].removeprefix(f"{DEVICES_SECTION}.")
+                        expected.pop(device, None)
+                        if component["before"] is not None:
+                            expected[device] = str(_text(component["before"]))
+                    else:
+                        assert response.json()["message"], response.text
+                case _:
+                    continue
+            assert response.status_code in (200, 409, 422, 500), response.text
+            assert new_components(app) == expected, steps
+
+    steps_hold()
 
 
 @pytest.fixture

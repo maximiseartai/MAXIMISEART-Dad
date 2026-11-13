@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -336,14 +336,6 @@ export type Configuration = {
      * Templates
      */
     templates: Array<TemplateReady | TemplateProblem>;
-    /**
-     * Workers
-     */
-    workers: ({
-        state: 'ready';
-    } & WorkersReady) | ({
-        state: 'unreadable';
-    } & WorkersUnreadable);
     /**
      * Reports
      */
@@ -1163,9 +1155,9 @@ export type IntermaxRestored = {
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -1425,7 +1417,9 @@ export type LoggedOutcome = {
 /**
  * Message
  *
- * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu.
+ * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
+ * Centrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki
+ * w Ustawieniach ma dalej trzy części, także w Logach Uruchomienia.
  */
 export type Message = {
     /**
@@ -1440,6 +1434,10 @@ export type Message = {
      * Action
      */
     action: string;
+    /**
+     * Setting
+     */
+    setting?: 'wykonawcy' | null;
 };
 
 /**
@@ -2614,6 +2612,111 @@ export type ReleaseNotification = {
 };
 
 /**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export type ReminderPreview = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export type ReminderRange = {
+    /**
+     * Start
+     */
+    start: string;
+    /**
+     * End
+     */
+    end: string;
+};
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export type RemindersEnabledChange = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export type RemindersForm = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+};
+
+/**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export type RemindersSetting = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Since
+     */
+    since: string | null;
+    problem: SettingProblem | null;
+};
+
+/**
  * RemoveRule
  */
 export type RemoveRule = {
@@ -2646,9 +2749,9 @@ export type ReportDraft = {
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
@@ -3565,6 +3668,7 @@ export type Settings = {
     inbox: InboxSetting;
     inbox_problem: SettingProblem | null;
     autostart: AutostartSetting;
+    reminders: RemindersSetting;
 };
 
 /**
@@ -3808,7 +3912,7 @@ export type UnknownReportSender = {
 /**
  * UnmatchedLogin
  *
- * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``).
  */
 export type UnmatchedLogin = {
     /**
@@ -3934,7 +4038,7 @@ export type WithoutQuantityUnread = {
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
- * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ * ``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty).
  */
 export type WorkerListSetting = {
     /**
@@ -3989,33 +4093,6 @@ export type WorkerSettlementRequest = {
 };
 
 /**
- * WorkersReady
- *
- * Nazwy Wykonawców w kolejności z Listy Wykonawców.
- */
-export type WorkersReady = {
-    /**
-     * State
-     */
-    state: 'ready';
-    /**
-     * Names
-     */
-    names: Array<string>;
-};
-
-/**
- * WorkersUnreadable
- */
-export type WorkersUnreadable = {
-    /**
-     * State
-     */
-    state: 'unreadable';
-    message: Message;
-};
-
-/**
  * Configuration
  *
  * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
@@ -4039,14 +4116,6 @@ export type ConfigurationWritable = {
      */
     templates: Array<TemplateReady | TemplateProblemWritable>;
     /**
-     * Workers
-     */
-    workers: ({
-        state: 'ready';
-    } & WorkersReady) | ({
-        state: 'unreadable';
-    } & WorkersUnreadable);
-    /**
      * Reports
      */
     reports: 'ready' | 'missing_key' | 'refused_key';
@@ -4055,9 +4124,9 @@ export type ConfigurationWritable = {
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -4263,9 +4332,9 @@ export type ProcessRunWritable = {
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
@@ -5952,6 +6021,81 @@ export type OpenRegisterResponses = {
 };
 
 export type OpenRegisterResponse = OpenRegisterResponses[keyof OpenRegisterResponses];
+
+export type ChangeRemindersData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders';
+};
+
+export type ChangeRemindersErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersError = ChangeRemindersErrors[keyof ChangeRemindersErrors];
+
+export type ChangeRemindersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersResponse = ChangeRemindersResponses[keyof ChangeRemindersResponses];
+
+export type ChangeRemindersEnabledData = {
+    body: RemindersEnabledChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/enabled';
+};
+
+export type ChangeRemindersEnabledErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersEnabledError = ChangeRemindersEnabledErrors[keyof ChangeRemindersEnabledErrors];
+
+export type ChangeRemindersEnabledResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersEnabledResponse = ChangeRemindersEnabledResponses[keyof ChangeRemindersEnabledResponses];
+
+export type PreviewReminderData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/preview';
+};
+
+export type PreviewReminderErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewReminderError = PreviewReminderErrors[keyof PreviewReminderErrors];
+
+export type PreviewReminderResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReminderPreview;
+};
+
+export type PreviewReminderResponse = PreviewReminderResponses[keyof PreviewReminderResponses];
 
 export type ChangeThemeData = {
     body: ThemeChange;

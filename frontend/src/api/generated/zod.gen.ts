@@ -37,6 +37,9 @@ export const zApiTiming = z.object({
         'changeInboxPassword',
         'changeFolders',
         'changeAutostart',
+        'changeRemindersEnabled',
+        'changeReminders',
+        'previewReminder',
         'getSettingsHistory',
         'getQuantityRules',
         'addQuantityRule',
@@ -592,12 +595,15 @@ export const zListedWorker = z.object({
 /**
  * Message
  *
- * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu.
+ * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
+ * Centrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki
+ * w Ustawieniach ma dalej trzy części, także w Logach Uruchomienia.
  */
 export const zMessage = z.object({
     what: z.string(),
     where: z.string(),
-    action: z.string()
+    action: z.string(),
+    setting: z.literal('wykonawcy').nullish()
 });
 
 /**
@@ -1114,6 +1120,50 @@ export const zReadyPath = z.object({
  */
 export const zRejected = z.object({
     state: z.literal('rejected')
+});
+
+/**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export const zReminderPreview = z.object({
+    subject: z.string(),
+    text: z.string()
+});
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export const zReminderRange = z.object({
+    start: z.string(),
+    end: z.string()
+});
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export const zRemindersEnabledChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export const zRemindersForm = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string()
 });
 
 /**
@@ -1880,6 +1930,29 @@ export const zQuantityRulesSaved = z.object({
 });
 
 /**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export const zRemindersSetting = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string(),
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    enabled: z.boolean(),
+    since: z.iso.date().nullable(),
+    problem: zSettingProblem.nullable()
+});
+
+/**
  * SettingsHistory
  *
  * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
@@ -2110,6 +2183,31 @@ export const zToolVersion = z.object({
 });
 
 /**
+ * Configuration
+ *
+ * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
+ *
+ * ``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji
+ * względem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,
+ * czy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``).
+ */
+export const zConfiguration = z.object({
+    version: zToolVersion.nullable(),
+    freshness: z.enum([
+        'current',
+        'newer',
+        'not_checked'
+    ]),
+    update_offered: z.boolean(),
+    templates: z.array(z.union([zTemplateReady, zTemplateProblem])),
+    reports: z.enum([
+        'ready',
+        'missing_key',
+        'refused_key'
+    ])
+});
+
+/**
  * UnknownReportSender
  *
  * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
@@ -2141,7 +2239,7 @@ export const zReportsView = z.object({
 /**
  * UnmatchedLogin
  *
- * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``).
  */
 export const zUnmatchedLogin = z.object({
     reason: z.literal('login_bez_wykonawcy'),
@@ -2226,7 +2324,7 @@ export const zWithoutQuantityUnread = z.object({
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
- * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ * ``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty).
  */
 export const zWorkerListSetting = z.object({
     state: z.enum([
@@ -2268,7 +2366,8 @@ export const zSettings = z.object({
     workers: zWorkerListSetting,
     inbox: zInboxSetting,
     inbox_problem: zSettingProblem.nullable(),
-    autostart: zAutostartSetting
+    autostart: zAutostartSetting,
+    reminders: zRemindersSetting
 });
 
 /**
@@ -2479,9 +2578,9 @@ export const zRunRestored = z.object({
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -2496,9 +2595,9 @@ export const zIntermaxSetup = z.object({
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
@@ -2550,53 +2649,6 @@ export const zRunEvent = z.object({
  */
 export const zWorkerSettlementRequest = z.object({
     worker: z.string()
-});
-
-/**
- * WorkersReady
- *
- * Nazwy Wykonawców w kolejności z Listy Wykonawców.
- */
-export const zWorkersReady = z.object({
-    state: z.literal('ready'),
-    names: z.array(z.string())
-});
-
-/**
- * WorkersUnreadable
- */
-export const zWorkersUnreadable = z.object({
-    state: z.literal('unreadable'),
-    message: zMessage
-});
-
-/**
- * Configuration
- *
- * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
- *
- * ``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji
- * względem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,
- * czy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``).
- */
-export const zConfiguration = z.object({
-    version: zToolVersion.nullable(),
-    freshness: z.enum([
-        'current',
-        'newer',
-        'not_checked'
-    ]),
-    update_offered: z.boolean(),
-    templates: z.array(z.union([zTemplateReady, zTemplateProblem])),
-    workers: z.discriminatedUnion('state', [
-        zWorkersReady,
-        zWorkersUnreadable
-    ]),
-    reports: z.enum([
-        'ready',
-        'missing_key',
-        'refused_key'
-    ])
 });
 
 /**
@@ -2813,9 +2865,9 @@ export const zRunRestoredWritable = z.object({
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -2830,9 +2882,9 @@ export const zIntermaxSetupWritable = z.object({
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
@@ -2912,10 +2964,6 @@ export const zConfigurationWritable = z.object({
     ]),
     update_offered: z.boolean(),
     templates: z.array(z.union([zTemplateReady, zTemplateProblemWritable])),
-    workers: z.discriminatedUnion('state', [
-        zWorkersReady,
-        zWorkersUnreadable
-    ]),
     reports: z.enum([
         'ready',
         'missing_key',
@@ -3367,6 +3415,27 @@ export const zChooseRegisterResponse = zChoice;
  * Successful Response
  */
 export const zOpenRegisterResponse = zOpened;
+
+export const zChangeRemindersBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersResponse = zChoice;
+
+export const zChangeRemindersEnabledBody = zRemindersEnabledChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersEnabledResponse = zChoice;
+
+export const zPreviewReminderBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zPreviewReminderResponse = zReminderPreview;
 
 export const zChangeThemeBody = zThemeChange;
 

@@ -7,8 +7,10 @@ nazwy, zapisu z gwiazdką i zapisu, który ma już inny składnik, nazwany jego 
 potrzebuje reguła, to odmowa ze zdaniem tej reguły (``needed_by``), a resztę niezmienników listy sprawdza silnik
 (``DeviceList``). Przy zapisie właściciel Ustawień sprawdza jeszcze raz listę razem z regułami (``CentrumSettings``).
 
-Nowy składnik dostaje id ze swojej nazwy (spacje na „-”, zajęte z kolejnym numerem) i staje na końcu listy. Zmieniony
-zostaje na swoim miejscu z tym samym id, więc reguły, które go potrzebują, działają dalej z nowymi zapisami.
+Nowy składnik dostaje id ze swojej nazwy (spacje na „-”, zajęte z kolejnym numerem) i staje na końcu listy. Zajęte jest
+id składnika z listy i każde id z wierszy Historii Ustawień listy (``used``), więc „Cofnij” starszego wiersza nie rusza
+składnika dodanego później pod tą samą nazwą. Zmieniony zostaje na swoim miejscu z tym samym id, więc reguły, które go
+potrzebują, działają dalej z nowymi zapisami.
 """
 
 from __future__ import annotations
@@ -69,13 +71,16 @@ def device_component(component: Component) -> contract.DeviceComponent:
     )
 
 
-def edited(components: tuple[Component, ...], edit: DeviceEdit) -> tuple[Component, ...] | FieldProblem | UnknownComponent:
-    """Lista ``components`` po zmianie ``edit`` sprawdzona przez silnik; ``FieldProblem``: zły formularz albo lista,
-    ``UnknownComponent``: zmiana albo usunięcie składnika, którego nie ma."""
+def edited(
+    components: tuple[Component, ...], edit: DeviceEdit, used: frozenset[str]
+) -> tuple[Component, ...] | FieldProblem | UnknownComponent:
+    """Lista ``components`` po zmianie ``edit`` sprawdzona przez silnik; ``used``: id składników z wierszy Historii,
+    których nowy składnik nie dostanie. ``FieldProblem``: zły formularz albo lista, ``UnknownComponent``: zmiana albo
+    usunięcie składnika, którego nie ma."""
 
     match edit:
         case AddComponent(form=form):
-            built = _component(form, _new_id(components, form), components)
+            built = _component(form, _new_id(components, form, used), components)
             after = built if isinstance(built, FieldProblem) else (*components, built)
         case ChangeComponent(component=identifier, form=form):
             if identifier not in {component.id for component in components}:
@@ -138,11 +143,12 @@ def _component(form: contract.ComponentForm, identifier: str, others: tuple[Comp
     return Component(identifier, tuple(spellings), None if form.group is None else _GROUP_OF[form.group])
 
 
-def _new_id(components: tuple[Component, ...], form: contract.ComponentForm) -> str:
-    """Id nowego składnika z jego nazwy: ``ont x`` → ``ont-x``, zajęte → ``ont-x-2``; składnik bez nazwy i tak odpada."""
+def _new_id(components: tuple[Component, ...], form: contract.ComponentForm, used: frozenset[str]) -> str:
+    """Id nowego składnika z jego nazwy: ``ont x`` → ``ont-x``, zajęte na liście albo w Historii → ``ont-x-2``; składnik
+    bez nazwy i tak odpada."""
 
     base = device_spelling(form.name).replace(" ", "-") or "skladnik"
-    taken = {component.id for component in components}
+    taken = {component.id for component in components} | used
     return next(
         candidate
         for candidate in (base, *(f"{base}-{number}" for number in range(2, len(taken) + 3)))

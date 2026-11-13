@@ -2420,6 +2420,132 @@
         }
       }
     },
+    "/api/settings/reminders": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Reminders",
+        "description": "Formularz naraz: pory, godzina pierwszego przypomnienia, pierwsze zdanie i stopka; działa od następnego\nsprawdzenia przypomnień.",
+        "operationId": "changeReminders",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/reminders/enabled": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Reminders Enabled",
+        "description": "Przełącznik: pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia dawny, bo okno dni i tak\nkończy się na okresach z Plikiem zbiorczym.",
+        "operationId": "changeRemindersEnabled",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersEnabledChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/reminders/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Reminder",
+        "description": "Przypomnienie za wczoraj z formularza, bez zapisu i bez wysyłki; zła wartość to ta sama odmowa co przy zapisie.",
+        "operationId": "previewReminder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemindersForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/theme": {
       "put": {
         "tags": [
@@ -2784,6 +2910,9 @@
               "changeInboxPassword",
               "changeFolders",
               "changeAutostart",
+              "changeRemindersEnabled",
+              "changeReminders",
+              "previewReminder",
               "getSettingsHistory",
               "getQuantityRules",
               "addQuantityRule",
@@ -3291,24 +3420,6 @@
             "type": "array",
             "title": "Templates"
           },
-          "workers": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/WorkersReady"
-              },
-              {
-                "$ref": "#/components/schemas/WorkersUnreadable"
-              }
-            ],
-            "title": "Workers",
-            "discriminator": {
-              "propertyName": "state",
-              "mapping": {
-                "ready": "#/components/schemas/WorkersReady",
-                "unreadable": "#/components/schemas/WorkersUnreadable"
-              }
-            }
-          },
           "reports": {
             "type": "string",
             "enum": [
@@ -3326,7 +3437,6 @@
           "freshness",
           "update_offered",
           "templates",
-          "workers",
           "reports"
         ],
         "title": "Configuration",
@@ -4675,7 +4785,7 @@
           "last"
         ],
         "title": "IntermaxSetup",
-        "description": "Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania\nINTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,\n``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania\nINTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
       "KeptCell": {
         "properties": {
@@ -5076,6 +5186,18 @@
           "action": {
             "type": "string",
             "title": "Action"
+          },
+          "setting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "wykonawcy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting"
           }
         },
         "additionalProperties": false,
@@ -5086,7 +5208,7 @@
           "action"
         ],
         "title": "Message",
-        "description": "Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu."
+        "description": "Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień\nCentrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki\nw Ustawieniach ma dalej trzy części, także w Logach Uruchomienia."
       },
       "Metrics": {
         "properties": {
@@ -7059,6 +7181,166 @@
         "title": "ReleaseNotification",
         "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty\n(``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum\nproponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
       },
+      "ReminderPreview": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "text"
+        ],
+        "title": "ReminderPreview",
+        "description": "Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść\nze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła."
+      },
+      "ReminderRange": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "title": "End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ReminderRange",
+        "description": "Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą."
+      },
+      "RemindersEnabledChange": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "RemindersEnabledChange",
+        "description": "Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś."
+      },
+      "RemindersForm": {
+        "properties": {
+          "morning": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "evening": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "first": {
+            "type": "string",
+            "title": "First"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "footer": {
+            "type": "string",
+            "title": "Footer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "morning",
+          "evening",
+          "first",
+          "text",
+          "footer"
+        ],
+        "title": "RemindersForm",
+        "description": "Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem\n``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu."
+      },
+      "RemindersSetting": {
+        "properties": {
+          "morning": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "evening": {
+            "$ref": "#/components/schemas/ReminderRange"
+          },
+          "first": {
+            "type": "string",
+            "title": "First"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "footer": {
+            "type": "string",
+            "title": "Footer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "morning",
+          "evening",
+          "first",
+          "text",
+          "footer",
+          "state",
+          "enabled",
+          "since",
+          "problem"
+        ],
+        "title": "RemindersSetting",
+        "description": "Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)\nalbo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;\n``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone)."
+      },
       "RemoveRule": {
         "properties": {
           "kind": {
@@ -7148,7 +7430,7 @@
           "last"
         ],
         "title": "ReportEnteringSetup",
-        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
       },
       "ReportNotQueued": {
         "properties": {
@@ -8742,6 +9024,9 @@
           },
           "autostart": {
             "$ref": "#/components/schemas/AutostartSetting"
+          },
+          "reminders": {
+            "$ref": "#/components/schemas/RemindersSetting"
           }
         },
         "additionalProperties": false,
@@ -8755,7 +9040,8 @@
           "workers",
           "inbox",
           "inbox_problem",
-          "autostart"
+          "autostart",
+          "reminders"
         ],
         "title": "Settings",
         "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
@@ -9165,7 +9451,7 @@
           "addresses"
         ],
         "title": "UnmatchedLogin",
-        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców."
+        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``)."
       },
       "UnreadablePath": {
         "properties": {
@@ -9396,7 +9682,7 @@
           "problem"
         ],
         "title": "WorkerListSetting",
-        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku, lista pusta)."
+        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty)."
       },
       "WorkerSettlement": {
         "properties": {
@@ -9442,49 +9728,6 @@
         ],
         "title": "WorkerSettlementRequest",
         "description": "Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu."
-      },
-      "WorkersReady": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "ready",
-            "title": "State"
-          },
-          "names": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Names"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "names"
-        ],
-        "title": "WorkersReady",
-        "description": "Nazwy Wykonawców w kolejności z Listy Wykonawców."
-      },
-      "WorkersUnreadable": {
-        "properties": {
-          "state": {
-            "type": "string",
-            "const": "unreadable",
-            "title": "State"
-          },
-          "message": {
-            "$ref": "#/components/schemas/Message"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "state",
-          "message"
-        ],
-        "title": "WorkersUnreadable"
       }
     }
   }
