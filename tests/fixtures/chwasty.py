@@ -44,6 +44,7 @@ def _major(number: int, code: str) -> tuple[str, ...]:
 WERDYKTY = {
     "dwa-wazne-z-tym-samym-kodem": _lines(*_major(1, CODE), *_major(2, CODE), "## Sprawdzone", "- diff"),
     "inny-kod": _lines(*_major(1, "R-DRUGA-DROGA"), "## Sprawdzone", "- diff"),
+    "potwierdza-kod": _lines("## Sprawdzone", f"- Korzeń W1 r1: {CODE} - brak testu zachowania.", "- diff"),
 }
 ZGODY = {
     "zgoda": f"ZGODA KORZEŃ: {CODE}",
@@ -53,26 +54,37 @@ ZGODY = {
 OPISY = {
     "wyrywa-chwast": opisy_pr.wzor(f"Korzeń z #{WEED_ISSUE}: {CODE}"),
 }
+
+
+def _issue(*rows: str) -> str:
+    """Treść issue chwastu w szablonie Q15 z wierszami tabeli „Wystąpienia” ``rows``."""
+
+    return _lines(
+        "## Korzeń",
+        "",
+        f"{CODE}: {DESCRIPTION}",
+        "",
+        "## Wystąpienia",
+        "",
+        TABLE,
+        "| --- | --- | --- | --- |",
+        *rows,
+        "",
+        "## Gotowe, gdy",
+        "",
+        f"- PR z linią „Korzeń z #N: {CODE}” w opisie, gdzie N to numer tego issue, wyrywa korzeń szczebel wyżej niż najwyższy w tabeli (ADR 0031, Q11), a tools/scal_pr.py zamyka to issue przy merge'u tego PR.",
+        "",
+    )
+
+
+OTHER_ROW = f"| #{OTHER} | W1 r1 | (b) | reguła ruff. |"
 # Treść otwartego issue chwastu z jednym wystąpieniem w #1436, w szablonie Q15.
-ISSUE = _lines(
-    "## Korzeń",
-    "",
-    f"{CODE}: {DESCRIPTION}",
-    "",
-    "## Wystąpienia",
-    "",
-    TABLE,
-    "| --- | --- | --- | --- |",
-    f"| #{OTHER} | W1 r1 | (b) | reguła ruff. |",
-    "",
-    "## Gotowe, gdy",
-    "",
-    f"- PR z linią „Korzeń z #N: {CODE}” w opisie, gdzie N to numer tego issue, wyrywa korzeń szczebel wyżej niż najwyższy w tabeli (ADR 0031, Q11), a tools/scal_pr.py zamyka to issue przy merge'u tego PR.",
-    "",
-)
+ISSUE = _issue(OTHER_ROW)
 ISSUES = {
     "w-szablonie": ISSUE,
     "z-proza": f"{ISSUE}\nUwaga dopisana ręcznie.\n",
+    # issue, które zakłada publikacja werdyktu na PR 1, gdy #1436 ma to samo Ważne ze szczeblem (b)
+    "zalozone-z-pr-1": _issue("| #1 | W1 r1 | - | - |", OTHER_ROW),
 }
 
 

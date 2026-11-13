@@ -41,7 +41,7 @@ SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
 CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
 FAKE_GH = """\
-import json, os, pathlib, subprocess, sys, time
+import json, os, pathlib, re, subprocess, sys, time
 
 here = pathlib.Path(sys.argv[0]).parent
 arguments = sys.argv[1:]
@@ -118,13 +118,25 @@ elif arguments[:2] == ["run", "list"]:
     merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
     print(runs.read_text() if merged and runs.exists() else "[]")
 elif arguments[:2] == ["api", "graphql"]:
-    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value == "-f")
-    with (here / "graphql.jsonl").open("a") as log:
-        log.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
-    pages = json.loads((here / "graphql.json").read_text())
-    page = int(variables.get("cursor", "0"))
-    more = {"hasNextPage": page + 1 < len(pages), "endCursor": str(page + 1)}
-    print(json.dumps({"data": {"repository": {"pullRequests": {"nodes": pages[page], "pageInfo": more}}}}))
+    # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek> i first; zmiana
+    # z graphql_changes.json ("po": tyle wcześniejszych zapytań) zmienia PR między stronami.
+    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
+    log = here / "graphql.jsonl"
+    calls = len(log.read_text().splitlines()) if log.exists() else 0
+    with log.open("a") as out:
+        out.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
+    nodes = json.loads((here / "graphql.json").read_text())
+    for change in json.loads((here / "graphql_changes.json").read_text()):
+        if calls >= change["po"]:
+            next(node for node in nodes if node["number"] == change["number"]).update(change["pola"])
+    terms = variables["q"].split()
+    if f"repo:{REPO}" not in terms or "is:pr" not in terms:
+        sys.exit(f"atrapa gh nie zna wyszukiwania: {terms}")
+    for field, sign, value in (re.fullmatch(r"(updated|created):([<>]=)(.+)", term).groups() for term in terms if re.fullmatch(r"(updated|created):[<>]=.+", term)):
+        nodes = [node for node in nodes if (node[field + "At"] >= value if sign == ">=" else node[field + "At"] <= value)]
+    field, direction = next(term for term in terms if term.startswith("sort:")).removeprefix("sort:").split("-")
+    nodes.sort(key=lambda node: (node[field + "At"], node["number"]), reverse=direction == "desc")
+    print(json.dumps({"data": {"search": {"nodes": nodes[: int(variables["first"])]}}}))
 elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") for argument in arguments):
     method = arguments[arguments.index("--method") + 1] if "--method" in arguments else "GET"
     path = next(argument for argument in arguments if argument.startswith("repos/{owner}/{repo}/"))
@@ -132,7 +144,11 @@ elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") 
         with (here / "writes.jsonl").open("a") as log:
             log.write(json.dumps([method, path, json.loads(sys.stdin.read())]) + "\\n")
     if method == "GET" and path.startswith("repos/{owner}/{repo}/issues?labels=chwast&state=open&"):
-        print(json.dumps(json.loads((here / "weeds.json").read_text())))
+        # po założeniu issue (weeds_after.json nie null) lista to issues innej publikacji i każde założone tu
+        writes = [json.loads(line) for line in (here / "writes.jsonl").read_text().splitlines()] if (here / "writes.jsonl").exists() else []
+        created = [{"number": 9001, "title": sent["title"], "body": sent["body"]} for method, path, sent in writes if [method, path] == ["POST", "repos/{owner}/{repo}/issues"]]
+        after = json.loads((here / "weeds_after.json").read_text())
+        print(json.dumps([*after, *created] if created and after is not None else json.loads((here / "weeds.json").read_text())))
     elif method == "GET" and path.startswith("repos/{owner}/{repo}/labels?"):
         print(json.dumps([{"name": name} for name in json.loads((here / "labels.json").read_text())]))
     elif method == "POST" and path == "repos/{owner}/{repo}/issues":
@@ -235,8 +251,10 @@ class MergeGitHub(FakeGitHub):
         self.issues: dict[str, str] = {}
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
         self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered(), **chwasty.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
-        self.graphql: list[list[dict[str, object]]] = [[]]  # strony PR-ów z zapytania rejestru korzeni
+        self.graphql: list[dict[str, object]] = []  # PR-y repozytorium dla wyszukiwania rejestru korzeni
+        self.graphql_changes: list[dict[str, object]] = []  # zmiany PR-ów po danej liczbie zapytań GraphQL
         self.weeds: list[dict[str, object]] = []  # otwarte issues z etykietą chwast
+        self.weeds_after: list[dict[str, object]] | None = None  # otwarte issues innej publikacji po założeniu issue
         self.labels = ["ready-for-agent"]
         self.permissions: dict[str, str] = {}  # prawo konta do repozytorium z ``gh api …/collaborators/<login>/permission``
         self.written = 0
@@ -326,7 +344,14 @@ class MergeGitHub(FakeGitHub):
         (self.bin / "issues.json").write_text(json.dumps(self.issues), encoding="utf-8")
         (self.bin / "repo_view").write_text(self.repo_view, encoding="utf-8")
         (self.bin / "markdown.json").write_text(json.dumps(self.markdown), encoding="utf-8")
-        for name, value in (("graphql.json", self.graphql), ("weeds.json", self.weeds), ("labels.json", self.labels), ("permissions.json", self.permissions)):
+        for name, value in (
+            ("graphql.json", self.graphql),
+            ("graphql_changes.json", self.graphql_changes),
+            ("weeds.json", self.weeds),
+            ("weeds_after.json", self.weeds_after),
+            ("labels.json", self.labels),
+            ("permissions.json", self.permissions),
+        ):
             (self.bin / name).write_text(json.dumps(value), encoding="utf-8")
 
 
@@ -346,8 +371,10 @@ def _empty_state(directory: Path) -> None:
         ("issues.json", "{}"),
         ("repo_view", ""),
         ("markdown.json", json.dumps(rendered)),
-        ("graphql.json", "[[]]"),
+        ("graphql.json", "[]"),
+        ("graphql_changes.json", "[]"),
         ("weeds.json", "[]"),
+        ("weeds_after.json", "null"),
         ("labels.json", "[]"),
         ("permissions.json", "{}"),
     ):
@@ -1865,9 +1892,9 @@ def _root_gate(
     korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
     (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
     albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
-    domyślnie ``baza``) i na HEAD (``skill``), kod dopisany do listy korzeni na HEAD (``listed``), PR-y z zapytania
-    rejestru korzeni (``registry``) i komentarz ze zgodą Maksa z ``chwasty.ZGODY`` od konta z danym prawem do
-    repozytorium (``consent``: klucz i prawo) po werdyktach."""
+    domyślnie ``baza``) i na HEAD (``skill``), kod dopisany do listy korzeni na HEAD (``listed``), chwilę założenia
+    issues z ``labels`` (``issue_created``), PR-y z zapytania rejestru korzeni (``registry``) i komentarz ze zgodą
+    Maksa z ``chwasty.ZGODY`` od konta z danym prawem do repozytorium (``consent``: klucz i prawo) po werdyktach."""
 
     skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
@@ -1886,8 +1913,10 @@ def _root_gate(
     if "repo_view" in setup:
         github.repo_view = str(setup["repo_view"])
     for number, label in cast(dict[int, str], setup.get("labels", {})).items():
-        github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}]}))
-    github.graphql = [cast(list[dict[str, object]], setup.get("registry", []))]
+        created = {"created_at": setup["issue_created"]} if "issue_created" in setup else {}
+        github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}], **created}))
+    github.graphql = cast(list[dict[str, object]], setup.get("registry", []))
+    github._save()
     for index, verdict in enumerate(verdicts):
         if edited and index == 0:
             github.edited_comment(1, verdict.format(commit=OLD))
@@ -2116,9 +2145,19 @@ OWN_ROW = "| #1 | W1 r1 | - | - |"
 WEED_TITLE = f"Chwast: {chwasty.CODE}"
 
 
-def _node(verdicts: list[tuple[str, str]], *, body: str = "", merged: str | None = None, edited: bool = False, number: int = chwasty.OTHER) -> dict[str, object]:
+def _node(
+    verdicts: list[tuple[str, str]],
+    *,
+    body: str = "",
+    merged: str | None = None,
+    edited: bool = False,
+    number: int = chwasty.OTHER,
+    created: str = BEFORE_DEPLOYMENT,
+    updated: str = UPDATED,
+) -> dict[str, object]:
     """PR ``number`` z zapytania GraphQL rejestru korzeni: komentarze ``verdicts`` (treść i chwila utworzenia, w komentarzu
-    edytowanym, gdy ``edited``), opis ``body`` i chwila merge'a ``merged``."""
+    edytowanym, gdy ``edited``), opis ``body``, chwila merge'a ``merged``, założenia ``created`` i ostatniej zmiany
+    ``updated``."""
 
     comments = [{**_verdict("comment", text.format(commit=OLD), when=when), "includesCreatedEdit": edited} for text, when in verdicts]
     return {
@@ -2131,7 +2170,8 @@ def _node(verdicts: list[tuple[str, str]], *, body: str = "", merged: str | None
         "headRefOid": OLD,
         "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
         "body": body,
-        "updatedAt": UPDATED,
+        "createdAt": created,
+        "updatedAt": updated,
         "mergedAt": merged,
         "comments": {"pageInfo": {"hasNextPage": False}, "nodes": comments},
         "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
@@ -2150,15 +2190,24 @@ def _sent(write: list[str]) -> dict[str, object]:
     return cast(dict[str, object], cast(object, write[2]))
 
 
-def _publish(tmp_path: Path, own: list[str], verdict: str, others: list[dict[str, object]], weeds: list[dict[str, object]] | None = None) -> tuple[MergeGitHub, subprocess.CompletedProcess[str]]:
+def _publish(
+    tmp_path: Path,
+    own: list[str],
+    verdict: str,
+    others: list[dict[str, object]],
+    weeds: list[dict[str, object]] | None = None,
+    weeds_after: list[dict[str, object]] | None = None,
+) -> tuple[MergeGitHub, subprocess.CompletedProcess[str]]:
     """``--werdykt`` z ``verdict`` na PR 1 po jego werdyktach ``own`` (na starszym commicie), gdy zapytanie rejestru
-    podaje PR-y ``others``, a otwarte issues z etykietą chwast to ``weeds``."""
+    podaje PR-y ``others``, a otwarte issues z etykietą chwast to ``weeds``, po założeniu issue zaś ``weeds_after``
+    (issues innej publikacji) i założone."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.graphql = [others]
+    github.graphql = others
     github.weeds = weeds or []
+    github.weeds_after = weeds_after
     github._save()
     for text in own:
         github.comment(1, text.format(commit=OLD))
@@ -2262,6 +2311,7 @@ CONSENT_NEEDED = "korzeń: W1 r1: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeb
         ("szczebel-b-wyzej-w-linii-pola", [MERGED_B], None, [HIGHER_THAN_B.format(rung="b")]),
         ("szczebel-a", [MERGED_B], None, []),
         ("szczebel-c", [_node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_B)], None, []),
+        ("szczebel-c", [_node([(FAIL_W1, AFTER_DEPLOYMENT)], merged=AFTER_DEPLOYMENT)], None, []),
         ("szczebel-a", [MERGED_A], None, [CONSENT_NEEDED]),
         ("szczebel-a", [MERGED_A], ("zgoda", "admin"), []),
         ("szczebel-a", [MERGED_A], ("zgoda", "write"), [CONSENT_NEEDED]),
@@ -2273,6 +2323,7 @@ CONSENT_NEEDED = "korzeń: W1 r1: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeb
         "szczebel-rowny-wczesniejszemu",
         "szczebel-wyzszy-niz-wczesniejszy",
         "wczesniejszy-szczebel-w-pr-nie-scalonym-sie-nie-liczy",
+        "wystapienie-w-scalonym-pr-bez-szczebla-sie-nie-liczy",
         "po-a-bez-zgody-maksa",
         "po-a-ze-zgoda-konta-wlasciciela",
         "po-a-ze-zgoda-konta-bez-prawa-admin",
@@ -2290,6 +2341,69 @@ def test_powrot_korzenia_wymaga_szczebla_wyzej_niz_wczesniejsze_wyrwanie_a_po_a_
     missing = [fragment for fragment in fragments if fragment not in last]
     assert missing == [], last
     assert ("korzeń:" in last) == bool(fragments), last
+
+
+# Q11: wcześniejsze wyrwanie to tylko merge przed chwilą, w której kod wystąpił w tym PR: utworzeniem pierwszego
+# werdyktu, który nadał kod temu Ważnemu (FAIL_W1 w _root_gate powstaje 24.10.2026 o 3:00:01), albo założeniem issue
+# czerwonego main.
+PASS_CONFIRMS = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + chwasty.WERDYKTY["potwierdza-kod"]
+RED_CONSENT_NEEDED = f"korzeń: Czerwony main #{korzenie_pr.RED_MAIN}: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeblu (a) w #1436"
+
+
+def _merged_a(merged: str) -> list[dict[str, object]]:
+    return [_node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_A, merged=merged)]
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "body", "setup", "fragments"),
+    [
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:00Z")}, [CONSENT_NEEDED]),
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:01Z")}, []),
+        ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
+        ([FAIL_W1, "Poprawione w {commit}.", PASS_CONFIRMS], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
+        ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-20T00:00:01Z", "registry": [MERGED_A]}, [RED_CONSENT_NEEDED]),
+        ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-19T23:59:59Z", "registry": [MERGED_A]}, []),
+    ],
+    ids=[
+        "merge-sekunde-przed-waznym-sie-liczy",
+        "merge-w-sekundzie-waznego-sie-nie-liczy",
+        "merge-sekunde-po-waznym-sie-nie-liczy",
+        "chwila-pierwszego-werdyktu-z-kodem-a-nie-potwierdzenia",
+        "merge-przed-zalozeniem-issue-czerwonego-main-sie-liczy",
+        "merge-po-zalozeniu-issue-czerwonego-main-sie-nie-liczy",
+    ],
+)
+def test_wczesniejsze_wyrwanie_to_tylko_merge_przed_chwila_wystapienia_kodu_w_tym_pr(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], fragments: list[str]
+) -> None:
+    answered = _root_gate(tmp_path, verdicts, body, setup)
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    missing = [fragment for fragment in fragments if fragment not in last]
+    assert missing == [], last
+    assert ("korzeń:" in last) == bool(fragments), last
+
+
+@pytest.mark.parametrize(
+    ("other", "edited", "closed"),
+    [(9000, 9000, 9001), (9002, None, 9002)],
+    ids=["inna-publikacja-zalozyla-wczesniej", "inna-publikacja-zalozyla-pozniej"],
+)
+def test_dwie_publikacje_z_tym_samym_kodem_zostawiaja_najstarsze_issue_chwastu_z_wierszami_obu(tmp_path: Path, other: int, edited: int | None, closed: int) -> None:
+    weed = {"number": other, "title": WEED_TITLE, "body": chwasty.ISSUES["w-szablonie"]}
+
+    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], weeds_after=[weed])
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    issue = "repos/{owner}/{repo}/issues/"
+    after = github.writes()[2:]
+    assert [write[:2] for write in after] == [*([["PATCH", f"{issue}{edited}"]] if edited else []), ["POST", f"{issue}{closed}/comments"], ["PATCH", f"{issue}{closed}"]], github.writes()
+    assert _sent(after[-2]) == {"body": f"Duplikat #{min(other, 9001)}"}
+    assert _sent(after[-1])["state"] == "closed"
+    if edited:
+        assert [line for line in str(_sent(after[0])["body"]).splitlines() if line.startswith("| #")] == [OWN_ROW, chwasty.OTHER_ROW]
+    assert _last_line(answered).endswith(f"CHWAST zamknięte #{closed}"), answered.stdout
 
 
 @pytest.mark.parametrize(
@@ -2320,19 +2434,10 @@ def test_merge_pr_z_linia_korzen_z_issue_zamyka_issue_chwastu_z_komentarzem_o_pr
 def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_bez_zapisu_tylko_je_podaje(tmp_path: Path, dry: bool) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
     _deploy_template(github)
-    github.graphql = [[MERGED_B], [_node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1)], [_node([(FAIL_W1, BEFORE_DEPLOYMENT)], number=2)]]
+    github.graphql = [MERGED_B, _node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1), _node([(FAIL_W1, BEFORE_DEPLOYMENT)], number=2)]
     github._save()
 
-    answered = subprocess.run(
-        [sys.executable, str(github.checkout / "tools" / "chwasty.py"), *(["--bez-zapisu"] if dry else [])],
-        cwd=github.checkout,
-        env=github.environment(),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=120,
-        check=False,
-    )
+    answered = _chwasty(github, dry=dry)
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     lines = answered.stdout.splitlines()
@@ -2344,6 +2449,55 @@ def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_
         assert lines[:-1] == ["CHWAST | założona etykieta chwast", f"CHWAST | założone #9001 „{WEED_TITLE}”"]
         table = [line for line in str(_sent(github.writes()[1])["body"]).splitlines() if line.startswith("| #")]
         assert table == [OWN_ROW, f"| #{chwasty.OTHER} | W1 r1 | (b) | reguła ruff. |"]
+
+
+def _chwasty(github: MergeGitHub, *, dry: bool) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(github.checkout / "tools" / "chwasty.py"), *(["--bez-zapisu"] if dry else [])],
+        cwd=github.checkout,
+        env=github.environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+
+def _registry(github: MergeGitHub, pulls: list[dict[str, object]], changes: list[dict[str, object]] | None = None) -> None:
+    github.graphql = pulls
+    github.graphql_changes = changes or []
+    _deploy_template(github)
+    github._save()
+
+
+def test_rejestr_czyta_kazdy_pr_zmieniony_od_wdrozenia_takze_gdy_pr_zmienia_sie_miedzy_stronami(tmp_path: Path) -> None:
+    """30 PR-ów to dwie strony, a #125 z drugiej strony (w kolejności założenia i w kolejności ostatniej zmiany)
+    dostaje werdykt po pobraniu pierwszej, jak przy publikacji w trakcie skanu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    pulls = [_node([(FAIL_W1, AFTER_DEPLOYMENT)], number=number, created=f"2026-10-02T00:{number - 100:02d}:00Z", updated=f"2026-10-24T05:{130 - number:02d}:00Z") for number in range(100, 130)]
+    _registry(github, pulls, [{"po": 1, "number": 125, "pola": {"updatedAt": "2026-10-24T23:00:00Z"}}])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == f"CHWASTY OK | 30 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+
+
+def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path) -> None:
+    """45 PR-ów zmienionych przed wdrożeniem szablonu (1.10.2026) skan pomija bez czytania: jedna strona z PR-em
+    zmienionym po wdrożeniu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    before = [_node([], number=number, created=f"2026-09-02T00:{number - 100:02d}:00Z", updated=f"2026-09-30T23:{number - 100:02d}:00Z") for number in range(100, 145)]
+    _registry(github, [*before, _node([(FAIL_W1, AFTER_DEPLOYMENT)], number=1)])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == "CHWASTY OK | 1 wystąpień, chwasty: brak", answered.stdout
+    assert len(github._log("graphql.jsonl")) == 1, github._log("graphql.jsonl")
 
 
 def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:

@@ -24,7 +24,11 @@ Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka p
 
 Powrót korzenia wyrywa się szczebel wyżej (Q11): blok ze ``Szczebel: (x)`` z kodem, który ma wcześniejsze wyrwanie
 w innym scalonym PR (``rejestr_korzeni.earlier``: blok sekcji ``## Korzeń`` ze szczeblem w PR scalonym po wdrożeniu
-szablonu, z Ważnym albo czerwonym `main` z rejestru), ma szczebel bliżej (a) niż najwyższy z nich. Gdy wcześniej
+szablonu, z Ważnym albo czerwonym `main` z rejestru), ma szczebel bliżej (a) niż najwyższy z nich. Wcześniejsze jest
+tylko wyrwanie scalone przed chwilą, w której kod wrócił w tym PR: dla bloku Ważnego przed utworzeniem pierwszego
+werdyktu, który nadał ten kod temu Ważnemu (``rejestr_korzeni.Major.since``), a dla bloku czerwonego `main` przed
+założeniem jego issue (``created_at`` z ``gh api``). PR z pierwszym wystąpieniem kodu, który inny PR wyrwał dopiero
+po jego Ważnym, nie wraca więc po tym wyrwaniu. Gdy wcześniej
 było (a), wyżej się nie da, więc decyduje Maks: blok przechodzi tylko z linią akapitu albo punktem listy ``ZGODA
 KORZEŃ: R-KOD`` w komentarzu albo recenzji tego PR od konta z prawem ``admin`` do repozytorium
 (``rejestr_korzeni.consents``). Granica: blok ``Wyrwany w #M`` nie ma szczebla, a opis PR korzenia go nie podaje, więc
@@ -115,17 +119,19 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
     found: list[str] = []
-    expected = _expected(rounds, found)
+    majors = _expected(rounds, found)
+    expected = {heading: major.code for heading, major in majors.items()}
+    since = {heading: major.since for heading, major in majors.items()}
     codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
     if expected or any(word in pull.body for word in RED_MAIN_WORDS):
-        found.extend(_described(pull, expected, codes))
+        found.extend(_described(pull, expected, since, codes))
     found.extend(_unlisted(codes, pull))
     return _refusal(found, pull)
 
 
-def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]]) -> list[str]:
+def _described(pull: Pull, expected: dict[str, str | None], since: dict[str, datetime | None], codes: dict[str, list[str]]) -> list[str]:
     """Przyczyny z opisu PR: czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``, której kody bloków
-    trafiają do ``codes``."""
+    trafiają do ``codes``; ``since`` to chwila wystąpienia kodu w bloku (Q11), uzupełniana o czerwony `main`."""
 
     try:
         html = github.html_markdownu(pull.body, pull.repository)
@@ -134,12 +140,13 @@ def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, lis
     found: list[str] = []
     red = _red_main(html, pull, found)
     expected.update({f"Czerwony main #{number}": None for number in red})
+    since.update({f"Czerwony main #{number}": created for number, created in red.items()})
     if expected:
-        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes))
+        found.extend(_section(szablon_werdyktu.items(html), expected, since, pull, codes))
     return found
 
 
-def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str, str | None]:
+def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str, rejestr_korzeni.Major]:
     """Nagłówki bloków ``W<n> r<k>`` każdego Ważnego werdyktów ``FAIL`` z kodem z ostatniego werdyktu, który go dotyczy
     (``rejestr_korzeni.majors``, z którego tak samo czyta rejestr korzeni)."""
 
@@ -148,7 +155,7 @@ def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str,
         f"korzeń: punkt „Korzeń {resolution.label} r{resolution.round}: {resolution.code}” werdyktu r{number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"
         for number, resolution in strays
     )
-    return {heading: major.code for heading, major in majors.items()}
+    return majors
 
 
 def _new_codes(rounds: Sequence[werdykt_pr.Round]) -> list[str]:
@@ -172,20 +179,29 @@ def _unlisted(codes: dict[str, list[str]], pull: Pull) -> list[str]:
     ]
 
 
-def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
-    red = []
+def _red_main(html: str, pull: Pull, found: list[str]) -> dict[int, datetime | None]:
+    """Issues czerwonego `main` z linii „Część” i „Naprawia” z chwilą założenia (``None``, gdy GitHub jej nie podał)."""
+
+    red: dict[int, datetime | None] = {}
     for number in naprawia.listed_issues(html, pull.repository, RED_MAIN_WORDS):
         try:
-            labels = {label["name"] for label in json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))["labels"]}
+            issue = json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))
         except Exception as error:  # noqa: BLE001 - każdy błąd GitHuba to odmowa z przyczyną
             found.append(f"korzeń: GitHub nie podał etykiet #{number}, więc nie wiadomo, czy to czerwony main ({error}), uruchom ponownie")
             continue
-        if github.CZERWONY_MAIN in labels:
-            red.append(number)
+        if github.CZERWONY_MAIN in {label["name"] for label in issue["labels"]}:
+            red[number] = _moment(issue.get("created_at"))
     return red
 
 
-def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]]) -> list[str]:
+def _moment(when: object) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(when))
+    except ValueError:
+        return None
+
+
+def _section(units: Sequence[Item], expected: dict[str, str | None], since: dict[str, datetime | None], pull: Pull, codes: dict[str, list[str]]) -> list[str]:
     parsed = rejestr_korzeni.section(units)
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if parsed is None:
@@ -215,7 +231,7 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull,
             found.append(
                 f"korzeń: {heading}: kod {block.code}, a ostatni werdykt, który go dotyczy, podaje {code}; inny kod rozstrzyga recenzent następnej rundy punktem „Korzeń {heading}: R-KOD - zdanie” w „## Sprawdzone” (Q25)"
             )
-        found.extend(_fields(block, pull, earlier))
+        found.extend(_fields(block, pull, earlier, since.get(heading)))
     found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected)
     return found
 
@@ -226,14 +242,16 @@ class _Earlier:
 
     def __init__(self, pull: Pull) -> None:
         self.pull = pull
-        self._best: dict[str, tuple[str, tuple[int, ...]]] | None = None
+        self._found: list[rejestr_korzeni.Occurrence] | None = None
         self._consents: frozenset[str] | None = None
 
-    def best(self, code: str) -> tuple[str, tuple[int, ...]] | None:
-        if self._best is None:
+    def best(self, code: str, before: datetime | None) -> tuple[str, tuple[int, ...]] | None:
+        """Najwyższe wyrwanie ``code`` w innych PR-ach scalonych przed chwilą ``before`` (``None``: w każdym)."""
+
+        if self._found is None:
             deployed = werdykt_pr.deployment(self.pull.base, szablon_werdyktu.ADR)
-            self._best = rejestr_korzeni.earlier(rejestr_korzeni.read(self.pull.repository, deployed, skip=self.pull.number))
-        return self._best.get(code)
+            self._found = rejestr_korzeni.read(self.pull.repository, deployed, skip=self.pull.number)
+        return rejestr_korzeni.earlier(self._found, before).get(code)
 
     def consented(self, code: str) -> bool:
         if self._consents is None:
@@ -241,13 +259,14 @@ class _Earlier:
         return code in self._consents
 
 
-def _higher(block: Block, rung: str, earlier: _Earlier) -> list[str]:
-    """Przyczyna, gdy kod bloku ma wcześniejsze wyrwanie w innym PR, a blok nie wyrywa go szczebel wyżej niż najwyższe
-    z nich (Q11); po (a) wyżej się nie da, więc merge wymaga zgody Maksa w tym PR."""
+def _higher(block: Block, rung: str, earlier: _Earlier, since: datetime | None) -> list[str]:
+    """Przyczyna, gdy kod bloku ma wcześniejsze wyrwanie w innym PR scalonym przed chwilą ``since``, w której kod
+    wystąpił w tym PR, a blok nie wyrywa go szczebel wyżej niż najwyższe z nich (Q11); po (a) wyżej się nie da, więc
+    merge wymaga zgody Maksa w tym PR."""
 
     label = f"korzeń: {block.heading}"
     try:
-        best = earlier.best(block.code)
+        best = earlier.best(block.code, since)
     except Exception as error:  # noqa: BLE001 - każdy błąd GitHuba to odmowa z przyczyną
         return [f"{label}: GitHub nie podał rejestru korzeni ({error}), więc nie wiadomo, czy {block.code} wraca; uruchom ponownie"]
     if best is None:
@@ -284,7 +303,7 @@ def _line(item: Item | None, field: str) -> str | None:
     return item.text.removeprefix(field).strip() if item is not None and item.kind == "line" and item.text.startswith(field) else None
 
 
-def _fields(block: Block, pull: Pull, earlier: _Earlier) -> list[str]:
+def _fields(block: Block, pull: Pull, earlier: _Earlier, since: datetime | None) -> list[str]:
     label = f"korzeń: {block.heading}"
     units = list(block.items)
     first = units[0] if units else None
@@ -311,7 +330,7 @@ def _fields(block: Block, pull: Pull, earlier: _Earlier) -> list[str]:
     found.extend(szablon_werdyktu.evidence_problems(label, _line(units[evidence], EVIDENCE) or "", units[evidence + 1 :]))
     if rung[1] == "e":
         found.extend(_failure_point(block, pull))
-    return [*found, *_higher(block, rung[1], earlier)]
+    return [*found, *_higher(block, rung[1], earlier, since)]
 
 
 def _root_pull(block: Block, line: Item, number: int, pull: Pull) -> list[str]:

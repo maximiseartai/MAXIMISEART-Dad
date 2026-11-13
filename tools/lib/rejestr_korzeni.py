@@ -18,13 +18,28 @@ chwast to kod z wystąpieniami w co najmniej 2 różnych PR-ach.
 Szczebel i mechanizm wystąpienia to pierwsza linia bloku sekcji ``## Korzeń`` scalonego PR z tym samym nagłówkiem:
 ``Szczebel: (x) - mechanizm`` daje ``(x)`` i mechanizm, ``Wyrwany w #M`` daje szczebel ``-`` i mechanizm ``Wyrwany
 w #M`` (szczebel ma tam PR korzenia, którego opis go nie podaje), a PR otwarty albo bez bloku daje ``-`` i ``-``.
-Wcześniejsze wyrwanie kodu dla bramki (Q11) to wystąpienie ze szczeblem w innym PR (``earlier``).
+Wcześniejsze wyrwanie kodu dla bramki (Q11) to wystąpienie ze szczeblem w innym PR scalonym (``mergedAt``) przed
+chwilą, w której powstało wystąpienie kodu w PR bramki (``earlier``): dla Ważnego to chwila utworzenia pierwszego
+werdyktu, który nadał ten kod temu Ważnemu (``Major.since``), bo dopiero wyrwanie scalone przed nią mogło temu
+Ważnemu zapobiec. Merge w tej samej sekundzie już się nie liczy.
 
-Zapytanie do GitHuba jest jedno i po kolei, bo konto ma secondary rate limit: GraphQL ``repository.pullRequests``
-w kolejności ostatniej zmiany (``orderBy: UPDATED_AT``, malejąco), po ``PAGE`` PR-ów na stronę, z opisem, komentarzami
-i recenzjami, strona po stronie, aż do pierwszego PR zmienionego przed wdrożeniem. Każde wystąpienie zmienia PR
-(komentarz werdyktu, merge), więc PR-y zmienione wcześniej go nie mają, a lista bez wyszukiwarki nie ma opóźnienia
-jej indeksu. PR, który ma więcej komentarzy albo recenzji niż jedna strona GraphQL (100), doczytuje ``stan_pr.pull``
+Zapytanie do GitHuba jest jedno i po kolei, bo konto ma secondary rate limit: GraphQL ``search`` PR-ów repozytorium
+zmienionych od wdrożenia (``updated:>=``), w kolejności założenia (``sort:created-asc``), po ``PAGE`` PR-ów na stronę,
+z opisem, komentarzami i recenzjami. Każde wystąpienie zmienia PR (komentarz werdyktu, merge), więc PR bez zmiany od
+wdrożenia go nie ma, a PR założony przed wdrożeniem z pierwszym werdyktem po nim (``werdykt_pr.rule_applies``) na
+liście jest. Kolejność stron jest stała, bo chwila założenia PR się nie zmienia: następna strona to nowe wyszukiwanie
+od chwili założenia ostatniego PR strony (``created:>=``, PR-y z tą samą sekundą rejestr pomija drugi raz). Lista
+po ostatniej zmianie tego nie daje: kursor GitHuba przy ``UPDATED_AT`` to para (``updatedAt``, id), więc PR zmieniony
+między stronami przeskakuje przed kursor i znika ze skanu. Nowe wyszukiwanie zamiast kursora wyszukiwarki omija też
+jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnienia, a ``updatedAt`` tylko rośnie, więc
+brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund; jego publikacja werdyktu sama
+czyta rejestr (``after_verdict``), a ``tools/chwasty.py`` uzupełnia go później.
+
+Koszt skanu rośnie z liczbą PR-ów zmienionych od wdrożenia (Q13 liczy powtórzenia od wdrożenia, więc skan go nie
+ucina): strona na każde ``PAGE - 1`` PR-ów i render każdego werdyktu PR-ów z werdyktem ``FAIL`` i opisu scalonego PR
+ze słowem „Korzeń”. 13.11.2026 skan 22 PR-ów to 2 strony, 30 renderów i 15 s, więc tydzień PR-ów (ok. 280 przy 40
+dziennie) to ok. 15 stron i kilka minut na każdą publikację ``FAIL`` z kodem i każdy merge z blokiem ze szczeblem.
+PR, który ma więcej komentarzy albo recenzji niż jedna strona GraphQL (100), doczytuje ``stan_pr.pull``
 (``gh pr view`` czyta wszystkie strony). Renderer GitHuba (``github.html_markdownu``, ``szablon_werdyktu.items``)
 czyta tylko werdykty PR-ów z werdyktem ``FAIL`` i opisy scalonych PR-ów ze słowem „Korzeń”. Granica: nagłówek sekcji
 zapisany encjami HTML (``Korze&#324;``) renderer pokazałby jako sekcję, a rejestr takiego opisu nie czyta.
@@ -33,15 +48,19 @@ Issue chwastu ma tytuł ``Chwast: R-KOD``, etykiety ``chwast`` i ``ready-for-age
 etykietę) i treść z szablonu Q15 bez wolnej prozy (``body``): sekcja „Korzeń” z opisem kodu z listy korzeni na bazie,
 „Wystąpienia” z tabelą PR | Ważne | Szczebel wyrwania | Mechanizm i „Gotowe, gdy”. Gdy otwarte issue już jest,
 rejestr nie komentuje, tylko zmienia jego treść: wiersze z rejestru zastępują wiersze z tym samym PR i Ważnym,
-a pozostałe wiersze tabeli zostają; treść poza szablonem zostaje bez zmian z ostrzeżeniem. Zamyka je merge PR
-z linią „Korzeń z #<issue>: R-KOD” (``root_lines``, ``naprawia.close_fixed``).
+a pozostałe wiersze tabeli zostają; treść poza szablonem zostaje bez zmian z ostrzeżeniem. Dwie publikacje z tym
+samym kodem w tej samej chwili mogą obie nie zobaczyć issue i obie je założyć, więc po założeniu rejestr czyta
+otwarte issues jeszcze raz (``_duplicates``): każde nowsze ``Chwast: R-KOD`` niż najstarsze zamyka z komentarzem
+``Duplikat #<najstarsze>``, a jego wiersze dopisuje do najstarszego. Bez blokady, bo każda publikacja czyta listę po
+własnym założeniu, więc druga z nich widzi oba issues i zamyka to samo nowsze. Zamyka je merge PR z linią „Korzeń
+z #<issue>: R-KOD” (``root_lines``, ``naprawia.close_fixed``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 import json
 import re
@@ -81,20 +100,22 @@ DONE = (
 NONE = "-"
 PAGE = 20
 _ESCAPED = re.compile(r"([\\`*_\[\]<>|~&])")
+DUPLICATE = "Duplikat #{number}"
+SEARCH = "repo:{repository} is:pr updated:>={deployed} sort:created-asc"
+SINCE = " created:>={created}"
 QUERY = """
-query($owner: String!, $name: String!, $cursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(first: %d, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      pageInfo { hasNextPage endCursor }
-      nodes {
-        number title state isDraft isCrossRepository baseRefName headRefOid url body updatedAt mergedAt
+query($q: String!, $first: Int!) {
+  search(query: $q, type: ISSUE, first: $first) {
+    nodes {
+      ... on PullRequest {
+        number title state isDraft isCrossRepository baseRefName headRefOid url body createdAt updatedAt mergedAt
         comments(first: 100) { pageInfo { hasNextPage } nodes { body authorAssociation createdAt includesCreatedEdit author { login } } }
         reviews(first: 100) { pageInfo { hasNextPage } nodes { body authorAssociation state submittedAt includesCreatedEdit author { login } } }
       }
     }
   }
 }
-""" % PAGE
+"""
 
 
 @dataclass(frozen=True)
@@ -177,12 +198,14 @@ def root_lines(units: Sequence[Item], repository: str) -> list[tuple[github.Link
 @dataclass(frozen=True)
 class Major:
     """Ważne ``heading`` (``W1 r2``) werdyktu ``FAIL`` rundy ``round`` z kodem z ostatniego werdyktu, który go dotyczy
-    (``None``, gdy żaden nie podał kodu w szablonie), i rundą ``decided`` tego werdyktu."""
+    (``None``, gdy żaden nie podał kodu w szablonie), rundą ``decided`` tego werdyktu i chwilą utworzenia ``since``
+    pierwszego werdyktu, który nadał ten kod temu Ważnemu (``None`` bez kodu albo bez chwili)."""
 
     heading: str
     round: int
     code: str | None
     decided: int
+    since: datetime | None = None
 
 
 def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[tuple[int, Root]]]:
@@ -192,6 +215,7 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
 
     found: dict[str, Major] = {}
     strays: list[tuple[int, Root]] = []
+    first: dict[tuple[str, str | None], datetime | None] = {}
     for current in rounds:
         if current.verdict.decision == "FAIL":
             labels = [*(f"W{index}" for index in range(1, max(current.declared_majors or 0, 1) + 1)), *(root.label for root in current.findings.majors)]
@@ -200,11 +224,12 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
             for root in current.findings.majors:
                 if root.code is not None:
                     key = f"{root.label} r{current.number}"
-                    found[key] = replace(found[key], code=root.code)
+                    found[key] = replace(found[key], code=root.code, since=first.setdefault((key, root.code), _moment(current.verdict.when)))
         for resolution in current.findings.resolutions:
             key = f"{resolution.label} r{resolution.round}"
             if key in found:
-                found[key] = replace(found[key], code=resolution.code, decided=current.number)
+                since = first.setdefault((key, resolution.code), _moment(current.verdict.when))
+                found[key] = replace(found[key], code=resolution.code, decided=current.number, since=since)
             else:
                 strays.append((current.number, resolution))
     return found, strays
@@ -213,7 +238,8 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
 @dataclass(frozen=True)
 class Occurrence:
     """Wystąpienie kodu ``code`` w PR ``pull``: Ważne (``W1 r2``) albo ``Czerwony main #N``, runda werdyktu, który dał
-    kod (0 dla czerwonego `main`), oraz litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma)."""
+    kod (0 dla czerwonego `main`), litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma) i chwila merge'a
+    PR (``None``: nie scalony)."""
 
     code: str
     pull: int
@@ -221,6 +247,7 @@ class Occurrence:
     decided: int
     rung: str
     mechanism: str
+    merged: datetime | None = None
 
 
 def read(repository: str, deployed: datetime | None, *, skip: int | None = None) -> list[Occurrence]:
@@ -229,9 +256,8 @@ def read(repository: str, deployed: datetime | None, *, skip: int | None = None)
 
     if deployed is None:
         return []
-    owner, name = repository.split("/")
     found = []
-    for node in _pulls(owner, name, deployed):
+    for node in _pulls(repository, deployed):
         if node["number"] != skip:
             merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
             found.extend(occurrences(_pull(node), deployed, merged))
@@ -250,18 +276,19 @@ def occurrences(pull: Pull, deployed: datetime, merged: datetime | None) -> list
         for major in majors(rounds)[0].values():
             when = _moment(rounds[major.round - 1].verdict.when)
             if major.code is not None and when is not None and when >= deployed:
-                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading))))
+                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), merged))
     if merged is not None and merged >= deployed:
-        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block)) for heading, block in blocks.items() if heading.startswith("Czerwony"))
+        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))
     return sorted(found, key=_order)
 
 
-def earlier(found: Iterable[Occurrence]) -> dict[str, tuple[str, tuple[int, ...]]]:
-    """Najwyższy szczebel (najbliżej (a)) wyrwania każdego kodu i PR-y, w których go użyto, z wystąpień ze szczeblem."""
+def earlier(found: Iterable[Occurrence], before: datetime | None) -> dict[str, tuple[str, tuple[int, ...]]]:
+    """Najwyższy szczebel (najbliżej (a)) wyrwania każdego kodu i PR-y, w których go użyto, z wystąpień ze szczeblem
+    w PR-ach scalonych przed chwilą ``before`` (``None``: w każdym scalonym)."""
 
     best: dict[str, tuple[str, tuple[int, ...]]] = {}
     for occurrence in found:
-        if occurrence.rung == NONE:
+        if occurrence.rung == NONE or occurrence.merged is None or (before is not None and occurrence.merged >= before):
             continue
         rung, pulls = best.get(occurrence.code, ("z", ()))
         if occurrence.rung < rung:
@@ -376,7 +403,36 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
         color, description = LABELS[name]
         api.wyslij("POST", f"{github.REPO}/labels", {"name": name, "color": color, "description": description})
         lines.append(f"CHWAST | założona etykieta {name}")
-    return [*lines, *github.wykonaj(api, actions, "CHWAST"), *notes]
+    lines += github.wykonaj(api, actions, "CHWAST")
+    created = [action.tytul for action in actions if isinstance(action, github.Zaloz)]
+    return [*lines, *(_duplicates(api, created, repository, described) if created else []), *notes]
+
+
+def _duplicates(api: github.GhApi, titles: Sequence[str], repository: str, described: dict[str, str]) -> list[str]:
+    """Po założeniu issues z tytułami ``titles``: każde otwarte issue z takim tytułem nowsze niż najstarsze zamyka
+    z komentarzem ``Duplikat #<najstarsze>``, a jego wiersze dopisuje do najstarszego."""
+
+    issues: dict[str, list[dict[str, Any]]] = {}
+    for issue in github.issues(api, WEED, "open"):
+        if str(issue["title"]) in titles:
+            issues.setdefault(str(issue["title"]), []).append(issue)
+    actions: list[github.Akcja] = []
+    notes = []
+    for title, same in issues.items():
+        if len(same) < 2:
+            continue
+        oldest, *newer = sorted(same, key=lambda issue: int(issue["number"]))
+        tables = [_rows(str(issue.get("body") or ""), repository) for issue in (oldest, *newer)]
+        if any(table is None for table in tables):
+            notes.append(f"CHWAST | UWAGA: „{title}” ma {len(same)} otwarte issues, a nie każde ma treść w szablonie; zostaw najstarsze #{oldest['number']} i dopisz wiersze ręcznie")
+            continue
+        merged = {(row.pull, row.major): row for table in reversed(tables) for row in table or []}
+        rows = sorted(merged.values(), key=lambda row: (row.pull, _natural(row.major)))
+        code = title.removeprefix(TITLE.format(code=""))
+        if rows != tables[0]:
+            actions.append(github.Edytuj(int(oldest["number"]), body(code, described.get(code, NONE), rows)))
+        actions.extend(github.Zamknij(int(issue["number"]), DUPLICATE.format(number=oldest["number"])) for issue in newer)
+    return [*github.wykonaj(api, actions, "CHWAST"), *notes]
 
 
 def _missing_labels(api: github.GhApi) -> list[str]:
@@ -466,22 +522,26 @@ def _descriptions(base: str) -> dict[str, str]:
         return {}
 
 
-def _pulls(owner: str, name: str, deployed: datetime) -> Iterator[dict[str, Any]]:
-    cursor = None
+def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
+    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz: strona to wyszukiwanie od chwili
+    założenia ostatniego PR poprzedniej strony, więc zmiana PR w trakcie skanu nie przesuwa stron."""
+
+    search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    seen: set[int] = set()
+    since = ""
     while True:
-        variables = ["-f", f"owner={owner}", "-f", f"name={name}", *(["-f", f"cursor={cursor}"] if cursor else [])]
-        answer = json.loads(github.gh("api", "graphql", "-f", f"query={QUERY}", *variables))
+        answer = json.loads(github.gh("api", "graphql", "-f", f"query={QUERY}", "-f", f"q={search}{since}", "-F", f"first={PAGE}"))
         if answer.get("errors"):
             raise ValueError(f"GraphQL: {answer['errors']}")
-        page = answer["data"]["repository"]["pullRequests"]
-        for node in page["nodes"]:
-            updated = _moment(node["updatedAt"])
-            if updated is None or updated < deployed:
-                return
-            yield node
-        if not page["pageInfo"]["hasNextPage"]:
+        nodes = answer["data"]["search"]["nodes"]
+        fresh = [node for node in nodes if node["number"] not in seen]
+        seen.update(node["number"] for node in fresh)
+        yield from fresh
+        if len(nodes) < PAGE:
             return
-        cursor = page["pageInfo"]["endCursor"]
+        if not fresh:
+            raise ValueError(f"GitHub: co najmniej {PAGE} PR-ów założonych w chwili {nodes[-1]['createdAt']}, więc strony rejestru korzeni stoją w miejscu")
+        since = SINCE.format(created=nodes[-1]["createdAt"])
 
 
 def _pull(node: dict[str, Any]) -> Pull:

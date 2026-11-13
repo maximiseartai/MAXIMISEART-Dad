@@ -58,6 +58,7 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 - Rejestrem są werdykty i issues na GitHubie; powrót korzenia wykrywa `tools/scal_pr.py --werdykt` przy publikacji (Q22).
   Wystąpienie kodu to Ważne werdyktu `FAIL` z kodem z ostatniego werdyktu, który go dotyczy (Q25), i blok `### Czerwony main #N: R-KOD` opisu scalonego PR, oba po wdrożeniu szablonu (Q13); czyta je jeden moduł, `tools/lib/rejestr_korzeni.py`.
   Werdykt z kodem, który ma wystąpienie w innym PR, zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do tabeli otwartego, a linia `WERDYKT OK` podaje to po `| CHWAST`.
+  Wcześniejsze wyrwanie (Q11) to blok ze szczeblem w innym PR scalonym przed powstaniem wystąpienia kodu w PR bramki: przed pierwszym werdyktem, który nadał ten kod temu Ważnemu, albo przed założeniem issue czerwonego `main`.
   Gdy wcześniejsze wyrwanie było na (a), zgodę Maksa daje komentarz z linią `ZGODA KORZEŃ: R-KOD` od konta z prawem `admin`; to samo konto piszą agenci, więc bramka sprawdza konto, a nie człowieka.
 - `## Korzeń` w opisie PR jest wymagany tylko po `FAIL` z Ważnym albo przy naprawie czerwonego `main`, z blokiem na każde Ważne: Szczebel, „Wyżej nie, bo”, Dowód (Q17).
   Wzór sekcji stoi w skillu [`pr`](../../.agents/skills/pr/SKILL.md), sekcja „Root section”, a `tools/scal_pr.py` czyta go jako wzór odmowy.
