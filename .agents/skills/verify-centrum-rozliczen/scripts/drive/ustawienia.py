@@ -234,6 +234,7 @@ def drive(run: Run, page: Page) -> None:
     _saved_and_undo(run, page)
     _failure_in_window(run, page)
     _history(run, page)
+    _history_release(run, page)
     _refusal_at_field(run, page)
     _typed_keeps_other(run, page)
     _bad_settings_file(run, page)
@@ -356,6 +357,48 @@ def _history(run: Run, page: Page) -> None:
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _history_release(run: Run, page: Page) -> None:
+    """A row of Historia whose change came with a Release reads „Wydanie <version>”, so Dad knows it was not him."""
+
+    run.step(FEATURE, "ustawienia-historia-wydanie")
+    answer = run.api("/api/settings/history", "ustawienia-historia-wydanie")
+    rows = answer["rows"]
+    assert isinstance(rows, list) and rows
+    # Harness: a Release change with this Centrum's real row shape on top; pytest drives the start that writes it.
+    answer["rows"] = [
+        {
+            **rows[0],
+            "id": "harness-wydanie",
+            "source": "release",
+            "release": {"version": "0.9.0", "commit": "abc1234", "change": "2026-11-motyw"},
+            "undoes": None,
+            "file": "centrum-ustawienia.yaml",
+            "section": "wyglad",
+            "changes": [{"key": "wyglad.motyw", "before": "light", "after": "dark"}],
+            "secret": False,
+            "undoable": True,
+            "refused": False,
+            "removed": False,
+            "reason": None,
+        },
+        *rows,
+    ]
+    print("  harness: the page gets Historia with a Release change on top (page.route)", flush=True)
+    page.route("**/api/settings/history", lambda route: route.fulfill(json=answer))
+    try:
+        window = open_settings(page, "Historia")
+        release = window.get_by_role("list", name="Zmiany").get_by_role("listitem").first
+        expect(release).to_contain_text("Motyw")
+        expect(release).to_contain_text("Jasny → Ciemny")
+        expect(release).to_contain_text("Wydanie 0.9.0")
+        expect(release.get_by_role("button", name="Cofnij: Motyw", exact=True)).to_be_visible()
+        run.check(True, "a change from a Release reads „Wydanie 0.9.0” in its row of Historia, with „Cofnij”")
+        run.capture(page, "340-ustawienia-historia-wydanie", full_page=False)
+        close_settings(page)
+    finally:
+        page.unroute("**/api/settings/history")
 
 
 def _refusal_at_field(run: Run, page: Page) -> None:
