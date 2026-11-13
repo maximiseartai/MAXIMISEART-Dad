@@ -164,7 +164,7 @@ def wysylka(komorka: str, log: CentrumLog, zegar: Clock) -> str:
 
 # Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
 # mypy i ruff ich nie łapią.
-ZNANE_LUKI: Final = {
+ZNANE_LUKI_PAMIECI: Final = {
     "konstruktor ForbiddenValues": """from rozliczenia.client_data import ForbiddenValues
 
 
@@ -185,8 +185,8 @@ def wysylka(komorka: str) -> str:
 
 @wymaga_ruff_i_mypy
 def test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
-    probki = {opis: kod for opis, (kod, _) in DROGI_DO_PUSTEJ_PAMIECI.items()} | ZNANE_LUKI
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_PUSTEJ_PAMIECI.items()} | ZNANE_LUKI_PAMIECI
     zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pamieci.py")
 
     assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_PUSTEJ_PAMIECI.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
-    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI}, "tests/test_regula_danych.py")
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_PAMIECI}, "tests/test_regula_danych.py")
