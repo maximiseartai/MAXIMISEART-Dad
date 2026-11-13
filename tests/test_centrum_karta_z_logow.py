@@ -16,7 +16,8 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum.contract.common import ProcessKey
+from rozliczenia.centrum import diagnosis_messages
+from rozliczenia.centrum.contract.common import Message, ProcessKey
 from rozliczenia.centrum.contract.metrics import ProcessRun
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.dad_actions import DadActions
@@ -26,6 +27,9 @@ from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, Environment, LoggedInterruption, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_origins import CentrumRuns
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.settlement_messages import unmapped_worker_warning
 from rozliczenia.telemetry import MetricsStore
 from tests.fixtures.centrum import finished_view, without_times
 from tests.fixtures.centrum_processes import (
@@ -75,6 +79,26 @@ def test_karta_po_starcie_idzie_za_plikiem_logow_bez_ustawien_metryk_i_folderu_o
     expected["result"]["warnings"][0]["what"] = "Ostrzeżenie zmienione w pliku Logów."
     expected["result"]["summary"]["figures"][0]["value"] = 999
     assert centrum.client.get("/api/runs/current").json()["previous"] == expected
+
+
+def test_karta_po_starcie_i_w_historii_ma_ostrzezenie_startu_przed_ostrzezeniem_wyniku_jak_na_zywo(tmp_path: Path) -> None:
+    """ADR 0017: karta z Logów idzie tą samą regułą co na żywo, także w kolejności ostrzeżeń: najpierw ostrzeżenie
+    startu (ostatnia dobra Lista Wykonawców), potem ostrzeżenie wyniku (nieznany WYKONAWCA)."""
+
+    centrum = settling_centrum(tmp_path, include_unmapped=True)
+    centrum.client.get("/api/settings")
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    live = run_to_end(centrum, dry_run=True)
+    centrum.client.stop()
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    card = centrum.client.get(f"/api/runs/{live['run']['id']}/card").json()
+    start = diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES))
+    result = unmapped_worker_warning(centrum.collective_file, "andrzej.nieznany2")
+    assert live["result"]["warnings"] == [Message.of(start).model_dump(), Message.of(result).model_dump()]
+    assert (previous, card) == (restored(live, previous["started_at"]),) * 2
 
 
 @pytest.mark.parametrize(("dry_run", "action"), [(True, PREVIEW_ADVICE), (False, WRITE_ADVICE)], ids=["podglad", "zapis"])
