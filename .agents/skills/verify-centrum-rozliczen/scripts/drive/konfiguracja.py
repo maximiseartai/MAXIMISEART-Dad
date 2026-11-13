@@ -12,21 +12,21 @@ from playwright.sync_api import Locator, Page, expect
 
 from drive.common import Run, move, open_settings, read_bytes, remove, served_version, settings_window, unreadable, version_line
 from drive.teksty import UPDATE_BUTTON
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
-REPORT_TO_MAINTAINER = "Przekaż ten komunikat osobie utrzymującej narzędzie."
 INACCESSIBLE_TEMPLATE = "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program."
-INACCESSIBLE_WORKER_CONFIG = (
-    "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
-)
+INACCESSIBLE_WORKER_LIST = "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program."
+WORKER_LIST_PLACE = "Lista Wykonawców w Ustawieniach Centrum"
 
 
 def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, int]]:
-    """Bytes and modification time of every configuration file of the fixture, plus every lock file."""
+    """Bytes and modification time of every configuration file of the fixture and the Lista Wykonawców, plus every lock
+    file."""
 
     config = next(iter(files.values())).parent
-    paths = [*files.values(), *config.glob(f"{EXCEL_LOCK_PREFIX}*")]
+    paths = [*files.values(), config / WORKERS_FILE, *config.glob(f"{EXCEL_LOCK_PREFIX}*")]
     return {path.name: (read_bytes(path), path.stat().st_mtime_ns) for path in sorted(paths)}
 
 
@@ -192,18 +192,17 @@ def drive(run: Run, page: Page) -> None:
         move(moved, worker_template)
 
     run.step(feature, "konfiguracja-nieczytelna-konfiguracja-wykonawcow")
-    worker_config = files["worker_config"]
+    worker_config = files["worker_template"].parent / WORKERS_FILE
     moved = worker_config.with_name(worker_config.name + ".przeniesiony")
     move(worker_config, moved)
     try:
-        worker_config.write_text("workers: [niedomknięta lista\n", encoding="utf-8")
+        worker_config.write_text("schema_version: 1\nwykonawcy: [niedomknięta lista\n", encoding="utf-8")
         page.reload()
         open_settings(page, "Wykonawcy")
-        # The same message as the stop of each process on this konfiguracja wykonawców.
-        message = alerts.filter(has_text="Nie można odczytać konfiguracji wykonawców.")
-        expect(message).to_contain_text("Plik nie jest poprawnym YAML.")
-        expect(message).to_contain_text(f"plik {worker_config.name}")
-        expect(message).to_contain_text(REPORT_TO_MAINTAINER)
+        # The same message as the Diagnoza step of the Lista Wykonawców.
+        message = alerts.filter(has_text="Lista Wykonawców ma złe ustawienie.")
+        expect(message).to_contain_text(f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść.")
+        expect(message).to_contain_text(WORKER_LIST_PLACE)
         expect(window.get_by_role("list", name="Wykonawcy")).to_have_count(0)
         workers = run.api("/api/configuration", "konfiguracja-nieczytelna-konfiguracja-wykonawcow")["workers"]
         assert isinstance(workers, dict)
@@ -216,10 +215,9 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "konfiguracja-niedostepna-konfiguracja-wykonawcow")
     with unreadable(worker_config):
         page.reload()
-        # The same message as Przebieg rozliczeń's stop on this konfiguracja wykonawców.
-        message = alerts.filter(has_text=INACCESSIBLE_WORKER_CONFIG)
-        expect(message).to_contain_text(f"plik {worker_config.name}, folder config")
-        expect(message).to_contain_text(REPORT_TO_MAINTAINER)
+        # The same message as the Diagnoza step of the Lista Wykonawców.
+        message = alerts.filter(has_text=INACCESSIBLE_WORKER_LIST)
+        expect(message).to_contain_text(WORKER_LIST_PLACE)
         run.check(
             all(word not in message.inner_text() for word in ("uszkodzon", "niepoprawn")),
             "a konfiguracja wykonawców without access is niedostępna, never uszkodzona or niepoprawna",

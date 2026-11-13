@@ -293,7 +293,8 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert second.returncode == 0
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert exit_code == 0
-    # Pierwszy start stosuje zmiany Ustawień z Wydania (folder okresów od Załączniki: bez folderu okresów bez zmian), a
+    # Pierwszy start stosuje zmiany Ustawień z Wydania (przeniesienie Listy Wykonawców: bez starych plików bez zmian;
+    # folder okresów od Załączniki: bez folderu okresów bez zmian), a
     # ich wpis czeka na ``start``, więc dziennik startu zaczyna się od niego.
     assert _log_events(runtime) == ["start", "ustawienia-wydanie", "juz-dziala", "zamkniecie", "stop"]
     assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")

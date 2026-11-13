@@ -62,7 +62,7 @@ from rozliczenia.quantity_rules_file import (
 )
 from rozliczenia.run_context import RunContext
 from atrapy.preparation import PERIOD, cell_values, make_preparation_fixture, register_order
-from atrapy.settlement import write_template
+from atrapy.settlement import worker_list, write_template
 from atrapy.workbooks import active_worksheet
 
 DEVICES = DeviceList(
@@ -542,7 +542,7 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
             fixture.register_path,
             fixture.periods_directory,
             PERIOD,
-            fixture.config_path,
+            worker_list(),
             fixture.internal_template_path,
             fixture.collective_template_path,
             quantity_rules=OWN_RULES,
@@ -552,7 +552,7 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
     prepared = [_quantities_in(preparation.collective_file, row) for row in (18, 19, 20)]
     _tata_writes(preparation.collective_file, {"AA18": 6, "V19": 1})
     settlement = run_settlements(
-        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template, quantity_rules=OWN_RULES),
+        SettlementInputs(preparation.collective_file, worker_list(), worker_template, quantity_rules=OWN_RULES),
         RunContext(),
     )
     check = quantity_check.check(settlement.orders, settlement.quantity_rules)

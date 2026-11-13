@@ -22,7 +22,7 @@ SUBJECT_WORD: Final = "raport"
 a rdzeń rozstrzyga resztę tematu."""
 
 Login = NewType("Login", str)
-"""Identyfikator Wykonawcy z ``WYKONAWCA`` po ``normalize_text``: klucz Konfiguracji wykonawców i pliku adresów."""
+"""Identyfikator Wykonawcy z ``WYKONAWCA`` po ``normalize_text``: login Wykonawcy z Listy Wykonawców."""
 
 _DIGEST_LETTERS: Final = 16
 _LETTERS: Final = str.maketrans("0123456789abcdef", "abcdefghijklmnop")
@@ -102,7 +102,7 @@ class ReportMail:
 
 @dataclass(frozen=True)
 class WorkerAddresses:
-    """Adres nadawcy → login Wykonawcy; buduje go tylko ``worker_addresses.load`` z pliku adresów Maksa."""
+    """Adres nadawcy → login Wykonawcy; buduje go tylko ``WorkerList.addresses`` z Listy Wykonawców."""
 
     logins: Mapping[SenderAddress, Login]
 

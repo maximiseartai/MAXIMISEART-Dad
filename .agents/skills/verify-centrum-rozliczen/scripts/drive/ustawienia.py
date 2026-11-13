@@ -29,6 +29,7 @@ from drive.common import (
     remove,
     remove_tree,
     sent_requests,
+    settings_title,
     settings_window,
     settle,
     unreadable,
@@ -122,7 +123,7 @@ def drive(run: Run, page: Page) -> None:
     expect(unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", FOLDERS)
     run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing and links to Foldery")
     unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
-    expect(window.get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    expect(settings_title(page)).to_have_text("Ustawienia/Foldery")
     run.answer_picker(run.fixture["order_register"])
     window.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     expect(register.get_by_text(register_name)).to_be_visible()
@@ -239,6 +240,7 @@ def drive(run: Run, page: Page) -> None:
 
     _saved_and_undo(run, page)
     _failure_in_window(run, page)
+    _failure_after_window(run, page)
     _history(run, page)
     _history_release(run, page)
     _refusal_at_field(run, page)
@@ -248,10 +250,13 @@ def drive(run: Run, page: Page) -> None:
     _inbox_password(run, page)
 
 
-def _toast(page: Page, title: str) -> Locator:
-    """The toast ``title`` on screen; a toast it replaced stays in the document while it slides out."""
+def _toast(scope: Page | Locator, title: str) -> Locator:
+    """The toast ``title`` on screen, on the page or in a window of it (``scope``); a toast it replaced stays in the
+    document while it slides out."""
 
-    return page.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text(title, exact=True))
+    # `has` is matched inside each toast, so it is built on the page, not on the window.
+    page = scope if isinstance(scope, Page) else scope.page
+    return scope.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text(title, exact=True))
 
 
 def _saved_and_undo(run: Run, page: Page) -> None:
@@ -269,8 +274,11 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
             run.check(True, f"the switch shows „Zapisano · Cofnij” ({viewport['width']} px)")
             run.capture(page, capture, full_page=False)
+            # The toast's title is a heading in the window too: the window's own title still reads one path (#1534).
+            open_settings(page, "Wygląd")
             saved.get_by_role("button", name="Cofnij", exact=True).click()
-            expect(_toast(page, "Cofnięto")).to_be_visible()
+            # „Cofnięto” stands in the window Ustawienia, over its blurred page, like „Zapisano”.
+            expect(_toast(settings_window(page), "Cofnięto")).to_be_visible()
             expect(page.locator("html")).to_have_class("dark")
             expect(themes.get_by_role("button", name="Ciemny", exact=True)).to_have_attribute("aria-pressed", "true")
             run.wait_for(lambda: run.remembered("motyw") == "dark", "„Cofnij” in the toast takes the theme back")
@@ -311,12 +319,42 @@ def _failure_in_window(run: Run, page: Page) -> None:
             timeout_s=UNCOVERED_WAIT_S,
         )
         run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
+        expect(page.locator("html")).to_have_class("dark")
+        expect(themes.get_by_role("button", name="Ciemny", exact=True)).to_have_attribute("aria-pressed", "true")
+        run.check(True, "after the failed save the page is back in the theme of the settings file, without a reload")
     finally:
         page.unroute(theme)
     close_settings(page)
     page.reload()
     expect(page.locator("html")).to_have_class("dark")
     run.check(run.remembered("motyw") == "dark", "the failed save left the theme as it was")
+
+
+def _failure_after_window(run: Run, page: Page) -> None:
+    """A save that fails after Dad closed the window Ustawienia shows its notification over the page instead of nowhere."""
+
+    run.step(FEATURE, "ustawienia-blad-po-zamknieciu")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    held: list[Route] = []
+    # Harness: the save is held, as a save at tata's can answer after he closed the window.
+    page.route(theme, lambda route: held.append(route))
+    try:
+        themes.get_by_role("button", name="Jasny", exact=True).click()
+        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        run.check(len(held) == 1, f"the save of Motyw waits for its answer ({len(held)} requests, held)")
+        close_settings(page)
+        held.pop().fulfill(status=500, body="")
+        expect(error_toasts(page)).to_have_count(1)
+        expect(error_toasts(page)).to_be_visible()
+        run.check(True, "a save that fails after the window Ustawienia closed is a notification over the page")
+        run.capture(page, "341-ustawienia-blad-po-zamknieciu", full_page=False)
+    finally:
+        for route in held:
+            route.continue_()
+        page.unroute(theme)
+    expect(page.locator("html")).to_have_class("dark")
+    run.check(run.remembered("motyw") == "dark", "the save that failed after the window closed left the theme as it was")
 
 
 def _history(run: Run, page: Page) -> None:

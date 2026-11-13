@@ -48,12 +48,28 @@ def _contract_errors(error: ValidationError) -> str:
     return ", ".join(f"{'.'.join(map(str, detail['loc'])) or '<result>'} ({detail['type']})" for detail in error.errors())
 
 
+def _named(node: object, code: str, value: str) -> Iterable[str]:
+    """``what`` of every Komunikat with ``code`` in ``node`` that names ``value``."""
+
+    if isinstance(node, dict):
+        what = node.get("what")
+        if node.get("code") == code and isinstance(what, str) and value in what:
+            yield what
+        for child in node.values():
+            yield from _named(child, code, value)
+    elif isinstance(node, list):
+        for child in node:
+            yield from _named(child, code, value)
+
+
 def load_result(
-    path: Path | None, row_content: Iterable[str], errors: list[str], *, naming: Iterable[str] = ()
+    path: Path | None, row_content: Iterable[str], errors: list[str], *, naming: Iterable[tuple[str, str]] = ()
 ) -> ProcessResult | None:
     """The result of a process step's evidence JSON as ``ProcessResult``; ``None`` after recording why not.
 
-    ``naming``: exact Komunikat texts allowed to carry a row value (an unknown WYKONAWCA identifier), nowhere else.
+    ``naming``: (Komunikat code, row value) pairs: the ``what`` of a Komunikat with that code may carry that one row
+    value (an unknown WYKONAWCA identifier) and no other row content; nothing else may carry any. The scripts name
+    the code and not the sentence, so the wording has one owner, the Komunikat catalog and its expected samples.
     """
 
     if path is None or not path.is_file():
@@ -61,11 +77,16 @@ def load_result(
         return None
     text = path.read_text(encoding="utf-8")
     raw_text = text
-    for allowed in naming:
-        text = text.replace(allowed, "").replace(json.dumps(allowed)[1:-1], "")
+    row_content = tuple(row_content)
+    document = json.loads(raw_text)
+    for code, value in naming:
+        for allowed in set(_named(document, code, value)):
+            if any(content in allowed.replace(value, "") for content in row_content):
+                errors.append(f"{code} carries row content besides the identifier it names")
+            text = text.replace(allowed, "").replace(json.dumps(allowed)[1:-1], "")
     if any(value in text for value in row_content):
         errors.append("process result contains row content")
-    raw = json.loads(raw_text)["result"]
+    raw = document["result"]
     if not isinstance(raw, dict):
         errors.append("process step printed no JSON result")
         return None

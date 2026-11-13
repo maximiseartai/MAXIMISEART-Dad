@@ -11,16 +11,18 @@ from typing import Final, assert_never
 
 from fastapi import APIRouter
 
-from rozliczenia import input_checks, workbook_files
-from rozliczenia.centrum.configuration import ConfigurationFiles, Template
+from rozliczenia import workbook_files
+from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import configuration as configuration_contract
 from rozliczenia.centrum.keyed_box import KeyJudgement
+from rozliczenia.centrum.settings.files import Good, Read, Unreadable
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.message import Message
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.workbook_files import Problem
+from rozliczenia.worker_list import WorkerList
 
 
 _Problem = tuple[configuration_contract.TemplateProblemKind, Message]
@@ -44,8 +46,9 @@ def configuration_router(
     release: ReleaseSource,
     key_judgement: Callable[[], KeyJudgement],
     template_check: TemplateCheck,
+    workers: Callable[[], Read[WorkerList] | Unreadable],
 ) -> APIRouter:
-    """Konfiguracja; ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
+    """Konfiguracja; ``workers`` daje Listę Wykonawców z migawki Ustawień Centrum, ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
     najwyżej ``CONFIGURATION_WAIT_S``.
 
     Aktualność narzędzia porównuje commit narzędzia z najnowszym Wydaniem na GitHubie według ``release``: odpowiedzi
@@ -64,7 +67,7 @@ def configuration_router(
             freshness=_STATE[judgement],
             update_offered=offers_update(judgement),
             templates=[checked.status(template) for template in files.templates()],
-            workers=_workers(files.worker_config),
+            workers=_workers(workers()),
             reports=_KEY_STATE[key_judgement()],
         )
 
@@ -139,10 +142,10 @@ class _CheckedTemplates:
         return result
 
 
-def _workers(config_path: Path) -> configuration_contract.Workers:
-    """Wykonawcy wczytani tak jak w obu procesach, w kolejności z konfiguracji wykonawców."""
+def _workers(workers: Read[WorkerList] | Unreadable) -> configuration_contract.Workers:
+    """Nazwy Wykonawców z Listy Wykonawców w jej kolejności; przy złym ustawieniu Komunikat Diagnozy."""
 
-    workers = input_checks.workers(config_path)
-    if isinstance(workers, Message):
-        return configuration_contract.WorkersUnreadable(state="unreadable", message=common_contract.Message.of(workers))
-    return configuration_contract.WorkersReady(state="ready", names=list(workers.values()))
+    if isinstance(workers, Good):
+        return configuration_contract.WorkersReady(state="ready", names=[worker.name for worker in workers.value.workers])
+    message = common_contract.Message.of(workers_problem(workers))
+    return configuration_contract.WorkersUnreadable(state="unreadable", message=message)

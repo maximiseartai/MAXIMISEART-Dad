@@ -15,7 +15,7 @@ only after every workbook is ready.
 ## How to get to it (user POV)
 
 - Dad starts it in Centrum rozliczeń from the `Uruchomienia` page with the period picked from a list (or from Okresy: `Podgląd bez zapisu` in `Następny krok`, or the period row's `Utwórz rozliczenia pracowników`); the Plik zbiorczy comes from that Folder okresu. `verify-centrum-rozliczen` drives that route.
-- Outside Centrum, run `py -3 tools\uruchom_proces.py settlement --source <source> --config <mapping> --worker-template <worker-template> --metrics <metrics>` with a synthetic fixture.
+- Outside Centrum, run `py -3 tools\uruchom_proces.py settlement --source <source> --wykonawcy <wykonawcy.yaml> --worker-template <worker-template> --metrics <metrics>` with a synthetic fixture.
 
 ## Driving it with PowerShell and the machine script
 

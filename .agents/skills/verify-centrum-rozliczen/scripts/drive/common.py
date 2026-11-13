@@ -263,6 +263,13 @@ def settings_window(page: Page) -> Locator:
     return page.get_by_role("dialog", name="Ustawienia")
 
 
+def settings_title(page: Page) -> Locator:
+    """The title of the window Ustawienia, its path ``Ustawienia/<section>``: the heading that names the window, not the
+    title of a notification („Zapisano”, „Cofnięto”), which stands in the window as a heading of its own (#1534)."""
+
+    return settings_window(page).get_by_role("heading", name=re.compile(r"^Ustawienia "))
+
+
 def open_settings(page: Page, section: str) -> Locator:
     """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title)."""
 
@@ -277,7 +284,7 @@ def open_settings(page: Page, section: str) -> Locator:
     else:
         window.get_by_role("combobox", name="Sekcja Ustawień").click()
         page.get_by_role("option", name=section, exact=True).click()
-    expect(window.get_by_role("heading")).to_have_text(f"Ustawienia/{section}")
+    expect(settings_title(page)).to_have_text(f"Ustawienia/{section}")
     return window
 
 
@@ -306,7 +313,7 @@ def choose_periods_directory(run: Run, page: Page, path: str | None = None) -> N
     Tablica okresów, whose „Ustaw w Ustawieniach” opens the section Foldery."""
 
     page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).first.click()
-    expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    expect(settings_title(page)).to_have_text("Ustawienia/Foldery")
     point_in_settings(run, page, "Folder okresów", run.fixture["periods_directory"] if path is None else path)
     expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 

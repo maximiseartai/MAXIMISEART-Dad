@@ -39,7 +39,7 @@ in `<feature>.md` next to this file, driven by the skill's
 - No settings are set when a run starts.
 - Only for `wydajnosc`, the fixture is created with `--wariant rok-pracy`: `<root>/Rok pracy/Załączniki` holds 52 periods in Dad's layout and the metrics files hold a year of records (see `wydajnosc.md`).
 - `<root>/aktualizacja/` holds the run's tool for `aktualizacja`: a clone (`klon`) on the first synthetic commit, with Dad's files in its `config/`, and a bare local "origin" (`origin.git`) one commit ahead that stops tracking his changed konfiguracja wykonawców, plus a branch `biblioteki` one commit later that needs a library pip cannot install offline and a branch `nie-startuje` whose Centrum does not start. Centrum's own commit is the clone's `HEAD`, and Aktualizacja narzędzia moves only this clone. The clone's `run_centrum.py` serves the run's scripted Centrum, so the Centrum the restart guardian starts after an update is again this run's.
-- The run's `config/` holds a synthetic `worker_mapping.yaml` (three Wykonawcy)
+- The run's `config/` holds a synthetic Lista Wykonawców `wykonawcy.yaml` (three Wykonawcy)
   and the three Wzorce, valid for the engine's Sprawdzanie; the configuration read of Ustawienia reads
   these, never Dad's `config/`.
 

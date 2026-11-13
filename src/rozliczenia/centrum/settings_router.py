@@ -14,11 +14,13 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
+from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
@@ -36,6 +38,7 @@ from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
+from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
 
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
@@ -162,6 +165,7 @@ def _path(value: str | None) -> Path | None:
 def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
+    workers = _workers(view.workers)
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     autostart = _describe_autostart(view.autostart)
     match view.folders:
@@ -173,6 +177,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
                 periods_all_years=False,
                 theme=DEFAULT_THEME,
                 folders_problem=None,
+                workers=workers,
                 inbox=inbox_setting,
                 inbox_problem=inbox_problem,
                 autostart=autostart,
@@ -181,13 +186,14 @@ def describe(view: SettingsView) -> settings_contract.Settings:
             problem = None
         case Bad(problem=bad, usable=usable):
             folders = FolderSettings() if usable is None else usable
-            problem = settings_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
     return settings_contract.Settings(
         order_register=_describe_path(folders.register, folders.register_state),
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
         periods_all_years=folders.periods_directory_all_years,
         theme=folders.theme,
         folders_problem=problem,
+        workers=workers,
         inbox=inbox_setting,
         inbox_problem=inbox_problem,
         autostart=autostart,
@@ -196,7 +202,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
 
 def _describe_inbox(
     read: Read[InboxFile] | Unreadable,
-) -> tuple[settings_contract.InboxSetting, settings_contract.SettingProblem | None]:
+) -> tuple[settings_contract.InboxSetting, settings_workers_contract.SettingProblem | None]:
     """Adres skrzynki i to, czy jest hasło, bez wartości hasła; zła treść ma zdanie o problemie i dobry adres z niej
     (przy złym starym haśle tata wpisuje nowe), a nieczytelna to skrzynka bez nich."""
 
@@ -204,7 +210,7 @@ def _describe_inbox(
         case Good(value=found):
             return _inbox_setting(found), None
         case Bad(problem=bad, usable=found):
-            problem = settings_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
             return _inbox_setting(found), problem
         case Unreadable():
             return _inbox_setting(None), None
@@ -217,6 +223,43 @@ def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
     )
 
 
+def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.WorkerListSetting:
+    """Lista Wykonawców w kolejności z pliku; przy złym pliku ostatnia dobra (bez niej pusta) i zdanie o problemie."""
+
+    match read:
+        case Good(value=workers):
+            state: Literal["good", "bad", "unreadable"] = "good"
+            problem = None
+        case Bad(problem=bad, usable=usable):
+            state, workers = "bad", usable or WorkerList(())
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
+        case Unreadable():
+            state, workers, problem = "unreadable", WorkerList(()), None
+    return settings_workers_contract.WorkerListSetting(
+        state=state,
+        workers=[
+            settings_workers_contract.ListedWorker(
+                logins=list(worker.logins),
+                name=worker.name,
+                addresses=[address.shown() for address in worker.addresses],
+                active=worker.active,
+                reminders=worker.reminders,
+            )
+            for worker in workers.workers
+        ],
+        unresolved=[_unresolved(item) for item in workers.unresolved],
+        problem=problem,
+    )
+
+
+def _unresolved(item: Unresolved) -> settings_workers_contract.UnmatchedLogin | settings_workers_contract.AddressesNotMoved:
+    match item:
+        case UnmatchedLogin(login=login, addresses=addresses):
+            return settings_workers_contract.UnmatchedLogin(
+                reason="login_bez_wykonawcy", login=login, addresses=[address.shown() for address in addresses]
+            )
+        case AddressesNotMoved(sentence=sentence):
+            return settings_workers_contract.AddressesNotMoved(reason="adresy_nieprzeniesione", message=sentence)
 def _describe_autostart(autostart: Read[bool] | Unreadable | Unsupported) -> settings_contract.AutostartSetting:
     match autostart:
         case Unsupported():

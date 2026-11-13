@@ -1,5 +1,5 @@
-"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, start razem z Windows i Historia
-Ustawień."""
+"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, Lista Wykonawców, start razem
+z Windows i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.settings_workers import SettingProblem, WorkerListSetting
 
 
 class NotSetPath(Model):
@@ -62,14 +63,6 @@ class AutostartSetting(Model):
     reason: str | None
 
 
-class SettingProblem(Model):
-    """Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
-    pliku i zdanie dla taty."""
-
-    field: str | None
-    message: str
-
-
 class InboxSetting(Model):
     """Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."""
 
@@ -88,6 +81,7 @@ class Settings(Model):
     periods_all_years: bool
     theme: Theme
     folders_problem: SettingProblem | None
+    workers: WorkerListSetting
     inbox: InboxSetting
     inbox_problem: SettingProblem | None
     autostart: AutostartSetting

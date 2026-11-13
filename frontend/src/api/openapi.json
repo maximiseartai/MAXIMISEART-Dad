@@ -2271,6 +2271,27 @@
   },
   "components": {
     "schemas": {
+      "AddressesNotMoved": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "const": "adresy_nieprzeniesione",
+            "title": "Reason"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "message"
+        ],
+        "title": "AddressesNotMoved",
+        "description": "Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego."
+      },
       "ApiTiming": {
         "properties": {
           "operation": {
@@ -3945,6 +3966,47 @@
         ],
         "title": "KindToFill",
         "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.\n\n``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym."
+      },
+      "ListedWorker": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "reminders": {
+            "type": "boolean",
+            "title": "Reminders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses",
+          "active",
+          "reminders"
+        ],
+        "title": "ListedWorker",
+        "description": "Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów\nwykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie."
       },
       "LoggedOutcome": {
         "properties": {
@@ -6968,7 +7030,7 @@
           "message"
         ],
         "title": "SettingProblem",
-        "description": "Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego\npliku i zdanie dla taty."
+        "description": "Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego\npliku i zdanie dla taty."
       },
       "Settings": {
         "properties": {
@@ -7054,6 +7116,9 @@
               }
             ]
           },
+          "workers": {
+            "$ref": "#/components/schemas/WorkerListSetting"
+          },
           "inbox": {
             "$ref": "#/components/schemas/InboxSetting"
           },
@@ -7079,6 +7144,7 @@
           "periods_all_years",
           "theme",
           "folders_problem",
+          "workers",
           "inbox",
           "inbox_problem",
           "autostart"
@@ -7428,6 +7494,35 @@
         "title": "UnknownReportSender",
         "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."
       },
+      "UnmatchedLogin": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "const": "login_bez_wykonawcy",
+            "title": "Reason"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "login",
+          "addresses"
+        ],
+        "title": "UnmatchedLogin",
+        "description": "Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców."
+      },
       "UnreadablePath": {
         "properties": {
           "state": {
@@ -7598,6 +7693,67 @@
         "title": "WithoutQuantityUnread",
         "description": "Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy."
       },
+      "WorkerListSetting": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/ListedWorker"
+            },
+            "type": "array",
+            "title": "Workers"
+          },
+          "unresolved": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/UnmatchedLogin"
+                },
+                {
+                  "$ref": "#/components/schemas/AddressesNotMoved"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "reason",
+                "mapping": {
+                  "adresy_nieprzeniesione": "#/components/schemas/AddressesNotMoved",
+                  "login_bez_wykonawcy": "#/components/schemas/UnmatchedLogin"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Unresolved"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "workers",
+          "unresolved",
+          "problem"
+        ],
+        "title": "WorkerListSetting",
+        "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku, lista pusta)."
+      },
       "WorkerSettlement": {
         "properties": {
           "worker": {
@@ -7665,7 +7821,7 @@
           "names"
         ],
         "title": "WorkersReady",
-        "description": "Nazwy Wykonawców w kolejności z konfiguracji wykonawców."
+        "description": "Nazwy Wykonawców w kolejności z Listy Wykonawców."
       },
       "WorkersUnreadable": {
         "properties": {

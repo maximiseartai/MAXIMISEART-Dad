@@ -45,8 +45,7 @@ def _inputs(start: Start, parts: HostParts) -> EnteringInputs:
     return EnteringInputs(
         start.path("register"),
         start.path("periods_directory"),
-        start.path("worker_config"),
-        start.path("worker_addresses"),
+        start.worker_list(),
         parts.report_entering(),
         now=parts.now,
         waiting=parts.waiting,
@@ -69,7 +68,7 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     view=_VIEW,
     core=report_entering_process.PROCESS,
     default_metrics=REPORT_ENTERING_METRICS,
-    needs=("register", "periods_directory", "worker_config", "worker_addresses", "worker_report_inbox"),
+    needs=("register", "periods_directory", "workers", "worker_report_inbox"),
     inputs=_inputs,
     settings=(
         NeededSetting(
@@ -78,6 +77,6 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
             partial(intermax_messages.register_missing, replacement=intermax_messages.ENTERING),
         ),
     ),
-    checks=("tata_settings", "files_in_onedrive", "intermax", "worker_config", *TAIL),
+    checks=("tata_settings", "files_in_onedrive", "intermax", "worker_list", *TAIL),
     logs=_logs,
 )

@@ -35,6 +35,7 @@ on:
       - src/rozliczenia/centrum/tool_updates.py
       - src/rozliczenia/centrum/tool_freshness.py
       - src/rozliczenia/centrum/configuration_router.py
+      - src/rozliczenia/centrum/period_board.py
       - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
       - tools/lib/atrapy/scenariusz_centrum.py

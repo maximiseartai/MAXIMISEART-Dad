@@ -454,10 +454,9 @@ def _cell_ranges(column: str, row_numbers: Sequence[int]) -> list[str]:
 def unknown_workers(
     register_path: Path,
     sheet: str,
-    config_path: Path,
     workers: Sequence[tuple[str, Sequence[int]]],
 ) -> Message:
-    """Zlecenie skuteczne ma wykonawcę spoza konfiguracji wykonawców Przebiegu rozliczeń.
+    """Zlecenie skuteczne ma wykonawcę spoza Listy Wykonawców, tej samej co w Przebiegu rozliczeń.
 
     ``workers`` to pary: identyfikator wykonawcy i numery wierszy Rejestru z tym wykonawcą.
     """
@@ -472,12 +471,11 @@ def unknown_workers(
     return Message(
         code="NIEZNANY_WYKONAWCA",
         dad_file="order_register",
-        what=f"{subject} spoza konfiguracji wykonawców: {identifiers}. {_NOTHING_CREATED}",
+        what=f"{subject} spoza Listy Wykonawców: {identifiers}. {_NOTHING_CREATED}",
         where=f"{_register_location(register_path, sheet)}, {rows}",
         action=(
-            f"Dopisz identyfikator wykonawcy do konfiguracji wykonawców ({config_path.name}), "
-            "tej samej co w Przebiegu rozliczeń, albo popraw WYKONAWCA we wskazanych wierszach "
-            "Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie."
+            "Dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście Wykonawców, albo popraw WYKONAWCA we wskazanych "
+            "wierszach Rejestru zleceń. Zapisz i zamknij Rejestr, i uruchom ponownie."
         ),
     )
 

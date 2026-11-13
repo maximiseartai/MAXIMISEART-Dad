@@ -24,6 +24,7 @@ from .text import normalize_text
 from .write_routes import Route, RouteCounts, TemplateKind
 from .period_folder import collective_period_token
 from .run_context import RunContext
+from .worker_list import WorkerList
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class SettlementInputs:
     """
 
     source: Path
-    config_path: Path
+    workers: WorkerList
     worker_template_path: Path
     dry_run: bool = False
     quantity_rules: QuantityRules = DEFAULT_QUANTITY_RULES
@@ -146,11 +147,11 @@ def _read_source_rows(
 class _Plan:
     rows_by_target: dict[str, list[DataRow]]
     unmapped_workers: tuple[str, ...]
-    """Identyfikatory WYKONAWCA spoza Konfiguracji wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
+    """Identyfikatory WYKONAWCA spoza Listy Wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
     rows_without_worker: tuple[int, ...]
 
 
-def _plan_rows(mapping: dict[str, str], rows_by_worker: dict[str, list[DataRow]], without_worker: list[int]) -> _Plan:
+def _plan_rows(mapping: Mapping[str, str], rows_by_worker: dict[str, list[DataRow]], without_worker: list[int]) -> _Plan:
     rows_by_target: defaultdict[str, list[DataRow]] = defaultdict(list)
     unmapped: list[str] = []
     for source_worker, rows in rows_by_worker.items():
@@ -179,14 +180,13 @@ def run_settlements(inputs: SettlementInputs, context: RunContext) -> Settlement
     phases = PhaseRunner(context.observer, clock=context.clock.now)
     files, dry_run = context.files, inputs.dry_run
     source_path = inputs.source.expanduser().resolve()
-    config_path = inputs.config_path.expanduser().resolve()
     worker_template_path = inputs.worker_template_path.expanduser().resolve()
 
     folder, mapping, worker_template = phases.check(
-        lambda: input_checks.check_settlement(source_path, config_path, worker_template_path, context.template_check)
+        lambda: input_checks.check_settlement(source_path, inputs.workers, worker_template_path, context.template_check)
     )
     target_directory = folder.worker_settlements
-    worker_names = list(mapping.values())
+    worker_names = list(dict.fromkeys(mapping.values()))
     rows_by_worker, without_worker, orders, inea_only = phases.read(
         lambda: _read_source_rows(source_path, files, inputs.quantity_rules),
         issue_count=lambda read_rows: len(read_rows[1]),

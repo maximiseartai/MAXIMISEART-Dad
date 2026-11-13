@@ -112,7 +112,7 @@ TIMING = Krok(
     (
         "{python} tools/syntetyczne_wzorce.py {temp}/syntetyczne-wzorce",
         "{python} tools/benchmark_przebiegu.py measure --scenario typowy-tydzien --templates-dir {temp}/syntetyczne-wzorce"
-        " --config {temp}/syntetyczne-wzorce/worker_mapping.yaml --mirror-dir {temp}/lustro --journal {temp}/przebieg.jsonl"
+        " --wykonawcy {temp}/syntetyczne-wzorce/wykonawcy.yaml --mirror-dir {temp}/lustro --journal {temp}/przebieg.jsonl"
         " --machine github-windows-latest",
         "{python} tools/benchmark_przebiegu.py guard --journal {temp}/przebieg.jsonl --budget-ms 180000 --summary {podsumowanie}",
     ),

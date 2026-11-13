@@ -31,7 +31,7 @@ from atrapy.preparation import (
 )
 from tests.fixtures.operacje import run_preparation
 from tests.fixtures.wyglad_komorek import wyglad, wyglady
-from atrapy.settlement import write_template
+from atrapy.settlement import worker_list, write_template
 from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
 RED = "FFFF0000"
@@ -71,7 +71,7 @@ def _chain(tmp_path: Path) -> Chain:
     leave_data_row_leftovers(worker_template, first_row=18, rows=LEFTOVER_ROWS, columns=12)
 
     run_preparation(fixture)
-    run_settlements(SettlementInputs(fixture.collective_file_path, fixture.config_path, worker_template), RunContext())
+    run_settlements(SettlementInputs(fixture.collective_file_path, worker_list(), worker_template), RunContext())
 
     worker = PeriodFolder.from_collective_file(fixture.collective_file_path).worker_settlement("Adrian Testowy")
     return Chain(

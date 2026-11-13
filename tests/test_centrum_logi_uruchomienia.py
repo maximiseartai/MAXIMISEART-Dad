@@ -201,9 +201,9 @@ def _aborted_decision(tmp_path: Path, _: pytest.MonkeyPatch) -> Ran:
     return centrum, finished_view(centrum.client)
 
 
-def _broken_worker_config(tmp_path: Path, _: pytest.MonkeyPatch) -> Ran:
-    centrum = settling_centrum(tmp_path)
-    centrum.configuration.worker_config.write_text(":: nie yaml", encoding="utf-8")
+def _missing_collective_template(tmp_path: Path, _: pytest.MonkeyPatch) -> Ran:
+    centrum = preparing_centrum(tmp_path)
+    centrum.fixture.collective_template_path.unlink()
     return centrum, run_to_end(centrum, dry_run=False)
 
 
@@ -329,11 +329,10 @@ ENDINGS = {
         files_unchanged=True,
     ),
     "do-maksa-zapis": Ending(
-        _broken_worker_config,
+        _missing_collective_template,
         "RUN",
         ("BLAD_KRYTYCZNY", "stop", "for_maks"),
-        [("stop", "ZLA_KONFIGURACJA_WYKONAWCOW")],
-        "rozliczenia.message.StopError",
+        [("stop", "BRAK_WZORCA")],
         files_unchanged=True,
     ),
     "wyjatek-zapis": Ending(

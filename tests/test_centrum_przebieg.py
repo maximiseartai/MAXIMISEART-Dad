@@ -225,11 +225,11 @@ def test_podglad_z_nieznanym_wykonawca_wymaga_sprawdzenia_inaczej_niz_sukces(tmp
     assert result["headline"] == "Podgląd wymaga sprawdzenia · nic nie zapisano"
     assert result["warnings"] == [
         {
-            "what": "Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w konfiguracji wykonawców.",
+            "what": "Nieznany identyfikator WYKONAWCA: andrzej.nieznany2. Nie ma go w Liście Wykonawców.",
             "where": f"plik {SOURCE_NAME}, folder {PERIOD}",
             "action": (
-                "Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy "
-                "do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
+                "Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście "
+                "Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
             ),
         }
     ]
@@ -263,8 +263,8 @@ def with_data_row_without_worker(tmp_path: Path) -> SettlingCentrum:
     [
         pytest.param(
             with_unmapped_worker,
-            "Popraw WYKONAWCĘ w kolumnie H albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy "
-            "do konfiguracji wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.",
+            "Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście "
+            "Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie.",
             id="nieznany-wykonawca",
         ),
         pytest.param(

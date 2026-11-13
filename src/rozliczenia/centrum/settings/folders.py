@@ -17,7 +17,7 @@ from typing import Final, Literal
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
 from rozliczenia.file_state import PathState, path_state
 from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
@@ -116,9 +116,9 @@ def parse(data: bytes | None) -> FolderSettings | FieldProblem:
         return FieldProblem(None, messages.damaged(SETTINGS_FILE))
     if document.get("schema_version") != _SCHEMA_VERSION:
         return FieldProblem(None, messages.other_schema(SETTINGS_FILE))
-    unknown = next((key for key in document if key != "schema_version" and key not in _SECTIONS), None)
+    unknown = next((place for place, key in enumerate(document, 1) if key != "schema_version" and key not in _SECTIONS), None)
     if unknown is not None:
-        return FieldProblem(str(unknown), messages.unknown_key(SETTINGS_FILE, str(unknown)))
+        return FieldProblem(None, messages.unknown_key(SETTINGS_FILE, unknown))
     register = _path(document.get(REGISTER), REGISTER, messages.register_path, suffix=".xlsx")
     if isinstance(register, FieldProblem):
         return register
@@ -127,17 +127,19 @@ def parse(data: bytes | None) -> FolderSettings | FieldProblem:
         return periods_directory
     theme = _theme(document.get(THEME, DEFAULT_THEME))
     if theme is None:
-        return FieldProblem(THEME, messages.unknown_theme())
+        return FieldProblem(FieldPath(THEME), messages.unknown_theme())
     return FolderSettings(register=register, periods_directory=periods_directory, theme=theme)
 
 
-def _path(value: object, key: str, sentence: Callable[[], str], *, suffix: str | None = None) -> Path | None | FieldProblem:
+def _path(
+    value: object, key: FieldName, sentence: Callable[[], str], *, suffix: str | None = None
+) -> Path | None | FieldProblem:
     if value is None or value == "":
         return None
     if not isinstance(value, str) or not Path(value).is_absolute():
-        return FieldProblem(key, sentence())
+        return FieldProblem(FieldPath(key), sentence())
     if suffix is not None and Path(value).suffix.lower() != suffix:
-        return FieldProblem(key, sentence())
+        return FieldProblem(FieldPath(key), sentence())
     return Path(value)
 
 
@@ -180,15 +182,19 @@ def _theme(value: object) -> Theme | None:
     return next((theme for theme in THEMES if theme == value), None)
 
 
-def shown(key: str, value: str | None) -> str:
-    """Wartość klucza w Zgłoszeniu: ścieżka tylko nazwą pliku albo ostatniego folderu (jak w Komunikatach), bo pełna
+def reported(change: KeyChange) -> str:
+    """Zmiana klucza w Zgłoszeniu: ścieżka tylko nazwą pliku albo ostatniego folderu (jak w Komunikatach), bo pełna
     ścieżka ma nazwę konta taty; motyw wprost."""
 
+    return f"{change.key}: {_shown(change.key, change.before)} → {_shown(change.key, change.after)}"
+
+
+def _shown(key: str, value: str | None) -> str:
     if value is None:
         return "nie ustawiono"
     return value if key.endswith(f".{THEME}") else PureWindowsPath(value).name
 
 
 FOLDERS: Final = SettingsFile(
-    name=SETTINGS_FILE, parse=parse, dump=dump, diff=diff, restore=restore, shown=shown, default=FolderSettings()
+    name=SETTINGS_FILE, parse=parse, dump=dump, diff=diff, restore=restore, reported=reported, default=FolderSettings()
 )

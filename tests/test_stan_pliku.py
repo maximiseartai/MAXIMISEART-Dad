@@ -1,9 +1,8 @@
 """Stan pliku albo folderu na dysku (``file_state``): jest, nie ma go albo jest niedostępny.
 
-Moduł jest szwem: biorą z niego odczyt skoroszytu, Konfiguracja wykonawców, otwarcie Rejestru zleceń z Ustawień,
+Moduł jest szwem: biorą z niego odczyt skoroszytu, Ustawienia Centrum, otwarcie Rejestru zleceń z Ustawień,
 listowanie Folderu okresu i Logi Uruchomienia, więc macierz błędów systemu plików jest tu raz, a wołający mają po
-jednym teście tłumaczenia na swój Komunikat (``tests/test_workbook_files.py``, ``tests/test_worker_config.py``,
-``tests/test_centrum_rozliczen.py``). Brak to ``FileNotFoundError`` albo ``NotADirectoryError``; każdy inny
+jednym teście tłumaczenia na swój Komunikat (``tests/test_workbook_files.py``, ``tests/test_centrum_rozliczen.py``). Brak to ``FileNotFoundError`` albo ``NotADirectoryError``; każdy inny
 ``OSError`` (w Windows ``PermissionError`` pliku trzymanego przez OneDrive albo folderu bez dostępu) to niedostępność,
 choć ``Path.is_file`` od Pythona 3.14 daje wtedy ``False``.
 """

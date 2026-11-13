@@ -3,7 +3,7 @@
 Każdy proces z okresem (``process_kind.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a
 start z okresem przechodzi przez te same odmowy dla taty w tej samej kolejności. Co różni procesy (co powstaje, jak
 wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień taty, Folderu okresu i
-Konfiguracji; tata nie wskazuje ich przy starcie.
+Konfiguracji, a Lista Wykonawców z migawki Ustawień Centrum; tata nie wskazuje ich przy starcie.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from rozliczenia.centrum.process_kind import (
     RecentWeeks,
     SettingField,
     Start,
+    workers_at_start,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -61,7 +62,8 @@ class PeriodStarts:
         kind = self.catalog.period_kind(request.process)
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
             raise refusal.no_forwarding(kind.title)
-        folders = self.settings.snapshot().folders
+        snapshot = self.settings.snapshot()
+        folders = snapshot.folders
         chosen = kind.required_paths(folders)
         if request.mode.dry_run and kind.start.no_preview is not None:
             raise kind.start.no_preview
@@ -72,6 +74,7 @@ class PeriodStarts:
             dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
             settings=folders,
+            workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 
@@ -81,7 +84,7 @@ class PeriodStarts:
                 return chosen[need]
             case "collective_file":
                 return located_period_folder(chosen["periods_directory"], period).collective_file
-            case "worker_config" | "worker_addresses" | "internal_template" | "collective_template" | "worker_template":
+            case "internal_template" | "collective_template" | "worker_template":
                 return self.configuration.path(need)
             case "copies_directory":
                 raise ValueError("Kopie INTERMAX ma tylko Uporządkowanie INTERMAX, które nie ma okresu (ADR 0019)")

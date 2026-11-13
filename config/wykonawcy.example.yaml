@@ -1,0 +1,13 @@
+# Przykład Listy Wykonawców (config/wykonawcy.yaml) z wymyślonymi Wykonawcami. Prawdziwy plik leży poza Gitem.
+schema_version: 1
+wykonawcy:
+  - nazwa: Adrian Testowy
+    loginy: [adrian.testowy]
+    adresy: [adrian.testowy@example.com]
+    aktywny: true
+    przypomnienia: true
+  - nazwa: Darek Fikcyjny
+    loginy: [darek.fikcyjny]
+    adresy: []
+    aktywny: true
+    przypomnienia: true

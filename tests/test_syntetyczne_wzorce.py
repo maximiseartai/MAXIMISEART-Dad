@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from rozliczenia import tool_files
-from rozliczenia.worker_config import load_worker_mapping
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
+from rozliczenia.worker_list import WorkerList
 from tests.fixtures.benchmark import (
     COLLECTIVE_TEMPLATE,
     INTERNAL_TEMPLATE,
@@ -156,10 +156,11 @@ def test_syntetyczne_wzorce_otwieraja_sie_w_lewym_gornym_rogu_w_75_procentach(tm
     assert pane is not None and (pane.state, pane.topLeftCell) == ("frozen", "A2")
 
 
-def test_syntetyczne_wzorce_maja_konfiguracje_dwudziestu_wykonawcow(tmp_path: Path) -> None:
+def test_syntetyczne_wzorce_maja_liste_dwudziestu_wykonawcow(tmp_path: Path) -> None:
     directory = write_synthetic_templates(tmp_path / "wzorce")
 
-    assert len(load_worker_mapping(directory / tool_files.WORKER_CONFIG.name)) == 20
+    workers = WORKERS.parse((directory / WORKERS_FILE).read_bytes())
+    assert isinstance(workers, WorkerList) and len(workers.workers) == 20
 
 
 def test_generator_tworzy_te_same_bajty_za_kazdym_razem(tmp_path: Path) -> None:

@@ -61,7 +61,7 @@ def run_przebieg(checkout: Path, mirror: Path, config: Path, worker_template: Pa
             "settlement",
             "--source",
             source,
-            "--config",
+            "--wykonawcy",
             config,
             "--worker-template",
             worker_template,

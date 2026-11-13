@@ -212,7 +212,7 @@ def test_adres_wpisany_jako_wykonawca_wychodzi_w_tytule_zgloszenia_zamaskowany_z
     [report] = centrum.surroundings.report_box.sent
     assert {"title": report.title, "body": report.body} == preview
     assert "Kwarcowa" not in report.title + report.body
-    assert "spoza konfiguracji wykonawców: [adres]." in report.title
+    assert "spoza Listy Wykonawców: [adres]." in report.title
     assert report.body.endswith(
         "## Uwagi techniczne\n\n"
         "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Zgłoszenia.\n"

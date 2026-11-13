@@ -12,64 +12,14 @@ nie ma”), bo po utracie pamięci właściciela zmiana biegnie jeszcze raz i wt
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Any, Final, Generic, TypeVar
+from dataclasses import replace
+from typing import Any, Final
 
-from rozliczenia.centrum.settings.files import Good, Read, SettingsFile, Unreadable
+from rozliczenia.centrum.settings.files import Good
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
+from rozliczenia.centrum.settings.migrations import workers as workers_migration
+from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Proposal, ReleaseChange, ReleaseInputs
 from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
-
-T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class ReleaseInputs(Generic[T]):
-    """Co zmiana widzi przy starcie: wartość swojego pliku po wykryciu zmiany spoza Centrum i folder ``config`` ze
-    starymi plikami, które migracja przenosi."""
-
-    current: Read[T] | Unreadable
-    config: Path
-
-
-@dataclass(frozen=True)
-class Edit(Generic[T]):
-    """Edycja bieżącej wartości pliku; ``undoable=False`` dla migracji, której cofnięcie zostawiłoby Centrum bez danych."""
-
-    edit: Callable[[T], T]
-    undoable: bool = True
-
-
-@dataclass(frozen=True)
-class Nothing:
-    """Nic do zmiany (np. plik już przeniesiony): zmiana jest zapamiętana bez wiersza Historii."""
-
-
-@dataclass(frozen=True)
-class Later:
-    """Teraz się nie da (np. OneDrive nie oddał folderu): bez wiersza i bez pamięci, zmiana wraca przy następnym starcie."""
-
-    reason: str
-
-
-@dataclass(frozen=True)
-class Refuse:
-    """Zmiana nie wejdzie: wiersz Historii ``odrzucono`` ze zdaniem dla taty, a zmiana już nie wraca."""
-
-    sentence: str
-
-
-Proposal = Edit[T] | Nothing | Later | Refuse
-
-
-@dataclass(frozen=True)
-class ReleaseChange(Generic[T]):
-    """Zmiana jednego pliku Ustawień Centrum; ``id`` w postaci ``rrrr-mm-nazwa`` jest jej pamięcią u taty."""
-
-    id: str
-    file: SettingsFile[T]
-    propose: Callable[[ReleaseInputs[T]], Proposal[T]]
 
 
 def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
@@ -99,6 +49,7 @@ def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) ->
 
 
 RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (
+    workers_migration.CHANGE,
     ReleaseChange("2026-11-folder-okresow-od-zalacznikow", FOLDERS, periods_directory_from_layout_root),
 )
 """Zmiany Ustawień Centrum, które niesie to Wydanie i każde poprzednie."""

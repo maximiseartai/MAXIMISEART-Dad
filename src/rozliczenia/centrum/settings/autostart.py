@@ -15,7 +15,7 @@ from typing import Final
 
 from rozliczenia.centrum.platform import Autostart
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, KeyChange, SettingsFile
 
 AUTOSTART_SETTING: Final = "autostart"
 """Nazwa ustawienia w Historii (pole ``plik``) i w pamięci właściciela, a także pole odmowy zmiany."""
@@ -50,12 +50,16 @@ def restore(enabled: bool, changes: tuple[KeyChange, ...]) -> bool:
     return enabled if before is None else before == ON
 
 
-def shown(key: str, value: str | None) -> str:
+def reported(change: KeyChange) -> str:
+    return f"{change.key}: {_shown(change.before)} → {_shown(change.after)}"
+
+
+def _shown(value: str | None) -> str:
     return "nie ustawiono" if value is None else value
 
 
 AUTOSTART: Final = SettingsFile(
-    name=AUTOSTART_SETTING, parse=parse, dump=dump, diff=diff, restore=restore, shown=shown, default=False
+    name=AUTOSTART_SETTING, parse=parse, dump=dump, diff=diff, restore=restore, reported=reported, default=False
 )
 
 
@@ -73,7 +77,7 @@ class AutostartPlace:
             state = self.autostart.state()
         except OSError:
             return None
-        return FieldProblem(AUTOSTART_SETTING, messages.autostart_unsupported()) if state == "unsupported" else None
+        return FieldProblem(FieldPath(AUTOSTART_SETTING), messages.autostart_unsupported()) if state == "unsupported" else None
 
     def read(self) -> bytes | None | OSError:
         """Stan skrótu jako treść ustawienia; ``OSError``, gdy folderu Autostart nie da się teraz sprawdzić."""

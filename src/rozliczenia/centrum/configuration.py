@@ -1,11 +1,10 @@
-"""Pliki Konfiguracji tylko do odczytu: trzy Wzorce, konfiguracja wykonawców i plik adresów Wykonawców.
+"""Pliki Konfiguracji tylko do odczytu: trzy Wzorce.
 
-Reguły należą do procesów: Wzorce i Konfigurację wykonawców sprawdza
-Sprawdzanie obu procesów (``input_checks``) tymi samymi czytnikami co proces,
-z tym samym komunikatem w trzech częściach, którym zatrzymałby się proces
-używający tego pliku. Niczego w katalogu konfiguracji nie zapisuje. Stan dla
-przeglądarki składa ``configuration_router``, a te same Sprawdzania
-(``ConfigurationFiles.templates``, ``workers_problem``) wykonuje Diagnoza.
+Reguły należą do procesów: Wzorce sprawdza Sprawdzanie obu procesów (``input_checks``) tymi samymi czytnikami co
+proces, z tym samym komunikatem w trzech częściach, którym zatrzymałby się proces używający tego pliku. Niczego w
+katalogu konfiguracji nie zapisuje. Stan dla przeglądarki składa ``configuration_router``, a te same Sprawdzania
+(``ConfigurationFiles.templates``) wykonuje Diagnoza. Listę Wykonawców obie dostają z migawki Ustawień Centrum i opisują
+ją tym samym Komunikatem (``workers_problem``).
 Karta startu Uruchomienia pyta tu, które skoroszyty wejściowe procesu są otwarte w Excelu (``open_in_excel``).
 Moduł nie wczytuje FastAPI: ``ConfigurationFiles`` biorą też Skrypt dla maszyn i odtworzenie bez serwera.
 """
@@ -17,21 +16,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal, NamedTuple, assert_never
 
-from rozliczenia import input_checks, workbook_files
+from rozliczenia import workbook_files
 from rozliczenia.centrum.process_kind import ConfigurationNeed, TemplateRole
 from rozliczenia.input_checks import ProcessTemplate
-from rozliczenia.message import Message
 from rozliczenia.run_context import TemplateCheck
-from rozliczenia.tool_files import CONFIG_DIR, COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_CONFIG, WORKER_TEMPLATE
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.centrum import diagnosis_messages
+from rozliczenia.centrum.settings.files import Bad, Unreadable
+from rozliczenia.message import Message
+from rozliczenia.tool_files import CONFIG_DIR, COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_TEMPLATE
+from rozliczenia.worker_list import WorkerList
 
 
 @dataclass(frozen=True)
 class ConfigurationFiles:
-    """Konfiguracja wykonawców, plik adresów Wykonawców i trzy Wzorce, z których korzystają procesy."""
+    """Trzy Wzorce, z których korzystają procesy."""
 
-    worker_config: Path
-    worker_addresses: Path
     internal_template: Path
     collective_template: Path
     worker_template: Path
@@ -43,8 +42,6 @@ class ConfigurationFiles:
     @classmethod
     def in_folder(cls, folder: Path) -> ConfigurationFiles:
         return cls(
-            worker_config=folder / WORKER_CONFIG.name,
-            worker_addresses=folder / WORKER_ADDRESSES_FILE,
             internal_template=folder / INTERNAL_TEMPLATE.name,
             collective_template=folder / COLLECTIVE_TEMPLATE.name,
             worker_template=folder / WORKER_TEMPLATE.name,
@@ -52,10 +49,6 @@ class ConfigurationFiles:
 
     def path(self, need: ConfigurationNeed) -> Path:
         match need:
-            case "worker_config":
-                return self.worker_config
-            case "worker_addresses":
-                return self.worker_addresses
             case "internal_template":
                 return self.internal_template
             case "collective_template":
@@ -136,8 +129,11 @@ class Template:
         return None if found is None else found.message
 
 
-def workers_problem(config_path: Path) -> Message | None:
-    """Komunikat, którym zatrzymałby się proces przy tej konfiguracji wykonawców; ``None``, gdy się wczytuje."""
+def workers_problem(workers: Bad[WorkerList] | Unreadable) -> Message:
+    """Komunikat o Liście Wykonawców z migawki Ustawień: złe ustawienie albo plik, którego system nie daje teraz czytać."""
 
-    workers = input_checks.workers(config_path)
-    return workers if isinstance(workers, Message) else None
+    match workers:
+        case Bad(problem=problem):
+            return diagnosis_messages.worker_list_bad(problem.sentence)
+        case Unreadable():
+            return diagnosis_messages.worker_list_unreadable()

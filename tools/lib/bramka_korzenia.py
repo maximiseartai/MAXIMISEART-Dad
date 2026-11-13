@@ -114,7 +114,7 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
     if not werdykt_pr.rule_applies(pull, deployed):
         return []
     try:
-        rounds = werdykt_pr.rounds(pull)
+        rounds = werdykt_pr.rounds(pull, werdykt_pr.rendered(pull))
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
     found: list[str] = []

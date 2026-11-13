@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import errno
+import hashlib
 import json
 import os
 import re
@@ -40,12 +42,13 @@ from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import history as history_module
+from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
-from rozliczenia.centrum.settings.release_changes import (
-    RELEASE_CHANGES,
+from rozliczenia.centrum.settings.proposal import (
     Edit,
     Later,
     Nothing,
@@ -54,6 +57,9 @@ from rozliczenia.centrum.settings.release_changes import (
     ReleaseChange,
     ReleaseInputs,
 )
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
@@ -69,9 +75,12 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
+from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks
 from tests.fixtures.tool_clone import tool_repository
 
+from atrapy.settlement import PERIOD, worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap
+
 import export_openapi
 
 
@@ -214,6 +223,8 @@ def test_localhost_jest_dozwolonym_naglowkiem_host(tmp_path: Path) -> None:
 
 NOT_SET = {"state": "not_set"}
 UNREADABLE = {"state": "unreadable"}
+# Sekcja Wykonawcy bez pliku Listy Wykonawców: pusta lista jest dobra (DESIGN D10).
+NO_WORKERS: dict[str, object] = {"state": "good", "workers": [], "unresolved": [], "problem": None}
 DAMAGED = "Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
 REGISTER_PATH = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
 PERIODS_PATH = "Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru."
@@ -225,7 +236,16 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
     response = centrum(tmp_path).client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {"order_register": NOT_SET, "periods_directory": NOT_SET, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF}
+    assert response.json() == {
+        "order_register": NOT_SET,
+        "periods_directory": NOT_SET,
+        "periods_all_years": False,
+        "theme": "dark",
+        "folders_problem": None,
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
+    }
 
 
 def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path) -> None:
@@ -278,7 +298,9 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         "periods_all_years": False,
         "theme": "dark",
         "folders_problem": {"field": None, "message": DAMAGED},
-        **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -325,7 +347,9 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             "periods_all_years": False,
             "theme": "dark",
             "folders_problem": None,
-            **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
 
@@ -344,7 +368,16 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
 
     assert (response.status_code, response.json()) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF},
+        {
+            "order_register": UNREADABLE,
+            "periods_directory": UNREADABLE,
+            "periods_all_years": False,
+            "theme": "dark",
+            "folders_problem": None,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
+        },
     )
 
 
@@ -365,7 +398,16 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
 
     assert (response.status_code, response.json()["settings"]) == (
         200,
-        {"order_register": UNREADABLE, "periods_directory": UNREADABLE, "periods_all_years": False, "theme": "dark", "folders_problem": None, **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF},
+        {
+            "order_register": UNREADABLE,
+            "periods_directory": UNREADABLE,
+            "periods_all_years": False,
+            "theme": "dark",
+            "folders_problem": None,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
+        },
     )
 
 
@@ -456,7 +498,9 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         "periods_all_years": False,
         "theme": "light",
         "folders_problem": None,
-        **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
+        "workers": NO_WORKERS,
+        **NO_INBOX,
+        "autostart": AUTOSTART_SHOWN_OFF,
     }
 
 
@@ -664,7 +708,9 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             "periods_all_years": False,
             "theme": "dark",
             "folders_problem": {"field": "folder_okresow", "message": PERIODS_PATH},
-            **NO_INBOX, "autostart": AUTOSTART_SHOWN_OFF,
+            "workers": NO_WORKERS,
+            **NO_INBOX,
+            "autostart": AUTOSTART_SHOWN_OFF,
         },
     )
     assert second.json() == first.json()
@@ -1010,6 +1056,350 @@ def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -
 
     assert (row["source"], row["undoable"]) == ("release", False)
     assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+# --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
+
+JAN = "jan.testowy@przyklad.invalid"
+ANNA = "anna.przyklad@przyklad.invalid"
+OBCY = "obcy@przyklad.invalid"
+OLD_MAPPING = "schema_version: 1\nworkers:\n  Jan.Testowy: Jan Testowy\n  anna.przyklad: Anna Przykład\n  ewa.bez: Ewa Bez\n"
+OLD_ADDRESSES = (
+    f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}]\n  anna.przyklad: [{ANNA}]\n  obcy.login: [{OBCY}]\n"
+)
+
+
+def listed(logins: list[str], name: str, addresses: list[str]) -> dict[str, object]:
+    """Wykonawca w sekcji Wykonawcy: aktywny, z przypomnieniami, tak jak przenosi go przeniesienie."""
+
+    return {"logins": logins, "name": name, "addresses": addresses, "active": True, "reminders": True}
+
+
+def old_files(tool: ToolDirectory, mapping: str | bytes | None, addresses: str | bytes | None) -> dict[str, bytes]:
+    """Stare pliki Wykonawców w ``config`` taty sprzed Wydania z Listą Wykonawców; ``None``: pliku nie ma."""
+
+    tool.config.mkdir(parents=True, exist_ok=True)
+    written: dict[str, bytes] = {}
+    for name, content in ((OLD_MAPPING_FILE, mapping), (OLD_ADDRESSES_FILE, addresses)):
+        if content is not None:
+            data = content.encode("utf-8") if isinstance(content, str) else content
+            (tool.config / name).write_bytes(data)
+            written[name] = data
+    return written
+
+
+def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Sekcja Wykonawcy i Historia Ustawień po pierwszym starcie Wydania z Listą Wykonawców."""
+
+    client = started(tool, RELEASE_CHANGES)
+    workers = client.get("/api/settings").json()["workers"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+    return workers, rows
+
+
+def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_spoza_konfiguracji_zostaje_dla_taty(
+    tmp_path: Path,
+) -> None:
+    """DESIGN §4.2: login z adresami i login bez adresów przechodzą jako aktywni Wykonawcy z przypomnieniami, adres przy
+    loginie spoza Konfiguracji wykonawców tata widzi do rozstrzygnięcia, a stare pliki zostają bajt w bajt."""
+
+    tool = ToolDirectory(tmp_path)
+    old = old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+
+    workers, rows = migrated(tool)
+
+    assert workers == {
+        "state": "good",
+        "workers": [
+            listed(["jan.testowy"], "Jan Testowy", [JAN]),
+            listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
+            listed(["ewa.bez"], "Ewa Bez", []),
+        ],
+        "unresolved": [{"reason": "login_bez_wykonawcy", "login": "obcy.login", "addresses": [OBCY]}],
+        "problem": None,
+    }
+    [row] = rows
+    assert (row["source"], row["release"]["change"], row["file"], row["section"], row["undoable"], row["refused"]) == (
+        "release",
+        "2026-11-lista-wykonawcow",
+        WORKERS_FILE,
+        "wykonawcy",
+        False,
+        False,
+    )
+    assert {name: (tool.config / name).read_bytes() for name in old} == old
+
+
+@pytest.mark.parametrize(
+    ("addresses", "reason"),
+    [
+        pytest.param("wykonawcy: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
+        pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}, {JAN}]\n", "ten sam adres stoi dwa razy", id="adres-dwa-razy"),
+        pytest.param(b"\xff\xfe nie UTF-8", "plik nie jest zapisany w UTF-8", id="spoza-utf-8"),
+    ],
+)
+def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
+    tmp_path: Path, addresses: str | bytes, reason: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, OLD_MAPPING, addresses)
+
+    workers, _ = migrated(tool)
+
+    assert [worker["addresses"] for worker in workers["workers"]] == [[], [], []]
+    assert workers["unresolved"] == [
+        {"reason": "adresy_nieprzeniesione", "message": settings_messages.addresses_not_moved(OLD_ADDRESSES_FILE, reason)}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mapping", "reason"),
+    [
+        pytest.param("workers: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
+        pytest.param("schema_version: 2\nworkers:\n  a: A\n", "plik nie ma schema_version: 1", id="inna-wersja"),
+        pytest.param("schema_version: 1\nworkers:\n  a: A\n  A: B\n", "identyfikator Wykonawcy stoi dwa razy", id="login-dwa-razy"),
+    ],
+)
+def test_zla_konfiguracja_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
+    tmp_path: Path, mapping: str, reason: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, mapping, OLD_ADDRESSES)
+
+    workers, rows = migrated(tool)
+
+    assert not tool.worker_list.exists()
+    assert workers["workers"] == []
+    assert [(row["source"], row["refused"], row["reason"]) for row in rows] == [
+        ("release", True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, reason))
+    ]
+
+
+def test_konfiguracja_wykonawcow_ktorej_reguly_nie_przechodza_na_liscie_jest_odrzucona_z_powodem(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, "schema_version: 1\nworkers:\n  a: Ten Sam\n  b: ten sam\n", None)
+
+    _, rows = migrated(tool)
+
+    assert not tool.worker_list.exists()
+    assert [(row["refused"], row["reason"]) for row in rows] == [
+        (True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, "Wykonawcy z adresami łamią reguły Listy Wykonawców"))
+    ]
+
+
+def test_same_adresy_bez_konfiguracji_wykonawcow_czekaja_na_tate_zamiast_zniknac(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, None, OLD_ADDRESSES)
+
+    workers, _ = migrated(tool)
+
+    assert workers["workers"] == []
+    assert [item["login"] for item in workers["unresolved"]] == ["jan.testowy", "anna.przyklad", "obcy.login"]
+
+
+@pytest.mark.parametrize("existing", [False, True], ids=["bez-starych-plikow", "lista-juz-jest"])
+def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_path: Path, existing: bool) -> None:
+    tool = ToolDirectory(tmp_path)
+    if existing:
+        old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+        write_worker_list(tool.worker_list, worker_list({"kamil.syntetyczny": "Kamil Syntetyczny"}))
+    before = tool.worker_list.read_bytes() if existing else None
+
+    workers, rows = migrated(tool)
+
+    assert rows == []
+    assert (tool.worker_list.read_bytes() if tool.worker_list.exists() else None) == before
+    assert [worker["name"] for worker in workers["workers"]] == (["Kamil Syntetyczny"] if existing else [])
+
+
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("locked", [OLD_MAPPING_FILE, OLD_ADDRESSES_FILE])
+def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zostawic_tate_bez_wykonawcow(
+    tmp_path: Path, locked: str
+) -> None:
+    """DESIGN §4.2: stary plik, którego system nie daje teraz czytać, nie jest ani zły, ani brakujący. Przeniesienie
+    czeka bez Listy Wykonawców i bez wiersza Historii, a następny start z czytelnym plikiem przenosi Wykonawców z
+    adresami (odmowa zostałaby zapamiętana na zawsze, a brak pliku dałby listę bez Wykonawców albo bez adresów)."""
+
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+    with without_access(tool.config / locked):
+        locked_workers, locked_rows = migrated(tool)
+        listed_while_locked = tool.worker_list.exists()
+
+    workers, rows = migrated(tool)
+
+    assert (listed_while_locked, locked_rows, locked_workers["workers"]) == (False, [], [])
+    assert workers["workers"] == [
+        listed(["jan.testowy"], "Jan Testowy", [JAN]),
+        listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
+        listed(["ewa.bez"], "Ewa Bez", []),
+    ]
+    assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
+
+
+WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
+
+
+@pytest.mark.parametrize(
+    ("entries", "field", "sentence"),
+    [
+        pytest.param("  - {nazwa: 'Jan/Testowy', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="nazwa-nie-do-pliku"),
+        pytest.param("  - {nazwa: 'Jan Testowy.', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="kropka-na-koncu"),
+        pytest.param(f"  - {{nazwa: {'J' * 300}, loginy: [jan]}}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_too_long(), id="nazwa-za-dluga"),
+        pytest.param(WORKER + "  - {nazwa: Jan Drugi, loginy: [Jan.Testowy]}\n", "wykonawcy[1].loginy[0]", settings_messages.worker_login_repeated(), id="powtorzony-login"),
+        pytest.param(WORKER + "  - {nazwa: 'jan  testowy', loginy: [jan.drugi]}\n", "wykonawcy[1].nazwa", settings_messages.worker_same_file(), id="dwie-nazwy-jeden-plik"),
+        pytest.param(WORKER + "  - {nazwa: Anna, loginy: [anna], adresy: [" + JAN.upper() + "]}\n", "wykonawcy[1].adresy[0]", settings_messages.worker_address_repeated(), id="adres-u-dwoch-wykonawcow"),
+        pytest.param("  - {nazwa: Jan, loginy: [jan], adresy: [jan]}\n", "wykonawcy[0].adresy[0]", settings_messages.worker_address_invalid(), id="nie-adres"),
+        pytest.param("  - {nazwa: Jan, loginy: [jan], adresy: ['Jan <" + JAN + ">']}\n", "wykonawcy[0].adresy[0]", settings_messages.worker_address_invalid(), id="adres-z-nazwa"),
+        pytest.param("  - {nazwa: Jan, loginy: []}\n", "wykonawcy[0].loginy", settings_messages.worker_without_login(), id="bez-loginu"),
+        pytest.param("  - {nazwa: '', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_empty(), id="pusta-nazwa"),
+    ],
+)
+def test_lista_wykonawcow_lamiaca_regule_to_zle_ustawienie_z_polem_bez_nazwy_loginu_i_adresu(
+    tmp_path: Path, entries: str, field: str, sentence: str
+) -> None:
+    """Sprawdzenia dzisiejszego czytnika Konfiguracji wykonawców (nazwa jako nazwa pliku, długość, powtórzony login, dwie
+    nazwy na jeden plik) i adresów działają na Liście Wykonawców, a nowa reguła odrzuca adres u dwóch Wykonawców."""
+
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_text(f"schema_version: 1\nwykonawcy:\n{entries}", encoding="utf-8")
+
+    workers = app.client.get("/api/settings").json()["workers"]
+
+    assert workers == {"state": "bad", "workers": [], "unresolved": [], "problem": {"field": field, "message": sentence}}
+
+
+LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kamil.wyciek@przyklad.invalid"
+
+
+@pytest.mark.parametrize(
+    ("content", "field", "sentence"),
+    [
+        pytest.param(
+            f"wykonawcy:\n  - {LEAKED_LOGIN}: {LEAKED_NAME}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 1),
+            id="stary-ksztalt-wpisu",
+        ),
+        pytest.param(
+            f"{LEAKED_LOGIN}: {LEAKED_NAME}\nwykonawcy: []\n",
+            None,
+            settings_messages.unknown_key(WORKERS_FILE, 2),
+            id="login-na-gorze-pliku",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], {LEAKED_ADDRESS}: tak}}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 3),
+            id="adres-w-miejscu-pola",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: {LEAKED_LOGIN}}}\n",
+            "wykonawcy[0].loginy",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy")),
+            id="login-zamiast-listy",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
+            "wykonawcy[0].aktywny",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny")),
+            id="nazwa-zamiast-tak-nie",
+        ),
+        pytest.param(
+            f"do_rozstrzygniecia:\n  - {{login: {LEAKED_LOGIN}, adresy: [{LEAKED_ADDRESS}], powod: {LEAKED_NAME}}}\n",
+            "do_rozstrzygniecia[0]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0)),
+            id="zly-wpis-do-rozstrzygniecia",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: '{LEAKED_NAME}/', loginy: [{LEAKED_LOGIN}], adresy: [{LEAKED_ADDRESS}]}}\n",
+            "wykonawcy[0].nazwa",
+            settings_messages.worker_name_invalid(),
+            id="nazwa-nie-do-pliku",
+        ),
+    ],
+)
+def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adresu_w_logach_i_zgloszeniu(
+    tmp_path: Path, content: str, field: str | None, sentence: str
+) -> None:
+    """Pole problemu składa się tylko ze znanych nazw pól i numerów, więc tekst z pliku (stary kształt wpisu ``login:
+    Nazwa``, klucz-adres, wartość nie tego typu) nie trafia do odpowiedzi, Logów Centrum ani Zgłoszenia (przegląd #1529
+    r1, W3)."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text(f"schema_version: 1\n{content}", encoding="utf-8")
+
+    settings = centrum_.client.get("/api/settings")
+    run_id = stopped_for_maks(centrum_)
+    report = centrum_.client.post(f"/api/runs/{run_id}/diagnosis").json()["report"]["body"]
+
+    assert settings.json()["workers"]["problem"] == {"field": field, "message": sentence}
+    seen = {
+        "odpowiedź": settings.text,
+        "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8"),
+        "Zgłoszenie": report,
+    }
+    assert sentence in report
+    leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
+    assert leaks == []
+
+
+def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    view = run_to_end(centrum_, dry_run=True)
+
+    assert (view["result"]["result"], view["result"]["ending"]) == ("OK", "finished")
+
+
+def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic(tmp_path: Path) -> None:
+    """Zła Lista Wykonawców bez ostatniej dobrej (po usunięciu pliku nie ma już dobrej treści) odmawia startu procesu."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.tool.worker_list.unlink()
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n", encoding="utf-8")
+
+    started_run = centrum_.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+
+    assert (started_run.status_code, started_run.json()) == (
+        409,
+        {
+            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Popraw ją w Ustawieniach.",
+            "field": "wykonawcy[0].loginy",
+        },
+    )
+
+
+def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}, {"jan.testowy": [JAN]}))
+    app.client.get("/api/settings")
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Nowak", "anna.przyklad": "Anna Przykład"}))
+
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
+        ("wykonawcy[jan.testowy]", False, False),
+        ("wykonawcy[anna.przyklad]", True, False),
+    ]
+    assert row["section"] == "wykonawcy"
+    assert [worker["name"] for worker in undone.json()["settings"]["workers"]["workers"]] == ["Jan Testowy"]
+    assert undone.json()["settings"]["workers"]["workers"][0]["addresses"] == [JAN]
+    log = app.tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-spoza plik=wykonawcy.yaml wynik=zapisano" in log
+    assert "ustawienia-zmiana plik=wykonawcy.yaml klucze=wykonawcy zrodlo=tata" in log
+    for secret in ("jan.testowy", "Jan Nowak", "anna.przyklad", JAN):
+        assert secret not in log, secret
 
 
 def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
@@ -1600,6 +1990,10 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
     assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
     assert tool.log_path.is_file()
+    # Pamięć zapisuje bajty jako base64, którego `_files_with_password` nie rozpozna, więc sam odcisk sprawdza się wprost.
+    remembered = json.loads((tool.config / MEMORY_DIRECTORY / f"{INBOX_ACCESS_FILE}.json").read_bytes())
+    access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
+    assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
 
 
 def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:

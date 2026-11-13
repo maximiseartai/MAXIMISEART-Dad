@@ -29,6 +29,7 @@ from atrapy.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     worker_settlement_name,
 )
+from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, WORKERS
 
 LINKED_TEMPLATES = (COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
@@ -79,7 +80,7 @@ def check(root: Path, desk: Path) -> list[str]:
             problems.append(f"fixture lacks {TEMPLATES_DIRECTORY}/{name}")
         elif not _used_link(template):
             problems.append(f"{TEMPLATES_DIRECTORY}/{name} has no external link used by a formula")
-    for relative in (REGISTER_NAME, f"{TEMPLATES_DIRECTORY}/worker_mapping.yaml", PERIODS_DIRECTORY):
+    for relative in (REGISTER_NAME, f"{TEMPLATES_DIRECTORY}/{WORKER_LIST_NAME}", PERIODS_DIRECTORY):
         if not (fixture / relative).exists():
             problems.append(f"fixture lacks {relative}")
     if (fixture / PERIODS_DIRECTORY / PERIOD).exists():

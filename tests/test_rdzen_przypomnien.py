@@ -17,9 +17,9 @@ import pytest
 
 from rozliczenia.report_cells import OrderRow
 from rozliczenia.settlement_period import period_of
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
     EXAMPLE_NUMBERS,
-    Login,
     MailId,
     OrderNumber,
     RegisterOrder,
@@ -29,7 +29,6 @@ from rozliczenia.worker_reports import (
     SenderAddress,
     SentReminder,
     Window,
-    WorkerAddresses,
     reminder_day,
     reminder_subject,
     reminders_due,
@@ -89,8 +88,9 @@ def _due(
     rollout: date = ROLLOUT,
     closed: Sequence[str] = (),
     footer: str | None = None,
+    workers: WorkerList | None = None,
 ) -> tuple[Reminder, ...]:
-    logins = {_address(sender): Login(login) for login, senders in ADDRESSES.items() for sender in senders}
+    listed = workers or _workers()
     return reminders_due(
         ReminderInputs(
             now=now,
@@ -98,14 +98,51 @@ def _due(
             orders=orders or (_order(),),
             mails=mails,
             sent=sent,
-            addresses=WorkerAddresses(logins),
+            addresses=listed.addresses(),
+            reminded=listed.reminded(),
             footer=footer,
         )
     )
 
 
+def _workers(*, active: bool = True, reminders: bool = True) -> WorkerList:
+    """Lista Wykonawców z ``ADDRESSES``; ``active`` i ``reminders`` dotyczą Wykonawcy ``jan.testowy``."""
+
+    workers = WorkerList.of(
+        [
+            WorkerEntry(["jan.testowy"], "Jan Testowy", ADDRESSES["jan.testowy"], active=active, reminders=reminders),
+            WorkerEntry(["ewa.probna"], "Ewa Próbna", ADDRESSES["ewa.probna"]),
+        ]
+    )
+    assert isinstance(workers, WorkerList)
+    return workers
+
+
 def _days(found: Sequence[Reminder]) -> list[tuple[str, date]]:
     return [(reminder.worker, reminder.day) for reminder in found]
+
+
+@pytest.mark.parametrize(
+    ("active", "reminders", "expected"),
+    [
+        pytest.param(True, True, {"jan.testowy", "ewa.probna"}, id="aktywny-z-przypomnieniami"),
+        pytest.param(False, True, {"ewa.probna"}, id="nieaktywny"),
+        pytest.param(True, False, {"ewa.probna"}, id="przypomnienia-wylaczone"),
+        pytest.param(False, False, {"ewa.probna"}, id="nieaktywny-bez-przypomnien"),
+    ],
+)
+def test_przypomnienie_idzie_tylko_do_aktywnego_wykonawcy_z_wlaczonymi_przypomnieniami(
+    active: bool, reminders: bool, expected: set[str]
+) -> None:
+    """ADR 0032: Przypomnienia o raporcie idą tylko do aktywnych Wykonawców z włączonymi przypomnieniami; Nieaktywny
+    Wykonawca i Wykonawca z wyłączonymi przypomnieniami nie dostają ich, choć mają zlecenie dnia i adres."""
+
+    orders = (_order(), _order(worker="ewa.probna", number=40000002, row=121))
+
+    found = _due(NEXT_MORNING, orders, workers=_workers(active=active, reminders=reminders))
+
+    assert {reminder.worker for reminder in found} == expected
+    assert {reminder.day for reminder in found} == {DAY}
 
 
 @pytest.mark.parametrize(

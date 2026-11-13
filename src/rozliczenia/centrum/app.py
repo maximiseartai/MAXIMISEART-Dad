@@ -62,7 +62,8 @@ from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
-from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES, ReleaseChange
+from rozliczenia.centrum.settings.proposal import ReleaseChange
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
@@ -269,6 +270,7 @@ def create_app(
             surroundings=surroundings,
             template_check=template_check,
             files=files,
+            workers=settings.snapshot().workers,
         ),
         log,
         comments,
@@ -292,7 +294,7 @@ def create_app(
     # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
     # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
-        work, settings, configuration, reminder_mailbox or inbox, files, reports, now
+        work, settings, reminder_mailbox or inbox, files, reports, now
     )
     # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
     # pokazuje też wynik ostatniego sprawdzenia przypomnień.
@@ -333,7 +335,12 @@ def create_app(
     app.include_router(metrics_router(history, today))
     app.include_router(
         configuration_router(
-            configuration, surroundings.tool_freshness, release, lambda: box.judge(wait_s=CONFIGURATION_WAIT_S), template_check
+            configuration,
+            surroundings.tool_freshness,
+            release,
+            lambda: box.judge(wait_s=CONFIGURATION_WAIT_S),
+            template_check,
+            lambda: settings.snapshot().workers,
         )
     )
     app.include_router(tool_update_router(updates))

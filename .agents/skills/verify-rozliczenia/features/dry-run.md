@@ -20,7 +20,7 @@ metrics file and parent directory if needed.
 
 - Dad's dry-run is `Podgląd bez zapisu` in Centrum rozliczeń, which
   `verify-centrum-rozliczen` drives.
-- Here run `py -3 tools\uruchom_proces.py settlement --source <source> --config <mapping> --worker-template <worker-template> --metrics <metrics> --dry-run`.
+- Here run `py -3 tools\uruchom_proces.py settlement --source <source> --wykonawcy <wykonawcy.yaml> --worker-template <worker-template> --metrics <metrics> --dry-run`.
   Without `--config` and `--worker-template` the script takes the files Centrum uses from `config/`.
 
 ## Driving it with PowerShell and the machine script

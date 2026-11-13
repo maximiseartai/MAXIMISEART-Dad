@@ -22,13 +22,13 @@ import smtplib
 import pytest
 import proba_przypomnien
 
-from rozliczenia import tool_files
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_ROLLOUT
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from atrapy.intermax import NUMBER, Intermax, Order
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
@@ -92,13 +92,8 @@ def _klon(tmp_path: Path) -> Klon:
     okresy = tmp_path / "Okresy"
     okresy.mkdir()
     (config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\nabcd efgh ijkl mnop\n", encoding="utf-8")
-    (config / tool_files.WORKER_CONFIG.name).write_text(
-        "schema_version: 1\nworkers:\n  jan.testowy: Jan Testowy\n  anna.probna: Anna Probna\n  bartek.obcy: Bartek Obcy\n",
-        encoding="utf-8",
-    )
-    (config / WORKER_ADDRESSES_FILE).write_text(
-        f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}]\n  anna.probna: [{ANNA}]\n", encoding="utf-8"
-    )
+    names = {"jan.testowy": "Jan Testowy", "anna.probna": "Anna Probna", "bartek.obcy": "Bartek Obcy"}
+    write_worker_list(config / WORKERS_FILE, worker_list(names, {"jan.testowy": [JAN], "anna.probna": [ANNA]}))
     (config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
     (config / REMINDERS_FOOTER).write_text(STOPKA, encoding="utf-8")
     (config / SETTINGS_FILE).write_text(
@@ -290,13 +285,20 @@ def _bez_pliku(nazwa: str) -> Callable[[Klon], None]:
     return lambda klon: (klon.config / nazwa).unlink()
 
 
+def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
+    def zepsuj(klon: Klon) -> None:
+        (klon.config / nazwa).write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    return zepsuj
+
+
 @pytest.mark.parametrize(
     ("zepsuj", "powod"),
     [
         (_bez_pliku(REMINDERS_ROLLOUT), f"brak dnia wdrozenia przypomnien w config/{REMINDERS_ROLLOUT}"),
         (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
-        (_bez_pliku(WORKER_ADDRESSES_FILE), "brak albo zly plik adresow Wykonawcow albo Konfiguracja wykonawcow"),
+        (_zly_plik(WORKERS_FILE), "zla albo nieczytelna Lista Wykonawcow"),
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),
         (lambda klon: klon.intermax.unlink(), "nieczytelny INTERMAX: WorkbookError"),
     ],

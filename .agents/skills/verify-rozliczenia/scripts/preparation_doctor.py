@@ -14,7 +14,8 @@ from openpyxl import load_workbook
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.worker_config import load_worker_mapping
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.message import StopError
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.template_file import TemplateFile
@@ -96,13 +97,15 @@ def _check(root: Path, *, worker_template: bool) -> tuple[str, int, int]:
     if worker_template:
         TemplateFile.worker_settlement(root / TEMPLATES_DIRECTORY / WORKER_TEMPLATE_NAME).check()
 
-    mapping = load_worker_mapping(root / TEMPLATES_DIRECTORY / "worker_mapping.yaml")
+    listed = WORKERS.parse((root / TEMPLATES_DIRECTORY / WORKERS_FILE).read_bytes())
+    if isinstance(listed, FieldProblem):
+        raise ValueError(f"Lista Wykonawców: {listed.sentence}")
     periods_directory = root / PERIODS_DIRECTORY
     if not periods_directory.is_dir():
         raise ValueError("periods directory is missing")
     if (periods_directory / period).exists():
         raise ValueError("Folder okresu must not exist before dry-run")
-    return period, len(mapping), order_sheets
+    return period, len(listed.workers), order_sheets
 
 
 def main(argv: list[str] | None = None) -> int:

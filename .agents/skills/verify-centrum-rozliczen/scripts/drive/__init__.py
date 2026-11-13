@@ -62,6 +62,7 @@ FEATURES = (
             "306-ustawienia-zapisano-cofnij",
             "307-ustawienia-zapisano-waskie",
             "315-ustawienia-blad-w-oknie",
+            "341-ustawienia-blad-po-zamknieciu",
             "308-ustawienia-historia",
             "309-ustawienia-historia-waska",
             "340-ustawienia-historia-wydanie",
@@ -294,8 +295,7 @@ FEATURES = (
             "58-diagnoza-nieoczekiwany-wyjatek",
             "59-diagnoza-nieoczekiwany-wyjatek-zgloszenie",
             "59b-diagnoza-klucz-odrzucony",
-            "59c-diagnoza-konfiguracja-wykonawcow",
-            "59d-diagnoza-konfiguracja-wykonawcow-niedostepna",
+            "59c-diagnoza-lista-wykonawcow",
         ),
     ),
     # Diagnoses one more such stop with the scripted GitHub and OneDrive.
