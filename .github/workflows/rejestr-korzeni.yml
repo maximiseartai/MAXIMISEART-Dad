@@ -1,0 +1,46 @@
+name: Rejestr korzeni
+
+# Every Monday at 6:00 Polish time: the numbers of the root registry since the deployment of the verdict template, the
+# last full week and the history of weeks go into the body of the one issue "Rejestr korzeni" (label chwast), before the
+# T3 task at 8:00 adds the XmR card and its judgement of the codes (tools/rejestr_korzeni_tydzien.py, ADR 0031, Q19,
+# Q23). GitHub's cron runs in UTC, so 6:00 in Warsaw is 5:00 UTC in winter time (CET, UTC+1) and 4:00 UTC in summer
+# time (CEST, UTC+2): the workflow has both crons, and the tool gets the cron that started it and goes on only when that
+# cron is 6:00 in Warsaw on that day (Poland changes the time on a Sunday, so a Monday has one offset). The other cron
+# ends with a line "REJESTR KORZENI POMINIĘTY". A manual run (workflow_dispatch) has no cron and always measures.
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+# issues: write edits or opens the issue; pull-requests: read reads the verdicts and bodies of the PRs (GraphQL search);
+# contents: read fetches main, whose first-parent history gives the moment of the deployment.
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  # Two runs at once could both miss the issue and both open one; a later run waits.
+  group: rejestr-korzeni
+  cancel-in-progress: false
+
+jobs:
+  rejestr:
+    name: Rejestr korzeni
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Standard library only, so the runner's python3 runs it as is.
+      - name: Update the issue "Rejestr korzeni" with the last full week
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRON: ${{ github.event.schedule }}
+        run: python3 tools/rejestr_korzeni_tydzien.py --cron "$CRON"

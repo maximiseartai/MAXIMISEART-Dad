@@ -238,8 +238,9 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
 @dataclass(frozen=True)
 class Occurrence:
     """Wystąpienie kodu ``code`` w PR ``pull``: Ważne (``W1 r2``) albo ``Czerwony main #N``, runda werdyktu, który dał
-    kod (0 dla czerwonego `main`), litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma) i chwila merge'a
-    PR (``None``: nie scalony)."""
+    kod (0 dla czerwonego `main`), litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma), chwila wystąpienia
+    ``when`` (Ważnego: utworzenie werdyktu ``FAIL`` jego rundy, ``Major.since``; czerwonego `main`: merge PR) i chwila
+    merge'a PR (``None``: nie scalony)."""
 
     code: str
     pull: int
@@ -247,6 +248,7 @@ class Occurrence:
     decided: int
     rung: str
     mechanism: str
+    when: datetime
     merged: datetime | None = None
 
 
@@ -275,9 +277,9 @@ def occurrences(pull: Pull, deployed: datetime, merged: datetime | None) -> list
         rounds = werdykt_pr.rounds(pull)
         for major in majors(rounds)[0].values():
             if major.code is not None and major.since is not None and major.since >= deployed:
-                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), merged))
+                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), major.since, merged))
     if merged is not None and merged >= deployed:
-        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))
+        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged, merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))
     return sorted(found, key=_order)
 
 
