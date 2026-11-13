@@ -20,6 +20,7 @@ from drive.common import (
     ended_run_shown,
     figure,
     move,
+    open_settings,
     point_in_settings,
     read_bytes,
     read_json,
@@ -27,6 +28,8 @@ from drive.common import (
     remove_tree,
     result_of_start,
     run_logs,
+    settings_title,
+    settings_window,
     stop_banner,
     switch_theme,
 )
@@ -61,6 +64,10 @@ KEPT = {
     "reported": "montaż anteny",
 }
 NARROW: ViewportSize = {"width": 390, "height": 844}
+# „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
+# today, so his address changes no figure of the click.
+ASSIGN = "Przypisz do Wykonawcy…"
+ASSIGNED_TO, ASSIGNED_LOGIN = "Wykonawca Testowy D", "wykonawca.d"
 WEEKDAYS = ("pn", "wt", "śr", "cz", "pt", "sb", "nd")
 MAP = "Mapa Raportów"
 # A Uporządkowanie INTERMAX that runs, as the Uruchomienia stream shows it (step `w-czasie-innego`).
@@ -182,6 +189,59 @@ def _day_columns(page: Page) -> int:
     """Columns of days on the Mapa cieplna: every column header but `Wykonawca` and `Wpisane`."""
 
     return _map(page).get_by_role("columnheader").count() - 2
+
+
+def _assign_stranger(run: Run, page: Page, address: str) -> None:
+    """„Przypisz do Wykonawcy…” at the stranger's Raport opens Ustawienia on Wykonawcy with a choice for that address; a
+    Wykonawca chosen there gets the address at once, and Raporty say whom it went to without a reload. „Cofnij” in
+    Historia takes it back, so the Lista Wykonawców is the fixture's again for the next steps."""
+
+    run.step(FEATURE, "przypisanie-nadawcy")
+    worker_list = run.config / "wykonawcy.yaml"
+    before = read_bytes(worker_list)
+    region = page.get_by_role("region", name="Spoza listy adresów")
+    expect(region.get_by_role("button", name=ASSIGN, exact=True)).to_be_visible()
+    run.capture(page, "404-raporty-przypisz")
+    region.get_by_role("button", name=ASSIGN, exact=True).click()
+    window = settings_window(page)
+    expect(settings_title(page)).to_have_text("Ustawienia/Wykonawcy")
+    chooser = window.get_by_role("group", name="Przypisz adres")
+    expect(chooser).to_contain_text(address)
+    run.check(read_bytes(worker_list) == before, "„Przypisz do Wykonawcy…” opens the choice and saves nothing")
+    run.capture(page, "405-raporty-przypisz-wybor", full_page=False)
+    page.set_viewport_size(NARROW)
+    try:
+        expect(chooser.get_by_role("combobox", name="Wykonawca")).to_be_visible()
+        page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        run.check(True, "on a narrow window the choice fits without a horizontal scroll")
+        run.capture(page, "407-raporty-przypisz-wybor-waski", full_page=False)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+    chooser.get_by_role("combobox", name="Wykonawca").click()
+    page.get_by_role("option", name=ASSIGNED_TO, exact=True).click()
+    expect(chooser).to_have_count(0)
+    workers = run.api("/api/settings", "raporty-przypisany-ustawienia")["workers"]
+    assert isinstance(workers, dict)
+    addresses = {worker["name"]: worker["addresses"] for worker in workers["workers"]}
+    run.check(address in addresses[ASSIGNED_TO], "the choice saves the address at the Wykonawca at once")
+    window.get_by_role("button", name="Zamknij Ustawienia").click()
+    expect(window).to_have_count(0)
+    expect(region).to_contain_text(f"Przypisany do {ASSIGNED_LOGIN}.")
+    expect(region.get_by_role("button", name=ASSIGN, exact=True)).to_have_count(0)
+    [sender] = _view(run, "raporty-przypisany")["unknown_senders"]
+    run.check(
+        (sender["sender"], sender["worker"]) == (address, ASSIGNED_LOGIN),
+        "Raporty, without a reload, show the stranger as assigned to the Wykonawca; the next click enters the Raport",
+    )
+    run.capture(page, "406-raporty-przypisany")
+    window = open_settings(page, "Historia")
+    newest = window.get_by_role("list", name="Zmiany").get_by_role("listitem").first
+    newest.get_by_role("button", name=f"Cofnij: wykonawcy[{ASSIGNED_LOGIN}]", exact=True).click()
+    run.wait_for(lambda: read_bytes(worker_list) == before, "„Cofnij” in Historia takes the address back")
+    window.get_by_role("button", name="Zamknij Ustawienia").click()
+    expect(window).to_have_count(0)
+    expect(region.get_by_role("button", name=ASSIGN, exact=True)).to_be_visible()
+    run.check(True, "after „Cofnij” the stranger is unknown again in Raporty")
 
 
 def _view(run: Run, name: str) -> Json:
@@ -719,6 +779,8 @@ def drive(run: Run, page: Page) -> None:
     run.check(read_bytes(register) == register_after_click, "„Zostaw moją” leaves INTERMAX byte for byte")
     run.capture(page, "282-raporty-zostaw-moja", full_page=False)
     _close(page, popover)
+
+    _assign_stranger(run, page, fixture["stranger_address"])
 
     run.step(FEATURE, "dzien-bez-problemow")
     print("  harness: the stranger's mail out of the Skrzynka raportów, as if Maks dealt with it", flush=True)

@@ -623,7 +623,7 @@ function SuggestionRow({ suggestion, adding, add }: { suggestion: WorkerSuggesti
           {suggestion.orders} {plural(suggestion.orders, { one: "zlecenie", few: "zlecenia", many: "zleceń" })}
         </span>
       </div>
-      <Button variant="outline" size="sm" disabled={adding} onClick={add}>
+      <Button variant="outline" size="sm" aria-label={`Dodaj Wykonawcę: ${suggestion.login}`} disabled={adding} onClick={add}>
         Dodaj Wykonawcę
       </Button>
     </div>
