@@ -1297,7 +1297,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
     "stop_kind": "for_maks",
     "issue_count": 3,
     "messages": [
-        {"kind": "warning", "code": "EFENIX_SPRZECZNOSC", "what": "Syntetyczny opis różnicy", "where": "Wiersz osiemnasty", "action": "Popraw ilość ręcznie"}
+        {"kind": "warning", "code": "EFENIX_SPRZECZNOSC", "what": "Syntetyczny opis różnicy", "where": "Wiersz osiemnasty", "action": "Popraw ilość ręcznie", "setting": "wykonawcy", "at_start": True}
     ],
     "technical_notes": ["Syntetyczna uwaga techniczna"],
     "summary": {

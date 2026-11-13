@@ -186,7 +186,7 @@ class ReportEnteringParts:
 
 @dataclass(frozen=True)
 class EnteringInputs:
-    """Wejście Wpisania raportów: INTERMAX i folder okresów z Ustawień taty, Lista Wykonawców z Ustawień Centrum,
+    """Wejście Wpisania raportów: INTERMAX, folder okresów i Lista Wykonawców z Ustawień Centrum,
     zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie
     (ADR 0019)."""
 

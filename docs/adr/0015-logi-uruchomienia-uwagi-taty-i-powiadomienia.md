@@ -109,6 +109,9 @@ w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efeni
 zmienia dalej tylko o dziennik z dopisku #845: krótkie procesy nie wysyłają
 nic w trakcie.
 
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zastępuje stary plik
+Wykonawców (`worker_mapping.yaml`) Listą Wykonawców.
+
 ## Kontekst
 
 Wszystko, co Maks wiedział o pracy narzędzia u taty, to rekord metryk (czasy,

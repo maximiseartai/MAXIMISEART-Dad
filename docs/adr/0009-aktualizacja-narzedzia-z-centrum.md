@@ -34,6 +34,9 @@ narzędzia, zmienia [ADR 0014](0014-tata-dostaje-tylko-wydania.md): najnowsze
 Wydanie zamiast `main`.
 [ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md) zastępuje
 Powiadomienie o naprawie z Kontekstu Powiadomieniem o nowej wersji.
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Rejestr zleceń
+i folder okresów do Ustawień Centrum, a stary plik Wykonawców
+(`worker_mapping.yaml`) zastępuje Lista Wykonawców (`wykonawcy.yaml`).
 
 ## Kontekst
 

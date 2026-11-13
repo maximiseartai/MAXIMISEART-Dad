@@ -51,7 +51,8 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         stop_kind=None if stopped is None else stopped.kind,
         issue_count=None if snapshot is None else snapshot.issue_count,
         messages=[LoggedMessage.of("stop", stop) for stop in run.stops]
-        + [LoggedMessage.of("warning", warning) for warning in run.warnings],
+        + [LoggedMessage.of("warning", warning, at_start=True) for warning in run.start_warnings]
+        + [LoggedMessage.of("warning", warning) for warning in run.result_warnings],
         technical_notes=list(run.technical_notes),
         summary=None if run.shown is None else run.shown.summary,
         phases=LoggedPhase.all_of(run.progress.phases, snapshot),

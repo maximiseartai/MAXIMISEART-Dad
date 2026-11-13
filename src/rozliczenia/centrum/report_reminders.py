@@ -338,7 +338,7 @@ def due_reminders(
     in_effect: SchedulesInEffect,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
-    raporcie, Ustawienia taty i Lista Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
+    raporcie, Ustawienia Centrum z Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
     (``schedules_in_effect``). Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do

@@ -1,4 +1,4 @@
-"""Kontrakt Konfiguracji: Wzorce, Wykonawcy, Token do Zgłoszeń i Aktualność narzędzia."""
+"""Kontrakt Konfiguracji: Wzorce, Token do Zgłoszeń i Aktualność narzędzia."""
 
 from __future__ import annotations
 
@@ -42,21 +42,6 @@ class TemplateProblem(Model):
 TemplateStatus = Annotated[TemplateReady | TemplateProblem, Field(discriminator="state")]
 
 
-class WorkersReady(Model):
-    """Nazwy Wykonawców w kolejności z Listy Wykonawców."""
-
-    state: Literal["ready"]
-    names: list[str]
-
-
-class WorkersUnreadable(Model):
-    state: Literal["unreadable"]
-    message: Message
-
-
-Workers = Annotated[WorkersReady | WorkersUnreadable, Field(discriminator="state")]
-
-
 # Token do Zgłoszeń na tym komputerze: ``ready`` („Zgłoszenia: gotowe”: jest, a Skrzynka go nie odrzuciła, także
 # bez sieci), ``missing_key`` albo ``refused_key`` (Skrzynka Zgłoszeń odmówiła tego tokenu); nigdy jego wartość.
 ReportKeyState = Literal["ready", "missing_key", "refused_key"]
@@ -86,5 +71,4 @@ class Configuration(Model):
     freshness: ToolFreshnessState
     update_offered: bool
     templates: list[TemplateStatus]
-    workers: Workers
     reports: ReportKeyState

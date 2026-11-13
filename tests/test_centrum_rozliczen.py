@@ -32,9 +32,10 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
 from rozliczenia import efenix_process
-from rozliczenia.centrum import app
+from rozliczenia.centrum import app, diagnosis_messages
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
+from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
@@ -305,6 +306,20 @@ def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
     assert response.json()["settings"]["periods_directory"]["path"] == str(periods)
 
 
+def test_nieznane_pole_pliku_ustawien_ma_numer_od_gory_a_nie_nazwe_z_pliku(tmp_path: Path) -> None:
+    """Nazwa pola to tekst z pliku (np. login wpisany ręcznie w złe miejsce), a zdanie trafia do Logów Centrum i do
+    Zgłoszenia, więc mówi tylko, które to pole od góry (przegląd #1529 r2, D2)."""
+
+    app = centrum(tmp_path)
+    app.settings_path.parent.mkdir(parents=True)
+    app.settings_path.write_text(f"schema_version: 1\nmotyw: light\n{LEAKED_LOGIN}: {LEAKED_NAME}\n", encoding="utf-8")
+
+    response = app.client.get("/api/settings")
+
+    assert response.json()["folders_problem"] == {"field": None, "message": settings_messages.unknown_key(SETTINGS_FILE, 3)}
+    assert LEAKED_LOGIN not in response.text + app.tool.log_path.read_text(encoding="utf-8")
+
+
 def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosciami_domyslnymi(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
@@ -344,7 +359,7 @@ def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_pa
 def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a_nie_brakujace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
-    """Ustawienia taty mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
+    """Ustawienia Centrum mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
 
     onedrive = tmp_path / "OneDrive"
     register = onedrive / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
@@ -379,7 +394,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
 
 @NO_ACCESS_ON_WINDOWS
 def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Path) -> None:
-    """Plik Ustawień taty trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
+    """Plik Ustawień Centrum trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
 
     app, _ = with_periods_directory(tmp_path)
 
@@ -486,7 +501,7 @@ def test_motyw_jasny_jest_zapamietany(tmp_path: Path) -> None:
 
 
 SETTINGS_NOT_SAVED = (
-    "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
+    "Nie udało się zapisać Ustawień Centrum w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
     "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
 )
 AUTOSTART_NOT_CHANGED = (
@@ -1496,16 +1511,25 @@ def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
         pytest.param("schema_version: 1\nworkers:\n  a: A\n  A: B\n", "identyfikator Wykonawcy stoi dwa razy", id="login-dwa-razy"),
     ],
 )
-def test_zla_konfiguracja_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
+def test_zly_stary_plik_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
     tmp_path: Path, mapping: str, reason: str
 ) -> None:
+    """Odrzucone przeniesienie to zły stan Listy Wykonawców bez ostatniej dobrej, także przy następnym starcie, nigdy
+    pusta dobra lista: tata nie może pomyśleć, że Wykonawców nie ma (przegląd #1529 r1, D1)."""
+
     tool = ToolDirectory(tmp_path)
     old_files(tool, mapping, OLD_ADDRESSES)
 
     workers, rows = migrated(tool)
+    after_restart, _ = migrated(tool)
 
     assert not tool.worker_list.exists()
-    assert workers["workers"] == []
+    assert workers == after_restart == {
+        "state": "bad",
+        "workers": [],
+        "unresolved": [],
+        "problem": {"field": None, "message": settings_messages.worker_list_not_created()},
+    }
     assert [(row["source"], row["refused"], row["reason"]) for row in rows] == [
         ("release", True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, reason))
     ]
@@ -1546,6 +1570,17 @@ def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_p
     assert rows == []
     assert (tool.worker_list.read_bytes() if tool.worker_list.exists() else None) == before
     assert [worker["name"] for worker in workers["workers"]] == (["Kamil Syntetyczny"] if existing else [])
+    assert (workers["state"], workers["problem"]) == ("good", None), "zły stan bez pliku tylko po odrzuconym przeniesieniu"
+
+
+WAITING_SENTENCE = settings_messages.worker_list_waiting()
+WAITING = {"field": None, "message": WAITING_SENTENCE}
+
+
+def unusable(sentence: str) -> str:
+    """Odmowa startu procesu bez użytecznej Listy Wykonawców ze zdaniem złego ustawienia ``sentence``."""
+
+    return f"Lista Wykonawców ma złe ustawienie: {sentence} Szczegóły są w Ustawieniach, w sekcji Wykonawcy."
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -1565,13 +1600,30 @@ def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast
 
     workers, rows = migrated(tool)
 
-    assert (listed_while_locked, locked_rows, locked_workers["workers"]) == (False, [], [])
+    assert (listed_while_locked, locked_rows) == (False, [])
+    assert locked_workers == {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING}
     assert workers["workers"] == [
         listed(["jan.testowy"], "Jan Testowy", [JAN]),
         listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
         listed(["ewa.bez"], "Ewa Bez", []),
     ]
     assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_plik_wykonawcow(tmp_path: Path) -> None:
+    """Przegląd #1569 r1, D2: gdy przeniesienie czeka na stary plik, którego system nie daje czytać, Przebieg
+    rozliczeń nie startuje na pustej liście, tak jak po odrzuconym przeniesieniu."""
+
+    tool = settling_centrum(tmp_path).tool
+    tool.worker_list.unlink()
+    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+    with without_access(tool.config / OLD_MAPPING_FILE):
+        client = started(tool, RELEASE_CHANGES)
+        refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+        client.stop()
+
+    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
 
 
 WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
@@ -1622,7 +1674,7 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
         pytest.param(
             f"{LEAKED_LOGIN}: {LEAKED_NAME}\nwykonawcy: []\n",
             None,
-            settings_messages.unknown_key(WORKERS_FILE, 2),
+            settings_messages.unknown_key(WORKERS_FILE, 2, settings_messages.MAKS_FIXES),
             id="login-na-gorze-pliku",
         ),
         pytest.param(
@@ -1634,19 +1686,19 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
         pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: {LEAKED_LOGIN}}}\n",
             "wykonawcy[0].loginy",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy")),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy"), settings_messages.MAKS_FIXES),
             id="login-zamiast-listy",
         ),
         pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
             "wykonawcy[0].aktywny",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny")),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"), settings_messages.MAKS_FIXES),
             id="nazwa-zamiast-tak-nie",
         ),
         pytest.param(
             f"do_rozstrzygniecia:\n  - {{login: {LEAKED_LOGIN}, adresy: [{LEAKED_ADDRESS}], powod: {LEAKED_NAME}}}\n",
             "do_rozstrzygniecia[0]",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0)),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0), settings_messages.MAKS_FIXES),
             id="zly-wpis-do-rozstrzygniecia",
         ),
         pytest.param(
@@ -1683,14 +1735,38 @@ def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adres
     assert leaks == []
 
 
-def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej(tmp_path: Path) -> None:
+def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
+    """DESIGN §4.3: karta i Logi Uruchomienia mówią, że proces użył ostatniej dobrej listy, z linkiem do sekcji
+    Wykonawcy (przegląd #1529 r1, D2)."""
+
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
 
     view = run_to_end(centrum_, dry_run=True)
 
+    warning = Message.of(diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES))).model_dump()
     assert (view["result"]["result"], view["result"]["ending"]) == ("OK", "finished")
+    assert (view["result"]["warnings"][0], warning["setting"]) == (warning, "wykonawcy")
+
+
+def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_nie_pozniejsza(tmp_path: Path) -> None:
+    """D9: Diagnoza wyjaśnia to Uruchomienie, więc zła lista ze startu zostaje w Diagnozie po naprawie pliku, a lista
+    zepsuta po starcie do niej nie trafia (przegląd #1529 r1, D2)."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    good = centrum_.tool.worker_list.read_bytes()
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    bad_at_start = stopped_for_maks(centrum_)
+    centrum_.tool.worker_list.write_bytes(good)
+    fixed_later = centrum_.client.post(f"/api/runs/{bad_at_start}/diagnosis").json()
+
+    [worker_list] = [check for check in fixed_later["checks"] if check["label"] == "Lista Wykonawców"]
+    assert (worker_list["state"], worker_list["detail"]) == (
+        "failed",
+        diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES)).what,
+    )
 
 
 def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic(tmp_path: Path) -> None:
@@ -1706,7 +1782,7 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
     assert (started_run.status_code, started_run.json()) == (
         409,
         {
-            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Popraw ją w Ustawieniach.",
+            "message": unusable(settings_messages.worker_without_login()),
             "field": "wykonawcy[0].loginy",
         },
     )

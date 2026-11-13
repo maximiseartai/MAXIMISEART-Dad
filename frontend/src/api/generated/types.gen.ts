@@ -251,14 +251,6 @@ export type Configuration = {
      */
     templates: Array<TemplateReady | TemplateProblem>;
     /**
-     * Workers
-     */
-    workers: ({
-        state: 'ready';
-    } & WorkersReady) | ({
-        state: 'unreadable';
-    } & WorkersUnreadable);
-    /**
      * Reports
      */
     reports: 'ready' | 'missing_key' | 'refused_key';
@@ -918,9 +910,9 @@ export type IntermaxRestored = {
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -1164,7 +1156,9 @@ export type LoggedOutcome = {
 /**
  * Message
  *
- * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu.
+ * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
+ * Centrum, do której prowadzi link przy „Co zrobić”. Bez sekcji pola nie ma w odpowiedzi, więc Komunikat bez poprawki
+ * w Ustawieniach ma dalej trzy części, także w Logach Uruchomienia.
  */
 export type Message = {
     /**
@@ -1179,6 +1173,10 @@ export type Message = {
      * Action
      */
     action: string;
+    /**
+     * Setting
+     */
+    setting?: 'wykonawcy' | null;
 };
 
 /**
@@ -2265,9 +2263,9 @@ export type ReportDraft = {
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
@@ -3344,7 +3342,7 @@ export type UnknownReportSender = {
 /**
  * UnmatchedLogin
  *
- * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``).
  */
 export type UnmatchedLogin = {
     /**
@@ -3470,7 +3468,7 @@ export type WithoutQuantityUnread = {
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
- * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ * ``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty).
  */
 export type WorkerListSetting = {
     /**
@@ -3525,33 +3523,6 @@ export type WorkerSettlementRequest = {
 };
 
 /**
- * WorkersReady
- *
- * Nazwy Wykonawców w kolejności z Listy Wykonawców.
- */
-export type WorkersReady = {
-    /**
-     * State
-     */
-    state: 'ready';
-    /**
-     * Names
-     */
-    names: Array<string>;
-};
-
-/**
- * WorkersUnreadable
- */
-export type WorkersUnreadable = {
-    /**
-     * State
-     */
-    state: 'unreadable';
-    message: Message;
-};
-
-/**
  * Configuration
  *
  * Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.
@@ -3575,14 +3546,6 @@ export type ConfigurationWritable = {
      */
     templates: Array<TemplateReady | TemplateProblemWritable>;
     /**
-     * Workers
-     */
-    workers: ({
-        state: 'ready';
-    } & WorkersReady) | ({
-        state: 'unreadable';
-    } & WorkersUnreadable);
-    /**
      * Reports
      */
     reports: 'ready' | 'missing_key' | 'refused_key';
@@ -3591,9 +3554,9 @@ export type ConfigurationWritable = {
 /**
  * IntermaxSetup
  *
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach taty,
+ * ``reminder`` to przypomnienie przed uruchomieniem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum,
  * ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Uporządkowania
  * INTERMAX z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
  */
@@ -3799,9 +3762,9 @@ export type ProcessRunWritable = {
 /**
  * ReportEnteringSetup
  *
- * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień taty.
+ * Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.
  *
- * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach taty albo w
+ * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
  * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).

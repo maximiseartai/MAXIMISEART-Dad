@@ -45,7 +45,7 @@ ReminderFailure = Literal[
     "odmowa-wysylki",
     "zapis-por",
 ]
-# Dlaczego zmiany Ustawień taty nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
+# Dlaczego zmiany Ustawień Centrum nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
 # system nie daje go czytać.
 SettingsUnreadableCause = Literal["dostep", "historia"]
 # Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie

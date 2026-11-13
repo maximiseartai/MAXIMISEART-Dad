@@ -82,7 +82,7 @@ the real Wzorce from `config/`.
 The facts of the synthetic scenario (period, Wykonawcy, file names, orders,
 Hiperłącza, row markers, the Ilości usług the Reguły ilości give, the rows
 Gotowość fills) live once in `tools/lib/atrapy/scenariusz_rozliczen.py`, beside
-the period, konfiguracja wykonawców and Wzorzec headers of the tests: the
+the period, Lista Wykonawców and Wzorzec headers of the tests: the
 `create_*` scripts build the files from them and the `assert_*` scripts,
 `fill_readiness.py` and `self_test.py` read the same values. Two expectations
 live there too, written out by hand for the oracles of both skills and never

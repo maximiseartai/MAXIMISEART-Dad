@@ -28,6 +28,9 @@ from typing import Final, Literal
 DadFile = Literal["order_register", "collective_file"]
 """Plik taty, który Komunikat każe poprawić: Rejestr zleceń albo Plik zbiorczy."""
 
+SettingsSection = Literal["wykonawcy"]
+"""Sekcja okna Ustawień Centrum, w której jest poprawka z „Co zrobić”: Wykonawcy (Lista Wykonawców)."""
+
 _MAINTAINER: Final = "osobie utrzymującej narzędzie"
 KEEP_ON_DEVICE: Final = (
     "W Eksploratorze plików kliknij ten plik prawym przyciskiem myszy, wybierz „Zawsze zachowuj na tym urządzeniu”, "
@@ -54,6 +57,9 @@ class Message:
     ``dad_file``: plik taty, w którym jest poprawka z „Co zrobić”, gdy otwarcie go pomaga; odcisk problemu
     go nie zawiera.
 
+    ``setting``: sekcja okna Ustawień Centrum, w której jest poprawka z „Co zrobić”; Centrum pokazuje przy Komunikacie
+    link do niej, a odcisk problemu jej nie zawiera.
+
     ``reports_to_maintainer``: Rodzaj Zatrzymania „do Maksa”, bo „Co zrobić” bezwarunkowo każe przekazać Komunikat
     osobie utrzymującej narzędzie. Ustawia go tylko ``Message.to_maintainer``, który pisze też to zdanie; zdanie
     warunkowe (``refer_if``) rodzaju nie zmienia, bo najpierw tata ponawia albo poprawia sam.
@@ -64,6 +70,7 @@ class Message:
     where: str
     action: str
     dad_file: DadFile | None = None
+    setting: SettingsSection | None = None
     reports_to_maintainer: bool = field(default=False, kw_only=True)
 
     @classmethod

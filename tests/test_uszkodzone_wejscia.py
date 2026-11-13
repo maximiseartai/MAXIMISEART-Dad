@@ -31,7 +31,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rozliczenia import period_folder
-from rozliczenia.centrum import diagnosis_messages, refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
@@ -42,6 +42,7 @@ from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD
 from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
@@ -559,7 +560,7 @@ READS: dict[str, set[str]] = {
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
     "getQuantityRules": {"wzorzec_zbiorczy"},
-    "getConfiguration": _OWNER | {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
+    "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
     "getToolUpdate": set(),
@@ -852,7 +853,7 @@ def test_folder_okresow_bez_odczytu_nazywa_folder_w_kazdym_wejsciu(
 
 
 @pytest.mark.parametrize(("process", "period"), [("preparation", PERIOD), ("settlement", SETTLEMENT_PERIOD)])
-def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_na_karcie_konfiguracji(
+def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_w_sekcji_wykonawcy(
     world_template: Path, tmp_path: Path, process: str, period: str
 ) -> None:
     world = World(tmp_path / "swiat")
@@ -861,13 +862,17 @@ def test_lista_wykonawcow_bez_odczytu_wstrzymuje_start_i_jest_niedostepna_na_kar
     listed = world.path("lista_wykonawcow")
     _inaccessible(listed)
     try:
-        card = client.get("/api/configuration").json()["workers"]
+        section = client.get("/api/settings").json()["workers"]
         started = client.post("/api/runs", json={"process": process, "period": period, "mode": "DRY-RUN"})
     finally:
         _readable_again(listed)
 
     assert (started.status_code, started.json()["message"]) == (409, refusal.workers_unusable(None).message)
-    assert (card["state"], card["message"]["what"]) == ("unreadable", diagnosis_messages.worker_list_unreadable().what)
+    assert (section["state"], section["workers"], section["problem"]) == (
+        "unreadable",
+        [],
+        {"field": None, "message": settings_messages.worker_list_unreadable()},
+    )
 
 
 def test_folder_miesiaca_znikajacy_w_trakcie_listowania_jest_pominiety(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

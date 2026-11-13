@@ -92,7 +92,7 @@ ROLLBACK_FAILED: Final = "COFNIECIE_NIEUDANE"
 
 Step = Literal["fetching", "installing"]
 
-# Wynik aktualizacji po ponownym starcie Centrum: plik obok Ustawień taty, który zapisuje opiekun ponownego startu,
+# Wynik aktualizacji po ponownym starcie Centrum: plik obok Ustawień Centrum, który zapisuje opiekun ponownego startu,
 # a Centrum, które potem wystartuje, odczytuje raz i usuwa.
 RESULT_FILE: Final = "centrum-aktualizacja.json"
 JOURNAL: Final = "centrum-aktualizacja-w-toku"
@@ -671,12 +671,12 @@ def _flush_to_disk(path: Path) -> None:
 class _DadFiles:
     """Pliki taty w ``config/``, które przesunięcie klonu usunęłoby: nowa wersja je usuwa albo przestaje śledzić.
 
-    Tata może je mieć zmienione (Konfiguracja wykonawców z prawdziwymi
-    nazwiskami po #161); te zmiany nie zatrzymują Aktualizacji narzędzia.
+    Tata może je mieć zmienione (stary plik Wykonawców ``worker_mapping.yaml``
+    z prawdziwymi nazwiskami po #161); te zmiany nie zatrzymują Aktualizacji narzędzia.
     Przed przesunięciem trafiają do kopii w dzienniku „Aktualizacja w toku”
     i wracają do stanu z ``HEAD``, żeby Git nie odmówił; po przesunięciu
     (udanym albo nie) wraca ich kopia. Inne
-    pliki taty (Wzorce, Ustawienia taty, klucz do Zgłoszeń, dziennik, metryki)
+    pliki taty (Wzorce, Ustawienia Centrum, klucz do Zgłoszeń, dziennik, metryki)
     Git zostawia sam, bo ich nie śledzi.
     """
 

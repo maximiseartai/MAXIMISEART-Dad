@@ -243,6 +243,7 @@ DIAGNOSIS_SAMPLES: Samples = {
     "period_file_open": [lambda: diagnosis_messages.period_file_open(PERIOD_DIRECTORY / INTERNAL_SETTLEMENT.name)],
     "worker_list_bad": [lambda: diagnosis_messages.worker_list_bad(settings_messages.worker_login_repeated())],
     "worker_list_unreadable": [diagnosis_messages.worker_list_unreadable],
+    "worker_list_last_good": [lambda: diagnosis_messages.worker_list_last_good(settings_messages.worker_login_repeated())],
 }
 
 FILL_SAMPLES: Samples = {

@@ -13,8 +13,8 @@ is part of the behaviour.
   `windows-latest` with `actions/setup-python` in the workflow).
 - `run_windows_verification.py` created a fresh run root with `windows_tool.prepare`: `dane/` (folder okresów `INEA`
   with `29_05_10_2026`, `22_28_09_2026`, `15_21_09_2026` and `Archiwum`; the last complete period `06_12_10_2026`
-  has no folder yet; Rejestr zleceń `ZLECENIA SYNTETYCZNE OD 01_01_2026.xlsx`; Dad's `config/` with the konfiguracja
-  wykonawców and three Wzorce), the origin `origin.git` with the only Wydanie `v0.1.0` on `first` and `main` on
+  has no folder yet; Rejestr zleceń `ZLECENIA SYNTETYCZNE OD 01_01_2026.xlsx`; Dad's `config/` with the Lista
+  Wykonawców and three Wzorce), the origin `origin.git` with the only Wydanie `v0.1.0` on `first` and `main` on
   `newest`, and `windows.json`.
 - The drive's environment carries `windows_tool.boundaries` (browser recorder, GitHub address rewritten to the
   origin); Centrum inherits it through the shortcut.

@@ -19,7 +19,7 @@ in `<feature>.md` next to this file, driven by the skill's
 - The fixture's "today" is Monday `2026-10-19`, so the last complete period is
   `06_12_10_2026`, whose Folder okresu does not exist. The folder okresów
   `INEA` holds `29_05_10_2026` (Plik zbiorczy przygotowany; its Plik zbiorczy
-  has a Wykonawca missing from the konfiguracja wykonawców), `22_28_09_2026`
+  has a Wykonawca missing from the Lista Wykonawców), `22_28_09_2026`
   (Rozliczenia pracowników gotowe, three files), `15_21_09_2026` (empty Folder
   okresu), and `Archiwum` (not a period).
 - `<root>/Załączniki` holds Dad's layout for `uklad-folderow-taty`: weeks in
@@ -38,7 +38,7 @@ in `<feature>.md` next to this file, driven by the skill's
   Centrum reads these, never the tool's own history.
 - No settings are set when a run starts.
 - Only for `wydajnosc`, the fixture is created with `--wariant rok-pracy`: `<root>/Rok pracy/Załączniki` holds 52 periods in Dad's layout and the metrics files hold a year of records (see `wydajnosc.md`).
-- `<root>/aktualizacja/` holds the run's tool for `aktualizacja`: a clone (`klon`) on the first synthetic commit, with Dad's files in its `config/`, and a bare local "origin" (`origin.git`) one commit ahead that stops tracking his changed konfiguracja wykonawców, plus a branch `biblioteki` one commit later that needs a library pip cannot install offline and a branch `nie-startuje` whose Centrum does not start. Centrum's own commit is the clone's `HEAD`, and Aktualizacja narzędzia moves only this clone. The clone's `run_centrum.py` serves the run's scripted Centrum, so the Centrum the restart guardian starts after an update is again this run's.
+- `<root>/aktualizacja/` holds the run's tool for `aktualizacja`: a clone (`klon`) on the first synthetic commit, with Dad's files in its `config/`, and a bare local "origin" (`origin.git`) one commit ahead that stops tracking his changed old Wykonawcy file (`worker_mapping.yaml`), plus a branch `biblioteki` one commit later that needs a library pip cannot install offline and a branch `nie-startuje` whose Centrum does not start. Centrum's own commit is the clone's `HEAD`, and Aktualizacja narzędzia moves only this clone. The clone's `run_centrum.py` serves the run's scripted Centrum, so the Centrum the restart guardian starts after an update is again this run's.
 - The run's `config/` holds a synthetic Lista Wykonawców `wykonawcy.yaml` (three Wykonawcy)
   and the three Wzorce, valid for the engine's Sprawdzanie; the configuration read of Ustawienia reads
   these, never Dad's `config/`.

@@ -168,6 +168,7 @@ def unmapped_worker(source: Path, workers: Sequence[str]) -> Message:
         what=f"W Pliku zbiorczym {subject} spoza Listy Wykonawców: {', '.join(workers)}. {_NOTHING_CREATED}",
         where=f"{file_label(source)}, kolumna {WORKER_HEADER.column}",
         action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",
+        setting="wykonawcy",
     )
 
 
@@ -193,6 +194,7 @@ def unmapped_worker_warning(source: Path, worker: str) -> Message:
         what=f"Nieznany identyfikator WYKONAWCA: {worker}. Nie ma go w Liście Wykonawców.",
         where=file_label(source),
         action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",
+        setting="wykonawcy",
     )
 
 

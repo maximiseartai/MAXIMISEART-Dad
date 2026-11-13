@@ -128,7 +128,7 @@ def _retry_in_flight(run: Run, page: Page) -> None:
     try:
         close_settings(page)
         page.get_by_role("link", name="Okresy", exact=True).click()
-        _via_settings(page, "Wykonawcy")()
+        _via_settings(page, "Wzorce")()
         failure = _failure(page, "ustawień")
         expect(failure).to_contain_text(UNREACHABLE)
         page.unroute("**/api/configuration")
@@ -158,7 +158,7 @@ def _retry_in_flight(run: Run, page: Page) -> None:
             route.abort()
         page.unroute("**/api/configuration")
     failure.get_by_role("button", name=RETRY, exact=True).click()
-    expect(settings_window(page).get_by_role("list", name="Wykonawcy")).to_be_visible()
+    expect(settings_window(page).get_by_role("list", name="Wzorce")).to_be_visible()
     expect(failure).to_have_count(0)
     run.check(True, "the next try reads Ustawienia")
 
@@ -301,7 +301,7 @@ def drive(run: Run, page: Page) -> None:
     )
     _fails_then_retries(
         run, page, step="blad-odczytu-konfiguracja", path="/api/configuration", what="ustawień",
-        open_page=_via_settings(page, "Wykonawcy"), content=settings_window(page).get_by_role("list", name="Wykonawcy"),
+        open_page=_via_settings(page, "Wzorce"), content=settings_window(page).get_by_role("list", name="Wzorce"),
         shot="146-blad-odczytu-konfiguracja",
     )
     _retry_in_flight(run, page)

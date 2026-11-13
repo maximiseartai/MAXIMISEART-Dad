@@ -392,7 +392,7 @@ def _history(run: Run, page: Page) -> None:
 
     with unreadable(settings):
         rows.first.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
-        expect(rows.first.get_by_role("alert")).to_contain_text("Nie udało się zapisać Ustawień taty")
+        expect(rows.first.get_by_role("alert")).to_contain_text("Nie udało się zapisać Ustawień Centrum")
     run.check(run.remembered("folder_okresow") == periods, "an undo the server refuses is one sentence under its row")
     close_settings(page)
 

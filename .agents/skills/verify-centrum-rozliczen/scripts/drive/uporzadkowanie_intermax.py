@@ -204,11 +204,11 @@ def drive(run: Run, page: Page) -> None:
     region.get_by_role("button", name=f"Sprawdzono ({len(labels)})", exact=True).click()
     shown = region.get_by_role("list", name="Sprawdzono").get_by_role("listitem")
     expect(shown.filter(has_text=re.compile(r"^INTERMAX · "))).to_have_count(1)
-    # Ustawienia taty name the file as the card does.
-    expect(shown.filter(has_text="Ustawienia taty · INTERMAX jest na miejscu.")).to_have_count(1)
+    # Ustawienia Centrum name the file as the card does.
+    expect(shown.filter(has_text="Ustawienia Centrum · INTERMAX jest na miejscu.")).to_have_count(1)
     expect(region.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_be_visible()
     run.check(
-        labels[:3] == ["Ustawienia taty", "Pliki w OneDrive", "INTERMAX"]
+        labels[:3] == ["Ustawienia Centrum", "Pliki w OneDrive", "INTERMAX"]
         and "- Proces: Uporządkowanie INTERMAX" in diagnosis["report"]["body"],
         "the Diagnoza checks Dad's INTERMAX and offers the Zgłoszenie of Uporządkowanie INTERMAX",
     )

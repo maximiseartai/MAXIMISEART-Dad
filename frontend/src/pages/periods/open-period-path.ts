@@ -26,7 +26,7 @@ export function openAndConfirm(token: string, what: OpenedInPeriod, onFailure: (
   )
 }
 
-/** Otwiera Rejestr zleceń z Ustawień taty, z tym samym potwierdzeniem co pliki okresu. */
+/** Otwiera Rejestr zleceń z Ustawień Centrum, z tym samym potwierdzeniem co pliki okresu. */
 export function openOrderRegisterAndConfirm() {
   confirmOpening("rejestr-zlecen", openOrderRegister, () => undefined)
 }

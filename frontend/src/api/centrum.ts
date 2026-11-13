@@ -205,7 +205,7 @@ export function startRun(request: RunRequest) {
   return call("startRun", { body: request })
 }
 
-/** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Uporządkowanie z Logów. */
+/** Karta „Uporządkuj INTERMAX”: przypomnienie, czego brakuje w Ustawieniach Centrum, i ostatnie Uporządkowanie z Logów. */
 export function getIntermaxSetup() {
   return call("getIntermaxSetup")
 }
@@ -215,17 +215,17 @@ export function getIntermaxDays() {
   return call("getIntermaxDays")
 }
 
-/** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
+/** Start Uporządkowania INTERMAX z Rejestrem zleceń z Ustawień Centrum; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startIntermax() {
   return call("startIntermax")
 }
 
-/** Karta „Wpisz raporty z maili”: przypomnienie, czego brakuje w Ustawieniach taty, i ostatnie Wpisanie raportów. */
+/** Karta „Wpisz raporty z maili”: przypomnienie, czego brakuje w Ustawieniach Centrum, i ostatnie Wpisanie raportów. */
 export function getReportEnteringSetup() {
   return call("getReportEnteringSetup")
 }
 
-/** Start Wpisania raportów z INTERMAX z Ustawień taty; gdy trwa inne Uruchomienie, serwer odmawia. */
+/** Start Wpisania raportów z INTERMAX z Ustawień Centrum; gdy trwa inne Uruchomienie, serwer odmawia. */
 export function startReportEntering() {
   return call("startReportEntering")
 }

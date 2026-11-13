@@ -292,9 +292,9 @@ _NOT_CHECKED_FRESHNESS: Final = {
 }
 
 
-@_check("Ustawienia taty")
+@_check("Ustawienia Centrum")
 def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
-    """Ustawienia taty z wpisu procesu po kolei: pierwsze brakujące wyjaśnia Komunikatem procesu.
+    """Ustawienia Centrum z wpisu procesu po kolei: pierwsze brakujące wyjaśnia Komunikatem procesu.
 
     Niedostępnego nie wyjaśnia: Komunikat o nim daje odczyt w sprawdzeniu, które go czyta.
     """
@@ -487,7 +487,7 @@ def diagnose(
     """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
 
     Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
-    (reguła danych, ADR 0025). ``workers``: Lista Wykonawców z migawki Ustawień Centrum w chwili Diagnozy.
+    (reguła danych, ADR 0025). ``workers``: Lista Wykonawców z migawki Ustawień Centrum ze startu Uruchomienia (bez niej z chwili Diagnozy).
     """
 
     declaration = declaration_of(process)

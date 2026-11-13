@@ -3,8 +3,8 @@
 Reguły należą do procesów: Wzorce sprawdza Sprawdzanie obu procesów (``input_checks``) tymi samymi czytnikami co
 proces, z tym samym komunikatem w trzech częściach, którym zatrzymałby się proces używający tego pliku. Niczego w
 katalogu konfiguracji nie zapisuje. Stan dla przeglądarki składa ``configuration_router``, a te same Sprawdzania
-(``ConfigurationFiles.templates``) wykonuje Diagnoza. Listę Wykonawców obie dostają z migawki Ustawień Centrum i opisują
-ją tym samym Komunikatem (``workers_problem``).
+(``ConfigurationFiles.templates``) wykonuje Diagnoza. Listę Wykonawców Diagnoza dostaje z migawki Ustawień Centrum i
+opisuje ją Komunikatem ``workers_problem``; okno Ustawień pokazuje ją w sekcji Wykonawcy.
 Karta startu Uruchomienia pyta tu, które skoroszyty wejściowe procesu są otwarte w Excelu (``open_in_excel``).
 Moduł nie wczytuje FastAPI: ``ConfigurationFiles`` biorą też Skrypt dla maszyn i odtworzenie bez serwera.
 """

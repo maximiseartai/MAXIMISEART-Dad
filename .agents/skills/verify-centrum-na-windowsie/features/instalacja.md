@@ -1,7 +1,7 @@
 # Instalacja
 
 Maks installs the tool once on Dad's computer (README, `Instalacja lokalna`): a Git clone whose `main` is reset to
-the newest Wydanie (ADR 0014) with README's PowerShell, Dad's own konfiguracja wykonawców and Wzorce copied into
+the newest Wydanie (ADR 0014) with README's PowerShell, Dad's own Lista Wykonawców and Wzorce copied into
 `config/`, the libraries installed with `py -3 -m pip install -r requirements.txt`, and the shortcut „Centrum rozliczeń” on
 the desktop and in the Autostart folder, both made by `py -3 install_centrum_shortcut.py` (ADR 0030). The tool lives on Dad's `C:` in his user folder, whose name
 has a space and a Polish letter, and so does the tool's folder here.
