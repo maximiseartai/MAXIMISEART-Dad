@@ -1,10 +1,10 @@
 """Treść pliku werdyktu pod dwiema pierwszymi liniami według szablonu ze skilla ``przeglad`` (ADR 0031, decyzja Q9).
 
-Treść czyta renderer GitHuba (``github.html_markdownu``), jak opis PR przy „Naprawia”, więc to GitHub decyduje, co
-jest nagłówkiem, akapitem, punktem listy i blokiem kodu (ogrodzonym ``` albo ~~~ i wciętym o cztery spacje). Pola
-i nagłówki szablonu liczą się tylko poza blokami kodu: linia bloku kodu w Dowodzie to zawsze linia Dowodu, także
-gdy zaczyna się od ``Korzeń:`` albo ``###``. Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna
-to odmowa:
+Treść czyta renderer GitHuba (``github.html_markdownu``; rejestr korzeni bierze ten sam HTML z pola ``bodyHTML``
+GraphQL), jak opis PR przy „Naprawia”, więc to GitHub decyduje, co jest nagłówkiem, akapitem, punktem listy
+i blokiem kodu (ogrodzonym ``` albo ~~~ i wciętym o cztery spacje). Pola i nagłówki szablonu liczą się tylko poza
+blokami kodu: linia bloku kodu w Dowodzie to zawsze linia Dowodu, także gdy zaczyna się od ``Korzeń:`` albo ``###``.
+Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmowa:
 
 - Ważne to nagłówek ``### W<n>. <zdanie>`` i linie akapitu z polami w tej kolejności: ``Gdzie: <plik:linia>``,
   ``Dowód: <tekst>`` z najwyżej 5 liniami treści po najwyżej 300 znaków (tekst pola ``Dowód:``, linie akapitu po nim
@@ -66,6 +66,9 @@ QUOTE = "cytat z polem albo nagłówkiem w Dowodzie ujmij w blok kodu ```"
 # Bloki, które GitHub stawia w punkcie listy: luźna lista owija tekst punktu w akapit, a każdy inny blok to odmowa.
 _LOOSE_ITEM = "p"
 _VOID = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "source", "track", "wbr"})
+# Osłona, w którą HTML treści z GraphQL (``bodyHTML``) owija blok kodu ``<pre>`` (przycisk kopiowania), a renderer
+# ``POST /markdown`` nie: parser ją pomija, więc oba HTML dają te same jednostki.
+SNIPPET = "snippet-clipboard-content"
 _BLOCKS = frozenset({"blockquote", "details", "div", "dl", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "ol", "pre", "table", "ul"})
 
 
@@ -122,8 +125,12 @@ class _Items(HTMLParser):
         self._text: list[str] = []
         self._links: list[github.LinkGithuba] = []
         self._nested: str | None = None  # blok wewnątrz punktu listy
+        self._wrappers: list[int] = []  # głębokość otwarcia każdej otwartej osłony ``SNIPPET``
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "div" and SNIPPET in (dict(attrs).get("class") or "").split():
+            self._wrappers.append(len(self._open))
+            return
         top = self._open[0] if self._open else None
         if top is None:
             self._text, self._links = [], []
@@ -145,6 +152,9 @@ class _Items(HTMLParser):
             self._open.append(tag)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "div" and self._wrappers and self._wrappers[-1] == len(self._open):
+            self._wrappers.pop()
+            return
         if tag not in self._open:
             return
         del self._open[len(self._open) - 1 - self._open[::-1].index(tag) :]
@@ -178,7 +188,8 @@ def _joined(parts: Sequence[str]) -> str:
 
 
 def items(html: str) -> list[Item]:
-    """Jednostki treści HTML z renderera GitHuba (``github.html_markdownu``) w kolejności dokumentu."""
+    """Jednostki treści HTML GitHuba w kolejności dokumentu: z renderera ``github.html_markdownu`` albo z pola
+    ``bodyHTML`` GraphQL, które daje te same jednostki (``SNIPPET``)."""
 
     parser = _Items()
     parser.feed(html)
@@ -312,19 +323,18 @@ def problems(html: str, declared: tuple[int, int] | None, codes: Callable[[], fr
     ich nie ma), ``declared`` liczby Ważnych i Drobnych z linii ``Znaleziska:`` (``None``, gdy jej nie ma), a
     ``codes`` czyta kody listy na HEAD PR, gdy jest pole Korzeń albo punkt rozstrzygnięcia."""
 
-    found, findings = _read(html, declared)
+    found, findings = _read(items(html), declared)
     found.extend(_root_problems([*findings.majors, *findings.resolutions], codes))
     return [*found, f"wzór ({SKILL.relative_to(ROOT).as_posix()}): {template()}"] if found else []
 
 
-def findings(html: str) -> Findings:
-    """Kody korzeni treści werdyktu z HTML renderera GitHuba, czytane tak samo jak przy ``problems``."""
+def findings(units: Sequence[Item]) -> Findings:
+    """Kody korzeni treści werdyktu z jej jednostek (``items``), czytane tak samo jak przy ``problems``."""
 
-    return _read(html, None)[1]
+    return _read(units, None)[1]
 
 
-def _read(html: str, declared: tuple[int, int] | None) -> tuple[list[str], Findings]:
-    units = items(html)
+def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list[str], Findings]:
     found: list[str] = []
     roots: list[Root] = []
     counts = {"W": 0, "D": 0}
