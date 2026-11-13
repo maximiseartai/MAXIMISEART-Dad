@@ -61,6 +61,7 @@ function keyOf(change: HistoryChange): Key {
 /** Nazwa zmiany ze zdaniem przed i po po kluczu Historii: składnik, wyjątek Kontroli ilości albo reguła. */
 function ruleLabel(key: string): string {
   if (key.startsWith("urzadzenia.")) return "Lista Urządzeń"
+
   return key.startsWith("wyjatki.") ? "Wyjątek Kontroli ilości" : "Reguła ilości"
 }
 
