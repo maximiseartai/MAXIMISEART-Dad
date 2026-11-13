@@ -13,14 +13,13 @@ rule:
   # Przechodzi tylko tłumienie, które czyta ruff albo mypy, bo ono samo odrzuca prozę zamiast kodu: noqa i noqa: z kodem
   # (PGH004, RUF100), type: ignore (mypy: Invalid "type: ignore" comment). Pliku ruff: noqa i mypy: (dokładnie „# mypy: ”,
   # jak w get_mypy_comments) ruff i mypy nie czytają obok kodu, a ast-grep nie widzi kolumny, więc oba przechodzą tylko
-  # w nagłówku modułu, gdzie komentarz zawsze stoi na własnej linii, a mypy odrzuca nieznaną opcję (Unrecognized option).
+  # w nagłówku modułu: przed nimi nie stoi żaden węzeł poza komentarzem (komentarz w nawiasie, bloku albo po kodzie ma
+  # przed sobą token rodzica), więc stoją na własnej linii, a mypy odrzuca tam nieznaną opcję (Unrecognized option).
   not:
     any:
       - regex: '^#\s*(?:(?i:noqa)(?::\s*[A-Z]+[0-9]+|\s|$)|type:\s*ignore\b)'
       - all:
           - regex: '^(?:#\s*ruff:\s*noqa(?::\s*[A-Z]+[0-9]+|\s|$)|# mypy: )'
-          - inside:
-              kind: module
           - not:
               follows:
                 not:
