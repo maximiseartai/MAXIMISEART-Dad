@@ -31,7 +31,8 @@ from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 INACCESSIBLE_TEMPLATE = "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program."
 # The sentences Dad reads in the section Wykonawcy, copied on purpose (docs/agents/skille.md, „Co wyrocznia bierze z src”).
-BROKEN_WORKER_LIST = f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."
+BROKEN_WORKER_LIST = f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść. Poprawia go Maks."
+LAST_GOOD_CAPTION = "Ostatnia dobra lista, której używają procesy"
 INACCESSIBLE_WORKER_LIST = (
     "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę."
 )
@@ -265,6 +266,11 @@ def drive(run: Run, page: Page) -> None:
         sentence = BROKEN_WORKER_LIST
         expect(alerts.filter(has_text=sentence)).to_have_count(1)
         expect(window.get_by_text("Na liście nie ma jeszcze Wykonawców.")).to_have_count(0)
+        expect(window.get_by_text(LAST_GOOD_CAPTION, exact=True)).to_be_visible()
+        run.check(
+            "Zapisz Ustawienia" not in window.locator("[data-slot=settings-section]").inner_text(),
+            "the read-only section Wykonawcy never asks to save Ustawienia, which does not rewrite the Lista Wykonawców",
+        )
         run.check(
             _listed(window) == run.fixture["workers"],
             "a broken Lista Wykonawców keeps showing the last good list under the sentence, never an empty good list",

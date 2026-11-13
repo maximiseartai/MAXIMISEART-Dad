@@ -72,7 +72,7 @@ def worker_list_bad(sentence: str) -> Message:
         code="ZLA_LISTA_WYKONAWCOW",
         what=f"Lista Wykonawców ma złe ustawienie. {sentence}",
         where=_WORKER_LIST,
-        action="Otwórz Ustawienia, sekcję Wykonawcy, popraw wskazane pole i uruchom ponownie.",
+        action="Otwórz Ustawienia, sekcję Wykonawcy, sprawdź tam, co jest nie tak z listą, i po poprawce uruchom ponownie.",
         setting="wykonawcy",
     )
 
@@ -85,7 +85,7 @@ def worker_list_last_good(sentence: str) -> Message:
         code="LISTA_WYKONAWCOW_OSTATNIA_DOBRA",
         what=f"Uruchomienie użyło ostatniej dobrej Listy Wykonawców, bo bieżąca ma złe ustawienie. {sentence}",
         where=_WORKER_LIST,
-        action="Otwórz Ustawienia, sekcję Wykonawcy, i popraw wskazane pole, zanim uruchomisz następny proces.",
+        action="Otwórz Ustawienia, sekcję Wykonawcy, i sprawdź tam, co jest nie tak z listą, zanim uruchomisz następny proces.",
         setting="wykonawcy",
     )
 

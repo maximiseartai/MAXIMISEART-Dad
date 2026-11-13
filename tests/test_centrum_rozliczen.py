@@ -1548,6 +1548,16 @@ def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_p
     assert rows == []
     assert (tool.worker_list.read_bytes() if tool.worker_list.exists() else None) == before
     assert [worker["name"] for worker in workers["workers"]] == (["Kamil Syntetyczny"] if existing else [])
+    assert (workers["state"], workers["problem"]) == ("good", None), "zły stan bez pliku tylko po odrzuconym przeniesieniu"
+
+
+WAITING = {"field": None, "message": settings_messages.worker_list_waiting()}
+
+
+def unusable(sentence: str) -> str:
+    """Odmowa startu procesu bez użytecznej Listy Wykonawców ze zdaniem złego ustawienia ``sentence``."""
+
+    return f"Lista Wykonawców ma złe ustawienie: {sentence} Szczegóły są w Ustawieniach, w sekcji Wykonawcy."
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -1567,13 +1577,30 @@ def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast
 
     workers, rows = migrated(tool)
 
-    assert (listed_while_locked, locked_rows, locked_workers["workers"]) == (False, [], [])
+    assert (listed_while_locked, locked_rows) == (False, [])
+    assert locked_workers == {"state": "bad", "workers": [], "unresolved": [], "problem": WAITING}
     assert workers["workers"] == [
         listed(["jan.testowy"], "Jan Testowy", [JAN]),
         listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
         listed(["ewa.bez"], "Ewa Bez", []),
     ]
     assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_plik_wykonawcow(tmp_path: Path) -> None:
+    """Przegląd #1569 r1, D2: gdy przeniesienie czeka na stary plik, którego system nie daje czytać, Przebieg
+    rozliczeń nie startuje na pustej liście, tak jak po odrzuconym przeniesieniu."""
+
+    tool = settling_centrum(tmp_path).tool
+    tool.worker_list.unlink()
+    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+    with without_access(tool.config / OLD_MAPPING_FILE):
+        client = started(tool, RELEASE_CHANGES)
+        refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+        client.stop()
+
+    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING["message"])})
 
 
 WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
@@ -1624,7 +1651,7 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
         pytest.param(
             f"{LEAKED_LOGIN}: {LEAKED_NAME}\nwykonawcy: []\n",
             None,
-            settings_messages.unknown_key(WORKERS_FILE, 2),
+            settings_messages.unknown_key(WORKERS_FILE, 2, settings_messages.MAKS_FIXES),
             id="login-na-gorze-pliku",
         ),
         pytest.param(
@@ -1636,19 +1663,19 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
         pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: {LEAKED_LOGIN}}}\n",
             "wykonawcy[0].loginy",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy")),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy"), settings_messages.MAKS_FIXES),
             id="login-zamiast-listy",
         ),
         pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
             "wykonawcy[0].aktywny",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny")),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"), settings_messages.MAKS_FIXES),
             id="nazwa-zamiast-tak-nie",
         ),
         pytest.param(
             f"do_rozstrzygniecia:\n  - {{login: {LEAKED_LOGIN}, adresy: [{LEAKED_ADDRESS}], powod: {LEAKED_NAME}}}\n",
             "do_rozstrzygniecia[0]",
-            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0)),
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0), settings_messages.MAKS_FIXES),
             id="zly-wpis-do-rozstrzygniecia",
         ),
         pytest.param(
@@ -1695,7 +1722,7 @@ def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrze
 
     view = run_to_end(centrum_, dry_run=True)
 
-    warning = Message.of(diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE))).model_dump()
+    warning = Message.of(diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES))).model_dump()
     assert (view["result"]["result"], view["result"]["ending"]) == ("OK", "finished")
     assert (view["result"]["warnings"][0], warning["setting"]) == (warning, "wykonawcy")
 
@@ -1715,7 +1742,7 @@ def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_
     [worker_list] = [check for check in fixed_later["checks"] if check["label"] == "Lista Wykonawców"]
     assert (worker_list["state"], worker_list["detail"]) == (
         "failed",
-        diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE)).what,
+        diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES)).what,
     )
 
 
@@ -1732,7 +1759,7 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
     assert (started_run.status_code, started_run.json()) == (
         409,
         {
-            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Popraw ją w Ustawieniach.",
+            "message": unusable(settings_messages.worker_without_login()),
             "field": "wykonawcy[0].loginy",
         },
     )

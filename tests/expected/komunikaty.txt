@@ -532,7 +532,7 @@ period_file_open [PLIK_OKRESU_OTWARTY]
 worker_list_bad [ZLA_LISTA_WYKONAWCOW]
   Co się stało: Lista Wykonawców ma złe ustawienie. Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy.
   Gdzie: Lista Wykonawców w Ustawieniach Centrum
-  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, popraw wskazane pole i uruchom ponownie.
+  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, sprawdź tam, co jest nie tak z listą, i po poprawce uruchom ponownie.
 
 worker_list_unreadable [NIEDOSTEPNA_LISTA_WYKONAWCOW]
   Co się stało: Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program.
@@ -542,7 +542,7 @@ worker_list_unreadable [NIEDOSTEPNA_LISTA_WYKONAWCOW]
 worker_list_last_good [LISTA_WYKONAWCOW_OSTATNIA_DOBRA]
   Co się stało: Uruchomienie użyło ostatniej dobrej Listy Wykonawców, bo bieżąca ma złe ustawienie. Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy.
   Gdzie: Lista Wykonawców w Ustawieniach Centrum
-  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, i popraw wskazane pole, zanim uruchomisz następny proces.
+  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, i sprawdź tam, co jest nie tak z listą, zanim uruchomisz następny proces.
 
 === Uzupełnienie pliku zbiorczego (src/rozliczenia/centrum/fill_messages.py) ===
 
@@ -1341,8 +1341,11 @@ conflict_note [zdanie]
 not_text [zdanie]
   Plik centrum-ustawienia.yaml w folderze config nie jest tekstem UTF-8. Zapisz Ustawienia jeszcze raz.
 
-damaged [zdanie]
+damaged #1 [zdanie]
   Plik centrum-ustawienia.yaml w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz.
+
+damaged #2 [zdanie]
+  Plik wykonawcy.yaml w folderze config ma uszkodzoną treść. Poprawia go Maks.
 
 other_schema [zdanie]
   Plik centrum-ustawienia.yaml w folderze config zapisała inna wersja narzędzia. Zapisz Ustawienia jeszcze raz.
@@ -1360,10 +1363,10 @@ unknown_theme [zdanie]
   Motyw może być tylko ciemny albo jasny.
 
 bad_field [zdanie]
-  Plik wykonawcy.yaml w folderze config ma złą wartość pola wykonawcy[0].aktywny. Zapisz Ustawienia jeszcze raz.
+  Plik wykonawcy.yaml w folderze config ma złą wartość pola wykonawcy[0].aktywny. Poprawia go Maks.
 
 worker_unknown_key [zdanie]
-  Plik wykonawcy.yaml w folderze config ma nieznane pole we wpisie 1. Wykonawcy (1. pole wpisu). Zapisz Ustawienia jeszcze raz.
+  Plik wykonawcy.yaml w folderze config ma nieznane pole we wpisie 1. Wykonawcy (1. pole wpisu). Poprawia go Maks.
 
 worker_without_login [zdanie]
   Każdy Wykonawca musi mieć co najmniej jeden login z kolumny WYKONAWCA.
@@ -1397,6 +1400,9 @@ workers_not_moved [zdanie]
 
 worker_list_not_created [zdanie]
   Listy Wykonawców nie ma: nie udało się jej utworzyć ze starych plików Wykonawców w folderze config. Powód jest w Historii.
+
+worker_list_waiting [zdanie]
+  Listy Wykonawców jeszcze nie ma: przeniesienie starych plików Wykonawców czeka na dostęp do pliku w folderze config i spróbuje znowu przy następnym starcie Centrum.
 
 worker_list_unreadable [zdanie]
   Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę.
@@ -1455,7 +1461,7 @@ setting_refused [HTTP 422]
   Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru.
 
 workers_unusable #1 [HTTP 409]
-  Lista Wykonawców ma złe ustawienie: Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Popraw ją w Ustawieniach.
+  Lista Wykonawców ma złe ustawienie: Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Szczegóły są w Ustawieniach, w sekcji Wykonawcy.
 
 workers_unusable #2 [HTTP 409]
   Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie.

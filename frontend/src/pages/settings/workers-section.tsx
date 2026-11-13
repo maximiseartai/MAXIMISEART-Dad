@@ -10,10 +10,13 @@ import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 
 type Unresolved = WorkerListSetting["unresolved"][number]
 
+const LAST_GOOD = "Ostatnia dobra lista, której używają procesy"
+
 /**
  * Lista Wykonawców (ADR 0032) tylko do odczytu: aktywni na górze, każdy z nazwą, loginami i adresami. Nad listą jednym
- * zdaniem to, czego przeniesienie starych plików nie rozstrzygnęło. Zły plik ma zdanie o problemie i ostatnią dobrą
- * listę, a bez niej samo zdanie: pusta lista znaczy tylko, że Wykonawców naprawdę nie ma.
+ * zdaniem to, czego przeniesienie starych plików nie rozstrzygnęło. Zły plik ma zdanie o problemie (z tym, kto poprawia
+ * plik) i ostatnią dobrą listę podpisaną jako ostatnia dobra, a bez niej samo zdanie: pusta lista znaczy tylko, że
+ * Wykonawców naprawdę nie ma.
  */
 export function WorkersSection() {
   const { settings, reload } = useSettings()
@@ -62,11 +65,14 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
         </ul>
       )}
       {workers.length > 0 ? (
-        <SettingsPanel label="Wykonawcy">
-          {workers.map((worker) => (
-            <WorkerRow key={worker.logins[0]} worker={worker} />
-          ))}
-        </SettingsPanel>
+        <div className="flex flex-col gap-1.5">
+          {setting.state === "bad" ? <p className="text-sm text-muted-foreground">{LAST_GOOD}</p> : null}
+          <SettingsPanel label="Wykonawcy">
+            {workers.map((worker) => (
+              <WorkerRow key={worker.logins[0]} worker={worker} />
+            ))}
+          </SettingsPanel>
+        </div>
       ) : setting.state === "good" ? (
         <p className="text-sm text-muted-foreground">Na liście nie ma jeszcze Wykonawców.</p>
       ) : null}

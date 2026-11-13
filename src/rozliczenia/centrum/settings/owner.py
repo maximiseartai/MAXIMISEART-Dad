@@ -38,9 +38,10 @@ Historii z id zmiany. Zmiany stosują się tylko wtedy, gdy oba dają się przec
 (``AppliedUnknown``), albo Historia, której system nie daje teraz czytać (``Unreadable``), wstrzymuje przy tym starcie
 każdą zmianę z linią w dzienniku Centrum, a następny start próbuje znowu, bo bez nich zmiana cofnięta przez tatę weszłaby
 jeszcze raz. Historię start czyta tylko wtedy, gdy pamięć nie ma którejś zmiany.
-Odrzucona migracja, której pliku dalej nie ma (``ReleaseChange.refused_absent``), daje złe ustawienie bez ostatniej dobrej
-wartości zamiast wartości domyślnych, więc tata nie widzi pustej dobrej Listy Wykonawców, a proces bez niej nie startuje;
-wie o tym tylko praca Centrum, która przy starcie przeczytała pamięć zmian z Wydań (nie ``read_snapshot``).
+Odrzucona migracja, której pliku dalej nie ma (``ReleaseChange.refused_absent``), i migracja, która przy tym starcie
+czeka (``Later``, ``ReleaseChange.waiting_absent``), dają złe ustawienie bez ostatniej dobrej wartości zamiast wartości
+domyślnych, więc tata nie widzi pustej dobrej Listy Wykonawców, a proces bez niej nie startuje; wie o tym tylko praca
+Centrum, która przy starcie przeczytała pamięć zmian z Wydań (nie ``read_snapshot``).
 Każda zmiana z wynikiem (weszła, nic do zmiany, odrzucona) trafia do pamięci i już nie wraca; ``Later``, wyjątek w kodzie
 zmiany i zapis, który się nie udał (także wiersz ``odrzucono``, którego nie da się dopisać), wracają przy następnym
 starcie. Kolejność to plik → wiersz Historii → pamięć pliku → pamięć zmian z Wydań, a zmianę z wierszem Historii o jej id
@@ -65,7 +66,7 @@ import hashlib
 from pathlib import Path
 import re
 import threading
-from typing import Any, Final, Protocol, TypeVar
+from typing import Any, Final, Literal, Protocol, TypeVar
 import uuid
 
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
@@ -101,6 +102,8 @@ T = TypeVar("T")
 REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
 HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
+_Later = Literal["pozniej"]
+_LATER: Final[_Later] = "pozniej"
 """Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
 
 
@@ -215,7 +218,7 @@ class CentrumSettings:
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
-        self._refused_absent: dict[str, str] = {}
+        self._absent: dict[str, str] = {}
         self._places: Mapping[str, _Place] = {
             FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
             WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
@@ -297,27 +300,29 @@ class CentrumSettings:
                 for change in changes:
                     self._log.settings_release(change=change.id, result="bez-pamieci")
                 return
-            self._apply_pending(changes, applied, origin)
-            self._refused_absent = {
-                change.file.name: change.refused_absent
+            waiting = self._apply_pending(changes, applied, origin)
+            self._absent = {
+                change.file.name: sentence
                 for change in changes
-                if change.refused_absent is not None and change.id in applied and applied[change.id].result == "odrzucono"
+                if (sentence := _absent_sentence(change, applied, waiting)) is not None
             }
 
     def _apply_pending(
         self, changes: tuple[ReleaseChange[Any], ...], applied: dict[str, Applied], origin: Callable[[], ReleaseOrigin]
-    ) -> None:
-        """Zmiany, których pamięć ``applied`` jeszcze nie ma; każda z wynikiem trafia do ``applied`` i do pamięci."""
+    ) -> frozenset[str]:
+        """Zmiany, których pamięć ``applied`` jeszcze nie ma; każda z wynikiem trafia do ``applied`` i do pamięci.
+        Daje id zmian, które dały ``Later``."""
 
         pending = [change for change in changes if change.id not in applied]
         if not pending:
-            return
+            return frozenset()
         in_history = self._release_rows()
         if isinstance(in_history, Unreadable):
             for change in pending:
                 self._log.settings_release(change=change.id, result="bez-historii")
-            return
+            return frozenset()
         version: ReleaseOrigin | None = None
+        waiting: set[str] = set()
         for change in pending:
             done = in_history.get(change.id)
             if done is None:
@@ -327,6 +332,9 @@ class CentrumSettings:
                 except Exception as failure:
                     self._log.unexpected_failure(failure, where=f"zmiana Ustawień z Wydania {change.id}")
                     continue
+                if result == _LATER:
+                    waiting.add(change.id)
+                    continue
                 if result is None:
                     continue
                 done = Applied(at=self._now(), release=version.release, commit=version.commit, result=result)
@@ -335,6 +343,7 @@ class CentrumSettings:
                 self._memory.remember_applied(applied)
             except OSError:
                 self._log.settings_release(change=change.id, result="bez-pamieci")
+        return frozenset(waiting)
 
     def _release_rows(self) -> dict[str, Applied] | Unreadable:
         """Zmiany z Wydania, które mają wiersz Historii, choć pamięć ich nie ma: wiersz idzie przed pamięcią, więc zmiana z
@@ -354,8 +363,8 @@ class CentrumSettings:
                 )
         return found
 
-    def _apply(self, change: ReleaseChange[T], version: ReleaseOrigin) -> AppliedResult | None:
-        """Jedna zmiana z Wydania; ``None``: wraca przy następnym starcie."""
+    def _apply(self, change: ReleaseChange[T], version: ReleaseOrigin) -> AppliedResult | _Later | None:
+        """Jedna zmiana z Wydania; ``_LATER`` (zmiana dała ``Later``) i ``None`` wracają przy następnym starcie."""
 
         source = FromRelease(release=version.release, commit=version.commit, change=change.id)
         match change.propose(ReleaseInputs(self._observe(change.file), self._config)):
@@ -363,7 +372,7 @@ class CentrumSettings:
                 result: AppliedResult | None = "bez-zmian"
             case Later():
                 self._log.settings_release(change=change.id, result="pozniej")
-                return None
+                return _LATER
             case Refuse(sentence=sentence):
                 result = self._refuse(change.file, source, sentence)
             case Edit(edit=edit, undoable=undoable):
@@ -517,10 +526,10 @@ class CentrumSettings:
         """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
         ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem. Zła treść ma ostatnią dobrą treść z pamięci,
         a bez niej (także po przyjętym braku pliku) ``usable`` ``None``, więc proces bez Listy Wykonawców nie startuje.
-        Brak pliku po odrzuconej migracji to złe ustawienie bez ostatniej dobrej wartości (``refused_absent``)."""
+        Brak pliku po odrzuconej albo czekającej migracji to złe ustawienie bez ostatniej dobrej wartości (``_absent``)."""
 
         compared = self._compared(file, data)
-        absent = self._refused_absent.get(file.name)
+        absent = self._absent.get(file.name)
         if data is None and absent is not None:
             return Bad(FieldProblem(None, absent), None)
         return _with_secret_value(file, compared, data)
@@ -691,6 +700,17 @@ def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> FieldProb
             return problem
         case Unreadable():
             return FieldProblem(None, messages.unavailable(file.name))
+
+
+def _absent_sentence(change: ReleaseChange[Any], applied: Mapping[str, Applied], waiting: frozenset[str]) -> str | None:
+    """Zdanie złego ustawienia pliku zmiany ``change``, którego nie ma: zmiana czeka (``Later``) albo została odrzucona;
+    ``None``: brak pliku to wartości domyślne."""
+
+    if change.id in waiting:
+        return change.waiting_absent
+    if change.id in applied and applied[change.id].result == "odrzucono":
+        return change.refused_absent
+    return None
 
 
 def _read(parsed: T | FieldProblem, usable: T | None) -> Read[T]:

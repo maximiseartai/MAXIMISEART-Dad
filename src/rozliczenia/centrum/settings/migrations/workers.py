@@ -136,7 +136,12 @@ def _addresses(path: Path) -> dict[Login, tuple[SenderAddress, ...]] | str:
 
 
 CHANGE: Final = ReleaseChange(
-    id="2026-11-lista-wykonawcow", file=WORKERS, propose=propose, refused_absent=messages.worker_list_not_created()
+    id="2026-11-lista-wykonawcow",
+    file=WORKERS,
+    propose=propose,
+    refused_absent=messages.worker_list_not_created(),
+    waiting_absent=messages.worker_list_waiting(),
 )
-"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie,
-dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie, a nie pustą dobrą listę."""
+"""Lista Wykonawców ze starych plików, bez „Cofnij”: cofnięcie zostawiłoby Centrum bez Wykonawców (D8). Po odmowie i
+gdy przeniesienie czeka na stary plik, dopóki pliku nie ma, sekcja Wykonawcy i procesy widzą złe ustawienie, a nie
+pustą dobrą listę."""

@@ -132,14 +132,17 @@ def setting_refused(problem: FieldProblem) -> Refusal:
 
 
 def workers_unusable(problem: FieldProblem | None) -> Refusal:
-    """Proces nie startuje bez Listy Wykonawców: plik ma złe ustawienie i nie ma ostatniej dobrej listy (``problem``)
-    albo system nie daje go teraz czytać (``None``)."""
+    """Proces nie startuje bez Listy Wykonawców: plik ma złe ustawienie i nie ma ostatniej dobrej listy (``problem``,
+    którego zdanie mówi też, kto poprawia plik albo na co czeka przeniesienie) albo system nie daje go teraz czytać
+    (``None``)."""
 
     if problem is None:
         return _refused(
             409, "Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie."
         )
-    return _refused(409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Popraw ją w Ustawieniach.", problem.place)
+    return _refused(
+        409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Szczegóły są w Ustawieniach, w sekcji Wykonawcy.", problem.place
+    )
 
 
 def report_entering_without_addresses() -> Refusal:
