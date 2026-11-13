@@ -23,9 +23,10 @@ CI runs `explore_wycena_efenix.py` (the `ci:` key) in Mutation checks whenever a
 of the cases (`--lista` prints them), with the second runs of its own stops and kills. The whole space (468 cases since
 #908 added `REFUSED_NO_PROPOSAL`, 35 of them kills checked on the reference's states, and 68 distinct second runs) took
 517 s on Maks's Mac, and the 8 parts took 63 to 85 s each, so `ci-czesci` stays 8 (2026-11-05, PR #916, Evidence).
-Since #960 no accepted risk is left, so equal states share one second run: the whole space in two parts gave 217 and
-216 first runs and 34 and 36 states after a kill in 229 and 278 s, `WYCENA EFENIX OK` with no first run excused
-(2026-11-05, PR #965, Evidence). On Windows in CI the two parts of n=2 took 259 and 338 s (run
+No accepted risk (none since #960) and no known finding is left (`scripts/explore_wycena_efenix.py:701`), so first
+runs that left the same state share one second run (`_resumes`, `scripts/explore_wycena_efenix.py:1508`). The whole
+space in two parts gave 217 and 216 first runs and 34 and 36 states after a kill in 229 and 278 s, `WYCENA EFENIX OK`
+with no first run excused (2026-11-05, PR #965, Evidence). On Windows in CI the two parts of n=2 took 259 and 338 s (run
 41985714991), about as long as on the Mac, so a part of n=8 takes about 1 to 1.5 min there. A
 pull request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci`.
 `tests/test_centrum_logi_uruchomienia.py` runs one small scope through every phase in pytest. `check_wycena_efenix_mutations.py`
