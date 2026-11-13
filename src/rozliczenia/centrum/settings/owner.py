@@ -595,10 +595,10 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
-    release = settings_bytes(config / RULES.name) is None
-    rules = _read_only(config, RULES, None if release else lambda value: _rules_problem(value, devices_data, remembered_devices))
+    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
+    # Migawka bierze tylko wartości: zdanie problemu listy (``release``) jej nie zmienia.
     devices = _read_only(
-        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)
+        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=False)
     )
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),

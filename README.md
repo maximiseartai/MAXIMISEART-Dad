@@ -185,7 +185,8 @@ powstają razem albo żaden.
   `src/rozliczenia/quantity_engine.py`. Tata zmienia je w oknie Ustawień
   (sekcja Reguły ilości, ADR 0033) z podglądem na ostatnich Plikach zbiorczych
   po Przebiegu rozliczeń; zapis trafia do `config/reguly-ilosci.yaml` i Historii
-  Ustawień. Logi Uruchomienia Przygotowania i Przebiegu zapisują Reguły ilości
+  Ustawień. Listę Urządzeń zmienia w sekcji Urządzenia (`config/lista-urzadzen.yaml`),
+  z podpowiedziami zapisów z ostatnich okresów. Logi Uruchomienia Przygotowania i Przebiegu zapisują Reguły ilości
   ze startu, więc odtworzenie z Logów liczy tymi samymi regułami. `tests/test_ilosci_uslug.py` sprawdza je
   z każdą linią instrukcji taty.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które

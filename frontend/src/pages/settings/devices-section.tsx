@@ -70,6 +70,19 @@ export function DevicesSection() {
 
         return (
           <div className="flex flex-col gap-6">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <p className="min-w-0 flex-1 basis-64 text-sm text-pretty text-muted-foreground">
+                Nowy zapis z INTERMAX dopisz do składnika ołówkiem. Działa od następnego Przygotowania pliku zbiorczego.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing({ id: null, form: { name: "", other_spellings: [], group: null }, suggestion: null })}
+              >
+                <PlusIcon data-icon="inline-start" />
+                Dodaj składnik
+              </Button>
+            </div>
             <Problem problem={settings.devices_problem} />
             <SettingsPanel label="Lista Urządzeń">
               {settings.devices.map((device) =>
@@ -83,20 +96,7 @@ export function DevicesSection() {
                   />
                 )
               )}
-              {editing !== null && editing.suggestion === null && editing.id === null ? (
-                editor(editing)
-              ) : (
-                <div role="listitem" className="px-2 py-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditing({ id: null, form: { name: "", other_spellings: [], group: null }, suggestion: null })}
-                  >
-                    <PlusIcon data-icon="inline-start" />
-                    Dodaj składnik
-                  </Button>
-                </div>
-              )}
+              {editing !== null && editing.suggestion === null && editing.id === null ? editor(editing) : null}
             </SettingsPanel>
             <Suggestions
               editing={editing?.suggestion ?? null}
