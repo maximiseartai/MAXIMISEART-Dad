@@ -55,6 +55,7 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
@@ -138,11 +139,12 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "not_text": [partial(settings_messages.not_text, SETTINGS_FILE)],
             "damaged": [partial(settings_messages.damaged, SETTINGS_FILE)],
             "other_schema": [partial(settings_messages.other_schema, SETTINGS_FILE)],
-            "unknown_key": [partial(settings_messages.unknown_key, SETTINGS_FILE, "folder_okresu")],
+            "unknown_key": [partial(settings_messages.unknown_key, SETTINGS_FILE, 2)],
             "register_path": [settings_messages.register_path],
             "periods_directory_path": [settings_messages.periods_directory_path],
             "unknown_theme": [settings_messages.unknown_theme],
-            "bad_field": [partial(settings_messages.bad_field, WORKERS_FILE, "wykonawcy[0].aktywny")],
+            "bad_field": [partial(settings_messages.bad_field, WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"))],
+            "worker_unknown_key": [partial(settings_messages.worker_unknown_key, WORKERS_FILE, 1, 1)],
             "worker_without_login": [settings_messages.worker_without_login],
             "worker_login_empty": [settings_messages.worker_login_empty],
             "worker_login_repeated": [settings_messages.worker_login_repeated],

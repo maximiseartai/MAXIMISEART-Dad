@@ -1343,7 +1343,7 @@ other_schema [zdanie]
   Plik centrum-ustawienia.yaml w folderze config zapisała inna wersja narzędzia. Zapisz Ustawienia jeszcze raz.
 
 unknown_key [zdanie]
-  Plik centrum-ustawienia.yaml w folderze config ma nieznane pole folder_okresu. Zapisz Ustawienia jeszcze raz.
+  Plik centrum-ustawienia.yaml w folderze config ma nieznane pole (2. od góry pliku). Zapisz Ustawienia jeszcze raz.
 
 register_path [zdanie]
   Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru.
@@ -1356,6 +1356,9 @@ unknown_theme [zdanie]
 
 bad_field [zdanie]
   Plik wykonawcy.yaml w folderze config ma złą wartość pola wykonawcy[0].aktywny. Zapisz Ustawienia jeszcze raz.
+
+worker_unknown_key [zdanie]
+  Plik wykonawcy.yaml w folderze config ma nieznane pole we wpisie 1. Wykonawcy (1. pole wpisu). Zapisz Ustawienia jeszcze raz.
 
 worker_without_login [zdanie]
   Każdy Wykonawca musi mieć co najmniej jeden login z kolumny WYKONAWCA.

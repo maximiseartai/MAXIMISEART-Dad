@@ -37,6 +37,7 @@ from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import history as history_module
+from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
@@ -68,7 +69,7 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
-from tests.fixtures.centrum_processes import run_to_end, settling_centrum
+from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks
 from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.settlement import PERIOD, worker_list, write_worker_list
@@ -1175,6 +1176,32 @@ def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_p
     assert [worker["name"] for worker in workers["workers"]] == (["Kamil Syntetyczny"] if existing else [])
 
 
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("locked", [OLD_MAPPING_FILE, OLD_ADDRESSES_FILE])
+def test_stary_plik_wykonawcow_bez_prawa_odczytu_czeka_na_nastepny_start_zamiast_zostawic_tate_bez_wykonawcow(
+    tmp_path: Path, locked: str
+) -> None:
+    """DESIGN §4.2: stary plik, którego system nie daje teraz czytać, nie jest ani zły, ani brakujący. Przeniesienie
+    czeka bez Listy Wykonawców i bez wiersza Historii, a następny start z czytelnym plikiem przenosi Wykonawców z
+    adresami (odmowa zostałaby zapamiętana na zawsze, a brak pliku dałby listę bez Wykonawców albo bez adresów)."""
+
+    tool = ToolDirectory(tmp_path)
+    old_files(tool, OLD_MAPPING, OLD_ADDRESSES)
+    with without_access(tool.config / locked):
+        locked_workers, locked_rows = migrated(tool)
+        listed_while_locked = tool.worker_list.exists()
+
+    workers, rows = migrated(tool)
+
+    assert (listed_while_locked, locked_rows, locked_workers["workers"]) == (False, [], [])
+    assert workers["workers"] == [
+        listed(["jan.testowy"], "Jan Testowy", [JAN]),
+        listed(["anna.przyklad"], "Anna Przykład", [ANNA]),
+        listed(["ewa.bez"], "Ewa Bez", []),
+    ]
+    assert [(row["source"], row["refused"]) for row in rows] == [("release", False)]
+
+
 WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
 
 
@@ -1206,6 +1233,82 @@ def test_lista_wykonawcow_lamiaca_regule_to_zle_ustawienie_z_polem_bez_nazwy_log
     workers = app.client.get("/api/settings").json()["workers"]
 
     assert workers == {"state": "bad", "workers": [], "unresolved": [], "problem": {"field": field, "message": sentence}}
+
+
+LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kamil.wyciek@przyklad.invalid"
+
+
+@pytest.mark.parametrize(
+    ("content", "field", "sentence"),
+    [
+        pytest.param(
+            f"wykonawcy:\n  - {LEAKED_LOGIN}: {LEAKED_NAME}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 1),
+            id="stary-ksztalt-wpisu",
+        ),
+        pytest.param(
+            f"{LEAKED_LOGIN}: {LEAKED_NAME}\nwykonawcy: []\n",
+            None,
+            settings_messages.unknown_key(WORKERS_FILE, 2),
+            id="login-na-gorze-pliku",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], {LEAKED_ADDRESS}: tak}}\n",
+            "wykonawcy[0]",
+            settings_messages.worker_unknown_key(WORKERS_FILE, 1, 3),
+            id="adres-w-miejscu-pola",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: {LEAKED_LOGIN}}}\n",
+            "wykonawcy[0].loginy",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy")),
+            id="login-zamiast-listy",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
+            "wykonawcy[0].aktywny",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny")),
+            id="nazwa-zamiast-tak-nie",
+        ),
+        pytest.param(
+            f"do_rozstrzygniecia:\n  - {{login: {LEAKED_LOGIN}, adresy: [{LEAKED_ADDRESS}], powod: {LEAKED_NAME}}}\n",
+            "do_rozstrzygniecia[0]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("do_rozstrzygniecia", 0)),
+            id="zly-wpis-do-rozstrzygniecia",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: '{LEAKED_NAME}/', loginy: [{LEAKED_LOGIN}], adresy: [{LEAKED_ADDRESS}]}}\n",
+            "wykonawcy[0].nazwa",
+            settings_messages.worker_name_invalid(),
+            id="nazwa-nie-do-pliku",
+        ),
+    ],
+)
+def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adresu_w_logach_i_zgloszeniu(
+    tmp_path: Path, content: str, field: str | None, sentence: str
+) -> None:
+    """Pole problemu składa się tylko ze znanych nazw pól i numerów, więc tekst z pliku (stary kształt wpisu ``login:
+    Nazwa``, klucz-adres, wartość nie tego typu) nie trafia do odpowiedzi, Logów Centrum ani Zgłoszenia (przegląd #1529
+    r1, W3)."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text(f"schema_version: 1\n{content}", encoding="utf-8")
+
+    settings = centrum_.client.get("/api/settings")
+    run_id = stopped_for_maks(centrum_)
+    report = centrum_.client.post(f"/api/runs/{run_id}/diagnosis").json()["report"]["body"]
+
+    assert settings.json()["workers"]["problem"] == {"field": field, "message": sentence}
+    seen = {
+        "odpowiedź": settings.text,
+        "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8"),
+        "Zgłoszenie": report,
+    }
+    assert sentence in report
+    leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
+    assert leaks == []
 
 
 def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej(tmp_path: Path) -> None:

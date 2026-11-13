@@ -139,7 +139,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
             problem = None
         case Bad(problem=bad, usable=usable):
             folders = FolderSettings() if usable is None else usable
-            problem = settings_workers_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
     return settings_contract.Settings(
         order_register=_describe_path(folders.register, folders.register_state),
         periods_directory=_describe_path(folders.periods_directory, folders.periods_directory_state),
@@ -158,7 +158,7 @@ def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.W
             problem = None
         case Bad(problem=bad, usable=usable):
             state, workers = "bad", usable or WorkerList(())
-            problem = settings_workers_contract.SettingProblem(field=bad.field, message=bad.sentence)
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
         case Unreadable():
             state, workers, problem = "unreadable", WorkerList(()), None
     return settings_workers_contract.WorkerListSetting(

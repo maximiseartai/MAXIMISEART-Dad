@@ -39,6 +39,7 @@ from rozliczenia.progress import PhaseState, ProgressProjection
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.run_context import RunContext
+from rozliczenia.worker_list import WorkerEntry, WorkerList
 from tests.fixtures.benchmark import WORKER_TEMPLATE, write_synthetic_templates
 from porownanie_znaczeniowe import compare_worker_settlements
 from atrapy.workbooks import (
@@ -560,6 +561,33 @@ def test_podglad_bez_zapisu_pokazuje_problemy_wierszy_danych_i_plan_kazdego_wyko
         ("Kamil Syntetyczny", "PUSTY_SZABLON", 0),
     ]
     assert not target_directory.exists()
+
+
+def test_wykonawca_z_dwoma_loginami_ma_jedno_rozliczenie_pracownika_z_wierszami_obu_loginow(tmp_path: Path) -> None:
+    """Lista Wykonawców pozwala na kilka loginów jednego Wykonawcy: Przebieg rozliczeń planuje jego plik raz, z
+    Wierszami danych każdego loginu (przegląd #1529 r1, D3)."""
+
+    source_path, _target_directory, _config_path = make_fixture(tmp_path)
+    with_workers(source_path, {18: "darek.drugi"})
+    workers = WorkerList.of(
+        [
+            WorkerEntry(["adrian.testowy"], "Adrian Testowy"),
+            WorkerEntry(["dariusz.fikcyjny2", "darek.drugi"], "Darek Fikcyjny"),
+            WorkerEntry(["kamil.syntetyczny"], "Kamil Syntetyczny"),
+        ]
+    )
+    assert isinstance(workers, WorkerList), workers
+
+    summary = run_settlements(
+        SettlementInputs(source_path, workers, tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=True), RunContext()
+    )
+
+    assert summary.warnings == []
+    assert [(result.worker_name, result.status, result.rows) for result in summary.results] == [
+        ("Adrian Testowy", "PLAN", 1),
+        ("Darek Fikcyjny", "PLAN", 2),
+        ("Kamil Syntetyczny", "PUSTY_SZABLON", 0),
+    ]
 
 
 @pytest.mark.parametrize(

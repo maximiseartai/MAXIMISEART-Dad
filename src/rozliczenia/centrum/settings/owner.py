@@ -373,7 +373,7 @@ class CentrumSettings:
             return _read(parsed, None)
         if remembered is None:
             if isinstance(parsed, FieldProblem):
-                self._log.settings_bad(file=file.name, field=parsed.field or "plik")
+                self._log.settings_bad(file=file.name, field=parsed.place or "plik")
             self._remember(file, Remembered(seen=data, good=None if isinstance(parsed, FieldProblem) else data))
             return _read(parsed, None)
         good = None if remembered.good is None else _good_value(remembered.good, file)
@@ -387,7 +387,7 @@ class CentrumSettings:
             return _read(parsed, good)
         self._remember(file, Remembered(seen=data, good=remembered.good if isinstance(parsed, FieldProblem) else data))
         if isinstance(parsed, FieldProblem):
-            self._log.settings_bad(file=file.name, field=parsed.field or "plik")
+            self._log.settings_bad(file=file.name, field=parsed.place or "plik")
             self._log.settings_external(file=file.name, result="odrzucono")
             return Bad(parsed, good)
         self._log.settings_external(file=file.name, result="zapisano")

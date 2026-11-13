@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from rozliczenia.centrum.settings.files import FieldPath
+
 
 def not_text(file: str) -> str:
     return f"Plik {file} w folderze config nie jest tekstem UTF-8. Zapisz Ustawienia jeszcze raz."
@@ -16,8 +18,19 @@ def other_schema(file: str) -> str:
     return f"Plik {file} w folderze config zapisała inna wersja narzędzia. Zapisz Ustawienia jeszcze raz."
 
 
-def unknown_key(file: str, key: str) -> str:
-    return f"Plik {file} w folderze config ma nieznane pole {key}. Zapisz Ustawienia jeszcze raz."
+def unknown_key(file: str, position: int) -> str:
+    """Nieznane pole na górze pliku po numerze, nie po nazwie: nazwa to tekst z pliku, a zdanie trafia do Zgłoszenia."""
+
+    return f"Plik {file} w folderze config ma nieznane pole ({position}. od góry pliku). Zapisz Ustawienia jeszcze raz."
+
+
+def worker_unknown_key(file: str, worker: int, position: int) -> str:
+    """Nieznane pole we wpisie Wykonawcy po numerach: stary kształt wpisu (``login: Nazwa``) ma login w miejscu pola."""
+
+    return (
+        f"Plik {file} w folderze config ma nieznane pole we wpisie {worker}. Wykonawcy ({position}. pole wpisu). Zapisz "
+        "Ustawienia jeszcze raz."
+    )
 
 
 def register_path() -> str:
@@ -32,8 +45,8 @@ def unknown_theme() -> str:
     return "Motyw może być tylko ciemny albo jasny."
 
 
-def bad_field(file: str, key: str) -> str:
-    return f"Plik {file} w folderze config ma złą wartość pola {key}. Zapisz Ustawienia jeszcze raz."
+def bad_field(file: str, place: FieldPath) -> str:
+    return f"Plik {file} w folderze config ma złą wartość pola {place.text}. Zapisz Ustawienia jeszcze raz."
 
 
 def worker_without_login() -> str:

@@ -135,9 +135,9 @@ def _unchanged_inputs(root: Path, manifest: dict[str, object]) -> list[str]:
 
 _UNMAPPED = UNMAPPED_WORKER
 _ROW_CONTENT = (SETTLEMENT_CITY, SETTLEMENT_ADDRESS, *(marker for _, marker in (*SETTLEMENT_ROWS, UNMAPPED_ROW)), _UNMAPPED)
-_UNMAPPED_WARNING = f"Nieznany identyfikator WYKONAWCA: {_UNMAPPED}. Nie ma go w konfiguracji wykonawców."
-_UNMAPPED_STOP = f"W Pliku zbiorczym jest WYKONAWCA spoza konfiguracji wykonawców: {_UNMAPPED}."
-_NAMING_UNMAPPED = (_UNMAPPED_WARNING, _UNMAPPED_STOP)
+# The unknown identifier by Komunikat code, not a copy of its sentence: the wording has one owner, the Komunikat
+# catalog with its samples in tests/expected/komunikaty.txt, and a copy here drifted from it (#1529 r1).
+_NAMING_UNMAPPED = (("BRAK_MAPOWANIA", _UNMAPPED), ("NIEZNANY_WYKONAWCA", _UNMAPPED))
 
 
 def _check_metrics(root: Path, expected: list[tuple[str, str]], errors: list[str]) -> None:
@@ -210,8 +210,8 @@ def _assert_dry_run(root: Path, result_path: Path | None) -> int:
             errors.append("dry-run result is not the expected finished result")
         if result.summary != expected_summary:
             errors.append("dry-run plan does not list every worker file with its rows")
-        expected_warnings = [("BRAK_MAPOWANIA", _UNMAPPED_WARNING)] if unmapped else []
-        if [(warning.code, warning.what) for warning in result.warnings] != expected_warnings:
+        expected_warnings = [("BRAK_MAPOWANIA", 1)] if unmapped else []
+        if [(warning.code, warning.what.count(_UNMAPPED)) for warning in result.warnings] != expected_warnings:
             errors.append("dry-run warnings do not name each unmapped worker once")
         problems = dict(figures(result.progress.figures)).get("Problemy")
         if problems != (1 if unmapped else 0):

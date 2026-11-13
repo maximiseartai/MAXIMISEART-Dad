@@ -3,7 +3,8 @@ starych plików (``do_rozstrzygniecia``).
 
 Kształt pliku sprawdza ``parse`` (mapa, schemat, znane pola, typy), a reguły Listy Wykonawców ``WorkerList.of``, ta sama
 budowa co w silniku. Brak pliku to pusta lista. Zdanie złego ustawienia nie ma nazwy, loginu ani adresu, bo trafia do
-Historii Ustawień i do Zgłoszenia; miejsce mówi pole (``wykonawcy[2].adresy[0]``).
+Historii Ustawień i do Zgłoszenia; miejsce mówi pole (``wykonawcy[2].adresy[0]``), złożone tylko ze znanych nazw pól i
+numerów (``FieldPath``), a nieznane pole jego numer, bo stary kształt wpisu (``login: Nazwa``) ma login w miejscu pola.
 
 Klucz Historii wpisu to ``wykonawcy[<login>]`` z jednym z jego loginów, a wartość przed i po to cały wpis; wpisy przed i
 po paruje wspólny login, bo login należy do jednego Wykonawcy. Zgłoszenie i Logi Centrum dostają tylko, co się zmieniło,
@@ -19,7 +20,7 @@ from typing import Final, Literal, assert_never
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
 from rozliczenia.worker_list import (
     AddressesNotMoved,
     UnmatchedLogin,
@@ -39,7 +40,11 @@ _SCHEMA_VERSION: Final = 1
 WORKERS_KEY: Final = "wykonawcy"
 UNRESOLVED_KEY: Final = "do_rozstrzygniecia"
 _TOP: Final = frozenset({"schema_version", WORKERS_KEY, UNRESOLVED_KEY})
-_NAME, _LOGINS, _ADDRESSES, _ACTIVE, _REMINDERS = "nazwa", "loginy", "adresy", "aktywny", "przypomnienia"
+_NAME: Final = "nazwa"
+_LOGINS: Final = "loginy"
+_ADDRESSES: Final = "adresy"
+_ACTIVE: Final = "aktywny"
+_REMINDERS: Final = "przypomnienia"
 _ENTRY: Final = (_NAME, _LOGINS, _ADDRESSES, _ACTIVE, _REMINDERS)
 _LOGIN, _REASON, _SENTENCE = "login", "powod", "zdanie"
 UnresolvedReason = Literal["login_bez_wykonawcy", "adresy_nieprzeniesione"]
@@ -69,9 +74,9 @@ def parse(data: bytes | None) -> WorkerList | FieldProblem:
         return FieldProblem(None, messages.damaged(WORKERS_FILE))
     if document.get("schema_version") != _SCHEMA_VERSION:
         return FieldProblem(None, messages.other_schema(WORKERS_FILE))
-    unknown = next((key for key in document if key not in _TOP), None)
+    unknown = next((place for place, key in enumerate(document, 1) if key not in _TOP), None)
     if unknown is not None:
-        return FieldProblem(str(unknown), messages.unknown_key(WORKERS_FILE, str(unknown)))
+        return FieldProblem(None, messages.unknown_key(WORKERS_FILE, unknown))
     entries = _entries(document.get(WORKERS_KEY, []))
     if isinstance(entries, FieldProblem):
         return entries
@@ -86,72 +91,75 @@ def parse(data: bytes | None) -> WorkerList | FieldProblem:
 
 def _entries(value: object) -> list[WorkerEntry] | FieldProblem:
     if not isinstance(value, list):
-        return FieldProblem(WORKERS_KEY, messages.bad_field(WORKERS_FILE, WORKERS_KEY))
+        return _bad(FieldPath(WORKERS_KEY))
     entries: list[WorkerEntry] = []
     for index, item in enumerate(value):
-        place = f"{WORKERS_KEY}[{index}]"
         if not isinstance(item, dict):
-            return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
-        unknown = next((key for key in item if key not in _ENTRY), None)
+            return _bad(FieldPath(WORKERS_KEY, index))
+        unknown = next((place for place, key in enumerate(item, 1) if key not in _ENTRY), None)
         if unknown is not None:
-            return FieldProblem(f"{place}.{unknown}", messages.unknown_key(WORKERS_FILE, f"{place}.{unknown}"))
+            return FieldProblem(FieldPath(WORKERS_KEY, index), messages.worker_unknown_key(WORKERS_FILE, index + 1, unknown))
         name = item.get(_NAME, "")
         if not isinstance(name, str):
-            return FieldProblem(f"{place}.{_NAME}", messages.worker_name_empty())
-        logins = _texts(item.get(_LOGINS, []), f"{place}.{_LOGINS}")
+            return FieldProblem(FieldPath(WORKERS_KEY, index, _NAME), messages.worker_name_empty())
+        logins = _texts(item.get(_LOGINS, []), WORKERS_KEY, index, _LOGINS)
         if isinstance(logins, FieldProblem):
             return logins
-        addresses = _texts(item.get(_ADDRESSES, []), f"{place}.{_ADDRESSES}")
+        addresses = _texts(item.get(_ADDRESSES, []), WORKERS_KEY, index, _ADDRESSES)
         if isinstance(addresses, FieldProblem):
             return addresses
         active, reminders = item.get(_ACTIVE, True), item.get(_REMINDERS, True)
         if not isinstance(active, bool):
-            return FieldProblem(f"{place}.{_ACTIVE}", messages.bad_field(WORKERS_FILE, f"{place}.{_ACTIVE}"))
+            return _bad(FieldPath(WORKERS_KEY, index, _ACTIVE))
         if not isinstance(reminders, bool):
-            return FieldProblem(f"{place}.{_REMINDERS}", messages.bad_field(WORKERS_FILE, f"{place}.{_REMINDERS}"))
+            return _bad(FieldPath(WORKERS_KEY, index, _REMINDERS))
         entries.append(WorkerEntry(logins, name, addresses, active, reminders))
     return entries
 
 
-def _texts(value: object, place: str) -> list[str] | FieldProblem:
-    """Lista tekstów pola ``place``; liczba albo pusta wartość w liście to zły wpis tego miejsca."""
+def _bad(place: FieldPath) -> FieldProblem:
+    return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+
+
+def _texts(value: object, first: FieldName, *rest: FieldName | int) -> list[str] | FieldProblem:
+    """Lista tekstów pola w miejscu ``first, *rest``; liczba albo pusta wartość w liście to zły wpis tego miejsca."""
 
     if not isinstance(value, list):
-        return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+        return _bad(FieldPath(first, *rest))
     for index, item in enumerate(value):
         if not isinstance(item, str):
-            return FieldProblem(f"{place}[{index}]", messages.bad_field(WORKERS_FILE, f"{place}[{index}]"))
+            return _bad(FieldPath(first, *rest, index))
     return list(value)
 
 
 def _unresolved(value: object) -> list[Unresolved] | FieldProblem:
     if not isinstance(value, list):
-        return FieldProblem(UNRESOLVED_KEY, messages.bad_field(WORKERS_FILE, UNRESOLVED_KEY))
+        return _bad(FieldPath(UNRESOLVED_KEY))
     found: list[Unresolved] = []
     for index, item in enumerate(value):
-        place = f"{UNRESOLVED_KEY}[{index}]"
+        place = FieldPath(UNRESOLVED_KEY, index)
         reason = next((known for known in _UNRESOLVED_FIELDS if isinstance(item, dict) and item.get(_REASON) == known), None)
         if not isinstance(item, dict) or reason is None or set(item) != _UNRESOLVED_FIELDS[reason]:
-            return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+            return _bad(place)
         if reason == _NOT_MOVED:
             sentence = item[_SENTENCE]
             if not isinstance(sentence, str):
-                return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+                return _bad(place)
             found.append(AddressesNotMoved(sentence))
             continue
-        login, addresses = item[_LOGIN], _texts(item[_ADDRESSES], f"{place}.{_ADDRESSES}")
+        login, addresses = item[_LOGIN], _texts(item[_ADDRESSES], UNRESOLVED_KEY, index, _ADDRESSES)
         if isinstance(addresses, FieldProblem):
             return addresses
         parsed = [SenderAddress.of(address) for address in addresses]
         if not isinstance(login, str) or not login.strip() or None in parsed:
-            return FieldProblem(place, messages.bad_field(WORKERS_FILE, place))
+            return _bad(place)
         found.append(UnmatchedLogin(Login(login.strip()), tuple(address for address in parsed if address is not None)))
     return found
 
 
 def _problem(problem: WorkerListProblem) -> FieldProblem:
-    item = "" if problem.item is None else f"[{problem.item}]"
-    return FieldProblem(f"{WORKERS_KEY}[{problem.worker}].{problem.part}{item}", _SENTENCES[problem.kind]())
+    item = () if problem.item is None else (problem.item,)
+    return FieldProblem(FieldPath(WORKERS_KEY, problem.worker, problem.part, *item), _SENTENCES[problem.kind]())
 
 
 _SENTENCES: Final = {

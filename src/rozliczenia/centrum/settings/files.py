@@ -9,17 +9,55 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 T = TypeVar("T")
+
+
+FieldName = Literal[
+    # centrum-ustawienia.yaml
+    "rejestr_zlecen",
+    "folder_okresow",
+    "motyw",
+    # wykonawcy.yaml
+    "wykonawcy",
+    "do_rozstrzygniecia",
+    "nazwa",
+    "loginy",
+    "adresy",
+    "aktywny",
+    "przypomnienia",
+]
+"""Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
+
+
+@dataclass(frozen=True, init=False)
+class FieldPath:
+    """Miejsce pola w pliku Ustawień (``wykonawcy[2].adresy[0]``), złożone tylko ze znanych nazw pól i numerów pozycji.
+
+    Miejsce trafia do Logów Centrum, Historii Ustawień i Zgłoszenia, więc tekst z pliku (nieznany klucz, który bywa
+    loginem albo nazwą) nie ma tu drogi: konstruktor przyjmuje tylko ``FieldName`` i ``int``, inny tekst odrzuca mypy.
+    """
+
+    text: str
+
+    def __init__(self, first: FieldName, *rest: FieldName | int) -> None:
+        parts = (f"[{part}]" if isinstance(part, int) else f".{part}" for part in rest)
+        object.__setattr__(self, "text", first + "".join(parts))
 
 
 @dataclass(frozen=True)
 class FieldProblem:
     """Pierwszy problem treści pliku: pole w pliku (``rejestr_zlecen``) albo ``None`` dla całego pliku i zdanie dla taty."""
 
-    field: str | None
+    field: FieldPath | None
     sentence: str
+
+    @property
+    def place(self) -> str | None:
+        """Pole jako tekst odmowy, kontraktu i Logów Centrum; ``None`` dla całego pliku."""
+
+        return None if self.field is None else self.field.text
 
 
 @dataclass(frozen=True)

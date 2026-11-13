@@ -128,7 +128,7 @@ def settings_not_saved() -> Refusal:
 def setting_refused(problem: FieldProblem) -> Refusal:
     """Zła wartość Ustawień Centrum: nic się nie zapisało, a odmowa niesie pole i zdanie, co poprawić."""
 
-    return _refused(422, problem.sentence, problem.field)
+    return _refused(422, problem.sentence, problem.place)
 
 
 def workers_unusable(problem: FieldProblem | None) -> Refusal:
@@ -139,7 +139,7 @@ def workers_unusable(problem: FieldProblem | None) -> Refusal:
         return _refused(
             409, "Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie."
         )
-    return _refused(409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Popraw ją w Ustawieniach.", problem.field)
+    return _refused(409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Popraw ją w Ustawieniach.", problem.place)
 
 
 def report_entering_without_addresses() -> Refusal:

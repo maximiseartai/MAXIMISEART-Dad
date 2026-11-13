@@ -30,7 +30,7 @@ from rozliczenia.centrum import (
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import ForwardRefusal, PagePart
@@ -430,10 +430,10 @@ REFUSALS: RefusalSamples = {
     "register_missing": [partial(refusal.register_missing, REGISTER.name)],
     "settings_not_saved": [refusal.settings_not_saved],
     "setting_refused": [
-        lambda: refusal.setting_refused(FieldProblem("folder_okresow", settings_messages.periods_directory_path()))
+        lambda: refusal.setting_refused(FieldProblem(FieldPath("folder_okresow"), settings_messages.periods_directory_path()))
     ],
     "workers_unusable": [
-        lambda: refusal.workers_unusable(FieldProblem("wykonawcy[1].nazwa", settings_messages.worker_same_file())),
+        lambda: refusal.workers_unusable(FieldProblem(FieldPath("wykonawcy", 1, "nazwa"), settings_messages.worker_same_file())),
         lambda: refusal.workers_unusable(None),
     ],
     "report_entering_without_addresses": [refusal.report_entering_without_addresses],

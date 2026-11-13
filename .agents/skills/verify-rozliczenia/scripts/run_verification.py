@@ -25,6 +25,7 @@ from atrapy.scenariusz_rozliczen import (
     PERIODS_DIRECTORY,
     REGISTER_NAME,
     TEMPLATES_DIRECTORY,
+    UNMAPPED_WORKER,
     WORKER_SETTLEMENTS_DIRECTORY,
     WORKER_TEMPLATE_NAME,
 )
@@ -558,7 +559,7 @@ WORKFLOW_VARIANTS = {
         run_exit=1,
         assertion="no-publish",
         expected_stop="NIEZNANY_WYKONAWCA",
-        expected_stop_what="spoza konfiguracji wykonawców: unknown.synthetic.",
+        expected_stop_what=UNMAPPED_WORKER,
     ),
     "preparation": WorkflowVariant(PREPARATION),
     "preparation-real-templates": WorkflowVariant(PREPARATION, templates="config"),
