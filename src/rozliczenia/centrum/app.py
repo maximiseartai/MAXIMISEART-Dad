@@ -84,7 +84,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
-from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
+from rozliczenia.workbook_files import ByteSource
 from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
 from rozliczenia.wall_clock import dad_today, local_now
@@ -112,7 +112,7 @@ def create_app(
     report_search_deadline_s: float = SEARCH_DEADLINE_S,
     tool_update: ToolClone | None = None,
     guardian: GuardianLauncher | None = None,
-    source: ByteSource = file_bytes,
+    source: ByteSource = DadFiles.source,
     template_check: TemplateCheck = check_on_disk,
     intermax_copies: Path | None = None,
     intermax_disk: Disk = LOCAL_DISK,

@@ -442,7 +442,7 @@ class _Catalog:
 
 _CATALOG: Final = _Catalog()
 """Dowód katalogu procesów: ``PreparedRun`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
-``Catalog.prepared``: poza tym modułem i ``catalog.py`` (jedyny ``noqa``) ruff (``TID251`` w ``pyproject.toml``)
+``Catalog.prepared``: poza tym modułem i ``catalog.py`` (prawo właściciela w ``pyproject.toml``) ruff (``TID251`` w ``pyproject.toml``)
 odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``process_kind._CATALOG``, także przez alias albo
 pełną ścieżkę), tak samo ``_Catalog``.
 

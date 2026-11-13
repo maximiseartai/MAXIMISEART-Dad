@@ -15,7 +15,6 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -55,12 +54,11 @@ from tests.fixtures.github_api import Answer, github_api
 from tests.fixtures.proxy_systemu import system_proxy
 from atrapy.sluchacz_kolejki import QueueListener
 
-SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
-sys.path.insert(0, str(SKILL / "scripts"))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
+import github_przypadki_archiwum
+import github_skrzynki
+import github_wymiana
 
-import github_przypadki_archiwum  # noqa: E402
-import github_skrzynki  # noqa: E402
-import github_wymiana  # noqa: E402
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 
 TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
