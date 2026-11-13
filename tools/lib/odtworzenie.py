@@ -61,6 +61,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import collective_layout, intermax_copies
 from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG, declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.logs_disk import name_of
@@ -97,7 +98,7 @@ from rozliczenia.centrum.run_logs import (
     logged_read,
 )
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
-from rozliczenia.centrum.runs import CONTINUE_HINT, EndedRun
+from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
@@ -1086,7 +1087,7 @@ class _Tata:
     """Rozmówca odtworzenia jak tata w Logach: zgoda w Decyzji taty, chyba że Logi kończą się odmową, i ostatni widok
     postępu, jak karta Centrum (``runs.Run``)."""
 
-    continue_hint = CONTINUE_HINT
+    continue_hint = runs_contract.CONTINUE_HINT
 
     def __init__(self, prepared: PreparedRun[Any, Any], consent: bool) -> None:
         self._prepared = prepared
