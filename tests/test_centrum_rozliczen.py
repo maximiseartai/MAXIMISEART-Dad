@@ -36,7 +36,7 @@ from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, m
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
 from rozliczenia.centrum.settings.release_changes import (
     Edit,
     Later,
@@ -734,6 +734,21 @@ def test_zmiana_ustawien_z_wydania_wchodzi_raz_z_numerem_wydania_w_historii_a_ta
     log = tool.log_path.read_text(encoding="utf-8")
     assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=wyglad.motyw zrodlo=wydanie" in log
     assert log.count("ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=zastosowano") == 1
+
+
+def test_uszkodzona_pamiec_zmian_z_wydan_wstrzymuje_zmiany_zeby_cofnieta_nie_weszla_drugi_raz(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+    memory.parent.mkdir(parents=True)
+    memory.write_text('{"schema_version": 1, "zmiany": {"2026-11-motyw-jas', encoding="utf-8")
+
+    client = started(tool, (LIGHT_THEME,))
+    theme = client.get("/api/settings").json()["theme"]
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+
+    assert (theme, rows) == ("dark", [])
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-pamieci" in tool.log_path.read_text(encoding="utf-8")
 
 
 def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -> None:

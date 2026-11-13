@@ -23,7 +23,8 @@ from rozliczenia.file_state import file_state
 
 MEMORY_DIRECTORY: Final = "ustawienia-pamiec"
 _REJECTED: Final = "odrzucone"
-_APPLIED: Final = "zmiany-z-wydan.json"
+APPLIED_FILE: Final = "zmiany-z-wydan.json"
+"""Pamięć zmian z Wydań, które już nie wracają (``release_changes``), w folderze pamięci."""
 
 AppliedResult = Literal["zastosowano", "bez-zmian", "odrzucono"]
 """Wynik zmiany z Wydania, po którym już nie wraca: weszła, nie było nic do zmiany albo została odrzucona."""
@@ -75,7 +76,7 @@ class Memory:
     def applied(self) -> dict[str, Applied] | AppliedUnknown:
         """Zmiany z Wydań, które już nie wracają, po id; brak pamięci to żadna."""
 
-        data = settings_bytes(self._directory / _APPLIED)
+        data = settings_bytes(self._directory / APPLIED_FILE)
         if data is None:
             return {}
         if isinstance(data, OSError):
@@ -89,7 +90,7 @@ class Memory:
         """Zapamiętuje zmiany z Wydań ``changes`` (wszystkie, nie tylko nową); ``OSError``, gdy się nie udało."""
 
         document = _AppliedFile(changes=dict(changes)).model_dump_json(by_alias=True, indent=2)
-        replace_atomically(self._directory / _APPLIED, document.encode("utf-8"), pause=self._pause)
+        replace_atomically(self._directory / APPLIED_FILE, document.encode("utf-8"), pause=self._pause)
 
     def keep_rejected(self, name: str, data: bytes, at: datetime) -> None:
         """Kopia złej treści pliku ``name`` przed zapisem taty, który ją nadpisuje; nieudana kopia nie zatrzymuje zapisu."""
