@@ -97,7 +97,7 @@ Dowód: <polecenie i wynik>
 - Skip preambles and keep prose brief: short sentences, one thought each.
   Keep it under about 40 lines: Maks and the reviewer read it in a minute.
   The body keeps the shortened result; long logs, tables of every run and lane recitals go into a PR comment or stay in the CI run that printed them, linked from the body, so an agent on another machine reads them.
-  A log with Dad's data or a Zgłoszenie's content stays outside this repository: the body gives its shortened result without that data and names what the evidence covers.
+  A log with Dad's data or a Zgłoszenie's content stays off GitHub, not in the body, a PR comment, an issue or a CI run log: the body gives its shortened result without that data and names what the evidence covers.
 - The body describes the HEAD it is on.
   After a review round, rewrite the sections that changed instead of adding a section about what changed after the review: the history lives in the verdicts and comments.
 - The repository is public: no client address, order or contract number, Wykonawca, row content of Dad's files, and nothing copied from a Zgłoszenie or a Kontrola ilości.
