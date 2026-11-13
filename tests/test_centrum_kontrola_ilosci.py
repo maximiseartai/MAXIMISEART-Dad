@@ -6,6 +6,7 @@ może wysłać, są znacznikami. Żaden test nie łączy się z GitHubem.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import json
 from pathlib import Path
@@ -816,6 +817,75 @@ def test_wyjatek_zostaje_po_zmianie_reguly_a_inny_wpis_taty_w_tej_komorce_to_now
     assert (ak(after_tata), after_tata["exceptions"]) == ([(22, 2, 3), (23, 2, 1)], 0)
 
 
+def in_late_fault(**cells: CellValue) -> Callable[[SettlingCentrum], None]:
+    """Zmiana tylko podanych komórek wiersza 21 (usterka w piątek o 16:30, tata 45 w N) w Pliku zbiorczym."""
+
+    def change(centrum: SettlingCentrum) -> None:
+        rows = [dict(row) for row in TATA_ROWS]
+        rows[3].update(cells)
+        write_quantity_source(centrum.collective_file, rows)
+
+    return change
+
+
+def row_above(centrum: SettlingCentrum) -> None:
+    write_quantity_source(centrum.collective_file, [TATA_ROWS[0], *TATA_ROWS])
+
+
+@pytest.mark.parametrize(
+    ("marked_cell", "change", "back", "hidden"),
+    [
+        pytest.param((21, "N"), lambda centrum: settled_copy(centrum, NEWER), (NEWER, 21, "N"), 1, id="okres"),
+        pytest.param((21, "N"), row_above, (PERIOD, 22, "N"), 0, id="wiersz"),
+        pytest.param((31, "Q"), lambda centrum: None, (PERIOD, 31, "S"), 1, id="kolumna-przy-tym-samym-wpisie"),
+        pytest.param((21, "N"), in_late_fault(N=46), (PERIOD, 21, "N"), 0, id="wpis-taty"),
+        pytest.param((21, "N"), in_late_fault(C="pr 7"), (PERIOD, 21, "N"), 0, id="umowa"),
+        pytest.param((21, "N"), in_late_fault(D="usterka gniazdo"), (PERIOD, 21, "N"), 0, id="urzadzenia"),
+        pytest.param((21, "N"), in_late_fault(E="wymiana"), (PERIOD, 21, "N"), 0, id="czynnosci"),
+        pytest.param((21, "N"), in_late_fault(G=THU.replace(hour=16, minute=30)), (PERIOD, 21, "N"), 0, id="dzien"),
+        pytest.param((21, "N"), in_late_fault(G=FRI.replace(hour=16, minute=35)), (PERIOD, 21, "N"), 0, id="godzina"),
+    ],
+)
+def test_wyjatek_ukrywa_tylko_swoja_komorke_a_zmiana_kazdej_rzeczy_ktora_tworzy_roznice_ja_przywraca(
+    tmp_path: Path,
+    marked_cell: tuple[int, str],
+    change: Callable[[SettlingCentrum], None],
+    back: tuple[str, int, str],
+    hidden: int,
+) -> None:
+    """„To był wyjątek” mówi o jednej komórce jednego zlecenia: inna kolumna z tym samym wpisem taty zostaje na liście,
+    a różnica tej komórki wraca, gdy zmieni się okres, wiersz w pliku, wpis taty, UMOWA, URZĄDZENIA, CZYNNOŚCI, dzień
+    albo godzina zlecenia (ADR 0033)."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    marked(centrum, at(differences(centrum), *marked_cell))
+
+    change(centrum)
+    found = differences(centrum)
+
+    cells = [(d["period"], d["row"], d["column"]) for d in found["differences"]]
+    assert (back in cells, found["exceptions"]) == (True, hidden)
+
+
+def test_drugi_wyjatek_tej_samej_roznicy_ze_starego_okna_jest_juz_zapisany_bez_drugiego_wiersza_historii(
+    tmp_path: Path,
+) -> None:
+    """Okno otwarte przed zapisem wysyła „To był wyjątek” tej samej różnicy jeszcze raz: zapis mówi „już zapisane”."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    late_fault = at(differences(centrum), 21, "N")
+    first = marked(centrum, late_fault)
+
+    second = marked(centrum, late_fault)
+
+    rows = centrum.client.get("/api/settings/history").json()["rows"]
+    assert (first["change"] is not None, second["change"]) == (True, None)
+    assert shown(second["differences"]) == without((21, "N"))
+    assert [row["id"] for row in rows if row["file"] == EXCEPTIONS_FILE] == [first["change"]]
+
+
 def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_path: Path) -> None:
     """Dwa zlecenia o tej samej treści, porze i wpisie taty to dwie różnice: wyjątek jest jednego zlecenia."""
 
@@ -901,6 +971,21 @@ def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznic
 
     assert (preview["changed"], preview["changed_as_tata"]) == (1, 1)
     assert shown(differences(centrum)) == without((21, "N"))
+
+
+def test_popraw_regule_nie_wpisuje_brakujacej_ilosci_w_p_q_i_s_ktore_narzedzie_liczy_samo(tmp_path: Path) -> None:
+    """Tata wpisał w P, Q i S więcej niż reguły: tych kolumn reguła nie wpisuje, więc „Zapisz” nie przyjąłby
+    formularza, który je wypełnia; działanie wybiera tata."""
+
+    rows = [dict(row) for row in TATA_ROWS]
+    rows[1].update(P=3, Q=5, S=9)
+    centrum = centrum_with(tmp_path, rows)
+    run_to_end(centrum, dry_run=False)
+    found = differences(centrum)
+
+    built_in = [(column, at(found, 19, column)["rule"], at(found, 19, column)["tata"]) for column in "PQS"]
+    assert built_in == [("P", 1, 3), ("Q", 2, 5), ("S", 4, 9)]
+    assert [at(found, 19, column)["draft"]["action"] for column in "PQS"] == [None, None, None]
 
 
 def test_lista_roznic_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazywa_jego_okres(tmp_path: Path) -> None:
