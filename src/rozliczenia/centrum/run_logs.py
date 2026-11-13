@@ -44,6 +44,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
+import json
 from typing import Annotated, Any, Final, Literal, assert_never
 
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
@@ -74,6 +75,13 @@ from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message
 from rozliczenia.process_run import RunResult, StopEnding
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.quantity_engine import QuantityRules, RulesProblem
+from rozliczenia.quantity_rules_file import (
+    dump_device_list,
+    dump_quantity_rules,
+    parse_device_list,
+    parse_quantity_rules,
+)
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts
 from rozliczenia.worker_reports import (
@@ -983,6 +991,36 @@ class ProcessLogs(_Record):
     report_entering: LoggedReports | None = None
 
 
+class LoggedQuantityRules(_Record):
+    """Reguły ilości z Listą Urządzeń ze startu Uruchomienia (migawka Ustawień Centrum): dokumenty plików
+    ``reguly-ilosci.yaml`` i ``lista-urzadzen.yaml`` (``quantity_rules_file``) jako tekst JSON. Tekst, a nie słownik,
+    bo strażnik reguły danych maskuje klucze słownika jak dane, a nazwy pól pliku reguł to słowa narzędzia. Liczą nimi
+    Przygotowanie pliku zbiorczego, Przebieg rozliczeń i jego Kontrola ilości, a odtworzenie z Logów liczy nimi zamiast
+    regułami z Wydania."""
+
+    rules: str
+    devices: str
+
+    @classmethod
+    def of(cls, rules: QuantityRules) -> LoggedQuantityRules:
+        return cls(rules=_json_text(dump_quantity_rules(rules)), devices=_json_text(dump_device_list(rules.devices)))
+
+    def value(self) -> QuantityRules | RulesProblem:
+        """Reguły ilości z Logów tym samym parserem co pliki Ustawień; problem, gdy ich nie da się odczytać (np. maska
+        strażnika reguły danych w tekście reguły albo zapis innego Wydania)."""
+
+        try:
+            rules, devices = json.loads(self.rules), json.loads(self.devices)
+        except ValueError:
+            return RulesProblem("plik", "Reguły ilości w Logach nie są tekstem JSON.")
+        found = parse_device_list(devices)
+        return found if isinstance(found, RulesProblem) else parse_quantity_rules(rules, found)
+
+
+def _json_text(document: dict[str, object]) -> str:
+    return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+
+
 class LoggedInterruption(_Record):
     """Urwana Wycena w efenix z dziennika: zlecenie zaczęte bez wyniku i wpisy dziennika, których nie dało się odczytać.
 
@@ -1160,6 +1198,9 @@ class RunLog(StartFacts):
     """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
     ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o
     wartościach zamaskowanych w Kopii (``guard_logs``)."""
+    quantity_rules: LoggedQuantityRules | None = None
+    """Reguły ilości ze startu Uruchomienia (``LoggedQuantityRules``). ``None``: Logi Urwanego Uruchomienia i pliki sprzed
+    tego pola."""
 
     @model_serializer(mode="wrap")
     def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

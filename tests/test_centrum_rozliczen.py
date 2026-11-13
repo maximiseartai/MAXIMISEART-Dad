@@ -23,6 +23,7 @@ import imaplib
 
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
@@ -935,6 +936,148 @@ def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(
     assert undone.status_code == 200, undone.text
     others = [rule.id for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "t-umowa-u"]
     assert list(rule_sentences(app)) == [*others, "t-umowa-u"]
+
+
+# Reguła z edytora: wpisz 2 w AA (pozostała kolumna N:AP), gdy URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI „montaż”.
+EDITOR_RULE: dict[str, Any] = {
+    "scope": "known",
+    "conditions": [
+        {"kind": "component", "component": "gniazdo", "negated": False},
+        {"kind": "activities", "text": "montaż", "negated": False},
+    ],
+    "action": {"kind": "fill", "writes": [{"column": "AA", "value": 2, "multiplier": "once", "component": None}]},
+}
+
+
+def test_regula_dodana_w_edytorze_ma_zdanie_wiersz_historii_ze_zdaniem_a_cofniecie_przywraca_poprzednie_reguly(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert saved.status_code == 200, saved.text
+    sentence = "Jeśli URZĄDZENIA zawierają „gniazdo” i CZYNNOŚCI zawierają „montaż”, to wpisz 2 w AA."
+    added = saved.json()["quantity_rules"]["rules"][-1]
+    assert (added["id"], added["rule"], saved.json()["change"]) == ("regula-1", EDITOR_RULE, row["id"])
+    assert (row["source"], row["file"], row["changes"][0]["key"]) == ("tata", RULES_FILE, "reguly.regula-1")
+    assert [(rule["key"], rule["before"], _text(rule["after"])) for rule in row["rules"]] == [
+        ("reguly.regula-1", None, sentence)
+    ]
+    assert undone.status_code == 200, undone.text
+    assert "regula-1" not in rule_sentences(app)
+    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def _text(parts: list[dict[str, Any]] | None) -> str | None:
+    if parts is None:
+        return None
+    return "".join(part["text"] if part["kind"] == "text" else part["letter"] for part in parts)
+
+
+def test_zmiana_reguly_w_edytorze_zostaje_na_jej_miejscu_a_historia_mowi_zdaniem_przed_i_po(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    nokia = next(rule for rule in app.client.get(QUANTITY_RULES_URL).json()["rules"] if rule["id"] == "nokia")
+    changed = json.loads(json.dumps(nokia["rule"]))
+    changed["action"]["writes"][0]["value"] = 2
+
+    saved = app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=changed)
+
+    assert saved.status_code == 200, saved.text
+    assert list(rule_sentences(app)) == [rule.id for rule in DEFAULT_QUANTITY_RULES.rules]
+    [row] = history_rows(app)
+    assert [(rule["key"], _text(rule["before"]), _text(rule["after"])) for rule in row["rules"]] == [
+        (
+            "reguly.nokia",
+            "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z.",
+            "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z.",
+        )
+    ]
+
+
+def test_regula_usunieta_w_edytorze_znika_a_historia_ma_jej_zdanie_przed(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/t-umowa-u")
+
+    assert removed.status_code == 200, removed.text
+    assert "t-umowa-u" not in rule_sentences(app)
+    [row] = history_rows(app)
+    assert [(_text(rule["before"]), rule["after"]) for rule in row["rules"]] == [
+        ("Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.", None)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rule", "field", "message"),
+    [
+        ({**EDITOR_RULE, "action": None}, "to", settings_messages.rule_without_action()),
+        (
+            {**EDITOR_RULE, "action": {"kind": "fill", "writes": [{"column": "AT", "value": 1, "multiplier": "once", "component": None}]}},
+            "to.wpisy[0].kolumna",
+            "Kolumna „AT” nie jest kolumną Ilości usług N:AP.",
+        ),
+        (
+            {**EDITOR_RULE, "action": {"kind": "fill", "writes": [{"column": "S", "value": 1, "multiplier": "once", "component": None}]}},
+            "to.wpisy[0].kolumna",
+            "Kolumnę S liczy narzędzie samo: P i Q z urządzeń TV, S z liczby urządzeń.",
+        ),
+        (
+            {**EDITOR_RULE, "action": {"kind": "leave_empty", "columns": ["AU"]}},
+            "to.kolumny",
+            "Kolumna „AU” nie jest kolumną Ilości usług N:AP.",
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "activities", "text": "Akt  Int", "negated": False}]},
+            "jesli[0].tekst",
+            "Tekst wpisz małymi literami, z pojedynczymi spacjami.",
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "date", "days": [0], "since": "17", "negated": False}]},
+            "jesli[0].od",
+            settings_messages.rule_hour(),
+        ),
+        (
+            {**EDITOR_RULE, "conditions": [{"kind": "component", "component": "nie-ma-takiego", "negated": False}]},
+            "jesli[0].skladnik",
+            "Składnika „nie-ma-takiego” nie ma na Liście Urządzeń.",
+        ),
+    ],
+    ids=["bez-dzialania", "kolumna-spoza-n-ap", "kolumna-wbudowana", "pusta-spoza-n-ap", "tekst-nie-malymi", "godzina", "skladnik"],
+)
+def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zdanie(
+    tmp_path: Path, rule: dict[str, Any], field: str, message: str
+) -> None:
+    app = centrum(tmp_path)
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=rule)
+    previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "add", "rule": rule})
+
+    assert (refused.status_code, refused.json()) == (422, {"message": message, "field": field})
+    assert (previewed.status_code, previewed.json()) == (422, {"message": message, "field": field})
+    assert not (app.tool.config / RULES_FILE).exists()
+    assert history_rows(app) == []
+
+
+def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    changed = app.client.put(f"{QUANTITY_RULES_URL}/nie-ma-takiej", json=EDITOR_RULE)
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/nie-ma-takiej")
+
+    unknown = {"message": "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień."}
+    assert [(changed.status_code, changed.json()), (removed.status_code, removed.json())] == [(404, unknown)] * 2
+    assert history_rows(app) == []
+
+
+def test_kolumny_edytora_to_n_ap_z_nazwa_cennika_a_p_q_i_s_regula_tylko_zostawia_puste(tmp_path: Path) -> None:
+    columns = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()["columns"]
+
+    n_to_ap = range(column_index_from_string("N"), column_index_from_string("AP") + 1)
+    assert [column["letter"] for column in columns] == [get_column_letter(index) for index in n_to_ap]
+    assert [column["letter"] for column in columns if not column["writable"]] == ["P", "Q", "S"]
 
 
 @pytest.mark.parametrize(

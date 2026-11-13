@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi import FastAPI
@@ -328,6 +328,14 @@ def _http(response: Any, where: str, seen: Seen) -> Problems:
     return []
 
 
+# Reguła z edytora Reguł ilości: przy składniku „nokia” wpisz 1 w Z.
+EDITOR_RULE: Final[dict[str, object]] = {
+    "scope": "known",
+    "conditions": [{"kind": "component", "component": "nokia", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "Z", "value": 1, "multiplier": "once", "component": None}]},
+}
+
+
 @dataclass(frozen=True)
 class Entry:
     operations: tuple[str, ...]  # operationId kontraktu Centrum, które wejście wywołuje
@@ -477,6 +485,12 @@ ENTRIES: dict[str, Entry] = {
     "getMetrics": _route("getMetrics", "GET", "/api/metrics"),
     "getConfiguration": _route("getConfiguration", "GET", "/api/configuration"),
     "getQuantityRules": _route("getQuantityRules", "GET", "/api/settings/quantity-rules"),
+    "addQuantityRule": _route("addQuantityRule", "POST", "/api/settings/quantity-rules", EDITOR_RULE),
+    "changeQuantityRule": _route("changeQuantityRule", "PUT", "/api/settings/quantity-rules/nokia", EDITOR_RULE),
+    "removeQuantityRule": _route("removeQuantityRule", "DELETE", "/api/settings/quantity-rules/t-umowa-u"),
+    "previewQuantityRules": _route(
+        "previewQuantityRules", "POST", "/api/settings/quantity-rules/preview", {"kind": "add", "rule": EDITOR_RULE}
+    ),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -554,6 +568,10 @@ READS: dict[str, set[str]] = {
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
     "getQuantityRules": {"wzorzec_zbiorczy"},
+    "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "removeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "previewQuantityRules": _BOARD | {"wzorzec_zbiorczy"},
     "getConfiguration": _OWNER | {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,

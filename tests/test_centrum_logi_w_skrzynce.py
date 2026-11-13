@@ -95,7 +95,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
-from atrapy.settlement import PERIOD
+from atrapy.settlement import PERIOD, write_quantity_source
 import sys
 
 import odtworz_uruchomienie
@@ -1209,6 +1209,25 @@ LIMITS = {
         "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1): odtworzenie czyta maskę w miejscu wartości taty",
     ),
     "inny_rozmiar_konfiguracji": (_other_config_size, None, 0, _CONFIGURATION),
+    "logi_bez_regul_ilosci": (
+        lambda record: record.update(quantity_rules=None),
+        None,
+        0,
+        "- Logi nie mają Reguł ilości Uruchomienia (Logi sprzed ich zapisu), więc odtworzenie liczy Regułami ilości z "
+        "Wydania tego drzewa",
+    ),
+    "maska_strazinka_w_regulach_ilosci": (
+        lambda record: record["quantity_rules"].update(rules=record["quantity_rules"]["rules"].replace("z-opisu", "[telefon]", 1)),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Reguły ilości w Logach mają maski strażnika reguły danych ([telefon])",
+    ),
+    "reguly_ilosci_innego_zapisu": (
+        lambda record: record["quantity_rules"].update(rules=record["quantity_rules"]["rules"].replace('"schema_version":1', '"schema_version":2')),
+        None,
+        3,
+        "NIE DA SIĘ ODTWORZYĆ: Reguł ilości z Logów nie da się odczytać (schema_version: Plik ma inną wersję zapisu niż 1.)",
+    ),
 }
 
 
@@ -1238,6 +1257,32 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     if case == "inny_rozmiar_konfiguracji":
         size = (configuration / WORKERS_FILE).stat().st_size
         assert any(line.endswith(f"inny rozmiar niż u taty: {WORKERS_FILE}: u taty 1 B, tu {size} B") for line in lines)
+
+
+def test_odtworzenie_przebiegu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tata zapisał w edytorze regułę „zostaw V pustą w Rozliczeniu pracownika” przy „nokia”; odtworzenie Przebiegu z
+    Logów liczy regułami z chwili Uruchomienia, nie regułami z Wydania, więc daje te same Ilości tylko dla INEA."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    centrum = settling_centrum(folder)
+    write_quantity_source(centrum.collective_file, [{"C": "pr", "D": "nokia", "G": datetime(2026, 9, 9, 12), "V": 1, "Z": 1}])
+    write_report_key(ToolDirectory(folder))
+    rule = {
+        "scope": "every",
+        "conditions": [{"kind": "devices", "mode": "contains", "text": "nokia", "negated": False}],
+        "action": {"kind": "leave_empty", "columns": ["V"]},
+    }
+    assert centrum.client.post("/api/settings/quantity-rules", json=rule).status_code == 200
+    run_to_end(centrum, dry_run=True)
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert produced.record["inea_only_cleared"] == {"AK": 0, "AP": 0, "V": 1}
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.

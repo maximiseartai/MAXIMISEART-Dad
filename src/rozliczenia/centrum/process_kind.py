@@ -259,7 +259,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
     ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
-    ``None``: proces bez Kontroli ilości.
+    ``None``: proces bez Kontroli ilości. ``quantity_rules``: proces liczy Regułami ilości ze startu (``Start``), więc
+    jego Uruchomienie ma je w Logach (``PreparedRun.quantity_rules``), a odtworzenie z Logów liczy nimi.
     """
 
     key: common_contract.ProcessKey
@@ -274,6 +275,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     journaled: bool = False
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
     quantity_check: Callable[[SummaryT], CheckResult] | None = None
+    quantity_rules: bool = False
 
     def __post_init__(self) -> None:
         modes = self.view.pricing_modes
@@ -423,12 +425,14 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
+    ``quantity_rules``: Reguły ilości ze startu (``Start.quantity_rules``) procesu, który nimi liczy
+    (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
     ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
     ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``
     (``_CATALOG``).
     """
 
-    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings")
+    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "quantity_rules", "settings")
 
     def __init__(
         self,
@@ -441,6 +445,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         engine: Engine,
         proof: _Catalog,
         settings: FolderSettings | None = None,
+        quantity_rules: QuantityRules | None = None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -450,6 +455,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.pricing: Final = pricing
         self.engine: Final = engine
         self.settings: Final = settings
+        self.quantity_rules: Final = quantity_rules
 
     @property
     def dry_run(self) -> bool:

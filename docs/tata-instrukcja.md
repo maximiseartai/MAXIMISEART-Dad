@@ -497,6 +497,26 @@ zerach. Zielone zostają wiersze, które uzupełniłeś.
 | „Brakuje nagłówka w Pliku zbiorczym” | Przywróć wskazany nagłówek tak jak w Wzorcu pliku zbiorczego, zapisz plik i odśwież stronę. |
 | „Plik zbiorczy jest tylko w OneDrive w chmurze” | W Eksploratorze plików kliknij plik prawym przyciskiem myszy i wybierz „Zawsze zachowuj na tym urządzeniu”. Gdy się pobierze, odśwież stronę. |
 
+## Reguły ilości
+
+Reguły ilości zmieniasz sam w oknie `Ustawienia`, w sekcji `Reguły ilości`.
+Działają od następnego Przygotowania pliku zbiorczego, a gotowe Pliki zbiorcze
+zostają bez zmian.
+
+1. Kliknij `Dodaj regułę` albo ołówek przy regule, którą chcesz zmienić.
+2. Wybierz, dla których zleceń reguła działa, dodaj warunki (`Gdy` albo
+   `Ale nie gdy`) i działanie, np. `Wpisz w kolumnę` z kolumną po nazwie z
+   cennika.
+3. Pod spodem `Podgląd na ostatnich okresach` pokazuje, ile wierszy ostatnich
+   rozliczonych Plików zbiorczych się zmieni i w ilu będzie tak, jak wpisałeś,
+   a niżej wiersze, w których reguła da inaczej niż Ty.
+4. Kliknij `Zapisz`, także gdy są różnice. Złą regułę Centrum odrzuci jednym
+   zdaniem przy polu, które trzeba poprawić.
+
+Zmianę reguły widać w sekcji `Historia` jako zdanie reguły przed i po, a
+`Cofnij` przywraca poprzednie reguły. Regułę usuwasz przyciskiem
+`Usuń regułę` w tym samym oknie.
+
 ## Przebieg rozliczeń
 
 ### Przed uruchomieniem

@@ -534,3 +534,121 @@ def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> N
     assert asked, "ponowienie przy starcie nie zapytało skrzynki"
     assert health is not None and health.status_code == 200
     assert issue.title == f"Kontrola ilości {PERIOD}: 7 różnic"
+
+
+RULES_URL = "/api/settings/quantity-rules"
+# Reguła z edytora: przy składniku „nokia” wpisz jeszcze 1 w Z, obok reguły „nokia” (Z razy liczba „nokia”).
+NOKIA_Z_ONCE: dict[str, Any] = {
+    "scope": "known",
+    "conditions": [{"kind": "component", "component": "nokia", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "Z", "value": 1, "multiplier": "once", "component": None}]},
+}
+
+
+def previewed(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, Any]:
+    response = centrum.client.post(f"{RULES_URL}/preview", json=edit)
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = response.json()
+    return found
+
+
+def rule_form(centrum: SettlingCentrum, rule_id: str) -> dict[str, Any]:
+    form: dict[str, Any] = next(rule["rule"] for rule in centrum.client.get(RULES_URL).json()["rules"] if rule["id"] == rule_id)
+    return form
+
+
+def test_podglad_reguly_liczy_roznice_tym_samym_rachunkiem_co_kontrola_ilosci_przebiegu_z_ta_regula(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    first = sent_check(centrum)
+
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    assert centrum.client.post(RULES_URL, json=NOKIA_Z_ONCE).status_code == 200
+    repeated(centrum)
+
+    assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
+    assert first.title == f"Kontrola ilości {PERIOD}: {preview['differences_before']} różnic"
+    assert f"- Różnice w kolumnach Reguł ilości: {preview['differences_after']}\n" in first.comments[0]
+    # Dwa wiersze z samym „nokia” (środa 13 i 16) mają po zmianie Z = 2, a tata wpisał 1.
+    assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == (
+        7,
+        9,
+        2,
+        0,
+    )
+
+
+def test_podglad_pokazuje_wiersze_z_roznica_od_taty_z_suma_dwoch_regul_w_jednej_kolumnie(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    nokia = "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z."
+    added = "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 1 w Z."
+    assert "".join(part.get("text", part.get("letter", "")) for part in preview["sentence"]) == added
+    assert preview["files"] == [{"period": PERIOD, "rows": len(TATA_ROWS)}]
+    shown = [
+        (
+            row["row"],
+            row["devices"],
+            row["activities"],
+            row["when"],
+            [(cell["column"], cell["before"], cell["after"], cell["tata"]) for cell in row["cells"]],
+            [
+                (total["column"], total["total"], ["".join(part.get("text", part.get("letter", "")) for part in rule["sentence"]) for rule in total["rules"]])
+                for total in row["sums"]
+            ],
+        )
+        for row in preview["rows"]
+    ]
+    assert shown == [
+        (24, "nokia", "", "śr 13", [("Z", 1, 2, 1)], [("Z", 2, [nokia, added])]),
+        (25, "nokia", "AKT INT", "śr 16", [("Z", 1, 2, 1)], [("Z", 2, [nokia, added])]),
+    ]
+    assert preview["more"] == 0
+
+
+def test_podglad_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    late_fault = rule_form(centrum, "dodatek-usterka-pn-pt")
+    late_fault["conditions"][1]["since"] = "16:00"
+
+    preview = previewed(centrum, {"kind": "change", "rule_id": "dodatek-usterka-pn-pt", "rule": late_fault})
+
+    # Usterka w piątek 16:30: po zmianie dodatek N = 45, tak jak wpisał tata.
+    assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
+    assert (preview["differences_before"], preview["differences_after"]) == (7, 6)
+
+
+def test_podglad_bez_okresu_po_przebiegu_rozliczen_nie_ma_na_czym_policzyc_a_zdanie_reguly_ma(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+
+    preview = previewed(centrum, {"kind": "remove", "rule_id": "t-umowa-u"})
+
+    assert preview == {"state": "no_settled_periods", "sentence": None}
+
+
+def test_podglad_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazywa_jego_okres(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    centrum.collective_file.write_bytes(b"to nie jest skoroszyt")
+
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    assert (preview["state"], preview["files"], preview["unread"], preview["changed"]) == ("ready", [], [PERIOD], 0)
+
+
+def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, [MARKED])
+    run_to_end(centrum, dry_run=False)
+    contract_rule = rule_form(centrum, "t-umowa-u")
+    contract_rule["action"]["writes"][0]["value"] = 2
+
+    response = centrum.client.post(
+        f"{RULES_URL}/preview", json={"kind": "change", "rule_id": "t-umowa-u", "rule": contract_rule}
+    ).text
+
+    assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
+    assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))

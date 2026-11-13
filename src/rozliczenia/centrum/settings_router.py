@@ -20,6 +20,7 @@ from fastapi import APIRouter
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
+from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
@@ -51,8 +52,14 @@ _REFUSED: dict[int | str, dict[str, object]] = {
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {404: {"model": common_contract.Problem}, **_REFUSED}
 
 
-def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: Callable[[], LoginResult]) -> APIRouter:
-    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu."""
+def settings_router(
+    settings: CentrumSettings,
+    platform: Platform,
+    inbox_login: Callable[[], LoginResult],
+    rule_sentences: Callable[[], Callable[[str, str | None], list[SentencePart] | None]],
+) -> APIRouter:
+    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu, a ``rule_sentences``
+    daje na jeden odczyt Historii zdanie reguły ilości z wartości jej klucza (``quantity_rules_router.history_sentences``)."""
 
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
@@ -133,7 +140,8 @@ def settings_router(settings: CentrumSettings, platform: Platform, inbox_login: 
         read = settings.history()
         if isinstance(read, Unreadable):
             raise refusal.settings_history_unreadable()
-        return settings_contract.SettingsHistory(rows=[_row(row) for row in read.rows], skipped=read.skipped)
+        sentence = rule_sentences()
+        return settings_contract.SettingsHistory(rows=[_row(row, sentence) for row in read.rows], skipped=read.skipped)
 
     @router.post("/history/{change_id}/undo", operation_id="undoSettingsChange", responses=_NOT_UNDOABLE)
     def undo(change_id: str) -> settings_contract.Choice:
@@ -284,7 +292,7 @@ def _describe_path(path: Path | None, state: SettingState) -> settings_contract.
             return settings_contract.NotSetPath(state="not_set")
 
 
-def _row(row: HistoryRow) -> settings_contract.HistoryRow:
+def _row(row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePart] | None]) -> settings_contract.HistoryRow:
     return settings_contract.HistoryRow(
         id=row.id,
         # Chwila taty w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”.
@@ -302,7 +310,21 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
         refused=row.result == "odrzucono",
         removed=row.removed,
         reason=row.reason,
+        rules=_rule_changes(row, sentence),
     )
+
+
+def _rule_changes(
+    row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePart] | None]
+) -> list[settings_contract.HistoryRuleChange]:
+    """Zmienione reguły ilości wiersza jako zdania przed i po; klucz, którego wartości nie są regułą, się nie pokazuje."""
+
+    found: list[settings_contract.HistoryRuleChange] = []
+    for change in row.changes:
+        before, after = sentence(change.key, change.before), sentence(change.key, change.after)
+        if before is not None or after is not None:
+            found.append(settings_contract.HistoryRuleChange(key=change.key, before=before, after=after))
+    return found
 
 
 def _source(row: HistoryRow) -> settings_contract.HistorySource:

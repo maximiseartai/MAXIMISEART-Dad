@@ -164,6 +164,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
+            "rule_without_action": [settings_messages.rule_without_action],
+            "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")

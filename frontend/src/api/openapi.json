@@ -1943,6 +1943,244 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add",
+        "operationId": "addQuantityRule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Change",
+        "description": "Skutek zmiany na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu (``quantity_rules_preview``).",
+        "operationId": "previewQuantityRules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AddRule"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChangeRule"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveRule"
+                  }
+                ],
+                "title": "Edit",
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "add": "#/components/schemas/AddRule",
+                    "change": "#/components/schemas/ChangeRule",
+                    "remove": "#/components/schemas/RemoveRule"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PreviewReady"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PreviewWithoutFiles"
+                    }
+                  ],
+                  "title": "Response Previewquantityrules",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "ready": "#/components/schemas/PreviewReady",
+                      "no_periods_directory": "#/components/schemas/PreviewWithoutFiles",
+                      "no_settled_periods": "#/components/schemas/PreviewWithoutFiles"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/{rule_id}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change",
+        "operationId": "changeQuantityRule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove",
+        "operationId": "removeQuantityRule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/settings/register/choose": {
@@ -2292,6 +2530,50 @@
   },
   "components": {
     "schemas": {
+      "ActivitiesCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "activities",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text",
+          "negated"
+        ],
+        "title": "ActivitiesCondition"
+      },
+      "AddRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "add",
+            "title": "Kind"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule"
+        ],
+        "title": "AddRule"
+      },
       "AddressesNotMoved": {
         "properties": {
           "reason": {
@@ -2329,6 +2611,10 @@
               "changeAutostart",
               "getSettingsHistory",
               "getQuantityRules",
+              "addQuantityRule",
+              "changeQuantityRule",
+              "removeQuantityRule",
+              "previewQuantityRules",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -2568,6 +2854,30 @@
         "title": "CellSource",
         "description": "Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."
       },
+      "ChangeRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "change",
+            "title": "Kind"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule_id",
+          "rule"
+        ],
+        "title": "ChangeRule"
+      },
       "Choice": {
         "properties": {
           "settings": {
@@ -2690,6 +3000,32 @@
         "title": "CollectiveFileVersion",
         "description": "Znacznik zapisu Pliku zbiorczego (czas zmiany i rozmiar); ``None``, gdy pliku nie widać."
       },
+      "ComponentCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "component",
+            "title": "Kind"
+          },
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "component",
+          "negated"
+        ],
+        "title": "ComponentCondition",
+        "description": "``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id)."
+      },
       "Configuration": {
         "properties": {
           "version": {
@@ -2776,6 +3112,32 @@
         ],
         "title": "Configuration",
         "description": "Konfiguracja tylko do odczytu, wyliczana z katalogu konfiguracji przy każdym odczycie.\n\n``version`` jest ``None``, gdy narzędzie nie leży w klonie Gita; ``freshness`` to Aktualność tej wersji\nwzględem najnowszego Wydania na GitHubie (ADR 0014), sprawdzana jak w Diagnozie. ``update_offered`` mówi,\nczy Konfiguracja proponuje Aktualizację narzędzia: tylko przy nowszym Wydaniu (``tool_freshness.offers_update``)."
+      },
+      "ContractCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "contract",
+            "title": "Kind"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "word",
+          "negated"
+        ],
+        "title": "ContractCondition",
+        "description": "Pierwsze słowo ``UMOWA`` jest tym słowem."
       },
       "Count": {
         "properties": {
@@ -2986,6 +3348,40 @@
         "title": "DadNoteText",
         "description": "Tytuł i treść Uwagi taty w trakcie pisania, do podglądu „Maks dostanie”; tytuł może być jeszcze pusty.\n\n``run_id`` to Uruchomienie z Centrum (``ProcessRun.run_id``), do którego tata przypina Uwagę; ``None``: ogólna."
       },
+      "DateCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "date",
+            "title": "Kind"
+          },
+          "days": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "since": {
+            "type": "string",
+            "title": "Since"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "days",
+          "since",
+          "negated"
+        ],
+        "title": "DateCondition",
+        "description": "``DATA`` przypada w dni tygodnia (0 to poniedziałek) od godziny ``since`` (``GG:MM``)."
+      },
       "Decision": {
         "properties": {
           "question": {
@@ -3092,6 +3488,42 @@
         "title": "DeviceComponent",
         "description": "Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna)."
       },
+      "DevicesCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "devices",
+            "title": "Kind"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "exactly",
+              "contains"
+            ],
+            "title": "Mode"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "mode",
+          "text",
+          "negated"
+        ],
+        "title": "DevicesCondition",
+        "description": "``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty)."
+      },
       "Diagnosis": {
         "properties": {
           "explanation": {
@@ -3197,6 +3629,29 @@
         "title": "Figure",
         "description": "Liczba karty Uruchomienia z etykietą; ``unit`` ``ms`` to czas, który przeglądarka pokazuje w sekundach."
       },
+      "FillAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fill",
+            "title": "Kind"
+          },
+          "writes": {
+            "items": {
+              "$ref": "#/components/schemas/RuleWrite"
+            },
+            "type": "array",
+            "title": "Writes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "writes"
+        ],
+        "title": "FillAction"
+      },
       "FillKind": {
         "type": "string",
         "enum": [
@@ -3269,6 +3724,36 @@
         ],
         "title": "FoldersChange",
         "description": "Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."
+      },
+      "GroupCondition": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "group",
+            "title": "Kind"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "router",
+              "tv",
+              "extender"
+            ],
+            "title": "Group"
+          },
+          "negated": {
+            "type": "boolean",
+            "title": "Negated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "group",
+          "negated"
+        ],
+        "title": "GroupCondition"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3483,6 +3968,13 @@
               }
             ],
             "title": "Reason"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRuleChange"
+            },
+            "type": "array",
+            "title": "Rules"
           }
         },
         "additionalProperties": false,
@@ -3500,10 +3992,84 @@
           "undoable",
           "refused",
           "removed",
-          "reason"
+          "reason",
+          "rules"
         ],
         "title": "HistoryRow",
         "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``; ``removed``: plik usunięty poza Centrum."
+      },
+      "HistoryRuleChange": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "before",
+          "after"
+        ],
+        "title": "HistoryRuleChange",
+        "description": "Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;\n``None``: reguły nie było."
       },
       "InaccessiblePath": {
         "properties": {
@@ -4034,6 +4600,30 @@
         "title": "KindToFill",
         "description": "Rodzaj Ilości do uzupełnienia z listą wierszy; ``done``: każdy wiersz zrobiony, także gdy wierszy nie ma.\n\n``hint``: co tata wpisuje w wierszach rodzaju, z reguły, która robi wiersz zrobionym."
       },
+      "LeaveEmptyAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "leave_empty",
+            "title": "Kind"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Columns"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "columns"
+        ],
+        "title": "LeaveEmptyAction",
+        "description": "Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA)."
+      },
       "ListedWorker": {
         "properties": {
           "logins": {
@@ -4371,6 +4961,22 @@
         ],
         "title": "NotSetPath",
         "description": "Ścieżka jeszcze niewskazana."
+      },
+      "NothingAction": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "nothing",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "NothingAction",
+        "description": "Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu."
       },
       "Notifications": {
         "properties": {
@@ -4979,6 +5585,309 @@
         ],
         "title": "PinnableRun",
         "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć."
+      },
+      "PreviewCell": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "before": {
+            "type": "integer",
+            "title": "Before"
+          },
+          "after": {
+            "type": "integer",
+            "title": "After"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "nieliczbowa"
+              }
+            ],
+            "title": "Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "name",
+          "before",
+          "after",
+          "tata"
+        ],
+        "title": "PreviewCell",
+        "description": "Kolumna wiersza w podglądzie: ilość z Reguł ilości teraz (``before``) i po zmianie (``after``) oraz wpis taty\n(liczba albo „nieliczbowa”)."
+      },
+      "PreviewFile": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "rows"
+        ],
+        "title": "PreviewFile",
+        "description": "Plik zbiorczy okresu ``period`` po Przebiegu rozliczeń w podglądzie; ``rows``: jego Wiersze danych."
+      },
+      "PreviewReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          },
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "changed_as_tata": {
+            "type": "integer",
+            "title": "Changed As Tata"
+          },
+          "differences_before": {
+            "type": "integer",
+            "title": "Differences Before"
+          },
+          "differences_after": {
+            "type": "integer",
+            "title": "Differences After"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "more": {
+            "type": "integer",
+            "title": "More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "sentence",
+          "files",
+          "unread",
+          "changed",
+          "changed_as_tata",
+          "differences_before",
+          "differences_after",
+          "rows",
+          "more"
+        ],
+        "title": "PreviewReady",
+        "description": "Skutek zmiany Reguł ilości na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym\nrachunkiem co Kontrola ilości.\n\n``sentence``: zdanie reguły po zmianie (``None`` przy usunięciu). ``unread``: okresy, których Pliku zbiorczego nie\ndało się przeczytać. ``changed``: wiersze, w których zmienią się ilości z Reguł ilości (albo kolumny zostawione\npuste), z czego ``changed_as_tata`` będzie tak, jak wpisał tata. ``differences_before`` i ``differences_after``:\nróżnice Kontroli ilości tych plików teraz i po zmianie. ``rows``: zmienione wiersze z różnicą od taty, najwyżej\n``SHOWN_ROWS``, a ``more`` reszta."
+      },
+      "PreviewRow": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "devices": {
+            "type": "string",
+            "title": "Devices"
+          },
+          "activities": {
+            "type": "string",
+            "title": "Activities"
+          },
+          "when": {
+            "type": "string",
+            "title": "When"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "sums": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewSum"
+            },
+            "type": "array",
+            "title": "Sums"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "row",
+          "devices",
+          "activities",
+          "when",
+          "cells",
+          "sums"
+        ],
+        "title": "PreviewRow",
+        "description": "Wiersz danych, w którym po zmianie reguła da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego,\n``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”) i kolumny. Bez adresu, numeru\nzlecenia, ``UMOWA`` i daty dziennej."
+      },
+      "PreviewSum": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/SummedRule"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "name",
+          "total",
+          "rules"
+        ],
+        "title": "PreviewSum",
+        "description": "Kolumna, w którą po zmianie wpisało w tym wierszu kilka reguł, z sumą i tymi regułami („Z = 2, bo reguły A i B”)."
+      },
+      "PreviewWithoutFiles": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "no_periods_directory",
+              "no_settled_periods"
+            ],
+            "title": "State"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SentenceText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SentenceColumn"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "column": "#/components/schemas/SentenceColumn",
+                      "text": "#/components/schemas/SentenceText"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "sentence"
+        ],
+        "title": "PreviewWithoutFiles",
+        "description": "Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie\nma jeszcze Rozliczeń pracowników (``no_settled_periods``)."
       },
       "PriceListItem": {
         "properties": {
@@ -5623,6 +6532,9 @@
             },
             "type": "array",
             "title": "Sentence"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RuleForm"
           }
         },
         "additionalProperties": false,
@@ -5630,10 +6542,37 @@
         "required": [
           "id",
           "scope",
-          "sentence"
+          "sentence",
+          "rule"
         ],
         "title": "QuantityRuleSentence",
-        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł."
+        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako\nformularz edytora (``rule``)."
+      },
+      "QuantityRulesSaved": {
+        "properties": {
+          "quantity_rules": {
+            "$ref": "#/components/schemas/QuantityRulesSettings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "quantity_rules",
+          "change"
+        ],
+        "title": "QuantityRulesSaved",
+        "description": "Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:\nzapis niczego nie zmienił."
       },
       "QuantityRulesSettings": {
         "properties": {
@@ -5650,6 +6589,13 @@
             },
             "type": "array",
             "title": "Devices"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/RuleColumn"
+            },
+            "type": "array",
+            "title": "Columns"
           },
           "rules_problem": {
             "anyOf": [
@@ -5677,6 +6623,7 @@
         "required": [
           "rules",
           "devices",
+          "columns",
           "rules_problem",
           "devices_problem"
         ],
@@ -5846,6 +6793,26 @@
         ],
         "title": "ReleaseNotification",
         "description": "Powiadomienie o nowej wersji: numer Wydania (``0.2.0``), notka „Co nowego” jako zdanie wstępu i punkty\n(``release_notes.whats_new``; notka bez punktów to sam wstęp), sprawy taty, które rozwiązuje, i czy Centrum\nproponuje Aktualizację narzędzia (``tool_freshness.offers_update``, tylko przy najnowszym Wydaniu)."
+      },
+      "RemoveRule": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "remove",
+            "title": "Kind"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "rule_id"
+        ],
+        "title": "RemoveRule"
       },
       "ReportDraft": {
         "properties": {
@@ -6406,6 +7373,167 @@
         ],
         "title": "RowToFill",
         "description": "Wiersz Pliku zbiorczego z Ilościami do uzupełnienia: numer wiersza i jego stan (zrobiony, do uzupełnienia, bez ilości)."
+      },
+      "RuleColumn": {
+        "properties": {
+          "letter": {
+            "type": "string",
+            "title": "Letter"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "letter",
+          "name",
+          "writable"
+        ],
+        "title": "RuleColumn",
+        "description": "Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest\npusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste."
+      },
+      "RuleForm": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown",
+              "every"
+            ],
+            "title": "Scope"
+          },
+          "conditions": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ComponentCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/DevicesCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivitiesCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/ContractCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/DateCondition"
+                },
+                {
+                  "$ref": "#/components/schemas/GroupCondition"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "activities": "#/components/schemas/ActivitiesCondition",
+                  "component": "#/components/schemas/ComponentCondition",
+                  "contract": "#/components/schemas/ContractCondition",
+                  "date": "#/components/schemas/DateCondition",
+                  "devices": "#/components/schemas/DevicesCondition",
+                  "group": "#/components/schemas/GroupCondition"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Conditions"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FillAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NothingAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LeaveEmptyAction"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fill": "#/components/schemas/FillAction",
+                    "leave_empty": "#/components/schemas/LeaveEmptyAction",
+                    "nothing": "#/components/schemas/NothingAction"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "conditions",
+          "action"
+        ],
+        "title": "RuleForm",
+        "description": "Reguła ilości w edytorze: zakres, warunki („ale nie gdy”: ``negated``) i działanie. ``action`` ``None``: tata nie\nwybrał działania, więc zapis to odmowa z polem ``to``."
+      },
+      "RuleWrite": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "multiplier": {
+            "type": "string",
+            "enum": [
+              "once",
+              "component",
+              "pieces"
+            ],
+            "title": "Multiplier"
+          },
+          "component": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "value",
+          "multiplier",
+          "component"
+        ],
+        "title": "RuleWrite"
       },
       "RunAwaitingDecision": {
         "properties": {
@@ -7413,6 +8541,42 @@
         ],
         "title": "SolvedCase",
         "description": "Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego\n„Co się stało”."
+      },
+      "SummedRule": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sentence"
+        ],
+        "title": "SummedRule"
       },
       "TemplateProblem": {
         "properties": {

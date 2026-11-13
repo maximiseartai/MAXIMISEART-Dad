@@ -25,7 +25,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   INTERMAX Wpisania raportów krój uporządkowanych wierszy, bo Kopia ma tylko uporządkowane wiersze. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Listę Wykonawców (``wykonawcy.yaml``) daje folder ``configuration``, bo Logi
-  mają z nich tylko nazwę i rozmiar.
+  mają z nich tylko nazwę i rozmiar. Reguły ilości ze startu Uruchomienia są w Logach (``RunLog.quantity_rules``), a
+  Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą Regułami ilości z Wydania tego drzewa (zastrzeżenie).
 - Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
   katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
@@ -122,6 +123,7 @@ from rozliczenia.register_columns import (
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.quantity_engine import QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
@@ -336,7 +338,13 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
                 blocking=True,
             )
         ]
-    limits = [*_guard_limits(record), *_typed_limits(copied), *_masked_limits(record), *rebuild.limits(record)]
+    limits = [
+        *_guard_limits(record),
+        *_typed_limits(copied),
+        *_masked_limits(record),
+        *_rules_limits(record, kind),
+        *rebuild.limits(record),
+    ]
     names = _from_configuration(kind, rebuild)
     if names:
         limits.append(_configuration_limit(record, configuration, names))
@@ -375,6 +383,36 @@ def _replay_input(cut: GuardCut) -> bool:
             ("report_entering.mails", "report_entering.memory_before", "report_entering.kept", "report_entering.skipped")
         )
     )
+
+
+def _rules_limits(record: RunLog, kind: ProcessKind[Any, Any]) -> list[Limit]:
+    """Reguły ilości ze startu z Logów: bez nich (Logi sprzed ich zapisu) proces, który nimi liczy, odtworzenie liczy
+    Regułami ilości z Wydania tego drzewa, a reguły, których nie da się odczytać albo które mają maskę strażnika reguły
+    danych, kończą odtworzenie: wynik z innymi regułami nic by nie znaczył."""
+
+    logged = record.quantity_rules
+    if not kind.quantity_rules:
+        return []
+    if logged is None:
+        return [
+            Limit(
+                "Logi nie mają Reguł ilości Uruchomienia (Logi sprzed ich zapisu), więc odtworzenie liczy Regułami ilości "
+                "z Wydania tego drzewa: reguły taty z Ustawień mogły dać inne ilości"
+            )
+        ]
+    masked = sorted({mask for mask in MASKS if mask in json.dumps(logged.model_dump(), ensure_ascii=False)})
+    if masked:
+        return [
+            Limit(
+                f"Reguły ilości w Logach mają maski strażnika reguły danych ({', '.join(masked)}), więc odtworzenie nie zna "
+                "reguł Uruchomienia",
+                blocking=True,
+            )
+        ]
+    value = logged.value()
+    if isinstance(value, RulesProblem):
+        return [Limit(f"Reguł ilości z Logów nie da się odczytać ({value.field}: {value.message})", blocking=True)]
+    return []
 
 
 def _typed_limits(copied: Sequence[LoggedInputFile]) -> list[Limit]:
@@ -1068,17 +1106,27 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
     paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
     workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
-    # Logi nie mają Reguł ilości Uruchomienia, więc odtworzenie liczy Regułami ilości z Wydania.
     start = Start(
         paths,
         period=period,
         dry_run=record.mode.dry_run,
         pricing=record.pricing,
         workers=workers,
-        quantity_rules=DEFAULT_QUANTITY_RULES,
+        quantity_rules=_quantity_rules(record),
     )
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
+
+
+def _quantity_rules(record: RunLog) -> QuantityRules:
+    """Reguły ilości ze startu Uruchomienia z Logów, a z Logów sprzed ich zapisu Reguły ilości z Wydania tego drzewa;
+    reguły, których nie da się odczytać, zatrzymują odtworzenie wcześniej (``_rules_limits``)."""
+
+    if record.quantity_rules is None:
+        return DEFAULT_QUANTITY_RULES
+    value = record.quantity_rules.value()
+    assert isinstance(value, QuantityRules), "reguły, których nie da się odczytać, to granica blokująca"
+    return value
 
 
 def _configured(work: _Work, needs: Sequence[ConfigurationNeed]) -> dict[PathNeed, Path]:
@@ -1228,10 +1276,12 @@ NOT_COMPARED: Final = frozenset(
         "dad_actions",
         "interruption",
         "input_copy_notes",
+        "quantity_rules",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
-kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie i uwagi o Kopii wejścia. Każde inne
+kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie, uwagi o Kopii wejścia i Reguły
+ilości ze startu. Każde inne
 pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 

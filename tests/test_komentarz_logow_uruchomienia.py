@@ -1503,6 +1503,11 @@ FULL_LOGS: Final[dict[str, Any]] = {
         }
     ],
     "input_copy_notes": ["Syntetyczna uwaga kopii"],
+    "quantity_rules": {
+        "rules": '{"schema_version":1,"reguly":[{"id":"regula-syntetyczna","zakres":"znane","jesli":[{"rodzaj":"czynnosci",'
+        '"tekst":"czynność reguły syntetyczna"}],"to":{"rodzaj":"wpisz","wpisy":[{"kolumna":"AA","wartosc":2,"razy":"raz"}]}}]}',
+        "devices": '{"schema_version":1,"urzadzenia":[{"id":"skladnik-syntetyczny","zapisy":["składnik syntetyczny"]}]}',
+    },
 }
 
 
