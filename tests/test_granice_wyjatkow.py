@@ -8,32 +8,40 @@ liczy. Blok, który kończy się czym innym, ma wpis w ``OTHER_ENDINGS`` z powod
 ``contextlib.suppress(Exception)`` i typ wyjątku pod inną nazwą są poza testem, tak jak były poza BLE001.
 
 Tłumienie reguły (najczęściej BLE001) ma powód na linii, a liczba tłumień ruff i mypy w każdym katalogu stoi w
-``ZAPISANE`` (ADR 0034), więc każde nowe tłumienie widać w diffie. Test czyta pliki, które sprawdza ruff (``include``
-z ``[tool.ruff]`` w ``pyproject.toml``, śledzone i nieśledzone nieignorowane), i liczy tokeny, które narzędzia same
-uznają za tłumienie, nie postacie kodu:
+``ZAPISANE`` (ADR 0034). Test bierze od narzędzi to, co one same uznają: pliki z ``ruff check --show-files`` i linie
+konfiguracji mypy z ``mypy.util.get_mypy_comments``, i liczy tokeny tłumień, nie postacie kodu:
 
 - ``noqa``: komentarz (``tokenize``) z dyrektywą ruff ``# noqa`` także po innym tekście komentarza, plikową
-  ``# ruff: noqa`` albo ``# flake8: noqa`` i zakresową ``# ruff: disable[...]``;
-- ``type: ignore``: ``type_ignores`` parsera Pythona, z którego bierze je mypy, i konfiguracja w linii ``# mypy:``.
+  ``# ruff: noqa`` albo ``# flake8: noqa`` i zakresową ``# ruff: disable[...]``, według ``RUFF``: ruff nie wypisuje
+  swoich dyrektyw, a RUF100 zgłasza tylko te bez naruszenia, więc nie widzi ``# noqa: RUF100`` ani plików pod
+  ``# ruff: noqa``;
+- ``type: ignore``: ``type_ignores`` parsera Pythona, z którego bierze je mypy, i każda linia konfiguracji
+  ``# mypy: ``, także w docstringu albo napisie, bo mypy czyta ją z surowych linii pliku.
 
-Napis „noqa” w docstringu albo w napisie nie jest komentarzem, więc się nie liczy. Czy tłumienie jest zasadne, ocenia
-przegląd. Granica: zwolnienie w konfiguracji (``per-file-ignores`` ruff, ``overrides`` mypy) nie stoi na linii kodu,
-więc test go nie liczy; widać je w diffie pliku konfiguracji.
+Napis „noqa” w docstringu albo w napisie nie jest komentarzem, więc się nie liczy, a postacie, których nie ma w
+repozytorium, stoją w ``PROBKI``. Czy tłumienie jest zasadne, ocenia przegląd. Granica: test porównuje saldo
+katalogu, więc zamiana (tłumienie usunięte i nowe dodane w tym samym katalogu) nie zmienia liczby i nowe tłumienie
+widać wtedy tylko w diffie linii (próbka w ``ZNANE_LUKI``). Zwolnienie w konfiguracji (``per-file-ignores`` ruff,
+``overrides`` mypy) nie stoi na linii kodu, więc test go nie liczy, a ``type: ignore`` w pliku, który sprawdza mypy,
+a nie ruff, jest poza testem.
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 import functools
 import io
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tokenize
-import tomllib
+from typing import Final
 
-from tests.fixtures.git_repo import git
+from tests.fixtures.znane_luki import assert_znane_luki, wymaga_ruff_i_mypy
 
 ROOT = Path(__file__).resolve().parents[1]
 CENTRUM = ROOT / "src" / "rozliczenia" / "centrum"
@@ -134,49 +142,108 @@ RUFF = re.compile(
     re.IGNORECASE,
 )
 
+# Postać tłumienia, której nie ma w repozytorium → kod pliku w src/ drzewa próbek i liczby, które uznaje narzędzie.
+PROBKI: Final = {
+    "plikowe # ruff: noqa": ("# ruff: noqa - próbka\nimport os\n", {"noqa": 1, "type: ignore": 0}),
+    "plikowe # flake8: noqa": ("# flake8: noqa - próbka\nimport os\n", {"noqa": 1, "type: ignore": 0}),
+    "zakresowe # ruff: disable[...]": (
+        "# ruff: disable[E501] - próbka\nx = 1\n# ruff: enable[E501]\n",
+        {"noqa": 1, "type: ignore": 0},
+    ),
+    "# mypy: w kolumnie 0": ("# mypy: ignore-errors\nx: int = 1\n", {"noqa": 0, "type: ignore": 1}),
+    "# mypy: w docstringu modułu": ('"""Moduł.\n\n# mypy: ignore-errors\n"""\n', {"noqa": 0, "type: ignore": 1}),
+    "# mypy: w napisie wielowierszowym": ('y = """\n# mypy: ignore-errors\n"""\n', {"noqa": 0, "type: ignore": 1}),
+    "wcięte # mypy:, którego mypy nie czyta": (
+        "def f() -> None:\n    # mypy: ignore-errors\n    pass\n",
+        {"noqa": 0, "type: ignore": 0},
+    ),
+    "noqa w docstringu, który nie jest komentarzem": ('"""Moduł # noqa: E501."""\n', {"noqa": 0, "type: ignore": 0}),
+}
+
+# Znane luki licznika (tests/fixtures/znane_luki.py): opis zmiany → pliki drzewa przed nią i po niej, na których
+# licznik daje te same liczby, bo porównuje saldo katalogu.
+ZNANE_LUKI: Final = {
+    "zamiana w jednym katalogu: noqa usunięte w jednym pliku, nowe noqa dodane w drugim": (
+        {"src/a.py": "import os  # noqa: F401 - próbka\n", "src/b.py": "y = 2\n"},
+        {"src/a.py": "x = 1\n", "src/b.py": "import sys  # noqa: F401 - próbka\n"},
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Tlumienie:
+    katalog: str
+    rodzaj: str
+    miejsce: str
+    tekst: str
+    powod: bool
+
 
 def _katalog(sciezka: str) -> str:
     return next((katalog for katalog in ZAPISANE if katalog != "." and sciezka.startswith(f"{katalog}/")), ".")
 
 
-def _pliki() -> list[str]:
-    include = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["include"]
-    wzorce = [f":(glob){wzorzec.removeprefix('/')}" for wzorzec in include]
-    return sorted(set(filter(None, git(ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *wzorce).split("\0"))))
+def _pliki(root: Path) -> list[str]:
+    """Pliki, które sprawdza ruff z konfiguracją ``root``, względem ``root``."""
+
+    pokazane = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--show-files"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=root,
+        check=True,
+    )
+    return sorted(Path(linia).relative_to(root).as_posix() for linia in pokazane.stdout.splitlines())
 
 
 @functools.cache
-def _tlumienia() -> list[tuple[str, str, str, str, bool]]:
-    """Każde tłumienie: katalog, rodzaj, linia ``plik:numer``, tekst komentarza i czy tłumienie ruff ma powód."""
+def _tlumienia(root: Path) -> list[Tlumienie]:
+    """Każde tłumienie ruff i mypy w plikach ``root``; ``powod`` mówi, czy dyrektywa ruff ma powód na linii."""
+
+    from mypy.util import get_mypy_comments
 
     znalezione = []
-    for nazwa in _pliki():
-        tekst = (ROOT / nazwa).read_text(encoding="utf-8")
+    for nazwa in _pliki(root):
+        tekst = (root / nazwa).read_text(encoding="utf-8")
         katalog = _katalog(nazwa)
-        for token in tokenize.generate_tokens(io.StringIO(tekst).readline):
-            if token.type != tokenize.COMMENT:
-                continue
-            miejsce = f"{nazwa}:{token.start[0]}"
-            for dyrektywa in RUFF.finditer(token.string):
-                powod = dyrektywa.group("powod") or dyrektywa.group("powod_zakresu") or ""
-                znalezione.append((katalog, "noqa", miejsce, token.string, re.search(r"\w", powod) is not None))
-            if token.start[1] == 0 and token.string.startswith("# mypy:"):
-                znalezione.append((katalog, "type: ignore", miejsce, token.string, True))
         linie = tekst.splitlines()
-        for ignore in ast.parse(tekst, nazwa, type_comments=True).type_ignores:
-            znalezione.append((katalog, "type: ignore", f"{nazwa}:{ignore.lineno}", linie[ignore.lineno - 1].strip(), True))
+        for token in tokenize.generate_tokens(io.StringIO(tekst).readline):
+            if token.type == tokenize.COMMENT:
+                for dyrektywa in RUFF.finditer(token.string):
+                    powod = dyrektywa.group("powod") or dyrektywa.group("powod_zakresu") or ""
+                    miejsce = f"{nazwa}:{token.start[0]}"
+                    znalezione.append(Tlumienie(katalog, "noqa", miejsce, token.string, re.search(r"\w", powod) is not None))
+        mypy = [numer for numer, _ in get_mypy_comments(tekst)]
+        mypy += [ignore.lineno for ignore in ast.parse(tekst, nazwa, type_comments=True).type_ignores]
+        znalezione += [Tlumienie(katalog, "type: ignore", f"{nazwa}:{numer}", linie[numer - 1].strip(), True) for numer in mypy]
     return znalezione
 
 
+def _drzewo(root: Path, pliki: Mapping[str, str]) -> Path:
+    """Drzewo z konfiguracją ruff repozytorium i ``pliki``, gotowe dla ``_tlumienia``."""
+
+    root.mkdir()
+    (root / "pyproject.toml").write_bytes((ROOT / "pyproject.toml").read_bytes())
+    for nazwa, kod in pliki.items():
+        (root / nazwa).parent.mkdir(parents=True, exist_ok=True)
+        (root / nazwa).write_text(kod, encoding="utf-8")
+    return root.resolve()
+
+
+def _saldo(root: Path) -> Counter[tuple[str, str]]:
+    return Counter((tlumienie.katalog, tlumienie.rodzaj) for tlumienie in _tlumienia(root))
+
+
+@wymaga_ruff_i_mypy
 def test_liczba_tlumien_w_kazdym_katalogu_jest_rowna_zapisanej() -> None:
-    tlumienia = _tlumienia()
-    policzone = Counter((katalog, rodzaj) for katalog, rodzaj, *_ in tlumienia)
+    policzone = _saldo(ROOT)
     rozjazdy = []
     for katalog, rodzaje in ZAPISANE.items():
         for rodzaj, zapisane in rodzaje.items():
             jest = policzone[katalog, rodzaj]
             if jest > zapisane:
-                linie = [f"    {miejsce}: {komentarz}" for k, r, miejsce, komentarz, _ in tlumienia if (k, r) == (katalog, rodzaj)]
+                linie = [f"    {t.miejsce}: {t.tekst}" for t in _tlumienia(ROOT) if (t.katalog, t.rodzaj) == (katalog, rodzaj)]
                 rozjazdy += [
                     f"{katalog}: {rodzaj} {jest}, a zapisane {zapisane}. Usuń nowe tłumienie albo podnieś liczbę w ZAPISANE"
                     " (tests/test_granice_wyjatkow.py) w tym samym PR, z powodem na linii tłumienia. Tłumienia tego katalogu:",
@@ -190,9 +257,38 @@ def test_liczba_tlumien_w_kazdym_katalogu_jest_rowna_zapisanej() -> None:
     assert not rozjazdy, "\n".join(rozjazdy)
 
 
+@wymaga_ruff_i_mypy
 def test_kazde_noqa_ma_powod_na_linii() -> None:
-    bez_powodu = [f"{miejsce}: {komentarz}" for _, rodzaj, miejsce, komentarz, powod in _tlumienia() if rodzaj == "noqa" and not powod]
+    bez_powodu = [f"{t.miejsce}: {t.tekst}" for t in _tlumienia(ROOT) if t.rodzaj == "noqa" and not t.powod]
 
     assert not bez_powodu, "\n".join(
         [*bez_powodu, "Dopisz powód po kodach na tej samej linii (# noqa: KOD - powód) albo usuń tłumienie, gdy ruff przechodzi bez niego."]
     )
+
+
+@wymaga_ruff_i_mypy
+def test_licznik_liczy_kazda_postac_tlumienia_ktora_uznaje_ruff_albo_mypy(tmp_path: Path) -> None:
+    pliki = {f"src/probka_{numer}.py": kod for numer, (kod, _) in enumerate(PROBKI.values())}
+    tlumienia = _tlumienia(_drzewo(tmp_path / "drzewo", pliki))
+
+    policzone = {
+        opis: {rodzaj: sum(t.miejsce.startswith(f"{nazwa}:") and t.rodzaj == rodzaj for t in tlumienia) for rodzaj in liczby}
+        for nazwa, (opis, (_, liczby)) in zip(pliki, PROBKI.items(), strict=True)
+    }
+    assert policzone == {opis: liczby for opis, (_, liczby) in PROBKI.items()}
+    assert all(t.powod for t in tlumienia if t.rodzaj == "noqa"), tlumienia
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_licznika_tlumien_nie_zmieniaja_salda(tmp_path: Path) -> None:
+    zgloszenia = {}
+    for numer, (opis, (przed, po)) in enumerate(ZNANE_LUKI.items()):
+        saldo_przed = _saldo(_drzewo(tmp_path / f"przed_{numer}", przed))
+        saldo_po = _saldo(_drzewo(tmp_path / f"po_{numer}", po))
+        zgloszenia[opis] = [
+            f"licznik {katalog} {rodzaj}: {saldo_przed[katalog, rodzaj]} → {saldo_po[katalog, rodzaj]}"
+            for katalog, rodzaj in sorted(saldo_przed | saldo_po)
+            if saldo_przed[katalog, rodzaj] != saldo_po[katalog, rodzaj]
+        ]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_wyjatkow.py")
