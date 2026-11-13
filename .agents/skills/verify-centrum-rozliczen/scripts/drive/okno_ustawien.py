@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, Request, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, settings_window
+from drive.common import DAD_VIEWPORT, Run, close_settings, settings_title, settings_window
 
 FEATURE = "okno-ustawien"
 # The groups of sections in the order of ADR 0032 that have a section now; Ilości has none yet.
@@ -43,7 +43,7 @@ def _page_under(page: Page, page_id: str) -> None:
 
 def drive(run: Run, page: Page) -> None:
     window = settings_window(page)
-    title = window.get_by_role("heading")
+    title = settings_title(page)
     gear = page.get_by_role("link", name="Ustawienia", exact=True)
 
     run.step(FEATURE, "okno-stopka-menu")
