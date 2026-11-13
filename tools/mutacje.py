@@ -22,12 +22,13 @@ NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origi
 ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
 jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
 
-Po ``MUTACJE OK`` z poleceniem pytest, które wybiera test dodany albo zmieniony od tego merge-base, narzędzie sprawdza
-każdą mutację też testami sprzed zmiany: w plikach, które szybko wybrałby dla zmutowanych plików (``szybko.plan``), bez
-testów dodanych albo zmienionych od merge-base, z ``-x``. Gdy test sprzed zmiany sam pada po mutacji, a bez niej
-przechodzi, linia ``JUŻ ŁAPIE <plik>::<test>`` na stderr mówi, że ten błąd ma już test, więc nowy go dubluje: dopisz
-asercję tam albo usuń nowy test. Linia ``JUŻ ŁAPIE NIESPRAWDZONE`` mówi, dlaczego sprawdzenia nie było. Werdyktów,
-ostatniej linii stdout ani kodu wyjścia to nie zmienia, a całe sprawdzenie trwa najwyżej ``ALREADY_S`` s.
+Po ``MUTACJE OK`` z poleceniem pytest, które wybiera test dodany albo zmieniony od tego merge-base, każdą mutację, którą
+taki nowy test sam łapie, narzędzie sprawdza też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``. Na
+stderr: ``JUŻ ŁAPIE <plik>::<test>`` (test sprzed zmiany sam pada po mutacji, a bez niej przechodzi), ``JUŻ ŁAPIE DUBEL
+<nowy test>`` (każdą jego mutację łapie już test sprzed zmiany: dopisz asercję tam albo usuń nowy test), ``JUŻ ŁAPIE
+TYLKO NOWY`` (część jego mutacji łapie tylko on) i ``JUŻ ŁAPIE NIESPRAWDZONE`` (dlaczego nie do końca, także pliki
+odłożone przez szybko). Werdyktów, stdout ani kodu to nie zmienia, a całe sprawdzenie, ze skanem i czasami CI, trwa
+najwyżej ``--juz-lapie-s`` s, chyba że już skan i pobranie czasów CI trwają dłużej.
 
 Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
 """
@@ -56,6 +57,7 @@ import github
 from jednostka import ZMIENNA_CZESCI
 from kroki_lokalne import environment
 import plan_runu
+from ostatnie_linie import MUTACJE_OK
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -165,14 +167,27 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
 
 ALREADY = "JUŻ ŁAPIE"
 UNCHECKED = f"{ALREADY} NIESPRAWDZONE"
+DUPLICATE = f"{ALREADY} DUBEL"
+ONLY_NEW = f"{ALREADY} TYLKO NOWY"
 # Przy nowym zachowaniu żaden test sprzed zmiany nie pada, więc bez limitu każda mutacja kosztowałaby cały wybór szybko.
 ALREADY_S = 300.0
 COLLECT_S = 120.0
 
 
 class _Probe(NamedTuple):
-    new: tuple[str, ...]  # testy polecenia dodane albo zmienione od merge-base
+    new: tuple[str, ...]  # id testów polecenia (z parametrami) dodanych albo zmienionych od merge-base
     tests: tuple[str, ...]  # pliki albo id testów sprzed zmiany, po odległości od mutacji
+    deferred: int  # pliki testów sprzed zmiany, które szybko.plan odłożył ponad budżet
+
+
+class _Found(NamedTuple):
+    """Co sprawdzenie wie o jednej mutacji; ``known`` fałszywe, gdy linia ``NIESPRAWDZONE`` zostawiła coś otwartym."""
+
+    selected: frozenset[str] | None  # nowe testy (``plik::test``), które wybiera polecenie; ``None``: nie wiadomo
+    catching: frozenset[str] = frozenset()  # te z nich, które same padają po mutacji, a bez niej przechodzą
+    old: str | None = None  # test sprzed zmiany, który sam ją łapie
+    alone: bool = False  # żaden test sprzed zmiany z wyboru szybko jej nie łapie, a szybko niczego nie odłożył
+    known: bool = True
 
 
 def _key(node: str) -> tuple[str, str]:
@@ -182,86 +197,136 @@ def _key(node: str) -> tuple[str, str]:
     return path, name
 
 
-def _command_tests(command: Sequence[str]) -> set[tuple[str, str]] | None:
-    """Testy (``_key``), które wybiera polecenie pytest, z kolekcji w checkoucie; ``None``, gdy kolekcja padła."""
+def _test(node: str) -> str:
+    return "::".join(_key(node))
+
+
+def _command_tests(command: Sequence[str], deadline: float) -> list[str] | str:
+    """Id testów, które wybiera polecenie pytest, z kolekcji w checkoucie, albo przyczyna, z którą ich nie ma."""
 
     # --verbosity po -q polecenia: id testów drukuje tylko -1, a -q -q daje same pliki.
     collect = [sys.executable, *command, "--collect-only", "--verbosity=-1", "-n", "0", "-p", "no:cacheprovider"]
     try:
-        done = potomne.run(collect, cwd=ROOT, env=environment(ROOT), timeout=COLLECT_S)
+        done = potomne.run(collect, cwd=ROOT, env=environment(ROOT), timeout=max(0.0, min(COLLECT_S, deadline - time.monotonic())))
     except potomne.TimeoutExpired:
-        return None
+        return "kolekcja testów polecenia nie skończyła się w limicie"
     if done.returncode != 0:
-        return None
-    return {_key(line.strip()) for line in done.stdout.splitlines() if "::" in line}
+        return "kolekcja testów polecenia padła"
+    return [line.strip() for line in done.stdout.splitlines() if "::" in line]
 
 
 def _probe(
-    mutation: Mutation, base: str, changed: frozenset[str], scanned: wplyw_zmiany.Repository, costs: czasy_ci.KosztyPlikow
-) -> _Probe | str:
-    """Testy, którymi ``_already`` sprawdza mutację, albo przyczyna, z którą jej nie sprawdza."""
-
-    selected = _command_tests(mutation.command)
-    if selected is None:
-        return "kolekcja testów polecenia padła"
+    mutation: Mutation, selected: Sequence[str], base: str, changed: frozenset[str], scanned: wplyw_zmiany.Repository, costs: czasy_ci.KosztyPlikow
+) -> _Probe | None:
+    """Testy, którymi ``_check`` sprawdza mutację z polecenia, które wybiera testy ``selected``; ``None``, gdy żaden
+    z nich nie jest dodany ani zmieniony od ``base``."""
 
     unchanged = cache(partial(wplyw_zmiany.unchanged_tests, ROOT, base))
-    new = tuple(sorted(f"{path}::{name}" for path, name in selected if path in changed and name not in unchanged(path)))
+    new = tuple(node for node in selected if (key := _key(node))[0] in changed and key[1] not in unchanged(key[0]))
     if not new:
-        return f"polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base[:8]}"
-    impact = scanned.impact(frozenset(edit.file.as_posix() for edit in mutation.edits))
-    chosen = szybko.plan(impact.tests, impact.distances, costs).run
-    tests: list[str] = []
-    for path in sorted(chosen, key=lambda path: (impact.distances.get(path, 0), path)):
-        tests += [f"{path}::{name}" for name in sorted(unchanged(path))] if path in changed else [path]
-    return _Probe(new, tuple(tests))
-
-
-def _first_failed(junit: Path) -> str | None:
-    try:
-        return next((test.id for test in wyniki_testow.testy(junit) if test.wynik == "padł" and test.id), None)
-    except (OSError, ValueError):
         return None
+    impact = scanned.impact(frozenset(edit.file.as_posix() for edit in mutation.edits))
+    chosen = szybko.plan(impact.tests, impact.distances, costs)
+    tests: list[str] = []
+    for path in sorted(chosen.run, key=lambda path: (impact.distances.get(path, 0), path)):
+        tests += [f"{path}::{name}" for name in sorted(unchanged(path))] if path in changed else [path]
+    return _Probe(new, tuple(tests), len(chosen.deferred))
 
 
-def _already(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -> str:
-    """Linia ``JUŻ ŁAPIE`` albo ``JUŻ ŁAPIE NIESPRAWDZONE`` mutacji, której testy sprzed zmiany są w ``probe``; pusta,
-    gdy żaden jej nie łapie.
-
-    Pierwszy test, który padł (``-x``), biegnie potem sam z mutacją i bez niej: dowodem jest tylko test, który sam pada
-    po mutacji, a bez niej przechodzi. Test sprzed zmiany potrafi padać na zmienionym kodzie także bez mutacji albo tylko
-    z sąsiadem w tym samym workerze, a fałszywa linia kazałaby usunąć potrzebny test."""
+def _failed(mutation: Mutation, tests: Sequence[str], deadline: float, limit_s: float, *, first: bool) -> tuple[Verdict, str, list[str]]:
+    """Werdykt mutacji na testach ``tests`` (pliki albo id), z ``first`` do pierwszej porażki (``-x``), jego ostatnia
+    linia i id testów, które padły (z junit)."""
 
     workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", str(czasy_ci.WORKERY_LOKALNE))
     with tempfile.TemporaryDirectory(prefix="juz-lapie-") as folder:
         listed, junit = Path(folder) / "testy.txt", Path(folder) / "junit.xml"
         # Lista w pliku (``@plik`` pytest): id testów zmienionego pliku przekraczają limit wiersza poleceń Windows.
-        listed.write_text("\n".join(probe.tests), encoding="utf-8")
-        command = ("-m", "pytest", "-q", "-x", "-n", workers, "-p", "no:cacheprovider", *wyniki_testow.zapis(junit), f"@{listed}")
-        [(verdict, last)] = verdicts([replace(mutation, command=command)], workers=1, limit_s=limit_s, deadline=deadline)
-        failed = _first_failed(junit) if verdict in {Verdict.CAUGHT, Verdict.HANG} else None
+        listed.write_text("\n".join(tests), encoding="utf-8")
+        stop = ("-x",) if first else ()
+        command = ("-m", "pytest", "-q", *stop, "-n", workers, "-p", "no:cacheprovider", *wyniki_testow.zapis(junit), f"@{listed}")
+        [(verdict, last)] = verdicts([replace(mutation, command=command, expected=None)], workers=1, limit_s=limit_s, deadline=deadline)
+        try:
+            ran = wyniki_testow.testy(junit) if verdict in {Verdict.CAUGHT, Verdict.HANG} else []
+        except (OSError, ValueError):
+            ran = []
+    return verdict, last, [test.id for test in ran if test.wynik == "padł" and test.id]
+
+
+def _catching(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -> frozenset[str] | str:
+    """Nowe testy (``plik::test``), które same po mutacji padają, a bez niej przechodzą, albo przyczyna, z którą tego nie
+    wiadomo; tylko o nich linia ``JUŻ ŁAPIE`` może powiedzieć, że dublują test sprzed zmiany."""
+
+    mutated, mutated_last, failed = _failed(mutation, probe.new, deadline, limit_s, first=False)
+    if mutated is Verdict.SURVIVED:
+        return frozenset()
+    if not failed:
+        return f"nowe testy dały z mutacją {mutated} bez testu, który padł ({mutated_last})"
+    # Bez sąsiadów z polecenia nowy test potrafi padać też bez mutacji, a wtedy niczego nie łapie.
+    clean, clean_last, _ = _failed(Mutation(mutation.name, (), ()), probe.new, deadline, limit_s, first=False)
+    if clean is not Verdict.SURVIVED:
+        return f"nowe testy same bez mutacji dają {clean} ({clean_last})"
+    return frozenset(map(_test, failed))
+
+
+def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -> tuple[str, _Found]:
+    """Linia mutacji (``JUŻ ŁAPIE``, ``JUŻ ŁAPIE NIESPRAWDZONE`` albo pusta) i co o niej wiadomo.
+
+    Najpierw nowe testy z mutacją i bez niej: mutacja, której żaden nowy test sam nie łapie, nie ma linii. Potem testy
+    sprzed zmiany z ``-x``, a pierwszy, który padł, biegnie sam z mutacją i bez niej: dowodem jest tylko test, który sam
+    pada po mutacji, a bez niej przechodzi. Test sprzed zmiany potrafi padać na zmienionym kodzie także bez mutacji albo
+    tylko z sąsiadem w tym samym workerze, a fałszywa linia kazałaby usunąć potrzebny test."""
+
+    selected = frozenset(_test(node) for node in probe.new)
+    catching = _catching(mutation, probe, deadline, limit_s)
+    if isinstance(catching, str):
+        return f"{UNCHECKED}: {mutation.name}: {catching}", _Found(selected, known=False)
+    if not catching:
+        return "", _Found(selected)
+    verdict, last, failed = _failed(mutation, probe.tests, deadline, limit_s, first=True) if probe.tests else (Verdict.SURVIVED, "", [])
+    unknown = _Found(selected, catching, known=False)
+    if verdict is Verdict.SURVIVED and probe.deferred:
+        return f"{UNCHECKED}: {mutation.name}: pliki testów sprzed zmiany odłożone przez szybko ponad budżet nie biegły (odłożone: {probe.deferred})", unknown
     if verdict is Verdict.SURVIVED:
-        return ""
+        return "", _Found(selected, catching, alone=True)
     if verdict in {Verdict.OVER_LIMIT, Verdict.NO_VERDICT}:
-        return f"{UNCHECKED}: {mutation.name}: testy sprzed zmiany nie skończyły się w limicie sprawdzenia ({last})"
-    if failed is None:
-        return f"{UNCHECKED}: {mutation.name}: testy sprzed zmiany dały {verdict} bez testu, który padł ({last})"
-    alone = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", failed)
+        return f"{UNCHECKED}: {mutation.name}: testy sprzed zmiany nie skończyły się w limicie sprawdzenia ({last})", unknown
+    if not failed:
+        return f"{UNCHECKED}: {mutation.name}: testy sprzed zmiany dały {verdict} bez testu, który padł ({last})", unknown
+    alone = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", failed[0])
     checks = [replace(mutation, command=alone), Mutation(mutation.name, (), alone)]
     (mutated, mutated_last), (clean, clean_last) = verdicts(checks, workers=1, limit_s=limit_s, deadline=deadline)
     if (mutated, clean) != (Verdict.CAUGHT, Verdict.SURVIVED):
         why = f"z mutacją {mutated} ({mutated_last}), bez niej {clean} ({clean_last})"
-        return f"{UNCHECKED}: {mutation.name}: {failed} sam daje {why}, więc niczego nie dowodzi"
-    return (
-        f"{ALREADY} {failed}: ten test sprzed zmiany już łapie mutację „{mutation.name}”, więc {', '.join(probe.new)} "
-        "dubluje go w tym błędzie: dopisz asercję do testu sprzed zmiany albo usuń nowy test"
-    )
+        return f"{UNCHECKED}: {mutation.name}: {failed[0]} sam daje {why}, więc niczego nie dowodzi", unknown
+    line = f"{ALREADY} {failed[0]}: ten test sprzed zmiany już łapie mutację „{mutation.name}”, którą łapie też {', '.join(sorted(catching))}"
+    return line, _Found(selected, catching, old=failed[0])
 
 
-def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float) -> None:
-    """Linie ``_already`` na stderr dla mutacji z poleceniem pytest bez oczekiwanej linii, razem w ``ALREADY_S`` s."""
+def _advice(found: Sequence[tuple[str, _Found]]) -> list[str]:
+    """``JUŻ ŁAPIE DUBEL`` nowego testu, gdy każdą mutację, którą łapie, łapie już test sprzed zmiany, a ``JUŻ ŁAPIE
+    TYLKO NOWY``, gdy część z nich łapie tylko on; nowy test bez żadnej mutacji ``JUŻ ŁAPIE`` nie dostaje żadnej."""
 
-    deadline = time.monotonic() + ALREADY_S
+    lines = []
+    for test in sorted({test for _, result in found for test in result.catching}):
+        mine = [(name, result) for name, result in found if result.selected is None or test in result.selected]
+        already = [name for name, result in mine if test in result.catching and result.old]
+        alone = [name for name, result in mine if test in result.catching and result.alone]
+        if already and alone:
+            lines.append(f"{ONLY_NEW} {test}: tylko ten test łapie {', '.join(f'„{name}”' for name in alone)}, więc go zostaw")
+        elif already and all(result.known for _, result in mine):
+            caught = ", ".join(f"„{name}”" for name in already)
+            lines.append(
+                f"{DUPLICATE} {test}: każdą mutację, którą ten test łapie ({caught}), łapie już test sprzed zmiany: "
+                "dopisz asercję do testu sprzed zmiany albo usuń nowy test"
+            )
+    return lines
+
+
+def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float, already_s: float) -> None:
+    """Linie ``_check`` i ``_advice`` na stderr dla mutacji z poleceniem pytest bez oczekiwanej linii, razem w
+    ``already_s`` s od startu, ze skanem zmian i czasami CI."""
+
+    deadline = time.monotonic() + already_s
     checked = [mutation for mutation in mutations if ("-m", "pytest") in pairwise(mutation.command) and mutation.expected is None]
     if not checked:
         return
@@ -272,15 +337,22 @@ def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float) ->
         return
     changed, scanned = repo.changed(ROOT, commit), wplyw_zmiany.Repository.scan(ROOT)
     costs, _ = czasy_ci.lokalne(ROOT)
+    found: list[tuple[str, _Found]] = []
     for mutation in checked:
         if time.monotonic() >= deadline:
-            print(f"{UNCHECKED}: {mutation.name}: minął limit sprawdzenia {ALREADY_S:g} s", file=sys.stderr, flush=True)
-            continue
-        probe = _probe(mutation, commit, changed, scanned, costs)
-        if isinstance(probe, str):
-            print(f"{UNCHECKED}: {mutation.name}: {probe}", file=sys.stderr, flush=True)
-        elif probe.tests and (line := _already(mutation, probe, deadline, limit_s)):
+            line, result = f"{UNCHECKED}: {mutation.name}: minął limit sprawdzenia {already_s:g} s", _Found(None, known=False)
+        elif isinstance(selected := _command_tests(mutation.command, deadline), str):
+            line, result = f"{UNCHECKED}: {mutation.name}: {selected}", _Found(None, known=False)
+        elif (probe := _probe(mutation, selected, commit, changed, scanned, costs)) is None:
+            line = f"{UNCHECKED}: {mutation.name}: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {commit[:8]}"
+            result = _Found(frozenset())
+        else:
+            line, result = _check(mutation, probe, deadline, limit_s)
+        if line:
             print(line, file=sys.stderr, flush=True)
+        found.append((mutation.name, result))
+    for line in _advice(found):
+        print(line, file=sys.stderr, flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -299,6 +371,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plik", type=Path, help="Plik JSON z listą mutacji.")
     parser.add_argument("--rownolegle", action="store_true", help="Mutacje naraz, każda w swojej kopii.")
     parser.add_argument("--limit-s", type=float, default=TIMEOUT, help="Limit czasu jednego polecenia w sekundach.")
+    parser.add_argument(
+        "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
+    )
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie {BASE}).")
     parser.add_argument(
         "--jak-ci",
@@ -337,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s)
     if code == 0 and not jak_ci:
-        _already_caught(mutations, args.baza, args.limit_s)
+        _already_caught(mutations, args.baza, args.limit_s, args.juz_lapie_s)
     return code
 
 

@@ -629,29 +629,59 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
 
 
 LOOSE_OLD_TEST = "import rozliczenia\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 5\n"
-STRICT_NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert rozliczenia.WARTOSC == {value}\n"
+ASSERTING_NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert {condition}\n"
+STRICT_NEW_TEST = ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC == {value}")
 # Drugi test pada po mutacji tylko za pierwszym w tym samym procesie.
 NEIGHBOURS_TEST = (
     "import rozliczenia\n\n\ndef test_sasiad():\n    rozliczenia.SLAD = rozliczenia.WARTOSC\n\n\n"
     "def test_po_sasiedzie():\n    assert getattr(rozliczenia, 'SLAD', 0) < 5\n"
 )
-ALREADY_ADVICE = "dubluje go w tym błędzie: dopisz asercję do testu sprzed zmiany albo usuń nowy test"
+ALREADY_ADVICE = "dopisz asercję do testu sprzed zmiany albo usuń nowy test"
+NEW_IN_BRANCH = "tests/test_n.py::test_nowy"
+CAUGHT_BY_OLD = "JUŻ ŁAPIE tests/test_stary.py::test_stary: ten test sprzed zmiany już łapie mutację „{name}”, którą łapie też " + NEW_IN_BRANCH
+
+
+def _branch_with_new_test(path: Path, old_at_base: str, old_in_branch: str, new: str, value: int = 0, files: dict[str, str] | None = None) -> tuple[Path, str]:
+    """Repozytorium, którego gałąź dopisuje ``new`` jako ``tests/test_n.py`` nad ``glowna`` z ``tests/test_stary.py``,
+    i skrót merge-base; świeże czasy CI bez pomiarów, chyba że ``files`` daje własne."""
+
+    repo = repository(path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", "tests/test_stary.py": old_at_base, **(files or {})})
+    forked = commit(repo, "baza")
+    git(repo, "branch", "glowna")
+    (repo / PACKAGE).write_text(f"WARTOSC = {value}\n", encoding="utf-8")
+    (repo / "tests" / "test_stary.py").write_text(old_in_branch, encoding="utf-8")
+    (repo / "tests" / "test_n.py").write_text(new, encoding="utf-8")
+    commit(repo, "nowy test")
+    # Bez pomiaru każdy plik waży 0, więc szybko.plan bierze każdy, a narzędzie nie pobiera czasów z GitHuba.
+    (repo / ".git" / "czasy-ci").mkdir(exist_ok=True)
+    (repo / ".git" / "czasy-ci" / "pobrane").touch()
+    return repo, forked[:8]
+
+
+def _already_lines(answered: subprocess.CompletedProcess[str], mutations: list[str]) -> list[str]:
+    """Linie ``JUŻ ŁAPIE`` ze stderr przebiegu, w którym każda z ``mutations`` jest WYKRYTA, a stdout i kod są jak bez
+    sprawdzenia."""
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == "MUTACJE OK", answered.stdout
+    assert [line.split(" → ")[0] for line in answered.stdout.splitlines()[:-1]] == [f"WYKRYTA: {name}" for name in mutations], answered.stdout
+    return [found for found in answered.stderr.splitlines() if found.startswith("JUŻ ŁAPIE")]
 
 
 @pytest.mark.parametrize(
-    ("value", "old_at_base", "old_in_branch", "mutated", "selected", "line"),  # line: wzorzec re z {base}, skrótem merge-base
+    ("value", "old_at_base", "old_in_branch", "mutated", "selected", "lines"),  # lines: wzorce re z {base}, skrótem merge-base
     [
-        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", f"JUŻ ŁAPIE tests/test_stary.py::test_stary: ten test sprzed zmiany już łapie mutację „mutacja”, więc tests/test_n.py::test_nowy {ALREADY_ADVICE}"),
-        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 1, "tests/test_n.py", None),
-        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST.replace("< 5", "< 6"), 7, "tests/test_n.py", None),
-        (6, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_stary sam daje z mutacją WYKRYTA \(1 failed in [0-9.]+s\), bez niej WYKRYTA \(1 failed in [0-9.]+s\), więc niczego nie dowodzi"),
-        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_stary.py", "JUŻ ŁAPIE NIESPRAWDZONE: mutacja: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base}"),
-        (0, NEIGHBOURS_TEST, NEIGHBOURS_TEST, 7, "tests/test_n.py", r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_po_sasiedzie sam daje z mutacją NIEWYKRYTA \(1 passed in [0-9.]+s\), bez niej NIEWYKRYTA \(1 passed in [0-9.]+s\), więc niczego nie dowodzi"),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", [CAUGHT_BY_OLD.format(name="mutacja"), f"JUŻ ŁAPIE DUBEL {NEW_IN_BRANCH}: każdą mutację, którą ten test łapie \\(„mutacja”\\), łapie już test sprzed zmiany: {ALREADY_ADVICE}"]),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 1, "tests/test_n.py", []),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST.replace("< 5", "< 6"), 7, "tests/test_n.py", []),
+        (6, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", [r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_stary sam daje z mutacją WYKRYTA \(1 failed in [0-9.]+s\), bez niej WYKRYTA \(1 failed in [0-9.]+s\), więc niczego nie dowodzi"]),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_stary.py", ["JUŻ ŁAPIE NIESPRAWDZONE: mutacja: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base}"]),
+        (0, NEIGHBOURS_TEST, NEIGHBOURS_TEST, 7, "tests/test_n.py", [r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_po_sasiedzie sam daje z mutacją NIEWYKRYTA \(1 passed in [0-9.]+s\), bez niej NIEWYKRYTA \(1 passed in [0-9.]+s\), więc niczego nie dowodzi"]),
     ],
     ids=["stary-test-lapie", "lapie-tylko-nowy", "stary-test-zmieniony-w-galezi", "stary-test-czerwony-bez-mutacji", "polecenie-bez-nowego-testu", "stary-test-pada-tylko-za-sasiadem"],
 )
 def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werdykt_i_kod_zostaja(
-    tmp_path: Path, value: int, old_at_base: str, old_in_branch: str, mutated: int, selected: str, line: str | None
+    tmp_path: Path, value: int, old_at_base: str, old_in_branch: str, mutated: int, selected: str, lines: list[str]
 ) -> None:
     """Gałąź dopisuje ścisły test, a test sprzed niej łapie mutację albo nie (T2: repro recenzenta na drugiej warstwie).
 
@@ -659,26 +689,109 @@ def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werd
     który pada też bez mutacji, albo po mutacji tylko za sąsiadem.
     """
 
-    repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", "tests/test_stary.py": old_at_base})
-    forked = commit(repo, "baza")
-    git(repo, "branch", "glowna")
-    (repo / PACKAGE).write_text(f"WARTOSC = {value}\n", encoding="utf-8")
-    (repo / "tests" / "test_stary.py").write_text(old_in_branch, encoding="utf-8")
-    (repo / "tests" / "test_n.py").write_text(STRICT_NEW_TEST.format(value=value), encoding="utf-8")
-    commit(repo, "nowy test")
-    # Świeże czasy CI bez pomiarów: szybko.plan bierze każdy plik, a narzędzie nie pobiera czasów z GitHuba.
-    (repo / ".git" / "czasy-ci").mkdir()
-    (repo / ".git" / "czasy-ci" / "pobrane").touch()
+    repo, base = _branch_with_new_test(tmp_path, old_at_base, old_in_branch, STRICT_NEW_TEST.format(value=value), value)
     command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected)
     caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
 
     answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, f"WARTOSC = {value}", f"WARTOSC = {mutated}", "--", *command, env=caller)
 
-    assert (answered.returncode, answered.stdout.splitlines()[1:]) == (0, ["MUTACJE OK"]), answered.stdout + answered.stderr
-    assert answered.stdout.startswith("WYKRYTA: mutacja → 1 failed"), answered.stdout
-    found = [found for found in answered.stderr.splitlines() if found.startswith("JUŻ ŁAPIE")]
-    expected = [] if line is None else [line.format(base=forked[:8])]
+    found = _already_lines(answered, ["mutacja"])
+    expected = [line.format(base=base) for line in lines]
     assert len(found) == len(expected) and all(map(re.fullmatch, expected, found)), answered.stderr
+
+
+# Kolekcja (``--collect-only``) dłuższa niż limit sprawdzenia w teście, a przebiegi testów bez czekania.
+SLOW_COLLECTION = {"tests/conftest.py": "import sys, time\n\nif '--collect-only' in sys.argv:\n    time.sleep(20)\n"}
+
+
+@pytest.mark.parametrize(
+    ("condition", "arguments", "files", "lines"),
+    [
+        ("rozliczenia.WARTOSC >= 0", (), {}, []),
+        ("0 <= rozliczenia.WARTOSC < 5", (), {}, [CAUGHT_BY_OLD.format(name="m2-duza"), f"JUŻ ŁAPIE TYLKO NOWY {NEW_IN_BRANCH}: tylko ten test łapie „m1-ujemna”, więc go zostaw"]),
+        ("0 <= rozliczenia.WARTOSC < 5", ("--juz-lapie-s", "0"), {}, [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: minął limit sprawdzenia 0 s" for name in ("m1-ujemna", "m2-duza")]),
+        (
+            "0 <= rozliczenia.WARTOSC < 5",
+            ("--juz-lapie-s", "5"),
+            SLOW_COLLECTION,
+            ["JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: kolekcja testów polecenia nie skończyła się w limicie", "JUŻ ŁAPIE NIESPRAWDZONE: m2-duza: minął limit sprawdzenia 5 s"],
+        ),
+    ],
+    ids=["nowy-test-nie-lapie-mutacji-starego", "czesc-mutacji-lapie-tylko-nowy", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia"],
+)
+def test_juz_lapie_radzi_usunac_nowy_test_tylko_gdy_kazda_jego_mutacje_lapie_test_sprzed_zmiany(
+    tmp_path: Path, condition: str, arguments: tuple[str, ...], files: dict[str, str], lines: list[str]
+) -> None:
+    """Polecenie z całym katalogiem testów i dwie mutacje: „m1-ujemna” łapie tylko nowy test, a „m2-duza” test sprzed
+    zmiany `WARTOSC < 5` (przegląd #1493 r1).
+
+    Mutacja, której nowy test sam nie łapie, nie dostaje linii, choć polecenie go wybiera, a rada usunięcia nowego testu
+    pada tylko wtedy, gdy każdą jego mutację łapie test sprzed zmiany. Limit obejmuje całe sprawdzenie, z kolekcją.
+    """
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, ASSERTING_NEW_TEST.format(condition=condition), files=files)
+    plan = tmp_path / "mutacje.json"
+    entries = [{"nazwa": name, "zmiany": [[PACKAGE, "WARTOSC = 0", f"WARTOSC = {value}"]]} for name, value in (("m1-ujemna", -1), ("m2-duza", 7))]
+    plan.write_text(json.dumps(entries), encoding="utf-8")
+    caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
+
+    answered = _in_repository(repo, "--baza", "glowna", *arguments, "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests", env=caller)
+
+    assert _already_lines(answered, ["m1-ujemna", "m2-duza"]) == lines, answered.stderr
+
+
+def test_juz_lapie_mowi_o_plikach_testow_odlozonych_przez_szybko_i_wtedy_nie_radzi_usunac_nowego_testu(tmp_path: Path) -> None:
+    """„m1-ujemna” łapie tylko test sprzed zmiany, który stoi dalej od mutacji, a czasy CI ważą go ponad budżet szybko,
+    więc nie biegnie, a „m2-duza” łapie test obok: brak linii o „m1-ujemna” nie może wyglądać na zachowanie naprawdę
+    nowe, a nowy test, który łapie obie, nie dostaje rady usunięcia (przegląd #1493 r1)."""
+
+    far = {
+        "src/posrednik.py": "from rozliczenia import WARTOSC\n",
+        "tests/test_daleki.py": "import posrednik\n\n\ndef test_daleki():\n    assert posrednik.WARTOSC >= 0\n",
+    }
+    measured = {"runy": [{"run": 1}], "tory": {"linux-3.14": {"pytest:tests/test_daleki.py": [{"run": 1, "proba": 1, "zadanie": "z", "s": 10_000.0, "status": "ok", "testy": 1}]}}}
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, STRICT_NEW_TEST.format(value=0), files=far)
+    (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps(measured), encoding="utf-8")
+    plan = tmp_path / "mutacje.json"
+    entries = [{"nazwa": name, "zmiany": [[PACKAGE, "WARTOSC = 0", f"WARTOSC = {value}"]]} for name, value in (("m1-ujemna", -1), ("m2-duza", 7))]
+    plan.write_text(json.dumps(entries), encoding="utf-8")
+    caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
+
+    answered = _in_repository(repo, "--baza", "glowna", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=caller)
+
+    assert _already_lines(answered, ["m1-ujemna", "m2-duza"]) == [
+        "JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: pliki testów sprzed zmiany odłożone przez szybko ponad budżet nie biegły (odłożone: 1)",
+        CAUGHT_BY_OLD.format(name="m2-duza"),
+    ], answered.stderr
+
+
+def test_juz_lapie_nie_liczy_nowego_testu_ktory_sam_pada_takze_bez_mutacji(tmp_path: Path) -> None:
+    """Nowy test przechodzi w poleceniu tylko za testem sprzed zmiany, który ustawia mu stan, więc sam pada też bez
+    mutacji i niczego nie dowodzi, choć test sprzed zmiany łapie tę mutację."""
+
+    setter = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_ustawia():\n    rozliczenia.SLAD = 1\n"}
+    new = ASSERTING_NEW_TEST.format(condition="getattr(rozliczenia, 'SLAD', 0) == 1 and rozliczenia.WARTOSC == 0")
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, new, files=setter)
+    caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
+
+    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 7", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests", env=caller)
+
+    [line] = _already_lines(answered, ["mutacja"])
+    assert re.fullmatch(r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: nowe testy same bez mutacji dają WYKRYTA \(1 failed in [0-9.]+s\)", line), answered.stderr
+
+
+def test_mutacja_z_oczekiwana_linia_nie_dostaje_juz_lapie(tmp_path: Path) -> None:
+    """Mutację z ``oczekiwane`` wykrywa linia wyjścia, nie porażka testu, więc sprawdzenie testami sprzed zmiany jej nie
+    dotyczy, choć ten sam test sprzed zmiany ją łapie."""
+
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, STRICT_NEW_TEST.format(value=0))
+    plan = tmp_path / "mutacje.json"
+    plan.write_text(json.dumps([{"nazwa": "z linia", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 7"]], "oczekiwane": "1 failed"}]), encoding="utf-8")
+    caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
+
+    answered = _in_repository(repo, "--baza", "glowna", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=caller)
+
+    assert _already_lines(answered, ["z linia"]) == [], answered.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGINT do jednego procesu jest sygnałem POSIX")
