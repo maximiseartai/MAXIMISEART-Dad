@@ -27,7 +27,7 @@ import { REMINDERS_SECTION, RemindersSection } from "@/pages/settings/reminders-
 import { ReportsSection } from "@/pages/settings/reports-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"
-import { WorkersSection } from "@/pages/settings/workers-section"
+import { WORKERS_SECTION, WorkersSection } from "@/pages/settings/workers-section"
 
 /** Grupy sekcji okna Ustawień w kolejności z ADR 0032; grupa bez żadnej sekcji się nie pokazuje. */
 const SETTINGS_GROUPS = ["Praca", "Ilości", "Pliki", "Połączenia", "Narzędzie", "Historia"] as const
@@ -40,7 +40,7 @@ type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
  */
 export const SETTINGS_SECTIONS = [
   { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection },
-  { id: "wykonawcy", title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
+  { id: WORKERS_SECTION, title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
   { id: REMINDERS_SECTION, title: "Przypomnienia", group: "Praca", icon: BellIcon, Content: RemindersSection },
   { id: "reguly-ilosci", title: "Reguły ilości", group: "Ilości", icon: ListChecksIcon, Content: QuantityRulesSection },
   { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },

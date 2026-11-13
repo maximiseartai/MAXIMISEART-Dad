@@ -79,7 +79,7 @@ from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
-from tests.fixtures.centrum import ROOT, ToolDirectory, run_events, views_until, write_report_key
+from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -1116,6 +1116,99 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
     assert _entering(centrum, second)["problems"] == []
     assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
     assert new_address not in json.dumps(centrum.run_logs(), ensure_ascii=False)
+
+
+NEW_ADDRESS = "jan.nowy@przyklad.invalid"
+
+
+def _assign(centrum: EnteringCentrum, login: str, address: str) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy u Wykonawcy z loginem ``login``."""
+
+    return centrum.client.post(f"/api/settings/workers/{login}/addresses", json={"address": address})
+
+
+def _addresses(centrum: EnteringCentrum) -> dict[str, list[str]]:
+    """Adresy Wykonawców z sekcji Wykonawcy po pierwszym loginie."""
+
+    workers = centrum.client.get("/api/settings").json()["workers"]["workers"]
+    return {worker["logins"][0]: worker["addresses"] for worker in workers}
+
+
+def _worker_rows(centrum: EnteringCentrum) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
+
+    return [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
+
+
+def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_raportow_rozpoznaje_jego_raport(
+    tmp_path: Path,
+) -> None:
+    """US 25, ADR 0028: Raport z nowego adresu Jana stoi w widoku Raporty jako nieznany nadawca z samym dniem, adresem i
+    powodem, bez tematu i treści maila. Tata przypisuje adres Janowi: adres dopisuje się na Liście Wykonawców, nadawca w
+    widoku Raporty jest przypisany do Jana jeszcze przed następnym kliknięciem, a następne kliknięcie wpisuje ten sam mail
+    bez innej pracy."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    before = _cells(centrum.register)
+    _finished(centrum)
+    first = _view(centrum)
+
+    assigned = _assign(centrum, "jan.testowy", NEW_ADDRESS)
+    shown = _view(centrum)
+    second = _finished(centrum)
+
+    assert first["unknown_senders"] == [
+        {
+            "day": "2026-11-09",
+            "sender": NEW_ADDRESS,
+            "reason": "Raport wykonawcy z 09.11.2026 przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum "
+            "go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze.",
+            "worker": None,
+        }
+    ]
+    shown_first = json.dumps(first, ensure_ascii=False)
+    assert SUBJECT not in shown_first and "wymiana routera" not in shown_first, "widok Raporty bez tematu i treści maila"
+    assert assigned.status_code == 200, assigned.json()
+    assert _addresses(centrum)["jan.testowy"] == [JAN, NEW_ADDRESS]
+    assert [found["worker"] for found in shown["unknown_senders"]] == ["jan.testowy"]
+    assert _entering(centrum, second)["problems"] == []
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+
+
+def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przywraca_nieznanego_nadawce(
+    tmp_path: Path,
+) -> None:
+    """US 25, 28: adresu, który ma już inny Wykonawca, nie da się przypisać: odmowa przy polu adresu, a Lista Wykonawców i
+    Historia zostają bez zmian, tak samo przy Wykonawcy, którego już nie ma; adres, który Wykonawca już ma, niczego nie
+    zmienia. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku Raporty znowu jest
+    nieznany."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    _finished(centrum)
+    listed_before = centrum.tool.worker_list.read_bytes()
+
+    refused = _assign(centrum, "anna.kowalska", JAN.upper())
+    gone = _assign(centrum, "nikt.taki", NEW_ADDRESS)
+    own = _assign(centrum, "jan.testowy", JAN.upper())
+    listed_after_refusal = centrum.tool.worker_list.read_bytes()
+    rows_after_refusal = _worker_rows(centrum)
+    assigned = _assign(centrum, "anna.kowalska", NEW_ADDRESS)
+    [row] = _worker_rows(centrum)
+    undone = centrum.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[1]"},
+    )
+    assert (gone.status_code, gone.json()["message"]) == (422, settings_messages.worker_unknown())
+    assert (own.status_code, own.json()["change"]) == (200, None)
+    assert listed_after_refusal == listed_before
+    assert rows_after_refusal == []
+    assert assigned.status_code == 200, assigned.json()
+    assert (row["id"], row["section"], row["undoable"]) == (assigned.json()["change"], "wykonawcy", True)
+    assert undone.status_code == 200, undone.json()
+    assert _addresses(centrum)["anna.kowalska"] == [ANNA]
+    assert [found["worker"] for found in _view(centrum)["unknown_senders"]] == [None]
 
 
 @pytest.mark.parametrize(
@@ -2968,6 +3061,61 @@ def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_na
 
     assert switched.status_code == 200, switched.json()
     assert [reminder.worker for reminder, _ in mailbox.sends] == reminded
+
+
+def _assigned(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """„Przypisz do Wykonawcy…” z widoku Raporty: adres ``NEW_ADDRESS`` u Wykonawcy ``worker``."""
+
+    return client.post(f"/api/settings/workers/{worker['logins'][0]}/addresses", json={"address": NEW_ADDRESS})
+
+
+def _edited(client: CentrumClient, worker: dict[str, Any]) -> Any:
+    """Formularz Wykonawcy ``worker`` z jego loginami, nazwą i adresami, do których tata dopisał ``NEW_ADDRESS``."""
+
+    form = {"logins": worker["logins"], "name": worker["name"], "addresses": [*worker["addresses"], NEW_ADDRESS]}
+    return client.put(f"/api/settings/workers/{worker['logins'][0]}", json=form)
+
+
+@pytest.mark.parametrize("change", [_assigned, _edited], ids=["przypisanie-adresu", "formularz"])
+@pytest.mark.parametrize(
+    ("active", "reminders"),
+    [(False, True), (True, False), (False, False)],
+    ids=["nieaktywny", "bez-przypomnien", "nieaktywny-bez-przypomnien"],
+)
+def test_dopisanie_adresu_przypisaniem_albo_formularzem_zostawia_reszte_wykonawcy_a_przypomnienia_go_omijaja(
+    tmp_path: Path, change: Callable[[CentrumClient, dict[str, Any]], Any], active: bool, reminders: bool
+) -> None:
+    """ADR 0032 (D13), W1 #1650 r1: tata dopisuje Annie adres przyciskiem „Przypisz do Wykonawcy…” albo formularzem.
+    Zmienia się tylko lista adresów: loginy (także drugi), nazwa, pierwsze adresy, Nieaktywny i Przypomnienia o raporcie
+    zostają, więc następne sprawdzenie przypomnień dalej omija Annę, a Jan je dostaje."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    anna = WorkerEntry(["anna.kowalska", "anna.k2"], "Anna Kowalska", [ANNA, "anna.k2@przyklad.invalid"], active, reminders)
+    listed = WorkerList.of([WorkerEntry(["jan.testowy"], "Jan Testowy", [JAN]), anna])
+    assert isinstance(listed, WorkerList), listed
+    write_worker_list(centrum.tool.worker_list, listed)
+    before = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    changed = change(centrum.client, before)
+    after = _listed_worker(centrum.client, "anna.kowalska")
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200, changed.json()
+    assert after == {**before, "addresses": [*before["addresses"], NEW_ADDRESS]}
+    assert (before["active"], before["reminders"]) == (active, reminders)
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["jan.testowy"]
+
+
+def _listed_worker(client: CentrumClient, login: str) -> dict[str, Any]:
+    """Wykonawca z pierwszym loginem ``login`` z sekcji Wykonawcy w Ustawieniach."""
+
+    [worker] = [worker for worker in client.get("/api/settings").json()["workers"]["workers"] if worker["logins"][0] == login]
+    return dict(worker)
 
 
 # Treść przypomnienia za 9.11 ze stopką „Pozdrawiam / Tata”, jaką Centrum wysyłało przed Ustawieniami (spec #1344).

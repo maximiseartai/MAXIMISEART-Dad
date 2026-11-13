@@ -12,6 +12,7 @@ import { useAction } from "@/lib/action"
 import { href, settingsHref, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { dateTime, plural } from "@/lib/format"
+import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { REMINDERS_SECTION } from "@/pages/settings/reminders-section"
 import { type DayState, dayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
@@ -27,11 +28,15 @@ import { UnknownSenders } from "@/pages/worker-reports/unknown-senders"
  * Raporty: wynik ostatniego kliknięcia „Wpisz raporty z maili” jako Mapa cieplna Wykonawców i dni (#1319). Serwer
  * oddaje całe okno z pliku wyniku, nie ze skrzynki; zakres dni z adresu `#/raporty/<od>/<do>` (bez zakresu:
  * poniedziałek poprzedniego tygodnia do niedzieli bieżącego, przycięte do dni okna), stan dnia, wyszukiwarkę i filtr
- * Status liczy przeglądarka. „Zostaw moją” zastępuje widok odpowiedzią serwera, a koniec Wpisania czyta go od nowa.
+ * Status liczy przeglądarka. „Zostaw moją” zastępuje widok odpowiedzią serwera, a koniec Wpisania i każda zmiana
+ * Ustawień (np. adres nadawcy przypisany Wykonawcy) czytają go od nowa.
  */
 export function ReportsPage() {
   const path = usePagePath()
   const { resource: view, reload, replace } = useResource(getReportsView, [], { fromDadFiles: false })
+
+  useReloadOnChange(reload)
+
   const entrance = useContentEntrance(view.state === "loading")
   const entering = useReportEntering(reload)
   const ready = view.state === "ready" && view.data.clicked_at !== null ? view.data : null

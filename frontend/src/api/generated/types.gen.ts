@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -3071,7 +3071,7 @@ export type ReportsProblem = {
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export type ReportsView = {
     /**
@@ -4024,7 +4024,9 @@ export type ToolVersion = {
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export type UnknownReportSender = {
     /**
@@ -4039,6 +4041,10 @@ export type UnknownReportSender = {
      * Reason
      */
     reason: string;
+    /**
+     * Worker
+     */
+    worker: string | null;
 };
 
 /**
@@ -4167,6 +4173,19 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export type WorkerAddress = {
+    /**
+     * Address
+     */
+    address: string;
+};
+
+/**
  * WorkerEdit
  *
  * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
@@ -4287,6 +4306,45 @@ export type WorkerSettlementRequest = {
      * Worker
      */
     worker: string;
+};
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export type WorkerSuggestion = {
+    /**
+     * Login
+     */
+    login: string;
+    /**
+     * Orders
+     */
+    orders: number;
+};
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export type WorkerSuggestions = {
+    /**
+     * State
+     */
+    state: 'read' | 'not_set' | 'unreadable';
+    /**
+     * Suggestions
+     */
+    suggestions: Array<WorkerSuggestion>;
+    /**
+     * Message
+     */
+    message: string | null;
 };
 
 /**
@@ -6421,6 +6479,22 @@ export type AddWorkerResponses = {
 
 export type AddWorkerResponse = AddWorkerResponses[keyof AddWorkerResponses];
 
+export type GetWorkerSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/workers/suggestions';
+};
+
+export type GetWorkerSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkerSuggestions;
+};
+
+export type GetWorkerSuggestionsResponse = GetWorkerSuggestionsResponses[keyof GetWorkerSuggestionsResponses];
+
 export type RemoveWorkerData = {
     body?: never;
     path: {
@@ -6488,6 +6562,36 @@ export type ChangeWorkerResponses = {
 };
 
 export type ChangeWorkerResponse = ChangeWorkerResponses[keyof ChangeWorkerResponses];
+
+export type AssignWorkerAddressData = {
+    body: WorkerAddress;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}/addresses';
+};
+
+export type AssignWorkerAddressErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type AssignWorkerAddressError = AssignWorkerAddressErrors[keyof AssignWorkerAddressErrors];
+
+export type AssignWorkerAddressResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type AssignWorkerAddressResponse = AssignWorkerAddressResponses[keyof AssignWorkerAddressResponses];
 
 export type SwitchWorkerData = {
     body: WorkerSwitches;

@@ -34,6 +34,8 @@ export const zApiTiming = z.object({
         'changeWorker',
         'switchWorker',
         'removeWorker',
+        'getWorkerSuggestions',
+        'assignWorkerAddress',
         'chooseRegister',
         'openRegister',
         'choosePeriodsDirectory',
@@ -2294,12 +2296,15 @@ export const zConfiguration = z.object({
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export const zUnknownReportSender = z.object({
     day: z.iso.date(),
     sender: z.string(),
-    reason: z.string()
+    reason: z.string(),
+    worker: z.string().nullable()
 });
 
 /**
@@ -2309,7 +2314,7 @@ export const zUnknownReportSender = z.object({
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export const zReportsView = z.object({
     clicked_at: z.iso.datetime().nullable(),
@@ -2402,6 +2407,16 @@ export const zWithoutQuantityRead = z.object({
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
+});
+
+/**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export const zWorkerAddress = z.object({
+    address: z.string()
 });
 
 /**
@@ -2771,6 +2786,34 @@ export const zRunEvent = z.object({
  */
 export const zWorkerSettlementRequest = z.object({
     worker: z.string()
+});
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export const zWorkerSuggestion = z.object({
+    login: z.string(),
+    orders: z.int()
+});
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export const zWorkerSuggestions = z.object({
+    state: z.enum([
+        'read',
+        'not_set',
+        'unreadable'
+    ]),
+    suggestions: z.array(zWorkerSuggestion),
+    message: z.string().nullable()
 });
 
 /**
@@ -3604,6 +3647,11 @@ export const zAddWorkerBody = zWorkerForm;
  */
 export const zAddWorkerResponse = zChoice;
 
+/**
+ * Successful Response
+ */
+export const zGetWorkerSuggestionsResponse = zWorkerSuggestions;
+
 export const zRemoveWorkerPath = z.object({
     login: z.string()
 });
@@ -3623,6 +3671,17 @@ export const zChangeWorkerPath = z.object({
  * Successful Response
  */
 export const zChangeWorkerResponse = zWorkerSaved;
+
+export const zAssignWorkerAddressBody = zWorkerAddress;
+
+export const zAssignWorkerAddressPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zAssignWorkerAddressResponse = zChoice;
 
 export const zSwitchWorkerBody = zWorkerSwitches;
 

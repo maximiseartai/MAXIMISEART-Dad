@@ -2,8 +2,8 @@
 
 Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu (opis postaci → kod modułu), a test puszcza każdą przez
 prawdziwe mechanizmy strażnika: ``ruff check`` z konfiguracją repozytorium na ścieżce sondy, ``mypy`` z konfiguracją
-``pyproject.toml`` i własne sprawdzenie strażnika na module próbki. Próbka przechodzi przez każdy z nich, a gdy któryś
-zaczyna ją łapać, ``assert_znane_luki`` każe usunąć ją ze ``ZNANE_LUKI``.
+``pyproject.toml``, gdy strażnik stoi na typie, i własne sprawdzenie strażnika na module próbki. Próbka przechodzi przez
+każdy z nich, a gdy któryś zaczyna ją łapać, ``assert_znane_luki`` każe usunąć ją ze ``ZNANE_LUKI``.
 """
 
 from __future__ import annotations
@@ -45,13 +45,13 @@ def modul(plik: Path) -> ModuleType:
     return wykonany
 
 
-def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
-    """Zgłoszenia ruff (próbka jako plik ``sonda``, więc z konfiguracją jej katalogu i bez ``--ignore-noqa``, jak w CI) i
-    mypy (jedno uruchomienie na wszystkie pliki, z własnym cache) dla każdej próbki."""
+def ruff(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
+    """Zgłoszenia ruff dla każdej próbki: próbka jako plik ``sonda``, więc z konfiguracją jej katalogu i bez
+    ``--ignore-noqa``, jak w CI."""
 
     zgloszenia: dict[str, list[str]] = {opis: [] for opis in pliki}
     for opis, plik in pliki.items():
-        ruff = subprocess.run(
+        sprawdzenie = subprocess.run(
             [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json", "--stdin-filename", str(sonda), "-"],
             input=plik.read_text(encoding="utf-8"),
             capture_output=True,
@@ -60,9 +60,15 @@ def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
             cwd=ROOT,
             check=False,
         )
-        assert ruff.stderr == "", ruff.stderr
-        zgloszenia[opis] += [f"ruff {finding['code']}: {finding['message']}" for finding in json.loads(ruff.stdout)]
+        assert sprawdzenie.stderr == "", sprawdzenie.stderr
+        zgloszenia[opis] += [f"ruff {finding['code']}: {finding['message']}" for finding in json.loads(sprawdzenie.stdout)]
+    return zgloszenia
 
+
+def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
+    """Zgłoszenia ruff (``ruff``) i mypy (jedno uruchomienie na wszystkie pliki, z własnym cache) dla każdej próbki."""
+
+    zgloszenia = ruff(pliki, sonda)
     katalog = {plik.parent for plik in pliki.values()}
     assert len(katalog) == 1, katalog
     mypy = subprocess.run(

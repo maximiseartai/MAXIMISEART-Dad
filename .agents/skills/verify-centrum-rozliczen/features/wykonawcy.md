@@ -7,11 +7,16 @@ removes a Wykonawca whose login no period has. A saved login has no text field: 
 beside it. Each rule is the server's: a bad value comes back as a sentence at its field, a Wykonawca or login with
 orders in the Rejestr zleceń or a Plik zbiorczy stays with a sentence that proposes Nieaktywny, and a new name while a
 Rozliczenie pracownika with the old one lies in a period asks first. Closing Ustawienia with an unsaved form asks
-`Zamknąć bez zapisu?`. The change itself, its Historia row and the processes are tested through the API
-(`tests/test_centrum_rozliczen.py`, `tests/test_centrum_wpisanie_raportow.py`).
+`Zamknąć bez zapisu?`. Under the list the section suggests the logins of the ordered orders of the current period and
+the 4 before it in the Rejestr zleceń that no Wykonawca has, each with `Dodaj Wykonawcę`, and says in one sentence when
+the Rejestr is not set or cannot be read (#1475). The change itself, its Historia row and the processes are tested
+through the API (`tests/test_centrum_rozliczen.py`, `tests/test_centrum_wpisanie_raportow.py`).
 
 ## Sub-features
 
+- `wykonawcy-podpowiedz`: with an INTERMAX whose today's order belongs to a login no Wykonawca has, the section lists that login with `1 zlecenie`, wide and at 420×860 without a horizontal scroll.
+- `wykonawcy-dodanie-z-podpowiedzi`: `Dodaj Wykonawcę` at the suggestion opens the form with the login, saves nothing before `Zapisz`, and after `Zapisz` the suggestion is gone.
+- `wykonawcy-rejestr-nieczytelny`: a Rejestr zleceń moved away is a sentence in the section, not an empty list of suggestions.
 - `wykonawcy-dodanie`: `Dodaj Wykonawcę` opens an empty form; with a login, a name and one address, `Zapisz` puts the Wykonawca on the list, active and with Przypomnienia (wide screenshot of the form).
 - `wykonawcy-odmowa-przy-polu`: an address another Wykonawca has stays unsaved, with the server's sentence under that address field.
 - `wykonawcy-zamkniecie-bez-zapisu`: Esc with a changed form asks `Zamknąć bez zapisu?`; `Wróć` keeps the window and what Dad typed.
@@ -34,6 +39,20 @@ Preconditions:
   `wykonawca.a`–`wykonawca.c`, D has none, and `22_28_09_2026` has the Rozliczenia pracowników of A–C. The feature
   points the folder okresów and the Rejestr zleceń in Ustawienia (`ensure_files_set`) when no feature before did.
 
+- **Suggestion.** Harness: a run-local INTERMAX (`<root>/INTERMAX/nowy-wykonawca/`, made by the INTERMAX Atrapa with
+  a paste area, since the fixture's own Rejestr zleceń has the older layout without one and the firmowa app pastes only
+  there) with today's ordered orders of `wykonawca.a` and `wykonawca.nowy`; Dad points the Rejestr zleceń to it in
+  Foldery. Open Wykonawcy: list `Nowe loginy` has list item `wykonawca.nowy` with `1 zlecenie`, and
+  `GET /api/settings/workers/suggestions` (`api/wykonawcy-podpowiedzi.json`) is that one login with `orders` 1 and
+  `state` `read`. Screenshot `410`; at 420×860 no horizontal scroll, screenshot `412`.
+- **Add from the suggestion.** Button `Dodaj Wykonawcę: wykonawca.nowy`: form `Nowy Wykonawca` has textbox `Login` =
+  `wykonawca.nowy` and the Lista Wykonawców keeps its bytes; name `Wykonawca Testowy N`, screenshot `411`, `Zapisz
+  Wykonawcę`: list item `Wykonawca Testowy N`, the list `Nowe loginy` is gone and the API has no suggestion. ✕.
+- **Unreadable Rejestr.** Harness: the INTERMAX moved away. Open Wykonawcy: the sentence `Nie da się teraz przeczytać
+  Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź Rejestr w sekcji Foldery.`, and the API
+  has `state` `unreadable` without suggestions. Screenshot `413`; ✕. The INTERMAX goes back, Dad points the Rejestr
+  zleceń to the one before in Foldery, and removes `Wykonawca Testowy N` (no order of his in that Rejestr); the Lista
+  Wykonawców has its bytes from before the suggestion.
 - **Add.** Open Wykonawcy. Button `Dodaj Wykonawcę`, form `Nowy Wykonawca`: textbox `Login` = `wykonawca.e`, label
   `Nazwa w Rozliczeniu pracownika` = `Wykonawca Testowy E`, `Dodaj adres`, textbox `Adres 1` =
   `wykonawca.e@przyklad.invalid`. Screenshot `390`. Button `Zapisz Wykonawcę`: list item `Wykonawca Testowy E` shows the
@@ -61,10 +80,12 @@ Preconditions:
   (`api/wykonawcy-usuniety.json`). Then the same changes the other way: A2 renamed back to A (no question, no file has
   the name A2), D `Oznacz jako aktywnego`, C's switch on; `config/wykonawcy.yaml` has the fixture's bytes again. ✕ (`Zamknij Ustawienia`) closes the window; Esc
   would first close the notification „Zapisano · Cofnij” of the last switch.
-- **Proof.** Screenshots `390`–`397`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
+- **Proof.** Screenshots `390`–`397` and `410`–`413`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
 
 ## Gotchas
 
+- A suggestion's button is named `Dodaj Wykonawcę: <login>`, so `Dodaj Wykonawcę` alone stays the one under the list.
+- Close the window with ✕ after a save: the first Esc closes the notification „Zapisano · Cofnij”.
 - Removal checks every Plik zbiorczy of the folder okresów, so the button shows `Sprawdzam okresy…` until the server
   answers; wait for the list item or the alert, never a fixed time.
 - The window Ustawienia is a modal: `Zamknąć bez zapisu?` and `Zmienić nazwę?` are alertdialogs above it, found on the

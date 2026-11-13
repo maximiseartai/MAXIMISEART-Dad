@@ -2728,6 +2728,28 @@
         }
       }
     },
+    "/api/settings/workers/suggestions": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Suggestions",
+        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista\nWykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie\no liście, a dodanie zapisuje listę od nowa.",
+        "operationId": "getWorkerSuggestions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerSuggestions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/workers/{login}": {
       "put": {
         "tags": [
@@ -2828,6 +2850,59 @@
               }
             },
             "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}/addresses": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Assign Address",
+        "description": "„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy na końcu adresów Wykonawcy, zapisany od\nrazu jak pojedynczy wybór (ADR 0032), tą samą drogą i regułami co formularz; loginów nie usuwa.",
+        "operationId": "assignWorkerAddress",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerAddress"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -3214,6 +3289,8 @@
               "changeWorker",
               "switchWorker",
               "removeWorker",
+              "getWorkerSuggestions",
+              "assignWorkerAddress",
               "chooseRegister",
               "openRegister",
               "choosePeriodsDirectory",
@@ -8268,7 +8345,7 @@
           "reminders_without_footer"
         ],
         "title": "ReportsView",
-        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy\nalfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców."
+        "description": "Widok Raporty: wynik ostatniego udanego kliknięcia „Wpisz raporty z maili” bez czytania skrzynki, dla całego okna.\n\n``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,\n``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy\nalfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców."
       },
       "ReportsWorker": {
         "properties": {
@@ -9937,6 +10014,17 @@
           "reason": {
             "type": "string",
             "title": "Reason"
+          },
+          "worker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker"
           }
         },
         "additionalProperties": false,
@@ -9944,10 +10032,11 @@
         "required": [
           "day",
           "sender",
-          "reason"
+          "reason",
+          "worker"
         ],
         "title": "UnknownReportSender",
-        "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."
+        "description": "Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla\ntaty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma\ngo teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany."
       },
       "UnmatchedLogin": {
         "properties": {
@@ -10147,6 +10236,21 @@
         ],
         "title": "WithoutQuantityUnread",
         "description": "Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy."
+      },
+      "WorkerAddress": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "title": "Address"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "title": "WorkerAddress",
+        "description": "Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do\nWykonawcy…”)."
       },
       "WorkerEdit": {
         "properties": {
@@ -10356,6 +10460,66 @@
         ],
         "title": "WorkerSettlementRequest",
         "description": "Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu."
+      },
+      "WorkerSuggestion": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "login",
+          "orders"
+        ],
+        "title": "WorkerSuggestion",
+        "description": "Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych\nzleceń ma."
+      },
+      "WorkerSuggestions": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "read",
+              "not_set",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerSuggestion"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "suggestions",
+          "message"
+        ],
+        "title": "WorkerSuggestions",
+        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim\nobszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."
       },
       "WorkerSwitches": {
         "properties": {
