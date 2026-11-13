@@ -1,6 +1,6 @@
 """Opisy PR z „Naprawia” i ich HTML z renderera GitHuba dla testów ``tools/scal_pr.py``.
 
-``PRZYPADKI`` to opisy z numerami issues, które ``naprawia.fixed_issues`` ma z nich wziąć: repro z pięciu werdyktów
+``PRZYPADKI`` to opisy z numerami issues, które ``naprawia.listed_issues`` ma wziąć z ich HTML po słowie „Naprawia”: repro z pięciu werdyktów
 FAIL PR #624 (parser regex nie odtwarzał, co GitHub renderuje jako kod, znacznik spoza listy wierszowych kończył
 linię, a akapit w nagłówku, ``<summary>`` albo tabeli zamykał) i przypadki brzegowe. ``PRAWDZIWE`` to scalone PR-y z bazą ``main``, których issues z „Naprawia” zostawały
 otwarte przed #624, z numerami, które narzędzie ma zamknąć. ``SCALENIE`` to opisy testów przepływu

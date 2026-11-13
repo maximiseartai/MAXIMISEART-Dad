@@ -1213,26 +1213,30 @@ def _render_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(klient_github, "gh", gh)
 
 
+def _fixed_issues(body: str, repository: str) -> tuple[int, ...]:
+    return naprawia.listed_issues(klient_github.html_markdownu(body, repository), repository, (naprawia.FIXES,))
+
+
 @pytest.mark.parametrize(("body", "fixes"), [case[1:] for case in opisy_pr.PRZYPADKI], ids=[case[0] for case in opisy_pr.PRZYPADKI])
 def test_naprawia_wskazuje_issues_tego_repo_tylko_na_poczatku_linii_tekstu_ktory_github_pokazuje(
     monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
 ) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(body, opisy_pr.REPO) == fixes
+    assert _fixed_issues(body, opisy_pr.REPO) == fixes
 
 
 def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(monkeypatch: pytest.MonkeyPatch) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
+    assert _fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
 
 
 @pytest.mark.parametrize(("number", "fixes"), opisy_pr.PRAWDZIWE.items(), ids=[f"pr-{number}" for number in opisy_pr.PRAWDZIWE])
 def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]) -> None:
     _render_in_process(monkeypatch)
 
-    assert naprawia.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
+    assert _fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
 
 
 def test_kazdy_opis_testow_ma_html_z_renderera_githuba() -> None:
