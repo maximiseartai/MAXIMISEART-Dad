@@ -270,6 +270,12 @@ def settings_title(page: Page) -> Locator:
     return settings_window(page).get_by_role("heading", name=re.compile(r"^Ustawienia "))
 
 
+def settings_section(page: Page) -> Locator:
+    """The open section of Ustawienia; the menu of sections has lists of the same names (its group Narzędzie)."""
+
+    return settings_window(page).locator("[data-slot=settings-section]")
+
+
 def open_settings(page: Page, section: str) -> Locator:
     """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title)."""
 
