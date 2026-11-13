@@ -24,6 +24,7 @@ from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
 from tests.fixtures.skladnia import dotted, drzewo, imports, pamiec_drzew, wezly
+from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
 
 TESTS = Path(__file__).resolve().parent
 # Atrapy wspólne z testami żyją poza tests/ (granica N13d), ale reguły czekania i limitów czasu obejmują je jak testy.
@@ -86,9 +87,8 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
     re-eksportować, a moduł wczytany z pliku bez wpisu w ``sys.modules`` jest drugą kopią narzędzia, w której dataclass
     nie działa (K2 F15, 7 testów do 9.11.2026).
 
-    Każde użycie ``sys.path`` w ``tests/`` (``sys.path.insert``, ``sys.path[:0] = …``, ``from sys import path``) poza
-    linią z ``# noqa: TID251 - <powód>`` odrzuca ruff ``TID251`` z ``tests/ruff.toml``, więc to sprawdzenie łapie tylko
-    te postaci, na poziomie modułu i w funkcji:
+    Każde użycie ``sys.path`` w ``tests/`` (``sys.path.insert``, ``sys.path[:0] = …``, ``from sys import path``)
+    odrzuca ruff ``TID251`` z ``tests/ruff.toml``, a to sprawdzenie łapie, na poziomie modułu i w funkcji:
 
     - wywołanie, którego nazwa kończy się na ``syspath_prepend`` (``monkeypatch.``, inna nazwa fixture), ze ścieżką
       pierwszym argumentem albo ``path=``;
@@ -98,12 +98,9 @@ def _tools_on_path(tree: ast.Module) -> list[int]:
     Ścieżkę czyta ze stałych napisów (``ROOT / "tools" / "lib"``, ``".../tools/ci"``, ``"C:\\repo\\tools"``), z nazw, które
     moduł przypisuje na swoim poziomie (``TOOLS = ROOT / "tools"`` albo ``TOOLS: Final = …``, potem ``TOOLS / "lib"``), i
     z argumentów pozycyjnych wywołań (``str(…)``).
-    Katalog ``scripts`` skilla i plik z ``tools/hooks`` przechodzą, bo conftest ich nie kładzie.
-
-    Nie łapie, więc zostaje przeglądowi: wstawki w napisie kodu podprocesu (ten proces nie ma conftest, więc jej
-    potrzebuje), ścieżki złożonej w trakcie działania (argument funkcji, ``sys.argv``, atrybut), wywołania przez zmienną
-    (``f = monkeypatch.syspath_prepend``) ani narzędzia wczytanego inaczej niż ``spec_from_file_location`` (``runpy``,
-    ``exec``, ``SourceFileLoader``)."""
+    Katalog ``scripts`` skilla, plik z ``tools/hooks`` i wstawka w napisie kodu podprocesu przechodzą, bo conftest ich
+    nie kładzie, a podproces nie ma conftest. Postacie, których nie łapie ani ruff, ani to sprawdzenie, są próbkami w
+    ``ZNANE_LUKI_SYS_PATH``."""
 
     assigned = {
         target.id: node.value
@@ -204,7 +201,6 @@ def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> N
     code = (
         'SKILL = ROOT / ".agents" / "skills" / "verify-x"\n'
         'monkeypatch.syspath_prepend(str(SKILL / "scripts"))\n'
-        "monkeypatch.syspath_prepend(sys.argv[1])\n"
         'monkeypatch.syspath_prepend("my_tools")\n'
         'KOD = "import sys\\nsys.path.insert(0, \'tools\')\\nimport mutacje\\n"\n'
         'LISTA = [str(ROOT / "tools")]\n'
@@ -216,6 +212,98 @@ def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu() -> N
     )
 
     assert _tools_on_path(ast.parse(code)) == []
+
+
+# Znane luki sprawdzenia sys.path (tests/fixtures/znane_luki.py): opis postaci → moduł testu, który kładzie katalog
+# narzędzi na sys.path albo wczytuje narzędzie z pliku, a mimo to przechodzi przez ruff z konfiguracją tests/ i
+# _tools_on_path.
+ZNANE_LUKI_SYS_PATH = {
+    "ścieżka z argumentu funkcji": """\
+from pathlib import Path
+
+import pytest
+
+
+def wstaw(monkeypatch: pytest.MonkeyPatch, katalog: Path) -> None:
+    monkeypatch.syspath_prepend(katalog)
+
+
+def test_narzedzie(monkeypatch: pytest.MonkeyPatch) -> None:
+    wstaw(monkeypatch, Path(__file__).resolve().parents[1] / "tools")
+""",
+    "ścieżka z sys.argv": """\
+import sys
+
+import pytest
+
+
+def test_narzedzie(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(sys.argv[1])
+""",
+    "ścieżka z atrybutu klasy": """\
+from pathlib import Path
+
+import pytest
+
+
+class Repo:
+    narzedzia = Path(__file__).resolve().parents[1] / "tools"
+
+
+def test_narzedzie(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(Repo.narzedzia)
+""",
+    "syspath_prepend wzięte do zmiennej": """\
+from pathlib import Path
+
+import pytest
+
+
+def test_narzedzie(monkeypatch: pytest.MonkeyPatch) -> None:
+    wstaw = monkeypatch.syspath_prepend
+    wstaw(Path(__file__).resolve().parents[1] / "tools")
+""",
+    "spec_from_file_location pod aliasem funkcji": """\
+from importlib.util import spec_from_file_location as wczytaj
+from pathlib import Path
+
+SPEC = wczytaj("mutacje", Path(__file__).resolve().parents[1] / "tools" / "mutacje.py")
+""",
+    "runpy.run_path": """\
+from pathlib import Path
+import runpy
+
+MUTACJE = runpy.run_path(str(Path(__file__).resolve().parents[1] / "tools" / "mutacje.py"))
+""",
+    "SourceFileLoader": """\
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+
+MUTACJE = SourceFileLoader("mutacje", str(Path(__file__).resolve().parents[1] / "tools" / "mutacje.py")).load_module()
+""",
+    "sys.path.insert z noqa": """\
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))  # noqa: TID251 - sonda
+""",
+    "site.addsitedir": """\
+from pathlib import Path
+import site
+
+site.addsitedir(str(Path(__file__).resolve().parents[1] / "tools"))
+""",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_sprawdzenia_sys_path_przechodza_przez_ruff_i_sprawdzenie(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_SYS_PATH, tmp_path)
+    zgloszenia = ruff(pliki, sonda=TESTS / "test_sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_tools_on_path: linia {line}" for line in _tools_on_path(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_SYS_PATH)")
 
 
 # Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.
@@ -736,9 +824,9 @@ def _thread_name_copies(names: set[str]) -> list[str]:
 
 
 def test_testy_i_atrapy_nazywaja_watek_narzedzia_stala_a_nie_kopia_jego_nazwy() -> None:
-    """Granica: napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami; nazwę
-    złożoną w trakcie działania, kawałek f-stringu i kawałek nazwy widzi tylko przegląd. Napis, który nie nazywa wątku,
-    trafia do ``NOT_THREADS`` pod kluczem z nawiasu."""
+    """Łapie napis równy całej nazwie wątku albo jej początkowi (``*_THREAD_PREFIX``) poza docstringami, a postacie,
+    których nie łapie, są próbkami w ``ZNANE_LUKI_NAZW_WATKOW``. Napis, który nie nazywa wątku, trafia do
+    ``NOT_THREADS`` pod kluczem z nawiasu."""
 
     names = _thread_names_in(SRC)
     found = _thread_name_copies(names)
@@ -781,6 +869,33 @@ def test_straznik_nazw_watkow_zglasza_kopie_nazwy_z_kazdej_czytanej_postaci_w_te
     found = _thread_name_copies(_thread_names_in(tmp_path / "src"))
 
     assert [line.split(" (")[0] for line in found] == [f"{'tests/' if copy.startswith('test_') else ''}{copy}:1: 'watek-proby' to kopia nazwy wątku z src/"]
+
+
+# Znane luki strażnika nazw wątków (tests/fixtures/znane_luki.py): opis postaci → moduł testu, który kopiuje nazwę
+# wątku z src/ (QUEUE_THREAD, RUN_THREAD_PREFIX), a mimo to przechodzi przez _thread_name_copies.
+ZNANE_LUKI_NAZW_WATKOW = {
+    "nazwa złożona z kawałków w trakcie działania": 'CZEKA_NA = "skrzynka-" + "kolejka"\n',
+    "początek nazwy w f-stringu": 'def watek_uruchomienia(numer: int) -> str:\n    return f"uruchomienie-{numer}"\n',
+    "kawałek nazwy": 'def czeka_na_kolejke(nazwa: str) -> bool:\n    return nazwa.endswith("-kolejka")\n',
+    "nazwa z bajtów": 'CZEKA_NA = b"skrzynka-kolejka".decode()\n',
+}
+
+
+def test_znane_luki_strazy_nazw_watkow_przechodza_przez_niego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_NAZW_WATKOW, tmp_path / "tests")
+    monkeypatch.setattr(sys.modules[__name__], "TESTS", tmp_path / "tests")
+    monkeypatch.setattr(sys.modules[__name__], "ATRAPY", tmp_path / "atrapy")
+    monkeypatch.setattr(sys.modules[__name__], "NOT_THREADS", {})
+    names = _thread_names_in(SRC)
+    opisy = {f"tests/{plik.name}": opis for opis, plik in pliki.items()}
+
+    zgloszenia: dict[str, list[str]] = {opis: [] for opis in pliki}
+    for linia in _thread_name_copies(names):
+        zgloszenia[opisy[linia.split(":", 1)[0]]].append(linia)
+
+    assert {QUEUE_THREAD, RUN_THREAD_PREFIX} <= names
+    assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_NAZW_WATKOW)")
 
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
