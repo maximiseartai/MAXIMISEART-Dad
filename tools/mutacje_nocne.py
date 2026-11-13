@@ -588,8 +588,9 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
     return 0
 
 
-def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB) -> int:
-    """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy i issue przeżytych mutacji."""
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub | None = None) -> int:
+    """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy, issue przeżytych mutacji
+    i artefakty czasów CI; bez niego noc pyta ``GITHUB``, a czasy ``czasy_ci.GITHUB``."""
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
@@ -605,20 +606,21 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     zgloszenie.add_argument("--run", required=True, help="URL runu workflow.")
     zgloszenie.add_argument("--plan-skilli", type=Path, help=f"Plan skryptów mutacji skilli nocy; ich zapisy w podkatalogach {ARTEFAKT_SKILLI}<id zadania>.")
     args = parser.parse_args(argv)
+    noc = GITHUB if github is None else github
     try:
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
             # Czasy pobiera klient czasy_ci z krótkim limitem zapytania, żeby zawieszony gh nie trzymał planu nocy (limit
-            # zadania 10 min); wstrzyknięty klient testów zostaje.
-            czasy_github = czasy_ci.GITHUB if github is GITHUB else github
+            # zadania 10 min).
+            czasy_github = czasy_ci.GITHUB if github is None else github
             czasy = czasy_ci.z_mainu(args.czasy or czasy_ci.katalog_checkoutu(root), odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=czasy_github)
             if czasy.blad:
                 print(f"CZASY CI | {czasy.blad}; część bez zmierzonej pracy testów zostaje na miejscu swojego numeru")
             # Części biegną na ubuntu-latest z Pythonem 3.14, jak zadania pytest toru ``TOR_LOKALNY``.
-            return zaplanuj(github, root, args.od or args.baza or "", args.zakres, koszty=czasy.koszty(czasy_ci.TOR_LOKALNY))
+            return zaplanuj(noc, root, args.od or args.baza or "", args.zakres, koszty=czasy.koszty(czasy_ci.TOR_LOKALNY))
         plan_skilli = None if args.plan_skilli is None else plan_runu.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
-        return zglos(github, root, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
+        return zglos(noc, root, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:
         szczegol = blad.stderr.strip() if isinstance(blad, subprocess.CalledProcessError) else blad
         print(f"MUTACJE NOCNE FAIL | {szczegol}")

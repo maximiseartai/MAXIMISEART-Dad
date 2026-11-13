@@ -397,6 +397,12 @@ class Report:
     def differ(self, part: Part, what: str) -> None:
         self.differences.append((part, what))
 
+    def code(self) -> int:
+        """Kod wyjścia narzędzia po porównaniu: 2 z różnicą albo częścią niesprawdzoną, 0 bez nich (przycisku
+        kalendarza i budowy propozycji bez pomiaru nie liczy, bo są w każdym wyniku)."""
+
+        return 2 if self.differences or self.unchecked else 0
+
     def lines(self) -> list[str]:
         """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``, a bez pomiaru propozycji
         Emmetta (``proposal_by_hand``) ``PROPOSAL_BY_HAND``."""
@@ -1008,7 +1014,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"BŁĄD | {error}", file=sys.stderr)
         return 1
     print("\n".join(report.lines()))
-    return 2 if report.differences or report.unchecked else 0
+    return report.code()
 
 
 if __name__ == "__main__":
