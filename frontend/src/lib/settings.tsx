@@ -232,7 +232,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   // Stan przełącznika podaje serwer z obecności skrótu; do jego odpowiedzi drugie kliknięcie niczego nie wysyła.
   const autostarting = useAction(async (enabled: boolean) => {
-    saved(await changeAutostart(enabled))
+    await changeAutostart(enabled).then(saved, failed)
   })
 
   const pick = picking.run
