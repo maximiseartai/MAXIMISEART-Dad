@@ -1440,6 +1440,12 @@ autostart_unreadable [zdanie]
 unavailable [zdanie]
   Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
 
+rule_without_action [zdanie]
+  Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą.
+
+rule_hour [zdanie]
+  Godzinę wpisz jako GG:MM, np. 17:00.
+
 needed_by_rules [zdanie]
   Plik lista-urzadzen.yaml w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.
 
@@ -1492,6 +1498,9 @@ report_entering_without_addresses [HTTP 409]
 
 settings_change_unknown [HTTP 404]
   Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.
+
+quantity_rule_unknown [HTTP 404]
+  Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.
 
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.

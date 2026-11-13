@@ -22,6 +22,8 @@ import type {
   RunEvent,
   RunInfo,
   RunOutcome,
+  PreviewQuantityRulesData,
+  RuleForm,
   RunRequest,
   SendDadNoteResponse,
   Settings,
@@ -154,6 +156,25 @@ export function getSettingsHistory() {
 /** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
 export function getQuantityRules() {
   return call("getQuantityRules")
+}
+
+/** Nowa Reguła ilości z edytora; zła reguła to odmowa z polem formularza (`jesli[0].tekst`, `to.wpisy[1].kolumna`). */
+export function addQuantityRule(rule: RuleForm) {
+  return call("addQuantityRule", { body: rule })
+}
+
+/** Zmieniona Reguła ilości; zostaje na swoim miejscu w regułach. */
+export function changeQuantityRule(id: string, rule: RuleForm) {
+  return call("changeQuantityRule", { path: { rule_id: id }, body: rule })
+}
+
+export function removeQuantityRule(id: string) {
+  return call("removeQuantityRule", { path: { rule_id: id } })
+}
+
+/** Skutek zmiany Reguł ilości na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu. */
+export function previewQuantityRules(edit: PreviewQuantityRulesData["body"]) {
+  return call("previewQuantityRules", { body: edit })
 }
 
 /** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */

@@ -299,6 +299,20 @@ FEATURES = (
         ),
         needs=("przebieg-rozliczen",),
     ),
+    # Edits the Reguły ilości with the preview on the Plik zbiorczy that Przebieg rozliczeń settled; ends with the rules
+    # of the Release again (the change undone in Historia).
+    Feature(
+        "edytor-regul-ilosci",
+        (
+            "380-edytor-podglad-szerokie",
+            "381-edytor-zla-wartosc",
+            "382-edytor-zamkniecie-bez-zapisu",
+            "383-edytor-zapisana",
+            "384-edytor-historia",
+            "385-edytor-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
     # Stops Uruchomienia of an empty Folder okresu after Dad's week.
     Feature(
         "diagnoza",

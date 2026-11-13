@@ -92,7 +92,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
-        return _ready(found, settings.snapshot().quantity_rules, settled=_settled(folder))
+        return _ready(found, settings.snapshot().quantity_rules, settled=folder.observe().settled)
 
     @router.get(
         "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=NOT_FOUND_OR_CONFLICT
@@ -102,7 +102,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
-        settled = _settled(folder)
+        settled = folder.observe().settled
         rules = settings.snapshot().quantity_rules
         [listed] = (listed for listed in quantities_to_fill(found.value.rows, rules, settled=settled).kinds if listed.kind is kind)
         return _table(listed, found, rules, settled=settled)
@@ -146,12 +146,8 @@ def _without_quantity(folder: PeriodFolder, files: DadFiles, rules: QuantityRule
         return filling_contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
         return filling_contract.WithoutQuantityUnread(state="unread")
-    rows = list(quantities_to_fill(found.rows, rules, settled=_settled(folder)).without_quantity)
+    rows = list(quantities_to_fill(found.rows, rules, settled=folder.observe().settled).without_quantity)
     return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
-
-
-def _settled(folder: PeriodFolder) -> bool:
-    return folder.observe().status == "worker_settlements_ready"
 
 
 def _ready(read: GoodRead[NumberedOrders], rules: QuantityRules, *, settled: bool) -> filling_contract.QuantitiesToFillReady:

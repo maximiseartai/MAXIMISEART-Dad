@@ -63,6 +63,18 @@ FieldName = Literal[
     "stopka",
     # przełącznik startu razem z Windows (skrót w folderze Autostart)
     "autostart",
+    # reguła pliku reguly-ilosci.yaml w edytorze Reguł ilości
+    "jesli",
+    "skladnik",
+    "tekst",
+    "slowo",
+    "dni",
+    "od",
+    "to",
+    "wpisy",
+    "kolumna",
+    "wartosc",
+    "kolumny",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
 
