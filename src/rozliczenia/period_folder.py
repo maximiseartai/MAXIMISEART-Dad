@@ -309,6 +309,13 @@ class PeriodFolderObservation:
             return "collective_file_prepared"
         return "no_period_files"
 
+    @property
+    def settled(self) -> bool:
+        """Okres po Przebiegu rozliczeń: Status okresu „Rozliczenia pracowników gotowe”, więc okres zamknięty (Droga
+        okresu), a ilości w Pliku zbiorczym to ilości taty, które rozliczył."""
+
+        return self.status == "worker_settlements_ready"
+
 
 def period_status_label(status: PeriodStatus) -> str:
     """Nazwa Statusu okresu z GLOSSARY."""

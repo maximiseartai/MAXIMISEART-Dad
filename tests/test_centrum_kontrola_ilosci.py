@@ -31,6 +31,7 @@ from tests.fixtures.centrum import (
 )
 from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum, write_dad_quantity_rules
 from tests.fixtures.potomne import wait_for
+from atrapy import pliki_taty
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
 LABEL: Final = "kontrola-ilosci"
@@ -652,3 +653,36 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 
     assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
     assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+
+
+def test_podglad_bierze_cztery_najnowsze_okresy_po_przebiegu_rozliczen_od_najnowszego(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    # Ten sam rozliczony okres jeszcze cztery razy: dwa tygodnie przed nim i dwa po nim.
+    for token in ("25_31_08_2026", "01_07_09_2026", "15_21_09_2026", "22_28_09_2026"):
+        folder = centrum.period_parent / token
+        folder.mkdir()
+        shutil.copyfile(centrum.collective_file, folder / pliki_taty.collective_file_name(token))
+        (folder / pliki_taty.worker_settlements_name(token)).mkdir()
+
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    assert [file["period"] for file in preview["files"]] == ["22_28_09_2026", "15_21_09_2026", PERIOD, "01_07_09_2026"]
+    assert (preview["changed"], preview["differences_before"]) == (2 * 4, 7 * 4)
+
+
+def test_podglad_liczy_wiersz_ktory_zmiana_reguly_tylko_zostawia_pusty_w_rozliczeniu_pracownika(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    leave_v_empty = {
+        "scope": "every",
+        "conditions": [{"kind": "activities", "text": "akt int", "negated": False}],
+        "action": {"kind": "leave_empty", "columns": ["V"]},
+    }
+
+    preview = previewed(centrum, {"kind": "add", "rule": leave_v_empty})
+
+    # Jedyny wiersz z „AKT INT” w CZYNNOŚCI (samo nokia, środa 16) ma po zmianie V pustą w Rozliczeniu pracownika, a ilości
+    # bez zmian, więc dalej jest tak, jak wpisał tata.
+    assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
+    assert (preview["differences_before"], preview["differences_after"]) == (7, 7)
