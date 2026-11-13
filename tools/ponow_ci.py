@@ -6,8 +6,8 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
 1. Run, który jeszcze trwa, nie jest ponawiany: GitHub odrzuca wtedy ponowienie („already running”), a T3 budzi wątek
    już po pierwszym padniętym zadaniu. Linia ``PONÓW CZEKA`` mówi, ile zadań biegnie.
 2. Każde padnięte zadanie ostatniej próby runu (``Required CI status`` tylko, gdy padł sam) narzędzie klasyfikuje
-   po jego logu. Awaria to sygnatura z ``SYGNATURY`` w kroku, który zaczerwienił zadanie (krok z ``continue-on-error``
-   się nie liczy, ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
+   po jego logu. Awaria to sygnatura z ``SYGNATURY`` w kroku, który zaczerwienił zadanie (pierwszym kroku z ``failure``,
+   ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
    z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
    to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
@@ -72,8 +72,13 @@ NAJWIECEJ_TESTOW = 5
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
-_CZAS_LINII = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)[\d.]*Z ")
-_BLAD_KROKU = re.compile(_LINE + r"##\[error\]")
+# Znaczniki runnera w logu zadania: każdy wykonany krok zaczyna się nagłówkiem ``##[group]Run``, podkroki akcji złożonej
+# (``uses: ./.github/actions/chromium``) mają swoje nagłówki między ``##[start-action`` i ``##[end-action``, a kroki
+# ``Post …`` i ``Complete job`` po krokach zadania zaczynają się swoją pierwszą linią.
+_NAGLOWEK_KROKU = re.compile(_LINE + r"##\[group\]Run ")
+_PODKROKI = re.compile(_LINE + r"##\[(start|end)-action ")
+_PO_KROKACH = re.compile(_LINE + r"(?:Post job cleanup\.|Cleaning up orphan processes)")
+_POZA_KROKAMI = frozenset({"Set up job", "Complete job"})
 
 
 @dataclass(frozen=True)
@@ -145,38 +150,41 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
 
 
 def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
-    """Linie logu zadania z kroków, które je zaczerwieniły (``conclusion: failure`` w API zadań).
+    """Linie kroku, który zaczerwienił zadanie: pierwszego kroku z ``conclusion: failure`` w API zadań, które podaje
+    kroki po ``number`` (5813 zadań prób z 30.10–13.11).
 
-    Krok z ``continue-on-error`` też drukuje ``##[error]``, ale ma ``conclusion: success`` (run 43439867902: „Upload the
-    unit times” padł na ``FinalizeArtifact`` po kroku pobrania, który padł), więc jego linia sygnaturą nie jest. Log
-    zadania nie dzieli się na kroki, więc krok to linie od sekundy jego ``started_at`` (API podaje czas ucięty do
-    sekundy) do jego pierwszej linii ``##[error]`` włącznie, a linia bez znacznika czasu należy do kroku linii przed nią.
-    Każdy z 660 kroków z ``failure`` w padniętych próbach runów z 30.10–13.11 ma tę linię przed końcem sekundy
-    ``completed_at``; krok bez niej nie daje linii, a zadanie bez kroku z ``failure`` (timeout, ``startup_failure``)
-    daje pusty log, czyli defekt. Granica: linia kroku, który skończył się w sekundzie startu kroku, który padł, trafia
-    do niego.
+    Po nim biegną tylko kroki ``if: failure()`` (wysłanie dowodów w ci.yml) i kroki z ``continue-on-error`` (wysłanie
+    czasów), które też drukują ``##[error]`` i padają na tej samej awarii usługi artefaktów, a porażki zadania nie
+    zmieniają; krok z ``continue-on-error`` przed nim ma ``conclusion: success``. Linie kroku wyznaczają nagłówki
+    ``##[group]Run``: n-ty nagłówek poza akcją złożoną zaczyna n-ty krok bez ``skipped`` (bez ``Set up job``,
+    ``Complete job`` i ``Post …``), a krok kończy się przed następnym nagłówkiem albo przed pierwszym krokiem ``Post``.
+    Tak było w każdym z 659 padniętych zadań prób runów z 30.10–13.11 (logi zadań z API). Gdy liczba nagłówków się nie
+    zgadza, krok jest niepewny i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout,
+    ``startup_failure``).
     """
 
-    wybrane: list[str] = []
-    for krok in kroki:
-        if krok.get("conclusion") != "failure":
-            continue
-        od, do = krok["started_at"][:19], krok["completed_at"][:19]
-        sekunda, jego = "", []
-        for linia in log.splitlines(keepends=True):
-            sekunda = found[1] if (found := _CZAS_LINII.match(linia)) else sekunda
-            if sekunda > do:
-                break
-            if sekunda >= od:
-                jego.append(linia)
-                if _BLAD_KROKU.match(linia):
-                    wybrane += jego
-                    break
-    return "".join(wybrane)
+    wykonane = [
+        krok for krok in kroki if krok["conclusion"] != "skipped" and krok["name"] not in _POZA_KROKAMI and not krok["name"].startswith("Post ")
+    ]
+    padly = next((numer for numer, krok in enumerate(wykonane) if krok["conclusion"] == "failure"), None)
+    linie = log.splitlines(keepends=True)
+    poczatki: list[int] = []
+    koniec, akcje = len(linie), 0
+    for numer, linia in enumerate(linie):
+        if found := _PODKROKI.match(linia):
+            akcje += 1 if found[1] == "start" else -1
+        elif akcje == 0 and _NAGLOWEK_KROKU.match(linia):
+            poczatki.append(numer)
+        elif akcje == 0 and _PO_KROKACH.match(linia):
+            koniec = numer
+            break
+    if padly is None or len(poczatki) != len(wykonane):
+        return ""
+    return "".join(linie[poczatki[padly] : [*poczatki, koniec][padly + 1]])
 
 
 def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
-    """Sygnatury z kroków, które zaczerwieniły zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
 
     porazka = log_porazki(log, kroki)
     return Zadanie(
