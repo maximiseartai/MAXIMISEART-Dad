@@ -399,7 +399,7 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
     if args.nadpisz and args.przeglad is None:
         parser.error("--nadpisz dotyczy tylko --przeglad")
     review = None if args.przeglad is None else ReviewFile.of(args.przeglad, args.nadpisz)
-    inbox = ImapInbox(args.config) if connect is None else ImapInbox(args.config, connect=connect)
+    inbox = ImapInbox(lambda: read_snapshot(args.config).inbox, connect=connect)
     try:
         if review is not None and (refusal := review.refusal()) is not None:
             raise ProbeFailed(refusal)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import codecs
 import copy
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 import email
 from email.message import EmailMessage, Message
@@ -33,10 +34,12 @@ from hypothesis import strategies as st
 import pydantic
 import pytest
 
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_report_inbox import (
     FETCH_BATCH,
     INBOX_ACCESS_FILE,
     ImapInbox,
+    InboxState,
     InboxOutcome,
     InboxUnreachable,
     MailRefused,
@@ -93,8 +96,14 @@ def dostep(config: Path, tresc: bytes = f"{SKRZYNKA}\nabcd efgh ijkl mnop\n".enc
     return config
 
 
+def z_pliku(config: Path) -> Callable[[], InboxState]:
+    """Dostęp do skrzynki z pliku w ``config`` tak, jak go czyta właściciel Ustawień Centrum (bez zapisu)."""
+
+    return lambda: read_snapshot(config).inbox
+
+
 def port(config: Path, atrapa: AtrapaImap) -> ImapInbox:
-    return ImapInbox(config, connect=lambda: imaplib.IMAP4("127.0.0.1", atrapa.port))
+    return ImapInbox(z_pliku(config), connect=lambda: imaplib.IMAP4("127.0.0.1", atrapa.port))
 
 
 def polecenia(atrapa: AtrapaImap) -> list[str]:
@@ -560,7 +569,7 @@ def test_plik_dostepu_bez_hasla_albo_z_zla_trescia_nie_laczy_sie_ze_skrzynka(
     def no_connection() -> imaplib.IMAP4:
         raise AssertionError("port łączy się ze skrzynką bez pliku dostępu")
 
-    inbox = ImapInbox(tmp_path, connect=no_connection)
+    inbox = ImapInbox(z_pliku(tmp_path), connect=no_connection)
 
     assert inbox.access() == stan
     assert inbox.mails_since(date(2026, 11, 8)) == InboxUnreachable(stan)
@@ -584,7 +593,7 @@ def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama
         raise ConnectionRefusedError(f"brak sieci przy {SKRZYNKA}")
 
     assert cut == InboxUnreachable("IMAP4.abort")
-    assert ImapInbox(config, connect=no_network).mails_since(date(2026, 11, 8)) == InboxUnreachable("ConnectionRefusedError")
+    assert ImapInbox(z_pliku(config), connect=no_network).mails_since(date(2026, 11, 8)) == InboxUnreachable("ConnectionRefusedError")
 
 
 @pytest.mark.parametrize(
@@ -613,7 +622,7 @@ def test_awaria_gmaila_w_trakcie_sesji_daje_wynik_niedostepnej_skrzynki_a_nie_od
 
     mails = [w_skrzynce(1, surowy())]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, cut=zerwanie, refuse=odmowa) as atrapa:
-        inbox = ImapInbox(dostep(tmp_path), connect=lambda: LimitCzasuPoZalogowaniu("127.0.0.1", atrapa.port))
+        inbox = ImapInbox(z_pliku(dostep(tmp_path)), connect=lambda: LimitCzasuPoZalogowaniu("127.0.0.1", atrapa.port))
         outcome = inbox.mails_since(date(2026, 11, 8))
 
     assert outcome == InboxUnreachable(przyczyna)
@@ -626,7 +635,7 @@ def _zlap_wynik(config: Path, scenariusz: str) -> tuple[ImapInbox, InboxOutcome]
         def no_network() -> imaplib.IMAP4:
             raise TimeoutError(f"LOGIN {SKRZYNKA} {HASLO}")
 
-        inbox = ImapInbox(config, connect=no_network)
+        inbox = ImapInbox(z_pliku(config), connect=no_network)
         return inbox, inbox.mails_since(date(2026, 11, 8))
     password = HASLO if scenariusz == "maile" else "inne-haslo-maksa"
     with AtrapaImap(address=SKRZYNKA, password=password, mails=[w_skrzynce(1, surowy())]) as atrapa:
@@ -667,7 +676,7 @@ def test_adres_nadawcy_nie_jest_tekstem_i_nie_pokazuje_sie_w_repr() -> None:
 
 def test_test_bez_atrapy_skrzynki_raportow_pada_zamiast_laczyc_sie_z_gmailem(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="Skrzynką raportów w Gmailu"):
-        ImapInbox(dostep(tmp_path)).mails_since(date(2026, 11, 8))
+        ImapInbox(z_pliku(dostep(tmp_path))).mails_since(date(2026, 11, 8))
 
 
 def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kazdego_odczytu() -> None:
@@ -708,7 +717,7 @@ def wyslany(uid: int, temat: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE
 
 def smtp_portu(config: Path, imap: AtrapaImap, smtp: AtrapaSmtp) -> ImapInbox:
     return ImapInbox(
-        config,
+        z_pliku(config),
         connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
         smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
     )
@@ -800,7 +809,7 @@ def _bez_sieci() -> smtplib.SMTP:
 
 def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
     if scenariusz == "brak-sieci":
-        inbox = ImapInbox(config, smtp=_bez_sieci)
+        inbox = ImapInbox(z_pliku(config), smtp=_bez_sieci)
         return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
     password = "inne-haslo-maksa" if scenariusz == "odrzucone-haslo" else HASLO
     cut: Literal["greeting"] | None = "greeting" if scenariusz == "zerwane" else None
@@ -832,4 +841,4 @@ def test_wynik_wysylki_przypomnienia_niesie_sama_nazwe_bledu_bez_hasla(tmp_path:
 
 def test_test_bez_atrapy_smtp_pada_zamiast_laczyc_sie_z_gmailem(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="Skrzynką raportów w Gmailu"):
-        ImapInbox(dostep(tmp_path)).send(PRZYPOMNIENIE, WYSLANE_O)
+        ImapInbox(z_pliku(dostep(tmp_path))).send(PRZYPOMNIENIE, WYSLANE_O)

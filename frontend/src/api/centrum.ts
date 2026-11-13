@@ -115,6 +115,11 @@ export function changeTheme(theme: Theme) {
   return call("changeTheme", { body: { theme } })
 }
 
+/** Nowe hasło aplikacji skrzynki raportów; odpowiedź mówi, czy skrzynka je przyjęła, i nigdy nie niesie hasła. */
+export function changeInboxPassword(password: string) {
+  return call("changeInboxPassword", { body: { password } })
+}
+
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
 export function changeFolders(folders: FoldersChange) {
   return call("changeFolders", { body: folders })

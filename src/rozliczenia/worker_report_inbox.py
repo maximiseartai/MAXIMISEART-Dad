@@ -9,9 +9,13 @@ nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz
 załączników nie pobiera: z serwera bierze szkielet maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z
 całego maila, a cały mail tylko wtedy, gdy szkieletu nie da się złożyć.
 
-Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło),
-który Maks pisze Notatnikiem albo PowerShellem, więc odczyt przyjmuje BOM UTF-8 i UTF-16. Hasło nie wychodzi z modułu:
-nie ma go w żadnym wyniku, ``repr`` ani wyjątku.
+Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło). Plik
+czyta i zmienia tylko właściciel Ustawień Centrum (``rozliczenia.centrum.settings.inbox``), a port dostaje od niego
+dostęp (``InboxState``) przy każdej sesji, więc nowe hasło taty działa od następnego połączenia. Hasło nie wychodzi z
+modułu: nie ma go w żadnym wyniku, ``repr`` ani wyjątku.
+
+``ImapInbox.try_login`` to jedna próba logowania po zmianie hasła w oknie Ustawień: samo ``LOGIN`` i ``LOGOUT``, z
+wynikiem przyjęte, odrzucone albo brak sieci.
 
 Przypomnienia o raporcie (``ReminderMailbox``): ``sent_reminders`` czyta tak samo tylko do odczytu folder z atrybutem
 ``\\Sent`` (RFC 6154, w Gmailu „Wysłane”) i oddaje maile, których temat napisał ``reminder_subject``, z adresatami z
@@ -28,7 +32,6 @@ wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a n
 
 from __future__ import annotations
 
-import codecs
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -41,7 +44,6 @@ from email.utils import format_datetime, getaddresses, make_msgid
 import hashlib
 from html.parser import HTMLParser
 import imaplib
-from pathlib import Path
 import re
 import smtplib
 import ssl
@@ -55,10 +57,14 @@ __all__ = [
     "FETCH_BATCH",
     "INBOX_ACCESS_FILE",
     "ImapInbox",
+    "ImapConnect",
     "InboxAccess",
+    "InboxCredentials",
     "InboxOutcome",
+    "InboxState",
     "InboxSurvey",
     "InboxUnreachable",
+    "LoginResult",
     "MailRefused",
     "MailSent",
     "Mails",
@@ -94,6 +100,12 @@ _T = TypeVar("_T")
 
 InboxAccess = Literal["ready", "missing", "unreadable"]
 """Plik dostępu do skrzynki: gotowy, brak pliku albo pustej linii (``missing``), zła treść (``unreadable``)."""
+
+LoginResult = Literal["accepted", "rejected", "no_network"]
+"""Wynik jednej próby logowania: skrzynka przyjęła hasło, odrzuciła je albo nie odpowiedziała."""
+
+ImapConnect = Callable[[], imaplib.IMAP4]
+"""Połączenie z serwerem IMAP skrzynki raportów; testy i skille podają atrapę."""
 
 
 @dataclass(frozen=True)
@@ -180,9 +192,15 @@ class ReminderMailbox(WorkerReportInbox, Protocol):
 
 
 @dataclass(frozen=True)
-class _Access:
+class InboxCredentials:
+    """Adres skrzynki raportów i hasło aplikacji z pliku dostępu; hasła nie ma w ``repr``."""
+
     address: SenderAddress
     password: str = field(repr=False)
+
+
+InboxState = InboxCredentials | Literal["missing", "unreadable"]
+"""Dostęp do skrzynki od właściciela Ustawień: adres i hasło albo stan pliku dostępu bez nich (``InboxAccess``)."""
 
 
 class UnexpectedReply(Exception):
@@ -198,24 +216,36 @@ def _gmail_smtp() -> smtplib.SMTP:
 
 
 class ImapInbox:
-    """Skrzynka raportów taty w Gmailu; ``config_directory`` to folder ``config`` z plikiem ``INBOX_ACCESS_FILE``.
+    """Skrzynka raportów taty w Gmailu; ``access`` daje dostęp z pliku ``INBOX_ACCESS_FILE`` przy każdej sesji.
 
-    ``connect`` łączy z serwerem IMAP, a ``smtp`` z serwerem SMTP; testy podają atrapy."""
+    ``connect`` łączy z serwerem IMAP (``None``: Gmail), a ``smtp`` z serwerem SMTP; testy podają atrapy."""
 
     def __init__(
         self,
-        config_directory: Path,
+        access: Callable[[], InboxState],
         *,
-        connect: Callable[[], imaplib.IMAP4] = _gmail,
+        connect: ImapConnect | None = None,
         smtp: Callable[[], smtplib.SMTP] = _gmail_smtp,
     ) -> None:
-        self._config = config_directory
-        self._connect = connect
+        self._access = access
+        self._connect = connect or _gmail
         self._smtp = smtp
 
     def access(self) -> InboxAccess:
-        found = _read_access(self._config)
-        return "ready" if isinstance(found, _Access) else found
+        found = self._access()
+        return "ready" if isinstance(found, InboxCredentials) else found
+
+    def try_login(self) -> LoginResult:
+        """Jedno logowanie bez otwierania folderu: czy skrzynka przyjmuje hasło z pliku dostępu. Plik bez adresu albo
+        hasła (zmieniony między zapisem a próbą) i każda porażka inna niż odrzucone hasło to brak sieci."""
+
+        match self._session(lambda imap, access: imap.login(_quoted(access.address.shown()), access.password)):
+            case PasswordRejected():
+                return "rejected"
+            case InboxUnreachable():
+                return "no_network"
+            case _:
+                return "accepted"
 
     def mails_since(self, day: date) -> InboxOutcome:
         return self._session(lambda imap, access: _read(imap, access, day))
@@ -224,8 +254,8 @@ class ImapInbox:
         return self._session(lambda imap, access: _sent(imap, access, day))
 
     def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
-        found = _read_access(self._config)
-        if not isinstance(found, _Access):
+        found = self._access()
+        if not isinstance(found, InboxCredentials):
             return InboxUnreachable(found)
         message = _reminder_message(reminder, found.address, at)
         smtp: smtplib.SMTP | None = None
@@ -252,9 +282,9 @@ class ImapInbox:
 
         return self._session(lambda imap, access: _survey(imap, access, day))
 
-    def _session(self, read: Callable[[imaplib.IMAP4, _Access], _T]) -> _T | PasswordRejected | InboxUnreachable:
-        found = _read_access(self._config)
-        if not isinstance(found, _Access):
+    def _session(self, read: Callable[[imaplib.IMAP4, InboxCredentials], _T]) -> _T | PasswordRejected | InboxUnreachable:
+        found = self._access()
+        if not isinstance(found, InboxCredentials):
             return InboxUnreachable(found)
         try:
             imap = self._connect()
@@ -278,29 +308,6 @@ def _cause(error: BaseException) -> str:
     return type(error).__qualname__
 
 
-def _read_access(config_directory: Path) -> _Access | Literal["missing", "unreadable"]:
-    try:
-        content = (config_directory / INBOX_ACCESS_FILE).read_bytes()
-    except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
-        return "missing"
-    except OSError:
-        return "unreadable"
-    # Notatnik dopisuje BOM UTF-8, a ``>`` i ``Out-File`` w PowerShell 5.1 zapisują UTF-16 z BOM.
-    encoding = "utf-16" if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) else "utf-8-sig"
-    try:
-        lines = content.decode(encoding).splitlines()
-    except UnicodeError:
-        return "unreadable"
-    address_line, password_line = (lines + ["", ""])[:2]
-    password = "".join(password_line.split())
-    if not address_line.strip() or not password:
-        return "missing"
-    address = SenderAddress.of(address_line.strip())
-    if address is None or address.shown() != address_line.strip().casefold() or not password.isascii():
-        return "unreadable"
-    return _Access(address, password)
-
-
 def _quoted(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -312,7 +319,7 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
     return data
 
 
-def _read(imap: imaplib.IMAP4, access: _Access, day: date) -> Mails:
+def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> Mails:
     imap.login(_quoted(access.address.shown()), access.password)
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
     chosen = _with_subject_word(imap, _since(imap, day))
@@ -460,7 +467,7 @@ def _header_facts(header: bytes) -> tuple[SenderAddress | None, bool] | None:
         return None
 
 
-def _survey(imap: imaplib.IMAP4, access: _Access, day: date) -> InboxSurvey:
+def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSurvey:
     imap.login(_quoted(access.address.shown()), access.password)
     folder = _folder(imap)
     _ok(imap.select(_quoted(folder), readonly=True))
@@ -523,7 +530,7 @@ def _special(imap: imaplib.IMAP4, attribute: bytes) -> str | None:
     return None
 
 
-def _sent(imap: imaplib.IMAP4, access: _Access, day: date) -> SentReminders:
+def _sent(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentReminders:
     imap.login(_quoted(access.address.shown()), access.password)
     folder = _special(imap, rb"\sent")
     if folder is None:

@@ -39,7 +39,6 @@ const FIELDS_OUTSIDE_UI = new Map([
   ["RunEvent.sequence", "numer zdarzenia strumienia SSE, nie treść dla taty"],
   ["ListedWorker.logins", UNTIL_WORKERS_SECTION],
   ["ListedWorker.addresses", UNTIL_WORKERS_SECTION],
-  ["UnmatchedLogin.login", UNTIL_WORKERS_SECTION],
   ["UnmatchedLogin.addresses", UNTIL_WORKERS_SECTION],
   ["WorkerListSetting.unresolved", UNTIL_WORKERS_SECTION],
 ])

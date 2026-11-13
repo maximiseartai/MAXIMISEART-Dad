@@ -509,6 +509,8 @@ NOT_SWEPT: dict[str, str] = {
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",
+    "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
+    "bez plików taty; zła wartość, zły plik skrzynki i trzy wyniki logowania: test_centrum_rozliczen",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.

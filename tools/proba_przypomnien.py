@@ -57,6 +57,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
+    InboxState,
     InboxUnreachable,
     MailRefused,
     MailSent,
@@ -168,11 +169,11 @@ def main(
     target = SenderAddress.of(args.do)
     if target is None:
         parser.error("--do to jeden adres lokalna@domena")
-    inbox = (
-        ImapInbox(args.config)
-        if connect is None or smtp is None
-        else ImapInbox(args.config, connect=connect, smtp=smtp)
-    )
+
+    def access() -> InboxState:
+        return read_snapshot(args.config).inbox
+
+    inbox = ImapInbox(access) if connect is None or smtp is None else ImapInbox(access, connect=connect, smtp=smtp)
     line = probe(now(), args.config, inbox, target)
     print(line)
     return 0 if line.startswith(OK) else 1
