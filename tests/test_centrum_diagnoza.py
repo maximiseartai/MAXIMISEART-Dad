@@ -360,7 +360,7 @@ def test_zgloszenie_ma_zmiany_ustawien_z_30_dni_z_folderem_sama_nazwa_bez_sciezk
 
     lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
 
-    at = [f"- {datetime.fromisoformat(row['at']):%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in _history(centrum)]
+    at = [f"- {datetime.fromisoformat(row['at']).astimezone():%Y-%m-%d %H:%M} · tata · {SETTINGS_FILE}" for row in _history(centrum)]
     start = lines.index("## Zmiany Ustawień (30 dni)")
     assert lines[start : start + 6] == [
         "## Zmiany Ustawień (30 dni)",

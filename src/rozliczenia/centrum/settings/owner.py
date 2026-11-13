@@ -168,7 +168,12 @@ class CentrumSettings:
             return self._undo(file, changes, row.id)
 
     def history(self) -> HistoryRead | Unreadable:
+        """Historia od najnowszego wiersza; najpierw, jak każdy odczyt, porównanie plików z pamięcią, więc zmiana spoza
+        Centrum ma już swój wiersz, gdy tata otwiera Historię."""
+
         with self._lock:
+            for file in _FILES.values():
+                self._observe(file)
             return self._history.read()
 
     def apply_release_changes(

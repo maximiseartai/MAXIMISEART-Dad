@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
@@ -38,6 +39,7 @@ from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.release_changes import (
     Edit,
     Later,
@@ -601,6 +603,20 @@ def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_
     assert "ustawienia-spoza plik=centrum-ustawienia.yaml wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
 
 
+def test_historia_otwarta_zaraz_po_recznej_zmianie_pliku_ustawien_pokazuje_jej_wiersz(tmp_path: Path) -> None:
+    """Tata otwiera Historię w oknie Ustawień, zanim cokolwiek innego przeczytało Ustawienia po zmianie Maksa."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    assert changes(history_rows(app))[0] == (
+        "outside",
+        [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}],
+    )
+
+
 def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_i_jednym_wierszem_bez_cofniecia(
     tmp_path: Path,
 ) -> None:
@@ -629,6 +645,27 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
     assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
     log = app.log_path.read_text(encoding="utf-8")
     assert log.count("ustawienia-zle plik=centrum-ustawienia.yaml pole=folder_okresow") == 1
+
+
+def test_reczne_przepisanie_pliku_ustawien_z_tymi_samymi_wartosciami_ma_wiersz_bez_cofniecia(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.settings_path.write_bytes(b"# kopia Maksa\n" + app.settings_path.read_bytes())
+
+    app.client.get("/api/settings")
+    rows = history_rows(app)
+    undo = app.client.post(f"/api/settings/history/{rows[0]['id']}/undo")
+
+    assert [(row["source"], row["changes"], row["undoable"]) for row in rows[:1]] == [("outside", [], False)]
+    assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folder(tmp_path: Path) -> None:
+    """``tools/proba_przypomnien.py`` czyta Ustawienia bez Centrum: zepsuty ręcznie plik nie zabiera mu folderu okresów."""
+
+    app, periods = with_periods_directory(tmp_path)
+    app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
+
+    assert read_snapshot(app.tool.config).folders.periods_directory == periods
 
 
 def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
@@ -739,6 +776,50 @@ def test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawie
     history.rmdir()
     assert app.client.get("/api/settings").json()["theme"] == "dark"
     assert history_rows(app) == []
+
+
+def test_pierwszy_wybor_taty_ktorego_wiersza_historii_nie_da_sie_dopisac_nie_zostawia_pliku_ustawien(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    history = app.tool.config / HISTORY_FILE
+    history.mkdir(parents=True)
+
+    refused = app.client.put("/api/settings/theme", json={"theme": "light"})
+    history.rmdir()
+    after = app.client.get("/api/settings").json()
+
+    assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
+    assert (app.settings_path.exists(), after["theme"], history_rows(app)) == (False, "dark", [])
+
+
+@pytest.mark.parametrize("bad", [False, True], ids=["dobra-tresc", "zla-tresc"])
+def test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_przy_nastepnym_odczycie(
+    tmp_path: Path, bad: bool
+) -> None:
+    """OneDrive albo antywirus trzyma Historię, gdy Maks zmienia plik ręcznie: zmiana działa, a wiersz dochodzi później."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    history = app.tool.config / HISTORY_FILE
+    kept = history.read_bytes()
+    history.unlink()
+    history.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{'INEA' if bad else other}'\n", encoding="utf-8")
+
+    held = app.client.get("/api/settings").json()
+    history.rmdir()
+    history.write_bytes(kept)
+    app.client.get("/api/settings")
+    app.client.get("/api/settings")
+    rows = history_rows(app)
+
+    assert held["periods_directory"]["path"] == str(periods if bad else other)
+    assert [(row["source"], row["refused"]) for row in rows] == [("outside", bad), ("tata", False)]
+    assert rows[0]["changes"] == (
+        [] if bad else [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}]
+    )
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -1162,6 +1243,25 @@ def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zm
     assert (health.status_code, asked) == (200, ["zapytana", "zapytana"])
     log = tool.log_path.read_text(encoding="utf-8")
     assert log.count('nieoczekiwany-wyjatek typ=KeyError miejsce="zmiana Ustawień z Wydania 2026-11-z-bledem"') == 2
+
+
+def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        app = centrum(tmp_path)
+        app.client.put("/api/settings/theme", json={"theme": "light"})
+        [row] = history_rows(app)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    assert row["at"].endswith("Z")
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:
