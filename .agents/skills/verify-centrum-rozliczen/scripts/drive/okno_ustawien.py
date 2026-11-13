@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Page, Request, expect
+from playwright.sync_api import Page, Request, ViewportSize, expect
 
 from drive.common import DAD_VIEWPORT, Run, close_settings, settings_window
 
@@ -16,7 +17,7 @@ HIDDEN_GROUPS = ("Ilości", "Historia")
 SECTIONS = ("Foldery", "Wykonawcy", "Wzorce", "Kopie INTERMAX", "Zgłoszenia", "Narzędzie", "Wygląd")
 FOLDERS = "#/ustawienia/foldery"
 # Dad's narrow browser window, where the window Ustawienia fills the screen.
-NARROW = {"width": 420, "height": 860}
+NARROW: ViewportSize = {"width": 420, "height": 860}
 
 
 def _hash(page: Page) -> str:
@@ -74,12 +75,13 @@ def drive(run: Run, page: Page) -> None:
         run.capture(page, "301-okno-szerokie", full_page=False)
 
         run.step(FEATURE, "okno-zamykanie")
-        for how, close in (
+        closes: tuple[tuple[str, Callable[[], None]], ...] = (
             ("Esc", lambda: page.keyboard.press("Escape")),
             ("✕", lambda: window.get_by_role("button", name="Zamknij Ustawienia", exact=True).click()),
             # Outside the window, on the blurred Centrum: its left edge is at 15 % of Dad's screen.
             ("a click on the backdrop", lambda: page.mouse.click(40, DAD_VIEWPORT["height"] // 2)),
-        ):
+        )
+        for how, close in closes:
             if not window.is_visible():
                 gear.click()
                 expect(title).to_have_text("Ustawienia/Foldery")
