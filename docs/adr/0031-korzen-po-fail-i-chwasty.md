@@ -28,8 +28,10 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 
 - Autor wyrywa korzeń według piramidy (architektura, refaktor, lint, testy, weryfikacja), a nie łata objaw pod `PASS`; recenzent następnej rundy to sprawdza (Q2).
 - Najwyższy działający szczebel, przy każdym wyższym jedno zdanie, czemu nie; Ważne, gdy recenzent pokaże wyższy; bez „bez mechanizmu” (Q7).
-- Szczebel (e) to punkt z przykładem w „Co jest porażką” skilla `przeglad`, dozwolony tylko, gdy wyższe nie działają; powrót kodu po (e) idzie do Maksa (Q26).
-  Zapadka (d) z dotychczasowej reguły zostaje między (c) a (e).
+- Szczebel (e) to punkt z przykładem w „Co jest porażką” skilla `przeglad`; powrót kodu po (e) idzie do Maksa (Q26).
+  Zapadka (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
+  Przy (d) i przy (e) autor pisze jedno zdanie, czemu wyżej się nie da.
+  To rozwinięcie decyzji Q7 i Q26 przez koordynatora (13.11.2026), do potwierdzenia przez Maksa.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja albo cofnięcie), a recenzent jedną sondą sprawdza siostrzaną formę (Q6).
 - Powrót korzenia wymusza szczebel wyżej niż poprzednio; brak wyższego idzie do Maksa (Q11).
 - Mały korzeń (do rozmiaru M) wyrywa się w tym samym PR, większy w osobnym PR korzenia scalanym najpierw, a oba PR-y łączą linki (Q8).
@@ -39,10 +41,12 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 - Zamknięta lista kodów w repo, [`korzenie.toml`](../../.agents/skills/przeglad/korzenie.toml), z jednym zdaniem i przykładem PR przy każdym kodzie (Q3).
   Kody pochodzą z historii (Q13); te, które opisują jeden moduł albo pokrywają się z innym, scalono, a te z samymi drobiazgami pominięto.
 - Nowy kod wchodzi przez `Korzeń: NOWY R-KOD - opis` w werdykcie, a autor dopisuje go do listy; porządek listy co tydzień jako propozycja dla Maksa (Q18).
-- Szablon werdyktu: Ważne z polami `Gdzie`, `Dowód` (do 5 linii), `Korzeń` i `Szczebel`, Drobne z jedną linią `Gdzie`, na końcu `## Sprawdzone` z najwyżej 5 punktami; sprawdza go `tools/scal_pr.py --werdykt` (Q3, Q9).
+- Szablon werdyktu: Ważne z polami `Gdzie`, `Dowód` (do 5 linii po 300 znaków), `Korzeń` i `Szczebel`, Drobne z jedną linią `Gdzie`, na końcu `## Sprawdzone` z najwyżej 5 punktami; sprawdza go `tools/scal_pr.py --werdykt` (Q3, Q9).
+  Treść czyta renderer GitHuba (`gh api markdown`), jak opis PR przy „Naprawia”, więc pola i nagłówki liczą się tylko poza blokami kodu, a cytat wyniku z linią pola nie psuje szablonu.
 - Autor może zakwestionować kod z powodem, rozstrzyga następny recenzent, a rejestr bierze kod z ostatniego werdyktu (Q25).
 - Szablon obowiązuje od pierwszego werdyktu po wdrożeniu; wątki, które już mają werdykt, kończą po staremu (Q20).
-  Kryterium jest deterministyczne: `--werdykt` sprawdza tylko dwie pierwsze linie, gdy najstarszy werdykt PR nie ma linii `## Sprawdzone`.
+  Kryterium jest deterministyczne i jedno dla publikacji i zgody na merge: wątek kończy po staremu, gdy najstarszy werdykt PR (`createdAt` z GitHuba, od konta z prawem zapisu) powstał przed chwilą wdrożenia.
+  Chwila wdrożenia to data commitu, który dodał ten ADR na bazie PR, liczona po `--first-parent`, czyli commitu merge'a PR wdrożenia; komentarzem nie da się jej przesunąć, a przed merge'em nikt jej nie zgaduje.
 
 ### Rejestr i chwasty
 
@@ -66,7 +70,6 @@ Pięć PR-ów w tej kolejności (Q24):
 ## Konsekwencje
 
 - Recenzent pisze werdykt w szablonie, a odmowa `--werdykt` podaje przyczyny i wzór, więc poprawia plik bez czytania dokumentacji.
-- Merge liczy zgodę `PASS` jak dotąd, z dwóch pierwszych linii; szablon pilnuje tylko publikacji, dopóki PR 2 nie zmieni gotowości.
+- W wątku z szablonem merge liczy `PASS` jako zgodę tylko wtedy, gdy przechodzi szablon, także gdy opublikowano go z pominięciem `--werdykt`; odmowa podaje przyczyny i wzór.
 - `NOWY R-KOD` przechodzi przy publikacji z kodem spoza listy HEAD PR, a z kodem, który już na niej stoi, jest odmową; recenzent nie dobiera najbliższego kodu, bo zły kod zafałszowałby rejestr powtórzeń.
   NOWY kod musi być na liście przed merge'em PR; pilnuje tego bramka korzenia (ADR 0031, PR 2).
-- Werdykt bez szablonu opublikowany z pominięciem `--werdykt` jako pierwszy werdykt PR otwiera wątek po staremu; tę granicę zamyka dopiero PR 2.

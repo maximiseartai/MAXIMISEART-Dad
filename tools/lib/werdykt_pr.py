@@ -2,8 +2,8 @@
 utworzenia; nieopublikowana recenzja (``PENDING``) się nie liczy. Werdykt to komentarz albo recenzja, której pierwsza
 niepusta linia, bez odstępów na brzegach, to dokładnie ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>``, gdzie
 ``<SHA>`` to pełny SHA HEAD PR małymi literami. ``FAIL`` jest sprzeciwem bez względu na dalsze linie, tak jak
-recenzja w stanie ``CHANGES_REQUESTED``. ``PASS`` jest zgodą tylko wtedy, gdy dwie pierwsze linie przechodzą reguły
-``--werdykt`` (niżej), bez względu na to, jak go opublikowano; inaczej to odmowa ``werdykt: PASS dla <sha> nie
+recenzja w stanie ``CHANGES_REQUESTED``. ``PASS`` jest zgodą tylko wtedy, gdy przechodzi reguły ``--werdykt`` (niżej),
+bez względu na to, jak go opublikowano; inaczej to odmowa ``werdykt: PASS dla <sha> nie
 przechodzi reguł --werdykt (<przyczyny>)`` z poleceniem ``--werdykt``. Inny tekst, także ``FAIL`` w prozie albo
 werdykt ze skróconym SHA, nie jest werdyktem. Zgodę pisze niezależny recenzent, nie autor zmiany: ``PASS`` mówi,
 że przegląd nie znalazł problemów, a skille ``verify-*`` z linii ``SKILLE VERIFY`` ``tools/skille_dla_zmiany.py``
@@ -15,12 +15,16 @@ przechodzi na nowy push. Komentarz edytowany liczy się z treścią po edycji, a
 co zgoda przy merge'u: pierwsza niepusta linia
 to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżącego HEAD PR, druga to ``Znaleziska: N
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
-najwyżej trzy, a treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``: Ważne z polami
-``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``, a kod korzenia
-z zamkniętej listy albo ``NOWY`` spoza niej). Szablon nie obowiązuje w wątku sprzed niego (ADR 0031, decyzja Q20): gdy najstarszy werdykt PR,
-dowolnego commitu, nie ma linii ``## Sprawdzone``, bo opublikowano go przed szablonem, ``--werdykt`` sprawdza tam tylko
-dwie pierwsze linie. Granica: werdykt bez szablonu opublikowany z pominięciem ``--werdykt`` też otwiera wątek po
-staremu. Merge liczy zgodę ``PASS`` tylko z dwóch pierwszych linii, bez szablonu. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
+najwyżej trzy, a w wątku z szablonem treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``:
+Ważne z polami ``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``,
+a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej). Czy wątek ma szablon, rozstrzyga jedna funkcja,
+``template_applies``, i przy publikacji, i przy zgodzie na merge (ADR 0031, decyzja Q20): szablon obowiązuje, gdy
+jest wdrożony na bazie PR (``szablon_werdyktu.deployed``), a najstarszy werdykt PR, dowolnego commitu, nie powstał
+przed chwilą wdrożenia (``createdAt`` komentarza albo ``submittedAt`` recenzji z GitHuba, których komentarzem nie da
+się zmienić). Wątek, którego pierwszy werdykt jest starszy, kończy po staremu: tylko dwie pierwsze linie. Werdykt bez
+czasu, którego GitHub nie podał, wątku nie postarza. Merge liczy więc ``PASS`` w wątku z szablonem jako zgodę tylko
+wtedy, gdy przechodzi szablon, także gdy opublikowano go z pominięciem ``--werdykt``, a odmowa podaje przyczyny
+i wzór. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
 każda przyczyna mówi, co poprawić w pliku. Opublikowany werdykt kończy się linią ``WERDYKT OK | #N <sha> | <PASS
 albo FAIL> | <adres komentarza>``.
 """
@@ -29,10 +33,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 import re
 from typing import Literal
 
+import github
 from stan_pr import Pull
 import szablon_werdyktu
 
@@ -57,6 +63,7 @@ class Verdict:
     commit: str | None
     stance: Stance | None
     problems: tuple[str, ...]
+    body: str
 
 
 def read(verdict: dict[str, object], head: str) -> Verdict | None:
@@ -77,7 +84,7 @@ def read(verdict: dict[str, object], head: str) -> Verdict | None:
     author = verdict.get("author")
     login = str(author.get("login", "?")) if isinstance(author, dict) else "?"
     when = str(verdict.get("createdAt") or verdict.get("submittedAt") or "?")
-    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems)
+    return Verdict(when, login, tuple(lines[:2]), decision, commit, stance, problems, str(verdict["body"]))
 
 
 def text_lines(body: object) -> list[str]:
@@ -86,8 +93,9 @@ def text_lines(body: object) -> list[str]:
     return [line.strip() for line in str(body).splitlines() if line.strip()]
 
 
-def consent_problem(pull: Pull) -> str | None:
-    """Przyczyna odmowy merge'a PR, gdy najnowszy werdykt dla jego HEAD nie jest zgodą."""
+def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
+    """Przyczyna odmowy merge'a PR, gdy najnowszy werdykt dla jego HEAD nie jest zgodą; ``deployed`` to chwila
+    wdrożenia szablonu na bazie PR (``szablon_werdyktu.deployed``)."""
 
     head = pull.head
     publish = f"tools/scal_pr.py {pull.number} --werdykt PLIK"
@@ -97,8 +105,11 @@ def consent_problem(pull: Pull) -> str | None:
         latest = found if found is not None and found.stance is not None else latest
     if latest is None:
         return f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}"
-    if latest.stance is Stance.BROKEN_CONSENT:
-        return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(latest.problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
+    problems = list(latest.problems)
+    if latest.stance is Stance.CONSENT and template_applies(pull, deployed):
+        problems = _template_problems(latest.body, pull)
+    if problems:
+        return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
     return None if latest.stance is Stance.CONSENT else f"werdykt: FAIL dla {head[:7]} bez nowszego „WERDYKT: PASS {head}”"
 
 
@@ -147,24 +158,43 @@ def file_problems(text: str, head: str) -> list[str]:
     return problems
 
 
-def publish_problems(text: str, pull: Pull) -> list[str]:
-    """Co poprawić w pliku werdyktu przed publikacją na ``pull``: dwie pierwsze linie, a poza wątkiem sprzed szablonu
-    także treść według ``szablon_werdyktu``."""
+def publish_problems(text: str, pull: Pull, deployed: datetime | None) -> list[str]:
+    """Co poprawić w pliku werdyktu przed publikacją na ``pull``: dwie pierwsze linie, a w wątku z szablonem
+    (``template_applies``) także treść według ``szablon_werdyktu``."""
 
     problems = file_problems(text, pull.head)
-    if _before_template(pull):
-        return problems
-    lines = text_lines(text)
-    findings = FINDINGS_LINE.fullmatch(lines[1]) if len(lines) > 1 else None
+    return [*problems, *_template_problems(text, pull)] if template_applies(pull, deployed) else problems
+
+
+def template_applies(pull: Pull, deployed: datetime | None) -> bool:
+    """Czy werdykt na ``pull`` idzie za szablonem: szablon jest wdrożony (``deployed`` to nie ``None``), a najstarszy
+    werdykt PR (z linią ``WERDYKT:``, od konta z prawem zapisu) nie powstał przed chwilą ``deployed`` (decyzja Q20)."""
+
+    if deployed is None:
+        return False
+    found = (read(verdict, pull.head) for verdict in pull.verdicts)
+    moments = [_moment(verdict.when) for verdict in found if verdict is not None and verdict.decision is not None]
+    known = [moment for moment in moments if moment is not None]
+    return not known or min(known) >= deployed
+
+
+def _moment(when: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(when)
+    except ValueError:
+        return None
+
+
+def _template_problems(text: str, pull: Pull) -> list[str]:
+    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+
+    lines = str(text).splitlines()
+    filled = [index for index, line in enumerate(lines) if line.strip()]
+    rest = "\n".join(lines[filled[1] + 1 :]) if len(filled) > 1 else ""
+    findings = FINDINGS_LINE.fullmatch(lines[filled[1]].strip()) if len(filled) > 1 else None
     declared = (int(findings[2]), int(findings[3])) if findings else None
-    return [*problems, *szablon_werdyktu.problems(lines[2:], declared, lambda: szablon_werdyktu.pull_codes(pull))]
-
-
-def _before_template(pull: Pull) -> bool:
-    """Czy wątek PR zaczął się przed szablonem: jego najstarszy werdykt nie ma linii ``## Sprawdzone``."""
-
-    for verdict in pull.verdicts:
-        found = read(verdict, pull.head)
-        if found is not None and found.decision is not None:
-            return szablon_werdyktu.CHECKED not in text_lines(verdict["body"])
-    return False
+    try:
+        html = github.html_markdownu(rest, pull.repository) if rest.strip() else ""
+    except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
+        return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
+    return szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))

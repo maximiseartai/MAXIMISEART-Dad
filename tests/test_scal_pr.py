@@ -8,6 +8,7 @@ wywołania ``gh pr merge`` zamiast scalać.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ import subprocess
 
 import pytest
 
-from tests.fixtures import opisy_pr
+from tests.fixtures import opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
@@ -192,7 +193,7 @@ class MergeGitHub(FakeGitHub):
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
-        self.markdown = opisy_pr.rendered()  # HTML opisu, a jak w ``answer_issue`` błąd albo ``zawiesza``
+        self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
         self.written = 0
 
     def open_pull(self, number: int, files: dict[str, str], *, parent: str = "") -> str:
@@ -279,7 +280,7 @@ def _fake_gh(tmp_path: Path) -> Path:
 
 
 def _empty_state(directory: Path) -> None:
-    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps(opisy_pr.rendered()))):
+    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps({**opisy_pr.rendered(), **werdykty_szablonu.rendered()}))):
         (directory / name).write_text(empty, encoding="utf-8")
 
 
@@ -299,6 +300,18 @@ def _repo_view(default_branch: str) -> str:
 
 def _last_line(answered: subprocess.CompletedProcess[str]) -> str:
     return answered.stdout.rstrip().rpartition("\n")[2]
+
+
+def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:00Z", merged: str = "2026-10-01T00:00:00Z") -> None:
+    """Wdrożenie szablonu werdyktu na ``main`` w ``origin``: commit autora z ADR 0031 z datą ``authored`` scalony do
+    ``main`` commitem merge'a z datą ``merged``; werdykty atrapy powstają 24 i 25.10.2026."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", authored)
+        added = github.commit_on("main", {szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"}, "ADR 0031")
+        patch.setenv("GIT_COMMITTER_DATE", merged)
+        git(github.checkout, "merge", "--quiet", "--no-ff", "--message", "Merge wdrożenia szablonu", added)
+    git(github.checkout, "push", "--quiet", "origin", "main")
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
@@ -462,7 +475,7 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
     ],
 )
 def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
-    assert werdykt_pr.consent_problem(_written(*verdicts)) == reason
+    assert werdykt_pr.consent_problem(_written(*verdicts), None) == reason
 
 
 @pytest.mark.parametrize(
@@ -1318,14 +1331,11 @@ def test_przeglad_bez_wyniku_skille_dla_zmiany_podaje_skille_nieznane_a_pr_bez_w
     assert _lines(answered, "RUNDA |") == ["RUNDA | 1: PR nie ma werdyktu"]
 
 
-MAJOR = "### W1. Brak testu.\nGdzie: kod/inne.py:1\nDowód: tools/mutacje.py: NIEWYKRYTA\nKorzeń: R-BEZ-TESTU - gałąź bez testu.\nSzczebel: (c) - test zachowania.\n"
-
-
 @pytest.mark.parametrize(
     ("verdict", "decision"),
     [
-        ("\n  WERDYKT: PASS {head}  \n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n### D1. Nazwa.\nGdzie: kod/inne.py:1\n## Sprawdzone\n- diff\n", "PASS"),
-        ("WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + MAJOR + "## Sprawdzone\n- diff\n", "FAIL"),
+        ("\n  WERDYKT: PASS {head}  \n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n" + werdykty_szablonu.WERDYKTY["drobne"] + "\n", "PASS"),
+        ("WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"] + "\n", "FAIL"),
     ],
     ids=["pass", "fail"],
 )
@@ -1333,6 +1343,7 @@ def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_
     tmp_path: Path, verdict: str, decision: str
 ) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(verdict.format(head=head), encoding="utf-8")
@@ -1378,6 +1389,7 @@ def test_plik_werdyktu_niezgodny_z_postacia_ze_skilla_albo_z_head_daje_przyczyny
 
 def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie_przyczyny_i_plik(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(MANY_PROBLEMS, encoding="utf-8")
@@ -1499,135 +1511,38 @@ def test_werdykt_bez_pliku_konczy_sie_bledem_narzedzia_bez_komentarza(tmp_path: 
     assert github.published() == []
 
 
-# Szablon werdyktu (ADR 0031, decyzja Q9): Ważne „### W<n>.” z polami Gdzie, Dowód (najwyżej 5 linii), Korzeń
-# i Szczebel, Drobne „### D<n>.” z jedną linią Gdzie, na końcu „## Sprawdzone” z 1–5 punktami.
-TEMPLATE_BODY = [
-    "### W1. Odmowa gubi przyczynę.",
-    "Gdzie: tools/scal_pr.py:149",
-    "Dowód: tools/mutacje.py --plik tools/scal_pr.py: NIEWYKRYTA",
-    "Korzeń: R-BEZ-TESTU - nowa gałąź bez testu zachowania.",
-    "Szczebel: (c) - test zachowania łapie klasę.",
-    "### D1. Nieaktualne zdanie.",
-    "Gdzie: AGENTS.md:60",
-    "## Sprawdzone",
-    "- szybko: SZYBKO OK",
-]
+# Szablon werdyktu (ADR 0031, decyzja Q9): treść pod dwiema pierwszymi liniami czyta renderer GitHuba, a w testach
+# zastępuje go HTML z ``tests/fixtures/werdykty_szablonu.json``.
 ROOTS = frozenset({"R-BEZ-TESTU", "R-DRUGA-DROGA"})
 
 
-def _replaced(old: str, *new: str) -> list[str]:
-    """Treść szablonu, w której linia ``old`` ustępuje liniom ``new`` (bez nich: znika)."""
-
-    index = TEMPLATE_BODY.index(old)
-    return [*TEMPLATE_BODY[:index], *new, *TEMPLATE_BODY[index + 1 :]]
+def _template_problems(text: str, declared: tuple[int, int] = (1, 1)) -> list[str]:
+    return szablon_werdyktu.problems(werdykty_szablonu.html(text), declared, lambda: ROOTS)
 
 
-def _template_problems(lines: list[str], declared: tuple[int, int] | None = (1, 1)) -> list[str]:
-    return szablon_werdyktu.problems(lines, declared, lambda: ROOTS)
+@pytest.mark.parametrize("text", werdykty_szablonu.PRZECHODZA.values(), ids=werdykty_szablonu.PRZECHODZA)
+def test_tresc_werdyktu_w_szablonie_przechodzi_takze_z_cytatem_pola_w_bloku_kodu(text: str) -> None:
+    assert _template_problems(text) == []
 
 
-def _evidence(count: int) -> list[str]:
-    return _replaced(TEMPLATE_BODY[2], "Dowód: tools/mutacje.py", *(f"linia {number}" for number in range(2, count + 1)))
-
-
-@pytest.mark.parametrize(
-    "lines",
-    [
-        TEMPLATE_BODY,
-        _replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD - opis kodu, którego nie ma na liście."),
-        _replaced(TEMPLATE_BODY[4], "Szczebel: (e) - punkt w „Co jest porażką”, bo (a)–(d) nie działają."),
-        _evidence(5),
-        _replaced(TEMPLATE_BODY[2], "Dowód:", "polecenie", "wynik"),
-        [*TEMPLATE_BODY, *(f"- punkt {number}" for number in range(2, 6))],
-    ],
-    ids=["szablon", "nowy-kod-spoza-listy", "szczebel-e", "dowod-5-linii", "dowod-pod-polem", "5-punktow-sprawdzone"],
-)
-def test_tresc_werdyktu_w_szablonie_przechodzi(lines: list[str]) -> None:
-    assert _template_problems(lines) == []
-
-
-@pytest.mark.parametrize(
-    ("lines", "declared", "fragment"),
-    [
-        (_replaced(TEMPLATE_BODY[1]), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
-        (_replaced(TEMPLATE_BODY[1], "Gdzie:"), (1, 1), "W1: puste pole Gdzie"),
-        (_replaced(TEMPLATE_BODY[2], "Dowód:"), (1, 1), "W1: puste pole Dowód"),
-        (_replaced(TEMPLATE_BODY[6], "Gdzie:"), (1, 1), "D1: puste pole Gdzie"),
-        ([TEMPLATE_BODY[0], TEMPLATE_BODY[2], TEMPLATE_BODY[1], *TEMPLATE_BODY[3:]], (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
-        ([*TEMPLATE_BODY[:3], TEMPLATE_BODY[4], TEMPLATE_BODY[3], *TEMPLATE_BODY[5:]], (1, 1), "a po Dowodzie jest „Szczebel:"),
-        (_replaced(TEMPLATE_BODY[3]), (1, 1), "a po Dowodzie jest „Szczebel:"),
-        (_replaced(TEMPLATE_BODY[4]), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po Korzeniu jest koniec"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: R-NIE-MA - kod spoza listy."), (1, 1), "W1: kod R-NIE-MA spoza listy"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-BEZ-TESTU - kod, który już jest."), (1, 1), "W1: NOWY R-BEZ-TESTU: ten kod jest już na liście"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD -"), (1, 1), "W1: „Korzeń: NOWY R-NOWY-KOD -” to nie"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD"), (1, 1), "W1: „Korzeń: NOWY R-NOWY-KOD” to nie"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY r-nowy-kod - kod małymi literami."), (1, 1), "W1: „Korzeń: NOWY r-nowy-kod"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY NOWY-KOD - kod bez R-."), (1, 1), "W1: „Korzeń: NOWY NOWY-KOD"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY_KOD - kod z podkreśleniem."), (1, 1), "W1: „Korzeń: NOWY R-NOWY_KOD"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: R-BEZ-TESTU"), (1, 1), "W1: „Korzeń: R-BEZ-TESTU”"),
-        (_replaced(TEMPLATE_BODY[4], "Szczebel: (f) - poza drabiną."), (1, 1), "W1: „Szczebel: (f)"),
-        (_evidence(6), (1, 1), "W1: Dowód ma 6 linii"),
-        (TEMPLATE_BODY, (0, 1), "w treści Ważne 1"),
-        ([*TEMPLATE_BODY[:5], *TEMPLATE_BODY[7:]], (1, 1), "w treści Ważne 1 i Drobne 0"),
-        ([*TEMPLATE_BODY[5:7], *TEMPLATE_BODY[:5], *TEMPLATE_BODY[7:]], (1, 1), "W1: Ważne stoją przed Drobnymi"),
-        ([TEMPLATE_BODY[0].replace("W1", "W2"), *TEMPLATE_BODY[1:]], (1, 1), "W2: to 1. Ważne"),
-        (_replaced(TEMPLATE_BODY[6], "Gdzie: AGENTS.md:60", "Dowód: zdanie"), (1, 1), "D1: Drobne ma tylko pole Gdzie"),
-        (["Recenzent pisze prozą.", *TEMPLATE_BODY], (1, 1), "Recenzent pisze prozą."),
-        (TEMPLATE_BODY[:7], (1, 1), "brak „## Sprawdzone”"),
-        (TEMPLATE_BODY[:8], (1, 1), "„## Sprawdzone” ma 0 punktów"),
-        ([*TEMPLATE_BODY, *(f"- punkt {number}" for number in range(2, 7))], (1, 1), "„## Sprawdzone” ma 6 punktów"),
-        ([*TEMPLATE_BODY, "Wszystko dobrze."], (1, 1), "Wszystko dobrze."),
-        (_replaced(TEMPLATE_BODY[4], TEMPLATE_BODY[4], "Dalsza proza."), (1, 1), "W1: po Szczeblu nic więcej, a jest „Dalsza proza.”"),
-        (_replaced(TEMPLATE_BODY[4], "Dalsza proza.", TEMPLATE_BODY[4]), (1, 1), "W1: „Dalsza proza.”"),
-        ([*TEMPLATE_BODY[:5], *TEMPLATE_BODY[7:]], (0, 0), "w treści Ważne 1"),
-    ],
-    ids=[
-        "brak-pola-gdzie",
-        "puste-pole-gdzie",
-        "puste-pole-dowod",
-        "drobne-z-pustym-gdzie",
-        "dowod-przed-gdzie",
-        "szczebel-przed-korzeniem",
-        "wazne-bez-korzenia",
-        "wazne-bez-szczebla",
-        "kod-spoza-listy",
-        "nowy-kod-z-listy",
-        "nowy-bez-opisu",
-        "nowy-bez-myslnika-i-opisu",
-        "nowy-kod-malymi-literami",
-        "nowy-kod-bez-r",
-        "nowy-kod-z-podkresleniem",
-        "korzen-bez-zdania",
-        "szczebel-spoza-drabiny",
-        "dowod-6-linii",
-        "wiecej-waznych-niz-w-linii-znalezisk",
-        "mniej-drobnych-niz-w-linii-znalezisk",
-        "wazne-po-drobnych",
-        "numer-nie-po-kolei",
-        "drobne-z-drugim-polem",
-        "proza-poza-szablonem",
-        "bez-sprawdzone",
-        "sprawdzone-bez-punktow",
-        "sprawdzone-6-punktow",
-        "proza-po-sprawdzone",
-        "proza-po-szczeblu",
-        "proza-zamiast-szczebla",
-        "pass-z-waznym",
-    ],
-)
-def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(lines: list[str], declared: tuple[int, int], fragment: str) -> None:
-    problems = _template_problems(lines, declared)
+@pytest.mark.parametrize(("text", "declared", "fragment"), werdykty_szablonu.ODMOWY.values(), ids=werdykty_szablonu.ODMOWY)
+def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared: tuple[int, int], fragment: str) -> None:
+    problems = _template_problems(text, declared)
 
     assert any(fragment in problem for problem in problems[:-1]), problems
     assert problems[-1].startswith("wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD> / Znaleziska: "), problems[-1]
     assert "### W1." in problems[-1] and "## Sprawdzone" in problems[-1], problems[-1]
 
 
+def test_kazda_tresc_werdyktu_testow_ma_html_z_renderera_githuba() -> None:
+    assert sorted(werdykty_szablonu.rendered()) == sorted(set(werdykty_szablonu.bodies())), "odśwież: .venv/bin/python tests/fixtures/werdykty_szablonu.py"
+
+
 def test_werdykt_bez_pola_korzen_nie_czyta_listy_kodow() -> None:
     def unread() -> frozenset[str]:
         raise AssertionError("lista kodów czytana bez pola Korzeń")
 
-    assert szablon_werdyktu.problems(["## Sprawdzone", "- diff"], (0, 0), unread) == []
+    assert szablon_werdyktu.problems(werdykty_szablonu.html(werdykty_szablonu.WERDYKTY["sprawdzone"]), (0, 0), unread) == []
 
 
 @pytest.mark.parametrize(
@@ -1655,61 +1570,129 @@ def test_lista_korzeni_w_repo_ma_kody_z_opisem_i_przykladem_pr() -> None:
 NEW_CODE = '\n[R-NOWY-KOD]\nopis = "Kod dodany w tym PR."\nprzyklad = 1\n'
 
 
-def _template_verdict(head: str, root: str) -> str:
-    return "\n".join([f"WERDYKT: FAIL {head}", "Znaleziska: 1 (Ważne 1, Drobne 0)", *TEMPLATE_BODY[:3], root, *TEMPLATE_BODY[4:5], *TEMPLATE_BODY[7:]]) + "\n"
-
-
 @pytest.mark.parametrize(
-    ("added", "root", "published"),
+    ("listed", "root", "published", "reason"),
     [
-        (False, "Korzeń: NOWY R-NOWY-KOD - opis kodu spoza listy.", True),
-        (True, "Korzeń: R-NOWY-KOD - kod dodany do listy przez HEAD.", True),
-        (True, "Korzeń: NOWY R-NOWY-KOD - opis kodu, który HEAD już dodał.", False),
-        (False, "Korzeń: R-NOWY-KOD - kod spoza listy.", False),
-        (False, "Korzeń: R-BEZ-TESTU - kod z listy.", True),
-        (False, "Korzeń: NOWY R-BEZ-TESTU - kod z listy.", False),
+        ("", 0, True, None),
+        (NEW_CODE, 1, True, None),
+        (NEW_CODE, 2, False, "W1: NOWY R-NOWY-KOD: ten kod jest już na liście .agents/skills/przeglad/korzenie.toml, napisz go bez NOWY"),
+        ("", 3, False, "W1: kod R-NOWY-KOD spoza listy"),
+        ("", 4, True, None),
+        ("", 5, False, "W1: NOWY R-BEZ-TESTU: ten kod jest już na liście .agents/skills/przeglad/korzenie.toml, napisz go bez NOWY"),
+        ('\n[r-male]\nopis = "Zdanie."\nprzyklad = 1\n', 4, False, "się nie wczytuje: „r-male” to nie kod"),
     ],
-    ids=["nowy-spoza-listy", "kod-dodany-przez-head", "nowy-dodany-przez-head", "kod-spoza-listy", "kod-z-listy", "nowy-z-listy"],
+    ids=["nowy-spoza-listy", "kod-dodany-przez-head", "nowy-dodany-przez-head", "kod-spoza-listy", "kod-z-listy", "nowy-z-listy", "nieczytelna-lista"],
 )
 def test_werdykt_z_korzeniem_trafia_na_pr_tylko_z_kodem_listy_head_a_nowy_tylko_spoza_niej(
-    tmp_path: Path, added: bool, root: str, published: bool
+    tmp_path: Path, listed: str, root: int, published: bool, reason: str | None
 ) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    listed = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + NEW_CODE * added
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", ".agents/skills/przeglad/korzenie.toml": listed})
+    _deploy_template(github)
+    codes = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + listed
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", ".agents/skills/przeglad/korzenie.toml": codes})
     path = tmp_path / "runda-1.md"
-    path.write_text(_template_verdict(head, root), encoding="utf-8")
+    path.write_text(f"WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n{werdykty_szablonu.WERDYKTY[f'korzen-{root}']}\n", encoding="utf-8")
 
     answered = github.run("1", "--werdykt", str(path))
 
     assert (answered.returncode == 0) == published, answered.stdout + answered.stderr
     assert len(github.published()) == published
-    if not published:
-        assert re.search("W1: (kod R-NOWY-KOD spoza listy|NOWY R-[A-Z-]+: ten kod jest już na liście .*, napisz go bez NOWY)", _last_line(answered)), answered.stdout
-        assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL" in _last_line(answered), answered.stdout
+    if reason is not None:
+        assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+        assert reason in _last_line(answered), answered.stdout
+
+
+# Decyzja Q20: szablon obowiązuje od pierwszego werdyktu po wdrożeniu, a wątek, którego najstarszy werdykt jest
+# starszy od wdrożenia, kończy po staremu. Werdykty ``_written`` powstają 24.10.2026 o 3:00:00, 3:00:01 i dalej.
+BEFORE_FIRST = datetime(2026, 10, 24, 2, 0, tzinfo=UTC)
+AFTER_FIRST = datetime(2026, 10, 24, 3, 0, 1, tzinfo=UTC)
+FAIL_OLD = f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: brak testu"
 
 
 @pytest.mark.parametrize(
-    ("earlier", "published"),
+    ("verdicts", "deployed", "applies"),
     [
-        (f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: brak testu", True),
-        (f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + MAJOR + "## Sprawdzone\n- diff", False),
-        ("Komentarz bez werdyktu.", False),
-        (None, False),
+        ([], None, False),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], None, False),
+        ([], AFTER_FIRST, True),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], BEFORE_FIRST, True),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, False),
+        ([("COMMENTED", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, False),
+        ([("comment", FAIL_OLD, "CONTRIBUTOR"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", FAIL_OLD, "NONE"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("PENDING", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", "Komentarz bez werdyktu."), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("CHANGES_REQUESTED", "Popraw nazwę."), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", f"WERDYKT: FAIL {OLD[:7]}"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
     ],
-    ids=["watek-sprzed-szablonu", "watek-w-szablonie", "komentarz-bez-werdyktu", "bez-werdyktu"],
+    ids=[
+        "niewdrozony-bez-werdyktu",
+        "niewdrozony-z-werdyktami",
+        "pr-bez-werdyktu-po-wdrozeniu",
+        "pierwszy-werdykt-po-wdrozeniu",
+        "pierwszy-werdykt-przed-wdrozeniem",
+        "pierwszy-werdykt-w-recenzji-przed-wdrozeniem",
+        "stary-werdykt-kontrybutora-nie-postarza",
+        "stary-werdykt-konta-bez-zwiazku-nie-postarza",
+        "stara-nieopublikowana-recenzja-nie-postarza",
+        "stary-komentarz-bez-werdyktu-nie-postarza",
+        "stara-prosba-o-zmiany-bez-linii-werdyktu-nie-postarza",
+        "stary-werdykt-ze-skroconym-sha-nie-postarza",
+    ],
 )
-def test_werdykt_bez_szablonu_trafia_na_pr_tylko_w_watku_ktorego_pierwszy_werdykt_byl_sprzed_szablonu(
-    tmp_path: Path, earlier: str | None, published: bool
+def test_szablon_obowiazuje_od_wdrozenia_a_watek_z_werdyktem_sprzed_niego_konczy_po_staremu(
+    verdicts: list[tuple[str, ...]], deployed: datetime | None, applies: bool
+) -> None:
+    assert werdykt_pr.template_applies(_written(*verdicts), deployed) is applies
+
+
+SPRAWDZONE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"] + "\n"
+PROSE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["proza"] + "\n"
+
+
+@pytest.mark.parametrize(
+    ("merged", "earlier", "verdict", "template"),
+    [
+        (None, None, PASS, False),
+        ("2026-10-24T12:00:00Z", FAIL_OLD, PASS, False),
+        ("2026-10-01T00:00:00Z", None, PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, PROSE_PASS, True),
+        ("2026-10-24T03:00:01Z", "Komentarz bez werdyktu.", PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, SPRAWDZONE_PASS, True),
+    ],
+    ids=[
+        "niewdrozony",
+        "watek-sprzed-wdrozenia",
+        "pr-bez-werdyktu-po-wdrozeniu",
+        "pierwszy-reczny-werdykt-bez-szablonu-po-wdrozeniu",
+        "pass-z-proza-po-wdrozeniu",
+        "komentarz-bez-werdyktu-nie-postarza",
+        "pass-w-szablonie-po-wdrozeniu",
+    ],
+)
+def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dla_pass_opublikowanego_recznie(
+    tmp_path: Path, merged: str | None, earlier: str | None, verdict: str, template: bool
 ) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    if merged is not None:
+        _deploy_template(github, authored="2026-10-01T00:00:00Z", merged=merged)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     if earlier is not None:
         github.comment(1, earlier)
     path = tmp_path / "runda-2.md"
-    path.write_text(PASS.format(head=head), encoding="utf-8")
+    path.write_text(verdict.format(head=head), encoding="utf-8")
+    passes = not template or verdict == SPRAWDZONE_PASS
 
     answered = github.run("1", "--werdykt", str(path))
+    if not passes:
+        github.comment(1, verdict.format(head=head))
+    checked = github.run("1", "--bez-merge")
 
-    assert (answered.returncode == 0) == published, answered.stdout + answered.stderr
-    assert len(github.published()) == published
+    assert (answered.returncode == 0) == passes, answered.stdout + answered.stderr
+    assert len(github.published()) == passes
+    assert (checked.returncode == 0) == passes, checked.stdout + checked.stderr
+    if not passes:
+        assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
+        assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
+        assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout

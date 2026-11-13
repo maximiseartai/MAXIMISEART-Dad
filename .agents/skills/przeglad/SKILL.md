@@ -50,7 +50,11 @@ Ta sama reguła obowiązuje przy poprawce operatora.
   - (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”);
   - (c) test zachowania, który łapie całą klasę, nie tylko ten przypadek;
   - (d) zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md));
-  - (e) punkt z przykładem PR w sekcji „Co jest porażką” tego skilla, tylko gdy (a)–(d) nie działają.
+  - (e) punkt z przykładem PR w sekcji „Co jest porażką” tego skilla.
+
+  Zapadka (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
+  Przy (d) i przy (e) autor pisze jedno zdanie, czemu wyżej się nie da.
+  To rozwinięcie decyzji Q7 i Q26 przez koordynatora (13.11.2026), do potwierdzenia przez Maksa.
 
   Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
 
@@ -89,7 +93,7 @@ WERDYKT: FAIL <pełny SHA HEAD>
 Znaleziska: 2 (Ważne 1, Drobne 1)
 ### W1. <defekt zachowania jednym zdaniem>
 Gdzie: <plik:linia>
-Dowód: <polecenie i wynik, najwyżej 5 linii>
+Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
 ### D1. <luka jednym zdaniem>
@@ -101,8 +105,10 @@ Gdzie: <plik:linia>
 Pierwsza linia to `WERDYKT: PASS <pełny SHA HEAD>` albo `WERDYKT: FAIL <pełny SHA HEAD>`, a druga `Znaleziska: N (Ważne a, Drobne b)`.
 Ważne (`### W1.`, `### W2.`) stoją przed Drobnymi (`### D1.`), każde z polami w kolejności szablonu.
 `PASS` bez znalezisk ma tylko dwie pierwsze linie i `## Sprawdzone`.
-`tools/scal_pr.py <PR> --werdykt <plik>` sprawdza tę postać przed publikacją i odmawia z przyczynami i wzorem, a merge liczy `PASS` tylko z dwiema pierwszymi liniami w tej postaci, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.
-W PR, którego pierwszy werdykt opublikowano przed szablonem, `--werdykt` sprawdza tylko dwie pierwsze linie (ADR 0031).
+Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
+Dowód dłuższy niż 5 linii albo z linią ponad 300 znaków zapisz w pliku obok werdyktu i podaj w Dowodzie jego ścieżkę.
+`tools/scal_pr.py <PR> --werdykt <plik>` sprawdza tę postać przed publikacją i odmawia z przyczynami i wzorem, a merge liczy `PASS` jako zgodę tylko w tej samej postaci, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.
+W PR, którego najstarszy werdykt powstał przed wdrożeniem szablonu (merge ADR 0031 do bazy PR), publikacja i merge sprawdzają tylko dwie pierwsze linie (ADR 0031, decyzja Q20).
 
 ## Kolejne rundy
 
