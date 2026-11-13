@@ -13,7 +13,7 @@ Opis bez słów „Część” i „Naprawia” i bez Ważnych bramka pomija bez
 
 Opis PR, werdykty, opis PR korzenia i sekcję „Co jest porażką” skilla ``przeglad`` czyta renderer GitHuba
 (``github.html_markdownu``) przez ``szablon_werdyktu.items``, więc pola liczą się tylko poza blokami kodu, a cytat pola
-w bloku kodu w Dowodzie nie psuje bloku. Sekcja to wszystko od nagłówka ``## Korzeń`` do następnego nagłówka ``##``;
+w bloku kodu w Dowodzie nie psuje bloku. Sekcja to wszystko od pierwszego nagłówka ``## Korzeń`` do następnego nagłówka ``##``;
 w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki kodu:
 
 - nagłówek ``### W<n> r<k>: R-KOD`` dla Ważnego ``W<n>`` z werdyktu ``FAIL`` rundy ``k`` (``k``-ty werdykt PR, od 1,
@@ -21,8 +21,8 @@ w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki k
   z późniejszego punktu ``Korzeń W<n> r<k>: R-KOD - zdanie`` w „## Sprawdzone”, którym recenzent następnej rundy
   rozstrzyga kod zakwestionowany przez autora (Q25); Ważne werdyktu to ``W1`` … ``W<a>`` z linii ``Znaleziska:`` i każde
   ``### W<n>.`` jego treści, a Ważne bez kodu w szablonie dostaje kod tylko z takiego punktu;
-- nagłówek ``### Czerwony main #<N>: R-KOD`` dla issue czerwonego `main` ``#N`` (link GitHuba) z kodem z listy na HEAD,
-  który wybiera autor;
+- nagłówek ``### Czerwony main #<N>: R-KOD`` dla issue czerwonego `main` ``#N`` z linii „Część” albo „Naprawia”
+  z kodem z listy na HEAD, który wybiera autor;
 - potem ``Wyrwany w #M`` (link GitHuba do PR tego repozytorium) i nic więcej, albo ``Szczebel: (x) - mechanizm`` ze
   szczeblem od (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy
   wyższy szczebel, w kolejności drabiny (pierwsza może stać w linii pola), i na końcu ``Dowód:`` jak w szablonie
@@ -124,10 +124,10 @@ def _expected(rounds: Sequence[werdykt_pr.Round], found: list[str]) -> dict[str,
             codes.update({f"{root.label} r{current.number}": root.code for root in current.findings.majors if root.code is not None})
         for resolution in current.findings.resolutions:
             key = f"{resolution.label} r{resolution.round}"
-            if key in codes and resolution.round is not None and resolution.round < current.number:
+            if key in codes:
                 codes[key] = resolution.code
             else:
-                found.append(f"korzeń: punkt „Korzeń {key}: {resolution.code}” werdyktu r{current.number} nie wskazuje Ważnego z wcześniejszej rundy z FAIL")
+                found.append(f"korzeń: punkt „Korzeń {key}: {resolution.code}” werdyktu r{current.number} nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy")
     return codes
 
 
@@ -160,14 +160,14 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull)
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if not starts:
         return [f"korzeń: brak sekcji „## {SECTION}”, a PR ma {_why(expected)}; {'; '.join(missing)}"]
-    found = [f"korzeń: sekcja „## {SECTION}” jest {len(starts)} razy"] if len(starts) > 1 else []
+    found: list[str] = []
     end = next((index for index in range(starts[0] + 1, len(units)) if units[index].kind == "h2"), len(units))
     blocks: dict[str, _Block] = {}
     index = starts[0] + 1
     while index < end:
         item = units[index]
         after = next((later for later in range(index + 1, end) if units[later].kind == "h3"), end)
-        block = _heading(item, pull, found)
+        block = _heading(item, found)
         if block is not None:
             if block.heading in blocks:
                 found.append(f"korzeń: blok „### {item.text}” powtórzony")
@@ -194,7 +194,7 @@ def _why(expected: dict[str, str | None]) -> str:
     return " i ".join(reasons)
 
 
-def _heading(item: Item, pull: Pull, found: list[str]) -> _Block | None:
+def _heading(item: Item, found: list[str]) -> _Block | None:
     """Blok bez treści z nagłówka ``###`` sekcji; inna jednostka przed blokiem albo nagłówek poza wzorem to przyczyna."""
 
     if item.kind != "h3":
@@ -203,8 +203,6 @@ def _heading(item: Item, pull: Pull, found: list[str]) -> _Block | None:
     if major := MAJOR_HEADING.fullmatch(item.text):
         return _Block(f"{major[1]} r{major[2]}", major[3], ())
     if red := RED_HEADING.fullmatch(item.text):
-        if not _links_to(item, pull, int(red[1]), "issue"):
-            found.append(f"korzeń: nagłówek „### {item.text}” bez linku GitHuba do issue #{red[1]} tego repo")
         return _Block(f"Czerwony main #{red[1]}", red[2], ())
     found.append(f"korzeń: nagłówek „### {item.text}” to nie „### W<n> r<runda>: R-KOD” ani „### Czerwony main #<issue>: R-KOD”")
     return None

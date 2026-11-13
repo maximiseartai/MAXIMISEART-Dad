@@ -1781,6 +1781,7 @@ def test_pass_w_watku_z_szablonem_bez_html_tresci_od_githuba_nie_jest_zgoda_a_od
 FAIL_W1 = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]
 FAIL_NEW_CODE = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["korzen-0"]
 PASS_RESOLVES = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-w1-r1"]
+FAIL_WITHOUT_ROOT = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + korzenie_pr.WERDYKTY["wazne-bez-korzenia"]
 PASS_RESOLVES_NEW = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + korzenie_pr.WERDYKTY["rozstrzyga-nowym-kodem"]
 RED = {korzenie_pr.RED_MAIN: "czerwony-main"}
 FLAKY = {korzenie_pr.FLAKY: "flaky-test"}
@@ -1790,9 +1791,11 @@ UPROOTED_IN = f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.ROOT_PR}"
 def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], *, deployed: str = "2026-10-01T00:00:00Z") -> subprocess.CompletedProcess[str]:
     """``--bez-merge`` PR 1 z werdyktami ``verdicts`` (na starszym commicie, więc PR nie ma zgody) i opisem ``body``
     z ``korzenie_pr.OPISY``; ``setup`` podaje stan i opis PR korzenia (``root``), etykiety issues (``labels``), skill
-    ``przeglad`` na HEAD (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
+    ``przeglad`` na bazie (``skill_base``, domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na
+    HEAD (``listed``)."""
 
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]})
+    skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill})
     _deploy_template(github, merged=deployed)
     files = {"kod/inne.py": "INNE: int = 1\n"}
     if "skill" in setup:
@@ -1837,12 +1840,16 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem"}, []),
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-bez-przykladu"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-przykladem-poza-sekcja"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
+        ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem"}, ["korzeń: W1 r1: Szczebel (e) wymaga punktu z przykładem PR"]),
         ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
         ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
         ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go przed tym PR"]),
         ([FAIL_W1], "wyrwany", {"root": ("CLOSED", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest zamknięty bez merge'a"]),
         ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-kod")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU” z linkiem do tego PR"]),
+        ([FAIL_W1], "wyrwany", {"root": ("MERGED", "inny-pr")}, [f"{UPROOTED_IN}: opis PR korzenia nie ma linii „Korzeń z #1: R-BEZ-TESTU”"]),
         ([FAIL_W1], "wyrwany", {"root": ("MERGED", "ten-kod")}, []),
+        ([FAIL_W1], "wyrwany", {}, [f"{UPROOTED_IN}: GitHub nie podał stanu PR"]),
+        ([FAIL_W1], "wyrwany-z-dowodem", {"root": ("MERGED", "ten-kod")}, [f"{UPROOTED_IN}: po „Wyrwany w #{korzenie_pr.ROOT_PR}” nic więcej, a jest linia „{korzenie_pr.EVIDENCE}”"]),
         ([FAIL_W1], "wyrwany-bez-linku", {}, ["korzeń: W1 r1: Wyrwany w #9999999 bez linku GitHuba do PR tego repo"]),
         ([FAIL_W1], "wyrwany-w-issue", {}, [f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.RED_MAIN} bez linku GitHuba do PR tego repo"]),
         ([FAIL_NEW_CODE], "nowy-kod", {}, ["korzeń: NOWY R-NOWY-KOD z werdyktu nie stoi na liście .agents/skills/przeglad/korzenie.toml na HEAD"]),
@@ -1850,6 +1857,13 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
         ([FAIL_W1, PASS_RESOLVES_NEW], "nowy-kod", {}, ["korzeń: NOWY R-NOWY-KOD z werdyktu nie stoi na liście"]),
         ([], "czerwony-main-bez-sekcji", {"labels": RED}, [f"korzeń: brak sekcji „## Korzeń”, a PR ma naprawę czerwonego main; brak bloku „### Czerwony main #{korzenie_pr.RED_MAIN}: R-KOD”"]),
         ([], "czerwony-main", {"labels": RED}, []),
+        ([], "czerwony-main-bez-sekcji", {}, [f"korzeń: GitHub nie podał etykiet #{korzenie_pr.RED_MAIN}, więc nie wiadomo, czy to czerwony main"]),
+        ([PASS_RESOLVES], "bez-sekcji", {}, ["korzeń: punkt „Korzeń W1 r1: R-DRUGA-DROGA” werdyktu r1 nie wskazuje Ważnego werdyktu FAIL tej albo wcześniejszej rundy"]),
+        ([FAIL_WITHOUT_ROOT], "szczebel-c", {}, ["korzeń: W1 r1: werdykt nie podaje kodu korzenia w szablonie, więc kod podaje recenzent następnej rundy punktem „Korzeń W1 r1: R-KOD - zdanie”"]),
+        ([FAIL_WITHOUT_ROOT, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
+        ([FAIL_W1], "proza-w-sekcji", {}, ["korzeń: w sekcji „## Korzeń” przed blokiem jest linia „Korzeń wyrwany w tym PR.”"]),
+        ([FAIL_W1], "naglowek-poza-wzorem", {}, ["korzeń: nagłówek „### W1: R-BEZ-TESTU” to nie „### W<n> r<runda>: R-KOD”", "korzeń: brak bloku „### W1 r1: R-BEZ-TESTU”"]),
+        ([FAIL_W1], "dowod-6-linii", {}, ["korzeń: W1 r1: Dowód ma 6 linii, najwyżej 5"]),
         ([], "flaky-test", {"labels": FLAKY}, []),
     ],
     ids=[
@@ -1871,12 +1885,16 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
         "szczebel-e-z-punktem-z-przykladem",
         "szczebel-e-z-punktem-bez-przykladu",
         "szczebel-e-z-punktem-poza-sekcja",
+        "szczebel-e-z-punktem-ktory-byl-na-bazie",
         "cytat-pola-w-bloku-kodu",
         "cytat-pola-bez-bloku-kodu",
         "wyrwany-w-otwartym-pr",
         "wyrwany-w-zamknietym-bez-merge",
         "wyrwany-w-pr-z-innym-kodem",
+        "wyrwany-w-pr-z-linia-innego-pr",
         "wyrwany-w-scalonym-pr-z-tym-kodem",
+        "wyrwany-bez-stanu-pr-korzenia-z-githuba",
+        "wyrwany-z-czymkolwiek-dalej",
         "wyrwany-bez-linku",
         "wyrwany-w-issue",
         "nowy-kod-spoza-listy-head",
@@ -1884,6 +1902,13 @@ def _root_gate(tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, 
         "nowy-kod-z-rozstrzygniecia-spoza-listy",
         "czerwony-main-bez-sekcji",
         "czerwony-main-z-blokiem",
+        "bez-etykiet-issue-z-githuba",
+        "rozstrzygniecie-bez-waznego",
+        "wazne-bez-kodu-w-szablonie",
+        "wazne-bez-kodu-rozstrzygniete",
+        "proza-w-sekcji-przed-blokiem",
+        "naglowek-poza-wzorem",
+        "dowod-6-linii",
         "flaky-test-bez-sekcji",
     ],
 )

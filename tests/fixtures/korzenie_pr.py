@@ -84,16 +84,21 @@ OPISY = {
     "cytat-pola-w-bloku-kodu": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", "Dowód: odmowa:", "```", "### W1 r1: R-DRUGA-DROGA", "Szczebel: (e) - cytat", "```")),
     "cytat-pola-bez-bloku-kodu": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", "Dowód: odmowa:", "", "### W1 r1: R-DRUGA-DROGA", "Szczebel: (e) - cytat")),
     "wyrwany": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}")),
+    "wyrwany-z-dowodem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", EVIDENCE)),
     "wyrwany-bez-linku": body(_lines("### W1 r1: R-BEZ-TESTU", "Wyrwany w #9999999")),
     "wyrwany-w-issue": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{RED_MAIN}")),
     "czerwony-main-bez-sekcji": body(why=f"Część #{RED_MAIN}"),
     "czerwony-main": body(_lines(f"### Czerwony main #{RED_MAIN}: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", EVIDENCE), why=f"Część #{RED_MAIN}"),
     "flaky-test": body(why=f"Część #{FLAKY}"),
     "kod-rozstrzygniety": body(C_BLOCK.replace("R-BEZ-TESTU", "R-DRUGA-DROGA")),
+    "proza-w-sekcji": body("Korzeń wyrwany w tym PR.", C_BLOCK),
+    "naglowek-poza-wzorem": body(C_BLOCK.replace("### W1 r1: R-BEZ-TESTU", "### W1: R-BEZ-TESTU")),
+    "dowod-6-linii": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", EVIDENCE, *(f"linia {number}" for number in range(2, 7)))),
 }
 PR_KORZENIA = {
     "ten-kod": opisy_pr.wzor(f"Korzeń z #{FEATURE}: R-BEZ-TESTU"),
     "inny-kod": opisy_pr.wzor(f"Korzeń z #{FEATURE}: R-DRUGA-DROGA"),
+    "inny-pr": opisy_pr.wzor(f"Korzeń z #{ROOT_PR}: R-BEZ-TESTU"),
 }
 _FAILURES = ("# Przegląd", "", "## Co jest porażką", "", "- Punkt bez przykładu.")
 SKILL = {
@@ -108,6 +113,7 @@ WERDYKTY = {
     "rozstrzyga-nowym-kodem": _lines("## Sprawdzone", "- Korzeń W1 r1: NOWY R-NOWY-KOD - opis kodu spoza listy.", "- diff"),
     "rozstrzyga-kodem-spoza-listy": _lines("## Sprawdzone", "- Korzeń W1 r1: R-NIE-MA - kod spoza listy.", "- diff"),
     "rozstrzygniecie-bez-rundy": _lines("## Sprawdzone", "- Korzeń W1: R-DRUGA-DROGA - bez rundy.", "- diff"),
+    "wazne-bez-korzenia": "- Ważne: brak testu, opisane prozą.",
 }
 
 
