@@ -9,6 +9,8 @@ Required czeka na każde zadanie runu.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -149,6 +151,22 @@ def _dependency_files(command: str) -> set[str]:
     return files
 
 
+# Zadania planu runu, które wykonują kroki skilli: Mutation checks w CI i nocne skrypty skilli.
+SKILL_STEP_JOBS = {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+
+
+def _plan_jobs() -> dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]]:
+    """(workflow, zadanie) → (workflow, zadanie) każdego zadania, które wykonuje pracę planu runu (``wykonaj_zadanie.py``)."""
+
+    return {
+        (workflow.name, name): (loaded, job)
+        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
+        for loaded in [yaml.safe_load(workflow.read_text(encoding="utf-8"))]
+        for name, job in loaded["jobs"].items()
+        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps"))
+    }
+
+
 def test_kroki_skilli_wybiera_dokladnie_plik_zaleznosci_z_ktorego_instaluje_zadanie_krokow_skilli() -> None:
     """Kroki skilli biegną w zadaniach planu poza pytest (Mutation checks, nocne skrypty skilli), a ich werdykty zależą od
     zainstalowanych bibliotek, także ruff i mypy bramy typów. Plik, z którego takie zadanie je instaluje, ma więc
@@ -156,16 +174,68 @@ def test_kroki_skilli_wybiera_dokladnie_plik_zaleznosci_z_ktorego_instaluje_zada
     u taty), żadnego: zmiana w nim nie zmienia środowiska kroku, a wybiera każdy, więc tylko wydłuża run (Z9, 13.11)."""
 
     installed = {
-        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "pip install" in step.get("run", "")))
-        for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
-        for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
-        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps"))
+        key: set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "pip install" in step.get("run", "")))
+        for key, (_, job) in _plan_jobs().items()
     }
     skill_jobs = {job: files for job, files in installed.items() if job != (WORKFLOW.name, "pytest")}
 
-    assert set(skill_jobs) == {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+    assert set(skill_jobs) == SKILL_STEP_JOBS
     assert all(skill_jobs.values()), skill_jobs
     assert set(Context.SKILL_STEPS.paths()) & set().union(*installed.values()) == set().union(*skill_jobs.values()), installed
+
+
+# Nazwa pliku zależności instalatora Pythona albo npm w każdej formie: plik, opcja (``--with-requirements``) i glob.
+DEPENDENCY_NAME = re.compile(r"requirement|constraint|pyproject|pylock|pipfile|setup\.(?:py|cfg)|\.lock\b|package(?:-lock)?\.json", re.IGNORECASE)
+# Słowo polecenia albo wartości: ścieżka, opcja albo glob, bez cudzysłowów, przypisań i operatorów powłoki.
+WORD = re.compile(r"[^\s'\"=,;()|&<>]+")
+
+
+def _executed_texts(node: Any) -> Iterator[str]:
+    """Każdy klucz i wartość, które GitHub wykonuje albo przekazuje krokowi, bez opisów (``description``), a w kroku
+    ``uses: ./…`` także ``inputs`` i ``runs`` jego akcji złożonej, rekurencyjnie."""
+
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "description":
+                continue
+            yield str(key)
+            yield from _executed_texts(value)
+            if key == "uses" and str(value).startswith("./"):
+                composite = action(value)
+                yield from _executed_texts({part: composite.get(part) for part in ("inputs", "runs")})
+    elif isinstance(node, list):
+        for item in node:
+            yield from _executed_texts(item)
+    elif node is not None:
+        yield str(node)
+
+
+def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zaleznosci_spoza_krokow_skilli() -> None:
+    """Zmiana pliku zależności spoza ``Context.SKILL_STEPS`` (``requirements.txt``) nie wybiera kroków skilli (Z9), więc
+    zadanie kroków skilli nie może z niego instalować ani go czytać w żadnej formie: ``-r`` w ``uv pip install``,
+    ``uv pip sync``, ``pip3 install``, ``uv run --with-requirements``, glob ``*.txt`` ani w akcji złożonej, którą woła.
+    Granica jest listą dozwolonych: każde słowo zadania, środowiska workflowu i akcji złożonych, które nazywa plik
+    zależności albo jako glob trafia w taki plik repozytorium, jest ścieżką z ``Context.SKILL_STEPS``, a inne, także
+    nieznana forma, kończą test. Plik, który czyta skrypt wołany z kroku (``tools/ci/``), i nazwa składana w czasie runu
+    zostają recenzji."""
+
+    allowed = set(Context.SKILL_STEPS.paths())
+    dependency_files = {path.relative_to(ROOT).as_posix() for path in (*ROOT.glob("*"), *ROOT.glob("*/*")) if DEPENDENCY_NAME.search(path.name)}
+    assert dependency_files - allowed, dependency_files
+
+    def names_dependency(word: str) -> bool:
+        return bool(DEPENDENCY_NAME.search(word)) or (any(char in word for char in "*?[") and any(fnmatch.fnmatch(path, word) for path in dependency_files))
+
+    mentioned = {
+        key: sorted(
+            {word for text in _executed_texts({"workflow": {part: loaded.get(part) for part in ("env", "defaults")}, "job": job}) for word in WORD.findall(text) if names_dependency(word)}
+            - allowed
+        )
+        for key, (loaded, job) in _plan_jobs().items()
+        if key in SKILL_STEP_JOBS
+    }
+
+    assert mentioned == dict.fromkeys(SKILL_STEP_JOBS, [])
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)
