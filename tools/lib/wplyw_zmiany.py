@@ -20,9 +20,10 @@ kodu, więc świeży worktree wybiera tak samo:
 
 - importy modułów Pythona;
 - w ``tests/`` ścieżki i nazwy modułów w napisach, czyli skrypt, który test uruchamia, plik, który czyta, albo
-  pliki katalogu; poza ``tests/`` tylko ścieżki z ``/``, i bez zależności dalej;
+  pliki katalogu; poza ``tests/`` tylko ścieżki z ``/``, i bez zależności dalej; ścieżka od ``Path(__file__)``
+  (``.parent``, ``.parents[n]``) zaczyna się w katalogu modułu;
 - pliki z globu (``glob``, ``rglob``, ``iterdir``) na katalogu o znanej nazwie, z ``**`` jako zero albo więcej
-  katalogów, jak w ``Path.glob``;
+  katalogów, jak w ``Path.glob``, oraz wszystkie pliki pod katalogiem, który przechodzi ``os.walk`` albo ``Path.walk``;
 - pliki inne niż Python w katalogu pakietu (``centrum/static``) dla każdego modułu tego pakietu.
 
 Zależność przez import i skrypt testu jest przechodnia, a przez katalog, glob i plik danych nie. Odległość pliku to
@@ -308,7 +309,7 @@ class _Graph:
             nodes = list(ast.walk(tree))
             for name in _imports(nodes, path):
                 depends_on[path] |= _resolve(name, path, modules, files)
-            texts, globs = references(nodes)
+            texts, globs = references(nodes, path)
             test = path.startswith("tests/")
             if not test:
                 # Poza testami sama nazwa pliku albo modułu to zwykle nazwa procesu albo pliku w cudzym katalogu.
@@ -326,6 +327,7 @@ class _Graph:
             folder_files[path] |= package_data.get(str(PurePosixPath(path).parent), set())
             depends_on[path] |= _packages(path, files)
             depends_on[path].discard(path)
+            folder_files[path].discard(path)
         return cls(files, depends_on, folder_files)
 
     def inputs_of(self, test: str) -> set[str]:
@@ -471,7 +473,9 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     """Katalog pakietu → jego pliki inne niż Python, także z podkatalogów, które nie są pakietami (``centrum/static``).
 
     Pakiet ``tests`` nie ma danych: ``tests/__init__.py`` robiłby z każdego pliku spod ``tests/expected/`` wejście każdego
-    testu, a test, który czyta taki plik, nazywa go albo jego katalog."""
+    testu. Test, który czyta taki plik, nazywa go, jego katalog (także od ``Path(__file__)``) albo katalog, który
+    przechodzi globem lub ``os.walk``; plik w podkatalogu, którego nazwę test liczy (``EXPECTED / n / f"{m}.txt"``),
+    graf pomija."""
 
     packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)
