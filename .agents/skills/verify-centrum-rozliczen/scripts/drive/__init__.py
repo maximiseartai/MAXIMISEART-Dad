@@ -61,6 +61,7 @@ FEATURES = (
             "05-ustawienia-motyw-jasny",
             "306-ustawienia-zapisano-cofnij",
             "307-ustawienia-zapisano-waskie",
+            "315-ustawienia-blad-w-oknie",
             "308-ustawienia-historia",
             "309-ustawienia-historia-waska",
             "310-ustawienia-odmowa-przy-polu",

@@ -9,6 +9,8 @@ import { XIcon, CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Load
 
 const toast = ToastPrimitive.createToastManager()
 
+const createToasts = ToastPrimitive.createToastManager
+
 function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
   return <ToastPrimitive.Provider {...props} />
 }
@@ -22,7 +24,7 @@ function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
     <ToastPrimitive.Viewport
       data-slot="toast-viewport"
       className={cn(
-        "pointer-events-none fixed inset-x-4 bottom-4 z-[60] mx-auto w-auto max-w-sm outline-none sm:right-4 sm:left-auto sm:mx-0 sm:w-full",
+        "pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto w-auto max-w-sm outline-none sm:right-4 sm:left-auto sm:mx-0 sm:w-full",
         className
       )}
       {...props}
@@ -214,4 +216,18 @@ function Toaster({
   )
 }
 
-export { Toaster, toast }
+/**
+ * Powiadomienia jednego okna dialogowego, z własnym menedżerem: stoją w rogu okna (bez portalu), więc okno otwarte
+ * później je zakrywa, i znikają razem z oknem.
+ */
+function DialogToaster({ toastManager }: { toastManager: ReturnType<typeof createToasts> }) {
+  return (
+    <ToastProvider toastManager={toastManager}>
+      <ToastViewport className="absolute">
+        <ToastList />
+      </ToastViewport>
+    </ToastProvider>
+  )
+}
+
+export { DialogToaster, Toaster, createToasts, toast }

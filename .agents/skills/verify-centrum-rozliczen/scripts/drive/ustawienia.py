@@ -17,6 +17,7 @@ from drive.common import (
     Run,
     choose_periods_directory,
     close_settings,
+    error_toasts,
     move,
     open_settings,
     put_text,
@@ -229,6 +230,7 @@ def drive(run: Run, page: Page) -> None:
     close_settings(page)
 
     _saved_and_undo(run, page)
+    _failure_in_window(run, page)
     _history(run, page)
     _refusal_at_field(run, page)
     _typed_keeps_other(run, page)
@@ -264,6 +266,36 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             close_settings(page)
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
+
+
+# Whether the element's centre takes a click: nothing (the blurred page, another window) stands over it.
+ON_TOP = """element => {
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return hit !== null && element.contains(hit)
+}"""
+
+
+def _failure_in_window(run: Run, page: Page) -> None:
+    """A save that fails shows its notification in the window Ustawienia, over its content, not under the blurred page."""
+
+    run.step(FEATURE, "ustawienia-blad-w-oknie")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    page.route(theme, lambda route: route.fulfill(status=500, body=""))
+    try:
+        themes.get_by_role("button", name="Jasny", exact=True).click()
+        failure = settings_window(page).get_by_role("dialog", name="Nie udało się")
+        expect(failure).to_be_visible()
+        expect(error_toasts(page)).to_have_count(1)
+        run.check(failure.evaluate(ON_TOP), "a failed save is a notification in the window Ustawienia that nothing covers")
+        run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
+    finally:
+        page.unroute(theme)
+    close_settings(page)
+    page.reload()
+    expect(page.locator("html")).to_have_class("dark")
+    run.check(run.remembered("motyw") == "dark", "the failed save left the theme as it was")
 
 
 def _history(run: Run, page: Page) -> None:
