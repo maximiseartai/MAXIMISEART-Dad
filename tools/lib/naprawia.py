@@ -28,6 +28,12 @@ kodu, przekreślenia (także takich, które zaczęły się przed końcem poprzed
 (fragmentu, bloku i ``<pre>``), przekreślenia, PR-a, issue już zamkniętego ani issues, które GitHub zamyka sam
 (``closingIssuesReferences``: ``Closes``, ``Fixes``, ``Resolves``).
 
+Tą samą drogą zamyka issues chwastów (ADR 0031, Q15): linia akapitu albo punkt listy ``Korzeń z #N: R-KOD``
+(``rejestr_korzeni.root_lines``) z linkiem do issue tego repozytorium zamyka #N, gdy jest otwarte i ma tytuł
+``Chwast: R-KOD`` z tym kodem, z tym samym komentarzem o PR i commicie merge'a; inne issue zostaje otwarte
+z ostrzeżeniem ``UWAGA: #N z „Korzeń z” to nie otwarte issue „Chwast: R-KOD” z tym kodem``. Linia z linkiem do PR to
+linia PR korzenia (Q14), więc niczego nie zamyka. Ostrzeżenia niżej mówią wtedy o „Naprawia” i „Korzeń z”.
+
 Merge do innej gałęzi niż domyślna (stos PR-ów) niczego nie zamyka i nie renderuje opisu, jak GitHub przy ``Closes``,
 a linia podaje ``bez zamykania „Naprawia”: baza <gałąź> to nie <domyślna>``. Gdy GitHub nie poda domyślnej gałęzi
 albo nie wyrenderuje opisu (``gh`` z błędem albo po czasie, pusta odpowiedź), narzędzie niczego nie zamyka, tylko
@@ -48,7 +54,9 @@ import re
 
 import github
 from github import LinkGithuba
+import rejestr_korzeni
 from stan_pr import Pull
+import szablon_werdyktu
 
 LINK = "\x01"
 NOT_TEXT = "\x00"
@@ -154,26 +162,35 @@ def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[i
 
 
 def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
-    """Zamyka otwarte issues z linii „Naprawia” z komentarzem o merge'u, a przed merge'em tylko je podaje."""
+    """Zamyka otwarte issues z linii „Naprawia” i issues chwastów z linii „Korzeń z #N: R-KOD” z komentarzem o merge'u,
+    a przed merge'em tylko je podaje."""
 
-    if FIXES not in pull.body:
+    words = [word for word, present in ((f"„{FIXES}”", FIXES in pull.body), (f"„{rejestr_korzeni.ROOT_WORDS}”", rejestr_korzeni.ROOT_WORDS in pull.body)) if present]
+    if not words:
         return ""
-    unchecked = "nie zamknięto issues z „Naprawia”, zamknij je ręcznie" if merged else "nie sprawdzono „Naprawia”"
+    unchecked = f"nie zamknięto issues z {' i '.join(words)}, zamknij je ręcznie" if merged else f"nie sprawdzono {' i '.join(words)}"
     try:
         default_branch = github.domyslna_galaz(pull.repository)
     except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
         return f" | UWAGA: GitHub nie podał domyślnej gałęzi, {unchecked}"
     if pull.base != default_branch:
-        return f" | bez zamykania „Naprawia”: baza {pull.base} to nie {default_branch}"
+        return f" | bez zamykania {' i '.join(words)}: baza {pull.base} to nie {default_branch}"
     try:
-        fixes = [number for number in fixed_issues(pull.body, pull.repository) if number not in pull.closed_by_github]
+        html = github.html_markdownu(pull.body, pull.repository)
     except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
         return f" | UWAGA: GitHub nie wyrenderował opisu PR, {unchecked}"
+    fixes: dict[int, str | None] = {number: None for number in listed_issues(html, pull.repository, (FIXES,)) if number not in pull.closed_by_github}
+    weeds = rejestr_korzeni.root_lines(szablon_werdyktu.items(html), pull.repository)
+    fixes.update({link.numer: rejestr_korzeni.TITLE.format(code=code) for link, code in weeds if link.rodzaj == "issue" and link.numer not in fixes})
     closes = merged and merge_commit is not None
-    open_issues, failed = [], []
-    for number in fixes:
+    open_issues, failed, other = [], [], []
+    for number, title in fixes.items():
         try:
-            if json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))["state"] != "open":
+            issue = json.loads(github.gh("api", f"repos/{pull.repository}/issues/{number}"))
+            if issue["state"] != "open":
+                continue
+            if title is not None and issue["title"] != title:
+                other.append(f"#{number}")
                 continue
             if closes:
                 comment = f"Naprawione przez #{pull.number}, scalone jako {merge_commit}."
@@ -189,5 +206,5 @@ def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
     )
     parts = [f"{done}: {', '.join(open_issues)}"] if open_issues else []
     parts += [warning.format(", ".join(failed))] if failed else []
+    parts += [f"UWAGA: {', '.join(other)} z „{rejestr_korzeni.ROOT_WORDS}” to nie otwarte issue „Chwast: R-KOD” z tym kodem, nie zamknięte"] if other else []
     return "".join(f" | {part}" for part in parts)
-

@@ -246,6 +246,17 @@ class Run:
 NARROW_WINDOW_PX = 768
 
 
+# Whether the element's centre takes a click: the topmost element there is the element or part of it, so nothing (the
+# blurred page, another window, a notification) stands over it. One read is the page at that moment, which is the check
+# when even a short cover is the defect (a notification over „Wyślij”); an element that slides in, like a notification,
+# is visible before its centre is clear, so wait for it with `Run.wait_for` (#1518).
+CENTRE_TAKES_CLICK = """element => {
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return hit !== null && element.contains(hit)
+}"""
+
+
 def settings_window(page: Page) -> Locator:
     """The window Ustawienia over the page (``dialog`` named ``Ustawienia``)."""
 

@@ -4,7 +4,7 @@
 ``LIMIT_S`` (``None`` bez limitu), a porażka to ``subprocess.CalledProcessError`` z wyjściem błędów programu.
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
 ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Akcje issue (``Zaloz``, ``Skomentuj``,
-``Zamknij``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
+``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
 
 W workflow ``gh`` dostaje token z ``GH_TOKEN``, lokalnie z logowania Maksa. Moduł używa tylko biblioteki standardowej,
 bo Zgłoszenia CI biegną systemowym ``python3`` runnera.
@@ -232,7 +232,15 @@ class Zamknij:
     zdejmij: tuple[str, ...] = ()  # etykiety, które zamknięcie zdejmuje z issue
 
 
-Akcja = Zaloz | Skomentuj | Zamknij
+@dataclass(frozen=True)
+class Edytuj:
+    """Nowa treść issue, bez komentarza."""
+
+    issue: int
+    tresc: str
+
+
+Akcja = Zaloz | Skomentuj | Zamknij | Edytuj
 
 
 def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
@@ -258,6 +266,9 @@ def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
                     github.wyslij("DELETE", f"{REPO}/issues/{issue}/labels/{urllib.parse.quote(etykieta)}", {})
                 github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "closed", "state_reason": "completed"})
                 linie.append(f"{prefiks} | zamknięte #{issue}" + "".join(f", zdjęta etykieta {etykieta}" for etykieta in zdejmij))
+            case Edytuj(issue, tresc):
+                github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"body": tresc})
+                linie.append(f"{prefiks} | zmieniona treść #{issue}")
     return linie
 
 
@@ -287,3 +298,5 @@ def opis(akcja: Akcja) -> str:
             return f"skomentuj #{issue}" + (f" i otwórz ponownie z etykietami {', '.join(otworz)}" if otworz else "") + _opis_powiadom(powiadom)
         case Zamknij(issue, _, zdejmij):
             return f"zamknij #{issue} z komentarzem" + "".join(f", zdejmij etykietę {etykieta}" for etykieta in zdejmij)
+        case Edytuj(issue, _):
+            return f"zmień treść #{issue} bez komentarza"

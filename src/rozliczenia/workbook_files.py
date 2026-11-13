@@ -52,7 +52,6 @@ from .collective_layout import (
 from .file_state import file_state
 from .highlights import Highlights, LookReader
 from .hyperlinks import Hyperlink, read_sheet_hyperlinks
-from .quantity_rules import QuantityColumn
 from .row_look import GENERAL
 from .workbook_parts import rows_with_input
 from .text import normalize_text
@@ -167,7 +166,7 @@ WORKER_HEADER = HeaderCell(get_column_letter(WORKER_COLUMN), HEADER_ROW)
 _WORKER_LABEL = "WYKONAWCA"
 
 
-_NO_QUANTITIES: MappingProxyType[QuantityColumn, Never] = MappingProxyType({})
+_NO_QUANTITIES: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 class DataCell(NamedTuple):
@@ -213,7 +212,7 @@ class RegisterRow:
 
     number: int
     cells: Mapping[str, DataCell]
-    quantities: Mapping[QuantityColumn, int] = field(default_factory=lambda: _NO_QUANTITIES)
+    quantities: Mapping[str, int] = field(default_factory=lambda: _NO_QUANTITIES)
     """Ilości usług Wiersza danych Pliku zbiorczego z Przygotowania: litera kolumny N:AP → liczba różna od zera.
 
     Trafiają do komórki Wzorca z jej wyglądem, bez Wyróżnień; reszta kolumn ilości zostaje jak we Wzorcu.
