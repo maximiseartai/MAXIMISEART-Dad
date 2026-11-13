@@ -87,7 +87,7 @@ from rozliczenia.efenix_window import (
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order
+from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order, read_results
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
@@ -98,9 +98,11 @@ from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 
 from atrapy.atrapa_efenix import (
+    CHANGE_STATUS,
     LIST_PAGE,
     LIST_SCRIPT,
     LOAD_EMMETT,
+    LOGIN_PAGE,
     ORDER_PAGE,
     ORDER_SCRIPT,
     PRICES,
@@ -1456,6 +1458,88 @@ def test_inna_budowa_tabeli_wynikow_albo_strony_zlecenia_zatrzymuje_wycene_do_ma
     assert stopped_at.duration_ms < 2 * timeout_ms, stopped_at
 
 
+def _without_calendar(page: Page) -> Callable[[Efenix], Efenix]:
+    """Pole daty wykonania bez kalendarza pickadate: przed datą wykonania strona ma jQuery bez niego."""
+
+    before = _scripts(page, {WindowAction.DATE: "() => { window.jQuery = () => ({}); }"})
+    return lambda efenix: _Before(efenix, before)
+
+
+def _answering(path: str, answer: Callable[[Route], None]) -> Callable[[Page], Callable[[Efenix], Efenix]]:
+    """Karta, w której efenix odpowiada na każde żądanie ``path`` przez ``answer``."""
+
+    def prepare(page: Page) -> Callable[[Efenix], Efenix]:
+        page.route(f"**/{path}", answer)
+        return lambda efenix: efenix
+
+    return prepare
+
+
+def _to_login(route: Route) -> None:
+    route.fulfill(status=HTTPStatus.FOUND, headers={"Location": LOGIN_PAGE})
+
+
+# Zlecenie w pliku i w efenix, tryb Wyceny i to, czym efenix odpowiada inaczej w działaniu okna, a potem kod
+# Zatrzymania, część strony, przyczyna techniczna z tabeli decyzji ``WindowStop.of`` i działanie okna, które się nie udało.
+_EMPTY = Order("#9511", cells={"O": 1}, amount=_au({"012": 1}))
+_READY = Order("#9512", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+ANSWERED = {
+    "pole-daty-bez-kalendarza": (
+        _EMPTY,
+        _EMPTY.in_efenix("951"),
+        PricingMode.FILL,
+        _without_calendar,
+        ("EFENIX_OKNO_ZATRZYMANE", PagePart.DATE, OtherShape(Shape.NO_CALENDAR), WindowAction.DATE),
+    ),
+    "zapis-ilosci-przekierowany-na-logowanie": (
+        _EMPTY,
+        replace(_EMPTY.in_efenix("951"), execution_date=DAY),
+        PricingMode.FILL,
+        _answering(SAVE_QUANTITY, _to_login),
+        ("EFENIX_WYLOGOWANY", PagePart.QUANTITY, LoginSign.REDIRECT, WindowAction.QUANTITY),
+    ),
+    "przekazanie-bez-odpowiedzi": (
+        _READY,
+        _READY.in_efenix("952"),
+        PricingMode.FORWARD,
+        _answering(CHANGE_STATUS, lambda route: route.abort()),
+        ("EFENIX_OKNO_ZATRZYMANE", PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD),
+    ),
+    "przekazanie-przekierowane-na-logowanie": (
+        _READY,
+        _READY.in_efenix("952"),
+        PricingMode.FORWARD,
+        _answering(CHANGE_STATUS, _to_login),
+        ("EFENIX_WYLOGOWANY", PagePart.FORWARD, LoginSign.REDIRECT, WindowAction.FORWARD),
+    ),
+}
+
+
+@pytest.mark.parametrize(("order", "in_efenix", "mode", "prepare", "stopped"), ANSWERED.values(), ids=ANSWERED.keys())
+def test_dzialanie_okna_bez_kalendarza_bez_odpowiedzi_albo_z_przekierowaniem_na_logowanie_zatrzymuje_wycene_z_przyczyna(
+    tmp_path: Path,
+    page: Page,
+    order: Order,
+    in_efenix: AtrapaOrder,
+    mode: PricingMode,
+    prepare: Callable[[Page], Callable[[Efenix], Efenix]],
+    stopped: tuple[str, PagePart, WindowCause, WindowAction],
+) -> None:
+    """Pole daty bez kalendarza to inna budowa strony, żądanie Przekazania do akceptacji bez odpowiedzi to Zatrzymanie
+    okna, a odpowiedź zapisu ilości albo „Tak” Przekazania przekierowana na stronę logowania to wylogowanie. Fakty
+    Zatrzymania dla Logów Uruchomienia mają część strony, przyczynę techniczną i działanie okna, które się nie udało."""
+
+    with atrapa_efenix([in_efenix]) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, [order]), page, atrapa.url, timeout_ms=3_000, window=prepare(page), mode=mode)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
+    failed = facts.stopped_at.failed
+    assert failed is not None
+    assert (_stop(outcome), facts.part, facts.cause, failed.action) == stopped
+
+
 _DIALOG = '<div id="dialog_emmett">{}</div>'
 _PROPOSAL = '<div id="emmett-propozycja">{}</div>'
 
@@ -1514,6 +1598,44 @@ def test_puste_pole_ilosc_na_stronie_zlecenia_to_ilosc_zero_pozycji(page: Page) 
         OrderPricing(None, Decimal("12.50"), {"012": 0, "019": 3}),
         {"012": "INDEKS_012_078", "019": "INDEKS_019_078"},
     )
+
+
+def _order_page(page: Page, html: str) -> object:
+    page.set_content(html)
+    return read_order(page)
+
+
+_ORDER = '<span id="data_install">{}</span><span id="cena_all2">12.50</span><input class="wycena-ilosc" id="{}" value="1">'
+_RESULTS = (
+    "<table><thead><tr><th>Numer dokumentu</th><th>Status</th><th>Wykonawca (login)</th><th>Dane adresowe</th></tr></thead>"
+    f'<tbody><tr><td></td><td>Do wyceny</td><td>Fikcyjny</td><td><a href="{ORDER_PAGE}?id=951">Otwórz</a></td></tr></tbody></table>'
+)
+# Strona zlecenia albo odpowiedź szukania, której okno nie czyta, jej odczyt, część strony i przyczyna techniczna z
+# tabeli decyzji ``WindowStop.of``.
+UNREAD = {
+    "pole-ilosc-o-id-spoza-indeksu": (_ORDER.format("", "ILOSC_012"), _order_page, PagePart.ORDER, OtherShape(Shape.QUANTITY_ID)),
+    "data-wykonania-dnia-ktorego-nie-ma": (
+        _ORDER.format("2026-02-30", "INDEKS_012_078"),
+        _order_page,
+        PagePart.ORDER,
+        OtherShape(Shape.DATE_TEXT),
+    ),
+    "wiersz-wynikow-bez-numeru": (_RESULTS, read_results, PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY)),
+}
+
+
+@pytest.mark.parametrize(("html", "read", "part", "cause"), UNREAD.values(), ids=UNREAD.keys())
+def test_strona_zlecenia_albo_wiersz_wynikow_w_innej_budowie_to_inna_strona_z_czescia_i_przyczyna(
+    page: Page, html: str, read: Callable[[Page, str], object], part: PagePart, cause: WindowCause
+) -> None:
+    """Pole Ilość o id spoza ``INDEKS_NNN_…``, data wykonania w postaci RRRR-MM-DD dnia, którego nie ma, i wiersz tabeli
+    wyników z linkiem do strony zlecenia, ale bez numeru, to strona w innej budowie (``UnexpectedPage``) z częścią strony
+    i przyczyną dla Logów Uruchomienia."""
+
+    with pytest.raises(UnexpectedPage) as raised:
+        read(page, html)
+
+    assert (raised.value.part, raised.value.cause) == (part, cause)
 
 
 def test_zmieniona_strona_efenix_oznacza_gotowe_przed_nia_a_komunikat_do_maksa_nie_ma_numeru_adresu_ani_loginu(
@@ -2017,6 +2139,23 @@ def test_strona_bledu_serwera_efenix_na_kazde_zadanie_okna_zatrzymuje_wycene_do_
         part,
         HttpStatus(status),
     )
+
+
+def test_strona_zlecenia_ze_statusem_bledu_ktora_okno_przeczytalo_to_strona_zlecenia_a_zlecenie_jest_gotowe(
+    tmp_path: Path, page: Page
+) -> None:
+    """Status odpowiedzi strony zlecenia okno sprawdza dopiero przy stronie, której nie przeczytało (#808): stronę zlecenia
+    w budowie efenix, którą serwer dał ze statusem 500, czyta jak każdą, więc zlecenie z wyceną zgodną z plikiem jest
+    gotowe."""
+
+    def with_error_status(route: Route) -> None:
+        route.fulfill(response=route.fetch(), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    page.route(lambda url: urlparse(url).path.endswith(f"/{ORDER_PAGE}"), with_error_status)
+    with atrapa_efenix([_READY.in_efenix("952")]) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [_READY], timeout_ms=3_000)
+
+    assert (outcome.result, _figures(outcome)) == ("OK", _figures_of(1, 1))
 
 
 def _window_moments(atrapa: AtrapaEfenix, path: str, since: int = 0) -> list[float]:
