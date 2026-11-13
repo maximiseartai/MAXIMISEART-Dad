@@ -1620,6 +1620,18 @@ UNREAD = {
         PagePart.ORDER,
         OtherShape(Shape.DATE_TEXT),
     ),
+    "kod-pozycji-w-dwoch-polach-ilosc": (
+        _ORDER.format("", "INDEKS_012_078") + '<input class="wycena-ilosc" id="INDEKS_012_079" value="1">',
+        _order_page,
+        PagePart.ORDER,
+        OtherShape(Shape.POSITION_TWICE, "012"),
+    ),
+    "data-wykonania-dwa-razy": (
+        _ORDER.format("", "INDEKS_012_078") + '<span id="data_install"></span>',
+        _order_page,
+        PagePart.ORDER,
+        ElementCount("#data_install", 2),
+    ),
     "wiersz-wynikow-bez-numeru": (_RESULTS, read_results, PagePart.RESULTS, OtherShape(Shape.ROW_EMPTY)),
 }
 
@@ -1628,9 +1640,9 @@ UNREAD = {
 def test_strona_zlecenia_albo_wiersz_wynikow_w_innej_budowie_to_inna_strona_z_czescia_i_przyczyna(
     page: Page, html: str, read: Callable[[Page, str], object], part: PagePart, cause: WindowCause
 ) -> None:
-    """Pole Ilość o id spoza ``INDEKS_NNN_…``, data wykonania w postaci RRRR-MM-DD dnia, którego nie ma, i wiersz tabeli
-    wyników z linkiem do strony zlecenia, ale bez numeru, to strona w innej budowie (``UnexpectedPage``) z częścią strony
-    i przyczyną dla Logów Uruchomienia."""
+    """Pole Ilość o id spoza ``INDEKS_NNN_…``, data wykonania w postaci RRRR-MM-DD dnia, którego nie ma, kod pozycji w
+    dwóch polach Ilość, data wykonania na stronie dwa razy i wiersz tabeli wyników z linkiem do strony zlecenia, ale bez
+    numeru, to strona w innej budowie (``UnexpectedPage``) z częścią strony i przyczyną dla Logów Uruchomienia."""
 
     with pytest.raises(UnexpectedPage) as raised:
         read(page, html)
@@ -2841,7 +2853,8 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     albo efenix odpowiada wolniej niż czas okna (tu 2 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
     nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
     taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
-    przyczyny. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
+    przyczyny. Zerwana lista zleceń, przy starcie i przy kolejnym zleceniu, to Zatrzymanie na liście zleceń z nieudanym
+    otwarciem strony. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
     zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
     zlecenia przed nim, a działanie, które się nie udało, trwa krócej niż dwa czasy okna. Komunikat, że w efenix nic się
     nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w nowym oknie efenix jak u taty, kończy się
@@ -2877,6 +2890,8 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
         # „Załaduj do zlecenia” i staje na jego odpowiedzi, a nie na oknie Emmetta, które się nie pokazało.
         assert facts.part is PagePart.EMMETT and isinstance(facts.cause, BrowserFailure), (facts.part, facts.cause)
         assert facts.cause.operation is Operation.ANSWER, facts.cause
+    if WHOLE_RUN[first] == ("GET", LIST_PAGE) and outage is Outage.CUT:
+        assert (facts.part, facts.cause) == (PagePart.LIST, BrowserFailure("playwright._impl._errors.Error", Operation.OPEN))
     # Lista zleceń drugiego zlecenia to żądanie 14: odcięcie przed nim zatrzymuje okno przy zleceniu 1 (wiersz 18).
     early: dict[int, list[int | None]] = {0: [None], 1: [None, 18]}
     rows = early.get(first, [18] if first < WHOLE_RUN.index(("GET", LIST_PAGE), 1) else [19])
