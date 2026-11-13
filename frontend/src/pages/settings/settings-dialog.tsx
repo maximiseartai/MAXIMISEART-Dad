@@ -16,6 +16,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import { closeSettings, settingsHref, showSection, useSettingsAddress } from "@/lib/address"
+import { SettingsToasts } from "@/lib/settings"
 import { useViewTiming } from "@/lib/view-timing"
 import { ConfigurationProvider } from "@/pages/settings/configuration"
 import { sectionOf, SETTINGS_SECTIONS, SHOWN_GROUPS, type SettingsSection } from "@/pages/settings/sections"
@@ -117,6 +118,7 @@ export function SettingsDialog() {
             </div>
           </SidebarProvider>
         </ConfigurationProvider>
+        <SettingsToasts />
       </DialogContent>
     </Dialog>
   )

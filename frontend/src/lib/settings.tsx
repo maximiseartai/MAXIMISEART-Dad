@@ -13,8 +13,8 @@ import {
 } from "@/api/centrum"
 import { failureMessage, refusedField } from "@/api/client"
 import type { Choice, FoldersChange, Settings } from "@/api/generated"
-import { toast } from "@/components/ui/toast"
-import { showFailure, useAction } from "@/lib/action"
+import { createToasts, DialogToaster } from "@/components/ui/toast"
+import { useAction } from "@/lib/action"
 import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 
@@ -58,6 +58,20 @@ export const PATH_FIELDS: Record<PickedPath, string> = {
 
 /** Pole motywu w pliku Ustawień, jak w `folders_problem`. */
 export const THEME_FIELD = "motyw"
+
+// Powiadomienia zmian Ustawień („Zapisano · Cofnij”, „Cofnięto”, porażka zapisu) mają jednego właściciela, okno
+// Ustawień: stoją w nim, więc okno otwarte później (np. „Napisz do Maksa”) je zakrywa, i znikają razem z nim.
+const settingsToasts = createToasts()
+
+/** Porażka zapisu albo cofnięcia Ustawień jako powiadomienie w oknie Ustawień, nad jego treścią. */
+function failed(failure: Error, title = "Nie udało się") {
+  settingsToasts.add({ title, description: failureMessage(failure), type: "error" })
+}
+
+/** Miejsce powiadomień zmian Ustawień w oknie Ustawień. */
+export function SettingsToasts() {
+  return <DialogToaster toastManager={settingsToasts} />
+}
 
 const PICKERS: Record<PickedPath, () => Promise<Choice>> = {
   order_register: chooseOrderRegister,
@@ -193,7 +207,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   // Jedno okno wyboru naraz, wspólne dla wszystkich stron: okno Windows pojawia się po chwili, więc drugie
   // kliknięcie (albo „Zmień” przy drugim pliku) otworzyłoby drugie okno.
   const picking = useAction(async (path: PickedPath) => {
-    await folders(PICKERS[path])
+    await folders(PICKERS[path]).catch(failed)
   })
 
   // `done` dostaje wynik zapisu; akcja odrzucona jako druga naraz albo nieudana kończy się bez niego.
@@ -209,7 +223,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       periods_directory: remembered(current.data.periods_directory),
     }
 
-    done(await folders(() => changeFolders({ ...kept, [path]: typed(value) })))
+    done(await folders(() => changeFolders({ ...kept, [path]: typed(value) })).catch((failure: Error) => {
+      failed(failure)
+
+      return false
+    }))
   })
 
   // Stan przełącznika podaje serwer z obecności skrótu; do jego odpowiedzi drugie kliknięcie niczego nie wysyła.
@@ -232,7 +250,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       choose: (path) => void pick(path),
       chooseTheme: (next) => {
         setChosenTheme(next)
-        changeTheme(next).then(saved, showFailure)
+        changeTheme(next).then(saved, failed)
       },
       switchAutostart: (enabled) => void switchAutostart(enabled),
       autostartPending,
@@ -264,22 +282,22 @@ let lastSaved: string | null = null
  */
 function announce(change: string, undone: (choice: Choice) => void) {
   if (lastSaved !== null) {
-    toast.close(lastSaved)
+    settingsToasts.close(lastSaved)
   }
 
-  const shown = toast.add({
+  const shown = settingsToasts.add({
     title: "Zapisano",
     type: "success",
     actionProps: {
       children: "Cofnij",
       onClick: () => {
-        toast.close(shown)
+        settingsToasts.close(shown)
         undoSettingsChange(change).then(
           (choice) => {
             undone(choice)
-            toast.add({ title: "Cofnięto", type: "success" })
+            settingsToasts.add({ title: "Cofnięto", type: "success" })
           },
-          (failure: Error) => showFailure(failure, "Nie udało się cofnąć")
+          (failure: Error) => failed(failure, "Nie udało się cofnąć")
         )
       },
     },
