@@ -4351,6 +4351,15 @@
             "type": "boolean",
             "title": "Last Complete"
           },
+          "board_place": {
+            "type": "string",
+            "enum": [
+              "recent",
+              "older",
+              "not_started"
+            ],
+            "title": "Board Place"
+          },
           "fillable": {
             "type": "boolean",
             "title": "Fillable"
@@ -4407,6 +4416,7 @@
           "status_label",
           "files",
           "last_complete",
+          "board_place",
           "fillable",
           "path",
           "next_step",
