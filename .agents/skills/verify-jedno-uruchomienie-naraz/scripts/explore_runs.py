@@ -506,6 +506,7 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
             dry_run=False,
             workers=WorkerList(()),
             quantity_rules=DEFAULT_QUANTITY_RULES,
+            warnings=(),
         ),
         process_kind.HostParts(),
         RunContext(),

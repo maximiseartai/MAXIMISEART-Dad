@@ -1551,7 +1551,8 @@ def test_przeniesienie_bez_starych_plikow_albo_po_liscie_niczego_nie_pisze(tmp_p
     assert (workers["state"], workers["problem"]) == ("good", None), "zły stan bez pliku tylko po odrzuconym przeniesieniu"
 
 
-WAITING = {"field": None, "message": settings_messages.worker_list_waiting()}
+WAITING_SENTENCE = settings_messages.worker_list_waiting()
+WAITING = {"field": None, "message": WAITING_SENTENCE}
 
 
 def unusable(sentence: str) -> str:
@@ -1600,7 +1601,7 @@ def test_proces_nie_startuje_na_pustej_liscie_gdy_przeniesienie_czeka_na_stary_p
         refused = client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
         client.stop()
 
-    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING["message"])})
+    assert (refused.status_code, refused.json()) == (409, {"message": unusable(WAITING_SENTENCE)})
 
 
 WORKER = "  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\n"
