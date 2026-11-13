@@ -1,11 +1,25 @@
-"""Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany, z workflow ``rozmiar-pr.yml``.
+"""Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany i licznik szopy, z workflow ``rozmiar-pr.yml``.
 
 Liczy jak workflow ``pr-size.yml`` z t3code: suma dodanych i usuniętych linii z ``git diff --numstat
 --ignore-all-space --ignore-blank-lines <baza>...<głowa>`` (od bazy scalenia). W PR, który zmienia też coś poza
 testami, pliki testów (``TESTY``) się nie liczą, a PR z samymi testami liczy się po testach. Progi to ``PROGI``.
 
+Licznik szopy (ADR 0034) bierze z tego samego diffu dodane i usunięte linie każdej z dwóch szop z jej testami osobno:
+maszynerii procesu (pliki grupy ``maszyneria``) i weryfikacji produktu (grupy ``weryfikacja``), bez prozy (``*.md``),
+którą spis zapachów liczy w słowach, i bez samej listy ``LISTA``, której wpis tylko przypisuje grupę liniom innego pliku.
+Grupę pliku daje wpis listy, który go nazywa albo jest jego katalogiem (wpis z ``/`` na końcu), a plik bez wpisu ma
+grupę z reguły katalogu ``REGULY``; plik spoza niej nie należy do żadnej grupy. Lista trzyma więc tylko wyjątki, a nowy
+plik bez wpisu nie wymaga zmiany listy; nowy test maszynerii bez wpisu liczy się więc jako test produktu. Każdy plik
+bierze grupę z listy bazy PR. Licznik liczy linie według ścieżek: przeniesienie pliku jest w nim usunięciem pod starą
+ścieżką i dodaniem pod nową. Tekst czy binarny rozstrzyga git z samych bajtów pliku (``-diff`` i ``binary`` z
+``.gitattributes`` drzewa roboczego, także w podkatalogu, ani plik atrybutów z ``core.attributesFile`` nie zerują linii);
+atrybuty spoza repozytorium i konfiguracji gita (``.git/info/attributes``, plik systemowy) licznik nadal czyta.
+Licznik drukuje też dwa stosunki na drzewie głowy według listy bazy: linie testów zachowania ``src`` (pliki ``tests/``
+grupy ``produkt``) do linii ``src`` i linie testów szopy (pozostałe pliki ``tests/``) do linii ``src``. Linia licznika
+to same liczby: niczego nie ocenia, a testy produktu dostają tylko liczbę.
+
 Z ``--pr N`` narzędzie zakłada brakującą etykietę rozmiaru (albo poprawia jej opis i kolor), nadaje ją PR-owi i zdejmuje
-z niego inne etykiety ``size:*``; inne etykiety zostawia. Bez ``--pr`` tylko drukuje rozmiar. Niczego nie blokuje:
+z niego inne etykiety ``size:*``; inne etykiety zostawia. Bez ``--pr`` tylko drukuje rozmiar i licznik szopy. Niczego nie blokuje:
 etykieta to informacja dla autora i recenzenta, nie warunek merge'u.
 
 Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR jako dane gita: nie uruchamia ich kodu.
@@ -16,10 +30,11 @@ Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import sys
+import tomllib
 import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
@@ -48,6 +63,25 @@ XXL = Etykieta("size:XXL", "b60205", f"1000+ {_DOPISEK}")
 ETYKIETY = (*(etykieta for _, etykieta in PROGI), XXL)
 # Pliki testów repozytorium: pytest w tests/, plik test_*.py gdziekolwiek i testy frontendu (*.test.*, *.spec.*).
 TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec.*")
+
+LISTA = "tools/lib/szopa.toml"
+PRODUKT = "produkt"
+WERYFIKACJA = "weryfikacja"
+MASZYNERIA = "maszyneria"
+GRUPY = (PRODUKT, WERYFIKACJA, MASZYNERIA)
+SRC = "src/"
+# Grupa pliku bez wpisu na liście: pierwszy początek ścieżki, od którego plik się zaczyna. Hooki leżą w ``tools/hooks/``.
+REGULY = (
+    (SRC, PRODUKT),
+    ("tests/", PRODUKT),
+    ("tools/", MASZYNERIA),
+    (".agents/skills/verify-", WERYFIKACJA),
+    (".agents/skills/", MASZYNERIA),
+)
+PROZA = ".md"
+# Drzewo bez plików, które git zna bez obiektu w repozytorium: diff od niego to linie każdego pliku, a atrybuty z niego
+# to brak atrybutów.
+PUSTE_DRZEWO = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 @dataclass(frozen=True)
@@ -103,6 +137,99 @@ def zmierz(root: Path, baza: str, glowa: str) -> Rozmiar:
     return Rozmiar(bez_testow, wszystkie - bez_testow)
 
 
+def wpisy(tekst: str) -> dict[str, str]:
+    """Każdy wpis listy w treści TOML ``tekst`` (jednostka i każdy plik jej testów) z nazwą swojej grupy. Inny kształt
+    niż tabele ``GRUPY``, w których jednostka ma listę plików testów, i wpis, który stoi dwa razy, to ``ValueError``."""
+
+    wynik: dict[str, str] = {}
+    for grupa, jednostki in tomllib.loads(tekst).items():
+        if grupa not in GRUPY or not isinstance(jednostki, dict):
+            raise ValueError(f"{LISTA}: tabela [{grupa}] nie jest grupą listy ({', '.join(GRUPY)})")
+        for jednostka, testy in jednostki.items():
+            if not isinstance(testy, list) or not all(isinstance(test, str) for test in testy):
+                raise ValueError(f"{LISTA}: jednostka {jednostka} ma mieć listę plików testów")
+            for wpis in (jednostka, *testy):
+                if wpis in wynik:
+                    raise ValueError(f"{LISTA}: {wpis} stoi na liście dwa razy")
+                wynik[wpis] = grupa
+    return wynik
+
+
+def obejmujace(wpisy: Mapping[str, str], sciezka: str) -> list[str]:
+    """Wpisy listy, które obejmują plik ``sciezka``: ten sam plik albo jego katalog (wpis z ``/`` na końcu)."""
+
+    return [wpis for wpis in wpisy if sciezka == wpis or (wpis.endswith("/") and sciezka.startswith(wpis))]
+
+
+def _grupa(lista: Mapping[str, str], sciezka: str) -> str | None:
+    """Grupa pliku ``sciezka`` z jego wpisu na liście ``lista``, a bez wpisu z reguły katalogu ``REGULY``."""
+
+    grupy = {lista[wpis] for wpis in obejmujace(lista, sciezka)}
+    if grupy:
+        # Dwa wpisy dwóch grup to błąd listy, który jej test łapie; do tej pory liczy się ostrożnie.
+        return grupy.pop() if len(grupy) == 1 else MASZYNERIA
+    return next((grupa for poczatek, grupa in REGULY if sciezka.startswith(poczatek)), None)
+
+
+def _lista(root: Path, rewizja: str) -> dict[str, str]:
+    if not repo.succeeds(root, "cat-file", "-e", f"{rewizja}:{LISTA}"):
+        return {}
+    return wpisy(repo.git(root, "show", f"{rewizja}:{LISTA}"))
+
+
+def _pliki(root: Path, *diff: str) -> list[tuple[str, int, int]]:
+    """Ścieżka, dodane i usunięte linie każdego pliku z ``git diff --numstat`` bez prozy; plik binarny ma 0 linii.
+
+    Atrybuty biorą się z pustego drzewa (``attr.tree``, git ≥ 2.48), a plik atrybutów z konfiguracji jest pusty, więc
+    o tym, czy plik jest binarny, decyduje git z jego bajtów, nie ``-diff`` ani ``binary`` z ``.gitattributes``."""
+
+    pliki = []
+    numstat = repo.git(root, "-c", "core.attributesFile=", "-c", f"attr.tree={PUSTE_DRZEWO}", "diff", "--numstat", "-z", "--no-renames", *diff)
+    for rekord in numstat.split("\0"):
+        if rekord:
+            dodane, usuniete, sciezka = rekord.split("\t", 2)
+            if not sciezka.endswith(PROZA):
+                pliki.append((sciezka, int(dodane) if dodane.isdigit() else 0, int(usuniete) if usuniete.isdigit() else 0))
+    return pliki
+
+
+def _stosunek(licznik: int, mianownik: int) -> str:
+    return f"{licznik / mianownik:.2f}".replace(".", ",") if mianownik else "brak src"
+
+
+@dataclass(frozen=True)
+class Szopa:
+    """Licznik szopy PR: dodane i usunięte od bazy scalenia linie maszynerii procesu i weryfikacji produktu, każdej
+    z jej testami, oraz linie ``src``, testów zachowania ``src`` i testów szopy na drzewie głowy."""
+
+    maszyneria: tuple[int, int]
+    weryfikacja: tuple[int, int]
+    src: int
+    testy_src: int
+    testy_szopy: int
+
+    def opis(self) -> str:
+        return (
+            f"maszyneria procesu z testami +{self.maszyneria[0]} -{self.maszyneria[1]}"
+            f", weryfikacja produktu z testami +{self.weryfikacja[0]} -{self.weryfikacja[1]}"
+            f", testy zachowania src / src {self.testy_src}/{self.src} = {_stosunek(self.testy_src, self.src)}"
+            f", testy szopy / src {self.testy_szopy}/{self.src} = {_stosunek(self.testy_szopy, self.src)}"
+        )
+
+
+def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
+    lista = _lista(root, baza)
+    szopy = {MASZYNERIA: (0, 0), WERYFIKACJA: (0, 0)}
+    for sciezka, plus, minus in _pliki(root, "--ignore-all-space", "--ignore-blank-lines", f"{baza}...{glowa}"):
+        if sciezka != LISTA and (grupa := _grupa(lista, sciezka)) in szopy:
+            szopy[grupa] = (szopy[grupa][0] + plus, szopy[grupa][1] + minus)
+    linie = {SRC: 0, PRODUKT: 0, MASZYNERIA: 0}
+    for sciezka, plus, _ in _pliki(root, PUSTE_DRZEWO, glowa, "--", SRC, "tests/"):
+        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa(lista, sciezka) == PRODUKT else MASZYNERIA
+        linie[rodzaj] += plus
+    return Szopa(szopy[MASZYNERIA], szopy[WERYFIKACJA], linie[SRC], linie[PRODUKT], linie[MASZYNERIA])
+
+
 def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
     """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
 
@@ -153,17 +280,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--pr",
         type=int,
-        help="numer PR, któremu nadać etykietę; bez niego tylko drukuje rozmiar",
+        help="numer PR, któremu nadać etykietę rozmiaru; bez niego tylko drukuje rozmiar i licznik szopy",
     )
     args = parser.parse_args(argv)
 
+    znak = f"#{args.pr}" if args.pr else args.glowa
     rozmiar = zmierz(repo.ROOT, args.baza, args.glowa)
-    print(
-        f"ROZMIAR PR | {'#' + str(args.pr) if args.pr else args.glowa} | {rozmiar.opis()}"
-    )
+    print(f"ROZMIAR PR | {znak} | {rozmiar.opis()}")
     if args.pr:
         for linia in nadaj(GhApi(), args.pr, rozmiar.etykieta):
             print(f"ROZMIAR PR | {linia}")
+    print(f"SZOPA | {znak} | {zmierz_szope(repo.ROOT, args.baza, args.glowa).opis()}")
     return 0
 
 
