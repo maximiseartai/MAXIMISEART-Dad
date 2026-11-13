@@ -49,6 +49,7 @@ SettingsUnreadableCause = Literal["dostep"]
 # Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
 # dało się zapisać, więc następny odczyt spróbuje jeszcze raz.
 SettingsExternalResult = Literal["zapisano", "odrzucono", "bez-zapisu"]
+SettingsReleaseResult = Literal["zastosowano", "bez-zmian", "odrzucono", "pozniej", "bez-zapisu", "bez-pamieci"]
 
 
 class CentrumLog:
@@ -184,6 +185,12 @@ class CentrumLog:
         """Plik Ustawień Centrum zmieniony poza Centrum: przyjęty, odrzucony jako zła treść albo bez zapisu wiersza."""
 
         self._write("ustawienia-spoza", plik=file, wynik=result)
+
+    def settings_release(self, *, change: str, result: SettingsReleaseResult) -> None:
+        """Zmiana Ustawień Centrum z Wydania przy starcie: id zmiany i wynik (``pozniej``, ``bez-zapisu`` i
+        ``bez-pamieci`` wracają przy następnym starcie), bez wartości."""
+
+        self._write("ustawienia-wydanie", zmiana=change, wynik=result)
 
     def settings_bad(self, *, file: str, field: str) -> None:
         """Złe ustawienie w pliku Ustawień Centrum: pole (``plik`` dla całego pliku), bez treści pliku."""

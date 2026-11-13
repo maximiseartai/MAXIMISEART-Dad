@@ -21,7 +21,7 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings.files import Bad, Good, Unreadable
 from rozliczenia.centrum.settings.folders import DEFAULT_THEME, FOLDERS, FolderSettings, SettingState
-from rozliczenia.centrum.settings.history import HistoryRow
+from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, NotUndoable, Refused, Saved, SettingsView
 from rozliczenia.file_state import file_state
 
@@ -155,7 +155,8 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
     return settings_contract.HistoryRow(
         id=row.id,
         at=row.at,
-        source="tata" if row.source.kind == "tata" else "outside",
+        source=_source(row),
+        release=_release(row),
         undoes=row.undoes,
         file=row.file,
         section=row.section,
@@ -167,3 +168,19 @@ def _row(row: HistoryRow) -> settings_contract.HistoryRow:
         refused=row.result == "odrzucono",
         reason=row.reason,
     )
+
+
+def _source(row: HistoryRow) -> settings_contract.HistorySource:
+    match row.source:
+        case ByDad():
+            return "tata"
+        case Outside():
+            return "outside"
+        case FromRelease():
+            return "release"
+
+
+def _release(row: HistoryRow) -> settings_contract.HistoryRelease | None:
+    if not isinstance(row.source, FromRelease):
+        return None
+    return settings_contract.HistoryRelease(version=row.source.release, commit=row.source.commit, change=row.source.change)

@@ -16,6 +16,13 @@ Wiersz, którego nie da się dopisać, przywraca poprzednią treść pliku i pam
 wiersz. Zgaśnięcie między zamianą pliku a pamięcią daje przy następnym odczycie wiersz ``spoza`` z poprawną różnicą,
 tylko ze złym źródłem. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
 
+Zmiany z Wydania (``release_changes``) właściciel stosuje przy starcie Centrum, przed pierwszym zapytaniem, tym samym
+zapisem co zmianę taty, tylko ze źródłem ``wydanie``. Każda zmiana z wynikiem (weszła, nic do zmiany, odrzucona) trafia do
+pamięci i już nie wraca; ``Later``, wyjątek w kodzie zmiany i zapis, który się nie udał, wracają przy następnym starcie.
+Pamięć, której nie da się przeczytać, wstrzymuje wszystkie zmiany do czasu, aż da się ją przeczytać, bo bez niej zmiana
+cofnięta przez tatę weszłaby jeszcze raz. Pamięć utracona w całości (usunięty folder) puszcza każdą zmianę jeszcze raz:
+edycja deklaratywna nie daje wtedy różnicy, chyba że tata ją cofnął.
+
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
 ``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
 """
@@ -28,15 +35,26 @@ from datetime import datetime, timedelta
 import hashlib
 from pathlib import Path
 import threading
-from typing import Final, TypeVar
+from typing import Any, Final, TypeVar
 import uuid
 
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
-from rozliczenia.centrum.settings.history import History, HistoryRead, HistoryRow, RowChange, RowSource, SourceKind
-from rozliczenia.centrum.settings.memory import Memory, settings_bytes
+from rozliczenia.centrum.settings.history import (
+    ByDad,
+    FromRelease,
+    History,
+    HistoryRead,
+    HistoryRow,
+    Outside,
+    ReleaseOrigin,
+    RowChange,
+    RowSource,
+)
+from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, settings_bytes
+from rozliczenia.centrum.settings.release_changes import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 
 T = TypeVar("T")
 
@@ -114,7 +132,7 @@ class CentrumSettings:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową."""
 
         with self._lock:
-            return self._change(file, edit, undoes=None)
+            return self._change(file, edit, undoes=None, source=ByDad(), undoable=True)
 
     def undo(self, row_id: str) -> Saved | Refused | NotSaved | NotUndoable:
         """Cofnięcie wiersza Historii: nowy zapis taty z wartościami sprzed tej zmiany; cofnięcie cofnięcia też."""
@@ -133,6 +151,71 @@ class CentrumSettings:
         with self._lock:
             return self._history.read()
 
+    def apply_release_changes(
+        self, changes: tuple[ReleaseChange[Any], ...], origin: Callable[[], ReleaseOrigin]
+    ) -> None:
+        """Zmiany z Wydania, których pamięć jeszcze nie ma, po kolei; ``origin`` daje wersję narzędzia do Historii i
+        pyta Gita tylko wtedy, gdy jest co zastosować. Niczego nie podnosi: start Centrum nie pada na zmianie z Wydania."""
+
+        with self._lock:
+            applied = self._memory.applied()
+            if isinstance(applied, AppliedUnknown):
+                for change in changes:
+                    self._log.settings_release(change=change.id, result="bez-pamieci")
+                return
+            pending = [change for change in changes if change.id not in applied]
+            if not pending:
+                return
+            version = origin()
+            for change in pending:
+                try:
+                    result = self._apply(change, version)
+                except Exception as failure:
+                    self._log.unexpected_failure(failure, where=f"zmiana Ustawień z Wydania {change.id}")
+                    continue
+                if result is None:
+                    continue
+                applied[change.id] = Applied(at=self._now(), release=version.release, commit=version.commit, result=result)
+                try:
+                    self._memory.remember_applied(applied)
+                except OSError:
+                    self._log.settings_release(change=change.id, result="bez-pamieci")
+
+    def _apply(self, change: ReleaseChange[T], version: ReleaseOrigin) -> AppliedResult | None:
+        """Jedna zmiana z Wydania; ``None``: wraca przy następnym starcie."""
+
+        source = FromRelease(release=version.release, commit=version.commit, change=change.id)
+        match change.propose(ReleaseInputs(self._observe(change.file), self._config)):
+            case Nothing():
+                result: AppliedResult | None = "bez-zmian"
+            case Later():
+                self._log.settings_release(change=change.id, result="pozniej")
+                return None
+            case Refuse(sentence=sentence):
+                result = self._refuse(change.file, source, sentence)
+            case Edit(edit=edit, undoable=undoable):
+                match self._change(change.file, edit, undoes=None, source=source, undoable=undoable):
+                    case Saved(change=row):
+                        result = "bez-zmian" if row is None else "zastosowano"
+                    case Refused(problem=problem):
+                        result = self._refuse(change.file, source, problem.sentence)
+                    case NotSaved():
+                        result = None
+        self._log.settings_release(change=change.id, result="bez-zapisu" if result is None else result)
+        return result
+
+    def _refuse(self, file: SettingsFile[T], source: FromRelease, sentence: str) -> AppliedResult | None:
+        """Wiersz ``odrzucono`` zmiany z Wydania z powodem; ``None``: wiersza nie dało się dopisać, zmiana wraca."""
+
+        row = self._row(file, (), source, undoes=None, undoable=False).model_copy(
+            update={"result": "odrzucono", "reason": sentence}
+        )
+        try:
+            self._history.append(row)
+        except OSError:
+            return None
+        return "odrzucono"
+
     def reported_changes(self, days: int = 30) -> tuple[str, ...]:
         """Linie Zgłoszenia o zmianach z ostatnich ``days`` dni (najwyżej ``REPORTED_CHANGES``, od najnowszej): kiedy,
         skąd, klucze i tylko wartości bez danych osobowych (folder samą nazwą, motyw), sekret samym znacznikiem."""
@@ -142,9 +225,11 @@ class CentrumSettings:
         return tuple(_reported(row) for row in rows)
 
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
-        return self._change(file, lambda current: file.restore(current, changes), undoes=row_id)
+        return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
 
-    def _change(self, file: SettingsFile[T], edit: Callable[[T], T], *, undoes: str | None) -> Saved | Refused | NotSaved:
+    def _change(
+        self, file: SettingsFile[T], edit: Callable[[T], T], *, undoes: str | None, source: RowSource, undoable: bool
+    ) -> Saved | Refused | NotSaved:
         data = self._bytes_for_change(file)
         if isinstance(data, Unreadable):
             self._log.settings_unreadable(cause="dostep")
@@ -161,7 +246,7 @@ class CentrumSettings:
             return Saved(change=None)
         if isinstance(observed, Bad) and data is not None:
             self._memory.keep_rejected(file.name, data, self._now())
-        row = self._row(file, changes, "tata", undoes=undoes) if changes else None
+        row = self._row(file, changes, source, undoes=undoes, undoable=undoable) if changes else None
         remembered = self._memory.remembered(file.name)
         try:
             replace_atomically(self._config / file.name, new, pause=self._pause)
@@ -176,7 +261,7 @@ class CentrumSettings:
             return NotSaved()
         if row is None:
             return Saved(change=None)
-        self._log.settings_changed(file=file.name, keys=tuple(change.key for change in changes), source="tata")
+        self._log.settings_changed(file=file.name, keys=tuple(change.key for change in changes), source=source.kind)
         return Saved(change=row.id)
 
     def _put_back(self, file: SettingsFile[T], data: bytes | None, remembered: bytes | None) -> None:
@@ -233,7 +318,7 @@ class CentrumSettings:
 
         try:
             if changes:
-                self._history.append(self._row(file, changes, "spoza", undoes=None))
+                self._history.append(self._row(file, changes, Outside(), undoes=None, undoable=True))
             self._memory.remember(file.name, data)
         except OSError:
             self._log.settings_external(file=file.name, result="bez-zapisu")
@@ -257,8 +342,8 @@ class CentrumSettings:
         )
         if last is not None and last.fingerprint == fingerprint:
             return
-        row = self._row(file, (), "spoza", undoes=None).model_copy(
-            update={"result": "odrzucono", "reason": problem.sentence, "undoable": False, "fingerprint": fingerprint}
+        row = self._row(file, (), Outside(), undoes=None, undoable=False).model_copy(
+            update={"result": "odrzucono", "reason": problem.sentence, "fingerprint": fingerprint}
         )
         try:
             self._history.append(row)
@@ -268,19 +353,19 @@ class CentrumSettings:
         self._log.settings_external(file=file.name, result="odrzucono")
 
     def _row(
-        self, file: SettingsFile[T], changes: tuple[KeyChange, ...], source: SourceKind, *, undoes: str | None
+        self, file: SettingsFile[T], changes: tuple[KeyChange, ...], source: RowSource, *, undoes: str | None, undoable: bool
     ) -> HistoryRow:
         sections = {change.key.partition(".")[0] for change in changes}
         return HistoryRow(
             id=uuid.uuid4().hex,
             at=self._now(),
-            source=RowSource(kind=source),
+            source=source,
             undoes=undoes,
             file=file.name,
             section=next(iter(sections)) if len(sections) == 1 else None,
             changes=tuple(RowChange.of(change) for change in changes) if not file.secret else (),
             secret=file.secret,
-            undoable=not file.secret,
+            undoable=undoable and not file.secret,
             result="zapisano",
             reason=None,
         )
@@ -319,8 +404,7 @@ def _usable(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
 
 
 def _reported(row: HistoryRow) -> str:
-    source = {"tata": "tata", "spoza": "spoza Centrum"}[row.source.kind]
-    head = f"- {row.at:%Y-%m-%d %H:%M} · {source} · {row.file}"
+    head = f"- {row.at:%Y-%m-%d %H:%M} · {_reported_source(row.source)} · {row.file}"
     if row.result == "odrzucono":
         return f"{head} · odrzucono: {row.reason}"
     file = _FILES.get(row.file)
@@ -331,3 +415,15 @@ def _reported(row: HistoryRow) -> str:
         f"{change.key}: {file.shown(change.key, change.before)} → {file.shown(change.key, change.after)}"
         for change in row.changes
     )
+
+
+def _reported_source(source: RowSource) -> str:
+    match source:
+        case ByDad():
+            return "tata"
+        case Outside():
+            return "spoza Centrum"
+        case FromRelease(release=release, commit=commit, change=change):
+            if release is not None:
+                return f"Wydanie {release} ({change})"
+            return f"{'wersja nieznana' if commit is None else f'commit {commit}'} ({change})"

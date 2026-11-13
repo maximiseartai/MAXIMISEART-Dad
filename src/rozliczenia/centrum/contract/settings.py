@@ -97,17 +97,27 @@ class HistoryChange(Model):
     after: str | None
 
 
-HistorySource = Literal["tata", "outside"]
-"""Skąd zmiana: zapis taty w Centrum (także cofnięcie) albo plik w ``config`` zmieniony poza Centrum."""
+HistorySource = Literal["tata", "outside", "release"]
+"""Skąd zmiana: zapis taty w Centrum (także cofnięcie), plik w ``config`` zmieniony poza Centrum albo zmiana z Wydania."""
+
+
+class HistoryRelease(Model):
+    """Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany."""
+
+    version: str | None
+    commit: str | None
+    change: str
 
 
 class HistoryRow(Model):
-    """Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
-    spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``."""
+    """Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+    ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+    z powodem ``reason``."""
 
     id: str
     at: datetime
     source: HistorySource
+    release: HistoryRelease | None
     undoes: str | None
     file: str
     section: str | None

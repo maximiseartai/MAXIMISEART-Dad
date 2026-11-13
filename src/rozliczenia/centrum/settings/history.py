@@ -1,6 +1,6 @@
 """Historia Ustawień w ``config/historia-ustawien.jsonl``: jeden wiersz JSON na jeden zapis, dopisywany linia po linii.
 
-Wiersz mówi, kiedy, skąd (tata albo zmiana spoza Centrum), który plik i które klucze się zmieniły, z wartością przed
+Wiersz mówi, kiedy, skąd (tata, zmiana z Wydania albo zmiana spoza Centrum), który plik i które klucze się zmieniły, z wartością przed
 i po (sekret bez wartości), czy da się go cofnąć i czy zmiana weszła (``zapisano``) albo została odrzucona z powodem.
 Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Final, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -21,8 +21,6 @@ from rozliczenia.centrum.settings.memory import settings_bytes
 HISTORY_FILE: Final = "historia-ustawien.jsonl"
 _VERSION: Final = 1
 
-SourceKind = Literal["tata", "spoza"]
-"""Skąd zmiana: zapis taty w Centrum (także cofnięcie) albo plik w ``config`` zmieniony poza Centrum."""
 RowResult = Literal["zapisano", "odrzucono"]
 
 
@@ -32,8 +30,35 @@ class _Model(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
 
-class RowSource(_Model):
-    kind: SourceKind = Field(validation_alias="rodzaj", serialization_alias="rodzaj")
+class ByDad(_Model):
+    """Zapis taty w Centrum, także cofnięcie."""
+
+    kind: Literal["tata"] = Field(default="tata", validation_alias="rodzaj", serialization_alias="rodzaj")
+
+
+class Outside(_Model):
+    """Plik w ``config`` zmieniony poza Centrum."""
+
+    kind: Literal["spoza"] = Field(default="spoza", validation_alias="rodzaj", serialization_alias="rodzaj")
+
+
+class ReleaseOrigin(_Model):
+    """Wersja narzędzia, której Wydanie niesie zmianę: numer Wydania (``0.9.0``) i skrót commitu; ``None``: nie wiadomo
+    (commit bez tagu Wydania albo narzędzie bez Gita)."""
+
+    release: str | None = Field(validation_alias="wydanie", serialization_alias="wydanie")
+    commit: str | None
+
+
+class FromRelease(ReleaseOrigin):
+    """Zmiana Ustawień z Wydania (``release_changes``): wersja narzędzia i id zmiany."""
+
+    kind: Literal["wydanie"] = Field(default="wydanie", validation_alias="rodzaj", serialization_alias="rodzaj")
+    change: str = Field(validation_alias="zmiana", serialization_alias="zmiana")
+
+
+RowSource = Annotated[ByDad | Outside | FromRelease, Field(discriminator="kind")]
+"""Skąd zmiana: zapis taty, zmiana z Wydania albo plik zmieniony poza Centrum."""
 
 
 class RowChange(_Model):

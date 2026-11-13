@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, get_args
@@ -33,9 +34,19 @@ from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
-from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.release_changes import (
+    Edit,
+    Later,
+    Nothing,
+    Proposal,
+    Refuse,
+    ReleaseChange,
+    ReleaseInputs,
+)
+from rozliczenia.centrum.tool_freshness import ToolFreshness
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -49,6 +60,7 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
+from tests.fixtures.tool_clone import tool_repository
 
 import export_openapi
 
@@ -656,6 +668,185 @@ def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> Non
         ["wyglad.motyw", "foldery.folder_okresow"],
         1,
     )
+
+
+def config_bytes(config: Path) -> dict[str, bytes]:
+    """Każdy plik folderu ``config`` z jego bajtami, po ścieżce względem ``config``."""
+
+    return {path.relative_to(config).as_posix(): path.read_bytes() for path in sorted(config.rglob("*")) if path.is_file()}
+
+
+def started(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...], **options: Any) -> CentrumClient:
+    """Centrum uruchomione jak u taty na katalogu narzędzia ``tool``, z Wydaniem, które niesie zmiany ``changes``."""
+
+    client = CentrumClient(centrum_app(tool, release_changes=changes, **options))
+    client.start()
+    return client
+
+
+def light_theme(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, theme="light"))
+
+
+LIGHT_THEME = ReleaseChange("2026-11-motyw-jasny", FOLDERS, light_theme)
+
+
+def test_start_centrum_z_wydania_bez_zmian_ustawien_zostawia_pliki_config_bajt_w_bajt(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.put("/api/settings/theme", json={"theme": "light"})
+    app.client.stop()
+    before = config_bytes(app.tool.config)
+
+    started(app.tool, ()).stop()
+    started(app.tool, ()).stop()
+
+    assert config_bytes(app.tool.config) == before
+
+
+def test_zmiana_ustawien_z_wydania_wchodzi_raz_z_numerem_wydania_w_historii_a_tata_ja_cofa(tmp_path: Path) -> None:
+    repository = tool_repository(tmp_path / "repozytoria")
+    freshness = ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+
+    first = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    [applied] = first.get("/api/settings/history").json()["rows"]
+    theme = first.get("/api/settings").json()["theme"]
+    first.stop()
+    second = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    undone = second.post(f"/api/settings/history/{applied['id']}/undo")
+    second.stop()
+    after_undo = config_bytes(tool.config)
+    third = started(tool, (LIGHT_THEME,), tool_freshness=freshness)
+    rows = third.get("/api/settings/history").json()["rows"]
+    third_theme = third.get("/api/settings").json()["theme"]
+    third.stop()
+
+    assert theme == "light"
+    assert (applied["source"], applied["release"], applied["changes"], applied["undoable"]) == (
+        "release",
+        {"version": "0.1.0", "commit": repository.head()[:7], "change": "2026-11-motyw-jasny"},
+        [{"key": "wyglad.motyw", "before": "dark", "after": "light"}],
+        True,
+    )
+    assert (undone.status_code, undone.json()["settings"]["theme"]) == (200, "dark")
+    assert [(row["source"], row["undoes"]) for row in rows] == [("tata", applied["id"]), ("release", None)]
+    assert (third_theme, config_bytes(tool.config)) == ("dark", after_undo)
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=wyglad.motyw zrodlo=wydanie" in log
+    assert log.count("ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=zastosowano") == 1
+
+
+def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -> None:
+    def migrated(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+        return Edit(lambda current: replace(current, theme="light"), undoable=False)
+
+    client = started(ToolDirectory(tmp_path), (ReleaseChange("2026-11-migracja", FOLDERS, migrated),))
+    [row] = client.get("/api/settings/history").json()["rows"]
+    undo = client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (row["source"], row["undoable"]) == ("release", False)
+    assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, periods_directory=Path("INEA")))
+
+
+WORKERS_MISSING = "Listy Wykonawców nie ma, bo pliku identyfikatorów nie da się przeczytać."
+
+
+def refused(_inputs: ReleaseInputs[FolderSettings]) -> Refuse:
+    return Refuse(WORKERS_MISSING)
+
+
+@pytest.mark.parametrize(
+    ("propose", "reason"),
+    [(bad_periods_directory, PERIODS_PATH), (refused, WORKERS_MISSING)],
+    ids=["zla-wartosc", "odmowa-zmiany"],
+)
+def test_zmiana_ustawien_z_wydania_ktora_nie_przechodzi_sprawdzen_nie_wchodzi_a_historia_mowi_dlaczego(
+    tmp_path: Path, propose: Callable[[ReleaseInputs[FolderSettings]], Proposal[FolderSettings]], reason: str
+) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+    saved = app.settings_path.read_bytes()
+    change = ReleaseChange("2026-11-zla-zmiana", FOLDERS, propose)
+
+    started(app.tool, (change,)).stop()
+    again = started(app.tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert app.settings_path.read_bytes() == saved
+    assert [(row["source"], row["refused"], row["undoable"], row["reason"]) for row in rows] == [
+        ("release", True, False, reason),
+        ("tata", False, True, None),
+    ]
+    assert rows[0]["release"]["change"] == "2026-11-zla-zmiana"
+    assert "ustawienia-wydanie zmiana=2026-11-zla-zmiana wynik=odrzucono" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_odlozona_na_pozniej_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    attachments = tmp_path / "Załączniki"
+
+    def periods_from_attachments(_inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
+        if not attachments.is_dir():
+            return Later("OneDrive nie oddał jeszcze folderu Załączniki")
+        return Edit(lambda current: replace(current, periods_directory=attachments))
+
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    change = ReleaseChange("2026-11-folder-zalaczniki", FOLDERS, periods_from_attachments)
+    before = config_bytes(tool.config)
+
+    started(tool, (change,)).stop()
+    later = config_bytes(tool.config)
+    attachments.mkdir()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    periods = again.get("/api/settings").json()["periods_directory"]
+    again.stop()
+
+    assert later == before
+    assert ([row["source"] for row in rows], periods["path"]) == (["release"], str(attachments))
+    assert "ustawienia-wydanie zmiana=2026-11-folder-zalaczniki wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wiersza(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def nothing(_inputs: ReleaseInputs[FolderSettings]) -> Nothing:
+        asked.append("zapytana")
+        return Nothing()
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-nic", FOLDERS, nothing)
+
+    started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (asked, rows) == (["zapytana"], [])
+
+
+def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zmiana_wraca(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def failing(_inputs: ReleaseInputs[FolderSettings]) -> Nothing:
+        asked.append("zapytana")
+        raise KeyError("pole")
+
+    tool = ToolDirectory(tmp_path)
+    change = ReleaseChange("2026-11-z-bledem", FOLDERS, failing)
+
+    started(tool, (change,)).stop()
+    again = started(tool, (change,))
+    health = again.get("/api/health")
+    again.stop()
+
+    assert (health.status_code, asked) == (200, ["zapytana", "zapytana"])
+    log = tool.log_path.read_text(encoding="utf-8")
+    assert log.count('nieoczekiwany-wyjatek typ=KeyError miejsce="zmiana Ustawień z Wydania 2026-11-z-bledem"') == 2
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

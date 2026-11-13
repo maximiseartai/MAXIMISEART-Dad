@@ -60,7 +60,9 @@ from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, R
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES, ReleaseChange
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
@@ -114,11 +116,14 @@ def create_app(
     worker_report_inbox: WorkerReportInbox | None = None,
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
+    release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
     work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
+        # Zmiany Ustawień Centrum z Wydania: przed pierwszym zapytaniem i przed Przypomnieniami, które czytają Ustawienia.
+        settings.apply_release_changes(release_changes, release_origin)
         # Powiadomienia: pierwsze pytanie skrzynki o stan spraw taty przy starcie, nie dopiero przy odczycie.
         notifications.check_in_background()
         # Klucz do Zgłoszeń: pierwsze sprawdzenie w tle, żeby Konfiguracja nie czekała na Skrzynkę.
@@ -200,6 +205,16 @@ def create_app(
     # do pamięci.
     freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
     release = RememberedRelease(freshness.release, clock=clock)
+
+    def release_origin() -> ReleaseOrigin:
+        """Wersja narzędzia tego Centrum dla wiersza Historii zmiany z Wydania: numer Wydania i skrót commitu."""
+
+        commit = freshness.local()
+        at_commit = None if commit is None else freshness.wydanie(commit)
+        return ReleaseOrigin(
+            release=None if at_commit is None else at_commit.version, commit=None if commit is None else short_commit(commit)
+        )
+
     # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),

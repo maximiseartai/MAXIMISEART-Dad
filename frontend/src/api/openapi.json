@@ -3134,6 +3134,45 @@
         "title": "HistoryChange",
         "description": "Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret."
       },
+      "HistoryRelease": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "change": {
+            "type": "string",
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "commit",
+          "change"
+        ],
+        "title": "HistoryRelease",
+        "description": "Zmiana z Wydania: numer Wydania (``0.9.0``) i skrót commitu narzędzia (``None``: nie wiadomo) oraz id zmiany."
+      },
       "HistoryRow": {
         "properties": {
           "id": {
@@ -3149,9 +3188,20 @@
             "type": "string",
             "enum": [
               "tata",
-              "outside"
+              "outside",
+              "release"
             ],
             "title": "Source"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoryRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "undoes": {
             "anyOf": [
@@ -3216,6 +3266,7 @@
           "id",
           "at",
           "source",
+          "release",
           "undoes",
           "file",
           "section",
@@ -3226,7 +3277,7 @@
           "reason"
         ],
         "title": "HistoryRow",
-        "description": "Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść\nspoza Centrum, której Centrum nie przyjęło, z powodem ``reason``."
+        "description": "Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;\n``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,\nz powodem ``reason``."
       },
       "InaccessiblePath": {
         "properties": {
