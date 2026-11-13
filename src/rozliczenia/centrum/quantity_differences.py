@@ -49,7 +49,7 @@ from rozliczenia.centrum.contract.quantity_rules import (
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum.quantity_rules_preview import Recent, RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_exceptions import (
     EXCEPTIONS,
     SECTION,
@@ -162,6 +162,9 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
                 raise refusal.setting_refused(problem)
             case NotSaved():
                 raise refusal.settings_not_saved()
+            case KeptInPeriods(presence=presence, what=what):
+                # Plik wyjątków nie usuwa loginów z Listy Wykonawców; odpowiedź jak przy każdym zapisie Ustawień.
+                raise refusal.worker_kept(presence, what)
 
     return router
 
