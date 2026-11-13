@@ -1,12 +1,19 @@
 """Narzędzie zgodności Atrapy efenix z efenix (``tools/zgodnosc_efenix.py``, #748) na Atrapie efenix.
 
-Każdy test uruchamia narzędzie jak Maks: osobnym procesem, który łączy się przez zdalne debugowanie z Chromium (u Maksa
-Chrome z sesją taty), a sprawdza to, co widać z zewnątrz: wynik (plik expect w ``tests/expected/zgodnosc_efenix/``),
-kod wyjścia, żądania, które dostała Atrapa, i jej stan. Zgodna Atrapa daje wynik bez różnic, a Atrapa ze zmienioną
-budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
+Narzędzie łączy się przez zdalne debugowanie z Chromium (u Maksa Chrome z sesją taty), a test sprawdza to, co widać z
+zewnątrz: wynik (plik expect w ``tests/expected/zgodnosc_efenix/``), żądania, które dostała Atrapa, i jej stan. Zgodna
+Atrapa daje wynik bez różnic, a Atrapa ze zmienioną budową każdą różnicę; każdy wynik ma prośbę o ręczne sprawdzenie
+przycisku kalendarza daty wykonania. Każde żądanie, które dostaje Atrapa, jest z listy dozwolonych odczytów, także gdy skrypty i
 elementy stron same wysyłają zapis albo wylogowanie, a nigdy propozycja Emmetta (``action_fill_emmett.php``), więc
 każdy wynik bez ``--emmett`` ma też linię o niesprawdzonej budowie propozycji. Wynik nie zawiera numerów zleceń,
 adresów, loginów ani identyfikatorów, które Atrapa pokazuje, ani cen.
+
+Tabele przypadków (postacie i zmiany budowy, okno Emmetta, wylogowanie w trakcie) wołają porównanie narzędzia w procesie
+testu (``_compared``): ``check`` i ``measure_proposal`` z sesją domyślnego kontekstu Chromium i osobnym kontekstem żądań
+bez ciasteczek, tak jak ``main``. Kontrakt wiersza poleceń sprawdzają testy, które uruchamiają narzędzie jak Maks,
+osobnym procesem (``_run``), po jednym na kontrakt: kod 0 bez różnic, kod 2 z samych różnic i z samych części
+niesprawdzonych, kod 1 z błędem na stderr, ``--numer``, ``--wzorzec`` i Wzorzec z konfiguracji, ``--limit-ms`` i
+``--emmett`` z Enter na stdin, z własnym połączeniem narzędzia z Chromium.
 
 Budowę, której Atrapa nie umie zmienić sama (``Changed``, ``Unread``), zmienia serwer przed Atrapą (``_in_front``):
 narzędzie łączy się z nim, a on przekazuje każde żądanie Atrapie i zmienia odpowiedź na wskazane strony (inny kod,
@@ -35,12 +42,13 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from typing import TypeVar, cast
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from openpyxl import Workbook
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import APIRequest, Browser, Page, sync_playwright
 import pytest
 import zgodnosc_efenix
 
@@ -75,7 +83,7 @@ from atrapy.atrapa_efenix import (
 )
 from atrapy.efenix import write_template_costs
 from tests.fixtures.expect import assert_expected
-from tests.fixtures.potomne import wait_for, wait_for_value
+from tests.fixtures.potomne import wait_for_value
 from atrapy.settlement import CellValue
 from atrapy.workbooks import active_worksheet
 
@@ -432,12 +440,11 @@ def _click_in_frame(browser: Browser, address: str, _elsewhere: str) -> None:
 @dataclass(frozen=True)
 class Emmett:
     """Pomiar propozycji Emmetta: co Maks robi w Chrome (``maks``: przeglądarka, adres zlecenia pod ``--efenix-url`` i
-    adres tego zlecenia na innym hoście), co wpisuje na stdin, Atrapa efenix pod narzędziem, kod wyjścia i plik expect.
+    adres tego zlecenia na innym hoście), co wpisuje na stdin, Atrapa efenix pod narzędziem i plik expect.
     ``read``: narzędzie przeczytało otwarte okno Emmetta, więc prosi o jego zamknięcie."""
 
     expected: Path
     maks: Callable[[Browser, str, str], None] = _click
-    code: int = 2
     read: bool = True
     orders: tuple[AtrapaOrder, ...] = EMMETT_ORDERS
     rewrites: Mapping[str, Rewrite] = field(default_factory=dict)
@@ -445,14 +452,13 @@ class Emmett:
 
 
 EMMETT = {
-    "zgodna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", code=0),
+    "zgodna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt"),
     # Propozycja z białymi znakami i komentarzem między elementami, jak HTML pisany z wcięciami.
     "propozycja-z-wcieciami-i-komentarzem": Emmett(
         ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt",
-        code=0,
         rewrites={FILL_EMMETT: _proposal("\n<!-- Emmett -->\n<ul>\n  <li>INDEKS_012_078: 3</li>\n  <!-- koniec -->\n</ul>\n")},
     ),
-    "druga-karta-bez-okna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", _click_and_open_second, code=0),
+    "druga-karta-bez-okna": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-zgodna.txt", _click_and_open_second),
     "bez-enter": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-enter.txt", read=False, enter=""),
     "bez-karty-zlecenia": Emmett(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "emmett-bez-karty-zlecenia.txt", _open_list, read=False),
     "karta-zlecenia-innego-hosta": Emmett(
@@ -591,9 +597,11 @@ _T = TypeVar("_T")
 
 @dataclass(frozen=True)
 class Chromium:
-    """Chromium ze zdalnym debugowaniem pod ``endpoint``; ``do`` wykonuje działanie Maksa w jego przeglądarce."""
+    """Chromium ze zdalnym debugowaniem pod ``endpoint``; ``do`` wykonuje działanie Maksa albo porównanie narzędzia w jego
+    przeglądarce, a ``request`` (żądania Playwrighta tego wątku) służy tylko w działaniach ``do``."""
 
     endpoint: str
+    request: APIRequest
     _jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]]
     _owner: threading.Thread
     _ended: queue.Queue[BaseException]
@@ -607,11 +615,17 @@ class Chromium:
 
         answer: queue.Queue[tuple[object, BaseException | None]] = queue.Queue()
         self._jobs.put((job, answer))
-        if not wait_for(lambda: not answer.empty() or not self._owner.is_alive(), 120, every=0.01):
-            raise TimeoutError("Chromium nie wykonał działania Maksa w 120 s")
-        if answer.empty():
-            raise self._ended.get_nowait()
-        result, error = answer.get_nowait()
+        deadline = time.monotonic() + 120
+        while True:
+            # Odpowiedź budzi ``get`` od razu; jego limit to tylko co ile ``do`` sprawdza, czy wątek jeszcze żyje.
+            try:
+                result, error = answer.get(timeout=1)
+                break
+            except queue.Empty:
+                if not self._owner.is_alive() and answer.empty():
+                    raise self._ended.get_nowait() from None
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Chromium nie wykonał działania Maksa w 120 s") from None
         if error is not None:
             raise error
         return cast(_T, result)
@@ -638,7 +652,7 @@ def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
     """
 
     profile = tmp_path_factory.mktemp("chromium-zgodnosc")
-    started: queue.Queue[str | BaseException] = queue.Queue()
+    started: queue.Queue[tuple[str, APIRequest] | BaseException] = queue.Queue()
     ended: queue.Queue[BaseException] = queue.Queue()
     stop = threading.Event()
     jobs: queue.Queue[tuple[Callable[[Browser], object], queue.Queue[tuple[object, BaseException | None]]]] = queue.Queue()
@@ -655,7 +669,7 @@ def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
                     remote = playwright.chromium.connect_over_cdp(endpoint)
                     name, value = SESSION_COOKIE
                     remote.contexts[0].add_cookies([{"name": name, "value": value, "domain": "127.0.0.1", "path": "/"}])
-                    started.put(endpoint)
+                    started.put((endpoint, playwright.request))
                     while not stop.is_set():
                         try:
                             job, answer = jobs.get_nowait()
@@ -676,10 +690,10 @@ def chromium(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Chromium]:
     owner = threading.Thread(target=own, name="chromium-zgodnosc")
     owner.start()
     try:
-        endpoint = started.get(timeout=120)
-        if isinstance(endpoint, BaseException):
-            raise endpoint
-        yield Chromium(endpoint, jobs, owner, ended)
+        start = started.get(timeout=120)
+        if isinstance(start, BaseException):
+            raise start
+        yield Chromium(*start, jobs, owner, ended)
     finally:
         stop.set()
         owner.join()
@@ -714,7 +728,11 @@ def chrome(chromium: Chromium) -> str:
     return chromium.endpoint
 
 
-def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = 10_000, enter: str | None = None) -> Checked:
+# Limit czekania na odpowiedź efenix w porównaniu narzędzia (``--limit-ms``).
+LIMIT_MS = 10_000
+
+
+def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = LIMIT_MS, enter: str | None = None) -> Checked:
     done = subprocess.run(
         [sys.executable, str(TOOL), "--efenix-url", url, "--cdp", endpoint, "--limit-ms", str(limit_ms), "--wzorzec", str(template), *extra],
         input=enter,
@@ -727,22 +745,75 @@ def _run(endpoint: str, url: str, template: Path, *extra: str, limit_ms: int = 1
     return Checked(done.returncode, done.stdout, done.stderr)
 
 
-def _checked(
-    endpoint: str, tmp_path: Path, variant: Variant, before: Callable[[AtrapaEfenix], None] = lambda _atrapa: None
-) -> tuple[Checked, AtrapaEfenix]:
-    """Wynik narzędzia na Atrapie ``variant``; Atrapa ma po nim ten sam stan i sesję, a Chrome te same karty."""
+def _compared(request: APIRequest, browser: Browser, url: str, template: Path, *, number: str = "", emmett: bool = False) -> zgodnosc_efenix.Report:
+    """Porównanie narzędzia w procesie testu, w wątku Chromium (``Chromium.do``), z tym, co daje mu ``main``: kosztami
+    Wzorca ``template``, sesją domyślnego kontekstu Chrome, nowym kontekstem żądań bez ciasteczek i kartą składania, a z
+    ``emmett`` także pomiarem propozycji Emmetta po Enter z ``sys.stdin``."""
+
+    costs = zgodnosc_efenix.template_costs(template)
+    session = browser.contexts[0].request
+    signed_out = request.new_context()
+    try:
+        with zgodnosc_efenix.parser_page(browser, timeout_ms=LIMIT_MS) as page:
+            report = zgodnosc_efenix.check(
+                zgodnosc_efenix._Efenix(session, url, timeout_ms=LIMIT_MS),
+                zgodnosc_efenix._Efenix(signed_out, url, timeout_ms=LIMIT_MS),
+                page,
+                costs,
+                number=number,
+            )
+        if emmett:
+            zgodnosc_efenix.measure_proposal(browser, url, report, timeout_ms=LIMIT_MS)
+    finally:
+        signed_out.dispose()
+    return report
+
+
+def _printed(report: zgodnosc_efenix.Report) -> str:
+    """Wynik porównania tak, jak narzędzie drukuje go na stdout."""
+
+    return "".join(f"{line}\n" for line in report.lines())
+
+
+def _on_atrapa(endpoint: str, tmp_path: Path, variant: Variant, compare: Callable[[str, Path], _T]) -> tuple[_T, AtrapaEfenix]:
+    """``compare`` (adres listy zleceń, Wzorzec z kosztami ``variant``) na Atrapie ``variant``; Atrapa ma po nim ten sam
+    stan i sesję, a Chrome te same karty."""
 
     template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, variant.costs)
     with atrapa_efenix(variant.orders, changed=variant.changed, cookie_session=variant.cookie_session) as atrapa:
-        before(atrapa)
         state, pages = atrapa.state(), _pages(endpoint)
         with _in_front(atrapa, variant.rewrites) if variant.rewrites else nullcontext(atrapa.url) as url:
-            checked = _run(endpoint, url, template, "--numer", variant.number)
+            result = compare(url, template)
         assert (atrapa.state(), _pages(endpoint)) == (state, pages)
-    assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
-    assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
-    assert PROPOSAL_BY_HAND in checked.stdout.splitlines()
+    return result, atrapa
+
+
+def _every_result(printed: str, shown: str, atrapa: AtrapaEfenix) -> None:
+    """Wynik ``printed`` bez propozycji Emmetta ma linie o niesprawdzanym przycisku kalendarza i budowie propozycji, nic
+    z tego, co widzi Maks (``shown``), nie ma danych zleceń Atrapy, a Atrapa nie dostała propozycji Emmetta."""
+
+    assert not [text for text in PRIVATE if text in shown]
+    assert DATE_BUTTON_BY_HAND in printed.splitlines()
+    assert PROPOSAL_BY_HAND in printed.splitlines()
     assert FILL_EMMETT not in {path for _method, path in atrapa.requested()}
+
+
+def _checked(chromium: Chromium, tmp_path: Path, variant: Variant) -> tuple[str, AtrapaEfenix]:
+    """Wynik porównania narzędzia w procesie na Atrapie ``variant``."""
+
+    def compare(url: str, template: Path) -> str:
+        return _printed(chromium.do(lambda browser: _compared(chromium.request, browser, url, template, number=variant.number)))
+
+    printed, atrapa = _on_atrapa(chromium.endpoint, tmp_path, variant, compare)
+    _every_result(printed, printed, atrapa)
+    return printed, atrapa
+
+
+def _checked_by_tool(endpoint: str, tmp_path: Path, variant: Variant) -> tuple[Checked, AtrapaEfenix]:
+    """Wynik narzędzia uruchomionego jak Maks, osobnym procesem, na Atrapie ``variant``."""
+
+    checked, atrapa = _on_atrapa(endpoint, tmp_path, variant, lambda url, template: _run(endpoint, url, template, "--numer", variant.number))
+    _every_result(checked.stdout, checked.stdout + checked.stderr, atrapa)
     return checked, atrapa
 
 
@@ -818,7 +889,7 @@ def _pages(endpoint: str) -> int:
 
 
 def test_atrapa_efenix_jest_zgodna_z_budowa_ktorej_uzywa_wycena_w_efenix(chrome: str, tmp_path: Path) -> None:
-    checked, atrapa = _checked(chrome, tmp_path, Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt"))
+    checked, atrapa = _checked_by_tool(chrome, tmp_path, Variant(ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt"))
 
     assert (checked.code, checked.stderr) == (0, ""), checked
     assert_expected(checked.stdout, ROOT / "tests" / "expected" / "zgodnosc_efenix" / "zgodna.txt")
@@ -831,17 +902,34 @@ def test_atrapa_efenix_jest_zgodna_z_budowa_ktorej_uzywa_wycena_w_efenix(chrome:
 
 
 @pytest.mark.parametrize("variant", SAME.values(), ids=SAME.keys())
-def test_atrapa_w_innej_postaci_tej_samej_budowy_jest_zgodna(chrome: str, tmp_path: Path, variant: Variant) -> None:
-    checked, atrapa = _checked(chrome, tmp_path, variant)
+def test_atrapa_w_innej_postaci_tej_samej_budowy_jest_zgodna(chromium: Chromium, tmp_path: Path, variant: Variant) -> None:
+    printed, atrapa = _checked(chromium, tmp_path, variant)
 
-    assert (checked.code, checked.stderr) == (0, ""), checked
-    assert_expected(checked.stdout, variant.expected)
+    assert_expected(printed, variant.expected)
     assert set(atrapa.requested()) == READING
 
 
 @pytest.mark.parametrize("variant", CHANGED.values(), ids=CHANGED.keys())
-def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Path, variant: Variant) -> None:
-    checked, atrapa = _checked(chrome, tmp_path, variant)
+def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chromium: Chromium, tmp_path: Path, variant: Variant) -> None:
+    printed, atrapa = _checked(chromium, tmp_path, variant)
+
+    assert_expected(printed, variant.expected)
+    assert set(atrapa.requested()) <= READING
+
+
+# Kod 2 narzędzia: z samymi różnicami (części niesprawdzone to tylko te zawsze w wyniku) i z samymi częściami
+# niesprawdzonymi bez różnic, które daje dopiero ``--numer`` numeru, którego efenix nie zna.
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param(CHANGED["lista-bez-pola-numer-i-jej-skrypt-z-bledem"], id="same-roznice"),
+        pytest.param(CHANGED["szukanie-bez-wynikow"], id="same-niesprawdzone-z-numerem"),
+    ],
+)
+def test_narzedzie_z_roznica_albo_czescia_niesprawdzona_konczy_sie_kodem_2_z_wynikiem_na_stdout(
+    chrome: str, tmp_path: Path, variant: Variant
+) -> None:
+    checked, atrapa = _checked_by_tool(chrome, tmp_path, variant)
 
     assert (checked.code, checked.stderr) == (2, ""), checked
     assert_expected(checked.stdout, variant.expected)
@@ -850,8 +938,42 @@ def test_atrapa_ze_zmieniona_budowa_daje_kazda_roznice(chrome: str, tmp_path: Pa
 
 @pytest.mark.parametrize("variant", EMMETT.values(), ids=EMMETT.keys())
 def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odczytem(
-    chromium: Chromium, tmp_path: Path, variant: Emmett
+    chromium: Chromium, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], variant: Emmett
 ) -> None:
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(variant.enter))
+    with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
+
+        def maks_then_tool(browser: Browser) -> tuple[zgodnosc_efenix.Report, int, tuple[object, ...], tuple[object, ...]]:
+            before = list(browser.contexts[0].pages)
+            try:
+                variant.maks(browser, _order(url), _order(atrapa.url))
+                clicked = len(atrapa.requests)
+                shown = (_tabs(browser, before), atrapa.state(), _pages(chromium.endpoint))
+                report = _compared(chromium.request, browser, url, template, emmett=True)
+                return report, clicked, shown, (_tabs(browser, before), atrapa.state(), _pages(chromium.endpoint))
+            finally:
+                _close_new(browser, before)
+
+        report, clicked, shown, after = chromium.do(maks_then_tool)
+
+    printed, asked = _printed(report), capsys.readouterr().err
+    assert after == shown
+    assert asked.splitlines() == [zgodnosc_efenix.ASK_EMMETT, *([zgodnosc_efenix.CLOSE_EMMETT] if variant.read else [])]
+    assert_expected(printed, variant.expected)
+    assert not [text for text in PRIVATE if text in printed + asked]
+    assert DATE_BUTTON_BY_HAND in printed.splitlines()
+    assert PROPOSAL_BY_HAND not in printed.splitlines()
+    # Przycisk Emmetta klika tylko Maks, przed porównaniem; narzędzie wysyła same odczyty.
+    assert set(atrapa.requested()[clicked:]) <= READING
+    assert set(atrapa.requested()) <= READING | {("POST", FILL_EMMETT)}
+
+
+def test_pomiar_propozycji_emmetta_narzedziem_jak_maks_czyta_okno_z_karty_przed_ostatnia_po_enter(
+    chromium: Chromium, tmp_path: Path
+) -> None:
+    # Okno Emmetta jest w pierwszej z dwóch kart zlecenia, które Maks otworzył, zanim narzędzie połączyło się z Chrome.
+    variant = EMMETT["druga-karta-bez-okna"]
     template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(variant.orders, cookie_session=True) as atrapa, _in_front(atrapa, variant.rewrites) as url:
         before: list[Page] = chromium.do(lambda browser: list(browser.contexts[0].pages))
@@ -864,15 +986,10 @@ def test_okno_emmetta_po_kliknieciu_maksa_narzedzie_porownuje_z_atrapa_samym_odc
         finally:
             chromium.do(lambda browser: _close_new(browser, before))
 
-    asked = [zgodnosc_efenix.ASK_EMMETT, *([zgodnosc_efenix.CLOSE_EMMETT] if variant.read else [])]
-    assert (checked.code, checked.stderr.splitlines()) == (variant.code, asked), checked
+    assert (checked.code, checked.stderr.splitlines()) == (0, [zgodnosc_efenix.ASK_EMMETT, zgodnosc_efenix.CLOSE_EMMETT]), checked
     assert_expected(checked.stdout, variant.expected)
     assert not [text for text in PRIVATE if text in checked.stdout + checked.stderr]
-    assert DATE_BUTTON_BY_HAND in checked.stdout.splitlines()
-    assert PROPOSAL_BY_HAND not in checked.stdout.splitlines()
-    # Przycisk Emmetta klika tylko Maks, przed startem narzędzia; narzędzie wysyła same odczyty.
     assert set(atrapa.requested()[clicked:]) <= READING
-    assert set(atrapa.requested()) <= READING | {("POST", FILL_EMMETT)}
 
 
 def _order(url: str) -> str:
@@ -893,23 +1010,29 @@ def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, list[bool
     return [(tab.url, [dialog.is_visible() for dialog in tab.locator(DIALOG).all()]) for tab in browser.contexts[0].pages if tab not in before]
 
 
+def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(chrome: str, tmp_path: Path) -> None:
+    template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
+    with atrapa_efenix(ORDERS, cookie_session=True) as atrapa:
+        atrapa.expire_session()
+        checked = _run(chrome, atrapa.url, template)
+
+    assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | {zgodnosc_efenix.NOT_SIGNED_IN}\n")
+    assert set(atrapa.requested()) <= READING
+
+
 @pytest.mark.parametrize(
-    ("before", "expire_after", "error"),
-    [
-        pytest.param(AtrapaEfenix.expire_session, None, zgodnosc_efenix.NOT_SIGNED_IN, id="przed-sprawdzaniem"),
-        pytest.param(lambda _atrapa: None, (ORDER_PAGE, 0), zgodnosc_efenix.LOGGED_OUT_MIDWAY, id="w-trakcie-sprawdzania"),
-        pytest.param(lambda _atrapa: None, (SEARCH, 0), zgodnosc_efenix.LOGGED_OUT_MIDWAY, id="przy-szukaniu-ostrzezenie"),
-    ],
+    "expire_after",
+    [pytest.param((ORDER_PAGE, 0), id="na-stronie-zlecenia"), pytest.param((SEARCH, 0), id="przy-szukaniu-ostrzezenie")],
 )
-def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(
-    chrome: str, tmp_path: Path, before: Callable[[AtrapaEfenix], None], expire_after: tuple[str, int] | None, error: str
+def test_wylogowanie_w_trakcie_sprawdzania_konczy_porownanie_bledem_bez_wyniku(
+    chromium: Chromium, tmp_path: Path, expire_after: tuple[str, int]
 ) -> None:
     template = write_template_costs(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name, COSTS)
     with atrapa_efenix(ORDERS, cookie_session=True, expire_after=expire_after) as atrapa:
-        before(atrapa)
-        checked = _run(chrome, atrapa.url, template)
+        with pytest.raises(zgodnosc_efenix.ToolError) as raised:
+            chromium.do(lambda browser: _compared(chromium.request, browser, atrapa.url, template))
 
-    assert (checked.code, checked.stdout, checked.stderr) == (1, "", f"BŁĄD | {error}\n")
+    assert str(raised.value) == zgodnosc_efenix.LOGGED_OUT_MIDWAY
     assert set(atrapa.requested()) <= READING
 
 
