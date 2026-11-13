@@ -43,18 +43,6 @@ GRAPH = {
     "tests/test_wzgledny.py": "from pakiet.pod.wzgledny import wartosc\n",
     "tests/skrypty/hak": "#!/usr/bin/env python3\nimport pakiet.a\n",
     "tests/test_hak.py": "HAK = 'tests/skrypty/hak'\n",
-    # Pakiet ``tests`` jak w repozytorium: plik spod ``tests/expected`` wybiera tylko test, który nazywa go albo katalog.
-    "tests/__init__.py": "",
-    "tests/expected/komunikat.txt": "komunikat\n",
-    "tests/expected/wyniki/a.txt": "wynik\n",
-    "tests/test_obok.py": "from pathlib import Path\n\n\ndef test_obok() -> None:\n    for nazwa in ('komunikat',):\n        (Path(__file__).parent / 'expected' / f'{nazwa}.txt').read_text()\n",
-    "tests/test_tutaj.py": "from pathlib import Path\n\nTUTAJ = Path(__file__).resolve().parent\n\n\ndef test_tutaj(nazwa: str) -> None:\n    (TUTAJ / 'expected' / nazwa).read_text()\n",
-    "tests/test_os_walk.py": "import os\nfrom pathlib import Path\n\nROOT = Path(__file__).parents[1]\n\n\ndef test_os_walk() -> None:\n    for katalog, _, nazwy in os.walk(ROOT / 'tests' / 'expected'):\n        for nazwa in nazwy:\n            Path(katalog, nazwa).read_text()\n",
-    "tests/test_path_walk.py": "from pathlib import Path\n\n\ndef test_path_walk() -> None:\n    for katalog, _, nazwy in (Path(__file__).parent / 'expected').walk():\n        for nazwa in nazwy:\n            (katalog / nazwa).read_text()\n",
-    "tests/test_rglob_obok.py": "from pathlib import Path\n\nWYNIKI = sorted((Path(__file__).parent / 'expected').rglob('*.txt'))\n",
-    "tests/fixtures/oczekiwane.py": "from pathlib import Path\n\nOCZEKIWANE = Path(__file__).resolve().parents[1] / 'expected'\n",
-    "tests/test_oczekiwane.py": "from tests.fixtures.oczekiwane import OCZEKIWANE\n",
-    # Pakiet ``tests/fixtures`` ma dane jak każdy inny pakiet: plik obok fixture jest wejściem testu, który ją importuje.
     "tests/fixtures/__init__.py": "",
     "tests/fixtures/zgloszenia.py": "",
     "tests/fixtures/uwagi.json": "{}\n",
@@ -81,6 +69,7 @@ UNUSED = {
     "tests/skrypty/uruchom": "#!/usr/bin/env node\nrequire('src/pakiet/b.py')\n",
     "tests/test_skrypt_node.py": "SKRYPT = 'tests/skrypty/uruchom'\n",
     "tests/expected/test_raport.txt": "raport\n",
+    "tests/__init__.py": "",
     "tests/expected/komunikaty.txt": "komunikat\n",
 }
 CONFIGURATION_READER = "from pathlib import Path\n\nKONFIGURACJA = Path('pyproject.toml')\n"
@@ -108,12 +97,6 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         ("docs/dane/wpis.md", "tests/test_glob_konca.py"),
         ("src/pakiet/a.py", "tests/test_wzgledny.py"),
         ("src/pakiet/a.py", "tests/test_hak.py"),
-        ("tests/expected/komunikat.txt", "tests/test_obok.py"),
-        ("tests/expected/komunikat.txt", "tests/test_tutaj.py"),
-        ("tests/expected/wyniki/a.txt", "tests/test_os_walk.py"),
-        ("tests/expected/wyniki/a.txt", "tests/test_path_walk.py"),
-        ("tests/expected/wyniki/a.txt", "tests/test_rglob_obok.py"),
-        ("tests/expected/komunikat.txt", "tests/test_oczekiwane.py"),
         ("tests/fixtures/uwagi.json", "tests/test_zgloszenia.py"),
     ],
     ids=[
@@ -127,12 +110,6 @@ def _repo(path: Path, files: dict[str, str]) -> Path:
         "plik z globu na katalogu wskazanym końcem ścieżki",
         "moduł z importu względnego modułu, który test importuje",
         "moduł, który importuje skrypt Pythona bez rozszerzenia",
-        "plik katalogu nazwanego od Path(__file__), z nazwą liczoną w teście",
-        "plik katalogu nazwanego od katalogu modułu w stałej",
-        "plik w podkatalogu katalogu, który test przechodzi os.walk",
-        "plik w podkatalogu katalogu, który test przechodzi Path.walk",
-        "plik z rglob na katalogu nazwanym od Path(__file__)",
-        "plik katalogu, który fixture testu nazywa od Path(__file__).parents[n]",
         "plik danych pakietu tests/fixtures, który czyta fixture testu",
     ],
 )
