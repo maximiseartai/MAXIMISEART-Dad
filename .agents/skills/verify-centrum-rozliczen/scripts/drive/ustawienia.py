@@ -21,6 +21,7 @@ from drive.common import (
     move,
     open_settings,
     put_text,
+    remove,
     remove_tree,
     sent_requests,
     settings_window,
@@ -498,7 +499,7 @@ def _autostart(run: Run, page: Page) -> None:
         page.set_viewport_size(DAD_VIEWPORT)
 
     # Harness: someone removes the shortcut from the Autostart folder by hand, outside Centrum.
-    shortcut.unlink()
+    remove(shortcut)
     page.reload()
     expect(switch).not_to_be_checked()
     run.check(True, "a shortcut removed by hand is the switch off")
@@ -529,7 +530,7 @@ def _autostart(run: Run, page: Page) -> None:
         run.check(True, "the switch is disabled with the server's one sentence why")
         run.capture(page, "333-ustawienia-autostart-bez-windows", full_page=False)
     finally:
-        without_windows.unlink()
+        remove(without_windows)
     page.reload()
     expect(switch).to_be_enabled()
     close_settings(page)
