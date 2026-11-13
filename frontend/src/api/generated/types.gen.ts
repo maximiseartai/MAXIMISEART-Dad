@@ -29,7 +29,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -2140,6 +2140,111 @@ export type ReleaseNotification = {
 };
 
 /**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export type ReminderPreview = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export type ReminderRange = {
+    /**
+     * Start
+     */
+    start: string;
+    /**
+     * End
+     */
+    end: string;
+};
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export type RemindersEnabledChange = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export type RemindersForm = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+};
+
+/**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export type RemindersSetting = {
+    morning: ReminderRange;
+    evening: ReminderRange;
+    /**
+     * First
+     */
+    first: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Footer
+     */
+    footer: string;
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Since
+     */
+    since: string | null;
+    problem: SettingProblem | null;
+};
+
+/**
  * ReportDraft
  *
  * Dokładna treść Zgłoszenia, które „Wyślij do Maksa” wyśle do skrzynki Zgłoszeń: tytuł i treść Markdown.
@@ -3007,6 +3112,7 @@ export type Settings = {
     inbox: InboxSetting;
     inbox_problem: SettingProblem | null;
     autostart: AutostartSetting;
+    reminders: RemindersSetting;
 };
 
 /**
@@ -5099,6 +5205,81 @@ export type OpenRegisterResponses = {
 };
 
 export type OpenRegisterResponse = OpenRegisterResponses[keyof OpenRegisterResponses];
+
+export type ChangeRemindersData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders';
+};
+
+export type ChangeRemindersErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersError = ChangeRemindersErrors[keyof ChangeRemindersErrors];
+
+export type ChangeRemindersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersResponse = ChangeRemindersResponses[keyof ChangeRemindersResponses];
+
+export type ChangeRemindersEnabledData = {
+    body: RemindersEnabledChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/enabled';
+};
+
+export type ChangeRemindersEnabledErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeRemindersEnabledError = ChangeRemindersEnabledErrors[keyof ChangeRemindersEnabledErrors];
+
+export type ChangeRemindersEnabledResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeRemindersEnabledResponse = ChangeRemindersEnabledResponses[keyof ChangeRemindersEnabledResponses];
+
+export type PreviewReminderData = {
+    body: RemindersForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/reminders/preview';
+};
+
+export type PreviewReminderErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewReminderError = PreviewReminderErrors[keyof PreviewReminderErrors];
+
+export type PreviewReminderResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReminderPreview;
+};
+
+export type PreviewReminderResponse = PreviewReminderResponses[keyof PreviewReminderResponses];
 
 export type ChangeThemeData = {
     body: ThemeChange;

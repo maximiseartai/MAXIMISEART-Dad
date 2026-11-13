@@ -9,10 +9,11 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAction } from "@/lib/action"
-import { href, usePagePath } from "@/lib/address"
+import { href, settingsHref, usePagePath } from "@/lib/address"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { dateTime, plural } from "@/lib/format"
 import { useResource } from "@/lib/use-resource"
+import { REMINDERS_SECTION } from "@/pages/settings/reminders-section"
 import { type DayState, dayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
 import type { Keep } from "@/pages/worker-reports/day-details"
 import { type DayRange, rangeFromPath } from "@/pages/worker-reports/days"
@@ -88,12 +89,15 @@ function showRange(range: DayRange) {
   window.location.hash = href("raporty", range.from, range.to)
 }
 
-/** Spokojna informacja, że ostatnie sprawdzenie przypomnień nie znalazło pliku stopki; znika po następnym z plikiem. */
+/** Spokojna informacja, że ostatnie sprawdzenie przypomnień szło bez stopki; znika po następnym ze stopką. */
 function WithoutFooter() {
   return (
     <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
       <BellOffIcon className="size-3.5 shrink-0" aria-hidden />
-      Przypomnienia o raporcie idą bez Twojej stopki, bo brakuje jej pliku. Powiedz o tym Maksowi.
+      Przypomnienia o raporcie idą bez Twojej stopki.
+      <a href={settingsHref(REMINDERS_SECTION)} className="text-foreground underline-offset-4 hover:underline">
+        Wpisz ją w Ustawieniach
+      </a>
     </p>
   )
 }

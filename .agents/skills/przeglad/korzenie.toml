@@ -126,3 +126,7 @@ przyklad = 1457
 [R-DECYZJA-PRZEPISANA]
 opis = "Decyzje Maksa przepisane własnymi słowami do ADR i skilla bez porównania punkt po punkcie z ich źródłem, więc rozjazd wychodzi dopiero w przeglądzie."
 przyklad = 1457
+
+[R-STAN-KROKU]
+opis = "Krok skilla albo testu zostawia włączoną pracę w tle albo zmieniony stan, a późniejsza funkcja tego samego przebiegu zakłada stan sprzed niego."
+przyklad = 1568

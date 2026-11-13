@@ -10,9 +10,10 @@ mutacji kończy się linią ``MUTACJE OK``; ostrzeżenia ``CZAS BLISKO LIMITU`` 
 wykonania. Krok biegnie przez ``tools/lib/potomne.py``: jego procesy potomne giną po jego końcu i po limicie, a cały krok
 ginie razem z zadaniem, choćby zabitym przez SIGKILL.
 
-Na pull request zadanie po porażce pytest uruchamia raz same testy, które padły (``niestabilne_testy``, najwyżej
-``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da się zgłosić w issue. Gdy wszystkie
-przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga porażka to porażka. Każde zadanie z pytest
+Na pull request zadanie po porażce pytest uruchamia raz w jednym procesie same testy, które padły
+(``niestabilne_testy.ponow``, najwyżej ``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da
+się zgłosić w issue. Gdy wszystkie przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga
+porażka to porażka. Każde zadanie z pytest
 zapisuje też wynik swoich testów z kwarantanny.
 Krok pytest ma limit ``plan_runu.limit_pytest_s`` ze ściany zadania z planu: po nim drzewo pytest ginie, a linia
 ``LIMIT`` mówi, że to limit, nie porażka testu.
@@ -48,7 +49,7 @@ import jednostka
 from jednostka import Czesc, Klucz, Rodzaj
 from kroki_skilli import Katalog, Step, repeats
 import niestabilne_testy
-from niestabilne_testy import FlakyTest, ZapisKwarantanny
+from niestabilne_testy import ZapisKwarantanny
 import plan_runu
 from plan_runu import Plan, Zadanie
 import potomne
@@ -59,8 +60,6 @@ from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie
 
 JUNIT = Path(".ci-czasy", "junit.xml")
 PONOWIENIE = Path(".ci-czasy", "junit-ponowienie.xml")
-# Flaky test trafia w jeden albo dwa testy (Skrzynka w runach 26.10); więcej porażek naraz to defekt albo awaria runnera.
-PONOWIENIE_NAJWIECEJ = 5
 CZESCI = Path(".ci-plan", "czesci.json")
 # Najdłuższy skrypt mutacji trwał w CI na Windows 770 s; limit łapie zawieszenie, a nie wolny runner.
 LIMIT_S = 30 * 60
@@ -172,28 +171,16 @@ def _krok_pytest(root: Path, plan: Plan, zadanie: Zadanie, pliki: Mapping[str, l
         " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
     )
     status = _uruchom(root, jednostka.krok("pytest"), [(_pytest(pliki), limit)], po_limicie)["status"]
-    if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and (testy := niestabilne_testy.padniete(JUNIT)):
-        if len(testy) > PONOWIENIE_NAJWIECEJ:
-            print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
-        elif obce := [test for test in testy if not niestabilne_testy.zgloszalny(test)]:
-            print(f"PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: {', '.join(obce)}", flush=True)
-        elif _ponow(root, zadanie, testy):
-            status = "ok"
+    if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and niestabilne_testy.ponow(JUNIT, PONOWIENIE, zadanie.nazwa, lambda testy: _ponow(root, testy)):
+        status = "ok"
     sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
     niestabilne_testy.zapisz_kwarantanne(ZapisKwarantanny(zadanie.id, proba, sha, niestabilne_testy.wyniki_kwarantanny(JUNIT)))
     return {"klucz": jednostka.krok("pytest"), "s": round(time.monotonic() - start, 1), "status": status}
 
 
-def _ponow(root: Path, zadanie: Zadanie, testy: Sequence[str]) -> bool:
-    """Testy, które padły, raz jeszcze w jednym procesie; przejście każdego to flaky test w ``niestabilne_testy.FLAKY_TESTY``."""
-
+def _ponow(root: Path, testy: Sequence[str]) -> bool:
     polecenie = (sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *testy, "--junitxml", str(PONOWIENIE))
-    if _uruchom(root, "ponowienie", [(polecenie, plan_runu.PONOWIENIE_LIMIT_S)])["status"] != "ok" or not niestabilne_testy.po_ponowieniu(JUNIT, PONOWIENIE, testy):
-        return False
-    print(f"FLAKY TESTY | przeszły po ponowieniu: {', '.join(testy)}", flush=True)
-    sha, run, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ID", "0")), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
-    niestabilne_testy.zapisz_flaky_testy([FlakyTest(test, zadanie.nazwa, sha, run, proba) for test in testy])
-    return True
+    return _uruchom(root, "ponowienie", [(polecenie, plan_runu.PONOWIENIE_LIMIT_S)])["status"] == "ok"
 
 
 def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = (), *, root: Path = ROOT) -> int:

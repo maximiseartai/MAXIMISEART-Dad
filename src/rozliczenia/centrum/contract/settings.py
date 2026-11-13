@@ -1,5 +1,5 @@
 """Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów, Lista Wykonawców, start razem
-z Windows i Historia Ustawień."""
+z Windows, Przypomnienia o raporcie i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.settings_reminders import RemindersSetting
 from rozliczenia.centrum.contract.settings_workers import SettingProblem, WorkerListSetting
 
 
@@ -85,6 +86,7 @@ class Settings(Model):
     inbox: InboxSetting
     inbox_problem: SettingProblem | None
     autostart: AutostartSetting
+    reminders: RemindersSetting
 
 
 class Choice(Model):
