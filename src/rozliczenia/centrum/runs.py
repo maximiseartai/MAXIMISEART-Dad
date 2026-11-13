@@ -35,6 +35,7 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal, Retry
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
 from rozliczenia.centrum.stops import StoppedRun, Stops
@@ -117,6 +118,8 @@ class EndedRun:
     ended_at: datetime
     input_copy: InputCopy | None = None
     """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
+    settings: FolderSettings | None = None
+    """Migawka Ustawień Centrum ze startu Uruchomienia (``PreparedRun.settings``), z której Logi biorą pliki procesu."""
 
     @classmethod
     def of(
@@ -129,7 +132,7 @@ class EndedRun:
         progress: runs_contract.Progress,
         started_at: datetime,
     ) -> EndedRun:
-        return cls(info, core, stopped, progress, started_at, utc_now(), prepared.input_copy)
+        return cls(info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings)
 
     @property
     def result(self) -> RunResult:
@@ -492,7 +495,7 @@ class Run:
             self._prepared,
             core,
             info=self.info,
-            stopped=self._stops.ended(self.info, stop, shown=self._show_report),
+            stopped=self._stops.ended(self.info, stop, shown=self._show_report, settings=self._prepared.settings),
             progress=self._progress,
             started_at=since,
         )

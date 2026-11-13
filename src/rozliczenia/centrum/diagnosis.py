@@ -54,7 +54,7 @@ from rozliczenia.period_folder import (
     locate_period_folder,
     period_place_label,
 )
-from rozliczenia.centrum.settings import Settings
+from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 
@@ -164,7 +164,7 @@ class _ProcessFiles:
 
     declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
-    settings: Settings
+    settings: FolderSettings
     configuration: ConfigurationFiles
 
     @cached_property
@@ -203,7 +203,7 @@ class _ProcessFiles:
 
 
 def files_of_process(
-    process: common_contract.ProcessKey, period: str, *, settings: Settings, configuration: ConfigurationFiles
+    process: common_contract.ProcessKey, period: str, *, settings: FolderSettings, configuration: ConfigurationFiles
 ) -> list[Path]:
     """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive.
 
@@ -471,7 +471,7 @@ def diagnose(
     process: common_contract.ProcessKey,
     period: str,
     *,
-    settings: Settings,
+    settings: FolderSettings,
     configuration: ConfigurationFiles,
     log: CentrumLog,
     surroundings: Surroundings,

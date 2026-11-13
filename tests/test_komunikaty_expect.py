@@ -18,6 +18,7 @@ Centrum rozliczeń ma powód w ``QUOTES_OUTSIDE_UI``.
 from __future__ import annotations
 
 import ast
+from functools import partial
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 import importlib
 import inspect
@@ -55,6 +56,8 @@ from rozliczenia.centrum import (
     update_messages,
 )
 from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import PeriodFolderError, PeriodFolderInaccessible, PeriodFolderLookupError
 from rozliczenia.workbook_files import WorkbookError
@@ -130,6 +133,18 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
     "Karta Wpisania raportów (zdania)": (
         report_entering_run,
         {"conflict_note": [lambda: report_entering_run.conflict_note(message_samples.CONFLICT_COPY)]},
+    ),
+    "Ustawienia Centrum (zdania)": (
+        settings_messages,
+        {
+            "not_text": [partial(settings_messages.not_text, SETTINGS_FILE)],
+            "damaged": [partial(settings_messages.damaged, SETTINGS_FILE)],
+            "other_schema": [partial(settings_messages.other_schema, SETTINGS_FILE)],
+            "unknown_key": [partial(settings_messages.unknown_key, SETTINGS_FILE, "folder_okresu")],
+            "register_path": [settings_messages.register_path],
+            "periods_directory_path": [settings_messages.periods_directory_path],
+            "unknown_theme": [settings_messages.unknown_theme],
+        },
     ),
 }
 

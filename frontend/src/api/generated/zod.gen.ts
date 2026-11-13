@@ -15,6 +15,9 @@ export const zApiTiming = z.object({
         'openRegister',
         'choosePeriodsDirectory',
         'changeTheme',
+        'changeFolders',
+        'getSettingsHistory',
+        'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
         'getQuantitiesToFill',
@@ -250,6 +253,16 @@ export const zFigure = z.object({
 export const zFillKind = z.enum(['without_rule', 'from_description']);
 
 /**
+ * FoldersChange
+ *
+ * Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie.
+ */
+export const zFoldersChange = z.object({
+    order_register: z.string().nullable(),
+    periods_directory: z.string().nullable()
+});
+
+/**
  * Health
  *
  * Tożsamość działającego Centrum.
@@ -263,6 +276,38 @@ export const zHealth = z.object({
     service: z.literal('centrum-rozliczen'),
     commit: z.string().nullable(),
     instance: z.string()
+});
+
+/**
+ * HistoryChange
+ *
+ * Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret.
+ */
+export const zHistoryChange = z.object({
+    key: z.string(),
+    before: z.string().nullable(),
+    after: z.string().nullable()
+});
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
+ * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export const zHistoryRow = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    source: z.enum(['tata', 'outside']),
+    undoes: z.string().nullable(),
+    file: z.string(),
+    section: z.string().nullable(),
+    changes: z.array(zHistoryChange),
+    secret: z.boolean(),
+    undoable: z.boolean(),
+    refused: z.boolean(),
+    removed: z.boolean(),
+    reason: z.string().nullable()
 });
 
 /**
@@ -608,10 +653,12 @@ export const zPricingNotification = z.object({
 /**
  * Problem
  *
- * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku.
+ * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,
+ * którego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum).
  */
 export const zProblem = z.object({
-    message: z.string()
+    message: z.string(),
+    field: z.string().nullish()
 });
 
 /**
@@ -1380,6 +1427,27 @@ export const zReportNotification = z.object({
 });
 
 /**
+ * SettingProblem
+ *
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
+ * pliku i zdanie dla taty.
+ */
+export const zSettingProblem = z.object({
+    field: z.string().nullable(),
+    message: z.string()
+});
+
+/**
+ * SettingsHistory
+ *
+ * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
+ */
+export const zSettingsHistory = z.object({
+    rows: z.array(zHistoryRow),
+    skipped: z.int()
+});
+
+/**
  * SolvedCase
  *
  * Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego
@@ -1569,7 +1637,7 @@ export const zReportsView = z.object({
 /**
  * UnreadablePath
  *
- * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
  */
 export const zUnreadablePath = z.object({
     state: z.literal('unreadable')
@@ -1577,6 +1645,9 @@ export const zUnreadablePath = z.object({
 
 /**
  * Settings
+ *
+ * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny.
  */
 export const zSettings = z.object({
     order_register: z.discriminatedUnion('state', [
@@ -1593,16 +1664,19 @@ export const zSettings = z.object({
         zUnreadablePath,
         zReadyPath
     ]),
-    theme: z.enum(['dark', 'light'])
+    theme: z.enum(['dark', 'light']),
+    folders_problem: zSettingProblem.nullable()
 });
 
 /**
  * Choice
  *
- * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
+ * Ustawienia po natywnym oknie wyboru albo zapisie sekcji: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
+ * ``change``: id wiersza Historii Ustawień tej zmiany (do „Cofnij”); ``None``: bez zmiany i bez wiersza.
  */
 export const zChoice = z.object({
-    settings: zSettings
+    settings: zSettings,
+    change: z.string().nullish()
 });
 
 /**
@@ -2604,6 +2678,27 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  * Successful Response
  */
 export const zGetSettingsResponse = zSettings;
+
+export const zChangeFoldersBody = zFoldersChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeFoldersResponse = zChoice;
+
+/**
+ * Successful Response
+ */
+export const zGetSettingsHistoryResponse = zSettingsHistory;
+
+export const zUndoSettingsChangePath = z.object({
+    change_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zUndoSettingsChangeResponse = zChoice;
 
 /**
  * Successful Response

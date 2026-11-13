@@ -14,9 +14,11 @@ class Model(BaseModel):
 
 
 class Problem(Model):
-    """Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku."""
+    """Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,
+    którego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum)."""
 
     message: str
+    field: str | None = None
 
 
 # Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.

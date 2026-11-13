@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
+from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.message import explorer_check
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
 
@@ -41,17 +42,18 @@ class Refusal(Exception):
     """Serwer odmawia żądania; ``create_app`` zamienia odmowę na odpowiedź ``Problem``. Tworzy ją tylko fabryka tego
     katalogu (``_CATALOG``), a podklasę z własnym konstruktorem bez dowodu odrzuca mypy (``final``)."""
 
-    def __init__(self, status_code: int, message: str, proof: _Catalog) -> None:
+    def __init__(self, status_code: int, message: str, proof: _Catalog, field: str | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.message = message
+        self.field = field
 
 
-def _refused(status_code: int, message: str) -> Refusal:
+def _refused(status_code: int, message: str, field: str | None = None) -> Refusal:
     """Odmowa z dowodem katalogu dla fabryk tego modułu. Poza nim ruff (``TID251``) odrzuca ją jak ``_CATALOG``, bo
     wkłada dowód za wywołującego, więc dałaby odmowę bez fabryki i bez próbki w ``tests/expected/komunikaty.txt``."""
 
-    return Refusal(status_code, message, _CATALOG)
+    return Refusal(status_code, message, _CATALOG, field)
 
 
 # Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``.
@@ -121,6 +123,22 @@ def settings_not_saved() -> Refusal:
         "Nie udało się zapisać Ustawień taty w folderze config. "
         + explorer_check("folder", "spróbuj ponownie", read_only=True),
     )
+
+
+def setting_refused(problem: FieldProblem) -> Refusal:
+    """Zła wartość Ustawień Centrum: nic się nie zapisało, a odmowa niesie pole i zdanie, co poprawić."""
+
+    return _refused(422, problem.sentence, problem.field)
+
+
+def settings_change_unknown() -> Refusal:
+    return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
+
+
+def settings_change_not_undoable() -> Refusal:
+    """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
+
+    return _refused(404, "Tej zmiany nie da się cofnąć.")
 
 
 def unknown_period() -> Refusal:

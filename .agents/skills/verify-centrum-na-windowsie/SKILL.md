@@ -1,6 +1,6 @@
 ---
 name: verify-centrum-na-windowsie
-description: Verify Centrum rozliczeń on Windows the way Dad installs, starts and updates it - the tool cloned into a user folder with a space and a Polish letter, the desktop shortcut and pythonw.exe without a console, the native start-problem window, the native tkinter pickers, Explorer, and Aktualizacja narzędzia with the restart guardian - on GitHub's windows-latest runner (or any Windows machine), with desktop screenshots, the Centrum log and process facts as evidence. Use after changes to `launcher.py`, `platform.py`, `shortcut.py`, `restart_guardian.py`, `tool_update.py`, `tool_updates.py`, `version.py`, `start_problems.py`, `log.py`, `update_messages.py`, `server.py`, `shutdown.py`, `centrum/settings.py`, `centrum/settings_router.py`, `run_centrum.py`, `install_centrum_shortcut.py`, `frontend/src/lib/tool-update.tsx` or `requirements.txt`, or when something works on the Mac but may not on Dad's Windows.
+description: Verify Centrum rozliczeń on Windows the way Dad installs, starts and updates it - the tool cloned into a user folder with a space and a Polish letter, the desktop shortcut and pythonw.exe without a console, the native start-problem window, the native tkinter pickers, Explorer, and Aktualizacja narzędzia with the restart guardian - on GitHub's windows-latest runner (or any Windows machine), with desktop screenshots, the Centrum log and process facts as evidence. Use after changes to `launcher.py`, `platform.py`, `shortcut.py`, `restart_guardian.py`, `tool_update.py`, `tool_updates.py`, `version.py`, `start_problems.py`, `log.py`, `update_messages.py`, `server.py`, `shutdown.py`, `centrum/settings/`, `centrum/settings_router.py`, `run_centrum.py`, `install_centrum_shortcut.py`, `frontend/src/lib/tool-update.tsx` or `requirements.txt`, or when something works on the Mac but may not on Dad's Windows.
 pilnuje:
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/platform.py
@@ -15,7 +15,7 @@ pilnuje:
   - src/rozliczenia/centrum/version.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/centrum/shutdown.py
-  - src/rozliczenia/centrum/settings.py
+  - src/rozliczenia/centrum/settings/*.py
   - src/rozliczenia/centrum/settings_router.py
   - run_centrum.py
   - install_centrum_shortcut.py

@@ -30,11 +30,13 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.reports import NoPreview, ProblemFingerprint, ReportHandle, ReportShown, Reports, StopReport
 from rozliczenia.process_run import Stop
 
-Diagnose = Callable[[common_contract.ProcessKey, str], Diagnosis]
-"""Diagnoza procesu dla tokenu okresu Zatrzymania, z Ustawieniami taty z chwili kliknięcia."""
+Diagnose = Callable[[common_contract.ProcessKey, str, FolderSettings | None], Diagnosis]
+"""Diagnoza procesu dla tokenu okresu Zatrzymania z migawką Ustawień Centrum ze startu Uruchomienia (``None``:
+Uruchomienie bez migawki, wtedy z bieżącymi), bo Diagnoza wyjaśnia to Uruchomienie."""
 
 
 class DiagnosedLogs(Protocol):
@@ -59,13 +61,20 @@ class Stops:
         self._last: dict[common_contract.ProcessKey, ProblemFingerprint] = {}
 
     @overload
-    def ended(self, info: runs_contract.RunInfo, stop: Stop, *, shown: ReportShown) -> StoppedRun: ...
+    def ended(
+        self, info: runs_contract.RunInfo, stop: Stop, *, shown: ReportShown, settings: FolderSettings | None
+    ) -> StoppedRun: ...
 
     @overload
-    def ended(self, info: runs_contract.RunInfo, stop: None, *, shown: ReportShown) -> None: ...
+    def ended(
+        self, info: runs_contract.RunInfo, stop: None, *, shown: ReportShown, settings: FolderSettings | None
+    ) -> None: ...
 
-    def ended(self, info: runs_contract.RunInfo, stop: Stop | None, *, shown: ReportShown) -> StoppedRun | None:
-        """Zatrzymanie zakończonego Uruchomienia; ``shown`` dostaje każdy nowy stan jego Zgłoszenia."""
+    def ended(
+        self, info: runs_contract.RunInfo, stop: Stop | None, *, shown: ReportShown, settings: FolderSettings | None
+    ) -> StoppedRun | None:
+        """Zatrzymanie zakończonego Uruchomienia; ``shown`` dostaje każdy nowy stan jego Zgłoszenia, a ``settings`` to
+        migawka Ustawień Centrum ze startu dla jego Diagnozy."""
 
         if stop is None:
             with self._lock:
@@ -86,14 +95,14 @@ class Stops:
             None if kind == "for_tata" else "on_request" if stop.kind == "stop" else "automatic"
         )
         report = None if offer is None else self._reports.handle(fingerprint, shown=shown)
-        return replace(named, kind=kind, offer=offer, report=report)
+        return replace(named, kind=kind, offer=offer, report=report, settings=settings)
 
     def diagnose(self, stopped: StoppedRun) -> diagnosis_contract.Diagnosis:
         report = stopped.report
         if report is None:
             raise refusal.no_diagnosis()
         info = stopped.info
-        diagnosis = self._diagnosis_of(info.process, info.period)
+        diagnosis = self._diagnosis_of(info.process, info.period, stopped.settings)
         self._log.diagnosed(process=info.process, period=info.period, cause=diagnosis.explanation.code)
         # Adres sprzed komentarza tej Diagnozy: podgląd nie zależy od tego, czy kolejka zdążyła go już wysłać.
         logs = self._logs.link(info.id)
@@ -119,7 +128,8 @@ class Stops:
 
 @dataclass(frozen=True, eq=False)
 class StoppedRun:
-    """Zatrzymanie zakończonego Uruchomienia; ``report`` (uchwyt jego Zgłoszenia) jest tam, gdzie ``offer``."""
+    """Zatrzymanie zakończonego Uruchomienia; ``report`` (uchwyt jego Zgłoszenia) jest tam, gdzie ``offer``, a
+    ``settings`` to migawka Ustawień Centrum ze startu Uruchomienia dla Diagnozy."""
 
     info: runs_contract.RunInfo
     stop: Stop
@@ -127,6 +137,7 @@ class StoppedRun:
     kind: runs_contract.StopKind
     offer: runs_contract.DiagnosisOffer | None
     report: ReportHandle | None
+    settings: FolderSettings | None = None
 
 
 def plain(info: runs_contract.RunInfo, stop: Stop) -> StoppedRun:

@@ -22,13 +22,13 @@ RETRY_PAUSES_S: Final = (0.05, 0.1, 0.2, 0.4)
 
 def replace_atomically(
     path: Path,
-    text: str,
+    text: str | bytes,
     *,
     pause: Callable[[float], None] = time.sleep,
     pauses: Sequence[float] = RETRY_PAUSES_S,
     newline: str | None = None,
 ) -> None:
-    """Zapisuje ``text`` w UTF-8 jako ``path`` przez plik tymczasowy w tym samym folderze.
+    """Zapisuje ``text`` w UTF-8 (bajty bez zmiany) jako ``path`` przez plik tymczasowy w tym samym folderze.
 
     ``newline`` jak w ``Path.write_text``: ``None`` zapisuje każde ``\n`` jako koniec linii systemu (na Windows
     ``\r\n``), a ``""`` zapisuje znaki ``text`` bez zmiany, więc plik ma na każdym systemie te same bajty.
@@ -41,7 +41,10 @@ def replace_atomically(
     temporary = path.with_name(path.name + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        temporary.write_text(text, encoding="utf-8", newline=newline)
+        if isinstance(text, bytes):
+            temporary.write_bytes(text)
+        else:
+            temporary.write_text(text, encoding="utf-8", newline=newline)
         for seconds in pauses:
             try:
                 temporary.replace(path)
