@@ -1711,7 +1711,7 @@ export const zViewTiming = z.object({
         'okresy',
         'uruchomienia',
         'metryki',
-        'konfiguracja',
+        'ustawienia',
         'powiadomienia',
         'uzupelnienie',
         'raporty'
