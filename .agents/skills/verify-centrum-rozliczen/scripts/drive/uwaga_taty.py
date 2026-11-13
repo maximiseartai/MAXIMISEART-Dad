@@ -16,6 +16,7 @@ from playwright.sync_api import FloatRect, Locator, Page, Request, ViewportSize,
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from drive.common import (
+    CENTRE_TAKES_CLICK,
     PAGES,
     REPORT_KEY,
     box_issues,
@@ -100,12 +101,6 @@ NOT_IN_HISTORY = "Tego Uruchomienia nie ma w historii Centrum. Wybierz inne albo
 LAPTOP = ViewportSize(width=1280, height=720)
 # Measured as painted: in the frame after the next, whose ResizeObserver has already scrolled the list for the last
 # change. A layout read between React's commit and that frame sees the list shrunk but not yet scrolled.
-# „Wyślij” takes a click at its centre: the topmost element there is the button or part of it.
-CLICKABLE = """button => {
-    const box = button.getBoundingClientRect()
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-    return hit !== null && button.contains(hit)
-}"""
 WHOLLY_SHOWN = """element => new Promise(measured => requestAnimationFrame(() => requestAnimationFrame(() => {
     const box = element.getBoundingClientRect()
     const inside = outer => box.top >= outer.top - 0.5 && box.bottom <= outer.bottom + 0.5
@@ -299,14 +294,14 @@ def _send_misplaced(page: Page, dialog: Locator) -> list[str]:
     shown = send.evaluate(WHOLLY_SHOWN)
     if not (_boxed(frame, button) and shown["shown"]):
         wrong.append(f"„Wyślij” {button} is not wholly inside the dialog {frame} or is clipped ({shown})")
-    if not send.is_enabled() or not send.evaluate(CLICKABLE):
+    if not send.is_enabled() or not send.evaluate(CENTRE_TAKES_CLICK):
         wrong.append("„Wyślij” does not take a click at its centre")
     if (label := caption.bounding_box()) is None or _overlap(toggle, label):
         wrong.append(f"the switch „Dotyczy” {toggle} overlaps the caption „Maks dostanie” {label}")
     for name, part in (("the switch „Dotyczy”", switch), ("the caption „Maks dostanie”", caption)):
         part.scroll_into_view_if_needed()
         shown = part.evaluate(WHOLLY_SHOWN)
-        if not (shown["shown"] and part.evaluate(CLICKABLE)):
+        if not (shown["shown"] and part.evaluate(CENTRE_TAKES_CLICK)):
             wrong.append(f"{name} scrolled into view is not wholly shown or does not take a click at its centre ({shown})")
     return wrong
 

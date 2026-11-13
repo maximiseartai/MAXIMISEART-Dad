@@ -7,11 +7,13 @@ from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import sys
+import time
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, expect
 
 from drive.common import (
+    CENTRE_TAKES_CLICK,
     DAD_VIEWPORT,
     REPEAT_SETTLE_MS,
     Run,
@@ -268,12 +270,12 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             page.set_viewport_size(DAD_VIEWPORT)
 
 
-# Whether the element's centre takes a click: nothing (the blurred page, another window) stands over it.
-ON_TOP = """element => {
-    const box = element.getBoundingClientRect()
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-    return hit !== null && element.contains(hit)
-}"""
+# How late the failed save answers: after the two frames in which the theme switch turns transitions off, as a save
+# at tata's answers, so the notification slides in from under the window's edge (400 ms) instead of standing at once.
+LATE_ANSWER_S = 0.3
+# How long the drive waits for the notification to stand over everything: shorter than the 5 s in which it closes
+# itself (`timeout` of Base UI's `ToastProvider`), so a notification covered for good fails with this step's sentence.
+UNCOVERED_WAIT_S = 3
 
 
 def _failure_in_window(run: Run, page: Page) -> None:
@@ -282,13 +284,23 @@ def _failure_in_window(run: Run, page: Page) -> None:
     run.step(FEATURE, "ustawienia-blad-w-oknie")
     theme = "**/api/settings/theme"
     themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
-    page.route(theme, lambda route: route.fulfill(status=500, body=""))
+
+    def late_failure(route: Route) -> None:
+        time.sleep(LATE_ANSWER_S)
+        route.fulfill(status=500, body="")
+
+    page.route(theme, late_failure)
     try:
         themes.get_by_role("button", name="Jasny", exact=True).click()
         failure = settings_window(page).get_by_role("dialog", name="Nie udało się")
         expect(failure).to_be_visible()
         expect(error_toasts(page)).to_have_count(1)
-        run.check(failure.evaluate(ON_TOP), "a failed save is a notification in the window Ustawienia that nothing covers")
+        # Sliding in, the notification is visible while its centre is still under the window's edge (#1518).
+        run.wait_for(
+            lambda: failure.evaluate(CENTRE_TAKES_CLICK),
+            "a failed save is a notification in the window Ustawienia that nothing covers",
+            timeout_s=UNCOVERED_WAIT_S,
+        )
         run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
     finally:
         page.unroute(theme)
