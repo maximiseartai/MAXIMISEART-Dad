@@ -974,7 +974,7 @@ old_copies_kept #2 [PRZYWRACANIE_STARE_KOPIE]
 copies_unreadable [KOPIE_INTERMAX_NIEDOSTEPNE]
   Co się stało: Nie można teraz odczytać folderu Kopii INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: folder Narzedzie\Kopie INTERMAX
-  Co zrobić: Sprawdź za chwilę listę kopii w Ustawieniach, w sekcji Kopie INTERMAX. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+  Co zrobić: Poczekaj chwilę i odśwież stronę. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
 copy_missing [BRAK_KOPII_INTERMAX]
   Co się stało: Tej Kopii INTERMAX już nie ma. INTERMAX nie został zmieniony.

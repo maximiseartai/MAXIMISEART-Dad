@@ -14,7 +14,7 @@ import {
 import { failureMessage, refusedField } from "@/api/client"
 import type { Choice, FoldersChange, Settings } from "@/api/generated"
 import { createToasts, DialogToaster } from "@/components/ui/toast"
-import { useAction } from "@/lib/action"
+import { showFailure, useAction } from "@/lib/action"
 import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 
@@ -65,13 +65,33 @@ export const THEME_FIELD = "motyw"
 // Ustawień: stoją w nim, więc okno otwarte później (np. „Napisz do Maksa”) je zakrywa, i znikają razem z nim.
 const settingsToasts = createToasts()
 
-/** Porażka zapisu albo cofnięcia Ustawień jako powiadomienie w oknie Ustawień, nad jego treścią. */
+// Ile miejsc powiadomień Ustawień jest teraz na stronie: bez otwartego okna Ustawień nikt by ich nie pokazał.
+let settingsToastsShown = 0
+
+/**
+ * Porażka zapisu albo cofnięcia Ustawień jako powiadomienie w oknie Ustawień, nad jego treścią; gdy odpowiedź przyszła
+ * po zamknięciu okna, we wspólnych powiadomieniach strony, żeby nie zginęła.
+ */
 function failed(failure: Error, title = "Nie udało się") {
+  if (settingsToastsShown === 0) {
+    showFailure(failure, title)
+
+    return
+  }
+
   settingsToasts.add({ title, description: failureMessage(failure), type: "error" })
 }
 
 /** Miejsce powiadomień zmian Ustawień w oknie Ustawień. */
 export function SettingsToasts() {
+  React.useEffect(() => {
+    settingsToastsShown += 1
+
+    return () => {
+      settingsToastsShown -= 1
+    }
+  }, [])
+
   return <DialogToaster toastManager={settingsToasts} />
 }
 
@@ -252,7 +272,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       choose: (path) => void pick(path),
       chooseTheme: (next) => {
         setChosenTheme(next)
-        changeTheme(next).then(saved, failed)
+        changeTheme(next).then(saved, (failure: Error) => {
+          // Niezapisany motyw wraca do motywu z pliku, chyba że tata wybrał już następny.
+          setChosenTheme((chosen) => (chosen === next ? null : chosen))
+          failed(failure)
+        })
       },
       switchAutostart: (enabled) => void switchAutostart(enabled),
       autostartPending,
