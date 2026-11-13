@@ -1,8 +1,9 @@
 """Etykieta rozmiaru PR (``tools/ci/rozmiar_pr.py``, workflow ``rozmiar-pr.yml``): progi z t3code, efektywne linie od
 bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR.
-Licznik szopy (ADR 0034): grupę pliku daje reguła katalogu, a lista dwóch szop tylko wyjątki od niej; PR z nowymi liniami
-maszynerii procesu bez większego usunięcia dostaje etykietę zgody, którą zdejmuje komentarz ``ZGODA SZOPA`` konta
-z prawem ``admin``."""
+Licznik szopy (ADR 0034): grupę pliku daje reguła katalogu, a lista dwóch szop tylko wyjątki od niej; licznik drukuje linie
+maszynerii procesu i weryfikacji produktu osobno, a PR z nowymi liniami maszynerii bez większego usunięcia albo ze zmianą
+strażnika dostaje etykietę zgody, którą zdejmuje komentarz ``ZGODA SZOPA`` konta z prawem ``admin``. Przeniesienia kodu
+między grupami licznik nie rozpoznaje: jego postacie są próbkami ``ZNANE_LUKI``."""
 
 from __future__ import annotations
 
@@ -280,7 +281,7 @@ def test_pr_bez_linii_maszynerii_procesu_nie_wymaga_zgody_choc_zmienia_produkt_w
 
     assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == (
         [
-            "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 45/35 = 1,29, testy szopy / src 10/35 = 0,29"
+            "SZOPA | #7 | maszyneria procesu z testami +0 -0, weryfikacja produktu z testami +13 -0, testy zachowania src / src 45/35 = 1,29, testy szopy / src 10/35 = 0,29"
             " | bez nowych linii maszynerii procesu"
         ],
         [],
@@ -294,7 +295,7 @@ def test_pr_ktory_usuwa_wiecej_linii_maszynerii_niz_dodaje_traci_etykiete_zgody(
 
     assert _licz(szopa, _GitHub(w_repo=[], na_pr=[rozmiar_pr.ZGODA.nazwa])) == (
         [
-            "SZOPA | #7 | maszyneria procesu z testami +5 -12, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+            "SZOPA | #7 | maszyneria procesu z testami +5 -12, weryfikacja produktu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
             " | usuwa więcej linii maszynerii procesu, niż dodaje",
             "SZOPA | zdjęta wymaga ZGODA SZOPA z #7",
         ],
@@ -307,54 +308,37 @@ def test_pr_ktory_dodaje_tyle_linii_maszynerii_z_testami_ile_usuwa_wymaga_zgody(
     commit(szopa, "tyle samo maszynerii")
 
     assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == _nadana(
-        "SZOPA | #7 | maszyneria procesu z testami +8 -8, testy zachowania src / src 5/20 = 0,25, testy szopy / src 18/20 = 0,90"
+        "SZOPA | #7 | maszyneria procesu z testami +8 -8, weryfikacja produktu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 18/20 = 0,90"
         " | wymaga ZGODA SZOPA"
     )
 
 
-def _pod_nowy_wpis_weryfikacji(repo: Path) -> None:
-    _przenies(repo, "tools/inna.py", "tools/inna_w.py")
-    _zapisz(repo, {rozmiar_pr.LISTA: _LISTA.replace('"tools/lib/atrapy/" = []', '"tools/lib/atrapy/" = []\n"tools/inna_w.py" = []')})
+def test_przeniesienie_pliku_maszynerii_do_weryfikacji_widac_w_liczbach_obu_grup(szopa: Path) -> None:
+    # Licznik nie rozpoznaje przeniesienia (granica w docstringu licznika), więc recenzent widzi je w liczbach grup.
+    _przenies(szopa, "tools/inna.py", "tools/lib/atrapy/inna.py")
+    commit(szopa, "maszyneria do weryfikacji")
+
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == (
+        [
+            "SZOPA | #7 | maszyneria procesu z testami +0 -60, weryfikacja produktu z testami +60 -0"
+            ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50 | bez nowych linii maszynerii procesu"
+        ],
+        [],
+    )
 
 
-def _do_katalogu_weryfikacji(repo: Path) -> None:
-    _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py")
-
-
-def _test_maszynerii_pod_nazwe_testu_produktu(repo: Path) -> None:
-    _przenies(repo, "tests/test_bramka.py", "tests/test_bramka_inny.py")
-
-
-@pytest.mark.parametrize(
-    ("zmiana", "linia"),
-    [
-        (
-            _pod_nowy_wpis_weryfikacji,
-            "+100 -60, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
-            ", zmienia strażnika tools/lib/szopa.toml",
-        ),
-        (
-            _do_katalogu_weryfikacji,
-            "+40 -60, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
-            ", przenosi tools/inna.py -> tools/lib/atrapy/inna.py (maszyneria -> weryfikacja)",
-        ),
-        (
-            _test_maszynerii_pod_nazwe_testu_produktu,
-            "+40 -10, testy zachowania src / src 15/20 = 0,75, testy szopy / src 0/20 = 0,00"
-            ", przenosi tests/test_bramka.py -> tests/test_bramka_inny.py (maszyneria -> produkt)",
-        ),
-    ],
-    ids=["pod-nowy-wpis-weryfikacji-na-liscie-pr", "do-katalogu-weryfikacji-z-listy-bazy", "test-maszynerii-pod-nazwe-testu-produktu"],
-)
-def test_pr_z_nowymi_liniami_maszynerii_i_przeniesieniem_jej_pliku_do_innej_grupy_wymaga_zgody(
-    szopa: Path, zmiana: Callable[[Path], None], linia: str
-) -> None:
-    # Bez zgody na przeniesienie 40 nowych linii maszynerii znikałoby w liniach przeniesionego pliku (przegląd #1646 r1).
+def test_pr_z_nowymi_liniami_maszynerii_i_przeniesieniem_jej_pliku_pod_nowy_wpis_listy_wymaga_zgody(szopa: Path) -> None:
+    # Przegląd #1646 r1, W1: wpis listy przenosi plik do weryfikacji, a zmiana listy to zmiana strażnika.
     _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
-    zmiana(szopa)
-    commit(szopa, "nowa maszyneria i przeniesienie")
+    _przenies(szopa, "tools/inna.py", "tools/inna_w.py")
+    _zapisz(szopa, {rozmiar_pr.LISTA: _LISTA.replace('"tools/lib/atrapy/" = []', '"tools/lib/atrapy/" = []\n"tools/inna_w.py" = []')})
+    commit(szopa, "nowa maszyneria i przeniesienie pod nowy wpis")
 
-    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == _nadana(f"SZOPA | #7 | maszyneria procesu z testami {linia} | wymaga ZGODA SZOPA")
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == _nadana(
+        "SZOPA | #7 | maszyneria procesu z testami +100 -60, weryfikacja produktu z testami +0 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50, zmienia strażnika tools/lib/szopa.toml"
+        " | wymaga ZGODA SZOPA"
+    )
 
 
 def test_pr_ktory_zmienia_tylko_liste_wymaga_zgody_a_nastepny_pr_liczy_pliki_wedlug_przyjetej_listy(szopa: Path) -> None:
@@ -372,13 +356,13 @@ def test_pr_ktory_zmienia_tylko_liste_wymaga_zgody_a_nastepny_pr_liczy_pliki_wed
 
     assert (zmiana_listy, _licz(szopa, _GitHub(w_repo=[], na_pr=[]))) == (
         _nadana(
-            "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+            "SZOPA | #7 | maszyneria procesu z testami +0 -0, weryfikacja produktu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
             ", zmienia strażnika tools/lib/szopa.toml | wymaga ZGODA SZOPA"
         ),
         (
             [
-                "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
-                " | bez nowych linii maszynerii procesu"
+                "SZOPA | #7 | maszyneria procesu z testami +0 -0, weryfikacja produktu z testami +40 -0, testy zachowania src / src 5/20 = 0,25"
+                ", testy szopy / src 10/20 = 0,50 | bez nowych linii maszynerii procesu"
             ],
             [],
         ),
@@ -399,7 +383,7 @@ def test_pr_ktory_zmienia_straznika_bez_nowych_linii_maszynerii_wymaga_zgody(szo
     commit(szopa, "strażnik bez jednej linii")
 
     assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == _nadana(
-        f"SZOPA | #7 | maszyneria procesu z testami {liczby}, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+        f"SZOPA | #7 | maszyneria procesu z testami {liczby}, weryfikacja produktu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
         f", zmienia strażnika {sciezka} | wymaga ZGODA SZOPA"
     )
 
@@ -421,14 +405,35 @@ def test_nowe_pliki_testow_narzedzi_i_skilli_bez_wpisu_na_liscie_biora_grupe_z_r
     linie, _ = _licz(szopa, _GitHub(w_repo=[], na_pr=[]))
 
     assert linie[0] == (
-        "SZOPA | #7 | maszyneria procesu z testami +6 -0, testy zachowania src / src 12/20 = 0,60, testy szopy / src 10/20 = 0,50"
+        "SZOPA | #7 | maszyneria procesu z testami +6 -0, weryfikacja produktu z testami +9 -0, testy zachowania src / src 12/20 = 0,60, testy szopy / src 10/20 = 0,50"
         " | wymaga ZGODA SZOPA"
     )
 
 
-def _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji(repo: Path) -> None:
-    _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py", _linie(60, "z"))
+def _nowe_linie_maszynerii(repo: Path) -> None:
     _zapisz(repo, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
+
+
+def _git_mv_do_katalogu_weryfikacji(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    git(repo, "mv", "tools/inna.py", "tools/lib/atrapy/inna.py")
+
+
+def _git_mv_do_skilla_verify(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    (repo / ".agents/skills/verify-cos").mkdir(parents=True)
+    git(repo, "mv", "tools/inna.py", ".agents/skills/verify-cos/inna.py")
+
+
+def _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    _zapisz(repo, {"tools/lib/atrapy/inna.py": (repo / "tools/inna.py").read_text(encoding="utf-8")})
+    _zapisz(repo, {"tools/inna.py": "from atrapy.inna import *\n"})
+
+
+def _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    _przenies(repo, "tools/inna.py", "tools/lib/atrapy/inna.py", _linie(60, "z"))
 
 
 def _nowy_test_maszynerii_bez_wpisu(repo: Path) -> None:
@@ -436,9 +441,17 @@ def _nowy_test_maszynerii_bez_wpisu(repo: Path) -> None:
 
 
 # Znane luki licznika szopy (tests/fixtures/znane_luki.py): opis postaci → zmiana PR, która powiększa maszynerię procesu,
-# a mimo to przechodzi przez licznik bez etykiety zgody.
+# a mimo to przechodzi przez licznik bez etykiety zgody. Licznik liczy linie według ścieżek i nie rozpoznaje pochodzenia
+# kodu, więc każda postać przeniesienia między grupami jest tu, a recenzent ocenia ją z liczb obu grup.
 ZNANE_LUKI: Final[dict[str, Callable[[Path], None]]] = {
-    "plik maszynerii usunięty i napisany od nowa pod ścieżką weryfikacji, czego git nie uznaje za przeniesienie": (
+    "nowe linie maszynerii i git mv jej pliku do katalogu weryfikacji z listy bazy (przegląd #1646 r1, W1)": (
+        _git_mv_do_katalogu_weryfikacji
+    ),
+    "nowe linie maszynerii i git mv jej pliku do skilla verify-* (przegląd #1646 r2, sonda S3)": _git_mv_do_skilla_verify,
+    "nowe linie maszynerii i kopia jej pliku do katalogu weryfikacji, a w starym pliku jedna linia importu (przegląd #1646 r2, W1)": (
+        _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku
+    ),
+    "nowe linie maszynerii i jej plik usunięty i napisany od nowa pod ścieżką weryfikacji": (
         _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji
     ),
     "nowy test maszynerii bez wpisu na liście liczy się jako test produktu": _nowy_test_maszynerii_bez_wpisu,
@@ -484,7 +497,7 @@ def test_komentarz_zgoda_szopa_od_konta_admin_poza_kodem_zdejmuje_etykiete_zgody
 
     assert (linie, wywolania) == (
         [
-            "SZOPA | #7 | maszyneria procesu z testami +3 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+            "SZOPA | #7 | maszyneria procesu z testami +3 -0, weryfikacja produktu z testami +0 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
             f" | {stan}",
             *zgody[0],
         ],
