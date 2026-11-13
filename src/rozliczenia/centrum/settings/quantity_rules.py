@@ -2,9 +2,12 @@
 
 Format plików i niezmienniki należą do silnika i jego parsera (``quantity_engine``, ``quantity_rules_file``); tu jest ich
 opis dla właściciela Ustawień. Brak pliku to Reguły ilości z Wydania (``DEFAULT_QUANTITY_RULES``). Każdy plik
-sprawdza się sam: Lista Urządzeń swoje składniki, a Reguły ilości wszystko poza tym, czy składnik reguły jest na
-liście. Oba pliki naraz sprawdza ``quantity_rules``: reguła ze składnikiem spoza Listy Urządzeń to złe ustawienie Reguł
-ilości, a procesy liczą wtedy Regułami ilości z Wydania, które są spójne same w sobie.
+sprawdza się sam (``parse``): Lista Urządzeń swoje składniki, a Reguły ilości wszystko poza tym, czy składnik reguły jest
+na liście. Ten jeden niezmiennik obu plików właściciel sprawdza przy każdym przyjęciu pliku (odczyt zmiany spoza
+Centrum, zapis, cofnięcie) tymi samymi dwiema funkcjami: ``rules_problem`` przyjmuje reguły pasujące do bieżącej Listy
+Urządzeń (dobrej samej w sobie) albo do ostatniej dobrej, a ``devices_problem`` listę pasującą do reguł, którymi liczą
+procesy. Plik, który do drugiego nie pasuje, to złe ustawienie z ostatnią dobrą wartością, więc procesy liczą ostatnią
+dobrą parą (``quantity_rules``).
 
 Wartością pliku są same krotki reguł i składników, bo cofnięcie (``restore``) może złożyć wartość, której ``parse`` nie
 przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz Historii to ``reguly.<id>`` albo
@@ -174,10 +177,41 @@ DEVICES: Final = SettingsFile[tuple[Component, ...]](
 )
 
 
-def quantity_rules(rules: tuple[QuantityRule, ...], components: tuple[Component, ...]) -> QuantityRules | FieldProblem:
-    """Reguły ilości z obu plików naraz albo problem: reguła, której składnika nie ma na Liście Urządzeń."""
+def rules_problem(
+    rules: tuple[QuantityRule, ...], devices_now: tuple[Component, ...] | None, devices_good: tuple[Component, ...]
+) -> FieldProblem | None:
+    """Problem Reguł ilości dobrych samych w sobie razem z Listą Urządzeń: ``None``, gdy pasują do bieżącej listy
+    (``devices_now``, ``None``: lista zła sama w sobie albo nieczytelna) albo do ostatniej dobrej (``devices_good``)."""
+
+    if devices_now is not None and _refusal(rules, devices_now) is None:
+        return None
+    problem = _refusal(rules, devices_good)
+    return None if problem is None else _problem(RULES_FILE, problem)
+
+
+def devices_problem(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> FieldProblem | None:
+    """Problem Listy Urządzeń dobrej samej w sobie razem z regułami, którymi liczą procesy (``rules``): składnik, którego
+    reguła potrzebuje, a lista go nie ma."""
+
+    problem = _refusal(rules, devices)
+    return None if problem is None else FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, problem.message))
+
+
+def quantity_rules(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> QuantityRules:
+    """Reguły ilości, którymi liczą procesy: reguły i lista przyjęte razem. Przyjęcie pilnuje, że do siebie pasują, więc
+    Reguły ilości z Wydania z ich Listą Urządzeń zostają tylko bez dobrej pary: Wydanie zmieniło Reguły ilości z Wydania
+    pod Listą Urządzeń taty, a pliku reguł tata nie ma, albo listy nie da się teraz przeczytać, a ostatnie dobre reguły
+    nie pasują do listy z Wydania."""
 
     try:
-        return QuantityRules(rules, DeviceList(components))
+        return QuantityRules(rules, DeviceList(devices))
+    except QuantityRulesRefused:
+        return DEFAULT_QUANTITY_RULES
+
+
+def _refusal(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> RulesProblem | None:
+    try:
+        QuantityRules(rules, DeviceList(devices))
     except QuantityRulesRefused as refused:
-        return _problem(RULES_FILE, refused.problem)
+        return refused.problem
+    return None

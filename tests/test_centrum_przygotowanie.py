@@ -20,7 +20,7 @@ from rozliczenia.telemetry import MetricsStore, metric_record
 from rozliczenia.centrum import run_view
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
-from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 
 from tests.fixtures.centrum import centrum as bare_centrum, finished_view, phase_states, run_events, views_until
 from atrapy.preparation import (
@@ -755,6 +755,20 @@ def test_przygotowanie_liczy_ilosci_regulami_z_ustawien_z_chwili_startu_a_zmiana
     run_to_end(centrum, dry_run=False)
 
     assert (during, _quantity(centrum, "Z18")) == (1, 3)
+
+
+def test_przygotowanie_liczy_ostatnia_dobra_para_gdy_lista_urzadzen_zmieniona_poza_centrum_nie_pasuje_do_regul(
+    tmp_path: Path,
+) -> None:
+    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "nokia zte"}]
+    centrum = preparing_centrum(tmp_path, rows)
+    write_dad_quantity_rules(centrum.tool, RULES_FILE, NOKIA_ROUTER_Z, NOKIA_ROUTER_Z.replace("wartosc: 1", "wartosc: 3"))
+    centrum.view("/api/settings/quantity-rules")
+    write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: instalacja-reczna, zapisy: [instalacja ręczna, wizja]}\n", "")
+
+    run_to_end(centrum, dry_run=False)
+
+    assert _quantity(centrum, "Z18") == 3
 
 
 def _quantity(centrum: PreparingCentrum, cell: str) -> object:
