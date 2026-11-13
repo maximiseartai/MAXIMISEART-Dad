@@ -59,6 +59,7 @@ pilnuje:
   - tools/lib/atrapy/preparation.py
   - tools/lib/atrapy/scenariusz_rozliczen.py
   - tools/lib/atrapy/settlement.py
+  - tools/lib/atrapy/wzorce.py
   - tools/uruchom_proces.py
 ci: .agents/skills/verify-rozliczenia/scripts/quantity_rules_conformance.py
 ---

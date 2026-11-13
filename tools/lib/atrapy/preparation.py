@@ -337,8 +337,10 @@ def write_internal_template(
     return path
 
 
-def write_collective_template(path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW) -> Path:
-    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, zera i formuły, link zewnętrzny."""
+def write_collective_template(
+    path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW, zero_rows: int = COLLECTIVE_TEMPLATE_ZERO_ROWS
+) -> Path:
+    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, ``zero_rows`` wierszy zer i formuł, link zewnętrzny."""
 
     workbook = Workbook()
     sheet = active_worksheet(workbook)
@@ -354,7 +356,7 @@ def write_collective_template(path: Path, *, row_style: bool = False, view: View
     sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
     _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_HEADERS), row_style=row_style, view=view)
     styled_data_columns = 0 if row_style else len(COLLECTIVE_HEADERS)
-    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_TEMPLATE_ZERO_ROWS):
+    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + zero_rows):
         for column in range(1, styled_data_columns + 1):  # A:K, przygotowane we wzorcu
             cell = sheet.cell(row, column)
             cell.font = Font(name=TEMPLATE_FONT_NAME, size=TEMPLATE_FONT_SIZE)

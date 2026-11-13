@@ -9,34 +9,26 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import sys
-import tempfile
-import xml.etree.ElementTree as ET
-import zipfile
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.worksheet import Worksheet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from skrypt_skilla import Parser, create_run_root
 
-from atrapy.pliki_taty import (
-    AMOUNT_COLUMN,
-    COLLECTIVE_HEADERS,
-    FIRST_DATA_ROW,
-    HEADER_ROW,
-    INTERNAL_HEADERS,
-    QUANTITY_COLUMNS,
-    WORKER_LIST_NAME,
+from atrapy.pliki_taty import WORKER_LIST_NAME
+from atrapy.preparation import (
+    REGISTER_HEADERS,
+    Highlight,
+    RegisterRow,
+    write_collective_template,
+    write_internal_template,
+    write_register_sheet,
 )
-from atrapy.preparation import REGISTER_HEADERS
 from atrapy.scenariusz_rozliczen import (
     ARCHIVED_NUMBER,
     ARCHIVED_ORDER,
@@ -52,13 +44,18 @@ from atrapy.scenariusz_rozliczen import (
 )
 from atrapy.settlement import PERIOD, WORKERS, write_worker_list
 from atrapy.workbooks import active_worksheet
+from atrapy.wzorce import write_settlement_template
 
+# Two rows of zeros below the 6 Zlecenia skuteczne prove that Przygotowanie keeps the Wzorzec below its written rows.
 COLLECTIVE_ZERO_ROWS = 8
-REGISTER_DATE_FORMAT = "dd.mm.yyyy hh:mm"
-HIGHLIGHT_FILL = "FFFFFF00"
-HIGHLIGHT_COLOR = "FFC00000"
-# ADRES of order 4: neither yellow nor plain, so the Plik zbiorczy shows it only when it copies the Rejestr.
-ADDRESS_FILL = "FF00B0F0"
+# Wzorzec rozliczenia pracownika shaped like Dad's: GODZINA in A17, its own rate and rows 1–16 unlike the Plik zbiorczy.
+WORKER_TEMPLATE_ROWS = 40
+# ADRES of order 4 (row 9): neither yellow nor plain, so the Plik zbiorczy shows it only when it copies the Rejestr.
+REGISTER_HIGHLIGHTS = {
+    (4, "ADRES"): Highlight(fill="FFFFFF00", color="FFC00000", bold=True),
+    (9, "ADRES"): Highlight(fill="FF00B0F0"),
+    (9, "WYKONAWCA"): Highlight(italic=True),
+}
 
 
 # Excel row -> order; rows without an entry are fully empty export rows.
@@ -67,168 +64,28 @@ REGISTER_ROWS: dict[int, dict[str, object]] = {
 }
 
 
+def _sheet_rows(orders: dict[int, dict[str, object]]) -> list[RegisterRow]:
+    return [orders.get(row) for row in range(2, max(orders) + 1)]
+
+
 def _write_register(path: Path) -> None:
+    """Decoy ``lista``, hidden ``ARCHIWUM`` with an order of another period and active ``ZLECENIA`` with hyperlinks."""
+
     workbook = Workbook()
     decoy = active_worksheet(workbook)
     decoy.title = "lista"
     decoy["A1"] = "WYKONAWCY"
     archive = workbook.create_sheet("ARCHIWUM")
     archive.sheet_state = "hidden"
+    write_register_sheet(archive, _sheet_rows({ARCHIVED_ORDER.row: register_values(ARCHIVED_NUMBER, ARCHIVED_ORDER)}))
     sheet = workbook.create_sheet("ZLECENIA")
-    # Column A has no header and stays completely empty.
-    columns = [(column, header) for column, header in enumerate(REGISTER_HEADERS, start=1) if header]
-    for target, rows in ((archive, {ARCHIVED_ORDER.row: register_values(ARCHIVED_NUMBER, ARCHIVED_ORDER)}), (sheet, REGISTER_ROWS)):
-        for column, header in columns:
-            target.cell(1, column).value = header
-        for row_number, order in rows.items():
-            for column, header in columns:
-                cell = target.cell(row_number, column)
-                cell.value = order[header]
-                cell.font = Font(name="Calibri", size=8)  # uporządkowane zlecenia taty, nie Surowe zlecenia
-                if header == "DATA GODZ. POCZ.":
-                    cell.number_format = REGISTER_DATE_FORMAT
-    adres_column = REGISTER_HEADERS.index("ADRES") + 1
-    highlighted = sheet.cell(4, adres_column)
-    highlighted.font = Font(name="Calibri", size=8, color=HIGHLIGHT_COLOR, bold=True)
-    highlighted.fill = PatternFill(fill_type="solid", fgColor=HIGHLIGHT_FILL)
-    sheet.cell(9, adres_column).fill = PatternFill(fill_type="solid", fgColor=ADDRESS_FILL)
-    worker_column = REGISTER_HEADERS.index("WYKONAWCA") + 1
-    sheet.cell(9, worker_column).font = Font(name="Calibri", size=8, italic=True)
+    write_register_sheet(sheet, _sheet_rows(REGISTER_ROWS), highlights=REGISTER_HIGHLIGHTS)
     order_column = REGISTER_HEADERS.index("NUMER ZL.") + 1
     for row_number in REGISTER_ROWS:
         sheet.cell(row_number, order_column).hyperlink = f"{ORDER_LINK}{row_number}"
     workbook.active = workbook.sheetnames.index("ZLECENIA")
     workbook.save(path)
     workbook.close()
-
-
-def _apply_template_layout(sheet: Worksheet, header_row: int, columns: int) -> None:
-    """Look of a Wzorzec, with a stale autofilter."""
-
-    for column in range(1, columns + 1):
-        dimension = sheet.column_dimensions[get_column_letter(column)]
-        dimension.width = 9 + column
-        dimension.font = Font(name="Calibri", size=10)
-        sheet.cell(header_row, column).font = Font(name="Calibri", size=10, bold=True)
-    sheet.freeze_panes = f"A{header_row + 1}"
-    sheet.auto_filter.ref = f"B{header_row}:C{header_row + 40}"
-
-
-def _write_internal_template(path: Path) -> None:
-    workbook = Workbook()
-    sheet = active_worksheet(workbook)
-    sheet.title = "Arkusz1"
-    for column, header in enumerate(INTERNAL_HEADERS, start=1):
-        sheet.cell(1, column).value = header
-    _apply_template_layout(sheet, 1, len(INTERNAL_HEADERS))
-    workbook.save(path)
-    workbook.close()
-
-
-def _write_collective_template(path: Path) -> None:
-    _write_collective_layout(path, rate=17.5)
-
-
-def _write_worker_template(path: Path) -> None:
-    """Same layout as the Wzorzec pliku zbiorczego, with the worker's own rate and no WYKONAWCA name."""
-
-    _write_collective_layout(path, rate=12.0)
-
-
-def _write_collective_layout(path: Path, *, rate: float) -> None:
-    workbook = Workbook()
-    sheet = active_worksheet(workbook)
-    sheet.title = "Sheet1"
-    sheet["A1"] = "STAWKI"
-    sheet["N1"] = rate
-    sheet["N16"] = f"=SUM(N{FIRST_DATA_ROW}:N40)"
-    sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
-    for column, header in enumerate(COLLECTIVE_HEADERS, start=1):
-        sheet.cell(HEADER_ROW, column).value = header
-    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS.start).value = "instalacja"
-    sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
-    _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_HEADERS))
-    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_ZERO_ROWS):
-        for column in QUANTITY_COLUMNS:
-            sheet.cell(row, column).value = 0
-        sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}*$N$1"
-    rates = workbook.create_sheet("Rates")
-    rates["A1"] = "synthetic rate"
-    rates["B1"] = rate
-    workbook.save(path)
-    workbook.close()
-    _add_external_link(path)
-
-
-def _add_external_link(path: Path) -> None:
-    """Inject one valid ``xl/externalLinks/*`` part, like the link to the Słownik."""
-
-    ns_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-    ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-    ns_pkg_rel = "http://schemas.openxmlformats.org/package/2006/relationships"
-    ns_content = "http://schemas.openxmlformats.org/package/2006/content-types"
-    ET.register_namespace("r", ns_rel)
-    parts = {
-        "xl/externalLinks/externalLink1.xml": (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            f'<externalLink xmlns="{ns_main}" xmlns:r="{ns_rel}">'
-            '<externalBook r:id="rId1"><sheetNames><sheetName val="Słownik"/></sheetNames>'
-            '<definedNames/><sheetDataSet><sheetData sheetId="0"/></sheetDataSet>'
-            "</externalBook></externalLink>"
-        ).encode("utf-8"),
-        "xl/externalLinks/_rels/externalLink1.xml.rels": (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            f'<Relationships xmlns="{ns_pkg_rel}">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" '
-            'Target="https://example.invalid/Slownik.xlsm" TargetMode="External"/>'
-            "</Relationships>"
-        ).encode("utf-8"),
-    }
-    descriptor, temporary_name = tempfile.mkstemp(suffix=".xlsx", dir=path.parent)
-    os.close(descriptor)
-    temporary = Path(temporary_name)
-    try:
-        with zipfile.ZipFile(path) as source, zipfile.ZipFile(temporary, "w") as target:
-            for info in source.infolist():
-                data = source.read(info.filename)
-                if info.filename == "xl/workbook.xml":
-                    # One default namespace per document: register it just before serialising.
-                    ET.register_namespace("", ns_main)
-                    root = ET.fromstring(data)
-                    references = ET.SubElement(root, f"{{{ns_main}}}externalReferences")
-                    ET.SubElement(references, f"{{{ns_main}}}externalReference", {f"{{{ns_rel}}}id": "rIdSynExternal1"})
-                    data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-                elif info.filename == "xl/_rels/workbook.xml.rels":
-                    ET.register_namespace("", ns_pkg_rel)
-                    root = ET.fromstring(data)
-                    ET.SubElement(
-                        root,
-                        f"{{{ns_pkg_rel}}}Relationship",
-                        {
-                            "Id": "rIdSynExternal1",
-                            "Type": f"{ns_rel}/externalLink",
-                            "Target": "externalLinks/externalLink1.xml",
-                        },
-                    )
-                    data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-                elif info.filename == "[Content_Types].xml":
-                    ET.register_namespace("", ns_content)
-                    root = ET.fromstring(data)
-                    ET.SubElement(
-                        root,
-                        f"{{{ns_content}}}Override",
-                        {
-                            "PartName": "/xl/externalLinks/externalLink1.xml",
-                            "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml",
-                        },
-                    )
-                    data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-                target.writestr(info, data)
-            for name, data in parts.items():
-                target.writestr(name, data)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _sha256(path: Path) -> str:
@@ -244,15 +101,15 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
     collective_template = config_directory / COLLECTIVE_TEMPLATE_NAME
     _write_register(register)
     if templates_from is None:
-        _write_internal_template(internal_template)
-        _write_collective_template(collective_template)
+        write_internal_template(internal_template)
+        write_collective_template(collective_template, zero_rows=COLLECTIVE_ZERO_ROWS)
     else:
         shutil.copyfile(templates_from / INTERNAL_TEMPLATE_NAME, internal_template)
         shutil.copyfile(templates_from / COLLECTIVE_TEMPLATE_NAME, collective_template)
     worker_template = config_directory / WORKER_TEMPLATE_NAME
     if with_worker_template:
         if templates_from is None:
-            _write_worker_template(worker_template)
+            write_settlement_template(worker_template, "GODZINA", WORKER_TEMPLATE_ROWS, comments=True)
         else:
             shutil.copyfile(templates_from / WORKER_TEMPLATE_NAME, worker_template)
     write_worker_list(config_directory / WORKER_LIST_NAME)
