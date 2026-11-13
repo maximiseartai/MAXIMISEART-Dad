@@ -1,6 +1,6 @@
 """Zgłoszenia CI (ADR 0020): issue dla flaky testów i dla czerwonego `main`, z workflow ``zgloszenia.yml`` po każdym runie CI.
 
-Wejście to jeden zakończony run workflow ``CI``. Narzędzie najpierw ustala akcje (``Zaloz``, ``Skomentuj``, ``Zamknij``),
+Wejście to jeden zakończony run workflow ``CI`` albo ``Mutacje nocne``, którego części zapisują flaky testy z bazy (ADR 0021). Narzędzie najpierw ustala akcje (``Zaloz``, ``Skomentuj``, ``Zamknij``),
 potem je wykonuje; z ``--bez-zapisu`` tylko je drukuje.
 
 - **Flaky test.** Każdy test z artefaktów ``flaky-testy-*`` runu (``tools/lib/niestabilne_testy.py``) dostaje jedno
