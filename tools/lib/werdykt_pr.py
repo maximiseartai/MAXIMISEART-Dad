@@ -187,16 +187,51 @@ def _moment(when: str) -> datetime | None:
         return None
 
 
-def _template_problems(text: str, pull: Pull) -> list[str]:
-    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+def _content(text: str) -> tuple[str, tuple[int, int] | None]:
+    """Treść pod dwiema pierwszymi niepustymi liniami ``text`` i liczby Ważnych i Drobnych z linii ``Znaleziska:``
+    (``None``, gdy jej nie ma)."""
 
     lines = str(text).splitlines()
     filled = [index for index, line in enumerate(lines) if line.strip()]
     rest = "\n".join(lines[filled[1] + 1 :]) if len(filled) > 1 else ""
     findings = FINDINGS_LINE.fullmatch(lines[filled[1]].strip()) if len(filled) > 1 else None
-    declared = (int(findings[2]), int(findings[3])) if findings else None
+    return rest, (int(findings[2]), int(findings[3])) if findings else None
+
+
+def _html(rest: str, pull: Pull) -> str:
+    return github.html_markdownu(rest, pull.repository) if rest.strip() else ""
+
+
+def _template_problems(text: str, pull: Pull) -> list[str]:
+    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+
+    rest, declared = _content(text)
     try:
-        html = github.html_markdownu(rest, pull.repository) if rest.strip() else ""
+        html = _html(rest, pull)
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
         return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
     return szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))
+
+
+@dataclass(frozen=True)
+class Round:
+    """Runda przeglądu: ``number``-ty werdykt PR (od 1, w kolejności utworzenia, dowolnego commitu), liczba Ważnych
+    z jego linii ``Znaleziska:`` (``None``, gdy jej nie ma) i kody korzeni jego treści z ``szablon_werdyktu.findings``."""
+
+    number: int
+    verdict: Verdict
+    declared_majors: int | None
+    findings: szablon_werdyktu.Findings
+
+
+def rounds(pull: Pull) -> list[Round]:
+    """Rundy przeglądu ``pull``: werdykty z linią ``WERDYKT:`` od kont z prawem zapisu, jak przy zgodzie na merge.
+
+    Treść każdego czyta renderer GitHuba; błąd renderera to wyjątek."""
+
+    found = [verdict for verdict in (read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None and verdict.decision is not None]
+    result = []
+    for number, verdict in enumerate(found, start=1):
+        rest, declared = _content(verdict.body)
+        result.append(Round(number, verdict, declared[0] if declared else None, szablon_werdyktu.findings(_html(rest, pull))))
+    return result
