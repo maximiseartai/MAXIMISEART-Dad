@@ -76,9 +76,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.efenix_chrome import atrapa_opening
 from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start
-from rozliczenia.centrum.runs import CONTINUE_HINT
 from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
@@ -137,7 +135,7 @@ class ProcessResult(_Model):
 
 
 class _Unattended:
-    continue_hint = f"uruchom proces w Centrum rozliczeń i {CONTINUE_HINT}"
+    continue_hint = f"uruchom proces w Centrum rozliczeń i {runs_contract.CONTINUE_HINT}"
 
     def __init__(self, progress_view: Callable[[ProgressSnapshot], runs_contract.Progress]) -> None:
         self._progress_view = progress_view
@@ -245,8 +243,14 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> Start:
 
 
 def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
-    # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez sesji taty.
-    efenix = atrapa_opening(args.efenix_window) if "efenix_window" in kind.needs else None
+    efenix = None
+    if "efenix_window" in kind.needs:
+        # Playwright tylko dla Wyceny w efenix: inne procesy nie płacą przy każdym starcie za jego import.
+        from rozliczenia.centrum.efenix_chrome import atrapa_opening
+
+        # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez
+        # sesji taty.
+        efenix = atrapa_opening(args.efenix_window)
     # Maile z folderu .eml, nigdy z Gmaila, i pamięć własnych wpisów tylko na czas tego Uruchomienia.
     inbox = "worker_report_inbox" in kind.needs
     reports = ReportEnteringParts(FolderInbox(args.worker_report_inbox), ReportStateInMemory()) if inbox else None
