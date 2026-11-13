@@ -2031,6 +2031,22 @@ def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
     )
 
 
+@NO_ACCESS_ON_WINDOWS
+@pytest.mark.parametrize("way", ["okno", "wpisana"])
+def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:
+    """Układu nad folderem bez dostępu nie widać, więc zapisuje się wskazany folder, a nie błąd wyboru."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    app = centrum(tmp_path)
+
+    with without_access(week):
+        settings = choose_periods_directory(app, week, way)
+
+    assert settings["periods_directory"]["path"] == str(week)
+
+
 def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_tygodnia(tmp_path: Path) -> None:
     """Formularz sekcji odsyła obie ścieżki, więc zapisany już folder okresów zostaje, nawet w środku układu."""
 
@@ -2127,17 +2143,27 @@ def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i
     assert tool.log_path.read_text(encoding="utf-8").count(f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=bez-zmian") == 1
 
 
-@NO_ACCESS_ON_WINDOWS
-def test_folder_okresow_bez_dostepu_przy_starcie_po_aktualizacji_zamienia_sie_na_zalaczniki_przy_nastepnym(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "obstacle", [pytest.param("bez-dostepu", marks=NO_ACCESS_ON_WINDOWS), "onedrive-nie-oddal-zalacznikow"]
+)
+def test_folder_okresow_nieczytelny_przy_starcie_po_aktualizacji_zamienia_sie_na_zalaczniki_przy_nastepnym(
+    tmp_path: Path, obstacle: str
 ) -> None:
-    root = dad_layout(tmp_path)
+    """Folder bez dostępu albo folder, którego nie ma, a nad nim nie widać układu: zmiana czeka, a nie kończy się
+    „nic do zmiany”, bo wtedy tydzień zostałby zapisany na zawsze."""
+
+    root = tmp_path / "Załączniki"
     month = inea(root, "10_Październik_2026")
     tool = ToolDirectory(tmp_path / "narzedzie-taty")
     write_folder_settings(tool, FolderSettings(periods_directory=month))
 
-    with without_access(root):
+    if obstacle == "bez-dostepu":
+        dad_layout(tmp_path)
+        with without_access(root):
+            started(tool, RELEASE_CHANGES).stop()
+    else:
         started(tool, RELEASE_CHANGES).stop()
+        dad_layout(tmp_path)
     later = tool.settings.read_bytes()
     again = started(tool, RELEASE_CHANGES)
     periods = again.get("/api/settings").json()["periods_directory"]
@@ -2146,6 +2172,35 @@ def test_folder_okresow_bez_dostepu_przy_starcie_po_aktualizacji_zamienia_sie_na
     assert FOLDERS.parse(later) == FolderSettings(periods_directory=month)
     assert periods["path"] == str(root)
     assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmiana_wchodzi_po_naprawie(
+    tmp_path: Path,
+) -> None:
+    """Przy złym pliku Centrum zna ostatnią dobrą wartość, ale zmiana z Wydania nie nadpisuje nią pliku taty."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    started(tool, ()).stop()
+    bad = FOLDERS.dump(FolderSettings(periods_directory=week)) + "nieznany_klucz: 1\n"
+    tool.settings.write_text(bad, encoding="utf-8")
+
+    while_bad = started(tool, RELEASE_CHANGES)
+    problem = while_bad.get("/api/settings").json()["folders_problem"]
+    while_bad.stop()
+    after_bad = tool.settings.read_text(encoding="utf-8")
+    write_folder_settings(tool, FolderSettings(periods_directory=week))
+    repaired = started(tool, RELEASE_CHANGES)
+    periods = repaired.get("/api/settings").json()["periods_directory"]
+    repaired.stop()
+
+    assert problem is not None
+    assert after_bad == bad
+    assert f"zmiana={PERIODS_FROM_ATTACHMENTS} wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
+    assert periods["path"] == str(root)
 
 
 def stages(row: dict[str, object]) -> list[str]:
