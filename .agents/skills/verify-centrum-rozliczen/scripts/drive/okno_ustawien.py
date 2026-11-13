@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
@@ -92,6 +93,9 @@ def drive(run: Run, page: Page) -> None:
     finally:
         page.remove_listener("request", count_metrics)
     run.check(metrics_reads == [], f"opening and closing the window leaves Metryki as it was ({len(metrics_reads)} reads)")
+    page.go_back()
+    expect(page.get_by_role("heading", name="Okresy", level=1)).to_be_visible()
+    run.check(_hash(page) == "#/okresy", f"after the window is closed, Back goes to Okresy, before Metryki ({_hash(page)})")
 
     run.step(FEATURE, "okno-adres-sekcji")
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
@@ -161,6 +165,20 @@ def drive(run: Run, page: Page) -> None:
             run.capture(page, "303-okno-z-raportow", full_page=False)
             close_settings(page)
             expect(page.get_by_role("heading", name="Raporty", level=1)).to_be_visible()
+    register = Path(run.fixture["order_register"])
+    answer = run.api("/api/settings", "okno-ustawien-przed-wskazanym-plikiem")
+    answer["order_register"] = {"state": "ready", "path": str(register), "name": register.name}
+    page.route("**/api/settings", lambda route: route.fulfill(json=answer))
+    try:
+        page.reload()
+        intermax = page.get_by_role("group", name="INTERMAX")
+        expect(intermax).to_contain_text(register.name)
+        expect(intermax.get_by_role("link", name="Ustaw w Ustawieniach")).to_have_count(0)
+        run.check(True, "a chosen INTERMAX on Raporty shows its name without „Ustaw w Ustawieniach”")
+    finally:
+        page.unroute("**/api/settings")
+    page.reload()
+    expect(page.get_by_role("group", name="INTERMAX").get_by_role("link", name="Ustaw w Ustawieniach")).to_be_visible()
 
     run.step(FEATURE, "okno-waskie")
     page.set_viewport_size(NARROW)
