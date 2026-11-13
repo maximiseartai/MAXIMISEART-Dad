@@ -146,7 +146,7 @@ def _clean_up() -> str:
 def _publish_verdict(number: int, path: Path) -> int:
     pull = stan_pr.pull(number)
     text = path.read_text(encoding="utf-8")
-    if problems := werdykt_pr.file_problems(text, pull.head):
+    if problems := werdykt_pr.publish_problems(text, pull):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()

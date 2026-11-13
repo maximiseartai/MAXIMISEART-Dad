@@ -15,7 +15,12 @@ przechodzi na nowy push. Komentarz edytowany liczy się z treścią po edycji, a
 co zgoda przy merge'u: pierwsza niepusta linia
 to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżącego HEAD PR, druga to ``Znaleziska: N
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
-najwyżej trzy. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
+najwyżej trzy, a treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``: Ważne z polami
+``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``, a kod korzenia
+z zamkniętej listy). Szablon nie obowiązuje w wątku sprzed niego (ADR 0031, decyzja Q20): gdy najstarszy werdykt PR,
+dowolnego commitu, nie ma linii ``## Sprawdzone``, bo opublikowano go przed szablonem, ``--werdykt`` sprawdza tam tylko
+dwie pierwsze linie. Granica: werdykt bez szablonu opublikowany z pominięciem ``--werdykt`` też otwiera wątek po
+staremu. Merge liczy zgodę ``PASS`` tylko z dwóch pierwszych linii, bez szablonu. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
 każda przyczyna mówi, co poprawić w pliku. Opublikowany werdykt kończy się linią ``WERDYKT OK | #N <sha> | <PASS
 albo FAIL> | <adres komentarza>``.
 """
@@ -29,6 +34,7 @@ import re
 from typing import Literal
 
 from stan_pr import Pull
+import szablon_werdyktu
 
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
 FINDINGS_LINE = re.compile(r"Znaleziska: (\d+) \(Ważne (\d+), Drobne (\d+)\)")
@@ -139,3 +145,26 @@ def file_problems(text: str, head: str) -> list[str]:
     if verdict is not None and (verdict[1] == "FAIL") != (major > 0):
         problems.append(f"{verdict[1]} z Ważne {major}: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych")
     return problems
+
+
+def publish_problems(text: str, pull: Pull) -> list[str]:
+    """Co poprawić w pliku werdyktu przed publikacją na ``pull``: dwie pierwsze linie, a poza wątkiem sprzed szablonu
+    także treść według ``szablon_werdyktu``."""
+
+    problems = file_problems(text, pull.head)
+    if _before_template(pull):
+        return problems
+    lines = text_lines(text)
+    findings = FINDINGS_LINE.fullmatch(lines[1]) if len(lines) > 1 else None
+    declared = (int(findings[2]), int(findings[3])) if findings else None
+    return [*problems, *szablon_werdyktu.problems(lines[2:], declared, lambda: szablon_werdyktu.pull_codes(pull))]
+
+
+def _before_template(pull: Pull) -> bool:
+    """Czy wątek PR zaczął się przed szablonem: jego najstarszy werdykt nie ma linii ``## Sprawdzone``."""
+
+    for verdict in pull.verdicts:
+        found = read(verdict, pull.head)
+        if found is not None and found.decision is not None:
+            return szablon_werdyktu.CHECKED not in text_lines(verdict["body"])
+    return False
