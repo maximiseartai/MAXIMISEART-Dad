@@ -1,9 +1,9 @@
 import * as React from "react"
 import { CircleHelpIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react"
 
-import { addWorker, changeWorker, removeWorker, switchWorker } from "@/api/centrum"
+import { addWorker, assignWorkerAddress, changeWorker, getWorkerSuggestions, removeWorker, switchWorker } from "@/api/centrum"
 import { failureMessage, refusedField } from "@/api/client"
-import type { Choice, ListedWorker, WorkerListSetting } from "@/api/generated"
+import type { Choice, ListedWorker, WorkerListSetting, WorkerSuggestion } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import {
   AlertDialog,
@@ -19,19 +19,41 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { useSettings } from "@/lib/settings"
+import { type Href, settingsHref, showSection, useSettingsPath } from "@/lib/address"
+import { plural } from "@/lib/format"
+import { useReloadOnChange, useSettings } from "@/lib/settings"
 import { useUnsavedForm } from "@/lib/unsaved"
+import { useResource } from "@/lib/use-resource"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 
 type Unresolved = WorkerListSetting["unresolved"][number]
 
-/** Otwarty formularz: zmiana Wykonawcy o loginie `login` albo nowy Wykonawca z loginem i adresami do wpisania. */
-type Editing = { kind: "worker"; login: string } | { kind: "new"; login: string; addresses: ReadonlyArray<string> }
+/**
+ * Otwarty formularz: zmiana Wykonawcy o loginie `login` albo nowy Wykonawca z loginem i adresami do wpisania; nowy z
+ * wyboru „Przypisz adres” stoi na miejscu wyboru (`assigned`), a każdy inny pod listą.
+ */
+type Editing =
+  | { kind: "worker"; login: string }
+  | { kind: "new"; login: string; addresses: ReadonlyArray<string>; assigned: boolean }
+
+export const WORKERS_SECTION = "wykonawcy"
+
+/** Człon adresu sekcji Wykonawcy z wyborem Wykonawcy dla adresu nieznanego nadawcy. */
+const ASSIGN = "przypisz"
+
+/** Wybór „Nowy Wykonawca” przy przypisaniu adresu; login Wykonawcy nie może być pusty, więc nie myli się z loginem. */
+const NEW_WORKER = ""
 
 const LAST_GOOD = "Ostatnia dobra lista, której używają procesy"
+
+/** Adres okna Ustawień na sekcji Wykonawcy z wyborem Wykonawcy dla adresu nieznanego nadawcy `address` (US 25). */
+export function assignHref(address: string): Href {
+  return settingsHref(WORKERS_SECTION, ASSIGN, address)
+}
 
 /**
  * Lista Wykonawców (ADR 0032): aktywni na górze, każdy z nazwą, loginami i adresami, przełącznikiem Przypomnień o
@@ -39,7 +61,9 @@ const LAST_GOOD = "Ostatnia dobra lista, której używają procesy"
  * Wykonawcę, zmienia nazwę i adresy, dopisuje drugi login, oznacza Nieaktywnego i usuwa Wykonawcę bez zleceń w okresach.
  * Każdą regułę sprawdza serwer: zła wartość wraca zdaniem przy polu, a odmowa usunięcia proponuje Nieaktywnego. Nad
  * listą jednym zdaniem to, czego przeniesienie starych plików nie rozstrzygnęło. Zły plik ma zdanie o problemie i
- * ostatnią dobrą listę podpisaną jako ostatnia dobra, a bez niej samo zdanie.
+ * ostatnią dobrą listę podpisaną jako ostatnia dobra, a bez niej samo zdanie. Pod listą loginy z ostatnich zleceń
+ * Rejestru zleceń, których na niej nie ma, z „Dodaj Wykonawcę”; adres `#/ustawienia/wykonawcy/przypisz/<adres>` (z
+ * „Przypisz do Wykonawcy…” w widoku Raporty) stawia nad listą wybór Wykonawcy dla adresu nieznanego nadawcy.
  */
 export function WorkersSection() {
   const { settings, reload } = useSettings()
@@ -61,6 +85,8 @@ export function WorkersSection() {
 
 function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: () => Promise<void> }) {
   const [editing, setEditing] = React.useState<Editing | null>(null)
+  const path = useSettingsPath()
+  const assigning = path[0] === ASSIGN && path[1] !== undefined && path[1] !== "" ? path[1] : null
 
   if (setting.state === "unreadable") {
     return (
@@ -77,9 +103,39 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
   const workers = setting.workers.toSorted((first, second) => Number(second.active) - Number(first.active))
   const close = () => setEditing(null)
 
+  // Formularz albo wybór z „Przypisz do Wykonawcy…” zamyka cały wybór: adres sekcji wraca do samej sekcji.
+  const closeAssigning = () => {
+    setEditing(null)
+    showSection(WORKERS_SECTION)
+  }
+
+  // Nowy z wyboru „Przypisz adres” stoi na miejscu wyboru, dopóki adres sekcji go ma, a każdy inny pod listą.
+  const atAssign = assigning !== null && editing?.kind === "new" && editing.assigned
+
+  const newForm = (shown: Extract<Editing, { kind: "new" }>, onDone: () => void) => (
+    <div className="rounded-xl border bg-card px-4 py-4">
+      <WorkerForm
+        key={JSON.stringify([shown.login, shown.addresses])}
+        initial={{ logins: [shown.login], name: "", addresses: shown.addresses }}
+        onDone={onDone}
+      />
+    </div>
+  )
+
   return (
     <div className="flex flex-col gap-3">
       {setting.problem === null ? null : <FieldSentence>{setting.problem.message}</FieldSentence>}
+      {assigning === null ? null : atAssign && editing?.kind === "new" ? (
+        newForm(editing, closeAssigning)
+      ) : (
+        <AssignAddress
+          key={assigning}
+          address={assigning}
+          workers={workers}
+          onNew={() => setEditing({ kind: "new", login: "", addresses: [assigning], assigned: true })}
+          onDone={closeAssigning}
+        />
+      )}
       {setting.unresolved.length === 0 ? null : (
         <ul aria-label="Do rozstrzygnięcia" className="flex flex-col gap-1.5">
           {setting.unresolved.map((item) => (
@@ -90,7 +146,7 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={() => setEditing({ kind: "new", login: item.login, addresses: item.addresses })}
+                  onClick={() => setEditing({ kind: "new", login: item.login, addresses: item.addresses, assigned: false })}
                 >
                   Dodaj Wykonawcę
                 </Button>
@@ -117,13 +173,15 @@ function WorkerList({ setting, reload }: { setting: WorkerListSetting; reload: (
       ) : setting.state === "good" ? (
         <p className="text-sm text-muted-foreground">Na liście nie ma jeszcze Wykonawców.</p>
       ) : null}
-      {editing?.kind === "new" ? (
-        <div className="rounded-xl border bg-card px-4 py-4">
-          <WorkerForm key={editing.login} initial={{ logins: [editing.login], name: "", addresses: editing.addresses }} onDone={close} />
-        </div>
+      <Suggestions
+        adding={editing?.kind === "new" && !atAssign ? editing.login : null}
+        add={(login) => setEditing({ kind: "new", login, addresses: [], assigned: false })}
+      />
+      {editing?.kind === "new" && !atAssign ? (
+        newForm(editing, editing.assigned ? closeAssigning : close)
       ) : (
         <div>
-          <Button variant="outline" size="sm" onClick={() => setEditing({ kind: "new", login: "", addresses: [] })}>
+          <Button variant="outline" size="sm" onClick={() => setEditing({ kind: "new", login: "", addresses: [], assigned: false })}>
             <PlusIcon aria-hidden />
             Dodaj Wykonawcę
           </Button>
@@ -414,6 +472,161 @@ function WorkerForm({ worker, initial, onDone }: { worker?: ListedWorker; initia
         </AlertDialogContent>
       </AlertDialog>
     </form>
+  )
+}
+
+/**
+ * Wybór Wykonawcy dla adresu nieznanego nadawcy z widoku Raporty: wybór Wykonawcy z listy zapisuje adres od razu, jak
+ * każdy pojedynczy wybór Ustawień, z „Zapisano · Cofnij”; „Nowy Wykonawca” otwiera formularz z wpisanym adresem.
+ * Adres, który ma już inny Wykonawca, wraca zdaniem serwera pod wyborem.
+ */
+function AssignAddress({
+  address,
+  workers,
+  onNew,
+  onDone,
+}: {
+  address: string
+  workers: ReadonlyArray<ListedWorker>
+  onNew: () => void
+  onDone: () => void
+}) {
+  const { sectionSaved } = useSettings()
+  const [busy, setBusy] = React.useState(false)
+  const [refusal, setRefusal] = React.useState<string | null>(null)
+
+  const options = [
+    ...workers.map((worker) => ({ value: firstLogin(worker), label: worker.name })),
+    { value: NEW_WORKER, label: "Nowy Wykonawca" },
+  ]
+
+  function choose(login: string) {
+    if (login === NEW_WORKER) {
+      onNew()
+
+      return
+    }
+
+    setBusy(true)
+    setRefusal(null)
+    void assignWorkerAddress(login, address)
+      .then((choice) => {
+        sectionSaved(choice)
+        onDone()
+      }, (failure: Error) => setRefusal(failureMessage(failure)))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div role="group" aria-label="Przypisz adres" className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
+          <span className="text-sm font-medium">Przypisz adres do Wykonawcy</span>
+          <span className="text-sm break-all text-muted-foreground">{address}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {busy ? <Spinner aria-label="Zapisuję" /> : null}
+          <Select
+            items={options}
+            value={null}
+            disabled={busy}
+            onValueChange={(next) => {
+              const chosen = options.find((option) => option.value === next)
+
+              if (chosen !== undefined) {
+                choose(chosen.value)
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Wykonawca" className="w-52 max-w-full">
+              <SelectValue placeholder="Wybierz Wykonawcę" />
+            </SelectTrigger>
+            <SelectContent className="w-auto min-w-(--anchor-width)">
+              <SelectGroup>
+                {options.slice(0, -1).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectGroup className={workers.length === 0 ? undefined : "border-t"}>
+                <SelectItem value={NEW_WORKER}>
+                  <PlusIcon aria-hidden />
+                  Nowy Wykonawca
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" onClick={onDone}>
+            Anuluj
+          </Button>
+        </div>
+      </div>
+      {refusal === null ? null : <FieldSentence>{refusal}</FieldSentence>}
+    </div>
+  )
+}
+
+/**
+ * Loginy z ostatnich zleceń Rejestru zleceń, których nie ma na liście, od najczęstszego, każdy z „Dodaj Wykonawcę”,
+ * które otwiera formularz z wpisanym loginem; po zapisie serwer już go nie podpowiada. Niewskazany albo nieczytelny
+ * Rejestr to zdanie serwera, a bez nowych loginów sekcja niczego nie pokazuje. Czyta się od nowa po każdej zmianie
+ * Ustawień.
+ */
+function Suggestions({ adding, add }: { adding: string | null; add: (login: string) => void }) {
+  const { resource, reload } = useResource(getWorkerSuggestions, [])
+
+  useReloadOnChange(reload)
+
+  if (resource.state !== "ready") {
+    return null
+  }
+
+  const found = resource.data
+
+  switch (found.state) {
+    case "not_set":
+    case "unreadable":
+      return <p className="text-sm text-pretty text-muted-foreground">{found.message}</p>
+    case "read":
+      return found.suggestions.length === 0 ? null : (
+        <section aria-label="Nowe loginy" className="flex flex-col gap-2">
+          <p aria-hidden className="px-1 text-xs font-medium text-muted-foreground">
+            Z ostatnich zleceń, spoza listy
+          </p>
+          <SettingsPanel label="Nowe loginy">
+            {found.suggestions.map((suggestion) => (
+              <SuggestionRow
+                key={suggestion.login}
+                suggestion={suggestion}
+                adding={adding === suggestion.login}
+                add={() => add(suggestion.login)}
+              />
+            ))}
+          </SettingsPanel>
+        </section>
+      )
+    default: {
+      const unhandled: never = found.state
+
+      return unhandled
+    }
+  }
+}
+
+function SuggestionRow({ suggestion, adding, add }: { suggestion: WorkerSuggestion; adding: boolean; add: () => void }) {
+  return (
+    <div role="listitem" aria-label={suggestion.login} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="flex min-w-0 flex-1 basis-40 flex-col gap-0.5">
+        <span className="text-sm font-medium break-all">{suggestion.login}</span>
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {suggestion.orders} {plural(suggestion.orders, { one: "zlecenie", few: "zlecenia", many: "zleceń" })}
+        </span>
+      </div>
+      <Button variant="outline" size="sm" aria-label={`Dodaj Wykonawcę: ${suggestion.login}`} disabled={adding} onClick={add}>
+        Dodaj Wykonawcę
+      </Button>
+    </div>
   )
 }
 

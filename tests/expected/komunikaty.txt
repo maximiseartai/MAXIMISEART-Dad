@@ -1401,6 +1401,12 @@ worker_unknown [zdanie]
 worker_list_changed [zdanie]
   Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz.
 
+worker_suggestions_not_set [zdanie]
+  Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń.
+
+worker_suggestions_unreadable [zdanie]
+  Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź Rejestr w sekcji Foldery.
+
 worker_rename_old_files #1 [zdanie]
   Rozliczenie pracownika ze starą nazwą jest już w okresie 08_14_09_2026. Ten plik zostanie ze starą nazwą, a nowa będzie w plikach następnych Przebiegów rozliczeń.
 

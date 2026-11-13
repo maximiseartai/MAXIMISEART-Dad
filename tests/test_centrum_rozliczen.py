@@ -35,7 +35,7 @@ import pytest
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
-from rozliczenia import efenix_process
+from rozliczenia import efenix_process, intermax_messages
 from rozliczenia.centrum import app, diagnosis_messages
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
@@ -72,7 +72,9 @@ from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
+from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
@@ -101,8 +103,17 @@ from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_list
+from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
+from atrapy.workbooks import rewrite_parts
 from atrapy.skrzynka_raportow import AtrapaImap
-from atrapy.preparation import REGISTER_HEADERS, RegisterRow, register_order, write_collective_template, write_register
+from atrapy.preparation import (
+    OLD_REGISTER_HEADERS,
+    REGISTER_HEADERS,
+    RegisterRow,
+    register_order,
+    write_collective_template,
+    write_register,
+)
 
 import export_openapi
 
@@ -2272,6 +2283,145 @@ def test_tata_dodaje_wykonawce_a_adres_innego_wykonawcy_i_nazwa_na_ten_sam_plik_
     )
     assert centrum_.tool.worker_list.read_bytes() == file_after_add
     assert len(history_rows_of(client)) == 1
+
+
+WORKER_SUGGESTIONS_API = f"{WORKERS_API}/suggestions"
+
+
+def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_znika_po_dodaniu_wykonawcy(
+    tmp_path: Path,
+) -> None:
+    """US 24: login z ``WYKONAWCA`` uporządkowanych zleceń bieżącego okresu i 4 poprzednich (okresy, które Tablica okresów
+    pokazuje od razu), którego nie ma żaden Wykonawca, także Nieaktywny i także jako drugi login, ani sprawa „login bez
+    Wykonawcy”, jest podpowiedzią z liczbą tych zleceń, od najczęstszej; login tylko ze starszych zleceń i zlecenie z
+    pustym ``WYKONAWCA`` nie są (D2 #1650 r1). Odpowiedź ma sam login
+    i liczbę, bez treści Rejestru, a odczyt niczego nie zapisuje. Po dodaniu Wykonawcy z loginem podpowiedzi podpowiedź
+    znika."""
+
+    # Dziś (TODAY) jest środa 16.09.2026 w okresie od wtorku 15.09, więc 4 poprzednie okresy zaczynają się we wtorek 18.08.
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    orders = [
+        ("stary.login", datetime(2026, 8, 17, 10)),
+        ("brzeg.okna", datetime(2026, 8, 18, 10)),
+        ("adrian.testowy", datetime(2026, 9, 8, 9)),
+        ("kamil.syntetyczny", datetime(2026, 9, 8, 10)),
+        ("kamil.drugi", datetime(2026, 9, 8, 10, 30)),
+        ("Nowy.Login", datetime(2026, 9, 8, 11)),
+        ("", datetime(2026, 9, 8, 12)),
+        ("sprawa.login", datetime(2026, 9, 9, 9)),
+        ("nowy.login ", datetime(2026, 9, 9, 10)),
+    ]
+    write_register(
+        register, [register_order(number, started, worker=login) for number, (login, started) in enumerate(orders, start=1)]
+    )
+    centrum_ = settling_centrum(tmp_path, register=register)
+    client = centrum_.client
+    address = SenderAddress.of("sprawa@przyklad.invalid")
+    assert address is not None
+    with_case = WorkerList.of(
+        [
+            WorkerEntry([login, "kamil.drugi"] if login == "kamil.syntetyczny" else [login], name)
+            for login, name in SETTLEMENT_WORKERS.items()
+        ],
+        [UnmatchedLogin(Login("sprawa.login"), (address,))],
+    )
+    assert isinstance(with_case, WorkerList), with_case
+    write_worker_list(centrum_.tool.worker_list, with_case)
+    assert client.put(f"{WORKERS_API}/kamil.syntetyczny/switches", json={"active": False}).status_code == 200
+    listed_before = centrum_.tool.worker_list.read_bytes()
+
+    first = client.get(WORKER_SUGGESTIONS_API)
+    listed_after_read = centrum_.tool.worker_list.read_bytes()
+    added = client.post(WORKERS_API, json=worker_form(["nowy.login"], "Nowy Login"))
+    second = client.get(WORKER_SUGGESTIONS_API)
+
+    assert (first.status_code, first.json()) == (
+        200,
+        {
+            "state": "read",
+            "suggestions": [{"login": "nowy.login", "orders": 2}, {"login": "brzeg.okna", "orders": 1}],
+            "message": None,
+        },
+    )
+    assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
+    assert added.status_code == 200, added.json()
+    assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+# Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.
+NO_ORDER_SHEET = intermax_messages.no_order_sheet(Path(REGISTER_NAME)).what
+
+
+def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
+    """Arkusz zleceń, którego wierszy nie da się rozdzielić przy czytaniu od dołu (komentarz pod ostatnim wierszem)."""
+
+    rewrite_parts(
+        register_of(centrum_.tmp_path),
+        lambda name, data: data.replace(b"</sheetData>", b"<!-- x --></sheetData>") if name.startswith("xl/worksheets/") else data,
+    )
+
+
+@pytest.mark.parametrize(
+    ("register", "damage", "state", "message"),
+    [
+        pytest.param(None, None, "not_set", settings_messages.worker_suggestions_not_set(), id="bez-rejestru"),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_of(centrum_.tmp_path).unlink(),
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="rejestru-nie-ma",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_of(centrum_.tmp_path).write_bytes(b"to nie jest skoroszyt"),
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="nie-skoroszyt",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: register_without_order_sheets(centrum_),
+            "unreadable",
+            NO_ORDER_SHEET,
+            id="rejestr-bez-arkuszy-zlecen",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: write_orders(register_of(centrum_.tmp_path), ["nowy.login"], OLD_REGISTER_HEADERS),
+            "unreadable",
+            NO_ORDER_SHEET,
+            id="starszy-uklad-bez-obszaru-wklejania",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            _register_unreadable_rows,
+            "unreadable",
+            settings_messages.worker_suggestions_unreadable(),
+            id="wiersze-nie-do-rozdzielenia",
+        ),
+    ],
+)
+def test_bez_wskazanego_albo_czytelnego_rejestru_sekcja_wykonawcy_mowi_zdaniem_dlaczego_nie_ma_podpowiedzi(
+    tmp_path: Path,
+    register: list[str] | None,
+    damage: Callable[[SettlingCentrum], None] | None,
+    state: str,
+    message: str,
+) -> None:
+    """US 24, W2 #1577 r1: niewskazany Rejestr zleceń albo Rejestr, którego nie da się przeczytać, to zdanie dla taty w
+    sekcji Wykonawcy, a nie pusta lista, która wygląda jak „brak nowych loginów”. Rejestr bez obszaru wklejania (bez
+    arkusza zleceń albo w starszym układzie bez AKCJE i UWAGI, z którego Przebieg czyta loginy) ma zdanie „Co się
+    stało” tego samego Komunikatu, którym zatrzymują się na nim procesy wklejania (D1 #1650 r1)."""
+
+    centrum_ = settling_with_register(tmp_path, register)
+    if damage is not None:
+        damage(centrum_)
+
+    answer = centrum_.client.get(WORKER_SUGGESTIONS_API)
+
+    assert (answer.status_code, answer.json()) == (200, {"state": state, "suggestions": [], "message": message})
 
 
 def history_rows_of(client: CentrumClient) -> list[dict[str, Any]]:

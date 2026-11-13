@@ -46,8 +46,8 @@ def reason(problem: ReportProblem) -> str:
             )
         case UnknownSender(day=day):
             return (
-                f"Raport wykonawcy z {_day(day)} przyszedł z adresu spoza listy adresów Wykonawców, więc Centrum go nie "
-                "wpisało. Powiedz Maksowi, czyj to adres."
+                f"Raport wykonawcy z {_day(day)} przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum "
+                "go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze."
             )
         case MissingVerdict(worker=worker, day=day, number=number, fault=fault):
             return f"Wpis zlecenia {number} od {worker} z {_day(day)} {_verdict(fault)}, więc Centrum go nie wpisało."
