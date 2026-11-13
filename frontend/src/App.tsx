@@ -7,7 +7,7 @@ import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { useHash } from "@/lib/address"
+import { useHash, useSettingsAddress } from "@/lib/address"
 import { DadNoteProvider } from "@/lib/dad-note"
 import { RunsProvider } from "@/lib/runs"
 import { NotificationsProvider } from "@/lib/notifications"
@@ -25,6 +25,10 @@ const LAYOUT = {
 export function App() {
   const page = useCurrentPage()
   const address = useHash()
+  const settings = useSettingsAddress()
+  // Karta otwarta od razu na oknie Ustawień: stronę pod nim zasłania okno, więc mierzy się tylko okno, które czyta
+  // te same zapytania. Strona pod spodem mierzy się od pierwszego przejścia na inny adres.
+  const [coldUnder] = React.useState(() => (settings === null ? null : address))
   const [closed, setClosed] = React.useState(false)
 
   if (closed) {
@@ -49,7 +53,7 @@ export function App() {
                 </CurrentPage>
                 {/* Każdy adres strony to osobny widok, także w jej obrębie (`#/uzupelnienie/<okres>/<rodzaj>`); okno
                     Ustawień nad stroną nie zmienia jej adresu i mierzy się samo. */}
-                <ViewTiming key={address} page={page} />
+                {address === coldUnder ? null : <ViewTiming key={address} page={page} />}
               </div>
             </SidebarInset>
           </SidebarProvider>

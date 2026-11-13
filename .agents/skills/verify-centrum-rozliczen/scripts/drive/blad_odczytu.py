@@ -126,6 +126,7 @@ def _retry_in_flight(run: Run, page: Page) -> None:
     held: list[Route] = []
     page.route("**/api/configuration", lambda route: route.abort())
     try:
+        close_settings(page)
         page.get_by_role("link", name="Okresy", exact=True).click()
         _via_settings(page, "Wykonawcy")()
         failure = _failure(page, "ustawień")

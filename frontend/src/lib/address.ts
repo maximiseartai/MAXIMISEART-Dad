@@ -63,28 +63,32 @@ function redirectOldConfiguration() {
   }
 }
 
+// Przekierowanie przed pierwszym odczytem adresu i przy każdej zmianie adresu; `replaceState` nie wywołuje
+// `hashchange`, więc React czyta już adres okna.
 redirectOldConfiguration()
 
+window.addEventListener("hashchange", redirectOldConfiguration)
+
+let seen = window.location.hash
 let address = read(null)
-const listeners = new Set<() => void>()
 
-function update() {
-  redirectOldConfiguration()
-
-  const next = read(address)
-
-  if (next.page !== address.page || next.settings !== address.settings || next.fromPage !== address.fromPage) {
-    address = next
-    listeners.forEach((listener) => listener())
+/**
+ * Adres liczony przy odczycie, gdy `location.hash` się zmienił: słuchacze `hashchange` rejestruje React, więc pomiar
+ * widoku (`view-timing.ts`, słuchacz z ładowania modułu) zawsze pierwszy zapisuje start przejścia.
+ */
+function current(): Address {
+  if (window.location.hash !== seen) {
+    seen = window.location.hash
+    address = read(address)
   }
+
+  return address
 }
 
-window.addEventListener("hashchange", update)
-
 function subscribe(onChange: () => void) {
-  listeners.add(onChange)
+  window.addEventListener("hashchange", onChange)
 
-  return () => listeners.delete(onChange)
+  return () => window.removeEventListener("hashchange", onChange)
 }
 
 /**
@@ -92,7 +96,7 @@ function subscribe(onChange: () => void) {
  * Wstecz w przeglądarce, a otwarcie i zamknięcie okna Ustawień go nie zmienia, więc strona pod oknem zostaje.
  */
 export function useHash(): string {
-  return React.useSyncExternalStore(subscribe, () => address.page)
+  return React.useSyncExternalStore(subscribe, () => current().page)
 }
 
 /** Człony adresu za identyfikatorem strony: `#/uzupelnienie/06_12_10_2026` → `["06_12_10_2026"]`. */
@@ -104,7 +108,7 @@ export function usePagePath(): ReadonlyArray<string> {
 
 /** Człon sekcji z adresu okna Ustawień (`""`, gdy adres jej nie ma) albo `null`, gdy okno jest zamknięte. */
 export function useSettingsAddress(): string | null {
-  return React.useSyncExternalStore(subscribe, () => address.settings)
+  return React.useSyncExternalStore(subscribe, () => current().settings)
 }
 
 /** Adres okna Ustawień na sekcji `section`; bez niej okno otwiera się na pierwszej sekcji. */
@@ -119,9 +123,11 @@ export function showSection(section: string) {
 
 /** Zamyka okno Ustawień i zostawia stronę pod spodem: „Wstecz”, gdy okno otwarto z tej karty, inaczej adres tej strony. */
 export function closeSettings() {
-  if (address.fromPage) {
+  const { page, fromPage } = current()
+
+  if (fromPage) {
     window.history.back()
   } else {
-    window.location.replace(address.page === "" ? "#/" : address.page)
+    window.location.replace(page === "" ? "#/" : page)
   }
 }
