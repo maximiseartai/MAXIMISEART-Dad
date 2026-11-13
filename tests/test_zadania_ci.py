@@ -18,6 +18,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tomllib
 from typing import Any
 
 import pytest
@@ -216,8 +217,9 @@ def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zalez
     ``uv pip sync``, ``pip3 install``, ``uv run --with-requirements``, glob ``*.txt`` ani w akcji złożonej, którą woła.
     Granica jest listą dozwolonych: każde słowo zadania, środowiska workflowu i akcji złożonych, które nazywa plik
     zależności albo jako glob trafia w taki plik repozytorium, jest ścieżką z ``Context.SKILL_STEPS``, a inne, także
-    nieznana forma, kończą test. Plik, który czyta skrypt wołany z kroku (``tools/ci/``), i nazwa składana w czasie runu
-    zostają recenzji."""
+    nieznana forma, kończą test. Pliki, które czyta instalator projektu (``-e ".[dev]"``), pilnuje
+    ``test_instalacja_projektu_bierze_zaleznosci_tylko_z_pyproject``. Plik, który czyta skrypt wołany z kroku
+    (``tools/ci/``), i nazwa składana w czasie runu zostają recenzji."""
 
     allowed = set(Context.SKILL_STEPS.paths())
     dependency_files = {path.relative_to(ROOT).as_posix() for path in (*ROOT.glob("*"), *ROOT.glob("*/*")) if DEPENDENCY_NAME.search(path.name)}
@@ -236,6 +238,21 @@ def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zalez
     }
 
     assert mentioned == dict.fromkeys(SKILL_STEP_JOBS, [])
+
+
+def test_instalacja_projektu_bierze_zaleznosci_tylko_z_pyproject() -> None:
+    """Zadanie kroków skilli instaluje ``-e ".[dev]"``, więc setuptools czyta jeszcze ``setup.py``, ``setup.cfg`` i pliki
+    z ``[tool.setuptools.dynamic]``: lista zależności z ``requirements.txt`` przez ``dynamic`` zmieniałaby biblioteki
+    kroków skilli, których zmiana tego pliku nie wybiera (Z9, przegląd #1583 r2). Zależności stoją więc w samym
+    ``pyproject.toml`` (``Context.SKILL_STEPS``), a ``dynamic`` i pliki konfiguracji setuptools obok niego kończą test."""
+
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert config["build-system"]["build-backend"] == "setuptools.build_meta"
+    assert "pyproject.toml" in Context.SKILL_STEPS.paths()
+    assert "dynamic" not in config["project"]
+    assert "dynamic" not in config.get("tool", {}).get("setuptools", {})
+    assert [name for name in ("setup.py", "setup.cfg") if (ROOT / name).exists()] == []
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)
