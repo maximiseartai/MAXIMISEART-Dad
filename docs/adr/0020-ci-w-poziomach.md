@@ -16,6 +16,11 @@ E2E i straż czasu, które biegły na nim, biegną na Windows 3.13, Pythonie tat
 Bramka PR też się nie zmienia, bo Windows 3.14 nigdy na niej nie biegł (poziom 2).
 W runach pushu do `main` od 2.11 do 12.11 (379 runów, pomiar bazy hillclimbu CI) tor Windows 3.14 miał 654 zadania i 149 runner-godzin, a 23 jego zadania padły; 16 runów było czerwonych tylko przez niego, każdy przez jedno zadanie, a tor wracał do zieleni najpóźniej w drugim kolejnym runie `main`.
 Defekt tylko z Windows i Pythonem 3.14 CI pokaże dopiero wtedy, gdy tata przejdzie na 3.14, a z nim tor Windows i `requires-python`.
+Zmieniona 13.11 (Z6, zgoda Maksa): run pushu do `main` bierze najwyżej 25 zadań zamiast 20 (`ZADANIA_RUNU_MAIN` w `tools/plan_ci.py`), a noc zostaje przy 20 (`ZADANIA_RUNU_NOCY`, ADR 0021).
+Po Z1 i Z2 ścianę pełnego CI `main` trzyma ten limit: plan pushu na czasach runów `main` 43273944234, 43275471483 i 43284572897 ma cel 530 s przy 20 zadaniach, 395 s przy 25, 330 s przy 30 i 255 s przy 40, a pierwszy run po Z2 (43469203986) doszedł do `Required CI status` w 533 s.
+Symulacja na merge'ach i zadaniach organizacji z 2–12.11 (runy `main` po kolei, jak w grupie współbieżności) daje strażnikowi `main` (merge → pełny werdykt) p90 15,8 min przy 20 zadaniach, 11,3 przy 25, 9,1 przy 30 i 6,9 przy 40; ten sam model z runem 23,1 min z bazy hillclimbu daje p90 42,7 min wobec zmierzonych 41,8.
+Czasu, w którym organizacja chciałaby więcej niż 60 zadań naraz, przybywa wobec 20 o 9 min w 11 dniach przy 25, 56 przy 30 i 96 przy 40, a zadanie `ci.yml` utworzone, gdy biegło 40–59 zadań, czekało w kolejce p50 13–22 s.
+25 daje połowę skrócenia, które dałoby 40, przy jednej dziesiątej dodatkowej kolejki, a powyżej 25 każde zadanie skraca cel coraz mniej (20 → 25: 27 s na zadanie, 25 → 30: 13 s, 30 → 40: 7,5 s).
 
 ## Kontekst
 
