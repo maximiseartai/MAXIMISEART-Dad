@@ -502,13 +502,14 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
     (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
 
-    Test, który czyta plik spod ``tests/``, jest więc wybierany tylko, gdy graf widzi jego ścieżkę, a graf widzi ją tylko
-    jako napis albo wyrażenie z literałów (``sciezki_w_kodzie``) w pliku testu i w modułach, które test importuje. Nie
-    widzi fixture z ``tests/conftest.py`` ani z modułu z ``pytest_plugins``, bo test bierze ją po nazwie parametru, a nie
-    importem (``def test_x(oczekiwany)``, choć fixture czyta ``Path("tests/expected/a.txt")``). Ścieżkę liczoną w czasie
-    testu (``os.walk`` katalogu, liczona część w ``os.path.join`` albo po ``Path(__file__)``) widzi tylko w części form.
-    Taki test wypada z wyboru na pull request i łapie go dopiero CI ``main``; próbki granicy stoją w
-    ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu``."""
+    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request wtedy, gdy w pliku testu albo w module,
+    który test importuje, stoi ścieżka tego pliku jako napis albo wyrażenie z samych literałów (``sciezki_w_kodzie``),
+    a ten tekst po zamianie ``\\`` na ``/`` jest równy ścieżce pliku od korzenia repozytorium albo jej końcowi
+    (``_files_named``). Gwarancja obejmuje tylko ten przypadek: przy każdej innej drodze do pliku (``./`` albo ``../`` na
+    początku, ścieżka bezwzględna, fixture z ``tests/conftest.py`` albo z ``pytest_plugins``, które test bierze po nazwie
+    parametru, ścieżka liczona w czasie testu) test może wypaść z wyboru, a łapie go dopiero pełne CI ``main``
+    (ADR 0020). Przykłady takich dróg stoją w ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu``; to
+    próbki, nie pełna lista."""
 
     packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)

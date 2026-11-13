@@ -180,19 +180,21 @@ TEST_TAKING_FIXTURE = "def test_x(oczekiwany: str) -> None:\n    assert oczekiwa
             "tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    n = 'a'\n"
             "    assert (Path(__file__).parent / 'expected' / f'{n}.txt').read_text()\n"
         },
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('./tests/expected/a.txt').read_text()\n"},
     ],
     ids=[
         "fixture z tests/conftest.py",
         "fixture z modułu w pytest_plugins",
         "os.walk katalogu",
         "liczona nazwa pliku po Path(__file__)",
+        "napis z ./ na początku",
     ],
 )
 def test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
-    """Granica wyboru z docstringu ``_package_data``: graf widzi ścieżkę pliku spod ``tests/`` tylko jako napis albo
-    wyrażenie z literałów w pliku testu i w modułach, które test importuje. Fixture test bierze po nazwie parametru,
-    a ścieżkę liczoną w czasie testu graf widzi tylko w części form. Ten test pada, gdy graf zacznie którąś próbkę
-    widzieć; wtedy przenieś ją do ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy`` i zmień docstring."""
+    """Próbki dróg do pliku spod ``tests/`` poza gwarancją z docstringu ``_package_data`` (napis albo wyrażenie z samych
+    literałów równe ścieżce od korzenia repozytorium albo jej końcowi, w pliku testu albo w module, który test importuje).
+    To nie pełna lista. Ten test pada, gdy graf zacznie którąś próbkę widzieć; wtedy przenieś ją do
+    ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy``."""
 
     repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
 
