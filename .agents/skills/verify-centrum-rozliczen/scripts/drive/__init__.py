@@ -65,6 +65,9 @@ FEATURES = (
             "309-ustawienia-historia-waska",
             "310-ustawienia-odmowa-przy-polu",
             "311-ustawienia-odmowa-waska",
+            "312-ustawienia-zle-pole",
+            "313-ustawienia-zly-plik",
+            "314-ustawienia-historia-bez-cofniecia",
         ),
     ),
     Feature(

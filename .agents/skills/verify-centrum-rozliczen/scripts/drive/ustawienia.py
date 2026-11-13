@@ -231,6 +231,8 @@ def drive(run: Run, page: Page) -> None:
     _saved_and_undo(run, page)
     _history(run, page)
     _refusal_at_field(run, page)
+    _typed_keeps_other(run, page)
+    _bad_settings_file(run, page)
 
 
 def _toast(page: Page, title: str) -> Locator:
@@ -346,16 +348,93 @@ def _refusal_at_field(run: Run, page: Page) -> None:
     expect(register.get_by_role("alert")).to_have_text(sentence)
     run.check(run.settings_text() == before, "a wrong file from the picker is refused under its field, not saved")
 
-    pasted = f'"{run.fixture["order_register"]}"'
-    register.get_by_role("button", name="Wpisz Rejestr zleceń", exact=True).click()
-    register.get_by_role("textbox", name="Ścieżka: Rejestr zleceń", exact=True).fill(pasted)
-    register.get_by_role("button", name="Zapisz Rejestr zleceń", exact=True).click()
-    expect(register.get_by_role("textbox")).to_have_count(0)
-    expect(register.get_by_role("alert")).to_have_count(0)
+    close_settings(page)
+
+
+def _typed_keeps_other(run: Run, page: Page) -> None:
+    """„Wpisz” saves the one path typed: the other path stays as it was, and quotes from Explorer go."""
+
+    run.step(FEATURE, "ustawienia-wpisz-druga-bez-zmiany")
+    window = open_settings(page, "Foldery")
+    register_path, periods_path = run.fixture["order_register"], run.fixture["periods_directory"]
+    # Dad pastes each path as Explorer copies it, in quotes; it is the path already remembered.
+    for title, key, path, other, kept in (
+        ("Rejestr zleceń", "rejestr_zlecen", register_path, "folder_okresow", periods_path),
+        ("Folder okresów", "folder_okresow", periods_path, "rejestr_zlecen", register_path),
+    ):
+        row = window.get_by_role("listitem", name=title)
+        row.get_by_role("button", name=f"Wpisz {title}", exact=True).click()
+        row.get_by_role("textbox", name=f"Ścieżka: {title}", exact=True).fill(f'"{path}"')
+        row.get_by_role("button", name=f"Zapisz {title}", exact=True).click()
+        # The field closes once the server has saved.
+        expect(row.get_by_role("textbox")).to_have_count(0)
+        expect(row.get_by_role("alert")).to_have_count(0)
+        run.check(run.remembered(key) == path, f"a {title} pasted from Explorer in quotes is saved without them")
+        run.check(run.remembered(other) == kept, f"typing the {title} leaves the other path ({other}) as it was")
+    close_settings(page)
+
+
+def _bad_settings_file(run: Run, page: Page) -> None:
+    """A wrong setting in the settings file stands as the server's one sentence: under its field, or above the list
+    Foldery for the whole file; Historia shows each such content without „Cofnij”, and the good file comes back."""
+
+    run.step(FEATURE, "ustawienia-zle-ustawienie")
+    settings = Path(run.fixture["settings"])
+    good = run.settings_text() or ""
+    window = open_settings(page, "Foldery")
+    folders = window.get_by_role("list", name="Foldery")
+    register = folders.get_by_role("listitem", name="Rejestr zleceń")
+    periods = folders.get_by_role("listitem", name="Folder okresów")
+    # Harness: Maks writes a relative folder okresów into the settings file by hand.
+    put_text(settings, good.replace(run.fixture["periods_directory"], "INEA"))
+    page.reload()
+    problem = run.api("/api/settings", "ustawienia-zle-pole")["folders_problem"]
+    assert isinstance(problem, dict)
+    run.check(problem["field"] == "folder_okresow", f"the server names the wrong field ({problem['field']})")
+    expect(periods.get_by_role("alert")).to_have_text(problem["message"])
+    expect(window.get_by_role("alert")).to_have_count(1)
+    run.check(True, "a wrong folder okresów in the file is the server's one sentence under its field, nowhere else")
+    run.capture(page, "312-ustawienia-zle-pole", full_page=False)
+
+    # Harness: the settings file loses its end (a copy cut off), so no field is to blame.
+    put_text(settings, "schema_version: [\n")
+    page.reload()
+    problem = run.api("/api/settings", "ustawienia-zly-plik")["folders_problem"]
+    assert isinstance(problem, dict)
+    run.check(problem["field"] is None, f"a damaged file names no field ({problem['field']})")
+    sentence = window.get_by_role("alert")
+    expect(sentence).to_have_text(problem["message"])
+    expect(folders.get_by_role("alert")).to_have_count(0)
+    above, below = sentence.bounding_box(), folders.bounding_box()
+    assert above is not None and below is not None
+    run.check(above["y"] + above["height"] <= below["y"], "the sentence about the whole file stands above the list Foldery")
+    run.capture(page, "313-ustawienia-zly-plik", full_page=False)
+
+    run.step(FEATURE, "ustawienia-historia-bez-cofniecia")
+    window.get_by_role("link", name="Historia", exact=True).click()
+    rows = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
+    history = run.api("/api/settings/history", "ustawienia-historia-bez-cofniecia")["rows"]
+    assert isinstance(history, list)
+    expect(rows).to_have_count(len(history))
+    refused = [index for index, row in enumerate(history) if row["refused"]]
     run.check(
-        run.remembered("rejestr_zlecen") == run.fixture["order_register"],
-        "a path pasted from Explorer in quotes is saved without them",
+        refused[:2] == [0, 1] and not any(history[index]["undoable"] for index in refused),
+        "the server's Historia has both wrong contents on top, neither of them undoable",
     )
+    for index in refused:
+        expect(rows.nth(index)).to_contain_text("Nie przyjęto")
+        expect(rows.nth(index).get_by_role("button")).to_have_count(0)
+    undoable = next(index for index, row in enumerate(history) if row["undoable"])
+    expect(rows.nth(undoable).get_by_role("button")).to_have_text("Cofnij")
+    run.check(True, "a row of Historia that cannot be undone has no „Cofnij”, while a change of Dad's has")
+    run.capture(page, "314-ustawienia-historia-bez-cofniecia", full_page=False)
+
+    put_text(settings, good)
+    window.get_by_role("link", name="Foldery", exact=True).click()
+    page.reload()
+    expect(register.get_by_text(Path(run.fixture["order_register"]).name, exact=True)).to_be_visible()
+    expect(window.get_by_role("alert")).to_have_count(0)
+    run.check(run.api("/api/settings", "ustawienia-dobry-plik")["folders_problem"] is None, "the good file is back")
     close_settings(page)
 
 
