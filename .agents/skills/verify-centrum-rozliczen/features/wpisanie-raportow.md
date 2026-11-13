@@ -3,7 +3,7 @@
 Dad clicks `Wpisz raporty z maili`, the one main button in the header of Raporty, and `tak`/`nie` and the activities
 from the Raporty wykonawców go into empty cells of INTERMAX (ADR 0028). Uruchomienia have no card of it (Maks's decision
 of 11.11.2026, #1321), but they still show the Uruchomienie live and its result with `Otwórz Raporty`. Raporty set
-INTERMAX (`Wskaż INTERMAX`/`Zmień INTERMAX` in one quiet line), turn the button off at a blocker from the server, and
+INTERMAX (in one quiet line, with `Ustaw w Ustawieniach` while it is not set), turn the button off at a blocker from the server, and
 read the view again by themselves when the Wpisanie ends. The button is off while any Uruchomienie procesu runs. The
 view Raporty is the result of the last click, read from its file and not from the mailbox: the server gives the whole
 window of the click (each day with its holiday, each Wykonawca with his days and the orders of each day as INTERMAX has
@@ -21,7 +21,7 @@ once and does not come back at the next click.
 ## Sub-features
 
 - `bez-karty-w-uruchomieniach`: the setup of Uruchomienia has region `Uporządkuj INTERMAX` and no region or button `Wpisz raporty z maili`.
-- `przycisk`: with the folder okresów set and `Wskaż INTERMAX`/`Zmień INTERMAX` of group `INTERMAX` on Raporty pointed to the fixture's INTERMAX of `wpisanie-raportow`, the header has the enabled button `Wpisz raporty z maili`, group `INTERMAX` names the file, no alert stands under the header; `GET /api/report-entering` has no `blocker` and no `open_in_excel`.
+- `przycisk`: with the folder okresów set and the Rejestr zleceń pointed in Foldery of Ustawienia, over Raporty, to the fixture's INTERMAX of `wpisanie-raportow`, the header has the enabled button `Wpisz raporty z maili`, group `INTERMAX` names the file, no alert stands under the header; `GET /api/report-entering` has no `blocker` and no `open_in_excel`.
 - `w-czasie-innego`: harness: the Uruchomienia stream shows a Uporządkowanie INTERMAX that runs; the button `Wpisz raporty z maili` is off with no alert under the header, and on again once the stream shows no Uruchomienie running.
 - `widok-przed-kliknieciem`: the page `Raporty` is on today 19.10.2026 (`today` of `GET /api/report-entering/view`, and the day in its `days` without a holiday); before any click it says `Jeszcze nie ma Raportów` and `Kliknij „Wpisz raporty z maili” powyżej.`.
 - `blokada`: harness: Excel's lock file next to INTERMAX; at Dad's return to the window the button is off and an alert under the header says INTERMAX `jest otwarty w Excelu` with the lock file's name (`open_in_excel`); without the lock file the button is on again and the alert is gone.
@@ -48,8 +48,8 @@ Preconditions:
 - `fixture.json` → `report_entering`: `register` (INTERMAX with ordered orders of 19.10.2026: `40000101` and `40000102` of `wykonawca.a`, `40000103` of `wykonawca.b` with `montaż ręcznie` in `CZYNNOŚCI ZREALIZOWANE`), `mails` (a Raport of each of them for 19.10 and one from `obcy@przyklad.invalid`), `stranger`.
 - The fixture's "today" is Monday 19.10.2026, so the first click's window is that day only.
 
-- **No card.** When `GET /api/settings` has no folder okresów: `#/okresy`, harness answers the picker, `Wskaż folder okresów`. `#/uruchomienia`, `Nowe Uruchomienie procesu` when a result is shown (`api/raporty-uruchomienia.json`); region `Uporządkuj INTERMAX` is there, region and button `Wpisz raporty z maili` are not.
-- **Button.** Menu link `Raporty` and a reload; group `INTERMAX` → `Wskaż INTERMAX`/`Zmień INTERMAX` with `report_entering.register`; the button `Wpisz raporty z maili` inside `main` is enabled; `api/raporty-przycisk.json`. Capture `280`.
+- **No card.** When `GET /api/settings` has no folder okresów: `#/okresy`, `Ustaw w Ustawieniach`, harness answers the picker, `Wskaż Folder okresów`, Esc. `#/uruchomienia`, `Nowe Uruchomienie procesu` when a result is shown (`api/raporty-uruchomienia.json`); region `Uporządkuj INTERMAX` is there, region and button `Wpisz raporty z maili` are not.
+- **Button.** Menu link `Raporty` and a reload; Ustawienia, Foldery → `Wskaż Rejestr zleceń`/`Zmień Rejestr zleceń` with `report_entering.register`, Esc; the button `Wpisz raporty z maili` inside `main` is enabled; `api/raporty-przycisk.json`. Capture `280`.
 - **Before the click.** `api/raporty-widok-przed.json`.
 - **Blocker.** Harness touches the lock file `~$…` of INTERMAX (`excel_lock`) and fires `focus`; `api/raporty-blokada.json`. Capture `285`. Lock file removed, `focus` again.
 - **Click.** The header button → `api/raporty-wynik.json` with the three figures; tiles of the view without a reload; menu link `Uruchomienia`, `Otwórz Raporty` in region `Podgląd na żywo`.
@@ -59,7 +59,7 @@ Preconditions:
 - **Narrow screen.** Viewport 390×844; `document.documentElement.scrollWidth` against its `clientWidth` (the gutter Centrum keeps), the table's container `scrollWidth` against its `clientWidth`, bounding boxes of the header button, group `Zakres dni`, `Wybierz dni w kalendarzu`, `Szukaj Wykonawcy` and `Status`. Capture `284`. Viewport back to 1440×1000.
 - **Range map.** `page.route` on `**/api/report-entering/view` answers the window of `_window_view` (also in `api/raporty-mapa-okno.json`); `#/raporty` and a reload. Column headers are named `<dd>. <DD.MM>` (a holiday adds `, święto: <name>`), a Sunday's cells without orders or problems are `td[data-day=…].niedziela` (a Sunday with orders gets a normal tile); the map without a popover, capture `293`. Popover of `wykonawca.b` 03.11 in the light theme (`288`) and the dark one (`289`), then the popover of `wykonawca.a` 03.11 without a capture, the theme back as it was. Przypomnienia: the popover of `wykonawca.b` 05.11, capture `294`; the popover of `wykonawca.a` 03.11 with the note and the Przypomnienie, capture `295`; the popover of `wykonawca.c` 09.11 with the note of the added order, capture `296`. Arrows by names `Wcześniejsze dni`/`Późniejsze dni`, `page.go_back()`/`go_forward()`. Calendar: `Wybierz dni w kalendarzu` → `dialog "Kalendarz dni"`, a day is `button[data-day="D.MM.RRRR"]`; hover 6 November before the second click, capture `290`. Status: button `Status` → `dialog "Pokaż w widoku"`, a state is the button `<Stan> <dni>` with `aria-pressed`; the dimmed tile has computed `opacity` below 0.5; capture `291`. 390 px as in the narrow screen, capture `292`. Unroute, then `#/raporty` shows `19 paź` again.
 - **Another Uruchomienie.** `page.route` on `**/api/runs/events` answers one event of a running Uporządkowanie INTERMAX (`OTHER_RUN`); reload; capture `287` live (the menu's sign of the run turns); unroute and reload.
-- **Stop.** Harness writes `<root>/INTERMAX/zepsuty/<name of INTERMAX>` with bytes that are no workbook; `Zmień INTERMAX` to it; the header button → `api/raporty-zatrzymanie.json`. Capture `286`. The link `Uruchomieniach` → the stop banner (`stop_banner`). Harness: the Rejestr zleceń from before the feature.
+- **Stop.** Harness writes `<root>/INTERMAX/zepsuty/<name of INTERMAX>` with bytes that are no workbook; `Zmień Rejestr zleceń` in Ustawienia to it; the header button → `api/raporty-zatrzymanie.json`. Capture `286`. The link `Uruchomieniach` → the stop banner (`stop_banner`). Harness: the Rejestr zleceń from before the feature.
 - **Proof.** Screenshots `280`–`296`, `api/raporty-*.json`, `state/` (the Logi), checks in `drive.txt`.
 
 ### Real mailbox (only on the machine with the access file, with Maks's consent)

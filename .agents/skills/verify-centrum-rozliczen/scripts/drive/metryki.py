@@ -21,6 +21,7 @@ from drive.common import (
     local_time,
     move,
     read_text,
+    switch_theme,
 )
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
@@ -392,7 +393,7 @@ def _drive_bar_details(run: Run, page: Page, chart: Locator, phases: list[str], 
     stopped = next(entry for entry in shown if entry["result"] == "BLAD_KRYTYCZNY")
     newest, previous = shown[0], shown[1]
     details = page.get_by_role("tooltip")
-    expect(page.get_by_role("button", name="Włącz motyw jasny", exact=True)).to_be_visible()
+    expect(page.locator("html")).to_have_class(re.compile(r"\bdark\b"))
 
     stopped_bar = chart.get_by_role("button", name=_bar_name(stopped, measured), exact=True)
     stopped_bar.hover()
@@ -436,12 +437,10 @@ def _drive_bar_details(run: Run, page: Page, chart: Locator, phases: list[str], 
     expect(previous_bar).to_be_focused()
     run.check(True, "Tab reaches the newest bar with its details, arrows move between bars, Escape closes them")
 
-    page.get_by_role("button", name="Włącz motyw jasny", exact=True).click()
-    expect(page.get_by_role("button", name="Włącz motyw ciemny", exact=True)).to_be_visible()
+    switch_theme(page, "jasny")
     stopped_bar.hover()
     _expect_details(details, stopped, measured)
     run.capture(page, "29-metryki-wykres-szczegoly-jasny")
     page.mouse.move(4, 4)
-    page.get_by_role("button", name="Włącz motyw ciemny", exact=True).click()
-    expect(page.get_by_role("button", name="Włącz motyw jasny", exact=True)).to_be_visible()
+    switch_theme(page, "ciemny")
     run.check(True, "the bar details read the same in the light theme")
