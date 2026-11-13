@@ -10,7 +10,7 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from windows_drive.common import Run, same_path, wait_for
+from windows_drive.common import Run, close_settings, open_settings, same_path, wait_for
 import windows_desktop
 from rozliczenia.centrum import start_problems
 from atrapy.pliki_taty import SERVICE
@@ -65,13 +65,13 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "karta")
     page.goto(url)
     expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
-    expect(page.get_by_role("button", name="Wskaż folder okresów", exact=True)).to_be_visible()
+    expect(page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", "#/ustawienia/foldery")
     run.capture(page, "pierwszy-start")
-    page.get_by_role("link", name="Konfiguracja", exact=True).click()
-    card = page.get_by_role("region", name="Narzędzie", exact=True)
-    expect(card).to_contain_text(f"Wersja {facts['versions']['first'][:7]}")
-    run.capture(page, "konfiguracja-wersja")
-    page.get_by_role("link", name="Okresy", exact=True).click()
+    version = open_settings(page, "Narzędzie").get_by_role("listitem", name="Wersja narzędzia")
+    expect(version).to_contain_text(facts["versions"]["first"][:7])
+    run.capture(page, "ustawienia-wersja")
+    close_settings(page)
+    expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
 
     run.step(FEATURE, "drugie-klikniecie")
     log_before = len(run.log_lines())

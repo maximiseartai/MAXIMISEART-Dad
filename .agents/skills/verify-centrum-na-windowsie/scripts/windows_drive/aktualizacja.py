@@ -12,7 +12,7 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from windows_drive.common import Run, wait_for
+from windows_drive.common import Run, open_settings, settings_section, wait_for
 from windows_drive.start_skrotem import check_windowless, start_dialogs
 import windows_desktop
 import windows_tool
@@ -61,19 +61,21 @@ def _started_without_console(run: Run, entries: list[str]) -> None:
 
 
 def _click_update(run: Run, page: Page) -> tuple[dict[str, object], int]:
+    """Dad opens Ustawienia with the gear on a freshly loaded tab and clicks the update in the section Narzędzie."""
+
     health = run.health()
     pid = run.centrum_process().pid
-    page.goto(run.url + "#/konfiguracja")
+    page.goto(run.url)
     page.reload()
-    card = page.get_by_role("region", name="Narzędzie", exact=True)
+    section = open_settings(page, "Narzędzie")
     expect(
-        card,
+        section,
         "the button needs the real GitHub API to name a Wydanie the run's clone lacks (ADR 0014, #319); "
         "`Nie sprawdzono` means no network or GitHub's hourly limit",
     ).to_contain_text("Jest nowsza wersja")
-    expect(card.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
+    expect(section.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
     page.evaluate(f"{MARKER} = true")
-    card.get_by_role("button", name=BUTTON, exact=True).click()
+    section.get_by_role("button", name=BUTTON, exact=True).click()
     return health, pid
 
 
@@ -115,9 +117,10 @@ def drive(run: Run, page: Page) -> None:
     run.check(any(" zamkniecie z=aktualizacja" in line for line in entries), "the old Centrum closed itself for the update")
     _stop_before_start(run, entries)
     _started_without_console(run, entries)
-    page.get_by_role("link", name="Konfiguracja", exact=True).click()
-    expect(page.get_by_role("region", name="Narzędzie", exact=True)).to_contain_text(f"Wersja {newest[:7]}")
-    run.capture(page, "konfiguracja-nowa-wersja")
+    # The tab reloads on the address it had, so Ustawienia is open again on Narzędzie.
+    version = settings_section(page).get_by_role("listitem", name="Wersja narzędzia")
+    expect(version).to_contain_text(newest[:7])
+    run.capture(page, "ustawienia-nowa-wersja")
     run.check(start_dialogs() == [], "no native window appeared")
 
     run.step(FEATURE, "nie-wystartowala")
