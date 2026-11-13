@@ -558,6 +558,22 @@ def test_na_pull_request_i_pushu_biegna_same_podstawy_a_noca_same_skrypty_mutacj
     assert decisions["verify-a/ci"][1].startswith(baseline[1]) and decisions[SCRIPT_A][1].startswith(script[1]), decisions
 
 
+@pytest.mark.parametrize(("event", "runs"), [(Zdarzenie.PULL_REQUEST, False), (Zdarzenie.PUSH, True)], ids=["pull-request", "push"])
+def test_zmiana_samego_requirements_nie_wybiera_podstawy_na_pull_request_a_push_do_main_ja_uruchamia(
+    tmp_path: Path, event: Zdarzenie, runs: bool
+) -> None:
+    """Granica Z9 w ``tests/test_zadania_ci.py`` zna tylko część dróg, którymi ``requirements.txt`` mógłby trafić do
+    środowiska kroku skilla, a droga spoza niej omija tylko wybór na PR, bo push do ``main`` uruchamia podstawę zawsze."""
+
+    command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    repo = repository(tmp_path / "repo", {**SKILLS, ".agents/skills/verify-a/SKILL.md": _with_ci("verify-a", command)})
+
+    decisions = _decisions(zakres(event, frozenset({"requirements.txt"}), repo))
+
+    assert "requirements.txt" not in Context.SKILL_STEPS.paths()
+    assert decisions["verify-a/ci"][0] is runs, decisions
+
+
 @pytest.mark.parametrize(
     ("arguments", "event", "changed", "separately", "script"),
     [

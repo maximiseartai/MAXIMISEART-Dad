@@ -212,14 +212,13 @@ def _executed_texts(node: Any) -> Iterator[str]:
 
 
 def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zaleznosci_spoza_krokow_skilli() -> None:
-    """Zmiana pliku zależności spoza ``Context.SKILL_STEPS`` (``requirements.txt``) nie wybiera kroków skilli (Z9), więc
-    zadanie kroków skilli nie może z niego instalować ani go czytać w żadnej formie: ``-r`` w ``uv pip install``,
-    ``uv pip sync``, ``pip3 install``, ``uv run --with-requirements``, glob ``*.txt`` ani w akcji złożonej, którą woła.
-    Granica jest listą dozwolonych: każde słowo zadania, środowiska workflowu i akcji złożonych, które nazywa plik
-    zależności albo jako glob trafia w taki plik repozytorium, jest ścieżką z ``Context.SKILL_STEPS``, a inne, także
-    nieznana forma, kończą test. Pliki, które czyta instalator projektu (``-e ".[dev]"``), pilnuje
-    ``test_instalacja_projektu_bierze_zaleznosci_tylko_z_pyproject``. Plik, który czyta skrypt wołany z kroku
-    (``tools/ci/``), i nazwa składana w czasie runu zostają recenzji."""
+    """Zmiana pliku zależności spoza ``Context.SKILL_STEPS`` (``requirements.txt``) nie wybiera kroków skilli na PR (Z9),
+    więc zadanie kroków skilli nie powinno z niego instalować. Test łapie formy, które je wymieniają w zadaniu,
+    środowisku workflowu i akcjach złożonych, które woła (``-r``, ``uv pip sync``, ``pip3 install``,
+    ``uv run --with-requirements``, glob, ``hashFiles``), listą dozwolonych słów z ``Context.SKILL_STEPS``; to nie jest
+    pełna lista dróg do środowiska kroku. Droga, której test nie widzi (np. zależność ścieżkowa projektu, plik czytany
+    przez skrypt z ``tools/ci/``, nazwa składana w czasie runu), omija tylko wybór na PR: pełne CI pushu do ``main``
+    uruchamia każdą podstawę ``ci:`` przy każdej zmianie (ADR 0020)."""
 
     allowed = set(Context.SKILL_STEPS.paths())
     dependency_files = {path.relative_to(ROOT).as_posix() for path in (*ROOT.glob("*"), *ROOT.glob("*/*")) if DEPENDENCY_NAME.search(path.name)}
@@ -240,11 +239,11 @@ def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zalez
     assert mentioned == dict.fromkeys(SKILL_STEP_JOBS, [])
 
 
-def test_instalacja_projektu_bierze_zaleznosci_tylko_z_pyproject() -> None:
-    """Zadanie kroków skilli instaluje ``-e ".[dev]"``, więc setuptools czyta jeszcze ``setup.py``, ``setup.cfg`` i pliki
-    z ``[tool.setuptools.dynamic]``: lista zależności z ``requirements.txt`` przez ``dynamic`` zmieniałaby biblioteki
-    kroków skilli, których zmiana tego pliku nie wybiera (Z9, przegląd #1583 r2). Zależności stoją więc w samym
-    ``pyproject.toml`` (``Context.SKILL_STEPS``), a ``dynamic`` i pliki konfiguracji setuptools obok niego kończą test."""
+def test_setuptools_nie_czyta_zaleznosci_spoza_pyproject() -> None:
+    """Zadanie kroków skilli instaluje ``-e ".[dev]"``, a setuptools czyta zależności także z ``setup.py``, ``setup.cfg``
+    i plików z ``[tool.setuptools.dynamic]``: lista z ``requirements.txt`` przez ``dynamic`` zmieniałaby biblioteki
+    kroków skilli, których zmiana tego pliku nie wybiera na PR (Z9, przegląd #1583 r2). Test łapie te formy setuptools;
+    inne wejścia instalatora omijają tylko wybór na PR, jak w teście granicy wyżej."""
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
