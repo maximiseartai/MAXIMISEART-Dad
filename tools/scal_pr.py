@@ -15,8 +15,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
-   ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej), a PR, który
-   wymienia otwarte issue „Chwast: R-KOD”, zamyka je linią ``Korzeń z #N: R-KOD`` (bramka chwastu,
+   ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej), a PR z Ważnym,
+   którego kod ma otwarte issue „Chwast: R-KOD”, zamyka je linią ``Korzeń z #N: R-KOD`` (bramka chwastu,
    ``bramka_chwastu``, niżej);
 5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);

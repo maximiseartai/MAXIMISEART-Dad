@@ -91,8 +91,8 @@ ISSUES = {
     "z-proza": f"{ISSUE}\nUwaga dopisana ręcznie.\n",
     # issue, które zakłada publikacja werdyktu na PR 1, gdy #1436 ma to samo Ważne ze szczeblem (b)
     "zalozone-z-pr-1": _issue("| #1 | W1 r1 | - | - |", OTHER_ROW),
+    # issue z linkiem do PR 1 poza tabelą „Wystąpienia” (bramka chwastu treści issue nie czyta, #1619)
     "z-proza-o-pr-1": f"{ISSUE}\nWystąpienie w #1 dopisane ręcznie.\n",
-    "z-proza-o-pr-1-innego-repo": f"{ISSUE}\nWystąpienie w cli/cli#1 dopisane ręcznie.\n",
 }
 
 

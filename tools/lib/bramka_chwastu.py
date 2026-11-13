@@ -1,19 +1,22 @@
 """Bramka chwastu przed merge'em (ADR 0031, Q12 i Q15; #1619): chwast z przeglądu wyrywa autor w tym samym PR.
 
-PR, który wymienia otwarte issue z etykietą ``chwast`` (link GitHuba do tego PR w treści issue, czyli wiersz tabeli
-„Wystąpienia”, który dopisała publikacja werdyktu), scala się dopiero wtedy, gdy jego opis zamyka to issue linią
-``Korzeń z #N: R-KOD`` (``rejestr_korzeni.root_lines`` z linkiem do issue i kodem z tytułu ``Chwast: R-KOD``; zamyka
-je ``naprawia.close_fixed`` przy merge'u do domyślnej gałęzi) albo gdy każdy blok sekcji ``## Korzeń`` z kodem issue
-ma ``Wyrwany w #M`` (co najmniej jeden blok). Czy PR korzenia ``#M`` jest scalony i ma linię ``Korzeń z`` do tego PR,
-sprawdza bramka korzenia, która obowiązuje w każdym wątku tej bramki, bo weszła wcześniej.
+PR, którego Ważne ma kod ``R-KOD`` z otwartym issue ``Chwast: R-KOD`` z etykietą ``chwast``, scala się dopiero wtedy,
+gdy jego opis zamyka to issue linią ``Korzeń z #N: R-KOD`` (``rejestr_korzeni.root_lines``; zamyka je
+``naprawia.close_fixed`` przy merge'u do domyślnej gałęzi) albo gdy każdy blok sekcji ``## Korzeń`` z tym kodem ma
+``Wyrwany w #M`` (co najmniej jeden blok). Kody Ważnych daje ``rejestr_korzeni.majors`` z werdyktów PR, czyli kod
+z ostatniego werdyktu, który dotyczy Ważnego (także po rozstrzygnięciu innym kodem, Q25), jak w bramce korzenia
+i w rejestrze, który publikacją werdyktu dopisuje PR do tego issue. Issue wskazuje sam tytuł, jak w
+``rejestr_korzeni.settle``; treści issue bramka nie czyta. Czy PR korzenia ``#M`` jest scalony i ma linię
+``Korzeń z`` do tego PR, sprawdza bramka korzenia, która obowiązuje w każdym wątku tej bramki, bo weszła wcześniej.
 
 Bramka obowiązuje od własnego wdrożenia (decyzja Q20): ``werdykt_pr.rule_applies`` z chwilą ``werdykt_pr.deployment``
-dla pliku ``MARKER``, więc wątek z pierwszym werdyktem sprzed niej kończy po staremu. Issues czyta jedno zapytanie
-GraphQL (``rejestr_korzeni.weed_issues``, z HTML treści), a opis PR renderer GitHuba, tylko gdy któreś issue wymienia
-PR. Błąd GitHuba i issue z etykietą ``chwast``, które wymienia PR, a ma tytuł inny niż ``Chwast: R-KOD``, to odmowa.
+dla pliku ``MARKER``, więc wątek z pierwszym werdyktem sprzed niej kończy po staremu. Werdykty i opis PR czyta
+renderer GitHuba, a issues jedno zapytanie GraphQL (``rejestr_korzeni.weed_issues``), tylko gdy PR ma Ważne z kodem;
+opis PR tylko, gdy któreś issue pasuje. Błąd GitHuba to odmowa.
 
-Granica: issue zamknięte (także jako duplikat) bramki nie dotyczy, a werdykt, którego chwastu publikacja nie zapisała
-w issue (``UWAGA`` w linii ``WERDYKT OK``), bramka zobaczy dopiero po ``tools/chwasty.py``. Linia ``Korzeń z`` musi
+Granica: issue zamknięte (także jako duplikat) bramki nie dotyczy, tak samo issue z tytułem innym niż
+``Chwast: R-KOD`` (``settle`` go nie uzupełnia, tylko zakłada nowe). Ważne z kodem, którego issue założy dopiero
+``tools/chwasty.py`` (``UWAGA`` w linii ``WERDYKT OK``), bramka zobaczy po jego uruchomieniu. Linia ``Korzeń z`` musi
 stać poza sekcją ``## Korzeń``, bo tam bramka korzenia przyjmuje tylko bloki.
 """
 
@@ -22,19 +25,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 import subprocess
-import re
-from typing import Any
 
 import github
 import rejestr_korzeni
 from rejestr_korzeni import Block
 from stan_pr import Pull
 import szablon_werdyktu
-from szablon_werdyktu import CODE
 import werdykt_pr
 
 MARKER = "tools/lib/bramka_chwastu.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia bramki (werdykt_pr.deployment)
-TITLE = re.compile(re.escape(rejestr_korzeni.TITLE.format(code="")) + f"({CODE.pattern})")
 GITHUB_ERRORS = (subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError)
 
 
@@ -44,7 +43,14 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
     if not werdykt_pr.rule_applies(pull, deployed):
         return []
     try:
-        weeds = [issue for issue in rejestr_korzeni.weed_issues(pull.repository) if _names(issue, pull)]
+        majors = rejestr_korzeni.majors(werdykt_pr.rounds(pull, werdykt_pr.rendered(pull)))[0].values()
+    except GITHUB_ERRORS as error:
+        return [f"chwast: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
+    titles = {rejestr_korzeni.TITLE.format(code=major.code): major.code for major in majors if major.code is not None}
+    if not titles:
+        return []
+    try:
+        weeds = [(int(issue["number"]), titles[str(issue["title"])]) for issue in rejestr_korzeni.weed_issues(pull.repository) if str(issue["title"]) in titles]
     except GITHUB_ERRORS as error:
         return [f"chwast: GitHub nie podał otwartych issues z etykietą {rejestr_korzeni.WEED} ({error}), uruchom ponownie"]
     if not weeds:
@@ -56,31 +62,19 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
     closing = {(link.numer, code) for link, code in rejestr_korzeni.root_lines(units, pull.repository)}
     section = rejestr_korzeni.section(units)
     blocks = section.blocks if section is not None else ()
-    found = [problem for issue in weeds if (problem := _unclosed(issue, closing, blocks))]
+    found = [problem for number, code in weeds if (problem := _unclosed(number, code, closing, blocks))]
     if not found:
         return []
     return [*found, f"chwast: opis popraw przez gh pr edit {pull.number} --body-file PLIK, bez nowego commita i bez nowego werdyktu"]
 
 
-def _names(issue: dict[str, Any], pull: Pull) -> bool:
-    """Czy treść issue ma link GitHuba do ``pull``; issues i PR-y repozytorium mają wspólne numery, więc numer
-    wyznacza PR."""
-
-    return any(link.w(pull.repository) and link.numer == pull.number for item in szablon_werdyktu.items(str(issue["bodyHTML"])) for link in item.links)
-
-
-def _unclosed(issue: dict[str, Any], closing: set[tuple[int, str]], blocks: Sequence[Block]) -> str | None:
-    number, title = int(issue["number"]), str(issue["title"])
-    titled = TITLE.fullmatch(title)
-    if titled is None:
-        return f"chwast: #{number} „{title}” z etykietą {rejestr_korzeni.WEED} wymienia ten PR, a ma tytuł inny niż „{rejestr_korzeni.TITLE.format(code='R-KOD')}”, więc linia „Korzeń z” go nie zamknie: popraw tytuł issue"
-    code = titled[1]
+def _unclosed(number: int, code: str, closing: set[tuple[int, str]], blocks: Sequence[Block]) -> str | None:
     if (number, code) in closing:
         return None
     own = [block for block in blocks if block.code == code]
     if own and all(block.uprooted() is not None for block in own):
         return None
     return (
-        f"chwast: otwarte #{number} „{title}” wymienia ten PR, więc ten PR je zamyka: dopisz poza sekcją „## Korzeń” linię "
+        f"chwast: otwarte #{number} „{rejestr_korzeni.TITLE.format(code=code)}” ma Ważne tego PR z kodem {code}, więc ten PR je zamyka: dopisz poza sekcją „## Korzeń” linię "
         f"„Korzeń z #{number}: {code}”, a gdy {code} wyrwał scalony PR korzenia, każdy blok {code} sekcji „## Korzeń” ma tylko „Wyrwany w #M”"
     )
