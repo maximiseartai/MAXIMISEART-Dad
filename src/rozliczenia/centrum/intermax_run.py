@@ -34,7 +34,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.diagnosis_messages import file_only_in_cloud
 from rozliczenia.centrum.live_file import saved_version
-from rozliczenia.centrum.process_kind import HostParts, PreparedRun, Start, start_warnings
+from rozliczenia.centrum.process_kind import HostParts, PreparedRun, start_from_settings
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
@@ -120,13 +120,9 @@ class IntermaxEntry:
         """Wejście procesu z Ustawień Centrum; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
         snapshot = self.settings.snapshot()
-        start = Start(
-            {"register": _register(snapshot.folders), "copies_directory": self.copies_directory},
-            period=None,
-            dry_run=False,
-            settings=snapshot,
-            quantity_rules=snapshot.quantity_rules,
-            warnings=start_warnings(snapshot, _KIND.needs),
+        start = start_from_settings(
+            _KIND, snapshot, {"register": _register(snapshot.folders), "copies_directory": self.copies_directory},
+            period=None, dry_run=False,
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

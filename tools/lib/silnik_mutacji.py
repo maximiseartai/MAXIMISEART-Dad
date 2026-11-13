@@ -76,10 +76,13 @@ takiego limitu nie ma.
 Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
 mutacji ułożonych po poleceniu, potem po nazwie, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą
 mutację dokładnie raz. Podstawa części to tylko polecenia jej mutacji, po kolei, a część bez mutacji kończy się
-``MUTACJE OK``. Kawałki po poleceniu dają każdemu poleceniu podstawę w jednej części, a tylko na granicy kawałków w
-dwóch: przy podziale co N-tą po nazwie każda z czterech części skryptu mutacji modelu Kolejki Skrzynki uruchamiała
-podstawę 5–9 z jego 13 poleceń i trwała 316–550 s (zadania Mutation checks runów PR 43363580640, 43365452211,
-43368688448). Tak plan CI (``tools/plan_ci.py``) dzieli długi skrypt mutacji skilla na zadania bez zmiany skryptu.
+``MUTACJE OK``. Kawałki po poleceniu dają poleceniu podstawę tylko w częściach, do których trafiają jego mutacje:
+polecenie z mutacjami w jednym kawałku w jednej części albo, na granicy kawałków, w dwóch, a polecenie z większą
+liczbą mutacji niż kawałek także w trzech i więcej (``_part`` na tabelach skryptów: ``check_model_kolejki_mutations.py``
+przy N=4 w 3, ``check_runs_mutations.py`` przy N=7 w 4, ``check_model_wznowienia_mutations.py`` z 2 poleceniami i 9
+mutacjami przy N=8 w 7). Przy podziale co N-tą po nazwie każda z czterech części skryptu mutacji modelu Kolejki
+Skrzynki uruchamiała podstawę 5–9 z jego 13 poleceń i trwała 316–550 s (zadania Mutation checks runów PR 43363580640,
+43365452211, 43368688448). Tak plan CI (``tools/plan_ci.py``) dzieli długi skrypt mutacji skilla na zadania bez zmiany skryptu.
 
 ``check_all`` drukuje na stderr czas polecenia każdej mutacji (linia ``CZAS``) i ostrzeżenie ``CZAS BLISKO LIMITU`` dla
 mutacji, której polecenie trwało ponad połowę ``--limit-s`` (``NEAR_LIMIT``), więc rosnący czas widać w logu, zanim
