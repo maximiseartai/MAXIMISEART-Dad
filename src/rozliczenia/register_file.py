@@ -44,9 +44,10 @@ from __future__ import annotations
 import html
 import re
 import zipfile
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import cached_property, lru_cache
 from pathlib import Path
 from types import MappingProxyType
@@ -387,6 +388,20 @@ def _paste_area(
         contract_number=positions[CONTRACT_NUMBER],
     )
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)
+
+
+def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
+    """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
+    pustych), z przeglądu od dołu każdego obszaru wklejania ``areas`` tą samą regułą co zlecenia Wpisania raportów
+    (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy wierszy
+    arkusza nie da się rozdzielić."""
+
+    found: Counter[str] = Counter()
+    for area in areas:
+        for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
+            found[normalize_text(row.value(area.columns.worker))] += 1
+    del found[""]
+    return found
 
 
 class PasteArea:

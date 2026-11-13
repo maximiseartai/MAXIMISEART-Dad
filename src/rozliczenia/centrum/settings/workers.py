@@ -325,6 +325,21 @@ def edited(current: WorkerList, login: str, form: WorkerForm) -> WorkerList | Fi
     return _with(current, index, WorkerEntry(form.logins, form.name, form.addresses, worker.active, worker.reminders))
 
 
+def address_assigned(current: WorkerList, login: str, address: str) -> WorkerList | FieldProblem:
+    """Lista z adresem nieznanego nadawcy ``address`` dopisanym na końcu adresów Wykonawcy z loginem ``login`` („Przypisz
+    do Wykonawcy…”) tymi samymi regułami co formularz: adres innego Wykonawcy albo zły adres to odmowa przy polu
+    ``adresy[i]``. Adres, który ten Wykonawca już ma, niczego nie zmienia."""
+
+    index = _index(current, login)
+    if index is None:
+        return FieldProblem(None, messages.worker_unknown())
+    worker = current.workers[index]
+    if SenderAddress.of(address) in worker.addresses:
+        return current
+    entry = _as_entry(worker)
+    return _with(current, index, WorkerEntry(entry.logins, entry.name, [*entry.addresses, address], worker.active, worker.reminders))
+
+
 def switched(current: WorkerList, login: str, *, active: bool | None, reminders: bool | None) -> WorkerList | FieldProblem:
     """Lista z przełącznikiem Nieaktywnego Wykonawcy (``active``) albo jego Przypomnień o raporcie (``reminders``)
     zmienionym; ``None`` zostawia przełącznik."""

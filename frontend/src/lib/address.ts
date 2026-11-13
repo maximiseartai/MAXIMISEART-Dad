@@ -111,9 +111,23 @@ export function useSettingsAddress(): string | null {
   return React.useSyncExternalStore(subscribe, () => current().settings)
 }
 
-/** Adres okna Ustawień na sekcji `section`; bez niej okno otwiera się na pierwszej sekcji. */
-export function settingsHref(section?: string): Href {
-  return section === undefined ? href(SETTINGS) : href(SETTINGS, section)
+/**
+ * Adres okna Ustawień na sekcji `section` z członami sekcji `path` (np. adres nadawcy do przypisania Wykonawcy); bez
+ * sekcji okno otwiera się na pierwszej sekcji.
+ */
+export function settingsHref(section?: string, ...path: ReadonlyArray<string>): Href {
+  return section === undefined ? href(SETTINGS) : href(SETTINGS, section, ...path)
+}
+
+function settingsHash(): string {
+  return isSettings(window.location.hash) ? window.location.hash : ""
+}
+
+/** Człony adresu okna Ustawień za sekcją: `#/ustawienia/wykonawcy/przypisz/<adres>` → `["przypisz", "<adres>"]`. */
+export function useSettingsPath(): ReadonlyArray<string> {
+  const hash = React.useSyncExternalStore(subscribe, settingsHash)
+
+  return React.useMemo(() => hashParts(hash).slice(2), [hash])
 }
 
 /** Inna sekcja w otwartym oknie: bez nowego wpisu w historii karty, więc „Wstecz” zamyka okno, a nie cofa sekcję. */

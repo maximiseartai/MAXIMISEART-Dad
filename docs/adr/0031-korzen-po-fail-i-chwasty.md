@@ -12,7 +12,7 @@ Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w dec
 Regułę „nazwij korzeń i napraw go na najwyższym szczeblu” pilnowały do dziś tylko dwa zdania prozy: w `AGENTS.md` i w kroku recenzenta skilla `przeglad`.
 Nic nie sprawdzało, że Ważne ma korzeń, ani nie liczyło, czy ten sam korzeń wraca w innym PR.
 Ręczny przegląd Ważnych z 28.10–12.11 przypisał im kody korzeni, a te same kody wracały w wielu PR-ach.
-Wystąpienia każdego kodu z co najmniej 2 PR-ów spisał audyt historii (Wdrożenie, punkt 5) w issues z etykietą `chwast`, np. `R-MATCH-KOD` w 12 PR-ach (#1541), `R-BEZ-TESTU` w 26 (#1520), `R-MATCH-TEKST` w 6 (#1542).
+Wystąpienia każdego kodu z co najmniej 2 PR-ów spisał audyt historii (Wdrożenie, punkt 5) w issues z etykietą `chwast`, np. z tego okna `R-MATCH-KOD` w 12 PR-ach (#1541), `R-BEZ-TESTU` w 18 (#1520), `R-MATCH-TEKST` w 6 (#1542); późniejsze werdykty dopisują tam następne PR-y.
 Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne Ważne gdzie indziej.
 
 ## Decyzja
