@@ -12,6 +12,9 @@ Zmieniona 2026-11-07: skoro czyta je tylko Centrum, plik Ustawień taty należy
 do modułu `rozliczenia.centrum.settings`, a jego ścieżkę zna
 `rozliczenia.tool_files.SETTINGS`, właściciel układu plików narzędzia.
 
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Ustawienia taty do Ustawień Centrum, a folder okresów zapisuje
+zawsze od folderu, od którego liczy się układ folderów taty.
+
 ## Kontekst
 
 Pierwsze uruchomienie na komputerze taty pokazało, że narzędzie zakładało inny

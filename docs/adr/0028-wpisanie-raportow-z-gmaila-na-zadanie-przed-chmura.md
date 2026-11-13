@@ -27,6 +27,9 @@ Raportu wykonawcy, a pamięć własnych wpisów obejmuje te zmiany) i
 raporcie przez SMTP tym samym hasłem aplikacji, ma plik stopki taty w `config/`, a widok Raporty pokazuje
 przypomnienia).
 
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia „adresy Wykonawców (prowadzi je Maks)” i to, że hasło aplikacji
+wpisuje Maks: adresy prowadzi tata w Liście Wykonawców, a hasło może wymienić sam.
+
 ## Kontekst
 
 Wykonawcy wysyłają tacie Raporty wykonawcy mailem: w temacie `Raport` i data dnia zleceń, w treści numer zlecenia,
