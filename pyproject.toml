@@ -201,6 +201,9 @@ extend-select = [
 "rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
 "rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
 "rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
+# Wpis procesu bierze się z katalogu procesów (centrum/catalog.py, prawo właściciela w per-file-ignores): katalog
+# daje Centrum, narzędziom, testom i skryptom skilli jeden spis wpisów.
+"rozliczenia.centrum.processes".msg = "wpis procesu czyta tylko katalog procesów: użyj declaration_of albo Catalog.kind z rozliczenia.centrum.catalog (rdzeń i plik metryk też daje Catalog), a podpowiedzi podglądu ProcessKind.preview_hint"
 
 [tool.mypy]
 # API biblioteki standardowej sprawdzane dla najstarszego Pythona z requires-python, nie dla tego, którym biegnie mypy.

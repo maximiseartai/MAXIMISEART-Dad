@@ -21,6 +21,7 @@ extend = "../pyproject.toml"
 "rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
 "rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
 "rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
+"rozliczenia.centrum.processes".msg = "wpis procesu czyta tylko katalog procesów: użyj declaration_of albo Catalog.kind z rozliczenia.centrum.catalog (rdzeń i plik metryk też daje Catalog), a podpowiedzi podglądu ProcessKind.preview_hint"
 # Plik taty czyta jedna droga (tests/test_jeden_odczyt_skoroszytu.py): bajty i skoroszyt obok uchwytu omijają
 # sprawdzenie dostępności, źródło bajtów uchwytu, pamięć reguły danych i Kopię wejścia (#1087).
 "rozliczenia.workbook_files.file_bytes".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files"

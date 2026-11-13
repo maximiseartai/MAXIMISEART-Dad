@@ -22,6 +22,7 @@ extend = "../../../../../pyproject.toml"
 "rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
 "rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
 "rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
+"rozliczenia.centrum.processes".msg = "wpis procesu czyta tylko katalog procesów: użyj declaration_of albo Catalog.kind z rozliczenia.centrum.catalog (rdzeń i plik metryk też daje Catalog), a podpowiedzi podglądu ProcessKind.preview_hint"
 # Deleting, moving or replacing a file or folder fails on Windows while the server holds it open (WinError 32, #921);
 # the retrying helpers of drive/common.py wait it out. Forms ruff cannot resolve (a method on an instance, p.unlink())
 # are the guard _removals of centrum_self_test.py.

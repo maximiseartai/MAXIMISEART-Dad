@@ -7,7 +7,8 @@ Bez tego zakaz z ``pyproject.toml``, np. ``os.name``, w takim katalogu po cichu 
 konfiguracji ruff jest ``ruff.toml``, ``.ruff.toml`` i ``pyproject.toml`` z tabelą ``[tool.ruff]``.
 
 Próbka biegnie przez ``ruff check --stdin-filename <katalog zakazu>/sonda_zakazu.py -``, więc ruff bierze konfigurację
-tego katalogu, a usunięcie albo literówka w linii zakazu wywraca jego próbkę.
+tego katalogu, a usunięcie albo literówka w linii zakazu wywraca jego próbkę. Zakaz z ``pyproject.toml``, który zastąpił
+sprawdzenie w teście, ma próbki postaci tego sprawdzenia, a próbka dozwolona (``ALLOWED``) przechodzi bez zgłoszenia.
 
 Z ``TID251`` konfiguracja ruff zwalnia tylko pliki z prawem właściciela (``OWNERS``), a kod każdego z nich zgłasza poza
 zwolnieniem dokładnie nazwy, których jest właścicielem.
@@ -28,6 +29,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 # Każdy plik konfiguracji ruff poza pyproject.toml w korzeniu, literałem, żeby tools/szybko.py wybierał ten test przy
 # zmianie któregoś z nich.
+ROOT_CONFIG = ROOT / "pyproject.toml"
 SRC_CONFIG = ROOT / "src" / "ruff.toml"
 TESTS_CONFIG = ROOT / "tests" / "ruff.toml"
 DRIVE_CONFIG = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "drive" / "ruff.toml"
@@ -36,6 +38,7 @@ DIRECTORY_CONFIGS = (SRC_CONFIG, TESTS_CONFIG, DRIVE_CONFIG)
 CHECKED = ("src", "tests", "tools", ".agents/skills")
 NAMES = ("ruff.toml", ".ruff.toml", "pyproject.toml")
 STAR = "F403"
+PROCESSES = "rozliczenia.centrum.processes"
 
 # Próbka → katalog (plik konfiguracji, podkatalog, w którym stoi sonda) i jedyny zakaz, który ruff w niej zgłasza
 # (``F403`` dla ``import *``). Pierwsze postaci usunięć napędu to dawne ``REMOVAL_SAMPLES`` z ``centrum_self_test.py``,
@@ -114,6 +117,22 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import time\nname = time.strftime('%Y%m%d')": (SRC_CONFIG, ("rozliczenia",), "time.strftime"),
     "import email.utils\nmoment = email.utils.localtime()": (SRC_CONFIG, ("rozliczenia",), "email.utils.localtime"),
     "from email.utils import formatdate\nheader = formatdate(localtime=True)": (SRC_CONFIG, ("rozliczenia",), "email.utils.formatdate"),
+    # Wpisy procesów czyta tylko katalog procesów: postaci importu, które czytało dawne sprawdzenie
+    # test_wpisy_procesow_czyta_tylko_katalog_procesow (tests/test_granice_importow.py), w każdej części kodu.
+    "import rozliczenia.centrum.processes": (ROOT_CONFIG, ("tools",), PROCESSES),
+    "import rozliczenia.centrum.processes.settlement as settlement": (TESTS_CONFIG, (), PROCESSES),
+    "from rozliczenia.centrum import catalog, processes": (ROOT_CONFIG, (".agents", "skills", "verify-rozliczenia", "scripts"), PROCESSES),
+    "from rozliczenia.centrum.processes import efenix": (DRIVE_CONFIG, (), PROCESSES),
+    "from rozliczenia.centrum.processes.intermax import KIND as intermax": (SRC_CONFIG, ("rozliczenia",), PROCESSES),
+    "def f() -> None:\n    from rozliczenia.centrum.processes import preparation": (TESTS_CONFIG, ("fixtures",), PROCESSES),
+    "from . import processes": (SRC_CONFIG, ("rozliczenia", "centrum"), PROCESSES),
+    "from ..processes.report_entering import KIND": (SRC_CONFIG, ("rozliczenia", "centrum", "settings"), PROCESSES),
+}
+# Próbka dozwolona → katalog, w którym ruff nie zgłasza w niej żadnego zakazu.
+ALLOWED: dict[str, tuple[Path, tuple[str, ...]]] = {
+    "from rozliczenia.centrum.catalog import declaration_of\nfrom rozliczenia.centrum import catalog, process_kind\n"
+    "import rozliczenia.centrum.process_kind": (ROOT_CONFIG, ("tools",)),
+    "from .catalog import Catalog\nfrom . import process_kind": (SRC_CONFIG, ("rozliczenia", "centrum")),
 }
 
 
@@ -206,12 +225,21 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     assert found == [banned], f"{config.relative_to(ROOT).as_posix()} ma odrzucić zakazem {banned}:\n{code}"
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize("code", list(ALLOWED))
+def test_ruff_przepuszcza_probke_dozwolona_w_jej_katalogu(code: str) -> None:
+    config, subdirectory = ALLOWED[code]
+    probe = config.parent.joinpath(*subdirectory, "sonda_zakazu.py")
+
+    assert _banned_names("--stdin-filename", str(probe), "-", code=code) == []
+
+
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
 OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now", "time.time"}),
-    "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
+    "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG", PROCESSES}),
     "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
     "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
     "src/rozliczenia/template_file.py": frozenset(

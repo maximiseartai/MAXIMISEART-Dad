@@ -23,8 +23,8 @@ skoroszytu czytanego bez openpyxl (zip, XML) nie łapie: to zostaje przeglądowi
 Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind.py``) i wpisy w ``centrum/processes/``
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
-komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
-katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
+komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. ``PreparedRun`` składa
+tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
 z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
 plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
 ``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
@@ -159,7 +159,6 @@ NOT_IN_CATALOG = frozenset(
     }
 )
 SERVER_LIBRARIES = frozenset({"fastapi", "starlette", "uvicorn"})
-PROCESS_KINDS = "rozliczenia.centrum.processes"
 CATALOG = SRC / "rozliczenia" / "centrum" / "catalog.py"
 MACHINE_SCRIPT = ROOT / "tools" / "uruchom_proces.py"
 VERSIONS = "rozliczenia.centrum.comment_versions"
@@ -619,25 +618,6 @@ def _imported_modules(path: Path) -> Iterator[tuple[int, str]]:
             yield node.lineno, base
             for alias in node.names:
                 yield node.lineno, f"{base}.{alias.name}"
-
-
-def test_wpisy_procesow_czyta_tylko_katalog_procesow() -> None:
-    found = {
-        f"{path.relative_to(ROOT).as_posix()}:{line}: {module}"
-        for path in _python_files()
-        if path != CATALOG and not path.is_relative_to(SRC / "rozliczenia" / "centrum" / "processes")
-        for line, module in _imported_modules(path)
-        if module == PROCESS_KINDS or module.startswith(f"{PROCESS_KINDS}.")
-    }
-
-    assert not found, "\n".join(
-        [
-            *sorted(found),
-            "Wpis procesu (centrum/processes/<proces>.py) importuje tylko src/rozliczenia/centrum/catalog.py: Centrum, "
-            "narzędzia, testy i skrypty skilli biorą wpis z katalogu (catalog.declaration_of, Catalog.kind), rdzeń "
-            "i plik metryk z Catalog, a podpowiedź podglądu z ProcessKind.preview_hint.",
-        ]
-    )
 
 
 # Moduły z funkcją ``replace``, która kopiuje dataclassę z podmienionymi polami.
