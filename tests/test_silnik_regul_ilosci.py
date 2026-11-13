@@ -319,6 +319,7 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", ActivitiesContain("akt  int"))), "reguly[x].jesli[0].tekst", id="czynnosci-spacje"),
         pytest.param(lambda: _rules(_rule("x", ContractFirstWord("u 1"))), "reguly[x].jesli[0].slowo", id="umowa-dwa-slowa"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset(), time(1)))), "reguly[x].jesli[0].dni", id="bez-dni"),
+        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({-1}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-minus-1"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({7}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-7"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({True}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-true"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({False}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-false"),

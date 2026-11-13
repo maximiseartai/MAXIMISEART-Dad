@@ -29,6 +29,7 @@ export const zApiTiming = z.object({
         'changeFolders',
         'changeAutostart',
         'getSettingsHistory',
+        'getQuantityRules',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -255,6 +256,22 @@ export const zDecisionAnswer = z.object({
 export const zDescriptionColumn = z.object({
     column: z.string(),
     rows: z.int()
+});
+
+/**
+ * DeviceComponent
+ *
+ * Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna).
+ */
+export const zDeviceComponent = z.object({
+    id: z.string(),
+    name: z.string(),
+    other_spellings: z.array(z.string()),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]).nullable()
 });
 
 /**
@@ -1515,6 +1532,41 @@ export const zReportNotification = z.object({
 });
 
 /**
+ * SentenceColumn
+ *
+ * Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:
+ * Wzorca nie da się przeczytać albo komórka jest pusta.
+ */
+export const zSentenceColumn = z.object({
+    kind: z.literal('column'),
+    letter: z.string(),
+    name: z.string().nullable()
+});
+
+/**
+ * SentenceText
+ */
+export const zSentenceText = z.object({
+    kind: z.literal('text'),
+    text: z.string()
+});
+
+/**
+ * QuantityRuleSentence
+ *
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ */
+export const zQuantityRuleSentence = z.object({
+    id: z.string(),
+    scope: z.enum([
+        'known',
+        'unknown',
+        'every'
+    ]),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
  * SettingProblem
  *
  * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego
@@ -1523,6 +1575,19 @@ export const zReportNotification = z.object({
 export const zSettingProblem = z.object({
     field: z.string().nullable(),
     message: z.string()
+});
+
+/**
+ * QuantityRulesSettings
+ *
+ * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ */
+export const zQuantityRulesSettings = z.object({
+    rules: z.array(zQuantityRuleSentence),
+    devices: z.array(zDeviceComponent),
+    rules_problem: zSettingProblem.nullable(),
+    devices_problem: zSettingProblem.nullable()
 });
 
 /**
@@ -2857,6 +2922,11 @@ export const zChangeInboxPasswordResponse = zInboxPasswordSaved;
  * Successful Response
  */
 export const zChoosePeriodsDirectoryResponse = zChoice;
+
+/**
+ * Successful Response
+ */
+export const zGetQuantityRulesResponse = zQuantityRulesSettings;
 
 /**
  * Successful Response

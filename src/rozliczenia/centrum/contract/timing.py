@@ -32,6 +32,7 @@ ApiOperation = Literal[
     "changeFolders",
     "changeAutostart",
     "getSettingsHistory",
+    "getQuantityRules",
     "undoSettingsChange",
     "getPeriodBoard",
     "openPeriodPath",

@@ -1399,6 +1399,15 @@ autostart_unsupported [zdanie]
 autostart_unreadable [zdanie]
   Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę.
 
+unavailable [zdanie]
+  Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
+
+needed_by_rules [zdanie]
+  Plik lista-urzadzen.yaml w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.
+
+quantity_rules_problem [zdanie]
+  Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
+
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
 not_local_address [HTTP 403]

@@ -122,6 +122,7 @@ from rozliczenia.register_columns import (
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
@@ -1067,7 +1068,15 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
     paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
     workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
-    start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing, workers=workers)
+    # Logi nie mają Reguł ilości Uruchomienia, więc odtworzenie liczy Regułami ilości z Wydania.
+    start = Start(
+        paths,
+        period=period,
+        dry_run=record.mode.dry_run,
+        pricing=record.pricing,
+        workers=workers,
+        quantity_rules=DEFAULT_QUANTITY_RULES,
+    )
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
 

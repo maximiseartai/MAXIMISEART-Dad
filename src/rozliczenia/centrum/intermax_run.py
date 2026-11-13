@@ -119,12 +119,14 @@ class IntermaxEntry:
     def prepare(self) -> PreparedRun[Any, Any]:
         """Wejście procesu z Ustawień taty; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
-        folders = self.settings.snapshot().folders
+        snapshot = self.settings.snapshot()
+        folders = snapshot.folders
         start = Start(
             {"register": _register(folders), "copies_directory": self.copies_directory},
             period=None,
             dry_run=False,
             settings=folders,
+            quantity_rules=snapshot.quantity_rules,
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

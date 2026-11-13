@@ -135,6 +135,11 @@ export function getSettingsHistory() {
   return call("getSettingsHistory")
 }
 
+/** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
+export function getQuantityRules() {
+  return call("getQuantityRules")
+}
+
 /** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */
 export function undoSettingsChange(change: string) {
   return call("undoSettingsChange", { path: { change_id: change } })

@@ -29,7 +29,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -446,6 +446,30 @@ export type DescriptionColumn = {
      * Rows
      */
     rows: number;
+};
+
+/**
+ * DeviceComponent
+ *
+ * Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna).
+ */
+export type DeviceComponent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Other Spellings
+     */
+    other_spellings: Array<string>;
+    /**
+     * Group
+     */
+    group: 'router' | 'tv' | 'extender' | null;
 };
 
 /**
@@ -1958,6 +1982,45 @@ export type QuantitiesToFillReady = {
 };
 
 /**
+ * QuantityRuleSentence
+ *
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ */
+export type QuantityRuleSentence = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Scope
+     */
+    scope: 'known' | 'unknown' | 'every';
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn>;
+};
+
+/**
+ * QuantityRulesSettings
+ *
+ * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ */
+export type QuantityRulesSettings = {
+    /**
+     * Rules
+     */
+    rules: Array<QuantityRuleSentence>;
+    /**
+     * Devices
+     */
+    devices: Array<DeviceComponent>;
+    rules_problem: SettingProblem | null;
+    devices_problem: SettingProblem | null;
+};
+
+/**
  * Queued
  *
  * Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie
@@ -2842,6 +2905,41 @@ export type Sent = {
      * State
      */
     state: 'sent';
+};
+
+/**
+ * SentenceColumn
+ *
+ * Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:
+ * Wzorca nie da się przeczytać albo komórka jest pusta.
+ */
+export type SentenceColumn = {
+    /**
+     * Kind
+     */
+    kind: 'column';
+    /**
+     * Letter
+     */
+    letter: string;
+    /**
+     * Name
+     */
+    name: string | null;
+};
+
+/**
+ * SentenceText
+ */
+export type SentenceText = {
+    /**
+     * Kind
+     */
+    kind: 'text';
+    /**
+     * Text
+     */
+    text: string;
 };
 
 /**
@@ -4977,6 +5075,22 @@ export type ChoosePeriodsDirectoryResponses = {
 };
 
 export type ChoosePeriodsDirectoryResponse = ChoosePeriodsDirectoryResponses[keyof ChoosePeriodsDirectoryResponses];
+
+export type GetQuantityRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules';
+};
+
+export type GetQuantityRulesResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSettings;
+};
+
+export type GetQuantityRulesResponse = GetQuantityRulesResponses[keyof GetQuantityRulesResponses];
 
 export type ChooseRegisterData = {
     body?: never;

@@ -1924,6 +1924,27 @@
         }
       }
     },
+    "/api/settings/quantity-rules": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getQuantityRules",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/register/choose": {
       "post": {
         "tags": [
@@ -2307,6 +2328,7 @@
               "changeFolders",
               "changeAutostart",
               "getSettingsHistory",
+              "getQuantityRules",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -3024,6 +3046,51 @@
         ],
         "title": "DescriptionColumn",
         "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał."
+      },
+      "DeviceComponent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "other_spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Other Spellings"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "router",
+                  "tv",
+                  "extender"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "other_spellings",
+          "group"
+        ],
+        "title": "DeviceComponent",
+        "description": "Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna)."
       },
       "Diagnosis": {
         "properties": {
@@ -5521,6 +5588,101 @@
         "title": "QuantitiesToFillReady",
         "description": "Ilości do uzupełnienia okresu przeliczone z zapisanego Pliku zbiorczego; ``kinds`` ma każdy rodzaj z listą.\n\n``settled``: Przebieg rozliczeń okresu się odbył (Status okresu Rozliczenia pracowników gotowe), więc strona jest\npodglądem bez „Gotowe, rozlicz pracowników”, a wiersz bez wpisu taty jest „bez ilości”."
       },
+      "QuantityRuleSentence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown",
+              "every"
+            ],
+            "title": "Scope"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "sentence"
+        ],
+        "title": "QuantityRuleSentence",
+        "description": "Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł."
+      },
+      "QuantityRulesSettings": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/QuantityRuleSentence"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceComponent"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "rules_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "devices_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rules",
+          "devices",
+          "rules_problem",
+          "devices_problem"
+        ],
+        "title": "QuantityRulesSettings",
+        "description": "Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i\n``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to."
+      },
       "Queued": {
         "properties": {
           "state": {
@@ -7004,6 +7166,59 @@
         ],
         "title": "Sent",
         "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
+      },
+      "SentenceColumn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "column",
+            "title": "Kind"
+          },
+          "letter": {
+            "type": "string",
+            "title": "Letter"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "letter",
+          "name"
+        ],
+        "title": "SentenceColumn",
+        "description": "Kolumna Ilości usług w zdaniu: litera i nazwa pozycji cennika z wiersza 17 Wzorca pliku zbiorczego; ``None``:\nWzorca nie da się przeczytać albo komórka jest pusta."
+      },
+      "SentenceText": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "text",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "SentenceText"
       },
       "SettingProblem": {
         "properties": {

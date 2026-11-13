@@ -1,7 +1,8 @@
 """Uzupełnienie pliku zbiorczego w Centrum: Ilości do uzupełnienia okresu jako zasób tylko do odczytu (ADR 0016).
 
 Każde żądanie czyta zapisany Plik zbiorczy jedynym odczytem skoroszytu, także gdy trzyma go Excel, i przelicza
-Ilości do uzupełnienia w silniku (``quantities_to_fill``) Regułami ilości z Wydania; Centrum nigdy nie zmienia pliku. Na żywo: tani znacznik
+Ilości do uzupełnienia w silniku (``quantities_to_fill``) bieżącymi Regułami ilości z Ustawień Centrum, nie tymi, z
+których plik powstał (ADR 0013: przelicza, niczego nie przechowuje); Centrum nigdy nie zmienia pliku. Na żywo: tani znacznik
 zapisu i ostatni dobry odczyt (``live_file``, ``FillingReads``).
 Podsumowanie dostaje tylko numery wierszy, stan „zrobione” i liczniki kolumn, a strona rodzaju też teksty
 wiersza, komórki N:AP i nazwy pozycji cennika, nigdy adres, numer zlecenia ani UMOWA. Nieudany odczyt to
@@ -34,7 +35,7 @@ from rozliczenia.message import Message
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import TEXT_COLUMNS, FillKind, KindToFill, fill_hint, quantities_to_fill
-from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
+from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
@@ -91,7 +92,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
-        return _ready(found, settled=_settled(folder))
+        return _ready(found, settings.snapshot().quantity_rules, settled=_settled(folder))
 
     @router.get(
         "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=NOT_FOUND_OR_CONFLICT
@@ -102,12 +103,9 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
         settled = _settled(folder)
-        [listed] = (
-            listed
-            for listed in quantities_to_fill(found.value.rows, DEFAULT_QUANTITY_RULES, settled=settled).kinds
-            if listed.kind is kind
-        )
-        return _table(listed, found, settled=settled)
+        rules = settings.snapshot().quantity_rules
+        [listed] = (listed for listed in quantities_to_fill(found.value.rows, rules, settled=settled).kinds if listed.kind is kind)
+        return _table(listed, found, rules, settled=settled)
 
     @router.get(
         "/{token}/collective-file-version",
@@ -127,7 +125,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.
         """
 
-        return _without_quantity(requested_folder(settings, token), filling.files)
+        return _without_quantity(requested_folder(settings, token), filling.files, settings.snapshot().quantity_rules)
 
     return router
 
@@ -141,14 +139,14 @@ def without_quantity_sentence(rows: Sequence[int]) -> str | None:
     return f"{count} {plural(count, 'wiersz', 'wiersze', 'wierszy')} bez ilości: {', '.join(map(str, rows))}"
 
 
-def _without_quantity(folder: PeriodFolder, files: DadFiles) -> filling_contract.WithoutQuantity:
+def _without_quantity(folder: PeriodFolder, files: DadFiles, rules: QuantityRules) -> filling_contract.WithoutQuantity:
     try:
         found = collective_file.read_numbered_orders(folder.collective_file, files)
     except WorkbookError:
         return filling_contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
         return filling_contract.WithoutQuantityUnread(state="unread")
-    rows = list(quantities_to_fill(found.rows, DEFAULT_QUANTITY_RULES, settled=_settled(folder)).without_quantity)
+    rows = list(quantities_to_fill(found.rows, rules, settled=_settled(folder)).without_quantity)
     return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
 
 
@@ -156,8 +154,8 @@ def _settled(folder: PeriodFolder) -> bool:
     return folder.observe().status == "worker_settlements_ready"
 
 
-def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract.QuantitiesToFillReady:
-    found = quantities_to_fill(read.value.rows, DEFAULT_QUANTITY_RULES, settled=settled)
+def _ready(read: GoodRead[NumberedOrders], rules: QuantityRules, *, settled: bool) -> filling_contract.QuantitiesToFillReady:
+    found = quantities_to_fill(read.value.rows, rules, settled=settled)
     return filling_contract.QuantitiesToFillReady(
         state="ready",
         read=_stamp(read),
@@ -165,7 +163,7 @@ def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract
         kinds=[
             filling_contract.KindToFill(
                 kind=kind.kind,
-                hint=fill_hint(kind.kind, DEFAULT_QUANTITY_RULES),
+                hint=fill_hint(kind.kind, rules),
                 rows=[filling_contract.RowToFill(row=row.number, state=row.state) for row in kind.rows],
                 done=kind.done,
             )
@@ -177,12 +175,14 @@ def _ready(read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract
     )
 
 
-def _table(listed: KindToFill, read: GoodRead[NumberedOrders], *, settled: bool) -> filling_contract.KindTableReady:
+def _table(
+    listed: KindToFill, read: GoodRead[NumberedOrders], rules: QuantityRules, *, settled: bool
+) -> filling_contract.KindTableReady:
     return filling_contract.KindTableReady(
         state="ready",
         read=_stamp(read),
         settled=settled,
-        hint=fill_hint(listed.kind, DEFAULT_QUANTITY_RULES),
+        hint=fill_hint(listed.kind, rules),
         text_columns=[column.target_header for column in TEXT_COLUMNS],
         columns=[filling_contract.PriceListItem(column=column, name=name) for column, name in read.value.price_list.items()],
         rows=[

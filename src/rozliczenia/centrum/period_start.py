@@ -74,6 +74,7 @@ class PeriodStarts:
             dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
             settings=folders,
+            quantity_rules=snapshot.quantity_rules,
             workers=workers_at_start(snapshot.workers) if "workers" in kind.needs else None,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())

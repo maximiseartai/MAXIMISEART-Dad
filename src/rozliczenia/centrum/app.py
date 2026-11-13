@@ -65,6 +65,7 @@ from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.quantity_rules_router import quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
@@ -201,6 +202,7 @@ def create_app(
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     app.include_router(settings_router(settings, platform, inbox.try_login))
     configuration = configuration_files or ConfigurationFiles.default()
+    app.include_router(quantity_rules_router(settings, configuration.collective_template))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
