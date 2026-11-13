@@ -75,7 +75,7 @@ from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
-from rozliczenia.quantity_engine import DeviceList, QuantityRules, QuantityRulesRefused
+from rozliczenia.quantity_engine import Component, DeviceList, QuantityRules, QuantityRulesRefused
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import (
@@ -1275,6 +1275,23 @@ def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_byl
     assert (freed.status_code, freed.json()["quantity_rules"]["devices_problem"]) == (200, None), freed.text
     assert device_form(app, "instalacja-reczna") == {"name": "instalacja ręczna", "other_spellings": [], "group": None}
     assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_ma_tylko_jej_zapisy(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Lista taty z oboma zapisami nowego składnika Wydania jest dobra także dla narzędzi: zmieniona poza Centrum, zanim
+    Centrum ją przeczyta, liczy się od razu, a nie ostatnia dobra lista z pamięci."""
+
+    app = centrum(tmp_path)
+    app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": ["wizja"], "group": None})
+    release_without_manual_installation()
+    path = app.tool.config / DEVICES_FILE
+    dad_list = DEVICES.parse(path.read_bytes())
+    assert isinstance(dad_list, tuple)
+    path.write_text(DEVICES.dump((*dad_list, Component("ont-x", ("ont x",)))), encoding="utf-8")
+
+    assert "ont-x" in read_snapshot(app.tool.config).quantity_rules.devices.ids()
 
 
 # Zapisy, które tata daje w sekcji Urządzenia przed Wydaniem: oba zapisy składnika „instalacja ręczna”, który daje dopiero

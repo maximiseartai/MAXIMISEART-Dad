@@ -301,7 +301,7 @@ class _Completion:
 
 def _completion(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> _Completion | None:
     """Uzupełnienie listy ``devices`` do reguł ``rules`` (``completed_devices``); ``None``: reguła potrzebuje składnika,
-    którego nie ma ani na liście, ani na Liście Urządzeń z Wydania."""
+    którego nie ma ani na liście, ani na Liście Urządzeń z Wydania, albo reguły bez składnika dalej go potrzebują."""
 
     release = {component.id: component for component in DEFAULT_QUANTITY_RULES.devices.components}
     taken = {spelling for component in devices for spelling in component.spellings}
@@ -309,7 +309,7 @@ def _completion(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...])
     absent: dict[str, Component] = {}
     while (problem := _refusal(without_components(rules, frozenset(absent)), (*devices, *joined.values()))) is not None:
         missing = release.get(problem.component or "")
-        if missing is None:
+        if missing is None or missing.id in absent:
             return None
         free = tuple(spelling for spelling in missing.spellings if spelling not in taken)
         if free:
