@@ -223,6 +223,8 @@ def _repo_szopy(katalog: Path) -> Path:
             "tools/lib/atrapy/stara.py": _linie(10),
             "tools/inna.py": _linie(60),
             rozmiar_pr.LISTA: _LISTA,
+            "tools/ci/rozmiar_pr.py": _linie(10),
+            ".github/workflows/rozmiar-pr.yml": _linie(10),
         },
     )
     commit(katalog, "baza")
@@ -370,6 +372,25 @@ def test_pr_ktory_zmienia_tylko_liste_wymaga_zgody_a_nastepny_pr_liczy_pliki_wed
             ],
             [],
         ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("sciezka", "tresc", "liczby"),
+    [
+        (rozmiar_pr.LISTA, _LISTA.replace('"tools/lib/atrapa.py" = []\n', ""), "+0 -0"),
+        ("tools/ci/rozmiar_pr.py", _linie(9), "+0 -1"),
+        (".github/workflows/rozmiar-pr.yml", _linie(9), "+0 -0"),
+    ],
+    ids=["lista", "licznik", "workflow"],
+)
+def test_pr_ktory_zmienia_straznika_bez_nowych_linii_maszynerii_wymaga_zgody(szopa: Path, sciezka: str, tresc: str, liczby: str) -> None:
+    _zapisz(szopa, {sciezka: tresc})
+    commit(szopa, "strażnik bez jednej linii")
+
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == _nadana(
+        f"SZOPA | #7 | maszyneria procesu z testami {liczby}, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+        f", zmienia strażnika {sciezka} | wymaga ZGODA SZOPA"
     )
 
 
