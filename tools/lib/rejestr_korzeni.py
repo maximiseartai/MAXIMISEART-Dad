@@ -19,9 +19,10 @@ Szczebel i mechanizm wystąpienia to pierwsza linia bloku sekcji ``## Korzeń`` 
 ``Szczebel: (x) - mechanizm`` daje ``(x)`` i mechanizm, ``Wyrwany w #M`` daje szczebel ``-`` i mechanizm ``Wyrwany
 w #M`` (szczebel ma tam PR korzenia, którego opis go nie podaje), a PR otwarty albo bez bloku daje ``-`` i ``-``.
 Wcześniejsze wyrwanie kodu dla bramki (Q11) to wystąpienie ze szczeblem w innym PR scalonym (``mergedAt``) przed
-chwilą, w której powstało wystąpienie kodu w PR bramki (``earlier``): dla Ważnego to chwila utworzenia pierwszego
-werdyktu, który nadał ten kod temu Ważnemu (``Major.since``), bo dopiero wyrwanie scalone przed nią mogło temu
-Ważnemu zapobiec. Merge w tej samej sekundzie już się nie liczy.
+chwilą, w której powstało wystąpienie kodu w PR bramki (``earlier``): dla Ważnego to chwila Ważnego, czyli utworzenia
+werdyktu ``FAIL`` jego rundy (``Major.since``), także gdy późniejszy werdykt rozstrzyga je innym kodem (Q25), bo
+dopiero wyrwanie scalone przed nią mogło temu Ważnemu zapobiec. Tę samą chwilę ``occurrences`` porównuje z chwilą
+wdrożenia. Merge w tej samej sekundzie już się nie liczy.
 
 Zapytanie do GitHuba jest jedno i po kolei, bo konto ma secondary rate limit: GraphQL ``search`` PR-ów repozytorium
 zmienionych od wdrożenia (``updated:>=``), w kolejności założenia (``sort:created-asc``), po ``PAGE`` PR-ów na stronę,
@@ -198,8 +199,9 @@ def root_lines(units: Sequence[Item], repository: str) -> list[tuple[github.Link
 @dataclass(frozen=True)
 class Major:
     """Ważne ``heading`` (``W1 r2``) werdyktu ``FAIL`` rundy ``round`` z kodem z ostatniego werdyktu, który go dotyczy
-    (``None``, gdy żaden nie podał kodu w szablonie), rundą ``decided`` tego werdyktu i chwilą utworzenia ``since``
-    pierwszego werdyktu, który nadał ten kod temu Ważnemu (``None`` bez kodu albo bez chwili)."""
+    (``None``, gdy żaden nie podał kodu w szablonie), rundą ``decided`` tego werdyktu i chwilą Ważnego ``since``, czyli
+    utworzenia werdyktu ``FAIL`` rundy ``round`` (``None`` bez chwili); rozstrzygnięcie innym kodem (Q25) zmienia kod,
+    a nie chwilę."""
 
     heading: str
     round: int
@@ -215,21 +217,19 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
 
     found: dict[str, Major] = {}
     strays: list[tuple[int, Root]] = []
-    first: dict[tuple[str, str | None], datetime | None] = {}
     for current in rounds:
         if current.verdict.decision == "FAIL":
             labels = [*(f"W{index}" for index in range(1, max(current.declared_majors or 0, 1) + 1)), *(root.label for root in current.findings.majors)]
             for label in dict.fromkeys(labels):
-                found[f"{label} r{current.number}"] = Major(f"{label} r{current.number}", current.number, None, current.number)
+                found[f"{label} r{current.number}"] = Major(f"{label} r{current.number}", current.number, None, current.number, _moment(current.verdict.when))
             for root in current.findings.majors:
                 if root.code is not None:
                     key = f"{root.label} r{current.number}"
-                    found[key] = replace(found[key], code=root.code, since=first.setdefault((key, root.code), _moment(current.verdict.when)))
+                    found[key] = replace(found[key], code=root.code)
         for resolution in current.findings.resolutions:
             key = f"{resolution.label} r{resolution.round}"
             if key in found:
-                since = first.setdefault((key, resolution.code), _moment(current.verdict.when))
-                found[key] = replace(found[key], code=resolution.code, decided=current.number, since=since)
+                found[key] = replace(found[key], code=resolution.code, decided=current.number)
             else:
                 strays.append((current.number, resolution))
     return found, strays
@@ -274,8 +274,7 @@ def occurrences(pull: Pull, deployed: datetime, merged: datetime | None) -> list
     if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
         rounds = werdykt_pr.rounds(pull)
         for major in majors(rounds)[0].values():
-            when = _moment(rounds[major.round - 1].verdict.when)
-            if major.code is not None and when is not None and when >= deployed:
+            if major.code is not None and major.since is not None and major.since >= deployed:
                 found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), merged))
     if merged is not None and merged >= deployed:
         found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))

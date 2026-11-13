@@ -2343,15 +2343,22 @@ def test_powrot_korzenia_wymaga_szczebla_wyzej_niz_wczesniejsze_wyrwanie_a_po_a_
     assert ("korzeń:" in last) == bool(fragments), last
 
 
-# Q11: wcześniejsze wyrwanie to tylko merge przed chwilą, w której kod wystąpił w tym PR: utworzeniem pierwszego
-# werdyktu, który nadał kod temu Ważnemu (FAIL_W1 w _root_gate powstaje 24.10.2026 o 3:00:01), albo założeniem issue
-# czerwonego main.
+# Q11: wcześniejsze wyrwanie to tylko merge przed chwilą, w której kod wystąpił w tym PR: utworzeniem werdyktu
+# Ważnego (FAIL_W1 w _root_gate powstaje 24.10.2026 o 3:00:01) także wtedy, gdy późniejszy werdykt (tu PASS_RESOLVES
+# o 3:00:04) rozstrzyga je innym kodem (Q25), albo założeniem issue czerwonego main.
 PASS_CONFIRMS = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + chwasty.WERDYKTY["potwierdza-kod"]
 RED_CONSENT_NEEDED = f"korzeń: Czerwony main #{korzenie_pr.RED_MAIN}: kod R-BEZ-TESTU wrócił po wyrwaniu na szczeblu (a) w #1436"
+RESOLVED_LATER = [FAIL_W1, "Poprawione w {commit}.", "Poprawione w {commit}.", PASS_RESOLVES]
+OTHER_CODE_FAIL = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + chwasty.WERDYKTY["inny-kod"]
+OTHER_CODE_HIGHER = "korzeń: W1 r1: kod R-DRUGA-DROGA wyrwano już na szczeblu (c) w #1436, więc powrót wyrywa się szczebel wyżej"
 
 
 def _merged_a(merged: str) -> list[dict[str, object]]:
     return [_node([(FAIL_W1, AFTER_DEPLOYMENT)], body=RUNG_A, merged=merged)]
+
+
+def _merged_other_code_c(merged: str) -> list[dict[str, object]]:
+    return [_node([(OTHER_CODE_FAIL, AFTER_DEPLOYMENT)], body=korzenie_pr.OPISY["inny-kod"], merged=merged)]
 
 
 @pytest.mark.parametrize(
@@ -2361,6 +2368,8 @@ def _merged_a(merged: str) -> list[dict[str, object]]:
         ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:01Z")}, []),
         ([FAIL_W1], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
         ([FAIL_W1, "Poprawione w {commit}.", PASS_CONFIRMS], "szczebel-a", {"registry": _merged_a("2026-10-24T03:00:02Z")}, []),
+        (RESOLVED_LATER, "kod-rozstrzygniety", {"registry": _merged_other_code_c("2026-10-24T03:00:00Z")}, [OTHER_CODE_HIGHER]),
+        (RESOLVED_LATER, "kod-rozstrzygniety", {"registry": _merged_other_code_c("2026-10-24T03:00:02Z")}, []),
         ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-20T00:00:01Z", "registry": [MERGED_A]}, [RED_CONSENT_NEEDED]),
         ([], "czerwony-main", {"labels": RED, "issue_created": "2026-10-19T23:59:59Z", "registry": [MERGED_A]}, []),
     ],
@@ -2369,6 +2378,8 @@ def _merged_a(merged: str) -> list[dict[str, object]]:
         "merge-w-sekundzie-waznego-sie-nie-liczy",
         "merge-sekunde-po-waznym-sie-nie-liczy",
         "chwila-pierwszego-werdyktu-z-kodem-a-nie-potwierdzenia",
+        "rozstrzygniecie-innym-kodem-merge-przed-waznym-sie-liczy",
+        "rozstrzygniecie-innym-kodem-merge-po-waznym-a-przed-rozstrzygnieciem-sie-nie-liczy",
         "merge-przed-zalozeniem-issue-czerwonego-main-sie-liczy",
         "merge-po-zalozeniu-issue-czerwonego-main-sie-nie-liczy",
     ],

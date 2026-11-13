@@ -25,16 +25,15 @@ Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka p
 Powrót korzenia wyrywa się szczebel wyżej (Q11): blok ze ``Szczebel: (x)`` z kodem, który ma wcześniejsze wyrwanie
 w innym scalonym PR (``rejestr_korzeni.earlier``: blok sekcji ``## Korzeń`` ze szczeblem w PR scalonym po wdrożeniu
 szablonu, z Ważnym albo czerwonym `main` z rejestru), ma szczebel bliżej (a) niż najwyższy z nich. Wcześniejsze jest
-tylko wyrwanie scalone przed chwilą, w której kod wrócił w tym PR: dla bloku Ważnego przed utworzeniem pierwszego
-werdyktu, który nadał ten kod temu Ważnemu (``rejestr_korzeni.Major.since``), a dla bloku czerwonego `main` przed
-założeniem jego issue (``created_at`` z ``gh api``). PR z pierwszym wystąpieniem kodu, który inny PR wyrwał dopiero
-po jego Ważnym, nie wraca więc po tym wyrwaniu. Gdy wcześniej
-było (a), wyżej się nie da, więc decyduje Maks: blok przechodzi tylko z linią akapitu albo punktem listy ``ZGODA
-KORZEŃ: R-KOD`` w komentarzu albo recenzji tego PR od konta z prawem ``admin`` do repozytorium
-(``rejestr_korzeni.consents``). Granica: blok ``Wyrwany w #M`` nie ma szczebla, a opis PR korzenia go nie podaje, więc
-nie jest ani wcześniejszym wyrwaniem, ani blokiem, który bramka porównuje; to samo konto piszą agenci i Maks, więc
-bramka sprawdza konto, a nie człowieka. Rejestr czyta bramka tylko wtedy, gdy blok ma szczebel, a błąd GitHuba to
-odmowa z przyczyną.
+tylko wyrwanie scalone przed chwilą, w której kod wrócił w tym PR: dla bloku Ważnego przed utworzeniem werdyktu
+``FAIL`` jego rundy, także gdy później rozstrzygnięto je innym kodem (``rejestr_korzeni.Major.since``), a dla bloku
+czerwonego `main` przed założeniem jego issue (``created_at`` z ``gh api``). PR z pierwszym wystąpieniem kodu, który
+inny PR wyrwał dopiero po jego Ważnym, nie wraca więc po tym wyrwaniu. Gdy wcześniej było (a), wyżej się nie da,
+więc decyduje Maks: blok przechodzi tylko z linią akapitu albo punktem listy ``ZGODA KORZEŃ: R-KOD`` w komentarzu
+albo recenzji tego PR od konta z prawem ``admin`` do repozytorium (``rejestr_korzeni.consents``). Granica: blok
+``Wyrwany w #M`` nie ma szczebla, a opis PR korzenia go nie podaje, więc nie jest ani wcześniejszym wyrwaniem, ani
+blokiem, który bramka porównuje; to samo konto piszą agenci i Maks, więc bramka sprawdza konto, a nie człowieka.
+Rejestr czyta bramka tylko wtedy, gdy blok ma szczebel, a błąd GitHuba to odmowa z przyczyną.
 
 Opis PR, werdykty, opis PR korzenia i sekcję „Co jest porażką” skilla ``przeglad`` czyta renderer GitHuba
 (``github.html_markdownu``) przez ``szablon_werdyktu.items``, więc pola liczą się tylko poza blokami kodu, a cytat pola
