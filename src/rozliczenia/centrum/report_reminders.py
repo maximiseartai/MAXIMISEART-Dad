@@ -19,7 +19,8 @@ nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wys�
 poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego sprawdzenie w porze zapisuje przed wysyłką
 pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
 Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
-plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Brak sieci
+plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Dopóki zapis pór się nie
+uda (``zapis-por``), sprawdzenie nie wysyła, a pora zostaje otwarta. Brak sieci
 (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje znowu, a przypomnienia, które
 już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
@@ -225,7 +226,11 @@ class ReportReminders:
         if pora is None or snapshot.reminders.sends is None or self._settled == (now.date(), pora, schedule):
             return
         found = _Check()
-        self._send(now, snapshot, self._checked(now, schedule), found)
+        in_effect = self._checked(now, schedule)
+        if self._schedules.unavailable:
+            found.failed = _Failed("zapis-por")
+        else:
+            self._send(now, snapshot, in_effect, found)
         failed = found.failed
         if failed is None or not failed.retry:
             self._settled = (now.date(), pora, schedule)
@@ -235,13 +240,16 @@ class ReportReminders:
         self._write(now, pora, found)
 
     def _checked(self, now: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
-        """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką. Nieudany zapis
-        czeka w ``StateFile``, a do ponownego startu Centrum pory zna pamięć."""
+        """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką, a zapis, który
+        czeka w ``StateFile``, ponawia. Dopóki zapis czeka, sprawdzenie nie wysyła: po ponownym starcie Centrum bez
+        pliku pór wysłane liczyłyby pory z ADR 0030, a nie pory z chwili wysyłki."""
 
         before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path, schedule)
         self._in_effect = before.checked(now, schedule)
         if self._in_effect is not before:
             self._schedules.write(_schedules_document(self._in_effect))
+        else:
+            self._schedules.retry()
         return self._in_effect
 
     def _send(self, now: datetime, snapshot: SettingsSnapshot, in_effect: SchedulesInEffect, found: _Check) -> None:

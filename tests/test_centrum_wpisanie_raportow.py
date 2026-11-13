@@ -3213,6 +3213,40 @@ def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
     return (found[0], found[1]), (found[2], found[3])
 
 
+def test_nieudany_zapis_por_wstrzymuje_wysylke_az_do_zapisu_wiec_ponowny_start_nie_daje_drugiego_maila(
+    tmp_path: Path,
+) -> None:
+    """Przy porannej 6:00–17:00 sprawdzenie o 7:00 nie zapisuje pór (plik tymczasowy zajęty), więc nie wysyła: po
+    ponownym starcie bez pliku pór mail z 7:00 liczyłby się przy porach z ADR 0030, poza porą. Po zwolnieniu pliku
+    następna minuta zapisuje pory i wysyła, a Centrum po ponownym starcie nie wysyła drugiego."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    early = _reminders_form(morning={"start": "06:00", "end": "17:00"}, first="06:00", footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=early).status_code == 200
+    busy = centrum.tool.config / f"{REMINDERS_SCHEDULES}.tmp"
+    busy.mkdir()
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 7, 0))
+    centrum.rhythm.tick()
+    blocked = (list(mailbox.sends), _reminder_result(centrum)["failure"])
+    busy.rmdir()
+    for minute in (1, 30):
+        centrum.moment.append(datetime(2026, 11, 10, 7, minute))
+        centrum.rhythm.tick()
+        centrum.restart()
+        centrum.client.start()
+    centrum.client.stop()
+
+    assert blocked == ([], "zapis-por")
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(7, 1)),
+        ("jan.testowy", time(7, 1)),
+    ]
+    assert centrum.tool.log_path.read_text(encoding="utf-8").count("przypomnienia-porazka przyczyna=zapis-por") == 1
+
+
 _FIRST_MINUTE, _LAST_MINUTE = 7 * 60, 23 * 60 + 58
 _DAY_MINUTES = st.integers(_FIRST_MINUTE, _LAST_MINUTE)
 _EVENTS = st.lists(
