@@ -2583,6 +2583,26 @@ def test_merge_pr_z_linia_korzen_z_issue_zamyka_issue_chwastu_z_komentarzem_o_pr
     assert github.closed() == ([["issue", "close", str(chwasty.WEED_ISSUE), "--repo", opisy_pr.REPO, "--comment", comment]] if closed else [])
 
 
+def test_pr_z_wierszem_w_otwartym_issue_chwastu_scala_sie_bez_linii_korzen_z(tmp_path: Path) -> None:
+    """Zachowanie bramki korzenia przed #1619: PR, którego Ważne W1 r1 stoi w tabeli otwartego issue chwastu, scala
+    się z samym blokiem szczebla (c), a issue zostaje otwarte."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
+    github.weeds = [{"number": chwasty.WEED_ISSUE, "title": WEED_TITLE, "body": chwasty.ISSUES["zalozone-z-pr-1"]}]
+    github.answer_issue(chwasty.WEED_ISSUE, answer=json.dumps({"state": "open", "title": WEED_TITLE}))
+    github.comment(1, FAIL_W1.format(commit=OLD))
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert _last_line(merged).startswith(f"SCAL OK | #1 {head[:7]} | scalony do main"), merged.stdout
+    assert github.closed() == []
+
+
 @pytest.mark.parametrize("dry", [True, False], ids=["bez-zapisu", "z-zapisem"])
 def test_chwasty_z_rejestru_od_wdrozenia_zaklada_te_same_issues_co_publikacja_a_bez_zapisu_tylko_je_podaje(tmp_path: Path, dry: bool) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
