@@ -79,6 +79,10 @@ FEATURES = (
             "316-ustawienia-haslo-przyjete",
             "317-ustawienia-historia-hasla",
             "318-ustawienia-haslo-waskie",
+            "360-ustawienia-przypomnienia-odmowa",
+            "361-ustawienia-przypomnienia-podglad",
+            "362-ustawienia-przypomnienia",
+            "363-ustawienia-przypomnienia-waskie",
         ),
     ),
     Feature(

@@ -18,6 +18,7 @@ HIDDEN_GROUPS = ("Ilości",)
 SECTIONS = (
     "Foldery",
     "Wykonawcy",
+    "Przypomnienia",
     "Wzorce",
     "Kopie INTERMAX",
     "Skrzynka raportów",
