@@ -173,10 +173,6 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
     assert "kod=INNA_WERSJA_CENTRUM" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
-FIRST_START = "ustawienia-wydanie"
-"""Pierwszy start Centrum w świeżym katalogu zapamiętuje zmiany Ustawień z Wydania (bez folderu okresów: nic do zmiany)."""
-
-
 def _log_events(runtime: Path) -> list[str]:
     """Nazwy zdarzeń z dziennika Centrum w kolejności wpisów."""
 
@@ -297,7 +293,7 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert second.returncode == 0
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert exit_code == 0
-    assert _log_events(runtime) == [FIRST_START, "start", "juz-dziala", "zamkniecie", "stop"]
+    assert _log_events(runtime) == ["start", "juz-dziala", "zamkniecie", "stop"]
     assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
@@ -338,7 +334,7 @@ def test_centrum_z_autostartu_startuje_bez_karty_a_skrot_z_pulpitu_otwiera_karte
     assert (startup_again.returncode, desktop_click.returncode, exit_code) == (0, 0, 0)
     assert not opened_before_desktop, "Skrót z Autostartu otworzył kartę."
     assert addresses == opened.read_text(encoding="utf-8").split() == [f"http://127.0.0.1:{port}/"]
-    assert _log_events(runtime) == [FIRST_START, "start", "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
+    assert _log_events(runtime) == ["start", "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
 
 _CONSOLE, _NO_CONSOLE = 10, 20
 _CONSOLE_PROBE = (
