@@ -1,7 +1,8 @@
 """Etykieta rozmiaru PR (``tools/ci/rozmiar_pr.py``, workflow ``rozmiar-pr.yml``): progi z t3code, efektywne linie od
 bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR.
-Licznik szopy (ADR 0034): lista dwóch szop przypisuje każdy plik, a PR z nowymi liniami maszynerii procesu bez większego
-usunięcia dostaje etykietę zgody, którą zdejmuje komentarz ``ZGODA SZOPA`` konta z prawem ``admin``."""
+Licznik szopy (ADR 0034): grupę pliku daje reguła katalogu, a lista dwóch szop tylko wyjątki od niej; PR z nowymi liniami
+maszynerii procesu bez większego usunięcia dostaje etykietę zgody, którą zdejmuje komentarz ``ZGODA SZOPA`` konta
+z prawem ``admin``."""
 
 from __future__ import annotations
 
@@ -188,15 +189,11 @@ def test_etykieta_z_innym_opisem_albo_kolorem_dostaje_opis_i_kolor_progu() -> No
     )
 
 
-_LISTA = """[produkt]
-"src/" = ["tests/test_stary.py"]
-
-[weryfikacja]
+_LISTA = """[weryfikacja]
 "tools/lib/atrapa.py" = []
 
 [maszyneria]
 "tools/bramka.py" = ["tests/test_bramka.py"]
-"tools/lib/szopa.toml" = []
 """
 # HTML renderera GitHuba (``gh api markdown``, gfm) dla treści komentarzy testu.
 _HTML = {
@@ -219,6 +216,7 @@ def szopa(tmp_path: Path) -> Path:
             "tools/bramka.py": _linie(30),
             "tests/test_bramka.py": _linie(10),
             "tools/lib/atrapa.py": _linie(10),
+            "tools/inna.py": _linie(10),
             "tools/lib/szopa.toml": _LISTA,
         },
     )
@@ -243,14 +241,14 @@ def test_pr_bez_linii_maszynerii_procesu_nie_wymaga_zgody_choc_zmienia_produkt_w
             "tests/test_nowy.py": _linie(40),
             "tools/lib/atrapa.py": _linie(16),
             "tools/OPIS.md": _linie(50),
-            "tools/lib/szopa.toml": _LISTA.replace('["tests/test_stary.py"]', '["tests/test_stary.py", "tests/test_nowy.py"]'),
+            "tools/lib/szopa.toml": _LISTA.replace('"tools/lib/atrapa.py" = []', '"tools/lib/atrapa.py" = ["tests/test_nowy.py"]'),
         },
     )
     commit(szopa, "produkt")
 
     assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == (
         [
-            "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 45/35 = 1,29, testy szopy / src 10/35 = 0,29"
+            "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 5/35 = 0,14, testy szopy / src 50/35 = 1,43"
             " | bez nowych linii maszynerii procesu"
         ],
         [],
@@ -258,7 +256,7 @@ def test_pr_bez_linii_maszynerii_procesu_nie_wymaga_zgody_choc_zmienia_produkt_w
 
 
 def test_pr_ktory_usuwa_wiecej_linii_maszynerii_niz_dodaje_traci_etykiete_zgody(szopa: Path) -> None:
-    # Nowy plik spod tools/ bez wpisu na żadnej liście liczy się jako maszyneria procesu.
+    # Nowy plik spod tools/ bez wpisu na liście ma grupę maszyneria z reguły katalogu.
     _zapisz(szopa, {"tools/bramka.py": _linie(18), "tools/nowa.py": _linie(5)})
     commit(szopa, "mniej maszynerii")
 
@@ -291,14 +289,19 @@ def test_pr_ktory_dodaje_tyle_linii_maszynerii_z_testami_ile_usuwa_wymaga_zgody(
     )
 
 
-def test_pr_liczy_swoje_linie_maszynerii_wedlug_listy_bazy_choc_jego_lista_przenosi_je_do_weryfikacji(szopa: Path) -> None:
+def test_pr_liczy_linie_maszynerii_plikow_z_bazy_wedlug_listy_bazy_choc_jego_lista_przenosi_je_do_weryfikacji(szopa: Path) -> None:
+    # tools/bramka.py ma wpis na liście bazy, tools/inna.py grupę z reguły katalogu, a nowy tools/lib/atrapa_nowa.py
+    # bierze grupę z listy głowy.
     _zapisz(
         szopa,
         {
             "tools/bramka.py": _linie(30) + _linie(4, "y"),
-            "tools/lib/szopa.toml": _LISTA.replace('"tools/lib/atrapa.py" = []', '"tools/lib/atrapa.py" = []\n"tools/bramka.py" = []').replace(
-                '"tools/bramka.py" = ["tests/test_bramka.py"]', '"tools/lib/bramka_testy.py" = ["tests/test_bramka.py"]'
-            ),
+            "tools/inna.py": _linie(10) + _linie(2, "y"),
+            "tools/lib/atrapa_nowa.py": _linie(9),
+            "tools/lib/szopa.toml": _LISTA.replace(
+                '"tools/lib/atrapa.py" = []',
+                '"tools/lib/atrapa.py" = []\n"tools/bramka.py" = []\n"tools/inna.py" = []\n"tools/lib/atrapa_nowa.py" = []',
+            ).replace('"tools/bramka.py" = ["tests/test_bramka.py"]', '"tools/lib/bramka_testy.py" = ["tests/test_bramka.py"]'),
         },
     )
     commit(szopa, "maszyneria jako weryfikacja")
@@ -306,7 +309,29 @@ def test_pr_liczy_swoje_linie_maszynerii_wedlug_listy_bazy_choc_jego_lista_przen
     linie, _ = _licz(szopa, _GitHub(w_repo=[], na_pr=[]))
 
     assert linie[0] == (
-        "SZOPA | #7 | maszyneria procesu z testami +4 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+        "SZOPA | #7 | maszyneria procesu z testami +6 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+        " | wymaga ZGODA SZOPA"
+    )
+
+
+def test_nowe_pliki_testow_narzedzi_i_skilli_bez_wpisu_na_liscie_biora_grupe_z_reguly_katalogu(szopa: Path) -> None:
+    # Testy: produkt; tools/: maszyneria; skill verify-*: weryfikacja; inny skill: maszyneria; docs/: poza szopą.
+    _zapisz(
+        szopa,
+        {
+            "tests/test_cos.py": _linie(7),
+            "tools/lib/cos.py": _linie(4),
+            ".agents/skills/verify-cos/scripts/cos.py": _linie(9),
+            ".agents/skills/pr/scripts/cos.py": _linie(2),
+            "docs/cos.py": _linie(6),
+        },
+    )
+    commit(szopa, "nowe pliki bez wpisu")
+
+    linie, _ = _licz(szopa, _GitHub(w_repo=[], na_pr=[]))
+
+    assert linie[0] == (
+        "SZOPA | #7 | maszyneria procesu z testami +6 -0, testy zachowania src / src 12/20 = 0,60, testy szopy / src 10/20 = 0,50"
         " | wymaga ZGODA SZOPA"
     )
 

@@ -1,12 +1,13 @@
 name: Rozmiar PR
 
 # Each PR gets one label size:XS … size:XXL from its effective changed lines (tools/ci/rozmiar_pr.py, after t3code's
-# pr-size.yml) and, when it adds process machinery lines without removing more (list tools/lib/szopa.toml, ADR 0034),
-# the label „wymaga ZGODA SZOPA”, which an admin's comment ZGODA SZOPA takes off. The labels only inform: no ruleset or
-# Required CI status depends on this workflow.
+# pr-size.yml) and, when it adds process machinery lines without removing more (directory rule REGULY in that script,
+# exceptions in tools/lib/szopa.toml, ADR 0034), the label „wymaga ZGODA SZOPA”, which an admin's comment ZGODA SZOPA
+# takes off. The labels only inform: no ruleset or Required CI status depends on this workflow.
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] the PR's commits are only git data here, never run
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  # issue_comment always runs the default branch's workflow and code, also for a comment on a PR from a fork.
   issue_comment:
     types: [created, edited, deleted]
 

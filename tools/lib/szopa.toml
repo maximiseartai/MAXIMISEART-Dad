@@ -1,140 +1,7 @@
-# Dwie szopy (ADR 0034): każdy plik `tools/`, `.agents/skills/` i `tests/` należy do produktu, weryfikacji produktu
-# albo maszynerii procesu. Klucz to jednostka (plik albo katalog z `/` na końcu), a wartość to jej pliki testów.
-# Licznik w `tools/ci/rozmiar_pr.py` czyta tę listę; jego docstring mówi, jak liczy.
-
-[produkt]
-"src/" = [
-    "tests/__init__.py",
-    "tests/conftest.py",
-    "tests/expected/komunikaty.txt",
-    "tests/expected/kontrakt_okna_efenix.txt",
-    "tests/expected/powody_raportow.txt",
-    "tests/expected/uruchomienia/",
-    "tests/fixtures/__init__.py",
-    "tests/fixtures/bez_dostepu.py",
-    "tests/fixtures/centrum.py",
-    "tests/fixtures/centrum_intermax.py",
-    "tests/fixtures/centrum_processes.py",
-    "tests/fixtures/centrum_w_procesie.py",
-    "tests/fixtures/clock.py",
-    "tests/fixtures/data_rows.py",
-    "tests/fixtures/expect.py",
-    "tests/fixtures/fake_process.py",
-    "tests/fixtures/fakt_domeny.py",
-    "tests/fixtures/formy_telefonu.py",
-    "tests/fixtures/git_config.py",
-    "tests/fixtures/github_api.py",
-    "tests/fixtures/intermax_disk.py",
-    "tests/fixtures/kolejka-v1-kontrola-ilosci.json",
-    "tests/fixtures/kolejka-v2-uwaga-taty.json",
-    "tests/fixtures/kolejka-v3-uwaga-przypieta.json",
-    "tests/fixtures/kolejka-v3-zgloszenie.json",
-    "tests/fixtures/konce_linii_windows.py",
-    "tests/fixtures/linie_watkow.py",
-    "tests/fixtures/locked_file.py",
-    "tests/fixtures/message_samples.py",
-    "tests/fixtures/okno_w_procesie.py",
-    "tests/fixtures/operacje.py",
-    "tests/fixtures/porownanie.py",
-    "tests/fixtures/praca_centrum.py",
-    "tests/fixtures/proxy_systemu.py",
-    "tests/fixtures/przegladarka.py",
-    "tests/fixtures/run_cards.py",
-    "tests/fixtures/stare_centrum.py",
-    "tests/fixtures/tool_clone.py",
-    "tests/fixtures/uwagi-taty-sprzed-powiadomien.json",
-    "tests/fixtures/uwagi-taty-z-powiadomieniami.json",
-    "tests/fixtures/wpisanie-raportow-stan-v1.json",
-    "tests/fixtures/wpisanie-raportow-stan-v3.json",
-    "tests/fixtures/wpisanie-raportow-wynik-v1.json",
-    "tests/fixtures/wyciek.py",
-    "tests/fixtures/wyglad_komorek.py",
-    "tests/fixtures/zgloszenia-wyslane-sprzed-powiadomien.json",
-    "tests/fixtures/zgloszenia-wyslane-z-powiadomieniami.json",
-    "tests/test_adres_efenix.py",
-    "tests/test_aktualizacja_narzedzia.py",
-    "tests/test_aktualnosc_narzedzia.py",
-    "tests/test_centrum_aktualizacja.py",
-    "tests/test_centrum_diagnoza.py",
-    "tests/test_centrum_karta_z_logow.py",
-    "tests/test_centrum_konfiguracja.py",
-    "tests/test_centrum_kontrola_ilosci.py",
-    "tests/test_centrum_launcher.py",
-    "tests/test_centrum_logi_uruchomienia.py",
-    "tests/test_centrum_logi_w_skrzynce.py",
-    "tests/test_centrum_metryki.py",
-    "tests/test_centrum_pomiar_u_taty.py",
-    "tests/test_centrum_powiadomienia.py",
-    "tests/test_centrum_przebieg.py",
-    "tests/test_centrum_przygotowanie.py",
-    "tests/test_centrum_przywracanie_kopii_intermax.py",
-    "tests/test_centrum_rozliczen.py",
-    "tests/test_centrum_serwer.py",
-    "tests/test_centrum_sprawy_taty.py",
-    "tests/test_centrum_token_do_zgloszen.py",
-    "tests/test_centrum_uchwyt_zgloszenia.py",
-    "tests/test_centrum_uporzadkowanie_intermax.py",
-    "tests/test_centrum_uwaga_do_uruchomienia.py",
-    "tests/test_centrum_uwaga_taty.py",
-    "tests/test_centrum_uzupelnienie.py",
-    "tests/test_centrum_uzupelnienie_gotowosc.py",
-    "tests/test_centrum_uzupelnienie_na_zywo.py",
-    "tests/test_centrum_uzupelnienie_tabela.py",
-    "tests/test_centrum_wpisanie_raportow.py",
-    "tests/test_centrum_zgloszenie.py",
-    "tests/test_collective_preparation.py",
-    "tests/test_collective_preparation_stops.py",
-    "tests/test_filtr_prywatnosci_wierszy.py",
-    "tests/test_hiperlacza_pliku_zbiorczego.py",
-    "tests/test_ilosci_tylko_dla_inea.py",
-    "tests/test_ilosci_uslug.py",
-    "tests/test_instrukcja_taty.py",
-    "tests/test_katalog_procesow.py",
-    "tests/test_klucz_zgloszen.py",
-    "tests/test_kolejka_skrzynki_zgloszen.py",
-    "tests/test_kolejnosc_sprawdzania.py",
-    "tests/test_komentarz_logow_uruchomienia.py",
-    "tests/test_komunikaty_expect.py",
-    "tests/test_notka_wydania.py",
-    "tests/test_opiekun_ponownego_startu.py",
-    "tests/test_ostrzezenia_ilosci.py",
-    "tests/test_phase_runner.py",
-    "tests/test_plik_metryk.py",
-    "tests/test_plik_stanu_centrum.py",
-    "tests/test_plik_taty_w_komunikacie.py",
-    "tests/test_plik_zbiorczy_kopia_wzorca.py",
-    "tests/test_podmiana_intermax.py",
-    "tests/test_process_run.py",
-    "tests/test_progress.py",
-    "tests/test_przejscie_miedzy_procesami.py",
-    "tests/test_przerwana_aktualizacja_narzedzia.py",
-    "tests/test_publikacja_przez_folder_tymczasowy.py",
-    "tests/test_rdzen_przypomnien.py",
-    "tests/test_rdzen_raportow.py",
-    "tests/test_regula_danych.py",
-    "tests/test_rodzaj_zatrzymania.py",
-    "tests/test_settlement_engine.py",
-    "tests/test_silnik_regul_ilosci.py",
-    "tests/test_skoroszyt_ktorego_nie_da_sie_uzyc.py",
-    "tests/test_skrzynka_raportow.py",
-    "tests/test_skrzynka_zgloszen_github.py",
-    "tests/test_stan_pliku.py",
-    "tests/test_swieta.py",
-    "tests/test_tabela_zatrzyman_efenix.py",
-    "tests/test_uporzadkowanie_intermax.py",
-    "tests/test_uruchomienia_expect.py",
-    "tests/test_uruchomienie_procesow.py",
-    "tests/test_uszkodzone_wejscia.py",
-    "tests/test_wersja_narzedzia.py",
-    "tests/test_wlasnosci_dopasowania_tekstu.py",
-    "tests/test_wlasnosci_tokenu_okresu.py",
-    "tests/test_wlasnosci_wpisania_raportow.py",
-    "tests/test_workbook_files.py",
-    "tests/test_wpisanie_komorek_intermax.py",
-    "tests/test_wycena_efenix.py",
-    "tests/test_wyglad_wiersza_danych.py",
-    "tests/test_zegar_centrum.py",
-]
+# Dwie szopy (ADR 0034): wyjątki od reguły katalogu `REGULY` w `tools/ci/rozmiar_pr.py`, z której `src/` i `tests/`
+# to produkt, `tools/` maszyneria procesu, skille `verify-*` weryfikacja produktu, a pozostałe skille maszyneria.
+# Klucz to jednostka (plik albo katalog z `/` na końcu), a wartość to jej pliki testów. Plik bez wpisu ma grupę
+# z reguły, więc wpis dostaje jednostka innej grupy niż jej katalog i jednostka szopy, która ma pliki testów.
 
 [weryfikacja]
 ".agents/skills/verify-aktualizacja-narzedzia/" = ["tests/test_model_aktualizacji_narzedzia.py"]
@@ -142,20 +9,12 @@
 ".agents/skills/verify-centrum-rozliczen/" = ["tests/test_limit_drive_centrum.py"]
 ".agents/skills/verify-github-skrzynki/" = ["tests/test_github_skrzynki.py"]
 ".agents/skills/verify-jedno-uruchomienie-naraz/" = ["tests/test_jedno_uruchomienie_naraz.py"]
-".agents/skills/verify-karta-efenix/" = []
-".agents/skills/verify-karta-uruchomienia/" = []
 ".agents/skills/verify-kolejka-skrzynki/" = ["tests/test_model_kolejki_skrzynki.py"]
 ".agents/skills/verify-kopia-wzorca/" = ["tests/test_kopia_wzorca.py"]
 ".agents/skills/verify-publikacja-plikow-okresu/" = ["tests/test_publikacja_plikow_okresu.py"]
-".agents/skills/verify-rozliczenia/" = []
 ".agents/skills/verify-skoroszyty-w-excelu/" = ["tests/test_sprzatanie_excela.py", "tests/test_weryfikacja_w_excelu.py"]
-".agents/skills/verify-sprawy-taty/" = []
-".agents/skills/verify-status-okresu/" = []
 ".agents/skills/verify-urwane-uruchomienie/" = ["tests/test_model_urwanego_uruchomienia.py"]
-".agents/skills/verify-wpisanie-raportow/" = []
-".agents/skills/verify-wycena-efenix/" = []
 ".agents/skills/verify-wznowienie-wyceny-efenix/" = ["tests/test_model_wznowienia_wyceny.py"]
-".agents/skills/verify-zapis-intermax/" = []
 "tools/lib/atrapy/" = ["tests/test_atrapa_efenix.py"]
 "tools/lib/eksplorator.py" = [
     "tests/fixtures/eksplorator_w_procesie.py",
@@ -173,9 +32,6 @@
 "tools/zgodnosc_efenix.py" = ["tests/expected/zgodnosc_efenix/", "tests/test_zgodnosc_efenix.py"]
 
 [maszyneria]
-".agents/skills/pr/" = []
-".agents/skills/przeglad/" = []
-".agents/skills/wydanie/" = []
 "tests/test_adr.py" = []
 "tests/test_decyzje_na_faktach.py" = []
 "tests/test_dokumenty_regul.py" = []
@@ -199,67 +55,38 @@
 "tests/test_zapadki.py" = []
 "tools/benchmark_przebiegu.py" = ["tests/fixtures/benchmark.py", "tests/test_benchmark_przebiegu.py"]
 "tools/chwasty.py" = ["tests/fixtures/chwasty.json", "tests/fixtures/chwasty.py"]
-"tools/ci/export_openapi.py" = []
 "tools/ci/rozmiar_pr.py" = ["tests/test_rozmiar_pr.py"]
-"tools/ci/shellcheck_akcji.py" = []
 "tools/ci/status_scalenia.py" = ["tests/test_status_scalenia.py"]
 "tools/ci/werdykt_required.py" = ["tests/fixtures/ci_workflow.py", "tests/test_zadania_ci.py"]
 "tools/ci/wykonaj_zadanie.py" = ["tests/fixtures/granice_ksztaltow.py", "tests/test_mutacje_skilli.py"]
-"tools/ci/zapis_czasow.py" = []
-"tools/ci/zapis_narzedzi_tlc.py" = []
 "tools/ci/zgloszenia_ci.py" = ["tests/test_zgloszenia_ci.py"]
 "tools/ci_lokalnie.py" = ["tests/test_ci_lokalnie.py"]
 "tools/hooks/czekanie.py" = ["tests/test_czekanie.py", "tests/test_wlasnosci_hookow.py"]
 "tools/hooks/praca_w_tle.py" = ["tests/test_praca_w_tle.py"]
 "tools/hooks/pre-push" = ["tests/test_brama_pre_push.py"]
 "tools/hooks/zgoda.py" = ["tests/test_zgoda.py"]
-"tools/lib/atrapa_z_logow.py" = []
-"tools/lib/benchmark/" = []
-"tools/lib/bramka_korzenia.py" = []
 "tools/lib/ciezkie_ci.py" = ["tests/test_ciezkie_ci.py"]
 "tools/lib/czasy_ci.py" = ["tests/test_czasy_ci.py"]
 "tools/lib/falszywe_api.py" = ["tests/fixtures/ustawienia_claude.py", "tests/test_falszywe_api.py"]
 "tools/lib/github.py" = ["tests/fixtures/fake_cli.py"]
-"tools/lib/jednostka.py" = []
-"tools/lib/kontekst_przegladu.py" = []
-"tools/lib/kroki_lokalne.py" = []
 "tools/lib/kroki_skilli.py" = ["tests/test_podstawa_w_czesciach.py"]
-"tools/lib/naprawia.py" = []
 "tools/lib/niestabilne_testy.py" = ["tests/fixtures/kwarantanna.py", "tests/test_kwarantanna.py"]
-"tools/lib/odtworzenie.py" = []
-"tools/lib/ostatnie_linie.py" = []
-"tools/lib/plan_runu.py" = []
-"tools/lib/pokrycie_procesu.py" = []
 "tools/lib/potomne.py" = ["tests/fixtures/potomne.py", "tests/test_potomne.py"]
-"tools/lib/pytest_czesc.py" = []
-"tools/lib/pytest_pokrycie.py" = []
-"tools/lib/rejestr_korzeni.py" = []
 "tools/lib/repo.py" = ["tests/fixtures/git_repo.py"]
 "tools/lib/rozjazd_modelu.py" = ["tests/test_rozjazd_modelu.py"]
-"tools/lib/sciezki_w_kodzie.py" = []
 "tools/lib/silnik_mutacji.py" = ["tests/fixtures/brama_typow.py"]
-"tools/lib/stan_pr.py" = []
 "tools/lib/szablon_werdyktu.py" = ["tests/fixtures/werdykty_szablonu.json", "tests/fixtures/werdykty_szablonu.py"]
-"tools/lib/szopa.toml" = []
-"tools/lib/testy_scalenia.py" = []
-"tools/lib/werdykt_pr.py" = []
-"tools/lib/werdykt_scalenia.py" = []
 "tools/lib/wplyw_zmiany.py" = ["tests/test_wplyw_zmiany.py"]
-"tools/lib/wyniki_testow.py" = []
 "tools/lib/zakres_runu.py" = ["tests/test_zakres_runu.py"]
 "tools/mutacje.py" = ["tests/test_mutacje.py"]
 "tools/mutacje_nocne.py" = ["tests/test_mutacje_nocne.py"]
 "tools/mutacje_zmiany.py" = ["tests/test_mutacje_zmiany.py"]
 "tools/na_scalonych_pr.py" = ["tests/test_na_scalonych_pr.py"]
-"tools/odtworz_uruchomienie.py" = []
 "tools/plan_ci.py" = ["tests/fixtures/ksztalt_bramki/", "tests/test_ksztalt_bramki.py", "tests/test_plan_ci.py"]
-"tools/pomiar_ci.py" = []
 "tools/pomiar_regul_ilosci.py" = ["tests/test_pomiar_regul_ilosci.py"]
-"tools/ponow_ci.py" = []
 "tools/praca_w_toku.py" = ["tests/test_praca_w_toku.py"]
 "tools/proba_przypomnien.py" = ["tests/test_proba_przypomnien.py"]
 "tools/proba_skrzynki_raportow.py" = ["tests/test_proba_skrzynki_raportow.py"]
-"tools/przesun_model.py" = []
 "tools/quiet_machine.py" = ["tests/fixtures/cicha_maszyna.py", "tests/test_cicha_maszyna.py"]
 "tools/rejestr_korzeni_tydzien.py" = ["tests/test_rejestr_korzeni_tydzien.py"]
 "tools/scal_pr.py" = [
@@ -276,7 +103,3 @@
 "tools/sprzatanie.py" = ["tests/test_sprzatanie.py"]
 "tools/szybko.py" = ["tests/test_szybko.py"]
 "tools/wydanie.py" = ["tests/test_wydanie.py"]
-"tools/wyrocznia_pracy_w_tle.py" = []
-"tools/wyrocznia_zgody.jsonl" = []
-"tools/wyrocznia_zgody.py" = []
-"tools/wyrocznia_zgody_prefiks.sh" = []

@@ -4,12 +4,15 @@ Liczy jak workflow ``pr-size.yml`` z t3code: suma dodanych i usuniętych linii z
 --ignore-all-space --ignore-blank-lines <baza>...<głowa>`` (od bazy scalenia). W PR, który zmienia też coś poza
 testami, pliki testów (``TESTY``) się nie liczą, a PR z samymi testami liczy się po testach. Progi to ``PROGI``.
 
-Licznik szopy (ADR 0034) bierze z tego samego diffu dodane i usunięte linie maszynerii procesu z jej testami: plików,
-które lista ``LISTA`` przypisuje grupie ``maszyneria``, bez prozy (``*.md``), którą spis zapachów liczy w słowach,
-i bez samej listy, na którą każdy nowy plik testów produktu dopisuje linię.
-Plik należy do grupy wpisu listy, który go nazywa albo jest jego katalogiem (wpis z ``/`` na końcu): w diffie najpierw
-według listy bazy, a plik, którego lista bazy nie zna, według listy głowy; plik spod ``OBSZARY`` bez wpisu na żadnej
-z nich to maszyneria. PR, który dodaje linie maszynerii procesu i nie usuwa ich więcej, niż dodaje, wymaga zgody.
+Licznik szopy (ADR 0034) bierze z tego samego diffu dodane i usunięte linie maszynerii procesu z jej testami: plików
+grupy ``maszyneria``, bez prozy (``*.md``), którą spis zapachów liczy w słowach, i bez samej listy ``LISTA``, której
+wpis tylko przypisuje grupę liniom innego pliku.
+Grupę pliku daje wpis listy, który go nazywa albo jest jego katalogiem (wpis z ``/`` na końcu), a plik bez wpisu ma
+grupę z reguły katalogu ``REGULY``; plik spoza niej nie należy do żadnej grupy. Lista trzyma więc tylko wyjątki, a nowy
+plik bez wpisu nie wymaga zmiany listy. Plik, który istnieje w bazie scalenia, bierze grupę z listy bazy, a nowy plik
+z listy głowy, więc PR nie przenosi istniejącej maszynerii do weryfikacji własną listą.
+Granica: nowy test maszynerii bez wpisu liczy się jako test produktu, dopóki ktoś go nie dopisze do listy.
+PR, który dodaje linie maszynerii procesu i nie usuwa ich więcej, niż dodaje, wymaga zgody.
 Licznik drukuje też dwa stosunki na drzewie głowy według jej listy: linie testów zachowania ``src`` (pliki ``tests/``
 grupy ``produkt``) do linii ``src`` i linie testów szopy (pozostałe pliki ``tests/``) do linii ``src``; testy produktu
 dostają tylko tę liczbę.
@@ -67,11 +70,18 @@ TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec
 
 LISTA = "tools/lib/szopa.toml"
 PRODUKT = "produkt"
+WERYFIKACJA = "weryfikacja"
 MASZYNERIA = "maszyneria"
-GRUPY = (PRODUKT, "weryfikacja", MASZYNERIA)
-# Katalogi, których każdy plik ma wpis na liście (test w ``tests/test_rozmiar_pr.py``).
-OBSZARY = ("tools/", ".agents/skills/", "tests/")
+GRUPY = (PRODUKT, WERYFIKACJA, MASZYNERIA)
 SRC = "src/"
+# Grupa pliku bez wpisu na liście: pierwszy początek ścieżki, od którego plik się zaczyna. Hooki leżą w ``tools/hooks/``.
+REGULY = (
+    (SRC, PRODUKT),
+    ("tests/", PRODUKT),
+    ("tools/", MASZYNERIA),
+    (".agents/skills/verify-", WERYFIKACJA),
+    (".agents/skills/", MASZYNERIA),
+)
 PROZA = ".md"
 # Drzewo bez plików, które git zna bez obiektu w repozytorium: diff od niego to linie każdego pliku.
 PUSTE_DRZEWO = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -160,13 +170,14 @@ def obejmujace(wpisy: Mapping[str, str], sciezka: str) -> list[str]:
     return [wpis for wpis in wpisy if sciezka == wpis or (wpis.endswith("/") and sciezka.startswith(wpis))]
 
 
-def _grupa(listy: Sequence[Mapping[str, str]], sciezka: str) -> str | None:
-    for wpisy_listy in listy:
-        grupy = {wpisy_listy[wpis] for wpis in obejmujace(wpisy_listy, sciezka)}
-        if grupy:
-            # Dwa wpisy dwóch grup na jednej liście to błąd listy, który jej test łapie; do tej pory liczy się ostrożnie.
-            return grupy.pop() if len(grupy) == 1 else MASZYNERIA
-    return MASZYNERIA if sciezka.startswith(OBSZARY) else None
+def _grupa(lista: Mapping[str, str], sciezka: str) -> str | None:
+    """Grupa pliku ``sciezka`` z jego wpisu na liście ``lista``, a bez wpisu z reguły katalogu ``REGULY``."""
+
+    grupy = {lista[wpis] for wpis in obejmujace(lista, sciezka)}
+    if grupy:
+        # Dwa wpisy dwóch grup to błąd listy, który jej test łapie; do tej pory liczy się ostrożnie.
+        return grupy.pop() if len(grupy) == 1 else MASZYNERIA
+    return next((grupa for poczatek, grupa in REGULY if sciezka.startswith(poczatek)), None)
 
 
 def _lista(root: Path, rewizja: str) -> dict[str, str]:
@@ -223,13 +234,14 @@ class Szopa:
 
 def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
     lista_bazy, lista_glowy = _lista(root, baza), _lista(root, glowa)
+    nowe = set(repo.git(root, "diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", f"{baza}...{glowa}").split("\0"))
     dodane = usuniete = 0
     for sciezka, plus, minus in _pliki(root, "--ignore-all-space", "--ignore-blank-lines", f"{baza}...{glowa}"):
-        if sciezka != LISTA and _grupa((lista_bazy, lista_glowy), sciezka) == MASZYNERIA:
+        if sciezka != LISTA and _grupa(lista_glowy if sciezka in nowe else lista_bazy, sciezka) == MASZYNERIA:
             dodane, usuniete = dodane + plus, usuniete + minus
     linie = {SRC: 0, PRODUKT: 0, MASZYNERIA: 0}
     for sciezka, plus, _ in _pliki(root, PUSTE_DRZEWO, glowa, "--", SRC, "tests/"):
-        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa((lista_glowy,), sciezka) == PRODUKT else MASZYNERIA
+        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa(lista_glowy, sciezka) == PRODUKT else MASZYNERIA
         linie[rodzaj] += plus
     return Szopa(dodane, usuniete, linie[SRC], linie[PRODUKT], linie[MASZYNERIA])
 
