@@ -253,10 +253,10 @@ def test_noca_sprawdzenie_spoza_folderu_skilla_uruchamia_skrypt_ktorego_mutacje_
 
 @pytest.mark.parametrize(
     ("event", "runs"),
-    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [SCRIPT_A, "verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"])],
+    [(Zdarzenie.NOC, ["verify-b/check_b_mutations.py", "verify-c/check_c_mutations.py"]), (Zdarzenie.PUSH, [])],
     ids=["noc", "push"],
 )
-def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_biegnie_wszystko(
+def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_pomija_kazdy_skrypt_mutacji(
     tmp_path: Path, event: Zdarzenie, runs: list[str]
 ) -> None:
     repo = repository(tmp_path / "repo", SKILLS)
@@ -264,7 +264,6 @@ def test_bez_zmian_od_bazy_noc_pomija_tylko_skill_z_pilnuje_i_tabela_a_push_bieg
     praca = zakres(event, frozenset(), repo)
 
     assert sorted(_runs(praca)) == runs
-    assert ({w.powod for w in praca.wybrane} == {""}) == (event is Zdarzenie.PUSH)
 
 
 @pytest.mark.parametrize(
@@ -517,11 +516,13 @@ def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostal
     ("event", "baseline", "script"),
     [
         (Zdarzenie.PULL_REQUEST, (True, "zmienione: "), (False, "skrypt mutacji biegnie nocą")),
+        # Na pushu do main każda podstawa, bez względu na zmianę, a skrypt mutacji tylko nocą (Z1, 13.11).
+        (Zdarzenie.PUSH, (True, ""), (False, "skrypt mutacji biegnie nocą")),
         (Zdarzenie.NOC, (False, "podstawa biegnie na pull request, nie nocą"), (True, "zmienione: ")),
     ],
-    ids=["pull-request", "noc"],
+    ids=["pull-request", "push", "noc"],
 )
-def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
+def test_na_pull_request_i_pushu_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
     tmp_path: Path, event: Zdarzenie, baseline: tuple[bool, str], script: tuple[bool, str]
 ) -> None:
     command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
@@ -536,8 +537,10 @@ def test_na_pull_request_biegna_same_podstawy_a_noca_same_skrypty_mutacji(
 @pytest.mark.parametrize(
     ("arguments", "event", "changed", "separately", "script"),
     [
-        ("", Zdarzenie.PUSH, "", False, True),
-        (" --pelny", Zdarzenie.PUSH, "", True, True),
+        # Na pushu skrypt mutacji nie biegnie, więc biegnie podstawa, którą uruchamia bez mutacji.
+        ("", Zdarzenie.PUSH, "", True, False),
+        (" --pelny", Zdarzenie.PUSH, "", True, False),
+        ("", Zdarzenie.NOC, ".agents/skills/verify-a/scripts/sprawdz_a.py", False, True),
         # Na PR biegnie sama podstawa, także przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą.
         ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", True, False),
         ("", Zdarzenie.PULL_REQUEST, ".agents/skills/verify-a/scripts/sprawdz_a.py", True, False),

@@ -20,12 +20,12 @@ Krok pytest ma limit ``plan_runu.limit_pytest_s`` ze ściany zadania z planu: po
 Zapis ``plan_runu.WYKONANIE`` ma wynik każdej jednostki i ostrzeżenia ``CZAS BLISKO LIMITU`` kroków skilli
 (``blisko_limitu``), które noc zgłasza w issue PR-u (``tools/mutacje_nocne.py``). Kod 1, gdy coś padło.
 
-Z ``--kroki-pushu`` (zadanie mutations ``tools/ci_lokalnie.py``) wykonuje tak samo jedno zadanie z każdym krokiem skilli
-zakresu pushu (``tools/lib/zakres_runu.py``), bez planu i bez części, a FAIL znalezienia kroku (zgubiony skrypt
-mutacji, zły klucz ``ci:`` albo ``ci-czesci:``) drukuje i liczy jako porażkę.
+Z ``--kroki-skilli`` (zadanie mutations ``tools/ci_lokalnie.py``) wykonuje tak samo jedno zadanie z każdym krokiem
+każdego skilla (podstawy jak push, skrypty mutacji jak noc), bez planu i bez części, a FAIL znalezienia kroku (zgubiony
+skrypt mutacji, zły klucz ``ci:`` albo ``ci-czesci:``) drukuje i liczy jako porażkę.
 
     python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie windows-3.14-2       # albo mutacje-1
-    python tools/ci/wykonaj_zadanie.py --kroki-pushu
+    python tools/ci/wykonaj_zadanie.py --kroki-skilli
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import jednostka
 from jednostka import Czesc, Klucz, Rodzaj
-from kroki_skilli import Katalog, Step
+from kroki_skilli import Katalog, Step, repeats
 import niestabilne_testy
 from niestabilne_testy import FlakyTest, ZapisKwarantanny
 import plan_runu
@@ -55,7 +55,7 @@ import potomne
 from repo import ROOT
 import rozjazd_modelu
 import silnik_mutacji
-from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie, zakres
+from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie
 
 JUNIT = Path(".ci-czasy", "junit.xml")
 PONOWIENIE = Path(".ci-czasy", "junit-ponowienie.xml")
@@ -64,7 +64,7 @@ PONOWIENIE_NAJWIECEJ = 5
 CZESCI = Path(".ci-plan", "czesci.json")
 # Najdłuższy skrypt mutacji trwał w CI na Windows 770 s; limit łapie zawieszenie, a nie wolny runner.
 LIMIT_S = 30 * 60
-KROKI_PUSHU = "kroki-skilli-pushu"
+KROKI_SKILLI = "kroki-skilli"
 
 
 def _pytest(pliki: Mapping[str, list[Czesc]]) -> tuple[str, ...]:
@@ -233,24 +233,25 @@ def wykonaj(plan: Plan, zadanie_id: str, bledy: Sequence[str] = (), *, root: Pat
     return 1 if padly else 0
 
 
-def _kroki_pushu(root: Path) -> int:
-    praca = zakres(Zdarzenie.PUSH, frozenset(), root)
-    for nazwa, powod in praca.bledy:
+def _kroki_skilli(root: Path) -> int:
+    katalog = Katalog.skanuj(root)
+    bledy = sorted(katalog.bledy.items())
+    for nazwa, powod in bledy:
         print(f"FAIL {nazwa}: {powod}", flush=True)
-    klucze = tuple(jednostka.skill(wybrany.krok.key) for wybrany in praca.wybrane)
-    plan = Plan(Zdarzenie.PUSH, 0.0, (), (Zadanie(KROKI_PUSHU, MUTACJE.nazwa, "kroki skilli pushu", klucze, 0.0),))
-    return wykonaj(plan, KROKI_PUSHU, [nazwa for nazwa, _ in praca.bledy], root=root)
+    klucze = tuple(jednostka.skill(step.key) for step in katalog.kroki if step.verdict or not repeats(step, katalog.kroki))
+    plan = Plan(Zdarzenie.PUSH, 0.0, (), (Zadanie(KROKI_SKILLI, MUTACJE.nazwa, "kroki skilli", klucze, 0.0),))
+    return wykonaj(plan, KROKI_SKILLI, [nazwa for nazwa, _ in bledy], root=root)
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     jak = parser.add_mutually_exclusive_group(required=True)
     jak.add_argument("--plan", type=Path)
-    jak.add_argument("--kroki-pushu", action="store_true", help="Każdy krok skilli zakresu pushu po kolei (tools/ci_lokalnie.py).")
+    jak.add_argument("--kroki-skilli", action="store_true", help="Każdy krok każdego skilla po kolei, podstawy i skrypty mutacji (tools/ci_lokalnie.py).")
     parser.add_argument("--zadanie")
     args = parser.parse_args(argv)
-    if args.kroki_pushu:
-        return _kroki_pushu(root)
+    if args.kroki_skilli:
+        return _kroki_skilli(root)
     if args.zadanie is None:
         parser.error("--plan wymaga --zadanie")
     try:

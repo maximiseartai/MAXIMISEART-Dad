@@ -1,8 +1,8 @@
 """Ciężkie zadania CI liczy GitHub, a lokalnie biegną tylko do odtworzenia ich konkretnej porażki.
 
 Ciężkie zadania to ``change-mutations`` (``tools/mutacje_zmiany.py``) i ``mutations`` (``tools/ci/wykonaj_zadanie.py
---kroki-pushu`` dla wszystkich skilli): trwają kilkanaście minut i dłużej, a CI liczy je w częściach, ``mutations`` po pushu, a
-``change-mutations`` nocą na ``main`` (ADR 0021).
+--kroki-skilli`` dla wszystkich skilli): trwają kilkanaście minut i dłużej, a CI liczy je w częściach, podstawy po pushu, a
+skrypty mutacji skilli i ``change-mutations`` nocą na ``main`` (ADR 0021).
 ``tools/mutacje_zmiany.py`` i ``tools/ci_lokalnie.py`` z ``mutations`` (także pełne, bez ``--tylko``) pytają
 ``refusal`` przed startem, a ``tools/mutacje.py`` pyta ``mutations_refusal``, bo lista dłuższa niż ``TARGETED``
 mutacji to ręczne ``change-mutations``. Poza CI odmawiają (kod 2 i linia ``CIĘŻKIE CI ODMOWA``), chyba że:

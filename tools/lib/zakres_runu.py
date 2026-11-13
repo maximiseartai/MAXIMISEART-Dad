@@ -1,8 +1,7 @@
 """Zakres runu CI: co CI uruchamia dla zdarzenia (push, pull request, noc) i zmiany, każda praca z powodem i poleceniem.
 
 Jedyne miejsce polityki „co biegnie” (ADR 0020, ADR 0021); plan runu (``tools/plan_ci.py``) tylko wycenia i pakuje
-wynik, ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LICZY NOC``, a
-``tools/ci/wykonaj_zadanie.py --kroki-pushu`` uruchamia kroki skilli pushu:
+wynik, a ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``LICZY NOC``:
 
     praca = zakres(Zdarzenie.PULL_REQUEST, changed_since(ROOT, "origin/main"), ROOT)
     praca.tory, praca.pliki, praca.zrodlo        # pytest: tory z krokami CI i pliki testów
@@ -21,7 +20,8 @@ sięga ``PRZEGLADARKA`` (Atrapa efenix, z którą rozmawia tylko przeglądarka: 
 potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je instaluje, a nocą część Change mutations,
 której mutacje sprawdzają takie testy (``tools/mutacje_nocne.py``).
 
-Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każdy. Na pull request biegnie podstawa ``ci:``, gdy
+Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każda podstawa ``ci:``, a skrypty mutacji tylko nocą
+(ADR 0021, zmiana z 13.11). Na pull request biegnie podstawa ``ci:``, gdy
 zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji modelu TLA+ (``model_watched``: każda
 jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt, sprawdzenie,
 które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
@@ -204,7 +204,7 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
-    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push w ``tools/ci/wykonaj_zadanie.py --kroki-pushu`` biegnie też poza gitem.
+    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push go nie czyta.
     repository = cache(lambda: Repository.scan(root))
     tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)
@@ -259,7 +259,7 @@ Powod = tuple[bool, str, frozenset[str]]
 def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
     match zdarzenie:
         case Zdarzenie.PUSH:
-            return True, "", frozenset()
+            return (True, "", frozenset()) if step.verdict is None else (False, NIGHTLY, frozenset())
         case Zdarzenie.PULL_REQUEST:
             return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
         case Zdarzenie.NOC:

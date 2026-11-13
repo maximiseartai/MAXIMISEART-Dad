@@ -1,4 +1,4 @@
-"""Wykonanie kroków skilli pushu (``tools/ci/wykonaj_zadanie.py --kroki-pushu``) nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
+"""Wykonanie każdego kroku skilli (``tools/ci/wykonaj_zadanie.py --kroki-skilli``) nie przepuszcza skryptu mutacji, który zgubił się albo nie dał werdyktu, a kroki skilli
 (``tools/lib/kroki_skilli.py``) mają polecenie, części i przeglądarkę z frontmattera i skryptów skilla.
 
 Każdy test buduje własne ``.agents/skills`` i uruchamia obok nich kopię narzędzia albo czyta katalog
@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 
 PASSING = 'print("WYKRYTA: proba")\nprint("MUTACJE OK")\n'
-OK_LINE = "WYKONANIE OK | kroki skilli pushu"
+OK_LINE = "WYKONANIE OK | kroki skilli"
 CHECKED = "src/pakiet/sprawdzany.py"
 GUARDED = "---\nname: verify-x\npilnuje:\n  - src/pakiet/rout*.py\n---\n"
 ANCHORS = "src/pakiet/kotwice.txt"
@@ -80,7 +80,7 @@ def _tool(root: Path) -> list[str]:
     """Kopia wykonania zadań CI i ``ci_lokalnie`` w ``root``; kopii, która już jest, nie nadpisuje, bo test może ją zmieniać."""
 
     copy_files(root, [name for name in with_imports(("tools/ci/wykonaj_zadanie.py", "tools/ci_lokalnie.py")) if not (root / name).exists()])
-    return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-pushu"]
+    return [sys.executable, str(root / "tools" / "ci" / "wykonaj_zadanie.py"), "--kroki-skilli"]
 
 
 def _run(root: Path) -> subprocess.CompletedProcess[str]:
