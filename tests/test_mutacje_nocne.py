@@ -41,9 +41,12 @@ import mutacje_zmiany
 import niestabilne_testy
 import plan_runu
 from silnik_mutacji import NearLimit
+from wplyw_zmiany import Context
 from zakres_runu import Zdarzenie
 
 ROOT = Path(__file__).resolve().parents[1]
+# Plik, którego zmiana uruchamia każdy krok skilla, z tabeli jej właściciela (tools/lib/wplyw_zmiany.py), nie z kopii.
+KAZDY_KROK_SKILLA = next(path for path in Context.SKILL_STEPS.paths() if not path.endswith("/"))
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
 MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
 
@@ -1403,7 +1406,7 @@ def test_skrypt_mutacji_skilla_ktory_padl_noca_po_zmianie_bibliotek_trafia_do_is
 ) -> None:
     # Biblioteki uruchamiają każdy skrypt mutacji, więc PR, który je zmienił po runnerze z #23, dostaje skrypt verify-b.
     repo, baza = _historia_skilli(tmp_path)
-    (repo / "requirements.txt").write_text("pytest\n", encoding="utf-8")
+    (repo / KAZDY_KROK_SKILLA).write_text("pytest\n", encoding="utf-8")
     commit(repo, "Zmień biblioteki (#24)")
     github = GitHubWPamieci()
     zapisy = _wykonania(
