@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -23,16 +24,20 @@ from drive.common import (
     move,
     open_settings,
     put_text,
+    read_bytes,
+    read_text,
+    remove,
     remove_tree,
     sent_requests,
     settings_window,
     settle,
     unreadable,
 )
-from harness import Log
+from harness import INBOX_ADDRESS, INBOX_PASSWORD, Log, Switch
 
 
 FOLDERS = "#/ustawienia/foldery"
+POLISH_LETTERS = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
 
 
 FEATURE = "ustawienia"
@@ -238,6 +243,7 @@ def drive(run: Run, page: Page) -> None:
     _refusal_at_field(run, page)
     _typed_keeps_other(run, page)
     _bad_settings_file(run, page)
+    _inbox_password(run, page)
 
 
 def _toast(page: Page, title: str) -> Locator:
@@ -523,6 +529,86 @@ def _bad_settings_file(run: Run, page: Page) -> None:
     expect(window.get_by_role("alert")).to_have_count(0)
     run.check(run.api("/api/settings", "ustawienia-dobry-plik")["folders_problem"] is None, "the good file is back")
     close_settings(page)
+
+
+def _inbox_password(run: Run, page: Page) -> None:
+    """A new password of the skrzynka raportów in a field that never shows the old one, and one login that says whether
+    the skrzynka took it: rejected, accepted, no network (the served atrapa IMAP, never Dad's Gmail)."""
+
+    run.step(FEATURE, "ustawienia-haslo-skrzynki")
+    access = run.config / "skrzynka-raportow.txt"
+    # An old password Google never gives (a Polish letter): Dad replaces it, the address stays Maks's.
+    old = "stare hasło maksa"
+    # Harness: Maks's access file as Notepad writes it (BOM UTF-8, CRLF).
+    access.write_bytes(f"{INBOX_ADDRESS}\r\n{old}\r\n".encode("utf-8-sig"))
+    page.reload()
+    window = open_settings(page, "Skrzynka raportów")
+    row = window.get_by_role("listitem", name="Hasło aplikacji")
+    expect(row).to_contain_text(INBOX_ADDRESS)
+    expect(row.get_by_role("alert")).to_have_text(POLISH_LETTERS)
+    expect(row.get_by_role("button", name="Zmień hasło", exact=True)).to_be_enabled()
+    run.check(True, "a wrong old password shows its sentence under the address and leaves „Zmień hasło” on")
+    run.capture(page, "319-ustawienia-zle-stare-haslo", full_page=False)
+    field = row.get_by_role("textbox", name="Nowe hasło aplikacji")
+
+    def save(password: str) -> None:
+        row.get_by_role("button", name="Zmień hasło", exact=True).click()
+        expect(field).to_have_value("")
+        expect(field).to_have_attribute("type", "password")
+        field.fill(password)
+        row.get_by_role("button", name="Zapisz hasło", exact=True).click()
+        expect(field).to_be_hidden()
+
+    save("zle haslo")
+    expect(row.get_by_role("alert")).to_have_text("Skrzynka nie przyjęła hasła. Sprawdź je i wpisz jeszcze raz.")
+    run.check(
+        read_bytes(access) == f"{INBOX_ADDRESS}\r\nzlehaslo\r\n".encode("utf-8-sig"),
+        "a password the skrzynka rejects is still saved, only its line changes and the file keeps BOM and CRLF",
+    )
+    save("nowe haslo taty")
+    expect(row.get_by_role("status")).to_have_text("Skrzynka przyjęła hasło.")
+    run.check(INBOX_PASSWORD in read_text(access), "the password the skrzynka took is in the file")
+    run.capture(page, "316-ustawienia-haslo-przyjete", full_page=False)
+    offline = Switch.INBOX_OFFLINE.on(run.root)
+    try:
+        save("nowe haslo taty")
+        expect(row.get_by_role("status")).to_have_text("Hasło zapisane, ale skrzynka nie odpowiada. Sprawdź internet.")
+    finally:
+        remove(offline)
+    run.check(True, "with no network the password is saved and the section says the skrzynka does not answer")
+    settings = run.api("/api/settings", "ustawienia-skrzynka")
+    history = run.api("/api/settings/history", "ustawienia-historia-skrzynki")
+    answers = json.dumps([settings, history])
+    run.check(
+        settings["inbox"] == {"address": INBOX_ADDRESS, "password": True}
+        and not [
+            word for word in (old, old.replace(" ", ""), "zle haslo", "zlehaslo", INBOX_PASSWORD, "nowe haslo") if word in answers
+        ],
+        "neither GET /api/settings nor the Historia carries any password",
+    )
+
+    rows = open_settings(page, "Historia").get_by_role("list", name="Zmiany").get_by_role("listitem")
+    expect(rows.first).to_contain_text("Hasło skrzynki raportów")
+    expect(rows.first).to_contain_text("zmieniono")
+    expect(rows.first.get_by_role("button")).to_have_count(0)
+    run.check(True, "Historia says only that the password changed, without „Cofnij”")
+    run.capture(page, "317-ustawienia-historia-hasla", full_page=False)
+
+    open_settings(page, "Skrzynka raportów")
+    page.set_viewport_size(NARROW)
+    try:
+        row.get_by_role("button", name="Zmień hasło", exact=True).click()
+        field.fill("hasło")
+        row.get_by_role("button", name="Zapisz hasło", exact=True).click()
+        expect(row.get_by_role("alert")).to_have_text(POLISH_LETTERS)
+        expect(field).to_have_attribute("aria-invalid", "true")
+        run.check(INBOX_PASSWORD in read_text(access), "a password with Polish letters is not saved")
+        run.capture(page, "318-ustawienia-haslo-waskie", full_page=False)
+        field.press("Escape")
+        expect(field).to_be_hidden()
+        close_settings(page)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
 
 
 @contextmanager

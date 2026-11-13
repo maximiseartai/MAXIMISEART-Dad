@@ -89,6 +89,7 @@ from typing import Final, TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE, AddressesError
 from rozliczenia.worker_addresses import load as load_addresses
 from rozliczenia.worker_config import WorkerConfigError, load_worker_mapping
@@ -407,7 +408,7 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
     if args.nadpisz and args.przeglad is None:
         parser.error("--nadpisz dotyczy tylko --przeglad")
     review = None if args.przeglad is None else ReviewFile.of(args.przeglad, args.nadpisz)
-    inbox = ImapInbox(args.config) if connect is None else ImapInbox(args.config, connect=connect)
+    inbox = ImapInbox(lambda: read_snapshot(args.config).inbox, connect=connect)
     try:
         if review is not None and (refusal := review.refusal()) is not None:
             raise ProbeFailed(refusal)

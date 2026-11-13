@@ -1,6 +1,8 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Na start obejmuje plik Folderów i motywu (``folders``). ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
+Obejmuje plik Folderów i motywu (``folders``) i plik dostępu do skrzynki raportów (``inbox``), który jest sekretem:
+jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma tylko odcisk jego treści, bez
+ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``. ``CentrumSettings`` czyta go przy każdym odczycie od nowa, więc
 zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 
@@ -48,6 +50,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import hashlib
 from pathlib import Path
 import threading
 from typing import Any, Final, TypeVar
@@ -57,6 +60,8 @@ from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.settings.files import Bad, FieldProblem, Good, KeyChange, Read, SettingsFile, Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
+from rozliczenia.centrum.settings import inbox
+from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import (
     ByDad,
     FromRelease,
@@ -70,6 +75,7 @@ from rozliczenia.centrum.settings.history import (
 )
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.release_changes import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.worker_report_inbox import InboxState
 
 T = TypeVar("T")
 
@@ -84,6 +90,7 @@ class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili: dobre, a przy złym pliku ostatnie dobre albo domyślne."""
 
     folders: FolderSettings
+    inbox: InboxState
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,7 @@ class SettingsView:
     """Ustawienia Centrum dla okna Ustawień: każda sekcja z wartością albo złym ustawieniem."""
 
     folders: Read[FolderSettings] | Unreadable
+    inbox: Read[InboxFile] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -138,11 +146,11 @@ class CentrumSettings:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
 
         with self._lock:
-            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS))
+            return SettingsSnapshot(folders=_usable(self._observe(FOLDERS), FOLDERS), inbox=inbox.state(self._observe(INBOX)))
 
     def view(self) -> SettingsView:
         with self._lock:
-            return SettingsView(folders=self._observe(FOLDERS))
+            return SettingsView(folders=self._observe(FOLDERS), inbox=self._observe(INBOX))
 
     def change(self, file: SettingsFile[T], edit: Callable[[T], T]) -> Saved | Refused | NotSaved:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową."""
@@ -161,7 +169,7 @@ class CentrumSettings:
             row = next((row for row in history.rows if row.id == row_id), None)
             if row is None:
                 return NotUndoable(known=False)
-            file = _FILES.get(row.file)
+            file = _UNDOABLE.get(row.file)
             if file is None or not row.undoable or row.result != "zapisano":
                 return NotUndoable(known=True)
             changes = row.key_changes()
@@ -172,8 +180,8 @@ class CentrumSettings:
         Centrum ma już swój wiersz, gdy tata otwiera Historię."""
 
         with self._lock:
-            for file in _FILES.values():
-                self._observe(file)
+            self._observe(FOLDERS)
+            self._observe(INBOX)
             return self._history.read()
 
     def apply_release_changes(
@@ -291,6 +299,8 @@ class CentrumSettings:
             self._log.settings_unreadable(cause="dostep")
             return NotSaved()
         observed = self._observed(file, data)
+        if isinstance(observed, Bad) and file.secret and observed.usable is None:
+            return Refused(observed.problem)
         current = _usable(observed, file)
         new = file.dump(edit(current)).encode("utf-8")
         edited = file.parse(new)
@@ -299,7 +309,7 @@ class CentrumSettings:
         changes = file.diff(current, edited)
         if not changes and isinstance(observed, Good):
             return Saved(change=None)
-        if isinstance(observed, Bad) and data is not None:
+        if isinstance(observed, Bad) and data is not None and not file.secret:
             self._memory.keep_rejected(file.name, data, self._now())
         row = self._row(file, changes, source, undoes=undoes, undoable=undoable) if changes else None
         try:
@@ -331,8 +341,11 @@ class CentrumSettings:
             self._log.unexpected_failure(failure, where="przywrócenie Ustawień po nieudanym wierszu Historii")
 
     def _remember(self, file: SettingsFile[T], remembered: Remembered) -> None:
-        """Pamięć po wierszu Historii; nieudana daje przy następnym odczycie powtórzony wiersz, nie zmianę bez wiersza."""
+        """Pamięć po wierszu Historii; nieudana daje przy następnym odczycie powtórzony wiersz, nie zmianę bez wiersza.
+        Sekretu pamięć nie trzyma: tylko odcisk stanu (``_seen``), bez ostatniej dobrej treści."""
 
+        if file.secret:
+            remembered = Remembered(seen=_seen(file, remembered.seen), good=None)
         try:
             self._memory.write(file.name, remembered)
         except OSError as failure:
@@ -359,6 +372,10 @@ class CentrumSettings:
         """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
         ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem."""
 
+        return _with_secret_value(file, self._compared(file, data), data)
+
+    def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
+
         parsed = file.parse(data)
         remembered = self._memory.read(file.name)
         if isinstance(remembered, Unreadable):
@@ -369,7 +386,7 @@ class CentrumSettings:
             self._remember(file, Remembered(seen=data, good=None if isinstance(parsed, FieldProblem) else data))
             return _read(parsed, None)
         before = _good_value(remembered.good, file)
-        if data == remembered.seen:
+        if _seen(file, data) == remembered.seen:
             return _read(parsed, before)
         try:
             self._history.append(self._outside_row(file, data, parsed, before))
@@ -408,7 +425,7 @@ class CentrumSettings:
             undoes=undoes,
             file=file.name,
             section=next(iter(sections)) if len(sections) == 1 else None,
-            changes=tuple(RowChange.of(change) for change in changes) if not file.secret else (),
+            changes=tuple(RowChange(key=change.key, before=None, after=None) if file.secret else RowChange.of(change) for change in changes),
             secret=file.secret,
             undoable=undoable and not file.secret,
             result="zapisano",
@@ -416,22 +433,50 @@ class CentrumSettings:
         )
 
 
-_FILES: Final[dict[str, SettingsFile[FolderSettings]]] = {FOLDERS.name: FOLDERS}
+_UNDOABLE: Final[dict[str, SettingsFile[FolderSettings]]] = {FOLDERS.name: FOLDERS}
+"""Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
+_FILES: Final[dict[str, SettingsFile[FolderSettings] | SettingsFile[InboxFile]]] = {**_UNDOABLE, INBOX.name: INBOX}
+"""Każdy plik właściciela; ``history`` porównuje z pamięcią każdy z nich."""
 
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela
     albo wartości domyślne; nie dopisuje Historii ani pamięci."""
 
-    data = settings_bytes(config / FOLDERS.name)
+    return SettingsSnapshot(folders=_read_only(config, FOLDERS), inbox=inbox.state(_read_only_view(config, INBOX)))
+
+
+def _read_only(config: Path, file: SettingsFile[T]) -> T:
+    return _usable(_read_only_view(config, file), file)
+
+
+def _read_only_view(config: Path, file: SettingsFile[T]) -> Read[T] | Unreadable:
+    data = settings_bytes(config / file.name)
     if isinstance(data, OSError):
-        return SettingsSnapshot(folders=FOLDERS.default)
-    parsed = FOLDERS.parse(data)
+        return Unreadable()
+    parsed = file.parse(data)
     if not isinstance(parsed, FieldProblem):
-        return SettingsSnapshot(folders=parsed)
-    remembered = Memory(config, lambda _: None).read(FOLDERS.name)
+        return Good(parsed)
+    remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
-    return SettingsSnapshot(folders=_good_value(good, FOLDERS))
+    return _with_secret_value(file, Bad(parsed, _good_value(good, file)), data)
+
+
+def _with_secret_value(file: SettingsFile[T], read: Read[T], data: bytes | None) -> Read[T]:
+    """Złe ustawienie sekretu z wartością samej złej treści zamiast ostatniej dobrej, której pamięć sekretu nie trzyma:
+    od niej zaczyna zapis taty, który naprawia tylko to, co zmienia."""
+
+    if not (file.secret and isinstance(read, Bad)):
+        return read
+    return Bad(read.problem, None if file.unchecked is None else file.unchecked(data))
+
+
+def _seen(file: SettingsFile[T], data: bytes | None) -> bytes | None:
+    """Stan pliku w pamięci: bajty, a sekretu tylko ich odcisk SHA-256, więc hasła nie ma w ``ustawienia-pamiec``."""
+
+    if data is None or not file.secret:
+        return data
+    return hashlib.sha256(data).digest()
 
 
 def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:

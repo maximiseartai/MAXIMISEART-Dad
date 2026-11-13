@@ -128,6 +128,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from datetime import date, datetime
 from functools import partial
+import imaplib
 import json
 import os
 from pathlib import Path
@@ -179,6 +180,8 @@ from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
 from skrypt_skilla import Parser
 from harness import (
+    INBOX_ADDRESS,
+    INBOX_PASSWORD,
     File,
     Log,
     Pace,
@@ -197,7 +200,7 @@ from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
 from atrapy.widok_skrzynki import shown
 from atrapy.efenix import write_collective_file
 from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
-from atrapy.skrzynka_raportow import FolderInbox
+from atrapy.skrzynka_raportow import AtrapaImap, FolderInbox
 
 EFENIX_SEARCH_DELAY_S = 1.0
 # How long a file the drive is putting in place is tried again (``_read_put_in_place``).
@@ -658,6 +661,15 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     shutdown = Shutdown(log)
     _pace_worker_templates(root, configuration["worker_template"])
     efenix = stack.enter_context(_efenix_window(root))
+    inbox = stack.enter_context(AtrapaImap(address=INBOX_ADDRESS, password=INBOX_PASSWORD))
+
+    def inbox_connect() -> imaplib.IMAP4:
+        """The login after a new password in Ustawienia goes to the atrapa, or nowhere while ``INBOX_OFFLINE`` is on."""
+
+        if Switch.INBOX_OFFLINE.is_on(root):
+            raise ConnectionRefusedError("skrzynka raportów poza siecią (atrapa)")
+        return imaplib.IMAP4("127.0.0.1", inbox.port)
+
     # Pip never reaches PyPI from a verification run.
     os.environ["PIP_NO_INDEX"] = "1"
     app = create_app(
@@ -679,6 +691,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         intermax_copies=Path(fixture["intermax"]["copies"]),
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
         efenix_window=efenix,
+        inbox_connect=inbox_connect,
         # Wpisanie raportów reads the run's .eml folder, never Dad's Gmail.
         worker_report_inbox=FolderInbox(Path(fixture["report_entering"]["mails"])),
     )
