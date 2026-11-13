@@ -23,8 +23,9 @@ albo ``api`` z adresem ponowienia Actions (``ADRES_PONOWIENIA``).
 Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (kod 0).
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
-Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
-hook pomija, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
+Ciała heredoców (skrypt Pythona, treść commitu), komentarze powłoki (od ``#`` na początku słowa do końca linii, a nie
+``#`` w słowie jak ``issue#12``, ``$#`` i ``${#x}``) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
+hook pomija we wszystkich regułach, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
 ``su -l -s /bin/sh root -c``).
 
@@ -64,6 +65,8 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 # Polecenia proste po ``_code``: między nimi stoją ``;``, ``&``, ``|``, nowa linia, nawiasy, ``$(`` i backtick.
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
+# Za tymi znakami poza cudzysłowem zaczyna się słowo, więc ``#`` za nimi otwiera komentarz powłoki.
+WORD_BREAKS = frozenset(" \t\n;&|()`")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -160,9 +163,9 @@ def _without_heredocs(command: str) -> str:
 
 
 def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tuple[str, int]:
-    """Polecenie bez tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
+    """Polecenie bez komentarzy i tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
 
-    Proza w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
+    Proza w komentarzu i w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
     Zwraca też indeks za ``)``, która zamyka ``$(`` przy ``inside_substitution``.
     """
 
@@ -171,8 +174,14 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     # Napis przyklejony do skryptu ``-c`` to jego dalszy ciąg: w ``bash -c '… perl -e '\''select(…)'\''; done'``
     # ``done`` stoi w trzecim napisie.
     depth, index, script_end = 0, start, -1
+    word_starts = True
     while index < len(command):
         char = command[index]
+        if char == "#" and word_starts:
+            newline = command.find("\n", index)
+            index = len(command) if newline < 0 else newline
+            continue
+        word_starts = char in WORD_BREAKS
         if char == "\\":
             kept.append(command[index : index + 2])
             if index == script_end:

@@ -109,6 +109,8 @@ WATCHES = (
     "timeout 580 gh run watch 40098178470 --exit-status > /dev/null 2>&1; echo rc=$?; "
     'gh pr checks 384 2>&1 | grep -v "pass" | head',
     "gh run watch 39930673572 --interval 30 --exit-status > /dev/null 2>&1; echo exit=$?; date -u +%T",
+    # Komentarz za poleceniem nie zdejmuje odmowy z samego polecenia.
+    "gh run watch 39930673572 --exit-status # do końca runu",
 )
 PGREP_LOOPS = (
     'until ! pgrep -f "tools/mutacje.py --plik ~/.t3/notes/arch-2026-10-24/K7/mutacje.json" >/dev/null; '
@@ -153,6 +155,14 @@ RERUNS = (
     "gh api --method POST repos/{owner}/{repo}/actions/jobs/130564767610/rerun",
     "gh api -X POST repos/o/r/actions/runs/1/attempts/1/rerun",
     'gh api -X POST "repos/o/r/actions/runs/$RUN/rerun-failed-jobs"',
+    "/opt/homebrew/bin/gh run rerun 43035692960",
+    # ``#`` w słowie, w cudzysłowie, za ukośnikiem albo w ciele heredoca nie zaczyna komentarza, a apostrof
+    # w komentarzu nie otwiera napisu, który zakryłby polecenie w następnej linii.
+    "echo issue#1459 && gh run rerun 43035692960",
+    'echo "#1459" && gh run rerun 43035692960',
+    "echo ${#RUN} $# \\# && gh run rerun 43035692960",
+    "gh run list -L 1 # it's red\ngh run rerun 43035692960",
+    "cat <<'EOF' > notatka.md\n# Ponowienie\nEOF\ngh run rerun 43035692960",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -222,6 +232,15 @@ PASSING = (
     # Ścieżka ze słowem rerun, która nie jest adresem ponowienia Actions.
     "gh api repos/maximiseartai/MAXIMISEART-Dad/contents/tools/rerun.py",
     "gh api repos/maximiseartai/MAXIMISEART-Dad/branches/tools/rerun-ci",
+    # Adres ponowienia liczy się tylko za ``gh api``: w argumencie innego polecenia ``gh`` to ścieżka pliku.
+    "gh pr comment 1459 --body-file ~/.t3/notes/actions/runs/43035692960/rerun.md",
+    # Komentarz powłoki to proza, także z zakazanym poleceniem (sondy przeglądu #1459, runda 2).
+    "gh run list # nie: gh run rerun",
+    "gh run list # ponów; gh run rerun 1",
+    "# (zamiast gh run rerun)\ngh run view 43035692960 --log-failed",
+    "gh run list # potem gh pr checks 1 --watch",
+    "# gh run watch 123\ngh run list",
+    "gh pr checks 1  # until ! gh pr checks 1 | grep -q pending; do sleep 30; done",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.
     "(while true; do echo \"$(date +%T) $(pgrep -fl 'serve_centrum|chrome-headless|pytest' | cut -c1-100 | "
     "tr '\\n' ' ')\"; sleep 5; done) > /tmp/wyd165-watch1.log 2>&1 & W=$!; .venv/bin/python "
