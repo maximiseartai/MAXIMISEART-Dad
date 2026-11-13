@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { cn } from "cn"
+import { CircleAlertIcon } from "lucide-react"
 
 /** Karta sekcji Ustawień: wiersze jeden pod drugim, oddzielone cienką linią (wzór: ustawienia T3 Code). */
 export function SettingsPanel({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
@@ -42,5 +43,15 @@ export function SettingRow({
       </div>
       {below}
     </div>
+  )
+}
+
+/** Jedno zdanie przy polu: zła wartość, której Centrum nie zapisało, albo złe ustawienie w pliku. */
+export function FieldSentence({ id, children }: { id?: string; children: React.ReactNode }) {
+  return (
+    <p id={id} role="alert" className="flex items-start gap-2 text-sm text-pretty text-destructive">
+      <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>{children}</span>
+    </p>
   )
 }

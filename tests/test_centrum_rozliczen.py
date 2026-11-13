@@ -455,7 +455,10 @@ def test_zmiana_motywu_przy_niedostepnym_pliku_ustawien_nie_wymazuje_folderu_okr
     assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
     assert kept == saved
     assert "ustawienia-bez-zapisu przyczyna=dostep" in app.log_path.read_text(encoding="utf-8")
-    assert (again.json()["theme"], again.json()["periods_directory"]["path"]) == ("light", str(periods))
+    assert (again.json()["settings"]["theme"], again.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -477,7 +480,10 @@ def test_plik_ustawien_niedostepny_na_chwile_przyjmuje_zmiane_po_ponowieniu(tmp_
     finally:
         tool.settings.chmod(0o644)
 
-    assert (changed.json()["theme"], changed.json()["periods_directory"]["path"]) == ("light", str(periods))
+    assert (changed.json()["settings"]["theme"], changed.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
     assert len(pauses) == 1
 
 
@@ -504,7 +510,7 @@ def test_zmiana_folderow_rejestru_i_motywu_ma_wiersz_historii_z_wartoscia_przed_
 
     chosen = app.client.post("/api/settings/register/choose")
     saved = app.client.put("/api/settings/folders", json={"order_register": str(register), "periods_directory": str(periods)})
-    app.client.put("/api/settings/theme", json={"theme": "light"})
+    themed = app.client.put("/api/settings/theme", json={"theme": "light"})
     rows = history_rows(app)
 
     assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
@@ -512,7 +518,7 @@ def test_zmiana_folderow_rejestru_i_motywu_ma_wiersz_historii_z_wartoscia_przed_
         ("tata", "foldery", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}], True),
         ("tata", "foldery", [{"key": "foldery.rejestr_zlecen", "before": None, "after": str(register)}], True),
     ]
-    assert [chosen.json()["change"], saved.json()["change"]] == [rows[2]["id"], rows[1]["id"]]
+    assert [chosen.json()["change"], saved.json()["change"], themed.json()["change"]] == [row["id"] for row in rows[::-1]]
     log = app.log_path.read_text(encoding="utf-8")
     assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=foldery.folder_okresow zrodlo=tata" in log
     assert (str(periods) in log, register.name in log) == (False, False)
@@ -755,7 +761,7 @@ def test_zapis_taty_przy_zlej_tresci_pliku_zmienia_ostatnia_dobra_wartosc(tmp_pa
 
     changed = app.client.put("/api/settings/theme", json={"theme": "light"})
 
-    assert (changed.status_code, changed.json()["periods_directory"]["path"], changed.json()["folders_problem"]) == (
+    assert (changed.status_code, changed.json()["settings"]["periods_directory"]["path"], changed.json()["settings"]["folders_problem"]) == (
         200,
         str(periods),
         None,
@@ -871,7 +877,7 @@ def test_plik_historii_zajety_na_chwile_przyjmuje_wiersz_po_ponowieniu(tmp_path:
         history.chmod(0o644)
     rows = client.get("/api/settings/history").json()["rows"]
 
-    assert (changed.status_code, changed.json()["theme"]) == (200, "light")
+    assert (changed.status_code, changed.json()["settings"]["theme"]) == (200, "light")
     assert [row["changes"][0]["key"] for row in rows] == ["wyglad.motyw", "foldery.folder_okresow"]
     assert len(pauses) == 1
 

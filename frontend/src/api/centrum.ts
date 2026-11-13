@@ -4,6 +4,7 @@ import type {
   DadNoteText,
   DecisionAnswer,
   FillKind,
+  FoldersChange,
   GetCurrentRunResponse,
   GetIntermaxDaysResponse,
   GetIntermaxSetupResponse,
@@ -112,6 +113,21 @@ export function choosePeriodsDirectory() {
 
 export function changeTheme(theme: Theme) {
   return call("changeTheme", { body: { theme } })
+}
+
+/** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
+export function changeFolders(folders: FoldersChange) {
+  return call("changeFolders", { body: folders })
+}
+
+/** Historia Ustawień od najnowszej zmiany. */
+export function getSettingsHistory() {
+  return call("getSettingsHistory")
+}
+
+/** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */
+export function undoSettingsChange(change: string) {
+  return call("undoSettingsChange", { path: { change_id: change } })
 }
 
 export function getPeriodBoard() {

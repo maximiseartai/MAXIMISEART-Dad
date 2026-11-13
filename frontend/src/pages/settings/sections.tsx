@@ -3,6 +3,7 @@ import {
   ArchiveRestoreIcon,
   FileSpreadsheetIcon,
   FolderIcon,
+  HistoryIcon,
   InboxIcon,
   PaletteIcon,
   UsersIcon,
@@ -13,6 +14,7 @@ import {
 import { FOLDERS_SECTION } from "@/components/setting-path"
 import { AppearanceSection } from "@/pages/settings/appearance-section"
 import { FoldersSection } from "@/pages/settings/folders-section"
+import { HistorySection } from "@/pages/settings/history-section"
 import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
@@ -36,6 +38,7 @@ export const SETTINGS_SECTIONS = [
   { id: "zgloszenia", title: "Zgłoszenia", group: "Połączenia", icon: InboxIcon, Content: ReportsSection },
   { id: "narzedzie", title: "Narzędzie", group: "Narzędzie", icon: WrenchIcon, Content: ToolSection },
   { id: "wyglad", title: "Wygląd", group: "Narzędzie", icon: PaletteIcon, Content: AppearanceSection },
+  { id: "historia", title: "Historia", group: "Historia", icon: HistoryIcon, Content: HistorySection },
 ] as const satisfies ReadonlyArray<{
   id: string
   title: string

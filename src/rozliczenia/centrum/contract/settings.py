@@ -71,8 +71,9 @@ class Settings(Model):
 
 
 class Choice(Model):
-    """Ustawienia po natywnym oknie wyboru albo zapisie sekcji: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
-    ``change``: id wiersza Historii Ustawień tej zmiany (do „Cofnij”); ``None``: bez zmiany i bez wiersza."""
+    """Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+    anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+    ``None``: bez zmiany i bez wiersza."""
 
     settings: Settings
     change: str | None = None
