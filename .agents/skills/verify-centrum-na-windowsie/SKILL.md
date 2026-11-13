@@ -37,6 +37,7 @@ pilnuje:
   - tools/lib/atrapy/pliki_taty.py
   - tools/lib/atrapy/workbooks.py
   - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
+  - .agents/skills/verify-centrum-rozliczen/scripts/drive/common.py
 ---
 
 # Verify Centrum rozliczeń na Windowsie
@@ -133,10 +134,10 @@ reads.
   `System.Drawing`.
 
 The tab is Playwright for Python's headless Chromium at 1440×1000, `pl-PL`, on `http://127.0.0.1:47811/`, with the
-same ARIA handles as `verify-centrum-rozliczen`: Dad opens dialog `Ustawienia` with link `Ustawienia` (the gear in the
-menu's footer) or with link `Ustaw w Ustawieniach` on the empty Okresy, and goes to a section by its link (`Foldery`,
-`Narzędzie`; heading `Ustawienia/<sekcja>`), whose content is `[data-slot=settings-section]` (the menu of sections
-has a list of the same name as the section Narzędzie); there buttons `Wskaż Folder okresów`, `Wskaż Rejestr zleceń`
+helpers of the window Ustawienia from `verify-centrum-rozliczen`'s `drive/common.py`: Dad opens dialog `Ustawienia`
+with link `Ustawienia` (the gear in the menu's footer) or with link `Ustaw w Ustawieniach` on the empty Okresy, and
+goes to a section by its link (`Foldery`, `Narzędzie`; heading `Ustawienia/<sekcja>`), whose content is
+`settings_section` (the menu of sections has a list of the same name as the section Narzędzie); there buttons `Wskaż Folder okresów`, `Wskaż Rejestr zleceń`
 and `Zaktualizuj narzędzie`, list items `Folder okresów`, `Rejestr zleceń` and `Wersja narzędzia`; Esc closes it. On
 the page: button `Folder okresu, okres 15_21_09_2026`, table `Tablica okresów`, dialog `Zaktualizowano` in region
 `Notifications`. Recipes are in `features/`.

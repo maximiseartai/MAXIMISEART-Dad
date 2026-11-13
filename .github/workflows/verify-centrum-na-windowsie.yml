@@ -49,6 +49,7 @@ on:
       - tools/lib/atrapy/pliki_taty.py
       - tools/lib/atrapy/workbooks.py
       - .agents/skills/verify-centrum-rozliczen/scripts/create_centrum_fixture.py
+      - .agents/skills/verify-centrum-rozliczen/scripts/drive/common.py
   push:
     branches:
       - main
