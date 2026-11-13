@@ -68,7 +68,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
+from typing import TYPE_CHECKING, Any, BinaryIO, Final, Literal, Protocol, assert_never, final, get_args
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.clock import Clock
@@ -93,6 +93,9 @@ from rozliczenia.centrum.report_box import (
 )
 from rozliczenia.client_data import Outgoing
 from rozliczenia.wall_clock import utc_now
+
+if TYPE_CHECKING:
+    from rozliczenia.centrum.comment_versions import LogsPost
 
 if sys.platform == "win32":
     import msvcrt
@@ -360,6 +363,7 @@ class Version:
         return cls(Rank.OWN, text)
 
 
+@final
 @dataclass(frozen=True)
 class Post:
     """Gotowa wysyłka do Skrzynki Zgłoszeń, wyrenderowana przez wersję narzędzia, która ją utworzyła.
@@ -369,6 +373,9 @@ class Post:
     wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie. ``rank``: stopień
     wersji tej wysyłki (``Rank``). ``state``: stan wysyłki, który nadaje i czyta jej słuchacz (``Listener``, Uwaga taty:
     czy Logi Uruchomienia są w drodze); kolejka zapisuje go w pliku i oddaje bez zmian, a do Skrzynki nie wysyła.
+
+    Podklasy nie ma (``final``), więc plik kolejki zapisuje zawsze ``to_json`` tej klasy, a zmienioną kopię daje tylko
+    ``dataclasses.replace`` albo ``__replace__``, których pola sprawdza mypy (``copy.replace`` ma zakaz ruff w ``src``).
     """
 
     target: Target
@@ -442,22 +449,6 @@ class Post:
 
     def to_json(self) -> str:
         return _queue_text(self, delivered_parts=0, archived=False)
-
-
-class Queueable(Protocol):
-    """To, co ``Outbox.post`` czyta z wysyłki: ``Post`` albo wysyłka, której nadawca nie daje zmienić przed kolejką
-    (``comment_versions.LogsPost``)."""
-
-    @property
-    def target(self) -> Target: ...
-
-    @property
-    def period(self) -> str | None: ...
-
-    @property
-    def run_id(self) -> str: ...
-
-    def to_json(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -1287,10 +1278,11 @@ class Outbox:
             self._changed.wait_for(settled, timeout_s)
             return (run_id, label) in self._first_comments
 
-    def post(self, post: Queueable) -> bool:
+    def post(self, post: Post | LogsPost) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
-        Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
+        Kolejka bierze tylko ``Post`` i ``comment_versions.LogsPost``, obie bez podklas, więc treść pliku kolejki daje
+        zawsze ``Post.to_json``. Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
         (Windows poprawia czas): chwila w nazwie jest wtedy o ``_TICK`` późniejsza od poprzedniej, więc wysyłka zapisana
         później ma nowszą wersję (``_version``). ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i
         wysyłka przepadła.

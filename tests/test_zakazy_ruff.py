@@ -94,6 +94,9 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.workbook_files.open_workbook",
     ),
+    # Zmieniona kopia dataclassy z polami Any, obok dataclasses.replace (przegląd #1660, W1).
+    "import copy\nsent = copy.replace(post, run_id=run)": (SRC_CONFIG, ("rozliczenia", "centrum"), "copy.replace"),
+    "from copy import replace as copied": (SRC_CONFIG, ("rozliczenia",), "copy.replace"),
     "from . import workbook_files\nworkbook_files.template_content(p)": (
         SRC_CONFIG,
         ("rozliczenia",),
