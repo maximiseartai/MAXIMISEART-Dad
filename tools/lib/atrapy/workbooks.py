@@ -120,15 +120,20 @@ def column_widths(sheet: Worksheet, max_col: int) -> list[float | None]:
     return widths
 
 
-def add_external_link_fixture(path: Path, *, prefixed: bool = False) -> None:
-    """Dopisuje do skoroszytu jeden link zewnętrzny; ``prefixed`` pisze ``xl/workbook.xml`` z prefiksem ``x:`` zamiast
-    domyślnej przestrzeni nazw, którą mają Wzorce taty."""
+def add_external_link_fixture(path: Path, *, default_namespace: bool = False) -> None:
+    """Dopisuje do skoroszytu jeden link zewnętrzny.
+
+    ``xl/workbook.xml`` i ``[Content_Types].xml`` dostają prefiks ``ns0:``, a ``default_namespace`` zostawia je w
+    domyślnej przestrzeni nazw jak we Wzorcach taty: produkt kopiuje obie postaci, więc testy potrzebują obu.
+    """
 
     ns_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     ns_pkg_rel = "http://schemas.openxmlformats.org/package/2006/relationships"
     ns_content = "http://schemas.openxmlformats.org/package/2006/content-types"
+    ET.register_namespace("", ns_main)
     ET.register_namespace("r", ns_rel)
+    ET.register_namespace("", ns_pkg_rel)
 
     descriptor = {
         "xl/externalLinks/externalLink1.xml": (
@@ -148,6 +153,17 @@ def add_external_link_fixture(path: Path, *, prefixed: bool = False) -> None:
             "</Relationships>"
         ).encode("utf-8"),
     }
+
+    def serialized(root: ET.Element, namespace: str) -> bytes:
+        # ElementTree trzyma jedną domyślną przestrzeń nazw na cały proces, a części relacji potrzebują w niej ns_pkg_rel.
+        if default_namespace:
+            ET.register_namespace("", namespace)
+        try:
+            xml: bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        finally:
+            ET.register_namespace("", ns_pkg_rel)
+        return xml
+
     file_descriptor, temp_name = tempfile.mkstemp(suffix=".xlsx", dir=path.parent)
     os.close(file_descriptor)
     temporary_path = Path(temp_name)
@@ -159,10 +175,7 @@ def add_external_link_fixture(path: Path, *, prefixed: bool = False) -> None:
                     root = ET.fromstring(data)
                     references = ET.SubElement(root, f"{{{ns_main}}}externalReferences")
                     ET.SubElement(references, f"{{{ns_main}}}externalReference", {f"{{{ns_rel}}}id": "rIdSynExternal1"})
-                    # ElementTree ma jedną domyślną przestrzeń nazw na proces, więc każda część rejestruje swoją tuż
-                    # przed zapisem; inaczej workbook.xml dostaje prefiks ns0:, którego Wzorce taty nie mają.
-                    ET.register_namespace("x" if prefixed else "", ns_main)
-                    data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                    data = serialized(root, ns_main)
                 elif info.filename == "xl/_rels/workbook.xml.rels":
                     root = ET.fromstring(data)
                     ET.SubElement(
@@ -174,7 +187,6 @@ def add_external_link_fixture(path: Path, *, prefixed: bool = False) -> None:
                             "Target": "externalLinks/externalLink1.xml",
                         },
                     )
-                    ET.register_namespace("", ns_pkg_rel)
                     data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
                 elif info.filename == "[Content_Types].xml":
                     root = ET.fromstring(data)
@@ -186,8 +198,7 @@ def add_external_link_fixture(path: Path, *, prefixed: bool = False) -> None:
                             "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml",
                         },
                     )
-                    ET.register_namespace("", ns_content)
-                    data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                    data = serialized(root, ns_content)
                 target.writestr(info, data)
             for name, data in descriptor.items():
                 target.writestr(name, data)

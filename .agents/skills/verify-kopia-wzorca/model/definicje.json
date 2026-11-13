@@ -79,7 +79,7 @@
     "WORKER_TEMPLATE_COLUMN_WIDTHS": "dbb22dbcdb7ffbab"
   },
   "tools/lib/atrapy/workbooks.py": {
-    "add_external_link_fixture": "efb47092c20f1e3e",
+    "add_external_link_fixture": "bde0365f02f18067",
     "refused_by_copy": "8bacdd43c6977f0c",
     "_rewrite_worksheets": "1cb1b3078f75debd",
     "_REFUSED": "f22739f90ca45b32"

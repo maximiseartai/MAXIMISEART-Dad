@@ -235,7 +235,7 @@ def build_templates(directory: Path, real_template: Path | None, names: Sequence
     if "maly" in names:
         small = directory / "maly.xlsx"
         write_template(small)
-        add_external_link_fixture(small, prefixed=True)
+        add_external_link_fixture(small)
         templates.append(
             Template.of(
                 "maly",

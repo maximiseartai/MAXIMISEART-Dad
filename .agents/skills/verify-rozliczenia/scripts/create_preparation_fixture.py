@@ -103,7 +103,8 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
     _write_register(register)
     if templates_from is None:
         write_internal_template(internal_template)
-        write_collective_template(collective_template, zero_rows=COLLECTIVE_ZERO_ROWS)
+        # Dad's unprefixed xl/workbook.xml: chain catches a copy of the Wzorzec that refuses this shape.
+        write_collective_template(collective_template, zero_rows=COLLECTIVE_ZERO_ROWS, default_namespace=True)
     else:
         shutil.copyfile(templates_from / INTERNAL_TEMPLATE_NAME, internal_template)
         shutil.copyfile(templates_from / COLLECTIVE_TEMPLATE_NAME, collective_template)

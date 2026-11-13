@@ -338,9 +338,17 @@ def write_internal_template(
 
 
 def write_collective_template(
-    path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW, zero_rows: int = COLLECTIVE_TEMPLATE_ZERO_ROWS
+    path: Path,
+    *,
+    row_style: bool = False,
+    view: View = TEMPLATE_VIEW,
+    zero_rows: int = COLLECTIVE_TEMPLATE_ZERO_ROWS,
+    default_namespace: bool = False,
 ) -> Path:
-    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, ``zero_rows`` wierszy zer i formuł, link zewnętrzny."""
+    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, ``zero_rows`` wierszy zer i formuł, link zewnętrzny.
+
+    ``default_namespace`` jak w ``add_external_link_fixture``.
+    """
 
     workbook = Workbook()
     sheet = active_worksheet(workbook)
@@ -371,7 +379,7 @@ def write_collective_template(
     rates["A1"] = "synthetic rate"
     rates["B1"] = 17.5
     workbook.save(path)
-    add_external_link_fixture(path)
+    add_external_link_fixture(path, default_namespace=default_namespace)
     return path
 
 

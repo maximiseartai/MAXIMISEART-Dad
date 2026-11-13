@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import zipfile
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 import pytest
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
@@ -36,7 +36,6 @@ from tests.fixtures.operacje import other_warnings, run_preparation
 from tests.fixtures.wyglad_komorek import wyglady
 from atrapy.workbooks import (
     active_worksheet,
-    add_external_link_fixture,
     external_link_parts,
     has_xml_comment,
     leave_data_row_leftovers,
@@ -166,17 +165,16 @@ def _cells(path: Path) -> dict[str, object]:
         workbook.close()
 
 
-@pytest.mark.parametrize(("prefixed", "root"), [(False, b"<workbook "), (True, b"<x:workbook ")], ids=["jak-u-taty", "z-prefiksem"])
-def test_link_zewnetrzny_atrapy_zostawia_workbook_xml_bez_prefiksu_jak_we_wzorcu_taty_a_prefiks_daje_na_zadanie(
-    tmp_path: Path, prefixed: bool, root: bytes
+@pytest.mark.parametrize(("default_namespace", "prefix"), [(False, b"ns0:"), (True, b"")], ids=["z-prefiksem", "jak-u-taty"])
+def test_wzorzec_pliku_zbiorczego_atrapy_ma_czesci_z_prefiksem_a_postac_taty_bez_prefiksu_na_zadanie(
+    tmp_path: Path, default_namespace: bool, prefix: bytes
 ) -> None:
-    path = tmp_path / "Wzorzec.xlsx"
-    Workbook().save(path)
-
-    add_external_link_fixture(path, prefixed=prefixed)
+    path = write_collective_template(tmp_path / "Wzorzec.xlsx", default_namespace=default_namespace)
 
     with zipfile.ZipFile(path) as archive:
-        assert root in archive.read("xl/workbook.xml")
+        assert b"<" + prefix + b"workbook " in archive.read("xl/workbook.xml")
+        assert b"<" + prefix + b"Types " in archive.read("[Content_Types].xml")
+        assert b"<Relationships " in archive.read("xl/_rels/workbook.xml.rels")
 
 
 @pytest.mark.parametrize(
