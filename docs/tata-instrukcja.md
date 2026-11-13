@@ -520,6 +520,16 @@ zostają bez zmian.
 4. Kliknij `Zapisz`, także gdy są różnice. Złą regułę Centrum odrzuci jednym
    zdaniem przy polu, które trzeba poprawić.
 
+Nad regułami stoi lista `Tu wpisałeś inaczej niż reguła`: wiersze ostatnich
+rozliczonych Plików zbiorczych, w których wpisałeś w kolumnie co innego niż
+reguła. To te same różnice, które Maks dostaje w Kontroli ilości.
+
+- `Popraw regułę` otwiera nową regułę z warunkami z `URZĄDZENIA` tego wiersza.
+  Nic się nie zapisuje, dopóki nie klikniesz `Zapisz`, więc najpierw sprawdź
+  podgląd.
+- `To był wyjątek` mówi, że w tym zleceniu wpisałeś dobrze. Ta różnica już nie
+  wraca na listę; w sekcji `Historia` cofniesz to przyciskiem `Cofnij`.
+
 Zmianę reguły widać w sekcji `Historia` jako zdanie reguły przed i po, a
 `Cofnij` przywraca poprzednie reguły. Regułę usuwasz przyciskiem
 `Usuń regułę` w tym samym oknie.

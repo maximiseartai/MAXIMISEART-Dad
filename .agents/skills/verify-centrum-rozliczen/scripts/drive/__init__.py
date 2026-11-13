@@ -299,6 +299,19 @@ FEATURES = (
         ),
         needs=("przebieg-rozliczen",),
     ),
+    # Shows the differences of the Kontrola ilości of the period Przebieg rozliczeń settled, opens a rule from one without
+    # saving it and marks one as an exception; ends with no exception (undone in Historia) and the rules unchanged.
+    Feature(
+        "roznice-z-kontroli",
+        (
+            "390-roznice-lista-szerokie",
+            "391-roznice-popraw-regule",
+            "392-roznice-wyjatek",
+            "393-roznice-historia",
+            "394-roznice-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
     # Edits the Reguły ilości with the preview on the Plik zbiorczy that Przebieg rozliczeń settled; ends with the rules
     # of the Release again (the change undone in Historia).
     Feature(

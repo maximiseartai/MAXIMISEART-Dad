@@ -485,6 +485,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getMetrics": _route("getMetrics", "GET", "/api/metrics"),
     "getConfiguration": _route("getConfiguration", "GET", "/api/configuration"),
+    "getQuantityDifferences": _route("getQuantityDifferences", "GET", "/api/settings/quantity-rules/differences"),
     "getQuantityRules": _route("getQuantityRules", "GET", "/api/settings/quantity-rules"),
     "addQuantityRule": _route("addQuantityRule", "POST", "/api/settings/quantity-rules", EDITOR_RULE),
     "changeQuantityRule": _route("changeQuantityRule", "PUT", "/api/settings/quantity-rules/nokia", EDITOR_RULE),
@@ -531,6 +532,8 @@ NOT_SWEPT: dict[str, str] = {
     "treści plików taty; zła wartość: test_centrum_rozliczen",
     "previewReminder": "składa przypomnienie z formularza, bez plików taty i bez zapisu: test_centrum_wpisanie_raportow",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
+    "markQuantityException": "zapisuje w config wyjątek różnicy, którą liczy getQuantityDifferences z tych samych plików "
+    "taty; różnicy już bez niej, nieczytelny Plik zbiorczy i zły plik wyjątków: test_centrum_kontrola_ilosci",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",
     "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
@@ -573,6 +576,7 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
+    "getQuantityDifferences": _BOARD,
     "getQuantityRules": {"wzorzec_zbiorczy"},
     "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},

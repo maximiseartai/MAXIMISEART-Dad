@@ -2,8 +2,8 @@
 
 import type * as z from "zod"
 
-import type { AddQuantityRuleData, ChangeAutostartData, ChangeFoldersData, ChangeInboxPasswordData, ChangeQuantityRuleData, ChangeRemindersData, ChangeRemindersEnabledData, ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetQuantityRulesData, GetReportEnteringSetupData, GetReportsViewData, GetRunCardData, GetRunSetupData, GetSettingsData, GetSettingsHistoryData, GetToolUpdateData, GetWithoutQuantityData, KeepManualValueData, MarkNotificationsReadData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, PreviewQuantityRulesData, PreviewReminderData, RecordViewTimingData, RemoveQuantityRuleData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartReportEnteringData, StartRunData, StartToolUpdateData, StreamRunEventsData, UndoSettingsChangeData } from "./types.gen"
-import { zAddQuantityRuleResponse, zChangeAutostartResponse, zChangeFoldersResponse, zChangeInboxPasswordResponse, zChangeQuantityRuleResponse, zChangeRemindersResponse, zChangeRemindersEnabledResponse, zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetQuantityRulesResponse, zGetReportEnteringSetupResponse, zGetReportsViewResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetSettingsHistoryResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zKeepManualValueResponse, zMarkNotificationsReadResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zPreviewQuantityRulesResponse, zPreviewReminderResponse, zRecordViewTimingResponse, zRemoveQuantityRuleResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartReportEnteringResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse, zUndoSettingsChangeResponse } from "./zod.gen"
+import type { AddQuantityRuleData, ChangeAutostartData, ChangeFoldersData, ChangeInboxPasswordData, ChangeQuantityRuleData, ChangeRemindersData, ChangeRemindersEnabledData, ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetQuantityDifferencesData, GetQuantityRulesData, GetReportEnteringSetupData, GetReportsViewData, GetRunCardData, GetRunSetupData, GetSettingsData, GetSettingsHistoryData, GetToolUpdateData, GetWithoutQuantityData, KeepManualValueData, MarkNotificationsReadData, MarkQuantityExceptionData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, PreviewQuantityRulesData, PreviewReminderData, RecordViewTimingData, RemoveQuantityRuleData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartReportEnteringData, StartRunData, StartToolUpdateData, StreamRunEventsData, UndoSettingsChangeData } from "./types.gen"
+import { zAddQuantityRuleResponse, zChangeAutostartResponse, zChangeFoldersResponse, zChangeInboxPasswordResponse, zChangeQuantityRuleResponse, zChangeRemindersResponse, zChangeRemindersEnabledResponse, zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetQuantityDifferencesResponse, zGetQuantityRulesResponse, zGetReportEnteringSetupResponse, zGetReportsViewResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetSettingsHistoryResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zKeepManualValueResponse, zMarkNotificationsReadResponse, zMarkQuantityExceptionResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zPreviewQuantityRulesResponse, zPreviewReminderResponse, zRecordViewTimingResponse, zRemoveQuantityRuleResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartReportEnteringResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse, zUndoSettingsChangeResponse } from "./zod.gen"
 
 export type OperationData = {
   addQuantityRule: AddQuantityRuleData
@@ -33,6 +33,7 @@ export type OperationData = {
   getNotifications: GetNotificationsData
   getPeriodBoard: GetPeriodBoardData
   getQuantitiesToFill: GetQuantitiesToFillData
+  getQuantityDifferences: GetQuantityDifferencesData
   getQuantityRules: GetQuantityRulesData
   getReportEnteringSetup: GetReportEnteringSetupData
   getReportsView: GetReportsViewData
@@ -44,6 +45,7 @@ export type OperationData = {
   getWithoutQuantity: GetWithoutQuantityData
   keepManualValue: KeepManualValueData
   markNotificationsRead: MarkNotificationsReadData
+  markQuantityException: MarkQuantityExceptionData
   openPeriodPath: OpenPeriodPathData
   openRegister: OpenRegisterData
   openWorkerSettlement: OpenWorkerSettlementData
@@ -91,6 +93,7 @@ export const operations = {
   getNotifications: { method: "GET", url: "/api/notifications", response: zGetNotificationsResponse },
   getPeriodBoard: { method: "GET", url: "/api/periods", response: zGetPeriodBoardResponse },
   getQuantitiesToFill: { method: "GET", url: "/api/periods/{token}/quantities-to-fill", response: zGetQuantitiesToFillResponse },
+  getQuantityDifferences: { method: "GET", url: "/api/settings/quantity-rules/differences", response: zGetQuantityDifferencesResponse },
   getQuantityRules: { method: "GET", url: "/api/settings/quantity-rules", response: zGetQuantityRulesResponse },
   getReportEnteringSetup: { method: "GET", url: "/api/report-entering", response: zGetReportEnteringSetupResponse },
   getReportsView: { method: "GET", url: "/api/report-entering/view", response: zGetReportsViewResponse },
@@ -102,6 +105,7 @@ export const operations = {
   getWithoutQuantity: { method: "GET", url: "/api/periods/{token}/without-quantity", response: zGetWithoutQuantityResponse },
   keepManualValue: { method: "POST", url: "/api/report-entering/keep", response: zKeepManualValueResponse },
   markNotificationsRead: { method: "POST", url: "/api/notifications/read", response: zMarkNotificationsReadResponse },
+  markQuantityException: { method: "POST", url: "/api/settings/quantity-rules/differences/{difference_id}/exception", response: zMarkQuantityExceptionResponse },
   openPeriodPath: { method: "POST", url: "/api/periods/{token}/open", response: zOpenPeriodPathResponse },
   openRegister: { method: "POST", url: "/api/settings/register/open", response: zOpenRegisterResponse },
   openWorkerSettlement: { method: "POST", url: "/api/periods/{token}/worker-settlements/open", response: zOpenWorkerSettlementResponse },

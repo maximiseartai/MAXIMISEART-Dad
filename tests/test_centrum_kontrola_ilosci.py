@@ -15,8 +15,12 @@ from typing import Any, Final
 
 import pytest
 
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
 
 from atrapy.skrzynka import BoxIssue
@@ -29,7 +33,13 @@ from tests.fixtures.centrum import (
     without_times,
     write_report_key,
 )
-from tests.fixtures.centrum_processes import SettlingCentrum, run_to_end, settling_centrum, write_dad_quantity_rules
+from tests.fixtures.centrum_processes import (
+    SettlingCentrum,
+    run_to_end,
+    settling_centrum,
+    stopped_for_maks,
+    write_dad_quantity_rules,
+)
 from tests.fixtures.potomne import wait_for
 from atrapy import pliki_taty
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
@@ -686,3 +696,250 @@ def test_podglad_liczy_wiersz_ktory_zmiana_reguly_tylko_zostawia_pusty_w_rozlicz
     # bez zmian, więc dalej jest tak, jak wpisał tata.
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
     assert (preview["differences_before"], preview["differences_after"]) == (7, 7)
+
+
+DIFFERENCES_URL = f"{RULES_URL}/differences"
+NEWER = "15_21_09_2026"
+# Różnice Kontroli ilości z TATA_ROWS (expected_body), po jednej na komórkę: okres, wiersz Pliku zbiorczego, URZĄDZENIA,
+# CZYNNOŚCI, dzień z godziną, kolumna, wartość reguły i wpis taty.
+TATA_DIFFERENCES = [
+    (PERIOD, 19, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
+    (PERIOD, 20, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
+    (PERIOD, 21, "usterka", "", "pt 16", "N", 0, 45),
+    (PERIOD, 22, "technicolor", "", "śr 12", "AK", 1, 0),
+    (PERIOD, 26, "przeniesienie", "", "pon 9", "V", 1, 0),
+    (PERIOD, 31, "fut", "", "czw 14", "Q", 1, "nieliczbowa"),
+    (PERIOD, 31, "fut", "", "czw 14", "S", 1, "nieliczbowa"),
+]
+
+
+def differences(centrum: SettlingCentrum) -> dict[str, Any]:
+    response = centrum.client.get(DIFFERENCES_URL)
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = response.json()
+    return found
+
+
+def shown(found: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [
+        (d["period"], d["row"], d["devices"], d["activities"], d["when"], d["column"], d["rule"], d["tata"])
+        for d in found["differences"]
+    ]
+
+
+def at(found: dict[str, Any], row: int, column: str, period: str = PERIOD) -> dict[str, Any]:
+    difference: dict[str, Any] = next(
+        d for d in found["differences"] if (d["period"], d["row"], d["column"]) == (period, row, column)
+    )
+    return difference
+
+
+def marked(centrum: SettlingCentrum, difference: dict[str, Any]) -> dict[str, Any]:
+    """„To był wyjątek” przy różnicy: zapis i lista różnic po nim."""
+
+    response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
+    assert response.status_code == 200, response.text
+    saved: dict[str, Any] = response.json()
+    return saved
+
+
+def without(*cells: tuple[int, str]) -> list[tuple[Any, ...]]:
+    return [difference for difference in TATA_DIFFERENCES if (difference[1], difference[5]) not in cells]
+
+
+def settled_copy(centrum: SettlingCentrum, token: str) -> None:
+    """Ten sam rozliczony Plik zbiorczy jako inny okres po Przebiegu rozliczeń."""
+
+    folder = centrum.period_parent / token
+    folder.mkdir()
+    shutil.copyfile(centrum.collective_file, folder / pliki_taty.collective_file_name(token))
+    (folder / pliki_taty.worker_settlements_name(token)).mkdir()
+
+
+def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okresu(tmp_path: Path) -> None:
+    """US 62: lista „Tu wpisałeś inaczej niż reguła” liczy ten sam rachunek co Kontrola ilości, komórka po komórce."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    issue = sent_check(centrum)
+
+    found = differences(centrum)
+
+    assert shown(found) == TATA_DIFFERENCES
+    assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
+    assert (found["files"], found["unread"], found["more"], found["exceptions"]) == ([{"period": PERIOD, "rows": 14}], [], 0, 0)
+
+
+def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy_nowszym_okresie(tmp_path: Path) -> None:
+    """US 63: różnica oznaczona „To był wyjątek” nie wraca na liście; ta sama komórka nowszego okresu to inna różnica."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+
+    saved = marked(centrum, at(differences(centrum), 21, "N"))
+    centrum.restart()
+    with centrum.client:
+        restarted = differences(centrum)
+        repeated(centrum)
+        settled_copy(centrum, NEWER)
+        later = differences(centrum)
+
+    assert saved["change"] is not None
+    assert (shown(saved["differences"]), saved["differences"]["exceptions"]) == (without((21, "N")), 1)
+    assert (shown(restarted), restarted["exceptions"]) == (without((21, "N")), 1)
+    newer = [(NEWER, *difference[1:]) for difference in TATA_DIFFERENCES]
+    assert (shown(later), later["exceptions"]) == ([*newer, *without((21, "N"))], 1)
+
+
+def test_wyjatek_zostaje_po_zmianie_reguly_a_inny_wpis_taty_w_tej_komorce_to_nowa_roznica(tmp_path: Path) -> None:
+    """Wyjątek mówi, że wpis taty jest dobry dla tego zlecenia: zmiana reguły go nie odkrywa, a zmiana wpisu albo nowa
+    różnica innego wiersza się pokazuje."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    marked(centrum, at(differences(centrum), 22, "AK"))
+    technicolor = rule_form(centrum, "technicolor")
+    technicolor["action"]["writes"][2]["value"] = 2
+
+    assert centrum.client.put(f"{RULES_URL}/technicolor", json=technicolor).status_code == 200
+    after_rule = differences(centrum)
+    changed = [dict(row) for row in TATA_ROWS]
+    changed[4]["AK"] = 3
+    write_quantity_source(centrum.collective_file, changed)
+    after_tata = differences(centrum)
+
+    def ak(found: dict[str, Any]) -> list[tuple[int, int, Any]]:
+        return [(d["row"], d["rule"], d["tata"]) for d in found["differences"] if d["column"] == "AK"]
+
+    # Technicolor o 15 (wiersz 23) ma AK 1 od taty, a reguła daje teraz 2.
+    assert (ak(after_rule), after_rule["exceptions"]) == ([(23, 2, 1)], 1)
+    assert (ak(after_tata), after_tata["exceptions"]) == ([(22, 2, 3), (23, 2, 1)], 0)
+
+
+def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    saved = marked(centrum, at(differences(centrum), 21, "N"))
+    [row] = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["id"] == saved["change"]]
+
+    undone = centrum.client.post(f"/api/settings/history/{row['id']}/undo")
+    restored = differences(centrum)
+    [undo_row] = [found for found in centrum.client.get("/api/settings/history").json()["rows"] if found["undoes"] == row["id"]]
+    again = centrum.client.post(f"/api/settings/history/{undo_row['id']}/undo")
+
+    assert (row["file"], row["source"], row["undoable"]) == (EXCEPTIONS_FILE, "tata", True)
+    [change] = row["rules"]
+    sentence = "".join(part.get("text", part.get("letter", "")) for part in change["after"])
+    assert (change["before"], sentence) == (None, f"To był wyjątek: okres {PERIOD}, wiersz 21, N: wpisałeś 45.")
+    assert undone.status_code == 200, undone.text
+    assert (shown(restored), restored["exceptions"]) == (TATA_DIFFERENCES, 0)
+    assert again.status_code == 200, again.text
+    assert shown(differences(centrum)) == without((21, "N"))
+
+
+def test_wyjatek_roznicy_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    gone = at(differences(centrum), 21, "N")
+    fixed = [dict(row) for row in TATA_ROWS]
+    fixed[3]["N"] = 0
+    write_quantity_source(centrum.collective_file, fixed)
+    history_before = centrum.client.get("/api/settings/history").json()
+
+    response = centrum.client.post(f"{DIFFERENCES_URL}/{gone['id']}/exception")
+
+    assert (response.status_code, response.json()) == (404, {"message": refusal.quantity_difference_unknown().message})
+    assert not (centrum.tool.config / EXCEPTIONS_FILE).exists()
+    assert centrum.client.get("/api/settings/history").json() == history_before
+
+
+def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznicy_bez_zapisu(tmp_path: Path) -> None:
+    """US 62: „Popraw regułę” otwiera edytor z warunkami z URZĄDZENIA tej różnicy; reguła zapisuje się dopiero
+    przyciskiem „Zapisz”, a dopisanie brakującej ilości w kolumnie daje wpis taty."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    found = differences(centrum)
+
+    def component(name: str) -> dict[str, Any]:
+        return {"kind": "component", "component": name, "negated": False}
+
+    late_fault = at(found, 21, "N")["draft"]
+    assert late_fault == {
+        "scope": "known",
+        "conditions": [component("usterka")],
+        "action": {"kind": "fill", "writes": [{"column": "N", "value": 45, "multiplier": "once", "component": None}]},
+    }
+    # Q i S liczy narzędzie samo, a mniejszej ilości niż reguła nowa reguła nie da: działanie wybiera tata.
+    assert at(found, 19, "Q")["draft"] == {
+        "scope": "known",
+        "conditions": [component("nokia-router"), component("fut")],
+        "action": None,
+    }
+    assert at(found, 22, "AK")["draft"] == {"scope": "known", "conditions": [component("technicolor")], "action": None}
+    assert at(found, 26, "V")["draft"] == {
+        "scope": "unknown",
+        "conditions": [{"kind": "devices", "mode": "contains", "text": "przeniesienie", "negated": False}],
+        "action": None,
+    }
+    assert not (centrum.tool.config / RULES_FILE).exists()
+
+    preview = previewed(centrum, {"kind": "add", "rule": late_fault})
+    assert centrum.client.post(RULES_URL, json=late_fault).status_code == 200
+
+    assert (preview["changed"], preview["changed_as_tata"]) == (1, 1)
+    assert shown(differences(centrum)) == without((21, "N"))
+
+
+def test_lista_roznic_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazywa_jego_okres(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    settled_copy(centrum, NEWER)
+    centrum.collective_file.write_bytes(b"to nie jest skoroszyt")
+
+    found = differences(centrum)
+
+    assert (found["files"], found["unread"]) == ([{"period": NEWER, "rows": 14}], [PERIOD])
+    assert shown(found) == [(NEWER, *difference[1:]) for difference in TATA_DIFFERENCES]
+
+
+def test_zly_plik_wyjatkow_ma_zdanie_w_sekcji_a_lista_pokazuje_rowniez_roznice_bez_wyjatku(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    (centrum.tool.config / EXCEPTIONS_FILE).write_text("wyjatki: [", encoding="utf-8")
+
+    found = differences(centrum)
+
+    assert shown(found) == TATA_DIFFERENCES
+    assert found["exceptions_problem"] == {"field": None, "message": settings_messages.damaged(EXCEPTIONS_FILE)}
+
+
+def test_roznice_i_wyjatek_w_historii_i_zgloszeniu_nie_maja_adresu_numerow_wykonawcy_daty_ani_tresci_wiersza(
+    tmp_path: Path,
+) -> None:
+    """Lista różnic pokazuje tacie URZĄDZENIA i CZYNNOŚCI jak podgląd, bez UMOWA; wyjątek w Historii Ustawień, w
+    Logach Centrum i w Zgłoszeniu ma tylko okres, wiersz, kolumnę i wpis taty (ADR 0013, ADR 0032)."""
+
+    centrum = centrum_with(tmp_path, [MARKED])
+    run_to_end(centrum, dry_run=False)
+    response = centrum.client.get(DIFFERENCES_URL).text
+    # URZĄDZENIA ze słowem spoza Listy Urządzeń: reguły dają V 1 i T 1, a tata wpisał w V słowo i nic w T.
+    assert [(d["row"], d["column"]) for d in differences(centrum)["differences"]] == [(18, "T"), (18, "V")]
+
+    marked(centrum, at(differences(centrum), 18, "V"))
+    # Zgłoszenie z Zatrzymania podglądu Przebiegu, który bez Folderu rozliczeń pracowników nie trafia na Nienadpisywanie.
+    shutil.rmtree(centrum.worker_settlements)
+    run_id = stopped_for_maks(centrum)
+    report = centrum.client.post(f"/api/runs/{run_id}/diagnosis").json()["report"]["body"]
+    kept = [
+        centrum.client.get("/api/settings/history").text,
+        (centrum.tool.config / HISTORY_FILE).read_text(encoding="utf-8"),
+        (centrum.tool.config / EXCEPTIONS_FILE).read_text(encoding="utf-8"),
+        centrum.log_path.read_text(encoding="utf-8"),
+        report,
+    ]
+
+    assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
+    assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+    assert [marker for marker in (*FORBIDDEN, *ALLOWED) if any(marker in text for text in kept)] == []
+    assert f"· tata · {EXCEPTIONS_FILE} · dodano wyjątek: okres {PERIOD}, wiersz 18, V, wpis taty nieliczbowa" in report

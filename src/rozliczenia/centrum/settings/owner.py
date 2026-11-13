@@ -4,8 +4,8 @@ Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``)
 (``reminders``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
-razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, oraz pliki Reguł
-ilości i Listy Urządzeń (``quantity_rules``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
+razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, pliki Reguł
+ilości i Listy Urządzeń (``quantity_rules``) oraz wyjątki Kontroli ilości (``quantity_exceptions``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
 czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSettings`` czyta je przy każdym odczycie od
 nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
 wartościach.
@@ -93,6 +93,7 @@ from rozliczenia.centrum.settings.history import (
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 from rozliczenia.centrum.settings import messages
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, QuantityException
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, devices_problem, quantity_rules, rules_problem
 from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
@@ -126,12 +127,15 @@ class SettingsSnapshot:
 
 @dataclass(frozen=True)
 class QuantityRulesView:
-    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, i problem każdego pliku (``None``:
-    plik dobry). Plik, który nie pasuje do drugiego, ma problem jak zły plik."""
+    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, wyjątki Kontroli ilości (przy złym
+    pliku ostatnie dobre) i problem każdego pliku (``None``: plik dobry). Plik reguł albo listy, który nie pasuje do
+    drugiego, ma problem jak zły plik."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
+    exceptions: tuple[QuantityException, ...]
+    exceptions_problem: FieldProblem | None
 
 
 @dataclass(frozen=True)
@@ -232,6 +236,7 @@ class CentrumSettings:
             AUTOSTART.name: AutostartPlace(autostart),
             DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
             RULES.name: _ConfigFile(config / RULES.name, pause),
+            EXCEPTIONS.name: _ConfigFile(config / EXCEPTIONS.name, pause),
         }
 
     def snapshot(self) -> SettingsSnapshot:
@@ -247,7 +252,8 @@ class CentrumSettings:
             )
 
     def quantity_rules(self) -> QuantityRulesView:
-        """Reguły ilości i Lista Urządzeń dla okna Ustawień, każdy plik porównany z pamięcią jak przy każdym odczycie."""
+        """Reguły ilości, Lista Urządzeń i wyjątki Kontroli ilości dla okna Ustawień, każdy plik porównany z pamięcią jak
+        przy każdym odczycie."""
 
         with self._lock:
             return self._quantity_rules()
@@ -444,8 +450,13 @@ class CentrumSettings:
     def _quantity_rules(self) -> QuantityRulesView:
         rules = self._observe(RULES)
         devices = self._observe(DEVICES)
+        exceptions = self._observe(EXCEPTIONS)
         return QuantityRulesView(
-            quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)), _problem(rules, RULES), _problem(devices, DEVICES)
+            quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)),
+            _problem(rules, RULES),
+            _problem(devices, DEVICES),
+            _usable(exceptions, EXCEPTIONS),
+            _problem(exceptions, EXCEPTIONS),
         )
 
     def _checked(self, file: SettingsFile[T], parsed: T | FieldProblem) -> T | FieldProblem:
@@ -633,6 +644,7 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     AUTOSTART.name: AUTOSTART,
     DEVICES.name: DEVICES,
     RULES.name: RULES,
+    EXCEPTIONS.name: EXCEPTIONS,
 }
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
 _FILES: Final[Mapping[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}

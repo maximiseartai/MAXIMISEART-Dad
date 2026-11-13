@@ -440,6 +440,7 @@ REFUSALS: RefusalSamples = {
     "report_entering_without_addresses": [refusal.report_entering_without_addresses],
     "settings_change_unknown": [refusal.settings_change_unknown],
     "quantity_rule_unknown": [refusal.quantity_rule_unknown],
+    "quantity_difference_unknown": [refusal.quantity_difference_unknown],
     "settings_change_not_undoable": [refusal.settings_change_not_undoable],
     "settings_history_unreadable": [refusal.settings_history_unreadable],
     "autostart_not_changed": [refusal.autostart_not_changed],

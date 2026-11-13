@@ -192,6 +192,11 @@ powstają razem albo żaden.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które
   wypełnił tata. Uruchamia go tylko Maks na swoim Macu, a wynik to same liczby
   i teksty `URZĄDZENIA`.
+- Nad Regułami ilości okno Ustawień pokazuje różnice Kontroli ilości ostatnich
+  Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi regułami
+  (`src/rozliczenia/centrum/quantity_differences.py`), z „Popraw regułę” i „To
+  był wyjątek”. Wyjątki są w `config/wyjatki-ilosci.yaml` z Historią Ustawień;
+  Kontroli ilości w Skrzynce Zgłoszeń nie zmieniają.
 - Wypełnienia, kolory czcionki, pogrubienia, kursywa i formaty dat przechodzą z
   Rejestru. Krój i rozmiar czcionki, szerokości kolumn, wysokości wierszy,
   nagłówek i blokada nagłówka pochodzą z wzorca. Autofiltr obejmuje nagłówek i

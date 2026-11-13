@@ -93,16 +93,19 @@ function placeOf(field: string | null): Place {
 /**
  * Edytor jednej Reguły ilości w miejscu listy: zakres, warunki („Gdy” albo „Ale nie gdy”), działanie z kolumną po
  * nazwie z cennika i podgląd skutku na ostatnich Plikach zbiorczych. Zapisuje się dopiero przyciskiem „Zapisz”, także
- * przy różnicach z tatą; zła reguła to jedno zdanie przy polu. Okno pyta przed zamknięciem z niezapisaną zmianą.
+ * przy różnicach z tatą; zła reguła to jedno zdanie przy polu. Okno pyta przed zamknięciem z niezapisaną zmianą, a
+ * formularz z różnicy (`prefilled`) jest niezapisany od początku.
  */
 export function RuleEditor({
   id,
   initial,
+  prefilled = false,
   settings,
   close,
 }: {
   id: string | null
   initial: RuleForm
+  prefilled?: boolean
   settings: QuantityRulesSettings
   close: (saved: QuantityRulesSettings | null) => void
 }) {
@@ -110,7 +113,7 @@ export function RuleEditor({
   const [rule, setRule] = React.useState<RuleForm>(initial)
   const [removing, setRemoving] = React.useState(false)
   const [refusal, setRefusal] = React.useState<Refusal | null>(null)
-  const dirty = removing || JSON.stringify(rule) !== JSON.stringify(initial)
+  const dirty = removing || prefilled || JSON.stringify(rule) !== JSON.stringify(initial)
 
   useUnsavedForm(dirty)
 
