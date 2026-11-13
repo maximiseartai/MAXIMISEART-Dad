@@ -122,6 +122,30 @@ def test_bramka_pr_biegnie_na_windows_313_i_linuksie_z_wyborem_szybko_a_e2e_i_st
     assert list(gate.pliki) == (pliki_testow(repo) if files is None else [*files, *STRUCTURE])
 
 
+@pytest.mark.parametrize(
+    ("event", "changed", "zmienione"),
+    [
+        (Zdarzenie.PULL_REQUEST, "tests/test_b.py", {"tests/test_b.py"}),
+        (Zdarzenie.PULL_REQUEST, "src/pakiet/a.py", {"tests/test_a.py"}),
+        (Zdarzenie.PULL_REQUEST, "README.md", set()),
+        (Zdarzenie.PULL_REQUEST, ".github/workflows/ci.yml", set()),
+        (Zdarzenie.PULL_REQUEST, "requirements.txt", {"tests/test_a.py", "tests/test_b.py"}),
+        (Zdarzenie.PUSH, "src/pakiet/a.py", set()),
+        (Zdarzenie.NOC, "src/pakiet/a.py", set()),
+    ],
+    ids=["plik testu", "plik importowany przez test", "dokument", "workflow uruchamia wszystko bez zmiany wejsc", "plik regul wyboru testow", "push", "noc"],
+)
+def test_bramka_pr_podaje_pliki_testow_z_wejsciami_zmienionymi_przez_pr_a_push_i_noc_zadnego(
+    tmp_path: Path, event: Zdarzenie, changed: str, zmienione: set[str]
+) -> None:
+    """Z7 (ADR 0020): wejścia testu to jego plik i pliki, od których zależy w grafie wpływu zmiany, więc zadanie pytest
+    PR-u nie ponawia jego porażki; plik reguły wyboru testów zmienia wejścia każdego testu."""
+
+    repo = repository(tmp_path / "repo", GATE)
+
+    assert zakres(event, frozenset({changed}), repo).zmienione_wejscia == zmienione
+
+
 def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(tmp_path: Path) -> None:
     file = next(node.partition("::")[0] for node in STRUCTURE if "::" in node)
     repo = repository(tmp_path / "repo", {**GATE, file: "def test_wezel() -> None:\n    pass\n"})

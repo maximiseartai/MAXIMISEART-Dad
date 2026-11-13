@@ -641,6 +641,23 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
     )
 
 
+@pytest.mark.parametrize(("zmienione", "code"), [((), 0), (("tests/test_flaky.py",), 1)], ids=["wejscia bez zmian", "wejscia zmienione przez PR"])
+def test_bramka_nie_ponawia_testu_ktorego_wejscia_zmienil_pr_a_test_spoza_zmiany_dalej_ponawia(
+    mini_repo: Path, capsys: pytest.CaptureFixture[str], zmienione: tuple[str, ...], code: int
+) -> None:
+    """Z7 (ADR 0020): porażka testu z pliku, którego wejścia zmienił PR (``Plan.zmienione_wejscia`` z ``plan.json``), zostaje
+    porażką, bo ponowienie ukryło w nim prawdziwy defekt (#1075 z PR #1072, #759 z PR #757)."""
+
+    (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    (mini_repo / "plan.json").write_text(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,), zmienione_wejscia=zmienione).do_json(), encoding="utf-8")
+
+    assert wykonaj_zadanie.main(["--plan", str(mini_repo / "plan.json"), "--zadanie", job.id], root=mini_repo) == code
+    out = capsys.readouterr().out.splitlines()
+    linia = f"PONOWIENIE | test tests/test_flaky.py::TestFlaky::test_pada_raz {niestabilne_testy.ZMIENIONE_WEJSCIA}"
+    assert (linia in out, "== ponowienie" in out, niestabilne_testy.FLAKY_TESTY.exists()) == (bool(code), not code, not code)
+
+
 def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
     job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
@@ -926,6 +943,29 @@ def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
 
     assert code == 0, out
     assert next(line for line in out.splitlines() if line.startswith("PLAN CI |")).startswith(plan_line), out
+
+
+@pytest.mark.parametrize(("event", "zmienione"), [("pull_request", ["tests/test_a.py"]), ("push", [])])
+def test_plan_pull_requestu_zapisuje_pliki_testow_z_wejsciami_zmienionymi_przez_pr_ktore_czyta_zadanie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], event: str, zmienione: list[str]
+) -> None:
+    files = {
+        "src/pakiet/a.py": "A = 1\n",
+        "tests/test_a.py": "from pakiet.a import A\n\n\ndef test_a() -> None:\n    assert A\n",
+        "tests/test_b.py": "def test_b() -> None:\n    pass\n",
+    }
+    repo = repository(tmp_path / "repo", files)
+    commit(repo, "baza")
+    git(repo, "branch", "baza")
+    (repo / "src/pakiet/a.py").write_text("A = 2\n", encoding="utf-8")
+    commit(repo, "zmiana")
+
+    code = plan_ci.main(["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA)
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert list(plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8")).zmienione_wejscia) == zmienione
+    assert ("BEZ PONOWIENIA | 1 plików testów z wejściami zmienionymi przez ten PR" in out.splitlines()) == bool(zmienione), out
 
 
 @pytest.mark.parametrize("fixed", [True, False], ids=["części z zakresu", "bez części z zakresu"])

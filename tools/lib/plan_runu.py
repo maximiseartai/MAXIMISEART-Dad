@@ -62,6 +62,8 @@ class Plan:
     runy: tuple[int, ...]  # runy main, z których są czasy
     zadania: tuple[Zadanie, ...]
     bledy: tuple[str, ...] = ()  # FAIL-e znalezienia kroków skilli: zgubiony skrypt mutacji, zły klucz ``ci:``
+    # Pliki testów, których wejścia zmienił pull request (``ZakresRunu.zmienione_wejscia``): ich porażka nie ma ponowienia.
+    zmienione_wejscia: tuple[str, ...] = ()
 
     @property
     def digest(self) -> str:
@@ -80,7 +82,7 @@ class Plan:
             raise ValueError(f"plan w wersji innej niż {WERSJA}")
         digest = dane.pop("digest")
         zadania = tuple(Zadanie(**{**zadanie, "jednostki": tuple(zadanie["jednostki"])}) for zadanie in dane.pop("zadania"))
-        plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"])})
+        plan = cls(**{**dane, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "runy": tuple(dane["runy"]), "zadania": zadania, "bledy": tuple(dane["bledy"]), "zmienione_wejscia": tuple(dane["zmienione_wejscia"])})
         if plan.digest != digest:
             raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
         # Klucz jednostki w innej postaci to ValueError, jak plan w innej wersji.

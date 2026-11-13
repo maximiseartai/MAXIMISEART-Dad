@@ -9,8 +9,9 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
    po jego logu. Awaria to log z sygnaturą z ``SYGNATURY`` i bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
    z porażek runów CI z 2–12.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
-   to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
-   Każda inna porażka, także nieznana, to defekt.
+   to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``),
+   a żaden nie ma linii ``niestabilne_testy.ZMIENIONE_WEJSCIA``: wejścia takiego testu zmienił PR, więc jego porażka to
+   defekt, choćby był znanym flaky testem (ADR 0020, Z7). Każda inna porażka, także nieznana, to defekt.
 3. Awarię i znany flaky test narzędzie ponawia tylko po próbie ``NAJWIECEJ_PONOWIEN`` runu, a w dalszej odmawia
    z poleceniem diagnozy. Porażka, która wróciła po ponowieniu, nie jest już chwilowa: zadanie PR samo ponawia padnięte
    testy raz (``tools/ci/wykonaj_zadanie.py``), więc znany flaky test w drugiej próbie padł czwarty raz z rzędu.
@@ -71,6 +72,7 @@ NAJWIECEJ_TESTOW = 5
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
+WEJSCIA_PR = re.compile(_LINE + r"PONOWIENIE \| test .* " + re.escape(niestabilne_testy.ZMIENIONE_WEJSCIA) + r"$")
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,7 @@ class Zadanie:
     nazwa: str
     sygnatury: tuple[str, ...]
     testy: tuple[str, ...]
+    wejscia_pr: bool = False  # zadanie nie ponowiło testu, którego wejścia zmienił PR
 
 
 @dataclass(frozen=True)
@@ -127,7 +130,8 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     if zadania and all(zadanie.sygnatury and not zadanie.testy for zadanie in zadania):
         return Awaria(tuple(sorted({nazwa for zadanie in zadania for nazwa in zadanie.sygnatury})))
     testy = tuple(dict.fromkeys(test for zadanie in zadania for test in zadanie.testy))
-    if zadania and all(zadanie.testy for zadanie in zadania) and all(niestabilne_testy.tytul_issue(test) in flaky for test in testy):
+    znane = all(niestabilne_testy.tytul_issue(test) in flaky for test in testy) and not any(zadanie.wejscia_pr for zadanie in zadania)
+    if zadania and all(zadanie.testy for zadanie in zadania) and znane:
         return ZnanyFlaky(testy)
     return Defekt(tuple(zadanie for zadanie in zadania if not zadanie.sygnatury or zadanie.testy))
 
@@ -137,6 +141,7 @@ def zadanie(nazwa: str, log: str) -> Zadanie:
         nazwa,
         tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(log)),
         tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
+        WEJSCIA_PR.search(log) is not None,
     )
 
 

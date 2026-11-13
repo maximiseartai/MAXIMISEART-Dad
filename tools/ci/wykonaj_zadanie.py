@@ -12,8 +12,9 @@ ginie razem z zadaniem, choćby zabitym przez SIGKILL.
 
 Na pull request zadanie po porażce pytest uruchamia raz w jednym procesie same testy, które padły
 (``niestabilne_testy.ponow``, najwyżej ``PONOWIENIE_NAJWIECEJ``; więcej porażek to nie flaky test), jeśli id każdego da
-się zgłosić w issue. Gdy wszystkie przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga
-porażka to porażka. Każde zadanie z pytest
+się zgłosić w issue i żaden nie stoi w pliku testów, którego wejścia zmienił ten PR (``Plan.zmienione_wejscia``, Z7).
+Gdy wszystkie przejdą, pytest przechodzi, a każdy z nich trafia do zapisu flaky testów; druga porażka to porażka.
+Każde zadanie z pytest
 zapisuje też wynik swoich testów z kwarantanny.
 Krok pytest ma limit ``plan_runu.limit_pytest_s`` ze ściany zadania z planu: po nim drzewo pytest ginie, a linia
 ``LIMIT`` mówi, że to limit, nie porażka testu.
@@ -171,7 +172,11 @@ def _krok_pytest(root: Path, plan: Plan, zadanie: Zadanie, pliki: Mapping[str, l
         " stosy swoich wątków, a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia"
     )
     status = _uruchom(root, jednostka.krok("pytest"), [(_pytest(pliki), limit)], po_limicie)["status"]
-    if status != "ok" and plan.zdarzenie is Zdarzenie.PULL_REQUEST and niestabilne_testy.ponow(JUNIT, PONOWIENIE, zadanie.nazwa, lambda testy: _ponow(root, testy)):
+    if (
+        status != "ok"
+        and plan.zdarzenie is Zdarzenie.PULL_REQUEST
+        and niestabilne_testy.ponow(JUNIT, PONOWIENIE, zadanie.nazwa, lambda testy: _ponow(root, testy), plan.zmienione_wejscia)
+    ):
         status = "ok"
     sha, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
     niestabilne_testy.zapisz_kwarantanne(ZapisKwarantanny(zadanie.id, proba, sha, niestabilne_testy.wyniki_kwarantanny(JUNIT)))

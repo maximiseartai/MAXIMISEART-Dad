@@ -749,6 +749,8 @@ TLC_SUMA = f"2026-11-09T06:09:10.8Z BŁĄD POBIERANIA NARZĘDZIA TLC: {_JAR} ma 
 HTTP_504 = "2026-11-05T09:12:43.9735858Z urllib.error.HTTPError: HTTP Error 504: Gateway Time-out\n2026-11-05T09:12:44Z WYKONANIE FAIL | skill:verify-urwane-uruchomienie/ci\n"
 TEST_OPIEKUNA = "tests/test_opiekun_ponownego_startu.py::test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu"
 PADLY_TEST = f"2026-11-07T16:56:41.7827770Z FAILED {TEST_OPIEKUNA} - TimeoutError: timed out\n2026-11-07T16:56:42Z WYKONANIE FAIL | krok:pytest\n"
+# Linia zadania PR-u, które nie ponowiło testu, bo PR zmienił jego wejścia (Z7): run z nią to defekt, choćby test miał issue.
+WEJSCIA_PR = f"2026-11-07T16:56:40Z PONOWIENIE | test {TEST_OPIEKUNA} {niestabilne_testy.ZMIENIONE_WEJSCIA}\n"
 MUTACJA = "2026-11-08T01:50:00Z FAIL skill:verify-kolejka-skrzynki/check_outbox_mutations.py#2/3 (41 s): kod wyjścia 1\n2026-11-08T01:50:01Z WYKONANIE FAIL | skill:verify-kolejka-skrzynki/ci\n"
 CYTAT_503 = (
     "2026-11-07T16:56:40Z E   urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n"
@@ -846,13 +848,14 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (6/6)": HTTP_504}, (), "awaria: HTTP 5xx serwera", True),
         ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA,), f"znany flaky test: {TEST_OPIEKUNA}", True),
         ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (), "ci_lokalnie.py --tylko pytest", False),
+        ({"pytest (Python 3.11, 2/2)": WEJSCIA_PR + PADLY_TEST}, (TEST_OPIEKUNA,), "defekt: pytest (Python 3.11, 2/2) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS, "pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA + "[inny]",), "defekt: pytest (Python 3.11, 2/2) |", False),
         ({"Mutation checks (6/6)": MUTACJA}, (), "ci_lokalnie.py --tylko mutations --odtwarzam 42435998596", False),
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
         ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy,workflowy", False),
     ],
-    ids=["dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "awaria-obok-testu", "mutacje", "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy"],
+    ids=["dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "znany-flaky-z-wejsciami-pr", "awaria-obok-testu", "mutacje", "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy"],
 )
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
     logi: dict[str, str], flaky: tuple[str, ...], linia: str, ponowiony: bool

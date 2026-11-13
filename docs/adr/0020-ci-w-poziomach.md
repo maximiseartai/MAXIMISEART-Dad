@@ -9,6 +9,7 @@ Zdanie poziomu 3, że Change mutations na `main` nie biegną, też przestało ob
 Opisuje stan docelowy, który wchodził krokami, jeden PR na krok; wszystkie kroki weszły 26.10 (#541, #542, #551, #552, #553, #554), więc Kontekst opisuje CI sprzed tego ADR.
 Od #540 (26.10) repozytorium jest w organizacji GitHuba `maximiseartai`, więc odpada powód „wymagają organizacji GitHuba zamiast konta osobistego” przy odrzuconych runnerach Blacksmith; pozostałe powody zostają.
 Od 13.11 (decyzja Maksa) tor Windows 3.13 zastępuje Windows 3.11 na PR i na `main`: tata ma na laptopie Pythona 3.13.15 ([komputer taty](../agents/komputer-taty.md)), a dolnej granicy 3.11 nie ma komputer, na którym narzędzie działa, więc `requires-python` rośnie do 3.13. Windows 3.14 zostaje na `main` jako ostrzeżenie przed aktualizacją Pythona, a liczba torów i zadań się nie zmienia.
+Zmieniona 13.11 (Z7, zgoda Maksa): bramka PR nie ponawia testu, którego wejścia zmienił ten PR (sekcja Niestabilne testy).
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md), według którego tata dostaje tylko Wydanie z commitu `main` z zielonym `Required CI status`.
 
 ## Kontekst
@@ -61,6 +62,14 @@ Test kształtu planu bramki dla dwóch wzorcowych PR-ów, małego tylko z testam
 
 Bramka ponawia raz tylko test, który padł.
 Przejście po ponowieniu przechodzi, ale trafia do zapisu, z którego powstaje issue dla tego testu; dwa padnięcia to prawdziwa porażka.
+Od 13.11 (Z7, zgoda Maksa) bramka nie ponawia testu, którego wejścia zmienił ten PR: jego plik albo plik, od którego zależy w grafie wpływu zmiany (`tools/lib/wplyw_zmiany.py`, `Impact.tests`), a plik reguły wyboru testów, np. `tests/conftest.py`, zmienia wejścia każdego testu.
+Taka porażka zostaje porażką, z linią `PONOWIENIE | test <id> ma wejścia zmienione przez ten PR: bez ponowienia`, a `tools/ponow_ci.py` nie ponawia runu z tą linią, choćby test miał otwarte issue `Flaky test:`.
+Plan zapisuje te pliki raz w `plan.json` (`zmienione_wejscia`), a zadanie pytest je czyta.
+Ponowienie dalej ratuje test, którego wejść PR nie zmienił, a noc (baza części Change mutations) i push na `main` się nie zmieniają: noc nie jest bramką PR, a push nie ponawia.
+Powód: ponowienie na PR ukryło prawdziwy defekt w teście, którego wejścia zmienił sam PR (#1075: test z `tests/test_centrum_serwer.py`, który zmienił PR #1072, padł w runie PR, przeszedł po ponowieniu i PR scalono).
+Plan z narzędziami tej reguły na commicie scalenia #1072 ma ten plik w `zmienione_wejscia`, więc run byłby czerwony.
+Drugiej ucieczki, #759 (błąd `same_address` na PR #757), reguła nie łapie: test importuje tylko `efenix_address.py`, którego #757 nie zmienił, a w PR-ze, który wniósł defekt, test własności przeszedł za pierwszym razem.
+Koszt: od 2.11 do 12.11 ponowienie uratowało 44 porażki testów na 37 PR-ach (issues `Flaky test:`), z czego 41 na 34 PR-ach miało wejścia zmienione przez PR, więc te PR-y byłyby czerwone, przy 376 scalonych PR-ach w oknie.
 Kwarantanna to wpis z numerem issue i datą wygaśnięcia najwyżej 7 dni od wpisania.
 Test w kwarantannie dalej biegnie na `main`, ale nie czerwieni `Required CI status`.
 Dlatego narzędzie Wydań sprawdza osobno, że na commicie Wydania testy z kwarantanny przeszły.
