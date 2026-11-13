@@ -6,7 +6,6 @@ instrukcji taty (spec #268), nie z kodu. Wzorce mają kształt Wzorców taty: ze
 
 from __future__ import annotations
 
-from copy import copy
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,6 +27,7 @@ from atrapy.preparation import (
     write_register_sheet,
 )
 from tests.fixtures.operacje import run_preparation
+from tests.fixtures.wyglad_komorek import Wyglad, wyglady
 from atrapy.workbooks import active_worksheet, refused_by_copy, replace_cells, rewrite_parts
 
 QUANTITY_LETTERS = [get_column_letter(column) for column in QUANTITY_COLUMNS]
@@ -220,22 +220,11 @@ def _quantity_rows(path: Path, count: int) -> list[dict[str, object]]:
         workbook.close()
 
 
-def _looks(path: Path, count: int) -> dict[str, object]:
+def _looks(path: Path, count: int) -> dict[str, Wyglad]:
     workbook = load_workbook(path)
     try:
         sheet = active_worksheet(workbook)
-        return {
-            cell.coordinate: (
-                cell.number_format,
-                (cell.font.name, cell.font.sz, bool(cell.font.b), bool(cell.font.i), copy(cell.font.color)),
-                copy(cell.fill),
-                copy(cell.border),
-                copy(cell.alignment),
-                copy(cell.protection),
-            )
-            for row in sheet.iter_rows(min_row=18, max_row=17 + count, min_col=14, max_col=42)
-            for cell in row
-        }
+        return wyglady(cell for row in sheet.iter_rows(min_row=18, max_row=17 + count, min_col=14, max_col=42) for cell in row)
     finally:
         workbook.close()
 
