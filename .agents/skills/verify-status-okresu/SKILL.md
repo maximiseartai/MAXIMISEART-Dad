@@ -1,6 +1,6 @@
 ---
 name: verify-status-okresu
-description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), the preview of a Reguły ilości change, Wpisanie raportów (`report_entering.closed_periods`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `closed_periods` in `report_entering.py`, `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
+description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), the preview of a Reguły ilości change and the list of Kontrola ilości differences, Wpisanie raportów (`report_entering.closed_periods`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `closed_periods` in `report_entering.py`, `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `listed` in `centrum/quantity_differences.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
 pilnuje:
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/file_state.py
@@ -13,6 +13,7 @@ pilnuje:
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/filling.py
   - src/rozliczenia/centrum/quantity_rules_preview.py
+  - src/rozliczenia/centrum/quantity_differences.py
   - src/rozliczenia/centrum/period_board.py
   - src/rozliczenia/centrum/period_start.py
   - src/rozliczenia/centrum/process_kind.py
@@ -47,8 +48,8 @@ says.
 - **OTWARCIE**: for every state of the Folder okresu, each process lets itself act on the period exactly when the
   Status okresu allows it: Przygotowanie pliku zbiorczego and Wpisanie raportów only in „Brak plików okresu”,
   Przebieg rozliczeń and Uzupełnienie only in „Plik zbiorczy przygotowany”, and the preview of a Reguły ilości change
-  counts only on the Plik zbiorczy of a period in „Rozliczenia pracowników gotowe”. Tablica okresów offers a step only where
-  its process will act. A consumer that cannot read the folder says so instead of answering, and says so only when
+  and the list of Kontrola ilości differences count only on the Plik zbiorczy of a period in „Rozliczenia pracowników
+  gotowe”. Tablica okresów offers a step only where its process will act. A consumer that cannot read the folder says so instead of answering, and says so only when
   something in the folder cannot be read.
   Harm: Dad sees „Okres zamknięty” while Wpisanie raportów writes into that period's days of INTERMAX, or Przygotowanie
   writes a new Plik zbiorczy into a period that already has Rozliczenia pracowników, or the board offers a start that
@@ -68,13 +69,14 @@ settles it („Okres z Rozliczeniami pracowników jest zamknięty”), and `Peri
 
 The check asks every consumer through its public entry point: `create_app` over HTTP for Tablica okresów
 (`/api/periods`), the start cards (`/api/runs/setup`), Uzupełnienie (`/api/periods/{token}/quantities-to-fill`) and the
-preview of a Reguły ilości change (`/api/settings/quantity-rules/preview`),
+preview of a Reguły ilości change (`/api/settings/quantity-rules/preview`), the list of Kontrola ilości differences
+(`/api/settings/quantity-rules/differences`),
 `report_entering.enter_from_mail` for Wpisanie raportów, and `input_checks.check_preparation` and
 `input_checks.check_settlement` for the starts.
 Run it when a diff changes how any of them reads the Folder okresu or decides from it: `PeriodFolderObservation`,
 `PeriodFolder.observe`, `_listing`, `_exists` and `reading` in `period_folder.py`, `path_taken` and `file_state` in
 `file_state.py`, `closed_periods` and `read` in `report_entering.py`, `Window` in `worker_reports/_model.py`, `read` and
-the `settled` calls in `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `_steps`, `_path` and `read_board` in `centrum/period_board.py`, `_recent_choice` and the
+the `settled` calls in `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `listed` in `centrum/quantity_differences.py`, `_steps`, `_path` and `read_board` in `centrum/period_board.py`, `_recent_choice` and the
 `ByStatus` and `RecentWeeks` choosers, `ensure_period_files_absent`, `ensure_worker_settlements_absent`, and the order
 of checks in `check_preparation` and `check_settlement`.
 A new consumer of the Status okresu (Diagnoza, a new process with a period) is not asked until you add it to
