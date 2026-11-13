@@ -24,10 +24,15 @@ nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tym
 
 Zmiany z Wydania (``release_changes``) właściciel stosuje przy starcie Centrum, przed pierwszym zapytaniem, tym samym
 zapisem co zmianę taty, tylko ze źródłem ``wydanie``. Każda zmiana z wynikiem (weszła, nic do zmiany, odrzucona) trafia do
-pamięci i już nie wraca; ``Later``, wyjątek w kodzie zmiany i zapis, który się nie udał, wracają przy następnym starcie.
+pamięci zmian z Wydań i już nie wraca; ``Later``, wyjątek w kodzie zmiany i zapis, który się nie udał, wracają przy
+następnym starcie. Kolejność to plik → wiersz Historii → pamięć pliku → pamięć zmian z Wydań, a zmianę z wierszem
+Historii o jej id start uznaje za zastosowaną (i dopisuje do pamięci), więc przerwa albo nieudany zapis po wierszu nie
+puszcza zmiany drugi raz, także po cofnięciu przez tatę; przerwa przed wierszem zostawia zmianę do ponownego
+zastosowania, a edycja deklaratywna nie daje wtedy drugiej różnicy. Granica: wynik bez wiersza (nic do zmiany) z
+nieudanym zapisem pamięci wraca przy następnym starcie, więc wartość, którą tata potem zmienił, edycja ustawi znowu.
 Pamięć, której nie da się przeczytać, wstrzymuje wszystkie zmiany do czasu, aż da się ją przeczytać, bo bez niej zmiana
-cofnięta przez tatę weszłaby jeszcze raz. Pamięć utracona w całości (usunięty folder) puszcza każdą zmianę jeszcze raz:
-edycja deklaratywna nie daje wtedy różnicy, chyba że tata ją cofnął.
+cofnięta przez tatę weszłaby jeszcze raz. Pamięć utracona w całości (usunięty folder) puszcza jeszcze raz każdą zmianę
+bez wiersza w Historii.
 
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
 ``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
@@ -170,20 +175,40 @@ class CentrumSettings:
             pending = [change for change in changes if change.id not in applied]
             if not pending:
                 return
-            version = origin()
+            in_history = self._release_rows()
+            version: ReleaseOrigin | None = None
             for change in pending:
-                try:
-                    result = self._apply(change, version)
-                except Exception as failure:
-                    self._log.unexpected_failure(failure, where=f"zmiana Ustawień z Wydania {change.id}")
-                    continue
-                if result is None:
-                    continue
-                applied[change.id] = Applied(at=self._now(), release=version.release, commit=version.commit, result=result)
+                done = in_history.get(change.id)
+                if done is None:
+                    version = version or origin()
+                    try:
+                        result = self._apply(change, version)
+                    except Exception as failure:
+                        self._log.unexpected_failure(failure, where=f"zmiana Ustawień z Wydania {change.id}")
+                        continue
+                    if result is None:
+                        continue
+                    done = Applied(at=self._now(), release=version.release, commit=version.commit, result=result)
+                applied[change.id] = done
                 try:
                     self._memory.remember_applied(applied)
                 except OSError:
                     self._log.settings_release(change=change.id, result="bez-pamieci")
+
+    def _release_rows(self) -> dict[str, Applied]:
+        """Zmiany z Wydania, które mają wiersz Historii, choć pamięć ich nie ma: wiersz idzie przed pamięcią, więc zmiana z
+        wierszem weszła (albo została odrzucona) i nie wraca, także gdy tata ją już cofnął."""
+
+        found: dict[str, Applied] = {}
+        for row in self._history.read().rows:
+            if isinstance(row.source, FromRelease) and row.source.change not in found:
+                found[row.source.change] = Applied(
+                    at=row.at,
+                    release=row.source.release,
+                    commit=row.source.commit,
+                    result="zastosowano" if row.result == "zapisano" else "odrzucono",
+                )
+        return found
 
     def _apply(self, change: ReleaseChange[T], version: ReleaseOrigin) -> AppliedResult | None:
         """Jedna zmiana z Wydania; ``None``: wraca przy następnym starcie."""

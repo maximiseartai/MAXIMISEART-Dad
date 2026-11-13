@@ -948,7 +948,6 @@ def test_zmiana_ustawien_z_wydania_odlozona_na_pozniej_wraca_przy_nastepnym_star
 
     tool = ToolDirectory(tmp_path / "narzedzie-taty")
     change = ReleaseChange("2026-11-folder-zalaczniki", FOLDERS, periods_from_attachments)
-    before = config_bytes(tool.config)
 
     started(tool, (change,)).stop()
     later = config_bytes(tool.config)
@@ -958,17 +957,24 @@ def test_zmiana_ustawien_z_wydania_odlozona_na_pozniej_wraca_przy_nastepnym_star
     periods = again.get("/api/settings").json()["periods_directory"]
     again.stop()
 
-    assert later == before
+    assert [name for name in (SETTINGS_FILE, HISTORY_FILE, f"{MEMORY_DIRECTORY}/{APPLIED_FILE}") if name in later] == []
     assert ([row["source"] for row in rows], periods["path"]) == (["release"], str(attachments))
     assert "ustawienia-wydanie zmiana=2026-11-folder-zalaczniki wynik=pozniej" in tool.log_path.read_text(encoding="utf-8")
 
 
-def test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wiersza(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "proposal",
+    [Nothing(), Edit(lambda current: replace(current, theme="dark"))],
+    ids=["nic-do-zmiany", "edycja-bez-roznicy"],
+)
+def test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wiersza(
+    tmp_path: Path, proposal: Proposal[FolderSettings]
+) -> None:
     asked: list[str] = []
 
-    def nothing(_inputs: ReleaseInputs[FolderSettings]) -> Nothing:
+    def nothing(_inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
         asked.append("zapytana")
-        return Nothing()
+        return proposal
 
     tool = ToolDirectory(tmp_path)
     change = ReleaseChange("2026-11-nic", FOLDERS, nothing)
@@ -979,6 +985,56 @@ def test_zmiana_ustawien_z_wydania_bez_niczego_do_zmiany_nie_wraca_i_nie_ma_wier
     again.stop()
 
     assert (asked, rows) == (["zapytana"], [])
+    assert "ustawienia-wydanie zmiana=2026-11-nic wynik=bez-zmian" in tool.log_path.read_text(encoding="utf-8")
+
+
+def test_zmiana_ustawien_z_wydania_ktorej_nie_da_sie_zapisac_wraca_przy_nastepnym_starcie(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    app.client.stop()
+    saved = app.settings_path.read_bytes()
+    history = app.tool.config / HISTORY_FILE
+    rows_before = history.read_bytes()
+    history.unlink()
+    history.mkdir()
+
+    started(app.tool, (LIGHT_THEME,)).stop()
+    blocked = app.settings_path.read_bytes()
+    history.rmdir()
+    history.write_bytes(rows_before)
+    again = started(app.tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (blocked, theme) == (saved, "light")
+    assert [row["source"] for row in rows] == ["release", "tata"]
+    log = app.log_path.read_text(encoding="utf-8")
+    assert log.index("zmiana=2026-11-motyw-jasny wynik=bez-zapisu") < log.index("zmiana=2026-11-motyw-jasny wynik=zastosowano")
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_zmiana_z_wydania_z_wierszem_historii_bez_pamieci_nie_wraca_po_cofnieciu_przez_tate(tmp_path: Path) -> None:
+    """Wiersz Historii idzie przed pamięcią zmian z Wydań, więc nieudany zapis pamięci nie puszcza zmiany drugi raz."""
+
+    tool = ToolDirectory(tmp_path)
+    memory = tool.config / MEMORY_DIRECTORY
+    memory.mkdir(parents=True)
+    memory.chmod(0o555)
+    try:
+        first = started(tool, (LIGHT_THEME,))
+        [applied] = first.get("/api/settings/history").json()["rows"]
+        undone = first.post(f"/api/settings/history/{applied['id']}/undo").json()["settings"]["theme"]
+        first.stop()
+    finally:
+        memory.chmod(0o755)
+    again = started(tool, (LIGHT_THEME,))
+    theme = again.get("/api/settings").json()["theme"]
+    rows = again.get("/api/settings/history").json()["rows"]
+    again.stop()
+
+    assert (applied["source"], undone, theme) == ("release", "dark", "dark")
+    assert [row["source"] for row in rows] == ["tata", "release"]
+    assert "ustawienia-wydanie zmiana=2026-11-motyw-jasny wynik=bez-pamieci" in tool.log_path.read_text(encoding="utf-8")
 
 
 def test_wyjatek_w_zmianie_ustawien_z_wydania_nie_zatrzymuje_startu_centrum_a_zmiana_wraca(tmp_path: Path) -> None:
