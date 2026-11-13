@@ -327,7 +327,11 @@ def test_pamiec_zielonych_nie_przepuszcza_zmiany_pliku_danych_pakietu(tmp_path: 
     assert "FAILED tests/test_strona.py::test_tytul" in after_change.stdout
 
 
-@pytest.mark.parametrize(("workers", "expected"), [(None, "4"), ("3", "3")], ids=["bez zmiennej", "ze zmienną"])
+@pytest.mark.parametrize(
+    ("workers", "expected"),
+    [(None, "4"), ("3", "3"), ("auto", str(os.cpu_count())), ("0", "1")],
+    ids=["bez zmiennej", "ze zmienną", "auto jak xdist to rdzenie", "zero to jeden"],
+)
 def test_pytest_bierze_cztery_workery_chyba_ze_zmienna_mowi_inaczej(tmp_path: Path, workers: str | None, expected: str) -> None:
     repo = _repo(tmp_path)
     _write(

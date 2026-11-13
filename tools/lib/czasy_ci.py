@@ -91,9 +91,14 @@ _BLEDY_POBRANIA = (OSError, subprocess.SubprocessError, RuntimeError, ValueError
 
 
 def workery_lokalne() -> int:
-    """Workery xdist kroku pytest na Macu agenta: ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a bez niej ``WORKERY_LOKALNE``."""
+    """Workery xdist kroku pytest na Macu agenta: ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a bez niej ``WORKERY_LOKALNE``.
+    Wartość, która nie jest liczbą (np. ``auto``), daje jak w pytest-xdist liczbę rdzeni, a liczba mniejsza od 1 to 1."""
 
-    return int(os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS") or WORKERY_LOKALNE)
+    tekst = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS") or str(WORKERY_LOKALNE)
+    try:
+        return max(1, int(tekst))
+    except ValueError:
+        return os.cpu_count() or WORKERY_LOKALNE
 
 
 @dataclass(frozen=True)

@@ -212,7 +212,7 @@ def _probe(
         return [f"{path}::{name}" for name in sorted(unchanged(path))] if path in changed else [path]
 
     impact = scanned.impact(frozenset(edit.file.as_posix() for edit in mutation.edits))
-    chosen = szybko.plan(impact.tests, impact.distances, costs)
+    chosen = szybko.plan(impact.tests, impact.distances, costs, workers=czasy_ci.workery_lokalne())
     tests = [test for path in sorted(chosen.run, key=lambda path: (impact.distances.get(path, 0), path)) for test in old(path)]
     return _Probe(tuple(tests), sum(1 for path in chosen.deferred if old(path)))
 
@@ -221,7 +221,7 @@ def _first_failed(mutation: Mutation, tests: Sequence[str], deadline: float, lim
     """Werdykt mutacji na testach ``tests`` (pliki albo id) do pierwszej porażki (``-x``), jego ostatnia linia i id
     testów, które padły (z junit)."""
 
-    workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", str(czasy_ci.WORKERY_LOKALNE))
+    workers = str(czasy_ci.workery_lokalne())
     with tempfile.TemporaryDirectory(prefix="juz-lapie-") as folder:
         listed, junit = Path(folder) / "testy.txt", Path(folder) / "junit.xml"
         # Lista w pliku (``@plik`` pytest): id testów zmienionego pliku przekraczają limit wiersza poleceń Windows.
