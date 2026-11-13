@@ -24,6 +24,7 @@ INPUT_CHECKS = Path("src/rozliczenia/input_checks.py")
 PREPARATION_FILES = Path("src/rozliczenia/preparation_files.py")
 FILLING = Path("src/rozliczenia/centrum/filling.py")
 QUANTITY_RULES_PREVIEW = Path("src/rozliczenia/centrum/quantity_rules_preview.py")
+QUANTITY_DIFFERENCES = Path("src/rozliczenia/centrum/quantity_differences.py")
 PERIOD_START = Path("src/rozliczenia/centrum/period_start.py")
 SETTLEMENT_KIND = Path("src/rozliczenia/centrum/processes/settlement.py")
 FILE_STATE = Path("src/rozliczenia/file_state.py")
@@ -249,6 +250,13 @@ MUTATIONS = (
         (Edit(QUANTITY_RULES_PREVIEW, "        if folder.observe().settled:\n", "        if folder.observe().exists(\"collective_file\"):\n"),),
         EXPLORER,
         "podgląd Reguł ilości liczy na ilościach, których tata jeszcze nie rozliczył",
+        NEW,
+    ),
+    Mutation(
+        "lista różnic nie zna okresu, którego Pliku zbiorczego nie dało się przeczytać",
+        (Edit(QUANTITY_DIFFERENCES, "        if not found.files and not found.unread:\n", "        if not found.files:\n"),),
+        EXPLORER,
+        "lista różnic mówi, że nie ma okresu po Przebiegu rozliczeń, zamiast nazwać nieczytelny Plik zbiorczy",
         NEW,
     ),
     Mutation(

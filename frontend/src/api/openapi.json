@@ -1994,6 +1994,96 @@
         }
       }
     },
+    "/api/settings/quantity-rules/differences": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getQuantityDifferences",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DifferencesReady"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DifferencesWithoutFiles"
+                    }
+                  ],
+                  "title": "Response Getquantitydifferences",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "ready": "#/components/schemas/DifferencesReady",
+                      "no_periods_directory": "#/components/schemas/DifferencesWithoutFiles",
+                      "no_settled_periods": "#/components/schemas/DifferencesWithoutFiles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/quantity-rules/differences/{difference_id}/exception": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Mark",
+        "description": "„To był wyjątek”: wyjątek różnicy o tym id z różnic policzonych teraz, zapisem właściciela Ustawień.",
+        "operationId": "markQuantityException",
+        "parameters": [
+          {
+            "name": "difference_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Difference Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExceptionSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/quantity-rules/preview": {
       "post": {
         "tags": [
@@ -3037,6 +3127,8 @@
               "changeReminders",
               "previewReminder",
               "getSettingsHistory",
+              "getQuantityDifferences",
+              "markQuantityException",
               "getQuantityRules",
               "addQuantityRule",
               "changeQuantityRule",
@@ -4008,6 +4100,139 @@
         "title": "DiagnosisCheck",
         "description": "Jedno sprawdzenie Diagnozy: co sprawdzono, czy przeszło i krótko dlaczego, bez pełnych ścieżek."
       },
+      "DifferencesReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/QuantityDifference"
+            },
+            "type": "array",
+            "title": "Differences"
+          },
+          "more": {
+            "type": "integer",
+            "title": "More"
+          },
+          "exceptions": {
+            "type": "integer",
+            "title": "Exceptions"
+          },
+          "exceptions_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "files",
+          "unread",
+          "differences",
+          "more",
+          "exceptions",
+          "exceptions_problem"
+        ],
+        "title": "DifferencesReady",
+        "description": "Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,\nod najnowszego okresu, bez różnic oznaczonych jako wyjątek.\n\n``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a\n``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków\n(lista liczy wtedy z ostatnimi dobrymi wyjątkami)."
+      },
+      "DifferencesWithoutFiles": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "no_periods_directory",
+              "no_settled_periods"
+            ],
+            "title": "State"
+          },
+          "exceptions_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "exceptions_problem"
+        ],
+        "title": "DifferencesWithoutFiles",
+        "description": "Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie\nma jeszcze Rozliczeń pracowników (``no_settled_periods``)."
+      },
+      "ExceptionSaved": {
+        "properties": {
+          "differences": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DifferencesReady"
+              },
+              {
+                "$ref": "#/components/schemas/DifferencesWithoutFiles"
+              }
+            ],
+            "title": "Differences",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "no_periods_directory": "#/components/schemas/DifferencesWithoutFiles",
+                "no_settled_periods": "#/components/schemas/DifferencesWithoutFiles",
+                "ready": "#/components/schemas/DifferencesReady"
+              }
+            }
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "differences",
+          "change"
+        ],
+        "title": "ExceptionSaved",
+        "description": "Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta\nróżnica już była wyjątkiem."
+      },
       "Figure": {
         "properties": {
           "label": {
@@ -4477,7 +4702,7 @@
           "after"
         ],
         "title": "HistoryRuleChange",
-        "description": "Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;\n``None``: reguły nie było."
+        "description": "Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz\n``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie\nbyło."
       },
       "InaccessiblePath": {
         "properties": {
@@ -6916,6 +7141,85 @@
         ],
         "title": "QuantitiesToFillReady",
         "description": "Ilości do uzupełnienia okresu przeliczone z zapisanego Pliku zbiorczego; ``kinds`` ma każdy rodzaj z listą.\n\n``settled``: Przebieg rozliczeń okresu się odbył (Status okresu Rozliczenia pracowników gotowe), więc strona jest\npodglądem bez „Gotowe, rozlicz pracowników”, a wiersz bez wpisu taty jest „bez ilości”."
+      },
+      "QuantityDifference": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "devices": {
+            "type": "string",
+            "title": "Devices"
+          },
+          "activities": {
+            "type": "string",
+            "title": "Activities"
+          },
+          "when": {
+            "type": "string",
+            "title": "When"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "rule": {
+            "type": "integer",
+            "title": "Rule"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "nieliczbowa"
+              }
+            ],
+            "title": "Tata"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/RuleForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "period",
+          "row",
+          "devices",
+          "activities",
+          "when",
+          "column",
+          "name",
+          "rule",
+          "tata",
+          "draft"
+        ],
+        "title": "QuantityDifference",
+        "description": "Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,\n``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z\nreguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.\n\n``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z\nwarunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,\nz wpisaniem brakującej ilości."
       },
       "QuantityRuleSentence": {
         "properties": {

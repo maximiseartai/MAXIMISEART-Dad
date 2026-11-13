@@ -96,13 +96,13 @@ def _suggestions(run: Run, page: Page, worker_list: Path) -> None:
             answer == {"state": "read", "suggestions": [{"login": FROM_REGISTER, "orders": 1}], "message": None},
             "the login of today's order that no Wykonawca has is the one suggestion, with its number of orders",
         )
-        run.capture(page, "400-wykonawcy-podpowiedz", full_page=False)
+        run.capture(page, "410-wykonawcy-podpowiedz", full_page=False)
         page.set_viewport_size(NARROW)
         try:
             expect(suggestions.get_by_role("listitem", name=FROM_REGISTER, exact=True)).to_be_visible()
             page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
             run.check(True, "on a narrow window the suggestion fits without a horizontal scroll")
-            run.capture(page, "402-wykonawcy-podpowiedz-waska", full_page=False)
+            run.capture(page, "412-wykonawcy-podpowiedz-waska", full_page=False)
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
 
@@ -112,7 +112,7 @@ def _suggestions(run: Run, page: Page, worker_list: Path) -> None:
         expect(form.get_by_role("textbox", name="Login", exact=True)).to_have_value(FROM_REGISTER)
         run.check(read_bytes(worker_list) == list_before, "the suggestion opens the form and saves nothing before Zapisz")
         form.get_by_label("Nazwa w Rozliczeniu pracownika").fill(FROM_REGISTER_NAME)
-        run.capture(page, "401-wykonawcy-formularz-z-podpowiedzi", full_page=False)
+        run.capture(page, "411-wykonawcy-formularz-z-podpowiedzi", full_page=False)
         _save(form)
         expect(_row(window, FROM_REGISTER_NAME)).to_be_visible()
         expect(suggestions).to_have_count(0)
@@ -135,7 +135,7 @@ def _suggestions(run: Run, page: Page, worker_list: Path) -> None:
                 (answer["state"], answer["suggestions"]) == ("unreadable", []),
                 "a Rejestr zleceń that cannot be read is a sentence in the section, not an empty list of suggestions",
             )
-            run.capture(page, "403-wykonawcy-rejestr-nieczytelny", full_page=False)
+            run.capture(page, "413-wykonawcy-rejestr-nieczytelny", full_page=False)
             _close(page)
         finally:
             move(aside, register)

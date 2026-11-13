@@ -167,3 +167,20 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
    Gdy HEAD PR zmienił się w trakcie, przejrzyj diff od przejrzanego SHA do nowego HEAD, zanim zmienisz SHA w pliku.
    Gdy kod Ważnego ma wystąpienie w innym PR, narzędzie zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do otwartego i podaje to w linii `WERDYKT OK` po `| CHWAST`.
    Krok kończy się linią `WERDYKT OK` z adresem komentarza: oddaj wywołującemu ścieżkę pliku i tę linię.
+
+## Karta korzeni (poniedziałek)
+
+Tę sekcję wykonuje stałe zadanie T3 w poniedziałek o 8:00, a przegląd PR ją pomija.
+Liczby tygodnia zapisuje wcześniej workflow `rejestr-korzeni.yml` w issue z etykietą `rejestr-korzeni`, a zadanie dokłada osąd: kartę XmR i porządek kodów ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), Q1, Q18, Q19, Q23).
+Zadanie tylko czyta GitHub i repo, a kartę i propozycje oddaje Maksowi w swoim wątku; wszystko biegnie na pierwszym planie.
+
+1. Przeczytaj issue z etykietą `rejestr-korzeni` i trzy ostatnie runy workflowu (`gh run list --workflow rejestr-korzeni.yml -L 3`).
+   Krok kończy się, gdy wiesz, czy `## Historia` ma wiersz tego tygodnia; gdy go nie ma albo run padł, napisz to jednym zdaniem z linkiem do runu i rysuj kartę z wierszy, które są.
+2. Narysuj kartę XmR udziału powtórzeń z `## Historia`: średnia, granice z ruchomego zakresu, a sygnał to punkt poza granicą albo 8 tygodni z rzędu po jednej stronie średniej.
+   Obok postaw liczbę wystąpień tygodnia i liczbę otwartych chwastów z `## Chwasty`.
+   Pokaż kartę w wątku jako wizualizację HTML, spokojną i z minimum tekstu.
+   Krok kończy się, gdy karta jest widoczna w wątku, a każdy sygnał ma nazwę.
+3. Porządek kodów: przejrzyj werdykty tygodnia z kodami z `## Kody` i zaproponuj najwyżej 3 zmiany [`korzenie.toml`](korzenie.toml): podział kodu, pod którym stoją różne przyczyny, scalenie kodów za wąskich albo nowy kod z `NOWY`, który wrócił.
+   Każda propozycja ma jedno zdanie powodu i przykład PR.
+   Krok kończy się, gdy każdy kod tygodnia jest przejrzany, a gdy propozycji nie ma, jedno zdanie mówi, że lista zostaje.
+4. Zakończ jednym zdaniem: czy udział powtórzeń spada, stoi czy rośnie według karty, i który otwarty chwast jest najstarszy.

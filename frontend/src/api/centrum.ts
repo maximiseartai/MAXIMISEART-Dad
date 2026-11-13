@@ -189,6 +189,16 @@ export function getSettingsHistory() {
   return call("getSettingsHistory")
 }
 
+/** Różnice z Kontroli ilości ostatnich okresów, bez oznaczonych jako wyjątek: „Tu wpisałeś inaczej niż reguła”. */
+export function getQuantityDifferences() {
+  return call("getQuantityDifferences")
+}
+
+/** „To był wyjątek”: serwer zapisuje wyjątek różnicy o tym id i oddaje listę różnic po nim. */
+export function markQuantityException(id: string) {
+  return call("markQuantityException", { path: { difference_id: id } })
+}
+
 /** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
 export function getQuantityRules() {
   return call("getQuantityRules")

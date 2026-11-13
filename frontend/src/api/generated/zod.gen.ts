@@ -47,6 +47,8 @@ export const zApiTiming = z.object({
         'changeReminders',
         'previewReminder',
         'getSettingsHistory',
+        'getQuantityDifferences',
+        'markQuantityException',
         'getQuantityRules',
         'addQuantityRule',
         'changeQuantityRule',
@@ -1476,6 +1478,34 @@ export const zChangeRule = z.object({
 });
 
 /**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export const zQuantityDifference = z.object({
+    id: z.string(),
+    period: z.string(),
+    row: z.int(),
+    devices: z.string(),
+    activities: z.string(),
+    when: z.string(),
+    column: z.string(),
+    name: z.string().nullable(),
+    rule: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ]),
+    draft: zRuleForm
+});
+
+/**
  * RunCardMissing
  *
  * Karty tego Uruchomienia nie ma: nie wystartowało z Centrum, nie ma jego Logów albo nie da się ich odczytać.
@@ -1791,8 +1821,9 @@ export const zSentenceText = z.object({
 /**
  * HistoryRuleChange
  *
- * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
- * ``None``: reguły nie było.
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
  */
 export const zHistoryRuleChange = z.object({
     key: z.string(),
@@ -1865,6 +1896,52 @@ export const zQuantityRuleSentence = z.object({
 export const zSettingProblem = z.object({
     field: z.string().nullable(),
     message: z.string()
+});
+
+/**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export const zDifferencesReady = z.object({
+    state: z.literal('ready'),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    differences: z.array(zQuantityDifference),
+    more: z.int(),
+    exceptions: z.int(),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zDifferencesWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods']),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export const zExceptionSaved = z.object({
+    differences: z.discriminatedUnion('state', [
+        zDifferencesReady,
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+    ]),
+    change: z.string().nullable()
 });
 
 /**
@@ -3386,6 +3463,26 @@ export const zAddQuantityRuleBody = zRuleForm;
  * Successful Response
  */
 export const zAddQuantityRuleResponse = zQuantityRulesSaved;
+
+/**
+ * Response Getquantitydifferences
+ *
+ * Successful Response
+ */
+export const zGetQuantityDifferencesResponse = z.discriminatedUnion('state', [
+    zDifferencesReady,
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
+
+export const zMarkQuantityExceptionPath = z.object({
+    difference_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zMarkQuantityExceptionResponse = zExceptionSaved;
 
 /**
  * Edit

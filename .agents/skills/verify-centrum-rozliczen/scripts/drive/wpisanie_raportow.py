@@ -201,20 +201,20 @@ def _assign_stranger(run: Run, page: Page, address: str) -> None:
     before = read_bytes(worker_list)
     region = page.get_by_role("region", name="Spoza listy adresów")
     expect(region.get_by_role("button", name=ASSIGN, exact=True)).to_be_visible()
-    run.capture(page, "404-raporty-przypisz")
+    run.capture(page, "414-raporty-przypisz")
     region.get_by_role("button", name=ASSIGN, exact=True).click()
     window = settings_window(page)
     expect(settings_title(page)).to_have_text("Ustawienia/Wykonawcy")
     chooser = window.get_by_role("group", name="Przypisz adres")
     expect(chooser).to_contain_text(address)
     run.check(read_bytes(worker_list) == before, "„Przypisz do Wykonawcy…” opens the choice and saves nothing")
-    run.capture(page, "405-raporty-przypisz-wybor", full_page=False)
+    run.capture(page, "415-raporty-przypisz-wybor", full_page=False)
     page.set_viewport_size(NARROW)
     try:
         expect(chooser.get_by_role("combobox", name="Wykonawca")).to_be_visible()
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the choice fits without a horizontal scroll")
-        run.capture(page, "407-raporty-przypisz-wybor-waski", full_page=False)
+        run.capture(page, "417-raporty-przypisz-wybor-waski", full_page=False)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
     chooser.get_by_role("combobox", name="Wykonawca").click()
@@ -233,7 +233,7 @@ def _assign_stranger(run: Run, page: Page, address: str) -> None:
         (sender["sender"], sender["worker"]) == (address, ASSIGNED_LOGIN),
         "Raporty, without a reload, show the stranger as assigned to the Wykonawca; the next click enters the Raport",
     )
-    run.capture(page, "406-raporty-przypisany")
+    run.capture(page, "416-raporty-przypisany")
     window = open_settings(page, "Historia")
     newest = window.get_by_role("list", name="Zmiany").get_by_role("listitem").first
     newest.get_by_role("button", name=f"Cofnij: wykonawcy[{ASSIGNED_LOGIN}]", exact=True).click()

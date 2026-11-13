@@ -60,7 +60,7 @@ Run from the repository root (Windows: `py -3`; macOS/Linux: `.venv/bin/python`)
 py -3 .agents\skills\verify-centrum-rozliczen\scripts\run_centrum_verification.py
 ```
 
-`--feature okno-ustawien`, `--feature ustawienia`, `--feature reguly-ilosci`, `--feature edytor-regul-ilosci`, `--feature tablica-okresow`, `--feature tablica-skrocona`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature wykonawcy`, `--feature aktualizacja`,
+`--feature okno-ustawien`, `--feature ustawienia`, `--feature reguly-ilosci`, `--feature roznice-z-kontroli`, `--feature edytor-regul-ilosci`, `--feature tablica-okresow`, `--feature tablica-skrocona`, `--feature uklad-folderow-taty`, `--feature konfiguracja`, `--feature wykonawcy`, `--feature aktualizacja`,
 `--feature metryki`, `--feature blad-odczytu`, `--feature przygotowanie-pliku-zbiorczego`, `--feature uzupelnienie`,
 `--feature przebieg-rozliczen`, `--feature uporzadkowanie-intermax`, `--feature kopie-intermax`, `--feature kontrola-ilosci`, `--feature diagnoza`, `--feature aktualnosc-i-onedrive`, `--feature zgloszenie`, `--feature uwaga-taty`, `--feature logi-uruchomienia`, `--feature karta-z-logow`, `--feature powiadomienia`, `--feature pomiar-u-taty`, `--feature wpisanie-raportow`, `--feature wycena-w-efenix`, or `--feature start-i-zamykanie` drives one
 feature; the default `all` drives every feature in `features/` except `wydajnosc`, ending

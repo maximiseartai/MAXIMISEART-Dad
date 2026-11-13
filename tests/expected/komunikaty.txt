@@ -1538,6 +1538,9 @@ settings_change_unknown [HTTP 404]
 quantity_rule_unknown [HTTP 404]
   Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.
 
+quantity_difference_unknown [HTTP 404]
+  Tej różnicy już nie ma na liście. Odśwież okno Ustawień.
+
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.
 

@@ -41,6 +41,8 @@ ApiOperation = Literal[
     "changeReminders",
     "previewReminder",
     "getSettingsHistory",
+    "getQuantityDifferences",
+    "markQuantityException",
     "getQuantityRules",
     "addQuantityRule",
     "changeQuantityRule",

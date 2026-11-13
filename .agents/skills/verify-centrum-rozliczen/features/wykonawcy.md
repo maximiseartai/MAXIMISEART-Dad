@@ -44,13 +44,13 @@ Preconditions:
   there) with today's ordered orders of `wykonawca.a` and `wykonawca.nowy`; Dad points the Rejestr zleceń to it in
   Foldery. Open Wykonawcy: list `Nowe loginy` has list item `wykonawca.nowy` with `1 zlecenie`, and
   `GET /api/settings/workers/suggestions` (`api/wykonawcy-podpowiedzi.json`) is that one login with `orders` 1 and
-  `state` `read`. Screenshot `400`; at 420×860 no horizontal scroll, screenshot `402`.
+  `state` `read`. Screenshot `410`; at 420×860 no horizontal scroll, screenshot `412`.
 - **Add from the suggestion.** Button `Dodaj Wykonawcę: wykonawca.nowy`: form `Nowy Wykonawca` has textbox `Login` =
-  `wykonawca.nowy` and the Lista Wykonawców keeps its bytes; name `Wykonawca Testowy N`, screenshot `401`, `Zapisz
+  `wykonawca.nowy` and the Lista Wykonawców keeps its bytes; name `Wykonawca Testowy N`, screenshot `411`, `Zapisz
   Wykonawcę`: list item `Wykonawca Testowy N`, the list `Nowe loginy` is gone and the API has no suggestion. ✕.
 - **Unreadable Rejestr.** Harness: the INTERMAX moved away. Open Wykonawcy: the sentence `Nie da się teraz przeczytać
   Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź Rejestr w sekcji Foldery.`, and the API
-  has `state` `unreadable` without suggestions. Screenshot `403`; ✕. The INTERMAX goes back, Dad points the Rejestr
+  has `state` `unreadable` without suggestions. Screenshot `413`; ✕. The INTERMAX goes back, Dad points the Rejestr
   zleceń to the one before in Foldery, and removes `Wykonawca Testowy N` (no order of his in that Rejestr); the Lista
   Wykonawców has its bytes from before the suggestion.
 - **Add.** Open Wykonawcy. Button `Dodaj Wykonawcę`, form `Nowy Wykonawca`: textbox `Login` = `wykonawca.e`, label
@@ -80,7 +80,7 @@ Preconditions:
   (`api/wykonawcy-usuniety.json`). Then the same changes the other way: A2 renamed back to A (no question, no file has
   the name A2), D `Oznacz jako aktywnego`, C's switch on; `config/wykonawcy.yaml` has the fixture's bytes again. ✕ (`Zamknij Ustawienia`) closes the window; Esc
   would first close the notification „Zapisano · Cofnij” of the last switch.
-- **Proof.** Screenshots `390`–`397` and `400`–`403`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
+- **Proof.** Screenshots `390`–`397` and `410`–`413`, `api/wykonawcy-*.json` and the checks in `drive.txt`.
 
 ## Gotchas
 
