@@ -41,7 +41,7 @@ def arguments(argv: Sequence[str], environment: Mapping[str, str] = os.environ) 
         return list(argv)
     return [*argv, *(f"--config={name}" for unit in part(UNITS, environment) for name in unit)]
 
-# Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
+# Akcja modelu i krok kodu, który opisuje komentarz nad nią w modelu, w słowach kontrprzykładu.
 _STEPS = {
     "Start": "tata otwiera Centrum: port, create_app, RunComments.close_left_behind czyta dzienniki (LogsOnDisk.left_behind)",
     "ZapiszLogi": "close_left_behind zapisuje plik Logów Wyceny {k} po strażniku (LogsOnDisk.write)",

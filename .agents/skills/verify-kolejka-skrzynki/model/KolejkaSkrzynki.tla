@@ -885,6 +885,10 @@ WyslijPlik(q) ==
 \* replace_atomically: temporary.write_text; jego OSError usuwa plik tymczasowy i wychodzi z suppress. Plik, którego
 \* Archiwum nie przyjęło (archive_waits), _archive_waits: _archive_refused, a potem znacznik części (archived false) i
 \* następny plik bez _remove; plik, który już miał znacznik części, czeka dalej bez zapisu.
+\* Rozbieżność z kodem: Znacznik zeruje stopped na każdej drodze, a _send_all nie rusza _stopped_on po pliku wypartym
+\* przez nowszą wersję (_superseded: sam _mark_delivered) ani po pliku commented, na który Archiwum czeka
+\* (ArchiveWaits: sam _archive_waits). Nieszkodliwe: stopped czyta tylko Decyzja po końcu przejścia, a przejście albo
+\* staje dalej na innym pliku (_stop ustawia _stopped_on znowu), albo kończy listę z self._stopped_on = None.
 Znacznik(q) ==
     LET w == biez[q]
         czeka == arch[q] = "czeka"
