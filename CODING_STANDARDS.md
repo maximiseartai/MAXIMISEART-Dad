@@ -132,7 +132,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
-| A line a change adds in `src/` carries no `#` comment except a ruff or mypy suppression (`noqa`, `type: ignore`, `ruff: noqa`, `mypy:` options) with its reason after it, and a docstring with an added line names no PR, issue or commit. | ast-grep rules in `reguly-ast-grep/` (`sgconfig.yml`), run by `tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src` in `tools/szybko.py` and in the CI job „Ruff, mypy” (known gaps: `ZNANE_LUKI` in the same file, run by `test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff`) |
+| A line a change adds in `src/` carries no `#` comment except a suppression ruff or mypy reads, with its reason after it: `noqa` with its codes and `type: ignore` on the line they suppress, and `ruff: noqa` and `# mypy:` options in the module header before the first statement; a docstring with an added line names no PR, issue or commit (a number after `#`, `GH-`, PR, pull request, issue, ticket or commit, a github.com address, a commit hash). | ast-grep rules in `reguly-ast-grep/` (`sgconfig.yml`), run by `tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src` in `tools/szybko.py` and in the CI job „Ruff, mypy” (known gaps: `ZNANE_LUKI` in the same file, run by `test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff`) |
 
 ## Review Context
 

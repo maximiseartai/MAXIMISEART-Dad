@@ -790,7 +790,7 @@ def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
     Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
     ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
     Reguły ast-grep biegną bez tego dowodu, bo dzisiejsze ``src/`` ma jeszcze komentarze, których zakaz dotyczy tylko
-    nowych linii (ADR 0034).
+    nowych linii (ADR 0034). ``--deselect`` wybiera po prefiksie node id, więc test sprawdza, że pominął dokładnie jeden.
     """
 
     empty_tree = subprocess.run(
@@ -812,3 +812,8 @@ def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
     )
 
     assert answered.returncode == 0, answered.stdout[-3000:]
+    assert ", 1 deselected" in answered.stdout.splitlines()[-1], (
+        "--deselect reguł ast-grep pominął inną liczbę testów niż jeden, więc inny test zapadek zniknął z tego dowodu: "
+        "nadaj mu nazwę, która nie zaczyna się od test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src\n"
+        + answered.stdout.splitlines()[-1]
+    )

@@ -3,13 +3,26 @@ language: python
 severity: error
 message: >-
   komentarz # w src: powód i ostrzeżenie z komentarza wyraź lepszą nazwą albo testem, który pada bez tego kodu, a
-  historię zmiany zostaw w PR albo issue; w src zostają tylko tłumienia ruff i mypy (noqa, type: ignore, ruff: noqa,
-  mypy: z opcjami), a powód tłumienia dopisz na jego linii (ADR 0034, „Komentarze w src”)
+  historię zmiany zostaw w PR albo issue; w src zostają tylko tłumienia ruff i mypy (noqa: z kodem i type: ignore na
+  linii, którą tłumią, a ruff: noqa i mypy: w nagłówku modułu, przed pierwszą instrukcją), a powód tłumienia dopisz na
+  jego linii (ADR 0034, „Komentarze w src”)
 files:
   - src/**
 rule:
   kind: comment
-  # Tłumienie zaczyna komentarz, a powód stoi za nim. Prozę zamiast kodów ruff odrzuca (PGH004, RUF100), a mypy prozę po
-  # type: ignore, więc tu tylko mypy: ma postać opcji (nazwa, =wartość, przecinek albo koniec komentarza).
+  # Przechodzi tylko tłumienie, które czyta ruff albo mypy, bo ono samo odrzuca prozę zamiast kodu: noqa i noqa: z kodem
+  # (PGH004, RUF100), type: ignore (mypy: Invalid "type: ignore" comment). Pliku ruff: noqa i mypy: (dokładnie „# mypy: ”,
+  # jak w get_mypy_comments) ruff i mypy nie czytają obok kodu, a ast-grep nie widzi kolumny, więc oba przechodzą tylko
+  # w nagłówku modułu, gdzie komentarz zawsze stoi na własnej linii, a mypy odrzuca nieznaną opcję (Unrecognized option).
   not:
-    regex: '^#\s*(?:(?i:noqa)\b|type:\s*ignore\b|ruff:\s*noqa\b|mypy:\s*[\w-]+(?:\s*=\s*\S+)?\s*(?:,|$))'
+    any:
+      - regex: '^#\s*(?:(?i:noqa)(?::\s*[A-Z]+[0-9]+|\s|$)|type:\s*ignore\b)'
+      - all:
+          - regex: '^(?:#\s*ruff:\s*noqa(?::\s*[A-Z]+[0-9]+|\s|$)|# mypy: )'
+          - inside:
+              kind: module
+          - not:
+              follows:
+                not:
+                  kind: comment
+                stopBy: end
