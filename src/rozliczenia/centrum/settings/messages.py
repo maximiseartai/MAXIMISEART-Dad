@@ -32,6 +32,14 @@ def unknown_theme() -> str:
     return "Motyw może być tylko ciemny albo jasny."
 
 
+def autostart_unsupported() -> str:
+    return "Start razem z Windows działa tylko na komputerze z Windows."
+
+
+def autostart_unreadable() -> str:
+    return "Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę."
+
+
 def inbox_not_text() -> str:
     return "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
 

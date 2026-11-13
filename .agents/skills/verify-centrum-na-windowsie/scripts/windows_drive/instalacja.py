@@ -46,14 +46,6 @@ def _readme_clone() -> str:
     return "\n".join(lines[:-1]) + "\n"
 
 
-def _encodable(text: str, code_page: int) -> bool:
-    try:
-        text.encode(f"cp{code_page}")
-    except (UnicodeEncodeError, LookupError):
-        return False
-    return True
-
-
 def drive(run: Run) -> None:
     facts = run.facts
     versions = facts["versions"]
@@ -104,12 +96,8 @@ def drive(run: Run) -> None:
     links = sorted(desktop.glob("*.lnk"))
     print(f"  code page {code_page}; shortcuts: {[ascii(found.name) for found in links]}", flush=True)
     run.check(created.returncode == 0 and len(links) == 1, "the step exits 0 and makes one shortcut on the desktop folder")
-    if not _encodable(link.name, code_page):
-        # WScript.Shell writes the name through the ANSI code page: Dad's 1250 has „ń”, the runner's may not.
-        run.harness(f"code page {code_page} cannot write {link.name!r} (Dad's 1250 can): the shortcut is {links[0].name!r}")
-        link = links[0]
-        facts["shortcut"] = str(link)
-    run.check(links[0] == link, f"the shortcut is {link.name}")
+    # WScript.Shell writes names through the ANSI code page; the runner's 1252 has no „ń”, Dad's 1250 has.
+    run.check(links == [link], f"the shortcut is {link.name} in code page {code_page} too")
     run.check(f"Utworzono skrót „Centrum rozliczeń”: {facts['desktop']}" in created.stdout, "the step says where the shortcut is")
     shortcut = windows_desktop.read_shortcut(link)
     (run.evidence / "state" / "skrot.json").write_text(json.dumps(shortcut, ensure_ascii=False, indent=2), encoding="utf-8")

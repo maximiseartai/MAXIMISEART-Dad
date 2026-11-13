@@ -17,6 +17,7 @@ export const zApiTiming = z.object({
         'changeTheme',
         'changeInboxPassword',
         'changeFolders',
+        'changeAutostart',
         'getSettingsHistory',
         'getQuantityRules',
         'undoSettingsChange',
@@ -56,6 +57,32 @@ export const zApiTiming = z.object({
     ]),
     browser_ms: z.int().gte(0).lte(600000),
     server_ms: z.int().gte(0).lte(600000).nullable()
+});
+
+/**
+ * AutostartChange
+ *
+ * Przełącznik „Uruchamiaj Centrum razem z Windows”: ``True`` zakłada skrót w folderze Autostart, ``False`` go usuwa.
+ */
+export const zAutostartChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * AutostartSetting
+ *
+ * Start Centrum razem z Windows: skrót w folderze Autostart jest (``on``) albo go nie ma (``off``), komputer nie ma
+ * Autostartu Windows (``unsupported``) albo folderu Autostart nie da się teraz sprawdzić (``unreadable``). ``reason``:
+ * zdanie dla taty, dlaczego przełącznika nie da się teraz zmienić; przy ``on`` i ``off`` ``None``.
+ */
+export const zAutostartSetting = z.object({
+    state: z.enum([
+        'on',
+        'off',
+        'unsupported',
+        'unreadable'
+    ]),
+    reason: z.string().nullable()
 });
 
 /**
@@ -1770,7 +1797,8 @@ export const zSettings = z.object({
     theme: z.enum(['dark', 'light']),
     folders_problem: zSettingProblem.nullable(),
     inbox: zInboxSetting,
-    inbox_problem: zSettingProblem.nullable()
+    inbox_problem: zSettingProblem.nullable(),
+    autostart: zAutostartSetting
 });
 
 /**
@@ -2799,6 +2827,13 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  * Successful Response
  */
 export const zGetSettingsResponse = zSettings;
+
+export const zChangeAutostartBody = zAutostartChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeAutostartResponse = zChoice;
 
 export const zChangeFoldersBody = zFoldersChange;
 

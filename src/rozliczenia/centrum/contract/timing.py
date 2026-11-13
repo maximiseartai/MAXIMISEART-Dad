@@ -30,6 +30,7 @@ ApiOperation = Literal[
     "changeTheme",
     "changeInboxPassword",
     "changeFolders",
+    "changeAutostart",
     "getSettingsHistory",
     "getQuantityRules",
     "undoSettingsChange",
