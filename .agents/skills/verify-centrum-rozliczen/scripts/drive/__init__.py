@@ -59,6 +59,12 @@ FEATURES = (
             "275-ustawienia-nieczytelny-plik",
             "276-ustawienia-niedostepna-sciezka",
             "05-ustawienia-motyw-jasny",
+            "306-ustawienia-zapisano-cofnij",
+            "307-ustawienia-zapisano-waskie",
+            "308-ustawienia-historia",
+            "309-ustawienia-historia-waska",
+            "310-ustawienia-odmowa-przy-polu",
+            "311-ustawienia-odmowa-waska",
         ),
     ),
     Feature(

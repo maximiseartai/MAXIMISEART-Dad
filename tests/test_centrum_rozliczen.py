@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from pathlib import Path
@@ -439,7 +440,10 @@ def test_zmiana_motywu_przy_niedostepnym_pliku_ustawien_nie_wymazuje_folderu_okr
     assert (refused.status_code, refused.json()) == (500, {"message": SETTINGS_NOT_SAVED})
     assert kept == saved
     assert "ustawienia-bez-zapisu przyczyna=dostep" in app.log_path.read_text(encoding="utf-8")
-    assert (again.json()["theme"], again.json()["periods_directory"]["path"]) == ("light", str(periods))
+    assert (again.json()["settings"]["theme"], again.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
 
 
 @NO_ACCESS_ON_WINDOWS
@@ -461,7 +465,10 @@ def test_plik_ustawien_niedostepny_na_chwile_przyjmuje_zmiane_po_ponowieniu(tmp_
     finally:
         tool.settings.chmod(0o644)
 
-    assert (changed.json()["theme"], changed.json()["periods_directory"]["path"]) == ("light", str(periods))
+    assert (changed.json()["settings"]["theme"], changed.json()["settings"]["periods_directory"]["path"]) == (
+        "light",
+        str(periods),
+    )
     assert len(pauses) == 1
 
 
@@ -488,7 +495,7 @@ def test_zmiana_folderow_rejestru_i_motywu_ma_wiersz_historii_z_wartoscia_przed_
 
     chosen = app.client.post("/api/settings/register/choose")
     saved = app.client.put("/api/settings/folders", json={"order_register": str(register), "periods_directory": str(periods)})
-    app.client.put("/api/settings/theme", json={"theme": "light"})
+    themed = app.client.put("/api/settings/theme", json={"theme": "light"})
     rows = history_rows(app)
 
     assert [(row["source"], row["section"], row["changes"], row["undoable"]) for row in rows] == [
@@ -496,7 +503,7 @@ def test_zmiana_folderow_rejestru_i_motywu_ma_wiersz_historii_z_wartoscia_przed_
         ("tata", "foldery", [{"key": "foldery.folder_okresow", "before": None, "after": str(periods)}], True),
         ("tata", "foldery", [{"key": "foldery.rejestr_zlecen", "before": None, "after": str(register)}], True),
     ]
-    assert [chosen.json()["change"], saved.json()["change"]] == [rows[2]["id"], rows[1]["id"]]
+    assert [chosen.json()["change"], saved.json()["change"], themed.json()["change"]] == [row["id"] for row in rows[::-1]]
     log = app.log_path.read_text(encoding="utf-8")
     assert "ustawienia-zmiana plik=centrum-ustawienia.yaml klucze=foldery.folder_okresow zrodlo=tata" in log
     assert (str(periods) in log, register.name in log) == (False, False)
@@ -586,6 +593,20 @@ def test_reczna_zmiana_pliku_ustawien_ma_jeden_wiersz_spoza_centrum_z_wartoscia_
     ]
     assert rows[0]["undoable"] is True
     assert "ustawienia-spoza plik=centrum-ustawienia.yaml wynik=zapisano" in app.log_path.read_text(encoding="utf-8")
+
+
+def test_historia_otwarta_zaraz_po_recznej_zmianie_pliku_ustawien_pokazuje_jej_wiersz(tmp_path: Path) -> None:
+    """Tata otwiera Historię w oknie Ustawień, zanim cokolwiek innego przeczytało Ustawienia po zmianie Maksa."""
+
+    app, periods = with_periods_directory(tmp_path)
+    other = tmp_path / "Załączniki"
+    other.mkdir()
+    app.settings_path.write_text(f"schema_version: 1\nfolder_okresow: '{other}'\n", encoding="utf-8")
+
+    assert changes(history_rows(app))[0] == (
+        "outside",
+        [{"key": "foldery.folder_okresow", "before": str(periods), "after": str(other)}],
+    )
 
 
 def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_i_jednym_wierszem_bez_cofniecia(
@@ -704,7 +725,7 @@ def test_zapis_taty_przy_zlej_tresci_pliku_zmienia_ostatnia_dobra_wartosc(tmp_pa
 
     changed = app.client.put("/api/settings/theme", json={"theme": "light"})
 
-    assert (changed.status_code, changed.json()["periods_directory"]["path"], changed.json()["folders_problem"]) == (
+    assert (changed.status_code, changed.json()["settings"]["periods_directory"]["path"], changed.json()["settings"]["folders_problem"]) == (
         200,
         str(periods),
         None,
@@ -776,7 +797,7 @@ def test_plik_historii_zajety_na_chwile_przyjmuje_wiersz_po_ponowieniu(tmp_path:
         history.chmod(0o644)
     rows = client.get("/api/settings/history").json()["rows"]
 
-    assert (changed.status_code, changed.json()["theme"]) == (200, "light")
+    assert (changed.status_code, changed.json()["settings"]["theme"]) == (200, "light")
     assert [row["changes"][0]["key"] for row in rows] == ["wyglad.motyw", "foldery.folder_okresow"]
     assert len(pauses) == 1
 
@@ -793,6 +814,25 @@ def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> Non
         ["wyglad.motyw", "foldery.folder_okresow"],
         1,
     )
+
+
+def test_chwila_wiersza_historii_idzie_do_przegladarki_w_utc_takze_na_komputerze_w_strefie_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Schemat przeglądarki przyjmuje tylko chwilę w UTC („Z”); na komputerze w UTC każda chwila tak wygląda.
+    if sys.platform == "win32":
+        pytest.skip("time.tzset jest tylko w systemach POSIX")
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        app = centrum(tmp_path)
+        app.client.put("/api/settings/theme", json={"theme": "light"})
+        [row] = history_rows(app)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    assert row["at"].endswith("Z")
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

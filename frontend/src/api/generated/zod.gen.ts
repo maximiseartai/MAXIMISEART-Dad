@@ -1671,8 +1671,9 @@ export const zSettings = z.object({
 /**
  * Choice
  *
- * Ustawienia po natywnym oknie wyboru albo zapisie sekcji: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
- * ``change``: id wiersza Historii Ustawień tej zmiany (do „Cofnij”); ``None``: bez zmiany i bez wiersza.
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
  */
 export const zChoice = z.object({
     settings: zSettings,
@@ -2720,7 +2721,7 @@ export const zChangeThemeBody = zThemeChange;
 /**
  * Successful Response
  */
-export const zChangeThemeResponse = zSettings;
+export const zChangeThemeResponse = zChoice;
 
 /**
  * Successful Response

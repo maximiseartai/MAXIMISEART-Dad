@@ -9,15 +9,17 @@ import shutil
 import sys
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Page, Request, Route, expect
+from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, expect
 
 from drive.common import (
+    DAD_VIEWPORT,
     REPEAT_SETTLE_MS,
     Run,
     choose_periods_directory,
     close_settings,
     move,
     open_settings,
+    put_text,
     remove_tree,
     sent_requests,
     settings_window,
@@ -30,8 +32,13 @@ from harness import Log
 FOLDERS = "#/ustawienia/foldery"
 
 
+FEATURE = "ustawienia"
+# The narrow browser window of the window Ustawienia (full screen, sections in a combobox).
+NARROW: ViewportSize = {"width": 420, "height": 860}
+
+
 def drive(run: Run, page: Page) -> None:
-    feature = "ustawienia"
+    feature = FEATURE
     register_name = Path(run.fixture["order_register"]).name
     window = settings_window(page)
     register = window.get_by_role("listitem", name="Rejestr zleceń")
@@ -219,6 +226,136 @@ def drive(run: Run, page: Page) -> None:
     themes.get_by_role("button", name="Ciemny", exact=True).click()
     expect(page.locator("html")).to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
+    close_settings(page)
+
+    _saved_and_undo(run, page)
+    _history(run, page)
+    _refusal_at_field(run, page)
+
+
+def _toast(page: Page, title: str) -> Locator:
+    """The toast ``title`` on screen; a toast it replaced stays in the document while it slides out."""
+
+    return page.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text(title, exact=True))
+
+
+def _saved_and_undo(run: Run, page: Page) -> None:
+    """„Zapisano · Cofnij” after a switch, wide and narrow; „Cofnij” in the toast takes the change back."""
+
+    run.step(FEATURE, "ustawienia-zapisano-cofnij")
+    for viewport, capture in ((DAD_VIEWPORT, "306-ustawienia-zapisano-cofnij"), (NARROW, "307-ustawienia-zapisano-waskie")):
+        # The gear is in the menu, which a narrow window hides: the window opens wide and the browser narrows.
+        themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+        page.set_viewport_size(viewport)
+        try:
+            themes.get_by_role("button", name="Jasny", exact=True).click()
+            run.wait_for(lambda: run.remembered("motyw") == "light", "the switch saves at once")
+            saved = _toast(page, "Zapisano")
+            expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
+            run.check(True, f"the switch shows „Zapisano · Cofnij” ({viewport['width']} px)")
+            run.capture(page, capture, full_page=False)
+            saved.get_by_role("button", name="Cofnij", exact=True).click()
+            expect(_toast(page, "Cofnięto")).to_be_visible()
+            expect(page.locator("html")).to_have_class("dark")
+            expect(themes.get_by_role("button", name="Ciemny", exact=True)).to_have_attribute("aria-pressed", "true")
+            run.wait_for(lambda: run.remembered("motyw") == "dark", "„Cofnij” in the toast takes the theme back")
+            close_settings(page)
+        finally:
+            page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _history(run: Run, page: Page) -> None:
+    """Historia lists every change with before and after, a change outside Centrum too, and „Cofnij” is a new change."""
+
+    run.step(FEATURE, "ustawienia-historia")
+    settings = Path(run.fixture["settings"])
+    periods = run.fixture["periods_directory"]
+    attachments = run.root / "Załączniki"
+    # Harness: Maks changes the folder okresów in the settings file by hand, outside Centrum.
+    put_text(settings, (run.settings_text() or "").replace(periods, str(attachments)))
+    window = open_settings(page, "Historia")
+    rows = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
+    outside = rows.first
+    expect(outside).to_contain_text("Folder okresów")
+    expect(outside).to_contain_text("INEA → Załączniki")
+    expect(outside).to_contain_text("spoza Centrum")
+    run.check(True, "a change of the settings file outside Centrum is the newest row, marked „spoza Centrum”")
+    expect(rows.nth(1)).to_contain_text("Ciemny")
+    expect(rows.nth(1)).to_contain_text("cofnięcie")
+    history = run.api("/api/settings/history", "ustawienia-historia")["rows"]
+    assert isinstance(history, list)
+    run.check(
+        [row["source"] for row in history[:2]] == ["outside", "tata"] and history[1]["undoes"] is not None,
+        "the server's Historia has the change outside Centrum, then the undo from the toast",
+    )
+    run.capture(page, "308-ustawienia-historia", full_page=False)
+
+    outside.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
+    expect(rows.first).to_contain_text("Załączniki → INEA")
+    expect(rows.first).to_contain_text("cofnięcie")
+    run.wait_for(lambda: run.remembered("folder_okresow") == periods, "„Cofnij” points the folder okresów back to INEA")
+    run.check(True, "the undo is a new row on top, and the row it undid stays")
+
+    with unreadable(settings):
+        rows.first.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
+        expect(rows.first.get_by_role("alert")).to_contain_text("Nie udało się zapisać Ustawień taty")
+    run.check(run.remembered("folder_okresow") == periods, "an undo the server refuses is one sentence under its row")
+    close_settings(page)
+
+    open_settings(page, "Historia")
+    page.set_viewport_size(NARROW)
+    try:
+        expect(rows.first).to_contain_text("Załączniki → INEA")
+        run.capture(page, "309-ustawienia-historia-waska", full_page=False)
+        close_settings(page)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _refusal_at_field(run: Run, page: Page) -> None:
+    """A wrong value is not saved: its one sentence stands under its field, typed or picked."""
+
+    run.step(FEATURE, "ustawienia-odmowa-przy-polu")
+    sentence = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
+    before = run.settings_text()
+    for viewport, capture in ((DAD_VIEWPORT, "310-ustawienia-odmowa-przy-polu"), (NARROW, "311-ustawienia-odmowa-waska")):
+        window = open_settings(page, "Foldery")
+        page.set_viewport_size(viewport)
+        try:
+            register = window.get_by_role("listitem", name="Rejestr zleceń")
+            register.get_by_role("button", name="Wpisz Rejestr zleceń", exact=True).click()
+            typed = register.get_by_role("textbox", name="Ścieżka: Rejestr zleceń", exact=True)
+            typed.fill("ZLECENIA.txt")
+            typed.press("Enter")
+            expect(register.get_by_role("alert")).to_have_text(sentence)
+            expect(typed).to_have_attribute("aria-invalid", "true")
+            run.check(run.settings_text() == before, f"a wrong typed path is not saved ({viewport['width']} px)")
+            run.capture(page, capture, full_page=False)
+            typed.press("Escape")
+            expect(typed).to_have_count(0)
+            expect(register.get_by_role("alert")).to_have_count(0)
+            expect(window).to_be_visible()
+            run.check(True, "Esc in the field goes back from the field and leaves the window open")
+            close_settings(page)
+        finally:
+            page.set_viewport_size(DAD_VIEWPORT)
+
+    register = open_settings(page, "Foldery").get_by_role("listitem", name="Rejestr zleceń")
+    run.answer_picker(str(run.root / "ZLECENIA.txt"))
+    register.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
+    expect(register.get_by_role("alert")).to_have_text(sentence)
+    run.check(run.settings_text() == before, "a wrong file from the picker is refused under its field, not saved")
+
+    pasted = f'"{run.fixture["order_register"]}"'
+    register.get_by_role("button", name="Wpisz Rejestr zleceń", exact=True).click()
+    register.get_by_role("textbox", name="Ścieżka: Rejestr zleceń", exact=True).fill(pasted)
+    register.get_by_role("button", name="Zapisz Rejestr zleceń", exact=True).click()
+    expect(register.get_by_role("textbox")).to_have_count(0)
+    expect(register.get_by_role("alert")).to_have_count(0)
+    run.check(
+        run.remembered("rejestr_zlecen") == run.fixture["order_register"],
+        "a path pasted from Explorer in quotes is saved without them",
+    )
     close_settings(page)
 
 
