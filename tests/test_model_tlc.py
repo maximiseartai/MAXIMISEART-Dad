@@ -466,7 +466,7 @@ def test_pobranie_tla2tools_ktore_zawodzi_do_konca_konczy_sie_bledem_pobierania_
     with pytest.raises(SystemExit) as stopped:
         narzedzia_tlc.jar(tmp_path)
 
-    assert str(stopped.value).startswith(f"BŁĄD POBIERANIA NARZĘDZIA TLC: {narzedzia_tlc.TLA_URL} po 3 próbach (HTTP 503 ")
+    assert str(stopped.value).startswith(f"{narzedzia_tlc.CHWILOWA_AWARIA}: {narzedzia_tlc.TLA_URL} po 3 próbach (HTTP 503 ")
     assert len(calls) == 3
     assert not list(tmp_path.glob("*.jar"))
 
@@ -540,7 +540,7 @@ def test_instalacja_javy_ktora_zawodzi_do_konca_konczy_sie_bledem_pobierania_a_n
     with pytest.raises(SystemExit) as stopped:
         narzedzia_tlc.java(tmp_path)
 
-    assert str(stopped.value).startswith(f"BŁĄD POBIERANIA NARZĘDZIA TLC: {narzedzia_tlc.JDK4PY} po 3 próbach (instalacja skończyła się kodem 1)")
+    assert str(stopped.value).startswith(f"{narzedzia_tlc.CHWILOWA_AWARIA}: {narzedzia_tlc.JDK4PY} po 3 próbach (instalacja skończyła się kodem 1)")
     assert len(installs) == 3
 
 

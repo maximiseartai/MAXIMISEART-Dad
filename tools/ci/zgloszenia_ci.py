@@ -55,7 +55,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-from github import MERGE, REPO, REQUIRED, ROZSTRZYGA, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis, required, rozstrzygniety, strony
+from github import CZERWONY_MAIN, MERGE, REPO, REQUIRED, ROZSTRZYGA, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis, required, rozstrzygniety, strony
 from github import wykonaj as wykonaj_akcje
 from jednostka import Rodzaj
 import niestabilne_testy
@@ -63,7 +63,7 @@ from repo import MAIN, ROOT
 import repo
 import wplyw_zmiany
 
-FLAKY_TEST, CZERWONY_MAIN, ZDERZENIE = "flaky-test", "czerwony-main", "zderzenie"
+ZDERZENIE = "zderzenie"
 # Tyle flaky testów jednego runu trafia do issue; reszta to znak awarii, a nie flaky testów.
 NAJWIECEJ_FLAKY_TESTOW = 10
 # Tyle ostatnich PR-ów z zakresu czerwonego `main` dostaje komentarz (secondary rate limit GitHuba na tworzenie treści).
@@ -71,7 +71,7 @@ NAJWIECEJ_POWIADOMIEN = 10
 # Tyle nowych porażek zderzenia wymienia issue.
 NAJWIECEJ_NOWYCH = 20
 # Id testu w tytule i w treści issue (GitHub przyjmuje tytuł do 256 znaków).
-DLUGOSC_W_TYTULE, DLUGOSC_W_TRESCI = 200, 2000
+DLUGOSC_W_TRESCI = 2000
 # Tyle commitów `main` wstecz szuka ostatniego zielonego.
 HISTORIA = 50
 OKNO_ZDERZEN = timedelta(days=7)
@@ -172,10 +172,6 @@ def _numery(pr: Sequence[PR]) -> str:
     return ", ".join(f"#{p.numer}" for p in pr)
 
 
-def _przytnij(tekst: str, dlugosc: int) -> str:
-    return tekst if len(tekst) <= dlugosc else f"{tekst[: dlugosc - 1]}…"
-
-
 def akcje(github: GitHub, root: Path, run_id: int, teraz: datetime) -> list[Akcja]:
     run = Run.z_api(github.json(f"{REPO}/actions/runs/{run_id}"))
     return [*_flaky_testy(github, run), *_main(github, root, run, teraz)]
@@ -219,19 +215,19 @@ def _flaky_testy(github: GitHub, run: Run) -> list[Akcja]:
         print(f"ZGŁOSZENIA | {len(testy)} flaky testów w runie, zgłaszam pierwsze {NAJWIECEJ_FLAKY_TESTOW}")
     if not testy:
         return []
-    otwarte = {issue["title"]: issue["number"] for issue in issues(github, FLAKY_TEST, "open")}
+    otwarte = {issue["title"]: issue["number"] for issue in issues(github, niestabilne_testy.ETYKIETA_FLAKY, "open")}
     pr = f", PR {', '.join(f'#{numer}' for numer in run.pr)}" if run.pr else ""
     wynik: list[Akcja] = []
     for test in list(testy)[:NAJWIECEJ_FLAKY_TESTOW]:
         opis = f"padł w [runie {run.id}]({run.url}) ({run.zdarzenie}, commit {run.sha}{pr}) i przeszedł po jednym ponowieniu."
         izolacja = "Ponowienie uruchamia same testy, które padły, więc przechodzi też test, który pada tylko po innym teście."
-        tresc = "\n".join(["Test", "", *blok_kodu([_przytnij(test, DLUGOSC_W_TRESCI)]), "", opis, izolacja])
-        tytul = f"Flaky test: {_przytnij(test, DLUGOSC_W_TYTULE)}"
+        tresc = "\n".join(["Test", "", *blok_kodu([niestabilne_testy.przytnij(test, DLUGOSC_W_TRESCI)]), "", opis, izolacja])
+        tytul = niestabilne_testy.tytul_issue(test)
         if tytul in otwarte:
             wynik.append(Skomentuj(otwarte[tytul], tresc))
         else:
             rada = "Napraw przyczynę albo wpisz test do `tests/fixtures/kwarantanna.py` z numerem tego issue, najwyżej na 7 dni (ADR 0020)."
-            wynik.append(Zaloz(tytul, f"{tresc}\n\n{rada}", (FLAKY_TEST,)))
+            wynik.append(Zaloz(tytul, f"{tresc}\n\n{rada}", (niestabilne_testy.ETYKIETA_FLAKY,)))
     return wynik
 
 

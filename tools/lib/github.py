@@ -34,6 +34,8 @@ CI_WORKFLOW = "CI"
 # Który run CI rozstrzyga o merge'u do `main`. Nowszy push na `main` anuluje run, który czeka za trwającym (concurrency
 # w ci.yml, ADR 0020), a run commitu merge'a tak anulowany nie ma checku ``REQUIRED`` (``rozstrzygniety``).
 ROZSTRZYGA = "o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge"
+# Etykieta issue czerwonego `main`, które zakłada ``tools/ci/zgloszenia_ci.py``.
+CZERWONY_MAIN = "czerwony-main"
 # Temat commitu scalenia PR na GitHubie: merge commit albo squash.
 MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
 SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")
