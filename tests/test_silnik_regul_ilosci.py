@@ -620,3 +620,19 @@ def test_reguly_z_wydania_bez_skladnika_licza_jak_z_tym_skladnikiem_ktorego_zapi
     order = OrderContent.of(contract, " ".join(words), activities, started)
 
     assert evaluate(without, order) == evaluate(never_found, order)
+
+
+@pytest.mark.parametrize("devices", ["ruter", "ruter kabel", "dekoder", "2*ruter wzmacniacz", ""])
+def test_regula_bez_skladnika_traci_tylko_jego_wpis_i_warunek_a_liczy_jak_z_nieznalezionym(devices: str) -> None:
+    """Reguła z wpisem razy liczba składnika, którego warunki nie wymagają, i reguła z warunkiem „nie zawierają” go liczą
+    bez tego składnika tak samo jak z nim, gdy żadne zlecenie nie ma jego zapisu."""
+
+    rules = (
+        _rule("ruter-i-kable", ContainsComponent("router"), action=Fill((Write("N", 1), Write("O", 1, Multiplier.COMPONENT, "kabel")))),
+        _rule("bez-kabla", ContainsComponent("kabel", negated=True), action=_fill("T", 1)),
+        _rule("kabel", ContainsComponent("kabel"), action=_fill("V", 1)),
+    )
+    never_found = QuantityRules(rules, DeviceList((*DEVICES.components[:3], Component("kabel", (_NEVER_SPELLED,)))))
+    without = QuantityRules(without_components(rules, frozenset({"kabel"})), DeviceList(DEVICES.components[:3]))
+
+    assert evaluate(without, _order(devices)) == evaluate(never_found, _order(devices))
