@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import zipfile
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 import pytest
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
@@ -36,6 +36,7 @@ from tests.fixtures.operacje import other_warnings, run_preparation
 from tests.fixtures.wyglad_komorek import wyglady
 from atrapy.workbooks import (
     active_worksheet,
+    add_external_link_fixture,
     external_link_parts,
     has_xml_comment,
     leave_data_row_leftovers,
@@ -163,6 +164,19 @@ def _cells(path: Path) -> dict[str, object]:
         }
     finally:
         workbook.close()
+
+
+@pytest.mark.parametrize(("prefixed", "root"), [(False, b"<workbook "), (True, b"<x:workbook ")], ids=["jak-u-taty", "z-prefiksem"])
+def test_link_zewnetrzny_atrapy_zostawia_workbook_xml_bez_prefiksu_jak_we_wzorcu_taty_a_prefiks_daje_na_zadanie(
+    tmp_path: Path, prefixed: bool, root: bytes
+) -> None:
+    path = tmp_path / "Wzorzec.xlsx"
+    Workbook().save(path)
+
+    add_external_link_fixture(path, prefixed=prefixed)
+
+    with zipfile.ZipFile(path) as archive:
+        assert root in archive.read("xl/workbook.xml")
 
 
 @pytest.mark.parametrize(
