@@ -13,7 +13,7 @@ UnreadableSubject
 UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie jest prawdziwym dniem, więc Centrum go nie wpisało.
 UnknownSender
-  Raport wykonawcy z 08.11.2026 przyszedł z adresu spoza listy adresów Wykonawców, więc Centrum go nie wpisało. Powiedz Maksowi, czyj to adres.
+  Raport wykonawcy z 08.11.2026 przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze.
 MissingVerdict
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 nie ma „tak” ani „nie”, więc Centrum go nie wpisało.
 MissingVerdict

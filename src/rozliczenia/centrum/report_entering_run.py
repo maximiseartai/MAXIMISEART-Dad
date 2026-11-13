@@ -51,7 +51,7 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
-from rozliczenia.centrum.settings.files import Good, Read, Unreadable
+from rozliczenia.centrum.settings.files import Good, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.public_holidays import public_holidays
@@ -59,7 +59,7 @@ from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
 from rozliczenia.run_context import RunContexts
 from rozliczenia.worker_list import WorkerList
-from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber, OrderState
+from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber, OrderState, SenderAddress, WorkerAddresses
 
 _KIND: Final = declaration_of("report_entering")
 _UNREADABLE: Final[dict[int | str, dict[str, object]]] = {500: {"model": common_contract.Problem}}
@@ -126,10 +126,12 @@ class ReportEnteringEntry:
 
     def view(self) -> report_entering_contract.ReportsView:
         """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”, z Przypomnieniami o raporcie
-        z ostatniego sprawdzenia ich pracy."""
+        z ostatniego sprawdzenia ich pracy i nieznanymi nadawcami przypisanymi od tamtej pory na bieżącej Liście
+        Wykonawców (przy złej liście ostatniej dobrej)."""
 
+        listed = usable(self.settings.snapshot().workers) or WorkerList(())
         try:
-            return _view(self.files.shown(), self.files.kept(), self.parts.now().date(), self.reminders())
+            return _view(self.files.shown(), self.files.kept(), self.parts.now().date(), self.reminders(), listed.addresses())
         except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
 
@@ -186,11 +188,12 @@ def _conflict(register: Path | None) -> str | None:
 
 
 def _view(
-    shown: ShownResult | None, kept: frozenset[Kept], today: date, reminders: ShownReminders
+    shown: ShownResult | None, kept: frozenset[Kept], today: date, reminders: ShownReminders, addresses: WorkerAddresses
 ) -> report_entering_contract.ReportsView:
     """Całe okno wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``): dni otwarte ostatniego
     kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby, problem albo informację. Chwila
-    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty.
+    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty. Nieznany
+    nadawca, którego adres ma teraz Wykonawca z ``addresses`` (tata przypisał go po kliknięciu), ma jego login.
 
     Przy dniu Wykonawcy stoją chwile Przypomnień o raporcie za ten dzień z ``reminders``. Przypomnienie za dzień, którego
     Wykonawca nie ma w wyniku kliknięcia, nie tworzy dnia, bo kafelek bez wyniku nie ma okienka."""
@@ -231,12 +234,21 @@ def _view(
         days=_days({today, *shown.days}),
         workers=[report_entering_contract.ReportsWorker(worker=name, days=found) for name, found in days.items()],
         unknown_senders=[
-            report_entering_contract.UnknownReportSender(day=problem.day, sender=problem.sender, reason=problem.reason)
+            report_entering_contract.UnknownReportSender(
+                day=problem.day, sender=problem.sender, reason=problem.reason, worker=_assigned(problem.sender, addresses)
+            )
             for problem in problems
             if problem.worker is None and problem.sender is not None
         ],
         reminders_without_footer=reminders.without_footer,
     )
+
+
+def _assigned(sender: str, addresses: WorkerAddresses) -> str | None:
+    """Login Wykonawcy, który ma teraz adres nieznanego nadawcy ``sender`` z wyniku kliknięcia; ``None``: nikt."""
+
+    address = SenderAddress.of(sender)
+    return None if address is None else addresses.logins.get(address)
 
 
 def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:

@@ -99,11 +99,14 @@ class ReportsDay(Model):
 
 
 class UnknownReportSender(Model):
-    """Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty."""
+    """Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+    taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+    go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany."""
 
     day: date
     sender: str
     reason: str
+    worker: str | None
 
 
 class ReportsView(Model):
@@ -111,7 +114,7 @@ class ReportsView(Model):
 
     ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
     ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
-    alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+    alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
     """
 
     clicked_at: datetime | None

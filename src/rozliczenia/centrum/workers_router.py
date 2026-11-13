@@ -1,5 +1,7 @@
 """Interfejs HTTP sekcji Wykonawcy w Ustawieniach Centrum (ADR 0032): tata dodaje Wykonawcę, zmienia go formularzem,
-przełącza Nieaktywnego i Przypomnienia o raporcie i usuwa Wykonawcę, którego login nie występuje w żadnym okresie.
+przełącza Nieaktywnego i Przypomnienia o raporcie, usuwa Wykonawcę, którego login nie występuje w żadnym okresie,
+przypisuje Wykonawcy adres nieznanego nadawcy z widoku Raporty i widzi podpowiedzi loginów z ostatnich zleceń Rejestru
+zleceń (``worker_suggestions``).
 
 Listę Wykonawców i jej reguły ma właściciel Ustawień (``settings``), także sprawdzenie okresów przy każdym usunięciu
 loginu, a zmiany wpisu ``settings.workers``; tu są tylko żądania przeglądarki i odmowy. Zła wartość formularza to 422 z
@@ -8,6 +10,9 @@ sprawdzić, to 409 z propozycją Nieaktywnego.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import date
 
 from fastapi import APIRouter
 
@@ -20,6 +25,8 @@ from rozliczenia.centrum.settings.files import FieldProblem, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
+from rozliczenia.centrum.worker_suggestions import worker_suggestions
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_list import Worker, WorkerList
 from rozliczenia.worker_periods import old_name_periods
 
@@ -28,7 +35,10 @@ _REFUSED: dict[int | str, dict[str, object]] = {422: {"model": common_contract.P
 _KEPT: dict[int | str, dict[str, object]] = {409: {"model": common_contract.Problem}, **_REFUSED}
 
 
-def workers_router(settings: CentrumSettings) -> APIRouter:
+def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[], date]) -> APIRouter:
+    """``files``: uchwyt plików taty pracy Centrum, którym podpowiedzi czytają Rejestr zleceń; ``today``: dzień taty,
+    od którego liczą się ostatnie okresy podpowiedzi."""
+
     router = APIRouter(prefix="/api/settings/workers", tags=["ustawienia"])
 
     @router.post("", operation_id="addWorker", responses=_REFUSED)
@@ -55,6 +65,25 @@ def workers_router(settings: CentrumSettings) -> APIRouter:
                 )
         saved = choice(settings, settings.change(WORKERS, lambda current: workers.edited(current, login, form)))
         return settings_contract.WorkerSaved(settings=saved.settings, change=saved.change)
+
+    @router.get("/suggestions", operation_id="getWorkerSuggestions")
+    def suggestions() -> contract.WorkerSuggestions:
+        """Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista
+        Wykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie
+        o liście, a dodanie zapisuje listę od nowa."""
+
+        snapshot = settings.snapshot()
+        listed = usable(snapshot.workers) or WorkerList(())
+        return worker_suggestions(listed, snapshot.folders.register, files, today())
+
+    @router.post("/{login}/addresses", operation_id="assignWorkerAddress", responses=_REFUSED)
+    def assign_address(login: str, assigned: contract.WorkerAddress) -> settings_contract.Choice:
+        """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy na końcu adresów Wykonawcy, zapisany od
+        razu jak pojedynczy wybór (ADR 0032), tą samą drogą i regułami co formularz; loginów nie usuwa."""
+
+        return choice(
+            settings, settings.change(WORKERS, lambda current: workers.address_assigned(current, login, assigned.address))
+        )
 
     @router.put("/{login}/switches", operation_id="switchWorker", responses=_REFUSED)
     def switch(login: str, switches: contract.WorkerSwitches) -> settings_contract.Choice:
