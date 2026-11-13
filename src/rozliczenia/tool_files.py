@@ -45,13 +45,10 @@ REPORT_ENTERING_RESULT: Final = "wpisanie-raportow-wynik.json"
 """Wynik ostatniego udanego kliknięcia Wpisania raportów dla widoku Raporty w ``config`` (ADR 0028)."""
 REPORT_ENTERING_DECISIONS: Final = "wpisanie-raportow-decyzje.json"
 """Decyzje taty „Zostaw moją” Wpisania raportów w ``config`` (ADR 0028)."""
-REMINDERS_ROLLOUT: Final = "przypomnienia-od.txt"
-"""Dzień wdrożenia Przypomnień o raporcie w ``config`` (jedna linia ``rrrr-mm-dd``, pisze Maks); bez niego Centrum ich
-nie wysyła (ADR 0030)."""
-REMINDERS_FOOTER: Final = "stopka-przypomnien.txt"
-"""Stopka taty w Przypomnieniach o raporcie w ``config``, tekst UTF-8 skopiowany z ustawień Gmaila taty (ADR 0030)."""
 REMINDERS_RESULT: Final = "przypomnienia-wynik.json"
 """Wynik ostatniego sprawdzenia Przypomnień o raporcie dla widoku Raporty w ``config`` (ADR 0030)."""
+REMINDERS_SCHEDULES: Final = "przypomnienia-pory.json"
+"""Pory, przy których sprawdzała praca Przypomnień o raporcie, od której chwili, w ``config`` (ADR 0032)."""
 
 LOG_PATH: Final = log_path(TOOL_ROOT)
 

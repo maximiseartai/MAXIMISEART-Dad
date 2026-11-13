@@ -126,6 +126,36 @@ def addresses_not_moved(old_file: str, reason: str) -> str:
         f"Adresów Wykonawców nie przeniesiono ze starego pliku {old_file} w folderze config: {reason}. Dopisz je "
         "Wykonawcom w Ustawieniach."
     )
+
+
+def reminders_time() -> str:
+    return "Wpisz godzinę jako GG:MM, np. 08:00."
+
+
+def reminders_empty_morning() -> str:
+    return "Poranna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_empty_evening() -> str:
+    return "Wieczorna pora musi kończyć się później, niż się zaczyna."
+
+
+def reminders_overlap() -> str:
+    return "Pory zachodzą na siebie: wieczorna może zacząć się dopiero wtedy, gdy kończy się poranna."
+
+
+def reminders_empty_text() -> str:
+    return "Wpisz pierwsze zdanie przypomnienia."
+
+
+def reminders_unknown_field() -> str:
+    return "W treści przypomnienia może stać tylko pole {dzień}, bez innych nawiasów klamrowych."
+
+
+def reminders_without_since() -> str:
+    return "Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz."
+
+
 def autostart_unsupported() -> str:
     return "Start razem z Windows działa tylko na komputerze z Windows."
 

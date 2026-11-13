@@ -18,6 +18,7 @@ import type {
   GetWithoutQuantityResponse,
   GetToolUpdateResponse,
   OpenRequest,
+  RemindersForm,
   RunEvent,
   RunInfo,
   RunOutcome,
@@ -125,6 +126,21 @@ export function changeAutostart(enabled: boolean) {
 /** Nowe hasło aplikacji skrzynki raportów; odpowiedź mówi, czy skrzynka je przyjęła, i nigdy nie niesie hasła. */
 export function changeInboxPassword(password: string) {
   return call("changeInboxPassword", { body: { password } })
+}
+
+/** Przełącznik Przypomnień o raporcie; pierwsze włączenie zapisuje dzisiejszy dzień jako dzień wdrożenia. */
+export function changeRemindersEnabled(enabled: boolean) {
+  return call("changeRemindersEnabled", { body: { enabled } })
+}
+
+/** Zapis formularza Przypomnień naraz; zła pora, godzina albo treść to odmowa z polem. */
+export function changeReminders(form: RemindersForm) {
+  return call("changeReminders", { body: form })
+}
+
+/** Przypomnienie z formularza za wczoraj, bez zapisu i bez wysyłki. */
+export function previewReminder(form: RemindersForm) {
+  return call("previewReminder", { body: form })
 }
 
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */

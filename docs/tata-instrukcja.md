@@ -38,6 +38,11 @@ Pierwszą instalację robi osoba utrzymująca narzędzie:
    `Uruchamiaj Centrum razem z Windows` w oknie `Ustawienia`, w sekcji
    `Narzędzie`.
 
+   Przypomnienia o raporcie włączasz i wyłączasz w oknie `Ustawienia`, w
+   sekcji `Przypomnienia`. Tam ustawiasz też pory, godzinę pierwszego
+   przypomnienia, pierwsze zdanie i stopkę maila; podgląd pod spodem pokazuje
+   mail tak, jak dostanie go Wykonawca. Zmiana działa od następnej minuty.
+
 Osoba utrzymująca narzędzie umieszcza w folderze `config` narzędzia trzy
 wzorce: `Wzorzec rozliczenia wewnętrznego.xlsx`, `Wzorzec pliku zbiorczego.xlsx`
 i `Wzorzec rozliczenia pracownika.xlsx`. Ten ostatni to pusty plik rozliczenia

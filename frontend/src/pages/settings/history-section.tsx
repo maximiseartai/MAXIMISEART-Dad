@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAction } from "@/lib/action"
-import { dateTime, plural } from "@/lib/format"
+import { dateTime, fullDate, plural } from "@/lib/format"
 import { useReloadOnChange, useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { Sentence } from "@/pages/settings/rule-sentence"
@@ -23,6 +23,11 @@ const THEMES = new Map([
 const AUTOSTART = new Map([
   ["wlaczony", "Włączony"],
   ["wylaczony", "Wyłączony"],
+])
+
+const REMINDERS_ON = new Map([
+  ["tak", "Włączone"],
+  ["nie", "Wyłączone"],
 ])
 
 /** Nazwa ścieżki: ostatni człon, pełna ścieżka w podpowiedzi. */
@@ -40,6 +45,13 @@ const KEYS = new Map<string, Key>([
   ["skrzynka.haslo", { label: "Hasło skrzynki raportów", shown: (value) => value }],
   ["skrzynka.dostep", { label: "Dostęp do skrzynki raportów", shown: (value) => value }],
   ["narzedzie.autostart", { label: "Start razem z Windows", shown: (value) => AUTOSTART.get(value) ?? value }],
+  ["przypomnienia.wlaczone", { label: "Przypomnienia o raporcie", shown: (value) => REMINDERS_ON.get(value) ?? value }],
+  ["przypomnienia.wlaczone_od", { label: "Przypomnienia od", shown: fullDate }],
+  ["przypomnienia.pora_poranna", { label: "Pora poranna", shown: (value) => value }],
+  ["przypomnienia.pora_wieczorna", { label: "Pora wieczorna", shown: (value) => value }],
+  ["przypomnienia.pierwsze_przypomnienie", { label: "Pierwsze przypomnienie", shown: (value) => value }],
+  ["przypomnienia.tresc", { label: "Treść przypomnienia", shown: (value) => value }],
+  ["przypomnienia.stopka", { label: "Stopka przypomnienia", shown: (value) => value }],
 ])
 
 function keyOf(change: HistoryChange): Key {

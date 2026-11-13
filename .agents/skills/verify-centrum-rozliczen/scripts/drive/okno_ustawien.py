@@ -17,6 +17,7 @@ SHOWN_GROUPS = ("Praca", "Ilości", "Pliki", "Połączenia", "Narzędzie", "Hist
 SECTIONS = (
     "Foldery",
     "Wykonawcy",
+    "Przypomnienia",
     "Reguły ilości",
     "Urządzenia",
     "Wzorce",

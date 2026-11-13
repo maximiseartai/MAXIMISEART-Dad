@@ -2,8 +2,8 @@
 
 import type * as z from "zod"
 
-import type { AddQuantityRuleData, ChangeAutostartData, ChangeFoldersData, ChangeInboxPasswordData, ChangeQuantityRuleData, ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetQuantityRulesData, GetReportEnteringSetupData, GetReportsViewData, GetRunCardData, GetRunSetupData, GetSettingsData, GetSettingsHistoryData, GetToolUpdateData, GetWithoutQuantityData, KeepManualValueData, MarkNotificationsReadData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, PreviewQuantityRulesData, RecordViewTimingData, RemoveQuantityRuleData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartReportEnteringData, StartRunData, StartToolUpdateData, StreamRunEventsData, UndoSettingsChangeData } from "./types.gen"
-import { zAddQuantityRuleResponse, zChangeAutostartResponse, zChangeFoldersResponse, zChangeInboxPasswordResponse, zChangeQuantityRuleResponse, zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetQuantityRulesResponse, zGetReportEnteringSetupResponse, zGetReportsViewResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetSettingsHistoryResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zKeepManualValueResponse, zMarkNotificationsReadResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zPreviewQuantityRulesResponse, zRecordViewTimingResponse, zRemoveQuantityRuleResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartReportEnteringResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse, zUndoSettingsChangeResponse } from "./zod.gen"
+import type { AddQuantityRuleData, ChangeAutostartData, ChangeFoldersData, ChangeInboxPasswordData, ChangeQuantityRuleData, ChangeRemindersData, ChangeRemindersEnabledData, ChangeThemeData, ChoosePeriodsDirectoryData, ChooseRegisterData, CloseCentrumData, DecideRunData, DiagnoseRunData, DraftDadNoteData, GetCollectiveFileVersionData, GetConfigurationData, GetCurrentRunData, GetDadNoteRunsData, GetHealthData, GetIntermaxCopiesData, GetIntermaxDaysData, GetIntermaxSetupData, GetKindTableData, GetMetricsData, GetNotificationsData, GetPeriodBoardData, GetQuantitiesToFillData, GetQuantityRulesData, GetReportEnteringSetupData, GetReportsViewData, GetRunCardData, GetRunSetupData, GetSettingsData, GetSettingsHistoryData, GetToolUpdateData, GetWithoutQuantityData, KeepManualValueData, MarkNotificationsReadData, OpenPeriodPathData, OpenRegisterData, OpenWorkerSettlementData, PreviewQuantityRulesData, PreviewReminderData, RecordViewTimingData, RemoveQuantityRuleData, ReportRunData, ReportToolUpdateData, RestoreIntermaxCopyData, SendDadNoteData, StartIntermaxData, StartReportEnteringData, StartRunData, StartToolUpdateData, StreamRunEventsData, UndoSettingsChangeData } from "./types.gen"
+import { zAddQuantityRuleResponse, zChangeAutostartResponse, zChangeFoldersResponse, zChangeInboxPasswordResponse, zChangeQuantityRuleResponse, zChangeRemindersResponse, zChangeRemindersEnabledResponse, zChangeThemeResponse, zChoosePeriodsDirectoryResponse, zChooseRegisterResponse, zCloseCentrumResponse, zDecideRunResponse, zDiagnoseRunResponse, zDraftDadNoteResponse, zGetCollectiveFileVersionResponse, zGetConfigurationResponse, zGetCurrentRunResponse, zGetDadNoteRunsResponse, zGetHealthResponse, zGetIntermaxCopiesResponse, zGetIntermaxDaysResponse, zGetIntermaxSetupResponse, zGetKindTableResponse, zGetMetricsResponse, zGetNotificationsResponse, zGetPeriodBoardResponse, zGetQuantitiesToFillResponse, zGetQuantityRulesResponse, zGetReportEnteringSetupResponse, zGetReportsViewResponse, zGetRunCardResponse, zGetRunSetupResponse, zGetSettingsResponse, zGetSettingsHistoryResponse, zGetToolUpdateResponse, zGetWithoutQuantityResponse, zKeepManualValueResponse, zMarkNotificationsReadResponse, zOpenPeriodPathResponse, zOpenRegisterResponse, zOpenWorkerSettlementResponse, zPreviewQuantityRulesResponse, zPreviewReminderResponse, zRecordViewTimingResponse, zRemoveQuantityRuleResponse, zReportRunResponse, zReportToolUpdateResponse, zRestoreIntermaxCopyResponse, zSendDadNoteResponse, zStartIntermaxResponse, zStartReportEnteringResponse, zStartRunResponse, zStartToolUpdateResponse, zStreamRunEventsResponse, zUndoSettingsChangeResponse } from "./zod.gen"
 
 export type OperationData = {
   addQuantityRule: AddQuantityRuleData
@@ -11,6 +11,8 @@ export type OperationData = {
   changeFolders: ChangeFoldersData
   changeInboxPassword: ChangeInboxPasswordData
   changeQuantityRule: ChangeQuantityRuleData
+  changeReminders: ChangeRemindersData
+  changeRemindersEnabled: ChangeRemindersEnabledData
   changeTheme: ChangeThemeData
   choosePeriodsDirectory: ChoosePeriodsDirectoryData
   chooseRegister: ChooseRegisterData
@@ -46,6 +48,7 @@ export type OperationData = {
   openRegister: OpenRegisterData
   openWorkerSettlement: OpenWorkerSettlementData
   previewQuantityRules: PreviewQuantityRulesData
+  previewReminder: PreviewReminderData
   recordViewTiming: RecordViewTimingData
   removeQuantityRule: RemoveQuantityRuleData
   reportRun: ReportRunData
@@ -66,6 +69,8 @@ export const operations = {
   changeFolders: { method: "PUT", url: "/api/settings/folders", response: zChangeFoldersResponse },
   changeInboxPassword: { method: "PUT", url: "/api/settings/inbox-password", response: zChangeInboxPasswordResponse },
   changeQuantityRule: { method: "PUT", url: "/api/settings/quantity-rules/{rule_id}", response: zChangeQuantityRuleResponse },
+  changeReminders: { method: "PUT", url: "/api/settings/reminders", response: zChangeRemindersResponse },
+  changeRemindersEnabled: { method: "PUT", url: "/api/settings/reminders/enabled", response: zChangeRemindersEnabledResponse },
   changeTheme: { method: "PUT", url: "/api/settings/theme", response: zChangeThemeResponse },
   choosePeriodsDirectory: { method: "POST", url: "/api/settings/periods-directory/choose", response: zChoosePeriodsDirectoryResponse },
   chooseRegister: { method: "POST", url: "/api/settings/register/choose", response: zChooseRegisterResponse },
@@ -101,6 +106,7 @@ export const operations = {
   openRegister: { method: "POST", url: "/api/settings/register/open", response: zOpenRegisterResponse },
   openWorkerSettlement: { method: "POST", url: "/api/periods/{token}/worker-settlements/open", response: zOpenWorkerSettlementResponse },
   previewQuantityRules: { method: "POST", url: "/api/settings/quantity-rules/preview", response: zPreviewQuantityRulesResponse },
+  previewReminder: { method: "POST", url: "/api/settings/reminders/preview", response: zPreviewReminderResponse },
   recordViewTiming: { method: "POST", url: "/api/view-timings", response: zRecordViewTimingResponse },
   removeQuantityRule: { method: "DELETE", url: "/api/settings/quantity-rules/{rule_id}", response: zRemoveQuantityRuleResponse },
   reportRun: { method: "POST", url: "/api/runs/{run_id}/report", response: zReportRunResponse },

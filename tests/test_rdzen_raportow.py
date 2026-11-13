@@ -24,6 +24,8 @@ import pytest
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
+    DEFAULT_REMINDERS,
+    DEFAULT_TEXT,
     AddBar,
     Added,
     ConflictingVerdicts,
@@ -3372,7 +3374,7 @@ def test_wpis_raportu_ma_numer_tak_albo_nie_i_czynnosci() -> None:
 # Przypomnienie za 8.11 wysłane ze skrzynki raportów taty, tak jak je cytują Gmail i Outlook. Treść z przykładem
 # (``12345678``, ``12345679``) pisze rdzeń przypomnień, a stopka jest zmyślona.
 REMINDER = "Przypomnienie: raport za dzień 08.11.2026"
-REMINDER_TEXT = reminder_text(DAY, "Pozdrawiam\nTata Testowy")
+REMINDER_TEXT = reminder_text(DAY, DEFAULT_TEXT, "Pozdrawiam\nTata Testowy")
 QUOTED = "".join(f"> {line}\n" if line else ">\n" for line in REMINDER_TEXT.splitlines())
 INBOX = "Raporty <raporty.taty@przyklad.invalid>"
 OUTLOOK_HEADERS = f"Wysłane: poniedziałek, 9 listopada 2026 08:00\nDo: {JAN}\nTemat: {REMINDER}\n\n"
@@ -3548,7 +3550,7 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
             (),
             inputs.addresses,
             frozenset(inputs.addresses.logins.values()),
-            footer=None,
+            settings=DEFAULT_REMINDERS,
         )
     )
 

@@ -169,6 +169,13 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "addresses_not_moved": [
                 partial(settings_messages.addresses_not_moved, OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy")
             ],
+            "reminders_time": [settings_messages.reminders_time],
+            "reminders_empty_morning": [settings_messages.reminders_empty_morning],
+            "reminders_empty_evening": [settings_messages.reminders_empty_evening],
+            "reminders_overlap": [settings_messages.reminders_overlap],
+            "reminders_empty_text": [settings_messages.reminders_empty_text],
+            "reminders_unknown_field": [settings_messages.reminders_unknown_field],
+            "reminders_without_since": [settings_messages.reminders_without_since],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],

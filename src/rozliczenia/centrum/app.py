@@ -202,7 +202,7 @@ def create_app(
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     configuration = configuration_files or ConfigurationFiles.default()
     price_list = PriceList(configuration.collective_template)
-    app.include_router(settings_router(settings, platform, inbox.try_login, history_sentences(settings, price_list)))
+    app.include_router(settings_router(settings, platform, inbox.try_login, today, history_sentences(settings, price_list)))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)

@@ -16,6 +16,7 @@ from typing import Any
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.centrum.settings.proposal import ReleaseChange
 from fastapi import FastAPI
 
 from rozliczenia.worker_report_inbox import (
@@ -282,12 +283,14 @@ def entering_centrum(
     inbox: WorkerReportInbox | None = None,
     periods: bool = True,
     reminder_mailbox: ReminderMailbox | None = None,
+    release_changes: tuple[ReleaseChange[Any], ...] = (),
 ) -> EnteringCentrum:
     """Centrum po wskazaniu INTERMAX ``intermax`` z Wykonawcami ``WORKERS`` i adresami ``SENDERS`` (``addresses``: inna
     treść pliku adresów); Skrzynka raportów to ``inbox``, a bez niej atrapa, która oddaje ``mails`` i ma plik dostępu w
     stanie ``access``. ``periods``: tata wskazał też pusty folder okresów ``EnteringCentrum.periods_directory``.
     ``reminder_mailbox``: skrzynka pracy Przypomnień o raporcie (bez niej ``FakeMailbox``), której sprawdzenie test
-    woła przez ``EnteringCentrum.rhythm``. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
+    woła przez ``EnteringCentrum.rhythm``. ``release_changes``: zmiany Ustawień z Wydania, które Centrum stosuje przy
+    każdym starcie. Chwila procesu to ostatni element ``EnteringCentrum.moment`` (na starcie ``ENTERING_NOW``), a
     podmiana INTERMAX idzie przez ``EnteringCentrum.disk``."""
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
@@ -326,6 +329,7 @@ def entering_centrum(
             intermax_disk=disk.disk(),
             reminder_mailbox=mailbox,
             reminder_rhythm=rhythm,
+            release_changes=release_changes,
         )
 
     rhythm = HandRhythm()

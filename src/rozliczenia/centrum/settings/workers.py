@@ -20,7 +20,7 @@ from typing import Final, Literal, assert_never
 import yaml
 
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile
+from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProblem, KeyChange, SettingsFile, settings_yaml
 from rozliczenia.worker_list import (
     AddressesNotMoved,
     UnmatchedLogin,
@@ -268,7 +268,7 @@ def _dump(entries: list[Document], unresolved: list[Document]) -> str:
     document: Document = {"schema_version": _SCHEMA_VERSION, WORKERS_KEY: entries}
     if unresolved:
         document[UNRESOLVED_KEY] = unresolved
-    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return settings_yaml(document)
 
 
 def _documents(text: str | None) -> list[Document]:
