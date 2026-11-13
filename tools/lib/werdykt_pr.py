@@ -17,7 +17,7 @@ to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżąceg
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
 najwyżej trzy, a treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``: Ważne z polami
 ``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``, a kod korzenia
-z zamkniętej listy). Szablon nie obowiązuje w wątku sprzed niego (ADR 0031, decyzja Q20): gdy najstarszy werdykt PR,
+z zamkniętej listy albo ``NOWY`` spoza niej). Szablon nie obowiązuje w wątku sprzed niego (ADR 0031, decyzja Q20): gdy najstarszy werdykt PR,
 dowolnego commitu, nie ma linii ``## Sprawdzone``, bo opublikowano go przed szablonem, ``--werdykt`` sprawdza tam tylko
 dwie pierwsze linie. Granica: werdykt bez szablonu opublikowany z pominięciem ``--werdykt`` też otwiera wątek po
 staremu. Merge liczy zgodę ``PASS`` tylko z dwóch pierwszych linii, bez szablonu. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której

@@ -1512,7 +1512,7 @@ TEMPLATE_BODY = [
     "## Sprawdzone",
     "- szybko: SZYBKO OK",
 ]
-ROOTS = szablon_werdyktu.Codes(listed=frozenset({"R-BEZ-TESTU", "R-DRUGA-DROGA", "R-NOWY-KOD"}), added=frozenset({"R-NOWY-KOD"}))
+ROOTS = frozenset({"R-BEZ-TESTU", "R-DRUGA-DROGA"})
 
 
 def _replaced(old: str, *new: str) -> list[str]:
@@ -1534,13 +1534,13 @@ def _evidence(count: int) -> list[str]:
     "lines",
     [
         TEMPLATE_BODY,
-        _replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD - opis kodu, który PR dodaje do listy."),
+        _replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD - opis kodu, którego nie ma na liście."),
         _replaced(TEMPLATE_BODY[4], "Szczebel: (e) - punkt w „Co jest porażką”, bo (a)–(d) nie działają."),
         _evidence(5),
         _replaced(TEMPLATE_BODY[2], "Dowód:", "polecenie", "wynik"),
         [*TEMPLATE_BODY, *(f"- punkt {number}" for number in range(2, 6))],
     ],
-    ids=["szablon", "nowy-kod-dodany-przez-head", "szczebel-e", "dowod-5-linii", "dowod-pod-polem", "5-punktow-sprawdzone"],
+    ids=["szablon", "nowy-kod-spoza-listy", "szczebel-e", "dowod-5-linii", "dowod-pod-polem", "5-punktow-sprawdzone"],
 )
 def test_tresc_werdyktu_w_szablonie_przechodzi(lines: list[str]) -> None:
     assert _template_problems(lines) == []
@@ -1557,9 +1557,13 @@ def test_tresc_werdyktu_w_szablonie_przechodzi(lines: list[str]) -> None:
         ([*TEMPLATE_BODY[:3], TEMPLATE_BODY[4], TEMPLATE_BODY[3], *TEMPLATE_BODY[5:]], (1, 1), "a po Dowodzie jest „Szczebel:"),
         (_replaced(TEMPLATE_BODY[3]), (1, 1), "a po Dowodzie jest „Szczebel:"),
         (_replaced(TEMPLATE_BODY[4]), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po Korzeniu jest koniec"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: R-NIE-MA - kod spoza listy."), (1, 1), "dopisz kod do listy albo użyj istniejącego"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-INNY-NOWY - kod, którego HEAD nie dodaje."), (1, 1), "dopisz kod do listy albo użyj istniejącego"),
-        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-BEZ-TESTU - kod, który już był."), (1, 1), "bez NOWY"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: R-NIE-MA - kod spoza listy."), (1, 1), "W1: kod R-NIE-MA spoza listy"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-BEZ-TESTU - kod, który już jest."), (1, 1), "W1: NOWY R-BEZ-TESTU: ten kod jest już na liście"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD -"), (1, 1), "W1: „Korzeń: NOWY R-NOWY-KOD -” to nie"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY-KOD"), (1, 1), "W1: „Korzeń: NOWY R-NOWY-KOD” to nie"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY r-nowy-kod - kod małymi literami."), (1, 1), "W1: „Korzeń: NOWY r-nowy-kod"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY NOWY-KOD - kod bez R-."), (1, 1), "W1: „Korzeń: NOWY NOWY-KOD"),
+        (_replaced(TEMPLATE_BODY[3], "Korzeń: NOWY R-NOWY_KOD - kod z podkreśleniem."), (1, 1), "W1: „Korzeń: NOWY R-NOWY_KOD"),
         (_replaced(TEMPLATE_BODY[3], "Korzeń: R-BEZ-TESTU"), (1, 1), "W1: „Korzeń: R-BEZ-TESTU”"),
         (_replaced(TEMPLATE_BODY[4], "Szczebel: (f) - poza drabiną."), (1, 1), "W1: „Szczebel: (f)"),
         (_evidence(6), (1, 1), "W1: Dowód ma 6 linii"),
@@ -1587,8 +1591,12 @@ def test_tresc_werdyktu_w_szablonie_przechodzi(lines: list[str]) -> None:
         "wazne-bez-korzenia",
         "wazne-bez-szczebla",
         "kod-spoza-listy",
-        "nowy-bez-wpisu-na-head",
-        "nowy-kod-ktory-juz-byl",
+        "nowy-kod-z-listy",
+        "nowy-bez-opisu",
+        "nowy-bez-myslnika-i-opisu",
+        "nowy-kod-malymi-literami",
+        "nowy-kod-bez-r",
+        "nowy-kod-z-podkresleniem",
         "korzen-bez-zdania",
         "szczebel-spoza-drabiny",
         "dowod-6-linii",
@@ -1616,7 +1624,7 @@ def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(lines: list[str], d
 
 
 def test_werdykt_bez_pola_korzen_nie_czyta_listy_kodow() -> None:
-    def unread() -> szablon_werdyktu.Codes:
+    def unread() -> frozenset[str]:
         raise AssertionError("lista kodów czytana bez pola Korzeń")
 
     assert szablon_werdyktu.problems(["## Sprawdzone", "- diff"], (0, 0), unread) == []
@@ -1654,16 +1662,16 @@ def _template_verdict(head: str, root: str) -> str:
 @pytest.mark.parametrize(
     ("added", "root", "published"),
     [
-        (True, "Korzeń: NOWY R-NOWY-KOD - opis kodu.", True),
-        (True, "Korzeń: R-NOWY-KOD - kod z listy HEAD.", True),
-        (False, "Korzeń: NOWY R-NOWY-KOD - opis kodu.", False),
+        (False, "Korzeń: NOWY R-NOWY-KOD - opis kodu spoza listy.", True),
+        (True, "Korzeń: R-NOWY-KOD - kod dodany do listy przez HEAD.", True),
+        (True, "Korzeń: NOWY R-NOWY-KOD - opis kodu, który HEAD już dodał.", False),
         (False, "Korzeń: R-NOWY-KOD - kod spoza listy.", False),
-        (False, "Korzeń: R-BEZ-TESTU - kod z listy bazy.", True),
-        (True, "Korzeń: NOWY R-BEZ-TESTU - kod z listy bazy.", False),
+        (False, "Korzeń: R-BEZ-TESTU - kod z listy.", True),
+        (False, "Korzeń: NOWY R-BEZ-TESTU - kod z listy.", False),
     ],
-    ids=["nowy-dodany-przez-head", "kod-dodany-przez-head", "nowy-bez-wpisu", "kod-spoza-listy", "kod-z-listy-bazy", "nowy-z-listy-bazy"],
+    ids=["nowy-spoza-listy", "kod-dodany-przez-head", "nowy-dodany-przez-head", "kod-spoza-listy", "kod-z-listy", "nowy-z-listy"],
 )
-def test_werdykt_z_korzeniem_trafia_na_pr_tylko_z_kodem_listy_head_a_nowy_tylko_dodany_przez_head(
+def test_werdykt_z_korzeniem_trafia_na_pr_tylko_z_kodem_listy_head_a_nowy_tylko_spoza_niej(
     tmp_path: Path, added: bool, root: str, published: bool
 ) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
@@ -1677,7 +1685,7 @@ def test_werdykt_z_korzeniem_trafia_na_pr_tylko_z_kodem_listy_head_a_nowy_tylko_
     assert (answered.returncode == 0) == published, answered.stdout + answered.stderr
     assert len(github.published()) == published
     if not published:
-        assert re.search("W1: .*(dopisz kod do listy albo użyj istniejącego|bez NOWY)", _last_line(answered)), answered.stdout
+        assert re.search("W1: (kod R-NOWY-KOD spoza listy|NOWY R-[A-Z-]+: ten kod jest już na liście .*, napisz go bez NOWY)", _last_line(answered)), answered.stdout
         assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL" in _last_line(answered), answered.stdout
 
 

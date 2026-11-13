@@ -1,7 +1,7 @@
 # Zamknięta lista kodów korzeni (ADR 0031, skill przeglad, sekcja „Korzeń i chwast”).
 # Korzeń to to, co skłoniło agenta do błędu, a nie sam błąd.
 # Każdy kod ma jedno zdanie opisu i numer jednego PR, w którym przegląd znalazł Ważne z tym korzeniem.
-# Nowy kod dopisuje autor PR, gdy werdykt podał „Korzeń: NOWY R-KOD - opis”; tools/scal_pr.py --werdykt czyta ten plik.
+# Nowy kod dopisuje autor PR, gdy werdykt podał „Korzeń: NOWY R-KOD - opis” z kodem spoza listy; tools/scal_pr.py --werdykt czyta ten plik.
 
 [R-DRUGA-DROGA]
 opis = "Druga droga do tego, co ma już właściciela: własny predykat, pamięć podręczna albo wyrocznia obok wspólnej, albo bezpośrednie wywołanie obok modułu-właściciela, bo był najbliższym przykładem."

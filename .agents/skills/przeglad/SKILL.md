@@ -65,9 +65,10 @@ Reguły szczebla i dowodu:
   Gdy wyższego nie ma, także po szczeblu (e), decyduje Maks.
 - Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie.
   Rejestr korzeni bierze kod z ostatniego werdyktu PR.
-- Nowy kod dopisuje do [`korzenie.toml`](korzenie.toml) autor PR, z jednym zdaniem i przykładem PR.
-  Werdykt pisze go jako `Korzeń: NOWY R-KOD - opis`, a `tools/scal_pr.py --werdykt` przyjmuje to tylko wtedy, gdy HEAD PR dodaje ten kod do listy.
-  Gdy w PR bez takiego wpisu żaden kod nie pasuje, recenzent bierze najbliższy i w zdaniu korzenia pisze, czym korzeń się różni, a autor może dopisać nowy kod w następnej rundzie.
+- Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.
+  `tools/scal_pr.py --werdykt` przyjmuje `NOWY` tylko z kodem w postaci kodów listy, którego nie ma na liście HEAD PR, i z niepustym opisem.
+  Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.
+  NOWY kod musi być na liście przed merge'em PR; pilnuje tego bramka korzenia (ADR 0031, PR 2).
 
 ## Dowody
 
@@ -89,7 +90,7 @@ Znaleziska: 2 (Ważne 1, Drobne 1)
 ### W1. <defekt zachowania jednym zdaniem>
 Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii>
-Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis>)
+Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>

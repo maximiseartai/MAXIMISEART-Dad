@@ -58,7 +58,7 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 Pięć PR-ów w tej kolejności (Q24):
 
 1. Ten ADR, pojęcia i drabina w skillu `przeglad`, lista kodów i szablon werdyktu sprawdzany przez `tools/scal_pr.py --werdykt` (Q3, Q5, Q9, Q18 część „NOWY”, Q21, Q25, Q26).
-2. `## Korzeń` w opisie PR i linie PR korzenia („Korzeń z #N”, „Wyrwany w #M”) sprawdzane przez `tools/scal_pr.py` przy merge'u (Q8, Q10, Q14, Q17).
+2. `## Korzeń` w opisie PR i linie PR korzenia („Korzeń z #N”, „Wyrwany w #M”) sprawdzane przez `tools/scal_pr.py` przy merge'u, razem z tym, że każdy `NOWY` kod z werdyktów PR stoi na liście na HEAD (Q8, Q10, Q14, Q17, Q18).
 3. Wykrycie powrotu korzenia przy publikacji werdyktu i issue „Chwast: R-KOD” (Q11, Q12, Q15, Q22).
 4. Workflow tygodniowy z issue „Rejestr korzeni” i zadanie T3 z kartą (Q18 porządek listy, Q19, Q23).
 5. Audyt historii: przypadki kodów z co najmniej 2 PR-ów odtworzone na `main` i issues tam, gdzie nic ich nie łapie (Q13, Q16).
@@ -67,5 +67,6 @@ Pięć PR-ów w tej kolejności (Q24):
 
 - Recenzent pisze werdykt w szablonie, a odmowa `--werdykt` podaje przyczyny i wzór, więc poprawia plik bez czytania dokumentacji.
 - Merge liczy zgodę `PASS` jak dotąd, z dwóch pierwszych linii; szablon pilnuje tylko publikacji, dopóki PR 2 nie zmieni gotowości.
-- `NOWY R-KOD` przechodzi tylko wtedy, gdy HEAD PR dodaje kod do listy, więc recenzent, który nie znajdzie pasującego kodu w PR bez takiego wpisu, używa najbliższego istniejącego i nazywa różnicę w zdaniu korzenia.
+- `NOWY R-KOD` przechodzi przy publikacji z kodem spoza listy HEAD PR, a z kodem, który już na niej stoi, jest odmową; recenzent nie dobiera najbliższego kodu, bo zły kod zafałszowałby rejestr powtórzeń.
+  NOWY kod musi być na liście przed merge'em PR; pilnuje tego bramka korzenia (ADR 0031, PR 2).
 - Werdykt bez szablonu opublikowany z pominięciem `--werdykt` jako pierwszy werdykt PR otwiera wątek po staremu; tę granicę zamyka dopiero PR 2.

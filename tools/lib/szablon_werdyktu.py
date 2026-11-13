@@ -10,10 +10,12 @@ Każda niepusta linia, bez odstępów na brzegach, ma miejsce w szablonie, a ka�
 - na końcu ``## Sprawdzone`` z 1 do 5 punktami ``- <tekst>``, a po nich nic.
 
 ``PASS`` bez znalezisk ma więc tylko dwie pierwsze linie i ``## Sprawdzone``; Drobne może mieć jak dotąd.
-Kod korzenia stoi na zamkniętej liście ``.agents/skills/przeglad/korzenie.toml`` na HEAD PR, a ``NOWY R-KOD`` przechodzi
-tylko wtedy, gdy HEAD PR dodaje ten kod do listy względem merge-base z bazą. Listę z obu commitów narzędzie czyta
-z Gita po pobraniu bazy i ``refs/pull/N/head`` z ``origin``, i tylko wtedy, gdy werdykt ma pole ``Korzeń:``. Odmowa
-kończy się wzorem szablonu, który narzędzie bierze z bloku ``markdown`` sekcji „Postać werdyktu” skilla.
+Kod korzenia bez ``NOWY`` stoi na zamkniętej liście ``.agents/skills/przeglad/korzenie.toml`` na HEAD PR, a kod
+z ``NOWY`` ma postać kodu listy i na niej nie stoi (decyzja Q18: recenzent nie dobiera najbliższego kodu, autor
+dopisuje nowy w swoim PR). NOWY kod musi być na liście przed merge'em PR; pilnuje tego bramka korzenia (ADR 0031, PR 2).
+Listę z HEAD PR narzędzie czyta z Gita po pobraniu ``refs/pull/N/head`` z ``origin``, i tylko wtedy, gdy werdykt ma
+pole ``Korzeń:``. Odmowa kończy się wzorem szablonu, który narzędzie bierze z bloku ``markdown`` sekcji „Postać
+werdyktu” skilla.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from dataclasses import dataclass
 import re
 import tomllib
 
-import github
 from repo import ROOT
 import repo
 from stan_pr import Pull
@@ -41,12 +42,6 @@ RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
 POINT = re.compile(r"- (\S.*)")
 FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:")
 ENTRY_KEYS = frozenset({"opis", "przyklad"})
-
-
-@dataclass(frozen=True)
-class Codes:
-    listed: frozenset[str]  # kody na liście HEAD PR
-    added: frozenset[str]  # kody, które HEAD PR dodaje względem merge-base
 
 
 class CodesUnavailable(Exception):
@@ -76,24 +71,16 @@ def listed_codes(text: str) -> frozenset[str]:
     return frozenset(entries)
 
 
-def _codes_at(commit: str) -> frozenset[str] | None:
-    if not repo.succeeds(ROOT, "cat-file", "-e", f"{commit}:{LIST}"):
-        return None
-    try:
-        return listed_codes(repo.git(ROOT, "show", f"{commit}:{LIST}"))
-    except ValueError as error:
-        raise CodesUnavailable(f"lista {LIST} na {commit[:7]} się nie wczytuje: {error}") from error
+def pull_codes(pull: Pull) -> frozenset[str]:
+    """Kody listy na HEAD ``pull``, pobranym z ``origin``."""
 
-
-def pull_codes(pull: Pull) -> Codes:
-    """Kody listy na HEAD ``pull`` i kody, które HEAD dodaje względem merge-base z bazą PR w ``origin``."""
-
-    base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    fork = repo.merge_base(ROOT, base, pull.head, timeout=github.LIMIT_S)
-    listed = _codes_at(pull.head)
-    if listed is None:
+    werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+    if not repo.succeeds(ROOT, "cat-file", "-e", f"{pull.head}:{LIST}"):
         raise CodesUnavailable(f"HEAD PR {pull.head[:7]} nie ma listy {LIST}")
-    return Codes(listed, listed - (_codes_at(fork) or frozenset()))
+    try:
+        return listed_codes(repo.git(ROOT, "show", f"{pull.head}:{LIST}"))
+    except ValueError as error:
+        raise CodesUnavailable(f"lista {LIST} na {pull.head[:7]} się nie wczytuje: {error}") from error
 
 
 def template() -> str:
@@ -147,27 +134,26 @@ def _minor(label: str, block: Sequence[str]) -> list[str]:
     return [*([] if where else [f"{label}: puste pole Gdzie"]), *(f"{label}: Drobne ma tylko pole Gdzie, a jest „{line}”" for line in block[1:])]
 
 
-def _root_problems(roots: Sequence[_Root], codes: Callable[[], Codes]) -> list[str]:
+def _root_problems(roots: Sequence[_Root], codes: Callable[[], frozenset[str]]) -> list[str]:
     if not roots:
         return []
     try:
-        known = codes()
+        listed = codes()
     except CodesUnavailable as error:
         return [str(error)]
     problems = []
     for root in roots:
-        if root.new and root.code in known.listed - known.added:
-            problems.append(f"{root.label}: {root.code} już jest na liście {LIST}, napisz „Korzeń: {root.code} - zdanie” bez NOWY")
-        elif root.new and root.code not in known.added:
-            problems.append(f"{root.label}: NOWY {root.code}, a HEAD PR nie dodaje go do listy {LIST}: dopisz kod do listy albo użyj istniejącego")
-        elif not root.new and root.code not in known.listed:
-            problems.append(f"{root.label}: kod {root.code} spoza listy {LIST}: dopisz kod do listy albo użyj istniejącego")
+        if root.new and root.code in listed:
+            problems.append(f"{root.label}: NOWY {root.code}: ten kod jest już na liście {LIST}, napisz go bez NOWY")
+        elif not root.new and root.code not in listed:
+            problems.append(f"{root.label}: kod {root.code} spoza listy {LIST}: użyj kodu z listy albo napisz „Korzeń: NOWY {root.code} - opis”")
     return problems
 
 
-def problems(lines: Sequence[str], declared: tuple[int, int] | None, codes: Callable[[], Codes]) -> list[str]:
+def problems(lines: Sequence[str], declared: tuple[int, int] | None, codes: Callable[[], frozenset[str]]) -> list[str]:
     """Co poprawić w treści werdyktu: ``lines`` to niepuste linie pod dwiema pierwszymi, ``declared`` liczby Ważnych
-    i Drobnych z linii ``Znaleziska:`` (``None``, gdy jej nie ma), a ``codes`` czyta listę kodów, gdy jest pole Korzeń."""
+    i Drobnych z linii ``Znaleziska:`` (``None``, gdy jej nie ma), a ``codes`` czyta kody listy na HEAD PR, gdy jest
+    pole Korzeń."""
 
     found: list[str] = []
     roots: list[_Root] = []
