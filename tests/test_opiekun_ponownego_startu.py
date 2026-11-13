@@ -40,6 +40,7 @@ from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.centrum import ToolDirectory
@@ -208,8 +209,7 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     # pamięci właściciela.
     assert events == [
         "start",
-        "ustawienia-wydanie",
-        "ustawienia-wydanie",
+        *["ustawienia-wydanie"] * len(RELEASE_CHANGES),
         "zamkniecie",
         "stop",
         "aktualizacja-koniec",
