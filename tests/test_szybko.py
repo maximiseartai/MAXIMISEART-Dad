@@ -643,8 +643,8 @@ def _requiring(repo: Path, version: tuple[int, int]) -> None:
 
 
 def test_modul_ktory_nie_importuje_sie_najstarszym_pythonem_wywraca_szybkie_sprawdzenie(tmp_path: Path) -> None:
-    if sys.version_info[:2] == (3, 11) or shutil.which("uv") is None:
-        pytest.skip("krok biegnie, gdy szybko ma Pythona nowszego niż 3.11 i uv, które da Pythona 3.11")
+    if shutil.which("uv") is None:
+        pytest.skip("krok potrzebuje uv, które da Pythona 3.11")
     repo = _repo(tmp_path)
     _requiring(repo, (3, 11))
     _write(repo, "src/pakiet/ilosci.py", ONLY_NEWER_PYTHON)
@@ -726,6 +726,17 @@ def test_requires_python_bez_najstarszej_wersji_wywraca_szybkie_sprawdzenie(tmp_
     assert "requires-python '~=3.11' nie ma postaci >=X.Y" in answered.stdout
     last = _verdict(answered)
     assert (answered.returncode, last) == (1, "SZYBKO FAIL | import src pod najstarszym Pythonem"), answered.stdout
+
+
+def test_venv_starszy_niz_requires_python_wywraca_szybkie_sprawdzenie_z_droga_naprawy(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _requiring(repo, (3, sys.version_info[1] + 1))
+
+    answered = _szybko(repo)
+
+    assert "odtwórz .venv przez python3 tools/setup_worktree.py" in answered.stdout
+    last = _verdict(answered)
+    assert (answered.returncode, last) == (1, f"SZYBKO FAIL | Python 3.{sys.version_info[1] + 1} albo nowszy"), answered.stdout
 
 
 def test_szybko_na_najstarszym_pythonie_nie_ma_osobnego_kroku_importu(tmp_path: Path) -> None:

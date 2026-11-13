@@ -1,7 +1,7 @@
 # Tablica okresów
 
-Okresy shows every Folder okresu from the folder okresów, newest first, with
-its Status okresu, its files, the number of Rozliczenia pracowników, and the
+Okresy shows the Folders okresu from the folder okresów, newest first (which of them at once:
+`tablica-skrocona.md`), with its Status okresu, its files, the number of Rozliczenia pracowników, and the
 next step. The next step and the Droga okresu (Plik zbiorczy → Uzupełnienie w
 Excelu → Wycena w efenix → Rozliczenia pracowników) also follow the period's last
 Wycena w efenix in the Historia: a period with a Plik zbiorczy has the next step

@@ -1,0 +1,128 @@
+# Zamknięta lista kodów korzeni (ADR 0031, skill przeglad, sekcja „Korzeń i chwast”).
+# Korzeń to to, co skłoniło agenta do błędu, a nie sam błąd.
+# Każdy kod ma jedno zdanie opisu i numer jednego PR, w którym przegląd znalazł Ważne z tym korzeniem.
+# Nowy kod dopisuje autor PR, gdy werdykt podał „Korzeń: NOWY R-KOD - opis” z kodem spoza listy; tools/scal_pr.py --werdykt czyta ten plik.
+
+[R-DRUGA-DROGA]
+opis = "Druga droga do tego, co ma już właściciela: własny predykat, pamięć podręczna albo wyrocznia obok wspólnej, albo bezpośrednie wywołanie obok modułu-właściciela, bo był najbliższym przykładem."
+przyklad = 1274
+
+[R-BEZ-WLASCICIELA]
+opis = "Decyzja (kolejność zapisów stanu, rodzaj awarii) rozproszona po wielu miejscach bez jednego właściciela, więc każdy PR dokłada miejsce według najbliższego przykładu."
+przyklad = 1166
+
+[R-MATCH-KOD]
+opis = "Własny strażnik AST albo regex na kodzie wylicza postacie z najbliższego przykładu, zamiast zakazu w ruff, typu albo audytu w czasie działania."
+przyklad = 1363
+
+[R-MATCH-TEKST]
+opis = "Własny parser formatu, który ma prawdziwy parser albo renderer (Markdown GitHuba, Bash, YAML, HTML, XML, git blame)."
+przyklad = 1196
+
+[R-KONSTRUKCJA]
+opis = "Reguła „tylko X tworzy Y” pilnowana testem na tekście kodu zamiast typem, więc replace, cast, podklasa albo __new__ ją omija."
+przyklad = 1371
+
+[R-LISTA-KOPIA]
+opis = "Lista, liczba albo tekst przepisany ręcznie ze źródła w innym pliku (katalogi, pola, Komunikaty, ścieżki, skrót commitu), więc rozjeżdża się ze źródłem."
+przyklad = 1223
+
+[R-PROZA-KOPIA]
+opis = "Ta sama reguła żyje w kilku dokumentach (ADR, skill, docs/agents), więc zmiana jednej kopii przeczy drugiej."
+przyklad = 704
+
+[R-WYCIEK]
+opis = "Ochrona danych taty wylicza zakazane wartości albo zgaduje ich położenie z treści, zamiast przepuszczać tylko dozwolone."
+przyklad = 984
+
+[R-WORKER]
+opis = "Testy i eksploratory biegną w procesie workera pytest i dzielą jego wątki, blokady i kolejność z sąsiadami."
+przyklad = 1072
+
+[R-SYSTEM]
+opis = "Agent pracuje na macOS, a zachowanie zależy od systemu albo wersji Pythona (Windows, Linux nocy, CRLF, 3.11, 3.14)."
+przyklad = 1331
+
+[R-FLAKY]
+opis = "Sprawdzenie zależy od czasu albo kolejności zdarzeń przeglądarki i wywraca się tylko na wolniejszym runnerze CI."
+przyklad = 965
+
+[R-API-PULAPKA]
+opis = "Autor nie zna granicy zewnętrznego API (Playwright, Claude Code, ruff, GitHub) i nie sprawdził jej na prawdziwym systemie."
+przyklad = 1362
+
+[R-ATRAPA]
+opis = "Sprawdzenie albo narzędzie zgodności zbudowane z Atrapy, nie z prawdziwego systemu, więc potwierdza samą Atrapę."
+przyklad = 755
+
+[R-WYROCZNIA-Z-SRC]
+opis = "Wyrocznia testu albo skilla bierze stałą albo konwencję ze sprawdzanego kodu, więc zła stała w src przechodzi razem z nią."
+przyklad = 1378
+
+[R-BEZ-TESTU]
+opis = "Nowa reguła albo gałąź kodu bez testu zachowania, który ją rozstrzyga (przeżyta mutacja albo przypadek bez próbki)."
+przyklad = 1367
+
+[R-PROBKI]
+opis = "Nowe sprawdzenie bez próbki każdego przypadku, który obiecuje łapać w docstringu albo opisie PR, także „nic nie sprawdzono, więc OK”."
+przyklad = 1370
+
+[R-KRYTERIUM]
+opis = "Kryterium ticketu albo reguła z ADR bez testu akceptacyjnego, więc autor je pominął albo test go nie rozstrzyga."
+przyklad = 1238
+
+[R-DOMENA]
+opis = "Reguła domeny sprawdzana na kilku przykładach bez generatora stanów (test własności), więc stan spoza przykładów ją łamie."
+przyklad = 1374
+
+[R-TEST-MNIEJ]
+opis = "Przepisany, przeniesiony albo zastąpiony test lub sprawdzenie gubi przypadek, który łapało na merge-base, a nic tego nie porównuje."
+przyklad = 1215
+
+[R-POPRAWKA-REGRES]
+opis = "Poprawka po FAIL zawęża regułę pod znalezisko i gubi przypadek, który łapała wcześniejsza runda."
+przyklad = 1127
+
+[R-REFAKTOR-SEMANTYKA]
+opis = "Refaktor „jedna droga” scala dwie ścieżki o różnej semantyce i zmienia zachowanie, którego nikt nie porównał."
+przyklad = 1100
+
+[R-WYBACZ]
+opis = "Znane znalezisko albo przyjęte ryzyko modelu lub eksploratora wybacza szerzej niż jego przyczyna."
+przyklad = 1345
+
+[R-MODEL-ROZJAZD]
+opis = "Model TLA+ albo jego definicje pisane ręcznie obok kodu pomijają gałąź albo funkcję kodu."
+przyklad = 1377
+
+[R-ZAPADKA-OBEJSCIE]
+opis = "Zapadka ma tańsze wyjście (wpis na liście) niż poprawka, a to wyjście psuje inny mechanizm."
+przyklad = 1368
+
+[R-ENV-PR]
+opis = "Run PR biegnie inaczej niż main i noc (plan pomija skrypt skilla, inne limity, zależność testu zapisana osobno w YAML)."
+przyklad = 1338
+
+[R-CI-RED]
+opis = "Przegląd zlecony na stanie, który już nie przechodzi: czerwone CI albo konflikt z main, którego autor nie sprawdził."
+przyklad = 1245
+
+[R-DOWOD]
+opis = "Opis PR podaje dowód, którego nikt nie odtworzył na HEAD."
+przyklad = 1024
+
+[R-PROCES-RECZNY]
+opis = "Krok procesu sprawdzany ręcznie, choć narzędzie mogłoby go odmówić."
+przyklad = 1315
+
+[R-IMIE]
+opis = "Tekst pisany z rozmowy albo z plików lokalnych wnosi do publicznego repo dane osobowe, których nic przed pushem nie zna."
+przyklad = 1225
+
+[R-STAN-Z-TRESCI]
+opis = "Stan wątku albo zgoda (wiek wątku, PASS przy merge'u) liczone z treści komentarzy, którą pisze i zmienia ta sama ręczna droga, którą reguła ma zamknąć."
+przyklad = 1457
+
+[R-DECYZJA-PRZEPISANA]
+opis = "Decyzje Maksa przepisane własnymi słowami do ADR i skilla bez porównania punkt po punkcie z ich źródłem, więc rozjazd wychodzi dopiero w przeglądzie."
+przyklad = 1457

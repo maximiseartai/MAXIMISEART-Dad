@@ -61,6 +61,7 @@ from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
 from stan_pr import Pull
+import szablon_werdyktu
 import testy_scalenia
 import werdykt_pr
 import werdykt_scalenia
@@ -97,7 +98,7 @@ def _body_problem(body: str) -> str | None:
 
 
 def _problems(pull: Pull) -> list[str]:
-    """Przyczyny odmowy z warunków 1–4."""
+    """Przyczyny odmowy z warunków 1–4; baza i HEAD PR są już pobrane z ``origin``."""
 
     problems = []
     if pull.state != "OPEN":
@@ -106,7 +107,7 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR jest szkicem")
     if pull.from_fork:
         problems.append("PR z forka")
-    return [*problems, *filter(None, [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull)])]
+    return [*problems, *filter(None, [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, szablon_werdyktu.deployed(pull.base))])]
 
 
 def _remote_base(base: str) -> str:
@@ -169,7 +170,8 @@ def _clean_up() -> str:
 def _publish_verdict(number: int, path: Path) -> int:
     pull = stan_pr.pull(number)
     text = path.read_text(encoding="utf-8")
-    if problems := werdykt_pr.file_problems(text, pull.head):
+    werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+    if problems := werdykt_pr.publish_problems(text, pull, szablon_werdyktu.deployed(pull.base)):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()

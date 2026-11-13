@@ -34,11 +34,15 @@ def drive(run: Run, page: Page) -> None:
         "the server finds every Folder okresu in Rozliczenia {rok}\\{miesiąc}\\INEA, newest first",
     )
     table_rows = page.get_by_role("table", name="Tablica okresów").get_by_role("row")
-    expect(table_rows).to_have_count(len(dad["board"]) + 1)
-    for index, (token, _, _) in enumerate(dad["board"], start=1):
+    expect(table_rows).to_have_count(len(dad["on_screen"]) + 1)
+    for index, token in enumerate(dad["on_screen"], start=1):
         expect(table_rows.nth(index)).to_contain_text(token)
     expect(period_row(page, LAST_COMPLETE)).to_contain_text("Plik zbiorczy przygotowany")
-    run.check(True, "the screen lists the same weeks; folders that are not periods (Podpisane, Nowe rozliczenia) are absent")
+    run.check(
+        True,
+        "the screen lists the same weeks except the one that has not started; folders that are not periods "
+        "(Podpisane, Nowe rozliczenia) are absent",
+    )
     run.capture(page, "15-uklad-taty-tablica")
 
     run.step(feature, "taty-nastepny-krok")

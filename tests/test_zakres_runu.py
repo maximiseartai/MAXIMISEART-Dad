@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 import re
+import tomllib
 
 import pytest
 import yaml
@@ -18,6 +19,7 @@ from tests.fixtures.git_repo import repository
 
 from jednostka import Klucz
 import kroki_skilli
+import setup_worktree
 from wplyw_zmiany import STRUCTURE, Repository
 from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
 
@@ -86,7 +88,7 @@ GATE = {
     "README.md": "Repozytorium\n",
     ".github/workflows/ci.yml": "name: CI\n",
 }
-WINDOWS, LINUX = "windows-3.11", "linux-3.14"
+WINDOWS, LINUX = "windows-3.13", "linux-3.14"
 
 
 @pytest.mark.parametrize(
@@ -103,7 +105,7 @@ WINDOWS, LINUX = "windows-3.11", "linux-3.14"
     ],
     ids=["test", "src poza straza czasu", "src w domknieciu strazy czasu", "skrypt strazy czasu", "tools", "dokument", "workflow", "plik FULL"],
 )
-def test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie(
+def test_bramka_pr_biegnie_na_windows_313_i_linuksie_z_wyborem_szybko_a_e2e_i_straz_czasu_tylko_przy_ich_zmianie(
     tmp_path: Path, changed: str, source: str, files: list[str] | None, steps: tuple[str, ...]
 ) -> None:
     repo = repository(tmp_path / "repo", GATE)
@@ -111,7 +113,7 @@ def test_bramka_pr_biegnie_na_windows_311_i_linuksie_z_wyborem_szybko_a_e2e_i_st
     gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo)
 
     rule = (
-        "bramka PR uruchamia pytest na Windows 3.11 i Linux 3.14 na wyborze tools/szybko.py dla zmiany, a zmiana ścieżki "
+        "bramka PR uruchamia pytest na Windows 3.13 i Linux 3.14 na wyborze tools/szybko.py dla zmiany, a zmiana ścieżki "
         "z Context.PR_GATE (tools/lib/wplyw_zmiany.py) wybiera wszystkie pliki, E2E i straż czasu"
     )
     assert [(lane.nazwa, lane.kroki) for lane in gate.tory] == [(WINDOWS, steps), (LINUX, ())], rule
@@ -129,6 +131,24 @@ def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(
     assert [unit for unit in gate.pliki if unit.startswith(file)] == [file]
 
 
+def test_bramka_pr_na_windows_testuje_najstarszego_pythona_z_requires_python_jak_mypy_ruff_i_setup_worktree(tmp_path: Path) -> None:
+    """Najstarszy Python z ``requires-python`` to Python taty (3.13.15 od 13.11, ADR 0020): bramka PR testuje go na
+    Windows, mypy i ruff sprawdzają kod dla niego, a ``tools/setup_worktree.py`` (systemowy Python, bez ``tomllib``)
+    trzyma jego kopię."""
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    oldest = re.fullmatch(r">=(\d+)\.(\d+)", pyproject["project"]["requires-python"])
+    assert oldest is not None
+    gate = zakres(Zdarzenie.PULL_REQUEST, frozenset({"README.md"}), repository(tmp_path / "repo", GATE))
+
+    assert {
+        "bramka PR na Windows": next(lane.python for lane in gate.tory if lane.os.startswith("windows")),
+        "mypy": pyproject["tool"]["mypy"]["python_version"],
+        "ruff": pyproject["tool"]["ruff"]["target-version"].replace("py3", "3."),
+        "setup_worktree": ".".join(map(str, setup_worktree.MINIMUM_PYTHON)),
+    } == dict.fromkeys(("bramka PR na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
+
+
 def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_noc_bez_pytest(tmp_path: Path) -> None:
     repo = repository(tmp_path / "repo", {**GATE, "tests/c_test.py": "def test_c() -> None:\n    pass\n"})
 
@@ -136,7 +156,7 @@ def test_push_biegnie_pelne_ci_main_na_trzech_torach_z_kazdym_plikiem_testow_a_n
     night = zakres(Zdarzenie.NOC, frozenset({"src/pakiet/a.py"}), repo)
 
     assert (main.tory, main.pliki, main.zrodlo) == (TORY, ("tests/c_test.py", "tests/test_a.py", "tests/test_b.py"), "wszystkie pliki")
-    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.11", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
+    assert [(lane.nazwa, lane.kroki) for lane in main.tory] == [("windows-3.13", ("e2e",)), ("windows-3.14", ("e2e", "timing")), ("linux-3.14", ())]
     assert (night.tory, night.pliki, night.zrodlo) == ((), (), "bez pytest")
 
 

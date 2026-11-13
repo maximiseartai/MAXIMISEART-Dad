@@ -27,6 +27,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/plan_ci.py`: Drukuje plan runu CI gałęzi (plan --baza origin/main): zadania pytest i Mutation checks, ich pliki i kroki skilli; użyj przed pushem albo gdy CI biegło inaczej.
 - `tools/pomiar_ci.py`: Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
 - `tools/pomiar_regul_ilosci.py`: Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości.
+- `tools/ponow_ci.py`: Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
 - `tools/porownanie_rozliczen.py`: Porównuje znaczeniowo dwa Foldery rozliczeń pracowników (spec #141); użyj jako bramki, gdy zmiana silnika ma dać te same rozliczenia.
 - `tools/praca_w_toku.py`: Pokazuje pracę innych checkoutów i otwartych PR-ów oraz pliki wspólne z bieżącym; użyj przed startem issue i przed aktualizacją z main.
 - `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
@@ -57,7 +58,6 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 ## Reguły i co ich pilnuje
 
-Przy poprawce operatora i Ważnym z przeglądu nazwij korzeń, czyli co skłoniło agenta (skopiowany najbliższy przykład, druga droga do tego samego, brak typu albo właściciela, instrukcja), i napraw go na najwyższym szczeblu, który działa: (a) usuń drugą drogę i stare przykłady, daj jednego właściciela; (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”); (c) test zachowania; (d) dopiero zapadka w `tests/test_zapadki.py`, która pada tylko na dodanych liniach (warunki w `CODING_STANDARDS.md`).
-Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
+Przy poprawce operatora, Ważnym z przeglądu i czerwonym `main` z prawdziwej zmiany nazwij korzeń i wyrwij go na najwyższym szczeblu, który działa, według sekcji „Korzeń i chwast” skilla [`przeglad`](.agents/skills/przeglad/SKILL.md).
 Regułę i drogę naprawy mówi komunikat strażnika (asercja testu, `msg` w `banned-api`, odmowa hooka albo narzędzia), a wiersz tabeli dopisz tylko z nowym strażnikiem, którego komunikat nie mówi już tej reguły albo który nie łapie każdej jej formy (granica w jego docstringu), w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
 Wyjątek zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).

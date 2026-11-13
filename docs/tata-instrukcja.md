@@ -22,7 +22,7 @@ Oba kroki robisz w Centrum rozliczeń, które otwierasz skrótem na pulpicie:
 
 Pierwszą instalację robi osoba utrzymująca narzędzie:
 
-1. Zainstaluj Python 3.11 lub nowszy.
+1. Zainstaluj Python 3.13 lub nowszy.
 2. W folderze narzędzia uruchom:
 
    ```powershell

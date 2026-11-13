@@ -1233,6 +1233,10 @@ export type PeriodRow = {
      */
     last_complete: boolean;
     /**
+     * Board Place
+     */
+    board_place: 'recent' | 'older' | 'not_started';
+    /**
      * Fillable
      */
     fillable: boolean;

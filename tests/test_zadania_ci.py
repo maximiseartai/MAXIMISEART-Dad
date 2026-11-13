@@ -117,20 +117,24 @@ def test_kazde_zadanie_z_mutacjami_instaluje_ruff_i_mypy_bramy_typow_z_dodatku_d
     assert set(installs) >= {("ci.yml", "mutations"), ("mutacje-nocne.yml", "change-mutations"), ("mutacje-nocne.yml", "skill-mutations")}
 
 
+INSTALLERS = (["uv", "pip", "install"], ["python", "-m", "pip", "install"])
+
+
 def _dependency_files(command: str) -> set[str]:
-    """Pliki zależności polecenia ``uv pip install``: plik ``-r``/``--requirement`` i ``pyproject.toml`` instalacji
-    katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``). Parser jest zamknięty: zapis,
-    którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z którego zadanie instaluje."""
+    """Pliki zależności polecenia ``uv pip install`` albo ``python -m pip install``: plik ``-r``/``--requirement`` i
+    ``pyproject.toml`` instalacji katalogu repo (``-e``/``--editable`` albo pozycyjnie: ``.``, ``./``, ``.[dodatek]``).
+    Parser jest zamknięty: zapis, którego nie zna, kończy test błędem z tym zapisem, zamiast po cichu zgubić plik, z
+    którego zadanie instaluje."""
 
     def local(path: str) -> str:
         assert path.split("[")[0].rstrip("/") == ".", f"instalacja spoza katalogu repo: {path!r} w {command!r}"
         return "pyproject.toml"
 
     tokens = shlex.split(command)
-    start = next(index for index in range(len(tokens) - 2) if tokens[index : index + 3] == ["uv", "pip", "install"]) + 3
+    start = next(index + len(prefix) for index in range(len(tokens)) for prefix in INSTALLERS if tokens[index : index + len(prefix)] == prefix)
     files, rest = set(), iter(tokens[start:])
     for token in rest:
-        if token == "--system":
+        if token in {"--system", "--disable-pip-version-check"}:
             continue
         if token == "--python":
             next(rest)
@@ -151,7 +155,7 @@ def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() ->
     uruchamiać każdy krok skilla (#293); dodatek dev zastąpił w nich ``requirements.txt``, a reguła została przy nim."""
 
     installed = {
-        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "uv pip install" in step.get("run", "")))
+        (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "pip install" in step.get("run", "")))
         for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
         for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
         if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps")) and (workflow, name) != (WORKFLOW, "pytest")
@@ -215,7 +219,7 @@ SCRIPT = "skill:verify-a/check_a_mutations.py"
 
 
 def _plan(event: str, *, skills: bool = False, errors: tuple[str, ...] = ()) -> plan_runu.Plan:
-    job = plan_runu.Zadanie("windows-3.11-1", "windows-3.11", "pytest (Python 3.11, 1/1)", ("pytest:tests/test_a.py#1/2", "pytest:tests/test_a.py#2/2", "pytest:tests/test_b.py", "krok:e2e"), 99.0)
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_a.py#1/2", "pytest:tests/test_a.py#2/2", "pytest:tests/test_b.py", "krok:e2e"), 99.0)
     checks = (
         plan_runu.Zadanie("mutacje-1", "mutacje", "Mutation checks (1/2)", ("skill:verify-a/ci", f"{SCRIPT}#1/2"), 99.0, przegladarka=True),
         plan_runu.Zadanie("mutacje-2", "mutacje", "Mutation checks (2/2)", (f"{SCRIPT}#2/2", "skill:verify-b/ci"), 99.0),
@@ -261,7 +265,7 @@ def test_required_czerwienieje_bez_planu_i_gdy_zadanie_planu_nie_zglosilo_jednos
     assert without_plan.returncode == incomplete.returncode == without_skill.returncode == failed_part.returncode == lost.returncode == 1
     assert "REQUIRED FAIL | plan CI: .ci-plan/plan.json nieczytelny (" in without_plan.stdout
     assert "REQUIRED FAIL | plan=failure" in without_plan.stdout
-    assert incomplete.stdout.splitlines() == ["REQUIRED FAIL | pytest (Python 3.11, 1/1): jednostki bez wyniku: krok:e2e"]
+    assert incomplete.stdout.splitlines() == ["REQUIRED FAIL | pytest (Python 3.13, 1/1): jednostki bez wyniku: krok:e2e"]
     assert without_skill.stdout.splitlines() == ["REQUIRED FAIL | Mutation checks (1/2): jednostki bez wyniku: skill:verify-a/ci"]
     assert failed_part.stdout.splitlines() == [f"REQUIRED FAIL | Mutation checks ({part}/2): jednostki z porażką: {SCRIPT}" for part in (1, 2)]
     assert lost.stdout.splitlines() == ["REQUIRED FAIL | mutacje skilli: x/check_x_mutation.py: nazwa spoza wzorca"]

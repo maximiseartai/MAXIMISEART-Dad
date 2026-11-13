@@ -721,29 +721,76 @@ def test_czesc_z_najdrozszymi_testami_startuje_pierwsza_a_noc_mutuje_te_same_cze
     assert plany["czasy"] == plany["numery"]
 
 
-def test_noc_z_workflow_wazy_czesci_praca_testow_linuksa_z_artefaktu_czasy_ci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Plan w ``mutacje-nocne.yml`` dostaje katalog artefaktów ``czasy-ci`` (``--czasy``), a części biegną na
-    ``ubuntu-latest`` z Pythonem 3.14, więc waży je praca testów toru ``linux-3.14``, a nie innego systemu. Nowe funkcje
-    ``a.py`` dają ponad ``NA_CZESC`` mutacji, więc część 1 to sam ``a.py``, a część 2 jego reszta i ``okno.py``."""
+def _noc_z_czasami(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, dict[str, object]]:
+    """Repo nocy i artefakt ``czasy-ci`` runu 7, w którym ``test_okno.py`` jest najdroższy na ``linux-3.14``, a ``test_a.py``
+    na ``windows-3.14``. Nowe funkcje ``a.py`` dają ponad ``NA_CZESC`` mutacji, więc część 1 to sam ``a.py``, a część 2
+    jego reszta i ``okno.py``."""
 
     repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
     with (repo / "src" / "pakiet" / "a.py").open("a", encoding="utf-8") as plik:
         plik.write("".join(f"\n\ndef a{i}(x: int) -> bool:\n    return x < {i}\n" for i in range(mutacje_nocne.NA_CZESC)))
     commit(repo, "nowe funkcje a")
-    czasy = tmp_path / "czasy"
-    czasy.mkdir()
 
     def tor(a_s: float, okno_s: float) -> dict[str, list[dict[str, object]]]:
         praca = {"tests/test_a.py": a_s, "tests/test_okno.py": okno_s}
         return {f"pytest:{plik}": [{"run": 7, "proba": 1, "zadanie": "pytest", "s": s, "status": "ok"}] for plik, s in praca.items()}
 
-    artefakt = {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {"linux-3.14": tor(1.0, 50.0), "windows-3.14": tor(50.0, 1.0)}}
-    (czasy / "7.json").write_text(json.dumps(artefakt), encoding="utf-8")
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    return repo, baza, {"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {"linux-3.14": tor(1.0, 50.0), "windows-3.14": tor(50.0, 1.0)}}
+
+
+def test_noc_z_workflow_wazy_czesci_praca_testow_linuksa_z_artefaktu_czasy_ci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plan w ``mutacje-nocne.yml`` dostaje katalog artefaktów ``czasy-ci`` (``--czasy``), a części biegną na
+    ``ubuntu-latest`` z Pythonem 3.14, więc waży je praca testów toru ``linux-3.14``, a nie innego systemu."""
+
+    repo, baza, artefakt = _noc_z_czasami(tmp_path, monkeypatch)
+    czasy = tmp_path / "czasy"
+    czasy.mkdir()
+    (czasy / "7.json").write_text(json.dumps(artefakt), encoding="utf-8")
 
     assert mutacje_nocne.main(["plan", "--od", baza, "--czasy", str(czasy)], root=repo, github=GitHubWPamieci()) == 0
     output = _wyjscie_planu(tmp_path / "output")
     assert (output["liczba"], [wpis["czesc"] for wpis in json.loads(output["czesci"])]) == ("2", [2, 1])
+
+
+class _GitHubCzasow:
+    """GitHub odczytu czasów: zielony run main 7 z artefaktem ``czasy-ci`` o id 1007."""
+
+    def __init__(self, artefakt: dict[str, object]) -> None:
+        self.artefakt = artefakt
+
+    def json(self, sciezka: str) -> dict[str, object]:
+        if sciezka.startswith(f"{REPO}/actions/workflows/ci.yml/runs?"):
+            return {"workflow_runs": [{"id": 7}]}
+        assert sciezka.startswith(f"{REPO}/actions/artifacts?name=czasy-ci&"), sciezka
+        return {"artifacts": [{"id": 1007, "expired": False, "workflow_run": {"id": 7}}]}
+
+    def bajty(self, sciezka: str) -> bytes:
+        assert sciezka == f"{REPO}/actions/artifacts/1007/zip", sciezka
+        archiwum = io.BytesIO()
+        with zipfile.ZipFile(archiwum, "w") as zip_:
+            zip_.writestr("czasy-ci.json", json.dumps(self.artefakt))
+        return archiwum.getvalue()
+
+    def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        raise AssertionError(f"odczyt czasów nie pisze do GitHuba: {metoda} {sciezka}")
+
+
+def test_noc_bez_wstrzyknietego_githuba_pobiera_czasy_klientem_czasy_ci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Produkcyjny plan bez ``--czasy`` pobiera artefakty ``czasy-ci`` klientem ``czasy_ci.GITHUB`` z krótkim limitem
+    zapytania, a nie klientem nocy, którego zawieszony ``gh`` trzymałby plan do limitu zadania."""
+
+    repo, baza, artefakt = _noc_z_czasami(tmp_path, monkeypatch)
+    noc = GitHubWPamieci()
+    domyslne = mutacje_nocne.main.__kwdefaults__
+    assert domyslne is not None
+    monkeypatch.setattr(mutacje_nocne, "GITHUB", noc)
+    monkeypatch.setitem(domyslne, "github", noc)
+    monkeypatch.setattr(czasy_ci, "GITHUB", _GitHubCzasow(artefakt))
+
+    assert mutacje_nocne.main(["plan", "--od", baza], root=repo) == 0
+    output = _wyjscie_planu(tmp_path / "output")
+    assert [wpis["czesc"] for wpis in json.loads(output["czesci"])] == [2, 1]
 
 
 FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"

@@ -32,6 +32,10 @@ prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #11
 omijała). Konstruktor bez dowodu katalogu odrzuca też mypy, a dowód ``process_kind._CATALOG`` poza katalogiem ruff
 (``TID251``), ale nie z ``# noqa: TID251``, więc konstruktor łapie ten test (przegląd #1371 r2).
 
+Skrypt dla maszyn (``tools/uruchom_proces.py``) nie wczytuje FastAPI, starlette ani uvicorn, także przez moduły
+``src/`` i importem w funkcji: Uruchomienie procesu nie potrzebuje serwera, a każdy start skryptu (w testach ok. stu)
+płacił za jego import ok. 0,2 s. Moduły ``tools/lib`` (Atrapy) sprawdzenie pomija: to zostaje przeglądowi.
+
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
@@ -157,6 +161,7 @@ NOT_IN_CATALOG = frozenset(
 SERVER_LIBRARIES = frozenset({"fastapi", "starlette", "uvicorn"})
 PROCESS_KINDS = "rozliczenia.centrum.processes"
 CATALOG = SRC / "rozliczenia" / "centrum" / "catalog.py"
+MACHINE_SCRIPT = ROOT / "tools" / "uruchom_proces.py"
 VERSIONS = "rozliczenia.centrum.comment_versions"
 # Pytania kolejki, czy wysyłka doszła albo została odrzucona: jedyne, czemu kod poza post_of podaje etykietę Logów.
 QUEUE_QUESTIONS = frozenset({"delivered", "rejected"})
@@ -570,6 +575,30 @@ def test_katalog_procesow_nie_wczytuje_serwera_okna_efenix_ani_modulow_centrum_k
             "nie wczytują FastAPI, runs, diagnosis, configuration, period_board ani efenix_browser, także przez inne "
             "moduły src i importem w funkcji: czytają je Skrypt dla maszyn, odtworzenie i wersje komentarza bez serwera. "
             "Przenieś typ, którego potrzebują, do modułu bez tych zależności (jak Settings w centrum/settings.py).",
+        ]
+    )
+
+
+def _is_server(module: str) -> bool:
+    return module.split(".")[0] in SERVER_LIBRARIES
+
+
+def test_skrypt_dla_maszyn_nie_wczytuje_serwera() -> None:
+    script = MACHINE_SCRIPT.relative_to(ROOT).as_posix()
+    found = set()
+    for line, module in _imported_modules(MACHINE_SCRIPT):
+        if _is_server(module):
+            found.add(f"{script}:{line}: {module}")
+        elif (file := _file_of(module)) is not None:
+            found |= {f"{script}:{line}: {module} → {chain}" for chain in _chains(file, _is_server)}
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            f"Skrypt dla maszyn ({script}) nie wczytuje FastAPI, starlette ani uvicorn, także przez moduły src i "
+            "importem w funkcji: Uruchomienie procesu nie potrzebuje serwera. Przenieś to, czego skrypt potrzebuje, "
+            "z modułu z routerem do modułu bez niego (jak ConfigurationFiles w centrum/configuration.py, a router "
+            "w centrum/configuration_router.py).",
         ]
     )
 

@@ -72,7 +72,10 @@ def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(ru
     code = runner.main(["--feature", "all", "--run-dir", "nie-powstanie"])
 
     assert code == 1
-    assert capsys.readouterr().err.startswith("VERIFY FAIL | features=all | MUTACJE_CZESC to K/N z 1 <= K <= N <= 24")
+    driven_by_all = len([feature for feature in runner.FEATURES if not feature.measurement])
+    assert capsys.readouterr().err.startswith(
+        f"VERIFY FAIL | features=all | MUTACJE_CZESC to K/N z 1 <= K <= N <= {driven_by_all}"
+    )
     assert not Path("nie-powstanie").exists()
 
 
