@@ -17,6 +17,7 @@ from drive.common import (
     close_settings,
     open_settings,
     period_files,
+    read_bytes,
     read_text,
     settings_title,
     settings_window,
@@ -180,7 +181,7 @@ def _unreadable_collective_file(run: Run, page: Page) -> None:
     The harness puts the file back byte for byte with its modification time, so the features after this one read it."""
 
     collective = period_files(run)[1]
-    kept, stat = collective.read_bytes(), collective.stat()
+    kept, stat = read_bytes(collective), collective.stat()
     print(f"  harness: the Plik zbiorczy of {LAST_COMPLETE} is not a workbook for this step", flush=True)
     collective.write_bytes(b"to nie jest skoroszyt")
     try:
