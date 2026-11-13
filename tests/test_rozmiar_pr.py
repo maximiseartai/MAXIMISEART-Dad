@@ -425,6 +425,12 @@ def _git_mv_do_skilla_verify(repo: Path) -> None:
     git(repo, "mv", "tools/inna.py", ".agents/skills/verify-cos/inna.py")
 
 
+def _git_mv_poza_szope(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    (repo / ".github/scripts").mkdir(parents=True)
+    git(repo, "mv", "tools/inna.py", ".github/scripts/inna.py")
+
+
 def _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku(repo: Path) -> None:
     _nowe_linie_maszynerii(repo)
     _zapisz(repo, {"tools/lib/atrapy/inna.py": (repo / "tools/inna.py").read_text(encoding="utf-8")})
@@ -448,6 +454,7 @@ ZNANE_LUKI: Final[dict[str, Callable[[Path], None]]] = {
         _git_mv_do_katalogu_weryfikacji
     ),
     "nowe linie maszynerii i git mv jej pliku do skilla verify-* (przegląd #1646 r2, sonda S3)": _git_mv_do_skilla_verify,
+    "nowe linie maszynerii i git mv jej pliku poza szopę (przegląd #1646 r2, sonda S2)": _git_mv_poza_szope,
     "nowe linie maszynerii i kopia jej pliku do katalogu weryfikacji, a w starym pliku jedna linia importu (przegląd #1646 r2, W1)": (
         _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku
     ),
