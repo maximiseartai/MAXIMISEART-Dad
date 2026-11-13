@@ -132,11 +132,13 @@ def _base() -> str | None:
 
 def _added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
     """Linie plików ``pattern`` w ``folder`` repozytorium ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
-    i treść."""
+    i treść. Linia różna tylko końcem CRLF nie jest dodana: checkout na Windows ma CRLF w drzewie, a testy ustawiają
+    ``core.autocrlf=false`` (``tests/fixtures/git_config.py``), więc bez tego każda jego linia byłaby zmieniona."""
 
     path = None
     number = 0
-    for line in _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", base, "--", f"{folder}/{pattern}").splitlines():
+    changed = _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", "--ignore-cr-at-eol", base, "--", f"{folder}/{pattern}")
+    for line in changed.splitlines():
         if line.startswith("+++ "):
             path = line.removeprefix("+++ b/") if line != "+++ /dev/null" else None
         elif hunk := _HUNK.match(line):
@@ -565,6 +567,18 @@ def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoz
     added = sorted(_added_lines(tmp_path, base, "tests"))
 
     assert added == [("tests/fixtures/nowy.py", 1, "nowa"), ("tests/test_a.py", 2, "dodana"), ("tests/test_a.py", 4, "na końcu")]
+
+
+def test_zapadka_nie_liczy_linii_rozniacej_sie_tylko_koncem_crlf_jak_w_checkoucie_windows(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_bytes(b"pierwsza\ndruga\n")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    (tmp_path / "src" / "a.py").write_bytes(b"pierwsza\r\ndruga\r\nnowa\r\n")
+
+    assert [(path, number) for path, number, _ in _added_lines(tmp_path, base, "src")] == [("src/a.py", 3)]
 
 
 def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
