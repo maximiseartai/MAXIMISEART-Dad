@@ -6,11 +6,12 @@ Osobny moduł, żeby pakiet importował moduły prywatne na górze bez cyklu: te
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from email.utils import parseaddr
 from enum import Enum, auto
 import hashlib
+from types import MappingProxyType
 from typing import ClassVar, Final, NewType, assert_never
 
 from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
@@ -102,9 +103,17 @@ class ReportMail:
 
 @dataclass(frozen=True)
 class WorkerAddresses:
-    """Adres nadawcy → login Wykonawcy; buduje go tylko ``WorkerList.addresses`` z Listy Wykonawców."""
+    """Adres nadawcy → login Wykonawcy i każdy login Wykonawcy → login, pod którym rdzeń zna Wykonawcę (``workers``,
+    pierwszy login jego wpisu), więc zlecenie spod drugiego loginu jest zleceniem tego samego Wykonawcy. Buduje go tylko
+    ``WorkerList.addresses`` z Listy Wykonawców."""
 
     logins: Mapping[SenderAddress, Login]
+    workers: Mapping[Login, Login] = field(default_factory=lambda: MappingProxyType({}))
+
+    def worker(self, login: Login) -> Login:
+        """Login, pod którym rdzeń zna Wykonawcę z loginem ``login``; login spoza Listy Wykonawców zostaje sobą."""
+
+        return self.workers.get(login, login)
 
 
 OrderNumber = NewType("OrderNumber", str)

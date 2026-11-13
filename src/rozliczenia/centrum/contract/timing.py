@@ -24,6 +24,10 @@ ViewKind = Literal["cold_start", "navigation"]
 ApiOperation = Literal[
     "getHealth",
     "getSettings",
+    "addWorker",
+    "changeWorker",
+    "switchWorker",
+    "removeWorker",
     "chooseRegister",
     "openRegister",
     "choosePeriodsDirectory",

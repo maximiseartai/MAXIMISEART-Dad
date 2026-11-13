@@ -16,7 +16,7 @@ import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, get_args
 import imaplib
@@ -80,12 +80,18 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
-from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks, write_dad_quantity_rules
+from tests.fixtures.centrum_processes import (
+    SettlingCentrum,
+    run_to_end,
+    settling_centrum,
+    stopped_for_maks,
+    write_dad_quantity_rules,
+)
 from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.settlement import PERIOD, worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap
-from atrapy.preparation import write_collective_template
+from atrapy.preparation import register_order, write_collective_template, write_register
 
 import export_openapi
 
@@ -1789,6 +1795,270 @@ def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia
     assert "ustawienia-zmiana plik=wykonawcy.yaml klucze=wykonawcy zrodlo=tata" in log
     for secret in ("jan.testowy", "Jan Nowak", "anna.przyklad", JAN):
         assert secret not in log, secret
+
+
+# --- Lista Wykonawców: tata zmienia ją w sekcji Wykonawcy (#1474, ADR 0032) ---------------------------------------------
+
+WORKERS_API = "/api/settings/workers"
+# Syntetyczny Plik zbiorczy okresu ``PERIOD`` ma zlecenia adrian.testowy i dariusz.fikcyjny2; kamil.syntetyczny jest na
+# Liście Wykonawców bez zleceń w tym okresie.
+EARLIER_PERIOD = "01_07_09_2026"
+
+
+def listed_workers(client: CentrumClient) -> dict[str, dict[str, Any]]:
+    """Wykonawcy sekcji Wykonawcy po pierwszym loginie."""
+
+    return {worker["logins"][0]: worker for worker in client.get("/api/settings").json()["workers"]["workers"]}
+
+
+def worker_form(logins: list[str], name: str, addresses: list[str] | None = None) -> dict[str, object]:
+    return {"logins": logins, "name": name, "addresses": addresses or []}
+
+
+def settling_with_register(tmp_path: Path, logins: Sequence[str] | None) -> SettlingCentrum:
+    """Centrum ze wskazanym syntetycznym Rejestrem zleceń, w którym zlecenia mają Wykonawców ``logins``; ``None``:
+    tata nie wskazał Rejestru."""
+
+    register = None
+    if logins is not None:
+        register = tmp_path / "Rejestr" / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+        register.parent.mkdir()
+        write_register(
+            register,
+            [register_order(number, datetime(2026, 9, 8, 10), worker=login) for number, login in enumerate(logins, start=1)],
+        )
+    return settling_centrum(tmp_path, register=register)
+
+
+def test_tata_dodaje_wykonawce_a_adres_innego_wykonawcy_i_nazwa_na_ten_sam_plik_sa_odmowa_przy_polu(tmp_path: Path) -> None:
+    """US 23, 28, 30: nowy Wykonawca z loginem, nazwą i adresem trafia na listę jako aktywny z przypomnieniami i ma
+    wiersz Historii; adres, który ma już inny Wykonawca, i nazwa, która daje ten sam plik Rozliczenia pracownika, nie
+    zapisują się, a odmowa wskazuje pole formularza."""
+
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+
+    added = client.post(WORKERS_API, json=worker_form(["Bartek.Nowy"], "Bartek Nowy", [JAN]))
+    file_after_add = centrum_.tool.worker_list.read_bytes()
+    same_address = client.post(WORKERS_API, json=worker_form(["ewa.nowa"], "Ewa Nowa", [JAN.upper()]))
+    same_file = client.post(WORKERS_API, json=worker_form(["ewa.nowa"], "bartek  NOWY"))
+
+    assert added.status_code == 200, added.json()
+    assert listed_workers(client)["bartek.nowy"] == listed(["bartek.nowy"], "Bartek Nowy", [JAN])
+    [row] = history_rows_of(client)
+    assert (row["section"], [change["key"] for change in row["changes"]], row["undoable"]) == (
+        "wykonawcy",
+        ["wykonawcy[bartek.nowy]"],
+        True,
+    )
+    assert (same_address.status_code, same_address.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[0]"},
+    )
+    assert (same_file.status_code, same_file.json()) == (
+        422,
+        {"message": settings_messages.worker_same_file(), "field": "nazwa"},
+    )
+    assert centrum_.tool.worker_list.read_bytes() == file_after_add
+    assert len(history_rows_of(client)) == 1
+
+
+def history_rows_of(client: CentrumClient) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Liście Wykonawców, od najnowszego."""
+
+    return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
+
+
+def kept(sentence: str) -> str:
+    """Odmowa usunięcia: zdanie, dlaczego Wykonawca albo login zostaje, i propozycja Nieaktywnego."""
+
+    return (
+        f"{sentence} Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy "
+        "dalej się rozliczą."
+    )
+
+
+@pytest.mark.parametrize(
+    ("register", "removed", "broken_earlier", "answer"),
+    [
+        pytest.param(
+            ["adrian.testowy", "kamil.syntetyczny"],
+            "kamil.syntetyczny",
+            False,
+            kept("Wykonawca ma zlecenia w Rejestrze zleceń, więc zostaje na Liście Wykonawców."),
+            id="w-rejestrze",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "dariusz.fikcyjny2",
+            False,
+            kept(f"Wykonawca ma zlecenia w okresie {PERIOD}, więc zostaje na Liście Wykonawców."),
+            id="tylko-w-pliku-zbiorczym",
+        ),
+        pytest.param(
+            ["adrian.testowy"],
+            "kamil.syntetyczny",
+            True,
+            kept(
+                f"Nie da się teraz przeczytać Pliku zbiorczego okresu {EARLIER_PERIOD}, więc nie wiadomo, czy Wykonawca "
+                "ma w nim zlecenia."
+            ),
+            id="nieczytelny-plik-zbiorczy",
+        ),
+        pytest.param(
+            None,
+            "kamil.syntetyczny",
+            False,
+            kept("Nie wiadomo, czy Wykonawca ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów."),
+            id="bez-rejestru",
+        ),
+    ],
+)
+def test_usuniecie_wykonawcy_z_loginem_w_okresie_jest_odmowa_z_propozycja_nieaktywnego(
+    tmp_path: Path, register: list[str] | None, removed: str, broken_earlier: bool, answer: str
+) -> None:
+    """ADR 0032, US 34, 36: Wykonawcy, którego login stoi w Rejestrze zleceń albo w Pliku zbiorczym okresu, nie da się
+    usunąć, tak samo gdy któregoś pliku nie da się przeczytać albo Rejestr nie jest wskazany; odmowa proponuje
+    Nieaktywnego, a lista i Historia zostają bez zmiany. Propozycja działa: Nieaktywny zostaje na liście."""
+
+    centrum_ = settling_with_register(tmp_path, register)
+    if broken_earlier:
+        earlier = centrum_.period_parent / EARLIER_PERIOD
+        earlier.mkdir()
+        (earlier / collective_file_name_with(EARLIER_PERIOD)).write_bytes(b"to nie jest skoroszyt")
+    before = centrum_.tool.worker_list.read_bytes()
+
+    refused_ = centrum_.client.delete(f"{WORKERS_API}/{removed}")
+    after_refusal = centrum_.tool.worker_list.read_bytes()
+    inactive = centrum_.client.put(f"{WORKERS_API}/{removed}/switches", json={"active": False})
+
+    assert (refused_.status_code, refused_.json()) == (409, {"message": answer})
+    assert after_refusal == before
+    assert inactive.status_code == 200
+    assert listed_workers(centrum_.client)[removed]["active"] is False
+    assert [change["key"] for row in history_rows_of(centrum_.client) for change in row["changes"]] == [
+        f"wykonawcy[{removed}]"
+    ], "odmowa nie ma wiersza Historii, przełącznik ma"
+
+
+def test_wykonawce_bez_loginu_w_zadnym_okresie_tata_usuwa_a_historia_pozwala_go_przywrocic(tmp_path: Path) -> None:
+    """US 36: Wykonawca dodany przez pomyłkę (loginu nie ma w Rejestrze zleceń ani w żadnym Pliku zbiorczym) znika z
+    listy po pełnym sprawdzeniu, a „Cofnij” z Historii przywraca go z adresami."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    centrum_.client.post(WORKERS_API, json=worker_form(["pomylka.login"], "Pomyłka Testowa", [OBCY]))
+
+    removed = centrum_.client.delete(f"{WORKERS_API}/pomylka.login")
+    after_remove = listed_workers(centrum_.client)
+    undone = centrum_.client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert removed.status_code == 200, removed.json()
+    assert "pomylka.login" not in after_remove and "kamil.syntetyczny" in after_remove
+    assert undone.status_code == 200
+    assert listed_workers(centrum_.client)["pomylka.login"] == listed(["pomylka.login"], "Pomyłka Testowa", [OBCY])
+
+
+def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
+    """US 29, 38: formularz, w którym zapisany login z zleceniami w okresie zastąpiono innym, nie zapisuje się, bo
+    zmieniłby po cichu, czyje zlecenia trafiają do kogo; dopisany drugi login obok zapisanego się zapisuje."""
+
+    centrum_ = settling_with_register(tmp_path, ["kamil.syntetyczny"])
+    before = centrum_.tool.worker_list.read_bytes()
+
+    rewritten = centrum_.client.put(
+        f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.nowy"], "Adrian Testowy")
+    )
+    unchanged = centrum_.tool.worker_list.read_bytes()
+    second = centrum_.client.put(
+        f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.testowy", "Adrian.Nowy"], "Adrian Testowy")
+    )
+
+    assert (rewritten.status_code, rewritten.json()) == (
+        409,
+        {"message": kept(f"Ten login ma zlecenia w okresie {PERIOD}, więc zostaje przy Wykonawcy.")},
+    )
+    assert unchanged == before
+    assert second.status_code == 200, second.json()
+    assert listed_workers(centrum_.client)["adrian.testowy"]["logins"] == ["adrian.testowy", "adrian.nowy"]
+
+
+def test_ostrzezenie_o_starej_nazwie_tylko_gdy_rozliczenie_pracownika_z_nia_lezy_w_okresie(tmp_path: Path) -> None:
+    """US 31–32: zmiana nazwy Wykonawcy, którego Rozliczenie pracownika leży już w Folderze rozliczeń pracowników,
+    niczego nie zapisuje bez potwierdzenia i mówi, że stary plik zostaje; potwierdzona zapisuje nazwę i nie rusza
+    plików taty. Wykonawca bez takiego pliku zmienia nazwę od razu."""
+
+    centrum_ = settling_centrum(tmp_path)
+    folder = write_worker_settlements(centrum_.period_directory, PERIOD, ["Adrian Testowy"])
+    files_before = sorted(path.name for path in folder.iterdir())
+    client = centrum_.client
+
+    asked = client.put(f"{WORKERS_API}/adrian.testowy", json=worker_form(["adrian.testowy"], "Adrian Nowak"))
+    name_after_ask = listed_workers(client)["adrian.testowy"]["name"]
+    confirmed = client.put(
+        f"{WORKERS_API}/adrian.testowy",
+        json=worker_form(["adrian.testowy"], "Adrian Nowak") | {"rename_confirmed": True},
+    )
+    without_file = client.put(f"{WORKERS_API}/kamil.syntetyczny", json=worker_form(["kamil.syntetyczny"], "Kamil Nowy"))
+
+    assert (asked.status_code, asked.json()["change"], asked.json()["rename_warning"]) == (
+        200,
+        None,
+        settings_messages.worker_rename_old_files((PERIOD,)),
+    )
+    assert name_after_ask == "Adrian Testowy"
+    assert (confirmed.json()["rename_warning"], confirmed.json()["change"] is not None) == (None, True)
+    assert (without_file.json()["rename_warning"], without_file.json()["change"] is not None) == (None, True)
+    assert {login: worker["name"] for login, worker in listed_workers(client).items()} == {
+        "adrian.testowy": "Adrian Nowak",
+        "dariusz.fikcyjny2": "Darek Fikcyjny",
+        "kamil.syntetyczny": "Kamil Nowy",
+    }
+    assert sorted(path.name for path in folder.iterdir()) == files_before
+
+
+def test_wykonawca_dodany_w_ustawieniach_z_drugim_loginem_trafia_do_rozliczenia_pracownika_w_nastepnym_przebiegu(
+    tmp_path: Path,
+) -> None:
+    """US 23, 29: Przebieg rozliczeń zatrzymuje się na loginie spoza Listy Wykonawców; po dodaniu Wykonawcy w
+    Ustawieniach i dopisaniu mu tego loginu jako drugiego następny Przebieg daje jego Rozliczenie pracownika."""
+
+    centrum_ = settling_centrum(tmp_path, include_unmapped=True)
+    stopped = run_to_end(centrum_, dry_run=False)
+    centrum_.client.post(WORKERS_API, json=worker_form(["andrzej.nowy"], "Andrzej Nowy"))
+    centrum_.client.put(
+        f"{WORKERS_API}/andrzej.nowy", json=worker_form(["andrzej.nowy", "andrzej.nieznany2"], "Andrzej Nowy")
+    )
+
+    settled = run_to_end(centrum_, dry_run=False)
+
+    assert stopped["result"]["result"] == "BLAD_KRYTYCZNY"
+    assert settled["result"]["result"] == "OK", settled["result"]
+    folder = PeriodFolder(centrum_.period_parent, parse_period_token(PERIOD))
+    assert folder.worker_settlement("Andrzej Nowy").is_file()
+
+
+def test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_nazwy_ani_adresu(tmp_path: Path) -> None:
+    """Każda zmiana z sekcji Wykonawcy (dodanie, formularz, przełącznik, usunięcie) ma wiersz Historii taty z „Cofnij”,
+    a Zgłoszenie mówi tylko, co się zmieniło, bez loginu, nazwy i adresu (D4 projektu Ustawień)."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form([LEAKED_LOGIN], LEAKED_NAME, [LEAKED_ADDRESS]))
+    client.put(f"{WORKERS_API}/{LEAKED_LOGIN}", json=worker_form([LEAKED_LOGIN], f"{LEAKED_NAME} Drugi", [LEAKED_ADDRESS]))
+    client.put(f"{WORKERS_API}/{LEAKED_LOGIN}/switches", json={"reminders": False})
+    client.delete(f"{WORKERS_API}/{LEAKED_LOGIN}")
+
+    rows = history_rows_of(client)
+    report = client.post(f"/api/runs/{stopped_for_maks(centrum_)}/diagnosis").json()["report"]["body"]
+
+    assert [(row["source"], row["section"], row["undoable"], row["refused"]) for row in rows] == [
+        ("tata", "wykonawcy", True, False)
+    ] * 4
+    for line in ("usunięto Wykonawcę", "zmieniono Wykonawcę (pola: przypomnienia)", "zmieniono Wykonawcę (pola: nazwa)", "dodano Wykonawcę"):
+        assert line in report, line
+    seen = {"Zgłoszenie": report, "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8")}
+    leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
+    assert leaks == []
 
 
 def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:

@@ -122,6 +122,14 @@ class InboxPasswordSaved(Choice):
     login: InboxLogin
 
 
+class WorkerSaved(Choice):
+    """Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+    które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+    (``rename_confirmed``)."""
+
+    rename_warning: str | None = None
+
+
 class FoldersChange(Model):
     """Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."""
 

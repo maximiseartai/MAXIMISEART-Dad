@@ -14,6 +14,7 @@ bez loginu, nazwy i adresu (D4 projektu Ustawień).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 import json
 from typing import Final, Literal, assert_never
 
@@ -30,6 +31,7 @@ from rozliczenia.worker_list import (
     WorkerList,
     WorkerListProblem,
 )
+from rozliczenia.text import normalize_text
 from rozliczenia.worker_reports import Login, SenderAddress
 
 WORKERS_FILE: Final = "wykonawcy.yaml"
@@ -285,6 +287,111 @@ def _logins(text: str | None) -> set[str]:
 def _listed(entry: Document) -> list[str]:
     logins = entry.get(_LOGINS)
     return [login for login in logins if isinstance(login, str)] if isinstance(logins, list) else []
+
+
+# --- zmiany taty w sekcji Wykonawcy ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WorkerForm:
+    """Wykonawca z formularza sekcji Wykonawcy przed sprawdzeniem: loginy, nazwa i adresy tak, jak je wpisał tata."""
+
+    logins: Sequence[str]
+    name: str
+    addresses: Sequence[str]
+
+
+def added(current: WorkerList, form: WorkerForm) -> WorkerList | FieldProblem:
+    """Lista z nowym Wykonawcą na końcu, aktywnym i z Przypomnieniami o raporcie."""
+
+    return _with(current, None, WorkerEntry(form.logins, form.name, form.addresses))
+
+
+def edited(current: WorkerList, login: str, form: WorkerForm, seen: frozenset[str]) -> WorkerList | FieldProblem:
+    """Lista z Wykonawcą, który ma login ``login``, zmienionym według formularza; przełączniki zostają. ``seen``: loginy
+    Wykonawcy, od których liczono usunięte loginy sprawdzone w okresach; inne loginy (lista zmieniła się w trakcie) to
+    odmowa."""
+
+    index = _index(current, login)
+    if index is None:
+        return FieldProblem(None, messages.worker_unknown())
+    worker = current.workers[index]
+    if frozenset(worker.logins) != seen:
+        return FieldProblem(None, messages.worker_list_changed())
+    return _with(current, index, WorkerEntry(form.logins, form.name, form.addresses, worker.active, worker.reminders))
+
+
+def switched(current: WorkerList, login: str, *, active: bool | None, reminders: bool | None) -> WorkerList | FieldProblem:
+    """Lista z przełącznikiem Nieaktywnego Wykonawcy (``active``) albo jego Przypomnień o raporcie (``reminders``)
+    zmienionym; ``None`` zostawia przełącznik."""
+
+    index = _index(current, login)
+    if index is None:
+        return FieldProblem(None, messages.worker_unknown())
+    worker = current.workers[index]
+    entry = _as_entry(worker)
+    return _with(
+        current,
+        index,
+        WorkerEntry(
+            entry.logins,
+            entry.name,
+            entry.addresses,
+            worker.active if active is None else active,
+            worker.reminders if reminders is None else reminders,
+        ),
+    )
+
+
+def removed(current: WorkerList, login: str, checked: frozenset[str]) -> WorkerList | FieldProblem:
+    """Lista bez Wykonawcy z loginem ``login``, gdy ma dokładnie loginy ``checked``, które sprawdzono w okresach przed
+    zapisem; inne loginy (lista zmieniła się w trakcie sprawdzania) to odmowa."""
+
+    index = _index(current, login)
+    if index is None:
+        return FieldProblem(None, messages.worker_unknown())
+    if frozenset(current.workers[index].logins) != checked:
+        return FieldProblem(None, messages.worker_list_changed())
+    built = WorkerList.of([_as_entry(worker) for at, worker in enumerate(current.workers) if at != index], current.unresolved)
+    return _problem(built) if isinstance(built, WorkerListProblem) else built
+
+
+def worker_of(workers: WorkerList, login: str) -> Worker | None:
+    """Wykonawca z loginem ``login`` (po ``normalize_text``)."""
+
+    index = _index(workers, login)
+    return None if index is None else workers.workers[index]
+
+
+def _index(workers: WorkerList, login: str) -> int | None:
+    wanted = Login(normalize_text(login))
+    return next((index for index, worker in enumerate(workers.workers) if wanted in worker.logins), None)
+
+
+def _as_entry(worker: Worker) -> WorkerEntry:
+    return WorkerEntry(worker.logins, worker.name, [address.shown() for address in worker.addresses], worker.active, worker.reminders)
+
+
+def _with(current: WorkerList, index: int | None, entry: WorkerEntry) -> WorkerList | FieldProblem:
+    """Lista z ``entry`` na miejscu ``index`` (``None``: na końcu). Reguły sprawdza ``WorkerList.of`` z ``entry`` na końcu,
+    więc login, adres albo nazwa, które ma już inny Wykonawca, to odmowa przy polu formularza (``nazwa``,
+    ``adresy[1]``), a nie przy wpisie drugiego Wykonawcy. Sprawa „login bez Wykonawcy”, którego login ma teraz
+    Wykonawca, znika z ``do_rozstrzygniecia``."""
+
+    others = [_as_entry(worker) for at, worker in enumerate(current.workers) if at != index]
+    checked = WorkerList.of([*others, entry])
+    if isinstance(checked, WorkerListProblem):
+        return _form_problem(checked) if checked.worker == len(others) else _problem(checked)
+    others.insert(len(others) if index is None else index, entry)
+    listed = {login for worker in checked.workers for login in worker.logins}
+    unresolved = [item for item in current.unresolved if not (isinstance(item, UnmatchedLogin) and normalize_text(item.login) in listed)]
+    built = WorkerList.of(others, unresolved)
+    return _problem(built) if isinstance(built, WorkerListProblem) else built
+
+
+def _form_problem(problem: WorkerListProblem) -> FieldProblem:
+    item = () if problem.item is None else (problem.item,)
+    return FieldProblem(FieldPath(problem.part, *item), _SENTENCES[problem.kind]())
 
 
 def reported(change: KeyChange) -> str:

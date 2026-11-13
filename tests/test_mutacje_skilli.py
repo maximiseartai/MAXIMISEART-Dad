@@ -329,6 +329,7 @@ def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
 
 POZA_VERIFY_ROZLICZENIA: dict[str, str] = {
     "src/rozliczenia/public_holidays.py": "święta kolumn dni widoku Raporty Centrum; żaden proces ich nie woła (#1319)",
+    "src/rozliczenia/worker_periods.py": "loginy Wykonawców w okresach dla sekcji Wykonawcy Centrum; żaden proces go nie woła (#1474)",
 }
 
 

@@ -56,6 +56,7 @@ from rozliczenia.period_folder import (
 from rozliczenia.quantity_engine import DESCRIPTION_COLUMNS
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.workbook_files import MergedCells, MissingHeader, Problem, WorkbookError
+from rozliczenia.worker_periods import InPeriod, InRegister, Unchecked
 
 REGISTER = Path("C:/Dane/ZLECENIA INTERMAX OD 08_11_2021.xlsx")
 PERIODS = Path("C:/Dane/INEA")
@@ -436,6 +437,14 @@ REFUSALS: RefusalSamples = {
     "workers_unusable": [
         lambda: refusal.workers_unusable(FieldProblem(FieldPath("wykonawcy", 1, "nazwa"), settings_messages.worker_same_file())),
         lambda: refusal.workers_unusable(None),
+    ],
+    "worker_kept": [
+        lambda: refusal.worker_kept(InRegister(), "worker"),
+        lambda: refusal.worker_kept(InPeriod("08_14_09_2026"), "login"),
+        lambda: refusal.worker_kept(Unchecked("not_set"), "worker"),
+        lambda: refusal.worker_kept(Unchecked("register"), "worker"),
+        lambda: refusal.worker_kept(Unchecked("periods_directory"), "login"),
+        lambda: refusal.worker_kept(Unchecked("collective_file", "01_07_09_2026"), "worker"),
     ],
     "report_entering_without_addresses": [refusal.report_entering_without_addresses],
     "settings_change_unknown": [refusal.settings_change_unknown],

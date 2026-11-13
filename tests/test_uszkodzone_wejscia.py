@@ -395,6 +395,21 @@ def _diagnosis(process: str, period: str, *, report: bool) -> Entry:
     return Entry((_start_operation(process), "streamRunEvents", "diagnoseRun") + (("reportRun",) if report else ()), call)
 
 
+def _worker_removal() -> Entry:
+    """Usunięcie Wykonawcy dodanego przez pomyłkę: jego loginu nie ma nigdzie, więc sprawdzenie okresów czyta Rejestr
+    zleceń i Plik zbiorczy każdego Folderu okresu do końca."""
+
+    def call(client: TestClient, seen: Seen) -> Problems:
+        form = {"logins": ["pomylka.login"], "name": "Pomyłka Testowa", "addresses": []}
+        added = client.post("/api/settings/workers", json=form)
+        problems = _http(added, "addWorker", seen)
+        if added.status_code != 200:
+            return problems
+        return problems + _http(client.delete("/api/settings/workers/pomylka.login"), "removeWorker", seen)
+
+    return Entry(("addWorker", "removeWorker"), call)
+
+
 def _pinned_dad_note() -> Entry:
     def call(client: TestClient, seen: Seen) -> Problems:
         runs = client.get("/api/dad-notes/runs")
@@ -487,6 +502,7 @@ ENTRIES: dict[str, Entry] = {
     "draftDadNote": _route("draftDadNote", "POST", "/api/dad-notes/draft", DAD_NOTE),
     "sendDadNote": _route("sendDadNote", "POST", "/api/dad-notes", DAD_NOTE),
     "uwaga-przypieta": _pinned_dad_note(),
+    "usuniecie-wykonawcy": _worker_removal(),
     "podglad[przygotowanie]": _process_run("preparation", PERIOD),
     "podglad[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD),
     "zapis[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD, saving=True),
@@ -516,6 +532,10 @@ NOT_SWEPT: dict[str, str] = {
     "test_centrum_rozliczen",
     "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
     "bez plików taty; zła wartość, zły plik skrzynki i trzy wyniki logowania: test_centrum_rozliczen",
+    "switchWorker": "zapisuje tylko przełącznik w Liście Wykonawców w config, bez plików taty; nieznany Wykonawca i "
+    "przypomnienia po przełączniku: test_centrum_rozliczen, test_centrum_wpisanie_raportow",
+    "changeWorker": "usunięty login sprawdza okresy tą samą drogą co usuniecie-wykonawcy, a ostrzeżenie o starej nazwie "
+    "listuje tylko Foldery rozliczeń pracowników i nieczytelnego folderu nie zgłasza; odmowy: test_centrum_rozliczen",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
@@ -563,6 +583,7 @@ READS: dict[str, set[str]] = {
     "draftDadNote": set(),
     "sendDadNote": {"dziennik_centrum", "folder_zgloszen", "klucz_zgloszen", "sprawy_taty"},
     "uwaga-przypieta": _METRICS | {"uruchomienia_centrum", "adresy_skrzynki"},
+    "usuniecie-wykonawcy": _SETTINGS | _FOLDERS | {"plik_zbiorczy", "dziennik_centrum"},
     "podglad[przygotowanie]": _PREPARATION,
     "podglad[przebieg]": _SETTLEMENT,
     "zapis[przebieg]": _SETTLEMENT,

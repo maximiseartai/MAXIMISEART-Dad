@@ -181,6 +181,45 @@ def test_mail_spoza_listy_adresow_surowe_zlecenie_dnia_i_zlecenie_sprzed_okna_ni
     assert centrum.inbox.days == [ENTERING_NOW.date()], "skrzynka czytana od dnia wdrożenia, czyli dziś"
 
 
+def _workers(register: Path) -> dict[int, object]:
+    """``NUMER ZL.`` → ``WYKONAWCA`` każdego wiersza arkusza zleceń z numerem."""
+
+    sheet = load_workbook(register)[ORDER_SHEET]
+    column = FIRST + HEADERS.index("WYKONAWCA")
+    return {
+        cell.value: sheet.cell(cell.row, column).value
+        for row in sheet.iter_rows(min_row=2)
+        for cell in row
+        if isinstance(cell.value, int) and cell.value >= 40000000
+    }
+
+
+def test_raport_wykonawcy_trafia_do_zlecenia_spod_drugiego_loginu_dopisanego_w_ustawieniach(tmp_path: Path) -> None:
+    """US 29 (#1474): tata dopisuje Wykonawcy w Ustawieniach drugi login z INTERMAX. Raport wykonawcy z jego adresu
+    wpisuje się też w zlecenie spod drugiego loginu, które zostaje w miejscu, bez Przeniesienia zlecenia pod pierwszy."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.nowy", 40000005),
+            _order(9, 11, "anna.kowalska", 40000002),
+        ),
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000001 tak montaż\n40000005 tak wymiana routera")])
+    before, workers_before = _cells(centrum.register), _workers(centrum.register)
+    second = centrum.client.put(
+        "/api/settings/workers/jan.testowy",
+        json={"logins": ["jan.testowy", "jan.nowy"], "name": "Jan Testowy", "addresses": [JAN]},
+    )
+
+    view = _finished(centrum)
+
+    assert second.status_code == 200, second.json()
+    assert view["result"]["summary"]["figures"][0] == {"label": "Wpisane", "value": 2, "unit": "count"}
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "montaż"), 40000005: ("tak", "wymiana routera")}
+    assert _workers(centrum.register) == workers_before
+
+
 def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w_czynnosciach_zamaskowany(
     tmp_path: Path,
 ) -> None:
@@ -2860,6 +2899,33 @@ def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopk
         ("jan.testowy", True),
     ]
     assert _reminder_result(centrum)["footer"] == "missing"
+
+
+@pytest.mark.parametrize(
+    ("login", "switches", "reminded"),
+    [
+        pytest.param("anna.kowalska", {"active": False}, ["jan.testowy"], id="nieaktywny"),
+        pytest.param("jan.testowy", {"reminders": False}, ["anna.kowalska"], id="bez-przypomnien"),
+    ],
+)
+def test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_nastepnego_sprawdzenia(
+    tmp_path: Path, login: str, switches: dict[str, bool], reminded: list[str]
+) -> None:
+    """ADR 0032, US 34, 37 (#1474): przełącznik na karcie Wykonawcy w Ustawieniach działa od następnego sprawdzenia
+    przypomnień: Nieaktywny Wykonawca i Wykonawca z wyłączonymi Przypomnieniami o raporcie ich nie dostają, inni tak."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum.tool)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    switched = centrum.client.put(f"/api/settings/workers/{login}/switches", json=switches)
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert switched.status_code == 200, switched.json()
+    assert [reminder.worker for reminder, _ in mailbox.sends] == reminded
 
 
 def test_praca_przypomnien_bez_dnia_wdrozenia_w_nocy_i_przed_8_dnia_nastepnego_nic_nie_wysyla(tmp_path: Path) -> None:

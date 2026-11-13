@@ -64,6 +64,7 @@ from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.workers_router import workers_router
 from rozliczenia.centrum.quantity_rules_router import quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
@@ -83,6 +84,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
+from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
 from rozliczenia.wall_clock import dad_today, local_now
 
@@ -231,6 +233,8 @@ def create_app(
     # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie i dni INTERMAX czytają nim pliki taty ze źródła
     # bajtów ``source``, a jego pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
+    # Sekcja Wykonawcy: usunięcie Wykonawcy albo loginu sprawdza okresy tym samym uchwytem plików taty.
+    app.include_router(workers_router(settings, WorkerPeriods(files)))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)

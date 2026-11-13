@@ -255,8 +255,9 @@ class CentrumSettings:
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
             )
 
-    def change(self, file: SettingsFile[T], edit: Callable[[T], T]) -> Saved | Refused | NotSaved:
-        """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową."""
+    def change(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> Saved | Refused | NotSaved:
+        """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową albo problem
+        zmiany (np. pole formularza sekcji Wykonawcy), który jest odmową bez zapisu."""
 
         with self._lock:
             return self._change(file, edit, undoes=None, source=ByDad(), undoable=True)
@@ -444,7 +445,13 @@ class CentrumSettings:
         return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
 
     def _change(
-        self, file: SettingsFile[T], edit: Callable[[T], T], *, undoes: str | None, source: RowSource, undoable: bool
+        self,
+        file: SettingsFile[T],
+        edit: Callable[[T], T | FieldProblem],
+        *,
+        undoes: str | None,
+        source: RowSource,
+        undoable: bool,
     ) -> Saved | Refused | NotSaved:
         place = self._places[file.name]
         unsupported = place.unsupported()
@@ -458,7 +465,10 @@ class CentrumSettings:
         if isinstance(observed, Bad) and file.secret and observed.usable is None:
             return Refused(observed.problem)
         current = _usable(observed, file)
-        new = file.dump(edit(current)).encode("utf-8")
+        value = edit(current)
+        if isinstance(value, FieldProblem):
+            return Refused(value)
+        new = file.dump(value).encode("utf-8")
         edited = self._checked(file, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
