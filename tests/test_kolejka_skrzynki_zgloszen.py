@@ -18,6 +18,7 @@ import shutil
 import sys
 import threading
 import time
+from typing import Final
 
 import pytest
 
@@ -50,6 +51,7 @@ from tests.fixtures.potomne import wait_for
 from atrapy.sluchacz_kolejki import QueueListener
 from atrapy.widok_skrzynki import shown
 from tests.fixtures.stare_centrum import SharedBox, killed_after_comment, old_centrum, queue_on
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 THREAD = PeriodThread(
@@ -1640,3 +1642,103 @@ def test_logi_dwoch_uruchomien_nowego_okresu_w_jednym_przejsciu_ida_do_archiwum_
     assert sorted(queue.box.archived("logi-08_14_09_2026")) == sorted(f"{run_id}.json.gz" for run_id in run_ids)
     assert len(queue.box.archives) == 1
     assert queue.files() == []
+
+
+_GOTOWA: Final = "from rozliczenia.centrum.outbox import Outbox, Post\n\n"
+
+# Drogi do pliku kolejki obok wysyłki zbudowanej przez konstruktor ``Post`` (przegląd #1660, W1) → zgłoszenie mypy albo
+# ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+DROGI_OBOK_POST: Final = {
+    "własna klasa z to_json": (
+        """from rozliczenia.centrum.outbox import Outbox
+
+
+class Wysylka:
+    def to_json(self) -> str:
+        return "{}"
+
+
+def wyslij(kolejka: Outbox, wysylka: Wysylka) -> bool:
+    return kolejka.post(wysylka)
+""",
+        'expected "Post | LogsPost"',
+    ),
+    "podklasa Post z to_json": (
+        """from rozliczenia.centrum.outbox import Post
+
+
+class Inna(Post):
+    def to_json(self) -> str:
+        return "{}"
+""",
+        'Cannot inherit from final class "Post"',
+    ),
+    "copy.replace": (
+        _GOTOWA
+        + """import copy
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(copy.replace(post, run_id=1))
+""",
+        "`copy.replace` is banned",
+    ),
+    "replace z modułu copy": (
+        _GOTOWA
+        + """from copy import replace
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(replace(post, run_id=1))
+""",
+        "`copy.replace` is banned",
+    ),
+    "__replace__ z polem złego typu": (
+        _GOTOWA
+        + """def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(post.__replace__(run_id=1))
+""",
+        '"__replace__" of "Post" has incompatible type',
+    ),
+}
+
+# Znane luki kolejki (tests/fixtures/znane_luki.py): postaci, które zmieniają pole gotowej wysyłki albo dają kolejce
+# inny obiekt, a mypy i ruff ich nie łapią.
+ZNANE_LUKI: Final = {
+    "object.__setattr__ na gotowej wysyłce": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post) -> bool:
+    object.__setattr__(post, "run_id", 1)
+    return kolejka.post(post)
+""",
+    "replace z getattr modułu copy": _GOTOWA
+    + """import copy
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(getattr(copy, "replace")(post, run_id=1))
+""",
+    "cast innej klasy na Post": _GOTOWA
+    + """from typing import cast
+
+
+def wyslij(kolejka: Outbox, wysylka: object) -> bool:
+    return kolejka.post(cast(Post, wysylka))
+""",
+    "wartość typu Any": """from typing import Any
+
+from rozliczenia.centrum.outbox import Outbox
+
+
+def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
+    return kolejka.post(wysylki["inna"])
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_OBOK_POST.items()} | ZNANE_LUKI
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_kolejki.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_OBOK_POST.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI}, "tests/test_kolejka_skrzynki_zgloszen.py")
