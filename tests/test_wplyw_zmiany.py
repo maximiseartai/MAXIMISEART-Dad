@@ -158,23 +158,24 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
 @pytest.mark.parametrize(
     "files",
     [
-        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests/expected/a.txt').read_text()\n"},
-        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests', 'expected', 'a.txt').read_text()\n"},
-        {"tests/test_x.py": "from pathlib import Path\n\nA = Path('tests/expected') / 'a.txt'\n\n\ndef test_x() -> None:\n    assert A.read_text()\n"},
+        {"tests/test_x.py": "def test_x() -> None:\n    with open('tests/expected/raport', encoding='utf-8') as plik:\n        assert plik.read()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    assert Path('tests', 'expected', 'raport').read_text()\n"},
+        {"tests/test_x.py": "from pathlib import Path\n\nA = Path('tests') / 'expected' / 'raport'\n\n\ndef test_x() -> None:\n    assert A.read_text()\n"},
         {
-            "tests/pomoc.py": "from pathlib import Path\n\nA = Path('tests/expected/a.txt')\n",
-            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    assert A.read_text()\n",
+            "tests/pomoc.py": "A = 'tests/expected/raport'\n",
+            "tests/test_x.py": "from tests.pomoc import A\n\n\ndef test_x() -> None:\n    with open(A, encoding='utf-8') as plik:\n        assert plik.read()\n",
         },
     ],
     ids=["napis od korzenia", "Path z kawałków", "stała z operatorem /", "napis w module, który test importuje"],
 )
 def test_test_widzi_plik_spod_tests_czytany_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
     """Drogi do pliku spod ``tests/``, które graf widzi (granica z docstringu ``_package_data``): zmiana pliku wybiera
-    test, choć pakiet ``tests`` nie ma danych pakietu."""
+    test, choć pakiet ``tests`` nie ma danych pakietu. Plik nie ma kropki, a kawałki ścieżki nie mają ``/``, więc ani
+    sama nazwa pliku, ani katalog w jednym napisie nie wskazują go za drogę, którą sprawdza przypadek."""
 
-    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
+    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/raport": "komunikat\n", **files})
 
-    assert "tests/test_x.py" in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
+    assert "tests/test_x.py" in Repository.scan(repo).impact(frozenset({"tests/expected/raport"})).tests
 
 
 FIXTURE_READING_EXPECTED = (

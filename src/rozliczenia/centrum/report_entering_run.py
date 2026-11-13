@@ -45,9 +45,7 @@ from rozliczenia.centrum.process_kind import (
     NeededSetting,
     PathNeed,
     PreparedRun,
-    Start,
-    start_warnings,
-    workers_at_start,
+    start_from_settings,
 )
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
@@ -120,19 +118,10 @@ class ReportEnteringEntry:
         }
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
-        workers = workers_at_start(snapshot.workers)
-        if not workers.addresses().logins:
-            raise refusal.report_entering_without_addresses()
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(
-            paths,
-            period=None,
-            dry_run=False,
-            settings=snapshot,
-            workers=workers,
-            quantity_rules=snapshot.quantity_rules,
-            warnings=start_warnings(snapshot, _KIND.needs),
-        )
+        start = start_from_settings(_KIND, snapshot, paths, period=None, dry_run=False)
+        if not start.worker_list().addresses().logins:
+            raise refusal.report_entering_without_addresses()
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
