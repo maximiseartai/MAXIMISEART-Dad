@@ -33,6 +33,8 @@ on:
       - src/rozliczenia/centrum/restart_guardian.py
       - src/rozliczenia/centrum/tool_update.py
       - src/rozliczenia/centrum/tool_updates.py
+      - src/rozliczenia/centrum/tool_freshness.py
+      - src/rozliczenia/centrum/configuration_router.py
       - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
       - tools/lib/atrapy/scenariusz_centrum.py
