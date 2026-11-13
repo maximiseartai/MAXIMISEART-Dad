@@ -10,7 +10,7 @@ import time
 from typing import Any, TypeVar
 import urllib.request
 
-from playwright.sync_api import Page
+from playwright.sync_api import Locator, Page, expect
 
 import windows_desktop
 import windows_tool
@@ -138,6 +138,38 @@ class Run:
     def opened_addresses(self) -> list[str]:
         opened = Path(self.facts["opened"])
         return [line.strip() for line in opened.read_text(encoding="utf-8").splitlines()] if opened.is_file() else []
+
+
+def settings_window(page: Page) -> Locator:
+    """The window Ustawienia over the page (ADR 0032), where Dad points his files and updates the tool."""
+
+    return page.get_by_role("dialog", name="Ustawienia")
+
+
+def settings_section(page: Page) -> Locator:
+    """The open section of Ustawienia; the menu of sections has lists of the same names (its group Narzędzie)."""
+
+    return settings_window(page).locator("[data-slot=settings-section]")
+
+
+def open_settings(page: Page, section: str) -> Locator:
+    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title);
+    returns that section."""
+
+    window = settings_window(page)
+    if not window.is_visible():
+        page.get_by_role("link", name="Ustawienia", exact=True).click()
+    expect(window).to_be_visible()
+    window.get_by_role("link", name=section, exact=True).click()
+    expect(window.get_by_role("heading")).to_have_text(f"Ustawienia/{section}")
+    return settings_section(page)
+
+
+def close_settings(page: Page) -> None:
+    """Dad closes Ustawienia with Esc; the page under it stays."""
+
+    page.keyboard.press("Escape")
+    expect(settings_window(page)).to_have_count(0)
 
 
 def wait_for(probe: Callable[[], T | None], *, timeout_s: float, what: str, every_s: float = 0.25) -> T:

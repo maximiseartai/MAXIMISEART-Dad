@@ -1,0 +1,16 @@
+# Lista Urządzeń z Wydania (ADR 0033): składniki URZĄDZENIA z instrukcji taty (spec #268) przepisane z kodu Reguł
+# ilości bez zmiany wyniku. Ten sam format ma plik config/lista-urzadzen.yaml taty (quantity_rules_file).
+schema_version: 1
+urzadzenia:
+  - {id: nokia, zapisy: [nokia]}
+  - {id: nokia-router, zapisy: [nokia zte, nokia getewayhomebox], grupa: router}
+  - {id: technicolor, zapisy: [technicolor], grupa: router}
+  - {id: gateway, zapisy: [gateway, zyxel], grupa: router}
+  - {id: fut, zapisy: [fut], grupa: tv}
+  - {id: globo, zapisy: [globo], grupa: tv}
+  - {id: stb2, zapisy: [stb2], grupa: tv}
+  - {id: wifi6extra, zapisy: [wifi6extra], grupa: extender}
+  - {id: usterka, zapisy: [usterka, usterka hurt, usterka wew]}
+  - {id: gniazdo, zapisy: [gniazdo]}
+  - {id: zmiana-instalacji, zapisy: [zmiana instalacji w lokalu abonenta]}
+  - {id: instalacja-reczna, zapisy: [instalacja ręczna, wizja]}
