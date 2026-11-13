@@ -181,7 +181,8 @@ def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merge
 
 
 PULLS = [
-    _pull(1436, [(FAIL_W1, "2026-10-07T10:00:00Z")]),
+    # Ważne w tygodniu 5.10, a PR scalony w tygodniu 19.10: Ważne liczy się w chwili werdyktu
+    _pull(1436, [(FAIL_W1, "2026-10-07T10:00:00Z")], merged="2026-10-20T08:00:00Z"),
     _pull(1437, [(FAIL_W1, "2026-10-20T10:00:00Z")]),
     _pull(1438, [(FAIL_OTHER, "2026-10-21T10:00:00Z")]),
     # scalony w poniedziałek 19.10 o 0:30 czasu letniego, a w UTC jeszcze w niedzielę 18.10
