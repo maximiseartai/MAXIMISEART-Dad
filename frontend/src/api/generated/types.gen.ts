@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -4037,6 +4037,52 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerEdit
+ *
+ * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
+ * ``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to.
+ */
+export type WorkerEdit = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * Rename Confirmed
+     */
+    rename_confirmed?: boolean;
+};
+
+/**
+ * WorkerForm
+ *
+ * Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu
+ * pracownika i adresy Raportów wykonawcy, tak jak je wpisał tata.
+ */
+export type WorkerForm = {
+    /**
+     * Logins
+     */
+    logins: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+};
+
+/**
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
@@ -4056,6 +4102,25 @@ export type WorkerListSetting = {
      */
     unresolved: Array<UnmatchedLogin | AddressesNotMoved>;
     problem: SettingProblem | null;
+};
+
+/**
+ * WorkerSaved
+ *
+ * Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+ * które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+ * (``rename_confirmed``).
+ */
+export type WorkerSaved = {
+    settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
+    /**
+     * Rename Warning
+     */
+    rename_warning?: string | null;
 };
 
 /**
@@ -4092,6 +4157,23 @@ export type WorkerSettlementRequest = {
      * Worker
      */
     worker: string;
+};
+
+/**
+ * WorkerSwitches
+ *
+ * Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
+ * ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik.
+ */
+export type WorkerSwitches = {
+    /**
+     * Active
+     */
+    active?: boolean | null;
+    /**
+     * Reminders
+     */
+    reminders?: boolean | null;
 };
 
 /**
@@ -5769,6 +5851,10 @@ export type UndoSettingsChangeErrors = {
      */
     404: Problem;
     /**
+     * Conflict
+     */
+    409: Problem;
+    /**
      * Zła wartość Ustawień Centrum z polem i zdaniem
      */
     422: Problem;
@@ -6123,6 +6209,129 @@ export type ChangeThemeResponses = {
 };
 
 export type ChangeThemeResponse = ChangeThemeResponses[keyof ChangeThemeResponses];
+
+export type AddWorkerData = {
+    body: WorkerForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/workers';
+};
+
+export type AddWorkerErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type AddWorkerError = AddWorkerErrors[keyof AddWorkerErrors];
+
+export type AddWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type AddWorkerResponse = AddWorkerResponses[keyof AddWorkerResponses];
+
+export type RemoveWorkerData = {
+    body?: never;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}';
+};
+
+export type RemoveWorkerErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type RemoveWorkerError = RemoveWorkerErrors[keyof RemoveWorkerErrors];
+
+export type RemoveWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type RemoveWorkerResponse = RemoveWorkerResponses[keyof RemoveWorkerResponses];
+
+export type ChangeWorkerData = {
+    body: WorkerEdit;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}';
+};
+
+export type ChangeWorkerErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type ChangeWorkerError = ChangeWorkerErrors[keyof ChangeWorkerErrors];
+
+export type ChangeWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkerSaved;
+};
+
+export type ChangeWorkerResponse = ChangeWorkerResponses[keyof ChangeWorkerResponses];
+
+export type SwitchWorkerData = {
+    body: WorkerSwitches;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}/switches';
+};
+
+export type SwitchWorkerErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type SwitchWorkerError = SwitchWorkerErrors[keyof SwitchWorkerErrors];
+
+export type SwitchWorkerResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type SwitchWorkerResponse = SwitchWorkerResponses[keyof SwitchWorkerResponses];
 
 export type CloseCentrumData = {
     body?: never;

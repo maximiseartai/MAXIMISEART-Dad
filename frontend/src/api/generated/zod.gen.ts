@@ -30,6 +30,10 @@ export const zApiTiming = z.object({
     operation: z.enum([
         'getHealth',
         'getSettings',
+        'addWorker',
+        'changeWorker',
+        'switchWorker',
+        'removeWorker',
         'chooseRegister',
         'openRegister',
         'choosePeriodsDirectory',
@@ -2323,6 +2327,31 @@ export const zWithoutQuantityUnread = z.object({
 });
 
 /**
+ * WorkerEdit
+ *
+ * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
+ * ``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to.
+ */
+export const zWorkerEdit = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string()),
+    rename_confirmed: z.boolean().optional().default(false)
+});
+
+/**
+ * WorkerForm
+ *
+ * Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu
+ * pracownika i adresy Raportów wykonawcy, tak jak je wpisał tata.
+ */
+export const zWorkerForm = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string())
+});
+
+/**
  * WorkerListSetting
  *
  * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
@@ -2397,6 +2426,19 @@ export const zInboxPasswordSaved = z.object({
         'rejected',
         'no_network'
     ])
+});
+
+/**
+ * WorkerSaved
+ *
+ * Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,
+ * które zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy
+ * (``rename_confirmed``).
+ */
+export const zWorkerSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    rename_warning: z.string().nullish()
 });
 
 /**
@@ -2651,6 +2693,17 @@ export const zRunEvent = z.object({
  */
 export const zWorkerSettlementRequest = z.object({
     worker: z.string()
+});
+
+/**
+ * WorkerSwitches
+ *
+ * Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo
+ * ``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik.
+ */
+export const zWorkerSwitches = z.object({
+    active: z.boolean().nullish(),
+    reminders: z.boolean().nullish()
 });
 
 /**
@@ -3445,6 +3498,44 @@ export const zChangeThemeBody = zThemeChange;
  * Successful Response
  */
 export const zChangeThemeResponse = zChoice;
+
+export const zAddWorkerBody = zWorkerForm;
+
+/**
+ * Successful Response
+ */
+export const zAddWorkerResponse = zChoice;
+
+export const zRemoveWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveWorkerResponse = zChoice;
+
+export const zChangeWorkerBody = zWorkerEdit;
+
+export const zChangeWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeWorkerResponse = zWorkerSaved;
+
+export const zSwitchWorkerBody = zWorkerSwitches;
+
+export const zSwitchWorkerPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zSwitchWorkerResponse = zChoice;
 
 /**
  * Successful Response

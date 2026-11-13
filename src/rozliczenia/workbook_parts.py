@@ -54,6 +54,7 @@ którego to przepisanie nie zna, tabela i arkusze zostają bez zmian.
 
 from __future__ import annotations
 
+import html
 import math
 import posixpath
 import re
@@ -556,6 +557,72 @@ def sheet_cells(row_xml: bytes) -> list[SheetCell]:
 
 def row_tag(xml: bytes, row: SheetRow) -> bytes:
     return xml[row.start : xml.index(b">", row.start) + 1]
+
+
+# --- jedna kolumna arkusza ----------------------------------------------------------------------
+
+_SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
+_PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
+
+
+class SharedStrings:
+    """Teksty wspólne bez podpowiedzi wymowy (``rPh``): zwykły tekst albo tekst każdego fragmentu.
+
+    Tekst powstaje dopiero, gdy komórka po niego sięga: INTERMAX taty ma dziesiątki tysięcy tekstów wspólnych, a
+    Uporządkowanie czyta kilkaset wierszy z dołu arkusza. Granice ``<si>`` daje ``shared_string_spans``: zepsuta część
+    to ``ExpatError``, a tabela w kształcie, którego granic nie zna, ``ValueError``, czyli w obu przypadkach nieczytelny
+    skoroszyt.
+    """
+
+    def __init__(self, xml: bytes) -> None:
+        self._xml = xml
+        try:
+            self._items = shared_string_spans(xml)
+        except UnsupportedShape as error:
+            raise ValueError(str(error)) from error
+        self._texts: dict[int, str] = {}
+
+    def __getitem__(self, index: int) -> str:
+        if index not in self._texts:
+            item = _PHONETIC.sub(b"", self._xml[slice(*self._items[index])])
+            self._texts[index] = html.unescape(b"".join(_SHARED_TEXT.findall(item)).decode("utf-8"))
+        return self._texts[index]
+
+
+def column_texts(xml: bytes, column: int, first_row: int, shared: SharedStrings) -> Iterator[tuple[int, str]]:
+    """Numer wiersza i tekst każdej komórki z wartością w kolumnie ``column`` (od 1) arkusza ``xml`` od wiersza
+    ``first_row``, w kolejności z pliku, bez openpyxl i bez dzielenia arkusza na wiersze: tekst wspólny z ``shared``,
+    tekst w komórce, a wartość innego typu (liczba, wynik formuły) jej zapisem z XML.
+
+    Komórkę kolumny poznaje jej adres ``r``, więc kształt musi być ten, który zapisują Excel i openpyxl (``SheetData``):
+    jeden ``<sheetData>``, ``r`` jako pierwszy atrybut każdej komórki i wiersza, bez komentarzy ani CDATA. Inny kształt to
+    ``IrregularSheetData``: komórka bez ``r`` albo w komentarzu zniknęłaby z odczytu bez śladu.
+    """
+
+    start, end = _sheet_data_bounds(xml)
+    if xml.find(b"<!", start, end) >= 0:
+        raise IrregularSheetData("komentarz albo CDATA")
+    if _WITHOUT_LEADING_R.search(xml, start, end):
+        raise IrregularSheetData("r")
+    cell = re.compile(rb'<c r="' + get_column_letter(column).encode("ascii") + rb'(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
+    for found in cell.finditer(xml, start, end):
+        row = int(found.group(1))
+        if row < first_row:
+            continue
+        text = _cell_text(SheetCell(column, found.group(2), found.group(3)), shared)
+        if text is not None:
+            yield row, text
+
+
+def _cell_text(cell: SheetCell, shared: SharedStrings) -> str | None:
+    if cell.kind == b"inlineStr":
+        return html.unescape(b"".join(_SHARED_TEXT.findall(cell.content or b"")).decode("utf-8"))
+    raw = cell.value
+    if raw is None:
+        return None
+    if cell.kind == b"s":
+        return shared[int(raw)]
+    return html.unescape(raw.decode("utf-8"))
 
 
 def row_attributes(tag: bytes) -> dict[bytes, bytes]:

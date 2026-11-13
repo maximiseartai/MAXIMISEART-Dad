@@ -10,8 +10,8 @@ from rozliczenia.centrum.settings.files import FieldPath
 SAVE_AGAIN: Final = "Zapisz Ustawienia jeszcze raz."
 """Naprawa złego pliku, który zapis taty w oknie Ustawień pisze od nowa z ostatniej dobrej wartości."""
 MAKS_FIXES: Final = "Poprawia go Maks."
-"""Naprawa złego pliku, którego tata nie zmienia w oknie Ustawień: Lista Wykonawców, dopóki sekcja Wykonawcy jest tylko
-do odczytu (edycja w #1474)."""
+"""Naprawa złego pliku Listy Wykonawców: zła treść bierze się z ręcznej zmiany Maksa w ``config``, a zmiana taty w
+sekcji Wykonawcy zapisałaby plik od nowa z ostatniej dobrej listy (zła treść trafia wtedy do ``odrzucone``)."""
 
 
 def not_text(file: str, repair: str = SAVE_AGAIN) -> str:
@@ -94,6 +94,26 @@ def worker_address_invalid() -> str:
 
 def worker_address_repeated() -> str:
     return "Ten adres jest już na Liście Wykonawców. Jeden adres należy do jednego Wykonawcy."
+
+
+def worker_unknown() -> str:
+    return "Tego Wykonawcy nie ma już na Liście Wykonawców. Zamknij formularz i sprawdź listę."
+
+
+def worker_list_changed() -> str:
+    return "Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz."
+
+
+def worker_rename_old_files(periods: tuple[str, ...]) -> str:
+    """Ostrzeżenie przed zmianą nazwy: ``periods`` to tokeny okresów (od najnowszego) z Rozliczeniem pracownika o starej
+    nazwie; zdanie podaje ich liczbę i najnowszy."""
+
+    count = len(periods)
+    where = f"w okresie {periods[0]}" if count == 1 else f"w {count} okresach, ostatnio {periods[0]}"
+    return (
+        f"Rozliczenie pracownika ze starą nazwą jest już {where}. Ten plik zostanie ze starą nazwą, a nowa będzie w "
+        "plikach następnych Przebiegów rozliczeń."
+    )
 
 
 def workers_not_moved(old_file: str, reason: str) -> str:

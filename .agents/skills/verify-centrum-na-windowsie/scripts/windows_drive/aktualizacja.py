@@ -12,10 +12,11 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from windows_drive.common import Run, open_settings, settings_section, wait_for
+from windows_drive.common import Run, wait_for
 from windows_drive.start_skrotem import check_windowless, start_dialogs
 import windows_desktop
 import windows_tool
+from drive.common import open_settings, settings_section
 from rozliczenia.centrum.tool_update import JOURNAL, RESULT_FILE
 from rozliczenia.tool_files import config_dir
 
@@ -67,7 +68,8 @@ def _click_update(run: Run, page: Page) -> tuple[dict[str, object], int]:
     pid = run.centrum_process().pid
     page.goto(run.url)
     page.reload()
-    section = open_settings(page, "Narzędzie")
+    open_settings(page, "Narzędzie")
+    section = settings_section(page)
     expect(
         section,
         "the button needs the real GitHub API to name a Wydanie the run's clone lacks (ADR 0014, #319); "

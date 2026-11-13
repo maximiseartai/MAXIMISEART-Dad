@@ -365,7 +365,7 @@ def due_reminders(
     window = Window.of(today, rollout, closed)
     try:
         register = register_file.read(settings.register, files, despite_excel_lock=True)
-        orders = register_orders(register, window.first, copy=False)
+        orders = register_orders(register, window.first, copy=False, workers=addresses)
     except (WorkbookError, StopError) as error:
         return NotRead("intermax", type(error).__name__)
     mails = mailbox.mails_since(window.first)
