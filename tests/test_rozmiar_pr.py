@@ -1,10 +1,14 @@
 """Etykieta rozmiaru PR (``tools/ci/rozmiar_pr.py``, workflow ``rozmiar-pr.yml``): progi z t3code, efektywne linie od
-bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR."""
+bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR.
+Licznik szopy (ADR 0034): grupę pliku daje reguła katalogu, a lista dwóch szop bazy tylko wyjątki od niej; licznik podaje
+linie maszynerii procesu i weryfikacji produktu osobno oraz dwa stosunki testów do ``src``, a atrybuty ``.gitattributes``
+nie zmieniają jego liczb."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+import re
 from typing import Any
 
 import pytest
@@ -178,3 +182,163 @@ def test_etykieta_z_innym_opisem_albo_kolorem_dostaje_opis_i_kolor_progu() -> No
             )
         ],
     )
+
+
+_LISTA = """[weryfikacja]
+"tools/lib/atrapa.py" = []
+"tools/lib/atrapy/" = []
+
+[maszyneria]
+"tools/bramka.py" = ["tests/test_bramka.py"]
+"""
+
+
+@pytest.fixture
+def szopa(tmp_path: Path) -> Path:
+    """Repozytorium z listą ``_LISTA`` na gałęzi ``main`` i gałęzią ``pr`` z niej."""
+
+    git(tmp_path, "init", "--quiet", "--initial-branch", "main")
+    _zapisz(
+        tmp_path,
+        {
+            "src/stary.py": _linie(20),
+            "tests/test_stary.py": _linie(5),
+            "tools/bramka.py": _linie(30),
+            "tests/test_bramka.py": _linie(10),
+            "tools/lib/atrapa.py": _linie(10),
+            "tools/lib/atrapy/stara.py": _linie(10),
+            "tools/inna.py": _linie(60),
+            rozmiar_pr.LISTA: _LISTA,
+        },
+    )
+    commit(tmp_path, "baza")
+    git(tmp_path, "switch", "--quiet", "--create", "pr")
+    return tmp_path
+
+
+def _szopa(repo: Path) -> str:
+    return rozmiar_pr.zmierz_szope(repo, "main", "pr").opis()
+
+
+def test_licznik_szopy_liczy_weryfikacje_z_listy_i_reguly_a_produkt_tylko_w_stosunkach_bez_prozy(szopa: Path) -> None:
+    _zapisz(
+        szopa,
+        {
+            "src/stary.py": _linie(35),
+            "tests/test_nowy.py": _linie(40),
+            "tools/lib/atrapa.py": _linie(16),
+            "tools/lib/atrapy/nowa.py": _linie(7),
+            "tools/OPIS.md": _linie(50),
+        },
+    )
+    commit(szopa, "produkt")
+
+    assert _szopa(szopa) == (
+        "maszyneria procesu z testami +0 -0, weryfikacja produktu z testami +13 -0"
+        ", testy zachowania src / src 45/35 = 1,29, testy szopy / src 10/35 = 0,29"
+    )
+
+
+def test_licznik_szopy_liczy_maszynerie_z_jej_testami_z_listy_i_nowy_plik_narzedzi_z_reguly_katalogu(szopa: Path) -> None:
+    _zapisz(
+        szopa,
+        {"tools/bramka.py": _linie(18), "tests/test_bramka.py": _linie(10) + _linie(8, "y"), "tools/nowa.py": _linie(5)},
+    )
+    commit(szopa, "maszyneria")
+
+    assert _szopa(szopa) == (
+        "maszyneria procesu z testami +13 -12, weryfikacja produktu z testami +0 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 18/20 = 0,90"
+    )
+
+
+def test_nowe_pliki_testow_narzedzi_i_skilli_bez_wpisu_na_liscie_biora_grupe_z_reguly_katalogu(szopa: Path) -> None:
+    # Testy: produkt; tools/: maszyneria; skill verify-*: weryfikacja; inny skill: maszyneria; docs/: poza szopą.
+    _zapisz(
+        szopa,
+        {
+            "tests/test_cos.py": _linie(7),
+            "tools/lib/cos.py": _linie(4),
+            ".agents/skills/verify-cos/scripts/cos.py": _linie(9),
+            ".agents/skills/pr/scripts/cos.py": _linie(2),
+            "docs/cos.py": _linie(6),
+        },
+    )
+    commit(szopa, "nowe pliki bez wpisu")
+
+    assert _szopa(szopa) == (
+        "maszyneria procesu z testami +6 -0, weryfikacja produktu z testami +9 -0"
+        ", testy zachowania src / src 12/20 = 0,60, testy szopy / src 10/20 = 0,50"
+    )
+
+
+def test_przeniesienie_pliku_maszynerii_do_weryfikacji_widac_w_liczbach_obu_grup(szopa: Path) -> None:
+    git(szopa, "mv", "tools/inna.py", "tools/lib/atrapy/inna.py")
+    commit(szopa, "maszyneria do weryfikacji")
+
+    assert _szopa(szopa) == (
+        "maszyneria procesu z testami +0 -60, weryfikacja produktu z testami +60 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+    )
+
+
+def test_pr_liczy_grupy_wedlug_listy_bazy_a_nastepny_pr_wedlug_listy_po_scaleniu(szopa: Path) -> None:
+    _zapisz(
+        szopa,
+        {
+            rozmiar_pr.LISTA: '[weryfikacja]\n"tools/lib/atrapa.py" = []\n"tools/lib/atrapy/" = []\n"tools/bramka.py" = ["tests/test_bramka.py"]\n',
+            "tools/bramka.py": _linie(30) + _linie(40, "y"),
+        },
+    )
+    commit(szopa, "bramka w weryfikacji")
+    zmiana_listy = _szopa(szopa)
+    git(szopa, "branch", "--force", "main", "pr")
+    _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(45, "y")})
+    commit(szopa, "więcej bramki")
+
+    assert (zmiana_listy, _szopa(szopa)) == (
+        "maszyneria procesu z testami +40 -0, weryfikacja produktu z testami +0 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50",
+        "maszyneria procesu z testami +0 -0, weryfikacja produktu z testami +5 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50",
+    )
+
+
+@pytest.mark.parametrize(
+    ("plik", "atrybuty"),
+    [
+        (".gitattributes", "tools/bramka.py -diff\n"),
+        (".gitattributes", "tools/** binary\nsrc/** binary\ntests/** binary\n"),
+        ("tools/.gitattributes", "bramka.py -diff\n"),
+        ("atrybuty-z-konfiguracji", "* binary\n"),
+    ],
+    ids=["diff-na-pliku-maszynerii", "binary-na-katalogach-szopy-i-src", "diff-w-podkatalogu", "plik-z-core-attributesfile"],
+)
+def test_atrybut_diff_albo_binary_spoza_bajtow_pliku_nie_zeruje_linii_licznika_szopy(szopa: Path, plik: str, atrybuty: str) -> None:
+    # Przegląd #1646 r3, W1: jedna linia .gitattributes na main zerowała numstat każdego kolejnego PR.
+    _zapisz(szopa, {plik: atrybuty})
+    if plik == "atrybuty-z-konfiguracji":
+        git(szopa, "config", "core.attributesFile", str(szopa / plik))
+    commit(szopa, "atrybuty")
+    git(szopa, "branch", "--force", "main", "pr")
+    _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(40, "y"), "tools/zrzut.bin": "a\0b\n" * 3})
+    commit(szopa, "więcej bramki i plik binarny")
+
+    assert _szopa(szopa) == (
+        "maszyneria procesu z testami +40 -0, weryfikacja produktu z testami +0 -0"
+        ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+    )
+
+
+@pytest.mark.parametrize(
+    ("tekst", "blad"),
+    [
+        ('[inna]\n"tools/a.py" = []\n', "tabela [inna] nie jest grupą listy"),
+        ('[maszyneria]\n"tools/a.py" = "tests/test_a.py"\n', "jednostka tools/a.py ma mieć listę plików testów"),
+        ('[produkt]\n"src/" = ["tests/test_a.py"]\n[maszyneria]\n"tools/a.py" = ["tests/test_a.py"]\n', "tests/test_a.py stoi na liście dwa razy"),
+    ],
+    ids=["obca-tabela", "testy-nie-lista", "powtorzony-wpis"],
+)
+def test_lista_dwoch_szop_innego_ksztaltu_albo_z_powtorzonym_wpisem_to_blad(tekst: str, blad: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(blad)):
+        rozmiar_pr.wpisy(tekst)

@@ -24,6 +24,10 @@ wymaga_ruff_i_mypy = pytest.mark.skipif(
     importlib.util.find_spec("ruff") is None or importlib.util.find_spec("mypy") is None,
     reason="znane luki ocenia prawdziwy ruff i mypy z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt",
 )
+wymaga_ruff = pytest.mark.skipif(
+    importlib.util.find_spec("ruff") is None,
+    reason="znane luki ocenia prawdziwy ruff z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt",
+)
 
 
 def zapisz(probki: Mapping[str, str], katalog: Path) -> dict[str, Path]:

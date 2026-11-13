@@ -98,9 +98,8 @@ TEST_FILES = ("test_*.py", "*_test.py")
 _RUN_ALL = (
     # Konfiguracja pytest i narzędzi (#305) i biblioteki zadań kroków skilli, które instalują dodatek dev (#293).
     _Rule("pyproject.toml", frozenset({_TESTS, _GATE, _SKILLS})),
-    # Biblioteki testów (#305) i kroki skilli (#293) z czasu, gdy zadania mutacji instalowały tylko je; zdjęcie kroków
-    # skilli stąd zwęża bramkę PR, więc czeka na zgodę Maksa (ADR 0020).
-    _Rule("requirements.txt", frozenset({_TESTS, _GATE, _SKILLS})),
+    # Biblioteki testów (#305); zadania kroków skilli z nich nie instalują (test_zadania_ci), więc kroków nie wybierają.
+    _Rule("requirements.txt", frozenset({_TESTS, _GATE})),
     # conftest każdego testu (#305) i fixture gita, którą wczytuje dla całej sesji (#360).
     _Rule("tests/conftest.py", frozenset({_TESTS, _GATE})),
     _Rule("tests/fixtures/git_config.py", frozenset({_TESTS, _GATE})),
