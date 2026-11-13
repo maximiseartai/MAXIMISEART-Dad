@@ -12,6 +12,7 @@ Zmieniona 6.11 (#935, Maks 5.11: „gotowe dla agenta”): ostrzeżenie `CZAS BL
 Zmieniona 6.11 (przegląd architektury 6.11, decyzja koordynatora w trybie auto Maksa): ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od`, jak części (sekcja Decyzja).
 Zmieniona 12.11 (#1339, bieg issues w trybie auto Maksa): mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS`, trafia do issue z dopiskiem, że noc nie dała jej werdyktu, a nie jako przeżyta; dalej nie jest wykryta (sekcje Decyzja i Odrzucone warianty).
 Zmieniona 12.11 (hillclimb CI, budżet Maksa z 12.11: najwyżej 20 zadań nocy naraz): noc zajmuje najwyżej 17 zadań części i 3 zadania skryptów skilli naraz, a części startują od najdroższej według pracy testów na `main` (sekcje Decyzja i Odrzucone warianty).
+Zmieniona 13.11 (Z4, zgoda Maksa): test, który w części pada bez mutacji, biegnie raz jeszcze jak w bramce PR, a gdy przejdzie, część mutuje dalej, a test dostaje issue `Flaky test:` (sekcje Decyzja i Konsekwencje).
 
 ## Kontekst
 
@@ -78,7 +79,11 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   Takie cofnięcie trafia do issue jak przed bramą, a gdy zmiana była tylko typów (#671, #674), agent odpowiada `nie warto`.
   Ręczne zamiany `check_all` skryptów mutacji skilli brama sprawdza tak samo jak mutacje operatorów.
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
-- Część, która nie dała wyniku (testy padają albo nie kończą się w limicie części bez mutacji, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
+- Testy, które w części padły bez mutacji, biegną raz jeszcze, tym samym `niestabilne_testy.ponow` co w bramce PR (ADR 0020): najwyżej 5 testów, każdy z id, które da się zgłosić w issue, z zapisem pokrycia jak w pierwszym przebiegu.
+  Gdy każdy przejdzie, część mutuje dalej, a testy trafiają do artefaktu `flaky-testy-mutacje-<część>`, z którego `zgloszenia.yml` po runie nocy zakłada albo komentuje issue `Flaky test: <test>`, tak jak po runie CI.
+  W nocach 3–8.11 (runy 41601085650, 41793945765, 42185360488, 42351341369, 42459531620) 6 części padło w przebiegu bez mutacji, każda na jednym teście, który okazał się flaky testem albo testem losowo czerwonym (wyścig, termin, uuid4 z numerem, pomiar czasu na wolnym runnerze).
+  Każdą z nich ponowienie by objęło, więc noce 4, 6, 7 i 8.11 byłyby zielone, o ile ten test za drugim razem przeszedł; 3.11 zostałaby czerwona przez 16 części na limicie czasu części.
+- Część, która nie dała wyniku (testy padają bez mutacji także po ponowieniu albo nie kończą się w limicie części, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
   Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
   Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji albo sprawdzenie zmieniło się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`, a pełne CI `main` dalej uruchamia każdy skrypt.
@@ -114,6 +119,8 @@ Luka w teście nie jest defektem, który trafi do taty: ten zatrzymuje Wydanie z
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
 - Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
 - Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc powtarza jego zakres.
+- Prawdziwa porażka, która przechodzi za drugim razem, nie czerwieni nocy, tylko daje issue `Flaky test:`; pilnuje jej dalej pełne CI `main`, które Wydanie wymaga zielonego.
+  Flaky test zostaje w testach mutacji części, więc jego porażka po mutacji może policzyć mutację jako wykrytą i schować lukę w testach do następnej zmiany tej linii.
 
 ## Odrzucone warianty
 
