@@ -46,6 +46,10 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_zakazy_ruff.py::test_wpisy_procesow_tylko_u_katalogu_procesow_takze_z_noqa": (
+        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a import wpisu procesu "
+        "bez noqa w src, tests, tools i skryptach skilli łapie ruff check przy każdym szybko"
+    ),
 }
 
 # Strażnicy reguł, których komunikat mówi regułę: biegną przy każdym ``tools/szybko.py``, z wierszem tabeli reguł
