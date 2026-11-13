@@ -155,6 +155,44 @@ def test_test_nie_jest_dotkniety_zmiana_pliku_ktorego_nie_uzywa(tmp_path: Path, 
     assert untouched not in Repository.scan(repo).impact(frozenset({changed})).tests
 
 
+FIXTURE_READING_EXPECTED = (
+    "import pytest\nfrom pathlib import Path\n\n\n@pytest.fixture\ndef oczekiwany() -> str:\n"
+    "    return Path('tests/expected/a.txt').read_text()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "fixture_files",
+    [
+        {"tests/conftest.py": FIXTURE_READING_EXPECTED},
+        {
+            "tests/conftest.py": "pytest_plugins = ['tests.fixtures.wtyczka']\n",
+            "tests/fixtures/__init__.py": "",
+            "tests/fixtures/wtyczka.py": FIXTURE_READING_EXPECTED,
+        },
+    ],
+    ids=["fixture z tests/conftest.py", "fixture z modułu w pytest_plugins"],
+)
+def test_test_nie_widzi_pliku_spod_tests_ktory_czyta_fixture_brana_po_nazwie(
+    tmp_path: Path, fixture_files: dict[str, str]
+) -> None:
+    """Granica wyboru z docstringu ``_package_data``: graf widzi ścieżkę pliku spod ``tests/`` tylko w pliku testu i
+    w modułach, które test importuje, a fixture test bierze po nazwie parametru. Ten test pada, gdy graf zacznie ją
+    widzieć; wtedy przenieś próbki do ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy`` i zmień docstring."""
+
+    repo = _repo(
+        tmp_path,
+        {
+            "tests/__init__.py": "",
+            "tests/expected/a.txt": "komunikat\n",
+            "tests/test_x.py": "def test_x(oczekiwany: str) -> None:\n    assert oczekiwany\n",
+            **fixture_files,
+        },
+    )
+
+    assert "tests/test_x.py" not in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
+
+
 def test_plik_testow_z_koncowka_test_jest_wybierany_jak_plik_z_przedrostkiem_a_modul_pomocniczy_nie(tmp_path: Path) -> None:
     """Plik testów to plik, który pytest zbiera (domyślne ``python_files``: ``test_*.py`` i ``*_test.py``), więc wybór
     na pull request bierze ``tests/a_test.py`` tak samo jak pełne CI ``main``, a moduł obok bez takiej nazwy i plik z taką

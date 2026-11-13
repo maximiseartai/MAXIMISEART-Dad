@@ -502,13 +502,13 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
     (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
 
-    Test, który czyta plik spod ``tests/``, jest więc wybierany tylko, gdy graf widzi ścieżkę. Widzi napis
-    ``"tests/expected/a.txt"``, części od korzenia z liczoną nazwą pliku (``ROOT / "tests" / "expected" / f"{n}.txt"``),
-    stałą katalogu z liczonym podkatalogiem (``EXPECTED / n / "a.txt"``), glob na takim katalogu oraz
-    ``Path(__file__).parent / "expected" / "a.txt"``, ``str()`` i ``os.path.join`` z samych literałów. Nie widzi
-    ``Path(__file__).parent / "expected" / f"{n}.txt"``, ``os.walk`` katalogu (także ``os.walk(str(...))``),
-    ``os.path.join`` z liczoną częścią ani liczonych naraz podkatalogu i pliku (``EXPECTED / n / f"{m}.txt"``): taki test
-    wypada z wyboru na pull request i łapie go dopiero CI ``main``."""
+    Test, który czyta plik spod ``tests/``, jest więc wybierany tylko, gdy graf widzi jego ścieżkę, a graf widzi ją tylko
+    jako napis albo wyrażenie z literałów (``sciezki_w_kodzie``) w pliku testu i w modułach, które test importuje. Nie
+    widzi fixture z ``tests/conftest.py`` ani z modułu z ``pytest_plugins``, bo test bierze ją po nazwie parametru, a nie
+    importem (``def test_x(oczekiwany)``, choć fixture czyta ``Path("tests/expected/a.txt")``). Ścieżkę liczoną w czasie
+    testu (``os.walk`` katalogu, liczona część w ``os.path.join`` albo po ``Path(__file__)``) widzi tylko w części form.
+    Taki test wypada z wyboru na pull request i łapie go dopiero CI ``main``; próbki granicy stoją w
+    ``test_test_nie_widzi_pliku_spod_tests_ktory_czyta_fixture_brana_po_nazwie``."""
 
     packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)
