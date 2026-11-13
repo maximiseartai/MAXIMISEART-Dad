@@ -441,11 +441,12 @@ already performs both checks and prints `scratch_removed=true`.
 - `scripts/assert_chain.py` checks the Przebieg rozliczeń of `chain` against
   the Plik zbiorczy it read: worker routing and order, `A:AT` equality of values apart from the empty Ilości tylko dla INEA,
   Wyróżnienia and Hiperłącza, the number format and Wygląd Wiersza danych in A:L, the Rejestr Hiperłącze in `NUMER ZL.`, Gotowość entries, no Zlecenie nieskuteczne, the preserved Wzorzec rozliczenia
-  pracownika, unchanged inputs and period files, the JSON result, and metrics.
+  pracownika, unchanged inputs and period files, the JSON result, and metrics with every file by copy of its
+  Wzorzec; `--templates config` drops the check that the synthetic Wzorzec has values beyond its active sheet.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_chain.py --root "$runRoot" --expect run --result "$evidenceRoot\settlement-run.json"`.
 - `scripts/wynik_uruchomienia.py` is what the three `assert_*.py` share: it
   loads a step's JSON result as `ProcessResult` and holds the metrics,
-  Hiperłącza, and external-link readers. Alone it checks one evidence file and
+  Hiperłącza, and external-link readers and the `routes` of a run with every file by copy (`by_copy`). Alone it checks one evidence file and
   names the fields that do not match the contract, never their values.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\wynik_uruchomienia.py --result "$evidenceRoot\run.json"`.
 - `scripts/create_intermax_fixture.py` creates the synthetic INTERMAX with one

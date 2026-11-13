@@ -31,6 +31,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 
 __all__ = [
     "Link",
+    "by_copy",
     "ProcessResult",
     "check_metrics",
     "external_link_parts",
@@ -102,6 +103,13 @@ def load_result(
 
 def figures(items: Sequence[runs_contract.Figure]) -> list[tuple[str, int]]:
     return [(figure.label, figure.value) for figure in items]
+
+
+def by_copy(*, worker_settlement: int = 0, collective_file: int = 0, internal_settlement: int = 0) -> dict[str, dict[str, int]]:
+    """``routes`` of a metrics record whose every written file is a copy of its Wzorzec, none by openpyxl (ADR 0008)."""
+
+    copies = {"worker_settlement": worker_settlement, "collective_file": collective_file, "internal_settlement": internal_settlement}
+    return {name: {"kopia": count, "openpyxl": 0} for name, count in copies.items()}
 
 
 def check_metrics(

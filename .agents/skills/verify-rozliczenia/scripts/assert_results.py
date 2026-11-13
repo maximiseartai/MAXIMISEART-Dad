@@ -14,7 +14,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from wynik_uruchomienia import Link, ProcessResult, check_metrics, figures, finish, hyperlinks, load_result, runs_contract
+from wynik_uruchomienia import Link, ProcessResult, by_copy, check_metrics, figures, finish, hyperlinks, load_result, runs_contract
 from skrypt_skilla import Parser
 
 from atrapy.scenariusz_rozliczen import (
@@ -142,13 +142,6 @@ _NAMING_UNMAPPED = (("BRAK_MAPOWANIA", _UNMAPPED), ("NIEZNANY_WYKONAWCA", _UNMAP
 
 def _check_metrics(root: Path, expected: list[tuple[str, str]], errors: list[str]) -> None:
     check_metrics(root / "metrics.jsonl", root, period=PERIOD, expected=expected, row_content=_ROW_CONTENT, errors=errors)
-
-
-def _routes(copies: int) -> dict[str, dict[str, int]]:
-    """``routes`` of a settlement record: ``copies`` Rozliczenia pracownika by copy, no other file (ADR 0008)."""
-
-    none = {"kopia": 0, "openpyxl": 0}
-    return {"worker_settlement": {"kopia": copies, "openpyxl": 0}, "collective_file": none, "internal_settlement": none}
 
 
 def _check_stop_metrics(root: Path, expected_stop: str, errors: list[str]) -> None:
@@ -285,7 +278,7 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
         root / "metrics.jsonl", root, period=PERIOD, expected=[("DRY-RUN", "OK"), ("RUN", "OK")],
         row_content=_ROW_CONTENT, errors=errors,
     )
-    if [record.get("routes") for record in records] != [_routes(0), _routes(len(WORKER_NAMES))]:
+    if [record.get("routes") for record in records] != [by_copy(), by_copy(worker_settlement=len(WORKER_NAMES))]:
         errors.append("metrics records do not count each written Rozliczenie pracownika as a copy of the Wzorzec")
 
     return finish(

@@ -413,6 +413,8 @@ def _run_chain_workflow(
             str(run_root),
             "--expect",
             mode,
+            "--templates",
+            templates,
             "--result",
             str(evidence_root / f"settlement-{mode}.json"),
         ]

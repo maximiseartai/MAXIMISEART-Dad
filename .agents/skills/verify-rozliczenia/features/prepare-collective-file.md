@@ -16,7 +16,7 @@ Centrum it runs as `tools/uruchom_proces.py preparation`.
 - `preparation-links` keeps every `xl/externalLinks/*` part of the Wzorzec pliku zbiorczego byte-identical.
 - `preparation-safety` leaves the Rejestr and both Wzorce byte-identical and leaves no staging directory.
 - `preparation-real-templates` (local only) runs the same Rejestr into copies of the real Wzorce from `config/`: data font equals the header font, Wzorzec cells outside the written rows are unchanged, Wzorce and external links are byte-identical.
-- `preparation-metrics` appends to its own history with counters `period_orders`, `successful_orders`, `skipped_empty_rows`, `warnings`, and `routes` with the Rozliczenie wewnętrzne and the Plik zbiorczy each by `kopia` or `openpyxl` (`openpyxl` when the copy refuses the Wzorzec, ADR 0008) (`preparation_files.write_period_files`); `assert_preparation.py` does not check `routes`.
+- `preparation-metrics` appends to its own history with counters `period_orders`, `successful_orders`, `skipped_empty_rows`, `warnings`, and `routes` with the Rozliczenie wewnętrzne and the Plik zbiorczy each by `kopia` or `openpyxl` (`openpyxl` when the copy refuses the Wzorzec, ADR 0008) (`preparation_files.write_period_files`); `assert_preparation.py` requires both by `kopia`, for the synthetic and the real Wzorce.
 
 ## How to get to it (user POV)
 

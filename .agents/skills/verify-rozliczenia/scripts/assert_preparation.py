@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from wynik_uruchomienia import (
+    by_copy,
     check_metrics,
     external_link_parts,
     figures,
@@ -184,13 +185,17 @@ def _check_result(result_path: Path | None, mode: str, errors: list[str]) -> Non
 
 
 def _check_metrics(root: Path, metrics: Path, modes: list[str], errors: list[str]) -> None:
-    """Every record is a completed run of the period with its mode's result and the synthetic Rejestr's counters."""
+    """Every record is a completed run of the period with its mode's result and the synthetic Rejestr's counters,
+    and the write made both period files as copies of their Wzorce."""
 
     expected = [(mode, EXPECTED_RESULT[mode]) for mode in modes]
     records = check_metrics(metrics, root, period=PERIOD, expected=expected, row_content=(ROW_MARKER,), errors=errors)
     for record in records:
         if record.get("counters") != EXPECTED_COUNTERS:
             errors.append("metrics counters do not match the synthetic Rejestr")
+    routes = {"DRY-RUN": by_copy(), "RUN": by_copy(collective_file=1, internal_settlement=1)}
+    if [record.get("routes") for record in records] != [routes[mode] for mode in modes]:
+        errors.append("metrics records do not count both period files as copies of their Wzorce")
 
 
 def _assert_dry_run(root: Path, metrics: Path, result_path: Path | None) -> int:

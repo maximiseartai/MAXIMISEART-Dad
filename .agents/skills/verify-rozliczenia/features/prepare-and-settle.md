@@ -17,9 +17,9 @@ own synthetic input; only this one hands the output of one process to the other.
 - `chain-row-look` gives `A:L` of those rows the number format of the Plik zbiorczy cell and the Wygląd Wiersza danych: font face and size of the Wzorzec's header cell, left and centre alignment, wrapping only for text with a line break, a thin automatic border, and no stored row height.
 - `chain-hyperlinks` carries the Hiperłącze of every Rejestr `NUMER ZL.` cell through the Plik zbiorczy into each Rozliczenie pracownika: the `A:AT` hyperlinks of every Wiersz danych equal its Plik zbiorczy row, whose `NUMER ZL.` holds the Rejestr address, and hyperlinks outside the Wiersze danych stay from the Wzorzec rozliczenia pracownika.
 - `chain-unsuccessful` keeps the Zlecenie nieskuteczne in the Rozliczenie wewnętrzne only, out of the Plik zbiorczy and every Rozliczenie pracownika.
-- `chain-preserve` leaves the sheet names and every stored value and hyperlink of the Wzorzec rozliczenia pracownika outside the Wiersze danych unchanged in each Rozliczenie pracownika, with byte-identical external links.
+- `chain-preserve` leaves the sheet names and every stored value and hyperlink of the Wzorzec rozliczenia pracownika outside the Wiersze danych unchanged in each Rozliczenie pracownika, with byte-identical external links; the synthetic Wzorzec has a `Stawki` sheet with values beyond the active one, and the check fails without it.
 - `chain-safety` leaves the Rejestr zleceń and all three Wzorce byte-identical, and the Przebieg rozliczeń leaves the Rozliczenie wewnętrzne and the Plik zbiorczy byte-identical.
-- `chain-metrics` appends one `DRY-RUN` and one `RUN` record to the history of each process.
+- `chain-metrics` appends one `DRY-RUN` and one `RUN` record to the history of each process; each `RUN` counts every file it wrote as a copy of its Wzorzec in `routes`, none by `openpyxl` (ADR 0008).
 - `chain-real-templates` (local only) runs the same path on byte copies of the three real Wzorce from `config/`.
 
 ## How to get to it (user POV)
@@ -31,7 +31,7 @@ own synthetic input; only this one hands the output of one process to the other.
 
 Preconditions:
 
-- The orchestrator builds the `preparation` fixture plus a synthetic Wzorzec rozliczenia pracownika in the same layout as the Wzorzec pliku zbiorczego, with its own rate and an external link, and the same three-worker mapping, under a fresh run root.
+- The orchestrator builds the `preparation` fixture plus a synthetic Wzorzec rozliczenia pracownika in Dad's shape from `tools/lib/atrapy/wzorce.py` (`GODZINA` in A17, its own rate, an external link, a `Stawki` sheet beyond the active one), and the same three-worker mapping, under a fresh run root.
 
 - **Run the proof.** Run `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant chain`. It runs the fixture, the doctor with `--with-worker-template`, the Przygotowanie dry-run and write with `assert_preparation.py`, `fill_readiness.py`, the Przebieg dry-run and write with `assert_chain.py`, cleanup, and the self-test. Success prints `VERIFY OK | variant=chain`; `--variant all` includes it, so the CI E2E job runs it.
 - **Read the counts.** The Przygotowanie counts match `preparation`. The `worker_settlements` of the Przebieg dry-run have 2 orders each for Adrian Testowy, Darek Fikcyjny, and Kamil Syntetyczny, with `Problemy` 0 and no `warnings`; the write reports `Zapisane szablony` 3, `Puste szablony` 0, and progress of 3 of 3 Szablony pracowników after the four stages in order. Gotowość fills Adrian's two rows and Darek's `PREP-SYN-ZL-6`; Darek's `gniazdo` order `PREP-SYN-ZL-8` and Kamil's two rows, one of them the `Technicolor 3*globo` order `PREP-SYN-ZL-9`, keep the Ilości usług Przygotowanie wrote over the Wzorzec's zeros in `N:AP` and an empty `AQ:AT`. So `AP` of Darek's second row and `AK` of Kamil's second row are the two Ilości tylko dla INEA.

@@ -4,7 +4,9 @@ The Plik zbiorczy was written by Przygotowanie pliku zbiorczego and then filled 
 the Gotowość step, so its Wiersze danych carry values in all of ``A:AT``, and the
 Wyróżnienia and NUMER ZL. Hiperłącza Przygotowanie carried over from the Rejestr. A Rozliczenie pracownika
 holds those rows without the Ilości tylko dla INEA (ADR 0018). The checks are generic over the Wzorce, so the
-same helper serves both the synthetic and the real Wzorce. Messages name workers, rows, and columns, never a cell value.
+same helper serves both the synthetic and the real Wzorce; only the synthetic Wzorzec rozliczenia pracownika must have a
+sheet with values beyond the active one, which every Rozliczenie pracownika keeps. Messages name workers, rows, and
+columns, never a cell value.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from wynik_uruchomienia import (
     Link,
+    by_copy,
     check_metrics,
     external_link_parts,
     figures,
@@ -139,6 +142,9 @@ def _check_metrics(root: Path, expected: list[tuple[str, str]], errors: list[str
         counters = record.get("counters") or {}
         if (counters.get("templates_total"), counters.get("rows")) != (TEMPLATES, EXPECTED_ROWS):
             errors.append("settlement metrics counters do not match the Plik zbiorczy")
+    copies = {"DRY-RUN": 0, "RUN": TEMPLATES}
+    if [record.get("routes") for record in records] != [by_copy(worker_settlement=copies[mode]) for mode, _ in expected]:
+        errors.append("settlement metrics do not count each Rozliczenie pracownika as a copy of the Wzorzec")
 
 
 def _assert_dry_run(root: Path, result_path: Path | None) -> int:
@@ -309,7 +315,7 @@ def _check_worker_file(
         errors.append(f"{name}: xl/externalLinks parts differ from the Wzorzec rozliczenia pracownika")
 
 
-def _check_worker_files(root: Path, period_directory: Path, target_directory: Path, errors: list[str]) -> int:
+def _check_worker_files(root: Path, period_directory: Path, target_directory: Path, templates: str, errors: list[str]) -> int:
     """Every Rozliczenie pracownika against the Plik zbiorczy it was made from and the Wzorzec rozliczenia pracownika.
 
     Returns the number of Ilości tylko dla INEA the Rozliczenia pracowników must hold empty.
@@ -363,6 +369,14 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
     template_links = external_link_parts(template_path)
     template = load_workbook(template_path, data_only=False, keep_links=True)
     try:
+        if templates == "synthetic" and not any(
+            cell.value is not None
+            for sheet in template.worksheets
+            if sheet is not _sheet(template)
+            for row in sheet.iter_rows()
+            for cell in row
+        ):
+            errors.append("Wzorzec rozliczenia pracownika has no values beyond its active sheet to preserve")
         for name, orders in EXPECTED_WORKER_ORDERS.items():
             expected_rows = [values for values in collective_rows if values[order_index] in orders]
             expected_empty = [
@@ -394,7 +408,7 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
     return sum(len(indices) for indices in inea_only)
 
 
-def _assert_run(root: Path, result_path: Path | None) -> int:
+def _assert_run(root: Path, result_path: Path | None, templates: str) -> int:
     errors: list[str] = []
     _unchanged_inputs(root, errors)
     period_directory = root / PERIODS_DIRECTORY / PERIOD
@@ -408,7 +422,7 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
     if not target_directory.is_dir() or {path.name for path in target_directory.iterdir()} != expected_files:
         errors.append("Folder rozliczeń pracowników does not hold exactly one workbook per Wykonawca")
     else:
-        inea_only = _check_worker_files(root, period_directory, target_directory, errors)
+        inea_only = _check_worker_files(root, period_directory, target_directory, templates, errors)
 
     result = load_result(result_path, (ROW_MARKER,), errors)
     if result is not None:
@@ -449,13 +463,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_root("run root of a chain fixture")
     parser.add_argument("--expect", choices=("dry-run", "run"), required=True)
     parser.add_argument("--result", type=Path, help="evidence JSON of the Przebieg rozliczeń step")
+    parser.add_argument(
+        "--templates",
+        choices=("synthetic", "config"),
+        default="synthetic",
+        help="'config': the fixture copied the real Wzorce, so check them generically",
+    )
     args = parser.parse_args(argv)
     root = args.root
     result_path = args.result.expanduser().resolve() if args.result else None
     try:
         if args.expect == "dry-run":
             return _assert_dry_run(root, result_path)
-        return _assert_run(root, result_path)
+        return _assert_run(root, result_path, args.templates)
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
         print(f"ASSERT FAIL: {exc}", file=sys.stderr)
         return 1
