@@ -560,6 +560,12 @@ def _is_id(text: str) -> bool:
     return bool(text) and text == text.strip()
 
 
+def _is_number(value: object) -> bool:
+    """Liczba całkowita, ale nie ``True`` ani ``False``, które Python liczy jako 1 i 0."""
+
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _require(holds: bool, path: str, message: str) -> None:
     if not holds:
         raise QuantityRulesRefused(RulesProblem(path, message))
@@ -576,7 +582,12 @@ def _check_condition(condition: Condition, devices: DeviceList, path: str) -> No
         case ContractFirstWord(word=word):
             _require(word.casefold().split() == [word], f"{path}.slowo", "Wpisz jedno słowo małymi literami.")
         case StartedAt(days=days, since=since):
-            _require(bool(days) and days <= frozenset(range(7)), f"{path}.dni", "Wybierz co najmniej jeden dzień tygodnia.")
+            _require(bool(days), f"{path}.dni", "Wybierz co najmniej jeden dzień tygodnia.")
+            _require(
+                all(_is_number(day) and 0 <= day <= 6 for day in days),
+                f"{path}.dni",
+                "Dzień tygodnia to liczba od 0 (poniedziałek) do 6 (niedziela).",
+            )
             _require(since.second == 0 and since.microsecond == 0, f"{path}.od", "Godzinę wpisz z minutą, bez sekund.")
         case HasGroup():
             pass
@@ -617,7 +628,11 @@ def _check_write(write: Write, devices: DeviceList, path: str) -> None:
         f"{path}.kolumna",
         f"Kolumnę {write.column} liczy narzędzie samo: P i Q z urządzeń TV, S z liczby urządzeń.",
     )
-    _require(1 <= write.value <= MAX_VALUE, f"{path}.wartosc", f"Wartość musi być od 1 do {MAX_VALUE}.")
+    _require(
+        _is_number(write.value) and 1 <= write.value <= MAX_VALUE,
+        f"{path}.wartosc",
+        f"Wartość musi być liczbą całkowitą od 1 do {MAX_VALUE}.",
+    )
     if write.multiplier is Multiplier.ONCE:
         _require(write.component is None, f"{path}.skladnik", "Wartość „raz na zlecenie” nie liczy składnika.")
     else:

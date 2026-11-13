@@ -1,5 +1,5 @@
-# Lista Urządzeń z Wydania (ADR 0033): składniki URZĄDZENIA z instrukcji taty (spec #268) przepisane z kodu Reguł
-# ilości bez zmiany wyniku. Ten sam format ma plik config/lista-urzadzen.yaml taty (quantity_rules_file).
+# Lista Urządzeń z Wydania (ADR 0033): składniki URZĄDZENIA z instrukcji taty (spec #268), te same co w kodzie sprzed
+# silnika Reguł ilości (brama na prawdziwych danych, #1471). Ten sam format ma plik config/lista-urzadzen.yaml taty (quantity_rules_file).
 schema_version: 1
 urzadzenia:
   - {id: nokia, zapisy: [nokia]}

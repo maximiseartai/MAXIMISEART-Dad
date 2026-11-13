@@ -69,21 +69,30 @@ def collective_orders(header: Mapping[str, int], rows: Sequence[DataRow]) -> Col
     )
 
 
-def order_contents(header: Mapping[str, int], rows: Sequence[DataRow]) -> tuple[OrderContent, ...] | MissingHeaders:
+def order_contents(
+    header: Mapping[str, int], rows: Sequence[DataRow], required: tuple[Column, ...] = _INPUTS
+) -> tuple[OrderContent, ...] | MissingHeaders:
     """Treść zlecenia każdego Wiersza danych, a przy ``DATA``, która nie jest datą, bez pory (``started`` ``None``).
 
-    ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1.
+    ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1. Bez nagłówka kolumny z ``required`` treści nie ma;
+    kolumna treści spoza ``required`` bez nagłówka czyta się jak pusta komórka.
     """
 
-    names = [normalize_text(column.target_header) for column in _INPUTS]
-    missing = tuple(column.target_header for column, name in zip(_INPUTS, names, strict=True) if name not in header)
+    columns = {column: header.get(normalize_text(column.target_header)) for column in _INPUTS}
+    missing = tuple(column.target_header for column in required if columns[column] is None)
     if missing:
         return MissingHeaders(missing)
-    contract, devices, activities, started = (get_column_letter(header[name]) for name in names)
+    contract, devices, activities, started = (None if index is None else get_column_letter(index) for index in columns.values())
     return tuple(
-        OrderContent.of(row.value(contract), row.value(devices), row.value(activities), cell_datetime(row.value(started)))
+        OrderContent.of(
+            _value(row, contract), _value(row, devices), _value(row, activities), cell_datetime(_value(row, started))
+        )
         for row in rows
     )
+
+
+def _value(row: DataRow, letter: str | None) -> object:
+    return None if letter is None else row.value(letter)
 
 
 def tata_value(cell: object) -> TataValue:

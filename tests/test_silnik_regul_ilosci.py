@@ -1,7 +1,7 @@
 """Silnik Reguł ilości (ADR 0033) na swoim interfejsie: ``evaluate``, niezmienniki typów i pliki reguł.
 
-Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdza ich test własności stare = nowe
-(``test_wlasnosci_dopasowania_tekstu.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
+Zachowania, których Reguły ilości z Wydania nie dotykają, więc nie sprawdzają ich testy instrukcji taty
+(``test_ilosci_uslug.py``, ``test_ilosci_tylko_dla_inea.py``): pierwszeństwo „``URZĄDZENIA`` są dokładnie tekstem”, trzy zakresy reguły,
 zaprzeczenie każdego warunku, zlecenie bez ``DATA``, suma reguł i jej źródła, mnożniki i każda odmowa z polem. Na
 końcu jeden przebieg procesów pokazuje, że każdy z nich liczy Regułami ilości ze swojego wejścia.
 Oczekiwania pochodzą z ADR 0033 i z docstringów ``quantity_engine``, nie z przebiegu kodu.
@@ -320,6 +320,8 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", ContractFirstWord("u 1"))), "reguly[x].jesli[0].slowo", id="umowa-dwa-slowa"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset(), time(1)))), "reguly[x].jesli[0].dni", id="bez-dni"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({7}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-7"),
+        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({True}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-true"),
+        pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({False}), time(1)))), "reguly[x].jesli[0].dni", id="dzien-false"),
         pytest.param(lambda: _rules(_rule("x", StartedAt(frozenset({1}), time(1, 0, 5)))), "reguly[x].jesli[0].od", id="sekundy"),
         pytest.param(lambda: _rules(_rule("x", action=Fill(()))), "reguly[x].to.wpisy", id="wpisz-bez-kolumny"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("M", 1))), "reguly[x].to.wpisy[0].kolumna", id="kolumna-spoza-n-ap"),
@@ -329,6 +331,7 @@ def _device_list(*components: Component) -> DeviceList:
         pytest.param(lambda: _rules(_rule("x", action=_fill("Q", 1))), "reguly[x].to.wpisy[0].kolumna", id="kolumna-q"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 0))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-0"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1000))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-1000"),
+        pytest.param(lambda: _rules(_rule("x", action=_fill("Z", True))), "reguly[x].to.wpisy[0].wartosc", id="wartosc-true"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.ONCE, "kabel"))), "reguly[x].to.wpisy[0].skladnik", id="raz-ze-skladnikiem"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.COMPONENT))), "reguly[x].to.wpisy[0].skladnik", id="liczba-bez-skladnika"),
         pytest.param(lambda: _rules(_rule("x", action=_fill("Z", 1, Multiplier.PIECES, "brak"))), "reguly[x].to.wpisy[0].skladnik", id="sztuki-nieznany"),
