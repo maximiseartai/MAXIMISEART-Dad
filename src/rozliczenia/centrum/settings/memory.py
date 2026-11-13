@@ -5,6 +5,7 @@ Stan pliku to brak pliku (``None``) albo jego bajty. ``seen`` to ostatni przyję
 którą Historia już ma; stan pliku różny od ``seen`` to zmiana spoza Centrum. ``good`` daje wartość przed tą zmianą
 i ostatnią dobrą wartość przy złym pliku. Pamięci się nie kasuje: brak pamięci (``None`` z ``read``) znaczy tylko, że
 właściciel nie przyjął jeszcze żadnego stanu, co odróżnia pierwszy start po Wydaniu od przyjętego braku pliku.
+Dla pliku z sekretem właściciel zapisuje tu tylko odcisk stanu (``seen``) i nic jako ``good``.
 """
 
 from __future__ import annotations

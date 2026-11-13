@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import imaplib
 import json
 import threading
 import time
@@ -64,7 +65,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.workbook_files import ByteSource, file_bytes
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
-from rozliczenia.worker_report_inbox import ReminderMailbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import ImapConnect, ReminderMailbox, WorkerReportInbox
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.linie_watkow import new_line, stop_after_test, threads_since
@@ -566,6 +567,7 @@ def centrum_app(
     intermax_copies: Path | None | Fake = FAKE,
     intermax_disk: Disk = LOCAL_DISK,
     window: EfenixWindow | None | Fake = FAKE,
+    inbox_connect: ImapConnect | Fake = FAKE,
     worker_report_inbox: WorkerReportInbox | Fake = FAKE,
     reminder_mailbox: ReminderMailbox | Fake = FAKE,
     reminder_rhythm: ReminderRhythm | Fake = FAKE,
@@ -576,7 +578,8 @@ def centrum_app(
     (``FakePlatform``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
-    Skrzynka raportów bez maili (``FakeInbox``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm
+    Skrzynka raportów bez maili (``FakeInbox``), skrzynka raportów bez sieci przy próbie logowania po zmianie hasła
+    (``inbox_connect``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm
     przypomnień, który sprawdza tylko na ``HandRhythm.tick`` testu; prawdziwego Gmaila test nie dostaje nigdy.
     ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
     narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
@@ -611,10 +614,15 @@ def centrum_app(
         intermax_disk=intermax_disk,
         now=now,
         efenix_window=_or_fake(window, lambda: efenix_window(tool)),
+        inbox_connect=_no_network if isinstance(inbox_connect, Fake) else inbox_connect,
         worker_report_inbox=FakeInbox() if isinstance(worker_report_inbox, Fake) else worker_report_inbox,
         reminder_mailbox=FakeMailbox() if isinstance(reminder_mailbox, Fake) else reminder_mailbox,
         reminder_rhythm=HandRhythm() if isinstance(reminder_rhythm, Fake) else reminder_rhythm,
     )
+
+
+def _no_network() -> imaplib.IMAP4:
+    raise ConnectionRefusedError("test bez skrzynki raportów: podstaw inbox_connect z AtrapaImap")
 
 
 @dataclass

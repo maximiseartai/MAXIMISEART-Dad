@@ -1,4 +1,4 @@
-"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw i Historia Ustawień."""
+"""Kontrakt Ustawień Centrum: Rejestr zleceń, folder okresów, motyw, skrzynka raportów i Historia Ustawień."""
 
 from __future__ import annotations
 
@@ -60,14 +60,24 @@ class SettingProblem(Model):
     message: str
 
 
+class InboxSetting(Model):
+    """Skrzynka raportów: adres (``None``: nie ustawiono) i to, czy plik ma hasło; samego hasła serwer nie wysyła nigdy."""
+
+    address: str | None
+    password: bool
+
+
 class Settings(Model):
     """Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
-    dobre wartości, a bez nich nie ustawiono i motyw domyślny."""
+    dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+    jest bez adresu i hasła."""
 
     order_register: PathSetting
     periods_directory: PathSetting
     theme: Theme
     folders_problem: SettingProblem | None
+    inbox: InboxSetting
+    inbox_problem: SettingProblem | None
 
 
 class Choice(Model):
@@ -81,6 +91,22 @@ class Choice(Model):
 
 class ThemeChange(Model):
     theme: Theme
+
+
+class InboxPasswordChange(Model):
+    """Nowe hasło aplikacji skrzynki raportów, tak jak je wpisał tata (spacje Google pomija zapis)."""
+
+    password: str
+
+
+InboxLogin = Literal["accepted", "rejected", "no_network"]
+"""Wynik próby logowania po zapisie hasła: skrzynka przyjęła hasło, odrzuciła je albo nie odpowiedziała."""
+
+
+class InboxPasswordSaved(Choice):
+    """Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”."""
+
+    login: InboxLogin
 
 
 class FoldersChange(Model):
