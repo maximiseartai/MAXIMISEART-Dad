@@ -102,7 +102,7 @@ from tests.fixtures.tool_clone import tool_repository
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap
-from atrapy.preparation import REGISTER_HEADERS, register_order, write_collective_template, write_register
+from atrapy.preparation import REGISTER_HEADERS, RegisterRow, register_order, write_collective_template, write_register
 
 import export_openapi
 
@@ -2235,7 +2235,9 @@ def register_of(tmp_path: Path) -> Path:
 def write_orders(register: Path, logins: Sequence[str], headers: tuple[str, ...] = REGISTER_HEADERS) -> None:
     """Rejestr zleceń ze zleceniem każdego z ``logins`` w kolumnie ``WYKONAWCA`` i nagłówkami ``headers``."""
 
-    orders = [register_order(number, datetime(2026, 9, 8, 10), worker=login) for number, login in enumerate(logins, start=1)]
+    orders: list[RegisterRow] = [
+        register_order(number, datetime(2026, 9, 8, 10), worker=login) for number, login in enumerate(logins, start=1)
+    ]
     write_register(register, orders, headers=headers)
 
 
