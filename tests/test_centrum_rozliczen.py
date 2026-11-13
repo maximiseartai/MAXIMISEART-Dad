@@ -929,6 +929,18 @@ def _inbox_centrum(tmp_path: Path, imap: AtrapaImap | None = None) -> tuple[Cent
     return CentrumClient(centrum_app(tool, inbox_connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port))), tool
 
 
+def _files_with_password(tool: ToolDirectory, passwords: Sequence[str]) -> list[str]:
+    """Pliki katalogu narzędzia poza plikiem skrzynki, w których jest któreś z ``passwords`` otwartym tekstem.
+
+    Hasło szuka się też bez spacji, bo tak trafia do pliku skrzynki; rekurencyjnie, więc i w pamięci odrzuconych.
+    """
+
+    secrets = {form.encode() for password in passwords for form in (password, password.replace(" ", ""))}
+    access = tool.config / INBOX_ACCESS_FILE
+    files = [path for path in sorted(tool.root.rglob("*")) if path.is_file() and path != access]
+    return [path.relative_to(tool.root).as_posix() for path in files if any(secret in path.read_bytes() for secret in secrets)]
+
+
 @pytest.mark.parametrize(
     ("haslo_skrzynki", "zerwanie", "wynik", "polecenia"),
     [
@@ -972,11 +984,10 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert row["changes"] == [{"key": "skrzynka.haslo", "before": None, "after": None}]
     assert undo.status_code == 404
     responses = [shown, saved, again, read, history, undo]
-    written = [path for path in tool.root.rglob("*") if path.is_file() and path.name != INBOX_ACCESS_FILE]
-    texts = [response.content for response in responses] + [path.read_bytes() for path in written]
     secrets = [secret for value in (STARE_HASLO, NOWE_HASLO) for secret in (value, value.replace(" ", ""))]
-    assert [secret for secret in secrets for text in texts if secret.encode() in text] == []
-    assert tool.log_path in written
+    assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
+    assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
+    assert tool.log_path.is_file()
 
 
 def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
@@ -1070,6 +1081,7 @@ def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_t
         )
         assert access.read_bytes() == zapis
         assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
+    assert _files_with_password(tool, ["starehasło", STARE_HASLO, NOWE_HASLO]) == []
 
 
 @pytest.mark.parametrize(
