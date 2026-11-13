@@ -139,3 +139,4 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Rule | Guard |
 |---|---|
 | A TODO, FIXME, XXX or HACK is finished in the same change or named in the report for Maks, never left in the code. | ruff `FIX001`–`FIX004` |
+| Every `noqa` states its reason on its line after the codes, and the number of `noqa` and of `type: ignore` in each folder equals its entry in `ZAPISANE`: a change that adds or removes a suppression changes that number in the same PR, also downwards. | `tests/test_granice_wyjatkow.py::test_liczba_tlumien_w_kazdym_katalogu_jest_rowna_zapisanej`, `tests/test_granice_wyjatkow.py::test_kazde_noqa_ma_powod_na_linii` (boundary: its module docstring) |
