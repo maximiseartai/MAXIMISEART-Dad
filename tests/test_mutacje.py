@@ -330,6 +330,10 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
 
 
 def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polecen_swoich_mutacji(tmp_path: Path) -> None:
+    """Podstawa części biegnie po kolei dla każdego polecenia jej mutacji, więc część bierze mutacje jednego polecenia
+    razem: tu sześć mutacji trzech poleceń w dwóch częściach uruchamia cztery podstawy, a nie sześć, jak przy podziale
+    co drugą po nazwie (m1, m3, m5 i m2, m4, m6 to w obu częściach polecenia A, B i C)."""
+
     repo = _small_repository(tmp_path)
     log = tmp_path / "polecenia"
 
@@ -338,10 +342,10 @@ def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polec
         writes = f"open(os.environ['DZIENNIK'], 'a').write('{name} ' + str(rozliczenia.WARTOSC) + ' ' + {seen} + chr(10))"
         return ["-c", f"import os, rozliczenia\n{writes}\nraise SystemExit(rozliczenia.WARTOSC)"]
 
-    table = [{"nazwa": f"m{number}", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 1"]], "polecenie": command("AB"[number % 2])} for number in range(1, 6)]
+    table = [{"nazwa": f"m{number}", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 1"]], "polecenie": command("CAB"[number % 3])} for number in range(1, 7)]
     seen = {}
     # Każda część to osobne zadanie CI z tą samą tabelą, a kolejność tabeli nie zmienia podziału.
-    for part, order in (("1/3", table), ("2/3", table[::-1]), ("3/3", table[2:] + table[:2]), ("6/6", table)):
+    for part, order in (("1/2", table), ("2/2", table[::-1]), ("2/3", table[2:] + table[:2]), ("1/7", table)):
         (tmp_path / "mutacje.json").write_text(json.dumps(order), encoding="utf-8")
         log.write_text("", encoding="utf-8")
         answered = _in_repository(repo, "--plik", str(tmp_path / "mutacje.json"), "--", "-c", "", env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": part, "DZIENNIK": str(log)})
@@ -353,10 +357,10 @@ def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polec
     broken = _in_repository(repo, "--plik", str(tmp_path / "mutacje.json"), "--", "-c", "", env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "0/3", "DZIENNIK": str(log)})
 
     assert seen == {
-        "1/3": (0, "MUTACJE OK", ["m1", "m4"], ["A", "B"], {"-"}),
-        "2/3": (0, "MUTACJE OK", ["m2", "m5"], ["A", "B"], {"-"}),
-        "3/3": (0, "MUTACJE OK", ["m3"], ["B"], {"-"}),
-        "6/6": (0, "MUTACJE OK", [], [], set()),
+        "1/2": (0, "MUTACJE OK", ["m1", "m2", "m4"], ["A", "B"], {"-"}),
+        "2/2": (0, "MUTACJE OK", ["m3", "m5", "m6"], ["B", "C"], {"-"}),
+        "2/3": (0, "MUTACJE OK", ["m2", "m5"], ["B"], {"-"}),
+        "1/7": (0, "MUTACJE OK", [], [], set()),
     }
     assert broken.returncode == 1 and "MUTACJE_CZESC to K/N z 1 <= K <= N, nie '0/3'" in broken.stderr, broken.stderr
 
