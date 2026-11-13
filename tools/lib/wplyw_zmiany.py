@@ -508,7 +508,7 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     importem (``def test_x(oczekiwany)``, choć fixture czyta ``Path("tests/expected/a.txt")``). Ścieżkę liczoną w czasie
     testu (``os.walk`` katalogu, liczona część w ``os.path.join`` albo po ``Path(__file__)``) widzi tylko w części form.
     Taki test wypada z wyboru na pull request i łapie go dopiero CI ``main``; próbki granicy stoją w
-    ``test_test_nie_widzi_pliku_spod_tests_ktory_czyta_fixture_brana_po_nazwie``."""
+    ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu``."""
 
     packages = {str(PurePosixPath(file).parent) for file in files if PurePosixPath(file).name == "__init__.py"} - {"tests"}
     data: dict[str, set[str]] = defaultdict(set)

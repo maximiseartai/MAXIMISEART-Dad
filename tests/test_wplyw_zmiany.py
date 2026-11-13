@@ -159,36 +159,42 @@ FIXTURE_READING_EXPECTED = (
     "import pytest\nfrom pathlib import Path\n\n\n@pytest.fixture\ndef oczekiwany() -> str:\n"
     "    return Path('tests/expected/a.txt').read_text()\n"
 )
+TEST_TAKING_FIXTURE = "def test_x(oczekiwany: str) -> None:\n    assert oczekiwany\n"
 
 
 @pytest.mark.parametrize(
-    "fixture_files",
+    "files",
     [
-        {"tests/conftest.py": FIXTURE_READING_EXPECTED},
+        {"tests/conftest.py": FIXTURE_READING_EXPECTED, "tests/test_x.py": TEST_TAKING_FIXTURE},
         {
             "tests/conftest.py": "pytest_plugins = ['tests.fixtures.wtyczka']\n",
             "tests/fixtures/__init__.py": "",
             "tests/fixtures/wtyczka.py": FIXTURE_READING_EXPECTED,
+            "tests/test_x.py": TEST_TAKING_FIXTURE,
+        },
+        {
+            "tests/test_x.py": "import os\nfrom pathlib import Path\n\nEXPECTED = Path(__file__).parent / 'expected'\n\n\n"
+            "def test_x() -> None:\n    assert [pliki for _, _, pliki in os.walk(EXPECTED)]\n"
+        },
+        {
+            "tests/test_x.py": "from pathlib import Path\n\n\ndef test_x() -> None:\n    n = 'a'\n"
+            "    assert (Path(__file__).parent / 'expected' / f'{n}.txt').read_text()\n"
         },
     ],
-    ids=["fixture z tests/conftest.py", "fixture z modułu w pytest_plugins"],
+    ids=[
+        "fixture z tests/conftest.py",
+        "fixture z modułu w pytest_plugins",
+        "os.walk katalogu",
+        "liczona nazwa pliku po Path(__file__)",
+    ],
 )
-def test_test_nie_widzi_pliku_spod_tests_ktory_czyta_fixture_brana_po_nazwie(
-    tmp_path: Path, fixture_files: dict[str, str]
-) -> None:
-    """Granica wyboru z docstringu ``_package_data``: graf widzi ścieżkę pliku spod ``tests/`` tylko w pliku testu i
-    w modułach, które test importuje, a fixture test bierze po nazwie parametru. Ten test pada, gdy graf zacznie ją
-    widzieć; wtedy przenieś próbki do ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy`` i zmień docstring."""
+def test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu(tmp_path: Path, files: dict[str, str]) -> None:
+    """Granica wyboru z docstringu ``_package_data``: graf widzi ścieżkę pliku spod ``tests/`` tylko jako napis albo
+    wyrażenie z literałów w pliku testu i w modułach, które test importuje. Fixture test bierze po nazwie parametru,
+    a ścieżkę liczoną w czasie testu graf widzi tylko w części form. Ten test pada, gdy graf zacznie którąś próbkę
+    widzieć; wtedy przenieś ją do ``test_test_jest_dotkniety_zmiana_pliku_od_ktorego_zalezy`` i zmień docstring."""
 
-    repo = _repo(
-        tmp_path,
-        {
-            "tests/__init__.py": "",
-            "tests/expected/a.txt": "komunikat\n",
-            "tests/test_x.py": "def test_x(oczekiwany: str) -> None:\n    assert oczekiwany\n",
-            **fixture_files,
-        },
-    )
+    repo = _repo(tmp_path, {"tests/__init__.py": "", "tests/expected/a.txt": "komunikat\n", **files})
 
     assert "tests/test_x.py" not in Repository.scan(repo).impact(frozenset({"tests/expected/a.txt"})).tests
 
