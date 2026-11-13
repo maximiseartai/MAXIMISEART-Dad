@@ -266,11 +266,13 @@ def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
 
 def watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...]:
     """Ścieżki, których zmiana uruchamia skrypt mutacji ``step``: folder skilla (z ``/`` na końcu), pliki, które skrypt
-    importuje (``imported``, ``Repository.imported``: silnik mutacji i jego zależności), ``LAUNCHER`` i sprawdzenia,
-    które uruchamiają jego mutacje; tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
+    importuje (``imported``, ``Repository.imported``: silnik mutacji i jego zależności), ``LAUNCHER``, sprawdzenia,
+    które uruchamiają jego mutacje, i pliki, które te sprawdzenia importują (kod, którego zmiana spowalnia sprawdzenie
+    albo przesuwa jego mutacje); tabela, której nie da się wczytać, to wyjątek z ``exec_module``."""
 
     checkers = sorted({mutation.command[0] for mutation in _mutations(step.root / step.command[0])})
-    return (step.folder, *sorted(imported(step.command[0])), *LAUNCHER, *checkers)
+    reached = sorted({name for checker in checkers for name in imported(checker)} - {step.command[0], *checkers})
+    return (step.folder, *sorted(imported(step.command[0])), *LAUNCHER, *checkers, *reached)
 
 
 def model_watched(step: Step, imported: Callable[[str], Iterable[str]]) -> tuple[str, ...] | None:

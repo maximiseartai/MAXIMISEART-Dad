@@ -463,6 +463,17 @@ def test_podstawa_ci_biegnie_z_argumentami_przed_mutacjami_skilla(tmp_path: Path
     assert lines[-1] == OK_LINE
 
 
+def test_podstawa_ci_ktora_skrypt_mutacji_uruchamia_bez_mutacji_nie_biegnie_drugi_raz(tmp_path: Path) -> None:
+    command = ".agents/skills/verify-a/scripts/sprawdz_a.py"
+    _tool(tmp_path)
+    _skill(tmp_path, "verify-a", {"check_a_mutations.py": WITH_TABLE, "sprawdz_a.py": CHECKED_IN_CI.format(code=0)}, _with_ci("verify-a", command))
+
+    result = _run(tmp_path)
+
+    lines = result.stdout.splitlines()
+    assert ("== skill:verify-a/ci" in lines, "== skill:verify-a/check_a_mutations.py" in lines, lines[-1]) == (False, True, OK_LINE), result.stdout
+
+
 def test_czerwona_podstawa_ci_daje_fail_takze_w_skillu_bez_skryptu_mutacji(tmp_path: Path) -> None:
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": PASSING})
     _skill(tmp_path, "verify-d", {"sprawdz_d.py": CHECKED_IN_CI.format(code=1)}, _with_ci("verify-d", ".agents/skills/verify-d/scripts/sprawdz_d.py"))

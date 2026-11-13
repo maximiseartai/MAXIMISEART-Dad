@@ -197,10 +197,11 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         # Trafienie w pilnuje uruchamia podstawę skilla na PR, a skrypt mutacji nie (ADR 0020).
         ("src/pakiet/routing.py", False),
         (".agents/skills/verify-b/SKILL.md", False),
-        # Plik, który mutacje zmieniają, i importy sprawdzenia: pytest bramki i pełne CI main, nie skrypt mutacji nocą.
-        (CHECKED, False),
+        # Kod, który sprawdzenie importuje, wprost albo dalej: push go już nie mutuje, więc skrypt biegnie nocą (Z1, 13.11).
+        (CHECKED, True),
+        ("src/pakiet/pomocnik.py", True),
+        # Kotwica spoza importów sprawdzenia: pilnuje jej pytest (``tests/test_mutacje_skilli.py``).
         (ANCHORS, False),
-        ("src/pakiet/pomocnik.py", False),
         # Polityka zakresu i samo narzędzie z wiersza poleceń (z jego odmową ciężkiego CI) nie biegną w procesie skryptu.
         ("tools/lib/zakres_runu.py", False),
         ("tools/mutacje.py", False),
