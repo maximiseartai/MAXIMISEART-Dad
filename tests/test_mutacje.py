@@ -704,32 +704,44 @@ def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werd
 SLOW_COLLECTION = {"tests/conftest.py": "import sys, time\n\nif '--collect-only' in sys.argv:\n    time.sleep(20)\n"}
 
 
+TWO_NEW_TESTS = ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC >= 0") + "\n\ndef test_drugi():\n    assert rozliczenia.WARTOSC < 5\n"
+
+
 @pytest.mark.parametrize(
-    ("condition", "arguments", "files", "lines"),
+    ("new", "arguments", "files", "lines"),
     [
-        ("rozliczenia.WARTOSC >= 0", (), {}, []),
-        ("0 <= rozliczenia.WARTOSC < 5", (), {}, [CAUGHT_BY_OLD.format(name="m2-duza"), f"JUŻ ŁAPIE TYLKO NOWY {NEW_IN_BRANCH}: tylko ten test łapie „m1-ujemna”, więc go zostaw"]),
-        ("0 <= rozliczenia.WARTOSC < 5", ("--juz-lapie-s", "0"), {}, [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: minął limit sprawdzenia 0 s" for name in ("m1-ujemna", "m2-duza")]),
+        (ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC >= 0"), (), {}, []),
         (
-            "0 <= rozliczenia.WARTOSC < 5",
+            TWO_NEW_TESTS,
+            (),
+            {},
+            [
+                "JUŻ ŁAPIE tests/test_stary.py::test_stary: ten test sprzed zmiany już łapie mutację „m2-duza”, którą łapie też tests/test_n.py::test_drugi",
+                f"JUŻ ŁAPIE DUBEL tests/test_n.py::test_drugi: każdą mutację, którą ten test łapie („m2-duza”), łapie już test sprzed zmiany: {ALREADY_ADVICE}",
+            ],
+        ),
+        (ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"), (), {}, [CAUGHT_BY_OLD.format(name="m2-duza"), f"JUŻ ŁAPIE TYLKO NOWY {NEW_IN_BRANCH}: tylko ten test łapie „m1-ujemna”, więc go zostaw"]),
+        (ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"), ("--juz-lapie-s", "0"), {}, [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: minął limit sprawdzenia 0 s" for name in ("m1-ujemna", "m2-duza")]),
+        (
+            ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"),
             ("--juz-lapie-s", "5"),
             SLOW_COLLECTION,
             ["JUŻ ŁAPIE NIESPRAWDZONE: m1-ujemna: kolekcja testów polecenia nie skończyła się w limicie", "JUŻ ŁAPIE NIESPRAWDZONE: m2-duza: minął limit sprawdzenia 5 s"],
         ),
     ],
-    ids=["nowy-test-nie-lapie-mutacji-starego", "czesc-mutacji-lapie-tylko-nowy", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia"],
+    ids=["nowy-test-nie-lapie-mutacji-starego", "drugi-nowy-test-dubluje-stary", "czesc-mutacji-lapie-tylko-nowy", "limit-calego-sprawdzenia", "kolekcja-w-limicie-sprawdzenia"],
 )
 def test_juz_lapie_radzi_usunac_nowy_test_tylko_gdy_kazda_jego_mutacje_lapie_test_sprzed_zmiany(
-    tmp_path: Path, condition: str, arguments: tuple[str, ...], files: dict[str, str], lines: list[str]
+    tmp_path: Path, new: str, arguments: tuple[str, ...], files: dict[str, str], lines: list[str]
 ) -> None:
-    """Polecenie z całym katalogiem testów i dwie mutacje: „m1-ujemna” łapie tylko nowy test, a „m2-duza” test sprzed
-    zmiany `WARTOSC < 5` (przegląd #1493 r1).
+    """Polecenie z całym katalogiem testów i dwie mutacje: „m1-ujemna” łapie tylko nowy test `WARTOSC >= 0`, a „m2-duza”
+    test sprzed zmiany `WARTOSC < 5` (przegląd #1493 r1).
 
-    Mutacja, której nowy test sam nie łapie, nie dostaje linii, choć polecenie go wybiera, a rada usunięcia nowego testu
-    pada tylko wtedy, gdy każdą jego mutację łapie test sprzed zmiany. Limit obejmuje całe sprawdzenie, z kolekcją.
+    Mutacja, której nowy test sam nie łapie, nie dostaje linii o nim, choć polecenie go wybiera, a rada usunięcia nowego
+    testu pada tylko wtedy, gdy każdą jego mutację łapie test sprzed zmiany. Limit obejmuje całe sprawdzenie, z kolekcją.
     """
 
-    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, ASSERTING_NEW_TEST.format(condition=condition), files=files)
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, new, files=files)
     plan = tmp_path / "mutacje.json"
     entries = [{"nazwa": name, "zmiany": [[PACKAGE, "WARTOSC = 0", f"WARTOSC = {value}"]]} for name, value in (("m1-ujemna", -1), ("m2-duza", 7))]
     plan.write_text(json.dumps(entries), encoding="utf-8")
