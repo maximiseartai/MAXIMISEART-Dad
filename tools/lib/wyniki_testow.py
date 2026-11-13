@@ -7,8 +7,8 @@ ma plik, ale nie ma id. Postać ``xunit1`` daje ``pyproject.toml`` zadaniom CI, 
 pytest w innym drzewie, wymuszają ją argumentami ``zapis``.
 
 Czytają go zapis czasów CI (``tools/ci/zapis_czasow.py``), flaky testy i kwarantanna (``tools/lib/niestabilne_testy.py``),
-pamięć zielonych testów ``tools/szybko.py`` i test scalenia ``tools/scal_pr.py``. Moduł używa tylko biblioteki
-standardowej, bo zapis czasów biegnie systemowym ``python3`` runnera.
+pamięć zielonych testów ``tools/szybko.py``, test scalenia ``tools/scal_pr.py`` i sprawdzenie ``JUŻ ŁAPIE``
+``tools/mutacje.py``. Moduł używa tylko biblioteki standardowej, bo zapis czasów biegnie systemowym ``python3`` runnera.
 """
 
 from __future__ import annotations

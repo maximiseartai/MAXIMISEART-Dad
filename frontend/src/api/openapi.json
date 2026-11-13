@@ -1706,6 +1706,120 @@
         }
       }
     },
+    "/api/settings/folders": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Folders",
+        "operationId": "changeFolders",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FoldersChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/history": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "History",
+        "operationId": "getSettingsHistory",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsHistory"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/history/{change_id}/undo": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Undo",
+        "operationId": "undoSettingsChange",
+        "parameters": [
+          {
+            "name": "change_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Change Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/periods-directory/choose": {
       "post": {
         "tags": [
@@ -1812,7 +1926,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Settings"
+                  "$ref": "#/components/schemas/Choice"
                 }
               }
             }
@@ -2085,6 +2199,9 @@
               "openRegister",
               "choosePeriodsDirectory",
               "changeTheme",
+              "changeFolders",
+              "getSettingsHistory",
+              "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
               "getQuantitiesToFill",
@@ -2279,6 +2396,17 @@
         "properties": {
           "settings": {
             "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
           }
         },
         "additionalProperties": false,
@@ -2287,7 +2415,7 @@
           "settings"
         ],
         "title": "Choice",
-        "description": "Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia."
+        "description": "Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,\nanulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);\n``None``: bez zmiany i bez wiersza."
       },
       "ClosedStep": {
         "properties": {
@@ -2887,6 +3015,40 @@
         "title": "FillStep",
         "description": "Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;\n``then`` to krok po nim, Wycena w efenix."
       },
+      "FoldersChange": {
+        "properties": {
+          "order_register": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Register"
+          },
+          "periods_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Periods Directory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "order_register",
+          "periods_directory"
+        ],
+        "title": "FoldersChange",
+        "description": "Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2932,6 +3094,144 @@
         ],
         "title": "Health",
         "description": "Tożsamość działającego Centrum.\n\n``commit`` to skrócony commit narzędzia, z którego Centrum wystartowało, jak na Konfiguracji (``None`` poza\nklonem Gita); po nim launcher i opiekun ponownego startu rozpoznają wersję działającego Centrum, a karta\npokazuje go w „Zaktualizowano”. ``instance`` to losowy identyfikator tego startu Centrum: po ponownym starcie\njest inny, także gdy commit się nie zmienił."
+      },
+      "HistoryChange": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "before",
+          "after"
+        ],
+        "title": "HistoryChange",
+        "description": "Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret."
+      },
+      "HistoryRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "tata",
+              "outside"
+            ],
+            "title": "Source"
+          },
+          "undoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undoes"
+          },
+          "file": {
+            "type": "string",
+            "title": "File"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "secret": {
+            "type": "boolean",
+            "title": "Secret"
+          },
+          "undoable": {
+            "type": "boolean",
+            "title": "Undoable"
+          },
+          "refused": {
+            "type": "boolean",
+            "title": "Refused"
+          },
+          "removed": {
+            "type": "boolean",
+            "title": "Removed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "source",
+          "undoes",
+          "file",
+          "section",
+          "changes",
+          "secret",
+          "undoable",
+          "refused",
+          "removed",
+          "reason"
+        ],
+        "title": "HistoryRow",
+        "description": "Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść\nspoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum."
       },
       "InaccessiblePath": {
         "properties": {
@@ -4405,6 +4705,17 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
           }
         },
         "additionalProperties": false,
@@ -4413,7 +4724,7 @@
           "message"
         ],
         "title": "Problem",
-        "description": "Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku."
+        "description": "Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,\nktórego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum)."
       },
       "ProcessFacts": {
         "properties": {
@@ -6371,6 +6682,33 @@
         "title": "Sent",
         "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
       },
+      "SettingProblem": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "SettingProblem",
+        "description": "Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego\npliku i zdanie dla taty."
+      },
       "Settings": {
         "properties": {
           "order_register": {
@@ -6440,6 +6778,16 @@
               "light"
             ],
             "title": "Theme"
+          },
+          "folders_problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -6447,9 +6795,34 @@
         "required": [
           "order_register",
           "periods_directory",
-          "theme"
+          "theme",
+          "folders_problem"
         ],
-        "title": "Settings"
+        "title": "Settings",
+        "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny."
+      },
+      "SettingsHistory": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows",
+          "skipped"
+        ],
+        "title": "SettingsHistory",
+        "description": "Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać."
       },
       "SolvedCase": {
         "properties": {
@@ -6784,7 +7157,7 @@
           "state"
         ],
         "title": "UnreadablePath",
-        "description": "Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."
+        "description": "Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano."
       },
       "ValidationError": {
         "properties": {
@@ -6842,7 +7215,7 @@
               "okresy",
               "uruchomienia",
               "metryki",
-              "konfiguracja",
+              "ustawienia",
               "powiadomienia",
               "uzupelnienie",
               "raporty"

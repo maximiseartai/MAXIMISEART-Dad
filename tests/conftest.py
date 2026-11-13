@@ -210,7 +210,8 @@ def regula_prywatnosci_centrum_rozliczen(
     Każda odpowiedź JSON, każde zdarzenie strumienia i dziennik Centrum aplikacji
     testowej nie mogą zawierać ścieżki z katalogu tymczasowego testów ani tekstu
     ``Traceback``. Wyjątki to ścieżki, które tata sam wskazał w ustawieniach
-    (Rejestr zleceń, folder okresów), bo Centrum pokazuje je celowo, oraz pole
+    (Rejestr zleceń, folder okresów), także jako wartość przed i po w Historii
+    Ustawień (klucz ``foldery.…``), bo Centrum pokazuje je celowo, oraz pole
     ``input`` odpowiedzi 422, w którym FastAPI odsyła treść samego żądania.
     """
 
@@ -346,8 +347,13 @@ def _strings_shown_to_browser(value: object, *, echoed_request: bool) -> Iterato
             yield from _strings_shown_to_browser(item, echoed_request=echoed_request)
     elif isinstance(value, dict):
         chosen_by_tata = set(value) == {"state", "path", "name"} and value["state"] in {"ready", "missing", "inaccessible"}
+        chosen_before_and_after = set(value) == {"key", "before", "after"} and str(value["key"]).startswith("foldery.")
         for key, item in value.items():
-            if (chosen_by_tata and key == "path") or (echoed_request and key == "input"):
+            if (
+                (chosen_by_tata and key == "path")
+                or (chosen_before_and_after and key in {"before", "after"})
+                or (echoed_request and key == "input")
+            ):
                 continue
             yield from _strings_shown_to_browser(item, echoed_request=echoed_request)
 

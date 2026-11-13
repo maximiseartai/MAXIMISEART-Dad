@@ -379,7 +379,7 @@ def test_polecenie_ci_kazdego_skilla_to_skrypt_z_repozytorium() -> None:
 
 
 def test_nazwy_mutacji_w_tabeli_kazdego_skryptu_skilla_sa_rozne() -> None:
-    """Część ``MUTACJE_CZESC`` układa mutacje po nazwie; przy dwóch równych nazwach decydowałoby ``repr`` ścieżek."""
+    """Część ``MUTACJE_CZESC`` układa mutacje jednego polecenia po nazwie; przy dwóch równych nazwach decydowałoby ``repr`` ścieżek."""
 
     scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{kroki_skilli.PATTERN}"))
     names = {script.name: [mutation.name for mutation in kroki_skilli._mutations(script)] for script in scripts}

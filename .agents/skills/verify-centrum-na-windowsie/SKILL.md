@@ -1,6 +1,6 @@
 ---
 name: verify-centrum-na-windowsie
-description: Verify Centrum rozliczeń on Windows the way Dad installs, starts and updates it - the tool cloned into a user folder with a space and a Polish letter, the desktop shortcut and pythonw.exe without a console, the native start-problem window, the native tkinter pickers, Explorer, and Aktualizacja narzędzia with the restart guardian - on GitHub's windows-latest runner (or any Windows machine), with desktop screenshots, the Centrum log and process facts as evidence. Use after changes to `launcher.py`, `platform.py`, `shortcut.py`, `restart_guardian.py`, `tool_update.py`, `tool_updates.py`, `version.py`, `start_problems.py`, `log.py`, `update_messages.py`, `server.py`, `shutdown.py`, `centrum/settings.py`, `centrum/settings_router.py`, `run_centrum.py`, `install_centrum_shortcut.py`, `frontend/src/lib/tool-update.tsx` or `requirements.txt`, or when something works on the Mac but may not on Dad's Windows.
+description: Verify Centrum rozliczeń on Windows the way Dad installs, starts and updates it - the tool cloned into a user folder with a space and a Polish letter, the desktop shortcut and pythonw.exe without a console, the native start-problem window, the native tkinter pickers, Explorer, and Aktualizacja narzędzia with the restart guardian - on GitHub's windows-latest runner (or any Windows machine), with desktop screenshots, the Centrum log and process facts as evidence. Use after changes to `launcher.py`, `platform.py`, `shortcut.py`, `restart_guardian.py`, `tool_update.py`, `tool_updates.py`, `version.py`, `start_problems.py`, `log.py`, `update_messages.py`, `server.py`, `shutdown.py`, `centrum/settings/`, `centrum/settings_router.py`, `run_centrum.py`, `install_centrum_shortcut.py`, `frontend/src/lib/tool-update.tsx` or `requirements.txt`, or when something works on the Mac but may not on Dad's Windows.
 pilnuje:
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/platform.py
@@ -11,15 +11,18 @@ pilnuje:
   - src/rozliczenia/centrum/restart_guardian.py
   - src/rozliczenia/centrum/tool_update.py
   - src/rozliczenia/centrum/tool_updates.py
+  - src/rozliczenia/centrum/tool_freshness.py
+  - src/rozliczenia/centrum/configuration_router.py
   - src/rozliczenia/centrum/update_messages.py
   - src/rozliczenia/centrum/version.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/centrum/shutdown.py
-  - src/rozliczenia/centrum/settings.py
+  - src/rozliczenia/centrum/settings/*.py
   - src/rozliczenia/centrum/settings_router.py
   - run_centrum.py
   - install_centrum_shortcut.py
   - frontend/src/lib/tool-update.tsx
+  - src/rozliczenia/centrum/static/**
   - requirements.txt
   - .github/workflows/verify-centrum-na-windowsie.yml
   - tools/lib/atrapy/scenariusz_centrum.py
@@ -56,7 +59,10 @@ same turn and read its last line:
 ```
 
 The workflow `.github/workflows/verify-centrum-na-windowsie.yml` also runs by itself on every pull request and push
-to `main` that touches the files in the description. A dispatch needs the workflow on `main` and then runs any pushed
+to `main` that touches a file of `pilnuje:` (`tests/test_skille_dla_zmiany.py` keeps its `paths` equal to it), among
+them the committed frontend build `src/rozliczenia/centrum/static/**`, which every change of the tab's menu, pages or
+window Ustawienia rewrites and the drive clicks through, and the server's answers the section Narzędzie shows
+(`configuration_router.py`, `tool_freshness.py`). A dispatch needs the workflow on `main` and then runs any pushed
 branch (`--ref`, default the current one) with that branch's skill. To wait for a PR's own run instead, pass it with
 `--run` (`gh run list --workflow verify-centrum-na-windowsie.yml --branch <branch>`).
 The verdict is about your local `HEAD`: a run of another commit ends in `VERIFY FAIL`, the last line names the run's
@@ -95,9 +101,9 @@ opens the `.lnk` with `os.startfile` like Explorer does for Dad:
 
 - `BROWSER` is `<root>\przegladarka.cmd`, which appends the address to `<root>\otwarte-adresy.txt`;
 - `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` set `url.<origin>.insteadOf` for the tool's fixed GitHub
-  address, so README's `git clone` and Aktualizacja narzędzia run against the run's origin. Diagnoza and
-  Konfiguracja still ask the real GitHub API for the newest Wydanie, so the card's freshness depends on the network;
-  `aktualizacja` needs it to read `Jest nowsza wersja` (see its Gotchas).
+  address, so README's `git clone` and Aktualizacja narzędzia run against the run's origin. Diagnoza and the
+  section Narzędzie of Ustawienia still ask the real GitHub API for the newest Wydanie, so the section's freshness
+  depends on the network; `aktualizacja` needs it to read `Jest nowsza wersja` (see its Gotchas).
 
 Teardown is the runner's `finally`: it keeps the state in the evidence, then runs the cleanup.
 
@@ -126,9 +132,13 @@ reads.
   `System.Drawing`.
 
 The tab is Playwright for Python's headless Chromium at 1440×1000, `pl-PL`, on `http://127.0.0.1:47811/`, with the
-same ARIA handles as `verify-centrum-rozliczen`: buttons `Wskaż folder okresów`, `Wskaż Rejestr zleceń`,
-`Folder okresu, okres 15_21_09_2026`, `Zaktualizuj narzędzie`; table `Tablica okresów`; group `Rejestr zleceń`;
-region `Narzędzie`; dialog `Zaktualizowano` in region `Notifications`. Recipes are in `features/`.
+same ARIA handles as `verify-centrum-rozliczen`: Dad opens dialog `Ustawienia` with link `Ustawienia` (the gear in the
+menu's footer) or with link `Ustaw w Ustawieniach` on the empty Okresy, and goes to a section by its link (`Foldery`,
+`Narzędzie`; heading `Ustawienia/<sekcja>`), whose content is `[data-slot=settings-section]` (the menu of sections
+has a list of the same name as the section Narzędzie); there buttons `Wskaż Folder okresów`, `Wskaż Rejestr zleceń`
+and `Zaktualizuj narzędzie`, list items `Folder okresów`, `Rejestr zleceń` and `Wersja narzędzia`; Esc closes it. On
+the page: button `Folder okresu, okres 15_21_09_2026`, table `Tablica okresów`, dialog `Zaktualizowano` in region
+`Notifications`. Recipes are in `features/`.
 
 ## Evidence
 

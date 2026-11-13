@@ -9,28 +9,46 @@ import shutil
 import sys
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Page, Request, Route, expect
+from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, expect
 
 from drive.common import (
+    DAD_VIEWPORT,
     REPEAT_SETTLE_MS,
     Run,
     choose_periods_directory,
+    close_settings,
+    error_toasts,
     move,
+    open_settings,
+    put_text,
     remove_tree,
     sent_requests,
+    settings_window,
     settle,
     unreadable,
 )
 from harness import Log
 
 
+FOLDERS = "#/ustawienia/foldery"
+
+
+FEATURE = "ustawienia"
+# The narrow browser window of the window Ustawienia (full screen, sections in a combobox).
+NARROW: ViewportSize = {"width": 420, "height": 860}
+
+
 def drive(run: Run, page: Page) -> None:
-    feature = "ustawienia"
+    feature = FEATURE
     register_name = Path(run.fixture["order_register"]).name
+    window = settings_window(page)
+    register = window.get_by_role("listitem", name="Rejestr zleceń")
+    periods = window.get_by_role("listitem", name="Folder okresów")
 
     run.step(feature, "ustawienia-pusty-stan")
     page.goto(run.url)
     expect(page.get_by_text("Wskaż folder okresów", exact=True).first).to_be_visible()
+    expect(page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_be_visible()
     settings = run.api("/api/settings", "ustawienia-przed")
     run.check(
         settings["order_register"] == {"state": "not_set"} and settings["periods_directory"] == {"state": "not_set"},
@@ -42,38 +60,38 @@ def drive(run: Run, page: Page) -> None:
     dialogs = len(run.lines(Log.DIALOGS))
     before = run.settings_text()
     pickers = ("Wskaż Rejestr zleceń", "Wskaż Folder okresów")
-    empty_state = page.get_by_role("button", name="Wskaż folder okresów", exact=True)
+    page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
+    folder_picker = window.get_by_role("button", name="Wskaż Folder okresów", exact=True)
     held: list[Route] = []
     # Harness: each picker request is held, as Dad's native window stays open until he picks or closes it.
     page.route("**/api/settings/*/choose", lambda route: held.append(route))
     try:
-        empty_state.dblclick()
+        folder_picker.dblclick()
         page.wait_for_timeout(REPEAT_SETTLE_MS)
-        run.check(len(held) == 1, f"a double click on Wskaż folder okresów opens one picker ({len(held)} requests)")
-        expect(empty_state).to_be_disabled()
-        expect(empty_state).to_contain_text("Czekam na wybór…")
+        run.check(len(held) == 1, f"a double click on Wskaż Folder okresów opens one picker ({len(held)} requests)")
+        expect(folder_picker).to_contain_text("Czekam na wybór…")
         for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        run.check(True, "while the picker is open (held, harness), every picker button on Okresy waits for it")
+            expect(window.get_by_role("button", name=name, exact=True)).to_be_disabled()
+        run.check(True, "while the picker is open (held, harness), both picker buttons of Foldery wait for it")
         run.capture(page, "19-ustawienia-jedno-okno-wyboru", live=True)  # the waiting spinner turns forever
+        close_settings(page)
         page.get_by_role("link", name="Uruchomienia", exact=True).click()
+        expect(page.get_by_role("heading", name="Uruchomienia", level=1)).to_be_visible()
+        open_settings(page, "Foldery")
         for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        page.get_by_role("link", name="Okresy", exact=True).click()
-        expect(empty_state).to_be_disabled()
-        for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        run.check(True, "on Uruchomienia and back on Okresy the picker buttons still wait for the open picker")
+            expect(window.get_by_role("button", name=name, exact=True)).to_be_disabled()
+        run.check(True, "closed and opened again over Uruchomienia, Foldery still waits for the open picker")
         run.check(len(held) == 1, f"no button opened a second picker ({len(held)} requests)")
     finally:
         for route in held:
             route.continue_()
         page.unroute("**/api/settings/*/choose")
     run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
-    expect(empty_state).to_be_enabled()
     for name in pickers:
-        expect(page.get_by_role("button", name=name, exact=True)).to_be_enabled()
+        expect(window.get_by_role("button", name=name, exact=True)).to_be_enabled()
     run.check(run.settings_text() == before, "after the cancelled picker every picker button works again, nothing set")
+    close_settings(page)
+    page.get_by_role("link", name="Okresy", exact=True).click()
 
     run.step(feature, "ustawienia-folder-okresow")
     choose_periods_directory(run, page)
@@ -91,11 +109,14 @@ def drive(run: Run, page: Page) -> None:
     missing_register = page.get_by_role("alert").filter(has_text="Najpierw wskaż Rejestr zleceń.")
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
     expect(missing_register).to_be_visible()
-    run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing for the start")
-    page.get_by_role("link", name="Okresy", exact=True).click()
+    unset = page.get_by_role("group", name="Rejestr zleceń")
+    expect(unset).to_contain_text("Rejestr zleceń: nie wskazano")
+    expect(unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", FOLDERS)
+    run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing and links to Foldery")
+    unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
+    expect(window.get_by_role("heading")).to_have_text("Ustawienia/Foldery")
     run.answer_picker(run.fixture["order_register"])
-    page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
-    register = page.get_by_role("group", name="Rejestr zleceń")
+    window.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.lines(Log.DIALOGS)[-1]["title"] == "Wybierz plik Rejestru zleceń", "the file picker opened")
     run.check(
@@ -105,15 +126,16 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "03-ustawienia-rejestr-zlecen")
 
     run.step(feature, "ustawienia-braki-do-startu")
-    page.get_by_role("link", name="Uruchomienia", exact=True).click()
+    close_settings(page)
     expect(page.get_by_text("Nowe Uruchomienie procesu", exact=True)).to_be_visible()
     expect(missing_register).to_have_count(0)
+    expect(page.get_by_role("group", name="Rejestr zleceń").get_by_role("link")).to_have_count(0)
     expect(page.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_enabled()
     processes = run.api("/api/runs/setup", "ustawienia-braki-do-startu")["processes"]
     assert isinstance(processes, list)
     run.check(
         [process["blocker"] for process in processes if process["process"] == "preparation"] == [None],
-        "the Rejestr zleceń pointed on Okresy is no longer missing on Uruchomienia: its start is read again",
+        "the Rejestr zleceń pointed in Ustawienia is no longer missing on Uruchomienia under it: its start is read again",
     )
     run.capture(page, "18-ustawienia-braki-do-startu")
 
@@ -126,30 +148,29 @@ def drive(run: Run, page: Page) -> None:
 
     page.on("request", count_setup)
     try:
+        themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
         with sent_requests(page, "PUT", "/api/settings/theme") as saves:
-            for click, then, theme in (
-                ("Włącz motyw jasny", "Włącz motyw ciemny", "light"),
-                ("Włącz motyw ciemny", "Włącz motyw jasny", "dark"),
-            ):
-                page.get_by_role("button", name=click, exact=True).click()
-                expect(page.get_by_role("button", name=then, exact=True)).to_be_visible()
+            for click, theme in (("Jasny", "light"), ("Ciemny", "dark")):
+                themes.get_by_role("button", name=click, exact=True).click()
+                expect(themes.get_by_role("button", name=click, exact=True)).to_have_attribute("aria-pressed", "true")
                 run.wait_for(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
             # A remount on the server's answer would read the start again once that answer reached the page.
             settle(page, saves)
+        close_settings(page)
     finally:
         page.remove_listener("request", count_setup)
     expect(page.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_enabled()
     run.check(
-        setup_reads == [], f"switching the theme on Uruchomienia does not read the start again ({len(setup_reads)} reads)"
+        setup_reads == [], f"switching the theme over Uruchomienia does not read the start again ({len(setup_reads)} reads)"
     )
     page.get_by_role("link", name="Okresy", exact=True).click()
 
     run.step(feature, "ustawienia-anulowanie")
     before = run.settings_text()
     dialogs = len(run.lines(Log.DIALOGS))
-    page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
+    open_settings(page, "Foldery").get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
     run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
-    expect(page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
+    expect(window.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.settings_text() == before, "a cancelled picker leaves the settings file unchanged")
 
@@ -171,11 +192,10 @@ def drive(run: Run, page: Page) -> None:
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 
     run.step(feature, "ustawienia-nieczytelny-plik")
-    periods = page.get_by_role("group", name="Folder okresów")
     with unreadable(Path(run.fixture["settings"])):
         page.reload()
-        for group in (register, periods):
-            expect(group.get_by_text("Nie da się teraz odczytać Ustawień taty", exact=True)).to_be_visible()
+        for row in (register, periods):
+            expect(row.get_by_text("Nie da się teraz odczytać Ustawień Centrum", exact=True)).to_be_visible()
         settings = run.api("/api/settings", "ustawienia-nieczytelny-plik")
         run.check(
             settings["order_register"] == settings["periods_directory"] == {"state": "unreadable"},
@@ -188,24 +208,266 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "ustawienia-niedostepna-sciezka")
     with _without_access(run, page) as (register_path, periods_path):
         page.reload()
-        for group, path in ((register, register_path), (periods, periods_path)):
-            expect(group.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
+        for row, path in ((register, register_path), (periods, periods_path)):
+            expect(row.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
         run.capture(page, "276-ustawienia-niedostepna-sciezka")
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
     expect(periods.get_by_text(Path(run.fixture["periods_directory"]).name, exact=True)).to_be_visible()
 
     run.step(feature, "ustawienia-motyw")
-    page.get_by_role("button", name="Włącz motyw jasny").click()
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    themes.get_by_role("button", name="Jasny", exact=True).click()
     expect(page.locator("html")).not_to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
     page.reload()
-    expect(page.get_by_role("button", name="Włącz motyw ciemny")).to_be_visible()
+    expect(themes.get_by_role("button", name="Jasny", exact=True)).to_have_attribute("aria-pressed", "true")
     expect(page.locator("html")).not_to_have_class("dark")
     run.capture(page, "05-ustawienia-motyw-jasny")
-    page.get_by_role("button", name="Włącz motyw ciemny").click()
+    themes.get_by_role("button", name="Ciemny", exact=True).click()
     expect(page.locator("html")).to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
+    close_settings(page)
+
+    _saved_and_undo(run, page)
+    _failure_in_window(run, page)
+    _history(run, page)
+    _refusal_at_field(run, page)
+    _typed_keeps_other(run, page)
+    _bad_settings_file(run, page)
+
+
+def _toast(page: Page, title: str) -> Locator:
+    """The toast ``title`` on screen; a toast it replaced stays in the document while it slides out."""
+
+    return page.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text(title, exact=True))
+
+
+def _saved_and_undo(run: Run, page: Page) -> None:
+    """„Zapisano · Cofnij” after a switch, wide and narrow; „Cofnij” in the toast takes the change back."""
+
+    run.step(FEATURE, "ustawienia-zapisano-cofnij")
+    for viewport, capture in ((DAD_VIEWPORT, "306-ustawienia-zapisano-cofnij"), (NARROW, "307-ustawienia-zapisano-waskie")):
+        # The gear is in the menu, which a narrow window hides: the window opens wide and the browser narrows.
+        themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+        page.set_viewport_size(viewport)
+        try:
+            themes.get_by_role("button", name="Jasny", exact=True).click()
+            run.wait_for(lambda: run.remembered("motyw") == "light", "the switch saves at once")
+            saved = _toast(page, "Zapisano")
+            expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
+            run.check(True, f"the switch shows „Zapisano · Cofnij” ({viewport['width']} px)")
+            run.capture(page, capture, full_page=False)
+            saved.get_by_role("button", name="Cofnij", exact=True).click()
+            expect(_toast(page, "Cofnięto")).to_be_visible()
+            expect(page.locator("html")).to_have_class("dark")
+            expect(themes.get_by_role("button", name="Ciemny", exact=True)).to_have_attribute("aria-pressed", "true")
+            run.wait_for(lambda: run.remembered("motyw") == "dark", "„Cofnij” in the toast takes the theme back")
+            close_settings(page)
+        finally:
+            page.set_viewport_size(DAD_VIEWPORT)
+
+
+# Whether the element's centre takes a click: nothing (the blurred page, another window) stands over it.
+ON_TOP = """element => {
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return hit !== null && element.contains(hit)
+}"""
+
+
+def _failure_in_window(run: Run, page: Page) -> None:
+    """A save that fails shows its notification in the window Ustawienia, over its content, not under the blurred page."""
+
+    run.step(FEATURE, "ustawienia-blad-w-oknie")
+    theme = "**/api/settings/theme"
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    page.route(theme, lambda route: route.fulfill(status=500, body=""))
+    try:
+        themes.get_by_role("button", name="Jasny", exact=True).click()
+        failure = settings_window(page).get_by_role("dialog", name="Nie udało się")
+        expect(failure).to_be_visible()
+        expect(error_toasts(page)).to_have_count(1)
+        run.check(failure.evaluate(ON_TOP), "a failed save is a notification in the window Ustawienia that nothing covers")
+        run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
+    finally:
+        page.unroute(theme)
+    close_settings(page)
+    page.reload()
+    expect(page.locator("html")).to_have_class("dark")
+    run.check(run.remembered("motyw") == "dark", "the failed save left the theme as it was")
+
+
+def _history(run: Run, page: Page) -> None:
+    """Historia lists every change with before and after, a change outside Centrum too, and „Cofnij” is a new change."""
+
+    run.step(FEATURE, "ustawienia-historia")
+    settings = Path(run.fixture["settings"])
+    periods = run.fixture["periods_directory"]
+    attachments = run.root / "Załączniki"
+    # Harness: Maks changes the folder okresów in the settings file by hand, outside Centrum.
+    put_text(settings, (run.settings_text() or "").replace(periods, str(attachments)))
+    window = open_settings(page, "Historia")
+    rows = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
+    outside = rows.first
+    expect(outside).to_contain_text("Folder okresów")
+    expect(outside).to_contain_text("INEA → Załączniki")
+    expect(outside).to_contain_text("spoza Centrum")
+    run.check(True, "a change of the settings file outside Centrum is the newest row, marked „spoza Centrum”")
+    expect(rows.nth(1)).to_contain_text("Ciemny")
+    expect(rows.nth(1)).to_contain_text("cofnięcie")
+    history = run.api("/api/settings/history", "ustawienia-historia")["rows"]
+    assert isinstance(history, list)
+    run.check(
+        [row["source"] for row in history[:2]] == ["outside", "tata"] and history[1]["undoes"] is not None,
+        "the server's Historia has the change outside Centrum, then the undo from the toast",
+    )
+    run.capture(page, "308-ustawienia-historia", full_page=False)
+
+    outside.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
+    expect(rows.first).to_contain_text("Załączniki → INEA")
+    expect(rows.first).to_contain_text("cofnięcie")
+    run.wait_for(lambda: run.remembered("folder_okresow") == periods, "„Cofnij” points the folder okresów back to INEA")
+    run.check(True, "the undo is a new row on top, and the row it undid stays")
+
+    with unreadable(settings):
+        rows.first.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
+        expect(rows.first.get_by_role("alert")).to_contain_text("Nie udało się zapisać Ustawień taty")
+    run.check(run.remembered("folder_okresow") == periods, "an undo the server refuses is one sentence under its row")
+    close_settings(page)
+
+    open_settings(page, "Historia")
+    page.set_viewport_size(NARROW)
+    try:
+        expect(rows.first).to_contain_text("Załączniki → INEA")
+        run.capture(page, "309-ustawienia-historia-waska", full_page=False)
+        close_settings(page)
+    finally:
+        page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _refusal_at_field(run: Run, page: Page) -> None:
+    """A wrong value is not saved: its one sentence stands under its field, typed or picked."""
+
+    run.step(FEATURE, "ustawienia-odmowa-przy-polu")
+    sentence = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
+    before = run.settings_text()
+    for viewport, capture in ((DAD_VIEWPORT, "310-ustawienia-odmowa-przy-polu"), (NARROW, "311-ustawienia-odmowa-waska")):
+        window = open_settings(page, "Foldery")
+        page.set_viewport_size(viewport)
+        try:
+            register = window.get_by_role("listitem", name="Rejestr zleceń")
+            register.get_by_role("button", name="Wpisz Rejestr zleceń", exact=True).click()
+            typed = register.get_by_role("textbox", name="Ścieżka: Rejestr zleceń", exact=True)
+            typed.fill("ZLECENIA.txt")
+            typed.press("Enter")
+            expect(register.get_by_role("alert")).to_have_text(sentence)
+            expect(typed).to_have_attribute("aria-invalid", "true")
+            run.check(run.settings_text() == before, f"a wrong typed path is not saved ({viewport['width']} px)")
+            run.capture(page, capture, full_page=False)
+            typed.press("Escape")
+            expect(typed).to_have_count(0)
+            expect(register.get_by_role("alert")).to_have_count(0)
+            expect(window).to_be_visible()
+            run.check(True, "Esc in the field goes back from the field and leaves the window open")
+            close_settings(page)
+        finally:
+            page.set_viewport_size(DAD_VIEWPORT)
+
+    register = open_settings(page, "Foldery").get_by_role("listitem", name="Rejestr zleceń")
+    run.answer_picker(str(run.root / "ZLECENIA.txt"))
+    register.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
+    expect(register.get_by_role("alert")).to_have_text(sentence)
+    run.check(run.settings_text() == before, "a wrong file from the picker is refused under its field, not saved")
+
+    close_settings(page)
+
+
+def _typed_keeps_other(run: Run, page: Page) -> None:
+    """„Wpisz” saves the one path typed: the other path stays as it was, and quotes from Explorer go."""
+
+    run.step(FEATURE, "ustawienia-wpisz-druga-bez-zmiany")
+    window = open_settings(page, "Foldery")
+    register_path, periods_path = run.fixture["order_register"], run.fixture["periods_directory"]
+    # Dad pastes each path as Explorer copies it, in quotes; it is the path already remembered.
+    for title, key, path, other, kept in (
+        ("Rejestr zleceń", "rejestr_zlecen", register_path, "folder_okresow", periods_path),
+        ("Folder okresów", "folder_okresow", periods_path, "rejestr_zlecen", register_path),
+    ):
+        row = window.get_by_role("listitem", name=title)
+        row.get_by_role("button", name=f"Wpisz {title}", exact=True).click()
+        row.get_by_role("textbox", name=f"Ścieżka: {title}", exact=True).fill(f'"{path}"')
+        row.get_by_role("button", name=f"Zapisz {title}", exact=True).click()
+        # The field closes once the server has saved.
+        expect(row.get_by_role("textbox")).to_have_count(0)
+        expect(row.get_by_role("alert")).to_have_count(0)
+        run.check(run.remembered(key) == path, f"a {title} pasted from Explorer in quotes is saved without them")
+        run.check(run.remembered(other) == kept, f"typing the {title} leaves the other path ({other}) as it was")
+    close_settings(page)
+
+
+def _bad_settings_file(run: Run, page: Page) -> None:
+    """A wrong setting in the settings file stands as the server's one sentence: under its field, or above the list
+    Foldery for the whole file; Historia shows each such content without „Cofnij”, and the good file comes back."""
+
+    run.step(FEATURE, "ustawienia-zle-ustawienie")
+    settings = Path(run.fixture["settings"])
+    good = run.settings_text() or ""
+    window = open_settings(page, "Foldery")
+    folders = window.get_by_role("list", name="Foldery")
+    register = folders.get_by_role("listitem", name="Rejestr zleceń")
+    periods = folders.get_by_role("listitem", name="Folder okresów")
+    # Harness: Maks writes a relative folder okresów into the settings file by hand.
+    put_text(settings, good.replace(run.fixture["periods_directory"], "INEA"))
+    page.reload()
+    problem = run.api("/api/settings", "ustawienia-zle-pole")["folders_problem"]
+    assert isinstance(problem, dict)
+    run.check(problem["field"] == "folder_okresow", f"the server names the wrong field ({problem['field']})")
+    expect(periods.get_by_role("alert")).to_have_text(problem["message"])
+    expect(window.get_by_role("alert")).to_have_count(1)
+    run.check(True, "a wrong folder okresów in the file is the server's one sentence under its field, nowhere else")
+    run.capture(page, "312-ustawienia-zle-pole", full_page=False)
+
+    # Harness: the settings file loses its end (a copy cut off), so no field is to blame.
+    put_text(settings, "schema_version: [\n")
+    page.reload()
+    problem = run.api("/api/settings", "ustawienia-zly-plik")["folders_problem"]
+    assert isinstance(problem, dict)
+    run.check(problem["field"] is None, f"a damaged file names no field ({problem['field']})")
+    sentence = window.get_by_role("alert")
+    expect(sentence).to_have_text(problem["message"])
+    expect(folders.get_by_role("alert")).to_have_count(0)
+    above, below = sentence.bounding_box(), folders.bounding_box()
+    assert above is not None and below is not None
+    run.check(above["y"] + above["height"] <= below["y"], "the sentence about the whole file stands above the list Foldery")
+    run.capture(page, "313-ustawienia-zly-plik", full_page=False)
+
+    run.step(FEATURE, "ustawienia-historia-bez-cofniecia")
+    window.get_by_role("link", name="Historia", exact=True).click()
+    rows = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
+    history = run.api("/api/settings/history", "ustawienia-historia-bez-cofniecia")["rows"]
+    assert isinstance(history, list)
+    expect(rows).to_have_count(len(history))
+    refused = [index for index, row in enumerate(history) if row["refused"]]
+    run.check(
+        refused[:2] == [0, 1] and not any(history[index]["undoable"] for index in refused),
+        "the server's Historia has both wrong contents on top, neither of them undoable",
+    )
+    for index in refused:
+        expect(rows.nth(index)).to_contain_text("Nie przyjęto")
+        expect(rows.nth(index).get_by_role("button")).to_have_count(0)
+    undoable = next(index for index, row in enumerate(history) if row["undoable"])
+    expect(rows.nth(undoable).get_by_role("button")).to_have_text("Cofnij")
+    run.check(True, "a row of Historia that cannot be undone has no „Cofnij”, while a change of Dad's has")
+    run.capture(page, "314-ustawienia-historia-bez-cofniecia", full_page=False)
+
+    put_text(settings, good)
+    window.get_by_role("link", name="Foldery", exact=True).click()
+    page.reload()
+    expect(register.get_by_text(Path(run.fixture["order_register"]).name, exact=True)).to_be_visible()
+    expect(window.get_by_role("alert")).to_have_count(0)
+    run.check(run.api("/api/settings", "ustawienia-dobry-plik")["folders_problem"] is None, "the good file is back")
+    close_settings(page)
 
 
 @contextmanager
@@ -238,8 +500,8 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
     periods = onedrive / Path(run.fixture["periods_directory"]).name
     periods.mkdir()
     print(f"  harness: a copy of the Rejestr zleceń and an empty folder okresów in {onedrive.name}", flush=True)
-    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", str(register))
-    _point(run, page, "Zmień Folder okresów", "folder_okresow", str(periods))
+    _point(run, page, "Rejestr zleceń", "rejestr_zlecen", str(register))
+    _point(run, page, "Folder okresów", "folder_okresow", str(periods))
     with unreadable(onedrive):
         yield register, periods
         settings = run.api("/api/settings", "ustawienia-niedostepna-sciezka")
@@ -248,14 +510,14 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
             and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
             "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
         )
-    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
-    _point(run, page, "Zmień Folder okresów", "folder_okresow", run.fixture["periods_directory"])
+    _point(run, page, "Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
+    _point(run, page, "Folder okresów", "folder_okresow", run.fixture["periods_directory"])
     remove_tree(onedrive)
 
 
-def _point(run: Run, page: Page, button: str, key: str, path: str) -> None:
-    """Dad points ``path`` with the picker behind ``button`` on the settings card, until the settings file has it."""
+def _point(run: Run, page: Page, label: str, key: str, path: str) -> None:
+    """Dad points ``path`` with „Zmień <label>” in the open section Foldery, until the settings file has it."""
 
     run.answer_picker(path)
-    page.get_by_role("button", name=button, exact=True).click()
+    settings_window(page).get_by_role("button", name=f"Zmień {label}", exact=True).click()
     run.wait_for(lambda: run.remembered(key) == path, f"the settings file remembers {Path(path).name} ({key})")

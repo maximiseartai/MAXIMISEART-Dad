@@ -606,7 +606,7 @@ def wire(scheduler: Scheduler) -> World:
         )
 
     class NoStops:
-        def ended(self, info: object, stop: object, *, shown: object) -> None:
+        def ended(self, info: object, stop: object, *, shown: object, settings: object) -> None:
             if stop is not None:
                 raise ModelGap("Zatrzymanie w Stops.ended; model kończy każde Uruchomienie sukcesem")
 

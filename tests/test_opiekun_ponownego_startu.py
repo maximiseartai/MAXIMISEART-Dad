@@ -33,6 +33,9 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
 from rozliczenia.tool_files import start_command
 
 from tests.fixtures.centrum import ToolDirectory
@@ -99,7 +102,9 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "WORKER_TEMPLATE": tool_files.WORKER_TEMPLATE,
         "COLLECTIVE_TEMPLATE": tool_files.COLLECTIVE_TEMPLATE,
         "INTERNAL_TEMPLATE": tool_files.INTERNAL_TEMPLATE,
-        "SETTINGS": tool_files.SETTINGS,
+        "SETTINGS": tool_files.CONFIG_DIR / SETTINGS_FILE,
+        "SETTINGS_HISTORY": tool_files.CONFIG_DIR / HISTORY_FILE,
+        "SETTINGS_MEMORY": tool_files.CONFIG_DIR / MEMORY_DIRECTORY,
         "SETTLEMENT_METRICS": tool_files.SETTLEMENT_METRICS,
         "PREPARATION_METRICS": tool_files.PREPARATION_METRICS,
         "INTERMAX_METRICS": tool_files.INTERMAX_METRICS,
@@ -114,6 +119,8 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "COLLECTIVE_TEMPLATE": "config/Wzorzec pliku zbiorczego.xlsx",
         "INTERNAL_TEMPLATE": "config/Wzorzec rozliczenia wewnętrznego.xlsx",
         "SETTINGS": "config/centrum-ustawienia.yaml",
+        "SETTINGS_HISTORY": "config/historia-ustawien.jsonl",
+        "SETTINGS_MEMORY": "config/ustawienia-pamiec",
         "SETTLEMENT_METRICS": ".rozliczenia-metrics.jsonl",
         "PREPARATION_METRICS": ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
         "INTERMAX_METRICS": ".uporzadkowanie-intermax-metrics.jsonl",

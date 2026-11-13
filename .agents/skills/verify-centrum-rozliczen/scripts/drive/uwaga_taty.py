@@ -37,6 +37,7 @@ from drive.common import (
     remove,
     Run,
     start_centrum,
+    shown_theme,
     switch_theme,
     toggle_theme,
 )
@@ -335,7 +336,7 @@ def _drive_low_windows(run: Run, page: Page) -> None:
         for second_theme in (False, True):
             if second_theme:
                 toggle_theme(page)
-            theme = "jasny" if page.locator("header").get_by_role("button", name="Włącz motyw ciemny").count() else "ciemny"
+            theme = shown_theme(page)
             themes.append(theme)
             for window, kind in ((screen, "lines"), *LOW_WINDOWS):
                 page.set_viewport_size(window)
@@ -467,12 +468,12 @@ def drive(run: Run, page: Page) -> None:
         page.goto(run.url + f"#/{page_id}")
         expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
         write = page.get_by_role("button", name=WRITE, exact=True)
-        theme = page.get_by_role("button", name="Włącz motyw", exact=False)
+        bell = page.locator("header").get_by_role("button", name="Powiadomienia", exact=False)
         expect(write).to_be_visible()
-        write_box, theme_box = write.bounding_box(), theme.bounding_box()
+        write_box, bell_box = write.bounding_box(), bell.bounding_box()
         run.check(
-            write_box is not None and theme_box is not None and write_box["x"] < theme_box["x"],
-            f"{heading}: the header has „{WRITE}” left of the theme toggle",
+            write_box is not None and bell_box is not None and write_box["x"] < bell_box["x"],
+            f"{heading}: the header has „{WRITE}” left of the bell Powiadomienia",
         )
     page.get_by_role("button", name=WRITE, exact=True).hover()
     expect(page.get_by_text(WRITE, exact=True)).to_be_visible()

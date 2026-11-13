@@ -15,7 +15,7 @@ Oba kroki robisz w Centrum rozliczeń, które otwierasz skrótem na pulpicie:
 | Otworzyć Plik zbiorczy, Rozliczenie wewnętrzne albo Folder okresu | Jedno kliknięcie w wierszu okresu |
 | Przygotować plik zbiorczy | Strona `Uruchomienia`, proces `Przygotowanie pliku zbiorczego` |
 | Utworzyć rozliczenia pracowników | Strona `Uruchomienia`, proces `Przebieg rozliczeń` |
-| Zaktualizować narzędzie | Przycisk `Zaktualizuj narzędzie`, gdy jest nowsza wersja: na stronie `Konfiguracja`, w Powiadomieniach i w Diagnozie |
+| Zaktualizować narzędzie | Przycisk `Zaktualizuj narzędzie`, gdy jest nowsza wersja: w oknie `Ustawienia` (sekcja `Narzędzie`), w Powiadomieniach i w Diagnozie |
 | Napisać do Maksa, ogólnie albo o jednym Uruchomieniu | Ikona „Napisz do Maksa” w prawym górnym rogu albo na karcie Uruchomienia |
 
 ## Pierwsza instalacja
@@ -74,7 +74,8 @@ komputerze. Nie otwiera czarnego okna konsoli.
 1. Dwukrotnie kliknij skrót „Centrum rozliczeń” na pulpicie.
 2. Po chwili przeglądarka sama otworzy kartę Centrum rozliczeń
    (`http://127.0.0.1:47811/`).
-3. Za pierwszym razem na stronie `Okresy` wskaż folder okresów, czyli
+3. Za pierwszym razem kliknij `Ustawienia` (zębatka w lewym dolnym rogu, nad
+   `Zamknij Centrum rozliczeń`) i w sekcji `Foldery` wskaż folder okresów, czyli
    `Załączniki` w OneDrive (ten z folderami `Rozliczenia 2025`,
    `Rozliczenia 2026`), i Rejestr zleceń. Centrum je zapamięta.
 
@@ -171,9 +172,9 @@ trzeba skontaktować się z Maksem.
 |---|---|
 | „Nie udało się zapisać Zgłoszenia na tym komputerze” | Kliknij `Spróbuj ponownie`. Jeśli komunikat wraca, rozwiń `Co zostanie wysłane`, skopiuj treść i wklej ją do maila do Maksa. Po odświeżeniu karty najpierw kliknij `Diagnoza`. |
 
-Na stronie `Konfiguracja` widać `Zgłoszenia: gotowe`, gdy Token do Zgłoszeń
-jest na komputerze, `Zgłoszenia: brak tokenu`, gdy go nie ma, albo
-`Zgłoszenia: token odrzucony`, gdy GitHub go nie przyjmuje. Wtedy powiedz
+W oknie `Ustawienia`, w sekcji `Zgłoszenia`, widać `Gotowe`, gdy Token do Zgłoszeń
+jest na komputerze, `Brak tokenu`, gdy go nie ma, albo
+`Token odrzucony`, gdy GitHub go nie przyjmuje. Wtedy powiedz
 Maksowi. Token wpisuje Maks; Ty niczego tam nie wpisujesz.
 
 ### Napisz do Maksa
@@ -227,13 +228,13 @@ zniknie, gdy się uda.
 
 ### Aktualizacja narzędzia
 
-Na stronie `Konfiguracja`, w karcie `Narzędzie`, widać wersję narzędzia, np.
-`Wersja 1a2b3c4 od 20.10.2026`, i czy jest najnowsza: `Aktualna`, `Jest nowsza
+W oknie `Ustawienia`, w sekcji `Narzędzie`, widać wersję narzędzia, np.
+`1a2b3c4 od 20.10.2026`, i czy jest najnowsza: `Aktualna`, `Jest nowsza
 wersja` albo `Nie sprawdzono` (bez internetu). Gdy Maks zapyta, którą wersję
-masz, przeczytaj mu ją. Przycisk `Zaktualizuj narzędzie` jest w Konfiguracji i w
+masz, przeczytaj mu ją. Przycisk `Zaktualizuj narzędzie` jest w tej sekcji i w
 Diagnozie tylko wtedy, gdy jest nowsza wersja.
 
-1. Kliknij `Zaktualizuj narzędzie`: na stronie `Konfiguracja` albo w
+1. Kliknij `Zaktualizuj narzędzie`: w oknie `Ustawienia` albo w
    Diagnozie. Oba przyciski robią to samo.
 2. Poczekaj. Pod przyciskiem widać `Pobieranie nowej wersji…`, a gdy nowa
    wersja potrzebuje nowych bibliotek, potem `Instalowanie bibliotek…` (to może
@@ -306,8 +307,8 @@ Narzędzie tylko czyta Rejestr zleceń i wzorce. Nigdy ich nie zmienia.
 
 ### Kroki
 
-Rejestr zleceń i folder okresów wskazujesz raz w `Ustawieniach` na stronie
-`Okresy`; potem Centrum je pamięta.
+Rejestr zleceń i folder okresów wskazujesz raz w oknie `Ustawienia`, w sekcji
+`Foldery`; potem Centrum je pamięta.
 
 1. Na stronie `Okresy` karta `Następny krok` pokazuje ostatni pełny okres.
    Kliknij `Podgląd bez zapisu`. Żeby przygotować inny tydzień, kliknij
@@ -391,7 +392,7 @@ z `.staging-` na końcu). To nie są Foldery okresu.
 | Co się stało (fragment) | Co zrobić |
 |---|---|
 | „Rejestr zleceń jest otwarty w Excelu” | Zapisz i zamknij Rejestr zleceń, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z folderu Rejestru pozostawiony plik `~$ZLECENIA INTERMAX OD 08_11_2021.xlsx`. |
-| „Nie znaleziono Rejestru zleceń” | W `Ustawieniach` na stronie `Okresy` wskaż właściwy plik Rejestru zleceń i uruchom ponownie. |
+| „Nie znaleziono Rejestru zleceń” | W oknie `Ustawienia`, w sekcji `Foldery`, wskaż właściwy plik Rejestru zleceń i uruchom ponownie. |
 | „Nie można teraz odczytać Rejestru zleceń” | Nie poprawiaj Rejestru. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy Rejestr otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie można odczytać Rejestru zleceń” | Sprawdź, czy Rejestr otwiera się w Excelu i jest zapisany jako `.xlsx`. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „nie znaleziono arkusza ze zleceniami” | Sprawdź, czy w `Ustawieniach` wskazano plik Rejestru zleceń. Pierwszy wiersz arkusza ze zleceniami musi mieć wszystkie nagłówki wymienione w komunikacie. |
@@ -404,7 +405,7 @@ z `.staging-` na końcu). To nie są Foldery okresu.
 | „spoza konfiguracji wykonawców” | Literówkę w `WYKONAWCA` popraw we wskazanych wierszach Rejestru. Nowego wykonawcę trzeba dopisać do konfiguracji wykonawców (`config\worker_mapping.yaml`, tej samej co w Przebiegu rozliczeń); poproś o to osobę utrzymującą narzędzie. |
 | „nie ma żadnego zlecenia z tego okresu” | Sprawdź, czy wybrano właściwy okres i czy eksport zleceń jest zapisany w Rejestrze. Uruchom ponownie. |
 | „Plik tego okresu już istnieje” | Narzędzie nie nadpisuje plików okresu, żeby nie stracić ręcznych poprawek. Sprawdź okres. Jeśli plik ma powstać od nowa, przenieś albo usuń wskazany plik i uruchom ponownie. Jeśli w Folderze okresu jest samo Rozliczenie wewnętrzne, bez Pliku zbiorczego, a poprzednie uruchomienie nie doszło do wyniku (np. zabrakło prądu), to jest niedokończony zapis: usuń to Rozliczenie wewnętrzne i uruchom ponownie. |
-| „Nie znaleziono folderu okresów” | W `Ustawieniach` na stronie `Okresy` wskaż istniejący folder okresów, np. `Załączniki`, i uruchom ponownie. |
+| „Nie znaleziono folderu okresów” | W oknie `Ustawienia`, w sekcji `Foldery`, wskaż istniejący folder okresów, np. `Załączniki`, i uruchom ponownie. |
 | „Nie można teraz odczytać folderu” | Otwórz folder wskazany w `Gdzie` w Eksploratorze plików. Jeśli się nie otwiera albo OneDrive pokazuje błąd, uruchom OneDrive i poczekaj, aż skończy synchronizację, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „w żadnym folderze miesiąca” | W `Rozliczenia {rok}` nie ma folderu tego tygodnia. W folderze `INEA` miesiąca, do którego należy tydzień, załóż pusty folder o nazwie okresu, np. `13_19_10_2026`, i uruchom ponownie. Pliki w nim zrobi narzędzie. |
 | „jest w więcej niż jednym folderze miesiąca” | `Gdzie` pokazuje oba miesiące z folderem tego tygodnia. Zostaw folder tylko w tym miesiącu, w którym ma być rozliczony: drugi usuń albo zmień mu nazwę, np. dopisz na końcu ` stary`. Uruchom ponownie. |

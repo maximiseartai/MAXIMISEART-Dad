@@ -32,7 +32,8 @@ from rozliczenia.centrum.process_kind import (
     SettingField,
     Start,
 )
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.period_folder import PeriodFolders, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
@@ -43,7 +44,7 @@ _TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "e
 
 @dataclass(frozen=True)
 class PeriodStarts:
-    store: SettingsStore
+    settings: CentrumSettings
     configuration: ConfigurationFiles
     catalog: Catalog
     today: Callable[[], date]
@@ -51,7 +52,7 @@ class PeriodStarts:
     parts: HostParts
 
     def setup(self) -> runs_contract.RunSetup:
-        settings = self.store.load()
+        settings = self.settings.snapshot().folders
         return runs_contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), settings) for key in _TILES])
 
     def prepare(self, request: runs_contract.RunRequest) -> PreparedRun[Any, Any]:
@@ -60,7 +61,8 @@ class PeriodStarts:
         kind = self.catalog.period_kind(request.process)
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
             raise refusal.no_forwarding(kind.title)
-        chosen = kind.required_paths(self.store.load())
+        folders = self.settings.snapshot().folders
+        chosen = kind.required_paths(folders)
         if request.mode.dry_run and kind.start.no_preview is not None:
             raise kind.start.no_preview
         period = requested_period(request.period)
@@ -69,6 +71,7 @@ class PeriodStarts:
             period=period.token,
             dry_run=request.mode.dry_run,
             pricing=request.pricing if kind.view.pricing_modes else None,
+            settings=folders,
         )
         return self.catalog.prepared(kind.key, start, self.parts, self.contexts.new())
 
@@ -85,7 +88,7 @@ class PeriodStarts:
             case _:
                 assert_never(need)
 
-    def _setup(self, kind: PeriodProcessKind[Any, Any], settings: Settings) -> runs_contract.ProcessSetup:
+    def _setup(self, kind: PeriodProcessKind[Any, Any], settings: FolderSettings) -> runs_contract.ProcessSetup:
         view = kind.view
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
         previewed = previewed_periods(self.catalog.metrics(kind.key)) if kind.preview_hint is not None else frozenset()

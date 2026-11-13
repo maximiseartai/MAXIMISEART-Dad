@@ -6,18 +6,14 @@ from pathlib import Path
 
 from playwright.sync_api import Page, expect
 
-from drive.common import Run, last_opened_is, next_step_names_current_step, period_row
+from drive.common import Run, last_opened_is, next_step_names_current_step, period_row, point_in_settings
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
 def _choose_folder(run: Run, page: Page, path: str) -> None:
-    """Points Centrum to ``path``: from the empty state when run alone, through the settings card otherwise."""
+    """Points Centrum to ``path`` in the section Foldery of Ustawienia, over Okresy."""
 
-    run.answer_picker(path)
-    unset = run.api("/api/settings", "uklad-taty-ustawienia")["periods_directory"] == {"state": "not_set"}
-    name = "Wskaż folder okresów" if unset else "Zmień Folder okresów"
-    page.get_by_role("button", name=name, exact=True).click()
-    run.wait_for(lambda: run.remembered("folder_okresow") == path, f"the settings file remembers {Path(path).name}")
+    point_in_settings(run, page, "Folder okresów", path)
 
 
 def drive(run: Run, page: Page) -> None:

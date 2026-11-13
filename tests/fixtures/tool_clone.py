@@ -29,7 +29,9 @@ import subprocess
 import threading
 import urllib.request
 
-from rozliczenia import tool_files
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease
 from rozliczenia.centrum.tool_update import Release, newest_on_main
 
@@ -195,7 +197,7 @@ def copy_centrum_runtime(destination: Path) -> Path:
         shutil.copy2(REPOSITORY_ROOT / name, destination)
     shutil.copytree(REPOSITORY_ROOT / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(
-        REPOSITORY_ROOT / "config", destination / "config", ignore=shutil.ignore_patterns(tool_files.SETTINGS.name)
+        REPOSITORY_ROOT / "config", destination / "config", ignore=shutil.ignore_patterns(SETTINGS_FILE, HISTORY_FILE, MEMORY_DIRECTORY)
     )
     return destination
 

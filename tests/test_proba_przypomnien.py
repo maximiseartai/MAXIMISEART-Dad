@@ -23,6 +23,7 @@ import pytest
 import proba_przypomnien
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import REMINDERS_FOOTER, REMINDERS_ROLLOUT
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
@@ -100,7 +101,7 @@ def _klon(tmp_path: Path) -> Klon:
     )
     (config / REMINDERS_ROLLOUT).write_text("2026-11-09\n", encoding="utf-8")
     (config / REMINDERS_FOOTER).write_text(STOPKA, encoding="utf-8")
-    (config / tool_files.SETTINGS.name).write_text(
+    (config / SETTINGS_FILE).write_text(
         f"schema_version: 1\nrejestr_zlecen: '{intermax}'\nfolder_okresow: '{okresy}'\n", encoding="utf-8"
     )
     return Klon(config, intermax, okresy)
@@ -293,7 +294,7 @@ def _bez_pliku(nazwa: str) -> Callable[[Klon], None]:
     ("zepsuj", "powod"),
     [
         (_bez_pliku(REMINDERS_ROLLOUT), f"brak dnia wdrozenia przypomnien w config/{REMINDERS_ROLLOUT}"),
-        (_bez_pliku(tool_files.SETTINGS.name), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
+        (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
         (_bez_pliku(WORKER_ADDRESSES_FILE), "brak albo zly plik adresow Wykonawcow albo Konfiguracja wykonawcow"),
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),

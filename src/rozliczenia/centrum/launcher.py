@@ -53,7 +53,6 @@ from rozliczenia.tool_files import (
     NO_BROWSER_FLAG,
     NO_DIALOGS_FLAG,
     PORT_FLAG,
-    SETTINGS,
     TOOL_ROOT,
     centrum_script,
     listen_locally,
@@ -155,7 +154,7 @@ def _start(
         open_tab(address)
 
     shutdown = Shutdown(log)
-    app = create_app(settings_path=SETTINGS, platform=system_platform(), log=log, shutdown=shutdown)
+    app = create_app(config=CONFIG_DIR, platform=system_platform(), log=log, shutdown=shutdown)
     return serve(app, listener=listener, on_ready=announce, shutdown=shutdown, log=log)
 
 

@@ -10,6 +10,7 @@ i ``tools/skille_dla_zmiany.py``:
     impact = repository.impact(changed)              # testy dotknięte zmianą, odległości, odcisk testu
     repository.reaching("tools/mutacje.py")          # pliki testów, które sięgają pliku
     repository.imported("tools/plan_ci.py")          # pliki, do których plik dochodzi importem
+    unchanged_tests(root, base, "tests/test_x.py")   # testy pliku z tym samym kodem co na commicie base
 
 Zmiana to ścieżki, którymi checkout, razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base``
 HEAD z bazą; przeniesienie daje starą i nową ścieżkę, a usunięty plik też jest zmianą.
@@ -52,12 +53,13 @@ from fnmatch import fnmatchcase
 from functools import cached_property
 import hashlib
 from pathlib import Path, PurePosixPath
+import subprocess
 import sys
 
 import repo
 from sciezki_w_kodzie import Glob, references
 
-__all__ = ["STRUCTURE", "Context", "Impact", "Repository", "changed_since", "run_all", "with_structure"]
+__all__ = ["STRUCTURE", "Context", "Impact", "Repository", "changed_since", "run_all", "unchanged_tests", "with_structure"]
 
 
 class Context(enum.Enum):
@@ -162,6 +164,32 @@ def changed_since(root: Path, base: str) -> frozenset[str]:
     to tekst błędu)."""
 
     return repo.changed(root, repo.merge_base(root, "HEAD", base))
+
+
+def unchanged_tests(root: Path, base: str, path: str) -> frozenset[str]:
+    """Testy pliku ``path`` checkoutu ``root`` (``test_x`` albo ``TestKlasa::test_x``, jak id pytest bez parametrów),
+    które na commicie ``base`` stoją w nim z tym samym kodem razem z dekoratorami; plik, którego ``base`` nie ma albo
+    którego nie da się sparsować, nie ma żadnego. Tak ``tools/mutacje.py`` odróżnia test sprzed zmiany od testu, który
+    zmiana dodała albo zmieniła."""
+
+    try:
+        old = _tests(repo.git(root, "show", f"{base}:{path}"))
+        current = _tests((root / path).read_text(encoding="utf-8"))
+    except (subprocess.CalledProcessError, OSError, SyntaxError):
+        return frozenset()
+    return frozenset(name for name, code in current.items() if old.get(name) == code)
+
+
+def _tests(source: str) -> dict[str, str]:
+    """Test modułu (nazwa jak w ``unchanged_tests``) → jego kod z dekoratorami (``ast.unparse``)."""
+
+    def tests(body: list[ast.stmt], prefix: str) -> dict[str, str]:
+        functions = (node for node in body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        return {f"{prefix}{node.name}": ast.unparse(node) for node in functions if node.name.startswith("test")}
+
+    module = ast.parse(source).body
+    classes = [node for node in module if isinstance(node, ast.ClassDef) and node.name.startswith("Test")]
+    return tests(module, "") | {name: code for node in classes for name, code in tests(node.body, f"{node.name}::").items()}
 
 
 def run_all(changed: Iterable[str], context: Context) -> tuple[str, ...]:

@@ -428,6 +428,10 @@ CONSTANT_TIME_BOUNDS = {
         "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
         "Powiadomienia, które czekają dwa razy dłużej"
     ),
+    "test_mutacje.py::test_polecenie_bez_wyniku_w_limicie_czasu_narzedzia_daje_przekroczony_czas::2 <= int(spent[1]) < 4": (
+        "polecenie mutacji śpi 60 s, linia CZAS mierzy samo polecenie (bez startu narzędzia i kopii), a granica poniżej "
+        "dwóch limitów --limit-s (2 s) łapie silnik, który kończy je dwa razy później"
+    ),
     "test_weryfikacja_w_excelu.py::test_start_excela_bez_zgody_na_automatyzacje_konczy_sie_od_razu_nazwana_przyczyna"
     "::time.monotonic() - started < 10": (
         "granica 10 s to połowa limitu startu Excela (20 s), do którego launch czekałby, gdyby nie rozpoznał odmowy"

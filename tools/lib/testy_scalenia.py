@@ -98,7 +98,7 @@ def failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:
     ``Refused``, gdy pytest nie daje wyniku w limicie czasu albo pada, nie nazywając testu (wtedy z przyczyną ze stderr,
     np. nieznana opcja)."""
 
-    workers = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", str(czasy_ci.WORKERY_LOKALNE))
+    workers = str(czasy_ci.workery_lokalne())
     with tempfile.TemporaryDirectory() as folder:
         junit = Path(folder, "junit.xml")
         try:

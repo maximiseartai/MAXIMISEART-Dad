@@ -53,6 +53,7 @@ from rozliczenia.centrum.report_box import (
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
@@ -440,13 +441,13 @@ class ToolDirectory:
 
     @property
     def config(self) -> Path:
-        """Folder ``config``: Ustawienia taty, Wzorce, Konfiguracja wykonawców, Token do Zgłoszeń i pliki stanu."""
+        """Folder ``config``: Ustawienia Centrum, Wzorce, Konfiguracja wykonawców, Token do Zgłoszeń i pliki stanu."""
 
         return tool_files.config_dir(self.root)
 
     @property
     def settings(self) -> Path:
-        return self._moved(tool_files.SETTINGS)
+        return self.config / SETTINGS_FILE
 
     @property
     def report_key(self) -> Path:
@@ -589,7 +590,7 @@ def centrum_app(
         assert isinstance(clock, ManualClock), "Zegar inny niż ManualClock potrzebuje własnego pause."
         pause = clock.pause
     return create_app(
-        settings_path=tool.settings,
+        config=tool.config,
         platform=platform or FakePlatform(),
         log=log,
         shutdown=shutdown or Shutdown(log),

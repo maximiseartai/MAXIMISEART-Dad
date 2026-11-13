@@ -11,7 +11,7 @@ zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej oddaje
 jak ``live_file.LastGoodReads``: OneDrive po pobraniu pliku nie zmienia jego znacznika. Uporządkowanie INTERMAX
 zmienia ten znacznik, więc dni po nim są świeże.
 
-Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
+Okno Ustawień wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
 „jedno naraz” ``RunHost``.
 """
 
@@ -41,7 +41,8 @@ from rozliczenia.intermax_copies import Copy
 from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings
 
 _KIND: Final = declaration_of("intermax")
 _VIEW: Final = _KIND.view
@@ -70,7 +71,7 @@ class IntermaxEntry:
     Uruchomienia pracy Centrum; jego uchwytem plików taty karta czyta dni.
     """
 
-    store: SettingsStore
+    settings: CentrumSettings
     catalog: Catalog
     copies_directory: Path
     parts: HostParts
@@ -85,7 +86,7 @@ class IntermaxEntry:
     def setup(self, last: runs_contract.RunRestored | None) -> intermax_contract.IntermaxSetup:
         """Karta przed startem z ostatnim Uporządkowaniem INTERMAX ``last`` z Logów Uruchomienia."""
 
-        settings = self.store.load()
+        settings = self.settings.snapshot().folders
         register = settings.register
         return intermax_contract.IntermaxSetup(
             title=_KIND.title,
@@ -98,7 +99,7 @@ class IntermaxEntry:
     def days(self) -> intermax_contract.IntermaxDays:
         """Dni INTERMAX z Ustawień taty ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
 
-        register = self.store.load().register
+        register = self.settings.snapshot().folders.register
         if register is None:
             return intermax_contract.IntermaxDays(days=[], problem=None)
         today = self.parts.now().date()
@@ -118,8 +119,13 @@ class IntermaxEntry:
     def prepare(self) -> PreparedRun[Any, Any]:
         """Wejście procesu z Ustawień taty; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
 
-        register = _register(self.store.load())
-        start = Start({"register": register, "copies_directory": self.copies_directory}, period=None, dry_run=False)
+        folders = self.settings.snapshot().folders
+        start = Start(
+            {"register": _register(folders), "copies_directory": self.copies_directory},
+            period=None,
+            dry_run=False,
+            settings=folders,
+        )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def copies(self) -> intermax_contract.IntermaxCopies:
@@ -134,7 +140,7 @@ class IntermaxEntry:
     def restore(self, name: str) -> intermax_contract.IntermaxRestore:
         """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień taty; ``Refusal``, gdy go nie wskazano."""
 
-        register = _register(self.store.load())
+        register = _register(self.settings.snapshot().folders)
         try:
             parts = self.parts
             restored = intermax_restore.restore(
@@ -163,7 +169,7 @@ def _day(day: intermax_ordering.RegisterDay, today: date) -> intermax_contract.I
     return intermax_contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
 
 
-def _register(settings: Settings) -> Path:
+def _register(settings: FolderSettings) -> Path:
     return _KIND.required_paths(settings)["register"]
 
 

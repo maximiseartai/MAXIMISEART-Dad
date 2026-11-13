@@ -88,6 +88,38 @@ def html_markdownu(tekst: str, repozytorium: str) -> str:
     return html
 
 
+def domyslna_galaz(repozytorium: str) -> str:
+    """Nazwa domyślnej gałęzi ``repozytorium`` (``właściciel/nazwa``) z ``gh repo view``."""
+
+    return str(json.loads(gh("repo", "view", repozytorium, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+
+
+@dataclass(frozen=True)
+class LinkGithuba:
+    """Odwołanie do issue albo PR, które renderer GitHuba (``html_markdownu``) zamienił na link: repozytorium
+    ``właściciel/nazwa``, numer i ``rodzaj`` z ``data-hovercard-type`` (``issue`` albo ``pull_request``), który GitHub
+    ustala ze stanu numeru u siebie."""
+
+    repozytorium: str
+    numer: int
+    rodzaj: str
+
+    def w(self, repozytorium: str) -> bool:
+        """Czy link wskazuje ``repozytorium`` (właściciel i nazwa bez względu na wielkość liter)."""
+
+        return self.repozytorium.casefold() == repozytorium.casefold()
+
+
+def link_githuba(atrybuty: Sequence[tuple[str, str | None]]) -> LinkGithuba | None:
+    """Link z atrybutów znacznika ``<a>`` HTML renderera GitHuba; ``None``, gdy to nie link do issue ani PR (``issue-link``)."""
+
+    wartosci = dict(atrybuty)
+    if "issue-link" not in (wartosci.get("class") or "").split():
+        return None
+    _, wlasciciel, nazwa, _, numer = urllib.parse.urlsplit(wartosci.get("data-url") or "").path.split("/")
+    return LinkGithuba(f"{wlasciciel}/{nazwa}", int(numer), wartosci.get("data-hovercard-type") or "")
+
+
 class GitHub(Protocol):
     def json(self, sciezka: str) -> Any: ...
 

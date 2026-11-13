@@ -1,4 +1,4 @@
-"""Przywracanie Kopii INTERMAX z Konfiguracji Centrum rozliczeń: Rejestr zleceń dostaje w całości bajty wybranej Kopii.
+"""Przywracanie Kopii INTERMAX z Ustawień Centrum rozliczeń: Rejestr zleceń dostaje w całości bajty wybranej Kopii.
 
 ``restore`` przywraca Kopię, którą wymienia ``copies``: INTERMAX dostaje jej bajty po Kopii stanu
 bieżącego, tą samą podmianą co Uporządkowanie INTERMAX (``intermax_replace``), i tylko nazywa jej fakt Komunikatem
@@ -46,7 +46,7 @@ def _is_workbook(content: bytes) -> bool:
 
 def copies(directory: Path) -> list[Copy]:
     """Kopie INTERMAX w ``directory`` od najnowszej (``intermax_copies.listed``); ``StopError``, gdy folderu nie da się
-    odczytać: Konfiguracja nie pokaże Kopii, a przywrócenie nie zacznie."""
+    odczytać: Ustawienia nie pokażą Kopii, a przywrócenie nie zacznie."""
 
     try:
         return intermax_copies.listed(directory)

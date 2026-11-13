@@ -5,8 +5,7 @@ import { getMetrics, getPeriodBoard, type PeriodBoard } from "@/api/centrum"
 import type { Metrics } from "@/api/generated"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
-import { ChoosingLabel } from "@/components/setting-path"
-import { Button } from "@/components/ui/button"
+import { SetInSettings } from "@/components/setting-path"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
   Empty,
@@ -20,7 +19,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useContentEntrance } from "@/lib/content-entrance"
 import { useSettings } from "@/lib/settings"
 import { useResource, type Resource } from "@/lib/use-resource"
-import { FileSettingsCard } from "@/pages/periods/file-settings-card"
 import { NextStepCard } from "@/pages/periods/next-step-card"
 import { PeriodBoardTable } from "@/pages/periods/period-board-table"
 import { PeriodStats } from "@/pages/periods/period-stats"
@@ -63,7 +61,6 @@ function PeriodsContent() {
       {settings.state === "ready" ? (
         <div className={cn(entrance, "flex flex-col gap-6")}>
           <PeriodBoardSection board={board} metrics={metrics} reload={reloadBoard} />
-          <FileSettingsCard />
         </div>
       ) : null}
     </>
@@ -116,7 +113,7 @@ function BoardContent({
             <EmptyDescription>Centrum znajdzie w nim Foldery okresu.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <ChoosePeriodsDirectory />
+            <SetInSettings primary />
           </EmptyContent>
         </Empty>
       )
@@ -131,7 +128,7 @@ function BoardContent({
             <EmptyDescription>Mógł zostać przeniesiony albo przemianowany.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <ChoosePeriodsDirectory />
+            <SetInSettings primary />
           </EmptyContent>
         </Empty>
       )
@@ -153,17 +150,6 @@ function BoardContent({
       return unhandled
     }
   }
-}
-
-/** Wskazanie folderu okresów z pustego stanu; czeka na okno wyboru jak „Zmień” w Ustawieniach. */
-function ChoosePeriodsDirectory() {
-  const { picker, choose } = useSettings()
-
-  return (
-    <Button disabled={picker !== null} aria-label="Wskaż folder okresów" onClick={() => choose("periods_directory")}>
-      <ChoosingLabel choosing={picker === "periods_directory"}>Wskaż folder okresów</ChoosingLabel>
-    </Button>
-  )
 }
 
 function PeriodsSkeleton() {

@@ -27,7 +27,8 @@ from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
 from skrypt_skilla import Parser
 from harness import Log
-from rozliczenia.tool_files import settings_file
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.tool_files import config_dir
 
 MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
 
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
     finally:
-        for source in (Log.OPENED.file(run.root), Log.DIALOGS.file(run.root), settings_file(run.root), run.log_path):
+        for source in (Log.OPENED.file(run.root), Log.DIALOGS.file(run.root), config_dir(run.root) / SETTINGS_FILE, run.log_path):
             if source.exists():
                 shutil.copy2(source, run.evidence / "state" / source.name)
         logs = run.run_logs_dir
