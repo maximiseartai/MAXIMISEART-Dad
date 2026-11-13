@@ -160,6 +160,12 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_same_file": [settings_messages.worker_same_file],
             "worker_address_invalid": [settings_messages.worker_address_invalid],
             "worker_address_repeated": [settings_messages.worker_address_repeated],
+            "worker_unknown": [settings_messages.worker_unknown],
+            "worker_list_changed": [settings_messages.worker_list_changed],
+            "worker_rename_old_files": [
+                partial(settings_messages.worker_rename_old_files, ("08_14_09_2026",)),
+                partial(settings_messages.worker_rename_old_files, ("08_14_09_2026", "01_07_09_2026", "25_31_08_2026")),
+            ],
             "workers_not_moved": [
                 partial(settings_messages.workers_not_moved, OLD_MAPPING_FILE, "plik nie jest poprawnym YAML")
             ],

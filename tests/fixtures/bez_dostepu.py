@@ -7,6 +7,7 @@ Do Pythona 3.13 ``Path.exists``, ``is_file``, ``is_dir`` i ``is_symlink`` w fold
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -28,6 +29,39 @@ def without_access(folder: Path) -> Iterator[None]:
         yield
     finally:
         folder.chmod(0o755)
+
+
+def deny_reading(path: Path) -> None:
+    """Plik albo folder ``path`` bez prawa odczytu na każdym systemie: ``chmod`` poza Windows, a w Windows odmowa odczytu
+    danych (``icacls /deny :(RD)``), bo ``chmod`` zmienia tam tylko atrybut „tylko do odczytu”. Folder dalej widać w
+    listowaniu folderu nad nim, a odczyt jego treści pada, co funkcja sprawdza."""
+
+    if sys.platform == "win32":
+        subprocess.run(["icacls", str(path), "/deny", f"{os.environ['USERNAME']}:(RD)"], check=True, capture_output=True)
+    else:
+        path.chmod(0)
+    with pytest.raises(PermissionError):
+        list(path.iterdir()) if path.is_dir() else path.open("rb").close()
+
+
+def allow_reading(path: Path) -> None:
+    """Oddaje prawo odczytu, które odebrało ``deny_reading``."""
+
+    if sys.platform == "win32":
+        subprocess.run(["icacls", str(path), "/remove:d", os.environ["USERNAME"]], check=True, capture_output=True)
+    else:
+        path.chmod(0o755)
+
+
+@contextmanager
+def without_reading(path: Path) -> Iterator[None]:
+    """``path`` bez prawa odczytu (``deny_reading``) do końca bloku, na każdym systemie."""
+
+    deny_reading(path)
+    try:
+        yield
+    finally:
+        allow_reading(path)
 
 
 def path_checks_up_to_python_313(monkeypatch: pytest.MonkeyPatch) -> None:

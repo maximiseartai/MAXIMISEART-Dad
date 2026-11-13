@@ -277,10 +277,16 @@ def settings_section(page: Page) -> Locator:
 
 
 def open_settings(page: Page, section: str) -> Locator:
-    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title)."""
+    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title).
+
+    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier feature
+    left open is closing, still visible while it fades out, so the gear waits until it is gone: no feature depends on how
+    the one before it ended (#1589).
+    """
 
     window = settings_window(page)
-    if not window.is_visible():
+    if not _on_settings_address(page):
+        expect(window).to_have_count(0)
         page.get_by_role("link", name="Ustawienia", exact=True).click()
     expect(window).to_be_visible()
     # Below 768 px (`useIsMobile`, Tailwind `md`) the list of sections is hidden and Dad picks from the combobox.
@@ -292,6 +298,12 @@ def open_settings(page: Page, section: str) -> Locator:
         page.get_by_role("option", name=section, exact=True).click()
     expect(settings_title(page)).to_have_text(f"Ustawienia/{section}")
     return window
+
+
+def _on_settings_address(page: Page) -> bool:
+    """Whether the page is on the window Ustawienia's address, ``#/ustawienia`` with or without a section."""
+
+    return urlsplit(page.url).fragment.split("/")[1:2] == ["ustawienia"]
 
 
 def close_settings(page: Page) -> None:

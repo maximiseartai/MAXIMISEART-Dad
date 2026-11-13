@@ -29,6 +29,9 @@ import type {
   Settings,
   ThemeChange,
   ViewTiming,
+  WorkerEdit,
+  WorkerForm,
+  WorkerSwitches,
 } from "@/api/generated"
 import { operations } from "@/api/generated/operations.gen"
 import { zRunEvent } from "@/api/generated/zod.gen"
@@ -146,6 +149,29 @@ export function previewReminder(form: RemindersForm) {
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
 export function changeFolders(folders: FoldersChange) {
   return call("changeFolders", { body: folders })
+}
+
+/** Nowy Wykonawca z formularza sekcji Wykonawcy, aktywny i z Przypomnieniami o raporcie. */
+export function addWorker(form: WorkerForm) {
+  return call("addWorker", { body: form })
+}
+
+/**
+ * Formularz Wykonawcy z loginem `login` naraz; zmiana nazwy przy Rozliczeniu pracownika ze starą nazwą bez
+ * `rename_confirmed` niczego nie zapisuje i niesie ostrzeżenie.
+ */
+export function changeWorker(login: string, edit: WorkerEdit) {
+  return call("changeWorker", { path: { login }, body: edit })
+}
+
+/** Przełącznik Nieaktywnego Wykonawcy albo jego Przypomnień o raporcie, zapisany od razu. */
+export function switchWorker(login: string, switches: WorkerSwitches) {
+  return call("switchWorker", { path: { login }, body: switches })
+}
+
+/** Usuwa Wykonawcę, którego żaden login nie występuje w okresie; inaczej odmowa z propozycją Nieaktywnego. */
+export function removeWorker(login: string) {
+  return call("removeWorker", { path: { login } })
 }
 
 /** Historia Ustawień od najnowszej zmiany. */

@@ -166,9 +166,13 @@ class WorkerList:
         return self.names().get(normalize_text(login))
 
     def addresses(self) -> WorkerAddresses:
-        """Adres → login każdego Wykonawcy, także Nieaktywnego: jego Raport wykonawcy też jest Raportem wykonawcy."""
+        """Adres → login każdego Wykonawcy, także Nieaktywnego: jego Raport wykonawcy też jest Raportem wykonawcy. Każdy
+        login Wykonawcy prowadzi do jego pierwszego loginu, więc Raport wykonawcy trafia też do zleceń spod drugiego."""
 
-        return WorkerAddresses({address: worker.logins[0] for worker in self.workers for address in worker.addresses})
+        return WorkerAddresses(
+            {address: worker.logins[0] for worker in self.workers for address in worker.addresses},
+            {login: worker.logins[0] for worker in self.workers for login in worker.logins},
+        )
 
     def reminded(self) -> frozenset[Login]:
         """Loginy aktywnych Wykonawców z włączonymi przypomnieniami: tylko oni dostają Przypomnienia o raporcie."""

@@ -99,8 +99,10 @@ samego trybu (`RUN` albo `DRY-RUN`).
 Prawdziwa Lista Wykonawców zawiera imiona, nazwiska i adresy pracowników taty,
 więc leży tylko na jego komputerze, tak jak Wzorce: `config/wykonawcy.yaml`
 jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
-z syntetycznymi Wykonawcami, który pokazuje format. Tata widzi Listę
-Wykonawców w oknie Ustawienia, w sekcji Wykonawcy. Pierwszy start Centrum po
+z syntetycznymi Wykonawcami, który pokazuje format. Tata prowadzi Listę
+Wykonawców sam w oknie Ustawienia, w sekcji Wykonawcy (ADR 0032): dodaje,
+zmienia i oznacza Nieaktywnego, a usuwa tylko Wykonawcę, którego login nie
+występuje w żadnym okresie. Pierwszy start Centrum po
 Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
 `config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
 Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie

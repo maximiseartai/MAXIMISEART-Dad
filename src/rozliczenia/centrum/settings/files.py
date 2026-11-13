@@ -152,6 +152,18 @@ class KeyChange:
     after: str | None
 
 
+RemovedWhat = Literal["worker", "login"]
+"""Co zmiana usuwa z Listy Wykonawców: całego Wykonawcę albo tylko jego login."""
+
+
+@dataclass(frozen=True)
+class RemovedLogins:
+    """Loginy, które zmiana usuwa z Listy Wykonawców, i czy znika z nimi cały Wykonawca (``what``)."""
+
+    logins: frozenset[str]
+    what: RemovedWhat
+
+
 @dataclass(frozen=True)
 class SettingsFile(Generic[T]):
     """Plik Ustawień Centrum w ``config``.
@@ -162,7 +174,9 @@ class SettingsFile(Generic[T]):
     ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged`` klucz dla Logów Centrum, oba bez danych osobowych. Plik
     ``secret`` ma w Historii tylko klucze, bez wartości, i nie da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie
     pamięta, więc ``unchecked`` daje wartość jego treści bez reguł ``parse`` (``None``: treść nie daje wartości): zapis
-    taty na złej treści zaczyna od niej, a ``parse`` zapisu odrzuca to, czego zapis nie naprawił.
+    taty na złej treści zaczyna od niej, a ``parse`` zapisu odrzuca to, czego zapis nie naprawił. ``removed_logins``
+    daje loginy, które zmiana wartości usuwa z Listy Wykonawców (``None``: żadnego): właściciel zapisuje zmianę taty
+    dopiero, gdy żaden z nich nie występuje w okresie (ADR 0032).
     """
 
     name: str
@@ -175,3 +189,4 @@ class SettingsFile(Generic[T]):
     logged: Callable[[str], str] = str
     secret: bool = False
     unchecked: Callable[[bytes | None], T | None] | None = None
+    removed_logins: Callable[[T, T], RemovedLogins | None] | None = None
