@@ -106,6 +106,12 @@ elif arguments[:2] == ["pr", "comment"]:
     with (here / "comments.jsonl").open("a") as log:
         log.write(json.dumps([arguments[2], body]) + "\\n")
     print(f"https://github.com/{REPO}/pull/{arguments[2]}#issuecomment-{len(pull['comments'])}")
+elif arguments[:2] == ["run", "list"]:
+    with (here / "run_lists.jsonl").open("a") as log:
+        log.write(json.dumps(arguments) + "\\n")
+    runs = here / "runs.json"
+    merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
+    print(runs.read_text() if merged and runs.exists() else "[]")
 elif arguments[:2] == ["issue", "close"]:
     issues[arguments[2]] = json.dumps({"state": "closed"})
     (here / "issues.json").write_text(json.dumps(issues))
@@ -248,6 +254,9 @@ class MergeGitHub(FakeGitHub):
         self.update(number, headRefOid=head)
         return head
 
+    def run_lists(self) -> list[list[str]]:
+        return self._log("run_lists.jsonl")
+
     def repo_views(self) -> list[list[str]]:
         return self._log("repo_views.jsonl")
 
@@ -348,6 +357,39 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
 
     written = [_verdict(kind, body, *association, when=f"2026-10-24T03:00:{index:02d}Z") for index, (kind, body, *association) in enumerate(verdicts)]
     return _pull(comments=[verdict for verdict in written if "createdAt" in verdict], reviews=[verdict for verdict in written if "submittedAt" in verdict])
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "own"),
+    [
+        ("", "run commitu merge'a 4242 https://github.com/o/r/actions/runs/4242, o ile nowszy push nie anuluje go, zanim ruszy"),
+        ("cancelled", "run commitu merge'a 4242 anulowany, więc rozstrzyga run późniejszego commitu z gh run list --workflow CI --event push --branch main"),
+        (None, "runu commitu merge'a jeszcze nie ma, runy pokaże gh run list --workflow CI --event push --branch main"),
+    ],
+    ids=["run-czeka", "run-anulowany", "runu-jeszcze-nie-ma"],
+)
+def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
+    """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
+    nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
+    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    if conclusion is not None:
+        run = {"databaseId": 4242, "url": "https://github.com/o/r/actions/runs/4242", "conclusion": conclusion}
+        (github.bin / "runs.json").write_text(json.dumps([run]), encoding="utf-8")
+
+    merged = github.run("1")
+
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert merged.stdout.splitlines()[-2:] == [
+        f"CI MAIN | {merge_commit[:7]} | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge: {own}"
+        " | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR",
+        _last_line(merged),
+    ]
+    assert github.run_lists() == [["run", "list", "--workflow", "CI", "--event", "push", "--branch", "main", "--commit", merge_commit, "--json", "databaseId,url,conclusion"]]
 
 
 @pytest.mark.parametrize(

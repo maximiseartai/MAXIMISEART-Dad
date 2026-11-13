@@ -31,6 +31,9 @@ REPO = "repos/{owner}/{repo}"
 REQUIRED = "Required CI status"
 # ``name:`` workflow ``.github/workflows/ci.yml``, który tworzy check ``REQUIRED``.
 CI_WORKFLOW = "CI"
+# Który run CI rozstrzyga o merge'u do `main`. Nowszy push na `main` anuluje run, który czeka za trwającym (concurrency
+# w ci.yml, ADR 0020), a run commitu merge'a tak anulowany nie ma checku ``REQUIRED`` (``rozstrzygniety``).
+ROZSTRZYGA = "o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge"
 # Temat commitu scalenia PR na GitHubie: merge commit albo squash.
 MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
 SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")
@@ -129,6 +132,22 @@ def issues(github: GitHub, etykieta: str, stan: str, od: datetime | None = None)
     return [issue for issue in strony(github, f"{REPO}/issues?{urllib.parse.urlencode(zapytanie)}") if "pull_request" not in issue]
 
 
+def required(github: GitHub, commit: str) -> dict[str, Any] | None:
+    """Najnowszy check ``REQUIRED`` commitu albo ``None``, gdy żaden run go nie utworzył."""
+
+    znalezione = github.json(f"{REPO}/commits/{commit}/check-runs?check_name={urllib.parse.quote(REQUIRED)}&per_page=100")["check_runs"]
+    return max(znalezione, key=lambda check: check.get("started_at") or "", default=None)
+
+
+def rozstrzygniety(github: GitHub, commit: str) -> dict[str, Any] | None:
+    """Check ``REQUIRED`` commitu `main`, gdy jego run rozstrzyga o merge'ach (``ROZSTRZYGA``): zakończony sukcesem albo
+    porażką. ``None``, gdy run jeszcze biegnie albo go anulowano, więc o merge'ach tego commitu rozstrzyga run
+    późniejszego."""
+
+    check = required(github, commit)
+    return check if check is not None and check["status"] == "completed" and check["conclusion"] in ("success", "failure") else None
+
+
 def blok_kodu(linie: Sequence[str]) -> list[str]:
     """Blok kodu z ``linie``: płot dłuższy od każdego ciągu backticków w nich, więc treść nie wyjdzie z bloku."""
 
@@ -137,10 +156,21 @@ def blok_kodu(linie: Sequence[str]) -> list[str]:
 
 
 @dataclass(frozen=True)
+class Powiadom:
+    """Komentarz ``tresc`` w każdym z PR-ów ``pr`` po założeniu albo skomentowaniu issue; ``wykonaj`` zaczyna go linkiem
+    do tego issue, a komentarz, który się nie udał albo przekroczył czas, zapisuje linią i idzie do następnego PR, bo
+    issue już jest."""
+
+    pr: tuple[int, ...] = ()
+    tresc: str = ""
+
+
+@dataclass(frozen=True)
 class Zaloz:
     tytul: str
     tresc: str
     etykiety: tuple[str, ...]
+    powiadom: Powiadom = Powiadom()
 
 
 @dataclass(frozen=True)
@@ -148,6 +178,7 @@ class Skomentuj:
     issue: int
     tresc: str
     otworz: tuple[str, ...] = ()  # niepuste: zamknięte issue wraca otwarte z tymi etykietami
+    powiadom: Powiadom = Powiadom()
 
 
 @dataclass(frozen=True)
@@ -166,15 +197,17 @@ def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
     linie = []
     for akcja in akcje:
         match akcja:
-            case Zaloz(tytul, tresc, etykiety):
+            case Zaloz(tytul, tresc, etykiety, powiadom):
                 numer = github.wyslij("POST", f"{REPO}/issues", {"title": tytul, "body": tresc, "labels": list(etykiety)})["number"]
                 linie.append(f"{prefiks} | założone #{numer} „{tytul}”")
-            case Skomentuj(issue, tresc, otworz):
+                linie += _powiadom(github, numer, powiadom, prefiks)
+            case Skomentuj(issue, tresc, otworz, powiadom):
                 github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
                 if otworz:
                     github.wyslij("PATCH", f"{REPO}/issues/{issue}", {"state": "open"})
                     github.wyslij("POST", f"{REPO}/issues/{issue}/labels", {"labels": list(otworz)})
                 linie.append(f"{prefiks} | {'otwarte ponownie' if otworz else 'komentarz w'} #{issue}")
+                linie += _powiadom(github, issue, powiadom, prefiks)
             case Zamknij(issue, tresc, zdejmij):
                 github.wyslij("POST", f"{REPO}/issues/{issue}/comments", {"body": tresc})
                 for etykieta in zdejmij:
@@ -184,13 +217,29 @@ def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
     return linie
 
 
+def _powiadom(github: GitHub, issue: int, powiadom: Powiadom, prefiks: str) -> list[str]:
+    linie = []
+    for pr in powiadom.pr:
+        try:
+            github.wyslij("POST", f"{REPO}/issues/{pr}/comments", {"body": f"#{issue}\n\n{powiadom.tresc}"})
+        except (BladApi, subprocess.TimeoutExpired) as blad:
+            linie.append(f"{prefiks} | komentarz w PR #{pr} o #{issue} nieudany: {blad}")
+        else:
+            linie.append(f"{prefiks} | komentarz w PR #{pr} o #{issue}")
+    return linie
+
+
+def _opis_powiadom(powiadom: Powiadom) -> str:
+    return f" i skomentuj PR {', '.join(f'#{pr}' for pr in powiadom.pr)}" if powiadom.pr else ""
+
+
 def opis(akcja: Akcja) -> str:
     """Co akcja zrobi, bez wykonania (podgląd ``--bez-zapisu``)."""
 
     match akcja:
-        case Zaloz(tytul, _, etykiety):
-            return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}"
-        case Skomentuj(issue, _, otworz):
-            return f"skomentuj #{issue}" + (f" i otwórz ponownie z etykietami {', '.join(otworz)}" if otworz else "")
+        case Zaloz(tytul, _, etykiety, powiadom):
+            return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}" + _opis_powiadom(powiadom)
+        case Skomentuj(issue, _, otworz, powiadom):
+            return f"skomentuj #{issue}" + (f" i otwórz ponownie z etykietami {', '.join(otworz)}" if otworz else "") + _opis_powiadom(powiadom)
         case Zamknij(issue, _, zdejmij):
             return f"zamknij #{issue} z komentarzem" + "".join(f", zdejmij etykietę {etykieta}" for etykieta in zdejmij)

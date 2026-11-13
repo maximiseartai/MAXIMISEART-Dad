@@ -11,8 +11,15 @@ potem je wykonuje; z ``--bez-zapisu`` tylko je drukuje.
 - **Czerwony `main`.** Push na `main` z ``Required CI status`` ``failure`` zakłada issue ``CzerwonyMain`` z etykietą
   ``czerwony-main``, gdy żadne nie jest otwarte, a inaczej dopisuje komentarz do otwartego: jedno na raz. Issue ma
   ostatni zielony commit linii pierwszych rodziców `main`, PR-y scalone pomiędzy, przyczyny z linii ``REQUIRED FAIL``
-  i polecenie ``git bisect``. Push na `main` z zielonym Required zamyka komentarzem z linkiem do runu otwarte issue,
-  którego czerwony commit jest jego przodkiem.
+  i polecenie ``git bisect``. Każdy PR, o którego merge'u rozstrzyga ten run (``github.ROZSTRZYGA``: PR-y scalone po
+  commicie poprzedniego runu, który nie był anulowany), dostaje komentarz z linkiem do issue i runu, najwyżej
+  ``NAJWIECEJ_POWIADOMIEN`` ostatnich, więc wątek, który obserwuje swój scalony PR, budzi się na czerwony `main`, także
+  gdy `main` był czerwony już przed jego merge'em. Komentarz ma znacznik czerwonego commitu, a PR, który go już ma, nie
+  dostaje drugiego, więc ponowienie workflow albo próby runu nie powtarza komentarzy w PR-ach; issue, którego znacznik
+  to commit runu, dostaje wtedy komentarz zamiast drugiego issue. Komentarz nie mówi, że PR czerwieni `main`: porażka
+  może być w innym PR z listy, ze zderzenia albo niestabilna, bo test z kwarantanny i test, który przeszedł po
+  ponowieniu, Required nie czerwienią. Push na `main` z zielonym Required zamyka komentarzem z linkiem do runu otwarte
+  issue, którego czerwony commit jest jego przodkiem.
 - **Zderzenie** (Q26, #959). Gdy scalenie PR B czerwieni `main` nową porażką, B ma zielone Required na swoim HEAD, a po
   utworzeniu runu tej bramki weszły do `main` PR-y A (także z zielonym Required na HEAD), których bramka B nie widziała,
   issue dostaje etykietę ``zderzenie`` z numerami A i B i liczbą zderzeń z ostatnich 7 dni, ale tylko wtedy, gdy każda
@@ -35,7 +42,7 @@ z ``GH_TOKEN``, lokalnie z logowaniem Maksa).
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import io
@@ -44,12 +51,11 @@ import re
 import subprocess
 import sys
 from typing import Any
-import urllib.parse
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-from github import MERGE, REPO, REQUIRED, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis
+from github import MERGE, REPO, REQUIRED, ROZSTRZYGA, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis, required, rozstrzygniety, strony
 from github import wykonaj as wykonaj_akcje
 from jednostka import Rodzaj
 import niestabilne_testy
@@ -60,6 +66,8 @@ import wplyw_zmiany
 FLAKY_TEST, CZERWONY_MAIN, ZDERZENIE = "flaky-test", "czerwony-main", "zderzenie"
 # Tyle flaky testów jednego runu trafia do issue; reszta to znak awarii, a nie flaky testów.
 NAJWIECEJ_FLAKY_TESTOW = 10
+# Tyle ostatnich PR-ów z zakresu czerwonego `main` dostaje komentarz (secondary rate limit GitHuba na tworzenie treści).
+NAJWIECEJ_POWIADOMIEN = 10
 # Tyle nowych porażek zderzenia wymienia issue.
 NAJWIECEJ_NOWYCH = 20
 # Id testu w tytule i w treści issue (GitHub przyjmuje tytuł do 256 znaków).
@@ -234,22 +242,44 @@ def _main(github: GitHub, root: Path, run: Run, teraz: datetime) -> list[Akcja]:
     if run.zdarzenie != "push" or run.galaz != MAIN or run.wynik in (None, "cancelled", "skipped"):
         return []
     zadania = github.json(f"{REPO}/actions/runs/{run.id}/jobs?per_page=100")["jobs"]
-    required = next((zadanie for zadanie in zadania if zadanie["name"] == REQUIRED), None)
-    if required is None or required["conclusion"] not in ("success", "failure"):
+    werdykt = next((zadanie for zadanie in zadania if zadanie["name"] == REQUIRED), None)
+    if werdykt is None or werdykt["conclusion"] not in ("success", "failure"):
         return []
     otwarte = issues(github, CZERWONY_MAIN, "open")
-    if required["conclusion"] == "success":
+    if werdykt["conclusion"] == "success":
         return [_zamkniecie(github, root, issue, znak["sha"], run) for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and repo.is_ancestor(root, znak["sha"], run.sha)]
-    przyczyny = tuple(_przyczyny(github, required["id"]))
+    przyczyny = tuple(_przyczyny(github, werdykt["id"]))
     zderzenie = _zderzenie(github, root, run, teraz)
-    if otwarte and zderzenie is None:
+    poprzedni = _poprzedni_rozstrzygniety(github, root, run.sha)
+    powiadom = _powiadom(github, run, _pr(root, poprzedni, run.sha) if poprzedni else ())
+    # Issue tego commitu już jest, gdy to ponowienie workflow albo próba runu: wtedy komentarz, a nie drugie issue.
+    wlasne = next((issue for issue in otwarte if (znak := _ZNACZNIK.search(issue.get("body") or "")) and znak["sha"] == run.sha), None)
+    if wlasne is not None or (otwarte and zderzenie is None):
         linie = [f"Nadal czerwony na commicie {run.sha} ([run]({run.url})).", *(["", "```", *przyczyny, "```"] if przyczyny else [])]
-        return [Skomentuj(otwarte[0]["number"], "\n".join(linie))]
+        return [Skomentuj((wlasne or otwarte[0])["number"], "\n".join(linie), powiadom=powiadom)]
     zielony = _ostatni_zielony(github, root, run.sha)
     pr = _pr(root, zielony[0], run.sha) if zielony else ()
     poprzednie = otwarte[0]["number"] if otwarte else None
     czerwony = CzerwonyMain(run.sha, run.url, zielony[0] if zielony else None, zielony[1] if zielony else None, pr, przyczyny, zderzenie, poprzednie)
-    return [Zaloz(czerwony.tytul, czerwony.tresc, czerwony.etykiety)]
+    return [Zaloz(czerwony.tytul, czerwony.tresc, czerwony.etykiety, powiadom)]
+
+
+def _powiadom(github: GitHub, run: Run, pr: Sequence[PR]) -> Powiadom:
+    """Komentarz czerwonego runu w PR-ach, o których merge'ach rozstrzyga (najwyżej ``NAJWIECEJ_POWIADOMIEN`` ostatnich),
+    bez PR-ów, które go już mają."""
+
+    if len(pr) > NAJWIECEJ_POWIADOMIEN:
+        print(f"ZGŁOSZENIA | {len(pr)} PR-ów, o których rozstrzyga run, komentuję {NAJWIECEJ_POWIADOMIEN} ostatnich")
+    znacznik = f"<!-- czerwony-main-pr {run.sha} -->"
+    nowe = [p.numer for p in pr[-NAJWIECEJ_POWIADOMIEN:] if not any(znacznik in (komentarz.get("body") or "") for komentarz in strony(github, f"{REPO}/issues/{p.numer}/comments"))]
+    linie = [
+        f"`main` jest czerwony na commicie {run.sha[:9]} ([run]({run.url})), a ten run rozstrzyga o merge'u tego PR: {ROZSTRZYGA}.",
+        f"Rozstrzyga o PR-ach: {_numery(pr)}.",
+        "To nie znaczy, że czerwieni go ten PR: porażka może być w innym PR z listy, ze zderzenia albo niestabilna.",
+        "Wątek, który scalał ten PR: przeczytaj przyczyny w issue i napisz w nim, czy naprawiasz; naprawia osobny PR (`docs/agents/pr-i-ci.md`).",
+        znacznik,
+    ]
+    return Powiadom(tuple(nowe), "\n".join(linie))
 
 
 def _zamkniecie(github: GitHub, root: Path, issue: Mapping[str, Any], czerwony: str, zielony: Run) -> Zamknij:
@@ -263,7 +293,7 @@ def _zamkniecie(github: GitHub, root: Path, issue: Mapping[str, Any], czerwony: 
 def _zazielenil_sie_sam(github: GitHub, root: Path, czerwony: str, zielony: str) -> bool:
     """Czy nowe porażki czerwonego commitu to testy, których wejść nie dotyka żadna zmiana do zielonego commitu."""
 
-    run_czerwony = _RUN.search((_required(github, czerwony) or {}).get("details_url") or "")
+    run_czerwony = _RUN.search((required(github, czerwony) or {}).get("details_url") or "")
     nowe = None if run_czerwony is None else _nowe_porazki(github, int(run_czerwony["run"]), repo.git(root, "rev-parse", f"{czerwony}^1").strip())
     if nowe is None or (pliki := _pliki_testow(nowe)) is None:
         return False
@@ -275,7 +305,7 @@ def _nowe_porazki(github: GitHub, run_id: int, rodzic: str) -> tuple[str, ...] |
     """Porażki runu, których nie miał rodzic, a gdy rodzic był zielony, wszystkie porażki runu; ``None``, gdy żadnej
     nowej nie ma albo stanu rodzica nie da się porównać (CI w toku, anulowane, bez logów)."""
 
-    check = _required(github, rodzic)
+    check = required(github, rodzic)
     if check is None or check["status"] != "completed":
         return None
     run_rodzica = _RUN.search(check.get("details_url") or "")
@@ -308,19 +338,25 @@ def _porazki(github: GitHub, run_id: int) -> frozenset[str]:
     return frozenset(porazki)
 
 
-def _required(github: GitHub, commit: str) -> dict[str, Any] | None:
-    znalezione = github.json(f"{REPO}/commits/{commit}/check-runs?check_name={urllib.parse.quote(REQUIRED)}&per_page=100")["check_runs"]
-    return max(znalezione, key=lambda check: check.get("started_at") or "", default=None)
+def _rozstrzygniete(github: GitHub, root: Path, czerwony: str) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Commity linii pierwszych rodziców przed ``czerwony`` (najwyżej ``HISTORIA``), o których rozstrzygnął run CI
+    (``github.rozstrzygniety``), od najnowszego, z checkiem Required."""
+
+    for commit in repo.git(root, "rev-list", "--first-parent", f"--max-count={HISTORIA}", czerwony).split()[1:]:
+        if (check := rozstrzygniety(github, commit)) is not None:
+            yield commit, check
+
+
+def _poprzedni_rozstrzygniety(github: GitHub, root: Path, czerwony: str) -> str | None:
+    """Commit poprzedniego runu, który rozstrzygnął: o merge'ach po nim rozstrzyga run ``czerwony`` (``ROZSTRZYGA``)."""
+
+    return next((commit for commit, _ in _rozstrzygniete(github, root, czerwony)), None)
 
 
 def _ostatni_zielony(github: GitHub, root: Path, czerwony: str) -> tuple[str, str] | None:
     """Najnowszy commit linii pierwszych rodziców przed ``czerwony`` z zielonym Required i link do jego runu."""
 
-    for commit in repo.git(root, "rev-list", "--first-parent", f"--max-count={HISTORIA}", czerwony).split()[1:]:
-        check = _required(github, commit)
-        if check is not None and check["status"] == "completed" and check["conclusion"] == "success":
-            return commit, check.get("details_url") or ""
-    return None
+    return next(((commit, check.get("details_url") or "") for commit, check in _rozstrzygniete(github, root, czerwony) if check["conclusion"] == "success"), None)
 
 
 @dataclass(frozen=True)
@@ -357,14 +393,14 @@ def _zderzenie(github: GitHub, root: Path, run: Run, teraz: datetime) -> Zderzen
     if not scalony:
         return None
     b = scalony[0]
-    check_b = _required(github, github.json(f"{REPO}/pulls/{b.pr.numer}")["head"]["sha"])
+    check_b = required(github, github.json(f"{REPO}/pulls/{b.pr.numer}")["head"]["sha"])
     if check_b is None or check_b["conclusion"] != "success":
         return None
     # Bramka testuje scalenie PR z `main` z chwili utworzenia runu (także w ponowionej próbie), nie ze startu Required.
     run_b = _RUN.search(check_b.get("details_url") or "")
     start_b = _chwila(github.json(f"{REPO}/actions/runs/{run_b['run']}")["created_at"] if run_b else check_b["started_at"])
     niewidziane = [a for a in _scalenia(root, f"--max-count={HISTORIA}", f"{run.sha}^1") if a.chwila > start_b]
-    zielone = [a for a in niewidziane if (check := _required(github, github.json(f"{REPO}/pulls/{a.pr.numer}")["head"]["sha"])) and check["conclusion"] == "success"]
+    zielone = [a for a in niewidziane if (check := required(github, github.json(f"{REPO}/pulls/{a.pr.numer}")["head"]["sha"])) and check["conclusion"] == "success"]
     if not niewidziane or zielone != niewidziane:
         return None
     nowe = _nowe_porazki(github, run.id, repo.git(root, "rev-parse", f"{run.sha}^1").strip())

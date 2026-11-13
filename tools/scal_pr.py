@@ -29,6 +29,12 @@ Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie s
 usuwa, tylko mówi, które lokalne gałęzie i worktree można usunąć. Sprzątanie, które przekroczy czas, kończy się
 ostrzeżeniem w linii ``SCAL OK``, bo PR jest już scalony.
 
+Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` mówi, który run CI rozstrzyga o merge'u (``github.ROZSTRZYGA``):
+nowszy push na `main` anuluje run commitu merge'a, gdy ten czeka za trwającym, i wtedy rozstrzyga run późniejszego
+commitu. Linia podaje run commitu merge'a i to, czy już go anulowano, a bez niego polecenie ``gh run list``, które
+pokaże runy pushu na `main`. Obserwację PR zostaw do zielonego `main` z tym merge'em albo do komentarza czerwonego
+`main` w PR, który ``tools/ci/zgloszenia_ci.py`` pisze w każdym PR, o którego merge'u rozstrzyga czerwony run.
+
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
 wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
@@ -51,7 +57,7 @@ import github
 import kontekst_przegladu
 import naprawia
 import potomne
-from repo import REMOTE, ROOT
+from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
 from stan_pr import Pull
@@ -134,6 +140,23 @@ def _merge_commit(number: int) -> str | None:
         return None
 
 
+def _main_ci(merge_commit: str | None) -> str:
+    """Linia ``CI MAIN``: który run CI rozstrzyga o merge'u do `main` i co wiadomo o runie commitu merge'a."""
+
+    listing = f"gh run list --workflow {github.CI_WORKFLOW} --event push --branch {MAIN}"
+    try:
+        runs = json.loads(github.gh(*listing.split()[1:], "--commit", merge_commit, "--json", "databaseId,url,conclusion")) if merge_commit else []
+    except (subprocess.SubprocessError, OSError, ValueError):
+        runs = []
+    if not runs:
+        own = f"runu commitu merge'a jeszcze nie ma, runy pokaże {listing}"
+    elif runs[0]["conclusion"] == "cancelled":
+        own = f"run commitu merge'a {runs[0]['databaseId']} anulowany, więc rozstrzyga run późniejszego commitu z {listing}"
+    else:
+        own = f"run commitu merge'a {runs[0]['databaseId']} {runs[0]['url']}, o ile nowszy push nie anuluje go, zanim ruszy"
+    return f"CI MAIN | {(merge_commit or '?')[:7]} | {github.ROZSTRZYGA}: {own} | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR"
+
+
 def _clean_up() -> str:
     try:
         done = potomne.run([sys.executable, str(CLEANUP)], cwd=ROOT, timeout=CLEANUP_TIMEOUT_S, echo=True)
@@ -170,7 +193,10 @@ def _merge(number: int, *, merge: bool) -> int:
     github.gh("pr", "merge", str(number), "--merge", "--match-head-commit", pull.head)
     merge_commit = _merge_commit(number)
     closed = naprawia.close_fixed(pull, merged=True, merge_commit=merge_commit)
-    print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {_clean_up()}")
+    cleaned = _clean_up()
+    if pull.base == MAIN:
+        print(_main_ci(merge_commit))
+    print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {cleaned}")
     return 0
 
 
