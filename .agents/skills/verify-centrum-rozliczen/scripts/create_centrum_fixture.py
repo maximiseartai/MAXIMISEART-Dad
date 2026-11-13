@@ -99,7 +99,7 @@ from atrapy.pliki_taty import (
     worker_settlements_name,
 )
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
-from rozliczenia.tool_files import WORKER_CONFIG, config_dir, settings_file
+from rozliczenia.tool_files import WORKER_CONFIG, config_dir
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
@@ -656,7 +656,7 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
         "today": TODAY,
         "periods_directory": dad["periods_directory"],
         "order_register": dad["order_register"],
-        "settings": str(settings_file(root)),
+        "settings": str(root / SETTINGS_FILE),
         "metrics": _metrics(root),
         # Konfiguracja: the files Centrum checks, and the Wykonawcy in the order of the konfiguracja wykonawców
         "configuration": dad["configuration"],

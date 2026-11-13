@@ -33,9 +33,9 @@ INTERNAL_TEMPLATE = tool_files.INTERNAL_TEMPLATE.name
 # Mała odmiana syntetycznych Wzorców: kilka grup wspólnych formuł (co 64 wiersze), szybka w pytest.
 SMALL_DATA_ROWS = 150
 
-# Pliki repozytorium, których benchmark nie może zmienić: Ustawienia taty i historie metryk procesów.
+# Pliki repozytorium, których benchmark nie może zmienić: Konfiguracja wykonawców i historie metryk procesów. Ustawień
+# Centrum benchmark nie dotyka, bo biegnie przez Skrypt dla maszyn, który ich nie pisze (rozliczenia.centrum.settings).
 PROTECTED_REPOSITORY_FILES = (
-    tool_files.SETTINGS,
     tool_files.WORKER_CONFIG,
     tool_files.SETTLEMENT_METRICS,
     tool_files.PREPARATION_METRICS,

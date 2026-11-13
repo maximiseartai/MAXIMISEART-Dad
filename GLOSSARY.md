@@ -651,7 +651,7 @@ _Avoid_: dashboard, panel, centrum dowodzenia
 Jeden wpis na każdy proces, który uruchamia Centrum rozliczeń: nazwa i widok
 Uruchomienia procesu, Ustawienia Centrum, bez których proces nie startuje,
 czytane Wzorce i sprawdzenia Diagnozy w kolejności wyjaśniania. Diagnoza, Logi
-Uruchomienia, Metryki i Ustawienia Centrum pytają wpis procesu, zamiast rozróżniać
+Uruchomienia, Metryki i okno Ustawień pytają wpis procesu, zamiast rozróżniać
 procesy same; pliki procesu wynikają z jego Ustawień Centrum i Wzorców.
 _Avoid_: rejestr procesów, lista procesów
 
@@ -953,7 +953,7 @@ _Avoid_: Powiadomienie o naprawie
 ## Wersja narzędzia
 
 Commit klonu narzędzia, z którego wystartowało Centrum rozliczeń na komputerze
-taty. Ustawienia Centrum pokazują jego skrót i dzień, od którego
+taty. Okno Ustawień pokazuje jego skrót i dzień, od którego
 narzędzie jest na tym commicie; Zgłoszenie podaje pełny commit.
 _Avoid_: numer wersji z `pyproject.toml`
 
@@ -977,8 +977,8 @@ _Avoid_: upgrade, git pull, instalacja
 
 Czy narzędzie na komputerze taty jest na najnowszym Wydaniu: `Aktualna`,
 `Jest nowsza wersja` albo `Nie sprawdzono` (bez internetu albo gdy GitHub
-chwilowo nie odpowiada na pytania o nową wersję). Pokazują ją
-Ustawienia Centrum i sprawdza Diagnoza; nowsza wersja jest przyczyną Zatrzymania
+chwilowo nie odpowiada na pytania o nową wersję). Pokazuje ją
+okno Ustawień i sprawdza Diagnoza; nowsza wersja jest przyczyną Zatrzymania
 tylko wtedy, gdy Diagnoza nie znalazła innej.
 _Avoid_: świeżość, freshness
 

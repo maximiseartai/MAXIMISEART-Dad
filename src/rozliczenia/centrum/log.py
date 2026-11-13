@@ -46,6 +46,9 @@ ReminderFailure = Literal[
 ]
 # Dlaczego zmiany Ustawień taty nie zapisano: plik jest, ale system nie daje go czytać.
 SettingsUnreadableCause = Literal["dostep"]
+# Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
+# dało się zapisać, więc następny odczyt spróbuje jeszcze raz.
+SettingsExternalResult = Literal["zapisano", "odrzucono", "bez-zapisu"]
 
 
 class CentrumLog:
@@ -168,9 +171,24 @@ class CentrumLog:
         self._write("dziennik-wyceny-niedostepny", typ=type(failure).__name__, miejsce=where)
 
     def settings_unreadable(self, *, cause: SettingsUnreadableCause) -> None:
-        """Zmiany Ustawień taty nie zapisano, bo ich pliku nie dało się przeczytać; plik zostaje bez zmian."""
+        """Zmiany Ustawień Centrum nie zapisano, bo ich pliku nie dało się przeczytać; plik zostaje bez zmian."""
 
         self._write("ustawienia-bez-zapisu", przyczyna=cause)
+
+    def settings_changed(self, *, file: str, keys: Sequence[str], source: str) -> None:
+        """Zapisana zmiana Ustawień Centrum: plik, klucze (``foldery.folder_okresow``) i źródło, bez wartości."""
+
+        self._write("ustawienia-zmiana", plik=file, klucze=",".join(keys), zrodlo=source)
+
+    def settings_external(self, *, file: str, result: SettingsExternalResult) -> None:
+        """Plik Ustawień Centrum zmieniony poza Centrum: przyjęty, odrzucony jako zła treść albo bez zapisu wiersza."""
+
+        self._write("ustawienia-spoza", plik=file, wynik=result)
+
+    def settings_bad(self, *, file: str, field: str) -> None:
+        """Złe ustawienie w pliku Ustawień Centrum: pole (``plik`` dla całego pliku), bez treści pliku."""
+
+        self._write("ustawienia-zle", plik=file, pole=field)
 
     def unexpected_failure(self, failure: BaseException, *, where: str) -> None:
         """Nieoczekiwany wyjątek: tylko nazwa typu i miejsce (np. trasa API), bez tekstu wyjątku."""

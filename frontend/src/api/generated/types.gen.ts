@@ -13,7 +13,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeFolders' | 'getSettingsHistory' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -103,10 +103,16 @@ export type CellSource = 'tool' | 'tata' | 'empty';
 /**
  * Choice
  *
- * Ustawienia po natywnym oknie wyboru: wybór zapisuje ścieżkę, anulowanie niczego nie zmienia.
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
  */
 export type Choice = {
     settings: Settings;
+    /**
+     * Change
+     */
+    change?: string | null;
 };
 
 /**
@@ -501,6 +507,22 @@ export type FillStep = {
 };
 
 /**
+ * FoldersChange
+ *
+ * Sekcja Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, ``None`` czyści ustawienie.
+ */
+export type FoldersChange = {
+    /**
+     * Order Register
+     */
+    order_register: string | null;
+    /**
+     * Periods Directory
+     */
+    periods_directory: string | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -533,6 +555,83 @@ export type Health = {
      * Instance
      */
     instance: string;
+};
+
+/**
+ * HistoryChange
+ *
+ * Zmiana jednego klucza (``foldery.folder_okresow``): wartość przed i po, ``None``: nie ustawiono albo sekret.
+ */
+export type HistoryChange = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Before
+     */
+    before: string | null;
+    /**
+     * After
+     */
+    after: string | null;
+};
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``undoes``: id cofniętego wiersza; ``undoable``: ma „Cofnij”; ``refused``: zła treść
+ * spoza Centrum, której Centrum nie przyjęło, z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export type HistoryRow = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Source
+     */
+    source: 'tata' | 'outside';
+    /**
+     * Undoes
+     */
+    undoes: string | null;
+    /**
+     * File
+     */
+    file: string;
+    /**
+     * Section
+     */
+    section: string | null;
+    /**
+     * Changes
+     */
+    changes: Array<HistoryChange>;
+    /**
+     * Secret
+     */
+    secret: boolean;
+    /**
+     * Undoable
+     */
+    undoable: boolean;
+    /**
+     * Refused
+     */
+    refused: boolean;
+    /**
+     * Removed
+     */
+    removed: boolean;
+    /**
+     * Reason
+     */
+    reason: string | null;
 };
 
 /**
@@ -1423,13 +1522,18 @@ export type PricingNotification = {
 /**
  * Problem
  *
- * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku.
+ * Odmowa wykonania żądania z bezpiecznym komunikatem dla taty, bez tekstu wyjątku; ``field``: pole formularza,
+ * którego dotyczy zła wartość (np. ``folder_okresow`` w Ustawieniach Centrum).
  */
 export type Problem = {
     /**
      * Message
      */
     message: string;
+    /**
+     * Field
+     */
+    field?: string | null;
 };
 
 /**
@@ -2599,7 +2703,27 @@ export type Sent = {
 };
 
 /**
+ * SettingProblem
+ *
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
+ * pliku i zdanie dla taty.
+ */
+export type SettingProblem = {
+    /**
+     * Field
+     */
+    field: string | null;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * Settings
+ *
+ * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny.
  */
 export type Settings = {
     /**
@@ -2634,6 +2758,23 @@ export type Settings = {
      * Theme
      */
     theme: 'dark' | 'light';
+    folders_problem: SettingProblem | null;
+};
+
+/**
+ * SettingsHistory
+ *
+ * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
+ */
+export type SettingsHistory = {
+    /**
+     * Rows
+     */
+    rows: Array<HistoryRow>;
+    /**
+     * Skipped
+     */
+    skipped: number;
 };
 
 /**
@@ -2847,7 +2988,7 @@ export type UnknownReportSender = {
 /**
  * UnreadablePath
  *
- * Pliku Ustawień taty nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
+ * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
  */
 export type UnreadablePath = {
     /**
@@ -2900,7 +3041,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */
@@ -4502,6 +4643,81 @@ export type GetSettingsResponses = {
 
 export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
 
+export type ChangeFoldersData = {
+    body: FoldersChange;
+    path?: never;
+    query?: never;
+    url: '/api/settings/folders';
+};
+
+export type ChangeFoldersErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeFoldersError = ChangeFoldersErrors[keyof ChangeFoldersErrors];
+
+export type ChangeFoldersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeFoldersResponse = ChangeFoldersResponses[keyof ChangeFoldersResponses];
+
+export type GetSettingsHistoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/history';
+};
+
+export type GetSettingsHistoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: SettingsHistory;
+};
+
+export type GetSettingsHistoryResponse = GetSettingsHistoryResponses[keyof GetSettingsHistoryResponses];
+
+export type UndoSettingsChangeData = {
+    body?: never;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/api/settings/history/{change_id}/undo';
+};
+
+export type UndoSettingsChangeErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type UndoSettingsChangeError = UndoSettingsChangeErrors[keyof UndoSettingsChangeErrors];
+
+export type UndoSettingsChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type UndoSettingsChangeResponse = UndoSettingsChangeResponses[keyof UndoSettingsChangeResponses];
+
 export type ChoosePeriodsDirectoryData = {
     body?: never;
     path?: never;
@@ -4583,7 +4799,7 @@ export type ChangeThemeResponses = {
     /**
      * Successful Response
      */
-    200: Settings;
+    200: Choice;
 };
 
 export type ChangeThemeResponse = ChangeThemeResponses[keyof ChangeThemeResponses];

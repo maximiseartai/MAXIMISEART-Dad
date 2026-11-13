@@ -28,7 +28,7 @@ from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
-from rozliczenia.centrum.settings import Settings, SettingState
+from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -84,13 +84,16 @@ class Start:
     ``paths`` ma ścieżkę każdej potrzeby-pliku procesu (sprawdza ``Catalog.prepared``). ``period``: token okresu, gdy
     gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
-    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``.
+    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
+    startu, z której Logi Uruchomienia i Diagnoza Zatrzymania biorą pliki procesu; ``None``: gospodarz bez Ustawień
+    Centrum (Skrypt dla maszyn, odtworzenie).
     """
 
     paths: Mapping[PathNeed, Path]
     period: str | None
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
+    settings: FolderSettings | None = None
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
@@ -146,14 +149,14 @@ class NeededSetting:
     field: SettingField
     missing: Callable[[Path], Message]
 
-    def chosen(self, settings: Settings) -> Path | None:
+    def chosen(self, settings: FolderSettings) -> Path | None:
         match self.field:
             case "register":
                 return settings.register
             case "periods_directory":
                 return settings.periods_directory
 
-    def state(self, settings: Settings) -> SettingState:
+    def state(self, settings: FolderSettings) -> SettingState:
         match self.field:
             case "register":
                 return settings.register_state
@@ -319,17 +322,17 @@ class ProcessKind(Generic[InputsT, SummaryT]):
             register_name=self.view.register_name,
         )
 
-    def settings_blocker(self, settings: Settings) -> str | None:
+    def settings_blocker(self, settings: FolderSettings) -> str | None:
         """„Najpierw wskaż …” z nazwami niewskazanych Ustawień procesu; ``None``, gdy wszystkie są wskazane."""
 
         unchosen = self._unchosen(settings)
         return None if unchosen is None else unchosen.message
 
-    def _unchosen(self, settings: Settings) -> Refusal | None:
+    def _unchosen(self, settings: FolderSettings) -> Refusal | None:
         missing = [setting.name for setting in self.settings if setting.chosen(settings) is None]
         return refusal.first_choose(missing) if missing else None
 
-    def required_paths(self, settings: Settings) -> Mapping[SettingField, Path]:
+    def required_paths(self, settings: FolderSettings) -> Mapping[SettingField, Path]:
         """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
 
         unchosen = self._unchosen(settings)
@@ -396,12 +399,13 @@ przeglądowi."""
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
-    w efenix (``None``: proces bez trybów), ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
+    w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
+    ``engine``: silnik z katalogu (``run_process``; inny daje tylko wyrocznia
     ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``). Powstaje tylko w ``Catalog.prepared``
     (``_CATALOG``).
     """
 
-    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing")
+    __slots__ = ("context", "engine", "inputs", "kind", "metrics", "period", "pricing", "settings")
 
     def __init__(
         self,
@@ -413,6 +417,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         pricing: runs_contract.Pricing | None,
         engine: Engine,
         proof: _Catalog,
+        settings: FolderSettings | None = None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -421,6 +426,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.metrics: Final = metrics
         self.pricing: Final = pricing
         self.engine: Final = engine
+        self.settings: Final = settings
 
     @property
     def dry_run(self) -> bool:

@@ -73,6 +73,7 @@ from atrapy.atrapa_efenix import (
     atrapa_efenix,
 )
 from tests.fixtures.centrum import (
+    STOP_S,
     TOOL_COMMIT,
     FakeGitHub,
     FakeReportBox,
@@ -546,6 +547,28 @@ def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_
         {"name": PeriodFolder.from_collective_file(centrum.collective_file).internal_settlement.name, "size": None, "online_only": None},
         {"name": SOURCE_NAME, "size": centrum.collective_file.stat().st_size, "online_only": True},
     ]
+
+
+def test_zmiana_folderow_w_trakcie_uruchomienia_zostawia_w_wyniku_i_logach_pliki_z_jego_startu(tmp_path: Path) -> None:
+    """Uruchomienie kończy na Ustawieniach Centrum ze swojego startu (ADR 0032): Rejestr zleceń i folder okresów
+    zmienione w trakcie nie zmieniają ani jego wyniku, ani plików procesu w jego Logach."""
+
+    centrum = preparing_centrum(tmp_path)
+    register = centrum.fixture.register_path
+    elsewhere = tmp_path / "Inny folder"
+    centrum.engines.release = threading.Event()
+    started = centrum.start(dry_run=True)
+    assert centrum.engines.held.wait(STOP_S)
+    changed = centrum.client.put(
+        "/api/settings/folders",
+        json={"order_register": str(elsewhere / "ZLECENIA INNE.xlsx"), "periods_directory": str(elsewhere)},
+    )
+    centrum.engines.release.set()
+    view = finished_view(centrum.client)
+
+    assert (started.status_code, changed.status_code, view["result"]["result"]) == (200, 200, "OK")
+    [record] = records(centrum)
+    assert register.name in [file["name"] for file in record["environment"]["files"]]
 
 
 def test_pliki_procesu_ktorych_nie_da_sie_wyliczyc_daja_logi_bez_plikow_bez_nieoczekiwanego_wyjatku_w_dzienniku(

@@ -48,7 +48,14 @@ from rozliczenia.centrum.tool_update import (
 )
 
 from tests.fixtures.centrum import CENTRUM, NO_RELEASE, join_threads_since, views_until, write_report_key
-from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum, run_to_end, stopped_for_maks
+from tests.fixtures.centrum_processes import (
+    PreparingCentrum,
+    Surroundings,
+    preparing_centrum,
+    run_to_end,
+    settings_changed_at,
+    stopped_for_maks,
+)
 from tests.fixtures.potomne import wait_for, wait_for_value
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.tool_clone import (
@@ -627,6 +634,7 @@ def test_zgloszenie_nieudanej_aktualizacji_ma_te_same_fakty_co_dziennik(tmp_path
     fingerprint = re.search(r"^- Odcisk problemu: ([0-9a-f]{16})$", body, re.MULTILINE)
     assert fingerprint is not None
     head, log_block = body.split("## Dziennik Centrum rozliczeń\n")
+    at = settings_changed_at(centrum)
     assert head.splitlines() == [
         "Zgłoszenie z Centrum rozliczeń.",
         "",
@@ -647,6 +655,11 @@ def test_zgloszenie_nieudanej_aktualizacji_ma_te_same_fakty_co_dziennik(tmp_path
         "## Narzędzie",
         "",
         f"- Odcisk problemu: {fingerprint[1]}",
+        "",
+        "## Zmiany Ustawień (30 dni)",
+        "",
+        f"{at[0]} · foldery.folder_okresow: nie ustawiono → {centrum.fixture.periods_directory.name}",
+        f"{at[1]} · foldery.rejestr_zlecen: nie ustawiono → {centrum.fixture.register_path.name}",
         "",
     ]
     log = centrum.log_path.read_text(encoding="utf-8").splitlines()
@@ -934,7 +947,8 @@ def test_wynik_aktualizacji_trafia_na_karte_gdy_dziennika_nie_da_sie_przeczytac(
     newest = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
     write_result(tmp_path / "config" / RESULT_FILE, UpdateResult(NEW_VERSION_FAILED, before, newest))
     # Na miejscu dziennika stoi folder: żaden system nie da go przeczytać jak pliku.
-    centrum.log_path.mkdir(parents=True)
+    centrum.log_path.unlink(missing_ok=True)
+    centrum.log_path.mkdir(parents=True, exist_ok=True)
 
     centrum.restart()
     view = centrum.client.get("/api/tool-update").json()

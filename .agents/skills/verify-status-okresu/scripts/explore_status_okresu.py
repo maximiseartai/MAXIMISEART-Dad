@@ -41,7 +41,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -60,13 +60,15 @@ from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.settings import SettingsStore
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.input_checks import check_preparation, check_settlement
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, SavedState, enter_from_mail
 from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.wall_clock import local_now
 from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
 from rozliczenia.worker_report_inbox import PasswordRejected
 from rozliczenia.worker_reports import OwnEntries
@@ -453,9 +455,8 @@ def _centrum(case: Path, periods: Path) -> TestClient:
     config = case / "config"
     config.mkdir()
     log = CentrumLog(config / "centrum.log")
-    settings = config / "centrum-ustawienia.yaml"
     app = create_app(
-        settings_path=settings,
+        config=config,
         platform=_Platform(),
         log=log,
         shutdown=Shutdown(log),
@@ -463,7 +464,9 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         # No Historia: the Wycena w efenix of the period was never run.
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
-    SettingsStore(settings, log=log, pause=lambda _: None).update(periods_directory=periods)
+    CentrumSettings(config, log=log, now=local_now, pause=lambda _: None).change(
+        FOLDERS, lambda folders: replace(folders, periods_directory=periods)
+    )
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
 

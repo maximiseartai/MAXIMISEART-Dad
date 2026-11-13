@@ -57,20 +57,6 @@
         "POST /api/view-timings": 1
       }
     },
-    "konfiguracja/zimny-start": {
-      "mediana_ms": {
-        "4x": 213,
-        "6x": 350
-      },
-      "zapytania_api": {
-        "GET /api/configuration": 1,
-        "GET /api/notifications": 1,
-        "GET /api/runs/events": 1,
-        "GET /api/settings": 1,
-        "GET /api/tool-update": 1,
-        "POST /api/view-timings": 1
-      }
-    },
     "menu/1/uruchomienia": {
       "mediana_ms": {
         "4x": 133,
@@ -100,24 +86,6 @@
       }
     },
     "menu/1/metryki/szkielet": {
-      "mediana_ms": {
-        "4x": 0,
-        "6x": 0
-      }
-    },
-    "menu/1/konfiguracja": {
-      "mediana_ms": {
-        "4x": 39,
-        "6x": 62
-      },
-      "zapytania_api": {
-        "GET /api/configuration": 1,
-        "GET /api/notifications": 1,
-        "GET /api/tool-update": 1,
-        "POST /api/view-timings": 1
-      }
-    },
-    "menu/1/konfiguracja/szkielet": {
       "mediana_ms": {
         "4x": 0,
         "6x": 0
@@ -170,24 +138,6 @@
       }
     },
     "menu/2/metryki/szkielet": {
-      "mediana_ms": {
-        "4x": 0,
-        "6x": 0
-      }
-    },
-    "menu/2/konfiguracja": {
-      "mediana_ms": {
-        "4x": 43,
-        "6x": 50
-      },
-      "zapytania_api": {
-        "GET /api/configuration": 1,
-        "GET /api/notifications": 1,
-        "GET /api/tool-update": 1,
-        "POST /api/view-timings": 1
-      }
-    },
-    "menu/2/konfiguracja/szkielet": {
       "mediana_ms": {
         "4x": 0,
         "6x": 0

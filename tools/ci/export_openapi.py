@@ -19,7 +19,7 @@ from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import FileTypes
 from rozliczenia.centrum.shutdown import Shutdown
-from rozliczenia.tool_files import SETTINGS
+from rozliczenia.tool_files import CONFIG_DIR
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "frontend" / "src" / "api" / "openapi.json"
@@ -49,7 +49,7 @@ class _NoPlatform:
 def main(*, output: Path = OUTPUT) -> int:
     log = CentrumLog(Path(os.devnull))  # eksport nie obsługuje żądań, więc niczego nie zapisuje
     app = create_app(
-        settings_path=SETTINGS,
+        config=CONFIG_DIR,
         platform=_NoPlatform(),
         log=log,
         shutdown=Shutdown(log),

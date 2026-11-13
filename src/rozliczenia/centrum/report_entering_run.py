@@ -44,7 +44,8 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
-from rozliczenia.centrum.settings import Settings, SettingsStore
+from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.file_state import file_state
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
@@ -70,7 +71,7 @@ class ReportEnteringEntry:
     ostatniego sprawdzenia pracy Przypomnień o raporcie (ADR 0030).
     """
 
-    store: SettingsStore
+    settings: CentrumSettings
     catalog: Catalog
     configuration: ConfigurationFiles
     parts: HostParts
@@ -85,7 +86,7 @@ class ReportEnteringEntry:
     def setup(self, last: runs_contract.RunRestored | None) -> report_entering_contract.ReportEnteringSetup:
         """Stan przycisku na ekranie Raporty przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
 
-        settings = self.store.load()
+        settings = self.settings.snapshot().folders
         register = settings.register
         return report_entering_contract.ReportEnteringSetup(
             title=_KIND.title,
@@ -99,7 +100,7 @@ class ReportEnteringEntry:
         """Wejście procesu z Ustawień taty i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
         wskazany."""
 
-        settings = self.store.load()
+        settings = self.settings.snapshot().folders
         if (unchosen := _unchosen(settings)) is not None:
             raise unchosen
         paths: dict[PathNeed, Path] = {
@@ -108,7 +109,7 @@ class ReportEnteringEntry:
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(paths, period=None, dry_run=False)
+        start = Start(paths, period=None, dry_run=False, settings=settings)
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
@@ -150,7 +151,7 @@ class ReportEnteringEntry:
         return refusal.report_entering_not_set_up(missing).message if missing else None
 
 
-def _unchosen(settings: Settings) -> refusal.Refusal | None:
+def _unchosen(settings: FolderSettings) -> refusal.Refusal | None:
     """„Najpierw wskaż …” z nazwami niewskazanych Ustawień kliknięcia; ``None``, gdy wszystkie są wskazane."""
 
     missing = [setting.name for setting in _SETTINGS if setting.chosen(settings) is None]

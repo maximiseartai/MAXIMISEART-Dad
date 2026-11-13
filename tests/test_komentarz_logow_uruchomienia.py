@@ -769,7 +769,7 @@ def _comments(
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
-        files=lambda process, period: [],
+        files=lambda process, period, settings: [],
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
     )

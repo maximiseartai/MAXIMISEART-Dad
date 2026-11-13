@@ -661,7 +661,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     # Pip never reaches PyPI from a verification run.
     os.environ["PIP_NO_INDEX"] = "1"
     app = create_app(
-        settings_path=Path(fixture["settings"]),
+        config=Path(fixture["settings"]).parent,
         platform=ScriptedPlatform(root),
         log=log,
         shutdown=shutdown,

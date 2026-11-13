@@ -513,6 +513,11 @@ NOT_SWEPT: dict[str, str] = {
     "closeCentrum": "kończy Centrum testu",
     "getReportsView": "czyta tylko pliki Wpisania raportów w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
     "keepManualValue": "zapisuje tylko plik decyzji w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
+    "changeFolders": "zapisuje ścieżki z żądania i oddaje stan ścieżek jak getSettings, bez treści plików taty; zła wartość "
+    "i niedostępny plik Ustawień: test_centrum_rozliczen",
+    "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
+    "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
+    "test_centrum_rozliczen",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 _BOARD = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
@@ -531,7 +536,7 @@ READS: dict[str, set[str]] = {
     "chooseRegister": _SETTINGS,
     "choosePeriodsDirectory": _SETTINGS,
     "openRegister": {"ustawienia", "rejestr"},
-    "changeTheme": _SETTINGS,
+    "changeTheme": _SETTINGS | {"dziennik_centrum"},
     "getPeriodBoard": _BOARD,
     "openPeriodPath": _BOARD,
     "getQuantitiesToFill": _BOARD,

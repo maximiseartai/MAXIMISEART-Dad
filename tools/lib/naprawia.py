@@ -42,32 +42,25 @@ zamyka, a linia podaje ``po merge'u zamknie: #N`` (a zamiast „nie zamknięto �
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
 import re
-from urllib.parse import urlsplit
 
 import github
+from github import LinkGithuba
 from stan_pr import Pull
 
 LINK = "\x01"
 NOT_TEXT = "\x00"
 _REFERENCE = rf"(?:{LINK}|(?:[\w.-]+/[\w.-]+)?#\d+)"
-FIXES = re.compile(rf"\s*Naprawia\s+({_REFERENCE}(?:\s*(?:,|\bi\b|\boraz\b)\s*{_REFERENCE})*)")
+FIXES = "Naprawia"
+_LISTED = rf"\s+({_REFERENCE}(?:\s*(?:,|\bi\b|\boraz\b)\s*{_REFERENCE})*)"
 REFERENCE = re.compile(_REFERENCE)
 BLOCKS = frozenset({"blockquote", "details", "div", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "p", "pre", "summary", "table"})
 LIST_OR_PARAGRAPH = frozenset({"li", "ol", "p", "ul"})
 EMPHASIS = frozenset({"em", "strong"})
 HIDDEN = frozenset({"code", "del", "s", "strike"})
 VOID = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "source", "track", "wbr"})
-
-
-@dataclass(frozen=True)
-class _Link:
-    repository: str
-    number: int
-    issue: bool
 
 
 class _Lines(HTMLParser):
@@ -80,21 +73,19 @@ class _Lines(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
-        self.lines: list[list[str | _Link]] = []
-        self._line: list[str | _Link] = []
+        self.lines: list[list[str | LinkGithuba]] = []
+        self._line: list[str | LinkGithuba] = []
         self._start: tuple[str, ...] | None = None
         self._open: list[str] = []
-        self._link: _Link | None = None
+        self._link: LinkGithuba | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
         if tag in BLOCKS or tag == "br":
             self._end_line()
         if tag in {"img", "input"} or (tag in HIDDEN and not self._hidden()):
             self._append(NOT_TEXT)
-        elif tag == "a" and not self._hidden() and "issue-link" in (attributes.get("class") or "").split():
-            _, owner, name, _, number = urlsplit(attributes.get("data-url") or "").path.split("/")
-            self._link = _Link(f"{owner}/{name}", int(number), attributes.get("data-hovercard-type") == "issue")
+        elif tag == "a" and not self._hidden():
+            self._link = github.link_githuba(attrs)
         if tag not in VOID:
             self._open.append(tag)
 
@@ -134,34 +125,42 @@ def fixed_issues(body: str, repository: str) -> tuple[int, ...]:
     Rzuca wyjątek, gdy GitHub opisu nie wyrenderował.
     """
 
+    return listed_issues(github.html_markdownu(body, repository), repository, (FIXES,))
+
+
+def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[int, ...]:
+    """Numery issues ``repository`` z list numerów po słowie z ``words`` na początku linii HTML opisu PR z renderera
+    GitHuba, według tych samych reguł co „Naprawia” (docstring modułu)."""
+
     parser = _Lines()
-    parser.feed(github.html_markdownu(body, repository))
+    parser.feed(html)
     parser.close()
+    pattern = re.compile(rf"\s*(?:{'|'.join(map(re.escape, words))}){_LISTED}")
     numbers: list[int] = []
     for line in parser.lines:
-        listed = FIXES.match("".join(LINK if isinstance(part, _Link) else part for part in line))
-        links = iter(part for part in line if isinstance(part, _Link))
+        listed = pattern.match("".join(LINK if isinstance(part, LinkGithuba) else part for part in line))
+        links = iter(part for part in line if isinstance(part, LinkGithuba))
         for reference in REFERENCE.finditer(listed[1] if listed else ""):
             if reference[0] != LINK:
                 if "/" in reference[0]:
                     break
                 continue
             link = next(links)
-            if link.repository.casefold() != repository.casefold():
+            if not link.w(repository):
                 break
-            if link.issue and link.number not in numbers:
-                numbers.append(link.number)
+            if link.rodzaj == "issue" and link.numer not in numbers:
+                numbers.append(link.numer)
     return tuple(numbers)
 
 
 def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
     """Zamyka otwarte issues z linii „Naprawia” z komentarzem o merge'u, a przed merge'em tylko je podaje."""
 
-    if "Naprawia" not in pull.body:
+    if FIXES not in pull.body:
         return ""
     unchecked = "nie zamknięto issues z „Naprawia”, zamknij je ręcznie" if merged else "nie sprawdzono „Naprawia”"
     try:
-        default_branch = str(json.loads(github.gh("repo", "view", pull.repository, "--json", "defaultBranchRef"))["defaultBranchRef"]["name"])
+        default_branch = github.domyslna_galaz(pull.repository)
     except Exception:  # noqa: BLE001 - po merge'u każdy błąd to tylko ostrzeżenie w linii SCAL OK, bo PR jest już scalony
         return f" | UWAGA: GitHub nie podał domyślnej gałęzi, {unchecked}"
     if pull.base != default_branch:

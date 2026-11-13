@@ -327,7 +327,11 @@ def test_pamiec_zielonych_nie_przepuszcza_zmiany_pliku_danych_pakietu(tmp_path: 
     assert "FAILED tests/test_strona.py::test_tytul" in after_change.stdout
 
 
-@pytest.mark.parametrize(("workers", "expected"), [(None, "4"), ("3", "3")], ids=["bez zmiennej", "ze zmienną"])
+@pytest.mark.parametrize(
+    ("workers", "expected"),
+    [(None, "4"), ("3", "3"), ("auto", str(os.cpu_count())), ("0", "1")],
+    ids=["bez zmiennej", "ze zmienną", "auto jak xdist to rdzenie", "zero to jeden"],
+)
 def test_pytest_bierze_cztery_workery_chyba_ze_zmienna_mowi_inaczej(tmp_path: Path, workers: str | None, expected: str) -> None:
     repo = _repo(tmp_path)
     _write(
@@ -412,19 +416,25 @@ def test_zmiana_konfiguracji_zostawia_ci_testy_ponad_budzet_i_mowi_ktore_w_kazdy
 
 
 @pytest.mark.parametrize(
-    ("changed", "text", "failing"),
+    ("changed", "text", "cost_s", "failing"),
     [
-        ("src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n", "tests/test_zawsze_pada.py::test_niedotkniety"),
-        ("tests/test_konfiguracja.py", CONFIGURATION_READER.replace("inna.toml", "inny.toml"), "tests/test_konfiguracja.py::test_konfiguracja"),
+        # 400 s to ponad budżet dalszych (45 s na każdego z 2 workerów), ale w ścianie odległości 1.
+        ("src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n", 400.0, "tests/test_zawsze_pada.py::test_niedotkniety"),
+        (
+            "tests/test_konfiguracja.py",
+            CONFIGURATION_READER.replace("inna.toml", "inny.toml"),
+            9000.0,
+            "tests/test_konfiguracja.py::test_konfiguracja",
+        ),
     ],
     ids=["moduł, który test importuje", "zmieniony test, który czyta konfigurację"],
 )
-def test_zmiana_konfiguracji_razem_z_innym_plikiem_uruchamia_zawsze_testy_w_odleglosci_1_od_niego(
-    tmp_path: Path, changed: str, text: str, failing: str
+def test_zmiana_konfiguracji_razem_z_innym_plikiem_uruchamia_zmieniony_test_zawsze_a_zalezny_wprost_w_scianie(
+    tmp_path: Path, changed: str, text: str, cost_s: float, failing: str
 ) -> None:
     repo = _repo(tmp_path)
     _write(repo, "tests/test_konfiguracja.py", CONFIGURATION_READER)
-    _commit_times(repo, dict.fromkeys(("tests/test_konfiguracja.py", "tests/test_zawsze_pada.py"), 9000.0))
+    _commit_times(repo, dict.fromkeys(("tests/test_konfiguracja.py", "tests/test_zawsze_pada.py"), cost_s))
     with (repo / "pyproject.toml").open("a", encoding="utf-8") as file:
         file.write("\n")
     _write(repo, changed, text)
@@ -433,6 +443,30 @@ def test_zmiana_konfiguracji_razem_z_innym_plikiem_uruchamia_zawsze_testy_w_odle
 
     assert f"FAILED {failing}" in answered.stdout, answered.stdout
     assert answered.returncode == 1
+
+
+@pytest.mark.parametrize(
+    ("workers", "verdict"),
+    [
+        ("2", ["zostawione CI: 1 z 1 plików testów (~2500 s w CI): test_zawsze_pada.py", "SZYBKO OK"]),
+        ("10", ["SZYBKO FAIL | pytest"]),
+    ],
+    ids=["2 workery: ponad ścianą", "10 workerów: w ścianie"],
+)
+def test_test_zalezny_wprost_biegnie_w_scianie_na_tylu_workerach_ile_bierze_krok_pytest(
+    tmp_path: Path, workers: str, verdict: list[str]
+) -> None:
+    """Ściana to ``WALL_S`` na każdego workera kroku pytest: test zależny wprost, który kosztuje pięć ścian, zostaje CI
+    przy 2 workerach, a przy 10 biegnie (i pada, bo zmiana go psuje)."""
+
+    repo = _repo(tmp_path)
+    _write(repo, "README.md", "Repozytorium testu.\n")
+    _commit_times(repo, {"tests/test_zawsze_pada.py": szybko.WALL_S * 5})
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n")
+
+    answered = _szybko(repo, workers=workers)
+
+    assert answered.stdout.splitlines()[-len(verdict) :] == verdict, answered.stdout
 
 
 @pytest.mark.parametrize(
@@ -457,7 +491,7 @@ def test_zmiana_konfiguracji_uruchamia_w_budzecie_testy_ktore_ja_czytaja_jak_w_o
     if also_changed:
         _write(repo, *also_changed)
 
-    answered = _szybko(repo)
+    answered = _szybko(repo, workers="4")
 
     assert "FAILED tests/test_konfiguracja.py::test_konfiguracja" in answered.stdout, answered.stdout
     name = re.escape(PurePosixPath(deferred).name)
@@ -507,26 +541,52 @@ FROZEN_TIMES = {
 
 
 @pytest.mark.parametrize(
-    ("budget_s", "deferred"),
+    ("budget_s", "wall_s", "deferred"),
     [
         # 4 workery po 10 s: odległość 1 zajmuje 35 s, test_czyta (3 s) i test_c_tani (2 s) dopełniają dokładnie 40 s,
         # a bliższy test_b (4 s) już się nie mieści.
-        (10.0, ("tests/test_b.py", "tests/test_c_bez_czasu.py", "tests/test_c_drogi.py")),
-        (0.0, ("tests/test_b.py", "tests/test_c_bez_czasu.py", "tests/test_c_drogi.py", "tests/test_c_tani.py", "tests/test_czyta.py")),
+        (10.0, szybko.WALL_S, ("tests/test_b.py", "tests/test_c_bez_czasu.py", "tests/test_c_drogi.py")),
+        (0.0, szybko.WALL_S, ("tests/test_b.py", "tests/test_c_bez_czasu.py", "tests/test_c_drogi.py", "tests/test_c_tani.py", "tests/test_czyta.py")),
+        # 4 workery po 2 s: odległość 1 mieści tanie test_a_tani i test_dane (po 1 s), a test_a_drogi (33 s) już nie.
+        (
+            0.0,
+            2.0,
+            (
+                "tests/test_a_drogi.py",
+                "tests/test_b.py",
+                "tests/test_c_bez_czasu.py",
+                "tests/test_c_drogi.py",
+                "tests/test_c_tani.py",
+                "tests/test_czyta.py",
+            ),
+        ),
     ],
-    ids=["budżet na część dalszych", "budżet zerowy"],
+    ids=["budżet na część dalszych", "budżet zerowy", "ściana na część odległości 1"],
 )
-def test_plan_bierze_zawsze_odleglosc_1_a_dalsze_w_budzecie_i_nazywa_zostawione(budget_s: float, deferred: tuple[str, ...]) -> None:
+def test_plan_bierze_odleglosc_1_w_scianie_a_dalsze_w_budzecie_i_nazywa_zostawione(
+    budget_s: float, wall_s: float, deferred: tuple[str, ...]
+) -> None:
     tests = sorted(path for path in FROZEN_DISTANCES if path.startswith("tests/"))
 
-    chosen = szybko.plan(tests, FROZEN_DISTANCES, czasy_ci.KosztyPlikow(FROZEN_TIMES), budget_s)
+    chosen = szybko.plan(tests, FROZEN_DISTANCES, czasy_ci.KosztyPlikow(FROZEN_TIMES), workers=4, budget_s=budget_s, wall_s=wall_s)
 
     # Plik spoza tabeli kosztuje tyle, co mediana tabeli: 2,5 s.
     costs = {**dict.fromkeys(tests, 2.5), **FROZEN_TIMES}
     assert chosen.deferred == deferred
     assert sorted(chosen.run + chosen.deferred) == tests
     assert chosen.deferred_s == sum(costs[test] for test in deferred)
-    assert {"tests/test_a_drogi.py", "tests/test_a_tani.py", "tests/test_dane.py"} <= set(chosen.run)
+
+
+def test_zmieniony_plik_testow_biegnie_ponad_sciane_i_zabiera_ja_zaleznym_wprost() -> None:
+    """Zmieniony plik testów biegnie zawsze, ale jego czas liczy się do ściany, więc plik zależny wprost od zmiany zostaje
+    CI, gdy zmieniony sam ją wypełnił."""
+
+    distances = {"tests/test_zmieniony.py": 0, "tests/test_zalezny.py": 1}
+    costs = czasy_ci.KosztyPlikow({"tests/test_zmieniony.py": 900.0, "tests/test_zalezny.py": 1.0})
+
+    chosen = szybko.plan(sorted(distances), distances, costs, workers=4, wall_s=200.0)
+
+    assert (chosen.run, chosen.deferred) == (("tests/test_zmieniony.py",), ("tests/test_zalezny.py",))
 
 
 def test_testy_struktury_i_zapadki_biegna_przy_zmianie_ktora_ich_nie_dotyka(tmp_path: Path) -> None:
