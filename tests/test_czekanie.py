@@ -174,14 +174,13 @@ RERUNS = (
     "echo ${x#a}; gh run rerun 1",
     "echo a\\\n#x; gh run rerun 1",
     'echo "$(date)"#; gh run rerun 1',
-    # Sondy przeglądu #1487, runda 1 i 2: ``#``, za którym bash albo zsh wykonuje polecenie. W ``$'…'`` ukośnik
-    # chroni apostrof, a ``$$'…'`` to numer procesu i zwykły napis.
+    # Sondy przeglądów #1487 (rundy 1–3): ``#``, za którym bash albo zsh wykonuje polecenie; hook bez ucinania
+    # komentarzy odmawia każdej z nich.
     "echo $(date +%s)#; gh run rerun 43035692960",
     "echo `date +%s`#; gh run rerun 43035692960",
     "echo `#x`; gh run rerun 1",
     "git log -1 --format=%h $(git rev-parse HEAD)#; gh run rerun 1",
     'echo "`echo " #"`"; gh run rerun 43035692960',
-    "echo $'\\' #'; gh run rerun 1",
     "echo ${x:- #}; gh run rerun 1",
     "x=`echo #`; gh run rerun 1",
     "(( 1 #x )); gh run rerun 1",

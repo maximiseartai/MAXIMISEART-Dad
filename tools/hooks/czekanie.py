@@ -33,9 +33,6 @@ Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie ur
 wzorca hook nie zna, łapie tylko przegląd. Tak samo ponowienie z ``eval "…"``, z polecenia złożonego ze zmiennych
 (``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
 skrypt albo program inny niż ``gh``.
-Komentarzy powłoki hook nie rozpoznaje, więc zakazane polecenie w komentarzu dostaje odmowę, a zakazane polecenie
-w następnej linii przechodzi, gdy komentarz albo napis ma ``<<EOF`` albo komentarz ma pojedynczy apostrof
-lub cudzysłów (``# it's``, także w backtickach); tak samo za ``\\\\`` na końcu linii.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
 """
@@ -176,16 +173,6 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     depth, index, script_end = 0, start, -1
     while index < len(command):
         char = command[index]
-        # ``$$`` to numer procesu, więc ``'`` za nim zaczyna zwykły napis, a nie ``$'…'``.
-        if command.startswith("$$", index):
-            kept.append("$$")
-            index += 2
-            continue
-        ansi = command.startswith("$'", index)
-        if ansi:
-            kept.append(char)
-            index += 1
-            char = "'"
         if char == "\\":
             kept.append(command[index : index + 2])
             if index == script_end:
@@ -193,7 +180,7 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
             index += 2
             continue
         if char in "'\"":
-            literal, end = _quoted(command, index, ansi)
+            literal, end = _quoted(command, index)
             script = scripts.is_script(index, end)
             if index == script_end:
                 kept.append(command[index + 1 : end])
@@ -216,17 +203,12 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     return "".join(kept), index
 
 
-def _quoted(command: str, start: int, ansi: bool = False) -> tuple[str, int]:
-    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``.
-
-    W ``$'…'`` (``ansi``) ukośnik chroni apostrof.
-    """
+def _quoted(command: str, start: int) -> tuple[str, int]:
+    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
 
     if command[start] == "'":
-        index = start + 1
-        while index < len(command) and command[index] != "'":
-            index += 2 if ansi and command[index] == "\\" else 1
-        end, kept = min(index + 1, len(command)), "''"
+        close = command.find("'", start + 1)
+        end, kept = (len(command) if close < 0 else close + 1), "''"
     else:
         parts, index = ['"'], start + 1
         while index < len(command):
