@@ -10254,7 +10254,7 @@
           "message"
         ],
         "title": "WorkerSuggestions",
-        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać); ``message``:\nzdanie dla taty przy ``not_set`` i ``unreadable``."
+        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim\nobszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."
       },
       "WorkerSwitches": {
         "properties": {

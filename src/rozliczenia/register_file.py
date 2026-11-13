@@ -260,19 +260,6 @@ class OrderSheets:
         found.discard("")
         return frozenset(found)
 
-    def recent_workers(self, since: date) -> Counter[str]:
-        """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
-        pustych), z przeglądu od dołu każdego obszaru wklejania tą samą regułą co zlecenia Wpisania raportów
-        (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy
-        wierszy arkusza nie da się rozdzielić."""
-
-        found: Counter[str] = Counter()
-        for area in self.paste_areas():
-            for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
-                found[normalize_text(row.value(area.columns.worker))] += 1
-        del found[""]
-        return found
-
     def period_rows(self, period: SettlementPeriod | None) -> tuple[RegisterSheet, ...]:
         """Arkusze zleceń z wierszami od pierwszego do ostatniego, którego data może leżeć w ``period``; bez ``period``
         z każdym wierszem od 2. ``WorkbookError``, gdy openpyxl nie przeczyta skoroszytu albo wiersza.
@@ -401,6 +388,20 @@ def _paste_area(
         contract_number=positions[CONTRACT_NUMBER],
     )
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)
+
+
+def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
+    """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
+    pustych), z przeglądu od dołu każdego obszaru wklejania ``areas`` tą samą regułą co zlecenia Wpisania raportów
+    (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy wierszy
+    arkusza nie da się rozdzielić."""
+
+    found: Counter[str] = Counter()
+    for area in areas:
+        for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
+            found[normalize_text(row.value(area.columns.worker))] += 1
+    del found[""]
+    return found
 
 
 class PasteArea:

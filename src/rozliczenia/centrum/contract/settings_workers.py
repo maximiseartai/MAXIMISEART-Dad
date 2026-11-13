@@ -90,8 +90,8 @@ class WorkerSuggestion(Model):
 
 class WorkerSuggestions(Model):
     """Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
-    puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać); ``message``:
-    zdanie dla taty przy ``not_set`` i ``unreadable``."""
+    puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+    obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."""
 
     state: Literal["read", "not_set", "unreadable"]
     suggestions: list[WorkerSuggestion]

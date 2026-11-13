@@ -35,7 +35,7 @@ import pytest
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
-from rozliczenia import efenix_process
+from rozliczenia import efenix_process, intermax_messages
 from rozliczenia.centrum import app, diagnosis_messages
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
@@ -106,7 +106,14 @@ from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_li
 from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
 from atrapy.workbooks import rewrite_parts
 from atrapy.skrzynka_raportow import AtrapaImap
-from atrapy.preparation import REGISTER_HEADERS, RegisterRow, register_order, write_collective_template, write_register
+from atrapy.preparation import (
+    OLD_REGISTER_HEADERS,
+    REGISTER_HEADERS,
+    RegisterRow,
+    register_order,
+    write_collective_template,
+    write_register,
+)
 
 import export_openapi
 
@@ -2285,8 +2292,9 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     tmp_path: Path,
 ) -> None:
     """US 24: login z ``WYKONAWCA`` uporządkowanych zleceń bieżącego okresu i 4 poprzednich (okresy, które Tablica okresów
-    pokazuje od razu), którego nie ma żaden Wykonawca, także Nieaktywny, ani sprawa „login bez Wykonawcy”, jest
-    podpowiedzią z liczbą tych zleceń, od najczęstszej; login tylko ze starszych zleceń nie jest. Odpowiedź ma sam login
+    pokazuje od razu), którego nie ma żaden Wykonawca, także Nieaktywny i także jako drugi login, ani sprawa „login bez
+    Wykonawcy”, jest podpowiedzią z liczbą tych zleceń, od najczęstszej; login tylko ze starszych zleceń i zlecenie z
+    pustym ``WYKONAWCA`` nie są (D2 #1650 r1). Odpowiedź ma sam login
     i liczbę, bez treści Rejestru, a odczyt niczego nie zapisuje. Po dodaniu Wykonawcy z loginem podpowiedzi podpowiedź
     znika."""
 
@@ -2298,7 +2306,9 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
         ("brzeg.okna", datetime(2026, 8, 18, 10)),
         ("adrian.testowy", datetime(2026, 9, 8, 9)),
         ("kamil.syntetyczny", datetime(2026, 9, 8, 10)),
+        ("kamil.drugi", datetime(2026, 9, 8, 10, 30)),
         ("Nowy.Login", datetime(2026, 9, 8, 11)),
+        ("", datetime(2026, 9, 8, 12)),
         ("sprawa.login", datetime(2026, 9, 9, 9)),
         ("nowy.login ", datetime(2026, 9, 9, 10)),
     ]
@@ -2310,7 +2320,10 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     address = SenderAddress.of("sprawa@przyklad.invalid")
     assert address is not None
     with_case = WorkerList.of(
-        [WorkerEntry([login], name) for login, name in SETTLEMENT_WORKERS.items()],
+        [
+            WorkerEntry([login, "kamil.drugi"] if login == "kamil.syntetyczny" else [login], name)
+            for login, name in SETTLEMENT_WORKERS.items()
+        ],
         [UnmatchedLogin(Login("sprawa.login"), (address,))],
     )
     assert isinstance(with_case, WorkerList), with_case
@@ -2334,6 +2347,10 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
     assert added.status_code == 200, added.json()
     assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+# Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.
+NO_ORDER_SHEET = intermax_messages.no_order_sheet(Path(REGISTER_NAME)).what
 
 
 def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
@@ -2367,8 +2384,15 @@ def _register_unreadable_rows(centrum_: SettlingCentrum) -> None:
             ["nowy.login"],
             lambda centrum_: register_without_order_sheets(centrum_),
             "unreadable",
-            settings_messages.worker_suggestions_unreadable(),
+            NO_ORDER_SHEET,
             id="rejestr-bez-arkuszy-zlecen",
+        ),
+        pytest.param(
+            ["nowy.login"],
+            lambda centrum_: write_orders(register_of(centrum_.tmp_path), ["nowy.login"], OLD_REGISTER_HEADERS),
+            "unreadable",
+            NO_ORDER_SHEET,
+            id="starszy-uklad-bez-obszaru-wklejania",
         ),
         pytest.param(
             ["nowy.login"],
@@ -2387,7 +2411,9 @@ def test_bez_wskazanego_albo_czytelnego_rejestru_sekcja_wykonawcy_mowi_zdaniem_d
     message: str,
 ) -> None:
     """US 24, W2 #1577 r1: niewskazany Rejestr zleceń albo Rejestr, którego nie da się przeczytać, to zdanie dla taty w
-    sekcji Wykonawcy, a nie pusta lista, która wygląda jak „brak nowych loginów”."""
+    sekcji Wykonawcy, a nie pusta lista, która wygląda jak „brak nowych loginów”. Rejestr bez obszaru wklejania (bez
+    arkusza zleceń albo w starszym układzie bez AKCJE i UWAGI, z którego Przebieg czyta loginy) ma zdanie „Co się
+    stało” tego samego Komunikatu, którym zatrzymują się na nim procesy wklejania (D1 #1650 r1)."""
 
     centrum_ = settling_with_register(tmp_path, register)
     if damage is not None:

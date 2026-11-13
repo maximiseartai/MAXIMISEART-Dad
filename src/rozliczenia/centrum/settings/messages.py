@@ -124,7 +124,8 @@ def worker_suggestions_not_set() -> str:
 
 def worker_suggestions_unreadable() -> str:
     """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo Rejestru zleceń nie da się teraz przeczytać (nie ma go, brak
-    dostępu, nie jest skoroszytem, bez arkuszy zleceń); stan pliku pokazuje sekcja Foldery."""
+    dostępu, nie jest skoroszytem, wierszy nie da się rozdzielić); stan pliku pokazuje sekcja Foldery. Rejestr bez
+    obszaru wklejania ma zamiast tego zdanie Komunikatu procesów (``worker_suggestions``)."""
 
     return (
         "Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź "
