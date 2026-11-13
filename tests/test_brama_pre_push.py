@@ -1,6 +1,6 @@
 """Brama ``tools/hooks/pre-push``: push agenta, który wysyła HEAD, przechodzi tylko po ruff i mypy dla obu systemów.
 
-Każdy test robi prawdziwy ``git push`` do tymczasowego repozytorium bare. Test kroków bramy uruchamia prawdziwe
+Każdy test robi prawdziwy ``git push`` do własnej kopii repozytorium bare (``built_once``). Test kroków bramy uruchamia prawdziwe
 ``tools/ci_lokalnie.py`` na małym kodzie, a pozostałe atrapę ``.venv/bin/python``. W CI moduł biegnie w jednym
 z zadań ``pytest (Python 3.14, Linux, K/N)`` z planu runu (``tools/plan_ci.py``).
 """
@@ -17,7 +17,7 @@ import sys
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, copy_files, repository, with_imports
+from tests.fixtures.git_repo import built_once, commit, copy_files, repository, with_imports
 from tests.fixtures.potomne import wait_for
 
 import repo
@@ -63,10 +63,15 @@ def _git(cwd: Path, *args: str, agent: str | None = "claude-code") -> subprocess
 
 @pytest.fixture
 def checkout(tmp_path: Path) -> Path:
-    remote = tmp_path / "zdalne.git"
-    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    built_once(tmp_path, _build_checkout)
+    return tmp_path / "checkout"
+
+
+def _build_checkout(directory: Path) -> None:
+    remote = directory / "zdalne.git"
+    _git(directory, "init", "-q", "--bare", str(remote))
     checkout = repository(
-        tmp_path / "checkout",
+        directory / "checkout",
         {
             ".gitignore": ".venv/\n__pycache__/\n",
             "pyproject.toml": '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nfiles = ["kod"]\n',
@@ -79,7 +84,6 @@ def checkout(tmp_path: Path) -> Path:
     commit(checkout, "start")
     _git(checkout, "config", "core.hooksPath", "tools/hooks")
     _git(checkout, "remote", "add", "origin", str(remote))
-    return checkout
 
 
 def _venv_python(checkout: Path, body: str) -> None:
