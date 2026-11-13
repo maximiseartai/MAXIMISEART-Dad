@@ -6,7 +6,7 @@ from pathlib import Path
 
 from playwright.sync_api import FloatRect, Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, move, open_settings, settings_window
+from drive.common import DAD_VIEWPORT, Run, close_settings, move, open_settings, settings_title, settings_window
 
 FEATURE = "reguly-ilosci"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -85,7 +85,7 @@ def drive(run: Run, page: Page) -> None:
         # On a narrow window the menu with the gear is folded away; the address opens the section, as a bookmark does.
         page.goto(run.url + "#/ustawienia/reguly-ilosci")
         window = settings_window(page)
-        expect(window.get_by_role("heading")).to_have_text("Ustawienia/Reguły ilości")
+        expect(settings_title(page)).to_have_text("Ustawienia/Reguły ilości")
         on_screen = sum(_group(window, scope).get_by_role("listitem").count() for scope in SCOPES)
         run.check(on_screen == len(rules), f"the narrow window shows every rule ({on_screen})")
         page.wait_for_function(
