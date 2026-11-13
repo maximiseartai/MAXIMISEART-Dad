@@ -2,9 +2,10 @@
 
 Zadanie pytest (``tools/ci/wykonaj_zadanie.py``) zapisuje dwa pliki, a dwa narzędzia je czytają z artefaktów runu:
 
-- ``FlakyTest``: test, który w zadaniu pytest bramki padł, a po jednym ponowieniu przeszedł. Lista trafia do
-  ``FLAKY_TESTY`` (artefakt ``flaky-testy-<zadanie>-<próba>``), a ``tools/ci/zgloszenia_ci.py`` zakłada z niej issue
-  ``Flaky test: <test>``.
+- ``FlakyTest``: test, który w zadaniu pytest bramki albo w przebiegu bez mutacji części nocy
+  (``tools/mutacje_zmiany.py``) padł, a po jednym ponowieniu (``ponow``) przeszedł. Lista trafia do ``FLAKY_TESTY``
+  (artefakt ``flaky-testy-<zadanie>-<próba>`` runu CI albo ``flaky-testy-mutacje-<część>`` runu Mutacji nocnych), a
+  ``tools/ci/zgloszenia_ci.py`` zakłada z niej issue ``Flaky test: <test>``.
 - ``ZapisKwarantanny``: wynik każdego testu z kwarantanny, który biegł w zadaniu (artefakt ``kwarantanna-<zadanie>-<próba>``
   na pushu do `main`). Test z kwarantanny ma w junit własność ``WLASNOSC`` (``tests/conftest.py``). ``stan_kwarantanny``
   mówi ``tools/wydanie.py``, czy na commicie testy z kwarantanny przeszły.
@@ -14,10 +15,11 @@ Id testu to id pytest (``tests/test_x.py::Klasa::test_y[parametry]``), które ju
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 import ast
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 import re
 from typing import Literal
@@ -38,6 +40,8 @@ ID_TESTU = re.compile(r"tests/[\w/]+\.py(?:::\w+)+(?:\[.*\])?")
 # Etykieta issue flaky testu, które zakłada ``tools/ci/zgloszenia_ci.py``, a ``tools/ponow_ci.py`` czyta.
 ETYKIETA_FLAKY = "flaky-test"
 DLUGOSC_W_TYTULE = 200
+# Flaky test trafia w jeden albo dwa testy (Skrzynka w runach 26.10); więcej porażek naraz to defekt albo awaria runnera.
+PONOWIENIE_NAJWIECEJ = 5
 # Własność junit testu z kwarantanny (``tests/conftest.py``), z powodem kwarantanny jako wartością.
 WLASNOSC = "kwarantanna"
 
@@ -186,6 +190,30 @@ def po_ponowieniu(junit: Path, ponowienie: Path, testy: Sequence[str]) -> bool:
     if any(wyniki.get(test) != "przeszedł" for test in testy):
         return False
     wyniki_testow.bez_porazek(junit, testy)
+    return True
+
+
+def ponow(junit: Path, ponowienie: Path, zadanie: str, uruchom: Callable[[tuple[str, ...]], bool]) -> bool:
+    """Jedno ponowienie testów, które padły w ``junit``: czy każdy przeszedł za drugim razem, więc to flaky testy.
+
+    ``uruchom`` uruchamia podane testy raz jeszcze z junit ``ponowienie`` i mówi, czy polecenie przeszło. Ponowienie
+    biegnie tylko dla najwyżej ``PONOWIENIE_NAJWIECEJ`` testów, z których id każdego da się zgłosić w issue, a gdy każdy
+    przejdzie, trafiają do ``FLAKY_TESTY`` z zadaniem ``zadanie`` oraz commitem i runem z ``GITHUB_*``."""
+
+    testy = padniete(junit)
+    if not testy:
+        return False
+    if len(testy) > PONOWIENIE_NAJWIECEJ:
+        print(f"PONOWIENIE | bez ponowienia: padło {len(testy)} testów, a flaky testy to najwyżej {PONOWIENIE_NAJWIECEJ}", flush=True)
+        return False
+    if obce := [test for test in testy if not zgloszalny(test)]:
+        print(f"PONOWIENIE | bez ponowienia: id testu, którego nie da się zgłosić w issue: {', '.join(obce)}", flush=True)
+        return False
+    if not uruchom(testy) or not po_ponowieniu(junit, ponowienie, testy):
+        return False
+    print(f"FLAKY TESTY | przeszły po ponowieniu: {', '.join(testy)}", flush=True)
+    sha, run, proba = os.environ.get("GITHUB_SHA", ""), int(os.environ.get("GITHUB_RUN_ID", "0")), int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
+    zapisz_flaky_testy([FlakyTest(test, zadanie, sha, run, proba) for test in testy])
     return True
 
 

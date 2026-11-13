@@ -44,6 +44,9 @@ Najpierw biegną raz testy dotknięte zmianą, wybrane jak w ``tools/szybko.py``
 ``tools/lib/pytest_pokrycie.py``. Zapisuje on, które testy wykonują które zmienione linie i jakikolwiek kod zmienionych
 plików, także w procesach Pythona uruchomionych przez test, oraz linie wykonane dla wielu testów naraz: przy imporcie
 modułu i w fixture o zasięgu szerszym niż test. Testy muszą przejść, inaczej wynik mutacji niczego nie dowodzi.
+Testy, które padły, biegną raz jeszcze, z tym samym zapisem pokrycia, jak w bramce PR (``niestabilne_testy.ponow``, ADR 0020):
+gdy każdy przejdzie, mutacje biegną dalej, a testy trafiają do zapisu flaky testów (``.ci-niestabilne/flaky-testy.json``),
+z którego ``tools/ci/zgloszenia_ci.py`` zakłada issue ``Flaky test: …`` (ADR 0021, Z4 13.11).
 
 Potem każda mutacja biegnie przez silnik ``tools/lib/silnik_mutacji.py`` (własna kopia checkoutu), najpierw z testami, które
 wykonały jej linie. Pokrycie tylko przyspiesza wykrycie: mutacja, która je przeżyła, biegnie drugi raz, po jednej
@@ -87,9 +90,9 @@ następnej zmianie jego pliku, a komentarz ``mutacje-zmiany:`` w innej postaci k
 
 Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje albo
 testy mutacji przekroczyły ``--limit-s`` w ostatnim przebiegu (``przekroczony czas <liczba>`` po liczbie przeżytych),
-kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają albo nie kończą się w limicie czasu części
-bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części (``--limit-czesci-s``) minął po
-pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
+kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają także po ponowieniu albo nie kończą
+się w limicie czasu części bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części
+(``--limit-czesci-s``) minął po pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
 linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
 W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
@@ -148,6 +151,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 from jednostka import Czesc
+import niestabilne_testy
 import pokrycie_procesu
 import potomne
 from repo import BASE, ROOT
@@ -176,6 +180,9 @@ PRZEKROCZONY_CZAS = "przekroczony_czas"
 # Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi albo z przekroczonym
 # czasem testów, 3 z mutacjami bez werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
 KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
+# Junit testów bez mutacji i ich ponowienia (``niestabilne_testy.ponow``).
+JUNIT = ROOT / ".ci-niestabilne" / "junit-pokrycia.xml"
+RETRY_JUNIT = ROOT / ".ci-niestabilne" / "junit-ponowienia.xml"
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
 COMMAND_LIMIT = 20_000
 EXCEPTION = re.compile(r"#\s*mutacje-zmiany:(?P<rest>.*)$")
@@ -727,9 +734,10 @@ class Coverage:
 
 
 def _coverage(
-    tests: Sequence[str], lines: dict[str, frozenset[int]], timeout: float
-) -> tuple[subprocess.CompletedProcess[str], Coverage]:
-    """Uruchamia testy raz z pluginem ``pytest_pokrycie``; zwraca wynik i pokrycie zmienionych plików.
+    tests: Sequence[str], lines: dict[str, frozenset[int]], timeout: float, junit: Path, coverage: Coverage
+) -> subprocess.CompletedProcess[str]:
+    """Uruchamia testy raz z pluginem ``pytest_pokrycie`` i z junit ``junit``; pokrycie zmienionych plików dopisuje do
+    ``coverage``.
 
     Po ``timeout`` sekundach rzuca ``subprocess.TimeoutExpired``.
     """
@@ -749,9 +757,8 @@ def _coverage(
             "PYTHONPATH": python_path.rstrip(os.pathsep),
             "POKRYCIE_LINII": json.dumps(settings),
         }
-        command = [sys.executable, "-m", "pytest", "-q", "-n", "auto", "-p", "pytest_pokrycie", "-p", "no:cacheprovider", *tests]
+        command = [sys.executable, "-m", "pytest", "-q", "-n", "auto", "-p", "pytest_pokrycie", "-p", "no:cacheprovider", *tests, "--junitxml", str(junit)]
         done = potomne.run(command, cwd=ROOT, env=env, timeout=timeout)
-        coverage = Coverage()
 
         def relative(absolute: str) -> str:
             return Path(absolute).relative_to(ROOT).as_posix()
@@ -766,7 +773,7 @@ def _coverage(
             for absolute, numbers in recorded["wspolne"].items():
                 coverage.shared[relative(absolute)].update(numbers)
             coverage.spawners.update(recorded["procesy"])
-    return done, coverage
+    return done
 
 
 def _command(tests: Sequence[str], workers: int = 0) -> tuple[str, ...]:
@@ -974,13 +981,19 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     clock = [time.monotonic()]
     coverage = Coverage()
     if tests:
+        lines = {path: changed_lines(hunks[path]) for path in paths}
+
+        def again(failed: tuple[str, ...]) -> bool:
+            return _coverage(failed, lines, deadline - time.monotonic(), RETRY_JUNIT, coverage).returncode == 0
+
         try:
-            done, coverage = _coverage(tests, {path: changed_lines(hunks[path]) for path in paths}, deadline - time.monotonic())
+            done = _coverage(tests, lines, deadline - time.monotonic(), JUNIT, coverage)
+            if done.returncode != 0:
+                print("\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:]))
+                if not niestabilne_testy.ponow(JUNIT, RETRY_JUNIT, f"Change mutations ({czesc})", again):
+                    return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
         except subprocess.TimeoutExpired:
             return 2, f"{out_of_time} w pokryciu, przed werdyktem {len(found)} mutacji"
-        if done.returncode != 0:
-            print("\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:]))
-            return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
         print(f"Pokrycie: {len(coverage.lines)} testów wykonało zmienione linie, {len(coverage.spawners)} uruchomiło proces.", flush=True)
     today = datetime.datetime.now(datetime.UTC).date()
     narrow: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []  # i testy dalszych przebiegów, gdy pierwszy przeżyje

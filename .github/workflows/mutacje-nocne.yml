@@ -128,8 +128,10 @@ jobs:
         uses: ./.github/actions/chromium
 
       # Code 1 is surviving mutations and code 3 mutations the part's time limit left without a verdict: results the
-      # last job files, so the part stays green. Any other failure (code 2: the tests fail or hang without mutations, a
-      # bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam reproduces it.
+      # last job files, so the part stays green. A test that fails without mutations runs once more, as in the CI of a
+      # pull request, and one that passes then is a flaky test, not a failure. Any other failure (code 2: the tests fail
+      # twice or hang without mutations, a bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam
+      # reproduces it.
       - name: Mutate the part's changed lines of src/ and tools/
         env:
           BAZA: ${{ needs.plan.outputs.baza }}
@@ -145,6 +147,17 @@ jobs:
           path: .ci-mutacje/czesc.json
           retention-days: 30
           if-no-files-found: warn
+          include-hidden-files: true
+          overwrite: true
+
+      # The workflow Zgłoszenia CI files an issue "Flaky test: <test>" for each test of these records, as for a CI run.
+      - name: Upload the flaky tests
+        if: ${{ !cancelled() && hashFiles('.ci-niestabilne/flaky-testy.json') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flaky-testy-mutacje-${{ matrix.czesc }}
+          path: .ci-niestabilne/flaky-testy.json
+          retention-days: 30
           include-hidden-files: true
           overwrite: true
 

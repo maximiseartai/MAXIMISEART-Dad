@@ -48,6 +48,10 @@ type SettingsContextValue = {
   undone: (choice: Choice) => void
   /** Ustawienia po zapisie sekretu (hasło skrzynki): bez „Zapisano · Cofnij”, bo sekretu nie da się cofnąć. */
   secretSaved: (choice: Choice) => void
+  /** Ustawienia po zapisie sekcji z własnym formularzem albo przełącznikiem: „Zapisano · Cofnij”, gdy coś się zmieniło. */
+  sectionSaved: (choice: Choice) => void
+  /** Porażka zapisu sekcji bez pola (np. plik, którego nie da się zapisać) jako powiadomienie w oknie Ustawień. */
+  saveFailed: (failure: Error) => void
   /** Numer przyjętych zmian Ustawień: Historia Ustawień czyta się od nowa przy każdej. */
   changes: number
 }
@@ -288,6 +292,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       dismiss: () => setRefusal(null),
       undone,
       secretSaved: take,
+      sectionSaved: saved,
+      saveFailed: failed,
       changes,
     }),
     [settings, reload, theme, picker, pick, saved, switchAutostart, autostartPending, type, refusal, undone, take, changes]
