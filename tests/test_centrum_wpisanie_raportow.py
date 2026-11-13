@@ -69,7 +69,6 @@ from rozliczenia.worker_reports import (
     SentReminder,
     SubjectFault,
     UnknownNumber,
-    UnknownSender,
     UnreadableSubject,
     Verdict,
 )
@@ -1158,13 +1157,12 @@ def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_rap
     shown = _view(centrum)
     second = _finished(centrum)
 
-    sender = SenderAddress.of(NEW_ADDRESS)
-    assert sender is not None
     assert first["unknown_senders"] == [
         {
             "day": "2026-11-09",
             "sender": NEW_ADDRESS,
-            "reason": reason(UnknownSender(MailId.of("<raport@przyklad.invalid>"), sender, date(2026, 11, 9))),
+            "reason": "Raport wykonawcy z 09.11.2026 przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum "
+            "go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze.",
             "worker": None,
         }
     ]
@@ -1181,14 +1179,17 @@ def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przyw
     tmp_path: Path,
 ) -> None:
     """US 25, 28: adresu, który ma już inny Wykonawca, nie da się przypisać: odmowa przy polu adresu, a Lista Wykonawców i
-    Historia zostają bez zmian. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku
-    Raporty znowu jest nieznany."""
+    Historia zostają bez zmian, tak samo przy Wykonawcy, którego już nie ma; adres, który Wykonawca już ma, niczego nie
+    zmienia. Przypisanie ma wiersz Historii z „Cofnij”, które zdejmuje adres, więc nadawca w widoku Raporty znowu jest
+    nieznany."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
     _finished(centrum)
     listed_before = centrum.tool.worker_list.read_bytes()
 
     refused = _assign(centrum, "anna.kowalska", JAN.upper())
+    gone = _assign(centrum, "nikt.taki", NEW_ADDRESS)
+    own = _assign(centrum, "jan.testowy", JAN.upper())
     listed_after_refusal = centrum.tool.worker_list.read_bytes()
     rows_after_refusal = _worker_rows(centrum)
     assigned = _assign(centrum, "anna.kowalska", NEW_ADDRESS)
@@ -1199,6 +1200,8 @@ def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przyw
         422,
         {"message": settings_messages.worker_address_repeated(), "field": "adresy[1]"},
     )
+    assert (gone.status_code, gone.json()["message"]) == (422, settings_messages.worker_unknown())
+    assert (own.status_code, own.json()["change"]) == (200, None)
     assert listed_after_refusal == listed_before
     assert rows_after_refusal == []
     assert assigned.status_code == 200, assigned.json()
