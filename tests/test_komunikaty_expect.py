@@ -504,6 +504,69 @@ def test_znane_luki_strazy_katalogu_odmow_przechodza_przez_kazdy_jego_mechanizm(
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py")
 
 
+# Znane luki strażnika miejsca złego ustawienia (tests/fixtures/znane_luki.py): opis postaci → moduł Ustawień Centrum,
+# który kładzie tekst z pliku (nieznany klucz) w miejscu złego ustawienia albo w zdaniu o nim, a mimo to przechodzi przez
+# mypy na konstruktorze FieldPath i ruff z konfiguracją src/.
+ZNANE_LUKI_FIELD_PATH: Final = {
+    "klucz z json.loads jako Any": """\
+import json
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(tekst: str) -> FieldPath:
+    return FieldPath(json.loads(tekst)["klucz"])
+""",
+    "klucz przez cast": """\
+from typing import cast
+
+from rozliczenia.centrum.settings.files import FieldName, FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(cast(FieldName, klucz))
+""",
+    "klucz z type: ignore": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(klucz)  # type: ignore[arg-type]
+""",
+    "tekst wpisany po budowie": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    wynik = FieldPath("wykonawcy")
+    object.__setattr__(wynik, "text", klucz)
+    return wynik
+""",
+    "tekst przez dataclasses.replace": """\
+import dataclasses
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return dataclasses.replace(FieldPath("wykonawcy"), text=klucz)
+""",
+    "zdanie z kluczem w fabryce przyjmującej str": """\
+def zle_pole(plik: str, klucz: str) -> str:
+    return f"Plik {plik} w folderze config ma złą wartość pola {klucz}. Poprawia go Maks."
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_FIELD_PATH, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "settings" / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
+
+
 def _refusal_as_value(module: ModuleType) -> bool:
     """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
 
