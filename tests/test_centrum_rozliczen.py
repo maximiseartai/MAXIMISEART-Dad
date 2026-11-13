@@ -1001,9 +1001,8 @@ def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Pa
         (f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n", "hasło taty", "haslo"),
         ("\r\n\r\n", NOWE_HASLO, "adres"),
         (None, NOWE_HASLO, "adres"),
-        (f"raporty.taty\r\n{STARE_HASLO}\r\n", NOWE_HASLO, "adres"),
     ],
-    ids=["puste", "polskie-znaki", "plik-bez-adresu", "bez-pliku", "zly-adres"],
+    ids=["puste", "polskie-znaki", "plik-bez-adresu", "bez-pliku"],
 )
 def test_haslo_ktorego_skrzynka_nie_uzyje_jest_odmowa_przy_polu_bez_zapisu_i_bez_logowania(
     tmp_path: Path, plik: str | None, haslo: str, pole: str
@@ -1021,6 +1020,74 @@ def test_haslo_ktorego_skrzynka_nie_uzyje_jest_odmowa_przy_polu_bez_zapisu_i_bez
     assert (refused.status_code, refused.json()["field"]) == (422, pole)
     assert (access.read_bytes() if access.exists() else None) == before
     assert client.get("/api/settings/history").json()["rows"] == []
+
+
+ZLE_ADRES = "Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks."
+ZLE_HASLO = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
+NIE_TEKST = "Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik."
+
+
+@pytest.mark.parametrize(
+    ("plik", "skrzynka", "problem", "zapis"),
+    [
+        (
+            f"{SKRZYNKA}\r\nstarehasło\r\n".encode("utf-8-sig"),
+            {"address": SKRZYNKA, "password": True},
+            {"field": "haslo", "message": ZLE_HASLO},
+            f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode("utf-8-sig"),
+        ),
+        (
+            f"Skrzynka <{SKRZYNKA}>\r\n{STARE_HASLO}\r\n".encode(),
+            {"address": None, "password": True},
+            {"field": "adres", "message": ZLE_ADRES},
+            None,
+        ),
+        (b"\xff\xfe\x00\xd8", {"address": None, "password": False}, {"field": None, "message": NIE_TEKST}, None),
+    ],
+    ids=["zle-stare-haslo", "zly-adres", "nie-tekst"],
+)
+def test_zly_plik_skrzynki_ma_zdanie_w_ustawieniach_a_nowe_haslo_taty_naprawia_tylko_zle_stare_haslo(
+    tmp_path: Path, plik: bytes, skrzynka: dict[str, object], problem: dict[str, object], zapis: bytes | None
+) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    shown = client.get("/api/settings").json()
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+    rows = client.get("/api/settings/history").json()["rows"]
+
+    assert (shown["inbox"], shown["inbox_problem"]) == (skrzynka, problem)
+    if zapis is None:
+        refused = put.json()
+        assert (put.status_code, refused.get("field"), refused["message"]) == (422, problem["field"], problem["message"])
+        assert (access.read_bytes(), rows) == (plik, [])
+    else:
+        assert (put.status_code, put.json()["settings"]["inbox"], put.json()["settings"]["inbox_problem"]) == (
+            200,
+            {"address": SKRZYNKA, "password": True},
+            None,
+        )
+        assert access.read_bytes() == zapis
+        assert [change["key"] for row in rows for change in row["changes"]] == ["skrzynka.haslo"]
+
+
+@pytest.mark.parametrize(
+    ("plik", "zapis"),
+    [
+        (f"{SKRZYNKA}\nstare\n# notatka maksa\n".encode(), f"{SKRZYNKA}\nnowehaslotaty\n# notatka maksa\n".encode()),
+        (f"{SKRZYNKA}\r\nstare\r\n".encode("utf-16"), f"{SKRZYNKA}\r\nnowehaslotaty\r\n".encode()),
+    ],
+    ids=["lf-i-dalsze-linie", "utf-16"],
+)
+def test_nowe_haslo_zostawia_znak_konca_linii_i_dalsze_linie_pliku_maksa(tmp_path: Path, plik: bytes, zapis: bytes) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    access = tool.config / INBOX_ACCESS_FILE
+    access.write_bytes(plik)
+
+    put = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO})
+
+    assert (put.status_code, access.read_bytes()) == (200, zapis)
 
 
 def test_akcja_zmieniajaca_stan_wymaga_origin_centrum(tmp_path: Path) -> None:

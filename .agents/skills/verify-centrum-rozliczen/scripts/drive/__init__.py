@@ -69,6 +69,7 @@ FEATURES = (
             "312-ustawienia-zle-pole",
             "313-ustawienia-zly-plik",
             "314-ustawienia-historia-bez-cofniecia",
+            "319-ustawienia-zle-stare-haslo",
             "316-ustawienia-haslo-przyjete",
             "317-ustawienia-historia-hasla",
             "318-ustawienia-haslo-waskie",

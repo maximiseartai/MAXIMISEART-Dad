@@ -35,6 +35,7 @@ from harness import INBOX_ADDRESS, INBOX_PASSWORD, Log, Switch
 
 
 FOLDERS = "#/ustawienia/foldery"
+POLISH_LETTERS = "Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków."
 
 
 FEATURE = "ustawienia"
@@ -481,13 +482,18 @@ def _inbox_password(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "ustawienia-haslo-skrzynki")
     access = run.config / "skrzynka-raportow.txt"
-    old = "stare haslo maksa"
+    # An old password Google never gives (a Polish letter): Dad replaces it, the address stays Maks's.
+    old = "stare hasło maksa"
     # Harness: Maks's access file as Notepad writes it (BOM UTF-8, CRLF).
     access.write_bytes(f"{INBOX_ADDRESS}\r\n{old}\r\n".encode("utf-8-sig"))
     page.reload()
     window = open_settings(page, "Skrzynka raportów")
     row = window.get_by_role("listitem", name="Hasło aplikacji")
     expect(row).to_contain_text(INBOX_ADDRESS)
+    expect(row.get_by_role("alert")).to_have_text(POLISH_LETTERS)
+    expect(row.get_by_role("button", name="Zmień hasło", exact=True)).to_be_enabled()
+    run.check(True, "a wrong old password shows its sentence under the address and leaves „Zmień hasło” on")
+    run.capture(page, "319-ustawienia-zle-stare-haslo", full_page=False)
     field = row.get_by_role("textbox", name="Nowe hasło aplikacji")
 
     def save(password: str) -> None:
@@ -520,7 +526,9 @@ def _inbox_password(run: Run, page: Page) -> None:
     answers = json.dumps([settings, history])
     run.check(
         settings["inbox"] == {"address": INBOX_ADDRESS, "password": True}
-        and not [word for word in (old, "zle haslo", "zlehaslo", INBOX_PASSWORD, "nowe haslo") if word in answers],
+        and not [
+            word for word in (old, old.replace(" ", ""), "zle haslo", "zlehaslo", INBOX_PASSWORD, "nowe haslo") if word in answers
+        ],
         "neither GET /api/settings nor the Historia carries any password",
     )
 
@@ -537,7 +545,7 @@ def _inbox_password(run: Run, page: Page) -> None:
         row.get_by_role("button", name="Zmień hasło", exact=True).click()
         field.fill("hasło")
         row.get_by_role("button", name="Zapisz hasło", exact=True).click()
-        expect(row.get_by_role("alert")).to_have_text("Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków.")
+        expect(row.get_by_role("alert")).to_have_text(POLISH_LETTERS)
         expect(field).to_have_attribute("aria-invalid", "true")
         run.check(INBOX_PASSWORD in read_text(access), "a password with Polish letters is not saved")
         run.capture(page, "318-ustawienia-haslo-waskie", full_page=False)

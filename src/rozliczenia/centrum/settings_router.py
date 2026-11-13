@@ -166,18 +166,24 @@ def describe(view: SettingsView) -> settings_contract.Settings:
 def _describe_inbox(
     read: Read[InboxFile] | Unreadable,
 ) -> tuple[settings_contract.InboxSetting, settings_contract.SettingProblem | None]:
-    """Adres skrzynki i to, czy jest hasło, bez wartości hasła; zła albo nieczytelna treść to skrzynka bez nich."""
+    """Adres skrzynki i to, czy jest hasło, bez wartości hasła; zła treść ma zdanie o problemie i dobry adres z niej
+    (przy złym starym haśle tata wpisuje nowe), a nieczytelna to skrzynka bez nich."""
 
     match read:
         case Good(value=found):
-            address = found.address
-            shown = None if address is None or not found.address_line.strip() else address.shown()
-            return settings_contract.InboxSetting(address=shown, password=bool(found.password)), None
-        case Bad(problem=bad):
+            return _inbox_setting(found), None
+        case Bad(problem=bad, usable=found):
             problem = settings_contract.SettingProblem(field=bad.field, message=bad.sentence)
-            return settings_contract.InboxSetting(address=None, password=False), problem
+            return _inbox_setting(found), problem
         case Unreadable():
-            return settings_contract.InboxSetting(address=None, password=False), None
+            return _inbox_setting(None), None
+
+
+def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
+    address = None if found is None else found.address
+    return settings_contract.InboxSetting(
+        address=None if address is None else address.shown(), password=found is not None and bool(found.password)
+    )
 
 
 def _describe_path(path: Path | None, state: SettingState) -> settings_contract.PathSetting:

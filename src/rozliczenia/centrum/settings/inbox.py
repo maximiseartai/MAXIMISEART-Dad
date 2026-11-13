@@ -40,11 +40,16 @@ class InboxFile:
 
     @property
     def address(self) -> SenderAddress | None:
-        return SenderAddress.of(self.address_line.strip())
+        """Adres skrzynki, gdy linia adresu to jeden adres ``lokalna@domena`` i nic więcej."""
+
+        address = SenderAddress.of(self.address_line.strip())
+        if address is None or address.shown() != self.address_line.strip().casefold():
+            return None
+        return address
 
 
-def parse(data: bytes | None) -> InboxFile | FieldProblem:
-    """Plik dostępu z bajtów; brak adresu albo hasła to dobra treść bez dostępu, a pierwszy problem złej treści ma pole."""
+def unchecked(data: bytes | None) -> InboxFile | None:
+    """Plik dostępu z bajtów bez reguł adresu i hasła; ``None``, gdy treść nie jest tekstem."""
 
     if data is None:
         return InboxFile()
@@ -52,20 +57,27 @@ def parse(data: bytes | None) -> InboxFile | FieldProblem:
     try:
         text = data.decode("utf-16" if utf16 else "utf-8-sig")
     except UnicodeError:
-        return FieldProblem(None, messages.inbox_not_text())
+        return None
     lines = text.splitlines()
     address_line, password_line = (lines + ["", ""])[:2]
-    inbox = InboxFile(
+    return InboxFile(
         address_line,
         "".join(password_line.split()),
         tuple(lines[2:]),
         bom=not utf16 and data.startswith(codecs.BOM_UTF8),
         newline="\n" if "\n" in text and "\r\n" not in text else "\r\n",
     )
-    if not address_line.strip() or not inbox.password:
+
+
+def parse(data: bytes | None) -> InboxFile | FieldProblem:
+    """Plik dostępu z bajtów; brak adresu albo hasła to dobra treść bez dostępu, a pierwszy problem złej treści ma pole."""
+
+    inbox = unchecked(data)
+    if inbox is None:
+        return FieldProblem(None, messages.inbox_not_text())
+    if not inbox.address_line.strip() or not inbox.password:
         return inbox
-    address = inbox.address
-    if address is None or address.shown() != address_line.strip().casefold():
+    if inbox.address is None:
         return FieldProblem(ADDRESS, messages.inbox_address())
     if not inbox.password.isascii():
         return FieldProblem(PASSWORD, messages.inbox_password_text())
@@ -73,15 +85,14 @@ def parse(data: bytes | None) -> InboxFile | FieldProblem:
 
 
 def new_password(read: Read[InboxFile] | Unreadable, typed: str) -> str | FieldProblem:
-    """Hasło wpisane przez tatę bez spacji albo problem zmiany: puste hasło, plik bez adresu albo zła treść pliku, której
-    zapis taty nie naprawi (adres poprawia Maks). Plik nieczytelny sprawdzi zapis właściciela."""
+    """Hasło wpisane przez tatę bez spacji albo problem zmiany: puste hasło albo plik bez adresu (adres wpisuje Maks).
+    Złą treść pliku sprawdza zapis właściciela: zaczyna od niej samej i odrzuca to, czego nowe hasło nie naprawi
+    (zły adres, plik, który nie jest tekstem), a złe stare hasło zastępuje."""
 
     password = "".join(typed.split())
     if not password:
         return FieldProblem(PASSWORD, messages.inbox_password_empty())
     match read:
-        case Bad(problem=problem):
-            return problem
         case Good(value=inbox) if not inbox.address_line.strip():
             return FieldProblem(ADDRESS, messages.inbox_no_address())
         case _:
@@ -125,5 +136,13 @@ def state(read: Read[InboxFile] | Unreadable) -> InboxState:
 
 
 INBOX: Final = SettingsFile(
-    name=INBOX_ACCESS_FILE, parse=parse, dump=dump, diff=diff, restore=restore, shown=shown, default=InboxFile(), secret=True
+    name=INBOX_ACCESS_FILE,
+    parse=parse,
+    dump=dump,
+    diff=diff,
+    restore=restore,
+    shown=shown,
+    default=InboxFile(),
+    secret=True,
+    unchecked=unchecked,
 )

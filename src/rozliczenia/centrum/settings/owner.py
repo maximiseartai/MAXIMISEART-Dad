@@ -167,6 +167,8 @@ class CentrumSettings:
             self._log.settings_unreadable(cause="dostep")
             return NotSaved()
         observed = self._observed(file, data)
+        if isinstance(observed, Bad) and file.secret and observed.usable is None:
+            return Refused(observed.problem)
         current = _usable(observed, file)
         new = file.dump(edit(current)).encode("utf-8")
         edited = file.parse(new)
@@ -237,6 +239,10 @@ class CentrumSettings:
     def _observed(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
         """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
         ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem."""
+
+        return _with_secret_value(file, self._compared(file, data), data)
+
+    def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
 
         parsed = file.parse(data)
         remembered = self._memory.read(file.name)
@@ -319,7 +325,16 @@ def _read_only_view(config: Path, file: SettingsFile[T]) -> Read[T] | Unreadable
         return Good(parsed)
     remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
-    return Bad(parsed, _good_value(good, file))
+    return _with_secret_value(file, Bad(parsed, _good_value(good, file)), data)
+
+
+def _with_secret_value(file: SettingsFile[T], read: Read[T], data: bytes | None) -> Read[T]:
+    """Złe ustawienie sekretu z wartością samej złej treści zamiast ostatniej dobrej, której pamięć sekretu nie trzyma:
+    od niej zaczyna zapis taty, który naprawia tylko to, co zmienia."""
+
+    if not (file.secret and isinstance(read, Bad)):
+        return read
+    return Bad(read.problem, None if file.unchecked is None else file.unchecked(data))
 
 
 def _seen(file: SettingsFile[T], data: bytes | None) -> bytes | None:
