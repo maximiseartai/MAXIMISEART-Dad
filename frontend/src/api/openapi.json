@@ -1848,6 +1848,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
             "content": {
@@ -2502,6 +2512,213 @@
         }
       }
     },
+    "/api/settings/workers": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add",
+        "operationId": "addWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change",
+        "description": "Formularz Wykonawcy naraz. Zła wartość jest odmową, zanim cokolwiek się sprawdza; zmiana nazwy, przy której w\nokresie leży Rozliczenie pracownika ze starą nazwą, bez ``rename_confirmed`` niczego nie zapisuje i daje\nostrzeżenie; usunięty login sprawdza w okresach właściciel.",
+        "operationId": "changeWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerSaved"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove",
+        "description": "Usuwa Wykonawcę; właściciel zapisuje to tylko po pełnym sprawdzeniu okresów, w którym żaden jego login nie\nwystępuje.",
+        "operationId": "removeWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
+    "/api/settings/workers/{login}/switches": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Switch",
+        "operationId": "switchWorker",
+        "parameters": [
+          {
+            "name": "login",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Login"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerSwitches"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
     "/api/shutdown": {
       "post": {
         "tags": [
@@ -2818,6 +3035,10 @@
             "enum": [
               "getHealth",
               "getSettings",
+              "addWorker",
+              "changeWorker",
+              "switchWorker",
+              "removeWorker",
               "chooseRegister",
               "openRegister",
               "choosePeriodsDirectory",
@@ -9662,6 +9883,73 @@
         "title": "WithoutQuantityUnread",
         "description": "Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy."
       },
+      "WorkerEdit": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "rename_confirmed": {
+            "type": "boolean",
+            "title": "Rename Confirmed",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses"
+        ],
+        "title": "WorkerEdit",
+        "description": "Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.\n``rename_confirmed``: tata widział ostrzeżenie o Rozliczeniu pracownika ze starą nazwą i zmienia nazwę mimo to."
+      },
+      "WorkerForm": {
+        "properties": {
+          "logins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logins"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "logins",
+          "name",
+          "addresses"
+        ],
+        "title": "WorkerForm",
+        "description": "Wykonawca z formularza sekcji Wykonawcy: loginy z kolumny WYKONAWCA (zapisane i dopisane), nazwa w Rozliczeniu\npracownika i adresy Raportów wykonawcy, tak jak je wpisał tata."
+      },
       "WorkerListSetting": {
         "properties": {
           "state": {
@@ -9723,6 +10011,42 @@
         "title": "WorkerListSetting",
         "description": "Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo\n``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty)."
       },
+      "WorkerSaved": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "rename_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rename Warning"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "WorkerSaved",
+        "description": "Ustawienia po zapisie formularza Wykonawcy. ``rename_warning``: zdanie o Rozliczeniu pracownika ze starą nazwą,\nktóre zostaje w okresie; wtedy nic się nie zapisało (``change`` ``None``), a tata potwierdza zmianę nazwy\n(``rename_confirmed``)."
+      },
       "WorkerSettlement": {
         "properties": {
           "worker": {
@@ -9767,6 +10091,36 @@
         ],
         "title": "WorkerSettlementRequest",
         "description": "Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu."
+      },
+      "WorkerSwitches": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WorkerSwitches",
+        "description": "Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo\n``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik."
       }
     }
   }

@@ -166,14 +166,14 @@ def test_sciana_pliku_testow_w_planie_to_jego_czas_na_czterech_vcpu_runnera_gith
         assert plan_ci.wycen(lane, [FILES[0]], _times(60.0)).podzielne == {f"pytest:{FILES[0]}": 15.0}, lane
 
 
-@pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_MAIN")])
+@pytest.mark.parametrize(("skills", "event", "limit"), [(False, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (True, Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (True, Zdarzenie.NOC, "ZADANIA_RUNU_NOCY")])
 def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(skills: bool, event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
     czasy = _with_skill_times(_times(per_file_s=150.0))
     steps = _skill_steps(list(SKILL_STEPS)) if skills else None
-    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
+    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN", "ZADANIA_RUNU_NOCY"):
         monkeypatch.setattr(plan_ci, name, 1000)
     unlimited = _plan(czasy, [*FILES, LONG], steps, event)
-    # Limit tego zdarzenia mieści połowę zadań runu bez limitu, a limit drugiego zdarzenia zostaje 1000.
+    # Limit tego zdarzenia mieści połowę zadań runu bez limitu, a limity pozostałych zdarzeń zostają 1000.
     jobs = plan_ci.STALE_ZADANIA + len(unlimited.zadania) // 2
     monkeypatch.setattr(plan_ci, limit, jobs)
     plan = _plan(czasy, [*FILES, LONG], steps, event)
@@ -192,9 +192,22 @@ def test_run_miesci_sie_w_limicie_zadan_zdarzenia_bo_cel_sciany_rosnie_o_krok(sk
     assert bool(plan.macierz("mutations")) == skills
 
 
-@pytest.mark.parametrize(("event", "limit"), [(Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN")])
+def test_push_do_main_bierze_25_zadan_runu_a_noc_20_ze_slotow_organizacji_dzielonych_z_runami_pull_request() -> None:
+    """Organizacja ma 60 zadań naraz: run pull request bierze najwyżej 40, push do ``main`` 25, żeby pełne CI ``main``
+    dawało werdykt szybciej (ADR 0020, Z6), a noc zostaje przy 20 (ADR 0021). Pracy jest tu więcej, niż mieści każdy z
+    tych limitów, więc każdy run wypełnia swój limit."""
+
+    czasy = _with_skill_times(_times(per_file_s=150.0))
+    steps = _skill_steps(list(SKILL_STEPS))
+
+    jobs = {event: _run_jobs(_plan(czasy, [*FILES, LONG], steps, event)) for event in Zdarzenie}
+
+    assert jobs == {Zdarzenie.PULL_REQUEST: 40, Zdarzenie.PUSH: 25, Zdarzenie.NOC: 20}
+
+
+@pytest.mark.parametrize(("event", "limit"), [(Zdarzenie.PULL_REQUEST, "ZADANIA_RUNU"), (Zdarzenie.PUSH, "ZADANIA_RUNU_MAIN"), (Zdarzenie.NOC, "ZADANIA_RUNU_NOCY")])
 def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_i_podaje_ten_limit(event: Zdarzenie, limit: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN"):
+    for name in ("ZADANIA_RUNU", "ZADANIA_RUNU_MAIN", "ZADANIA_RUNU_NOCY"):
         monkeypatch.setattr(plan_ci, name, 1000)
     # Trzy tory z pracą, a limit zdarzenia zostawia planowi jedno zadanie.
     monkeypatch.setattr(plan_ci, limit, plan_ci.STALE_ZADANIA + 1)

@@ -143,6 +143,20 @@ FEATURES = (
             "14d-konfiguracja-do-rozstrzygniecia-waski",
         ),
     ),
+    # Changes the Lista Wykonawców and brings it back to the fixture's bytes before it ends.
+    Feature(
+        "wykonawcy",
+        (
+            "390-wykonawcy-formularz",
+            "391-wykonawcy-odmowa-przy-polu",
+            "392-wykonawcy-zamkniecie-bez-zapisu",
+            "393-wykonawcy-stara-nazwa",
+            "394-wykonawcy-odmowa-usuniecia",
+            "395-wykonawcy-lista",
+            "396-wykonawcy-formularz-waski",
+            "397-wykonawcy-lista-waska",
+        ),
+    ),
     # Moves the run's tool clone right after Konfiguracja shows it.
     Feature(
         "aktualizacja",
@@ -304,11 +318,11 @@ FEATURES = (
     Feature(
         "roznice-z-kontroli",
         (
-            "390-roznice-lista-szerokie",
-            "391-roznice-popraw-regule",
-            "392-roznice-wyjatek",
-            "393-roznice-historia",
-            "394-roznice-waskie",
+            "400-roznice-lista-szerokie",
+            "401-roznice-popraw-regule",
+            "402-roznice-wyjatek",
+            "403-roznice-historia",
+            "404-roznice-waskie",
         ),
         needs=("przebieg-rozliczen",),
     ),

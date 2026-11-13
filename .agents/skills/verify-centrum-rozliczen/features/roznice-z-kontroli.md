@@ -33,18 +33,18 @@ Dad wrote nothing; run alone (`--feature roznice-z-kontroli`) the drive runs `pr
 - **List.** The harness reads `GET /api/settings/quantity-rules/differences` (evidence `api/roznice-lista.json` with the
   row texts replaced): ready, with differences. `open_settings` on `Reguły ilości`; the item `<column>, wiersz <row>` of
   the server's first difference in the region `Tu wpisałeś inaczej niż reguła` has the values and the row. Screenshot
-  `390`.
+  `400`.
 - **Fix the rule.** Its `Popraw regułę`: heading `Nowa reguła`, the list `Warunki` has `Warunek 1` up to the number of
-  the server's conditions and no more; `Zapisz` is enabled. Screenshot `391`. `Anuluj`: the list again; the server's
+  the server's conditions and no more; `Zapisz` is enabled. Screenshot `401`. `Anuluj`: the list again; the server's
   rules and `config/reguly-ilosci.yaml` as before.
 - **Exception.** Its `To był wyjątek`: the item goes; the server's list has no such id; `config/wyjatki-ilosci.yaml`
-  has it; the toast `Zapisano` has `Cofnij`. Screenshot `392`.
+  has it; the toast `Zapisano` has `Cofnij`. Screenshot `402`.
 - **Historia.** `open_settings` on `Historia`: the first item of list `Zmiany` has `Wyjątek Kontroli ilości` and the
-  sentence. Screenshot `393`. Its `Cofnij: Wyjątek Kontroli ilości` adds `Usunięto: To był wyjątek` on top, and the
+  sentence. Screenshot `403`. Its `Cofnij: Wyjątek Kontroli ilości` adds `Usunięto: To był wyjątek` on top, and the
   server lists the id again.
 - **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/reguly-ilosci`: the item, no horizontal scroll. Screenshot
-  `394`, then the viewport goes back to 1440×1000 (also in `finally`).
-- **Proof.** Screenshots `390`–`394` and the checks in `drive.txt`.
+  `404`, then the viewport goes back to 1440×1000 (also in `finally`).
+- **Proof.** Screenshots `400`–`404` and the checks in `drive.txt`.
 
 ## Gotchas
 

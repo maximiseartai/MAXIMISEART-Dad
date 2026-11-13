@@ -12,9 +12,10 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldProblem, RemovedWhat
 from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
+from rozliczenia.worker_periods import InPeriod, InRegister, Unchecked
 
 
 @final
@@ -143,6 +144,34 @@ def workers_unusable(problem: FieldProblem | None) -> Refusal:
     return _refused(
         409, f"Lista Wykonawców ma złe ustawienie: {problem.sentence} Szczegóły są w Ustawieniach, w sekcji Wykonawcy.", problem.place
     )
+
+
+def worker_kept(presence: InRegister | InPeriod | Unchecked, what: RemovedWhat) -> Refusal:
+    """Wykonawcy albo loginu nie da się usunąć (formularzem, „Usuń Wykonawcę” ani „Cofnij”): login ma zlecenia w okresie
+    (Rejestr zleceń, Plik zbiorczy) albo nie da się tego teraz sprawdzić. Odmowa proponuje Nieaktywnego Wykonawcę, który
+    zostaje na liście (ADR 0032)."""
+
+    who = "Wykonawca" if what == "worker" else "Ten login"
+    asked = "Wykonawca" if what == "worker" else "ten login"
+    stays = "zostaje na Liście Wykonawców" if what == "worker" else "zostaje przy Wykonawcy"
+    inactive = "Gdy Wykonawca już nie pracuje, oznacz go jako nieaktywnego: nie dostanie przypomnień, a jego okresy dalej się rozliczą."
+    match presence:
+        case InRegister():
+            found = f"{who} ma zlecenia w Rejestrze zleceń, więc {stays}."
+        case InPeriod(token=token):
+            found = f"{who} ma zlecenia w okresie {token}, więc {stays}."
+        case Unchecked(place="not_set"):
+            found = f"Nie wiadomo, czy {asked} ma zlecenia w okresach: najpierw wskaż Rejestr zleceń i folder okresów."
+        case Unchecked(place="register"):
+            found = f"Nie da się teraz przeczytać Rejestru zleceń, więc nie wiadomo, czy {asked} ma w nim zlecenia."
+        case Unchecked(place="periods_directory"):
+            found = f"Nie da się teraz odczytać folderu okresów, więc nie wiadomo, czy {asked} ma zlecenia w okresach."
+        case Unchecked(token=token):
+            found = (
+                f"Nie da się teraz przeczytać Pliku zbiorczego okresu {token}, więc nie wiadomo, czy {asked} ma w "
+                "nim zlecenia."
+            )
+    return _refused(409, f"{found} {inactive}")
 
 
 def report_entering_without_addresses() -> Refusal:

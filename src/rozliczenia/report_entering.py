@@ -336,7 +336,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        orders = register_orders(register, window.start, copy=files.copy is not None)
+        orders = register_orders(register, window.start, copy=files.copy is not None, workers=addresses)
         ordered = _ordered_days(register, window.start)
         return window, register, orders, ordered, _present(register, window.numbers_since), outcome.skipped, outcome.mails
 
@@ -561,9 +561,12 @@ def _orderless(
     return tuple(sorted(found, key=lambda logged: (logged.sheet, logged.number)))
 
 
-def register_orders(register: RegisterFile, since: date, *, copy: bool) -> tuple[RegisterOrder, ...]:
+def register_orders(
+    register: RegisterFile, since: date, *, copy: bool, workers: WorkerAddresses
+) -> tuple[RegisterOrder, ...]:
     """Uporządkowane zlecenia z dni od ``since`` w każdym obszarze wklejania, każdy przeczytany wiersz w Kopii wejścia
-    (``copy``)."""
+    (``copy``). Wykonawca zlecenia to login, pod którym rdzeń zna Wykonawcę z ``WYKONAWCA`` (``workers``), także spod
+    jego drugiego loginu; ``worker_name`` zostaje pisownią z komórki."""
 
     areas = paste_areas(register)
     assert isinstance(register.order_sheets, OrderSheets), "paste_areas zatrzymuje Rejestr bez arkuszy zleceń"
@@ -586,5 +589,5 @@ def register_orders(register: RegisterFile, since: date, *, copy: bool) -> tuple
                 address=row.value(at[ADDRESS]),
             )
             if order is not None:
-                orders.append(order)
+                orders.append(replace(order, key=replace(order.key, worker=workers.worker(order.key.worker))))
     return tuple(orders)

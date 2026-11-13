@@ -18,6 +18,7 @@ from drive.common import (
     next_step_names_current_step,
     period_row,
     remove,
+    remove_tree,
     sent_requests,
     settle,
 )
@@ -194,8 +195,9 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "tablica-zmiana-na-dysku")
     changed = periods / "15_21_09_2026"
-    for name in ("Rozliczenie wew. 15_21_09_2026.xlsx", "Rozliczenie 15_21_09_2026 - zbiorcze.xlsx"):
-        (changed / name).write_bytes(b"")
+    outside = [changed / name for name in ("Rozliczenie wew. 15_21_09_2026.xlsx", "Rozliczenie 15_21_09_2026 - zbiorcze.xlsx")]
+    for path in outside:
+        path.write_bytes(b"")
     page.reload()
     expect(period_row(page, "15_21_09_2026")).to_contain_text("Plik zbiorczy przygotowany")
     run.check(True, "after a reload the board shows a Plik zbiorczy added outside Centrum")
@@ -236,6 +238,11 @@ def drive(run: Run, page: Page) -> None:
     page.evaluate("window.dispatchEvent(new FocusEvent('focus'))")
     expect(period_row(page, "15_21_09_2026")).to_contain_text("Rozliczenia pracowników gotowe")
     run.check(True, "once the server answers, a (simulated) return to the tab shows the board again")
+    # The period goes back to the fixture's: its empty Plik zbiorczy is unreadable, and a later feature of the run reads
+    # every Plik zbiorczy (the check of periods before Dad removes a Wykonawca), #1589.
+    remove_tree(changed / "Rozliczenie pracowników 15_21_09_2026")
+    for path in outside:
+        remove(path)
 
     run.step(feature, "tablica-podpowiedz")
     period_row(page, NEEDS_CHECK).get_by_text("Wyceń w efenix").hover()

@@ -10,8 +10,9 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from windows_drive.common import Run, close_settings, open_settings, same_path, wait_for
+from windows_drive.common import Run, same_path, wait_for
 import windows_desktop
+from drive.common import close_settings, open_settings, settings_section
 from rozliczenia.centrum import start_problems
 from atrapy.pliki_taty import SERVICE
 
@@ -67,7 +68,8 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", "#/ustawienia/foldery")
     run.capture(page, "pierwszy-start")
-    version = open_settings(page, "Narzędzie").get_by_role("listitem", name="Wersja narzędzia")
+    open_settings(page, "Narzędzie")
+    version = settings_section(page).get_by_role("listitem", name="Wersja narzędzia")
     expect(version).to_contain_text(facts["versions"]["first"][:7])
     run.capture(page, "ustawienia-wersja")
     close_settings(page)

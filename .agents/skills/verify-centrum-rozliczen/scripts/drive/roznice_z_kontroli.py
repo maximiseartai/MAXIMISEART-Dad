@@ -67,7 +67,7 @@ def drive(run: Run, page: Page) -> None:
     expect(item).to_contain_text(f"reguła {first['rule']} · wpisałeś {first['tata']}")
     expect(item).to_contain_text(f"{first['period']} · wiersz {first['row']} · {first['when']}")
     run.check(True, "the first difference shows the server's column, rule value, Dad's entry and row, without UMOWA")
-    capture_quantity_rules(run, page, "390-roznice-lista-szerokie", full_page=False)
+    capture_quantity_rules(run, page, "400-roznice-lista-szerokie", full_page=False)
 
     run.step(FEATURE, "roznice-popraw-regule")
     item.get_by_role("button", name="Popraw regułę", exact=True).click()
@@ -78,7 +78,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "„Popraw regułę” opens a new rule with the conditions of the server's form for this difference")
     expect(window.get_by_role("button", name="Zapisz", exact=True)).to_be_enabled()
     run.check(True, "the form from a difference is unsaved from the start, so „Zapisz” takes it as it is")
-    capture_quantity_rules(run, page, "391-roznice-popraw-regule", full_page=False)
+    capture_quantity_rules(run, page, "401-roznice-popraw-regule", full_page=False)
     window.get_by_role("button", name="Anuluj", exact=True).click()
     expect(window.get_by_role("region", name=TITLE, exact=True)).to_be_visible()
     run.check(
@@ -98,7 +98,7 @@ def drive(run: Run, page: Page) -> None:
     saved = window.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text("Zapisano", exact=True))
     expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
     run.check(True, "the exception says „Zapisano” with „Cofnij” like every change of Ustawienia")
-    capture_quantity_rules(run, page, "392-roznice-wyjatek", full_page=False)
+    capture_quantity_rules(run, page, "402-roznice-wyjatek", full_page=False)
 
     run.step(FEATURE, "roznice-historia")
     window = open_settings(page, "Historia")
@@ -106,7 +106,7 @@ def drive(run: Run, page: Page) -> None:
     expect(newest).to_contain_text("Wyjątek Kontroli ilości")
     expect(newest).to_contain_text(f"Dodano: To był wyjątek: okres {first['period']}, wiersz {first['row']}")
     run.check(True, "Historia reads the exception as a sentence with the period, the row and the column")
-    run.capture(page, "393-roznice-historia", full_page=False)
+    run.capture(page, "403-roznice-historia", full_page=False)
     newest.get_by_role("button", name="Cofnij: Wyjątek Kontroli ilości", exact=True).click()
     expect(window.get_by_role("list", name="Zmiany").get_by_role("listitem").first).to_contain_text("Usunięto: To był wyjątek")
     run.check(first["id"] in _ids(run, "roznice-po-cofnieciu"), "„Cofnij” in Historia brings the difference back")
@@ -122,7 +122,7 @@ def drive(run: Run, page: Page) -> None:
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the list of differences wraps without a horizontal scroll")
         _item(window, first).scroll_into_view_if_needed()
-        capture_quantity_rules(run, page, "394-roznice-waskie", full_page=False)
+        capture_quantity_rules(run, page, "404-roznice-waskie", full_page=False)
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
