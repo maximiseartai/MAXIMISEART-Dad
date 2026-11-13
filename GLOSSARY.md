@@ -313,14 +313,14 @@ _Avoid_: nowe zlecenie, brakujące zlecenie
 
 ## Przypomnienie o raporcie
 
-Mail ze skrzynki raportów taty do Wykonawcy z listy adresów Wykonawców, który
+Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który
 ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu
 wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
-treści i kończy się stopką taty. Pierwsze idzie o 8:00 następnego dnia, kolejne
-o 8:00 i 18:00, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
-dnia dostanie Plik zbiorczy; nigdy w nocy i nigdy za dni sprzed wdrożenia
-przypomnień. Poranne nadrabia się po włączeniu laptopa do 16:59, a od 17:00 do
-18:00 nie idzie żadne. Każdy brakujący dzień ma własne przypomnienia.
+treści i kończy się stopką taty. Idzie w porannej i wieczornej porze z Ustawień
+Centrum (domyślnie 8:00–17:00 i 18:00–22:00), pierwsze w porannej porze
+następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
+dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia
+przypomnień. Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
 
 ## Rozliczenie wewnętrzne
@@ -379,11 +379,28 @@ Osoba wskazana w kolumnie `WYKONAWCA` pliku zbiorczego. Wartość w tej kolumnie
 jest identyfikatorem źródłowym, który nie musi być identyczny z nazwą człowieka
 w nazwie pliku docelowego.
 
-## Konfiguracja wykonawców
+## Lista Wykonawców
 
-Plik konfiguracji w folderze `config`, który łączy identyfikator Wykonawcy z
-kolumny `WYKONAWCA` (H) z nazwą Wykonawcy w Rozliczeniu pracownika. Wspólny
-dla Przebiegu rozliczeń i Przygotowania pliku zbiorczego.
+Część Ustawień Centrum: każdy Wykonawca z identyfikatorem z kolumny
+`WYKONAWCA` (H), nazwą w Rozliczeniu pracownika i adresami, z których wysyła
+Raporty wykonawcy. Wspólna dla Przebiegu rozliczeń, Przygotowania pliku
+zbiorczego, Wpisania raportów i Przypomnień o raporcie.
+_Avoid_: Konfiguracja wykonawców, lista adresów Wykonawców, pracownicy
+
+## Nieaktywny Wykonawca
+
+Wykonawca z Listy Wykonawców, który już nie pracuje u taty: nie dostaje
+Przypomnień o raporcie, a okresy z jego zleceniami nadal się rozliczają.
+Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie
+usuwa, tylko oznacza jako nieaktywnego.
+_Avoid_: usunięty Wykonawca, były pracownik
+
+## Historia Ustawień
+
+Każda zmiana Ustawień Centrum: kiedy, co i jaka była wartość przed i po, bez
+wartości sekretów. Z niej tata cofa zmianę, a Zgłoszenie podaje zmiany z
+ostatnich 30 dni.
+_Avoid_: log ustawień, dziennik konfiguracji
 
 ## Szablon pracownika
 
@@ -412,10 +429,13 @@ tata, a narzędzie go odszukuje. Folder wskazany wewnątrz `Rozliczenia {rok}`
 folderów `Rozliczenia {rok}` Foldery okresu leżą w folderze okresów
 bezpośrednio (np. `INEA`).
 
-## Ustawienia taty
+## Ustawienia Centrum
 
-Rejestr zleceń i folder okresów wskazane raz w Centrum rozliczeń. Czyta je
-tylko Centrum rozliczeń.
+Wartości o pracy taty, które tata sam zmienia w Centrum rozliczeń, na przykład
+Rejestr zleceń i folder okresów. Zmiana działa od razu, a Aktualizacja
+narzędzia jej nie nadpisuje. Zachowanie narzędzia, które może zmienić tylko
+Maks, nie jest Ustawieniem Centrum.
+_Avoid_: Ustawienia taty, Konfiguracja
 
 ## Folder rozliczeń pracowników
 
@@ -474,18 +494,26 @@ _Avoid_: cyfry, zera i jedynki, kolumny
 ## Ilości tylko dla INEA
 
 Ilości usług z Pliku zbiorczego, które INEA płaci tacie, a Wykonawca ich nie
-wykonuje, więc nie przechodzą do Rozliczenia pracownika: `AP` w zleceniu z
-`gniazdo` w `URZĄDZENIA` i `AK` w zleceniu z `technicolor` w `URZĄDZENIA`, bez
-względu na liczbę. Należą do taty, tak jak Reguły ilości.
+wykonuje, więc nie przechodzą do Rozliczenia pracownika, np. `AP` w zleceniu z
+`gniazdo` w `URZĄDZENIA`, bez względu na liczbę. Wyznacza je Reguła ilości,
+którą tata ustawia jak każdą inną.
 _Avoid_: kasowanie jedynek, usuwanie cyfr
 
 ## Reguły ilości
 
 Zasady taty, które z treści zlecenia (`UMOWA`, `URZĄDZENIA`, `CZYNNOŚCI`,
-`DATA`) wyznaczają Ilości usług. Należą do taty: zmiany zgłasza Maksowi. Ilości
-wynikające z opisu technika (`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości,
-bo wpisuje je tata.
+`DATA`) wyznaczają Ilości usług. Są Ustawieniem Centrum: tata tworzy je i
+zmienia sam, każdą jako „jeśli … to …”. Ilości wynikające z opisu technika
+(`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości, bo wpisuje je tata.
 _Avoid_: scenariusze rozliczeń, instrukcja
+
+## Lista Urządzeń
+
+Składniki kolumny `URZĄDZENIA`, które znają Reguły ilości, każdy z innymi
+zapisami tej samej rzeczy (np. `zyxel` i `gateway`) i grupą (router, TV,
+extender). Część Ustawień Centrum. Składnik spoza Listy Urządzeń to nieznane
+`URZĄDZENIA`.
+_Avoid_: słownik, aliasy
 
 ## Ilości do uzupełnienia
 
@@ -620,10 +648,10 @@ _Avoid_: dashboard, panel, centrum dowodzenia
 ## Katalog procesów
 
 Jeden wpis na każdy proces, który uruchamia Centrum rozliczeń: nazwa i widok
-Uruchomienia procesu, Ustawienia taty, bez których proces nie startuje,
+Uruchomienia procesu, Ustawienia Centrum, bez których proces nie startuje,
 czytane Wzorce i sprawdzenia Diagnozy w kolejności wyjaśniania. Diagnoza, Logi
-Uruchomienia, Metryki i Konfiguracja pytają wpis procesu, zamiast rozróżniać
-procesy same; pliki procesu wynikają z jego Ustawień taty i Wzorców.
+Uruchomienia, Metryki i Ustawienia Centrum pytają wpis procesu, zamiast rozróżniać
+procesy same; pliki procesu wynikają z jego Ustawień Centrum i Wzorców.
 _Avoid_: rejestr procesów, lista procesów
 
 ## Skrypt dla maszyn
@@ -892,9 +920,10 @@ _Avoid_: Wydanie, release Logów, załącznik
 ## Kontrola ilości
 
 Porównanie Ilości usług, które dają Reguły ilości, z Ilościami usług w Pliku
-zbiorczym, z którego tata uruchomił Przebieg rozliczeń. Pokazuje Maksowi, co
-tata musiał poprawić albo dopisać ręcznie. Jeden okres ma jedną Kontrolę
-ilości w Skrzynce Zgłoszeń, a tata jej nie wysyła ani nie ogląda.
+zbiorczym, z którego tata uruchomił Przebieg rozliczeń. Pokazuje, co tata
+musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach
+ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę
+ilości, której tata nie wysyła.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Powiadomienie
@@ -923,7 +952,7 @@ _Avoid_: Powiadomienie o naprawie
 ## Wersja narzędzia
 
 Commit klonu narzędzia, z którego wystartowało Centrum rozliczeń na komputerze
-taty. Karta `Narzędzie` w Konfiguracji pokazuje jego skrót i dzień, od którego
+taty. Ustawienia Centrum pokazują jego skrót i dzień, od którego
 narzędzie jest na tym commicie; Zgłoszenie podaje pełny commit.
 _Avoid_: numer wersji z `pyproject.toml`
 
@@ -947,8 +976,8 @@ _Avoid_: upgrade, git pull, instalacja
 
 Czy narzędzie na komputerze taty jest na najnowszym Wydaniu: `Aktualna`,
 `Jest nowsza wersja` albo `Nie sprawdzono` (bez internetu albo gdy GitHub
-chwilowo nie odpowiada na pytania o nową wersję). Pokazuje ją
-Konfiguracja i sprawdza Diagnoza; nowsza wersja jest przyczyną Zatrzymania
+chwilowo nie odpowiada na pytania o nową wersję). Pokazują ją
+Ustawienia Centrum i sprawdza Diagnoza; nowsza wersja jest przyczyną Zatrzymania
 tylko wtedy, gdy Diagnoza nie znalazła innej.
 _Avoid_: świeżość, freshness
 

@@ -6,6 +6,9 @@ Zaakceptowana. Dopełnia [ADR 0012](0012-ilosci-uslug-w-przygotowaniu-pliku-zbio
 Ilości usług w Pliku zbiorczym to to, co INEA płaci tacie, a Rozliczenie
 pracownika przestaje być wierną kopią Pliku zbiorczego w kolumnach `N:AP`.
 
+[ADR 0033](0033-reguly-ilosci-naleza-do-taty.md) zmienia punkt „Zasada należy do taty, a utrzymuje ją Maks”: Ilości tylko
+dla INEA to działanie Reguły ilości, które tata ustawia sam.
+
 ## Kontekst
 
 Reguły ilości wpisują w Pliku zbiorczym `AP` (deinstalacja usługi z odbiorem
