@@ -1,4 +1,4 @@
-"""Show that sprawdz_model_kolejki.py fails when the TLA+ model of the Kolejka Skrzynki loses a guard the code has.
+"""Show (sonda L9) that sprawdz_model_kolejki.py fails when the TLA+ model of the Kolejka Skrzynki loses a guard the code has.
 
 Each mutation removes from ``model/KolejkaSkrzynki.tla`` one guard or step whose counterpart in
 ``src/rozliczenia/centrum/outbox.py`` the mutation names, runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``)

@@ -202,3 +202,4 @@ mypy_path = "src"
 show_error_codes = true
 # Ponad strict: match bez przypadku dla każdego wariantu, warunek zawsze prawdziwy i ignore bez kodu błędu.
 enable_error_code = ["exhaustive-match", "truthy-bool", "truthy-iterable", "ignore-without-code"]
+# sonda L9: pełna bramka (gałąź próbna, nie scalać)
