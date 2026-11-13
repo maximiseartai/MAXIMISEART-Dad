@@ -1,7 +1,8 @@
-"""``tools/ci/zgloszenia_ci.py``: issue flaky testu, issue czerwonego `main` z rozpoznaniem zderzenia i jego zamknięcie.
+"""``tools/ci/zgloszenia_ci.py``: issue flaky testu, issue czerwonego `main` z rozpoznaniem zderzenia i jego zamknięcie,
+oraz ``tools/ponow_ci.py``, który z tych issue i logów padniętych zadań decyduje o ponowieniu runu CI.
 
 Historia `main` to prawdziwy Git z PR-ami scalonymi merge'em, a GitHub to zapisane odpowiedzi API w kształcie
-odpowiedzi z runów 26.10.
+odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–11.11.
 """
 
 from __future__ import annotations
@@ -25,8 +26,9 @@ from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git
 
 import niestabilne_testy
+import ponow_ci
 import zgloszenia_ci
-from github import REPO, REQUIRED, STRONA, BladApi, Skomentuj, Zaloz, Zamknij
+from github import CZERWONY_MAIN, REPO, REQUIRED, STRONA, BladApi, Skomentuj, Zaloz, Zamknij
 
 ROOT = Path(__file__).resolve().parents[1]
 ZGLOSZENIA = ROOT / ".github" / "workflows" / "zgloszenia.yml"
@@ -167,7 +169,7 @@ def test_id_testu_z_backtickami_zostaje_w_bloku_kodu_a_dlugie_jest_przyciete() -
     assert isinstance(pierwszy, Zaloz) and isinstance(drugi, Zaloz)
     assert _blok_kodu(pierwszy.tresc) == ["````", backticki, "````"]
     assert _blok_kodu(drugi.tresc)[1] == dlugi[: zgloszenia_ci.DLUGOSC_W_TRESCI - 1] + "…"
-    assert drugi.tytul == f"Flaky test: {dlugi[: zgloszenia_ci.DLUGOSC_W_TYTULE - 1]}…"
+    assert drugi.tytul == f"Flaky test: {dlugi[: niestabilne_testy.DLUGOSC_W_TYTULE - 1]}…"
 
 
 def test_run_z_forka_nie_zaklada_issue_flaky_testu_i_mowi_dlaczego(capsys: pytest.CaptureFixture[str]) -> None:
@@ -728,3 +730,204 @@ def test_zadanie_bez_podsumowania_pytest_porownuje_sie_z_rodzicem_po_torze(main:
     [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
 
     assert isinstance(akcja, Zaloz) and akcja.etykiety == etykiety
+
+
+PONOW_TERAZ = datetime(2026, 11, 11, 15, 0, tzinfo=UTC)
+DNS = (
+    "2026-11-11T13:54:04.6717522Z   Temporary failure resolving 'azure.archive.ubuntu.com'\n"
+    "2026-11-11T13:54:30.1Z Failed to install browsers\n2026-11-11T13:54:30.2Z Error: Installation process exited with code: 100\n"
+)
+TLC = (
+    "2026-11-09T06:09:10.8200328Z BŁĄD POBIERANIA NARZĘDZIA TLC: https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/"
+    "tla2tools.jar po 3 próbach (HTTP 504 Gateway Time-out); to awaria pobierania narzędzia, nie wynik modelu.\n"
+    "2026-11-09T06:09:10.9Z WYKONANIE FAIL | skill:verify-kolejka-skrzynki/check_model_kolejki_mutations.py\n"
+)
+HTTP_504 = "2026-11-05T09:12:43.9735858Z urllib.error.HTTPError: HTTP Error 504: Gateway Time-out\n2026-11-05T09:12:44Z WYKONANIE FAIL | skill:verify-urwane-uruchomienie/ci\n"
+TEST_OPIEKUNA = "tests/test_opiekun_ponownego_startu.py::test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu"
+PADLY_TEST = f"2026-11-07T16:56:41.7827770Z FAILED {TEST_OPIEKUNA} - TimeoutError: timed out\n2026-11-07T16:56:42Z WYKONANIE FAIL | krok:pytest\n"
+MUTACJA = "2026-11-08T01:50:00Z FAIL skill:verify-kolejka-skrzynki/check_outbox_mutations.py#2/3 (41 s): kod wyjścia 1\n2026-11-08T01:50:01Z WYKONANIE FAIL | skill:verify-kolejka-skrzynki/ci\n"
+CYTAT_503 = (
+    "2026-11-07T16:56:40Z E   urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n"
+    "2026-11-07T16:56:41Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
+    "2026-11-07T16:56:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
+)
+
+
+class Ponowienia:
+    """``ponow_ci.Akcje``, które zapisują ponowienia zamiast pisać na GitHubie."""
+
+    def __init__(self) -> None:
+        self.zapisane: list[tuple[str, int]] = []
+        self.akcje = ponow_ci.Akcje(lambda run: self.zapisane.append(("rerun", run)), lambda pr: self.zapisane.append(("close/reopen", pr)))
+
+
+def _run_ci(run_id: int, *, status: str = "completed", wynik: str | None = "failure", proba: int = 1, koniec: str = "2026-11-11T14:00:00Z") -> dict[str, Any]:
+    return {
+        "id": run_id,
+        "name": "CI",
+        "status": status,
+        "conclusion": wynik,
+        "run_attempt": proba,
+        "head_branch": f"galaz-{run_id}",
+        "created_at": "2026-11-11T13:50:00Z",
+        "updated_at": koniec,
+    }
+
+
+def _proba(run_id: int, proba: int, logi: dict[str, str], *, w_toku: int = 0) -> dict[str, Any]:
+    """Zadania próby runu: padnięte z logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku`` biegnących."""
+
+    padniete = [{"id": run_id * 100 + numer, "name": nazwa, "status": "completed", "conclusion": "failure"} for numer, nazwa in enumerate(logi)]
+    reszta = [
+        {"id": run_id * 100 + 90, "name": "Frontend", "status": "completed", "conclusion": "success"},
+        *({"id": run_id * 100 + 91 + numer, "name": f"pytest (Python 3.11, {numer + 1}/9)", "status": "in_progress", "conclusion": None} for numer in range(w_toku)),
+        {"id": run_id * 100 + 99, "name": REQUIRED, "status": "completed", "conclusion": "failure"},
+    ]
+    zadania = [*padniete, *reszta]
+    return {
+        f"{REPO}/actions/runs/{run_id}/attempts/{proba}/jobs?per_page=100&page=1": {"total_count": len(zadania), "jobs": zadania},
+        **{f"{REPO}/actions/jobs/{zadanie['id']}/logs": log.encode() for zadanie, log in zip(padniete, logi.values(), strict=True)},
+        f"{REPO}/actions/jobs/{run_id * 100 + 99}/logs": b"2026-11-11T14:00:00Z REQUIRED FAIL\n",
+    }
+
+
+def _github(run: dict[str, Any], logi: dict[str, str], *, ponowione: tuple[dict[str, Any], ...] = (), flaky: tuple[str, ...] = (), odpowiedzi: dict[str, Any] | None = None) -> Nagrany:
+    return Nagrany(
+        {
+            f"{REPO}/actions/runs/{run['id']}": run,
+            **_proba(run["id"], run["run_attempt"], logi),
+            f"{REPO}/actions/runs?per_page=100": {"workflow_runs": [run, *ponowione]},
+            **_issues(niestabilne_testy.ETYKIETA_FLAKY, "open", [{"number": 7, "title": niestabilne_testy.tytul_issue(test)} for test in flaky]),
+            **(odpowiedzi or {}),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "wynik_runu", "linia"),
+    [
+        ("in_progress", None, "PONÓW CZEKA | run 43035692960 | run jeszcze trwa, w toku 3 zadań"),
+        ("completed", "success", "PONÓW ODMOWA | run 43035692960 | run zakończony: success, nic do ponowienia"),
+    ],
+    ids=["run-w-toku", "run-zielony"],
+)
+def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wynik_runu: str | None, linia: str) -> None:
+    """Run w toku czeka na swój koniec zamiast odbicia „already running”, choć ma już padnięte zadanie z awarią."""
+
+    run = _run_ci(43035692960, status=status, wynik=wynik_runu)
+    github = Nagrany({f"{REPO}/actions/runs/{run['id']}": run, **_proba(run["id"], 1, {"pytest (Python 3.14, Linux, 5/8)": DNS}, w_toku=3)})
+    ponowienia = Ponowienia()
+
+    wynik = ponow_ci.ponow(github, run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+
+    assert (wynik.kod, ponowienia.zapisane) == (1, [])
+    assert wynik.linia.startswith(linia)
+
+
+@pytest.mark.parametrize(
+    ("logi", "flaky", "linia", "ponowiony"),
+    [
+        ({"pytest (Python 3.14, Linux, 5/8)": DNS, "pytest (Python 3.14, Linux, 6/8)": DNS}, (), "awaria: DNS runnera, instalacja przeglądarek", True),
+        ({"Mutation checks (3/10)": TLC}, (), "awaria: pobranie narzędzia TLC", True),
+        ({"Mutation checks (6/6)": HTTP_504}, (), "awaria: HTTP 5xx serwera", True),
+        ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA,), f"znany flaky test: {TEST_OPIEKUNA}", True),
+        ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (), "ci_lokalnie.py --tylko pytest", False),
+        ({"pytest (Python 3.14, Linux, 5/8)": DNS, "pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA + "[inny]",), "defekt: pytest (Python 3.11, 2/2) |", False),
+        ({"Mutation checks (6/6)": MUTACJA}, (), "ci_lokalnie.py --tylko mutations --odtwarzam 42435998596", False),
+        ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
+        ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
+        ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy,workflowy", False),
+    ],
+    ids=["dns-apt", "pobranie-tlc", "http-504", "znany-flaky-test", "padly-test", "awaria-obok-testu", "mutacje", "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy"],
+)
+def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
+    logi: dict[str, str], flaky: tuple[str, ...], linia: str, ponowiony: bool
+) -> None:
+    run = _run_ci(42435998596)
+    ponowienia = Ponowienia()
+
+    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+
+    assert linia in wynik.linia
+    assert (wynik.kod, ponowienia.zapisane) == ((0, [("rerun", run["id"])]) if ponowiony else (1, []))
+    assert wynik.linia.startswith("PONÓW OK" if ponowiony else "PONÓW ODMOWA")
+
+
+def _kanarek(proba: int, status: str, wynik: str | None, koniec: str, log: str = DNS) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Ponowiony run 43033018567 i padnięta próba, którą narzędzie czyta: poprzednia, gdy biegnie, inaczej ostatnia."""
+
+    run = _run_ci(43033018567, status=status, wynik=wynik, proba=proba, koniec=koniec)
+    czytana = proba - 1 if status != "completed" else proba
+    return run, _proba(run["id"], czytana, {"pytest (Python 3.14, Linux, 1/2)": log})
+
+
+@pytest.mark.parametrize(
+    ("kanarek", "linia", "zapisane"),
+    [
+        (_kanarek(3, "in_progress", None, "2026-11-11T14:55:00Z"), "PONÓW CZEKA | run 43035363425 | kanarek run 43033018567 (galaz-43033018567, próba 3) jeszcze biegnie", []),
+        (_kanarek(3, "completed", "failure", "2026-11-11T14:42:00Z"), "padł znów na awarię | awaria trwa: ponów najwcześniej o 15:12 UTC", []),
+        (_kanarek(3, "completed", "failure", "2026-11-11T14:20:00Z"), "PONÓW KANAREK | run 43035363425 | ponowiłem kanarek run 43033018567", [("rerun", 43033018567)]),
+        (_kanarek(3, "completed", "success", "2026-11-11T14:50:00Z"), "PONÓW OK | run 43035363425 | awaria", [("rerun", 43035363425)]),
+        (_kanarek(3, "completed", "failure", "2026-11-11T14:50:00Z", PADLY_TEST), "PONÓW OK | run 43035363425 | awaria", [("rerun", 43035363425)]),
+        (_kanarek(3, "completed", "failure", "2026-11-11T12:30:00Z"), "PONÓW OK | run 43035363425 | awaria", [("rerun", 43035363425)]),
+    ],
+    ids=["kanarek-biegnie", "kanarek-padl-niedawno", "kanarek-padl-po-przerwie", "kanarek-zielony", "ponowiony-defekt-to-nie-kanarek", "kanarek-sprzed-okna"],
+)
+def test_wspolna_awarie_ponawia_tylko_jeden_kanarek_a_po_zielonym_kanarku_kazdy(
+    kanarek: tuple[dict[str, Any], dict[str, Any]], linia: str, zapisane: list[tuple[str, int]]
+) -> None:
+    run = _run_ci(43035363425)
+    inny, jego_proba = kanarek
+    ponowienia = Ponowienia()
+
+    wynik = ponow_ci.ponow(_github(run, {"pytest (Python 3.14, Linux, 5/8)": DNS}, ponowione=(inny,), odpowiedzi=jego_proba), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+
+    assert linia in wynik.linia
+    assert ponowienia.zapisane == zapisane
+
+
+@pytest.mark.parametrize(("koniec", "zapisane"), [("2026-11-11T14:20:00Z", [("rerun", 43033018567)]), ("2026-11-11T14:42:00Z", [])])
+def test_kanarek_ktory_padl_na_awarie_ponawia_sie_sam_dopiero_po_przerwie(koniec: str, zapisane: list[tuple[str, int]]) -> None:
+    run = _run_ci(43033018567, proba=3, koniec=koniec)
+    ponowienia = Ponowienia()
+
+    ponow_ci.ponow(_github(run, {"pytest (Python 3.14, Linux, 1/2)": DNS}), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+
+    assert ponowienia.zapisane == zapisane
+
+
+def _czerwone_main(otwarte: tuple[dict[str, Any], ...] = (), zamkniete: tuple[dict[str, Any], ...] = ()) -> dict[str, Any]:
+    return {**_issues(CZERWONY_MAIN, "open", list(otwarte)), **_issues(CZERWONY_MAIN, "closed", list(zamkniete), od="2026-11-11T13%3A50%3A00Z")}
+
+
+@pytest.mark.parametrize(
+    ("otwarte", "zamkniete", "linia", "zapisane"),
+    [
+        ((), ({"number": 1328, "created_at": "2026-11-11T12:00:00Z", "closed_at": "2026-11-11T14:30:00Z"},), "na scaleniu z czerwonym main (#1328 zamknięte potem)", [("close/reopen", 1303)]),
+        (({"number": 1328, "created_at": "2026-11-11T12:00:00Z"},), (), "main nadal czerwony (#1328)", []),
+        ((), ({"number": 1328, "created_at": "2026-11-11T14:00:00Z", "closed_at": "2026-11-11T14:30:00Z"},), "PONÓW ODMOWA", []),
+    ],
+    ids=["main-naprawiony-po-starcie-runu", "main-nadal-czerwony", "main-zaczerwienil-sie-po-starcie"],
+)
+def test_defekt_runu_pr_ze_scalenia_z_czerwonym_main_dostaje_cie_na_swiezym_scaleniu(
+    otwarte: tuple[dict[str, Any], ...], zamkniete: tuple[dict[str, Any], ...], linia: str, zapisane: list[tuple[str, int]]
+) -> None:
+    run = _run_ci(43041493249)
+    ponowienia = Ponowienia()
+
+    wynik = ponow_ci.ponow(_github(run, {"pytest (Python 3.11, 2/2)": PADLY_TEST}, odpowiedzi=_czerwone_main(otwarte, zamkniete)), run["id"], 1303, PONOW_TERAZ, ponowienia.akcje)
+
+    assert linia in wynik.linia
+    assert ponowienia.zapisane == zapisane
+
+
+@pytest.mark.parametrize(("stan", "zapisane"), [("open", [("rerun", 42335147260)]), ("closed", [])])
+def test_defekt_z_przyczyna_w_otwartym_issue_jest_ponawiany_z_tym_issue(stan: str, zapisane: list[tuple[str, int]]) -> None:
+    run = _run_ci(42335147260)
+    github = _github(run, {"Mutation checks (1/10)": MUTACJA}, odpowiedzi={f"{REPO}/issues/1040": {"number": 1040, "state": stan}})
+    ponowienia = Ponowienia()
+
+    wynik = ponow_ci.ponow(github, run["id"], None, PONOW_TERAZ, ponowienia.akcje, issue=1040)
+
+    assert ponowienia.zapisane == zapisane
+    assert ("przyczyna w #1040" in wynik.linia) == (stan == "open")

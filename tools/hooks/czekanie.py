@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hook ``PreToolUse`` Claude Code dla Basha: odrzuca blokujące czekanie na CI i pętle ``pgrep -f``.
+"""Hook ``PreToolUse`` Claude Code dla Basha: odrzuca blokujące czekanie na CI, pętle ``pgrep -f`` i gołe ponowienie runu.
 
 Agent na pierwszym planie, który pętli ``until/while/for … sleep`` na ``gh pr checks``, stoi do limitu 600 s
 Basha, choć CI i tak powiadamia: wątek główny przez ``watch_pull_request`` T3, a polecenie w tle przez
@@ -14,7 +14,10 @@ Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` al
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API,
 a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``, ``&&`` albo ``||``, w grupie ``( … )`` albo ``{ …; }``.
 ``&`` w grupie za pętlą (``done | (cat & wait)``) puszcza w tło tylko tę grupę.
-Wszystko inne, także te polecenia z ``run_in_background``, przechodzi bez słowa (kod 0).
+Ponowienie runu GitHub Actions (``gh run rerun`` i ``gh api`` z adresem ``/rerun`` w tym samym poleceniu prostym)
+odrzuca zawsze, także w tle, bo o ponowieniu decyduje ``tools/ponow_ci.py``: czeka na koniec runu, odróżnia awarię
+runnera od defektu i przy wspólnej awarii ponawia tylko kanarka.
+Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (kod 0).
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
 Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
@@ -48,6 +51,9 @@ CI_ADDRESS = re.compile(r"check-runs|actions/runs|/status\b")
 CHECKS = re.compile(_GH + r"pr\s+checks\b")
 WATCH_OPTION = re.compile(r"--watch\b")
 RUN_WATCH = re.compile(_GH + r"run\s+watch\b")
+# ``gh -R właściciel/repo run rerun`` też: opcje ``gh`` stoją przed poleceniem.
+RUN_RERUN = re.compile(_GH + r"(?:-{1,2}[\w-]+(?:[=\s][^\s-]\S*)?\s+)*run\s+rerun\b")
+RERUN_ADDRESS = re.compile(r"/rerun\b|/rerun-failed-jobs\b")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
@@ -114,6 +120,12 @@ class Refusal:
 
 CI_LOOP = Refusal(f"Odmowa: pętla z sleep na pierwszym planie czeka na CI. {INSTEAD}")
 WATCHING = Refusal(f"Odmowa: gh pr checks --watch i gh run watch blokują na pierwszym planie. {INSTEAD}")
+RERUN = Refusal(
+    "Odmowa: o ponowieniu runu CI decyduje tools/ponow_ci.py: .venv/bin/python tools/ponow_ci.py N (najnowszy run CI "
+    "na HEAD PR N) albo --run ID (Windows: py -3 tools/ponow_ci.py). Czeka na koniec runu, odróżnia awarię runnera od "
+    "defektu po logach padniętych zadań, przy wspólnej awarii ponawia tylko kanarka, a przy defekcie podaje polecenie "
+    "tools/ci_lokalnie.py --tylko <zadanie>."
+)
 PGREP_LOOP = Refusal(
     "Odmowa: pętla z sleep na pgrep -f nie widzi procesu, bo pgrep -f znajduje własną powłokę tej pętli: "
     "until ! pgrep -f X i while pgrep -f X nie kończą się nigdy, a until pgrep -f X kończy się od razu. "
@@ -344,11 +356,13 @@ def _first_from(positions: list[int], start: int, default: int) -> int:
 
 
 def judge(command: str, in_background: bool) -> Optional[Refusal]:
-    if in_background:
-        return None
     try:
         shell, _ = _code(_without_heredocs(command))
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
+        return None
+    if RUN_RERUN.search(shell) or _in_one_command(shell, GH_API, RERUN_ADDRESS).starts:
+        return RERUN
+    if in_background:
         return None
     if RUN_WATCH.search(shell) or _in_one_command(shell, CHECKS, WATCH_OPTION).starts:
         return WATCHING

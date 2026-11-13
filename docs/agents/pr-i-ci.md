@@ -11,7 +11,8 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 ## Zadanie CI padło
 
-- Gdy run padł przez starą wersję `main` w scaleniu PR, CI na świeżym scaleniu bez zmiany HEAD uruchamiasz przez `gh pr close N && gh pr reopen N`, więc werdykt dla HEAD zostaje ważny, a ponowienie zadania (`gh run rerun`) biegnie na starym scaleniu.
+- Run CI ponawiasz tylko przez `.venv/bin/python tools/ponow_ci.py N` (Windows: `py -3 tools/ponow_ci.py N`), a run `main` przez `--run ID`: narzędzie czeka na koniec runu, ponawia awarię runnera tylko jednym kanarkiem na wiele PR-ów, a defekt odrzuca z poleceniem odtworzenia, a hook `tools/hooks/czekanie.py` odrzuca gołe `gh run rerun`.
+- Gdy run padł przez starą wersję `main` w scaleniu PR, `tools/ponow_ci.py` uruchamia CI na świeżym scaleniu bez zmiany HEAD przez `gh pr close N` i `gh pr reopen N`, więc werdykt dla HEAD zostaje ważny, a ponowienie zadania (`gh run rerun`) biegnie na starym scaleniu.
   Gotowość w `tools/scal_pr.py` i linia `CI` jego `--przeglad` liczą wtedy tylko najnowszy run workflow `CI` na HEAD, czyli ten o największym identyfikatorze runu z `detailsUrl` jego checków (`stan_pr.latest_ci_run` w `tools/lib/stan_pr.py`), więc checki starszych runów nie blokują merge'u ani go nie dają.
   Merge blokuje najnowszy run bez checku `Required CI status` (GitHub tworzy go dopiero po zadaniach z jego `needs:`, więc taki run jeszcze trwa), z Required w toku albo czerwonym i z zadaniem w toku obok zielonego Required (ponowienie zadań w tym samym runie).
 - Porażkę zadania odtwarzasz przez `.venv/bin/python tools/ci_lokalnie.py --tylko <zadanie>` (Windows: `py -3 tools/ci_lokalnie.py --tylko <zadanie>`).
