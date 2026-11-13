@@ -163,7 +163,7 @@ class StartupShortcut:
     def state(self) -> AutostartState:
         """Stan skrótu; najpierw usuwa plik pośredni zapisu (``_written_file``), więc stan mówi, czy Windows uruchomi
         Centrum po zalogowaniu. Zapis i odczyt idą pod blokadą Ustawień, więc to nigdy nie plik trwającego zapisu, a
-        wyłączenie zawsze poprzedza ten odczyt."""
+        ten odczyt zawsze poprzedza wyłączenie, więc ``disable`` nie sprząta pliku pośredniego drugi raz."""
 
         folder = self._folder()
         _written_file(folder).unlink(missing_ok=True)

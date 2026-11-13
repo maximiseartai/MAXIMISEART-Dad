@@ -62,6 +62,7 @@ FEATURES = (
             "306-ustawienia-zapisano-cofnij",
             "307-ustawienia-zapisano-waskie",
             "315-ustawienia-blad-w-oknie",
+            "341-ustawienia-blad-po-zamknieciu",
             "308-ustawienia-historia",
             "309-ustawienia-historia-waska",
             "340-ustawienia-historia-wydanie",

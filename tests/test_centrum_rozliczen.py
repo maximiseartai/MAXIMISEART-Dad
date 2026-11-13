@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import errno
+import hashlib
 import json
 import os
 import re
@@ -1852,6 +1854,10 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert [secret for secret in secrets for response in responses if secret.encode() in response.content] == []
     assert _files_with_password(tool, [STARE_HASLO, NOWE_HASLO]) == []
     assert tool.log_path.is_file()
+    # Pamięć zapisuje bajty jako base64, którego `_files_with_password` nie rozpozna, więc sam odcisk sprawdza się wprost.
+    remembered = json.loads((tool.config / MEMORY_DIRECTORY / f"{INBOX_ACCESS_FILE}.json").read_bytes())
+    access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
+    assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
 
 
 def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
