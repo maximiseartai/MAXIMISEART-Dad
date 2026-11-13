@@ -293,7 +293,9 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
     assert second.returncode == 0
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert exit_code == 0
-    assert _log_events(runtime) == ["start", "juz-dziala", "zamkniecie", "stop"]
+    # Pierwszy start stosuje zmiany Ustawień z Wydania (folder okresów od Załączniki: bez folderu okresów bez zmian), a
+    # ich wpis czeka na ``start``, więc dziennik startu zaczyna się od niego.
+    assert _log_events(runtime) == ["start", "ustawienia-wydanie", "juz-dziala", "zamkniecie", "stop"]
     assert "konsola=nie" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
@@ -334,7 +336,7 @@ def test_centrum_z_autostartu_startuje_bez_karty_a_skrot_z_pulpitu_otwiera_karte
     assert (startup_again.returncode, desktop_click.returncode, exit_code) == (0, 0, 0)
     assert not opened_before_desktop, "Skrót z Autostartu otworzył kartę."
     assert addresses == opened.read_text(encoding="utf-8").split() == [f"http://127.0.0.1:{port}/"]
-    assert _log_events(runtime) == ["start", "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
+    assert _log_events(runtime) == ["start", "ustawienia-wydanie", "juz-dziala", "juz-dziala", "zamkniecie", "stop"]
 
 _CONSOLE, _NO_CONSOLE = 10, 20
 _CONSOLE_PROBE = (
