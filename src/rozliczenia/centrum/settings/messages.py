@@ -95,6 +95,17 @@ def workers_not_moved(old_file: str, reason: str) -> str:
     )
 
 
+def worker_list_unreadable() -> str:
+    return "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę."
+
+
+def worker_list_not_created() -> str:
+    return (
+        "Listy Wykonawców nie ma: nie udało się jej utworzyć ze starych plików Wykonawców w folderze config. Powód jest "
+        "w Historii."
+    )
+
+
 def addresses_not_moved(old_file: str, reason: str) -> str:
     return (
         f"Adresów Wykonawców nie przeniesiono ze starego pliku {old_file} w folderze config: {reason}. Dopisz je "

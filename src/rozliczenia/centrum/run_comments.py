@@ -103,7 +103,7 @@ from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
 from rozliczenia.centrum.run_logs import Environment, LoggedFile, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
-from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
@@ -124,10 +124,10 @@ _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 
 T = TypeVar("T")
 
-ProcessFiles = Callable[[common_contract.ProcessKey, str, FolderSettings | None], Sequence[Path]]
+ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path]]
 """Pliki procesu dla tokenu okresu z migawką Ustawień Centrum ze startu Uruchomienia (``None``: bez migawki, z
 bieżącymi)."""
-"""Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami taty z chwili końca Uruchomienia."""
+"""Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami Centrum z chwili końca Uruchomienia."""
 
 
 class CommentQueue(Protocol):
@@ -195,7 +195,7 @@ class RecordMaker:
         return Tool(wydanie=None if release is None else release.version, commit=commit)
 
     def _environment(
-        self, process: common_contract.ProcessKey, period: str, settings: FolderSettings | None
+        self, process: common_contract.ProcessKey, period: str, settings: SettingsSnapshot | None
     ) -> Environment:
         try:
             paths = self._files(process, period, settings)

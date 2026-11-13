@@ -1,4 +1,4 @@
-"""Interfejs HTTP Konfiguracji: Wzorce, Wykonawcy, wersja narzędzia z Aktualnością i stan klucza do Zgłoszeń.
+"""Interfejs HTTP Konfiguracji: Wzorce, wersja narzędzia z Aktualnością i stan klucza do Zgłoszeń.
 
 Pliki Konfiguracji i ich Sprawdzania należą do ``configuration``; tu jest tylko odpowiedź dla przeglądarki.
 """
@@ -12,17 +12,15 @@ from typing import Final, assert_never
 from fastapi import APIRouter
 
 from rozliczenia import workbook_files
-from rozliczenia.centrum.configuration import ConfigurationFiles, Template, workers_problem
+from rozliczenia.centrum.configuration import ConfigurationFiles, Template
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import configuration as configuration_contract
 from rozliczenia.centrum.keyed_box import KeyJudgement
-from rozliczenia.centrum.settings.files import Good, Read, Unreadable
 from rozliczenia.centrum.tool_freshness import Judgement, ReleaseSource, ToolFreshness, offers_update
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.message import Message
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.workbook_files import Problem
-from rozliczenia.worker_list import WorkerList
 
 
 _Problem = tuple[configuration_contract.TemplateProblemKind, Message]
@@ -46,9 +44,8 @@ def configuration_router(
     release: ReleaseSource,
     key_judgement: Callable[[], KeyJudgement],
     template_check: TemplateCheck,
-    workers: Callable[[], Read[WorkerList] | Unreadable],
 ) -> APIRouter:
-    """Konfiguracja; ``workers`` daje Listę Wykonawców z migawki Ustawień Centrum, ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
+    """Konfiguracja; ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
     najwyżej ``CONFIGURATION_WAIT_S``.
 
     Aktualność narzędzia porównuje commit narzędzia z najnowszym Wydaniem na GitHubie według ``release``: odpowiedzi
@@ -67,7 +64,6 @@ def configuration_router(
             freshness=_STATE[judgement],
             update_offered=offers_update(judgement),
             templates=[checked.status(template) for template in files.templates()],
-            workers=_workers(workers()),
             reports=_KEY_STATE[key_judgement()],
         )
 
@@ -141,11 +137,3 @@ class _CheckedTemplates:
                 self._results[path] = (signature, result)
         return result
 
-
-def _workers(workers: Read[WorkerList] | Unreadable) -> configuration_contract.Workers:
-    """Nazwy Wykonawców z Listy Wykonawców w jej kolejności; przy złym ustawieniu Komunikat Diagnozy."""
-
-    if isinstance(workers, Good):
-        return configuration_contract.WorkersReady(state="ready", names=[worker.name for worker in workers.value.workers])
-    message = common_contract.Message.of(workers_problem(workers))
-    return configuration_contract.WorkersUnreadable(state="unreadable", message=message)

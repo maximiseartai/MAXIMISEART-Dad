@@ -1,6 +1,6 @@
 """Praca Centrum rozliczeń: to, co dzielą moduły Centrum od startu serwera do jego zamknięcia.
 
-Moduł Centrum bierze ``CentrumWork`` i sam wie, które jego pliki leżą w katalogu ``config`` (obok Ustawień taty) albo
+Moduł Centrum bierze ``CentrumWork`` i sam wie, które jego pliki leżą w katalogu ``config`` (obok Ustawień Centrum) albo
 obok dziennika Centrum (``log.directory``, katalog Logów, ADR 0015), więc nowy plik stanu albo nowa wspólna zależność
 modułu zmienia tylko ten moduł, nie ``create_app``.
 """

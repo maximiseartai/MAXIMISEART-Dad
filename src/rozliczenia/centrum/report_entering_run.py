@@ -1,6 +1,6 @@
-"""Wpisanie raportów z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień taty i start (ADR 0028).
+"""Wpisanie raportów z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień Centrum i start (ADR 0028).
 
-INTERMAX to Rejestr zleceń z Ustawień taty, folder okresów też z nich (okres z Plikiem zbiorczym jest dla Wpisania
+INTERMAX to Rejestr zleceń z Ustawień Centrum, folder okresów też z nich (okres z Plikiem zbiorczym jest dla Wpisania
 raportów zamknięty), Lista Wykonawców z migawki Ustawień Centrum, a
 Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``). Proces nie należy do okresu: okres
 Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc Logi Uruchomienia
@@ -107,7 +107,7 @@ class ReportEnteringEntry:
         )
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień taty i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
+        """Wejście procesu z Ustawień Centrum i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
         wskazany."""
 
         snapshot = self.settings.snapshot()
@@ -123,7 +123,7 @@ class ReportEnteringEntry:
         if not workers.addresses().logins:
             raise refusal.report_entering_without_addresses()
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
-        start = Start(paths, period=None, dry_run=False, settings=settings, workers=workers)
+        start = Start(paths, period=None, dry_run=False, settings=snapshot, workers=workers)
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:

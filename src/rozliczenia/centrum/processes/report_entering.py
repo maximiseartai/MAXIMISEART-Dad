@@ -1,6 +1,6 @@
 """Wpisanie raportów w katalogu procesów: wpis i widok Uruchomienia (ADR 0028).
 
-Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień taty i nie należy do okresu (jak Uporządkowanie
+Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień Centrum i nie należy do okresu (jak Uporządkowanie
 INTERMAX, ADR 0019); folder okresów z Ustawień czyta tylko po to, by pominąć dni okresów z Plikiem zbiorczym. Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
 """
 

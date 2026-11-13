@@ -23,13 +23,14 @@ from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, f
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum import refusal
+from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -87,8 +88,9 @@ class Start:
     gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
-    startu, z której Logi Uruchomienia i Diagnoza Zatrzymania biorą pliki procesu; ``None``: gospodarz bez Ustawień
-    Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
+    startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców, a karta
+    ostrzeżenie o ostatniej dobrej Liście Wykonawców; ``None``: gospodarz bez Ustawień Centrum (Skrypt dla maszyn,
+    odtworzenie). ``workers``: Lista Wykonawców z chwili startu (Centrum: migawka Ustawień,
     Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces jej nie potrzebuje.
     """
 
@@ -96,7 +98,7 @@ class Start:
     period: str | None
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
-    settings: FolderSettings | None = None
+    settings: SettingsSnapshot | None = None
     workers: WorkerList | None = None
 
     def path(self, need: PathNeed) -> Path:
@@ -119,6 +121,14 @@ def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     if found is None:
         raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
     return found
+
+
+def workers_warnings(workers: Read[WorkerList] | Unreadable) -> tuple[Message, ...]:
+    """Ostrzeżenie karty Uruchomienia, które biegnie na ostatniej dobrej Liście Wykonawców, bo plik ma złe ustawienie."""
+
+    if isinstance(workers, Bad) and workers.usable is not None:
+        return (diagnosis_messages.worker_list_last_good(workers.problem.sentence),)
+    return ()
 
 
 @dataclass(frozen=True)
@@ -157,7 +167,7 @@ class HostParts:
 
 @dataclass(frozen=True)
 class NeededSetting:
-    """Ścieżka z Ustawień taty, bez której proces nie startuje.
+    """Ścieżka z Ustawień Centrum, bez której proces nie startuje.
 
     ``name`` to nazwa dla taty w karcie, odmowie startu i Diagnozie, a ``missing`` Komunikat procesu o ścieżce
     wskazanej, której już nie ma.
@@ -248,7 +258,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     ``core`` to rdzeń procesu (testy podmieniają go przez ``Catalog.steered``), a ``default_metrics`` plik metryk
     procesu w katalogu narzędzia (testy i ``--metrics`` podmieniają go przez ``Catalog.with_metrics``); oba czyta się
     przez katalog. ``needs`` to potrzeby wejścia procesu, a ``inputs`` jedyna budowa wejścia z nich: czysta funkcja
-    startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia taty w kolejności odmowy i Diagnozy,
+    startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia Centrum w kolejności odmowy i Diagnozy,
     a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia Zatrzymanie.
     ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
@@ -435,7 +445,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         pricing: runs_contract.Pricing | None,
         engine: Engine,
         proof: _Catalog,
-        settings: FolderSettings | None = None,
+        settings: SettingsSnapshot | None = None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -449,6 +459,14 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     @property
     def dry_run(self) -> bool:
         return self.kind.core.dry_run(self.inputs)
+
+    @property
+    def warnings(self) -> tuple[Message, ...]:
+        """Ostrzeżenia ze startu na kartę i do Logów: proces z Listą Wykonawców biegnie na ostatniej dobrej liście."""
+
+        if self.settings is None or "workers" not in self.kind.needs:
+            return ()
+        return workers_warnings(self.settings.workers)
 
     @property
     def input_copy(self) -> InputCopy | None:

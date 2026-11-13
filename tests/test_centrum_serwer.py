@@ -139,6 +139,32 @@ def test_nieudany_start_nie_zapisuje_ani_startu_ani_stopu(tmp_path: Path) -> Non
     listen_locally(port).close()
 
 
+def test_wpis_z_przygotowania_serwera_zostaje_w_dzienniku_takze_gdy_start_sie_nie_udal(tmp_path: Path) -> None:
+    """Wpis sprzed ``start`` (zmiana Ustawień z Wydania w lifespan) czeka na ``start``, a przy nieudanym starcie
+    zapisuje go ``release_held``: bez niego dziennik nie mówiłby, co Centrum zrobiło z Ustawieniami (przegląd #1529 r2,
+    #1532 r2)."""
+
+    path = tmp_path / "centrum-rozliczen.log"
+    log = CentrumLog(path)
+
+    @asynccontextmanager
+    async def failing(_app: FastAPI) -> AsyncIterator[None]:
+        log.settings_release(change="2026-11-zmiana-testowa", result="pozniej")
+        raise RuntimeError("start się nie udał")
+        yield
+
+    shutdown = Shutdown(log)
+    since = new_line()
+
+    with pytest.raises(SystemExit):
+        serve(FastAPI(lifespan=failing), listener=listen_locally(0), on_ready=lambda _url: None, shutdown=shutdown, log=log)
+    events = _events(path)
+    shutdown.request()
+    join_threads_since(since)
+
+    assert events == ["ustawienia-wydanie"]
+
+
 # Wycena w efenix, którą zgaszone Centrum urwało: jej dziennik w katalogu Logów czeka na następny start.
 URWANA_WYCENA = StartFacts(
     run_id="627b45fe219e4274b722953c34d4af54",

@@ -74,7 +74,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from rozliczenia import intermax_copies
 from rozliczenia.centrum import run_view
-from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -107,7 +106,7 @@ class CodedMessage(_Model):
 
     @classmethod
     def of(cls, message: Message) -> CodedMessage:
-        return cls(code=message.code, **common_contract.Message.of(message).model_dump())
+        return cls(code=message.code, what=message.what, where=message.where, action=message.action)
 
 
 class StopResult(_Model):

@@ -59,9 +59,8 @@ from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, ReportReminders
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
-from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.history import ReleaseOrigin
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
@@ -243,17 +242,18 @@ def create_app(
         settings_changes=settings.reported_changes,
     )
 
-    def folders(at_start: FolderSettings | None) -> FolderSettings:
-        """Ustawienia Centrum ze startu Uruchomienia, a bez migawki (Urwane Uruchomienie) bieżące."""
+    def at(start: SettingsSnapshot | None) -> SettingsSnapshot:
+        """Migawka Ustawień Centrum ze startu Uruchomienia, a bez niej (Urwane Uruchomienie) bieżąca: Logi i Diagnoza
+        wyjaśniają to Uruchomienie, nie późniejszą zmianę Ustawień (D9)."""
 
-        return settings.snapshot().folders if at_start is None else at_start
+        return settings.snapshot() if start is None else start
 
     disk = LogsOnDisk(log, journaled=catalog.journaled)
     records = RecordMaker(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
         files=lambda process, period, at_start: files_of_process(
-            process, period, settings=folders(at_start), configuration=configuration
+            process, period, settings=at(at_start).folders, configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
@@ -264,13 +264,13 @@ def create_app(
         lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=folders(at_start),
+            settings=at(at_start).folders,
             configuration=configuration,
             log=log,
             surroundings=surroundings,
             template_check=template_check,
             files=files,
-            workers=settings.snapshot().workers,
+            workers=at(at_start).workers,
         ),
         log,
         comments,
@@ -340,7 +340,6 @@ def create_app(
             release,
             lambda: box.judge(wait_s=CONFIGURATION_WAIT_S),
             template_check,
-            lambda: settings.snapshot().workers,
         )
     )
     app.include_router(tool_update_router(updates))

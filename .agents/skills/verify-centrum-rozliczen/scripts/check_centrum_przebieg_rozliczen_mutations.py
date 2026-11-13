@@ -46,9 +46,10 @@ MUTATIONS = (
         (
             Edit(
                 SETTLEMENT_MESSAGES,
-                '        action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",\n    )\n\n\ndef rows_without_worker(',
-                '        action=f"{_PREVIEW_PROBLEMS} {_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",\n    )\n\n\n'
+                '        action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",\n        setting="wykonawcy",\n    )\n\n\n'
                 "def rows_without_worker(",
+                '        action=f"{_PREVIEW_PROBLEMS} {_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",\n        setting="wykonawcy",\n'
+                '    )\n\n\ndef rows_without_worker(',
             ),
         ),
         PRZEBIEG,

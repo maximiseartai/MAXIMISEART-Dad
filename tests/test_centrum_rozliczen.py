@@ -28,9 +28,10 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
 from rozliczenia import efenix_process
-from rozliczenia.centrum import app
+from rozliczenia.centrum import app, diagnosis_messages
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
+from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
@@ -283,6 +284,20 @@ def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
     assert response.json()["settings"]["periods_directory"]["path"] == str(periods)
 
 
+def test_nieznane_pole_pliku_ustawien_ma_numer_od_gory_a_nie_nazwe_z_pliku(tmp_path: Path) -> None:
+    """Nazwa pola to tekst z pliku (np. login wpisany ręcznie w złe miejsce), a zdanie trafia do Logów Centrum i do
+    Zgłoszenia, więc mówi tylko, które to pole od góry (przegląd #1529 r2, D2)."""
+
+    app = centrum(tmp_path)
+    app.settings_path.parent.mkdir(parents=True)
+    app.settings_path.write_text(f"schema_version: 1\nmotyw: light\n{LEAKED_LOGIN}: {LEAKED_NAME}\n", encoding="utf-8")
+
+    response = app.client.get("/api/settings")
+
+    assert response.json()["folders_problem"] == {"field": None, "message": settings_messages.unknown_key(SETTINGS_FILE, 3)}
+    assert LEAKED_LOGIN not in response.text + app.tool.log_path.read_text(encoding="utf-8")
+
+
 def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosciami_domyslnymi(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.settings_path.parent.mkdir(parents=True)
@@ -320,7 +335,7 @@ def test_nieistniejacy_zapamietany_folder_okresow_jest_wyraznie_oznaczony(tmp_pa
 def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a_nie_brakujace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_checks: Callable[[pytest.MonkeyPatch], None]
 ) -> None:
-    """Ustawienia taty mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
+    """Ustawienia Centrum mówią o nich to, co Diagnoza („Nie da się teraz odczytać”), a nie „Nie ma już” ani błąd."""
 
     onedrive = tmp_path / "OneDrive"
     register = onedrive / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
@@ -353,7 +368,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
 
 @NO_ACCESS_ON_WINDOWS
 def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Path) -> None:
-    """Plik Ustawień taty trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
+    """Plik Ustawień Centrum trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
 
     app, _ = with_periods_directory(tmp_path)
 
@@ -456,7 +471,7 @@ def test_motyw_jasny_jest_zapamietany(tmp_path: Path) -> None:
 
 
 SETTINGS_NOT_SAVED = (
-    "Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
+    "Nie udało się zapisać Ustawień Centrum w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, "
     "nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie."
 )
 AUTOSTART_NOT_CHANGED = (
@@ -1154,16 +1169,25 @@ def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
         pytest.param("schema_version: 1\nworkers:\n  a: A\n  A: B\n", "identyfikator Wykonawcy stoi dwa razy", id="login-dwa-razy"),
     ],
 )
-def test_zla_konfiguracja_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
+def test_zly_stary_plik_wykonawcow_nie_daje_listy_a_historia_ma_powod_odrzucenia(
     tmp_path: Path, mapping: str, reason: str
 ) -> None:
+    """Odrzucone przeniesienie to zły stan Listy Wykonawców bez ostatniej dobrej, także przy następnym starcie, nigdy
+    pusta dobra lista: tata nie może pomyśleć, że Wykonawców nie ma (przegląd #1529 r1, D1)."""
+
     tool = ToolDirectory(tmp_path)
     old_files(tool, mapping, OLD_ADDRESSES)
 
     workers, rows = migrated(tool)
+    after_restart, _ = migrated(tool)
 
     assert not tool.worker_list.exists()
-    assert workers["workers"] == []
+    assert workers == after_restart == {
+        "state": "bad",
+        "workers": [],
+        "unresolved": [],
+        "problem": {"field": None, "message": settings_messages.worker_list_not_created()},
+    }
     assert [(row["source"], row["refused"], row["reason"]) for row in rows] == [
         ("release", True, settings_messages.workers_not_moved(OLD_MAPPING_FILE, reason))
     ]
@@ -1341,14 +1365,38 @@ def test_zly_plik_listy_wykonawcow_mowi_wpis_po_numerze_bez_loginu_nazwy_i_adres
     assert leaks == []
 
 
-def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej(tmp_path: Path) -> None:
+def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
+    """DESIGN §4.3: karta i Logi Uruchomienia mówią, że proces użył ostatniej dobrej listy, z linkiem do sekcji
+    Wykonawcy (przegląd #1529 r1, D2)."""
+
     centrum_ = settling_centrum(tmp_path)
     centrum_.client.get("/api/settings")
     centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
 
     view = run_to_end(centrum_, dry_run=True)
 
+    warning = Message.of(diagnosis_messages.worker_list_last_good(settings_messages.damaged(WORKERS_FILE))).model_dump()
     assert (view["result"]["result"], view["result"]["ending"]) == ("OK", "finished")
+    assert (view["result"]["warnings"][0], warning["setting"]) == (warning, "wykonawcy")
+
+
+def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_nie_pozniejsza(tmp_path: Path) -> None:
+    """D9: Diagnoza wyjaśnia to Uruchomienie, więc zła lista ze startu zostaje w Diagnozie po naprawie pliku, a lista
+    zepsuta po starcie do niej nie trafia (przegląd #1529 r1, D2)."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    good = centrum_.tool.worker_list.read_bytes()
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    bad_at_start = stopped_for_maks(centrum_)
+    centrum_.tool.worker_list.write_bytes(good)
+    fixed_later = centrum_.client.post(f"/api/runs/{bad_at_start}/diagnosis").json()
+
+    [worker_list] = [check for check in fixed_later["checks"] if check["label"] == "Lista Wykonawców"]
+    assert (worker_list["state"], worker_list["detail"]) == (
+        "failed",
+        diagnosis_messages.worker_list_bad(settings_messages.damaged(WORKERS_FILE)).what,
+    )
 
 
 def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic(tmp_path: Path) -> None:

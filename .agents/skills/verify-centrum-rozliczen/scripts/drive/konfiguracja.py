@@ -10,15 +10,31 @@ import re
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, move, open_settings, read_bytes, remove, served_version, settings_window, unreadable, version_line
+from playwright.sync_api import ViewportSize
+
+from drive.common import (
+    Run,
+    dad_tab,
+    move,
+    open_settings,
+    read_bytes,
+    remove,
+    served_version,
+    settings_window,
+    unreadable,
+    version_line,
+)
 from drive.teksty import UPDATE_BUTTON
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from atrapy.workbooks import EXCEL_LOCK_PREFIX, excel_lock
 
 TEMPLATE_LABELS = ("Wzorzec rozliczenia wewnętrznego", "Wzorzec pliku zbiorczego", "Wzorzec rozliczenia pracownika")
 INACCESSIBLE_TEMPLATE = "Nie można teraz odczytać wzorca. Plik może być zajęty przez inny program."
-INACCESSIBLE_WORKER_LIST = "Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program."
-WORKER_LIST_PLACE = "Lista Wykonawców w Ustawieniach Centrum"
+NARROW_VIEWPORT: ViewportSize = {"width": 390, "height": 844}
+# Synthetic matters left by moving the old Wykonawcy files, as the migration writes them (ADR 0032, DESIGN §4.2).
+UNRESOLVED_LOGIN, UNRESOLVED_ADDRESS = "obcy.login", "obcy.login@przyklad.invalid"
+UNRESOLVED_SENTENCE = "Adresów Wykonawców nie przeniesiono ze starego pliku adresy-wykonawcow.yaml w folderze config."
 
 
 def _configuration_snapshot(files: dict[str, Path]) -> dict[str, tuple[bytes, int]]:
@@ -61,6 +77,42 @@ def _expect_badge_icon(page: Page, label: str, color: str) -> None:
     expect(icon).to_have_class(re.compile(rf"(^|\s){color}(\s|$)"))
 
 
+def _workers_answer(run: Run, name: str) -> dict[str, object]:
+    workers = run.api("/api/settings", name)["workers"]
+    assert isinstance(workers, dict)
+    return workers
+
+
+def _parts(workers: dict[str, object]) -> tuple[object, list[object], list[object]]:
+    """State, Wykonawcy and matters to settle of the server's Lista Wykonawców."""
+
+    listed, unresolved = workers["workers"], workers["unresolved"]
+    assert isinstance(listed, list) and isinstance(unresolved, list)
+    return workers["state"], listed, unresolved
+
+
+def _names(workers: dict[str, object]) -> list[object]:
+    return [worker["name"] for worker in _parts(workers)[1] if isinstance(worker, dict)]
+
+
+def _listed(window: Locator) -> list[str | None]:
+    """The names of the Wykonawcy in the section Wykonawcy, top to bottom (each list item is named by its Wykonawca)."""
+
+    return [item.get_attribute("aria-label") for item in window.get_by_role("list", name="Wykonawcy").get_by_role("listitem").all()]
+
+
+def _narrow_capture(run: Run, page: Page, name: str) -> None:
+    """The section Wykonawcy in a phone-sized window of Dad's browser, for the screenshot ``name``."""
+
+    with dad_tab(page, viewport=NARROW_VIEWPORT) as narrow:
+        # On a phone the menu with the gear is folded away, so Dad comes by the address of the section.
+        narrow.goto(run.url + "#/ustawienia/wykonawcy")
+        expect(settings_window(narrow).get_by_role("heading")).to_have_text("Ustawienia/Wykonawcy")
+        width = narrow.evaluate("document.documentElement.scrollWidth")
+        run.check(width <= NARROW_VIEWPORT["width"], f"the section Wykonawcy fits {NARROW_VIEWPORT['width']} px without scrolling sideways")
+        run.capture(narrow, name)
+
+
 def _template_answer(run: Run, name: str, label: str) -> dict[str, object]:
     templates = run.api("/api/configuration", name)["templates"]
     assert isinstance(templates, list)
@@ -87,10 +139,12 @@ def drive(run: Run, page: Page) -> None:
         == [(label, "ready") for label in TEMPLATE_LABELS],
         "the server reports all three Wzorce present and readable",
     )
+    workers = _workers_answer(run, "konfiguracja-gotowa-wykonawcy")
     run.check(
-        configuration["workers"] == {"state": "ready", "names": run.fixture["workers"]},
-        "the server lists the Wykonawcy in the order of the konfiguracja wykonawców",
+        (workers["state"], _names(workers), _parts(workers)[2]) == ("good", run.fixture["workers"], []),
+        "the server lists the Wykonawcy in the order of the Lista Wykonawców, with nothing left to settle",
     )
+    run.check("workers" not in configuration, "the configuration no longer carries the Wykonawcy: one source, the Ustawienia")
     commit, since = served_version(run)
     run.check(
         configuration["version"] == {"commit": commit[:7], "since": since},
@@ -101,7 +155,12 @@ def drive(run: Run, page: Page) -> None:
     expect(alerts).to_have_count(0)
     run.capture(page, "10-konfiguracja-gotowa")
     open_settings(page, "Wykonawcy")
-    expect(window.get_by_role("list", name="Wykonawcy").get_by_role("listitem")).to_have_text(run.fixture["workers"])
+    expect(window.get_by_role("list", name="Wykonawcy").get_by_role("listitem")).to_have_count(len(run.fixture["workers"]))
+    run.check(_listed(window) == run.fixture["workers"], "the section Wykonawcy lists the active Wykonawcy in file order")
+    first = window.get_by_role("listitem", name=run.fixture["workers"][0], exact=True)
+    expect(first).to_contain_text("@przyklad.invalid")
+    run.capture(page, "10b-konfiguracja-wykonawcy")
+    _narrow_capture(run, page, "10a-konfiguracja-wykonawcy-waski")
     open_settings(page, "Narzędzie")
     expect(window.get_by_role("listitem", name="Wersja narzędzia").get_by_text(version_line(commit, since), exact=True)).to_be_visible()
     run.check(True, "the window shows the same Wzorce, Wykonawcy, and version, with no problem")
@@ -191,42 +250,81 @@ def drive(run: Run, page: Page) -> None:
     finally:
         move(moved, worker_template)
 
-    run.step(feature, "konfiguracja-nieczytelna-konfiguracja-wykonawcow")
-    worker_config = files["worker_template"].parent / WORKERS_FILE
-    moved = worker_config.with_name(worker_config.name + ".przeniesiony")
-    move(worker_config, moved)
+    run.step(feature, "konfiguracja-zla-lista-wykonawcow")
+    worker_list = files["worker_template"].parent / WORKERS_FILE
+    moved = worker_list.with_name(worker_list.name + ".przeniesiony")
+    move(worker_list, moved)
     try:
-        worker_config.write_text("schema_version: 1\nwykonawcy: [niedomknięta lista\n", encoding="utf-8")
+        worker_list.write_text("schema_version: 1\nwykonawcy: [niedomknięta lista\n", encoding="utf-8")
         page.reload()
         open_settings(page, "Wykonawcy")
-        # The same message as the Diagnoza step of the Lista Wykonawców.
-        message = alerts.filter(has_text="Lista Wykonawców ma złe ustawienie.")
-        expect(message).to_contain_text(f"Plik {WORKERS_FILE} w folderze config ma uszkodzoną treść.")
-        expect(message).to_contain_text(WORKER_LIST_PLACE)
-        expect(window.get_by_role("list", name="Wykonawcy")).to_have_count(0)
-        workers = run.api("/api/configuration", "konfiguracja-nieczytelna-konfiguracja-wykonawcow")["workers"]
-        assert isinstance(workers, dict)
-        run.check(workers["state"] == "unreadable", "the server reports the konfiguracja wykonawców as unreadable")
-        run.capture(page, "14-konfiguracja-nieczytelna-konfiguracja-wykonawcow")
+        sentence = settings_messages.damaged(WORKERS_FILE)
+        expect(alerts.filter(has_text=sentence)).to_have_count(1)
+        expect(window.get_by_text("Na liście nie ma jeszcze Wykonawców.")).to_have_count(0)
+        run.check(
+            _listed(window) == run.fixture["workers"],
+            "a broken Lista Wykonawców keeps showing the last good list under the sentence, never an empty good list",
+        )
+        workers = _workers_answer(run, "konfiguracja-zla-lista-wykonawcow")
+        run.check(
+            (workers["state"], workers["problem"]) == ("bad", {"field": None, "message": sentence}),
+            "the server reports the Lista Wykonawców as bad, with the sentence and the last good list",
+        )
+        run.capture(page, "14-konfiguracja-zla-lista-wykonawcow")
+        _narrow_capture(run, page, "14b-konfiguracja-zla-lista-wykonawcow-waski")
     finally:
-        remove(worker_config, missing_ok=True)
-        move(moved, worker_config)
+        remove(worker_list, missing_ok=True)
+        move(moved, worker_list)
 
-    run.step(feature, "konfiguracja-niedostepna-konfiguracja-wykonawcow")
-    with unreadable(worker_config):
+    run.step(feature, "konfiguracja-niedostepna-lista-wykonawcow")
+    with unreadable(worker_list):
         page.reload()
-        # The same message as the Diagnoza step of the Lista Wykonawców.
-        message = alerts.filter(has_text=INACCESSIBLE_WORKER_LIST)
-        expect(message).to_contain_text(WORKER_LIST_PLACE)
+        message = alerts.filter(has_text=settings_messages.worker_list_unreadable())
+        expect(message).to_have_count(1)
         run.check(
             all(word not in message.inner_text() for word in ("uszkodzon", "niepoprawn")),
-            "a konfiguracja wykonawców without access is niedostępna, never uszkodzona or niepoprawna",
+            "a Lista Wykonawców without access is niedostępna, never uszkodzona or niepoprawna",
         )
         expect(window.get_by_role("list", name="Wykonawcy")).to_have_count(0)
-        workers = run.api("/api/configuration", "konfiguracja-niedostepna-konfiguracja-wykonawcow")["workers"]
-        assert isinstance(workers, dict)
-        run.check(workers["state"] == "unreadable", "the server reports the konfiguracja wykonawców as unreadable")
-        run.capture(page, "14a-konfiguracja-niedostepna-konfiguracja-wykonawcow")
+        expect(window.get_by_role("button", name="Spróbuj ponownie")).to_be_visible()
+        workers = _workers_answer(run, "konfiguracja-niedostepna-lista-wykonawcow")
+        run.check(
+            (workers["state"], workers["problem"])
+            == ("unreadable", {"field": None, "message": settings_messages.worker_list_unreadable()}),
+            "the server reports the Lista Wykonawców as unreadable, with the sentence the section shows",
+        )
+        run.capture(page, "14a-konfiguracja-niedostepna-lista-wykonawcow")
+
+    run.step(feature, "konfiguracja-do-rozstrzygniecia")
+    move(worker_list, moved)
+    try:
+        print("  harness: the Lista Wykonawców gets the matters a migration of the old files leaves for Dad", flush=True)
+        worker_list.write_bytes(
+            read_bytes(moved)
+            + (
+                "do_rozstrzygniecia:\n"
+                f"  - {{login: {UNRESOLVED_LOGIN}, adresy: [{UNRESOLVED_ADDRESS}], powod: login_bez_wykonawcy}}\n"
+                f"  - {{powod: adresy_nieprzeniesione, zdanie: '{UNRESOLVED_SENTENCE}'}}\n"
+            ).encode("utf-8")
+        )
+        page.reload()
+        open_settings(page, "Wykonawcy")
+        matters = window.get_by_role("list", name="Do rozstrzygnięcia").get_by_role("listitem")
+        expect(matters).to_have_count(2)
+        expect(matters.nth(0)).to_contain_text(UNRESOLVED_LOGIN)
+        expect(matters.nth(0)).to_contain_text(UNRESOLVED_ADDRESS)
+        expect(matters.nth(1)).to_have_text(UNRESOLVED_SENTENCE)
+        run.check(_listed(window) == run.fixture["workers"], "the matters stand above the unchanged list, one sentence each")
+        workers = _workers_answer(run, "konfiguracja-do-rozstrzygniecia")
+        run.check(
+            (workers["state"], len(_parts(workers)[2])) == ("good", 2),
+            "the server gives the two matters with a good list",
+        )
+        run.capture(page, "14c-konfiguracja-do-rozstrzygniecia")
+        _narrow_capture(run, page, "14d-konfiguracja-do-rozstrzygniecia-waski")
+    finally:
+        remove(worker_list, missing_ok=True)
+        move(moved, worker_list)
 
     run.step(feature, "konfiguracja-bez-zmian")
     page.reload()
@@ -235,5 +333,5 @@ def drive(run: Run, page: Page) -> None:
         _shown_as_ready(page, label)
     run.check(
         _configuration_snapshot(files) == before,
-        "the konfiguracja wykonawców and every Wzorzec keep their bytes and modification times; no lock file is left",
+        "the Lista Wykonawców and every Wzorzec keep their bytes and modification times; no lock file is left",
     )

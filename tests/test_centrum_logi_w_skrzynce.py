@@ -55,6 +55,7 @@ from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 from rozliczenia.domain import RunMode
 
 from atrapy.skrzynka import BoxIssue
+from atrapy.workbooks import excel_lock
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
     CentrumClient,
@@ -514,22 +515,24 @@ def test_inna_wada_sprawdzenia_za_tym_samym_wyjasnieniem_zmienia_komentarz_logow
     run_id = unexpected_exception(centrum)
     thread_with(centrum, comments=1)
     centrum.configuration.worker_template.write_bytes(b"to nie jest skoroszyt")
-    workers = centrum.tool.worker_list
-    workers.write_bytes("wykonawcy: [".encode())
-    not_yaml = diagnose(centrum, run_id)
+    # Pliki okresu Diagnoza czyta na dysku przy każdym pytaniu (Listę Wykonawców bierze z migawki startu, D9).
+    collective = centrum.collective_file.read_bytes()
+    centrum.collective_file.unlink()
+    without_collective_file = diagnose(centrum, run_id)
     sent = [diagnosed_logs(centrum, edits=1)]
 
-    workers.write_bytes("wykonawcy: ż".encode("cp1250"))
-    not_utf8 = diagnose(centrum, run_id)
+    centrum.collective_file.write_bytes(collective)
+    excel_lock(centrum.collective_file).write_bytes(b"")
+    open_in_excel = diagnose(centrum, run_id)
 
     sent.append(diagnosed_logs(centrum, edits=2))
-    label = "Lista Wykonawców"
-    assert [diagnosis["explanation"] for diagnosis in (not_yaml, not_utf8)] == [not_yaml["explanation"]] * 2
-    assert check_detail(not_yaml, label) != check_detail(not_utf8, label)
+    diagnoses = (without_collective_file, open_in_excel)
+    assert [diagnosis["explanation"] for diagnosis in diagnoses] == [without_collective_file["explanation"]] * 2
     logged = [logs["diagnosis"] for logs in sent]
-    checks = [next(check for check in diagnosis["checks"] if check["label"] == label) for diagnosis in logged]
-    assert [(check["code"], check["detail"]) for check in checks] == [
-        ("ZLA_LISTA_WYKONAWCOW", check_detail(diagnosis, label)) for diagnosis in (not_yaml, not_utf8)
+    failed = [[(check["label"], check["code"]) for check in diagnosis["checks"] if check["state"] == "failed"] for diagnosis in logged]
+    assert [rows[1:] for rows in failed] == [
+        [("Folder okresu", "BRAK_PLIKU_ZBIORCZEGO")],
+        [("Pliki okresu w Excelu", "PLIK_OKRESU_OTWARTY")],
     ]
 
 

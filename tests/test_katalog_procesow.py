@@ -243,7 +243,7 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     diagnosis = client.post(f"/api/runs/{view['run']['id']}/diagnosis").json()
     labels = [check["label"] for check in diagnosis["checks"]]
 
-    assert labels[:2] == ["Ustawienia taty", "Pliki w OneDrive"]
+    assert labels[:2] == ["Ustawienia Centrum", "Pliki w OneDrive"]
     assert labels[-3:] == ["Aktualność narzędzia", "Token do Zgłoszeń", "Dziennik Centrum rozliczeń"]
     assert ("Folder okresu" in labels) is declaration.reads_period_folder
     assert ("Pliki okresu w Excelu" in labels) is declaration.reads_period_folder

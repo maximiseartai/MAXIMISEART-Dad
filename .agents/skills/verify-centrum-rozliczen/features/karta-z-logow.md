@@ -30,7 +30,7 @@ card is not there. Dad never reads the word Logi.
 Preconditions:
 
 - Centrum is served for this run with `DOCTOR OK`; the drive points it to the fixture's files if no feature did (`ensure_files_set`).
-- `INEA/29_05_10_2026` has Status okresu `Plik zbiorczy przygotowany`, with a Wykonawca the konfiguracja wykonawców does not know (`fixture.json` → `settlement.needs_check`).
+- `INEA/29_05_10_2026` has Status okresu `Plik zbiorczy przygotowany`, with a Wykonawca the Lista Wykonawców does not know (`fixture.json` → `settlement.needs_check`).
 - The Rejestr zleceń ends `06_12_10_2026` on a Saturday, so its RUN asks the incomplete-period Decyzja.
 
 - **Before closing.** `#/uruchomienia` → `Nowe Uruchomienie procesu` → radio `Przebieg rozliczeń` (combobox `Okres` shows `29_05_10_2026`) → `Podgląd bez zapisu`. Label `Wynik` shows `Podgląd wymaga sprawdzenia · nic nie zapisano`; `api/karta-przed-zamknieciem.json`; exactly one new file in `logs/uruchomienia/`. Capture `210`.

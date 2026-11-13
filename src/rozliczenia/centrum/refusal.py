@@ -120,7 +120,7 @@ def register_missing(register: str) -> Refusal:
 def settings_not_saved() -> Refusal:
     return _refused(
         500,
-        "Nie udało się zapisać Ustawień taty w folderze config. "
+        "Nie udało się zapisać Ustawień Centrum w folderze config. "
         + explorer_check("folder", "spróbuj ponownie", read_only=True),
     )
 

@@ -539,6 +539,11 @@ worker_list_unreadable [NIEDOSTEPNA_LISTA_WYKONAWCOW]
   Gdzie: Lista Wykonawców w Ustawieniach Centrum
   Co zrobić: Zamknij program, który może trzymać plik, i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
 
+worker_list_last_good [LISTA_WYKONAWCOW_OSTATNIA_DOBRA]
+  Co się stało: Uruchomienie użyło ostatniej dobrej Listy Wykonawców, bo bieżąca ma złe ustawienie. Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy.
+  Gdzie: Lista Wykonawców w Ustawieniach Centrum
+  Co zrobić: Otwórz Ustawienia, sekcję Wykonawcy, i popraw wskazane pole, zanim uruchomisz następny proces.
+
 === Uzupełnienie pliku zbiorczego (src/rozliczenia/centrum/fill_messages.py) ===
 
 collective_file_unusable #1 [BRAK_PLIKU_ZBIORCZEGO]
@@ -1390,6 +1395,12 @@ worker_address_repeated [zdanie]
 workers_not_moved [zdanie]
   Listy Wykonawców nie utworzono ze starego pliku worker_mapping.yaml w folderze config: plik nie jest poprawnym YAML. Dodaj Wykonawców w Ustawieniach.
 
+worker_list_not_created [zdanie]
+  Listy Wykonawców nie ma: nie udało się jej utworzyć ze starych plików Wykonawców w folderze config. Powód jest w Historii.
+
+worker_list_unreadable [zdanie]
+  Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program. Spróbuj za chwilę.
+
 addresses_not_moved [zdanie]
   Adresów Wykonawców nie przeniesiono ze starego pliku adresy-wykonawcow.yaml w folderze config: ten sam adres stoi dwa razy. Dopisz je Wykonawcom w Ustawieniach.
 
@@ -1429,7 +1440,7 @@ register_missing [HTTP 404]
   Nie ma Rejestru zleceń ZLECENIA INTERMAX OD 08_11_2021.xlsx. Wybierz właściwy plik w Ustawieniach.
 
 settings_not_saved [HTTP 500]
-  Nie udało się zapisać Ustawień taty w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie.
+  Nie udało się zapisać Ustawień Centrum w folderze config. Sprawdź, czy folder otwiera się w Eksploratorze plików, nie jest tylko do odczytu i czy OneDrive działa, potem spróbuj ponownie.
 
 setting_refused [HTTP 422]
   Folder okresów trzeba podać pełną ścieżką. Wybierz go oknem wyboru.

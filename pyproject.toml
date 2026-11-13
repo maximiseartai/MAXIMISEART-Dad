@@ -185,7 +185,7 @@ extend-select = [
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
 "rozliczenia.tool_files.settings_file".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
-# Lista Wykonawców zastąpiła Konfigurację wykonawców i plik adresów (#1473): stare pliki czyta tylko przeniesienie
+# Lista Wykonawców zastąpiła stary plik Wykonawców i plik adresów (#1473): stare pliki czyta tylko przeniesienie
 # rozliczenia.centrum.settings.migrations.workers, a drugi czytelnik obok niego ominąłby Listę Wykonawców taty.
 "rozliczenia.tool_files.WORKER_CONFIG".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); nazwę pliku daje WORKERS_FILE"
 "rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"

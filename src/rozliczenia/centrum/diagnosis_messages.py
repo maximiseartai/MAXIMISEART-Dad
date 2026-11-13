@@ -73,6 +73,20 @@ def worker_list_bad(sentence: str) -> Message:
         what=f"Lista Wykonawców ma złe ustawienie. {sentence}",
         where=_WORKER_LIST,
         action="Otwórz Ustawienia, sekcję Wykonawcy, popraw wskazane pole i uruchom ponownie.",
+        setting="wykonawcy",
+    )
+
+
+def worker_list_last_good(sentence: str) -> Message:
+    """Uruchomienie biegnie na ostatniej dobrej Liście Wykonawców, bo plik ma złe ustawienie; ``sentence`` to zdanie
+    właściciela Ustawień, bez nazwy, loginu i adresu."""
+
+    return Message(
+        code="LISTA_WYKONAWCOW_OSTATNIA_DOBRA",
+        what=f"Uruchomienie użyło ostatniej dobrej Listy Wykonawców, bo bieżąca ma złe ustawienie. {sentence}",
+        where=_WORKER_LIST,
+        action="Otwórz Ustawienia, sekcję Wykonawcy, i popraw wskazane pole, zanim uruchomisz następny proces.",
+        setting="wykonawcy",
     )
 
 
@@ -84,4 +98,5 @@ def worker_list_unreadable() -> Message:
         what="Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program.",
         where=_WORKER_LIST,
         action=f"Zamknij program, który może trzymać plik, i uruchom ponownie. {IF_ERROR_RETURNS}",
+        setting="wykonawcy",
     )

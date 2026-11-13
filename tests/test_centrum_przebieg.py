@@ -231,6 +231,7 @@ def test_podglad_z_nieznanym_wykonawca_wymaga_sprawdzenia_inaczej_niz_sukces(tmp
                 "Popraw WYKONAWCĘ w kolumnie H albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście "
                 "Wykonawców. Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
             ),
+            "setting": "wykonawcy",
         }
     ]
     assert [(figure["label"], figure["value"], figure["unit"]) for figure in view["progress"]["figures"]] == [

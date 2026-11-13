@@ -2,7 +2,7 @@
 
 Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check`` co minutę od startu Centrum do jego
 zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i poza porą przypomnień (``reminder_pora``) nic nie
-robi. W porze czyta Ustawienia taty (INTERMAX, folder okresów), z ``config`` dzień wdrożenia przypomnień
+robi. W porze czyta Ustawienia Centrum (INTERMAX, folder okresów), z ``config`` dzień wdrożenia przypomnień
 (``REMINDERS_ROLLOUT``, bez niego nic nie wysyła), Listę Wykonawców z migawki Ustawień Centrum i stopkę taty
 (``REMINDERS_FOOTER``), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
@@ -303,7 +303,7 @@ def due_reminders(
     files: DadFiles,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: dzień wdrożenia
-    i stopka z ``config``, Ustawienia taty i Lista Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
+    i stopka z ``config``, Ustawienia Centrum z Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``. Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""

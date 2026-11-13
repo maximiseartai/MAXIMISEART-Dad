@@ -30,7 +30,7 @@ class ListedWorker(Model):
 
 
 class UnmatchedLogin(Model):
-    """Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców."""
+    """Adresy przy loginie, którego nie miał żaden Wykonawca starego pliku Wykonawców (``worker_mapping.yaml``)."""
 
     reason: Literal["login_bez_wykonawcy"]
     login: str
@@ -49,7 +49,7 @@ Unresolved = Annotated[UnmatchedLogin | AddressesNotMoved, Field(discriminator="
 
 class WorkerListSetting(Model):
     """Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
-    ``unreadable`` (system nie daje teraz czytać pliku, lista pusta)."""
+    ``unreadable`` (system nie daje teraz czytać pliku: lista pusta, ``problem`` bez pola ze zdaniem dla taty)."""
 
     state: Literal["good", "bad", "unreadable"]
     workers: list[ListedWorker]

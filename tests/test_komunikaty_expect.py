@@ -157,6 +157,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "workers_not_moved": [
                 partial(settings_messages.workers_not_moved, OLD_MAPPING_FILE, "plik nie jest poprawnym YAML")
             ],
+            "worker_list_not_created": [settings_messages.worker_list_not_created],
+            "worker_list_unreadable": [settings_messages.worker_list_unreadable],
             "addresses_not_moved": [
                 partial(settings_messages.addresses_not_moved, OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy")
             ],

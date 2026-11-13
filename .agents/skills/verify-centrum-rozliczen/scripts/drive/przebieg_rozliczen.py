@@ -449,7 +449,7 @@ def drive(run: Run, page: Page) -> None:
     result = finished_result(run, "przebieg-wymaga-sprawdzenia")
     run.check(
         (result["result"], result["next_action"]) == ("WYMAGA_SPRAWDZENIA", "rerun"),
-        "a Wykonawca missing from the konfiguracja wykonawców gives Wymaga sprawdzenia, not a success",
+        "a Wykonawca missing from the Lista Wykonawców gives Wymaga sprawdzenia, not a success",
     )
     run.check(
         not (Path(run.fixture["periods_directory"]) / needs_check / f"Rozliczenie pracowników {needs_check}").exists(),

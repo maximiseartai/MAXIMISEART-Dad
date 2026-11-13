@@ -2,7 +2,7 @@
 
 This is the production app (``create_app`` + ``serve`` from ``rozliczenia.centrum``)
 with run-local inputs: the settings file, the configuration directory
-(konfiguracja wykonawców and the three Wzorce), and the metrics files of the processes live in
+(Lista Wykonawców and the three Wzorce), and the metrics files of the processes live in
 the run root and ``File.FIXTURE`` names them (never Dad's files next to the tool), and the platform adapter,
 the production boundary for Dad's computer, is scripted.
 Every file of the run root named below by a member of ``harness.py`` is the file of that member; without it the

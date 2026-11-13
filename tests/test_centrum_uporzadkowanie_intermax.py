@@ -51,6 +51,7 @@ from atrapy.intermax import (
     Intermax,
     Order,
 )
+from atrapy.settlement import write_worker_list
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.intermax_disk import denied, failing_replace
@@ -94,6 +95,20 @@ def test_bez_wskazanego_rejestru_zlecen_karta_mowi_co_ustawic_a_start_jest_odrzu
     assert (started.status_code, started.json()) == (409, {"message": "Najpierw wskaż INTERMAX."})
     assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
     assert centrum.client.get("/api/intermax/days").json() == {"days": [], "problem": None}
+
+
+def test_uporzadkowanie_bez_listy_wykonawcow_nie_ostrzega_o_jej_zlym_ustawieniu(tmp_path: Path) -> None:
+    """Ostrzeżenie o ostatniej dobrej Liście Wykonawców ma tylko proces, który jej używa (DESIGN §4.3)."""
+
+    centrum = ordering_centrum(tmp_path)
+    write_worker_list(centrum.tool.worker_list)
+    centrum.client.get("/api/settings")
+    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    view = centrum.run_to_end()
+
+    assert view["result"]["ending"] == "finished"
+    assert not [warning for warning in view["result"]["warnings"] if warning.get("setting") == "wykonawcy"]
 
 
 def test_karta_mowi_ze_intermax_jest_otwarty_w_excelu_az_do_jego_zamkniecia(tmp_path: Path) -> None:
@@ -462,14 +477,14 @@ def test_zatrzymanie_do_maksa_prowadzi_do_diagnozy_intermax_i_zgloszenia(tmp_pat
     assert diagnosis.status_code == 200
     checks = {check["label"]: (check["state"], check["detail"]) for check in diagnosis.json()["checks"]}
     assert list(checks) == [
-        "Ustawienia taty",
+        "Ustawienia Centrum",
         "Pliki w OneDrive",
         "INTERMAX",
         "Aktualność narzędzia",
         "Token do Zgłoszeń",
         "Dziennik Centrum rozliczeń",
     ]
-    assert checks["Ustawienia taty"] == ("passed", "INTERMAX jest na miejscu.")
+    assert checks["Ustawienia Centrum"] == ("passed", "INTERMAX jest na miejscu.")
     assert checks["Pliki w OneDrive"] == ("passed", "Sprawdzone pliki są na tym komputerze: 1.")
     assert checks["INTERMAX"] == ("passed", "Nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")
     assert diagnosis.json()["next_action"] == "report"
@@ -505,7 +520,7 @@ def test_diagnoza_mowi_ktorego_intermax_z_ustawien_taty_nie_ma(tmp_path: Path) -
     assert diagnosis["explanation"]["what"] == "Nie znaleziono INTERMAX. INTERMAX nie został zmieniony."
     assert diagnosis["next_action"] == "rerun"
     states = {check["label"]: check["state"] for check in diagnosis["checks"]}
-    assert (states["Ustawienia taty"], states["INTERMAX"]) == ("failed", "not_checked")
+    assert (states["Ustawienia Centrum"], states["INTERMAX"]) == ("failed", "not_checked")
 
 
 @pytest.mark.parametrize(
