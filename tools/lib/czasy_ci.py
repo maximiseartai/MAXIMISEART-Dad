@@ -3,10 +3,10 @@
 Zapis zadania (``Zapis``, ``wczytaj``). Każde zadanie ``pytest`` i ``mutations`` zapisuje jeden plik JSON
 (``tools/ci/zapis_czasow.py zadanie``, artefakt ``czasy-zadanie-<zadanie>-<indeks macierzy>-<próba>``, 7 dni):
 
-    {"wersja": 1, "run": 40259456807, "proba": 1, "szablon": "pytest", "zadanie": "pytest (Python 3.14, 1/4)",
-     "tor": "windows-3.14", "zdarzenie": "push", "sha": "31bb7651...", "narzut_s": 17.0,
+    {"wersja": 1, "run": 43473166640, "proba": 1, "szablon": "pytest", "zadanie": "pytest (Python 3.13, 1/4)",
+     "tor": "windows-3.13", "zdarzenie": "push", "sha": "c11a455d...", "narzut_s": 17.0,
      "jednostki": [{"klucz": "pytest:tests/test_adr.py", "s": 0.412, "status": "ok", "testy": 3}, ...], "bledy": [],
-     "plan": "9f2c...", "zadanie_planu": "windows-3.14-1"}
+     "plan": "9f2c...", "zadanie_planu": "windows-3.13-1"}
 
 Tor to system runnera i jego Python (``windows-3.13``, ``windows-3.14``, ``linux-3.14``). Klucz jednostki nie zależy od
 podziału na zadania, więc para tor i klucz wskazuje tę samą pracę w każdym runie:
@@ -26,8 +26,8 @@ testów: ile jego testów (``<testcase>``) jest w junit zadania. ``plan`` to ``d
 Scalenie. Na pushu do main ``Required CI status`` scala zapisy runu w ``czasy-ci.json`` (``tools/ci/zapis_czasow.py
 scal``, artefakt ``czasy-ci``, 30 dni), jedyne źródło czasów CI:
 
-    {"wersja": 1, "runy": [{"run": 40259456807, "proba": 1, "sha": "31bb7651...", "zdarzenie": "push"}],
-     "tory": {"windows-3.14": {"narzut:pytest": [{"run": 40259456807, "proba": 1, "zadanie": "...", "s": 17.0, "status": "ok", "testy": null}],
+    {"wersja": 1, "runy": [{"run": 43473166640, "proba": 1, "sha": "c11a455d...", "zdarzenie": "push"}],
+     "tory": {"windows-3.13": {"narzut:pytest": [{"run": 43473166640, "proba": 1, "zadanie": "...", "s": 17.0, "status": "ok", "testy": null}],
                                "pytest:tests/test_adr.py": [...]}}}
 
 Obserwacje klucza idą po runie, próbie i zadaniu, więc te same zapisy dają ten sam plik bajt w bajt.
