@@ -149,21 +149,23 @@ def _dependency_files(command: str) -> set[str]:
     return files
 
 
-def test_zmiana_pliku_zaleznosci_zadan_krokow_skilli_uruchamia_kroki_skilli() -> None:
+def test_kroki_skilli_wybiera_dokladnie_plik_zaleznosci_z_ktorego_instaluje_zadanie_krokow_skilli() -> None:
     """Kroki skilli biegną w zadaniach planu poza pytest (Mutation checks, nocne skrypty skilli), a ich werdykty zależą od
     zainstalowanych bibliotek, także ruff i mypy bramy typów. Plik, z którego takie zadanie je instaluje, ma więc
-    uruchamiać każdy krok skilla (#293); dodatek dev zastąpił w nich ``requirements.txt``, a reguła została przy nim."""
+    uruchamiać każdy krok skilla (#293), a plik, z którego instaluje tylko pytest (``requirements.txt`` na Windows, jak
+    u taty), żadnego: zmiana w nim nie zmienia środowiska kroku, a wybiera każdy, więc tylko wydłuża run (Z9, 13.11)."""
 
     installed = {
         (workflow.name, name): set().union(*(_dependency_files(step["run"]) for step in job["steps"] if "pip install" in step.get("run", "")))
         for workflow in sorted(WORKFLOW.parent.glob("*.yml"))
         for name, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items()
-        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps")) and (workflow, name) != (WORKFLOW, "pytest")
+        if "tools/ci/wykonaj_zadanie.py" in str(job.get("steps"))
     }
+    skill_jobs = {job: files for job, files in installed.items() if job != (WORKFLOW.name, "pytest")}
 
-    assert set(installed) == {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
-    assert {job: files - set(Context.SKILL_STEPS.paths()) for job, files in installed.items()} == dict.fromkeys(installed, set()), installed
-    assert all(installed.values()), installed
+    assert set(skill_jobs) == {("ci.yml", "mutations"), ("mutacje-nocne.yml", "skill-mutations")}
+    assert all(skill_jobs.values()), skill_jobs
+    assert set(Context.SKILL_STEPS.paths()) & set().union(*installed.values()) == set().union(*skill_jobs.values()), installed
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOW.parent.glob("*.yml")), ids=lambda path: path.name)

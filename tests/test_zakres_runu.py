@@ -207,7 +207,8 @@ def test_plik_testow_ktory_siega_atrapy_efenix_potrzebuje_chromium_na_pull_reque
         ("tools/lib/ciezkie_ci.py", False),
         (".agents/skills/verify-a/scripts/sprawdz_a.py", True),
         (".agents/skills/verify-a/SKILL.md", True),
-        ("requirements.txt", True),
+        ("pyproject.toml", True),
+        ("requirements.txt", False),
         # Uruchamiacz kroku i silnik mutacji, który skrypt importuje, z każdym modułem, do którego silnik dochodzi.
         ("tools/ci/wykonaj_zadanie.py", True),
         ("tools/lib/kroki_skilli.py", True),
@@ -476,7 +477,8 @@ BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
         # Import sprawdzenia spoza pilnuje nie uruchamia podstawy na PR (ADR 0020): pełne CI main ją uruchamia.
         ("src/pakiet/pomocnik.py", False),
         (".agents/skills/verify-d/SKILL.md", True),
-        ("requirements.txt", True),
+        ("pyproject.toml", True),
+        ("requirements.txt", False),
         ("tools/ci/wykonaj_zadanie.py", False),
     ],
 )
@@ -577,7 +579,7 @@ def test_noca_podstawa_z_ci_czesci_biegnie_kazda_czescia_kazdego_n_a_pull_reques
     assert all(w.czesci == () for w in praca.wybrane if w.krok.verdict is not None)
 
 
-ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", "requirements.txt"
+ROUTING, ENGINE, LIBRARIES = "src/pakiet/routing.py", "tools/lib/silnik_mutacji.py", "pyproject.toml"
 FOLDER_C = ".agents/skills/verify-c/scripts/check_c_mutations.py"
 # Podstawa w częściach skilla bez pilnuje.
 BASELINE_E = ".agents/skills/verify-e/scripts/sprawdz_e.py"
