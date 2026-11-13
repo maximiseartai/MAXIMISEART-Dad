@@ -196,10 +196,11 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     assert not work.exists()
     assert ToolClone(clone).interrupted_update() is None
     events = [line.split(" ", 2)[1] for line in _log_lines(clone)]
-    # Zmiany Ustawień z Wydania stosuje tylko pierwszy start: nowa wersja ma je już w pamięci właściciela.
+    # Zmiany Ustawień z Wydania stosuje tylko pierwszy start (wpis zaraz po jego ``start``): nowa wersja ma je już w
+    # pamięci właściciela.
     assert events == [
-        "ustawienia-wydanie",
         "start",
+        "ustawienia-wydanie",
         "zamkniecie",
         "stop",
         "aktualizacja-koniec",
