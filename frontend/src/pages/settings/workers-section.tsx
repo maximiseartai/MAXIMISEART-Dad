@@ -270,7 +270,7 @@ function WorkerForm({ worker, initial, onDone }: { worker?: ListedWorker; initia
   return (
     <form
       aria-label={worker === undefined ? "Nowy Wykonawca" : `Wykonawca ${worker.name}`}
-      className="flex flex-col gap-4 border-t pt-4"
+      className={worker === undefined ? "flex flex-col gap-4" : "flex flex-col gap-4 border-t pt-4"}
       onSubmit={(event) => {
         event.preventDefault()
         save(false)

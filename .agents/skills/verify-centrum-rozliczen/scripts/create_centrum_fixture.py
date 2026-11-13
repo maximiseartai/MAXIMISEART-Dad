@@ -614,6 +614,9 @@ def dad_files(root: Path) -> dict[str, object]:
 
     ready_token = "22_28_09_2026"
     ready = _period_files(periods, ready_token)
+    # The settled period's Plik zbiorczy has the orders of the Wykonawcy whose Rozliczenia pracownika lie beside it, so
+    # the check of the periods before a removal of a Wykonawca reads it (wykonawcy.md).
+    _collective_file(ready / collective_file_name(ready_token), WORKER_IDS[:3])
     workers = ready / worker_settlements_name(ready_token)
     workers.mkdir()
     for worker in WORKERS:

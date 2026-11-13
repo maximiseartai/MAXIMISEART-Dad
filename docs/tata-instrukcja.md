@@ -49,7 +49,14 @@ W tym samym folderze `config` leży też Lista Wykonawców `wykonawcy.yaml`,
 czyli lista Twoich pracowników z ich adresami. Ten plik jest tylko na Twoim
 komputerze, nie w internecie. Plik `wykonawcy.example.yaml` obok to przykład z
 wymyślonymi nazwiskami; narzędzie z niego nie korzysta. Listę Wykonawców
-widzisz w oknie `Ustawienia`, w sekcji `Wykonawcy`.
+prowadzisz sam w oknie `Ustawienia`, w sekcji `Wykonawcy`: `Dodaj Wykonawcę`
+dodaje pracownika z loginem z kolumny `WYKONAWCA`, nazwą w jego Rozliczeniu
+pracownika i adresami maili, a `Edytuj` zmienia nazwę, adresy albo dopisuje
+drugi login; zmiana zapisuje się przyciskiem `Zapisz`. Przełącznik
+`Przypomnienia` wyłącza przypomnienia jednemu pracownikowi, np. na urlop.
+Pracownika, który ma zlecenia w Rejestrze zleceń albo w Pliku zbiorczym
+któregoś tygodnia, nie da się usunąć: gdy odchodzi, kliknij
+`Oznacz jako nieaktywnego`, a jego tygodnie dalej się rozliczą.
 
 ### Foldery tygodni
 

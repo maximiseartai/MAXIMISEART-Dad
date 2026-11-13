@@ -139,6 +139,20 @@ FEATURES = (
             "14d-konfiguracja-do-rozstrzygniecia-waski",
         ),
     ),
+    # Changes the Lista Wykonawców and brings it back to the fixture's bytes before it ends.
+    Feature(
+        "wykonawcy",
+        (
+            "380-wykonawcy-formularz",
+            "381-wykonawcy-odmowa-przy-polu",
+            "382-wykonawcy-zamkniecie-bez-zapisu",
+            "383-wykonawcy-stara-nazwa",
+            "384-wykonawcy-odmowa-usuniecia",
+            "385-wykonawcy-lista",
+            "386-wykonawcy-formularz-waski",
+            "387-wykonawcy-lista-waska",
+        ),
+    ),
     # Moves the run's tool clone right after Konfiguracja shows it.
     Feature(
         "aktualizacja",
