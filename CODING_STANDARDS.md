@@ -7,7 +7,7 @@ A bullet is a judgement call that no check makes: the reviewer reports a broken 
 ## Fixing a Mistake Class
 
 A mistake is a class once it has happened twice: two review findings, two red runs, or a correction from Maks that repeats an earlier one.
-Fix a class at the highest rung of the ladder (a)–(d) in `AGENTS.md` that works, and say in the PR why a higher rung did not.
+Fix a class at the highest rung of the ladder (a)–(e) in the section „Korzeń i chwast” of the skill [`przeglad`](.agents/skills/przeglad/SKILL.md) that works, and say in the PR why a higher rung did not.
 Turn a ruff or mypy rule on when it has no violation left, like the rules under `# Zapadki` in `pyproject.toml`.
 A ratchet in `tests/test_zapadki.py`, only for a pattern that is already common, states its literal boundary in its docstring and raises nothing on the whole tree.
 A new check fails on the commit of the PR whose review found the mistake, raises no false alarm on a few recent merged PRs (`--ostatnie 5`, one of them with Windows-only code), and the PR body shows both runs (`tools/na_scalonych_pr.py`, skill `pr`).

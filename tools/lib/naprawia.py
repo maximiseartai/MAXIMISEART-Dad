@@ -134,11 +134,8 @@ def fixed_issues(body: str, repository: str) -> tuple[int, ...]:
     Rzuca wyjątek, gdy GitHub opisu nie wyrenderował.
     """
 
-    rendered = github.gh("api", "markdown", "--input", "-", wejscie=json.dumps({"text": body, "mode": "gfm", "context": repository}))
-    if not rendered.strip():
-        raise ValueError("GitHub zwrócił pusty HTML")
     parser = _Lines()
-    parser.feed(rendered)
+    parser.feed(github.html_markdownu(body, repository))
     parser.close()
     numbers: list[int] = []
     for line in parser.lines:

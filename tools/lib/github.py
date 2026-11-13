@@ -78,6 +78,16 @@ def gh_bajty(*argumenty: str, wejscie: bytes | None = None, limit_s: float | Non
     return wyjscie
 
 
+def html_markdownu(tekst: str, repozytorium: str) -> str:
+    """HTML ``tekst`` z renderera GitHuba (``gh api markdown``, ``mode=gfm``, ``context`` to ``repozytorium``), więc to
+    GitHub decyduje, co jest kodem, nagłówkiem albo punktem listy; pusty HTML to ``ValueError``."""
+
+    html = gh("api", "markdown", "--input", "-", wejscie=json.dumps({"text": tekst, "mode": "gfm", "context": repozytorium}))
+    if not html.strip():
+        raise ValueError("GitHub zwrócił pusty HTML")
+    return html
+
+
 class GitHub(Protocol):
     def json(self, sciezka: str) -> Any: ...
 

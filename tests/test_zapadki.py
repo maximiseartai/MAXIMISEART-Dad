@@ -100,8 +100,9 @@ PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
 _PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
 _NEW_PARSER = (
     "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
-    " najwyższym szczeblu z sekcji „Reguły i co ich pilnuje” w AGENTS.md: (a) jedna droga i jeden właściciel, (b) typ"
-    " albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania, (d) dopiero zapadka"
+    " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md: (a) jedna droga i jeden"
+    " właściciel, (b) typ albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania,"
+    " (d) dopiero zapadka"
     " w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w"
     " opisie PR"
 )
