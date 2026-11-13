@@ -2,14 +2,16 @@
 należą się w danej chwili, ich temat i treść.
 
 Testy idą przez operację rdzenia z chwilą na wejściu: zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z
-„Wysłanych”, adresy Wykonawców i stopka, a przypomnienia na wyjściu. Pory (8:00–17:00, 18:00–22:00), dzień X+1 i treść
-biorą wartości ze speca #1344 i ADR 0030. Dane są syntetyczne, adresy w domenie ``.invalid``, numery zmyślone.
+„Wysłanych”, adresy Wykonawców i Ustawienia przypomnień, a przypomnienia na wyjściu. Pory domyślne (8:00–17:00,
+18:00–22:00), dzień X+1 od 8:00 i treść biorą wartości ze speca #1344 i ADR 0030, a pory, godzina pierwszego
+przypomnienia i treść z Ustawień Centrum (ADR 0032) działają tak samo jak domyślne. Dane są syntetyczne, adresy w domenie ``.invalid``, numery zmyślone.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta, timezone
+from dataclasses import replace
+from datetime import date, datetime, time, timedelta, timezone
 
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
@@ -19,15 +21,19 @@ from rozliczenia.report_cells import OrderRow
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
+    DEFAULT_REMINDERS,
     EXAMPLE_NUMBERS,
     MailId,
     OrderNumber,
     RegisterOrder,
     Reminder,
     ReminderInputs,
+    ReminderSchedule,
+    ReminderSettings,
     ReportMail,
     SenderAddress,
     SentReminder,
+    TimeRange,
     Window,
     reminder_day,
     reminder_subject,
@@ -87,8 +93,9 @@ def _due(
     sent: Sequence[SentReminder] = (),
     rollout: date = ROLLOUT,
     closed: Sequence[str] = (),
-    footer: str | None = None,
+    footer: str = "",
     workers: WorkerList | None = None,
+    settings: ReminderSettings | None = None,
 ) -> tuple[Reminder, ...]:
     listed = workers or _workers()
     return reminders_due(
@@ -100,7 +107,7 @@ def _due(
             sent=sent,
             addresses=listed.addresses(),
             reminded=listed.reminded(),
-            footer=footer,
+            settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
         )
     )
 
@@ -180,6 +187,68 @@ def test_przypomnienie_za_dzien_idzie_od_8_dnia_nastepnego_najwyzej_raz_w_porze_
 
     assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent])) == expected
 
+
+
+# Pory i godzina pierwszego przypomnienia, które tata ustawił inaczej niż ADR 0030 (ADR 0032, US 41–43).
+SHIFTED = replace(
+    DEFAULT_REMINDERS,
+    enabled=True,
+    since=ROLLOUT,
+    schedule=ReminderSchedule(TimeRange(time(6, 30), time(12)), TimeRange(time(15), time(19, 30)), time(9, 15)),
+)
+
+
+def _shifted(day: date, hour: int, minute: int = 0) -> datetime:
+    return _at(day + timedelta(days=1), hour, minute)
+
+
+@pytest.mark.parametrize(
+    ("now", "sent", "expected"),
+    [
+        pytest.param(_shifted(DAY, 9, 14), [], [], id="9:14-przed-pierwszym"),
+        pytest.param(_shifted(DAY, 9, 15), [], [("jan.testowy", DAY)], id="9:15-pierwsze"),
+        pytest.param(_shifted(DAY, 11, 59), [_shifted(DAY, 9, 15)], [], id="11:59-poranna-juz-poszla"),
+        pytest.param(_shifted(DAY, 11, 59), [], [("jan.testowy", DAY)], id="11:59-poranna-nadrabia"),
+        pytest.param(_shifted(DAY, 12, 0), [], [], id="12:00-koniec-porannej"),
+        pytest.param(_shifted(DAY, 14, 59), [], [], id="14:59-miedzy-porami"),
+        pytest.param(_shifted(DAY, 17, 30), [], [("jan.testowy", DAY)], id="17:30-wieczorna-choc-domyslnie-przerwa"),
+        pytest.param(_shifted(DAY, 15, 0), [_shifted(DAY, 9, 15)], [("jan.testowy", DAY)], id="15:00-wieczorna-po-porannej"),
+        pytest.param(_shifted(DAY, 19, 29), [_shifted(DAY, 15, 0)], [], id="19:29-wieczorna-juz-poszla"),
+        pytest.param(_shifted(DAY, 19, 30), [], [], id="19:30-koniec-wieczornej"),
+        pytest.param(_shifted(DAY + timedelta(days=1), 6, 30), [_shifted(DAY, 15, 0)], [("jan.testowy", DAY)], id="6:30-kolejnego-dnia"),
+    ],
+)
+def test_pory_i_godzina_pierwszego_przypomnienia_z_ustawien_zastepuja_pory_z_adr_0030(
+    now: datetime, sent: list[datetime], expected: list[tuple[str, date]]
+) -> None:
+    """ADR 0032: pory i godzina pierwszego przypomnienia z Ustawień Centrum działają jak dawne stałe. Pierwsze
+    przypomnienie za dzień X idzie od 9:15 dnia X+1, najwyżej jedno w porze 6:30–12:00 i 15:00–19:30, bez końca pory, a
+    poza nimi, także w dawnych porach z ADR 0030, nie idzie żadne."""
+
+    assert _days(_due(now, sent=[_sent(DAY, moment) for moment in sent], settings=SHIFTED)) == expected
+
+
+def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_zostaja() -> None:
+    """D-M1 projektu Ustawień: tata zmienia pierwsze zdanie z polem ``{dzień}`` i stopkę, a stały wzór Raportu wykonawcy
+    z przykładem i temat zostają, bo po nich Wpisanie raportów poznaje odpowiedź (US 46, 48)."""
+
+    settings = replace(SHIFTED, text="Raport za {dzień} proszę, bo {dzień} był dniem pracy.", footer="Tata")
+
+    [reminder] = _due(_shifted(DAY, 10), settings=settings)
+
+    assert reminder.subject == "Przypomnienie: raport za dzień 09.11.2026"
+    assert reminder.text.splitlines() == [
+        "Raport za 09.11.2026 proszę, bo 09.11.2026 był dniem pracy.",
+        "",
+        "Raport proszę wysłać według tego wzoru:",
+        "Temat maila: Raport 09.11.2026",
+        "Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności",
+        "PRZYKŁAD:",
+        "12345678 tak montaż ONT",
+        "12345679 nie brak klienta",
+        "",
+        "Tata",
+    ]
 
 
 def test_laptop_wlaczony_przed_18_po_pominietej_porannej_daje_jedno_przypomnienie_o_18() -> None:
@@ -319,15 +388,13 @@ PRZYKŁAD:
     ("footer", "expected"),
     [
         pytest.param("Pozdrawiam\nTata Testowy\ntel. w stopce\n", EXPECTED_TEXT + "\nPozdrawiam\nTata Testowy\ntel. w stopce\n", id="ze-stopka"),
-        pytest.param(None, EXPECTED_TEXT, id="bez-pliku-stopki"),
+        pytest.param("", EXPECTED_TEXT, id="bez-stopki"),
         pytest.param(" \n", EXPECTED_TEXT, id="pusta-stopka"),
     ],
 )
-def test_tresc_przypomnienia_ma_temat_wzor_i_przyklad_ze_speca_a_na_koncu_stopke_taty(
-    footer: str | None, expected: str
-) -> None:
-    """Temat i treść ustalone przez Maksa (spec #1344, Implementation Decisions), a na końcu stopka z pliku albo nic
-    (US 43–44)."""
+def test_tresc_przypomnienia_ma_temat_wzor_i_przyklad_ze_speca_a_na_koncu_stopke_taty(footer: str, expected: str) -> None:
+    """Temat i treść ustalone przez Maksa (spec #1344, Implementation Decisions) są treścią domyślną, a na końcu stopka
+    z Ustawień albo nic (US 43–44)."""
 
     day = date(2026, 11, 5)
 

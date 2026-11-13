@@ -1,6 +1,7 @@
 import type * as React from "react"
 import {
   ArchiveRestoreIcon,
+  BellIcon,
   FileSpreadsheetIcon,
   FolderIcon,
   HistoryIcon,
@@ -18,6 +19,7 @@ import { FoldersSection } from "@/pages/settings/folders-section"
 import { HistorySection } from "@/pages/settings/history-section"
 import { InboxSection } from "@/pages/settings/inbox-section"
 import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
+import { REMINDERS_SECTION, RemindersSection } from "@/pages/settings/reminders-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"
@@ -35,6 +37,7 @@ type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 export const SETTINGS_SECTIONS = [
   { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection },
   { id: "wykonawcy", title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
+  { id: REMINDERS_SECTION, title: "Przypomnienia", group: "Praca", icon: BellIcon, Content: RemindersSection },
   { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection },
   { id: "kopie-intermax", title: "Kopie INTERMAX", group: "Pliki", icon: ArchiveRestoreIcon, Content: IntermaxCopiesSection },
   { id: "skrzynka-raportow", title: "Skrzynka raportów", group: "Połączenia", icon: MailIcon, Content: InboxSection },

@@ -30,6 +30,16 @@ FieldName = Literal[
     "adresy",
     "aktywny",
     "przypomnienia",
+    # przypomnienia.yaml
+    "wlaczone",
+    "wlaczone_od",
+    "pora_poranna",
+    "pora_wieczorna",
+    "od",
+    "do",
+    "pierwsze_przypomnienie",
+    "tresc",
+    "stopka",
     # przełącznik startu razem z Windows (skrót w folderze Autostart)
     "autostart",
 ]

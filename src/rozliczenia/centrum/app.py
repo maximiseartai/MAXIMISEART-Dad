@@ -199,7 +199,7 @@ def create_app(
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
-    app.include_router(settings_router(settings, platform, inbox.try_login))
+    app.include_router(settings_router(settings, platform, inbox.try_login, today))
     configuration = configuration_files or ConfigurationFiles.default()
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)

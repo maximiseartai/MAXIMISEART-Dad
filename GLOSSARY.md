@@ -317,8 +317,8 @@ Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, któ
 ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu
 wykonawcy za ten dzień. Prosi o raport za ten dzień, podaje wzór tematu i
 treści i kończy się stopką taty. Idzie w porannej i wieczornej porze z Ustawień
-Centrum (domyślnie 8:00–17:00 i 18:00–22:00), pierwsze w porannej porze
-następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
+Centrum (domyślnie 8:00–17:00 i 18:00–22:00), pierwsze od godziny pierwszego
+przypomnienia następnego dnia (domyślnie 8:00), najwyżej jedno w każdej porze, aż raport przyjdzie albo okres
 dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia
 przypomnień. Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie

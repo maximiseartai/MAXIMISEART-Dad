@@ -28,6 +28,9 @@ export const zApiTiming = z.object({
         'changeInboxPassword',
         'changeFolders',
         'changeAutostart',
+        'changeRemindersEnabled',
+        'changeReminders',
+        'previewReminder',
         'getSettingsHistory',
         'undoSettingsChange',
         'getPeriodBoard',
@@ -962,6 +965,50 @@ export const zRejected = z.object({
 });
 
 /**
+ * ReminderPreview
+ *
+ * Przypomnienie z formularza na przykładowy dzień (wczoraj), takie, jakie dostałby Wykonawca: stały temat i treść
+ * ze wzorem Raportu wykonawcy i stopką. Nic się nie zapisuje ani nie wysyła.
+ */
+export const zReminderPreview = z.object({
+    subject: z.string(),
+    text: z.string()
+});
+
+/**
+ * ReminderRange
+ *
+ * Pora przypomnień od ``start`` do ``end`` (``GG:MM``), bez końca pory: przy 8:00–17:00 o 17:00 już nie idą.
+ */
+export const zReminderRange = z.object({
+    start: z.string(),
+    end: z.string()
+});
+
+/**
+ * RemindersEnabledChange
+ *
+ * Przełącznik Przypomnień o raporcie; pierwsze włączenie ustawia dzień wdrożenia na dziś.
+ */
+export const zRemindersEnabledChange = z.object({
+    enabled: z.boolean()
+});
+
+/**
+ * RemindersForm
+ *
+ * Formularz sekcji Przypomnienia: pory, godzina pierwszego przypomnienia następnego dnia, pierwsze zdanie z polem
+ * ``{dzień}`` i stopka (pusta: bez stopki). Godziny sprawdza serwer, a złą wartość odrzuca zdaniem przy polu.
+ */
+export const zRemindersForm = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string()
+});
+
+/**
  * ReportDraft
  *
  * Dokładna treść Zgłoszenia, które „Wyślij do Maksa” wyśle do skrzynki Zgłoszeń: tytuł i treść Markdown.
@@ -1526,6 +1573,29 @@ export const zSettingProblem = z.object({
 });
 
 /**
+ * RemindersSetting
+ *
+ * Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)
+ * albo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;
+ * ``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone).
+ */
+export const zRemindersSetting = z.object({
+    morning: zReminderRange,
+    evening: zReminderRange,
+    first: z.string(),
+    text: z.string(),
+    footer: z.string(),
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    enabled: z.boolean(),
+    since: z.iso.date().nullable(),
+    problem: zSettingProblem.nullable()
+});
+
+/**
  * SettingsHistory
  *
  * Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać.
@@ -1850,7 +1920,8 @@ export const zSettings = z.object({
     workers: zWorkerListSetting,
     inbox: zInboxSetting,
     inbox_problem: zSettingProblem.nullable(),
-    autostart: zAutostartSetting
+    autostart: zAutostartSetting,
+    reminders: zRemindersSetting
 });
 
 /**
@@ -2865,6 +2936,27 @@ export const zChooseRegisterResponse = zChoice;
  * Successful Response
  */
 export const zOpenRegisterResponse = zOpened;
+
+export const zChangeRemindersBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersResponse = zChoice;
+
+export const zChangeRemindersEnabledBody = zRemindersEnabledChange;
+
+/**
+ * Successful Response
+ */
+export const zChangeRemindersEnabledResponse = zChoice;
+
+export const zPreviewReminderBody = zRemindersForm;
+
+/**
+ * Successful Response
+ */
+export const zPreviewReminderResponse = zReminderPreview;
 
 export const zChangeThemeBody = zThemeChange;
 

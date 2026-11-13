@@ -14,8 +14,12 @@ from __future__ import annotations
 
 from typing import Any, Final
 
+from rozliczenia.centrum.settings.migrations import reminders as reminders_migration
 from rozliczenia.centrum.settings.migrations import workers as workers_migration
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 
-RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (workers_migration.CHANGE,)
+RELEASE_CHANGES: Final[tuple[ReleaseChange[Any], ...]] = (
+    workers_migration.CHANGE,
+    reminders_migration.CHANGE,
+)
 """Zmiany Ustawień Centrum, które niesie to Wydanie i każde poprzednie."""

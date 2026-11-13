@@ -33,7 +33,9 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 from rozliczenia import tool_files
+from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
@@ -103,6 +105,9 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "WORKER_LIST": tool_files.CONFIG_DIR / WORKERS_FILE,
         "OLD_WORKER_MAPPING": tool_files.CONFIG_DIR / OLD_MAPPING_FILE,
         "OLD_WORKER_ADDRESSES": tool_files.CONFIG_DIR / OLD_ADDRESSES_FILE,
+        "REMINDERS": tool_files.CONFIG_DIR / REMINDERS_FILE,
+        "OLD_REMINDERS_ROLLOUT": tool_files.CONFIG_DIR / OLD_ROLLOUT_FILE,
+        "OLD_REMINDERS_FOOTER": tool_files.CONFIG_DIR / OLD_FOOTER_FILE,
         "WORKER_TEMPLATE": tool_files.WORKER_TEMPLATE,
         "COLLECTIVE_TEMPLATE": tool_files.COLLECTIVE_TEMPLATE,
         "INTERNAL_TEMPLATE": tool_files.INTERNAL_TEMPLATE,
@@ -122,6 +127,9 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "WORKER_LIST": "config/wykonawcy.yaml",
         "OLD_WORKER_MAPPING": "config/worker_mapping.yaml",
         "OLD_WORKER_ADDRESSES": "config/adresy-wykonawcow.yaml",
+        "REMINDERS": "config/przypomnienia.yaml",
+        "OLD_REMINDERS_ROLLOUT": "config/przypomnienia-od.txt",
+        "OLD_REMINDERS_FOOTER": "config/stopka-przypomnien.txt",
         "WORKER_TEMPLATE": "config/Wzorzec rozliczenia pracownika.xlsx",
         "COLLECTIVE_TEMPLATE": "config/Wzorzec pliku zbiorczego.xlsx",
         "INTERNAL_TEMPLATE": "config/Wzorzec rozliczenia wewnętrznego.xlsx",
@@ -200,6 +208,7 @@ def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identy
     # pamięci właściciela.
     assert events == [
         "start",
+        "ustawienia-wydanie",
         "ustawienia-wydanie",
         "zamkniecie",
         "stop",

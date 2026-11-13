@@ -17,6 +17,7 @@ from rozliczenia import preparation_messages
 from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
@@ -398,6 +399,33 @@ def test_zgloszenie_podaje_zmiane_listy_wykonawcow_bez_loginu_nazwy_i_adresu(tmp
     ), lines[start : start + 4]
     for secret in ("dariusz.fikcyjny2", "Dariusz Zmieniony", "nowy.wykonawca", "Nowy Wykonawca", "nowy@przyklad.invalid"):
         assert not zawiera_wartosc(body, secret), secret
+def test_zgloszenie_podaje_zmiane_por_przypomnien_wprost_a_stopke_bez_jej_tresci(tmp_path: Path) -> None:
+    """D4 projektu Ustawień: zmiana Przypomnień o raporcie w Zgłoszeniu ma pory przed i po, a stopka, w której tata
+    ma imię i telefon, tylko znacznik zmiany (#1476)."""
+
+    centrum = preparing_centrum(tmp_path)
+    form = {
+        "morning": {"start": "07:00", "end": "12:00"},
+        "evening": {"start": "18:00", "end": "22:00"},
+        "first": "08:00",
+        "text": "Poproszę o wysłanie raportu za dzień {dzień}.",
+        "footer": "Pozdrawiam\nTata Syntetyczny\ntel. 600 100 200\n",
+    }
+    assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    run_id = stopped_for_maks(centrum)
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    assert any(
+        line.endswith(
+            f"· tata · {REMINDERS_FILE} · przypomnienia.pora_poranna: 08:00 – 17:00 → 07:00 – 12:00; przypomnienia.stopka: zmieniono"
+        )
+        for line in body.splitlines()
+    ), body
+    for secret in ("Tata Syntetyczny", "600 100 200"):
+        assert not zawiera_wartosc(body, secret), secret
+
+
 def test_zgloszenie_ma_zmiane_hasla_skrzynki_samym_kluczem_bez_hasla(tmp_path: Path) -> None:
     """Zmiana hasła skrzynki raportów trafia do Zgłoszenia jako „zmieniono: skrzynka.haslo”, bez starego i nowego hasła
     (#1469, D4 projektu Ustawień)."""

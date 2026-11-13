@@ -1,6 +1,7 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
-Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), plik dostępu do skrzynki raportów
+Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), Przypomnienia o raporcie
+(``reminders``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, i przełącznik startu
 razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``: każde ustawienie
@@ -81,9 +82,11 @@ from rozliczenia.centrum.settings.history import (
 )
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_report_inbox import InboxState
+from rozliczenia.worker_reports import ReminderSettings
 
 T = TypeVar("T")
 
@@ -95,12 +98,14 @@ HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 
 @dataclass(frozen=True)
 class SettingsSnapshot:
-    """Wartości Ustawień Centrum z jednej chwili. Foldery: dobre, a przy złym pliku ostatnie dobre albo domyślne.
-    Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (``workers_usable``)."""
+    """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
+    dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje
+    (``workers_usable``)."""
 
     folders: FolderSettings
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
+    reminders: ReminderSettings
 
 
 @dataclass(frozen=True)
@@ -111,6 +116,7 @@ class SettingsView:
     workers: Read[WorkerList] | Unreadable
     inbox: Read[InboxFile] | Unreadable
     autostart: Read[bool] | Unreadable | Unsupported
+    reminders: Read[ReminderSettings] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -194,6 +200,7 @@ class CentrumSettings:
         self._places: Mapping[str, _Place] = {
             FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
             WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
+            REMINDERS.name: _ConfigFile(config / REMINDERS.name, pause),
             INBOX.name: _ConfigFile(config / INBOX.name, pause),
             AUTOSTART.name: AutostartPlace(autostart),
         }
@@ -206,6 +213,7 @@ class CentrumSettings:
                 folders=_usable(self._observe(FOLDERS), FOLDERS),
                 workers=self._observe(WORKERS),
                 inbox=inbox.state(self._observe(INBOX)),
+                reminders=_usable(self._observe(REMINDERS), REMINDERS),
             )
 
     def view(self) -> SettingsView:
@@ -216,6 +224,7 @@ class CentrumSettings:
                 workers=self._observe(WORKERS),
                 inbox=self._observe(INBOX),
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
+                reminders=self._observe(REMINDERS),
             )
 
     def change(self, file: SettingsFile[T], edit: Callable[[T], T]) -> Saved | Refused | NotSaved:
@@ -508,6 +517,7 @@ class CentrumSettings:
 _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     FOLDERS.name: FOLDERS,
     WORKERS.name: WORKERS,
+    REMINDERS.name: REMINDERS,
     AUTOSTART.name: AUTOSTART,
 }
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
@@ -525,6 +535,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
         folders=_usable(_read_only_view(config, FOLDERS), FOLDERS),
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
+        reminders=_usable(_read_only_view(config, REMINDERS), REMINDERS),
     )
 
 

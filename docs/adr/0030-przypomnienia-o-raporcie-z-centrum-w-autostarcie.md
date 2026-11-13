@@ -20,7 +20,9 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
   bez adresów Wykonawców i bez treści maili.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia pory, godzinę pierwszego przypomnienia, stopkę i treść maila w
-Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały.
+Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały, a stały blok wzoru z
+przykładem też. Dzień wdrożenia przypomnień i stopka z plików Maksa w `config/` przechodzą przy pierwszym starcie po
+Aktualizacji do Ustawień Centrum (`przypomnienia.yaml`), a przypomnienia włącza i wyłącza tata przełącznikiem.
 
 ## Kontekst
 
