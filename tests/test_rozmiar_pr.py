@@ -1,10 +1,13 @@
 """Etykieta rozmiaru PR (``tools/ci/rozmiar_pr.py``, workflow ``rozmiar-pr.yml``): progi z t3code, efektywne linie od
-bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR."""
+bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR.
+Licznik szopy (ADR 0034): lista dwóch szop przypisuje każdy plik, a PR z nowymi liniami maszynerii procesu bez większego
+usunięcia dostaje etykietę zgody, którą zdejmuje komentarz ``ZGODA SZOPA`` konta z prawem ``admin``."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+import re
 from typing import Any
 
 import pytest
@@ -99,19 +102,24 @@ def test_pr_z_samymi_testami_liczy_linie_testow(repo: Path) -> None:
 
 
 class _GitHub:
-    def __init__(self, w_repo: list[dict[str, Any]], na_pr: list[str]) -> None:
-        self.odpowiedzi = {
+    def __init__(
+        self,
+        w_repo: list[dict[str, Any]],
+        na_pr: list[str],
+        komentarze: Sequence[dict[str, Any]] = (),
+        prawa: Sequence[tuple[str, str]] = (),
+    ) -> None:
+        self.odpowiedzi: dict[str, Any] = {
             f"{REPO}/labels": w_repo,
             f"{REPO}/issues/7/labels": [{"name": nazwa} for nazwa in na_pr],
+            f"{REPO}/issues/7/comments": list(komentarze),
+            **{f"{REPO}/collaborators/{login}/permission": {"permission": prawo} for login, prawo in prawa},
         }
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
     def json(self, sciezka: str) -> Any:
-        return (
-            self.odpowiedzi[sciezka.partition("?")[0]]
-            if sciezka.endswith("page=1")
-            else []
-        )
+        sciezka, _, zapytanie = sciezka.partition("?")
+        return self.odpowiedzi[sciezka] if not zapytanie or zapytanie.endswith("page=1") else []
 
     def bajty(self, sciezka: str) -> bytes:
         raise AssertionError(sciezka)
@@ -178,3 +186,174 @@ def test_etykieta_z_innym_opisem_albo_kolorem_dostaje_opis_i_kolor_progu() -> No
             )
         ],
     )
+
+
+_LISTA = """[produkt]
+"src/" = ["tests/test_stary.py"]
+
+[weryfikacja]
+"tools/lib/atrapa.py" = []
+
+[maszyneria]
+"tools/bramka.py" = ["tests/test_bramka.py"]
+"tools/lib/szopa.toml" = []
+"""
+# HTML renderera GitHuba (``gh api markdown``, gfm) dla treści komentarzy testu.
+_HTML = {
+    "ZGODA SZOPA": '<p dir="auto">ZGODA SZOPA</p>\n',
+    "Ok.\n\n- ZGODA SZOPA": '<p dir="auto">Ok.</p>\n<ul dir="auto">\n<li>ZGODA SZOPA</li>\n</ul>\n',
+    "Zgoda w kodzie:\n\n```\nZGODA SZOPA\n```": (
+        '<p dir="auto">Zgoda w kodzie:</p>\n<pre class="notranslate"><code class="notranslate">ZGODA SZOPA\n</code></pre>\n'
+    ),
+}
+
+
+@pytest.fixture
+def szopa(tmp_path: Path) -> Path:
+    git(tmp_path, "init", "--quiet", "--initial-branch", "main")
+    _zapisz(
+        tmp_path,
+        {
+            "src/stary.py": _linie(20),
+            "tests/test_stary.py": _linie(5),
+            "tools/bramka.py": _linie(30),
+            "tests/test_bramka.py": _linie(10),
+            "tools/lib/atrapa.py": _linie(10),
+            "tools/lib/szopa.toml": _LISTA,
+        },
+    )
+    commit(tmp_path, "baza")
+    git(tmp_path, "switch", "--quiet", "--create", "pr")
+    return tmp_path
+
+
+def _licz(repo: Path, github: _GitHub) -> tuple[list[str], list[tuple[str, str, Mapping[str, object]]]]:
+    """Linie licznika szopy i wywołania GitHuba dla etykiety zgody, bez etykiety rozmiaru."""
+
+    linie = rozmiar_pr.licz(repo, "main", "pr", 7, github, _HTML.__getitem__)
+    zgody = [wywolanie for wywolanie in github.wyslane if "ZGODA" in wywolanie[1] or "ZGODA" in str(wywolanie[2])]
+    return [linia for linia in linie if linia.startswith("SZOPA")], zgody
+
+
+def test_pr_bez_linii_maszynerii_procesu_nie_wymaga_zgody_choc_zmienia_produkt_weryfikacje_proze_i_liste(szopa: Path) -> None:
+    _zapisz(
+        szopa,
+        {
+            "src/stary.py": _linie(35),
+            "tests/test_nowy.py": _linie(40),
+            "tools/lib/atrapa.py": _linie(16),
+            "tools/OPIS.md": _linie(50),
+            "tools/lib/szopa.toml": _LISTA.replace('["tests/test_stary.py"]', '["tests/test_stary.py", "tests/test_nowy.py"]'),
+        },
+    )
+    commit(szopa, "produkt")
+
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == (
+        [
+            "SZOPA | #7 | maszyneria procesu z testami +0 -0, testy zachowania src / src 45/35 = 1,29, testy szopy / src 10/35 = 0,29"
+            " | bez nowych linii maszynerii procesu"
+        ],
+        [],
+    )
+
+
+def test_pr_ktory_usuwa_wiecej_linii_maszynerii_niz_dodaje_traci_etykiete_zgody(szopa: Path) -> None:
+    # Nowy plik spod tools/ bez wpisu na żadnej liście liczy się jako maszyneria procesu.
+    _zapisz(szopa, {"tools/bramka.py": _linie(18), "tools/nowa.py": _linie(5)})
+    commit(szopa, "mniej maszynerii")
+
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[rozmiar_pr.ZGODA.nazwa])) == (
+        [
+            "SZOPA | #7 | maszyneria procesu z testami +5 -12, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+            " | usuwa więcej linii maszynerii procesu, niż dodaje",
+            "SZOPA | zdjęta wymaga ZGODA SZOPA z #7",
+        ],
+        [("DELETE", f"{REPO}/issues/7/labels/wymaga%20ZGODA%20SZOPA", {})],
+    )
+
+
+def test_pr_ktory_dodaje_tyle_linii_maszynerii_z_testami_ile_usuwa_wymaga_zgody(szopa: Path) -> None:
+    _zapisz(szopa, {"tools/bramka.py": _linie(22), "tests/test_bramka.py": _linie(10) + _linie(8, "y")})
+    commit(szopa, "tyle samo maszynerii")
+    zgoda = rozmiar_pr.ZGODA
+
+    assert _licz(szopa, _GitHub(w_repo=[], na_pr=[])) == (
+        [
+            "SZOPA | #7 | maszyneria procesu z testami +8 -8, testy zachowania src / src 5/20 = 0,25, testy szopy / src 18/20 = 0,90"
+            " | wymaga ZGODA SZOPA",
+            "SZOPA | założona etykieta wymaga ZGODA SZOPA",
+            "SZOPA | nadana wymaga ZGODA SZOPA #7",
+        ],
+        [
+            ("POST", f"{REPO}/labels", {"name": zgoda.nazwa, "color": zgoda.kolor, "description": zgoda.opis}),
+            ("POST", f"{REPO}/issues/7/labels", {"labels": [zgoda.nazwa]}),
+        ],
+    )
+
+
+def test_pr_liczy_swoje_linie_maszynerii_wedlug_listy_bazy_choc_jego_lista_przenosi_je_do_weryfikacji(szopa: Path) -> None:
+    _zapisz(
+        szopa,
+        {
+            "tools/bramka.py": _linie(30) + _linie(4, "y"),
+            "tools/lib/szopa.toml": _LISTA.replace('"tools/lib/atrapa.py" = []', '"tools/lib/atrapa.py" = []\n"tools/bramka.py" = []').replace(
+                '"tools/bramka.py" = ["tests/test_bramka.py"]', '"tools/lib/bramka_testy.py" = ["tests/test_bramka.py"]'
+            ),
+        },
+    )
+    commit(szopa, "maszyneria jako weryfikacja")
+
+    linie, _ = _licz(szopa, _GitHub(w_repo=[], na_pr=[]))
+
+    assert linie[0] == (
+        "SZOPA | #7 | maszyneria procesu z testami +4 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+        " | wymaga ZGODA SZOPA"
+    )
+
+
+@pytest.mark.parametrize(
+    ("komentarz", "prawo", "stan", "zgody"),
+    [
+        (
+            "Ok.\n\n- ZGODA SZOPA",
+            "admin",
+            "ZGODA SZOPA od maks",
+            (["SZOPA | zdjęta wymaga ZGODA SZOPA z #7"], [("DELETE", f"{REPO}/issues/7/labels/wymaga%20ZGODA%20SZOPA", {})]),
+        ),
+        ("ZGODA SZOPA", "write", "wymaga ZGODA SZOPA", ([], [])),
+        ("Zgoda w kodzie:\n\n```\nZGODA SZOPA\n```", "admin", "wymaga ZGODA SZOPA", ([], [])),
+    ],
+    ids=["punkt-listy-od-admina", "akapit-od-konta-bez-admina", "blok-kodu-od-admina"],
+)
+def test_komentarz_zgoda_szopa_od_konta_admin_poza_kodem_zdejmuje_etykiete_zgody(
+    szopa: Path, komentarz: str, prawo: str, stan: str, zgody: tuple[list[str], list[tuple[str, str, Mapping[str, object]]]]
+) -> None:
+    _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(3, "y")})
+    commit(szopa, "więcej maszynerii")
+    github = _GitHub(
+        w_repo=[], na_pr=[rozmiar_pr.ZGODA.nazwa], komentarze=[{"user": {"login": "maks"}, "body": komentarz}], prawa=[("maks", prawo)]
+    )
+
+    linie, wywolania = _licz(szopa, github)
+
+    assert (linie, wywolania) == (
+        [
+            "SZOPA | #7 | maszyneria procesu z testami +3 -0, testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
+            f" | {stan}",
+            *zgody[0],
+        ],
+        zgody[1],
+    )
+
+
+@pytest.mark.parametrize(
+    ("tekst", "blad"),
+    [
+        ('[inna]\n"tools/a.py" = []\n', "tabela [inna] nie jest grupą listy"),
+        ('[maszyneria]\n"tools/a.py" = "tests/test_a.py"\n', "jednostka tools/a.py ma mieć listę plików testów"),
+        ('[produkt]\n"src/" = ["tests/test_a.py"]\n[maszyneria]\n"tools/a.py" = ["tests/test_a.py"]\n', "tests/test_a.py stoi na liście dwa razy"),
+    ],
+)
+def test_lista_dwoch_szop_innego_ksztaltu_albo_z_powtorzonym_wpisem_to_blad(tekst: str, blad: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(blad)):
+        rozmiar_pr.wpisy(tekst)

@@ -1,14 +1,27 @@
-"""Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany, z workflow ``rozmiar-pr.yml``.
+"""Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany i licznik szopy, z workflow ``rozmiar-pr.yml``.
 
 Liczy jak workflow ``pr-size.yml`` z t3code: suma dodanych i usuniętych linii z ``git diff --numstat
 --ignore-all-space --ignore-blank-lines <baza>...<głowa>`` (od bazy scalenia). W PR, który zmienia też coś poza
 testami, pliki testów (``TESTY``) się nie liczą, a PR z samymi testami liczy się po testach. Progi to ``PROGI``.
 
-Z ``--pr N`` narzędzie zakłada brakującą etykietę rozmiaru (albo poprawia jej opis i kolor), nadaje ją PR-owi i zdejmuje
-z niego inne etykiety ``size:*``; inne etykiety zostawia. Bez ``--pr`` tylko drukuje rozmiar. Niczego nie blokuje:
-etykieta to informacja dla autora i recenzenta, nie warunek merge'u.
+Licznik szopy (ADR 0034) bierze z tego samego diffu dodane i usunięte linie maszynerii procesu z jej testami: plików,
+które lista ``LISTA`` przypisuje grupie ``maszyneria``, bez prozy (``*.md``), którą spis zapachów liczy w słowach,
+i bez samej listy, na którą każdy nowy plik testów produktu dopisuje linię.
+Plik należy do grupy wpisu listy, który go nazywa albo jest jego katalogiem (wpis z ``/`` na końcu): w diffie najpierw
+według listy bazy, a plik, którego lista bazy nie zna, według listy głowy; plik spod ``OBSZARY`` bez wpisu na żadnej
+z nich to maszyneria. PR, który dodaje linie maszynerii procesu i nie usuwa ich więcej, niż dodaje, wymaga zgody.
+Licznik drukuje też dwa stosunki na drzewie głowy według jej listy: linie testów zachowania ``src`` (pliki ``tests/``
+grupy ``produkt``) do linii ``src`` i linie testów szopy (pozostałe pliki ``tests/``) do linii ``src``; testy produktu
+dostają tylko tę liczbę.
 
-Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR jako dane gita: nie uruchamia ich kodu.
+Z ``--pr N`` narzędzie zakłada brakującą etykietę rozmiaru (albo poprawia jej opis i kolor), nadaje ją PR-owi i zdejmuje
+z niego inne etykiety ``size:*``; inne etykiety zostawia. PR, który wymaga zgody, dostaje etykietę ``ZGODA``, chyba że
+ma komentarz z linią akapitu albo punktem listy ``ZGODA SZOPA`` (poza kodem według renderera GitHuba) od konta
+z prawem ``admin`` do repozytorium; PR bez tej potrzeby albo ze zgodą traci tę etykietę. Bez ``--pr`` tylko drukuje
+rozmiar i licznik. Niczego nie blokuje: etykiety to informacja dla autora, recenzenta i Maksa, nie warunek merge'u.
+
+Workflow biegnie na ``pull_request_target`` i na komentarzu z ``ZGODA SZOPA`` z kodem ``main`` i tylko czyta commity
+PR jako dane gita: nie uruchamia ich kodu, a listę głowy czyta jako TOML.
 
     .venv/bin/python tools/ci/rozmiar_pr.py --baza origin/main --glowa HEAD
 """
@@ -16,16 +29,19 @@ Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import sys
+import tomllib
 import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-from github import REPO, GhApi, GitHub, strony
+from github import REPO, GhApi, GitHub, html_markdownu, strony
+from rejestr_korzeni import ADMIN
 import repo
+import szablon_werdyktu
 
 
 @dataclass(frozen=True)
@@ -48,6 +64,23 @@ XXL = Etykieta("size:XXL", "b60205", f"1000+ {_DOPISEK}")
 ETYKIETY = (*(etykieta for _, etykieta in PROGI), XXL)
 # Pliki testów repozytorium: pytest w tests/, plik test_*.py gdziekolwiek i testy frontendu (*.test.*, *.spec.*).
 TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec.*")
+
+LISTA = "tools/lib/szopa.toml"
+PRODUKT = "produkt"
+MASZYNERIA = "maszyneria"
+GRUPY = (PRODUKT, "weryfikacja", MASZYNERIA)
+# Katalogi, których każdy plik ma wpis na liście (test w ``tests/test_rozmiar_pr.py``).
+OBSZARY = ("tools/", ".agents/skills/", "tests/")
+SRC = "src/"
+PROZA = ".md"
+# Drzewo bez plików, które git zna bez obiektu w repozytorium: diff od niego to linie każdego pliku.
+PUSTE_DRZEWO = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+SLOWA_ZGODY = "ZGODA SZOPA"
+ZGODA = Etykieta(
+    "wymaga ZGODA SZOPA",
+    "5319e7",
+    "Dodaje linie maszynerii procesu i nie usuwa więcej (ADR 0034); zdejmuje ją ZGODA SZOPA od admina",
+)
 
 
 @dataclass(frozen=True)
@@ -103,29 +136,151 @@ def zmierz(root: Path, baza: str, glowa: str) -> Rozmiar:
     return Rozmiar(bez_testow, wszystkie - bez_testow)
 
 
-def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
-    """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
+def wpisy(tekst: str) -> dict[str, str]:
+    """Każdy wpis listy w treści TOML ``tekst`` (jednostka i każdy plik jej testów) z nazwą swojej grupy. Inny kształt
+    niż tabele ``GRUPY``, w których jednostka ma listę plików testów, i wpis, który stoi dwa razy, to ``ValueError``."""
 
-    linie = []
+    wynik: dict[str, str] = {}
+    for grupa, jednostki in tomllib.loads(tekst).items():
+        if grupa not in GRUPY or not isinstance(jednostki, dict):
+            raise ValueError(f"{LISTA}: tabela [{grupa}] nie jest grupą listy ({', '.join(GRUPY)})")
+        for jednostka, testy in jednostki.items():
+            if not isinstance(testy, list) or not all(isinstance(test, str) for test in testy):
+                raise ValueError(f"{LISTA}: jednostka {jednostka} ma mieć listę plików testów")
+            for wpis in (jednostka, *testy):
+                if wpis in wynik:
+                    raise ValueError(f"{LISTA}: {wpis} stoi na liście dwa razy")
+                wynik[wpis] = grupa
+    return wynik
+
+
+def obejmujace(wpisy: Mapping[str, str], sciezka: str) -> list[str]:
+    """Wpisy listy, które obejmują plik ``sciezka``: ten sam plik albo jego katalog (wpis z ``/`` na końcu)."""
+
+    return [wpis for wpis in wpisy if sciezka == wpis or (wpis.endswith("/") and sciezka.startswith(wpis))]
+
+
+def _grupa(listy: Sequence[Mapping[str, str]], sciezka: str) -> str | None:
+    for wpisy_listy in listy:
+        grupy = {wpisy_listy[wpis] for wpis in obejmujace(wpisy_listy, sciezka)}
+        if grupy:
+            # Dwa wpisy dwóch grup na jednej liście to błąd listy, który jej test łapie; do tej pory liczy się ostrożnie.
+            return grupy.pop() if len(grupy) == 1 else MASZYNERIA
+    return MASZYNERIA if sciezka.startswith(OBSZARY) else None
+
+
+def _lista(root: Path, rewizja: str) -> dict[str, str]:
+    if not repo.succeeds(root, "cat-file", "-e", f"{rewizja}:{LISTA}"):
+        return {}
+    return wpisy(repo.git(root, "show", f"{rewizja}:{LISTA}"))
+
+
+def _pliki(root: Path, *diff: str) -> list[tuple[str, int, int]]:
+    """Ścieżka, dodane i usunięte linie każdego pliku z ``git diff --numstat`` bez prozy; plik binarny ma 0 linii."""
+
+    pliki = []
+    for rekord in repo.git(root, "diff", "--numstat", "-z", "--no-renames", *diff).split("\0"):
+        if rekord:
+            dodane, usuniete, sciezka = rekord.split("\t", 2)
+            if not sciezka.endswith(PROZA):
+                pliki.append((sciezka, int(dodane) if dodane.isdigit() else 0, int(usuniete) if usuniete.isdigit() else 0))
+    return pliki
+
+
+def _stosunek(licznik: int, mianownik: int) -> str:
+    return f"{licznik / mianownik:.2f}".replace(".", ",") if mianownik else "brak src"
+
+
+@dataclass(frozen=True)
+class Szopa:
+    """Licznik szopy PR: linie maszynerii procesu z jej testami dodane i usunięte od bazy scalenia oraz linie ``src``,
+    testów zachowania ``src`` i testów szopy na drzewie głowy."""
+
+    dodane: int
+    usuniete: int
+    src: int
+    testy_src: int
+    testy_szopy: int
+
+    @property
+    def wymaga_zgody(self) -> bool:
+        return self.dodane > 0 and self.usuniete <= self.dodane
+
+    def opis(self) -> str:
+        return (
+            f"maszyneria procesu z testami +{self.dodane} -{self.usuniete}"
+            f", testy zachowania src / src {self.testy_src}/{self.src} = {_stosunek(self.testy_src, self.src)}"
+            f", testy szopy / src {self.testy_szopy}/{self.src} = {_stosunek(self.testy_szopy, self.src)}"
+        )
+
+    def stan(self, zgoda: str | None) -> str:
+        """Werdykt licznika; ``zgoda`` to login konta, którego komentarz ``ZGODA SZOPA`` znalazł ``zgoda``."""
+
+        if not self.wymaga_zgody:
+            return "usuwa więcej linii maszynerii procesu, niż dodaje" if self.dodane else "bez nowych linii maszynerii procesu"
+        return f"{SLOWA_ZGODY} od {zgoda}" if zgoda else f"wymaga {SLOWA_ZGODY}"
+
+
+def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
+    lista_bazy, lista_glowy = _lista(root, baza), _lista(root, glowa)
+    dodane = usuniete = 0
+    for sciezka, plus, minus in _pliki(root, "--ignore-all-space", "--ignore-blank-lines", f"{baza}...{glowa}"):
+        if sciezka != LISTA and _grupa((lista_bazy, lista_glowy), sciezka) == MASZYNERIA:
+            dodane, usuniete = dodane + plus, usuniete + minus
+    linie = {SRC: 0, PRODUKT: 0, MASZYNERIA: 0}
+    for sciezka, plus, _ in _pliki(root, PUSTE_DRZEWO, glowa, "--", SRC, "tests/"):
+        rodzaj = SRC if sciezka.startswith(SRC) else PRODUKT if _grupa((lista_glowy,), sciezka) == PRODUKT else MASZYNERIA
+        linie[rodzaj] += plus
+    return Szopa(dodane, usuniete, linie[SRC], linie[PRODUKT], linie[MASZYNERIA])
+
+
+def zgoda(github: GitHub, pr: int, html: Callable[[str], str]) -> str | None:
+    """Login konta z prawem ``admin`` do repozytorium, którego komentarz w PR ``pr`` ma linię akapitu albo punkt listy
+    ``ZGODA SZOPA`` w HTML renderera ``html`` (``github.html_markdownu``); ``None``, gdy takiego komentarza nie ma."""
+
+    admini: dict[str, bool] = {}
+    for komentarz in strony(github, f"{REPO}/issues/{pr}/comments"):
+        tresc = str(komentarz.get("body") or "")
+        autor = komentarz.get("user")
+        login = str(autor.get("login") or "") if isinstance(autor, dict) else ""
+        if SLOWA_ZGODY not in tresc or not login:
+            continue
+        if not any(jednostka.kind in {"line", "point"} and jednostka.text == SLOWA_ZGODY for jednostka in szablon_werdyktu.items(html(tresc))):
+            continue
+        if login not in admini:
+            prawo = github.json(f"{REPO}/collaborators/{urllib.parse.quote(login, safe='')}/permission")
+            admini[login] = prawo["permission"] == ADMIN
+        if admini[login]:
+            return login
+    return None
+
+
+def _zaloz(github: GitHub, nowa: Etykieta) -> list[str]:
     w_repo = {wpis["name"]: wpis for wpis in strony(github, f"{REPO}/labels")}
-    sciezka = urllib.parse.quote(nowa.nazwa, safe="")
     if nowa.nazwa not in w_repo:
         github.wyslij(
             "POST",
             f"{REPO}/labels",
             {"name": nowa.nazwa, "color": nowa.kolor, "description": nowa.opis},
         )
-        linie.append(f"założona etykieta {nowa.nazwa}")
-    elif (w_repo[nowa.nazwa]["color"], w_repo[nowa.nazwa].get("description") or "") != (
+        return [f"założona etykieta {nowa.nazwa}"]
+    if (w_repo[nowa.nazwa]["color"], w_repo[nowa.nazwa].get("description") or "") != (
         nowa.kolor,
         nowa.opis,
     ):
         github.wyslij(
             "PATCH",
-            f"{REPO}/labels/{sciezka}",
+            f"{REPO}/labels/{urllib.parse.quote(nowa.nazwa, safe='')}",
             {"color": nowa.kolor, "description": nowa.opis},
         )
-        linie.append(f"poprawiona etykieta {nowa.nazwa}")
+        return [f"poprawiona etykieta {nowa.nazwa}"]
+    return []
+
+
+def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
+    """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
+
+    linie = _zaloz(github, nowa)
     na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
     for stara in sorted(na_pr & {e.nazwa for e in ETYKIETY} - {nowa.nazwa}):
         github.wyslij(
@@ -138,6 +293,34 @@ def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
         github.wyslij("POST", f"{REPO}/issues/{pr}/labels", {"labels": [nowa.nazwa]})
         linie.append(f"nadana {nowa.nazwa} #{pr}")
     return linie
+
+
+def oznacz(github: GitHub, pr: int, potrzebna: bool) -> list[str]:
+    """Etykieta ``ZGODA`` jest na PR ``pr`` wtedy i tylko wtedy, gdy ``potrzebna``; linia na akcję."""
+
+    na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
+    if potrzebna and ZGODA.nazwa not in na_pr:
+        linie = _zaloz(github, ZGODA)
+        github.wyslij("POST", f"{REPO}/issues/{pr}/labels", {"labels": [ZGODA.nazwa]})
+        return [*linie, f"nadana {ZGODA.nazwa} #{pr}"]
+    if not potrzebna and ZGODA.nazwa in na_pr:
+        github.wyslij("DELETE", f"{REPO}/issues/{pr}/labels/{urllib.parse.quote(ZGODA.nazwa, safe='')}", {})
+        return [f"zdjęta {ZGODA.nazwa} z #{pr}"]
+    return []
+
+
+def licz(root: Path, baza: str, glowa: str, pr: int | None, github: GitHub, html: Callable[[str], str]) -> list[str]:
+    """Linie wyniku: rozmiar i licznik szopy zmiany ``baza...glowa``, a z ``pr`` też akcje na etykietach tego PR."""
+
+    rozmiar, szopa = zmierz(root, baza, glowa), zmierz_szope(root, baza, glowa)
+    znak = f"#{pr}" if pr else glowa
+    linie = [f"ROZMIAR PR | {znak} | {rozmiar.opis()}"]
+    if not pr:
+        return [*linie, f"SZOPA | {znak} | {szopa.opis()} | {szopa.stan(None)}"]
+    linie += [f"ROZMIAR PR | {linia}" for linia in nadaj(github, pr, rozmiar.etykieta)]
+    login = zgoda(github, pr, html) if szopa.wymaga_zgody else None
+    linie.append(f"SZOPA | {znak} | {szopa.opis()} | {szopa.stan(login)}")
+    return [*linie, *(f"SZOPA | {linia}" for linia in oznacz(github, pr, szopa.wymaga_zgody and login is None))]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -153,17 +336,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--pr",
         type=int,
-        help="numer PR, któremu nadać etykietę; bez niego tylko drukuje rozmiar",
+        help="numer PR, któremu nadać etykiety; bez niego tylko drukuje rozmiar i licznik szopy",
     )
     args = parser.parse_args(argv)
 
-    rozmiar = zmierz(repo.ROOT, args.baza, args.glowa)
-    print(
-        f"ROZMIAR PR | {'#' + str(args.pr) if args.pr else args.glowa} | {rozmiar.opis()}"
-    )
-    if args.pr:
-        for linia in nadaj(GhApi(), args.pr, rozmiar.etykieta):
-            print(f"ROZMIAR PR | {linia}")
+    github = GhApi()
+    for linia in licz(repo.ROOT, args.baza, args.glowa, args.pr, github, lambda tekst: html_markdownu(tekst, github.json(REPO)["full_name"])):
+        print(linia)
     return 0
 
 

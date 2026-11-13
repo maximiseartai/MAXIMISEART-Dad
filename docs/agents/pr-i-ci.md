@@ -8,6 +8,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Co biegnie na swojej gałęzi, drukuje `.venv/bin/python tools/plan_ci.py plan --baza origin/main` (Windows: `py -3 tools/plan_ci.py plan --baza origin/main`).
   Linia `PLAN CI` podaje źródło plików (`wybór <n> plików` albo `FULL (<pliki>)`), a linie `WYBRANY` i `POMINIĘTY` kroki skilli z powodem.
 - Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu.
+- PR, który dodaje linie maszynerii procesu z listy `tools/lib/szopa.toml` i nie usuwa ich więcej, dostaje od workflow `Rozmiar PR` etykietę `wymaga ZGODA SZOPA`, którą zdejmuje tylko komentarz `ZGODA SZOPA` Maksa z konta `admin`, a agent go nie pisze (ADR 0034).
 - pytest na Windows biegnie w CI, na PR i na `main`, tylko na Pythonie taty (3.13) i na tym torze biegną E2E i straż czasu; pytest na Pythonie 3.14 biegnie tylko na Linuksie (ADR 0020, Z2).
 
 ## Zadanie CI padło

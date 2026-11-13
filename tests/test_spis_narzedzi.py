@@ -19,6 +19,10 @@ a z biblioteki biorą narzędzia, skille i testy (``_library_reaches_tools`` wyl
 Skrypt, który workflow uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem ze wszystkim, co
 importuje z ``tools/``, używa tylko biblioteki standardowej.
 
+Każdy plik ``tools/``, ``.agents/skills/`` i ``tests/`` ma dokładnie jeden wpis na liście dwóch szop
+(``tools/lib/szopa.toml``, ADR 0034), z której licznik w workflow rozmiaru PR liczy linie maszynerii procesu, a każdy
+wpis obejmuje co najmniej jeden plik.
+
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
 tylko przegląd. Importu przez ``importlib`` ani polecenia składanego w czasie biegu strażnik importów nie widzi.
 """
@@ -34,9 +38,11 @@ from typing import get_args
 
 import pytest
 
+import rozmiar_pr
 from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.git_repo import git
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -515,5 +521,30 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
             "Napis, który jedno narzędzie CI pisze, a inne czyta, pisze tylko jego właściciel: weź klucz, część albo "
             "prefiks od właściciela zamiast pisać napis, bo zmiana napisu po jednej stronie zostawiała drugą z cichym "
             "„nieznane”.",
+        ]
+    )
+
+
+def test_kazdy_plik_narzedzi_skilli_i_testow_ma_jeden_wpis_na_liscie_dwoch_szop() -> None:
+    wpisy = rozmiar_pr.wpisy((ROOT / "tools" / "lib" / "szopa.toml").read_text(encoding="utf-8"))
+    pliki = sorted(
+        nazwa
+        for nazwa in set(filter(None, git(ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0")))
+        if (ROOT / nazwa).is_file()
+    )
+    obejmujace = {nazwa: rozmiar_pr.obejmujace(wpisy, nazwa) for nazwa in pliki}
+    bledy = [
+        f"{nazwa}: brak wpisu" if not swoje else f"{nazwa}: obejmuje go kilka wpisów ({', '.join(swoje)})"
+        for nazwa, swoje in obejmujace.items()
+        if nazwa.startswith(rozmiar_pr.OBSZARY) and len(swoje) != 1
+    ]
+    bledy += [f"{wpis}: wpis nie obejmuje żadnego pliku" for wpis in wpisy if not any(wpis in swoje for swoje in obejmujace.values())]
+
+    assert bledy == [], "\n".join(
+        [
+            *bledy,
+            f"Każdy plik {', '.join(rozmiar_pr.OBSZARY)} ma jeden wpis w {rozmiar_pr.LISTA} (ADR 0034): nową jednostkę "
+            "dopisz do grupy weryfikacja (wyrok o zachowaniu produktu) albo maszyneria (reszta szopy; przy wątpliwości "
+            "ta), plik testów do listy testów swojej jednostki, test produktu do src/, a wpis bez pliku usuń.",
         ]
     )
