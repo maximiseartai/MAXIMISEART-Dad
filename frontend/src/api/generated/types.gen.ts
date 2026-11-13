@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -652,6 +652,79 @@ export type DiagnosisCheck = {
 };
 
 /**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export type DifferencesReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Files
+     */
+    files: Array<PreviewFile>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+    /**
+     * Differences
+     */
+    differences: Array<QuantityDifference>;
+    /**
+     * More
+     */
+    more: number;
+    /**
+     * Exceptions
+     */
+    exceptions: number;
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export type DifferencesWithoutFiles = {
+    /**
+     * State
+     */
+    state: 'no_periods_directory' | 'no_settled_periods';
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export type ExceptionSaved = {
+    /**
+     * Differences
+     */
+    differences: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+    /**
+     * Change
+     */
+    change: string | null;
+};
+
+/**
  * Figure
  *
  * Liczba karty Uruchomienia z etykietą; ``unit`` ``ms`` to czas, który przeglądarka pokazuje w sekundach.
@@ -889,8 +962,9 @@ export type HistoryRow = {
 /**
  * HistoryRuleChange
  *
- * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
- * ``None``: reguły nie było.
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
  */
 export type HistoryRuleChange = {
     /**
@@ -2373,6 +2447,61 @@ export type QuantitiesToFillReady = {
      * Description Columns
      */
     description_columns: Array<DescriptionColumn>;
+};
+
+/**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export type QuantityDifference = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Devices
+     */
+    devices: string;
+    /**
+     * Activities
+     */
+    activities: string;
+    /**
+     * When
+     */
+    when: string;
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Rule
+     */
+    rule: number;
+    /**
+     * Tata
+     */
+    tata: number | 'nieliczbowa';
+    draft: RuleForm;
 };
 
 /**
@@ -5785,6 +5914,62 @@ export type AddQuantityRuleResponses = {
 };
 
 export type AddQuantityRuleResponse = AddQuantityRuleResponses[keyof AddQuantityRuleResponses];
+
+export type GetQuantityDifferencesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules/differences';
+};
+
+export type GetQuantityDifferencesResponses = {
+    /**
+     * Response Getquantitydifferences
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+};
+
+export type GetQuantityDifferencesResponse = GetQuantityDifferencesResponses[keyof GetQuantityDifferencesResponses];
+
+export type MarkQuantityExceptionData = {
+    body?: never;
+    path: {
+        /**
+         * Difference Id
+         */
+        difference_id: string;
+    };
+    query?: never;
+    url: '/api/settings/quantity-rules/differences/{difference_id}/exception';
+};
+
+export type MarkQuantityExceptionErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MarkQuantityExceptionError = MarkQuantityExceptionErrors[keyof MarkQuantityExceptionErrors];
+
+export type MarkQuantityExceptionResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExceptionSaved;
+};
+
+export type MarkQuantityExceptionResponse = MarkQuantityExceptionResponses[keyof MarkQuantityExceptionResponses];
 
 export type PreviewQuantityRulesData = {
     /**

@@ -928,6 +928,16 @@ ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę
 ilości, której tata nie wysyła.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
+## Wyjątek Kontroli ilości
+
+Różnica Kontroli ilości w jednej komórce jednego Wiersza danych, przy której
+tata kliknął w podpowiedziach przy Regułach ilości „To był wyjątek”: jego wpis
+jest dobry dla tego zlecenia. Ta różnica nie wraca w podpowiedziach, także
+po zmianie reguły, dopóki tata nie zmieni wpisu ani treści wiersza; cofa ją
+„Cofnij” w Historii Ustawień. Nie zmienia Reguł ilości ani Kontroli ilości w
+Skrzynce Zgłoszeń.
+_Avoid_: wyjątek od reguły (reguła zostaje bez zmian), pominięcie różnicy
+
 ## Powiadomienie
 
 Fakt dla taty o jego Zgłoszeniach, Uwagach taty, wersjach narzędzia i

@@ -191,6 +191,13 @@ def quantity_rule_unknown() -> Refusal:
     return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
 
 
+def quantity_difference_unknown() -> Refusal:
+    """Różnicy z Kontroli ilości o tym id nie ma już na liście „Tu wpisałeś inaczej niż reguła” (np. tata poprawił Plik
+    zbiorczy albo regułę), więc nie ma czego oznaczyć jako wyjątek."""
+
+    return _refused(404, "Tej różnicy już nie ma na liście. Odśwież okno Ustawień.")
+
+
 def settings_change_not_undoable() -> Refusal:
     """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
 

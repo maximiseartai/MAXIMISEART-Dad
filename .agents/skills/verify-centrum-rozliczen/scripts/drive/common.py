@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -311,6 +311,39 @@ def close_settings(page: Page) -> None:
 
     page.keyboard.press("Escape")
     expect(settings_window(page)).to_have_count(0)
+
+
+QUANTITY_DIFFERENCES = "/api/settings/quantity-rules/differences"
+"""The list „Tu wpisałeś inaczej niż reguła” above the Reguły ilości: rows of the settled Pliki zbiorcze."""
+ROW_TEXT = "<tekst wiersza>"
+"""What the evidence keeps instead of URZĄDZENIA and CZYNNOŚCI of a synthetic Plik zbiorczy (workbook content)."""
+
+
+def capture_quantity_rules(
+    run: Run, page: Page, name: str, *, full_page: bool = True, texts: tuple[str, ...] = ()
+) -> None:
+    """Screenshot of the section Reguły ilości, whose list of differences of the Kontrola ilości shows URZĄDZENIA and
+    CZYNNOŚCI of the settled Pliki zbiorcze: its ARIA snapshot gets those row texts, and ``texts`` (rows of a preview),
+    replaced (``without_row_texts``), as the saved answers do, or ``centrum_self_test.py`` fails on the fixture's row
+    marker."""
+
+    run.capture(page, name, full_page=full_page)
+    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=10) as response:
+        listed: dict[str, Any] = json.load(response)
+    shown = (*texts, *(difference[key] for difference in listed.get("differences", []) for key in ("devices", "activities")))
+    snapshot = run.evidence / "aria" / f"{name}.txt"
+    snapshot.write_text(without_row_texts(read_text(snapshot), shown), encoding="utf-8")
+
+
+def without_row_texts(text: str, texts: Iterable[str]) -> str:
+    """``text`` with each of ``texts`` (URZĄDZENIA, CZYNNOŚCI of a synthetic Plik zbiorczy) as ``ROW_TEXT``, also in the
+    form the rules read it (small letters, single spaces), as the form „Popraw regułę” has it."""
+
+    shown = {value for value in texts if value}
+    shown |= {" ".join(value.casefold().split()) for value in shown}
+    for value in sorted(shown, key=len, reverse=True):
+        text = text.replace(value, ROW_TEXT)
+    return text
 
 
 def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
