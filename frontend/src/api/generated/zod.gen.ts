@@ -3,6 +3,15 @@
 import * as z from 'zod';
 
 /**
+ * ActivitiesCondition
+ */
+export const zActivitiesCondition = z.object({
+    kind: z.literal('activities'),
+    text: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * AddressesNotMoved
  *
  * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
@@ -37,6 +46,10 @@ export const zApiTiming = z.object({
         'previewReminder',
         'getSettingsHistory',
         'getQuantityRules',
+        'addQuantityRule',
+        'changeQuantityRule',
+        'removeQuantityRule',
+        'previewQuantityRules',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -189,6 +202,28 @@ export const zCollectiveFileVersion = z.object({
 });
 
 /**
+ * ComponentCondition
+ *
+ * ``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id).
+ */
+export const zComponentCondition = z.object({
+    kind: z.literal('component'),
+    component: z.string(),
+    negated: z.boolean()
+});
+
+/**
+ * ContractCondition
+ *
+ * Pierwsze słowo ``UMOWA`` jest tym słowem.
+ */
+export const zContractCondition = z.object({
+    kind: z.literal('contract'),
+    word: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * Count
  */
 export const zCount = z.object({
@@ -249,6 +284,18 @@ export const zDadNoteText = z.object({
 });
 
 /**
+ * DateCondition
+ *
+ * ``DATA`` przypada w dni tygodnia (0 to poniedziałek) od godziny ``since`` (``GG:MM``).
+ */
+export const zDateCondition = z.object({
+    kind: z.literal('date'),
+    days: z.array(z.int()),
+    since: z.string(),
+    negated: z.boolean()
+});
+
+/**
  * DecisionAnswer
  */
 export const zDecisionAnswer = z.object({
@@ -279,6 +326,22 @@ export const zDeviceComponent = z.object({
         'tv',
         'extender'
     ]).nullable()
+});
+
+/**
+ * DevicesCondition
+ *
+ * ``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty).
+ */
+export const zDevicesCondition = z.object({
+    kind: z.literal('devices'),
+    mode: z.enum([
+        'empty',
+        'exactly',
+        'contains'
+    ]),
+    text: z.string(),
+    negated: z.boolean()
 });
 
 /**
@@ -325,6 +388,19 @@ export const zFoldersChange = z.object({
 });
 
 /**
+ * GroupCondition
+ */
+export const zGroupCondition = z.object({
+    kind: z.literal('group'),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]),
+    negated: z.boolean()
+});
+
+/**
  * Health
  *
  * Tożsamość działającego Centrum.
@@ -360,33 +436,6 @@ export const zHistoryRelease = z.object({
     version: z.string().nullable(),
     commit: z.string().nullable(),
     change: z.string()
-});
-
-/**
- * HistoryRow
- *
- * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
- * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
- * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
- */
-export const zHistoryRow = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    source: z.enum([
-        'tata',
-        'outside',
-        'release'
-    ]),
-    release: zHistoryRelease.nullable(),
-    undoes: z.string().nullable(),
-    file: z.string(),
-    section: z.string().nullable(),
-    changes: z.array(zHistoryChange),
-    secret: z.boolean(),
-    undoable: z.boolean(),
-    refused: z.boolean(),
-    removed: z.boolean(),
-    reason: z.string().nullable()
 });
 
 /**
@@ -478,6 +527,16 @@ export const zKindTableCell = z.object({
         z.int(),
         z.literal('nieliczbowa')
     ])
+});
+
+/**
+ * LeaveEmptyAction
+ *
+ * Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA).
+ */
+export const zLeaveEmptyAction = z.object({
+    kind: z.literal('leave_empty'),
+    columns: z.array(z.string())
 });
 
 /**
@@ -585,6 +644,15 @@ export const zMissingPath = z.object({
  */
 export const zNotSetPath = z.object({
     state: z.literal('not_set')
+});
+
+/**
+ * NothingAction
+ *
+ * Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu.
+ */
+export const zNothingAction = z.object({
+    kind: z.literal('nothing')
 });
 
 /**
@@ -733,6 +801,33 @@ export const zPhaseProgress = z.object({
         'failed'
     ]),
     duration_ms: z.int()
+});
+
+/**
+ * PreviewCell
+ *
+ * Kolumna wiersza w podglądzie: ilość z Reguł ilości teraz (``before``) i po zmianie (``after``) oraz wpis taty
+ * (liczba albo „nieliczbowa”).
+ */
+export const zPreviewCell = z.object({
+    column: z.string(),
+    name: z.string().nullable(),
+    before: z.int(),
+    after: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ])
+});
+
+/**
+ * PreviewFile
+ *
+ * Plik zbiorczy okresu ``period`` po Przebiegu rozliczeń w podglądzie; ``rows``: jego Wiersze danych.
+ */
+export const zPreviewFile = z.object({
+    period: z.string(),
+    rows: z.int()
 });
 
 /**
@@ -1033,6 +1128,14 @@ export const zRemindersForm = z.object({
 });
 
 /**
+ * RemoveRule
+ */
+export const zRemoveRule = z.object({
+    kind: z.literal('remove'),
+    rule_id: z.string()
+});
+
+/**
  * ReportDraft
  *
  * Dokładna treść Zgłoszenia, które „Wyślij do Maksa” wyśle do skrzynki Zgłoszeń: tytuł i treść Markdown.
@@ -1290,6 +1393,84 @@ export const zQuantitiesToFillReady = z.object({
     settled: z.boolean(),
     kinds: z.array(zKindToFill),
     description_columns: z.array(zDescriptionColumn)
+});
+
+/**
+ * RuleColumn
+ *
+ * Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest
+ * pusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste.
+ */
+export const zRuleColumn = z.object({
+    letter: z.string(),
+    name: z.string().nullable(),
+    writable: z.boolean()
+});
+
+/**
+ * RuleWrite
+ */
+export const zRuleWrite = z.object({
+    column: z.string(),
+    value: z.int(),
+    multiplier: z.enum([
+        'once',
+        'component',
+        'pieces'
+    ]),
+    component: z.string().nullable()
+});
+
+/**
+ * FillAction
+ */
+export const zFillAction = z.object({
+    kind: z.literal('fill'),
+    writes: z.array(zRuleWrite)
+});
+
+/**
+ * RuleForm
+ *
+ * Reguła ilości w edytorze: zakres, warunki („ale nie gdy”: ``negated``) i działanie. ``action`` ``None``: tata nie
+ * wybrał działania, więc zapis to odmowa z polem ``to``.
+ */
+export const zRuleForm = z.object({
+    scope: z.enum([
+        'known',
+        'unknown',
+        'every'
+    ]),
+    conditions: z.array(z.union([
+        zComponentCondition,
+        zDevicesCondition,
+        zActivitiesCondition,
+        zContractCondition,
+        zDateCondition,
+        zGroupCondition
+    ])),
+    action: z.discriminatedUnion('kind', [
+        zFillAction,
+        zNothingAction,
+        zLeaveEmptyAction
+    ]).nullable()
+});
+
+/**
+ * AddRule
+ */
+export const zAddRule = z.object({
+    kind: z.literal('add'),
+    rule: zRuleForm
+});
+
+/**
+ * ChangeRule
+ */
+export const zChangeRule = z.object({
+    kind: z.literal('change'),
+    rule_id: z.string(),
+    rule: zRuleForm
 });
 
 /**
@@ -1606,9 +1787,61 @@ export const zSentenceText = z.object({
 });
 
 /**
+ * HistoryRuleChange
+ *
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
+ * ``None``: reguły nie było.
+ */
+export const zHistoryRuleChange = z.object({
+    key: z.string(),
+    before: z.array(z.union([zSentenceText, zSentenceColumn])).nullable(),
+    after: z.array(z.union([zSentenceText, zSentenceColumn])).nullable()
+});
+
+/**
+ * HistoryRow
+ *
+ * Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
+ * ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
+ * z powodem ``reason``; ``removed``: plik usunięty poza Centrum.
+ */
+export const zHistoryRow = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    source: z.enum([
+        'tata',
+        'outside',
+        'release'
+    ]),
+    release: zHistoryRelease.nullable(),
+    undoes: z.string().nullable(),
+    file: z.string(),
+    section: z.string().nullable(),
+    changes: z.array(zHistoryChange),
+    secret: z.boolean(),
+    undoable: z.boolean(),
+    refused: z.boolean(),
+    removed: z.boolean(),
+    reason: z.string().nullable(),
+    rules: z.array(zHistoryRuleChange)
+});
+
+/**
+ * PreviewWithoutFiles
+ *
+ * Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zPreviewWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods']),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])).nullable()
+});
+
+/**
  * QuantityRuleSentence
  *
- * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł.
+ * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako
+ * formularz edytora (``rule``).
  */
 export const zQuantityRuleSentence = z.object({
     id: z.string(),
@@ -1617,7 +1850,8 @@ export const zQuantityRuleSentence = z.object({
         'unknown',
         'every'
     ]),
-    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])),
+    rule: zRuleForm
 });
 
 /**
@@ -1640,8 +1874,20 @@ export const zSettingProblem = z.object({
 export const zQuantityRulesSettings = z.object({
     rules: z.array(zQuantityRuleSentence),
     devices: z.array(zDeviceComponent),
+    columns: z.array(zRuleColumn),
     rules_problem: zSettingProblem.nullable(),
     devices_problem: zSettingProblem.nullable()
+});
+
+/**
+ * QuantityRulesSaved
+ *
+ * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * zapis niczego nie zmienił.
+ */
+export const zQuantityRulesSaved = z.object({
+    quantity_rules: zQuantityRulesSettings,
+    change: z.string().nullable()
 });
 
 /**
@@ -1722,6 +1968,68 @@ export const zNotifications = z.object({
         zPricingNotification
     ])),
     message: zMessage.nullable()
+});
+
+/**
+ * SummedRule
+ */
+export const zSummedRule = z.object({
+    id: z.string(),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
+ * PreviewSum
+ *
+ * Kolumna, w którą po zmianie wpisało w tym wierszu kilka reguł, z sumą i tymi regułami („Z = 2, bo reguły A i B”).
+ */
+export const zPreviewSum = z.object({
+    column: z.string(),
+    name: z.string().nullable(),
+    total: z.int(),
+    rules: z.array(zSummedRule)
+});
+
+/**
+ * PreviewRow
+ *
+ * Wiersz danych, w którym po zmianie reguła da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego,
+ * ``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”) i kolumny. Bez adresu, numeru
+ * zlecenia, ``UMOWA`` i daty dziennej.
+ */
+export const zPreviewRow = z.object({
+    period: z.string(),
+    row: z.int(),
+    devices: z.string(),
+    activities: z.string(),
+    when: z.string(),
+    cells: z.array(zPreviewCell),
+    sums: z.array(zPreviewSum)
+});
+
+/**
+ * PreviewReady
+ *
+ * Skutek zmiany Reguł ilości na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+ * rachunkiem co Kontrola ilości.
+ *
+ * ``sentence``: zdanie reguły po zmianie (``None`` przy usunięciu). ``unread``: okresy, których Pliku zbiorczego nie
+ * dało się przeczytać. ``changed``: wiersze, w których zmienią się ilości z Reguł ilości (albo kolumny zostawione
+ * puste), z czego ``changed_as_tata`` będzie tak, jak wpisał tata. ``differences_before`` i ``differences_after``:
+ * różnice Kontroli ilości tych plików teraz i po zmianie. ``rows``: zmienione wiersze z różnicą od taty, najwyżej
+ * ``SHOWN_ROWS``, a ``more`` reszta.
+ */
+export const zPreviewReady = z.object({
+    state: z.literal('ready'),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])).nullable(),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    changed: z.int(),
+    changed_as_tata: z.int(),
+    differences_before: z.int(),
+    differences_after: z.int(),
+    rows: z.array(zPreviewRow),
+    more: z.int()
 });
 
 /**
@@ -3028,6 +3336,53 @@ export const zChoosePeriodsDirectoryResponse = zChoice;
  * Successful Response
  */
 export const zGetQuantityRulesResponse = zQuantityRulesSettings;
+
+export const zAddQuantityRuleBody = zRuleForm;
+
+/**
+ * Successful Response
+ */
+export const zAddQuantityRuleResponse = zQuantityRulesSaved;
+
+/**
+ * Edit
+ */
+export const zPreviewQuantityRulesBody = z.discriminatedUnion('kind', [
+    zAddRule,
+    zChangeRule,
+    zRemoveRule
+]);
+
+/**
+ * Response Previewquantityrules
+ *
+ * Successful Response
+ */
+export const zPreviewQuantityRulesResponse = z.discriminatedUnion('state', [
+    zPreviewReady,
+    zPreviewWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zPreviewWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
+
+export const zRemoveQuantityRulePath = z.object({
+    rule_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveQuantityRuleResponse = zQuantityRulesSaved;
+
+export const zChangeQuantityRuleBody = zRuleForm;
+
+export const zChangeQuantityRulePath = z.object({
+    rule_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeQuantityRuleResponse = zQuantityRulesSaved;
 
 /**
  * Successful Response

@@ -184,6 +184,12 @@ DEVICES: Final = SettingsFile[tuple[Component, ...]](
 )
 
 
+def rule_ids(keys: frozenset[str]) -> frozenset[str]:
+    """Id reguł z kluczy Historii Ustawień pliku reguł (``reguly.<id>``)."""
+
+    return frozenset(key.removeprefix(f"{RULES_SECTION}.") for key in keys if key.startswith(f"{RULES_SECTION}."))
+
+
 def rules_problem(
     rules: tuple[QuantityRule, ...], devices_now: tuple[Component, ...] | None, devices_good: tuple[Component, ...]
 ) -> FieldProblem | None:

@@ -128,4 +128,5 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     logs=_logs,
     quantity_check=_quantity_check,
+    quantity_rules=True,
 )

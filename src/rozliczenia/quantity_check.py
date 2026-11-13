@@ -98,6 +98,30 @@ class NotCompared:
 CheckResult = QuantityCheck | NotCompared
 
 
+@dataclass(frozen=True)
+class RowCheck:
+    """Kontrola ilości jednego Wiersza danych: wynik reguł, kolumny porównania i te z nich, w których tata wpisał inaczej
+    niż reguła. Wiersz bez daty i godziny w ``DATA`` nie ma wyniku reguł ani kolumn porównania."""
+
+    result: RuleResult | None
+    compared: tuple[str, ...]
+    differences: tuple[str, ...]
+
+
+def row_check(row: OrderFacts, rules: QuantityRules) -> RowCheck:
+    """Rachunek Kontroli ilości na jednym Wierszu danych według ``rules``; ten sam liczy ``check`` i podgląd zmiany
+    Reguł ilości w Ustawieniach (ADR 0033)."""
+
+    content = row.content
+    if content is None or content.started is None:
+        return RowCheck(None, (), ())
+    result = evaluate(rules, content)
+    compared = compared_columns(result, rules)
+    return RowCheck(
+        result, compared, tuple(column for column in compared if result.quantities.get(column, 0) != row.quantity(column))
+    )
+
+
 def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
     """Kontrola ilości Zleceń Przebiegu według ``rules``, Reguł ilości tego Przebiegu."""
 
@@ -110,20 +134,17 @@ def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
     result = QuantityCheck(other_columns)
     for row in orders:
         result.rows += 1
-        content = row.content
-        if content is None or content.started is None:
+        checked = row_check(row, rules)
+        content, rule, compared = row.content, checked.result, checked.compared
+        if content is None or content.started is None or rule is None:
             result.undated += 1
-            compared: tuple[str, ...] = ()
+        elif isinstance(rule, FromDescription):
+            result.from_description += 1
+        elif isinstance(rule, ServiceQuantities):
+            result.compared += 1
+            result.differences.update(_differences(content, content.started, row, rule.quantities, checked.differences))
         else:
-            rule = evaluate(rules, content)
-            compared = compared_columns(rule, rules)
-            if isinstance(rule, FromDescription):
-                result.from_description += 1
-            elif isinstance(rule, ServiceQuantities):
-                result.compared += 1
-                result.differences.update(_differences(content, content.started, row, rule.quantities, compared))
-            else:
-                _add_unruled(result.unruled[content.devices], content, content.started, row, rule, compared)
+            _add_unruled(result.unruled[content.devices], content, content.started, row, rule, checked)
         result.description_filled.update(
             column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in compared
         )
@@ -149,31 +170,33 @@ def _add_unruled(
     started: WeekTime,
     row: OrderFacts,
     rule: WithoutRule,
-    compared: tuple[str, ...],
+    checked: RowCheck,
 ) -> None:
     group.rows += 1
-    group.differences.update(_differences(content, started, row, rule.quantities, compared))
+    group.differences.update(_differences(content, started, row, rule.quantities, checked.differences))
     group.values.update(
-        (column, row.quantity(column)) for column in QUANTITY_LETTERS if column not in compared and row.quantity(column) != 0
+        (column, row.quantity(column))
+        for column in QUANTITY_LETTERS
+        if column not in checked.compared and row.quantity(column) != 0
     )
 
 
 def _differences(
     content: OrderContent, started: WeekTime, row: OrderFacts, quantities: Mapping[str, int], columns: Iterable[str]
 ) -> Iterable[Difference]:
+    """Grupy różnic w kolumnach ``columns``, w których tata wpisał inaczej niż reguła (``RowCheck.differences``)."""
+
     for column in columns:
-        rule, tata = quantities.get(column, 0), row.quantity(column)
-        if rule != tata:
-            yield Difference(
-                content.devices,
-                content.activities,
-                content.contract,
-                started.weekday,
-                started.at.hour,
-                column,
-                rule,
-                tata,
-            )
+        yield Difference(
+            content.devices,
+            content.activities,
+            content.contract,
+            started.weekday,
+            started.at.hour,
+            column,
+            quantities.get(column, 0),
+            row.quantity(column),
+        )
 
 
 def title(period: str, result: CheckResult) -> str:

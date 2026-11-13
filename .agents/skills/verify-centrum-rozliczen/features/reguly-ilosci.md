@@ -1,7 +1,8 @@
 # Reguły ilości i Urządzenia
 
 In the group Ilości of the window Ustawienia, Dad sees the Reguły ilości and the Lista Urządzeń that the next
-Przygotowanie pliku zbiorczego uses (ADR 0033), read only: editing them is #1478 and #1479. Each rule is one sentence
+Przygotowanie pliku zbiorczego uses (ADR 0033); the editor of a rule is `edytor-regul-ilosci.md`, and editing the
+Lista Urządzeń is #1479. Each rule is one sentence
 „Jeśli … to …” built by the server from the engine's types, the rules stand in three groups by their scope, and a
 column shows its price-list name from row 17 of the Wzorzec pliku zbiorczego next to its letter, or the letter alone
 when the Wzorzec cannot be read. One sentence says the rules work from the next Przygotowanie and leave finished Pliki

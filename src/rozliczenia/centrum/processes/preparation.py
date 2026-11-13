@@ -97,4 +97,5 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
         "period_files_in_excel",
         *TAIL,
     ),
+    quantity_rules=True,
 )

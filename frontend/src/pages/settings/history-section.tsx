@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { getSettingsHistory, undoSettingsChange } from "@/api/centrum"
 import { failureMessage } from "@/api/client"
-import type { HistoryChange, HistoryRow } from "@/api/generated"
+import type { HistoryChange, HistoryRow, HistoryRuleChange } from "@/api/generated"
 import { LoadFailure } from "@/components/load-failure"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -10,8 +10,9 @@ import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAction } from "@/lib/action"
 import { dateTime, fullDate, plural } from "@/lib/format"
-import { useSettings } from "@/lib/settings"
+import { useReloadOnChange, useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
+import { Sentence } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
 
 const THEMES = new Map([
@@ -62,17 +63,9 @@ function keyOf(change: HistoryChange): Key {
  * da się cofnąć. Cofnięcie jest nową zmianą na górze listy, a jego odmowa to jedno zdanie pod wierszem.
  */
 export function HistorySection() {
-  const { changes } = useSettings()
   const { resource: history, reload } = useResource(getSettingsHistory, [], { fromDadFiles: false })
-  const seen = React.useRef(changes)
 
-  // Każda przyjęta zmiana (także z „Zapisano · Cofnij” w powiadomieniu) czyta Historię od nowa, bez szkieletu.
-  React.useEffect(() => {
-    if (seen.current !== changes) {
-      seen.current = changes
-      void reload()
-    }
-  }, [changes, reload])
+  useReloadOnChange(reload)
 
   switch (history.state) {
     case "loading":
@@ -119,7 +112,10 @@ function Row({ row }: { row: HistoryRow }) {
     await undoSettingsChange(row.id).then(undone, (failure: Error) => setRefusal(failureMessage(failure)))
   })
 
-  const title = row.changes.length === 0 ? row.file : row.changes.map((change) => keyOf(change).label).join(", ")
+  // Reguła ilości ma w wierszu zdanie przed i po zamiast zapisu z pliku.
+  const rules = new Map(row.rules.map((rule) => [rule.key, rule]))
+  const label = (change: HistoryChange) => (rules.has(change.key) ? "Reguła ilości" : keyOf(change).label)
+  const title = row.changes.length === 0 ? row.file : [...new Set(row.changes.map(label))].join(", ")
 
   return (
     <SettingRow
@@ -129,12 +125,18 @@ function Row({ row }: { row: HistoryRow }) {
           {row.refused ? (
             <span className="text-foreground">Nie przyjęto: {row.reason}</span>
           ) : (
-            row.changes.map((change) => (
-              <span key={change.key} className="text-foreground">
-                {row.changes.length > 1 ? `${keyOf(change).label}: ` : null}
-                <Values change={change} secret={row.secret} />
-              </span>
-            ))
+            row.changes.map((change) => {
+              const rule = rules.get(change.key)
+
+              return rule === undefined ? (
+                <span key={change.key} className="text-foreground">
+                  {row.changes.length > 1 ? `${label(change)}: ` : null}
+                  <Values change={change} secret={row.secret} />
+                </span>
+              ) : (
+                <RuleValues key={change.key} rule={rule} />
+              )
+            })
           )}
           <span>{meta(row).join(" · ")}</span>
         </span>
@@ -181,6 +183,26 @@ function sourceOf(row: HistoryRow): string[] {
       return unhandled
     }
   }
+}
+
+/** Reguła ilości przed i po jako zdania; nowa reguła ma tylko „Dodano”, usunięta tylko „Usunięto”. */
+function RuleValues({ rule }: { rule: HistoryRuleChange }) {
+  const lines: ReadonlyArray<[string, HistoryRuleChange["before"]]> =
+    rule.before === null
+      ? [["Dodano", rule.after]]
+      : rule.after === null
+        ? [["Usunięto", rule.before]]
+        : [
+            ["Przed", rule.before],
+            ["Po", rule.after],
+          ]
+
+  return lines.map(([shown, parts]) => (
+    <span key={shown} className="text-pretty text-foreground">
+      <span className="text-muted-foreground">{shown}: </span>
+      {parts === null ? null : <Sentence parts={parts} />}
+    </span>
+  ))
 }
 
 /** Przed → po; sekret tylko „zmieniono”, ścieżka nazwą z pełną ścieżką w podpowiedzi. */

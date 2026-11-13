@@ -188,6 +188,12 @@ def settings_change_unknown() -> Refusal:
     return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
 
 
+def quantity_rule_unknown() -> Refusal:
+    """Reguły ilości o tym id nie ma już w regułach, którymi liczy Centrum (np. cofnięta w Historii w innym oknie)."""
+
+    return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
+
+
 def settings_change_not_undoable() -> Refusal:
     """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
 

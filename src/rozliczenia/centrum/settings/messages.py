@@ -208,6 +208,18 @@ def quantity_rules_problem(file: str, problem: str) -> str:
     return f"Plik {file} w folderze config: {problem}"
 
 
+def rule_without_action() -> str:
+    """Reguła z edytora Reguł ilości bez działania."""
+
+    return "Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą."
+
+
+def rule_hour() -> str:
+    """Godzina warunku DATA z edytora Reguł ilości nie jest godziną z minutą."""
+
+    return "Godzinę wpisz jako GG:MM, np. 17:00."
+
+
 def needed_by_rules(file: str, component: str) -> str:
     """Lista Urządzeń bez składnika, którego potrzebują Reguły ilości; ``component``: jego nazwa, jak w sekcji Urządzenia."""
 

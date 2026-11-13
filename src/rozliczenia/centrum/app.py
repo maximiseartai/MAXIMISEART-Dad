@@ -65,7 +65,8 @@ from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.workers_router import workers_router
-from rozliczenia.centrum.quantity_rules_router import quantity_rules_router
+from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
+from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import server_timing, timing_router
@@ -201,9 +202,9 @@ def create_app(
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
-    app.include_router(settings_router(settings, platform, inbox.try_login, today))
     configuration = configuration_files or ConfigurationFiles.default()
-    app.include_router(quantity_rules_router(settings, configuration.collective_template))
+    price_list = PriceList(configuration.collective_template)
+    app.include_router(settings_router(settings, platform, inbox.try_login, today, history_sentences(settings, price_list)))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
@@ -235,6 +236,7 @@ def create_app(
     files = DadFiles(source=source, forbidden=work.forbidden)
     # Sekcja Wykonawcy: usunięcie Wykonawcy albo loginu sprawdza okresy tym samym uchwytem plików taty.
     app.include_router(workers_router(settings, WorkerPeriods(files)))
+    app.include_router(quantity_rules_router(settings, price_list, RecentCollectiveFiles(files)))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)

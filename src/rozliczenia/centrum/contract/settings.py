@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract.settings_reminders import RemindersSetting
 from rozliczenia.centrum.contract.settings_workers import SettingProblem, WorkerListSetting
 
@@ -147,6 +148,15 @@ class HistoryChange(Model):
     after: str | None
 
 
+class HistoryRuleChange(Model):
+    """Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
+    ``None``: reguły nie było."""
+
+    key: str
+    before: list[SentencePart] | None
+    after: list[SentencePart] | None
+
+
 HistorySource = Literal["tata", "outside", "release"]
 """Skąd zmiana: zapis taty w Centrum (także cofnięcie), plik w ``config`` zmieniony poza Centrum albo zmiana z Wydania."""
 
@@ -177,6 +187,8 @@ class HistoryRow(Model):
     refused: bool
     removed: bool
     reason: str | None
+    rules: list[HistoryRuleChange]
+    """Zmienione reguły ilości wiersza jako zdania, po jednej na klucz ``reguly.<id>``; pusta w wierszu innej sekcji."""
 
 
 class SettingsHistory(Model):

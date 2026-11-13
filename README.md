@@ -185,7 +185,11 @@ powstają razem albo żaden.
   ostrzeżeniami wynikiem OK.
 - Reguły ilości z Wydania są danymi w `src/rozliczenia/reguly_ilosci_domyslne.yaml`
   i `src/rozliczenia/lista_urzadzen_domyslna.yaml`, a liczy je silnik
-  `src/rozliczenia/quantity_engine.py`. `tests/test_ilosci_uslug.py` sprawdza je
+  `src/rozliczenia/quantity_engine.py`. Tata zmienia je w oknie Ustawień
+  (sekcja Reguły ilości, ADR 0033) z podglądem na ostatnich Plikach zbiorczych
+  po Przebiegu rozliczeń; zapis trafia do `config/reguly-ilosci.yaml` i Historii
+  Ustawień. Logi Uruchomienia Przygotowania i Przebiegu zapisują Reguły ilości
+  ze startu, więc odtworzenie z Logów liczy tymi samymi regułami. `tests/test_ilosci_uslug.py` sprawdza je
   z każdą linią instrukcji taty.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które
   wypełnił tata. Uruchamia go tylko Maks na swoim Macu, a wynik to same liczby

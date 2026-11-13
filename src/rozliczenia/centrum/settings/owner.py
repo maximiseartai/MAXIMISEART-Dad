@@ -270,6 +270,33 @@ class CentrumSettings:
         with self._lock:
             return self._change(file, edit, undoes=None, source=ByDad(), undoable=True)
 
+    def change_with_used_keys(
+        self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T]
+    ) -> Saved | Refused | NotSaved:
+        """Zapis taty jak ``change``, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``),
+        przeczytane pod tą samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc
+        „Cofnij” starszego wiersza go nie rusza. Historia, której nie da się przeczytać, to ``NotSaved``."""
+
+        with self._lock:
+            keys = self._used_keys(file)
+            if isinstance(keys, Unreadable):
+                self._log.settings_unreadable(cause="historia")
+                return NotSaved()
+            return self._change(file, lambda current: edit(current, keys), undoes=None, source=ByDad(), undoable=True)
+
+    def used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
+        """Klucze, które plik ``file`` ma w wierszach Historii Ustawień, z każdego źródła i wyniku. Linia Historii, której
+        nie da się przeczytać, nie daje klucza, ale też nie da się jej cofnąć."""
+
+        with self._lock:
+            return self._used_keys(file)
+
+    def _used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
+        history = self._history.read()
+        if isinstance(history, Unreadable):
+            return history
+        return frozenset(change.key for row in history.rows if row.file == file.name for change in row.changes)
+
     def undo(self, row_id: str) -> Saved | Refused | NotSaved | NotUndoable:
         """Cofnięcie wiersza Historii: nowy zapis taty z wartościami sprzed tej zmiany; cofnięcie cofnięcia też."""
 
