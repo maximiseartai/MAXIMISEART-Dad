@@ -88,7 +88,8 @@ Dowód: <polecenie i wynik>
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
 - A code that another merged PR already uprooted (a block with `Szczebel:` in its `## Korzeń`) needs a rung higher than the highest earlier one, closer to (a).
   After (a) no higher rung exists, so Maks decides: the merge needs a comment in this PR from an account with `admin` rights on the repository with the line `ZGODA KORZEŃ: R-KOD`.
-- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
+- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD` outside `## Korzeń`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
+  A PR that an open issue `Chwast: R-KOD` names (its verdict added the row) needs that line, or `Wyrwany w #M` in every block with that code, before `tools/scal_pr.py` merges it; a thread whose first verdict came before the merge that added `tools/lib/bramka_chwastu.py` finishes without it.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
 ## Language and length

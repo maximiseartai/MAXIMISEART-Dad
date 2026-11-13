@@ -418,7 +418,7 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
         if issue is None:
             actions.append(github.Zaloz(TITLE.format(code=code), body(code, described.get(code, NONE), list(fresh.values())), (WEED, READY)))
             continue
-        kept = _rows(str(issue["bodyHTML"]), repository)
+        kept = table_rows(str(issue["bodyHTML"]), repository)
         if kept is None:
             notes.append(f"CHWAST | UWAGA: #{issue['number']} „{issue['title']}” nie ma treści w szablonie, dopisz wystąpienia ręcznie")
             continue
@@ -449,7 +449,7 @@ def _duplicates(api: github.GhApi, titles: Sequence[str], repository: str, descr
         if len(same) < 2:
             continue
         oldest, *newer = sorted(same, key=lambda issue: int(issue["number"]))
-        tables = [_rows(str(issue["bodyHTML"]), repository) for issue in (oldest, *newer)]
+        tables = [table_rows(str(issue["bodyHTML"]), repository) for issue in (oldest, *newer)]
         if any(table is None for table in tables):
             notes.append(f"CHWAST | UWAGA: „{title}” ma {len(same)} otwarte issues, a nie każde ma treść w szablonie; zostaw najstarsze #{oldest['number']} i dopisz wiersze ręcznie")
             continue
@@ -500,7 +500,7 @@ def body(code: str, description: str, rows: Sequence[Row]) -> str:
 
 
 def _cell(text: str) -> str:
-    """Tekst komórki, który renderer GitHuba pokaże dosłownie, więc odczyt tabeli (``_rows``) odda ten sam tekst."""
+    """Tekst komórki, który renderer GitHuba pokaże dosłownie, więc odczyt tabeli (``table_rows``) odda ten sam tekst."""
 
     return _ESCAPED.sub(r"\\\1", text)
 
@@ -509,7 +509,7 @@ def _row(occurrence: Occurrence) -> Row:
     return Row(occurrence.pull, occurrence.major, NONE if occurrence.rung == NONE else f"({occurrence.rung})", occurrence.mechanism)
 
 
-def _rows(html: str, repository: str) -> list[Row] | None:
+def table_rows(html: str, repository: str) -> list[Row] | None:
     """Wiersze tabeli „Wystąpienia” z HTML treści issue (``bodyHTML``); ``None``, gdy treść nie jest w szablonie: inne
     jednostki niż ``SHAPE``, inna liczba tabel niż jedna, inne kolumny albo wiersz bez jednego linku do PR tego
     repozytorium w pierwszej komórce."""

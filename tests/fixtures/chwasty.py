@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from tests.fixtures import opisy_pr
+from tests.fixtures import korzenie_pr, opisy_pr
 
 REPO = opisy_pr.REPO
 RENDERED = Path(__file__).with_name("chwasty.json")
@@ -53,6 +53,11 @@ ZGODY = {
 }
 OPISY = {
     "wyrywa-chwast": opisy_pr.wzor(f"Korzeń z #{WEED_ISSUE}: {CODE}"),
+    # opisy PR 1 z blokiem W1 r1 szczebla (c) i linią „Korzeń z” w „## Why” (bramka chwastu, #1619)
+    "szczebel-c-zamyka-chwast": korzenie_pr.body(korzenie_pr.C_BLOCK, why=f"Korzeń z #{WEED_ISSUE}: {CODE}"),
+    "szczebel-c-zamyka-chwast-innym-kodem": korzenie_pr.body(korzenie_pr.C_BLOCK, why=f"Korzeń z #{WEED_ISSUE}: R-DRUGA-DROGA"),
+    "szczebel-c-korzen-z-pr": korzenie_pr.body(korzenie_pr.C_BLOCK, why=f"Korzeń z #{OTHER}: {CODE}"),
+    "szczebel-c-korzen-z-w-bloku-kodu": korzenie_pr.body(korzenie_pr.C_BLOCK, why=_lines("```", f"Korzeń z #{WEED_ISSUE}: {CODE}", "```")),
 }
 
 
@@ -85,6 +90,7 @@ ISSUES = {
     "z-proza": f"{ISSUE}\nUwaga dopisana ręcznie.\n",
     # issue, które zakłada publikacja werdyktu na PR 1, gdy #1436 ma to samo Ważne ze szczeblem (b)
     "zalozone-z-pr-1": _issue("| #1 | W1 r1 | - | - |", OTHER_ROW),
+    "z-proza-o-pr-1": f"{ISSUE}\nWystąpienie w #1 dopisane ręcznie.\n",
 }
 
 
