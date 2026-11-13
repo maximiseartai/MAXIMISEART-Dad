@@ -26,6 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
+from drive.waiting import Budget, TimedOut, until
 from harness import File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -232,14 +233,15 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = 10) -> None:
-        deadline = time.monotonic() + timeout_s
-        while not condition():
-            if time.monotonic() > deadline:
-                check_clock_alarm(self)
-                raise DriveFailure(f"timed out: {message}")
-            time.sleep(0.1)
-        print(f"  ok: {message}", flush=True)
+    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = Budget.SCREEN.value) -> None:
+        """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
+        yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
+
+        try:
+            until(lambda: bool(condition()), message, timeout_s)
+        except TimedOut as timed_out:
+            check_clock_alarm(self)
+            raise DriveFailure(str(timed_out)) from timed_out
 
 
 # The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).

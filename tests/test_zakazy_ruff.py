@@ -222,14 +222,14 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
 OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now", "time.time"}),
     "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
-    "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes", "rozliczenia.client_data.empty_memory"}),
+    "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
+    "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),
     "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/quantity_check_run.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/reports.py": frozenset({"rozliczenia.client_data.tool"}),
-    "src/rozliczenia/centrum/work.py": frozenset({"rozliczenia.client_data.empty_memory"}),
     "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
     "src/rozliczenia/template_file.py": frozenset(
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}

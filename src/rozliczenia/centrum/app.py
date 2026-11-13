@@ -77,6 +77,7 @@ from rozliczenia.centrum.tool_update import ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.file_state import path_state
 from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
@@ -125,7 +126,7 @@ def create_app(
     reminder_rhythm: ReminderRhythm | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
-    work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
+    work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:

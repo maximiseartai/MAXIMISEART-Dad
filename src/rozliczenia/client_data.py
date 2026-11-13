@@ -239,7 +239,7 @@ class ForbiddenValues:
 
 
 def empty_memory() -> ForbiddenValues:
-    """Pusta pamięć jednej pracy Centrum albo jednego procesu bez Centrum."""
+    """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
 
     return ForbiddenValues(_PASSED)
 

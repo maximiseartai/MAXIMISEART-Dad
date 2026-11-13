@@ -6,6 +6,7 @@ from pathlib import Path
 
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
 from tests.fixtures.clock import ManualClock
 
 
@@ -13,4 +14,4 @@ def centrum_work(config: Path, log: CentrumLog, clock: ManualClock | None = None
     """Praca Centrum testu modułu bez aplikacji: pliki stanu w ``config``, dziennik ``log`` i zegar, który stoi."""
 
     clock = clock or ManualClock()
-    return CentrumWork(config=config, log=log, clock=clock, pause=clock.pause)
+    return CentrumWork(config=config, log=log, clock=clock, pause=clock.pause, forbidden=empty_memory())

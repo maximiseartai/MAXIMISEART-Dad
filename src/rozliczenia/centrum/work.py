@@ -8,21 +8,22 @@ modułu zmienia tylko ten moduł, nie ``create_app``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.client_data import ForbiddenValues, empty_memory
+from rozliczenia.client_data import ForbiddenValues
 
 
 @dataclass(frozen=True)
 class CentrumWork:
     """Jedna praca Centrum; ``forbidden`` to pamięć reguły danych (ADR 0025): zakazane wartości z każdego pliku taty,
-    który ta praca przeczytała, dla strażnika każdej wysyłki do Skrzynki, tylko w pamięci."""
+    który ta praca przeczytała, dla strażnika każdej wysyłki do Skrzynki, tylko w pamięci. Pustą pamięć daje jej tylko
+    start serwera (``app.create_app``), więc moduł Centrum nie zbuduje drugiej pracy z pustą pamięcią obok niej."""
 
     config: Path
     log: CentrumLog
     clock: Clock
     pause: Callable[[float], None]
-    forbidden: ForbiddenValues = field(default_factory=empty_memory)
+    forbidden: ForbiddenValues

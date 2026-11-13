@@ -97,7 +97,7 @@ from rozliczenia.centrum.report_entering_logs import (
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
+from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
@@ -293,7 +293,8 @@ def replay(
         limits += rebuilt.limits
         if any(limit.blocking for limit in rebuilt.limits):
             return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
-        replayed = _run(record, _prepared(record, kind, rebuilt, here))
+        memory = empty_memory()
+        replayed = _run(record, _prepared(record, kind, rebuilt, here, memory), memory)
     difference = first_difference(record, replayed)
     return Report(
         Verdict.AGREES if difference is None else Verdict.DIFFERS,
@@ -1088,7 +1089,9 @@ def _from_configuration(kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> list[
     return [*templates, WORKERS_FILE] if "workers" in kind.needs and not rebuild.workers else templates
 
 
-def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
+def _prepared(
+    record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work, memory: ForbiddenValues
+) -> PreparedRun[Any, Any]:
     """Uruchomienie z Logów ``record`` z plikami odbudowanymi i z folderu Konfiguracji, z Kopią wejścia i plikiem
     metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
     procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
@@ -1106,7 +1109,7 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
         warnings=record.start_warnings(),
     )
     metrics = work.path("metryki.jsonl")
-    return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
+    return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts(files=DadFiles(forbidden=memory)).new())
 
 
 def _quantity_rules(record: RunLog) -> QuantityRules:
@@ -1163,7 +1166,7 @@ class _Tata:
         self.progress = self._prepared.progress_view(snapshot)
 
 
-def _run(record: RunLog, prepared: PreparedRun[Any, Any]) -> RunLog:
+def _run(record: RunLog, prepared: PreparedRun[Any, Any], memory: ForbiddenValues) -> RunLog:
     """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
 
     tata = _Tata(prepared, consent=record.ending != "declined")
@@ -1186,7 +1189,7 @@ def _run(record: RunLog, prepared: PreparedRun[Any, Any]) -> RunLog:
         environment=environment,
         dad_actions=DadActions(entries=[], omitted=0),
     )
-    return guard_logs(replayed, prepared.context.files.forbidden).record
+    return guard_logs(replayed, memory).record
 
 
 # --- porównanie -----------------------------------------------------------------------------------------------------

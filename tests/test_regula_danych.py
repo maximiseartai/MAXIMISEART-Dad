@@ -184,6 +184,13 @@ def wysylka(komorka: str) -> Post:
     + """def wysylka(komorka: str) -> Post:
     return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (komorka,))  # type: ignore[arg-type]
 """,
+    "object.__setattr__ na częściach gotowej wysyłki": """from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    object.__setattr__(post, "parts", (komorka,))
+    return post
+""",
     "tytuł celu z komórki": _POST
     + """from rozliczenia.client_data import ForbiddenValues
 
@@ -205,8 +212,68 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
 }
 
 
+# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy, które
+# każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+DROGI_DO_PUSTEJ_PAMIECI: Final = {
+    "pamięć świeżego uchwytu plików taty": (
+        """from rozliczenia.dad_files import DadFiles
+
+
+def wysylka(komorka: str) -> str:
+    return DadFiles().forbidden.guard(komorka, "treść").text
+""",
+        'Item "None" of "ForbiddenValues | None" has no attribute "guard"',
+    ),
+    "pamięć kontekstu Uruchomienia bez Centrum": (
+        """from rozliczenia.run_context import RunContext
+
+
+def wysylka(komorka: str) -> str:
+    return RunContext().files.forbidden.guard(komorka, "treść").text
+""",
+        'Item "None" of "ForbiddenValues | None" has no attribute "guard"',
+    ),
+    "pamięć świeżej pracy Centrum": (
+        """from pathlib import Path
+
+from rozliczenia.centrum.clock import Clock
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.work import CentrumWork
+
+
+def wysylka(komorka: str, log: CentrumLog, zegar: Clock) -> str:
+    return CentrumWork(Path("config"), log, zegar, print).forbidden.guard(komorka, "treść").text
+""",
+        'Missing positional argument "forbidden"',
+    ),
+}
+
+# Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
+# mypy i ruff ich nie łapią.
+ZNANE_LUKI_PAMIECI: Final = {
+    "cast pamięci uchwytu": """from typing import cast
+
+from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.dad_files import DadFiles
+
+
+def wysylka(komorka: str) -> str:
+    return cast(ForbiddenValues, DadFiles().forbidden).guard(komorka, "treść").text
+""",
+}
+
+
 @wymaga_ruff_i_mypy
 def test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
     zgloszenia = ruff_i_mypy(zapisz(ZNANE_LUKI, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
 
     assert_znane_luki(zgloszenia, "tests/test_regula_danych.py")
+
+
+@wymaga_ruff_i_mypy
+def test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_PUSTEJ_PAMIECI.items()} | ZNANE_LUKI_PAMIECI
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pamieci.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_PUSTEJ_PAMIECI.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_PAMIECI}, "tests/test_regula_danych.py")
