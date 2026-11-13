@@ -125,6 +125,7 @@ class IntermaxEntry:
             period=None,
             dry_run=False,
             settings=snapshot,
+            quantity_rules=snapshot.quantity_rules,
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

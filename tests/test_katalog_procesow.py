@@ -22,6 +22,7 @@ from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessK
 from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.efenix_pricing import PricingMode
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
 from rozliczenia import tool_files
@@ -59,11 +60,22 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
     [
         (
             "settlement",
-            Start({"collective_file": Path("plik-zbiorczy.xlsx")}, period=None, dry_run=False, workers=WorkerList(())),
+            Start(
+                {"collective_file": Path("plik-zbiorczy.xlsx")},
+                period=None,
+                dry_run=False,
+                workers=WorkerList(()),
+                quantity_rules=DEFAULT_QUANTITY_RULES,
+            ),
             HostParts(),
             "potrzebuje plików",
         ),
-        ("settlement", Start(_SETTLEMENT_FILES, period=None, dry_run=False), HostParts(), "potrzebuje Listy Wykonawców"),
+        (
+            "settlement",
+            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES),
+            HostParts(),
+            "potrzebuje Listy Wykonawców",
+        ),
         (
             "preparation",
             Start(
@@ -75,15 +87,23 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 },
                 period=None,
                 dry_run=True,
+                quantity_rules=DEFAULT_QUANTITY_RULES,
             ),
             HostParts(),
             "potrzebuje okresu",
         ),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False), HostParts(), "potrzebuje okna efenix"),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True), _ATRAPA, "nie ma Podglądu bez zapisu"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES), HostParts(), "potrzebuje okna efenix"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES), _ATRAPA, "nie ma Podglądu bez zapisu"),
         (
             "settlement",
-            Start(_SETTLEMENT_FILES, None, False, pricing="z Przekazaniem", workers=WorkerList(())),
+            Start(
+                _SETTLEMENT_FILES,
+                None,
+                False,
+                pricing="z Przekazaniem",
+                workers=WorkerList(()),
+                quantity_rules=DEFAULT_QUANTITY_RULES,
+            ),
             HostParts(),
             "nie ma trybu z Przekazaniem",
         ),
@@ -107,7 +127,13 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
     """Skrypt dla maszyn bez ``--z-przekazaniem`` i Logi sprzed trybów nie wybierają trybu, a Wycena biegnie wtedy bez
     Przekazania (ADR 0027): ten sam tryb w wejściu silnika i w Uruchomieniu na karcie."""
 
-    start = Start({"collective_file": Path("plik-zbiorczy.xlsx")}, period=None, dry_run=False, pricing=chosen)
+    start = Start(
+        {"collective_file": Path("plik-zbiorczy.xlsx")},
+        period=None,
+        dry_run=False,
+        pricing=chosen,
+        quantity_rules=DEFAULT_QUANTITY_RULES,
+    )
 
     prepared = CATALOG.prepared("efenix", start, _ATRAPA, RunContext())
 

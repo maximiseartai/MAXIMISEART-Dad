@@ -44,6 +44,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.centrum import (
@@ -476,6 +477,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getMetrics": _route("getMetrics", "GET", "/api/metrics"),
     "getConfiguration": _route("getConfiguration", "GET", "/api/configuration"),
+    "getQuantityRules": _route("getQuantityRules", "GET", "/api/settings/quantity-rules"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -552,6 +554,7 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
+    "getQuantityRules": {"wzorzec_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
@@ -776,6 +779,8 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "wynik_aktualizacji": TOOL.config / RESULT_FILE,
         "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
+        "reguly_ilosci": TOOL.config / RULES_FILE,
+        "lista_urzadzen": TOOL.config / DEVICES_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -794,6 +799,8 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "wynik_aktualizacji": "config/centrum-aktualizacja.json",
         "dzialania_taty": "logs/dzialania-taty.jsonl",
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
+        "reguly_ilosci": "config/reguly-ilosci.yaml",
+        "lista_urzadzen": "config/lista-urzadzen.yaml",
     }
 
 

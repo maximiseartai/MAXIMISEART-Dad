@@ -59,6 +59,7 @@ from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.message import Message, StopError
 from rozliczenia.period_folder import PeriodFolderError, PeriodFolderInaccessible, PeriodFolderLookupError
@@ -164,6 +165,11 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             ],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
+            "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
+            "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
+            "quantity_rules_problem": [
+                partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
+            ],
         },
     ),
 }
@@ -552,6 +558,7 @@ QUOTES_OUTSIDE_UI: Final = {
     ".Rozliczenie pracowników 08_14_09_2026.staging-": "początek nazwy folderu tymczasowego z próbki",
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
+    "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
 }
 
 

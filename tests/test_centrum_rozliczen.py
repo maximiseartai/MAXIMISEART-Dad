@@ -22,6 +22,8 @@ from typing import Any, Literal, get_args
 import imaplib
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from rozliczenia.settlement_period import parse_period_token
@@ -63,6 +65,8 @@ from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -76,11 +80,12 @@ from tests.fixtures.centrum import (
     centrum_app,
     view_timing,
 )
-from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks
+from tests.fixtures.centrum_processes import run_to_end, settling_centrum, stopped_for_maks, write_dad_quantity_rules
 from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.settlement import PERIOD, worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap
+from atrapy.preparation import write_collective_template
 
 import export_openapi
 
@@ -637,6 +642,314 @@ def test_cofniecie_zmiany_ktorej_nie_ma_w_historii_jest_odmowa(tmp_path: Path) -
         404,
         {"message": "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień."},
     )
+
+
+QUANTITY_RULES_URL = "/api/settings/quantity-rules"
+
+
+def rule_sentences(app: Centrum) -> dict[str, str]:
+    """Zdanie każdej reguły z odpowiedzi sekcji Reguły ilości; kolumna jako „nazwa (litera)” albo sama litera."""
+
+    response = app.client.get(QUANTITY_RULES_URL)
+    assert response.status_code == 200, response.text
+    return {
+        rule["id"]: "".join(
+            part["text"] if part["kind"] == "text" else part["letter"] if part["name"] is None else f"{part['name']} ({part['letter']})"
+            for part in rule["sentence"]
+        )
+        for rule in response.json()["rules"]
+    }
+
+
+def test_kazda_regula_ilosci_z_wydania_ma_w_ustawieniach_zdanie_jesli_to_a_bez_wzorca_kolumna_to_litera(tmp_path: Path) -> None:
+    response = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()
+    sentences = rule_sentences(centrum(tmp_path))
+
+    assert [(rule["id"], rule["scope"]) for rule in response["rules"]] == [
+        (rule.id, {"znane": "known", "nieznane": "unknown", "kazde": "every"}[rule.scope.value])
+        for rule in DEFAULT_QUANTITY_RULES.rules
+    ]
+    assert all(sentence[0].isupper() and sentence.endswith(".") for sentence in sentences.values())
+    assert (response["rules_problem"], response["devices_problem"]) == (None, None)
+    # Zdania wybranych reguł, po jednej na każdy rodzaj warunku, działania i mnożnika (ADR 0033).
+    assert {rule: sentences[rule] for rule in RULE_SENTENCES} == RULE_SENTENCES
+
+
+RULE_SENTENCES = {
+    "z-opisu-puste": "Jeśli URZĄDZENIA są puste, to nic nie wpisuj w tym zleceniu.",
+    "z-opisu-prewencja": "Jeśli URZĄDZENIA to dokładnie „prewencja”, to nic nie wpisuj w tym zleceniu.",
+    "v-znane": "Wpisz 1 w V, ale nie gdy URZĄDZENIA zawierają „instalacja ręczna”.",
+    "v-nieznane": "Wpisz 1 w V.",
+    "t-umowa-u": "Jeśli UMOWA zaczyna się od słowa „u”, to wpisz 1 w T.",
+    "dodatek-usterka-pn-pt": "Jeśli URZĄDZENIA zawierają „usterka” i DATA to poniedziałek–piątek od 17:00, to wpisz 45 w N.",
+    "dodatek-usterka-sobota": "Jeśli URZĄDZENIA zawierają „usterka” i DATA to sobota od 0:00, to wpisz 45 w N.",
+    "nokia-bez-routera-akt-int": (
+        "Jeśli URZĄDZENIA zawierają „nokia” i CZYNNOŚCI zawierają „akt int”, "
+        "ale nie gdy zlecenie ma urządzenie z grupy router, to wpisz 1 w O."
+    ),
+    "technicolor": "Jeśli URZĄDZENIA zawierają „technicolor”, to wpisz liczbę „technicolor” w O, Z i AK.",
+    "gateway-z-extenderem": (
+        "Jeśli URZĄDZENIA zawierają „gateway” i zlecenie ma urządzenie z grupy extender, to wpisz liczbę „gateway” w AO."
+    ),
+    "instalacja-reczna": (
+        "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz „N szt” z CZYNNOŚCI za każde „instalacja ręczna” w AN i V."
+    ),
+    "inea-gniazdo": "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw AP pustą w Rozliczeniu pracownika.",
+}
+
+
+def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["Z17"], sheet["AK17"] = "ONT  Nokia\nz montażem", "Technicolor (opis)"
+    workbook.save(template)
+
+    sentences = rule_sentences(app)
+
+    assert sentences["technicolor"] == (
+        "Jeśli URZĄDZENIA zawierają „technicolor”, to wpisz liczbę „technicolor” w O, ONT Nokia z montażem (Z) "
+        "i Technicolor (opis) (AK)."
+    )
+    assert sentences["inea-gniazdo"] == "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw demontaż (AP) pustą w Rozliczeniu pracownika."
+
+
+def test_lista_urzadzen_w_ustawieniach_ma_kazdy_skladnik_z_innymi_zapisami_i_grupa(tmp_path: Path) -> None:
+    devices = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()["devices"]
+
+    assert [device["id"] for device in devices] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
+    shown = {device["id"]: (device["name"], device["other_spellings"], device["group"]) for device in devices}
+    assert (shown["gateway"], shown["usterka"], shown["fut"]) == (
+        ("gateway", ["zyxel"], "router"),
+        ("usterka", ["usterka hurt", "usterka wew"], None),
+        ("fut", [], "tv"),
+    )
+
+
+NOKIA_Z = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}"
+MANUAL_INSTALLATION = "  - {id: instalacja-reczna, zapisy: [instalacja ręczna, wizja]}\n"
+NEW_COMPONENT = "  - {id: nowy, zapisy: [nowy]}\n"
+
+
+def test_lista_urzadzen_bez_skladnika_regul_ilosci_to_zle_ustawienie_listy_a_procesy_licza_ostatnia_dobra_para(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("wartosc: 1", "wartosc: 2"))
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, "")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"], response["devices_problem"]) == (
+        None,
+        {
+            "field": None,
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „instalacja ręczna”, którego potrzebują "
+            "Reguły ilości, więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
+        },
+    )
+    assert "instalacja-reczna" in [device["id"] for device in response["devices"]]
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+    assert (tools_see.devices, tools_see.rules == DEFAULT_QUANTITY_RULES.rules) == (DEFAULT_QUANTITY_RULES.devices, False)
+    assert [(row["file"], row["refused"]) for row in history_rows(app)] == [(DEVICES_FILE, True)]
+
+
+def test_lista_urzadzen_bez_skladnika_taty_z_reguly_nazywa_go_tak_jak_sekcja_urzadzenia(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + "  - {id: ont-x, zapisy: [ont x]}\n")
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: ont-x"))
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["devices_problem"] == {
+        "field": None,
+        "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „ont x”, którego potrzebują Reguły ilości, "
+        "więc Centrum liczy ostatnią dobrą Listą Urządzeń.",
+    }
+    assert {device["id"]: device["name"] for device in response["devices"]}["ont-x"] == "ont x"
+
+
+def test_uszkodzona_lista_urzadzen_to_zle_ustawienie_listy_a_widac_ostatnia_dobra_liste(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    rule_sentences(app)
+    devices.write_text("urzadzenia: [", encoding="utf-8")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"], response["devices_problem"]) == (
+        None,
+        {"field": None, "message": f"Plik {DEVICES_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."},
+    )
+    assert "nowy" in [device["id"] for device in response["devices"]]
+
+
+def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:
+    """Lista Urządzeń taty ze składnikiem spoza listy z Wydania i reguła z tym składnikiem, obie przyjęte; potem lista
+    się psuje, a reguła zmienia wartość: pasuje tylko do ostatniej dobrej listy z pamięci, nie do listy z Wydania."""
+
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    devices.write_text("urzadzenia: [", encoding="utf-8")
+    rule_sentences(app)
+    return write_dad_quantity_rules(
+        app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy").replace("wartosc: 1", "wartosc: 2")
+    )
+
+
+def test_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie_dziala_od_razu(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    _rules_changed_under_damaged_dad_list(app)
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["rules_problem"] is None
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nowy” w Z."
+
+
+def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty_przy_uszkodzonej_liscie(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rules = _rules_changed_under_damaged_dad_list(app)
+
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+
+    assert tools_see.rules == RULES.parse(rules.read_bytes())
+    assert "nowy" in [component.id for component in tools_see.devices.components]
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_procesy_licza_regulami_z_wydania(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+
+    with without_access(devices):
+        response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"]["message"], response["devices_problem"]["message"]) == (
+        f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+        f"Pliku {DEVICES_FILE} w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.",
+    )
+    assert [device["id"] for device in response["devices"]] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
+
+
+def test_regula_ze_skladnikiem_spoza_listy_jest_zla_a_po_dopisaniu_skladnika_dziala_z_wierszem_historii(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+
+    refused = app.client.get(QUANTITY_RULES_URL).json()["rules_problem"]
+    write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+
+    assert refused == {
+        "field": None,
+        "message": f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+    }
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."
+    assert [(row["file"], row["refused"], [change["key"] for change in row["changes"]]) for row in history_rows(app)] == [
+        (DEVICES_FILE, False, ["urzadzenia.nowy"]),
+        (RULES_FILE, False, ["reguly.nokia"]),
+        (RULES_FILE, True, []),
+    ]
+
+
+def test_cofniecie_po_ktorym_regula_ma_skladnik_spoza_listy_urzadzen_jest_odmowa_i_nic_sie_nie_zapisuje(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    rule_sentences(app)
+    rules = write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    rows = history_rows(app)
+    files = (devices.read_bytes(), rules.read_bytes())
+    [devices_row] = [row for row in rows if row["file"] == DEVICES_FILE]
+
+    undone = app.client.post(f"/api/settings/history/{devices_row['id']}/undo")
+
+    assert (undone.status_code, undone.json()) == (
+        422,
+        {
+            "message": f"Plik {DEVICES_FILE} w folderze config nie ma składnika „nowy”, którego potrzebują Reguły ilości, "
+            "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
+        },
+    )
+    assert (devices.read_bytes(), rules.read_bytes(), history_rows(app)) == (*files, rows)
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nowy” w Z."
+
+
+def test_zly_plik_regul_ilosci_to_zle_ustawienie_a_procesy_licza_ostatnimi_dobrymi(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    good = write_dad_quantity_rules(
+        app.tool, RULES_FILE, "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}", "{kolumna: Z, wartosc: 2, razy: liczba, skladnik: nokia}"
+    )
+    rule_sentences(app)
+    good.write_text(good.read_text(encoding="utf-8").replace("wartosc: 2", "wartosc: 0"), encoding="utf-8")
+
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert response["rules_problem"] == {
+        "field": None,
+        "message": f"Plik {RULES_FILE} w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.",
+    }
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    assert [(row["source"], row["refused"]) for row in history_rows(app)] == [("outside", True)]
+
+
+def test_regula_ilosci_zmieniona_poza_centrum_dziala_od_razu_ma_wiersz_historii_i_da_sie_ja_cofnac(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    write_dad_quantity_rules(
+        app.tool, RULES_FILE, "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia}", "{kolumna: Z, wartosc: 2, razy: liczba, skladnik: nokia}"
+    )
+
+    changed = rule_sentences(app)["nokia"]
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert changed == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
+    assert (row["source"], row["file"], row["section"], [change["key"] for change in row["changes"]]) == (
+        "outside",
+        RULES_FILE,
+        "reguly",
+        ["reguly.nokia"],
+    )
+    assert undone.status_code == 200, undone.text
+    assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z."
+    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    rule_sentences(app)
+    contract_rule = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
+    write_dad_quantity_rules(app.tool, RULES_FILE, contract_rule, "")
+    rule_sentences(app)
+    [row] = history_rows(app)
+
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    others = [rule.id for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "t-umowa-u"]
+    assert list(rule_sentences(app)) == [*others, "t-umowa-u"]
 
 
 @pytest.mark.parametrize(

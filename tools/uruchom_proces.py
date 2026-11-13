@@ -32,7 +32,7 @@ etykiety i Komunikaty co karta Uruchomienia. Bez parametru Lista Wykonawców
 i Wzorce są te z Centrum (``config/wykonawcy.yaml``, ``ConfigurationFiles.default()``), a plik
 metryk to plik metryk procesu. Listę Wykonawców ``--wykonawcy`` czyta reguła właściciela Ustawień Centrum
 (``WORKERS.parse``) bez zapisu Historii i pamięci: brak pliku to pusta lista, a zła treść kończy Skrypt kodem 1 ze
-zdaniem na stderr, bez JSON. Skrypt nie czyta Ustawień taty, nie otwiera okien
+zdaniem na stderr, bez JSON. Skrypt nie czyta Ustawień taty (Reguły ilości są te z Wydania), nie otwiera okien
 wyboru i nie pyta o nic: każdą Decyzję taty odrzuca, więc nigdy nie czeka.
 
 Na stdout trafia jeden obiekt JSON (UTF-8, ``ProcessResult``):
@@ -88,6 +88,7 @@ from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import CONFIG_DIR
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 
 from atrapy.skrzynka_raportow import FolderInbox
@@ -244,6 +245,7 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
         dry_run=values.get("dry_run", False),
         pricing="z Przekazaniem" if values.get("handover") else None,
         workers=_workers(args.workers, parser) if "workers" in kind.needs else None,
+        quantity_rules=DEFAULT_QUANTITY_RULES,
     )
 
 
