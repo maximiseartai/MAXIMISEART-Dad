@@ -51,16 +51,25 @@ dziennie to ok. 16 stron na tydzień PR-ów, czyli ok. 420 punktów na przebieg 
 strona issues na każde 100 chwastów i ``pull_node`` na PR z ponad 100 komentarzami. Limit 1000 punktów przebieg
 przekroczy po ok. 14 miesiącach; wtedy ``PAGE`` 50 (ten sam 1 punkt na stronę) daje 2,6 raza mniej stron.
 
-Issue chwastu ma tytuł ``Chwast: R-KOD``, etykiety ``chwast`` i ``ready-for-agent`` (rejestr zakłada brakującą
-etykietę) i treść z szablonu Q15 bez wolnej prozy (``body``): sekcja „Korzeń” z opisem kodu z listy korzeni na bazie,
-„Wystąpienia” z tabelą PR | Ważne | Szczebel wyrwania | Mechanizm i „Gotowe, gdy”. Gdy otwarte issue już jest,
-rejestr nie komentuje, tylko zmienia jego treść: wiersze z rejestru zastępują wiersze z tym samym PR i Ważnym,
+Issue chwastu ma tytuł ``Chwast: R-KOD``, etykietę ``chwast`` (rejestr zakłada brakującą etykietę repozytorium)
+i treść z szablonu Q15 bez wolnej prozy (``body``): sekcja „Korzeń” z opisem kodu z listy korzeni na bazie,
+„Wystąpienia” z tabelą PR | Ważne | Szczebel wyrwania | Mechanizm i „Gotowe, gdy”. Etykietę ``ready-for-agent`` ma
+tylko czoło kolejki chwastów (ADR 0034), więc nowe issue dostaje ją tylko wtedy, gdy kolejka (``queue``) jest pusta,
+a z kilku nowych naraz tylko pierwsze. Gdy otwarte issue już jest, rejestr nie zmienia jego etykiet ani nie komentuje,
+tylko zmienia jego treść: wiersze z rejestru zastępują wiersze z tym samym PR i Ważnym,
 a pozostałe wiersze tabeli zostają; treść poza szablonem zostaje bez zmian z ostrzeżeniem. Dwie publikacje z tym
 samym kodem w tej samej chwili mogą obie nie zobaczyć issue i obie je założyć, więc po założeniu rejestr czyta
 otwarte issues jeszcze raz (``_duplicates``): każde nowsze ``Chwast: R-KOD`` niż najstarsze zamyka z komentarzem
 ``Duplikat #<najstarsze>``, a jego wiersze dopisuje do najstarszego. Bez blokady, bo każda publikacja czyta listę po
 własnym założeniu, więc druga z nich widzi oba issues i zamyka to samo nowsze. Zamyka je merge PR z linią „Korzeń
 z #<issue>: R-KOD” (``root_lines``, ``naprawia.close_fixed``).
+
+Kolejność chwastów stoi w jednym otwartym issue z etykietą ``kolejka-chwastow`` (``QUEUE``), a czyta ją ``queue``,
+jedna droga dla rejestru i dla ogrodnika. Treść to nagłówek „## Kolejka” z punktami ``- #N`` w kolejności brania
+i nagłówek „## Poza kolejką” z chwastami, których nie bierze się osobno (wyrywa je program); każdy punkt ma jeden link
+do issue tego repozytorium. Kolejka to otwarte chwasty z „Kolejki” w jej kolejności, a po nich otwarte chwasty spoza
+obu list (założone później) w kolejności numerów; czoło to pierwszy. Inna liczba issues kolejki niż jedno albo treść
+poza tym kształtem to ``ValueError``, więc rejestr niczego wtedy nie zakłada.
 """
 
 from __future__ import annotations
@@ -96,11 +105,13 @@ READY = "ready-for-agent"
 # Etykieta issue „Rejestr korzeni” z tygodniowym pomiarem (``tools/rejestr_korzeni_tydzien.py``), osobna od ``WEED``,
 # żeby lista issues z etykietą ``chwast`` miała same chwasty.
 REGISTRY = "rejestr-korzeni"
+QUEUE = "kolejka-chwastow"
 LABELS = {
     WEED: ("b60205", "Korzeń z Ważnym w co najmniej 2 PR-ach (ADR 0031)"),
     READY: ("0e8a16", "Gotowe do podjęcia przez agenta"),
     REGISTRY: ("5319e7", "Tygodniowy pomiar powtórzeń korzeni (ADR 0031)"),
 }
+QUEUE_HEADINGS = ("Kolejka", "Poza kolejką")
 TITLE = "Chwast: {code}"
 COLUMNS = ("PR", "Ważne", "Szczebel wyrwania", "Mechanizm")
 HEADINGS = ("Korzeń", "Wystąpienia", "Gotowe, gdy")
@@ -397,8 +408,9 @@ class Row:
 
 def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository: str, base: str, *, write: bool) -> list[str]:
     """Issues chwastów dla kodów z ``codes`` (``None``: każdego) z wystąpieniami ``found`` w co najmniej 2 PR-ach:
-    zakłada brakujące issue (i brakujące etykiety), a w otwartym zmienia tabelę wystąpień. Bez ``write`` niczego nie
-    zapisuje, tylko podaje, co by zrobił. Linia ``CHWAST | …`` na każdą akcję i ostrzeżenie."""
+    zakłada brakujące issue (i brakujące etykiety; ``ready-for-agent`` tylko czołu pustej kolejki), a w otwartym zmienia
+    tabelę wystąpień. Bez ``write`` niczego nie zapisuje, tylko podaje, co by zrobił. Linia ``CHWAST | …`` na każdą
+    akcję i ostrzeżenie."""
 
     wanted = None if codes is None else set(codes)
     by_code: dict[str, list[Occurrence]] = {}
@@ -408,7 +420,10 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
     if not weeds:
         return []
     api = github.GhApi()
-    issues = {str(issue["title"]): issue for issue in sorted(weed_issues(repository), key=lambda issue: -int(issue["number"]))}
+    present = weed_issues(repository)
+    issues = {str(issue["title"]): issue for issue in sorted(present, key=lambda issue: -int(issue["number"]))}
+    new = [code for code in weeds if TITLE.format(code=code) not in issues]
+    lead = bool(new) and not queue(repository, present)
     described = _descriptions(base)
     actions: list[github.Akcja] = []
     notes = []
@@ -416,7 +431,8 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
         fresh = {(row.pull, row.major): row for row in map(_row, by_code[code])}
         issue = issues.get(TITLE.format(code=code))
         if issue is None:
-            actions.append(github.Zaloz(TITLE.format(code=code), body(code, described.get(code, NONE), list(fresh.values())), (WEED, READY)))
+            labels = (WEED, READY) if lead and code == new[0] else (WEED,)
+            actions.append(github.Zaloz(TITLE.format(code=code), body(code, described.get(code, NONE), list(fresh.values())), labels))
             continue
         kept = _rows(str(issue["bodyHTML"]), repository)
         if kept is None:
@@ -489,6 +505,28 @@ def weed_issues(repository: str, label: str = WEED) -> list[dict[str, Any]]:
         if not page["pageInfo"]["hasNextPage"]:
             return found
         after = page["pageInfo"]["endCursor"]
+
+
+def queue(repository: str, weeds: Iterable[dict[str, Any]] | None = None) -> list[int]:
+    """Kolejka chwastów (ADR 0034): numery otwartych issues chwastów ``weeds`` (``None``: czytane z GitHuba) w kolejności
+    brania według jedynego otwartego issue z etykietą ``QUEUE``; czoło kolejki to pierwszy numer."""
+
+    found = weed_issues(repository, QUEUE)
+    if len(found) != 1:
+        raise ValueError(f"kolejka chwastów: {len(found)} otwartych issues z etykietą {QUEUE}, a ma być jedno")
+    lists: dict[str, list[int]] = {}
+    for item in szablon_werdyktu.items(str(found[0]["bodyHTML"])):
+        if item.kind == "h2" and item.text in QUEUE_HEADINGS and item.text not in lists:
+            lists[item.text] = []
+        elif item.kind == "point" and lists and len(item.links) == 1 and item.links[0].w(repository) and item.links[0].rodzaj == "issue":
+            lists[list(lists)[-1]].append(item.links[0].numer)
+        else:
+            raise ValueError(f"kolejka chwastów #{found[0]['number']}: {item.shown()} poza kształtem „## Kolejka” i „## Poza kolejką” z punktami „- #N”")
+    listed = [number for numbers in lists.values() for number in numbers]
+    if tuple(lists) != QUEUE_HEADINGS or len(set(listed)) != len(listed):
+        raise ValueError(f"kolejka chwastów #{found[0]['number']}: nagłówki {list(lists)} zamiast {list(QUEUE_HEADINGS)} albo numer w dwóch punktach")
+    present = {int(issue["number"]) for issue in (weed_issues(repository) if weeds is None else weeds)}
+    return [number for number in lists[QUEUE_HEADINGS[0]] if number in present] + sorted(present - set(listed))
 
 
 def body(code: str, description: str, rows: Sequence[Row]) -> str:
