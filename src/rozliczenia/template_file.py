@@ -28,7 +28,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
-from .quantity_rules import QuantityColumn
 from .row_look import GENERAL, RowLook, wraps
 from .template_copy import InvalidValue, Package, Recalculation, Row, SheetLayout, TemplateCopy
 from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
@@ -409,7 +408,7 @@ def _last_written_column(layout: SheetLayout, columns: Collection[int]) -> int:
     return max(layout.look_columns, *columns)
 
 
-_NO_QUANTITIES: MappingProxyType[QuantityColumn, Never] = MappingProxyType({})
+_NO_QUANTITIES: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 def _in_columns(rows: Sequence[DataRow] | Sequence[RegisterRow], target_columns: Mapping[str, int]) -> list[Row]:

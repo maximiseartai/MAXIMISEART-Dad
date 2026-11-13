@@ -60,6 +60,7 @@ import github
 import kontekst_przegladu
 import naprawia
 import potomne
+import rejestr_korzeni
 from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
@@ -176,11 +177,13 @@ def _publish_verdict(number: int, path: Path) -> int:
     pull = stan_pr.pull(number)
     text = path.read_text(encoding="utf-8")
     werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-    if problems := werdykt_pr.publish_problems(text, pull, werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)):
+    deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
+    if problems := werdykt_pr.publish_problems(text, pull, deployed):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(number), "--body-file", str(path)).strip()
-    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}")
+    weeds = rejestr_korzeni.after_verdict(pull.number, text, pull.base, deployed)
+    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}{weeds}")
     return 0
 
 
@@ -208,7 +211,7 @@ def _merge(number: int, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )

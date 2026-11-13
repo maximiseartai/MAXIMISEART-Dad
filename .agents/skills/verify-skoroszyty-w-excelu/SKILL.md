@@ -16,7 +16,10 @@ pilnuje:
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/preparation_process.py
-  - src/rozliczenia/quantity_rules.py
+  - src/rozliczenia/quantity_engine.py
+  - src/rozliczenia/quantity_rules_file.py
+  - src/rozliczenia/reguly_ilosci_domyslne.yaml
+  - src/rozliczenia/lista_urzadzen_domyslna.yaml
   - src/rozliczenia/engine.py
   - src/rozliczenia/inea_only_quantities.py
   - src/rozliczenia/period_folder.py

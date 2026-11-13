@@ -189,6 +189,12 @@ def items(html: str) -> list[Item]:
 def listed_codes(text: str) -> frozenset[str]:
     """Kody z treści listy korzeni; ``ValueError``, gdy wpis nie ma postaci kodu z ``opis`` i numerem PR ``przyklad``."""
 
+    return frozenset(descriptions(text))
+
+
+def descriptions(text: str) -> dict[str, str]:
+    """Kody z treści listy korzeni z ich opisem; ``ValueError`` jak w ``listed_codes``."""
+
     entries = tomllib.loads(text)
     for code, entry in entries.items():
         if CODE.fullmatch(code) is None:
@@ -199,7 +205,7 @@ def listed_codes(text: str) -> frozenset[str]:
             raise ValueError(f"{code}: opis to jedno zdanie tekstu")
         if not isinstance(entry["przyklad"], int) or isinstance(entry["przyklad"], bool) or entry["przyklad"] < 1:
             raise ValueError(f"{code}: przyklad to numer PR")
-    return frozenset(entries)
+    return {code: entry["opis"] for code, entry in entries.items()}
 
 
 def pull_codes(pull: Pull) -> frozenset[str]:

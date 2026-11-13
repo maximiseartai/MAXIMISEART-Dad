@@ -21,6 +21,7 @@ from .dad_files import DadFiles
 from .efenix_mark import without_efenix_mark
 from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
+from .quantity_engine import QuantityRules
 from .register_columns import WORKER, Column
 from .quantities_to_fill import TEXT_COLUMNS, NumberedOrder, RowTexts
 from .workbook_files import DataRow
@@ -39,8 +40,8 @@ class CollectiveRows:
     """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA."""
 
 
-def read_data_rows(path: Path, files: DadFiles) -> CollectiveRows:
-    """Wiersze danych Pliku zbiorczego jednym odczytem; plik jest tylko czytany."""
+def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> CollectiveRows:
+    """Wiersze danych Pliku zbiorczego jednym odczytem, Ilości tylko dla INEA według ``rules``; plik jest tylko czytany."""
 
     read = workbook_files.read_data_rows(path, files)
     rows: list[DataRow] = []
@@ -50,7 +51,7 @@ def read_data_rows(path: Path, files: DadFiles) -> CollectiveRows:
             without_worker.append(row.number)
             continue
         rows.append(row)
-    rows, inea_only = without_inea_only(read.header, without_efenix_mark(read.header, rows))
+    rows, inea_only = without_inea_only(read.header, without_efenix_mark(read.header, rows), rules)
     return CollectiveRows(rows, without_worker, collective_orders(read.header, read.rows), inea_only)
 
 

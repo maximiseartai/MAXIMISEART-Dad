@@ -1,15 +1,18 @@
 """Kontrola ilości: Reguły ilości przeliczone na Wierszach danych z Przebiegu i porównane z Ilościami usług taty.
 
 Czysta funkcja (``check``) i jej tekst Markdown (``title``, ``blocks``). Nie zna Centrum, Skrzynki Zgłoszeń ani
-skoroszytów: dostaje tylko treść dozwoloną filtrem prywatności (``order_facts``). Kolumny (decyzja 9):
+skoroszytów: dostaje tylko treść dozwoloną filtrem prywatności (``order_facts``) i Reguły ilości, z których liczył
+Przebieg. Kolumny (decyzja 9):
 
-- kolumny Reguł ilości (``QuantityColumn``) są porównywane; AK i AM tylko w wierszu, w którym reguła daje w nich
-  wartość różną od zera, a w pozostałych liczą się jak kolumny z opisu technika;
+- kolumny Reguł ilości (``QuantityRules.rule_columns``) są porównywane; te z nich, które są też kolumnami z opisu
+  technika (AK i AM), tylko w wierszu, w którym reguła daje w nich wartość różną od zera, a w pozostałych liczą się
+  jak kolumny z opisu technika;
 - kolumny z opisu technika (``DESCRIPTION_COLUMNS``): liczba wierszy wypełnionych przez tatę;
 - pozostałe kolumny N:AP, wyliczone jako reszta: liczba wypełnionych wierszy, osobno.
 
 Wiersze rozliczane z opisu nie dają różnic, a wiersze bez reguły tworzą grupę na dokładny tekst URZĄDZENIA:
-różnice tylko w V, T i N oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to samo
+różnice tylko w kolumnach reguł dla składnika spoza listy (``QuantityRules.without_rule_columns``, z Wydania V, T i N)
+oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to samo
 (decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
 """
 
@@ -23,22 +26,17 @@ from typing import Final
 from .text import WEEKDAY_LABELS, plural
 from .collective_layout import HEADER_ROW, QUANTITY_LETTERS
 from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataValue
-from .quantity_rules import (
+from .quantity_engine import (
     DESCRIPTION_COLUMNS,
     FromDescription,
     OrderContent,
-    QuantityColumn,
+    QuantityRules,
     RuleResult,
     ServiceQuantities,
+    WeekTime,
     WithoutRule,
     evaluate,
 )
-
-_RULE_COLUMNS: Final = frozenset(QuantityColumn)
-_SHARED: Final = frozenset({QuantityColumn.AK, QuantityColumn.AM})
-WITHOUT_RULE_COLUMNS: Final = (QuantityColumn.V, QuantityColumn.T, QuantityColumn.N)
-"""Kolumny, w których Kontrola porównuje wiersz bez reguły (decyzja 10), w kolejności podpowiedzi dla taty."""
-_OTHER_COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in _RULE_COLUMNS and column not in DESCRIPTION_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -68,6 +66,8 @@ class Unruled:
 
 @dataclass
 class QuantityCheck:
+    other_columns: tuple[str, ...]
+    """Kolumny N:AP poza kolumnami Reguł ilości i kolumnami z opisu technika, w kolejności N:AP."""
     rows: int = 0
     compared: int = 0
     from_description: int = 0
@@ -98,57 +98,69 @@ class NotCompared:
 CheckResult = QuantityCheck | NotCompared
 
 
-def check(orders: CollectiveOrders) -> CheckResult:
+def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
+    """Kontrola ilości Zleceń Przebiegu według ``rules``, Reguł ilości tego Przebiegu."""
+
     if isinstance(orders, MissingHeaders):
         return NotCompared(orders.headers)
-    result = QuantityCheck()
+    rule_columns = rules.rule_columns
+    other_columns = tuple(
+        column for column in QUANTITY_LETTERS if column not in rule_columns and column not in DESCRIPTION_COLUMNS
+    )
+    result = QuantityCheck(other_columns)
     for row in orders:
         result.rows += 1
         content = row.content
-        if content is None:
+        if content is None or content.started is None:
             result.undated += 1
-            compared: tuple[QuantityColumn, ...] = ()
+            compared: tuple[str, ...] = ()
         else:
-            rule = evaluate(content)
-            compared = compared_columns(rule)
+            rule = evaluate(rules, content)
+            compared = compared_columns(rule, rules)
             if isinstance(rule, FromDescription):
                 result.from_description += 1
             elif isinstance(rule, ServiceQuantities):
                 result.compared += 1
-                result.differences.update(_differences(content, row, rule.quantities, compared))
+                result.differences.update(_differences(content, content.started, row, rule.quantities, compared))
             else:
-                _add_unruled(result.unruled[content.devices], content, row, rule, compared)
+                _add_unruled(result.unruled[content.devices], content, content.started, row, rule, compared)
         result.description_filled.update(
             column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in compared
         )
-        result.other_filled.update(column for column in _OTHER_COLUMNS if row.quantity(column) != 0)
+        result.other_filled.update(column for column in other_columns if row.quantity(column) != 0)
     return result
 
 
-def compared_columns(rule: RuleResult) -> tuple[QuantityColumn, ...]:
-    """Kolumny Reguł ilości, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
+def compared_columns(rule: RuleResult, rules: QuantityRules) -> tuple[str, ...]:
+    """Kolumny Reguł ilości ``rules``, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
 
     if isinstance(rule, FromDescription):
         return ()
     if isinstance(rule, WithoutRule):
-        return WITHOUT_RULE_COLUMNS
-    return tuple(column for column in QuantityColumn if column not in _SHARED or rule.quantities.get(column, 0))
+        return rules.without_rule_columns
+    return tuple(
+        column for column in rules.rule_columns if column not in DESCRIPTION_COLUMNS or rule.quantities.get(column, 0)
+    )
 
 
 def _add_unruled(
-    group: Unruled, content: OrderContent, row: OrderFacts, rule: WithoutRule, compared: tuple[QuantityColumn, ...]
+    group: Unruled,
+    content: OrderContent,
+    started: WeekTime,
+    row: OrderFacts,
+    rule: WithoutRule,
+    compared: tuple[str, ...],
 ) -> None:
     group.rows += 1
-    group.differences.update(_differences(content, row, rule.quantities, compared))
+    group.differences.update(_differences(content, started, row, rule.quantities, compared))
     group.values.update(
         (column, row.quantity(column)) for column in QUANTITY_LETTERS if column not in compared and row.quantity(column) != 0
     )
 
 
 def _differences(
-    content: OrderContent, row: OrderFacts, quantities: Mapping[QuantityColumn, int], columns: Iterable[QuantityColumn]
+    content: OrderContent, started: WeekTime, row: OrderFacts, quantities: Mapping[str, int], columns: Iterable[str]
 ) -> Iterable[Difference]:
-    started = content.started
     for column in columns:
         rule, tata = quantities.get(column, 0), row.quantity(column)
         if rule != tata:
@@ -209,7 +221,7 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         "\n## Kolumny z opisu technika: wiersze wypełnione przez tatę\n\n",
         _count_table(DESCRIPTION_COLUMNS, result.description_filled),
         "\n## Pozostałe kolumny N:AP: wiersze wypełnione przez tatę\n\n",
-        _count_table(_OTHER_COLUMNS, result.other_filled),
+        _count_table(result.other_columns, result.other_filled),
         tool,
     )
 
