@@ -518,7 +518,7 @@ _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
 _BOARD = _FOLDERS | _OWNER | {"plik_zbiorczy"}
-_SETTINGS = _OWNER | {"rejestr", "folder_okresow"}
+_SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
 _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
 _RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}

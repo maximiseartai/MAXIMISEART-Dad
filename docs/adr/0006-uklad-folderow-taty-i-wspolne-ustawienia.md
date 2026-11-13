@@ -14,7 +14,9 @@ tylko ten pakiet (`SETTINGS_FILE`), razem z Historią Ustawień i pamięcią
 właściciela, a `rozliczenia.tool_files` daje tylko folder `config`.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Ustawienia taty do Ustawień Centrum, a folder okresów zapisuje
-zawsze od folderu, od którego liczy się układ folderów taty.
+zawsze od folderu, od którego liczy się układ folderów taty. Od #1472 (2026-11-13) wybór tygodnia, `INEA` albo
+miesiąca zapisuje `Załączniki`, a zapis sprzed tej zmiany zamienia raz zmiana z Wydania
+`2026-11-folder-okresow-od-zalacznikow`, którą tata może cofnąć w Historii Ustawień.
 
 ## Kontekst
 

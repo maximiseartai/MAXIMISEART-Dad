@@ -76,6 +76,10 @@ function PathRow({ path, title, description }: { path: PickedPath; title: string
           <span>{description}</span>
           <span className="text-foreground">
             <PathDescription setting={setting} />
+            {/* Korzeń układu folderów taty: Centrum widzi z niego Foldery okresu wszystkich lat (ADR 0032). */}
+            {path === "periods_directory" && setting.state === "ready" && settings.data.periods_all_years ? (
+              <span className="text-muted-foreground"> – wszystkie lata</span>
+            ) : null}
           </span>
         </span>
       }
