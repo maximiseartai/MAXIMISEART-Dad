@@ -23,6 +23,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from typing import Any, cast
 import urllib.parse
 import zipfile
@@ -895,32 +896,38 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     assert (plan["do"], plan["mutacje"]) == (commity[0], "2")
 
 
-# Limit czasu części w teście: części biegną naprawdę, jak krok zadania części w mutacje-nocne.yml.
-CZAS_CZESCI_S = 20
+# Limit czasu części, która kończy się sama: chroni tylko przed zawieszeniem, więc pod obciążeniem nie mija (#1461).
+CZAS_CZESCI_S = 45
 
 
-def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path) -> subprocess.CompletedProcess[str]:
+def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path, limit_s: int = CZAS_CZESCI_S) -> subprocess.CompletedProcess[str]:
+    """Część biegnie naprawdę, jak krok zadania części w mutacje-nocne.yml; część bez zapisu przed dwukrotnością
+    ``limit_s`` to porażka, więc test łapie limit części usunięty i dwa razy większy."""
+
     zapis = zapisy / f"{mutacje_nocne.ARTEFAKT}{numer}" / mutacje_nocne.ZAPIS
-    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(CZAS_CZESCI_S), "--zapis", str(zapis)]
-    return subprocess.run(
-        [sys.executable, "tools/mutacje_zmiany.py", *polecenie],
-        cwd=repo,
-        # Narzędzie biegnie jak w zadaniu CI, bo poza nim odmawia startu (tools/lib/ciezkie_ci.py).
-        env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=120,
-        check=False,
-    )
+    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(limit_s), "--zapis", str(zapis)]
+    try:
+        return subprocess.run(
+            [sys.executable, "tools/mutacje_zmiany.py", *polecenie],
+            cwd=repo,
+            # Narzędzie biegnie jak w zadaniu CI, bo poza nim odmawia startu (tools/lib/ciezkie_ci.py).
+            env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=2 * limit_s,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"część {numer} nie skończyła się zapisem przed {2 * limit_s} s, dwukrotnością swojego limitu czasu {limit_s} s")
 
 
 def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_nastepna_zaczyna_za_nia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Części biegną naprawdę z limitem czasu ``CZAS_CZESCI_S``. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2
-    po każdej jej mutacji śpi 300 s, więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez
-    werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
+    """Części biegną naprawdę. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2 po każdej jej mutacji śpi 300 s,
+    więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez werdyktu idą do issue PR #2, a
+    następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
 
     test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep(300)\n    assert b(3) is True\n"
     pliki = {
@@ -943,11 +950,16 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2)
     zapisy = tmp_path / "zapisy"
 
-    czesci = [_czesc(repo, plan, numer, zapisy) for numer in range(1, int(plan["liczba"]) + 1)]
+    start = time.monotonic()
+    czesci = [_czesc(repo, plan, 1, zapisy)]
+    # Część 2 nie dostaje werdyktu tylko po upływie swojego limitu, ale przed nim musi skończyć pokrycie. Część 1 zrobiła
+    # więcej: start, to samo pokrycie i dwa przebiegi mutacji, więc limit z jej czasu rośnie z tempem maszyny (#1461).
+    limit_s = math.ceil(2 * (time.monotonic() - start))
+    czesci.append(_czesc(repo, plan, 2, zapisy, limit_s))
     kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
 
-    assert [czesc.returncode for czesc in czesci] == [0, 3], [czesc.stdout for czesc in czesci]
-    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {CZAS_CZESCI_S} s minął przed werdyktem 2 mutacji")
+    assert (plan["liczba"], [czesc.returncode for czesc in czesci]) == ("2", [0, 3]), [czesc.stdout for czesc in czesci]
+    assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {limit_s} s minął przed werdyktem 2 mutacji")
     assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
     (issue,) = github.issues
     assert issue["title"] == "Przeżyte mutacje z #2"
