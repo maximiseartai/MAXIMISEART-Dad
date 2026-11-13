@@ -18,7 +18,8 @@ narzędzia, a nie dokłada nowych.
 
 Przełącznik „Uruchamiaj Centrum razem z Windows” w Ustawieniach Centrum zakłada
 albo usuwa ten sam skrót z Autostartu (``StartupShortcut``), a jego stan to
-obecność pliku skrótu, więc skrót usunięty ręcznie Centrum widzi jako wyłączony.
+obecność pliku skrótu, więc skrót usunięty ręcznie Centrum widzi jako wyłączony. Plik pośredni zapisu, który zostaje,
+gdy Centrum zgaśnie w trakcie PowerShella, odczyt stanu usuwa, bo Windows uruchomiłby z niego Centrum przy stanie „off”.
 Centrum ze skrótu działa pod ``pythonw``, więc PowerShell biegnie przez
 ``platform.run_console_program``: bez okna konsoli i z limitem czasu, bo zapis
 skrótu trzyma blokadę Ustawień.
@@ -62,6 +63,13 @@ def shortcut_file(folder: Path) -> Path:
     """Plik skrótu „Centrum rozliczeń” w ``folder``: ten sam dla zapisu, stanu przełącznika i usuwania."""
 
     return folder / SHORTCUT_FILE
+
+
+def _written_file(folder: Path) -> Path:
+    """Plik pośredni zapisu skrótu w ``folder``: zostaje po nim, gdy Centrum zgaśnie w trakcie PowerShella, który
+    potem kończy ``Save()``, a Windows uruchamia Centrum także z niego."""
+
+    return folder / _WRITTEN_NAME
 
 
 @dataclass(frozen=True)
@@ -153,7 +161,13 @@ class StartupShortcut:
     run: ConsoleRun = run_console_program
 
     def state(self) -> AutostartState:
-        match file_state(shortcut_file(self._folder())):
+        """Stan skrótu; najpierw usuwa plik pośredni zapisu (``_written_file``), więc stan mówi, czy Windows uruchomi
+        Centrum po zalogowaniu. Zapis i odczyt idą pod blokadą Ustawień, więc to nigdy nie plik trwającego zapisu, a
+        wyłączenie zawsze poprzedza ten odczyt."""
+
+        folder = self._folder()
+        _written_file(folder).unlink(missing_ok=True)
+        match file_state(shortcut_file(folder)):
             case "file":
                 return "on"
             case "missing":
@@ -203,7 +217,7 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
     """
 
     target = shortcut_file(folder.resolve() if folder is not None else _system_folder(shortcut.folder))
-    written = target.with_name(_WRITTEN_NAME)
+    written = _written_file(target.parent)
     environment = os.environ | {
         "CENTRUM_SKROT_PLIK": str(written),
         "CENTRUM_SKROT_NAZWA": SHORTCUT_NAME,

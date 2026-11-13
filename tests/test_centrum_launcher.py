@@ -382,6 +382,31 @@ def test_program_konsolowy_z_centrum_ktory_sie_nie_konczy_jest_przerwany_po_limi
     assert not wait_for(alive.exists, 1, every=0.05), "Program konsolowy żyje po limicie czasu."
 
 
+@contextmanager
+def _input_nobody_writes() -> Iterator[None]:
+    """Wejście tego procesu (deskryptor 0) to potok otwarty do zapisu, do którego nikt nie pisze: program, który je
+    odziedziczy i czyta, czeka bez końca (pytest daje mu zwykle pusty ``/dev/null``)."""
+
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        yield
+    finally:
+        os.dup2(saved, 0)
+        for descriptor in (saved, read_end, write_end):
+            os.close(descriptor)
+
+
+def test_program_konsolowy_z_centrum_ktory_czyta_wejscie_dostaje_jego_koniec_zamiast_czekac() -> None:
+    """Pip, Git albo PowerShell pytający o coś w konsoli nie wiesza Centrum: dostaje koniec wejścia."""
+
+    with _input_nobody_writes():
+        result = run_console_program([sys.executable, "-c", "import sys; print(repr(sys.stdin.read()))"], timeout_s=5)
+
+    assert (result.returncode, result.stdout.strip()) == (0, "''")
+
+
 def _read_shortcut(link: Path) -> dict[str, str]:
     """Pola skrótu z WScript.Shell, który czyta ścieżkę w stronie kodowej ANSI: czyta kopię pod nazwą ASCII."""
 
@@ -526,12 +551,12 @@ def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_ins
     )
     client = CentrumClient(centrum_app(ToolDirectory(tmp_path), autostart=StartupShortcut(from_settings)))
 
-    launched: list[int] = []
+    launched: list[list[int]] = []
 
     def switch(enabled: bool) -> str:
         with _started_programs(monkeypatch) as flags:
             response = client.put("/api/settings/autostart", json={"enabled": enabled})
-        launched.extend(flags)
+        launched.append(flags)
         assert response.status_code == 200, response.text
         state: str = response.json()["settings"]["autostart"]["state"]
         return state
@@ -546,9 +571,12 @@ def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_ins
 
     assert installed.returncode == 0, installed.stdout
     assert switched == ["on", "on", "on", "off"]
-    # Centrum ze skrótu działa pod pythonw: PowerShell każdego włączenia startuje bez okna konsoli, które mignęłoby tacie.
-    assert launched == [_CREATE_NO_WINDOW] * 3
-    # Dwa włączenia nadpisują jeden skrót o nazwie skrótu z instalacji, a nie dokładają drugiego.
+    # Centrum ze skrótu działa pod pythonw: każdy PowerShell startuje bez okna konsoli, które mignęłoby tacie.
+    started = [flag for flags in launched for flag in flags]
+    assert started and set(started) == {_CREATE_NO_WINDOW}, launched
+    # Włączenie przy skrócie, który już jest, niczego nie zapisuje, więc nie uruchamia PowerShella wcale.
+    assert launched[1] == [], launched
+    # Dwa włączenia dają jeden skrót o nazwie skrótu z instalacji, a nie dokładają drugiego.
     assert [path.name for path in created] == [SHORTCUT_FILE]
     assert shortcut == _read_shortcut(from_install / SHORTCUT_FILE)
     assert (removed, outside["source"], outside["changes"]) == (

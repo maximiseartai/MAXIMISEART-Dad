@@ -1022,12 +1022,14 @@ class PowerShellWithCodePage1252:
     """PowerShell z WScript.Shell na Windows ze stroną kodową ANSI 1252 (angielski Windows, runner CI): zapisuje skrót
     pod nazwą przepuszczoną przez tę stronę kodową, w której nie ma „ń”, więc ``ń`` zostaje ``n``.
 
-    ``hangs``: PowerShell zapisuje skrót, ale nie kończy w limicie czasu, więc uruchomienie programu konsolowego
-    rzuca ``TimeoutExpired`` jak ``platform.run_console_program``.
+    ``takes_s``: tyle sekund PowerShell pisze skrót; dłużej niż limit czasu wołającego to ``TimeoutExpired`` jak w
+    ``platform.run_console_program``, po zapisaniu skrótu. ``exit_code``: kod wyjścia PowerShella po zapisaniu skrótu,
+    np. 1, gdy ``Save()`` zapisał część pliku i padł.
     """
 
     def __init__(self) -> None:
-        self.hangs = False
+        self.takes_s = 1.0
+        self.exit_code = 0
 
     def __call__(
         self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
@@ -1036,9 +1038,9 @@ class PowerShellWithCodePage1252:
         link = Path(env["CENTRUM_SKROT_PLIK"])
         in_code_page = unicodedata.normalize("NFKD", link.name).encode("cp1252", errors="ignore").decode("cp1252")
         (link.parent / in_code_page).write_bytes(b"skrot")
-        if self.hangs:
+        if self.takes_s > timeout_s:
             raise subprocess.TimeoutExpired(list(command), timeout_s)
-        return subprocess.CompletedProcess(list(command), 0, "", "")
+        return subprocess.CompletedProcess(list(command), self.exit_code, "", "")
 
 
 def startup_shortcut(tmp_path: Path, powershell: PowerShellWithCodePage1252) -> tuple[CentrumClient, Path]:
@@ -1068,10 +1070,10 @@ def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrot
 ) -> None:
     powershell = PowerShellWithCodePage1252()
     client, folder = startup_shortcut(tmp_path, powershell)
-    powershell.hangs = True
+    powershell.takes_s = 60  # zawieszony na minutę, a blokada Ustawień nie czeka tyle
 
     refused = client.put("/api/settings/autostart", json={"enabled": True})
-    powershell.hangs = False
+    powershell.takes_s = 1.0
     after_refusal = list(folder.iterdir())
     shown = client.get("/api/settings").json()["autostart"]
     enabled = client.put("/api/settings/autostart", json={"enabled": True})
@@ -1080,6 +1082,32 @@ def test_powershell_ktory_nie_zapisze_skrotu_w_limicie_czasu_to_odmowa_bez_skrot
     assert (shown, after_refusal) == (AUTOSTART_SHOWN_OFF, [])
     assert enabled.json()["settings"]["autostart"]["state"] == "on"
     assert [path.name for path in folder.iterdir()] == ["Centrum rozliczeń.lnk"]
+
+
+def test_powershell_ktory_skonczy_bledem_po_zapisaniu_czesci_skrotu_to_odmowa_bez_skrotu_w_autostarcie(tmp_path: Path) -> None:
+    powershell = PowerShellWithCodePage1252()
+    client, folder = startup_shortcut(tmp_path, powershell)
+    powershell.exit_code = 1
+
+    refused = client.put("/api/settings/autostart", json={"enabled": True})
+
+    assert (refused.status_code, refused.json()) == (500, {"message": AUTOSTART_NOT_CHANGED})
+    assert (client.get("/api/settings").json()["autostart"], list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+
+
+def test_plik_przerwanego_zapisu_skrotu_nie_zostaje_w_autostarcie_przy_przelaczniku_wylaczonym(tmp_path: Path) -> None:
+    """Centrum zgasło w trakcie PowerShella, który potem dokończył zapis pod nazwą pośrednią: Windows uruchomiłby z
+    niego Centrum po zalogowaniu, choć przełącznik mówi „off”."""
+
+    client, folder = startup_shortcut(tmp_path, PowerShellWithCodePage1252())
+    client.put("/api/settings/autostart", json={"enabled": True})
+    client.put("/api/settings/autostart", json={"enabled": False})
+    (folder / "Centrum rozliczen (zapis).lnk").write_bytes(b"skrot")
+
+    shown = client.get("/api/settings").json()["autostart"]
+
+    assert (shown, list(folder.iterdir())) == (AUTOSTART_SHOWN_OFF, [])
+    assert [row["source"] for row in client.get("/api/settings/history").json()["rows"]] == ["tata", "tata"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Autostart Windows jest tylko na Windows; tu komputer bez niego.")
