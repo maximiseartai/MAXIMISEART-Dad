@@ -102,6 +102,10 @@ CI_LOOPS = (
     "echo { a; until ! gh pr checks 446 | grep -q pending; do sleep 30; done; echo koniec &",
     # ``\&`` to znak, a nie tło.
     "until ! gh pr checks 446 | grep -q pending; do sleep 30; done | sed s/a/\\&/",
+    # Komentarz nie zakrywa pętli (sondy przeglądu #1487, runda 1 i 2; w ``${x:-{a} #b}`` zsh agenta liczy klamry).
+    "echo $(date)#x && until gh pr checks 1 | grep -q pass; do sleep 30; done",
+    "x=$(date)#; until gh pr checks 1 | grep -q pass; do sleep 30; done",
+    "echo ${x:-{a} #b}; until gh pr checks 1 | grep -q pass; do sleep 30; done",
 )
 WATCHES = (
     "timeout 1500 gh pr checks 215 --watch > .audit/swarm-215/lane1-pr-checks.txt 2>&1; echo exit=$?",
@@ -109,6 +113,13 @@ WATCHES = (
     "timeout 580 gh run watch 40098178470 --exit-status > /dev/null 2>&1; echo rc=$?; "
     'gh pr checks 384 2>&1 | grep -v "pass" | head',
     "gh run watch 39930673572 --interval 30 --exit-status > /dev/null 2>&1; echo exit=$?; date -u +%T",
+    # Komentarz za poleceniem nie zdejmuje odmowy z samego polecenia.
+    "gh run watch 39930673572 --exit-status # do końca runu",
+    # Sondy przeglądu #1487, runda 1 i 2: ``#``, za którym powłoka wykonuje polecenie.
+    "x=$(date +%s)#; gh run watch 39930673572",
+    "echo $((1+1))#; gh pr checks 1 --watch",
+    "echo ${x:-{a} #b}; gh run watch 1",
+    "[[ x =~ x|#b ]] && gh pr checks 1 --watch",
 )
 PGREP_LOOPS = (
     'until ! pgrep -f "tools/mutacje.py --plik ~/.t3/notes/arch-2026-10-24/K7/mutacje.json" >/dev/null; '
@@ -153,6 +164,36 @@ RERUNS = (
     "gh api --method POST repos/{owner}/{repo}/actions/jobs/130564767610/rerun",
     "gh api -X POST repos/o/r/actions/runs/1/attempts/1/rerun",
     'gh api -X POST "repos/o/r/actions/runs/$RUN/rerun-failed-jobs"',
+    "/opt/homebrew/bin/gh run rerun 43035692960",
+    # ``#`` w słowie, w cudzysłowie, za ukośnikiem albo w ciele heredoca nie zakrywa polecenia.
+    "echo issue#1459 && gh run rerun 43035692960",
+    'echo "#1459" && gh run rerun 43035692960',
+    "echo ${#RUN} $# \\# && gh run rerun 43035692960",
+    "cat <<'EOF' > notatka.md\n# Ponowienie\nEOF\ngh run rerun 43035692960",
+    "a=#b; gh run rerun 1",
+    "echo ${x#a}; gh run rerun 1",
+    "echo a\\\n#x; gh run rerun 1",
+    'echo "$(date)"#; gh run rerun 1',
+    # Sondy przeglądów #1487 (rundy 1–3): ``#``, za którym bash albo zsh wykonuje polecenie; hook bez ucinania
+    # komentarzy odmawia każdej z nich.
+    "echo $(date +%s)#; gh run rerun 43035692960",
+    "echo `date +%s`#; gh run rerun 43035692960",
+    "echo `#x`; gh run rerun 1",
+    "git log -1 --format=%h $(git rev-parse HEAD)#; gh run rerun 1",
+    'echo "`echo " #"`"; gh run rerun 43035692960',
+    "echo ${x:- #}; gh run rerun 1",
+    "x=`echo #`; gh run rerun 1",
+    "(( 1 #x )); gh run rerun 1",
+    "echo $[ # ]; gh run rerun 1",
+    "[[ a =~ (a #) ]]; gh run rerun 1",
+    "echo a\\ #x; gh run rerun 1",
+    'echo "${x:-" #"}"; gh run rerun 1',
+    "echo $$'a\\'; gh run rerun 1\necho '",
+    "echo ${x:-{} #}; gh run rerun 1",
+    "echo $[ a[1] + ##x ]; gh run rerun 1",
+    "a=(5); echo $[ a[1] + ##x ]; gh run rerun 1",
+    "echo ${x:-[a] #b}; gh run rerun 1",
+    "[[ $v =~ ^(ok|done)$|#x ]]; gh run rerun 1",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -222,6 +263,8 @@ PASSING = (
     # Ścieżka ze słowem rerun, która nie jest adresem ponowienia Actions.
     "gh api repos/maximiseartai/MAXIMISEART-Dad/contents/tools/rerun.py",
     "gh api repos/maximiseartai/MAXIMISEART-Dad/branches/tools/rerun-ci",
+    # Adres ponowienia liczy się tylko za ``gh api``: w argumencie innego polecenia ``gh`` to ścieżka pliku.
+    "gh pr comment 1459 --body-file ~/.t3/notes/actions/runs/43035692960/rerun.md",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.
     "(while true; do echo \"$(date +%T) $(pgrep -fl 'serve_centrum|chrome-headless|pytest' | cut -c1-100 | "
     "tr '\\n' ' ')\"; sleep 5; done) > /tmp/wyd165-watch1.log 2>&1 & W=$!; .venv/bin/python "
