@@ -94,7 +94,7 @@ class Start:
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
     chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania. ``warnings``: ostrzeżenia startu na
-    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_warnings`` z migawki Ustawień, Skrypt dla
+    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
     maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ani ``warnings`` nie mają wartości
     domyślnej, więc każdy gospodarz mówi, skąd je ma.
     """
@@ -120,7 +120,27 @@ class Start:
         return self.period
 
 
-def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
+def start_from_settings(
+    kind: ProcessKind[Any, Any],
+    settings: SettingsSnapshot,
+    paths: Mapping[PathNeed, Path],
+    *,
+    period: str | None,
+    dry_run: bool,
+    pricing: runs_contract.Pricing | None = None,
+) -> Start:
+    """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
+    Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
+    ilości i ostrzeżenia startu. Ścieżki, okres i tryb wybiera gospodarz."""
+
+    return Start(
+        paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
+        workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
+        quantity_rules=settings.quantity_rules, warnings=_start_warnings(settings, kind.needs),
+    )
+
+
+def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
     ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
 
@@ -130,7 +150,7 @@ def workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     return found
 
 
-def start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
+def _start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
     """Ostrzeżenia startu Uruchomienia procesu o potrzebach ``needs`` z migawki Ustawień Centrum (``Start.warnings``):
     proces z Listą Wykonawców biegnie na ostatniej dobrej liście, bo plik ma złe ustawienie."""
 
