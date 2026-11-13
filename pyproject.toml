@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "maximiseart-dad-settlements"
 version = "0.1.0"
 description = "Lokalne, deterministyczne rozdzielanie rozliczenia zbiorczego na pliki pracowników."
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "openpyxl>=3.1.5",
     "PyYAML>=6.0",
@@ -67,7 +67,7 @@ where = ["src"]
 "rozliczenia.centrum" = ["static/**/*", "*.ico"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 include = [
     "/*.py",
     "src/**/*.py",
@@ -184,7 +184,7 @@ extend-select = [
 
 [tool.mypy]
 # API biblioteki standardowej sprawdzane dla najstarszego Pythona z requires-python, nie dla tego, którym biegnie mypy.
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 files = [
     "*.py",

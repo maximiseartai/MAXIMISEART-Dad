@@ -1,6 +1,6 @@
 # Kopie INTERMAX
 
-When INTERMAX breaks, Dad opens Konfiguracja and finds the card `Kopie INTERMAX`:
+When INTERMAX breaks, Dad opens the section `Kopie INTERMAX` of Ustawienia:
 the 10 newest Kopie INTERMAX from before an Uporządkowanie or a restore (each write
 removes older ones of both names, `intermax_copies.KEPT`), newest first, each with its date and time from the file name and a quiet note of what
 it was made before. `Przywróć` on a row asks one sentence: the changes made in
@@ -18,7 +18,7 @@ INTERMAX open in Excel it refuses with a Komunikat and changes nothing.
 
 ## How to get to it (user POV)
 
-- Konfiguracja (side menu) → the card `Kopie INTERMAX` under Wzorce and Wykonawcy.
+- The gear `Ustawienia` in the menu's footer → section `Kopie INTERMAX` (group Pliki, `#/ustawienia/kopie-intermax`).
 
 ## Driving it with Playwright for Python
 
@@ -29,7 +29,7 @@ Preconditions:
 - Centrum's folder of Kopie is `<root>/Kopie INTERMAX` (`intermax.copies`); its clock for the restore is the fixture's today, Monday 19.10.2026, at the computer's time of day.
 
 - **Harness.** The settings file gets `rejestr_zlecen` = this feature's INTERMAX (the rest kept), and the three Kopie are copied into the folder of Kopie.
-- **List.** `#/konfiguracja`; `api/kopie-lista.json`; region `Kopie INTERMAX`, its groups `Kopia z …` in the API's order, labels in `Europe/Warsaw` from the computer's local time in the name. Capture `240`.
+- **List.** `#/ustawienia/kopie-intermax` and a reload; `api/kopie-lista.json`; region `Kopie INTERMAX` in dialog `Ustawienia`, its groups `Kopia z …` in the API's order, labels in `Europe/Warsaw` from the computer's local time in the name. Capture `240`.
 - **Warning.** Group of the oldest Kopia → button `Przywróć`; `alertdialog` with heading `Przywrócić kopię z …?` and the sentence. Capture `241`. `Anuluj`: INTERMAX and the Kopie unchanged on disk.
 - **Open in Excel.** Harness: `~$<name>` next to INTERMAX. `Przywróć` → `Przywróć tę kopię`; the card's banner with the Komunikat; INTERMAX and the Kopie unchanged. Capture `242`. Harness: the lock file removed.
 - **Restore by touch.** A new context with `has_touch`, `Emulation.setCPUThrottlingRate` 4; tap `Przywróć` on the oldest Kopia, tap `Przywróć tę kopię`; the alert `Przywrócono kopię z …`; INTERMAX equals the oldest Kopia on disk; the one new file in the folder of Kopie matches `INTERMAX przed przywróceniem 2026-10-19 GG-MM-SS.xlsx` and holds INTERMAX from before; `api/kopie-po-przywroceniu.json` lists it first and so does the card. Capture `243`.

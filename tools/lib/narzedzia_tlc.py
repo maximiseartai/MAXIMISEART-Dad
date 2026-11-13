@@ -8,8 +8,9 @@ od skrótu tego pliku, więc nowa wersja, suma albo sposób instalacji to nowy k
 
 Chwilowa awaria źródła (błąd sieci, HTTP 5xx albo 429) nie kończy sprawdzenia: ``z_ponowieniem`` ponawia próbę po
 przerwach ``PRZERWY_S``, bo jedno 504 GitHub Releases czerwieniło CI PR-ów i noc na ``main`` (#930). Gdy zawiedzie
-ostatnia próba albo źródło odpowie innym błędem HTTP, proces kończy się linią z ``BLAD_POBIERANIA``, żeby log nie mylił
-awarii pobierania z wynikiem modelu.
+ostatnia próba, proces kończy się linią z ``CHWILOWA_AWARIA``, a gdy źródło odpowie innym błędem HTTP albo jar ma inną
+sumę SHA-256, linią z samym ``BLAD_POBIERANIA``, żeby log nie mylił awarii pobierania z wynikiem modelu, a ponowienie
+runu CI (``tools/ponow_ci.py``) dotyczyło tylko awarii, która może minąć.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import potomne
 
 __all__ = [
     "BLAD_POBIERANIA",
+    "CHWILOWA_AWARIA",
     "JDK4PY",
     "KATALOG",
     "PRZERWY_S",
@@ -52,6 +54,8 @@ TLA_SHA256 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 # Przerwy przed drugą i trzecią próbą: chwilowe 504 GitHub Releases mija zwykle w sekundach.
 PRZERWY_S = (5.0, 20.0)
 BLAD_POBIERANIA = "BŁĄD POBIERANIA NARZĘDZIA TLC"
+# Początek linii chwilowej awarii źródła po ostatniej próbie; inny ``BLAD_POBIERANIA`` wraca w każdym ponowieniu runu.
+CHWILOWA_AWARIA = f"{BLAD_POBIERANIA} (chwilowa awaria źródła)"
 # Katalog podręczny narzędzi względem korzenia repozytorium, ignorowany przez Gita; ``path`` kroków cache w workflowach.
 KATALOG = Path(".verification") / "formal-aktualizacja"
 
@@ -76,7 +80,7 @@ def z_ponowieniem(narzedzie: str, proba: Callable[[], None]) -> None:
         except ChwilowaAwaria as awaria:
             if przerwa is None:
                 sys.exit(
-                    f"{BLAD_POBIERANIA}: {narzedzie} po {len(PRZERWY_S) + 1} próbach ({awaria}); "
+                    f"{CHWILOWA_AWARIA}: {narzedzie} po {len(PRZERWY_S) + 1} próbach ({awaria}); "
                     "to awaria pobierania narzędzia, nie wynik modelu."
                 )
             print(f"UWAGA: pobieranie {narzedzie} zawiodło ({awaria}); ponawiam za {przerwa:g} s.", file=sys.stderr)

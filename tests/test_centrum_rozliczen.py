@@ -830,6 +830,7 @@ def test_ostatni_pelny_okres_jest_wyrozniony_takze_bez_folderu_okresu(tmp_path: 
             {"target": "worker_settlements_folder", "label": "Folder rozliczeń pracowników", "exists": False, "count": None},
         ],
         "last_complete": True,
+        "board_place": "recent",
         "fillable": False,
         "path": [
             {"label": "Plik zbiorczy", "stage": "now"},
@@ -871,6 +872,60 @@ def test_ostatni_pelny_okres_konczy_sie_przed_dzisiejszym_dniem(tmp_path: Path, 
     app, _periods = with_periods_directory(tmp_path, today=today)
 
     assert [row["token"] for row in board_rows(app) if row["last_complete"]] == [token]
+
+
+def test_tablica_okresow_pokazuje_od_razu_biezacy_okres_i_4_poprzednie_starsze_po_rozwinieciu_a_przyszle_nigdy(
+    tmp_path: Path,
+) -> None:
+    app, periods = with_periods_directory(tmp_path, today=date(2026, 10, 19))
+    for token in (
+        "27_02_11_2026",
+        "20_26_10_2026",
+        "13_19_10_2026",
+        "29_05_10_2026",
+        "22_28_09_2026",
+        "15_21_09_2026",
+        "08_14_09_2026",
+        "01_07_09_2026",
+    ):
+        (periods / token).mkdir()
+
+    rows = board_rows(app)
+
+    assert [(row["token"], row["board_place"]) for row in rows] == [
+        ("27_02_11_2026", "not_started"),
+        ("20_26_10_2026", "not_started"),
+        ("13_19_10_2026", "recent"),
+        ("06_12_10_2026", "recent"),
+        ("29_05_10_2026", "recent"),
+        ("22_28_09_2026", "recent"),
+        ("15_21_09_2026", "recent"),
+        ("08_14_09_2026", "older"),
+        ("01_07_09_2026", "older"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("today", "place"),
+    [(date(2026, 10, 19), "not_started"), (date(2026, 10, 20), "recent"), (date(2026, 10, 26), "recent")],
+)
+def test_okres_zaczyna_sie_na_tablicy_okresow_w_swoj_wtorek(tmp_path: Path, today: date, place: str) -> None:
+    app, periods = with_periods_directory(tmp_path, today=today)
+    (periods / "20_26_10_2026").mkdir()
+
+    rows = board_rows(app)
+
+    assert [row["board_place"] for row in rows if row["token"] == "20_26_10_2026"] == [place]
+
+
+def test_przy_pieciu_zaczetych_okresach_tablica_okresow_nie_ma_nic_po_rozwinieciu(tmp_path: Path) -> None:
+    app, periods = with_periods_directory(tmp_path, today=date(2026, 10, 19))
+    for token in ("20_26_10_2026", "13_19_10_2026", "29_05_10_2026", "22_28_09_2026", "15_21_09_2026"):
+        (periods / token).mkdir()
+
+    rows = board_rows(app)
+
+    assert [row["board_place"] for row in rows] == ["not_started", *["recent"] * 5]
 
 
 def test_istniejacy_folder_ostatniego_pelnego_okresu_nie_jest_powtorzony(tmp_path: Path) -> None:

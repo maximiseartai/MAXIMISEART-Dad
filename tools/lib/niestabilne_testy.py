@@ -35,6 +35,9 @@ ARTEFAKT_KWARANTANNY = "kwarantanna-"
 # w jednej linii. Parametry pytest escapuje (``\u017c``), ale mogą mieć nawiasy, cudzysłowy, ``;``, ``@`` i backticki,
 # więc treść issue podaje id tylko w bloku kodu.
 ID_TESTU = re.compile(r"tests/[\w/]+\.py(?:::\w+)+(?:\[.*\])?")
+# Etykieta issue flaky testu, które zakłada ``tools/ci/zgloszenia_ci.py``, a ``tools/ponow_ci.py`` czyta.
+ETYKIETA_FLAKY = "flaky-test"
+DLUGOSC_W_TYTULE = 200
 # Własność junit testu z kwarantanny (``tests/conftest.py``), z powodem kwarantanny jako wartością.
 WLASNOSC = "kwarantanna"
 
@@ -62,6 +65,16 @@ class ZapisKwarantanny:
 def zapisz_flaky_testy(flaky_testy: Sequence[FlakyTest], plik: Path = FLAKY_TESTY) -> None:
     plik.parent.mkdir(parents=True, exist_ok=True)
     plik.write_text(json.dumps([asdict(flaky) for flaky in flaky_testy], indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+def przytnij(tekst: str, dlugosc: int) -> str:
+    return tekst if len(tekst) <= dlugosc else f"{tekst[: dlugosc - 1]}…"
+
+
+def tytul_issue(test: str) -> str:
+    """Tytuł jedynego otwartego issue flaky testu ``test``."""
+
+    return f"Flaky test: {przytnij(test, DLUGOSC_W_TYTULE)}"
 
 
 def zgloszalny(test: str) -> bool:

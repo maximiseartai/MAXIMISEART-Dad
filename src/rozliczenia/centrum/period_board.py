@@ -5,12 +5,13 @@ obserwację plików i Status okresu z nazwą zna silnik (``period_folder``);
 treści skoroszytów Centrum nie czyta. Wycena w efenix okresu jest zaliczona, gdy
 ostatnie jej Uruchomienie w Historii (plik metryk procesu) skończyło się wynikiem
 OK; Statusu okresu nie zmienia. Tu są Droga okresu, następny krok i krok obok
-niego (podpowiedź podglądu deklaruje wpis procesu w katalogu procesów) oraz etykiety i wybór plików do otwarcia.
+niego (podpowiedź podglądu deklaruje wpis procesu w katalogu procesów), etykiety i wybór plików do otwarcia oraz
+miejsce okresu na tablicy: bieżący okres i 4 poprzednie od razu, starsze po „Pokaż wszystkie”, niezaczęte nigdy.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Final, Literal, get_args
@@ -135,7 +136,28 @@ def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[periods_contract.Nex
                     return _SETTLE, None
 
 
-def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> periods_contract.PeriodRow:
+RECENT_PERIODS: Final = 5
+"""Ile zaczętych okresów Tablica okresów pokazuje od razu: bieżący okres i 4 poprzednie."""
+
+
+def _board_places(newest_first: Sequence[SettlementPeriod], today: date) -> list[periods_contract.BoardPlace]:
+    """Okres, którego wtorek jest po ``today``, jeszcze się nie zaczął; z zaczętych, od najnowszego, pierwsze
+    ``RECENT_PERIODS`` widać od razu, a resztę po „Pokaż wszystkie”."""
+
+    places: list[periods_contract.BoardPlace] = []
+    started = 0
+    for period in newest_first:
+        if period.tuesday > today:
+            places.append("not_started")
+            continue
+        places.append("recent" if started < RECENT_PERIODS else "older")
+        started += 1
+    return places
+
+
+def _row(
+    folder: PeriodFolder, *, last_complete: bool, board_place: periods_contract.BoardPlace, pricing: Pricing
+) -> periods_contract.PeriodRow:
     period = folder.period
     observation = folder.observe()
     status = observation.status
@@ -148,6 +170,7 @@ def _row(folder: PeriodFolder, *, last_complete: bool, pricing: Pricing) -> peri
         status_label=period_status_label(status),
         files=[_file(observation, place) for place in get_args(PeriodPlace)],
         last_complete=last_complete,
+        board_place=board_place,
         fillable=status == "collective_file_prepared",
         path=_path(status, pricing),
         next_step=next_step,
@@ -171,7 +194,8 @@ def _has_collective_file(row: periods_contract.PeriodRow) -> bool:
 
 
 def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> periods_contract.PeriodBoard:
-    """Tablica okresów z folderu okresów; ``catalog`` daje Historię Wyceny w efenix (jej plik metryk)."""
+    """Tablica okresów z folderu okresów w dniu taty ``today``; ``catalog`` daje Historię Wyceny w efenix (jej plik
+    metryk)."""
 
     if periods_directory is None:
         return periods_contract.BoardNotSet(state="not_set")
@@ -183,9 +207,15 @@ def read_board(periods_directory: Path | None, today: date, catalog: Catalog) ->
     folders.setdefault(last_complete, PeriodFolder(periods_directory, last_complete))
     newest_first = sorted(folders.values(), key=lambda folder: folder.period.tuesday, reverse=True)
     priced = last_results(catalog.metrics("efenix"))
+    places = _board_places([folder.period for folder in newest_first], today)
     rows = [
-        _row(folder, last_complete=folder.period == last_complete, pricing=_pricing(priced.get(folder.period.token)))
-        for folder in newest_first
+        _row(
+            folder,
+            last_complete=folder.period == last_complete,
+            board_place=place,
+            pricing=_pricing(priced.get(folder.period.token)),
+        )
+        for folder, place in zip(newest_first, places, strict=True)
     ]
     return periods_contract.BoardReady(
         state="ready",

@@ -61,8 +61,8 @@ def check(root: Path, desk: Path) -> list[str]:
     problems: list[str] = []
     if sys.platform != "darwin":
         problems.append("this skill drives Excel for Mac; run it on macOS")
-    if sys.version_info < (3, 11):
-        problems.append("Python 3.11 or newer is required")
+    if sys.version_info < (3, 13):
+        problems.append("Python 3.13 or newer is required")
     version = excel.installed_version()
     if version is None:
         problems.append("Microsoft Excel is not installed in /Applications")

@@ -19,7 +19,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item"
 import { Skeleton } from "@/components/ui/skeleton"
 import { dateTime, hourMinute } from "@/lib/format"
@@ -33,7 +32,7 @@ type Outcome = IntermaxRestore | { state: "failed"; message: string }
  * zmiany po jej godzinie znikną. Wynik (przywrócona albo Komunikat odmowy) stoi nad listą, a lista czyta się od
  * nowa, bo stan sprzed przywrócenia jest teraz nową Kopią.
  */
-export function IntermaxCopiesCard() {
+export function IntermaxCopiesSection() {
   const { resource: copies, reload } = useResource(getIntermaxCopies, [])
   const [chosen, setChosen] = React.useState<IntermaxCopy | null>(null)
   const [restoring, setRestoring] = React.useState(false)
@@ -51,12 +50,8 @@ export function IntermaxCopiesCard() {
   }
 
   return (
-    <Card role="region" aria-labelledby="kopie-intermax">
-      <CardHeader>
-        <CardTitle id="kopie-intermax">Kopie INTERMAX</CardTitle>
-        <CardDescription>Stan INTERMAX sprzed każdej zmiany przez narzędzie.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <div role="region" aria-label="Kopie INTERMAX" className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">Stan INTERMAX sprzed każdej zmiany przez narzędzie.</p>
         {outcome === null ? null : <RestoreOutcome outcome={outcome} />}
         {copies.state === "loading" ? <Skeleton className="h-32 w-full" aria-label="Wczytywanie Kopii INTERMAX" /> : null}
         {copies.state === "failed" ? (
@@ -72,7 +67,7 @@ export function IntermaxCopiesCard() {
           </p>
         ) : null}
         {copies.state === "ready" && copies.data.copies.length > 0 ? (
-          <ul aria-labelledby="kopie-intermax" className="flex flex-col gap-2">
+          <ul aria-label="Kopie INTERMAX" className="flex flex-col gap-2">
             {copies.data.copies.map((copy) => (
               <li key={copy.name}>
                 <Item variant="muted" size="sm" role="group" aria-label={`Kopia z ${dateTime(copy.taken_at)}`}>
@@ -96,13 +91,12 @@ export function IntermaxCopiesCard() {
             ))}
           </ul>
         ) : null}
-      </CardContent>
       <ConfirmRestoreDialog
         copy={chosen}
         onOpenChange={(open) => (open ? null : setChosen(null))}
         onConfirm={restore}
       />
-    </Card>
+    </div>
   )
 }
 

@@ -25,7 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import SYSTEM_CLOCK, Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
-from rozliczenia.centrum.configuration import CONFIGURATION_WAIT_S, ConfigurationFiles, configuration_router
+from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.configuration_router import CONFIGURATION_WAIT_S, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract.centrum import Health
 from rozliczenia.centrum.contract.common import Problem

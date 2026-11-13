@@ -713,6 +713,11 @@ export const zPeriodRow = z.object({
     status_label: z.string(),
     files: z.array(zBoardFile),
     last_complete: z.boolean(),
+    board_place: z.enum([
+        'recent',
+        'older',
+        'not_started'
+    ]),
     fillable: z.boolean(),
     path: z.array(zPathStep),
     next_step: z.discriminatedUnion('action', [
@@ -1632,7 +1637,7 @@ export const zViewTiming = z.object({
         'okresy',
         'uruchomienia',
         'metryki',
-        'konfiguracja',
+        'ustawienia',
         'powiadomienia',
         'uzupelnienie',
         'raporty'

@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { ReceiptTextIcon } from "lucide-react"
+import { ReceiptTextIcon, SettingsIcon } from "lucide-react"
 
 import { ActiveRunMark, RUNS_PAGE } from "@/components/active-run"
 import { CloseCentrumButton } from "@/components/close-centrum"
@@ -14,7 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { href } from "@/lib/address"
+import { href, settingsHref } from "@/lib/address"
 import { menuPageId, PAGES, type Page } from "@/pages"
 
 export function AppSidebar({
@@ -65,7 +65,16 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="gap-0">
+        {/* Nad „Zamknij Centrum rozliczeń”: okno Ustawień otwiera się nad bieżącą stroną (ADR 0032). */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="Ustawienia" render={<a href={settingsHref()} />}>
+              <SettingsIcon />
+              <span>Ustawienia</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <CloseCentrumButton onClosed={onClosed} />
       </SidebarFooter>
     </Sidebar>

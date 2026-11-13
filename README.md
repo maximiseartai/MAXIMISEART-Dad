@@ -31,7 +31,7 @@ Instrukcja dla taty jest w
 
 ## Instalacja lokalna
 
-Wymagany jest Python 3.11 lub nowszy na komputerze taty. Narzędzie to klon
+Wymagany jest Python 3.13 lub nowszy na komputerze taty. Narzędzie to klon
 publicznego repozytorium na gałęzi `main` ustawionej na najnowsze Wydanie
 ([ADR 0014](docs/adr/0014-tata-dostaje-tylko-wydania.md)), bo sam `git clone`
 daje najnowszy `main`, także zmiany, które nie weszły do żadnego Wydania. Wydanie
@@ -73,9 +73,9 @@ GitHuba token fine-grained (tylko repozytorium
 zapis, ważność do roku) i wpisuje go jako jedyną linię do
 `config\zgloszenia-klucz.txt` na komputerze taty. Plik jest poza Gitem. Bez
 niego Zgłoszenia czekają w Kolejce wysyłki w `config\zgloszenia\kolejka\` i
-wychodzą same, gdy token się pojawi, a Konfiguracja pokazuje „Zgłoszenia: brak
+wychodzą same, gdy token się pojawi, a okno Ustawień w sekcji Zgłoszenia pokazuje „Brak
 tokenu”. Gdy GitHub nie przyjmuje tokenu (wygasł albo nie ma uprawnień),
-Konfiguracja pokazuje „Zgłoszenia: token odrzucony”. W obu przypadkach tata
+pokazuje tam „Token odrzucony”. W obu przypadkach tata
 widzi przy Zgłoszeniu, Uwadze taty i w Powiadomieniach „Token do Zgłoszeń nie
 działa. Skontaktuj się z Maksem.”
 
@@ -388,7 +388,7 @@ Na macOS i Linuksie (bez `py -3`) zestaw developerski instaluje się przez
 [`uv`](https://docs.astral.sh/uv/), a komendy uruchamia z `.venv`:
 
 ```sh
-uv venv -p 3.12 .venv && uv pip install -p .venv -e ".[dev]"
+uv venv -p 3.13 .venv && uv pip install -p .venv -e ".[dev]"
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check
 .venv/bin/python -m mypy
@@ -492,7 +492,7 @@ npm run build      # build do src/rozliczenia/centrum/static/
   wejścia `inputs`, a proces z okresem także karta startu `PeriodStart`),
   jego pozycja w `KINDS` (`centrum/catalog.py`), a procesu z okresem także
   kafelek w `_TILES` (`centrum/period_start.py`). Start, Diagnoza, Logi
-  Uruchomienia, karty z Logów, Metryki i Konfiguracja pytają wpis, więc
+  Uruchomienia, karty z Logów, Metryki i okno Ustawień pytają wpis, więc
   `runs.py` i one się nie zmieniają; czego brakuje, mówi
   `tests/test_katalog_procesow.py`.
 

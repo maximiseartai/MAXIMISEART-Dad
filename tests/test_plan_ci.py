@@ -281,9 +281,9 @@ def _with_units(plan: plan_runu.Plan, units: dict[str, tuple[str, ...]]) -> plan
 
 
 def _long_shares(plan: plan_runu.Plan) -> tuple[plan_runu.Zadanie, str]:
-    """Zadanie toru Windows 3.11 z pierwszym udziałem ``LONG`` i ten udział."""
+    """Zadanie toru Windows 3.13 z pierwszym udziałem ``LONG`` i ten udział."""
 
-    job = next(job for job in plan.zadania if job.tor == "windows-3.11" and any(unit.startswith(f"pytest:{LONG}#1/") for unit in job.jednostki))
+    job = next(job for job in plan.zadania if job.tor == "windows-3.13" and any(unit.startswith(f"pytest:{LONG}#1/") for unit in job.jednostki))
     return job, next(unit for unit in job.jednostki if unit.startswith(f"pytest:{LONG}#1/"))
 
 
@@ -296,7 +296,7 @@ def _incomplete(case: str) -> tuple[plan_runu.Plan, str]:
         count = share.rpartition("/")[2]
         broken = _with_units(plan, {job.id: tuple(unit for unit in job.jednostki if unit != share)})
         rest = ", ".join(f"{share}/{count}" for share in range(2, int(count) + 1))
-        return broken, f"plan CI: części {rest} jednostki pytest:{LONG} na torze windows-3.11 nie są całością 1..{count}"
+        return broken, f"plan CI: części {rest} jednostki pytest:{LONG} na torze windows-3.13 nie są całością 1..{count}"
     plan, key = _base_in_parts(1.5), "skill:verify-e/ci"
     [first, second] = plan.zadania
     if case == "zdublowana":
@@ -330,12 +330,25 @@ def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
     assert len({job.nazwa for job in first.zadania}) == len({job.id for job in first.zadania}) == len(first.zadania)
 
 
+def test_tor_windows_313_bez_pomiarow_wazy_prace_czasami_toru_windows_311_ktory_zastapil() -> None:
+    """Do pierwszych pomiarów toru windows-3.13 (``POMIARY_ZASTEPCZE``) plan bierze czasy windows-3.11, a z nimi już nie."""
+
+    lane = next(lane for lane in TORY if lane.nazwa == "windows-3.13")
+    files = [*FILES, LONG]
+    measured = _times()
+    only_old = dataclasses.replace(measured, tory={"windows-3.11" if name == lane.pomiary else name: keys for name, keys in measured.tory.items()})
+    both = dataclasses.replace(measured, tory={**measured.tory, "windows-3.11": _times(per_file_s=600.0).tory[lane.pomiary]})
+
+    assert plan_ci.wycen(lane, files, only_old) == plan_ci.wycen(lane, files, measured) == plan_ci.wycen(lane, files, both)
+    assert plan_ci.wycen(lane, files, czasy_ci.Czasy((), {})) != plan_ci.wycen(lane, files, measured)
+
+
 def test_tor_bez_pracy_nie_ma_zadan_a_bez_zadnej_pracy_macierz_jest_pusta(monkeypatch: pytest.MonkeyPatch) -> None:
     with_steps = _plan(czasy_ci.Czasy((), {}), [], steps=[])
     empty = _plan(czasy_ci.Czasy((), {}), [], steps=[], tory=tuple(dataclasses.replace(lane, kroki=()) for lane in TORY))
     skipped = {"plan": "success", "pytest": "skipped", "mutations": "skipped"}
 
-    assert {job.tor for job in with_steps.zadania} == {"windows-3.11", "windows-3.14"}
+    assert {job.tor for job in with_steps.zadania} == {"windows-3.13", "windows-3.14"}
     assert (empty.macierz("pytest"), empty.macierz("mutations"), with_steps.macierz("mutations")) == ([], [], [])
     assert werdykt_required.werdykt(empty, skipped, []) == []
     assert werdykt_required.werdykt(with_steps, skipped, []) == [
@@ -971,7 +984,7 @@ def test_zgubiony_skrypt_mutacji_albo_zly_klucz_ci_trafia_z_wyboru_do_planu_i_cz
     assert werdykt_required.werdykt(plan, every_job_green, complete) == [f"mutacje skilli: {failure}"]
 
 
-WINDOWS, LINUX = "windows-3.11", "linux-3.14"
+WINDOWS, LINUX = "windows-3.13", "linux-3.14"
 
 
 def test_wezel_testu_biegnie_caly_w_jednym_zadaniu_a_required_przyjmuje_go_z_zapisu_jego_pliku() -> None:

@@ -8,6 +8,7 @@ wywołania ``gh pr merge`` zamiast scalać.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ import subprocess
 
 import pytest
 
-from tests.fixtures import opisy_pr
+from tests.fixtures import opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
@@ -25,12 +26,14 @@ import czasy_ci
 import github as klient_github
 import naprawia
 import stan_pr
+import szablon_werdyktu
 import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 TEMPLATE = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "pr" / "SKILL.md"
+REVIEW = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "przeglad"
 BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
@@ -184,6 +187,8 @@ class MergeGitHub(FakeGitHub):
                 ".gitignore": ".mypy_cache/\n.ruff_cache/\n__pycache__/\nposprzatane\n",
                 "pyproject.toml": PYPROJECT,
                 ".agents/skills/pr/SKILL.md": TEMPLATE.read_text(encoding="utf-8"),
+                ".agents/skills/przeglad/SKILL.md": (REVIEW / "SKILL.md").read_text(encoding="utf-8"),
+                ".agents/skills/przeglad/korzenie.toml": (REVIEW / "korzenie.toml").read_text(encoding="utf-8"),
                 "tools/sprzatanie.py": CLEANUP,
                 **files,
             },
@@ -194,7 +199,7 @@ class MergeGitHub(FakeGitHub):
         self.pulls: dict[str, dict[str, object]] = {}
         self.issues: dict[str, str] = {}
         self.repo_view = _repo_view("main")  # zaczęte od „gh: ” to błąd ``gh repo view``
-        self.markdown = opisy_pr.rendered()  # HTML opisu, a jak w ``answer_issue`` błąd albo ``zawiesza``
+        self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
         self.written = 0
 
     def open_pull(self, number: int, files: dict[str, str], *, parent: str = "") -> str:
@@ -284,7 +289,7 @@ def _fake_gh(tmp_path: Path) -> Path:
 
 
 def _empty_state(directory: Path) -> None:
-    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps(opisy_pr.rendered()))):
+    for name, empty in (("pulls.json", "{}"), ("issues.json", "{}"), ("repo_view", ""), ("markdown.json", json.dumps({**opisy_pr.rendered(), **werdykty_szablonu.rendered()}))):
         (directory / name).write_text(empty, encoding="utf-8")
 
 
@@ -304,6 +309,18 @@ def _repo_view(default_branch: str) -> str:
 
 def _last_line(answered: subprocess.CompletedProcess[str]) -> str:
     return answered.stdout.rstrip().rpartition("\n")[2]
+
+
+def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:00Z", merged: str = "2026-10-01T00:00:00Z") -> None:
+    """Wdrożenie szablonu werdyktu na ``main`` w ``origin``: commit autora z ADR 0031 z datą ``authored`` scalony do
+    ``main`` commitem merge'a z datą ``merged``; werdykty atrapy powstają 24 i 25.10.2026."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", authored)
+        added = github.commit_on("main", {szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"}, "ADR 0031")
+        patch.setenv("GIT_COMMITTER_DATE", merged)
+        git(github.checkout, "merge", "--quiet", "--no-ff", "--message", "Merge wdrożenia szablonu", added)
+    git(github.checkout, "push", "--quiet", "origin", "main")
 
 
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
@@ -500,7 +517,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     ],
 )
 def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
-    assert werdykt_pr.consent_problem(_written(*verdicts)) == reason
+    assert werdykt_pr.consent_problem(_written(*verdicts), None) == reason
 
 
 @pytest.mark.parametrize(
@@ -1359,8 +1376,8 @@ def test_przeglad_bez_wyniku_skille_dla_zmiany_podaje_skille_nieznane_a_pr_bez_w
 @pytest.mark.parametrize(
     ("verdict", "decision"),
     [
-        ("\n  WERDYKT: PASS {head}  \n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n- Drobne: nazwa\n", "PASS"),
-        ("WERDYKT: FAIL {head}\nZnaleziska: 4 (Ważne 1, Drobne 3)\n- Ważne: brak testu\n", "FAIL"),
+        ("\n  WERDYKT: PASS {head}  \n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n" + werdykty_szablonu.WERDYKTY["drobne"] + "\n", "PASS"),
+        ("WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"] + "\n", "FAIL"),
     ],
     ids=["pass", "fail"],
 )
@@ -1368,6 +1385,7 @@ def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_
     tmp_path: Path, verdict: str, decision: str
 ) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(verdict.format(head=head), encoding="utf-8")
@@ -1413,6 +1431,7 @@ def test_plik_werdyktu_niezgodny_z_postacia_ze_skilla_albo_z_head_daje_przyczyny
 
 def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie_przyczyny_i_plik(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     path = tmp_path / "runda-1.md"
     path.write_text(MANY_PROBLEMS, encoding="utf-8")
@@ -1420,7 +1439,9 @@ def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie
     answered = github.run("1", "--werdykt", str(path))
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"WERDYKT ODMOWA | #1 | {MANY_REASONS.format(head=head)}; popraw {path} i uruchom ponownie"
+    assert _last_line(answered).startswith(f"WERDYKT ODMOWA | #1 | {MANY_REASONS.format(head=head)}; ")
+    assert "brak „## Sprawdzone”" in _last_line(answered)
+    assert _last_line(answered).endswith(f"; popraw {path} i uruchom ponownie")
     assert github.published() == []
 
 
@@ -1530,3 +1551,225 @@ def test_werdykt_bez_pliku_konczy_sie_bledem_narzedzia_bez_komentarza(tmp_path: 
     assert _last_line(answered).startswith("WERDYKT FAIL | ")
     assert "brak.md" in _last_line(answered)
     assert github.published() == []
+
+
+# Szablon werdyktu (ADR 0031, decyzja Q9): treść pod dwiema pierwszymi liniami czyta renderer GitHuba, a w testach
+# zastępuje go HTML z ``tests/fixtures/werdykty_szablonu.json``.
+ROOTS = frozenset({"R-BEZ-TESTU", "R-DRUGA-DROGA"})
+
+
+def _template_problems(text: str, declared: tuple[int, int] = (1, 1)) -> list[str]:
+    return szablon_werdyktu.problems(werdykty_szablonu.html(text), declared, lambda: ROOTS)
+
+
+@pytest.mark.parametrize("text", werdykty_szablonu.PRZECHODZA.values(), ids=werdykty_szablonu.PRZECHODZA)
+def test_tresc_werdyktu_w_szablonie_przechodzi_takze_z_cytatem_pola_w_bloku_kodu(text: str) -> None:
+    assert _template_problems(text) == []
+
+
+@pytest.mark.parametrize(("text", "declared", "fragment"), werdykty_szablonu.ODMOWY.values(), ids=werdykty_szablonu.ODMOWY)
+def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared: tuple[int, int], fragment: str) -> None:
+    problems = _template_problems(text, declared)
+
+    assert any(fragment in problem for problem in problems[:-1]), problems
+    assert problems[-1].startswith("wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD> / Znaleziska: "), problems[-1]
+    assert "### W1." in problems[-1] and "## Sprawdzone" in problems[-1], problems[-1]
+
+
+def test_kazda_tresc_werdyktu_testow_ma_html_z_renderera_githuba() -> None:
+    assert sorted(werdykty_szablonu.rendered()) == sorted(set(werdykty_szablonu.bodies())), "odśwież: .venv/bin/python tests/fixtures/werdykty_szablonu.py"
+
+
+def test_werdykt_bez_pola_korzen_nie_czyta_listy_kodow() -> None:
+    def unread() -> frozenset[str]:
+        raise AssertionError("lista kodów czytana bez pola Korzeń")
+
+    assert szablon_werdyktu.problems(werdykty_szablonu.html(werdykty_szablonu.WERDYKTY["sprawdzone"]), (0, 0), unread) == []
+
+
+@pytest.mark.parametrize(
+    ("entry", "reason"),
+    [
+        ('[R-DOBRY]\nopis = "Zdanie."\nprzyklad = 1\n[r-male]\nopis = "Zdanie."\nprzyklad = 2\n', "r-male"),
+        ('[R-BEZ-OPISU]\nprzyklad = 1\n', "R-BEZ-OPISU"),
+        ('[R-PUSTY]\nopis = " "\nprzyklad = 1\n', "R-PUSTY"),
+        ('[R-BEZ-PR]\nopis = "Zdanie."\nprzyklad = "#1"\n', "R-BEZ-PR"),
+        ('[R-PR-ZERO]\nopis = "Zdanie."\nprzyklad = 0\n', "R-PR-ZERO"),
+        ('[R-NADMIAR]\nopis = "Zdanie."\nprzyklad = 1\nszczebel = "c"\n', "R-NADMIAR"),
+        ('R-PLASKI = "Zdanie."\n', "R-PLASKI"),
+    ],
+    ids=["kod-malymi-literami", "bez-opisu", "pusty-opis", "przyklad-tekstem", "przyklad-zero", "dodatkowe-pole", "wpis-bez-tabeli"],
+)
+def test_lista_korzeni_z_wpisem_poza_postacia_sie_nie_wczytuje(entry: str, reason: str) -> None:
+    with pytest.raises(ValueError, match=reason):
+        szablon_werdyktu.listed_codes(entry)
+
+
+def test_lista_korzeni_w_repo_ma_kody_z_opisem_i_przykladem_pr() -> None:
+    assert "R-BEZ-TESTU" in szablon_werdyktu.listed_codes((REVIEW / "korzenie.toml").read_text(encoding="utf-8"))
+
+
+NEW_CODE = '\n[R-NOWY-KOD]\nopis = "Kod dodany w tym PR."\nprzyklad = 1\n'
+
+
+@pytest.mark.parametrize(
+    ("listed", "root", "published", "reason"),
+    [
+        ("", 0, True, None),
+        (NEW_CODE, 1, True, None),
+        (NEW_CODE, 2, False, "W1: NOWY R-NOWY-KOD: ten kod jest już na liście .agents/skills/przeglad/korzenie.toml, napisz go bez NOWY"),
+        ("", 3, False, "W1: kod R-NOWY-KOD spoza listy"),
+        ("", 4, True, None),
+        ("", 5, False, "W1: NOWY R-BEZ-TESTU: ten kod jest już na liście .agents/skills/przeglad/korzenie.toml, napisz go bez NOWY"),
+        ('\n[r-male]\nopis = "Zdanie."\nprzyklad = 1\n', 4, False, "się nie wczytuje: „r-male” to nie kod"),
+    ],
+    ids=["nowy-spoza-listy", "kod-dodany-przez-head", "nowy-dodany-przez-head", "kod-spoza-listy", "kod-z-listy", "nowy-z-listy", "nieczytelna-lista"],
+)
+def test_werdykt_z_korzeniem_trafia_na_pr_tylko_z_kodem_listy_head_a_nowy_tylko_spoza_niej(
+    tmp_path: Path, listed: str, root: int, published: bool, reason: str | None
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    codes = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + listed
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", ".agents/skills/przeglad/korzenie.toml": codes})
+    path = tmp_path / "runda-1.md"
+    path.write_text(f"WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n{werdykty_szablonu.WERDYKTY[f'korzen-{root}']}\n", encoding="utf-8")
+
+    answered = github.run("1", "--werdykt", str(path))
+
+    assert (answered.returncode == 0) == published, answered.stdout + answered.stderr
+    assert len(github.published()) == published
+    if reason is not None:
+        assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+        assert reason in _last_line(answered), answered.stdout
+
+
+# Decyzja Q20: szablon obowiązuje od pierwszego werdyktu po wdrożeniu, a wątek, którego najstarszy werdykt jest
+# starszy od wdrożenia, kończy po staremu. Werdykty ``_written`` powstają 24.10.2026 o 3:00:00, 3:00:01 i dalej.
+BEFORE_FIRST = datetime(2026, 10, 24, 2, 0, tzinfo=UTC)
+AFTER_FIRST = datetime(2026, 10, 24, 3, 0, 1, tzinfo=UTC)
+FAIL_OLD = f"WERDYKT: FAIL {OLD}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n- Ważne: brak testu"
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "deployed", "applies"),
+    [
+        ([], None, False),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], None, False),
+        ([], AFTER_FIRST, True),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], BEFORE_FIRST, True),
+        ([("comment", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, False),
+        ([("COMMENTED", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, False),
+        ([("comment", FAIL_OLD, "CONTRIBUTOR"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", FAIL_OLD, "NONE"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("PENDING", FAIL_OLD), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", "Komentarz bez werdyktu."), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("CHANGES_REQUESTED", "Popraw nazwę."), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+        ([("comment", f"WERDYKT: FAIL {OLD[:7]}"), ("comment", PASS_HEAD)], AFTER_FIRST, True),
+    ],
+    ids=[
+        "niewdrozony-bez-werdyktu",
+        "niewdrozony-z-werdyktami",
+        "pr-bez-werdyktu-po-wdrozeniu",
+        "pierwszy-werdykt-po-wdrozeniu",
+        "pierwszy-werdykt-przed-wdrozeniem",
+        "pierwszy-werdykt-w-recenzji-przed-wdrozeniem",
+        "stary-werdykt-kontrybutora-nie-postarza",
+        "stary-werdykt-konta-bez-zwiazku-nie-postarza",
+        "stara-nieopublikowana-recenzja-nie-postarza",
+        "stary-komentarz-bez-werdyktu-nie-postarza",
+        "stara-prosba-o-zmiany-bez-linii-werdyktu-nie-postarza",
+        "stary-werdykt-ze-skroconym-sha-nie-postarza",
+    ],
+)
+def test_szablon_obowiazuje_od_wdrozenia_a_watek_z_werdyktem_sprzed_niego_konczy_po_staremu(
+    verdicts: list[tuple[str, ...]], deployed: datetime | None, applies: bool
+) -> None:
+    assert werdykt_pr.template_applies(_written(*verdicts), deployed) is applies
+
+
+@pytest.mark.parametrize(
+    "verdicts",
+    [
+        [(PASS_HEAD, True)],
+        [(FAIL_OLD, True), (PASS_HEAD, False)],
+    ],
+    ids=["komentarz-zmieniony-na-pass", "komentarz-zmieniony-na-fail-potem-reczny-pass"],
+)
+def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_reczny_pass_bez_szablonu_to_odmowa(
+    verdicts: list[tuple[str, bool]],
+) -> None:
+    comments = [
+        {**_verdict("comment", body, when=f"2026-10-24T03:00:{index:02d}Z"), "includesCreatedEdit": edited}
+        for index, (body, edited) in enumerate(verdicts)
+    ]
+    pull = _pull(comments=comments)
+
+    assert werdykt_pr.template_applies(pull, AFTER_FIRST) is True
+    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
+
+
+SPRAWDZONE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"] + "\n"
+PROSE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["proza"] + "\n"
+
+
+@pytest.mark.parametrize(
+    ("merged", "earlier", "verdict", "template"),
+    [
+        (None, None, PASS, False),
+        ("2026-10-24T12:00:00Z", FAIL_OLD, PASS, False),
+        ("2026-10-01T00:00:00Z", None, PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, PROSE_PASS, True),
+        ("2026-10-24T03:00:01Z", "Komentarz bez werdyktu.", PASS, True),
+        ("2026-10-01T00:00:00Z", FAIL_OLD, SPRAWDZONE_PASS, True),
+    ],
+    ids=[
+        "niewdrozony",
+        "watek-sprzed-wdrozenia",
+        "pr-bez-werdyktu-po-wdrozeniu",
+        "pierwszy-reczny-werdykt-bez-szablonu-po-wdrozeniu",
+        "pass-z-proza-po-wdrozeniu",
+        "komentarz-bez-werdyktu-nie-postarza",
+        "pass-w-szablonie-po-wdrozeniu",
+    ],
+)
+def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dla_pass_opublikowanego_recznie(
+    tmp_path: Path, merged: str | None, earlier: str | None, verdict: str, template: bool
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    if merged is not None:
+        _deploy_template(github, authored="2026-10-01T00:00:00Z", merged=merged)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    if earlier is not None:
+        github.comment(1, earlier)
+    path = tmp_path / "runda-2.md"
+    path.write_text(verdict.format(head=head), encoding="utf-8")
+    passes = not template or verdict == SPRAWDZONE_PASS
+
+    answered = github.run("1", "--werdykt", str(path))
+    if not passes:
+        github.comment(1, verdict.format(head=head))
+    checked = github.run("1", "--bez-merge")
+
+    assert (answered.returncode == 0) == passes, answered.stdout + answered.stderr
+    assert len(github.published()) == passes
+    assert (checked.returncode == 0) == passes, checked.stdout + checked.stderr
+    if not passes:
+        assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
+        assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
+        assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+
+
+@pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n"], ids=["blad-http", "pusta-odpowiedz"])
+def test_pass_w_watku_z_szablonem_bez_html_tresci_od_githuba_nie_jest_zgoda_a_odmowa_podaje_przyczyne(tmp_path: Path, answer: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.markdown[werdykty_szablonu.WERDYKTY["sprawdzone"]] = answer
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    checked = github.run("1", "--bez-merge")
+
+    assert checked.returncode != 0, checked.stdout + checked.stderr
+    assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (GitHub nie wyrenderował treści werdyktu (" in _last_line(checked), checked.stdout

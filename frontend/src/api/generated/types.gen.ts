@@ -1233,6 +1233,10 @@ export type PeriodRow = {
      */
     last_complete: boolean;
     /**
+     * Board Place
+     */
+    board_place: 'recent' | 'older' | 'not_started';
+    /**
      * Fillable
      */
     fillable: boolean;
@@ -2896,7 +2900,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */

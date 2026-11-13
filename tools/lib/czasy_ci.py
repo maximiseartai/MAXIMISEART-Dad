@@ -8,7 +8,7 @@ Zapis zadania (``Zapis``, ``wczytaj``). Każde zadanie ``pytest`` i ``mutations`
      "jednostki": [{"klucz": "pytest:tests/test_adr.py", "s": 0.412, "status": "ok", "testy": 3}, ...], "bledy": [],
      "plan": "9f2c...", "zadanie_planu": "windows-3.14-1"}
 
-Tor to system runnera i jego Python (``windows-3.11``, ``windows-3.14``, ``linux-3.14``). Klucz jednostki nie zależy od
+Tor to system runnera i jego Python (``windows-3.13``, ``windows-3.14``, ``linux-3.14``). Klucz jednostki nie zależy od
 podziału na zadania, więc para tor i klucz wskazuje tę samą pracę w każdym runie:
 
     pytest:<plik testów>     suma czasów testów pliku, każdy setup + call + teardown (junit pytest, ``junit_family = "xunit1"``

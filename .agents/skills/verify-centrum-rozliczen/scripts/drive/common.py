@@ -42,7 +42,6 @@ PAGES = {
     "uruchomienia": "Uruchomienia",
     "raporty": "Raporty",
     "metryki": "Metryki",
-    "konfiguracja": "Konfiguracja",
 }
 # Dad's computer runs on Polish time; dates in Centrum are shown in the browser's time zone.
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
@@ -243,25 +242,75 @@ class Run:
         print(f"  ok: {message}", flush=True)
 
 
-def choose_periods_directory(run: Run, page: Page, path: str | None = None) -> None:
-    """Dad points Centrum to the folder okresów ``path`` (the fixture's without it) from the empty Tablica okresów."""
+# The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).
+NARROW_WINDOW_PX = 768
 
-    run.answer_picker(run.fixture["periods_directory"] if path is None else path)
-    page.get_by_role("button", name="Wskaż folder okresów", exact=True).click()
+
+def settings_window(page: Page) -> Locator:
+    """The window Ustawienia over the page (``dialog`` named ``Ustawienia``)."""
+
+    return page.get_by_role("dialog", name="Ustawienia")
+
+
+def open_settings(page: Page, section: str) -> Locator:
+    """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title)."""
+
+    window = settings_window(page)
+    if not window.is_visible():
+        page.get_by_role("link", name="Ustawienia", exact=True).click()
+    expect(window).to_be_visible()
+    # Below 768 px (`useIsMobile`, Tailwind `md`) the list of sections is hidden and Dad picks from the combobox.
+    viewport = page.viewport_size
+    if viewport is None or viewport["width"] >= NARROW_WINDOW_PX:
+        window.get_by_role("link", name=section, exact=True).click()
+    else:
+        window.get_by_role("combobox", name="Sekcja Ustawień").click()
+        page.get_by_role("option", name=section, exact=True).click()
+    expect(window.get_by_role("heading")).to_have_text(f"Ustawienia/{section}")
+    return window
+
+
+def close_settings(page: Page) -> None:
+    """Dad closes Ustawienia with Esc; the page under it stays."""
+
+    page.keyboard.press("Escape")
+    expect(settings_window(page)).to_have_count(0)
+
+
+def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
+    """Dad points ``label`` (``Rejestr zleceń`` or ``Folder okresów``) to ``path`` in the section Foldery of Ustawienia,
+    the only place Centrum chooses files (ADR 0032), and closes the window once the settings file has it."""
+
+    key = {"Rejestr zleceń": "rejestr_zlecen", "Folder okresów": "folder_okresow"}[label]
+    window = open_settings(page, "Foldery")
+    run.answer_picker(path)
+    window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$")).click()
+    run.wait_for(lambda: run.remembered(key) == path, f"{label} set in Ustawienia")
+    expect(window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$"))).to_be_enabled()
+    close_settings(page)
+
+
+def choose_periods_directory(run: Run, page: Page, path: str | None = None) -> None:
+    """Dad points Centrum to the folder okresów ``path`` (the fixture's without it) in Ustawienia from the empty
+    Tablica okresów, whose „Ustaw w Ustawieniach” opens the section Foldery."""
+
+    page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).first.click()
+    expect(settings_window(page).get_by_role("heading")).to_have_text("Ustawienia/Foldery")
+    point_in_settings(run, page, "Folder okresów", run.fixture["periods_directory"] if path is None else path)
     expect(page.get_by_role("table", name="Tablica okresów")).to_be_visible()
 
 
 def ensure_files_set(run: Run, page: Page, periods_directory: str | None = None) -> None:
     """Points Centrum to the folder okresów ``periods_directory`` (the fixture's without it) and the fixture's Rejestr
-    zleceń unless a feature before did."""
+    zleceń in Ustawienia unless a feature before did."""
 
     settings = run.api("/api/settings", "ustawienia-przed-uruchomieniem")
     if settings["periods_directory"] == {"state": "not_set"}:
-        choose_periods_directory(run, page, periods_directory)
+        point_in_settings(
+            run, page, "Folder okresów", run.fixture["periods_directory"] if periods_directory is None else periods_directory
+        )
     if settings["order_register"] == {"state": "not_set"}:
-        run.answer_picker(run.fixture["order_register"])
-        page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
-        run.wait_for(lambda: run.remembered("rejestr_zlecen") == run.fixture["order_register"], "Rejestr zleceń set")
+        point_in_settings(run, page, "Rejestr zleceń", run.fixture["order_register"])
 
 
 def frontend_ms(source: str, name: str) -> int:
@@ -558,24 +607,35 @@ def dad_tab(
         context.close()
 
 
-def toggle_theme(page: Page) -> str:
-    """Dad clicks the theme icon in the header; the theme it switched to (``jasny`` or ``ciemny``), once the icon
-    offers the other one."""
+def shown_theme(page: Page) -> str:
+    """The theme on screen, ``jasny`` or ``ciemny`` (the class ``dark`` of the page)."""
 
-    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
-    theme = str(toggle.get_attribute("aria-label")).removeprefix("Włącz motyw ")
-    toggle.click()
-    expect(toggle).to_have_attribute("aria-label", f"Włącz motyw {'ciemny' if theme == 'jasny' else 'jasny'}")
+    return "ciemny" if "dark" in str(page.locator("html").get_attribute("class") or "").split() else "jasny"
+
+
+def choose_theme(page: Page, theme: str) -> None:
+    """Dad picks ``theme`` (``jasny`` or ``ciemny``) under Motyw in the section Wygląd of Ustawienia and closes it."""
+
+    window = open_settings(page, "Wygląd")
+    window.get_by_role("group", name="Motyw").get_by_role("button", name=theme.capitalize(), exact=True).click()
+    expect(page.locator("html")).to_have_class(re.compile(r"\bdark\b") if theme == "ciemny" else re.compile(r"^(?!.*\bdark\b)"))
+    close_settings(page)
+
+
+def toggle_theme(page: Page) -> str:
+    """Dad switches to the other theme in Ustawienia; the theme it switched to (``jasny`` or ``ciemny``)."""
+
+    theme = "ciemny" if shown_theme(page) == "jasny" else "jasny"
+    choose_theme(page, theme)
     return theme
 
 
 def switch_theme(page: Page, theme: str) -> bool:
     """Switches to ``theme`` (``jasny`` or ``ciemny``) unless it is shown; whether it switched."""
 
-    toggle = page.locator("header").get_by_role("button", name="Włącz motyw", exact=False)
-    if toggle.get_attribute("aria-label") != f"Włącz motyw {theme}":
+    if shown_theme(page) == theme:
         return False
-    toggle_theme(page)
+    choose_theme(page, theme)
     return True
 
 
@@ -909,12 +969,12 @@ def served_version(run: Run) -> tuple[str, str | None]:
 
 
 def version_line(commit: str, since: str | None) -> str:
-    """The version line Dad reads in the card ``Narzędzie``: ``Wersja 1a2b3c4 od 20.10.2026``."""
+    """The version Dad reads under Wersja narzędzia in the section Narzędzie of Ustawienia: ``1a2b3c4 od 20.10.2026``."""
 
     if since is None:
-        return f"Wersja {commit[:7]}"
+        return commit[:7]
     year, month, day = since.split("-")
-    return f"Wersja {commit[:7]} od {day}.{month}.{year}"
+    return f"{commit[:7]} od {day}.{month}.{year}"
 
 
 def release_only(origin: Path, commit: str) -> None:

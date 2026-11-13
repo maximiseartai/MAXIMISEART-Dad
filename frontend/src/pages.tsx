@@ -6,13 +6,11 @@ import {
   ClipboardPenLineIcon,
   MailCheckIcon,
   PlayIcon,
-  SlidersHorizontalIcon,
   type LucideIcon,
 } from "lucide-react"
 
 import type { ViewTiming } from "@/api/generated"
 import { hashParts, useHash } from "@/lib/address"
-import { ConfigurationPage } from "@/pages/configuration/configuration-page"
 import { FillingPage } from "@/pages/filling/filling-page"
 import { MetricsPage } from "@/pages/metrics/metrics-page"
 import { NotificationsPage } from "@/pages/notifications/notifications-page"
@@ -40,7 +38,6 @@ export const PAGES = [
   // Raporty ma przycisk „Wpisz raporty z maili”; otwiera je też wynik Wpisania raportów w Uruchomieniach.
   { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
   { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
-  { id: "konfiguracja", title: "Konfiguracja", icon: SlidersHorizontalIcon, Content: ConfigurationPage, menu: true },
   NOTIFICATIONS_PAGE,
   {
     id: "uzupelnienie",

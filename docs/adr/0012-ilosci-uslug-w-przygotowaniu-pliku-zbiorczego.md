@@ -11,6 +11,10 @@ pliku zbiorczego w Centrum, które Pliku zbiorczego nie zmienia) i
 [ADR 0018](0018-ilosci-tylko-dla-inea-nie-przechodza-do-rozliczenia-pracownika.md)
 (Ilości tylko dla INEA nie przechodzą do Rozliczenia pracownika).
 
+[ADR 0033](0033-reguly-ilosci-naleza-do-taty.md) zmienia punkt „Reguły ilości są w repozytorium narzędzia i utrzymuje je
+Maks” i odrzucony wariant „Plik reguł edytowany przez tatę”: Reguły ilości tata
+zmienia sam w Ustawieniach Centrum.
+
 ## Kontekst
 
 Tata wpisuje Ilości usług do gotowego Pliku zbiorczego ręcznie, około dwóch

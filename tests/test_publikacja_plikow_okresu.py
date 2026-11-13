@@ -160,7 +160,7 @@ def _dowiazanie_przez_os_lstat(path: Path) -> bool:
 def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkeypatch: pytest.MonkeyPatch) -> None:
     """Na każdej wersji Pythona sprawdzenie przechodzi te same harmonogramy.
 
-    Na Pythonie 3.11 i 3.12 `Path.exists` i `Path.is_symlink` pytają `Path.stat` i `Path.lstat`, a na 3.14
+    Na Pythonie 3.11–3.13 `Path.exists` i `Path.is_symlink` pytają `Path.stat` i `Path.lstat`, a na 3.14
     `os.path.exists` i `os.path.islink`, których odpowiedzi mówią mniej. Stan zapamiętywał odpowiedź, więc na 3.14
     łączył stany, które 3.12 rozróżnia, i przechodził 6640 harmonogramów `dwa-uruchomienia` zamiast 9798.
     """
@@ -168,7 +168,7 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
     explorer = _load_explorer()
     trees = {}
     for version, exists, is_symlink in (
-        ("3.11 i 3.12", _istnieje_przez_os_stat, _dowiazanie_przez_os_lstat),
+        ("3.11–3.13", _istnieje_przez_os_stat, _dowiazanie_przez_os_lstat),
         # Przechwytywanie podmienia os.path.exists i os.path.islink, więc szukamy ich w chwili wywołania.
         ("3.14", lambda path: os.path.exists(path), lambda path: os.path.islink(path)),
     ):
@@ -177,7 +177,7 @@ def test_drzewo_harmonogramow_nie_zalezy_od_tego_czym_pathlib_pyta_o_plik(monkey
         report = explorer.explore(explorer.SCOPES["jedno-uruchomienie"])
         trees[version] = (report.schedules, report.states)
 
-    assert trees["3.11 i 3.12"] == trees["3.14"], trees
+    assert trees["3.11–3.13"] == trees["3.14"], trees
 
 
 def test_rozjazd_kroku_zapisu_skoroszytu_sprawdzenie_tylko_ostrzega_takze_w_ci(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

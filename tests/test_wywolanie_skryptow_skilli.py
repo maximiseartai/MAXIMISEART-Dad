@@ -95,11 +95,13 @@ def test_sprzatanie_nie_usuwa_katalogu_ktorego_nie_utworzyla_fixture(tmp_path: P
     assert (foreign / "wazne.txt").read_text(encoding="utf-8") == "zostaje\n"
 
 
-class _NtfsOrder:
-    """NTFS listuje katalog w kolejności nazw, więc ``.katalog-runu`` przed resztą."""
+class _NtfsOrder(Iterator[os.DirEntry[str]]):
+    """NTFS listuje katalog w kolejności nazw, więc ``.katalog-runu`` przed resztą.
+
+    Iterator, a nie samo ``__iter__``: ``shutil.rmtree`` w 3.13 na Windows woła ``next()`` na wyniku ``os.scandir``."""
 
     def __init__(self, entries: Iterator[os.DirEntry[str]]) -> None:
-        self._entries = sorted(entries, key=lambda entry: entry.name)
+        self._entries = iter(sorted(entries, key=lambda entry: entry.name))
         close = getattr(entries, "close", None)
         if close is not None:
             close()
@@ -110,8 +112,8 @@ class _NtfsOrder:
     def __exit__(self, *_: object) -> None:
         pass
 
-    def __iter__(self) -> Iterator[os.DirEntry[str]]:
-        return iter(self._entries)
+    def __next__(self) -> os.DirEntry[str]:
+        return next(self._entries)
 
     def close(self) -> None:
         pass

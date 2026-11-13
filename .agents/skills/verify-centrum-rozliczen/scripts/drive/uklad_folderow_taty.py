@@ -6,18 +6,14 @@ from pathlib import Path
 
 from playwright.sync_api import Page, expect
 
-from drive.common import Run, last_opened_is, next_step_names_current_step, period_row
+from drive.common import Run, last_opened_is, next_step_names_current_step, period_row, point_in_settings
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
 def _choose_folder(run: Run, page: Page, path: str) -> None:
-    """Points Centrum to ``path``: from the empty state when run alone, through the settings card otherwise."""
+    """Points Centrum to ``path`` in the section Foldery of Ustawienia, over Okresy."""
 
-    run.answer_picker(path)
-    unset = run.api("/api/settings", "uklad-taty-ustawienia")["periods_directory"] == {"state": "not_set"}
-    name = "Wskaż folder okresów" if unset else "Zmień Folder okresów"
-    page.get_by_role("button", name=name, exact=True).click()
-    run.wait_for(lambda: run.remembered("folder_okresow") == path, f"the settings file remembers {Path(path).name}")
+    point_in_settings(run, page, "Folder okresów", path)
 
 
 def drive(run: Run, page: Page) -> None:
@@ -34,11 +30,15 @@ def drive(run: Run, page: Page) -> None:
         "the server finds every Folder okresu in Rozliczenia {rok}\\{miesiąc}\\INEA, newest first",
     )
     table_rows = page.get_by_role("table", name="Tablica okresów").get_by_role("row")
-    expect(table_rows).to_have_count(len(dad["board"]) + 1)
-    for index, (token, _, _) in enumerate(dad["board"], start=1):
+    expect(table_rows).to_have_count(len(dad["on_screen"]) + 1)
+    for index, token in enumerate(dad["on_screen"], start=1):
         expect(table_rows.nth(index)).to_contain_text(token)
     expect(period_row(page, LAST_COMPLETE)).to_contain_text("Plik zbiorczy przygotowany")
-    run.check(True, "the screen lists the same weeks; folders that are not periods (Podpisane, Nowe rozliczenia) are absent")
+    run.check(
+        True,
+        "the screen lists the same weeks except the one that has not started; folders that are not periods "
+        "(Podpisane, Nowe rozliczenia) are absent",
+    )
     run.capture(page, "15-uklad-taty-tablica")
 
     run.step(feature, "taty-nastepny-krok")

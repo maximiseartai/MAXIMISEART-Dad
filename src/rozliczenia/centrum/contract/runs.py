@@ -164,6 +164,11 @@ class Decision(Model):
     counts: CountGroup
 
 
+CONTINUE_HINT: Final = "przy decyzji wybierz „Kontynuuj”"
+"""Jak w Centrum wyraża się zgodę w Decyzji taty (``Conversation.continue_hint``); ten sam tekst ma Komunikat po
+odmowie w Uruchomieniu odtworzonym z Logów (``tools/odtworz_uruchomienie.py``)."""
+
+
 class PeriodFile(Model):
     """Plik okresu z wyniku, sama nazwa: Rozliczenie wewnętrzne albo Plik zbiorczy."""
 
