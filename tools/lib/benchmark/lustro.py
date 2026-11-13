@@ -3,7 +3,7 @@
 Lustro to ``Załączniki/Rozliczenia 2026/10_Październik_2026/INEA/06_12_10_2026`` z
 Plikiem zbiorczym gotowym do Przebiegu rozliczeń, zbudowane atomowo pod nazwą
 ``<scenariusz>-<odcisk wejść>``: inne Wzorce Przygotowania pliku zbiorczego,
-Konfiguracja wykonawców albo scenariusz dają inne lustro.
+Lista Wykonawców albo scenariusz dają inne lustro.
 """
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ from benchmark import SCRIPT, BenchmarkError
 from repo import ROOT
 import repo
 import potomne
-from rozliczenia import worker_config_messages
 from rozliczenia.period_folder import PeriodFolder, collective_file_name
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.collective_layout import CHARGE_AMOUNT, CHARGE_DESCRIPTION, QUANTITY_COLUMNS, REMARKS, REMARKS_AMOUNT
 from rozliczenia.workbook_files import read_data_rows
 from rozliczenia.workbook_save import save_workbook
-from rozliczenia.worker_config import WorkerConfigError, load_worker_mapping
-from atrapy.pliki_taty import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_CONFIG_NAME, WORKER_TEMPLATE_NAME
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
+from atrapy.pliki_taty import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 
 
 @dataclass(frozen=True)
@@ -115,10 +115,10 @@ def default_templates_directory() -> Path:
     return _config_with(WORKER_TEMPLATE_NAME)
 
 
-def default_worker_config() -> Path:
-    """Prawdziwa Konfiguracja wykonawców spoza gita: z ``config/`` tego checkoutu albo głównego checkoutu."""
+def default_worker_list() -> Path:
+    """Prawdziwa Lista Wykonawców spoza gita: z ``config/`` tego checkoutu albo głównego checkoutu."""
 
-    return _config_with(WORKER_CONFIG_NAME) / WORKER_CONFIG_NAME
+    return _config_with(WORKERS_FILE) / WORKERS_FILE
 
 
 def template_paths(directory: Path) -> dict[str, Path]:
@@ -130,16 +130,17 @@ def template_paths(directory: Path) -> dict[str, Path]:
 
 
 def _worker_ids(config: Path) -> list[str]:
+    """Loginy Listy Wykonawców ``config`` regułą właściciela Ustawień Centrum, każdy Wykonawca pierwszym loginem."""
+
     if not config.is_file():
         raise BenchmarkError(
-            f"Brak Konfiguracji wykonawców {config}. Wskaż plik przez --config "
+            f"Brak Listy Wykonawców {config}. Wskaż plik przez --wykonawcy "
             "(np. syntetyczny z tools/syntetyczne_wzorce.py)."
         )
-    try:
-        return list(load_worker_mapping(config))
-    except WorkerConfigError as error:
-        reason = worker_config_messages.worker_config_problem(config, error).what
-        raise BenchmarkError(f"{reason} Plik: {config}") from None
+    parsed = WORKERS.parse(config.read_bytes())
+    if isinstance(parsed, FieldProblem):
+        raise BenchmarkError(f"{parsed.sentence} Plik: {config}")
+    return [worker.logins[0] for worker in parsed.workers]
 
 
 def _fingerprint(scenario_name: str, config: Path, templates: Mapping[str, Path]) -> str:
@@ -279,7 +280,7 @@ def ensure_mirror(
                     staging / "Załączniki",
                     "--period",
                     PERIOD.token,
-                    "--config",
+                    "--wykonawcy",
                     config,
                     "--internal-template",
                     templates[INTERNAL_TEMPLATE_NAME],

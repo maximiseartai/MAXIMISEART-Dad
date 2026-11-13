@@ -2,7 +2,7 @@
 ``message``).
 
 Części nie zawierają pełnych ścieżek ani treści wierszy: wskazują tylko nazwę
-pliku, folder okresu, kolumnę, numer wiersza albo Wykonawcę z konfiguracji wykonawców.
+pliku, folder okresu, kolumnę, numer wiersza albo Wykonawcę z Listy Wykonawców.
 Wyjątek (ADR 0015): ``unmapped_worker`` i ``unmapped_worker_warning`` podają w „co się
 stało” identyfikator z kolumny WYKONAWCA spoza konfiguracji, bez numeru wiersza.
 """
@@ -26,8 +26,8 @@ _RETRY: Final = f"Uruchom ponownie. {IF_ERROR_RETURNS}"
 _PREVIEW_PROBLEMS: Final = "Uruchom Podgląd bez zapisu: lista problemów pokaże wiersze."
 _SAVE_AND_RETRY: Final = "Potem zapisz i zamknij Plik zbiorczy w Excelu i uruchom ponownie."
 _FIX_UNMAPPED_WORKER: Final = (
-    f"Popraw WYKONAWCĘ w kolumnie {WORKER_HEADER.column} albo poproś osobę utrzymującą narzędzie o dopisanie Wykonawcy "
-    "do konfiguracji wykonawców."
+    f"Popraw WYKONAWCĘ w kolumnie {WORKER_HEADER.column} albo dodaj Wykonawcę z tym loginem w Ustawieniach, w Liście "
+    "Wykonawców."
 )
 
 
@@ -159,13 +159,13 @@ _WORKER_TEMPLATE_MESSAGES = WorkbookMessages(
 
 
 def unmapped_worker(source: Path, workers: Sequence[str]) -> Message:
-    """RUN: identyfikatory ``workers`` z kolumny WYKONAWCA Pliku zbiorczego nie mają wpisu w konfiguracji wykonawców."""
+    """RUN: identyfikatory ``workers`` z kolumny WYKONAWCA Pliku zbiorczego nie mają wpisu w Liście Wykonawców."""
 
     subject = "jest WYKONAWCA" if len(workers) == 1 else "są WYKONAWCY"
     return Message(
         code="NIEZNANY_WYKONAWCA",
         dad_file="collective_file",
-        what=f"W Pliku zbiorczym {subject} spoza konfiguracji wykonawców: {', '.join(workers)}. {_NOTHING_CREATED}",
+        what=f"W Pliku zbiorczym {subject} spoza Listy Wykonawców: {', '.join(workers)}. {_NOTHING_CREATED}",
         where=f"{file_label(source)}, kolumna {WORKER_HEADER.column}",
         action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",
     )
@@ -186,11 +186,11 @@ def rows_without_worker(source: Path) -> Message:
 
 
 def unmapped_worker_warning(source: Path, worker: str) -> Message:
-    """DRY-RUN: identyfikator ``worker`` z kolumny WYKONAWCA Pliku zbiorczego nie ma wpisu w konfiguracji wykonawców."""
+    """DRY-RUN: identyfikator ``worker`` z kolumny WYKONAWCA Pliku zbiorczego nie ma wpisu w Liście Wykonawców."""
 
     return Message(
         code="BRAK_MAPOWANIA",
-        what=f"Nieznany identyfikator WYKONAWCA: {worker}. Nie ma go w konfiguracji wykonawców.",
+        what=f"Nieznany identyfikator WYKONAWCA: {worker}. Nie ma go w Liście Wykonawców.",
         where=file_label(source),
         action=f"{_FIX_UNMAPPED_WORKER} {_SAVE_AND_RETRY}",
     )

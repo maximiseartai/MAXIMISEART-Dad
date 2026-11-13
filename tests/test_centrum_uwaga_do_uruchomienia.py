@@ -10,7 +10,7 @@ from typing import Any, Final
 
 import pytest
 
-from rozliczenia import settlement_process
+from rozliczenia import settlement_messages, settlement_process
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Rejected, Unreachable
@@ -109,15 +109,15 @@ def _settlements_exist(centrum: SettlingCentrum) -> None:
     centrum.worker_settlements.mkdir()
 
 
-def _broken_worker_config(centrum: SettlingCentrum) -> None:
-    centrum.configuration.worker_config.write_text(":: nie yaml", encoding="utf-8")
+def _stop_for_maks(centrum: SettlingCentrum) -> None:
+    centrum.engines.stop = settlement_messages.summary_not_shown()
 
 
 RESULTS: Final[dict[str, tuple[Callable[[SettlingCentrum], None], bool, bool, str]]] = {
     "ok": (_as_is, False, True, "podgląd · OK"),
     "do-sprawdzenia": (_as_is, True, True, "podgląd · do sprawdzenia"),
     "zatrzymano-dla-taty": (_settlements_exist, False, False, "zapis · zatrzymano"),
-    "blad-do-maksa": (_broken_worker_config, False, False, "zapis · błąd"),
+    "blad-do-maksa": (_stop_for_maks, False, False, "zapis · błąd"),
 }
 
 

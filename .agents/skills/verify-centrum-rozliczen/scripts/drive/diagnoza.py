@@ -30,6 +30,7 @@ from harness import File, Log, Switch
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from atrapy.workbooks import excel_lock
 
 FEATURE = "diagnoza"
@@ -38,9 +39,11 @@ FEATURE = "diagnoza"
 PERIOD = PERIOD_WITHOUT_FILES
 REGISTER_OPEN = "Rejestr zleceń jest otwarty w Excelu. Nie utworzono żadnego pliku."
 NO_ORDERS = "W Rejestrze zleceń nie ma żadnego zlecenia z tego okresu."
-# The one Komunikat of the konfiguracja wykonawców, the same in both processes.
-WORKER_CONFIG_NOT_UTF8 = "Nie można odczytać konfiguracji wykonawców. Plik nie jest zapisany w kodowaniu UTF-8."
-WORKER_CONFIG_INACCESSIBLE = "Nie można teraz odczytać konfiguracji wykonawców. Plik może być zajęty przez inny program."
+# The Diagnoza check of a bad Lista Wykonawców and the start refusal on one the system refuses to read.
+WORKER_LIST_BAD = "Lista Wykonawców ma złe ustawienie."
+WORKER_LIST_UNREADABLE = (
+    "Nie można teraz odczytać Listy Wykonawców. Zamknij program, który może trzymać plik, i spróbuj ponownie."
+)
 CONFIRMS = "Diagnoza potwierdza ten komunikat."
 NOT_DAD_FILES = "To nie wynika z Twoich plików."
 NOT_CHECKED_UNEXPECTED = "Nie udało się sprawdzić: nieoczekiwany błąd."
@@ -59,7 +62,7 @@ CHECKS = (
     "Rejestr zleceń",
     "Wzorzec rozliczenia wewnętrznego",
     "Wzorzec pliku zbiorczego",
-    "Konfiguracja wykonawców",
+    "Lista Wykonawców",
     "Folder okresu",
     "Pliki okresu w Excelu",
     "Aktualność narzędzia",
@@ -77,7 +80,7 @@ def drive(run: Run, page: Page) -> None:
     configuration = run.fixture["configuration"]
     assert isinstance(configuration, dict)
     internal_template = Path(configuration["internal_template"])
-    untouched = [register, *(Path(configuration[key]) for key in ("internal_template", "collective_template", "worker_config"))]
+    untouched = [register, *(Path(configuration[key]) for key in ("internal_template", "collective_template"))]
     before = _snapshot(untouched)
     lock = excel_lock(register)
     diagnosis = page.get_by_role("region", name="Diagnoza")
@@ -242,7 +245,7 @@ def drive(run: Run, page: Page) -> None:
     key_item = diagnosis.get_by_role("list", name="Sprawdzono").get_by_role("listitem").filter(has_text=KEY_CHECK)
     diagnosis.get_by_role("button", name=f"Sprawdzono ({len(CHECKS)})", exact=True).click()
     expect(key_item).to_contain_text(f"{KEY_CHECK} · {NO_KEY}")
-    run.check(_snapshot(untouched) == before, "the Rejestr zleceń, the Wzorce and the konfiguracja wykonawców are unchanged")
+    run.check(_snapshot(untouched) == before, "the Rejestr zleceń and the Wzorce are unchanged")
     log = run.log()
     run.check(
         f"diagnoza proces=preparation okres={PERIOD} przyczyna=NIE_ZNALEZIONO_PRZYCZYNY" in log,
@@ -384,68 +387,50 @@ def drive(run: Run, page: Page) -> None:
         remove(refusing)
         drop_report_key(key_file)
 
-    run.step(FEATURE, "diagnoza-konfiguracja-wykonawcow")
-    worker_config = Path(configuration["worker_config"])
-    kept = worker_config.with_name(f"{worker_config.name}.odlozony")
-    move(worker_config, kept)
-    worker_config.write_bytes(b"\xff\xfe nie UTF-8")
+    run.step(FEATURE, "diagnoza-lista-wykonawcow")
+    worker_list = internal_template.parent / WORKERS_FILE
+    kept = worker_list.with_name(f"{worker_list.name}.odlozony")
+    move(worker_list, kept)
+    worker_list.write_bytes(b"\xff\xfe nie UTF-8")
     try:
         page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
         page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
         page.get_by_role("combobox", name="Okres").click()
         page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
-        expect(stop_banner(page)).to_contain_text(WORKER_CONFIG_NOT_UTF8)
-        result = finished_result(run, "diagnoza-konfiguracja-wykonawcow")
-        run.check(result["stop_kind"] == "for_maks", "a konfiguracja wykonawców Przygotowanie cannot read is „do Maksa”")
-        stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
-        expect(diagnosis).to_contain_text(CONFIRMS)
-        expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_have_count(0)
-        run.check(True, "the Diagnoza confirms the stop on the konfiguracja wykonawców instead of a second Komunikat")
-        config_run = current_run(run, "diagnoza-konfiguracja-wykonawcow")["run"]
-        assert isinstance(config_run, dict)
-        answer = diagnosis_answer(run, str(config_run["id"]), "diagnoza-konfiguracja-wykonawcow")
-        explanation = answer["explanation"]
-        assert isinstance(explanation, dict) and isinstance(answer["checks"], list)
+        expect(stop_banner(page)).to_contain_text(NO_ORDERS)
+        result = finished_result(run, "diagnoza-lista-wykonawcow")
         run.check(
-            explanation["what"] == WORKER_CONFIG_NOT_UTF8
-            and answer["confirms_stop"] is True
-            and {"label": "Konfiguracja wykonawców", "state": "failed", "detail": WORKER_CONFIG_NOT_UTF8} in answer["checks"],
-            "the check of the konfiguracja wykonawców explains it with Przygotowanie's Komunikat, the one the stop showed",
+            all(WORKER_LIST_BAD not in stop["what"] for stop in result["stops"]),
+            "a Lista Wykonawców Przygotowanie cannot use runs on the last good list: the stop is the period's, not the list's",
         )
-        run.capture(page, "59c-diagnoza-konfiguracja-wykonawcow")
+        # A stop for tata offers `Diagnoza` only when Uruchom ponownie repeats the same Komunikat.
+        run_again(run, stop_banner(page), "diagnoza-lista-wykonawcow")
+        stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
+        list_run = current_run(run, "diagnoza-lista-wykonawcow")["run"]
+        assert isinstance(list_run, dict)
+        answer = diagnosis_answer(run, str(list_run["id"]), "diagnoza-lista-wykonawcow")
+        assert isinstance(answer["checks"], list)
+        run.check(
+            any(
+                check["label"] == "Lista Wykonawców" and check["state"] == "failed" and WORKER_LIST_BAD in check["detail"]
+                for check in answer["checks"]
+            ),
+            "the Diagnoza check of the Lista Wykonawców names the bad setting, so tata knows what to fix in Ustawienia",
+        )
+        run.capture(page, "59c-diagnoza-lista-wykonawcow")
     finally:
-        remove(worker_config)
-        move(kept, worker_config)
+        remove(worker_list)
+        move(kept, worker_list)
 
-    run.step(FEATURE, "diagnoza-konfiguracja-wykonawcow-niedostepna")
-    with unreadable(worker_config):
-        page.get_by_role("button", name="Nowe Uruchomienie procesu").click()
-        page.get_by_role("radio", name="Przygotowanie pliku zbiorczego").click()
-        page.get_by_role("combobox", name="Okres").click()
-        page.get_by_role("option", name=period_choice(PERIOD, "Brak plików okresu"), exact=True).click()
-        page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
-        expect(stop_banner(page)).to_contain_text(WORKER_CONFIG_INACCESSIBLE)
-        expect(stop_banner(page)).to_contain_text(f"plik {worker_config.name}")
-        result = finished_result(run, "diagnoza-konfiguracja-wykonawcow-niedostepna")
-        run.check(
-            result["stop_kind"] == "for_maks",
-            "a konfiguracja wykonawców without access stops Przygotowanie „do Maksa”, like a Wzorzec without access",
+    run.step(FEATURE, "diagnoza-lista-wykonawcow-niedostepna")
+    with unreadable(worker_list):
+        refused = run.post(
+            "/api/runs",
+            "diagnoza-lista-wykonawcow-niedostepna",
+            {"process": "preparation", "period": PERIOD, "mode": "DRY-RUN"},
         )
-        stop_banner(page).get_by_role("button", name="Diagnoza", exact=True).click()
-        expect(diagnosis).to_contain_text(CONFIRMS)
-        expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_have_count(0)
-        config_run = current_run(run, "diagnoza-konfiguracja-wykonawcow-niedostepna")["run"]
-        assert isinstance(config_run, dict)
-        answer = diagnosis_answer(run, str(config_run["id"]), "diagnoza-konfiguracja-wykonawcow-niedostepna")
-        explanation = answer["explanation"]
-        assert isinstance(explanation, dict) and isinstance(answer["checks"], list)
         run.check(
-            explanation["what"] == WORKER_CONFIG_INACCESSIBLE
-            and explanation["where"] == f"plik {worker_config.name}, folder {worker_config.parent.name}"
-            and answer["confirms_stop"] is True
-            and {"label": "Konfiguracja wykonawców", "state": "failed", "detail": WORKER_CONFIG_INACCESSIBLE}
-            in answer["checks"],
-            "the Diagnoza confirms the stop and names the konfiguracja wykonawców file without access niedostępna, never niepoprawna",
+            refused.status == 409 and isinstance(refused.body, dict) and refused.body.get("message") == WORKER_LIST_UNREADABLE,
+            "a Lista Wykonawców the system refuses to read refuses the start with a sentence, never „niepoprawna”",
         )
-        run.capture(page, "59d-diagnoza-konfiguracja-wykonawcow-niedostepna")

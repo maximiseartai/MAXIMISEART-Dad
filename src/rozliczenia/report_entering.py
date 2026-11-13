@@ -3,7 +3,7 @@
 Operacją procesu jest ``enter_from_mail()``. Silnik sekwencjonuje kroki i jako jedyny tłumaczy ich fakty na
 Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
 
-- Sprawdzanie: plik dostępu do Skrzynki raportów, Konfiguracja wykonawców, plik adresów Wykonawców, pamięć własnych
+- Sprawdzanie: plik dostępu do Skrzynki raportów, pamięć własnych
   wpisów (``ReportState.load``), brak kopii konfliktu OneDrive obok INTERMAX (``onedrive_conflicts.beside``) i INTERMAX
   zamknięty w Excelu, więc przy kopii konfliktu albo INTERMAX otwartym w Excelu skrzynka nie jest czytana;
 - Odczyt danych: Pliki zbiorcze okresów okna (``scan_period_folders``), bo okres z Plikiem zbiorczym jest zamknięty, potem
@@ -49,10 +49,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol, assert_never
 
-from . import intermax_messages, onedrive_conflicts, raw_orders, register_file, worker_addresses, workbook_files
+from . import intermax_messages, onedrive_conflicts, raw_orders, register_file, workbook_files
 from . import report_entering_messages as messages
 from .domain import ProgressPhase
-from .input_checks import workers
 from .intermax_cells import CellsWritten, Rejected, write_cells
 from .intermax_ordering import paste_areas
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting
@@ -66,7 +65,6 @@ from .run_context import RunContext
 from .settlement_period import SettlementPeriod, period_of
 from .workbook_files import WorkbookError
 from .workbook_parts import UnsupportedShape
-from .worker_addresses import AddressesError
 from .worker_report_inbox import InboxUnreachable, Mails, PasswordRejected, WorkerReportInbox
 from .worker_reports import (
     Kept,
@@ -92,6 +90,7 @@ from .worker_reports import (
     order_number,
 )
 from .wall_clock import local_now
+from .worker_list import WorkerList
 
 __all__ = [
     "ClickResult",
@@ -187,14 +186,13 @@ class ReportEnteringParts:
 
 @dataclass(frozen=True)
 class EnteringInputs:
-    """Wejście Wpisania raportów: INTERMAX i folder okresów z Ustawień taty, Konfiguracja wykonawców, plik adresów,
+    """Wejście Wpisania raportów: INTERMAX i folder okresów z Ustawień taty, Lista Wykonawców z Ustawień Centrum,
     zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie
     (ADR 0019)."""
 
     register_path: Path
     periods_directory: Path
-    worker_config: Path
-    worker_addresses: Path
+    workers: WorkerList
     parts: ReportEnteringParts
     now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
@@ -295,13 +293,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     def check() -> tuple[WorkerAddresses, SavedState]:
         _ensure_access(parts.inbox.access())
-        found = workers(inputs.worker_config)
-        if isinstance(found, Message):
-            raise StopError(found)
-        try:
-            addresses = worker_addresses.load(inputs.worker_addresses, workers=found)
-        except AddressesError as error:
-            raise StopError(messages.addresses_unusable(inputs.worker_addresses, error.problem)) from error
+        addresses = inputs.workers.addresses()
         with (
             _stops(messages.state_unreadable, StateUnreadable),
             _stops(messages.decisions_unreadable, DecisionsUnreadable),

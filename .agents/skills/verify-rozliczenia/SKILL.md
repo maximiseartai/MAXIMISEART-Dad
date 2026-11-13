@@ -51,8 +51,7 @@ pilnuje:
   - src/rozliczenia/tool_files.py
   - src/rozliczenia/wall_clock.py
   - src/rozliczenia/workbook_*.py
-  - src/rozliczenia/worker_addresses.py
-  - src/rozliczenia/worker_config*.py
+  - src/rozliczenia/worker_list.py
   - src/rozliczenia/worker_report_inbox.py
   - src/rozliczenia/worker_reports/*.py
   - src/rozliczenia/write_routes.py

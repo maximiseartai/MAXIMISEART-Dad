@@ -14,7 +14,7 @@ from rozliczenia.run_context import RunContext
 from atrapy.preparation import PERIOD, make_preparation_fixture
 from atrapy.preparation import cell_values, collective_row, register_order
 from tests.fixtures.operacje import run_preparation
-from atrapy.settlement import write_template
+from atrapy.settlement import worker_list, write_template
 
 
 def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zleceniami_skutecznymi(
@@ -26,7 +26,7 @@ def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zlecen
 
     preparation = run_preparation(fixture)
     settlement = run_settlements(
-        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template),
+        SettlementInputs(preparation.collective_file, worker_list(), worker_template),
         RunContext(),
     )
 
@@ -97,7 +97,7 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
 
     preparation = run_preparation(fixture)
     settlement = run_settlements(
-        SettlementInputs(preparation.collective_file, fixture.config_path, worker_template),
+        SettlementInputs(preparation.collective_file, worker_list(), worker_template),
         RunContext(),
     )
     result = quantity_check.check(settlement.orders, settlement.quantity_rules)

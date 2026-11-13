@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+import json
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -12,7 +13,9 @@ import pytest
 from openpyxl import load_workbook
 
 from rozliczenia import tool_files
-from rozliczenia.centrum import tool_freshness
+from rozliczenia.centrum import diagnosis_messages, tool_freshness
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.centrum.settings import messages as settings_messages
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.run_context import TemplateCheck, check_on_disk
@@ -22,7 +25,7 @@ from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolD
 from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.centrum_processes import write_configuration
 from atrapy.workbooks import cut_sheet_after_data_rows
-from atrapy.settlement import write_template
+from atrapy.settlement import WORKERS, worker_list, write_template, write_worker_list
 
 INTERNAL = tool_files.INTERNAL_TEMPLATE.name
 COLLECTIVE = tool_files.COLLECTIVE_TEMPLATE.name
@@ -340,7 +343,7 @@ def test_naprawiony_albo_zamkniety_wzorzec_jest_gotowy_przy_nastepnym_odczycie(t
 
 
 def config_directory_snapshot(config: Path) -> dict[str, tuple[bytes, int]]:
-    return {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in sorted(config.iterdir())}
+    return {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in sorted(config.iterdir()) if path.is_file()}
 
 
 def test_centrum_nie_zmienia_zadnego_pliku_konfiguracji_ani_wzorca(tmp_path: Path) -> None:
@@ -356,7 +359,7 @@ def test_centrum_nie_zmienia_zadnego_pliku_konfiguracji_ani_wzorca(tmp_path: Pat
     assert config_directory_snapshot(config) == before
 
 
-def test_wykonawcy_sa_wypisani_w_kolejnosci_z_konfiguracji_wykonawcow(tmp_path: Path) -> None:
+def test_wykonawcy_sa_wypisani_w_kolejnosci_z_listy_wykonawcow(tmp_path: Path) -> None:
     configuration = read_configuration(configured(tmp_path))
 
     assert configuration["workers"] == {
@@ -365,31 +368,25 @@ def test_wykonawcy_sa_wypisani_w_kolejnosci_z_konfiguracji_wykonawcow(tmp_path: 
     }
 
 
-def test_zla_konfiguracja_wykonawcow_jest_komunikatem_w_trzech_czesciach(tmp_path: Path) -> None:
+def test_zla_lista_wykonawcow_jest_komunikatem_w_trzech_czesciach_bez_nazw(tmp_path: Path) -> None:
     app = configured(tmp_path)
-    app.files.worker_config.write_text("schema_version: 1\nworkers:\n  a: Ten Sam\n  b: ten sam\n", encoding="utf-8")
+    ToolDirectory(tmp_path).worker_list.write_text(
+        "schema_version: 1\nwykonawcy:\n  - {nazwa: Ten Sam, loginy: [a]}\n  - {nazwa: ten sam, loginy: [b]}\n",
+        encoding="utf-8",
+    )
 
     configuration = read_configuration(app)
 
-    assert configuration["workers"] == {
-        "state": "unreadable",
-        "message": {
-            "what": (
-                "Nie można odczytać konfiguracji wykonawców. "
-                "Dwóch identyfikatorów wskazuje ten sam plik pracownika: Ten Sam / ten sam"
-            ),
-            "where": "plik worker_mapping.yaml, folder config",
-            "action": REPORT_TO_MAINTAINER,
-        },
-    }
+    message = diagnosis_messages.worker_list_bad(settings_messages.worker_same_file())
+    assert configuration["workers"] == {"state": "unreadable", "message": common_contract.Message.of(message).model_dump()}
+    assert "Ten Sam" not in json.dumps(configuration, ensure_ascii=False)
     assert [template["state"] for template in templates_by_file(configuration).values()] == ["ready"] * 3
 
 
-def test_nowy_wykonawca_dopisany_do_konfiguracji_jest_widoczny_bez_restartu(tmp_path: Path) -> None:
+def test_nowy_wykonawca_dopisany_do_listy_jest_widoczny_bez_restartu(tmp_path: Path) -> None:
     app = configured(tmp_path)
     read_configuration(app)
-    with app.files.worker_config.open("a", encoding="utf-8") as config:
-        config.write("  nowy.wykonawca: Nowy Wykonawca\n")
+    write_worker_list(ToolDirectory(tmp_path).worker_list, worker_list({**WORKERS, "nowy.wykonawca": "Nowy Wykonawca"}))
 
     workers = read_configuration(app)["workers"]
 

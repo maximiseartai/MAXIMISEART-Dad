@@ -77,6 +77,7 @@ from rozliczenia.message import Message
 from rozliczenia.process_run import Interlocutor
 from rozliczenia.progress import ProgressProjection
 from rozliczenia.run_context import RunContext
+from rozliczenia.worker_list import WorkerList
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
 import rozjazd_modelu
 
@@ -497,12 +498,12 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
             {
                 "register": Path("Rejestr.xlsx"),
                 "periods_directory": Path("okresy"),
-                "worker_config": Path("konfiguracja.xlsx"),
                 "internal_template": Path("wewnetrzny.xlsx"),
                 "collective_template": Path("zbiorczy.xlsx"),
             },
             period="08_14_09_2026",
             dry_run=False,
+            workers=WorkerList(()),
         ),
         process_kind.HostParts(),
         RunContext(),

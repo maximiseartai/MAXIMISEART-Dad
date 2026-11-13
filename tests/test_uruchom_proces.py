@@ -25,6 +25,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.preparation_process import PROCESS as PREPARATION
 from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
@@ -39,10 +40,9 @@ from rozliczenia.tool_files import (
     REPORT_ENTERING_METRICS,
     SETTLEMENT_METRICS,
     TOOL_ROOT,
-    WORKER_CONFIG,
     WORKER_TEMPLATE,
 )
-from rozliczenia.worker_addresses import WORKER_ADDRESSES_FILE
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 
 from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
@@ -113,7 +113,7 @@ def _settlement_arguments(tmp_path: Path, source: Path, config: Path, *extra: st
         "settlement",
         "--source",
         str(source),
-        "--config",
+        "--wykonawcy",
         str(config),
         "--worker-template",
         str(tmp_path / tool_files.WORKER_TEMPLATE.name),
@@ -140,7 +140,7 @@ def _preparation_arguments(fixture: PreparationFixture, *extra: str) -> list[str
         fixture.periods_directory,
         "--period",
         PERIOD,
-        "--config",
+        "--wykonawcy",
         fixture.config_path,
         "--internal-template",
         fixture.internal_template_path,
@@ -349,8 +349,8 @@ def test_podsumowanie_i_ostrzezenia_w_kolejnosci_etapow_sa_te_same_w_skrypcie_na
         "settlement",
         "--source",
         centrum.collective_file,
-        "--config",
-        centrum.configuration.worker_config,
+        "--wykonawcy",
+        centrum.tool.worker_list,
         "--worker-template",
         centrum.configuration.worker_template,
         "--metrics",
@@ -565,6 +565,23 @@ def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(
     assert not (tmp_path / "metrics.jsonl").exists()
 
 
+def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustawien_bez_uruchomienia(
+    tmp_path: Path,
+) -> None:
+    """Skrypt dla maszyn czyta ``--wykonawcy`` regułą właściciela Ustawień Centrum, bez zapisu: zła treść to błąd
+    argumentu (kod 1, zdanie na stderr, bez JSON), a nie Uruchomienie na pustej liście."""
+
+    source, target, config = make_fixture(tmp_path)
+    config.write_text("schema_version: 1\nwykonawcy:\n  - {nazwa: 'Jan/Testowy', loginy: [jan]}\n", encoding="utf-8")
+
+    completed = _completed(*_settlement_arguments(tmp_path, source, config))
+
+    assert (completed.returncode, completed.stdout) == (1, "")
+    assert completed.stderr.splitlines()[-1].endswith(f"--wykonawcy: {settings_messages.worker_name_invalid()}")
+    assert not target.exists() and not (tmp_path / "metrics.jsonl").exists()
+    assert sorted(path.name for path in config.parent.iterdir() if path.name.startswith("ustawienia")) == []
+
+
 def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_procesow() -> None:
     completed = _completed("--help")
 
@@ -579,11 +596,12 @@ def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_pr
 _METRICS = "Plik metryk JSONL."
 _DRY_RUN = ("--dry-run", False, False, "Podgląd bez zapisu.")
 # Flagi Skryptu dla maszyn zamrożone z f981e7c6e, ostatniego commitu z podparserami pisanymi ręcznie: kolejność,
-# wymagalność, wartość domyślna i pomoc, na których stoją E2E, benchmark, skille i tools/rownowaznosc.py.
+# wymagalność, wartość domyślna i pomoc, na których stoją E2E, benchmark, skille i tools/rownowaznosc.py; Listę
+# Wykonawców (--wykonawcy) w miejscu --config i --adresy-wykonawcow wprowadził #1473.
 _FLAGS = {
     "settlement": [
         ("--source", True, None, "Plik zbiorczy."),
-        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
+        ("--wykonawcy", False, CONFIG_DIR / WORKERS_FILE, "Lista Wykonawców (plik wykonawcy.yaml)."),
         ("--worker-template", False, WORKER_TEMPLATE, "Wzorzec rozliczenia pracownika."),
         ("--metrics", False, SETTLEMENT_METRICS, _METRICS),
         _DRY_RUN,
@@ -592,7 +610,7 @@ _FLAGS = {
         ("--register", True, None, "Rejestr zleceń."),
         ("--periods-directory", True, None, "Folder okresów."),
         ("--period", True, None, "Token okresu, np. 08_14_09_2026."),
-        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
+        ("--wykonawcy", False, CONFIG_DIR / WORKERS_FILE, "Lista Wykonawców (plik wykonawcy.yaml)."),
         ("--internal-template", False, INTERNAL_TEMPLATE, "Wzorzec rozliczenia wewnętrznego."),
         ("--collective-template", False, COLLECTIVE_TEMPLATE, "Wzorzec pliku zbiorczego."),
         ("--metrics", False, PREPARATION_METRICS, _METRICS),
@@ -612,8 +630,7 @@ _FLAGS = {
     "report_entering": [
         ("--register", True, None, "Rejestr zleceń (INTERMAX)."),
         ("--periods-directory", True, None, "Folder okresów."),
-        ("--config", False, WORKER_CONFIG, "Konfiguracja wykonawców."),
-        ("--adresy-wykonawcow", False, CONFIG_DIR / WORKER_ADDRESSES_FILE, "Plik adresów Wykonawców."),
+        ("--wykonawcy", False, CONFIG_DIR / WORKERS_FILE, "Lista Wykonawców (plik wykonawcy.yaml)."),
         ("--maile", True, None, "Folder maili .eml w miejscu Skrzynki raportów."),
         ("--metrics", False, REPORT_ENTERING_METRICS, _METRICS),
     ],

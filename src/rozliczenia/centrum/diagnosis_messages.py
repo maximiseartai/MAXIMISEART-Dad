@@ -2,8 +2,8 @@
 
 Diagnoza wyjaśnia przyczynę Komunikatem z katalogu procesu, gdy proces ma
 własny (np. Rejestr zleceń otwarty w Excelu). Ten katalog ma tylko resztę:
-brak przyczyny, nowsza wersja narzędzia, plik okresu otwarty w Excelu i plik
-tylko w chmurze OneDrive. Instrukcja taty cytuje „Co się stało” każdego Komunikatu
+brak przyczyny, nowsza wersja narzędzia, plik okresu otwarty w Excelu, plik
+tylko w chmurze OneDrive i zła Lista Wykonawców (tym samym Komunikatem pokazuje ją Konfiguracja). Instrukcja taty cytuje „Co się stało” każdego Komunikatu
 (``tests/test_instrukcja_taty.py``).
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rozliczenia.message import KEEP_ON_DEVICE, Message, file_label
+from rozliczenia.message import IF_ERROR_RETURNS, KEEP_ON_DEVICE, Message, file_label
 from rozliczenia.workbook_messages import lock_hint
 
 _DIAGNOSIS = "Diagnoza w Centrum rozliczeń"
@@ -58,4 +58,30 @@ def file_only_in_cloud(path: Path) -> Message:
         what="Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.",
         where=file_label(path),
         action=f"{KEEP_ON_DEVICE} i uruchom ponownie.",
+    )
+
+
+_WORKER_LIST = "Lista Wykonawców w Ustawieniach Centrum"
+
+
+def worker_list_bad(sentence: str) -> Message:
+    """Plik Listy Wykonawców ma złe ustawienie; ``sentence`` to zdanie właściciela Ustawień, bez nazwy, loginu i
+    adresu. Proces biegnie wtedy na ostatniej dobrej liście albo nie startuje."""
+
+    return Message(
+        code="ZLA_LISTA_WYKONAWCOW",
+        what=f"Lista Wykonawców ma złe ustawienie. {sentence}",
+        where=_WORKER_LIST,
+        action="Otwórz Ustawienia, sekcję Wykonawcy, popraw wskazane pole i uruchom ponownie.",
+    )
+
+
+def worker_list_unreadable() -> Message:
+    """Pliku Listy Wykonawców system nie daje teraz czytać (np. trzyma go antywirus): treść nieznana, a nie zła."""
+
+    return Message(
+        code="NIEDOSTEPNA_LISTA_WYKONAWCOW",
+        what="Nie można teraz odczytać Listy Wykonawców. Plik może być zajęty przez inny program.",
+        where=_WORKER_LIST,
+        action=f"Zamknij program, który może trzymać plik, i uruchom ponownie. {IF_ERROR_RETURNS}",
     )

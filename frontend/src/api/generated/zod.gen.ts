@@ -3,6 +3,16 @@
 import * as z from 'zod';
 
 /**
+ * AddressesNotMoved
+ *
+ * Starego pliku adresów nie dało się przeczytać, więc Wykonawcy przeszli bez adresów; ``message`` mówi dlaczego.
+ */
+export const zAddressesNotMoved = z.object({
+    reason: z.literal('adresy_nieprzeniesione'),
+    message: z.string()
+});
+
+/**
  * ApiTiming
  *
  * Jedno zapytanie API widoku: czas w przeglądarce i czas serwera z ``Server-Timing`` (``None``: brak nagłówka).
@@ -444,6 +454,20 @@ export const zKindTableCell = z.object({
         z.int(),
         z.literal('nieliczbowa')
     ])
+});
+
+/**
+ * ListedWorker
+ *
+ * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
+ * wykonawcy, ``active``: nie jest Nieaktywnym Wykonawcą, ``reminders``: dostaje Przypomnienia o raporcie.
+ */
+export const zListedWorker = z.object({
+    logins: z.array(z.string()),
+    name: z.string(),
+    addresses: z.array(z.string()),
+    active: z.boolean(),
+    reminders: z.boolean()
 });
 
 /**
@@ -1493,7 +1517,7 @@ export const zReportNotification = z.object({
 /**
  * SettingProblem
  *
- * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``folder_okresow``, ``motyw``) albo ``None`` dla całego
+ * Złe ustawienie w pliku: pole w pliku (``rejestr_zlecen``, ``wykonawcy[2].adresy[0]``) albo ``None`` dla całego
  * pliku i zdanie dla taty.
  */
 export const zSettingProblem = z.object({
@@ -1699,68 +1723,23 @@ export const zReportsView = z.object({
 });
 
 /**
+ * UnmatchedLogin
+ *
+ * Adresy przy loginie, którego nie miał żaden Wykonawca starej Konfiguracji wykonawców.
+ */
+export const zUnmatchedLogin = z.object({
+    reason: z.literal('login_bez_wykonawcy'),
+    login: z.string(),
+    addresses: z.array(z.string())
+});
+
+/**
  * UnreadablePath
  *
  * Pliku Ustawień Centrum nie da się teraz przeczytać, więc nie wiadomo, jaką ścieżkę wskazano.
  */
 export const zUnreadablePath = z.object({
     state: z.literal('unreadable')
-});
-
-/**
- * Settings
- *
- * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
- * jest bez adresu i hasła.
- */
-export const zSettings = z.object({
-    order_register: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zInaccessiblePath,
-        zUnreadablePath,
-        zReadyPath
-    ]),
-    periods_directory: z.discriminatedUnion('state', [
-        zNotSetPath,
-        zMissingPath,
-        zInaccessiblePath,
-        zUnreadablePath,
-        zReadyPath
-    ]),
-    theme: z.enum(['dark', 'light']),
-    folders_problem: zSettingProblem.nullable(),
-    inbox: zInboxSetting,
-    inbox_problem: zSettingProblem.nullable(),
-    autostart: zAutostartSetting
-});
-
-/**
- * Choice
- *
- * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
- * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
- * ``None``: bez zmiany i bez wiersza.
- */
-export const zChoice = z.object({
-    settings: zSettings,
-    change: z.string().nullish()
-});
-
-/**
- * InboxPasswordSaved
- *
- * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
- */
-export const zInboxPasswordSaved = z.object({
-    settings: zSettings,
-    change: z.string().nullish(),
-    login: z.enum([
-        'accepted',
-        'rejected',
-        'no_network'
-    ])
 });
 
 /**
@@ -1825,6 +1804,80 @@ export const zWithoutQuantityRead = z.object({
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
+});
+
+/**
+ * WorkerListSetting
+ *
+ * Lista Wykonawców: ``good``, ``bad`` (zły plik: ``problem`` i ostatnia dobra lista, a bez niej pusta) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, lista pusta).
+ */
+export const zWorkerListSetting = z.object({
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    workers: z.array(zListedWorker),
+    unresolved: z.array(z.union([zUnmatchedLogin, zAddressesNotMoved])),
+    problem: zSettingProblem.nullable()
+});
+
+/**
+ * Settings
+ *
+ * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * jest bez adresu i hasła.
+ */
+export const zSettings = z.object({
+    order_register: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    periods_directory: z.discriminatedUnion('state', [
+        zNotSetPath,
+        zMissingPath,
+        zInaccessiblePath,
+        zUnreadablePath,
+        zReadyPath
+    ]),
+    theme: z.enum(['dark', 'light']),
+    folders_problem: zSettingProblem.nullable(),
+    workers: zWorkerListSetting,
+    inbox: zInboxSetting,
+    inbox_problem: zSettingProblem.nullable(),
+    autostart: zAutostartSetting
+});
+
+/**
+ * Choice
+ *
+ * Ustawienia po natywnym oknie wyboru, zapisie sekcji, przełączniku albo cofnięciu: wybór zapisuje ścieżkę,
+ * anulowanie niczego nie zmienia. ``change``: id wiersza Historii Ustawień tej zmiany (do „Zapisano · Cofnij”);
+ * ``None``: bez zmiany i bez wiersza.
+ */
+export const zChoice = z.object({
+    settings: zSettings,
+    change: z.string().nullish()
+});
+
+/**
+ * InboxPasswordSaved
+ *
+ * Ustawienia po zapisie hasła skrzynki z wynikiem jednej próby logowania; wiersz Historii nie ma „Cofnij”.
+ */
+export const zInboxPasswordSaved = z.object({
+    settings: zSettings,
+    change: z.string().nullish(),
+    login: z.enum([
+        'accepted',
+        'rejected',
+        'no_network'
+    ])
 });
 
 /**
@@ -2084,7 +2137,7 @@ export const zWorkerSettlementRequest = z.object({
 /**
  * WorkersReady
  *
- * Nazwy Wykonawców w kolejności z konfiguracji wykonawców.
+ * Nazwy Wykonawców w kolejności z Listy Wykonawców.
  */
 export const zWorkersReady = z.object({
     state: z.literal('ready'),

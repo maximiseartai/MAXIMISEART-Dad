@@ -66,6 +66,7 @@ from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
 from atrapy.preparation import PERIOD, incomplete_period_rows
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import ROOT, ToolDirectory, run_events, views_until, write_report_key
@@ -74,6 +75,7 @@ from tests.fixtures.centrum_intermax import (
     ENTERING_PERIOD,
     REGISTER_NAME,
     SENDERS,
+    WORKERS,
     EnteringCentrum,
     entering_centrum,
     open_in_excel,
@@ -341,8 +343,8 @@ def test_wpisanie_raportow_nie_startuje_w_trakcie_innego_uruchomienia(tmp_path: 
     """Slot „jedno naraz”: w czasie Uruchomienia, które czeka na Decyzję taty, kliknięcie odmawia i niczego nie czyta."""
 
     centrum = preparing_centrum(tmp_path, incomplete_period_rows())
-    # Bez pliku adresów Wpisanie raportów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
-    centrum.tool.configuration.worker_addresses.touch()
+    # Bez adresu na Liście Wykonawców Wpisanie raportów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
+    write_worker_list(centrum.tool.worker_list, worker_list(addresses={"adrian.testowy": [JAN]}))
     centrum.start(dry_run=False)
     waiting = views_until(centrum.client, "awaiting_decision")[-1]
 
@@ -881,74 +883,31 @@ def test_brak_sieci_albo_gmail_bez_odpowiedzi_to_tylko_komunikat_sprobuj_za_chwi
     assert not _state(centrum).exists()
 
 
-@pytest.mark.parametrize(
-    ("spoil", "problem"),
-    [
-        pytest.param(
-            lambda addresses: addresses.write_text("wykonawcy: [jan@przyklad.invalid\n", encoding="utf-8"),
-            "plik nie jest poprawnym YAML-em",
-            id="nieczytelny",
-        ),
-        pytest.param(
-            lambda addresses: addresses.write_text(
-                json.dumps({"schema_version": 1, "wykonawcy": {"obcy.login": [JAN]}}), encoding="utf-8"
-            ),
-            "któryś Wykonawca nie jest w konfiguracji wykonawców",
-            id="login-spoza-konfiguracji",
-        ),
-    ],
+ACCESS_MISSING = (
+    "Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje hasła do skrzynki raportów (plik "
+    "skrzynka-raportow.txt). Dopisze je Maks."
 )
-def test_zly_plik_adresow_to_zatrzymanie_do_maksa_ze_zgloszeniem_bez_adresow_i_loginu(
-    tmp_path: Path, spoil: Callable[[Path], object], problem: str
-) -> None:
-    """US 50: plik adresów, którego nie da się odczytać albo który ma login spoza Konfiguracji wykonawców, daje
-    Zatrzymanie „do Maksa” ze Zgłoszeniem bez adresów i loginów z pliku, zanim proces przeczyta skrzynkę."""
-
-    write_report_key(ToolDirectory(tmp_path))
-    surroundings = Surroundings()
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], surroundings=surroundings)
-    spoil(centrum.tool.configuration.worker_addresses)
-    before = centrum.register.read_bytes()
-
-    view = _stopped_view(centrum)
-    _reported(centrum, view)
-
-    assert surroundings.report_box.wait_until(lambda fake: len(fake.sent) == 1)
-    result = view["result"]
-    assert (result["stop_kind"], result["stops"][0]["what"], result["stops"][0]["where"]) == (
-        "for_maks",
-        f"Nie można użyć adresów Wykonawców: {problem}. INTERMAX nie został zmieniony.",
-        "plik adresy-wykonawcow.yaml, folder config",
-    )
-    texts = _issue_texts(surroundings)
-    for secret in (JAN, "jan.testowy", "obcy.login"):
-        assert [text for text in texts if secret in text] == [], secret
-    assert centrum.fake_inbox.days == []
-    assert centrum.register.read_bytes() == before
-
-
-ACCESS_MISSING = "hasła do skrzynki raportów (plik skrzynka-raportow.txt)"
-ADDRESSES_MISSING = "adresów Wykonawców (plik adresy-wykonawcow.yaml)"
+ADDRESSES_MISSING = "Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach."
 
 
 @pytest.mark.parametrize(
-    ("access", "addresses", "missing"),
+    ("access", "addresses", "sentence"),
     [
         pytest.param("missing", True, ACCESS_MISSING, id="bez-hasla"),
         pytest.param("ready", False, ADDRESSES_MISSING, id="bez-adresow"),
-        pytest.param("missing", False, f"{ACCESS_MISSING} i {ADDRESSES_MISSING}", id="bez-obu"),
+        pytest.param("missing", False, ACCESS_MISSING, id="bez-obu"),
     ],
 )
-def test_bez_pliku_hasla_albo_adresow_karta_mowi_czego_brakuje_a_start_jest_odrzucony(
-    tmp_path: Path, access: InboxAccess, addresses: bool, missing: str
+def test_bez_pliku_hasla_albo_adresow_wykonawcow_karta_mowi_czego_brakuje_a_start_jest_odrzucony(
+    tmp_path: Path, access: InboxAccess, addresses: bool, sentence: str
 ) -> None:
-    """US 51: bez pliku dostępu do skrzynki raportów albo pliku adresów Wykonawców karta mówi, którego brakuje, a start
-    jest odrzucony tym samym zdaniem, bez Uruchomienia i bez odczytu skrzynki."""
+    """US 51: bez pliku dostępu do skrzynki raportów albo bez adresu żadnego Wykonawcy na Liście Wykonawców karta mówi,
+    czego brakuje, a start jest odrzucony tym samym zdaniem, bez Uruchomienia i bez odczytu skrzynki; brak hasła mówi
+    pierwszy, bo dopisuje je Maks."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")], access=access)
     if not addresses:
-        centrum.tool.configuration.worker_addresses.unlink()
-    sentence = f"Wpisanie raportów nie jest jeszcze ustawione: w folderze config brakuje {missing}. Dopisze je Maks."
+        write_worker_list(centrum.tool.worker_list, worker_list(WORKERS))
 
     setup = centrum.setup()
     started = centrum.start()
@@ -1075,8 +1034,8 @@ def test_ten_sam_numer_dwa_razy_u_wykonawcy_w_jednym_dniu_niczego_nie_wpisuje(tm
 
 
 def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_dopisaniu_adresu(tmp_path: Path) -> None:
-    """US 15–16: Raport z poprawnym tematem z nowego adresu Jana daje problem nieznanego nadawcy; Maks dopisuje adres do
-    pliku adresów i następne kliknięcie wpisuje ten sam mail bez innej pracy."""
+    """US 15–16: Raport z poprawnym tematem z nowego adresu Jana daje problem nieznanego nadawcy; tata dopisuje adres na
+    Liście Wykonawców i następne kliknięcie wpisuje ten sam mail bez innej pracy."""
 
     new_address = "jan.nowy@przyklad.invalid"
     centrum = entering_centrum(tmp_path, INTERMAX, [report(new_address, SUBJECT, "40000001 tak wymiana routera")])
@@ -1084,9 +1043,7 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
 
     first = _finished(centrum)
     listed = {"jan.testowy": [JAN, new_address], "anna.kowalska": [ANNA]}
-    centrum.tool.configuration.worker_addresses.write_text(
-        json.dumps({"schema_version": 1, "wykonawcy": listed}, ensure_ascii=False), encoding="utf-8"
-    )
+    write_worker_list(centrum.tool.worker_list, worker_list(WORKERS, listed))
     second = _finished(centrum)
 
     assert [problem["kind"] for problem in _entering(centrum, first)["problems"]] == ["unknown_sender"]
@@ -3117,7 +3074,6 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     [
         pytest.param("bez-ustawien", "ustawienia", id="bez-ustawien"),
         pytest.param("bez-dostepu", "dostep", id="bez-dostepu"),
-        pytest.param("bez-adresow", "adresy", id="bez-adresow"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
     ],
@@ -3126,15 +3082,13 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
     tmp_path: Path, cause: str, broken: str
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
-    pliku dostępu, bez pliku adresów, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    pliku dostępu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
     mailbox = FakeMailbox(state="missing" if broken == "dostep" else "ready")
     centrum = entering_centrum(tmp_path, INTERMAX, chosen=broken != "ustawienia", reminder_mailbox=mailbox)
     _reminders_set_up(centrum.tool)
-    if broken == "adresy":
-        centrum.tool.configuration.worker_addresses.unlink()
     if broken == "okresy":
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":

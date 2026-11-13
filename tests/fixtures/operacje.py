@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from atrapy.preparation import PERIOD, PreparationFixture
+from atrapy.settlement import worker_list
 from rozliczenia.collective_preparation import (
     PreparationInputs,
     PreparationSummary,
@@ -46,7 +47,7 @@ def run_preparation(
         fixture.register_path,
         fixture.periods_directory,
         period,
-        fixture.config_path,
+        worker_list(),
         fixture.internal_template_path,
         fixture.collective_template_path,
         dry_run,

@@ -57,6 +57,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for, wait_for_value
+from atrapy.settlement import worker_list, write_worker_list
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from tests.fixtures.tool_clone import (
     NEW_REQUIREMENTS,
@@ -462,8 +463,8 @@ def test_w_trakcie_aktualizacji_uruchomienie_druga_aktualizacja_i_zamkniecie_sa_
     hold = threading.Event()
     centrum, repository = updating_centrum(tmp_path, hold=hold)
     current = repository.head()
-    # Wpisanie raportów bez pliku adresów odmawia startu, zanim zapyta o miejsce „jedno naraz”.
-    centrum.tool.configuration.worker_addresses.touch()
+    # Wpisanie raportów bez adresu na Liście Wykonawców odmawia startu, zanim zapyta o miejsce „jedno naraz”.
+    write_worker_list(centrum.tool.worker_list, worker_list(addresses={"adrian.testowy": ["adrian@przyklad.invalid"]}))
     assert centrum.client.post("/api/tool-update").status_code == 202
 
     run = centrum.start(dry_run=True)

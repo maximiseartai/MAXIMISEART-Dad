@@ -18,6 +18,10 @@ extend = "../../../../../pyproject.toml"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
 "rozliczenia.tool_files.settings_file".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
+"rozliczenia.tool_files.WORKER_CONFIG".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); nazwę pliku daje WORKERS_FILE"
+"rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
+"rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
+"rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
 # Deleting, moving or replacing a file or folder fails on Windows while the server holds it open (WinError 32, #921);
 # the retrying helpers of drive/common.py wait it out. Forms ruff cannot resolve (a method on an instance, p.unlink())
 # are the guard _removals of centrum_self_test.py.

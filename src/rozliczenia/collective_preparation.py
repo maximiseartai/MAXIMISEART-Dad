@@ -32,6 +32,7 @@ from .register_file import RegisterFile
 from .text import day_label
 from .write_routes import RouteCounts
 from .run_context import RunContext
+from .worker_list import WorkerList
 
 __all__ = [
     "PreparationInputs",
@@ -50,7 +51,7 @@ class PreparationInputs:
     register_path: Path
     periods_directory: Path
     period: str
-    config_path: Path
+    workers: WorkerList
     internal_template_path: Path
     collective_template_path: Path
     dry_run: bool = False
@@ -153,7 +154,6 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
     period, dry_run = inputs.period, inputs.dry_run
     register_path = inputs.register_path.expanduser().resolve()
     periods_directory = inputs.periods_directory.expanduser().resolve()
-    config_path = inputs.config_path.expanduser().resolve()
     internal_template = inputs.internal_template_path.expanduser().resolve()
     collective_template = inputs.collective_template_path.expanduser().resolve()
 
@@ -162,7 +162,7 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
             register_path,
             periods_directory,
             period,
-            config_path,
+            inputs.workers,
             internal_template=internal_template,
             collective_template=collective_template,
             template_check=context.template_check,
@@ -179,7 +179,7 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
         plan = preparation_plan.plan_period_orders(
-            register_path, sheets, folder.period, config_path, worker_mapping, inputs.quantity_rules
+            register_path, sheets, folder.period, worker_mapping, inputs.quantity_rules
         )
         collective = preparation_files.plan_period_files(files, len(plan.orders), plan.collective_rows)
         return plan, collective, _plan_warnings(register_path, files, plan, collective)

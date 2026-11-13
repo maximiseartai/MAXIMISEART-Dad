@@ -12,7 +12,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.worker_config import load_worker_mapping
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.workers import WORKERS as WORKER_LIST_FILE, WORKERS_FILE
 from skrypt_skilla import Parser
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderError
 from rozliczenia.template_file import TemplateFile
@@ -32,8 +33,8 @@ def _check(root: Path) -> tuple[str, int]:
     folder = PeriodFolder.from_collective_file(source)
     period = folder.period.token
     target_directory = folder.worker_settlements
-    mapping = load_worker_mapping(root / "worker_mapping.yaml")
-    if len(mapping) != len(WORKERS):
+    listed = WORKER_LIST_FILE.parse((root / WORKERS_FILE).read_bytes())
+    if isinstance(listed, FieldProblem) or len(listed.workers) != len(WORKERS):
         raise ValueError(f"synthetic mapping must contain {len(WORKERS)} workers")
     if target_directory.exists():
         raise ValueError("target directory must not exist before dry-run")
@@ -49,7 +50,7 @@ def _check(root: Path) -> tuple[str, int]:
     finally:
         workbook.close()
 
-    return period, len(mapping)
+    return period, len(listed.workers)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -84,7 +84,7 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
     return SettlementInputs(
         start.path("collective_file"),
         dry_run=start.dry_run,
-        config_path=start.path("worker_config"),
+        workers=start.worker_list(),
         worker_template_path=start.path("worker_template"),
     )
 
@@ -105,7 +105,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     core=settlement_process.PROCESS,
     default_metrics=SETTLEMENT_METRICS,
-    needs=("collective_file", "worker_config", "worker_template"),
+    needs=("collective_file", "workers", "worker_template"),
     inputs=_inputs,
     start=PeriodStart(
         creates="Rozliczenia pracowników",
@@ -120,7 +120,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
         "tata_settings",
         "files_in_onedrive",
         "templates",
-        "worker_config",
+        "worker_list",
         PeriodFolderCheck(collective_file_missing=settlement_messages.collective_file_missing),
         "period_files_in_excel",
         *TAIL,
