@@ -159,6 +159,12 @@ def quantity_rule_unknown() -> Refusal:
     return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
 
 
+def device_component_unknown() -> Refusal:
+    """Składnika o tym id nie ma już na Liście Urządzeń, którą liczy Centrum (np. cofnięty w Historii w innym oknie)."""
+
+    return _refused(404, "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.")
+
+
 def settings_change_not_undoable() -> Refusal:
     """Wiersz Historii Ustawień bez „Cofnij”: zmiana sekretu albo zła treść spoza Centrum, której Centrum nie przyjęło."""
 

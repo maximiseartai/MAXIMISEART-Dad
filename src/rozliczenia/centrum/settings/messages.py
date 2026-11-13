@@ -144,6 +144,40 @@ def rule_hour() -> str:
     return "Godzinę wpisz jako GG:MM, np. 17:00."
 
 
+def component_name_empty() -> str:
+    """Składnik z sekcji Urządzenia bez nazwy (pierwszego zapisu)."""
+
+    return "Wpisz nazwę składnika tak, jak stoi w URZĄDZENIA."
+
+
+def spelling_with_star(spelling: str) -> str:
+    """Zapis składnika z gwiazdką: Reguły ilości czytają ją w ``URZĄDZENIA`` jako krotność."""
+
+    return f"Zapis „{spelling}” nie może mieć gwiazdki: w URZĄDZENIA gwiazdka to liczba sztuk, np. 2*fut."
+
+
+def spelling_taken(spelling: str, component: str) -> str:
+    """Zapis, który ma już inny składnik; ``component``: jego nazwa, jak w sekcji Urządzenia."""
+
+    return f"Zapis „{spelling}” ma już składnik „{component}”. Jeden zapis należy do jednego składnika."
+
+
+def component_used_by_rule(component: str, rule: str) -> str:
+    """Usunięcie składnika, którego potrzebuje reguła; ``rule``: jej zdanie „jeśli … to …”."""
+
+    return f"Składnika „{component}” potrzebuje reguła: {rule} Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
+
+
+def needed_by_release_rules(component: str) -> str:
+    """Lista Urządzeń taty bez składnika, którego potrzebują Reguły ilości z Wydania (tata nie ma pliku reguł);
+    ``component``: jego nazwa z Listy Urządzeń z Wydania."""
+
+    return (
+        f"Reguły ilości z Wydania potrzebują składnika „{component}”, którego nie ma na Liście Urządzeń, więc Centrum "
+        "bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”."
+    )
+
+
 def needed_by_rules(file: str, component: str) -> str:
     """Lista Urządzeń bez składnika, którego potrzebują Reguły ilości; ``component``: jego nazwa, jak w sekcji Urządzenia."""
 

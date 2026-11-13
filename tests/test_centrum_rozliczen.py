@@ -65,7 +65,9 @@ from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
-from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES, RULES_FILE
+from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, RULES, RULES_FILE
+from rozliczenia.quantity_engine import DeviceList, QuantityRules, QuantityRulesRefused
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
 from tests.fixtures.centrum import (
@@ -775,6 +777,202 @@ def test_uszkodzona_lista_urzadzen_to_zle_ustawienie_listy_a_widac_ostatnia_dobr
         {"field": None, "message": f"Plik {DEVICES_FILE} w folderze config ma uszkodzoną treść. Zapisz Ustawienia jeszcze raz."},
     )
     assert "nowy" in [device["id"] for device in response["devices"]]
+
+
+DEVICES_URL = "/api/settings/devices"
+
+
+def device_form(app: Centrum, device_id: str) -> dict[str, Any]:
+    """Składnik z sekcji Urządzenia jako formularz zapisu: nazwa, inne zapisy i grupa."""
+
+    device = next(device for device in app.client.get(QUANTITY_RULES_URL).json()["devices"] if device["id"] == device_id)
+    return {"name": device["name"], "other_spellings": device["other_spellings"], "group": device["group"]}
+
+
+def test_zapis_dopisany_do_skladnika_ma_wiersz_historii_zdaniem_przed_i_po_a_cofniecie_go_usuwa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    form = device_form(app, "gateway")
+
+    saved = app.client.put(f"{DEVICES_URL}/gateway", json={**form, "other_spellings": [*form["other_spellings"], " Nowy,Router "]})
+    [row] = history_rows(app)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert saved.status_code == 200, saved.text
+    shown = {device["id"]: device for device in saved.json()["quantity_rules"]["devices"]}
+    assert (shown["gateway"]["other_spellings"], saved.json()["change"]) == (["zyxel", "nowy router"], row["id"])
+    assert (row["source"], row["file"], row["section"]) == ("tata", DEVICES_FILE, "urzadzenia")
+    assert [(change["key"], _text(change["before"]), _text(change["after"])) for change in row["rules"]] == [
+        (
+            "urzadzenia.gateway",
+            "Składnik „gateway”, też „zyxel”, grupa router.",
+            "Składnik „gateway”, też „zyxel”, „nowy router”, grupa router.",
+        )
+    ]
+    assert undone.status_code == 200, undone.text
+    assert device_form(app, "gateway") == form
+
+
+def test_nowy_skladnik_z_grupa_staje_na_koncu_listy_urzadzen_a_historia_mowi_dodano(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    saved = app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": ["ont-x2", ""], "group": "extender"})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["devices"][-1] == {
+        "id": "ont-x",
+        "name": "ont x",
+        "other_spellings": ["ont-x2"],
+        "group": "extender",
+    }
+    [row] = history_rows(app)
+    assert [(change["key"], change["before"], _text(change["after"])) for change in row["rules"]] == [
+        ("urzadzenia.ont-x", None, "Składnik „ont x”, też „ont-x2”, grupa extender.")
+    ]
+    assert "ont-x" in [component.id for component in read_snapshot(app.tool.config).quantity_rules.devices.components]
+
+
+@pytest.mark.parametrize(
+    ("request_line", "body", "refusal"),
+    [
+        (
+            ("put", "nokia"),
+            {"name": "nokia", "other_spellings": ["ZYXEL"], "group": None},
+            {"field": "zapisy[0]", "message": "Zapis „zyxel” ma już składnik „gateway”. Jeden zapis należy do jednego składnika."},
+        ),
+        (
+            ("post", None),
+            {"name": "Fut", "other_spellings": [], "group": "tv"},
+            {"field": "nazwa", "message": "Zapis „fut” ma już składnik „fut”. Jeden zapis należy do jednego składnika."},
+        ),
+        (
+            ("post", None),
+            {"name": " , ", "other_spellings": ["nowy"], "group": None},
+            {"field": "nazwa", "message": "Wpisz nazwę składnika tak, jak stoi w URZĄDZENIA."},
+        ),
+        (
+            ("put", "fut"),
+            {"name": "fut", "other_spellings": ["fut*2"], "group": "tv"},
+            {"field": "zapisy[0]", "message": "Zapis „fut*2” nie może mieć gwiazdki: w URZĄDZENIA gwiazdka to liczba sztuk, np. 2*fut."},
+        ),
+    ],
+)
+def test_zly_skladnik_z_sekcji_urzadzenia_sie_nie_zapisuje_a_odmowa_ma_pole_i_zdanie(
+    tmp_path: Path, request_line: tuple[str, str | None], body: dict[str, Any], refusal: dict[str, str]
+) -> None:
+    app = centrum(tmp_path)
+    method, device = request_line
+
+    refused = app.client.request(method.upper(), DEVICES_URL if device is None else f"{DEVICES_URL}/{device}", json=body)
+
+    assert (refused.status_code, refused.json()) == (422, refusal)
+    assert ((app.tool.config / DEVICES_FILE).exists(), history_rows(app)) == (False, [])
+
+
+def test_usuniecie_skladnika_potrzebnego_regule_jest_odmowa_ze_zdaniem_tej_reguly_a_innego_wchodzi_do_historii(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+
+    refused = app.client.delete(f"{DEVICES_URL}/technicolor")
+    removed = app.client.delete(f"{DEVICES_URL}/globo")
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {
+            "message": "Składnika „technicolor” potrzebuje reguła: Jeśli URZĄDZENIA zawierają „technicolor”, to wpisz liczbę "
+            "„technicolor” w O, Z i AK. Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
+        },
+    )
+    assert removed.status_code == 200, removed.text
+    ids = [device["id"] for device in removed.json()["quantity_rules"]["devices"]]
+    assert ("technicolor" in ids, "globo" in ids) == (True, False)
+    [row] = history_rows(app)
+    assert [(change["key"], _text(change["before"]), change["after"]) for change in row["rules"]] == [
+        ("urzadzenia.globo", "Składnik „globo”, grupa TV.", None)
+    ]
+
+
+def test_zmiana_albo_usuniecie_skladnika_ktorego_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    changed = app.client.put(f"{DEVICES_URL}/nie-ma", json={"name": "x", "other_spellings": [], "group": None})
+    removed = app.client.delete(f"{DEVICES_URL}/nie-ma")
+
+    unknown = {"message": "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień."}
+    assert [(changed.status_code, changed.json()), (removed.status_code, removed.json())] == [(404, unknown)] * 2
+    assert history_rows(app) == []
+
+
+@pytest.fixture
+def release_without_manual_installation(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[], None]]:
+    """Wcześniejsze Wydanie: Reguły ilości i Lista Urządzeń z Wydania bez składnika „instalacja ręczna” i bez reguł, które
+    go potrzebują. Wywołanie zwrócone przez fixture to Aktualizacja do dzisiejszego Wydania (reguły znów go potrzebują)."""
+
+    devices = DeviceList(tuple(component for component in DEFAULT_QUANTITY_RULES.devices.components if component.id != "instalacja-reczna"))
+
+    def fits(rule: Any) -> bool:
+        try:
+            QuantityRules((rule,), devices)
+        except QuantityRulesRefused:
+            return False
+        return True
+
+    def release(rules: QuantityRules) -> None:
+        monkeypatch.setattr(settings_quantity_rules, "DEFAULT_QUANTITY_RULES", rules)
+        settings_quantity_rules._parse_rules.cache_clear()
+        settings_quantity_rules._parse_devices.cache_clear()
+
+    release(QuantityRules(tuple(rule for rule in DEFAULT_QUANTITY_RULES.rules if fits(rule)), devices))
+    yield lambda: release(DEFAULT_QUANTITY_RULES)
+    monkeypatch.undo()
+    settings_quantity_rules._parse_rules.cache_clear()
+    settings_quantity_rules._parse_devices.cache_clear()
+
+
+def test_wydanie_z_regulami_potrzebujacymi_skladnika_spoza_listy_taty_zostawia_liste_taty_i_mowi_co_zrobic(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    nokia = device_form(app, "nokia")
+    assert app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]}).status_code == 200
+
+    release_without_manual_installation()
+    response = app.client.get(QUANTITY_RULES_URL).json()
+
+    assert (response["rules_problem"], response["devices_problem"]) == (
+        None,
+        {
+            "field": None,
+            "message": "Reguły ilości z Wydania potrzebują składnika „instalacja ręczna”, którego nie ma na Liście Urządzeń, "
+            "więc Centrum bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem "
+            "„Zapisz”.",
+        },
+    )
+    shown = {device["id"]: device["other_spellings"] for device in response["devices"]}
+    assert (shown["nokia"], shown["instalacja-reczna"], list(shown)[-1]) == (["ont nokia"], ["wizja"], "instalacja-reczna")
+    tools_see = read_snapshot(app.tool.config).quantity_rules
+    assert tools_see.rules == DEFAULT_QUANTITY_RULES.rules
+    assert [component.spellings for component in tools_see.devices.components if component.id in ("nokia", "instalacja-reczna")] == [
+        ("nokia", "ont nokia"),
+        ("instalacja ręczna", "wizja"),
+    ]
+
+
+def test_lista_taty_zapisana_po_wydaniu_z_nowym_skladnikiem_regul_ma_go_i_znow_pasuje_do_regul(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    nokia = device_form(app, "nokia")
+    app.client.put(f"{DEVICES_URL}/nokia", json={**nokia, "other_spellings": ["ont nokia"]})
+    release_without_manual_installation()
+
+    saved = app.client.put(f"{DEVICES_URL}/instalacja-reczna", json=device_form(app, "instalacja-reczna"))
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["devices_problem"] is None
+    dad_list = DEVICES.parse((app.tool.config / DEVICES_FILE).read_bytes())
+    assert isinstance(dad_list, tuple) and "instalacja-reczna" in [component.id for component in dad_list]
+    assert [change["key"] for change in history_rows(app)[0]["changes"]] == ["urzadzenia.instalacja-reczna"]
 
 
 def _rules_changed_under_damaged_dad_list(app: Centrum) -> Path:

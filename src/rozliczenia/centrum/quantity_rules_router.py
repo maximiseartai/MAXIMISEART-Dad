@@ -1,15 +1,18 @@
 """Interfejs HTTP sekcji Reguły ilości i Urządzenia okna Ustawień (ADR 0033): odczyt reguł jako zdań i formularzy,
-Listy Urządzeń i kolumn, edytor reguły (dodaj, zmień, usuń) i podgląd zmiany przed zapisem.
+Listy Urządzeń i kolumn, edytor reguły (dodaj, zmień, usuń), podgląd zmiany przed zapisem, edycja Listy Urządzeń (dodaj,
+zmień, usuń składnik; ``device_forms``) i jej podpowiedzi z ostatnich okresów (``device_suggestions``).
 
 Reguły i Listę Urządzeń daje właściciel Ustawień (``CentrumSettings.quantity_rules``), te same, którymi liczy następne
-Uruchomienie. Każdy zapis edytora idzie zapisem właściciela (``CentrumSettings.change`` pliku reguł), więc sprawdza go
-ta sama reguła pary Reguł ilości i Listy Urządzeń co odczyt, cofnięcie i zmianę spoza Centrum, a zmiana ma wiersz
-Historii z „Cofnij”. Przed nim silnik sprawdza reguły po zmianie z bieżącą Listą Urządzeń, a jego problem z reguły
-edytora wraca jako odmowa 422 z polem formularza (``rule_forms.checked``); zmiana albo usunięcie reguły, której już
-nie ma, to 404.
+Uruchomienie. Każdy zapis edytora i sekcji Urządzenia idzie zapisem właściciela (``CentrumSettings.change`` pliku reguł
+albo listy), więc sprawdza go ta sama reguła pary Reguł ilości i Listy Urządzeń co odczyt, cofnięcie i zmianę spoza
+Centrum, a zmiana ma wiersz Historii z „Cofnij”. Przed nim silnik sprawdza reguły po zmianie z bieżącą Listą Urządzeń, a
+jego problem z reguły edytora wraca jako odmowa 422 z polem formularza (``rule_forms.checked``); listę po zmianie sprawdza
+formularz składnika z regułami, którymi liczy Centrum (``device_forms``). Zmiana albo usunięcie reguły albo składnika,
+którego już nie ma, to 404.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
-Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt i podgląd niczego nie zapisują.
+Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt, podgląd i podpowiedzi niczego nie
+zapisują.
 """
 
 from __future__ import annotations
@@ -26,15 +29,18 @@ from rozliczenia.centrum.contract import quantity_rules as contract
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
+from rozliczenia.centrum import device_forms
+from rozliczenia.centrum.device_forms import AddComponent, ChangeComponent, DeviceEdit, RemoveComponent, UnknownComponent
+from rozliczenia.centrum.device_suggestions import device_suggestions
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles, preview
-from rozliczenia.centrum.rule_forms import GROUPS, SCOPES, UnknownRule, checked, edited, edited_id, form_of
-from rozliczenia.centrum.rule_sentences import rule_sentence
+from rozliczenia.centrum.rule_forms import SCOPES, UnknownRule, checked, edited, edited_id, form_of
+from rozliczenia.centrum.rule_sentences import component_sentence, rule_sentence
 from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import RULES, RULES_SECTION
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_SECTION, RULES, RULES_SECTION, completed_devices
 from rozliczenia.collective_layout import QUANTITY_LETTERS
-from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
-from rozliczenia.quantity_rules_file import parse_rule
+from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, Component, QuantityRule, QuantityRules, RulesProblem
+from rozliczenia.quantity_rules_file import parse_component, parse_rule
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
 
@@ -61,24 +67,29 @@ class PriceList:
 
 
 RuleSentences = Callable[[str, str | None], list[SentencePart] | None]
-"""Zdanie reguły z wartości klucza Historii Ustawień (``reguly.<id>``); ``None``: klucz innej sekcji albo wartość, z której
-nie da się odtworzyć reguły."""
+"""Zdanie reguły albo składnika z wartości klucza Historii Ustawień (``reguly.<id>``, ``urzadzenia.<id>``); ``None``: klucz
+innej sekcji albo wartość, z której nie da się odtworzyć reguły ani składnika."""
 
 
 def history_sentences(settings: CentrumSettings, price_list: PriceList) -> Callable[[], RuleSentences]:
-    """Zdania reguł dla jednego odczytu Historii: składniki nazwane bieżącą Listą Urządzeń, kolumny nazwami z cennika."""
+    """Zdania reguł i składników dla jednego odczytu Historii: składniki w regułach nazwane bieżącą Listą Urządzeń, kolumny
+    nazwami z cennika."""
 
     def reader() -> RuleSentences:
         devices = settings.quantity_rules().rules.devices
         names = price_list.names()
 
         def sentence(key: str, value: str | None) -> list[SentencePart] | None:
-            if value is None or not key.startswith(f"{RULES_SECTION}."):
+            section = key.partition(".")[0]
+            if value is None or section not in (RULES_SECTION, DEVICES_SECTION):
                 return None
             try:
                 entry: object = json.loads(value)
             except ValueError:
                 return None
+            if section == DEVICES_SECTION:
+                component = parse_component(entry)
+                return None if isinstance(component, RulesProblem) else component_sentence(component)
             rule = parse_rule(entry)
             return None if isinstance(rule, RulesProblem) else rule_sentence(rule, devices, names)
 
@@ -95,15 +106,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         names = price_list.names()
         return contract.QuantityRulesSettings(
             rules=[_rule(rule, view.rules, names) for rule in view.rules.rules],
-            devices=[
-                contract.DeviceComponent(
-                    id=component.id,
-                    name=component.spellings[0],
-                    other_spellings=list(component.spellings[1:]),
-                    group=None if component.group is None else GROUPS[component.group],
-                )
-                for component in view.rules.devices.components
-            ],
+            devices=[device_forms.device_component(component) for component in view.rules.devices.components],
             columns=[
                 contract.RuleColumn(letter=letter, name=names.get(letter) or None, writable=letter not in BUILT_IN_COLUMNS)
                 for letter in QUANTITY_LETTERS
@@ -159,6 +162,55 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
     @router.delete("/quantity-rules/{rule_id}", operation_id="removeQuantityRule", responses=_UNKNOWN_OR_REFUSED)
     def remove(rule_id: str) -> contract.QuantityRulesSaved:
         return saved(contract.RemoveRule(kind="remove", rule_id=rule_id))
+
+    def device_saved(edit: DeviceEdit) -> contract.QuantityRulesSaved:
+        """Zmiana Listy Urządzeń: najpierw formularz i reguły, którymi liczy Centrum (odmowa z polem albo ze zdaniem
+        reguły), potem zapis właściciela Ustawień na bieżącej wartości pliku. Lista, w której reguły z Wydania mają
+        składnik z listy z Wydania (``completed_devices``), zapisuje się razem z nim."""
+
+        now = settings.quantity_rules().rules
+        after = device_forms.edited(now.devices.components, edit)
+        if isinstance(after, UnknownComponent):
+            raise refusal.device_component_unknown()
+        if isinstance(after, FieldProblem):
+            raise refusal.setting_refused(after)
+        needed = device_forms.needed_by(now, after, price_list.names())
+        if needed is not None:
+            raise refusal.setting_refused(needed)
+
+        def applied(current: tuple[Component, ...]) -> tuple[Component, ...]:
+            changed = device_forms.edited(completed_devices(current, now.rules), edit)
+            return changed if isinstance(changed, tuple) else current
+
+        match settings.change(DEVICES, applied):
+            case Saved(change=change):
+                return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
+            case Refused(problem=problem):
+                raise refusal.setting_refused(problem)
+            case NotSaved():
+                raise refusal.settings_not_saved()
+
+    @router.post("/devices", operation_id="addDevice", responses=_REFUSED)
+    def add_device(component: contract.ComponentForm) -> contract.QuantityRulesSaved:
+        return device_saved(AddComponent(component))
+
+    @router.put("/devices/{device_id}", operation_id="changeDevice", responses=_UNKNOWN_OR_REFUSED)
+    def change_device(device_id: str, component: contract.ComponentForm) -> contract.QuantityRulesSaved:
+        return device_saved(ChangeComponent(device_id, component))
+
+    @router.delete("/devices/{device_id}", operation_id="removeDevice", responses=_UNKNOWN_OR_REFUSED)
+    def remove_device(device_id: str) -> contract.QuantityRulesSaved:
+        return device_saved(RemoveComponent(device_id))
+
+    @router.get("/devices/suggestions", operation_id="getDeviceSuggestions")
+    def suggestions() -> contract.DeviceSuggestions:
+        """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``)."""
+
+        rules = settings.quantity_rules().rules
+        directory = settings.snapshot().folders.periods_directory_to_read
+        if directory is None:
+            return contract.DeviceSuggestions(suggestions=[], unread=[])
+        return device_suggestions(rules, recent.read(directory))
 
     @router.post("/quantity-rules/preview", operation_id="previewQuantityRules", responses=_UNKNOWN_OR_REFUSED)
     def preview_change(edit: contract.RuleEdit) -> contract.RulesPreview:

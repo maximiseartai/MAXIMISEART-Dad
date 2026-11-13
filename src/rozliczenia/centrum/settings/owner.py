@@ -11,7 +11,8 @@ wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_checked``: odczyt,
 zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego nie pasuje, jest zły tak samo jak plik z
-uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Plik, który zaczyna pasować dopiero po zmianie drugiego, ma
+uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
+dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania. Plik, który zaczyna pasować dopiero po zmianie drugiego, ma
 wtedy wiersz ``spoza`` jak zmiana jego treści.
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
@@ -392,9 +393,12 @@ class CentrumSettings:
             quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)), _problem(rules, RULES), _problem(devices, DEVICES)
         )
 
-    def _checked(self, file: SettingsFile[T], parsed: T | FieldProblem) -> T | FieldProblem:
-        """Wartość pliku z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój ``parse``."""
+    def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
+        """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój
+        ``parse``. Reguły ilości z Wydania (brak pliku reguł) pasować nie muszą: pasować musi do nich lista taty."""
 
+        if data is None and file.name == RULES.name:
+            return parsed
         together: Mapping[str, Callable[[Any], FieldProblem | None]] = {
             RULES.name: self._rules_problem,
             DEVICES.name: self._devices_problem,
@@ -413,7 +417,12 @@ class CentrumSettings:
     def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | None:
         """Lista z regułami, którymi liczą procesy: reguły przyjmuje się pierwsze."""
 
-        return devices_problem(devices, _usable(self._observe(RULES), RULES), _last_good_devices(self._memory.read(DEVICES.name)))
+        return devices_problem(
+            devices,
+            _usable(self._observe(RULES), RULES),
+            _last_good_devices(self._memory.read(DEVICES.name)),
+            release=self._places[RULES.name].read() is None,
+        )
 
     def _undo(self, file: SettingsFile[T], changes: tuple[KeyChange, ...], row_id: str) -> Saved | Refused | NotSaved:
         return self._change(file, lambda current: file.restore(current, changes), undoes=row_id, source=ByDad(), undoable=True)
@@ -434,7 +443,7 @@ class CentrumSettings:
             return Refused(observed.problem)
         current = _usable(observed, file)
         new = file.dump(edit(current)).encode("utf-8")
-        edited = self._checked(file, file.parse(new))
+        edited = self._checked(file, new, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
         changes = file.diff(current, edited)
@@ -506,7 +515,7 @@ class CentrumSettings:
 
     def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
 
-        parsed = self._checked(file, file.parse(data))
+        parsed = self._checked(file, data, file.parse(data))
         remembered = self._memory.read(file.name)
         if isinstance(remembered, Unreadable):
             return _read(parsed, None)
@@ -586,8 +595,11 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
-    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
-    devices = _read_only(config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices)))
+    release = settings_bytes(config / RULES.name) is None
+    rules = _read_only(config, RULES, None if release else lambda value: _rules_problem(value, devices_data, remembered_devices))
+    devices = _read_only(
+        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)
+    )
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),
         workers=_read_only_view(config, WORKERS),

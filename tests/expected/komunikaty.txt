@@ -1464,6 +1464,9 @@ settings_change_unknown [HTTP 404]
 quantity_rule_unknown [HTTP 404]
   Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.
 
+device_component_unknown [HTTP 404]
+  Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.
+
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.
 

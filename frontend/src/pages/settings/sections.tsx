@@ -16,11 +16,12 @@ import {
 
 import { FOLDERS_SECTION } from "@/components/setting-path"
 import { AppearanceSection } from "@/pages/settings/appearance-section"
+import { DevicesSection } from "@/pages/settings/devices-section"
 import { FoldersSection } from "@/pages/settings/folders-section"
 import { HistorySection } from "@/pages/settings/history-section"
 import { InboxSection } from "@/pages/settings/inbox-section"
 import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
-import { DevicesSection, QuantityRulesSection } from "@/pages/settings/quantity-rules-section"
+import { QuantityRulesSection } from "@/pages/settings/quantity-rules-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"

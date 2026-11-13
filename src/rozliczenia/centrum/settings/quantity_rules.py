@@ -7,7 +7,9 @@ na liście. Ten jeden niezmiennik obu plików właściciel sprawdza przy każdym
 Centrum, zapis, cofnięcie) tymi samymi dwiema funkcjami: ``rules_problem`` przyjmuje reguły pasujące do bieżącej Listy
 Urządzeń (dobrej samej w sobie) albo do ostatniej dobrej, a ``devices_problem`` listę pasującą do reguł, którymi liczą
 procesy. Plik, który do drugiego nie pasuje, to złe ustawienie z ostatnią dobrą wartością, więc procesy liczą ostatnią
-dobrą parą (``quantity_rules``).
+dobrą parą (``quantity_rules``). Reguły ilości z Wydania (tata nie ma pliku reguł) pasować nie muszą: Wydanie mogło je
+zmienić pod Listą Urządzeń taty, więc zła jest wtedy lista, a procesy biorą brakujący składnik z Listy Urządzeń z
+Wydania (``completed_devices``), bez zmiany pliku taty.
 
 Wartością pliku są same krotki reguł i składników, bo cofnięcie (``restore``) może złożyć wartość, której ``parse`` nie
 przyjmie, a właściciel sprawdza ją dopiero przez ``dump`` i ``parse``. Klucz Historii to ``reguly.<id>`` albo
@@ -197,32 +199,58 @@ def rules_problem(
 
 
 def devices_problem(
-    devices: tuple[Component, ...], rules: tuple[QuantityRule, ...], devices_good: tuple[Component, ...]
+    devices: tuple[Component, ...], rules: tuple[QuantityRule, ...], devices_good: tuple[Component, ...], *, release: bool
 ) -> FieldProblem | None:
     """Problem Listy Urządzeń dobrej samej w sobie razem z regułami, którymi liczą procesy (``rules``): składnik, którego
-    reguła potrzebuje, a lista go nie ma, nazwany jak w sekcji Urządzenia, która pokazuje wtedy ostatnią dobrą listę
-    (``devices_good``); składnik spoza niej ma tylko swój identyfikator."""
+    reguła potrzebuje, a lista go nie ma. Przy regułach z pliku taty nazwany jak w sekcji Urządzenia, która pokazuje
+    wtedy ostatnią dobrą listę (``devices_good``; składnik spoza niej ma tylko swój identyfikator). Przy Regułach ilości z
+    Wydania (``release``: tata nie ma pliku reguł) nazwany jak na Liście Urządzeń z Wydania, z której procesy go biorą
+    (``completed_devices``)."""
 
     match _refusal(rules, devices):
         case None:
             return None
+        case RulesProblem(component=str() as missing) if release:
+            return FieldProblem(None, messages.needed_by_release_rules(_name(missing, DEFAULT_QUANTITY_RULES.devices.components)))
         case RulesProblem(component=str() as missing):
-            names = {component.id: component.spellings[0] for component in devices_good}
-            return FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, names.get(missing, missing)))
+            return FieldProblem(None, messages.needed_by_rules(DEVICES_FILE, _name(missing, devices_good)))
         case problem:
             return _problem(DEVICES_FILE, problem)
 
 
+def completed_devices(devices: tuple[Component, ...], rules: tuple[QuantityRule, ...]) -> tuple[Component, ...]:
+    """Lista ``devices`` ze składnikami z Listy Urządzeń z Wydania, których potrzebują reguły ``rules``, a lista ich nie
+    ma, na końcu; lista, która do reguł pasuje albo której tak uzupełnić się nie da, zostaje bez zmian. Tak procesy liczą
+    Regułami ilości z Wydania, gdy Wydanie zmieniło je pod Listą Urządzeń taty, a tata nie ma pliku reguł."""
+
+    release = {component.id: component for component in DEFAULT_QUANTITY_RULES.devices.components}
+    completed = devices
+    while (problem := _refusal(rules, completed)) is not None:
+        missing = release.get(problem.component or "")
+        if missing is None or missing in completed:
+            return devices
+        completed = (*completed, missing)
+    try:
+        DeviceList(completed)
+    except QuantityRulesRefused:
+        return devices
+    return completed
+
+
 def quantity_rules(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> QuantityRules:
-    """Reguły ilości, którymi liczą procesy: reguły i lista przyjęte razem. Przyjęcie pilnuje, że do siebie pasują, więc
-    Reguły ilości z Wydania z ich Listą Urządzeń zostają tylko bez dobrej pary: Wydanie zmieniło Reguły ilości z Wydania
-    pod Listą Urządzeń taty, a pliku reguł tata nie ma, albo listy nie da się teraz przeczytać, a ostatnie dobre reguły
-    nie pasują do listy z Wydania."""
+    """Reguły ilości, którymi liczą procesy: reguły i lista przyjęte razem. Przyjęcie pilnuje, że do siebie pasują, poza
+    Regułami ilości z Wydania (tata bez pliku reguł), którym brakujące składniki daje Lista Urządzeń z Wydania
+    (``completed_devices``). Reguły ilości z Wydania z ich Listą Urządzeń zostają tylko bez dobrej pary: listy nie da się
+    teraz przeczytać, a ostatnie dobre reguły taty potrzebują składnika, którego lista z Wydania nie ma."""
 
     try:
-        return QuantityRules(rules, DeviceList(devices))
+        return QuantityRules(rules, DeviceList(completed_devices(devices, rules)))
     except QuantityRulesRefused:
         return DEFAULT_QUANTITY_RULES
+
+
+def _name(component: str, devices: tuple[Component, ...]) -> str:
+    return next((found.spellings[0] for found in devices if found.id == component), component)
 
 
 def _refusal(rules: tuple[QuantityRule, ...], devices: tuple[Component, ...]) -> RulesProblem | None:

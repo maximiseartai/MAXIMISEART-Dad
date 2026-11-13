@@ -491,6 +491,12 @@ ENTRIES: dict[str, Entry] = {
     "previewQuantityRules": _route(
         "previewQuantityRules", "POST", "/api/settings/quantity-rules/preview", {"kind": "add", "rule": EDITOR_RULE}
     ),
+    "addDevice": _route("addDevice", "POST", "/api/settings/devices", {"name": "ont x", "other_spellings": [], "group": None}),
+    "changeDevice": _route(
+        "changeDevice", "PUT", "/api/settings/devices/gateway", {"name": "gateway", "other_spellings": ["zyxel", "ont x"], "group": "router"}
+    ),
+    "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
+    "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -572,6 +578,10 @@ READS: dict[str, set[str]] = {
     "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "previewQuantityRules": _BOARD | {"wzorzec_zbiorczy"},
+    "addDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "getDeviceSuggestions": _BOARD,
     "getConfiguration": _OWNER | {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,

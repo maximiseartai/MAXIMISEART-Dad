@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -289,6 +289,28 @@ export type ComponentCondition = {
      * Negated
      */
     negated: boolean;
+};
+
+/**
+ * ComponentForm
+ *
+ * Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy
+ * Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez
+ * ``xg``.
+ */
+export type ComponentForm = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Other Spellings
+     */
+    other_spellings: Array<string>;
+    /**
+     * Group
+     */
+    group: 'router' | 'tv' | 'extender' | null;
 };
 
 /**
@@ -578,6 +600,40 @@ export type DeviceComponent = {
      * Group
      */
     group: 'router' | 'tv' | 'extender' | null;
+};
+
+/**
+ * DeviceSuggestion
+ *
+ * Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;
+ * ``orders``: w ilu takich zleceniach jest.
+ */
+export type DeviceSuggestion = {
+    /**
+     * Spelling
+     */
+    spelling: string;
+    /**
+     * Orders
+     */
+    orders: number;
+};
+
+/**
+ * DeviceSuggestions
+ *
+ * Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku
+ * zbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta.
+ */
+export type DeviceSuggestions = {
+    /**
+     * Suggestions
+     */
+    suggestions: Array<DeviceSuggestion>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
 };
 
 /**
@@ -2402,7 +2458,7 @@ export type QuantityRuleSentence = {
 /**
  * QuantityRulesSaved
  *
- * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
  * zapis niczego nie zmienił.
  */
 export type QuantityRulesSaved = {
@@ -5473,6 +5529,115 @@ export type ChangeAutostartResponses = {
 };
 
 export type ChangeAutostartResponse = ChangeAutostartResponses[keyof ChangeAutostartResponses];
+
+export type AddDeviceData = {
+    body: ComponentForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/devices';
+};
+
+export type AddDeviceErrors = {
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type AddDeviceError = AddDeviceErrors[keyof AddDeviceErrors];
+
+export type AddDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type AddDeviceResponse = AddDeviceResponses[keyof AddDeviceResponses];
+
+export type GetDeviceSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/devices/suggestions';
+};
+
+export type GetDeviceSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceSuggestions;
+};
+
+export type GetDeviceSuggestionsResponse = GetDeviceSuggestionsResponses[keyof GetDeviceSuggestionsResponses];
+
+export type RemoveDeviceData = {
+    body?: never;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/settings/devices/{device_id}';
+};
+
+export type RemoveDeviceErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type RemoveDeviceError = RemoveDeviceErrors[keyof RemoveDeviceErrors];
+
+export type RemoveDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type RemoveDeviceResponse = RemoveDeviceResponses[keyof RemoveDeviceResponses];
+
+export type ChangeDeviceData = {
+    body: ComponentForm;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/settings/devices/{device_id}';
+};
+
+export type ChangeDeviceErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeDeviceError = ChangeDeviceErrors[keyof ChangeDeviceErrors];
+
+export type ChangeDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type ChangeDeviceResponse = ChangeDeviceResponses[keyof ChangeDeviceResponses];
 
 export type ChangeFoldersData = {
     body: FoldersChange;

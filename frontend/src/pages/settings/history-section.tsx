@@ -100,9 +100,12 @@ function Row({ row }: { row: HistoryRow }) {
     await undoSettingsChange(row.id).then(undone, (failure: Error) => setRefusal(failureMessage(failure)))
   })
 
-  // Reguła ilości ma w wierszu zdanie przed i po zamiast zapisu z pliku.
+  // Reguła ilości i składnik Listy Urządzeń mają w wierszu zdanie przed i po zamiast zapisu z pliku.
   const rules = new Map(row.rules.map((rule) => [rule.key, rule]))
-  const label = (change: HistoryChange) => (rules.has(change.key) ? "Reguła ilości" : keyOf(change).label)
+
+  const label = (change: HistoryChange) =>
+    rules.has(change.key) ? (change.key.startsWith("urzadzenia.") ? "Lista Urządzeń" : "Reguła ilości") : keyOf(change).label
+
   const title = row.changes.length === 0 ? row.file : [...new Set(row.changes.map(label))].join(", ")
 
   return (
@@ -173,7 +176,7 @@ function sourceOf(row: HistoryRow): string[] {
   }
 }
 
-/** Reguła ilości przed i po jako zdania; nowa reguła ma tylko „Dodano”, usunięta tylko „Usunięto”. */
+/** Reguła ilości albo składnik przed i po jako zdania; nowa reguła ma tylko „Dodano”, usunięta tylko „Usunięto”. */
 function RuleValues({ rule }: { rule: HistoryRuleChange }) {
   const lines: ReadonlyArray<[string, HistoryRuleChange["before"]]> =
     rule.before === null

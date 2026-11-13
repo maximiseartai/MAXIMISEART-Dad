@@ -652,3 +652,21 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 
     assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
     assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+
+
+SUGGESTIONS_URL = "/api/settings/devices/suggestions"
+
+
+def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okresow_i_znikaja_po_dodaniu(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    before = centrum.client.get(SUGGESTIONS_URL).json()
+    run_to_end(centrum, dry_run=False)
+
+    suggested = centrum.client.get(SUGGESTIONS_URL).json()
+    added = centrum.client.post("/api/settings/devices", json={"name": "przeniesienie", "other_spellings": [], "group": None})
+
+    assert before == {"suggestions": [], "unread": []}
+    # „prewencja” jest nieznana, ale zlecenie z nią rozlicza się z opisu, więc ma już swoją regułę.
+    assert suggested == {"suggestions": [{"spelling": "przeniesienie", "orders": 2}], "unread": []}
+    assert added.status_code == 200, added.text
+    assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [], "unread": []}

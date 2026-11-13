@@ -18,6 +18,7 @@ from typing import Final, assert_never
 from rozliczenia.centrum.contract.quantity_rules import SentenceColumn, SentencePart, SentenceText
 from rozliczenia.quantity_engine import (
     ActivitiesContain,
+    Component,
     Condition,
     ContainsComponent,
     ContractFirstWord,
@@ -51,6 +52,24 @@ def rule_sentence(rule: QuantityRule, devices: DeviceList, names: Mapping[str, s
     first, *rest = action
     assert isinstance(first, str), "działanie zaczyna się od słowa"
     return _parts(first[:1].upper() + first[1:], *rest, f", {exception}." if exception else ".")
+
+
+def component_sentence(component: Component) -> list[SentencePart]:
+    """Składnik Listy Urządzeń jako zdanie dla Historii Ustawień: nazwa, inne zapisy i grupa."""
+
+    others = ", ".join(f"„{spelling}”" for spelling in component.spellings[1:])
+    also = f", też {others}" if others else ""
+    group = "" if component.group is None else f", grupa {_GROUPS[component.group]}"
+    return _parts(f"Składnik „{component.spellings[0]}”{also}{group}.")
+
+
+def plain_sentence(parts: Sequence[SentencePart]) -> str:
+    """Zdanie jako jeden tekst, np. w odmowie: kolumna jako „nazwa (litera)” albo sama litera, jak w oknie Ustawień."""
+
+    return "".join(
+        part.text if isinstance(part, SentenceText) else part.letter if part.name is None else f"{part.name} ({part.letter})"
+        for part in parts
+    )
 
 
 def component_name(component: str, devices: DeviceList) -> str:

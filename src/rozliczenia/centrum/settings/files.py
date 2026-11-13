@@ -44,6 +44,8 @@ FieldName = Literal[
     "kolumna",
     "wartosc",
     "kolumny",
+    # składnik pliku lista-urzadzen.yaml w sekcji Urządzenia (nazwa składnika to "nazwa")
+    "zapisy",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
 
