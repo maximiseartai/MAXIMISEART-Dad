@@ -11,7 +11,7 @@ zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej oddaje
 jak ``live_file.LastGoodReads``: OneDrive po pobraniu pliku nie zmienia jego znacznika. Uporządkowanie INTERMAX
 zmienia ten znacznik, więc dni po nim są świeże.
 
-Konfiguracja wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
+Okno Ustawień wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
 „jedno naraz” ``RunHost``.
 """
 

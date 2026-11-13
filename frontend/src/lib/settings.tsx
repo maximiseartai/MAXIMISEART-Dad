@@ -13,7 +13,7 @@ import { showFailure, useAction } from "@/lib/action"
 import { rememberTheme, showTheme } from "@/lib/theme"
 import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 
-/** Plik taty wskazywany natywnym oknem wyboru: pole Ustawień taty, które jest ścieżką. */
+/** Plik taty wskazywany natywnym oknem wyboru: pole Ustawień Centrum, które jest ścieżką. */
 export type PickedPath = { [Key in keyof Settings]: Settings[Key] extends PathSetting ? Key : never }[keyof Settings]
 
 type SettingsContextValue = {
@@ -23,7 +23,7 @@ type SettingsContextValue = {
   /** Plik, którego okno wyboru jest teraz otwarte; dopóki jest, żaden przycisk nie otwiera drugiego. */
   picker: PickedPath | null
   choose: (path: PickedPath) => void
-  toggleTheme: () => void
+  chooseTheme: (theme: Theme) => void
 }
 
 const PICKERS: Record<PickedPath, () => Promise<Choice>> = {
@@ -94,9 +94,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       theme,
       picker,
       choose: (path) => void pick(path),
-      toggleTheme: () => {
-        const next = theme === "dark" ? "light" : "dark"
-
+      chooseTheme: (next) => {
         setChosenTheme(next)
         changeTheme(next).then((saved) => replace({ state: "ready", data: saved }), showFailure)
       },

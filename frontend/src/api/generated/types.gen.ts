@@ -2900,7 +2900,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'konfiguracja' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
     /**
      * Ready Ms
      */

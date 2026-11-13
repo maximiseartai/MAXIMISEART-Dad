@@ -35,6 +35,18 @@ class Feature(NamedTuple):
 # The order of `all`. CI drives `all` in consecutive parts of it (`ci-czesci` in SKILL.md), each part on a fresh
 # fixture and Centrum, so a feature also starts right after the fixture or after any earlier feature of the order.
 FEATURES = (
+    # Checks the files unset, so it runs before `ustawienia` sets them; it sets nothing itself.
+    Feature(
+        "okno-ustawien",
+        (
+            "300-okno-stopka-menu",
+            "301-okno-szerokie",
+            "302-okno-foldery",
+            "303-okno-z-raportow",
+            "304-okno-waskie",
+            "305-okno-waskie-wybor",
+        ),
+    ),
     Feature(
         "ustawienia",
         (
@@ -463,7 +475,6 @@ FEATURES = (
             "84-wydajnosc-okresy",
             "85-wydajnosc-uruchomienia",
             "86-wydajnosc-metryki",
-            "87-wydajnosc-konfiguracja",
         ),
         evidence=(
             "wydajnosc/raport.json",

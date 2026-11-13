@@ -9,7 +9,7 @@ import shutil
 from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
-from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove
+from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove, settings_window
 from atrapy.workbooks import excel_lock
 
 FEATURE = "kopie-intermax"
@@ -38,7 +38,7 @@ def _label(name: str) -> str:
 
 
 def _card(page: Page) -> Locator:
-    return page.get_by_role("region", name=CARD, exact=True)
+    return settings_window(page).get_by_role("region", name=CARD, exact=True)
 
 
 def _row(page: Page, name: str) -> Locator:
@@ -46,9 +46,9 @@ def _row(page: Page, name: str) -> Locator:
 
 
 def _to_card(run: Run, page: Page) -> None:
-    page.goto(run.url + "#/konfiguracja")
+    page.goto(run.url + "#/ustawienia/kopie-intermax")
     page.reload()
-    expect(page.get_by_role("heading", name="Konfiguracja", exact=True)).to_be_visible()
+    expect(settings_window(page).get_by_role("heading")).to_have_text(f"Ustawienia/{CARD}")
     expect(_card(page)).to_be_visible()
 
 
@@ -57,7 +57,7 @@ def _kopie(folder: Path) -> dict[str, bytes]:
 
 
 def _point_register(run: Run, page: Page, register: Path) -> None:
-    """Harness: the native picker answers ``register`` to „Wskaż INTERMAX”, as when Dad points to it."""
+    """Harness: the native picker answers ``register`` to „Zmień Rejestr zleceń” in Ustawienia, as when Dad points to it."""
 
     run.answer_picker(str(register))
     answer = page.request.post(run.url.rstrip("/") + "/api/settings/register/choose", headers={"Origin": run.url.rstrip("/")})

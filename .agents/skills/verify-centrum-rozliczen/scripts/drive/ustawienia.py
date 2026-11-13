@@ -15,22 +15,32 @@ from drive.common import (
     REPEAT_SETTLE_MS,
     Run,
     choose_periods_directory,
+    close_settings,
     move,
+    open_settings,
     remove_tree,
     sent_requests,
+    settings_window,
     settle,
     unreadable,
 )
 from harness import Log
 
 
+FOLDERS = "#/ustawienia/foldery"
+
+
 def drive(run: Run, page: Page) -> None:
     feature = "ustawienia"
     register_name = Path(run.fixture["order_register"]).name
+    window = settings_window(page)
+    register = window.get_by_role("listitem", name="Rejestr zleceń")
+    periods = window.get_by_role("listitem", name="Folder okresów")
 
     run.step(feature, "ustawienia-pusty-stan")
     page.goto(run.url)
     expect(page.get_by_text("Wskaż folder okresów", exact=True).first).to_be_visible()
+    expect(page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_be_visible()
     settings = run.api("/api/settings", "ustawienia-przed")
     run.check(
         settings["order_register"] == {"state": "not_set"} and settings["periods_directory"] == {"state": "not_set"},
@@ -42,38 +52,38 @@ def drive(run: Run, page: Page) -> None:
     dialogs = len(run.lines(Log.DIALOGS))
     before = run.settings_text()
     pickers = ("Wskaż Rejestr zleceń", "Wskaż Folder okresów")
-    empty_state = page.get_by_role("button", name="Wskaż folder okresów", exact=True)
+    page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
+    folder_picker = window.get_by_role("button", name="Wskaż Folder okresów", exact=True)
     held: list[Route] = []
     # Harness: each picker request is held, as Dad's native window stays open until he picks or closes it.
     page.route("**/api/settings/*/choose", lambda route: held.append(route))
     try:
-        empty_state.dblclick()
+        folder_picker.dblclick()
         page.wait_for_timeout(REPEAT_SETTLE_MS)
-        run.check(len(held) == 1, f"a double click on Wskaż folder okresów opens one picker ({len(held)} requests)")
-        expect(empty_state).to_be_disabled()
-        expect(empty_state).to_contain_text("Czekam na wybór…")
+        run.check(len(held) == 1, f"a double click on Wskaż Folder okresów opens one picker ({len(held)} requests)")
+        expect(folder_picker).to_contain_text("Czekam na wybór…")
         for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        run.check(True, "while the picker is open (held, harness), every picker button on Okresy waits for it")
+            expect(window.get_by_role("button", name=name, exact=True)).to_be_disabled()
+        run.check(True, "while the picker is open (held, harness), both picker buttons of Foldery wait for it")
         run.capture(page, "19-ustawienia-jedno-okno-wyboru", live=True)  # the waiting spinner turns forever
+        close_settings(page)
         page.get_by_role("link", name="Uruchomienia", exact=True).click()
+        expect(page.get_by_role("heading", name="Uruchomienia", level=1)).to_be_visible()
+        open_settings(page, "Foldery")
         for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        page.get_by_role("link", name="Okresy", exact=True).click()
-        expect(empty_state).to_be_disabled()
-        for name in pickers:
-            expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
-        run.check(True, "on Uruchomienia and back on Okresy the picker buttons still wait for the open picker")
+            expect(window.get_by_role("button", name=name, exact=True)).to_be_disabled()
+        run.check(True, "closed and opened again over Uruchomienia, Foldery still waits for the open picker")
         run.check(len(held) == 1, f"no button opened a second picker ({len(held)} requests)")
     finally:
         for route in held:
             route.continue_()
         page.unroute("**/api/settings/*/choose")
     run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
-    expect(empty_state).to_be_enabled()
     for name in pickers:
-        expect(page.get_by_role("button", name=name, exact=True)).to_be_enabled()
+        expect(window.get_by_role("button", name=name, exact=True)).to_be_enabled()
     run.check(run.settings_text() == before, "after the cancelled picker every picker button works again, nothing set")
+    close_settings(page)
+    page.get_by_role("link", name="Okresy", exact=True).click()
 
     run.step(feature, "ustawienia-folder-okresow")
     choose_periods_directory(run, page)
@@ -91,11 +101,14 @@ def drive(run: Run, page: Page) -> None:
     missing_register = page.get_by_role("alert").filter(has_text="Najpierw wskaż Rejestr zleceń.")
     page.get_by_role("link", name="Uruchomienia", exact=True).click()
     expect(missing_register).to_be_visible()
-    run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing for the start")
-    page.get_by_role("link", name="Okresy", exact=True).click()
+    unset = page.get_by_role("group", name="Rejestr zleceń")
+    expect(unset).to_contain_text("Rejestr zleceń: nie wskazano")
+    expect(unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True)).to_have_attribute("href", FOLDERS)
+    run.check(True, "before the Rejestr zleceń is set, Uruchomienia says it is missing and links to Foldery")
+    unset.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
+    expect(window.get_by_role("heading")).to_have_text("Ustawienia/Foldery")
     run.answer_picker(run.fixture["order_register"])
-    page.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
-    register = page.get_by_role("group", name="Rejestr zleceń")
+    window.get_by_role("button", name="Wskaż Rejestr zleceń", exact=True).click()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.lines(Log.DIALOGS)[-1]["title"] == "Wybierz plik Rejestru zleceń", "the file picker opened")
     run.check(
@@ -105,15 +118,16 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "03-ustawienia-rejestr-zlecen")
 
     run.step(feature, "ustawienia-braki-do-startu")
-    page.get_by_role("link", name="Uruchomienia", exact=True).click()
+    close_settings(page)
     expect(page.get_by_text("Nowe Uruchomienie procesu", exact=True)).to_be_visible()
     expect(missing_register).to_have_count(0)
+    expect(page.get_by_role("group", name="Rejestr zleceń").get_by_role("link")).to_have_count(0)
     expect(page.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_enabled()
     processes = run.api("/api/runs/setup", "ustawienia-braki-do-startu")["processes"]
     assert isinstance(processes, list)
     run.check(
         [process["blocker"] for process in processes if process["process"] == "preparation"] == [None],
-        "the Rejestr zleceń pointed on Okresy is no longer missing on Uruchomienia: its start is read again",
+        "the Rejestr zleceń pointed in Ustawienia is no longer missing on Uruchomienia under it: its start is read again",
     )
     run.capture(page, "18-ustawienia-braki-do-startu")
 
@@ -126,30 +140,29 @@ def drive(run: Run, page: Page) -> None:
 
     page.on("request", count_setup)
     try:
+        themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
         with sent_requests(page, "PUT", "/api/settings/theme") as saves:
-            for click, then, theme in (
-                ("Włącz motyw jasny", "Włącz motyw ciemny", "light"),
-                ("Włącz motyw ciemny", "Włącz motyw jasny", "dark"),
-            ):
-                page.get_by_role("button", name=click, exact=True).click()
-                expect(page.get_by_role("button", name=then, exact=True)).to_be_visible()
+            for click, theme in (("Jasny", "light"), ("Ciemny", "dark")):
+                themes.get_by_role("button", name=click, exact=True).click()
+                expect(themes.get_by_role("button", name=click, exact=True)).to_have_attribute("aria-pressed", "true")
                 run.wait_for(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
             # A remount on the server's answer would read the start again once that answer reached the page.
             settle(page, saves)
+        close_settings(page)
     finally:
         page.remove_listener("request", count_setup)
     expect(page.get_by_role("button", name="Podgląd bez zapisu", exact=True)).to_be_enabled()
     run.check(
-        setup_reads == [], f"switching the theme on Uruchomienia does not read the start again ({len(setup_reads)} reads)"
+        setup_reads == [], f"switching the theme over Uruchomienia does not read the start again ({len(setup_reads)} reads)"
     )
     page.get_by_role("link", name="Okresy", exact=True).click()
 
     run.step(feature, "ustawienia-anulowanie")
     before = run.settings_text()
     dialogs = len(run.lines(Log.DIALOGS))
-    page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
+    open_settings(page, "Foldery").get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
     run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
-    expect(page.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
+    expect(window.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.settings_text() == before, "a cancelled picker leaves the settings file unchanged")
 
@@ -171,11 +184,10 @@ def drive(run: Run, page: Page) -> None:
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 
     run.step(feature, "ustawienia-nieczytelny-plik")
-    periods = page.get_by_role("group", name="Folder okresów")
     with unreadable(Path(run.fixture["settings"])):
         page.reload()
-        for group in (register, periods):
-            expect(group.get_by_text("Nie da się teraz odczytać Ustawień taty", exact=True)).to_be_visible()
+        for row in (register, periods):
+            expect(row.get_by_text("Nie da się teraz odczytać Ustawień Centrum", exact=True)).to_be_visible()
         settings = run.api("/api/settings", "ustawienia-nieczytelny-plik")
         run.check(
             settings["order_register"] == settings["periods_directory"] == {"state": "unreadable"},
@@ -188,24 +200,26 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "ustawienia-niedostepna-sciezka")
     with _without_access(run, page) as (register_path, periods_path):
         page.reload()
-        for group, path in ((register, register_path), (periods, periods_path)):
-            expect(group.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
+        for row, path in ((register, register_path), (periods, periods_path)):
+            expect(row.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
         run.capture(page, "276-ustawienia-niedostepna-sciezka")
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
     expect(periods.get_by_text(Path(run.fixture["periods_directory"]).name, exact=True)).to_be_visible()
 
     run.step(feature, "ustawienia-motyw")
-    page.get_by_role("button", name="Włącz motyw jasny").click()
+    themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
+    themes.get_by_role("button", name="Jasny", exact=True).click()
     expect(page.locator("html")).not_to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
     page.reload()
-    expect(page.get_by_role("button", name="Włącz motyw ciemny")).to_be_visible()
+    expect(themes.get_by_role("button", name="Jasny", exact=True)).to_have_attribute("aria-pressed", "true")
     expect(page.locator("html")).not_to_have_class("dark")
     run.capture(page, "05-ustawienia-motyw-jasny")
-    page.get_by_role("button", name="Włącz motyw ciemny").click()
+    themes.get_by_role("button", name="Ciemny", exact=True).click()
     expect(page.locator("html")).to_have_class("dark")
     run.wait_for(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
+    close_settings(page)
 
 
 @contextmanager
@@ -238,8 +252,8 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
     periods = onedrive / Path(run.fixture["periods_directory"]).name
     periods.mkdir()
     print(f"  harness: a copy of the Rejestr zleceń and an empty folder okresów in {onedrive.name}", flush=True)
-    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", str(register))
-    _point(run, page, "Zmień Folder okresów", "folder_okresow", str(periods))
+    _point(run, page, "Rejestr zleceń", "rejestr_zlecen", str(register))
+    _point(run, page, "Folder okresów", "folder_okresow", str(periods))
     with unreadable(onedrive):
         yield register, periods
         settings = run.api("/api/settings", "ustawienia-niedostepna-sciezka")
@@ -248,14 +262,14 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
             and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
             "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
         )
-    _point(run, page, "Zmień Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
-    _point(run, page, "Zmień Folder okresów", "folder_okresow", run.fixture["periods_directory"])
+    _point(run, page, "Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
+    _point(run, page, "Folder okresów", "folder_okresow", run.fixture["periods_directory"])
     remove_tree(onedrive)
 
 
-def _point(run: Run, page: Page, button: str, key: str, path: str) -> None:
-    """Dad points ``path`` with the picker behind ``button`` on the settings card, until the settings file has it."""
+def _point(run: Run, page: Page, label: str, key: str, path: str) -> None:
+    """Dad points ``path`` with „Zmień <label>” in the open section Foldery, until the settings file has it."""
 
     run.answer_picker(path)
-    page.get_by_role("button", name=button, exact=True).click()
+    settings_window(page).get_by_role("button", name=f"Zmień {label}", exact=True).click()
     run.wait_for(lambda: run.remembered(key) == path, f"the settings file remembers {Path(path).name} ({key})")

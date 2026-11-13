@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
+import re
 from pathlib import Path
 import statistics
 from typing import Any
@@ -19,7 +20,18 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Browser, BrowserContext, CDPSession, Page, Request, expect
 
 from drive import DEFAULT_REPEATS
-from drive.common import PAGES, DriveFailure, Run, dad_context, ensure_files_set, read_json, read_text, replace_file
+from drive.common import (
+    PAGES,
+    DriveFailure,
+    Run,
+    close_settings,
+    dad_context,
+    ensure_files_set,
+    open_settings,
+    read_json,
+    read_text,
+    replace_file,
+)
 from atrapy.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
@@ -27,8 +39,8 @@ BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
 # docs/agents/komputer-taty.md: 4× is the reference profile of Dad's laptop, 6× the pessimistic one.
 PROFILES = (4, 6)
 # The menu pages the baseline holds; Raporty has no budget yet, so it is neither measured nor captured.
-MEASURED_PAGES = ("okresy", "uruchomienia", "metryki", "konfiguracja")
-LAP = ("uruchomienia", "metryki", "konfiguracja", "okresy")
+MEASURED_PAGES = ("okresy", "uruchomienia", "metryki")
+LAP = ("uruchomienia", "metryki", "okresy")
 REOPENED = ("okresy", "metryki")
 TRACED = ("okresy", "metryki")
 REOPEN_WARMUP = 2  # V8 caches the bundle's code only after a few visits
@@ -302,8 +314,12 @@ def _interactions(browsing: Browsing, measured: Measured) -> None:
 
         browsing.open(page, "okresy")
         page.wait_for_timeout(SETTLE_MS)
-        interaction("okresy/motyw-jasny", page.get_by_role("button", name="Włącz motyw jasny", exact=True).click)
-        interaction("okresy/motyw-ciemny", page.get_by_role("button", name="Włącz motyw ciemny", exact=True).click)
+        # The theme is switched in the section Wygląd of Ustawienia over Okresy; the opening itself is not measured.
+        themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw", exact=True)
+        page.wait_for_timeout(SETTLE_MS)
+        interaction("okresy/motyw-jasny", themes.get_by_role("button", name="Jasny", exact=True).click)
+        interaction("okresy/motyw-ciemny", themes.get_by_role("button", name="Ciemny", exact=True).click)
+        close_settings(page)
         return_to_tab("okresy/powrot-do-karty")
         go("metryki")
         for group, option, slug in (
@@ -681,7 +697,7 @@ def _prepare_year_of_work(run: Run, page: Page) -> None:
     runs = run.api("/api/metrics", "wydajnosc-metryki")["runs"]
     assert isinstance(runs, list)
     run.check(len(runs) == run.fixture["metrics"]["runs"], f"Metryki read {len(runs)} records of the year")
-    expect(page.get_by_role("button", name="Włącz motyw jasny", exact=True)).to_be_visible()
+    expect(page.locator("html")).to_have_class(re.compile(r"\bdark\b"))
     for number, page_id in enumerate(MEASURED_PAGES, start=84):
         page.get_by_role("link", name=PAGES[page_id], exact=True).click()
         expect(page.get_by_role("heading", name=PAGES[page_id], exact=True)).to_be_visible()

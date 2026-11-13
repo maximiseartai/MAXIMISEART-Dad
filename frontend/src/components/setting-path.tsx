@@ -3,35 +3,27 @@ import { cn } from "cn"
 import { TriangleAlertIcon } from "lucide-react"
 
 import type { PathSetting } from "@/api/centrum"
-import { Button } from "@/components/ui/button"
-import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
-import { Spinner } from "@/components/ui/spinner"
+import { buttonVariants } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { settingsHref } from "@/lib/address"
 import { useSettings, type PickedPath } from "@/lib/settings"
 
-/** Plik taty z Ustawień taty i jego okno wyboru: niewskazany plik się „Wskaż”, wskazany „Zmień”. */
-function useSettingPath(path: PickedPath) {
-  const { settings, picker, choose } = useSettings()
-  const setting = settings.state === "ready" ? settings.data[path] : null
+/** Sekcja okna Ustawień, w której tata wskazuje Rejestr zleceń i folder okresów (ADR 0032: jedyne miejsce wyboru). */
+export const FOLDERS_SECTION = "foldery"
 
-  return {
-    setting,
-    verb: setting?.state === "not_set" ? "Wskaż" : "Zmień",
-    choosing: picker === path,
-    busy: picker !== null,
-    choose: () => choose(path),
-  }
-}
-
-/** Napis przycisku, który otwiera okno wyboru; dopóki to okno jest otwarte, przycisk na nie czeka. */
-export function ChoosingLabel({ choosing, children }: { choosing: boolean; children: React.ReactNode }) {
-  return choosing ? (
-    <>
-      <Spinner data-icon="inline-start" />
-      Czekam na wybór…
-    </>
-  ) : (
-    children
+/** Link do sekcji Foldery okna Ustawień, w miejscu dawnego wyboru pliku na stronie; `primary` w pustym stanie strony. */
+export function SetInSettings({ className, primary = false }: { className?: string; primary?: boolean }) {
+  return (
+    <a
+      href={settingsHref(FOLDERS_SECTION)}
+      className={cn(
+        buttonVariants({ variant: primary ? "default" : "link", size: "sm" }),
+        primary ? null : "h-auto px-0",
+        className
+      )}
+    >
+      Ustaw w Ustawieniach
+    </a>
   )
 }
 
@@ -48,9 +40,13 @@ function PathName({ className, hint, children }: { className?: string; hint: Rea
   )
 }
 
-/** Plik taty w jednym wierszu z ikoną: nazwa, pełna ścieżka w podpowiedzi i „Wskaż”/„Zmień” jako link po prawej. */
+/**
+ * Plik taty w jednym wierszu z ikoną: nazwa z pełną ścieżką w podpowiedzi. Wybór jest tylko w oknie Ustawień, więc
+ * plik, którego nie da się użyć (niewskazany, nie ma go, niedostępny), ma tu link „Ustaw w Ustawieniach”.
+ */
 export function SettingPath({ label, icon, path }: { label: string; icon: React.ReactNode; path: PickedPath }) {
-  const { setting, verb, busy, choose } = useSettingPath(path)
+  const { settings } = useSettings()
+  const setting = settings.state === "ready" ? settings.data[path] : null
 
   if (setting === null) {
     return null
@@ -70,45 +66,8 @@ export function SettingPath({ label, icon, path }: { label: string; icon: React.
           {pathText(setting)}
         </PathName>
       )}
-      <Button
-        variant="link"
-        size="sm"
-        className="ml-auto h-auto px-0"
-        disabled={busy}
-        aria-label={`${verb} ${label}`}
-        onClick={choose}
-      >
-        {verb}
-      </Button>
+      {setting.state === "ready" ? null : <SetInSettings className="ml-auto" />}
     </div>
-  )
-}
-
-/** Plik taty w Ustawieniach: tytuł, nazwa pod nim (brakujący z ostrzeżeniem) i „Wskaż”/„Zmień” jako przycisk. */
-export function SettingPathItem({ label, icon, path }: { label: string; icon: React.ReactNode; path: PickedPath }) {
-  const { setting, verb, choosing, busy, choose } = useSettingPath(path)
-
-  if (setting === null) {
-    return null
-  }
-
-  return (
-    <Item size="sm" role="group" aria-label={label}>
-      <ItemMedia variant="icon" className="text-muted-foreground">
-        {icon}
-      </ItemMedia>
-      <ItemContent>
-        <ItemTitle>{label}</ItemTitle>
-        <ItemDescription>
-          <PathDescription setting={setting} />
-        </ItemDescription>
-      </ItemContent>
-      <ItemActions>
-        <Button variant="outline" size="sm" disabled={busy} aria-label={`${verb} ${label}`} onClick={choose}>
-          <ChoosingLabel choosing={choosing}>{verb}</ChoosingLabel>
-        </Button>
-      </ItemActions>
-    </Item>
   )
 }
 
@@ -130,12 +89,13 @@ function pathText(setting: ChosenPath) {
   }
 }
 
-function PathDescription({ setting }: { setting: PathSetting }) {
+/** Stan pliku taty pod jego nazwą w sekcji Foldery: nazwa, a brakujący albo niedostępny z ostrzeżeniem. */
+export function PathDescription({ setting }: { setting: PathSetting }) {
   switch (setting.state) {
     case "not_set":
       return <span>Nie wskazano</span>
     case "unreadable":
-      return <span>Nie da się teraz odczytać Ustawień taty</span>
+      return <span>Nie da się teraz odczytać Ustawień Centrum</span>
     case "missing":
     case "inaccessible":
       return (
@@ -148,9 +108,7 @@ function PathDescription({ setting }: { setting: PathSetting }) {
         </PathName>
       )
     case "ready":
-      return (
-        <PathName hint={setting.path}>{setting.name}</PathName>
-      )
+      return <PathName hint={setting.path}>{setting.name}</PathName>
     default: {
       const unhandled: never = setting
 

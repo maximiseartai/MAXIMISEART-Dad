@@ -15,6 +15,7 @@ from drive.common import (
     current_run,
     dad_tab,
     ended_run_shown,
+    point_in_settings,
     read_bytes,
     remove,
     result_of_start,
@@ -73,12 +74,9 @@ def _to_card(run: Run, page: Page) -> None:
 
 
 def _choose(run: Run, page: Page, path: str) -> None:
-    """Dad points the card's INTERMAX to ``path`` through the native picker (harness answers it)."""
+    """Dad points INTERMAX (the Rejestr zleceń) to ``path`` in Ustawienia over the card (harness answers the picker)."""
 
-    run.answer_picker(path)
-    verb = "Wskaż" if run.remembered("rejestr_zlecen") is None else "Zmień"
-    _card(page).get_by_role("button", name=f"{verb} INTERMAX", exact=True).click()
-    run.wait_for(lambda: run.remembered("rejestr_zlecen") == path, f"INTERMAX set to {Path(path).name}")
+    point_in_settings(run, page, "Rejestr zleceń", path)
     expect(_card(page).get_by_role("group", name="INTERMAX")).to_contain_text(Path(path).name)
 
 

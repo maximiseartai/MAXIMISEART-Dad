@@ -7,7 +7,7 @@ import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { useHash } from "@/lib/address"
+import { useHash, useSettingsAddress } from "@/lib/address"
 import { DadNoteProvider } from "@/lib/dad-note"
 import { RunsProvider } from "@/lib/runs"
 import { NotificationsProvider } from "@/lib/notifications"
@@ -15,6 +15,7 @@ import { SettingsProvider } from "@/lib/settings"
 import { ToolUpdateProvider } from "@/lib/tool-update"
 import { useViewTiming } from "@/lib/view-timing"
 import { useCurrentPage, type Page } from "@/pages"
+import { SettingsDialog } from "@/pages/settings/settings-dialog"
 
 const LAYOUT = {
   "--sidebar-width": "calc(var(--spacing) * 66)",
@@ -24,6 +25,10 @@ const LAYOUT = {
 export function App() {
   const page = useCurrentPage()
   const address = useHash()
+  const settings = useSettingsAddress()
+  // Karta otwarta od razu na oknie Ustawień: stronę pod nim zasłania okno, więc mierzy się tylko okno, które czyta
+  // te same zapytania. Strona pod spodem mierzy się od pierwszego przejścia na inny adres.
+  const [coldUnder] = React.useState(() => (settings === null ? null : address))
   const [closed, setClosed] = React.useState(false)
 
   if (closed) {
@@ -46,11 +51,13 @@ export function App() {
                 <CurrentPage value={page}>
                   <page.Content />
                 </CurrentPage>
-                {/* Każdy adres to osobny widok, także w obrębie strony (`#/uzupelnienie/<okres>/<rodzaj>`). */}
-                <ViewTiming key={address} page={page} />
+                {/* Każdy adres strony to osobny widok, także w jej obrębie (`#/uzupelnienie/<okres>/<rodzaj>`); okno
+                    Ustawień nad stroną nie zmienia jej adresu i mierzy się samo. */}
+                {address === coldUnder ? null : <ViewTiming key={address} page={page} />}
               </div>
             </SidebarInset>
           </SidebarProvider>
+          <SettingsDialog />
           </DadNoteProvider>
           </NotificationsProvider>
           </ToolUpdateProvider>
