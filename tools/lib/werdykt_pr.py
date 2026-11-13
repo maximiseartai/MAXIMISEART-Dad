@@ -22,7 +22,8 @@ a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej). Czy wątek ma szab
 jest wdrożony na bazie PR (``szablon_werdyktu.deployed``), a najstarszy werdykt PR, dowolnego commitu, nie powstał
 przed chwilą wdrożenia (``createdAt`` komentarza albo ``submittedAt`` recenzji z GitHuba, których komentarzem nie da
 się zmienić). Wątek, którego pierwszy werdykt jest starszy, kończy po staremu: tylko dwie pierwsze linie. Werdykt bez
-czasu, którego GitHub nie podał, wątku nie postarza. Merge liczy więc ``PASS`` w wątku z szablonem jako zgodę tylko
+czasu, którego GitHub nie podał, wątku nie postarza, tak jak werdykt w komentarzu edytowanym (``includesCreatedEdit``),
+który nadal jest werdyktem: komentarzem, także edytowanym, nie da się przesunąć chwili wdrożenia ani postarzyć wątku. Merge liczy więc ``PASS`` w wątku z szablonem jako zgodę tylko
 wtedy, gdy przechodzi szablon, także gdy opublikowano go z pominięciem ``--werdykt``, a odmowa podaje przyczyny
 i wzór. Inaczej niczego nie publikuje i kończy się linią ``WERDYKT ODMOWA | #N | <przyczyny>``, w której
 każda przyczyna mówi, co poprawić w pliku. Opublikowany werdykt kończy się linią ``WERDYKT OK | #N <sha> | <PASS
@@ -168,11 +169,12 @@ def publish_problems(text: str, pull: Pull, deployed: datetime | None) -> list[s
 
 def template_applies(pull: Pull, deployed: datetime | None) -> bool:
     """Czy werdykt na ``pull`` idzie za szablonem: szablon jest wdrożony (``deployed`` to nie ``None``), a najstarszy
-    werdykt PR (z linią ``WERDYKT:``, od konta z prawem zapisu) nie powstał przed chwilą ``deployed`` (decyzja Q20)."""
+    werdykt PR (z linią ``WERDYKT:``, od konta z prawem zapisu) nie powstał przed chwilą ``deployed`` (decyzja Q20).
+    Werdykt w komentarzu edytowanym (``includesCreatedEdit``) wątku nie postarza, bo jego treść mogła powstać później."""
 
     if deployed is None:
         return False
-    found = (read(verdict, pull.head) for verdict in pull.verdicts)
+    found = (read(verdict, pull.head) for verdict in pull.verdicts if not verdict.get("includesCreatedEdit"))
     moments = [_moment(verdict.when) for verdict in found if verdict is not None and verdict.decision is not None]
     known = [moment for moment in moments if moment is not None]
     return not known or min(known) >= deployed

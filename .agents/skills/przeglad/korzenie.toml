@@ -118,3 +118,11 @@ przyklad = 1315
 [R-IMIE]
 opis = "Tekst pisany z rozmowy albo z plików lokalnych wnosi do publicznego repo dane osobowe, których nic przed pushem nie zna."
 przyklad = 1225
+
+[R-STAN-Z-TRESCI]
+opis = "Stan wątku albo zgoda (wiek wątku, PASS przy merge'u) liczone z treści komentarzy, którą pisze i zmienia ta sama ręczna droga, którą reguła ma zamknąć."
+przyklad = 1457
+
+[R-DECYZJA-PRZEPISANA]
+opis = "Decyzje Maksa przepisane własnymi słowami do ADR i skilla bez porównania punkt po punkcie z ich źródłem, więc rozjazd wychodzi dopiero w przeglądzie."
+przyklad = 1457

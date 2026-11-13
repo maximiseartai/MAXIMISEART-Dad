@@ -27,9 +27,11 @@ wczytuje, to odmowa z przyczyną. Odmowa kończy się wzorem szablonu, który na
 sekcji „Postać werdyktu” skilla.
 
 Szablon jest wdrożony od chwili, w której ADR 0031 wszedł do bazy PR (``deployed``): to data commitu, który na
-``origin/<baza>`` dodał ADR, liczona po ``--first-parent``, czyli commitu merge'a PR wdrożenia, a nie commitu autora,
-który powstał przed merge'em, gdy szablon jeszcze nie działał. Chwila płynie z historii bazy, więc nie trzeba jej
-zgadywać przed merge'em, a każdy checkout po pobraniu bazy dostaje tę samą.
+``origin/<baza>`` dodał ADR, liczona po ``--first-parent``. Na ``main`` to commit merge'a PR wdrożenia, a nie commit
+autora, który powstał przed merge'em, gdy szablon jeszcze nie działał. Na gałęzi stosu to commit z jej własnej
+historii: scalenie ``main`` do niej albo commit autora, którego datę zmienia rebase. Na bazie, do której ADR jeszcze
+nie wszedł, szablon nie obowiązuje (``None``). Chwila płynie z historii bazy, więc nie trzeba jej zgadywać przed
+merge'em, a każdy checkout po pobraniu bazy dostaje tę samą; komentarzem, także edytowanym, nie da się jej przesunąć.
 """
 
 from __future__ import annotations

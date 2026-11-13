@@ -46,7 +46,9 @@ Poprawka pod `PASS` zamykała znalezisko, a korzeń zostawał i dawał następne
 - Autor może zakwestionować kod z powodem, rozstrzyga następny recenzent, a rejestr bierze kod z ostatniego werdyktu (Q25).
 - Szablon obowiązuje od pierwszego werdyktu po wdrożeniu; wątki, które już mają werdykt, kończą po staremu (Q20).
   Kryterium jest deterministyczne i jedno dla publikacji i zgody na merge: wątek kończy po staremu, gdy najstarszy werdykt PR (`createdAt` z GitHuba, od konta z prawem zapisu) powstał przed chwilą wdrożenia.
-  Chwila wdrożenia to data commitu, który dodał ten ADR na bazie PR, liczona po `--first-parent`, czyli commitu merge'a PR wdrożenia; komentarzem nie da się jej przesunąć, a przed merge'em nikt jej nie zgaduje.
+  Werdykt w komentarzu edytowanym (`includesCreatedEdit`) nadal jest werdyktem, ale wątku nie postarza, bo jego treść mogła powstać po wdrożeniu.
+  Chwila wdrożenia to data commitu, który dodał ten ADR na bazie PR, liczona po `--first-parent`: na `main` to commit merge'a PR wdrożenia, a na gałęzi stosu commit z jej własnej historii (scalenie `main` do niej albo commit autora, którego datę zmienia rebase), a na bazie, do której ten ADR jeszcze nie wszedł, szablon nie obowiązuje.
+  Komentarzem, także edytowanym, nie da się przesunąć chwili wdrożenia, a przed merge'em nikt jej nie zgaduje.
 
 ### Rejestr i chwasty
 

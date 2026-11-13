@@ -1646,6 +1646,27 @@ def test_szablon_obowiazuje_od_wdrozenia_a_watek_z_werdyktem_sprzed_niego_konczy
     assert werdykt_pr.template_applies(_written(*verdicts), deployed) is applies
 
 
+@pytest.mark.parametrize(
+    "verdicts",
+    [
+        [(PASS_HEAD, True)],
+        [(FAIL_OLD, True), (PASS_HEAD, False)],
+    ],
+    ids=["komentarz-zmieniony-na-pass", "komentarz-zmieniony-na-fail-potem-reczny-pass"],
+)
+def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_reczny_pass_bez_szablonu_to_odmowa(
+    verdicts: list[tuple[str, bool]],
+) -> None:
+    comments = [
+        {**_verdict("comment", body, when=f"2026-10-24T03:00:{index:02d}Z"), "includesCreatedEdit": edited}
+        for index, (body, edited) in enumerate(verdicts)
+    ]
+    pull = _pull(comments=comments)
+
+    assert werdykt_pr.template_applies(pull, AFTER_FIRST) is True
+    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
+
+
 SPRAWDZONE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"] + "\n"
 PROSE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["proza"] + "\n"
 
@@ -1696,3 +1717,17 @@ def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dl
         assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
         assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
         assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+
+
+@pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n"], ids=["blad-http", "pusta-odpowiedz"])
+def test_pass_w_watku_z_szablonem_bez_html_tresci_od_githuba_nie_jest_zgoda_a_odmowa_podaje_przyczyne(tmp_path: Path, answer: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.markdown[werdykty_szablonu.WERDYKTY["sprawdzone"]] = answer
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    checked = github.run("1", "--bez-merge")
+
+    assert checked.returncode != 0, checked.stdout + checked.stderr
+    assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (GitHub nie wyrenderował treści werdyktu (" in _last_line(checked), checked.stdout
