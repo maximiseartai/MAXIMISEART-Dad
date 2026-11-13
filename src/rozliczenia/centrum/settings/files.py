@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Generic, Literal, TypeVar
+import json
+from typing import Generic, Literal, Protocol, TypeVar
 
 import yaml
 
@@ -63,6 +64,12 @@ FieldName = Literal[
     "stopka",
     # przełącznik startu razem z Windows (skrót w folderze Autostart)
     "autostart",
+    # wyjatki-ilosci.yaml (różnice Kontroli ilości oznaczone „To był wyjątek”)
+    "wyjatki",
+    "okres",
+    "wiersz",
+    "tata",
+    "odcisk",
     # reguła pliku reguly-ilosci.yaml w edytorze Reguł ilości
     "jesli",
     "skladnik",
@@ -192,3 +199,62 @@ class SettingsFile(Generic[T]):
     secret: bool = False
     unchecked: Callable[[bytes | None], T | None] | None = None
     removed_logins: Callable[[T, T], RemovedLogins | None] | None = None
+
+
+class _Identified(Protocol):
+    @property
+    def id(self) -> str: ...
+
+
+_Entry = TypeVar("_Entry", bound=_Identified)
+
+
+@dataclass(frozen=True)
+class EntriesById(Generic[_Entry]):
+    """Jak porównać i odtworzyć wpisy pliku, który jest listą wpisów z ``id``: klucz Historii ``<sekcja>.<id>``, a wartość
+    to wpis jako JSON (``dumped``) i z powrotem (``parsed``; ``None``: wpisu nie da się odczytać)."""
+
+    section: str
+    dumped: Callable[[_Entry], dict[str, object]]
+    parsed: Callable[[object], _Entry | None]
+
+    def diff(self, before: tuple[_Entry, ...], after: tuple[_Entry, ...]) -> tuple[KeyChange, ...]:
+        old: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in before}
+        new: dict[str, str] = {entry.id: _entry_json(self.dumped(entry)) for entry in after}
+        return tuple(
+            KeyChange(f"{self.section}.{identifier}", old.get(identifier), new.get(identifier))
+            for identifier in dict.fromkeys((*old, *new))
+            if old.get(identifier) != new.get(identifier)
+        )
+
+    def ids(self, keys: frozenset[str]) -> frozenset[str]:
+        """Id wpisów z kluczy Historii Ustawień tej sekcji (``<sekcja>.<id>``)."""
+
+        return frozenset(key.removeprefix(f"{self.section}.") for key in keys if key.startswith(f"{self.section}."))
+
+    def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
+        """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
+        sekcji albo wpis, którego nie da się odczytać, zostaje bez zmian."""
+
+        entries = list(current)
+        for change in changes:
+            section, _, identifier = change.key.partition(".")
+            if section != self.section:
+                continue
+            kept: list[_Entry] = [entry for entry in entries if entry.id != identifier]
+            if change.before is None:
+                entries = kept
+                continue
+            try:
+                restored = self.parsed(json.loads(change.before))
+            except ValueError:
+                continue
+            if restored is None:
+                continue
+            position: int = next((index for index, entry in enumerate(entries) if entry.id == identifier), len(kept))
+            entries = [*kept[:position], restored, *kept[position:]]
+        return tuple(entries)
+
+
+def _entry_json(entry: dict[str, object]) -> str:
+    return json.dumps(entry, ensure_ascii=False, separators=(", ", ": "))

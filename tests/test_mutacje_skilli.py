@@ -550,12 +550,15 @@ SHAPE_GAPS = ROOT / "tests" / "fixtures" / "granice_ksztaltow.py"
 
 def _shape_gaps(root: Path) -> dict[str, list[str]]:
     """Luki granic kształtów każdego eksploratora skilla ``verify-*`` w ``root``, po ścieżce eksploratora. Kod
-    eksploratora wykonuje własny proces z limitem czasu, nie proces pytest (#651)."""
+    eksploratora wykonuje własny proces z limitem czasu, nie proces pytest (#651); ``-P`` nie kładzie na ``sys.path``
+    katalogu ``tests/fixtures``, którego moduły (``potomne``, ``model_tlc``) przesłoniłyby te z ``tools/lib``."""
 
     gaps = {}
     for explorer in sorted((root / ".agents" / "skills").glob("verify-*/scripts/explore_*.py")):
+        path = os.pathsep.join(str(folder) for folder in (explorer.parent, TOOLS / "lib", TOOLS))
         done = subprocess.run(
-            [sys.executable, "-X", "utf8", str(SHAPE_GAPS), str(TOOLS), str(explorer)],
+            [sys.executable, "-X", "utf8", "-P", str(SHAPE_GAPS), str(explorer)],
+            env=os.environ | {"PYTHONPATH": path},
             cwd=root,
             stdin=subprocess.DEVNULL,
             capture_output=True,

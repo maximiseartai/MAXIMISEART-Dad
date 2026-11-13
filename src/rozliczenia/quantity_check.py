@@ -152,6 +152,12 @@ def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
     return result
 
 
+def week_hour(weekday: int, hour: int) -> str:
+    """Dzień tygodnia z pełną godziną, jak grupy różnic Kontroli ilości („pt 16”): od godziny zależy dodatek za usterkę."""
+
+    return f"{WEEKDAY_LABELS[weekday]} {hour}"
+
+
 def compared_columns(rule: RuleResult, rules: QuantityRules) -> tuple[str, ...]:
     """Kolumny Reguł ilości ``rules``, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
 
@@ -295,7 +301,7 @@ def _difference_rows(differences: Counter[Difference], devices: str) -> list[str
     )
     return [
         f"| {difference.column} | {difference.rule} | {difference.tata} | {_code(difference.activities)} | "
-        f"{_code(difference.contract)} | {WEEKDAY_LABELS[difference.weekday]} {difference.hour} | "
+        f"{_code(difference.contract)} | {week_hour(difference.weekday, difference.hour)} | "
         f"{differences[difference]} |\n"
         for difference in rows
     ]

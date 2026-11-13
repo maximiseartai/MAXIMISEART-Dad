@@ -49,7 +49,7 @@ MUTATIONS = (
     ),
     Mutation(
         "lista nie czyta się po przywróceniu",
-        (Edit(BUILD, "message:g_(e)})).finally(()=>{a(!1),t()})}", "message:g_(e)})).finally(()=>{a(!1)})}"),),
+        (Edit(BUILD, "message:x_(e)})).finally(()=>{a(!1),t()})}", "message:x_(e)})).finally(()=>{a(!1)})}"),),
         KOPIE,
         "po przywróceniu lista nie ma nowej Kopii stanu sprzed przywrócenia",
     ),

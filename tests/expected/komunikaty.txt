@@ -1547,6 +1547,9 @@ quantity_rule_unknown [HTTP 404]
 device_component_unknown [HTTP 404]
   Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.
 
+quantity_difference_unknown [HTTP 404]
+  Tej różnicy już nie ma na liście. Odśwież okno Ustawień.
+
 settings_change_not_undoable [HTTP 404]
   Tej zmiany nie da się cofnąć.
 

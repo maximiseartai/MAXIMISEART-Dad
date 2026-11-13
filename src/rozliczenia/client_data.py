@@ -48,6 +48,16 @@ MIN_VALUE: Final = 5
 _Position = TypeVar("_Position")
 
 
+class _ReadValues:
+    """Znacznik pola Logów Uruchomienia (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze
+    strony efenix, także liczby: strażnik Logów sprawdza w nim liczbę (``guard_number``) i maskuje ją z zakazaną
+    wartością albo telefonem jak tekst. Każda inna liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba,
+    którą policzyło narzędzie."""
+
+
+READ_VALUES: Final = _ReadValues()
+
+
 class ForbiddenColumn(Enum):
     """Kolumna, której wartość nigdy nie wychodzi z komputera taty; ``value`` to jej nazwa w uwadze technicznej."""
 

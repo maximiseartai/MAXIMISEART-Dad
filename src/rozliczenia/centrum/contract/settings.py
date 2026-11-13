@@ -149,8 +149,9 @@ class HistoryChange(Model):
 
 
 class HistoryRuleChange(Model):
-    """Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
-    ``None``: reguły nie było."""
+    """Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+    ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+    było."""
 
     key: str
     before: list[SentencePart] | None
@@ -188,7 +189,8 @@ class HistoryRow(Model):
     removed: bool
     reason: str | None
     rules: list[HistoryRuleChange]
-    """Zmienione reguły ilości wiersza jako zdania, po jednej na klucz ``reguly.<id>``; pusta w wierszu innej sekcji."""
+    """Zmienione reguły ilości i wyjątki Kontroli ilości wiersza jako zdania, po jednym na klucz; pusta w wierszu innej
+    sekcji."""
 
 
 class SettingsHistory(Model):

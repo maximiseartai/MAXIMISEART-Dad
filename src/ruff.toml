@@ -1,6 +1,6 @@
 # Ruff bierze banned-api z najbliższego pliku konfiguracji w całości, a nie dokłada do tabeli rodzica: pierwsze wpisy
 # to kopia tabeli z pyproject.toml (tests/test_zakazy_ruff.py pilnuje, że żadnego nie gubi), a ostatnie obowiązują tylko
-# w src/, każdy z próbką w tests/test_zakazy_ruff.py. Wyjątek dostaje swoją linię: # noqa: TID251 - <powód>.
+# w src/, każdy z próbką w tests/test_zakazy_ruff.py. Prawo właściciela stoi w per-file-ignores pyproject.toml.
 extend = "../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]
@@ -26,7 +26,7 @@ extend = "../pyproject.toml"
 "rozliczenia.workbook_files.file_bytes".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files"
 "rozliczenia.workbook_files.template_content".msg = "Wzorzec czytaj przez rozliczenia.template_file, a wartości pliku taty uchwytem DadFiles.read z rozliczenia.dad_files"
 "rozliczenia.workbook_files.open_workbook".msg = "wartości pliku taty czytaj uchwytem DadFiles.read z rozliczenia.dad_files, a arkusz świadkiem ReadFile.sheet"
-# Zegar ścienny ma jednego właściciela (rozliczenia/wall_clock.py, wyjątek w extend-per-file-ignores niżej), bo
+# Zegar ścienny ma jednego właściciela (rozliczenia/wall_clock.py, prawo właściciela w pyproject.toml), bo
 # datetime.now(timezone.utc).date() przechodzi DTZ, a daje dzień UTC zamiast dnia taty. Tu noqa nie wystarcza:
 # tests/test_zakazy_ruff.py uruchamia te zakazy (lista CLOCK, tam dopisz nowy) na src/ z --ignore-noqa. Co zakaz
 # po nazwie łapie, a co zostaje przeglądowi, mówi docstring rozliczenia/wall_clock.py.
@@ -43,6 +43,3 @@ extend = "../pyproject.toml"
 "time.strftime".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki, a podany znacznik czasu ts zamieniaj przez datetime.fromtimestamp(ts, tz)"
 "email.utils.localtime".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki, a podaną chwilę dt zamieniaj na strefę komputera przez dt.astimezone()"
 "email.utils.formatdate".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki, a nagłówek Date daje email.utils.format_datetime(chwila) z chwilą z wall_clock"
-
-[lint.extend-per-file-ignores]
-"rozliczenia/wall_clock.py" = ["TID251"]
