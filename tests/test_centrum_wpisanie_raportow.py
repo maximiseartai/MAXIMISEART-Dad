@@ -11,6 +11,7 @@ Przeszkody kliknięcia (#1232) mają zdania Komunikatów ze speca #1224 (US 44�
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 import email
 from email.message import EmailMessage
@@ -23,6 +24,8 @@ import smtplib
 import threading
 from typing import Any
 
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils.cell import get_column_letter
 import pytest
@@ -46,6 +49,7 @@ from rozliczenia.worker_report_inbox import (
     MailRefused,
     MailSent,
     PasswordRejected,
+    SentReminders,
 )
 from rozliczenia.worker_reports import (
     AddBar,
@@ -2890,16 +2894,31 @@ Tata
 """
 
 
-def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_przed_ustawieniami(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("rollout", "footer", "text"),
+    [
+        (b"2026-11-09\n", b"Pozdrawiam\nTata\n", TEXT_BEFORE_SETTINGS),
+        (
+            b"\xef\xbb\xbf2026-11-09\r\n",
+            b"\xef\xbb\xbfPozdrawiam\r\nTata\r\n",
+            TEXT_BEFORE_SETTINGS.replace("Pozdrawiam\nTata", "Pozdrawiam\r\nTata"),
+        ),
+    ],
+    ids=["lf", "crlf-z-notatnika"],
+)
+def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_przed_ustawieniami(
+    tmp_path: Path, rollout: bytes, footer: bytes, text: str
+) -> None:
     """Kryterium #1476: po Aktualizacji tata nic nie zmienia, a pierwszy start przenosi dzień wdrożenia i stopkę z plików
     Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem i
-    treścią bajt w bajt, a druga minuta pory nie wysyła drugiego (ADR 0030, DESIGN §3)."""
+    treścią bajt w bajt, a druga minuta pory nie wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF)
+    szła przed Wydaniem z CRLF między liniami i tak samo idzie po nim."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
     (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
-    (centrum.tool.config / OLD_ROLLOUT_FILE).write_text("2026-11-09\n", encoding="utf-8")
-    (centrum.tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\nTata\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(rollout)
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(footer)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -2913,7 +2932,7 @@ def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_p
 
     sent = [(reminder.worker, reminder.recipients, reminder.subject, reminder.text) for reminder, _ in mailbox.sends]
     assert sent == [
-        (login, (SenderAddress(SENDERS[login]),), "Przypomnienie: raport za dzień 09.11.2026", TEXT_BEFORE_SETTINGS)
+        (login, (SenderAddress(SENDERS[login]),), "Przypomnienie: raport za dzień 09.11.2026", text)
         for login in ("anna.kowalska", "jan.testowy")
     ]
 
@@ -2950,6 +2969,189 @@ def test_zmiana_pory_i_godziny_pierwszego_przypomnienia_dziala_od_nastepnego_spr
         ("anna.kowalska", date(2026, 11, 9), time(7, 33)),
         ("jan.testowy", date(2026, 11, 9), time(7, 33)),
     ]
+
+
+@dataclass
+class SentFolderMailbox(FakeMailbox):
+    """Skrzynka przypomnień, której „Wysłane” mają każde przypomnienie wysłane przez nią, z chwilą wysyłki, jak Gmail."""
+
+    def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        return SentReminders(tuple(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in self.sends))
+
+
+@pytest.mark.parametrize(
+    ("sent_at", "later", "checked_at"),
+    [
+        (time(8, 5), {"morning": {"start": "09:00", "end": "17:00"}}, time(9, 1)),
+        (time(18, 5), {"evening": {"start": "19:00", "end": "22:00"}}, time(19, 1)),
+    ],
+    ids=["poranna", "wieczorna"],
+)
+def test_przesuniecie_poczatku_pory_po_wysylce_nie_daje_drugiego_maila_tej_samej_pory(
+    tmp_path: Path, sent_at: time, later: dict[str, object], checked_at: time
+) -> None:
+    """Decyzja W1 (#1568): przypomnienie wysłane w porze zamyka tę nazwaną porę na cały dzień, także gdy tata potem
+    przesunie jej początek za chwilę wysyłki, więc następne sprawdzenie w nowej porze nie wysyła Wykonawcom drugiego."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), sent_at))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    first = [(reminder.worker, at.time()) for reminder, at in mailbox.sends]
+
+    changed = centrum.client.put("/api/settings/reminders", json=_reminders_form(**later, footer="Pozdrawiam\nTata\n"))
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), checked_at))
+    centrum.rhythm.tick()
+    centrum.restart()
+    centrum.client.start()
+    centrum.moment.append(datetime.combine(date(2026, 11, 10), checked_at.replace(minute=30)))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert first == [("anna.kowalska", sent_at), ("jan.testowy", sent_at)]
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == first, "drugi mail tej samej pory"
+
+
+def test_pory_bez_zmian_od_kilku_dni_dalej_chronia_poranna_wyslana_przed_ich_przesunieciem(tmp_path: Path) -> None:
+    """Decyzja W1 (#1568): pory z ADR 0030 obowiązują od sprawdzenia 8.11; 10.11 o 8:05 idzie poranne przypomnienie, a
+    tata przesuwa poranną na 9:00–17:00. Pory sprzed doby dalej mówią, że 8:05 była w porannej, więc o 9:01 drugiego
+    porannego nie ma."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+    for moment in (datetime(2026, 11, 8, 10, 0), datetime(2026, 11, 10, 8, 5)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    later = _reminders_form(morning={"start": "09:00", "end": "17:00"}, footer="Pozdrawiam\nTata\n")
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 9, 1))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", datetime(2026, 11, 10, 8, 5).astimezone()),
+        ("jan.testowy", datetime(2026, 11, 10, 8, 5).astimezone()),
+    ]
+
+
+def test_pora_ktora_dzis_jeszcze_nie_poszla_po_zmianie_por_wysyla_przypomnienie_od_nastepnego_sprawdzenia(
+    tmp_path: Path,
+) -> None:
+    """Decyzja W1 (#1568): o 13:00 przy porach z ADR 0030 idzie poranne przypomnienie; tata skraca poranną do 12:00 i
+    zaczyna wieczorną o 12:30, więc 13:00 leży teraz w wieczornej, ale mail poszedł w porannej. Wieczorna dziś jeszcze
+    nie poszła, więc następne sprawdzenie ją wysyła, a jeszcze następne nie wysyła drugiej."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(datetime(2026, 11, 10, 13, 0))
+    centrum.client.start()
+    centrum.rhythm.tick()
+    later = _reminders_form(
+        morning={"start": "08:00", "end": "12:00"}, evening={"start": "12:30", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+    )
+    assert centrum.client.put("/api/settings/reminders", json=later).status_code == 200
+    for moment in (datetime(2026, 11, 10, 13, 30), datetime(2026, 11, 10, 13, 31), datetime(2026, 11, 10, 20, 0)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(13, 0)),
+        ("jan.testowy", time(13, 0)),
+        ("anna.kowalska", time(13, 30)),
+        ("jan.testowy", time(13, 30)),
+    ]
+
+
+_HALF_HOURS = st.lists(st.integers(6 * 2, 23 * 2 + 1), min_size=4, max_size=4, unique=True).map(sorted)
+"""Cztery różne pełne albo połówkowe godziny od 6:00 do 23:30, rosnąco: początek i koniec porannej i wieczornej."""
+
+
+@st.composite
+def _pory(draw: st.DrawFn) -> tuple[tuple[time, time], tuple[time, time]]:
+    """Dobre pory z formularza: poranna przed wieczorną, czasem stykające się (koniec porannej = początek wieczornej)."""
+
+    found = [time(half // 2, 30 * (half % 2)) for half in draw(_HALF_HOURS)]
+    if draw(st.booleans()):
+        found[2] = found[1]
+    return (found[0], found[1]), (found[2], found[3])
+
+
+_DAY_MINUTES = st.integers(7 * 60, 23 * 60 + 58)
+_EVENTS = st.lists(
+    st.tuples(_DAY_MINUTES, st.one_of(_pory(), st.just("sprawdzenie"), st.just("restart"))), min_size=1, max_size=12
+)
+"""Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
+Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty."""
+
+
+@settings(
+    derandomize=True,
+    database=None,
+    deadline=None,
+    max_examples=40,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(events=_EVENTS)
+def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_tej_samej_pory(
+    tmp_path_factory: pytest.TempPathFactory, events: list[tuple[int, object]]
+) -> None:
+    """Decyzja W1 (#1568): przy dowolnych zmianach pór w ciągu dnia, sprawdzeniach i ponownych startach Centrum każde
+    przypomnienie idzie w porze obowiązującej w chwili jego sprawdzenia, a Wykonawca dostaje za dzień raportu najwyżej
+    jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia."""
+
+    mailbox = SentFolderMailbox()
+    centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    day = date(2026, 11, 10)
+    in_effect: tuple[tuple[time, time], tuple[time, time]] = ((time(8), time(17)), (time(18), time(22)))
+    named: list[tuple[str, str]] = []
+    moments: list[tuple[int, object]] = []
+    for minute, event in sorted(events, key=lambda found: found[0]):
+        moments += [(minute, event)] if event == "sprawdzenie" else [(minute, event), (minute + 1, "sprawdzenie")]
+    moments.sort(key=lambda found: found[0])
+    centrum.client.start()
+    try:
+        for minute, event in moments:
+            moment = datetime.combine(day, time(minute // 60, minute % 60))
+            if event == "restart":
+                centrum.restart()
+                centrum.client.start()
+            elif event == "sprawdzenie":
+                centrum.moment.append(moment)
+                before = len(mailbox.sends)
+                centrum.rhythm.tick()
+                pora = _named_pora(moment.time(), in_effect)
+                named += [(reminder.worker, pora) for reminder, _ in mailbox.sends[before:]]
+            else:
+                assert isinstance(event, tuple)
+                (morning_start, morning_end), (evening_start, evening_end) = in_effect = event
+                form = _reminders_form(
+                    morning={"start": f"{morning_start:%H:%M}", "end": f"{morning_end:%H:%M}"},
+                    evening={"start": f"{evening_start:%H:%M}", "end": f"{evening_end:%H:%M}"},
+                    footer="Pozdrawiam\nTata\n",
+                )
+                assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    finally:
+        centrum.client.stop()
+
+    assert "poza porą" not in {pora for _, pora in named}, named
+    assert len(named) == len(set(named)), f"dwa maile tej samej pory: {named}"
+
+
+def _named_pora(moment: time, pory: tuple[tuple[time, time], tuple[time, time]]) -> str:
+    """Nazwana pora chwili przy porach ``pory`` (od początku do końca, bez końca), wprost z ADR 0030."""
+
+    (morning_start, morning_end), (evening_start, evening_end) = pory
+    if morning_start <= moment < morning_end:
+        return "poranna"
+    return "wieczorna" if evening_start <= moment < evening_end else "poza porą"
 
 
 def test_podglad_przypomnienia_pokazuje_temat_tresc_i_stopke_z_formularza_bez_zapisu_i_bez_wysylki(tmp_path: Path) -> None:

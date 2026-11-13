@@ -5,7 +5,8 @@ Narzędzie dla Maksa, poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypom
 i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_reminders.due_reminders``): z folderu
 ``--config`` Przypomnienia o raporcie z Ustawień Centrum (``przypomnienia.yaml``: czy idą, dzień wdrożenia, pory,
 treść i stopka taty), Ustawienia taty (``centrum-ustawienia.yaml``: INTERMAX i folder okresów), plik dostępu do
-skrzynki raportów (``skrzynka-raportow.txt``) i Listę Wykonawców (``wykonawcy.yaml``), potem Pliki zbiorcze okresów, INTERMAX tylko do
+skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców (``wykonawcy.yaml``) i pory, przy których sprawdzała
+praca przypomnień (``przypomnienia-pory.json``: z nich pory „Wysłanych”), potem Pliki zbiorcze okresów, INTERMAX tylko do
 odczytu (także otwarty w Excelu), skrzynkę i jej „Wysłane” tylko do odczytu, i pyta rdzeń raportów, które
 przypomnienia należą się w tej chwili.
 
@@ -53,7 +54,7 @@ from typing import Final
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
-from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders
+from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.dad_files import DadFiles
@@ -85,7 +86,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
     snapshot = read_snapshot(config)
-    read = due_reminders(now, snapshot, inbox, DadFiles())
+    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES))
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"

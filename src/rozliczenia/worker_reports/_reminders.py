@@ -128,13 +128,60 @@ class SentReminder:
     sent_at: datetime
 
 
+CLOCK_MARGIN: Final = timedelta(minutes=2)
+"""Ile chwila z „Wysłanych” (zegar Gmaila) może odejść od zegara laptopa taty, przy którym praca przypomnień zapisała
+pory. Sprawdzenie z nowymi porami rusza najwcześniej minutę po końcu sprawdzenia, które wysyłało przy starych."""
+
+
+@dataclass(frozen=True)
+class ScheduleSince:
+    """Pory, które praca przypomnień wzięła pierwszy raz w sprawdzeniu z chwili ``since`` (ze strefą)."""
+
+    since: datetime
+    schedule: ReminderSchedule
+
+
+@dataclass(frozen=True)
+class SchedulesInEffect:
+    """Pory przypomnień, przy których praca przypomnień sprawdzała, od najstarszych: każde obowiązują od chwili swojego
+    pierwszego sprawdzenia do chwili następnych. Z nich nazwana pora przypomnienia z „Wysłanych”: ta, w której poszło
+    przy porach z chwili wysyłki, a nie przy bieżących (decyzja Maksa W1 w #1568). Bez wpisów pory się nie zmieniały,
+    więc obowiązują bieżące."""
+
+    changes: tuple[ScheduleSince, ...] = ()
+
+    def around(self, moment: datetime, current: ReminderSchedule) -> frozenset[ReminderSchedule]:
+        """Pory obowiązujące w chwili ``moment`` z zapasem ``CLOCK_MARGIN`` w obie strony; przed pierwszym wpisem
+        pierwsze, a bez wpisów ``current``. Przy zmianie pór blisko wysyłki mail zamyka nazwaną porę przy obu porach,
+        bo dwa maile tej samej pory są gorsze niż przypomnienie, które poczeka do następnej pory."""
+
+        if not self.changes:
+            return frozenset({current})
+        start, end = moment - CLOCK_MARGIN, moment + CLOCK_MARGIN
+        earlier = [change.schedule for change in self.changes if change.since <= start]
+        found = {earlier[-1] if earlier else self.changes[0].schedule}
+        return frozenset(found | {change.schedule for change in self.changes if start < change.since <= end})
+
+    def checked(self, moment: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
+        """Pory po sprawdzeniu z chwili ``moment`` przy porach ``schedule``: nowy wpis, gdy różnią się od ostatnich.
+        Zostają wpisy z ostatniej doby i ostatni sprzed niej, bo „Wysłane” liczą się tylko z bieżącego dnia."""
+
+        if self.changes and self.changes[-1].schedule == schedule:
+            return self
+        cutoff = moment - timedelta(days=1)
+        older = [change for change in self.changes if change.since < cutoff]
+        recent = [change for change in self.changes if change.since >= cutoff]
+        return SchedulesInEffect((*older[-1:], *recent, ScheduleSince(moment, schedule)))
+
+
 @dataclass(frozen=True)
 class ReminderInputs:
     """Wejście ``reminders_due``: chwila ze strefą taty, okno dni (od dnia wdrożenia przypomnień, bez okresów z Plikiem
     zbiorczym), uporządkowane zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z „Wysłanych”, adresy
     Wykonawców z Listy Wykonawców (także tych, którym przypomnienia nie idą: ich Raport wykonawcy dalej jest raportem),
-    loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami), i Ustawienia
-    przypomnień (pory, godzina pierwszego, treść i stopka)."""
+    loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami), Ustawienia
+    przypomnień (pory, godzina pierwszego, treść i stopka) i pory, przy których praca przypomnień sprawdzała
+    (``in_effect``; bez nich pory „Wysłanych” to bieżące)."""
 
     now: datetime
     window: Window
@@ -144,6 +191,7 @@ class ReminderInputs:
     addresses: WorkerAddresses
     reminded: frozenset[Login]
     settings: ReminderSettings
+    in_effect: SchedulesInEffect = SchedulesInEffect()
 
 
 @dataclass(frozen=True)
@@ -189,7 +237,8 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
 
     Przypomnienie za dzień X należy się Wykonawcy z listy adresów, któremu przypomnienia idą (``reminded``), który ma
     zlecenie dnia X, od godziny pierwszego przypomnienia dnia
-    X+1, w porze (``reminder_pora``), w której tego dnia nie poszło jeszcze przypomnienie za X do żadnego jego adresu,
+    X+1, w porze (``reminder_pora``), w której tego dnia nie poszło jeszcze przypomnienie za X do żadnego jego adresu
+    (porę wysłanego liczą pory z chwili wysyłki, ``SchedulesInEffect.around``),
     dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, także z literówką w roku, treść bez znaczenia) z któregokolwiek
     adresu z listy. Liczą się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z
     Plikiem zbiorczym. Każdy dzień ma osobne przypomnienie.
@@ -209,7 +258,8 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     reminded = {
         (worker, sent.day)
         for sent in inputs.sent
-        if (moment := sent.sent_at.astimezone(now.tzinfo)).date() == now.date() and reminder_pora(moment, schedule) is pora
+        if (moment := sent.sent_at.astimezone(now.tzinfo)).date() == now.date()
+        and pora in {reminder_pora(moment, found) for found in inputs.in_effect.around(moment, schedule)}
         for recipient in sent.recipients
         if (worker := logins.get(recipient)) is not None
     }
