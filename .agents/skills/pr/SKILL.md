@@ -81,7 +81,7 @@ Dowód: <polecenie i wynik>
 - `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
   Rung (e) needs this PR to add a point with an example PR (`#N`) to „Co jest porażką” in the skill `przeglad`.
 - `Dowód:` is a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
-- A root larger than `size:M` (the label from `tools/ci/rozmiar_pr.py`) goes in its own root PR, merged first: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
+- A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
