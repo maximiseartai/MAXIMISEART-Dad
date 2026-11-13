@@ -14,9 +14,12 @@ Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` al
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API,
 a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``, ``&&`` albo ``||``, w grupie ``( … )`` albo ``{ …; }``.
 ``&`` w grupie za pętlą (``done | (cat & wait)``) puszcza w tło tylko tę grupę.
-Ponowienie runu GitHub Actions (``gh run rerun`` i ``gh api`` z adresem ``/rerun`` w tym samym poleceniu prostym)
-odrzuca zawsze, także w tle, bo o ponowieniu decyduje ``tools/ponow_ci.py``: czeka na koniec runu, odróżnia awarię
-runnera od defektu i przy wspólnej awarii ponawia tylko kanarka.
+Ponowienie runu GitHub Actions odrzuca zawsze, także w tle, bo o ponowieniu decyduje ``tools/ponow_ci.py``: czeka
+na koniec runu, odróżnia awarię runnera od defektu i przy wspólnej awarii ponawia tylko kanarka. Hook czyta każde
+polecenie proste słowami ``shlex``: za słowem ``gh`` albo ``gh-axi`` w dowolnym miejscu (za ``env``, ``xargs``,
+``command``, ale też w ``echo gh run rerun``, bo hook nie wylicza programów, które uruchamiają ``gh``)
+słowa pozycyjne ``run rerun`` z dowolnymi opcjami przed i między nimi (``-R``/``--repo`` z wartością w osobnym słowie)
+albo ``api`` z adresem ponowienia Actions (``ADRES_PONOWIENIA``).
 Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (kod 0).
 Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zatrzymać pracy.
 
@@ -27,7 +30,9 @@ hook pomija, bo to nie są polecenia powłoki; zostawia z nich ``$(…)`` i cia�
 
 Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku, w Pythonie
 (``time.sleep``) albo z adresem ``gh api`` w cudzysłowie, czekanie na plik wyjścia zadania w tle i pętle, których
-wzorca hook nie zna, łapie tylko przegląd.
+wzorca hook nie zna, łapie tylko przegląd. Tak samo ponowienie z ``eval "…"``, z polecenia złożonego ze zmiennych
+(``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
+skrypt albo program inny niż ``gh``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
 """
@@ -39,6 +44,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
 import re
+import shlex
 import sys
 from typing import Optional
 
@@ -51,9 +57,12 @@ CI_ADDRESS = re.compile(r"check-runs|actions/runs|/status\b")
 CHECKS = re.compile(_GH + r"pr\s+checks\b")
 WATCH_OPTION = re.compile(r"--watch\b")
 RUN_WATCH = re.compile(_GH + r"run\s+watch\b")
-# ``gh -R właściciel/repo run rerun`` też: opcje ``gh`` stoją przed poleceniem.
-RUN_RERUN = re.compile(_GH + r"(?:-{1,2}[\w-]+(?:[=\s][^\s-]\S*)?\s+)*run\s+rerun\b")
-RERUN_ADDRESS = re.compile(r"/rerun\b|/rerun-failed-jobs\b")
+GH_NAMES = frozenset({"gh", "gh-axi"})
+GH_VALUE_OPTIONS = frozenset({"-R", "--repo"})
+# Ponowienie runu, jego próby albo zadania w REST API Actions, z zapytaniem albo bez.
+ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/rerun(?:-failed-jobs)?|jobs/[^/\s]+/rerun)(?:\?\S*)?")
+# Polecenia proste po ``_code``: między nimi stoją ``;``, ``&``, ``|``, nowa linia, nawiasy, ``$(`` i backtick.
+SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
@@ -355,12 +364,43 @@ def _first_from(positions: list[int], start: int, default: int) -> int:
     return positions[index] if index < len(positions) else default
 
 
+def _words(command: str) -> list[str]:
+    try:
+        return shlex.split(command)
+    except ValueError:  # cudzysłów przecięty granicą polecenia prostego (``"$r $(gh …)"``)
+        return command.split()
+
+
+def _reruns(shell: str) -> bool:
+    """Czy któreś polecenie proste ponawia run GitHub Actions przez ``gh`` (``gh run rerun`` albo ``gh api`` z adresem
+    ponowienia); słowa za każdym ``gh`` czyta do następnego ``gh``, więc czas zostaje liniowy."""
+
+    for command in SIMPLE_COMMANDS.split(shell.replace("\\\n", " ")):
+        calls: list[list[str]] = []
+        value = False
+        for word in _words(command):
+            if word.rsplit("/", 1)[-1] in GH_NAMES:
+                calls.append([])
+            elif value:
+                value = False
+            elif word in GH_VALUE_OPTIONS:
+                value = True
+            elif calls and not word.startswith("-"):
+                calls[-1].append(word)
+        for positional in calls:
+            if positional[:1] == ["api"] and any(ADRES_PONOWIENIA.search(argument) for argument in positional[1:]):
+                return True
+            if any(positional[index : index + 2] == ["run", "rerun"] for index in range(len(positional))):
+                return True
+    return False
+
+
 def judge(command: str, in_background: bool) -> Optional[Refusal]:
     try:
         shell, _ = _code(_without_heredocs(command))
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
         return None
-    if RUN_RERUN.search(shell) or _in_one_command(shell, GH_API, RERUN_ADDRESS).starts:
+    if _reruns(shell):
         return RERUN
     if in_background:
         return None

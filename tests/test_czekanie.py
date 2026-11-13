@@ -143,10 +143,16 @@ RERUNS = (
     "gh run rerun 43035692960 --failed && echo rerun ok",
     "for r in 43033018567 43035363425 43037317259 43037329237 43037646710 43039417461 43039705347 43042271974 43044422686 "
     '43046293903 43050742878 43050791629 43052656424; do gh run rerun $r --failed && echo "rerun $r"; done',
-    # Ta sama decyzja inną drogą: opcja ``gh`` przed poleceniem i adres ponowienia w ``gh api``.
+    # Ta sama decyzja inną drogą: opcje ``gh`` przed poleceniem i między ``run`` a ``rerun`` oraz adres ponowienia
+    # w ``gh api`` (sondy przeglądu #1459).
     "gh -R maximiseartai/MAXIMISEART-Dad run rerun 42003129295 --job 127163220031",
+    "gh run -R maximiseartai/MAXIMISEART-Dad rerun 43035692960",
+    "gh run --repo=maximiseartai/MAXIMISEART-Dad --debug rerun 43035692960",
+    "gh 'run' \"rerun\" 43035692960",
     "gh api -X POST repos/maximiseartai/MAXIMISEART-Dad/actions/runs/43035189944/rerun-failed-jobs",
     "gh api --method POST repos/{owner}/{repo}/actions/jobs/130564767610/rerun",
+    "gh api -X POST repos/o/r/actions/runs/1/attempts/1/rerun",
+    'gh api -X POST "repos/o/r/actions/runs/$RUN/rerun-failed-jobs"',
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -212,6 +218,10 @@ PASSING = (
     'git commit -q -m "docs(agents): nie pisz gh run rerun, tylko tools/ponow_ci.py"',
     'rg -n "gh run rerun" docs/agents/pr-i-ci.md',
     "gh api repos/maximiseartai/MAXIMISEART-Dad/actions/runs/43035189944 --jq .run_attempt",
+    "gh api repos/o/r/actions/runs/1 --jq .rerun_url",
+    # Ścieżka ze słowem rerun, która nie jest adresem ponowienia Actions.
+    "gh api repos/maximiseartai/MAXIMISEART-Dad/contents/tools/rerun.py",
+    "gh api repos/maximiseartai/MAXIMISEART-Dad/branches/tools/rerun-ci",
     # Próbnik procesów puszczony ``&`` obok pomiaru i ubity ``kill``.
     "(while true; do echo \"$(date +%T) $(pgrep -fl 'serve_centrum|chrome-headless|pytest' | cut -c1-100 | "
     "tr '\\n' ' ')\"; sleep 5; done) > /tmp/wyd165-watch1.log 2>&1 & W=$!; .venv/bin/python "
