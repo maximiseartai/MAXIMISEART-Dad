@@ -9,8 +9,8 @@
 //    wywraca regułę. Granica: destrukturyzację (`const { parse } = JSON`), `JSON["parse"]`, `Reflect.get`,
 //    `Response.json()` i to, czy plik z NETWORK_FILES parsuje odpowiedź schematem, łapie tylko przegląd.
 // 4. Przeglądarka woła przez `call` (src/api/client.ts) dokładnie operacje pomiaru widoku (`ApiTiming.operation`
-//    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał pierwszego argumentu `call`; metodę, adres
-//    i schemat odpowiedzi `call` bierze z wygenerowanej tablicy operacji. Granica: `call` pod inną nazwą (alias
+//    kontraktu): każdą z nich poza OPERATIONS_OUTSIDE_UI i żadnej innej, a nazwa operacji to literał pierwszego
+//    argumentu `call`; metodę, adres i schemat odpowiedzi `call` bierze z wygenerowanej tablicy operacji. Granica: `call` pod inną nazwą (alias
 //    importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
@@ -28,10 +28,29 @@ const SCHEMAS_OUTSIDE_UI = new Map([
   ["ValidationError", "domyślny błąd walidacji FastAPI, część HTTPValidationError"],
 ])
 
+// Wyjątek z terminem: rdzeń Ustawień Centrum (#1467 P1) daje kontrakt Historii, którego okno Ustawień użyje dopiero
+// w P2 (#1467); wpis pada jako zbędny, gdy P2 go użyje. Zgoda: koordynator programu #1463 (pełne auto), 13.11.2026.
+const UNTIL_SETTINGS_WINDOW = "kontrakt rdzenia Ustawień (#1467 P1), którego okno Ustawień użyje w P2 (#1467)"
+
 // Pola kontraktu, których UI nie pokazuje; każde z uzasadnieniem. Pole użyte w src trzeba stąd usunąć.
 const FIELDS_OUTSIDE_UI = new Map([
   ["Health.service", "czyta je launcher Centrum (launcher.py), nie przeglądarka"],
   ["RunEvent.sequence", "numer zdarzenia strumienia SSE, nie treść dla taty"],
+  ["HistoryRow.undoes", UNTIL_SETTINGS_WINDOW],
+  ["HistoryRow.changes", UNTIL_SETTINGS_WINDOW],
+  ["HistoryRow.secret", UNTIL_SETTINGS_WINDOW],
+  ["HistoryRow.undoable", UNTIL_SETTINGS_WINDOW],
+  ["HistoryRow.removed", UNTIL_SETTINGS_WINDOW],
+  ["Settings.folders_problem", UNTIL_SETTINGS_WINDOW],
+  ["SettingsHistory.skipped", UNTIL_SETTINGS_WINDOW],
+])
+
+// Operacje pomiaru widoku (ApiTiming.operation), których przeglądarka jeszcze nie woła; każda z uzasadnieniem.
+// Operację wołaną przez `call` trzeba stąd usunąć.
+const OPERATIONS_OUTSIDE_UI = new Map([
+  ["changeFolders", UNTIL_SETTINGS_WINDOW],
+  ["getSettingsHistory", UNTIL_SETTINGS_WINDOW],
+  ["undoSettingsChange", UNTIL_SETTINGS_WINDOW],
 ])
 
 // Pliki, które wolno rozgałęziać po nazwie procesu; każdy z uzasadnieniem.
@@ -286,6 +305,8 @@ const timed = timedOperations(contract)
 
 const called = new Set(operationCalls.map(({ operation }) => operation))
 
+const staleOperationExceptions = [...OPERATIONS_OUTSIDE_UI.keys()].filter((operation) => called.has(operation))
+
 const problems = [
   ...unused.map((key) => `Pole kontraktu ${key} nie jest użyte w src: pokaż je w UI albo usuń z kontraktu.`),
   ...staleExceptions.map((key) => `Wyjątek ${key} jest zbędny: pole jest już użyte w src.`),
@@ -298,7 +319,12 @@ const problems = [
   ...network.map(({ place, kind }) => `Sieć albo JSON.parse poza NETWORK_FILES: ${place}. ${REPAIRS[kind]}`),
   ...staleNetworkFiles.map((key) => `Wyjątek ${key} w NETWORK_FILES jest zbędny: plik nie łączy się z serwerem.`),
   ...[...timed].flatMap((operation) =>
-    called.has(operation) ? [] : [`Operacji ${operation} z ApiTiming.operation przeglądarka nie woła przez \`call\`.`],
+    called.has(operation) || OPERATIONS_OUTSIDE_UI.has(operation)
+      ? []
+      : [`Operacji ${operation} z ApiTiming.operation przeglądarka nie woła przez \`call\`.`],
+  ),
+  ...staleOperationExceptions.map(
+    (operation) => `Wyjątek ${operation} w OPERATIONS_OUTSIDE_UI jest zbędny: przeglądarka woła tę operację.`,
   ),
   ...operationCalls.flatMap(({ place, operation }) =>
     operation !== null && !timed.has(operation)
