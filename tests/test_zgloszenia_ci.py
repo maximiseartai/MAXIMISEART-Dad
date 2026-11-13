@@ -2,7 +2,7 @@
 oraz ``tools/ponow_ci.py``, który z tych issue i logów padniętych zadań decyduje o ponowieniu runu CI.
 
 Historia `main` to prawdziwy Git z PR-ami scalonymi merge'em, a GitHub to zapisane odpowiedzi API w kształcie
-odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–11.11.
+odpowiedzi z runów 26.10; linie logów ponowień pochodzą z runów CI z 5–13.11.
 """
 
 from __future__ import annotations
@@ -756,6 +756,25 @@ CYTAT_503 = (
     "2026-11-07T16:56:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
 )
 
+# Run 43439867902 (13.11): plan części nie przyszedł przez download-artifact, więc pytest nie wystartował, a zapis czasów
+# padł po nim na brak jego plików; wysłanie czasów przez upload-artifact padło tak samo.
+POBRANIE_ARTEFAKTU = (
+    "2026-11-13T14:09:34.8229570Z ##[error]Unable to download artifact(s): Failed to GetSignedArtifactURL: Unable to make request: ETIMEDOUT\n"
+    "If you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints\n"
+    "2026-11-13T14:09:38.1673222Z CZASY CI FAIL | junit.xml: FileNotFoundError(2, 'No such file or directory')\n"
+    "2026-11-13T14:09:38.3137312Z ##[error]Process completed with exit code 1.\n"
+)
+WYSLANIE_ARTEFAKTU = "2026-11-13T14:10:08.0078114Z ##[error]Failed to FinalizeArtifact: Unable to make request: ETIMEDOUT\n"
+# Wzór komunikatów @actions/artifact w upload-artifact@cf430e0 i download-artifact@9000827, przypiętych w ci.yml.
+ARTEFAKT_HTTP_503 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Failed to make request after 5 attempts: Failed request: (503) Service Unavailable\n"
+ARTEFAKT_HTTP_403 = "2026-11-13T14:10:08Z ##[error]Failed to CreateArtifact: Received non-retryable error: Failed request: (403) Forbidden\n"
+BRAK_ARTEFAKTU = "2026-11-13T14:09:34Z ##[error]Unable to download artifact(s): Artifact not found for name: plan\n"
+CYTAT_ARTEFAKTU = (
+    "2026-11-13T14:09:40Z Failed to FinalizeArtifact: Unable to make request: ETIMEDOUT\n"
+    "2026-11-13T14:09:41Z FAIL skill:verify-github-skrzynki/ci (12 s): kod wyjścia 1\n"
+    "2026-11-13T14:09:41Z WYKONANIE FAIL | skill:verify-github-skrzynki/ci\n"
+)
+
 
 class Ponowienia:
     """``ponow_ci.Akcje``, które zapisują ponowienia zamiast pisać na GitHubie."""
@@ -851,8 +870,18 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
         ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy,workflowy", False),
+        ({"pytest (Python 3.13, 1/20)": POBRANIE_ARTEFAKTU}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": WYSLANIE_ARTEFAKTU}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_503}, (), "awaria: usługa artefaktów GitHuba", True),
+        ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_403}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
+        ({"pytest (Python 3.13, 1/20)": BRAK_ARTEFAKTU}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
+        ({"Mutation checks (1/1)": CYTAT_ARTEFAKTU}, (), "defekt: Mutation checks (1/1) |", False),
     ],
-    ids=["dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "awaria-obok-testu", "mutacje", "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy"],
+    ids=[
+        "dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "awaria-obok-testu", "mutacje",
+        "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy", "pobranie-artefaktu-etimedout", "wyslanie-artefaktu-etimedout",
+        "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
+    ],
 )
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
     logi: dict[str, str], flaky: tuple[str, ...], linia: str, ponowiony: bool

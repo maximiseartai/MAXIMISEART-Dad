@@ -7,7 +7,7 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
    już po pierwszym padniętym zadaniu. Linia ``PONÓW CZEKA`` mówi, ile zadań biegnie.
 2. Każde padnięte zadanie ostatniej próby runu (``Required CI status`` tylko, gdy padł sam) narzędzie klasyfikuje
    po jego logu. Awaria to log z sygnaturą z ``SYGNATURY`` i bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
-   z porażek runów CI z 2–12.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
+   z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
    to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
    Każda inna porażka, także nieznana, to defekt.
@@ -85,6 +85,13 @@ SYGNATURY = (
     Sygnatura("instalacja przeglądarek", re.compile(_LINE + r"Failed to install browsers"), "41959078147 (5.11, apt)"),
     Sygnatura("pobranie narzędzia TLC", re.compile(_LINE + re.escape(narzedzia_tlc.CHWILOWA_AWARIA)), "42571178441 (9.11, HTTP 504)"),
     Sygnatura("HTTP 5xx serwera", re.compile(_LINE + r"urllib\.error\.HTTPError: HTTP Error 5\d\d"), "42000370217 (5.11, HTTP 504)"),
+    # Komunikat actions/download-artifact i upload-artifact (@actions/artifact): przyczyną chwilową jest tylko błąd sieci
+    # i ponowienia wyczerpane na HTTP 5xx albo 429; brak artefaktu i inne HTTP 4xx są defektem.
+    Sygnatura(
+        "usługa artefaktów GitHuba",
+        re.compile(_LINE + r"##\[error\](?:Unable to download artifact\(s\): )?Failed to \w*Artifact\w*: (?:Unable to make request|Failed to make request after \d+ attempts): "),
+        "43439867902 (13.11, ETIMEDOUT)",
+    ),
 )
 
 # Początek nazwy zadania w ci.yml i zadanie ``tools/ci_lokalnie.py --tylko``, które je odtwarza.
