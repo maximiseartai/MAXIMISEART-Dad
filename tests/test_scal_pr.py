@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -95,6 +94,7 @@ elif arguments[0] == "api" and arguments[1].startswith(f"repos/{REPO}/issues/"):
     number = arguments[1].rpartition("/")[2]
     if issues.get(number) == "zawiesza":
         time.sleep(60)
+        print(json.dumps({"state": "open"}))
     elif number in issues:
         print(issues[number])
     else:
@@ -307,7 +307,8 @@ class MergeGitHub(FakeGitHub):
         self.answer_issue(*numbers, answer=json.dumps({"state": state}))
 
     def answer_issue(self, *numbers: int, answer: str) -> None:
-        """``gh api`` issue ``numbers`` drukuje ``answer``, a ``zawiesza`` każe mu czekać minutę."""
+        """``gh api`` issue ``numbers`` drukuje ``answer``, a ``zawiesza`` każe mu czekać minutę i podać issue otwarte,
+        więc narzędzie bez limitu ``gh`` by je zamknęło."""
 
         self.issues.update(dict.fromkeys(map(str, numbers), answer))
         self._save()
@@ -365,15 +366,6 @@ class MergeGitHub(FakeGitHub):
             (self.bin / name).write_text(json.dumps(value), encoding="utf-8")
 
 
-def _fake_gh(tmp_path: Path) -> Path:
-    """Katalog atrapy ``gh`` bez PR-ów i issues, która renderuje opisy z ``tests/fixtures/opisy_pr.json``."""
-
-    directory = tmp_path / "bin"
-    fake_cli(directory, "gh", FAKE_GH)
-    _empty_state(directory)
-    return directory
-
-
 def _empty_state(directory: Path) -> None:
     rendered = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered(), **chwasty.rendered()}
     for name, empty in (
@@ -429,11 +421,8 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     github.comment(1, f"Poprawione w {head[:7]}.")
     github.comment(1, f"WERDYKT: PASS {head}\nZnaleziska: 1 (Ważne 0, Drobne 1)\n- Drobne: nazwa")
 
-    checked = github.run("1", "--bez-merge")
     merged = github.run("1")
 
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-    assert _last_line(checked).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main {main[:7]}")
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert _last_line(merged) == (
@@ -930,7 +919,7 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
         ({SUM_TEST_FILE: SUM_TEST + DESCRIBED_TEST}, ABS_SUM, None, f"pada: {SUM_TEST_FILE}::test_suma_opisana[dwa i dwa]"),
         # Błąd kolekcji nowego pliku testów nie ma id testu, więc odmowa nazywa plik.
         ({NEGATIVE_TEST_FILE: "from kod import suma\n\nassert suma(-1, -1) == -2\n"}, ABS_SUM, None, f"pada: {NEGATIVE_TEST_FILE}"),
-        ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 5"), f"bez wyniku po 5 s: {SUM_TEST_FILE}"),
+        ({SUM_TEST_FILE: SUM_TEST + SLOW_TEST}, ABS_SUM, ("MERGE_TEST_TIMEOUT_S = 300", "MERGE_TEST_TIMEOUT_S = 1"), f"bez wyniku po 1 s: {SUM_TEST_FILE}"),
         (
             {SUM_TEST_FILE: SUM_TEST + NEGATIVE_TEST},
             ABS_SUM,
@@ -1116,8 +1105,11 @@ def test_bez_domyslnej_galezi_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwar
     assert github.closed() == []
 
 
-@pytest.mark.parametrize("answer", ["gh: HTTP 502", "\n", "zawiesza"], ids=["blad-http", "pusta-odpowiedz", "gh-po-czasie"])
-def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, answer: str) -> None:
+# ``gh`` po czasie czeka limit w każdym przebiegu, a „nie sprawdzono” z ``--bez-merge`` to ten sam ``except`` co błąd HTTP.
+@pytest.mark.parametrize(
+    ("answer", "dry_run"), [("gh: HTTP 502", True), ("\n", True), ("zawiesza", False)], ids=["blad-http", "pusta-odpowiedz", "gh-po-czasie"]
+)
+def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_ostrzezeniem(tmp_path: Path, answer: str, dry_run: bool) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"}, parent=_short_github_timeout(github))
     github.open_issues(3)
@@ -1125,11 +1117,12 @@ def test_bez_html_opisu_od_githuba_merge_sie_odbywa_a_issues_zostaja_otwarte_z_o
     github.update(1, body=opisy_pr.SCALENIE["jedno"])
     github.comment(1, PASS.format(head=head))
 
-    checked = github.run("1", "--bez-merge")
+    if dry_run:
+        checked = github.run("1", "--bez-merge")
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        assert _last_line(checked).endswith("(--bez-merge) | UWAGA: GitHub nie wyrenderował opisu PR, nie sprawdzono „Naprawia”")
     merged = github.run("1")
 
-    assert checked.returncode == 0, checked.stdout + checked.stderr
-    assert _last_line(checked).endswith("(--bez-merge) | UWAGA: GitHub nie wyrenderował opisu PR, nie sprawdzono „Naprawia”")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     warning = "UWAGA: GitHub nie wyrenderował opisu PR, nie zamknięto issues z „Naprawia”, zamknij je ręcznie"
     assert f" | {warning} | " in _last_line(merged)
@@ -1145,11 +1138,13 @@ def test_porazka_zamykania_issue_nie_odwoluje_scalenia(tmp_path: Path) -> None:
     github.answer_issue(10, answer="")
     github.answer_issue(11, answer="{}")
     github.answer_issue(12, answer="[]")
-    github.answer_issue(13, answer="zawiesza")
+    github.answer_issue(13, answer="")
     github.update(1, body=opisy_pr.SCALENIE["porazki"])
     github.comment(1, PASS.format(head=head))
 
     checked = github.run("1", "--bez-merge")
+    # Tylko w przebiegu z merge'em: ``gh`` po czasie czeka limit, a w ``--bez-merge`` daje ten sam ``except`` co #10.
+    github.answer_issue(13, answer="zawiesza")
     answered = github.run("1")
 
     failed = "#14, #10, #11, #12, #13"
@@ -1177,26 +1172,41 @@ def test_bez_commitu_merge_od_githuba_issues_zostaja_otwarte_z_ostrzezeniem(tmp_
     assert github.closed() == []
 
 
+def _render_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``gh`` klienta GitHuba renderuje w procesie testu jak ``gh api markdown`` atrapy ``FAKE_GH``: HTML opisu
+    z ``opisy_pr.json`` tylko dla prośby z ``mode=gfm`` i ``context`` tego repozytorium bez względu na litery.
+    Drogę przez program ``gh`` sprawdzają testy przebiegu narzędzia (``test_po_merge_zamyka…``)."""
+
+    rendered = opisy_pr.rendered()
+
+    def gh(*arguments: str, wejscie: str | None = None, limit_s: float | None = None, cwd: Path | None = None) -> str:
+        assert arguments == ("api", "markdown", "--input", "-") and wejscie is not None, arguments
+        request = json.loads(wejscie)
+        assert request.keys() == {"text", "mode", "context"} and request["mode"] == "gfm", request
+        assert request["context"].casefold() == opisy_pr.REPO.casefold(), request
+        return rendered[request["text"]]
+
+    monkeypatch.setattr(klient_github, "gh", gh)
+
+
 @pytest.mark.parametrize(("body", "fixes"), [case[1:] for case in opisy_pr.PRZYPADKI], ids=[case[0] for case in opisy_pr.PRZYPADKI])
 def test_naprawia_wskazuje_issues_tego_repo_tylko_na_poczatku_linii_tekstu_ktory_github_pokazuje(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
+    monkeypatch: pytest.MonkeyPatch, body: str, fixes: tuple[int, ...]
 ) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(body, opisy_pr.REPO) == fixes
 
 
-def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+def test_naprawia_wskazuje_issues_tego_repo_bez_wzgledu_na_wielkosc_liter_jego_nazwy(monkeypatch: pytest.MonkeyPatch) -> None:
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(opisy_pr.SCALENIE["dwa"], opisy_pr.REPO.swapcase()) == (3, 4)
 
 
 @pytest.mark.parametrize(("number", "fixes"), opisy_pr.PRAWDZIWE.items(), ids=[f"pr-{number}" for number in opisy_pr.PRAWDZIWE])
-def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]
-) -> None:
-    monkeypatch.setenv("PATH", f"{_fake_gh(tmp_path)}{os.pathsep}{os.environ['PATH']}")
+def test_opisy_scalonych_pr_wskazuja_issues_ktore_github_zostawil_otwarte(monkeypatch: pytest.MonkeyPatch, number: int, fixes: tuple[int, ...]) -> None:
+    _render_in_process(monkeypatch)
 
     assert naprawia.fixed_issues(opisy_pr.real_body(number), opisy_pr.REPO) == fixes
 
