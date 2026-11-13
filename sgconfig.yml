@@ -1,0 +1,4 @@
+# Reguły ast-grep repozytorium (ADR 0034, szczebel (d)). Zgłaszają tylko linie dodane przez zmianę: uruchamia je
+# tests/test_zapadki.py, w tools/szybko.py i w zadaniu CI „Ruff, mypy”, a gołe `ast-grep scan` widzi też stare linie.
+ruleDirs:
+  - reguly-ast-grep

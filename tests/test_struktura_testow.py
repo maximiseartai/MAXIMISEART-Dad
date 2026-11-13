@@ -789,6 +789,8 @@ def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
 
     Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
     ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
+    Reguły ast-grep biegną bez tego dowodu, bo dzisiejsze ``src/`` ma jeszcze komentarze, których zakaz dotyczy tylko
+    nowych linii (ADR 0034).
     """
 
     empty_tree = subprocess.run(
@@ -797,7 +799,10 @@ def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
     environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
 
     answered = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"],
+        [
+            *(sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"),
+            *("--deselect", "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src"),
+        ],
         cwd=TESTS.parent,
         env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
         capture_output=True,

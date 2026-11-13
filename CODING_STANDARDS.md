@@ -130,6 +130,10 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - A docstring, `--help`, ADR, `SKILL.md` or document states what the code does now, and only what a check or a run shows: a number names the run or the command it came from.
 - A change that makes a sentence of `AGENTS.md`, this file, `GLOSSARY.md`, a skill or an ADR untrue fixes that sentence in the same change.
 
+| Rule | Guard |
+|---|---|
+| A line a change adds in `src/` carries no `#` comment except a ruff or mypy suppression (`noqa`, `type: ignore`, `ruff: noqa`, `mypy:` options) with its reason after it, and a docstring with an added line names no PR, issue or commit. | ast-grep rules in `reguly-ast-grep/` (`sgconfig.yml`), run by `tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src` in `tools/szybko.py` and in the CI job „Ruff, mypy” (known gaps: `ZNANE_LUKI` in the same file, run by `test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff`) |
+
 ## Review Context
 
 - Treat ADR 0001 as the constraint that Python remains the single source of settlement rules, with no VBA adapter (ADR 0011).

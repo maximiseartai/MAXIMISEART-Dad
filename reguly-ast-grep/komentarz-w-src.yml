@@ -1,0 +1,15 @@
+id: komentarz-w-src
+language: python
+severity: error
+message: >-
+  komentarz # w src: powód i ostrzeżenie z komentarza wyraź lepszą nazwą albo testem, który pada bez tego kodu, a
+  historię zmiany zostaw w PR albo issue; w src zostają tylko tłumienia ruff i mypy (noqa, type: ignore, ruff: noqa,
+  mypy: z opcjami), a powód tłumienia dopisz na jego linii (ADR 0034, „Komentarze w src”)
+files:
+  - src/**
+rule:
+  kind: comment
+  # Tłumienie zaczyna komentarz, a powód stoi za nim. Prozę zamiast kodów ruff odrzuca (PGH004, RUF100), a mypy prozę po
+  # type: ignore, więc tu tylko mypy: ma postać opcji (nazwa, =wartość, przecinek albo koniec komentarza).
+  not:
+    regex: '^#\s*(?:(?i:noqa)\b|type:\s*ignore\b|ruff:\s*noqa\b|mypy:\s*[\w-]+(?:\s*=\s*\S+)?\s*(?:,|$))'

@@ -290,7 +290,9 @@ def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> Non
 
     checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
 
-    assert checks == [(check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py")]
+    assert checks == [
+        (check, INDEPENDENT) for check in ("ruff", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "pytest")
+    ]
 
 
 def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:

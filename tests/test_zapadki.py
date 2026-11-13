@@ -1,13 +1,13 @@
 """Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę.
 
-W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę z
-bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``. Formę, która ma jeszcze
+W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę poza
+regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``. Formę, która ma jeszcze
 stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
 Płytki checkout bez bazy (zadania pytest w CI) nie ma czego porównać, więc zapadka się pomija; pilnuje jej
-``tools/szybko.py`` przed pushem. Moduł importuje tylko bibliotekę standardową i pytest, bo pomiar zapadek uruchamia go
+``tools/szybko.py`` przed pushem, a reguły ast-grep także zadanie CI „Ruff, mypy” z bazą ``HEAD^1``. Moduł importuje tylko bibliotekę standardową i pytest, bo pomiar zapadek uruchamia go
 też w kopii starego commitu.
 """
 
@@ -15,11 +15,14 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import importlib.util
+import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
+import shutil
 import subprocess
-from typing import Final
+import sysconfig
+from typing import Final, NamedTuple
 
 import pytest
 
@@ -127,12 +130,13 @@ def _base() -> str | None:
         return None
 
 
-def _added_lines(root: Path, base: str, folder: str) -> Iterator[tuple[str, int, str]]:
-    """Linie ``*.py`` w ``folder`` repozytorium ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii i treść."""
+def _added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
+    """Linie plików ``pattern`` w ``folder`` repozytorium ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
+    i treść."""
 
     path = None
     number = 0
-    for line in _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", base, "--", f"{folder}/*.py").splitlines():
+    for line in _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", base, "--", f"{folder}/{pattern}").splitlines():
         if line.startswith("+++ "):
             path = line.removeprefix("+++ b/") if line != "+++ /dev/null" else None
         elif hunk := _HUNK.match(line):
@@ -140,7 +144,7 @@ def _added_lines(root: Path, base: str, folder: str) -> Iterator[tuple[str, int,
         elif line.startswith("+") and path is not None:
             yield path, number, line[1:]
             number += 1
-    for path in _git(root, "ls-files", "--others", "--exclude-standard", "--", f"{folder}/*.py").splitlines():
+    for path in _git(root, "ls-files", "--others", "--exclude-standard", "--", f"{folder}/{pattern}").splitlines():
         for number, line in enumerate((root / path).read_text(encoding="utf-8").splitlines(), start=1):
             yield path, number, line
 
@@ -727,11 +731,188 @@ def _empty_base(root: Path) -> str:
     return _git(root, "rev-parse", "HEAD").strip()
 
 
+AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
+AST_GREP_CONFIG = ROOT / "sgconfig.yml"
+_COMMENT, _HISTORY, _BLANKET = "komentarz-w-src", "historia-w-docstringu", "no-suppress-all"
+_BLANKET_HELPER = (
+    "dyrektywa ast-grep-ignore wyłącza reguły ast-grep w src: usuń ją i popraw kod według komunikatu reguły, którą"
+    " wyłączała (ADR 0034, „Komentarze w src”)"
+)
+needs_ast_grep = pytest.mark.skipif(
+    AST_GREP is None,
+    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
+    " w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
+)
+
+
+class SyntaxFinding(NamedTuple):
+    path: str
+    line: int
+    rule: str
+    message: str
+
+
+def syntax_rules(root: Path, base: str) -> list[SyntaxFinding]:
+    """Zgłoszenia reguł ast-grep z ``sgconfig.yml`` (katalog ``reguly-ast-grep/``), których węzeł obejmuje linię
+    ``src/``, dodaną w repozytorium ``root`` od ``base``; linia zgłoszenia to pierwsza dodana linia węzła.
+
+    ast-grep dostaje jawnie każdy plik ``src/**/*.py`` i ``src/**/*.pyi`` z dodaną linią, więc widzi też plik ukryty
+    i plik śledzony mimo ``.gitignore``. Węzeł to komentarz albo cały docstring, więc dodana linia w starym docstringu
+    z historią zgłasza ten docstring. Dyrektywę ``ast-grep-ignore`` bez nazw reguł zgłasza wbudowana reguła
+    ``no-suppress-all``, a dyrektywę na własnej linii reguła komentarzy. Postacie, których nie łapie ani reguła, ani
+    ruff, są próbkami ``ZNANE_LUKI`` tego pliku. Dzisiejsze ``src/`` ma jeszcze komentarze, więc tej zapadki nie
+    uruchamia ``test_zapadki_nie_zglaszaja_zadnej_linii_testow``.
+    """
+
+    added: dict[str, set[int]] = {}
+    for pattern in ("*.py", "*.pyi"):
+        for path, number, _ in _added_lines(root, base, "src", pattern):
+            added.setdefault(path, set()).add(number)
+    if not added:
+        return []
+    assert AST_GREP is not None, "brak ast-grep z dodatku dev: uruchom python3 tools/setup_worktree.py"
+    scan = subprocess.run(
+        [AST_GREP, "scan", "--config", str(AST_GREP_CONFIG), "--json=stream", "--color=never", f"--error={_BLANKET}", *sorted(added)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if scan.returncode not in (0, 1) or bool(scan.stdout) != (scan.returncode == 1):
+        raise AssertionError(f"ast-grep scan zakończył się kodem {scan.returncode}:\n{scan.stderr}")
+    found = []
+    for match in map(json.loads, scan.stdout.splitlines()):
+        path = PurePath(match["file"]).as_posix()
+        lines = range(match["range"]["start"]["line"] + 1, match["range"]["end"]["line"] + 2)
+        if new := sorted(added.get(path, set()).intersection(lines)):
+            message = _BLANKET_HELPER if match["ruleId"] == _BLANKET else match["message"]
+            found.append(SyntaxFinding(path, new[0], match["ruleId"], message))
+    return sorted(found)
+
+
+def syntax_rule_findings(root: Path, base: str) -> list[str]:
+    return [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in syntax_rules(root, base)]
+
+
+def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert syntax_rule_findings(ROOT, base) == []
+
+
+def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
+    base = _empty_base(root)
+    (root / "src" / "rozliczenia").mkdir(parents=True)
+    (root / "src" / "rozliczenia" / name).write_text(text, encoding="utf-8")
+    return base
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("x = 1  # wyjaśnienie obok kodu\n", [(1, _COMMENT)]),
+        ("# komentarz na własnej linii\nx = 1\n", [(1, _COMMENT)]),
+        ("def f() -> int:\n    # w ciele funkcji\n    return 1\n", [(2, _COMMENT)]),
+        ("#!/usr/bin/env python\nx = 1\n", [(1, _COMMENT)]),
+        ("x = 1  # type: ignorowane, bo proza\n", [(1, _COMMENT)]),
+        ("x = 1  # ruff: tu wyjaśnienie\n", [(1, _COMMENT)]),
+        ("x = 1  # mypy: tu wyjaśnienie\n", [(1, _COMMENT)]),
+        ("x = 1  # ast-grep-ignore\n", [(1, _BLANKET)]),
+        ("# ast-grep-ignore: komentarz-w-src\nx = 1  # wyjaśnienie\n", [(1, _COMMENT)]),
+        ('"""Moduł z #123."""\n', [(1, _HISTORY)]),
+        ('#!/usr/bin/env python\n"""Moduł z #123."""\n', [(1, _COMMENT), (2, _HISTORY)]),
+        ('def f() -> None:\n    """Naprawione w 5b2edaf2f9."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Naprawione w 1234567a."""\n', [(2, _HISTORY)]),
+        ('class K:\n    """Od PR 1234."""\n', [(2, _HISTORY)]),
+        ('class K:\n    """Od PR-1234."""\n', [(2, _HISTORY)]),
+        ("async def f() -> None:\n    '''Zob. https://github.com/o/r/pull/77'''\n", [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. https://github.com/o/r/commit/abc."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Opis.\n\n    Wzór z #808.\n    """\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    "Część z #1 " "i dalej"\n', [(2, _HISTORY)]),
+        ("@staticmethod\ndef f() -> None:\n    r'''Z a1b2c3d.'''\n", [(3, _HISTORY)]),
+    ],
+)
+def test_reguly_ast_grep_lapia_komentarz_i_historie_w_docstringu(tmp_path: Path, text: str, expected: list[tuple[int, str]]) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == expected
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    "text",
+    [
+        "import os  # noqa: F401 - używany przez wtyczkę\n",
+        "import os  # noqa: F401\n",
+        "z = x.y  # type: ignore[attr-defined]  # stub nie zna y\n",
+        "z = x.y  # type: ignore[attr-defined]\n",
+        "# ruff: noqa: E501\nx = 1\n",
+        '# mypy: disable-error-code="misc"\nx = 1\n',
+        "# mypy: ignore-errors, warn-unused-ignores=False\nx = 1\n",
+        '"""Moduł bez historii: 600 s, 2026-11-13, telefon 48600123456 i słowo deadbeef."""\n',
+        'w = "#123 w napisie, który nie jest docstringiem"\n',
+        'def f() -> str:\n    s = "zwykły napis"\n    """Drugi napis z #9 nie jest docstringiem."""\n    return s\n',
+        'if True:\n    """Napis z #9 w bloku if nie jest docstringiem."""\n',
+        'def f() -> None:\n    """Opis bez numeru PR, PRZYKŁAD 12 i test e2e."""\n',
+    ],
+)
+def test_reguly_ast_grep_przepuszczaja_tlumienie_z_powodem_i_napisy_bez_historii(tmp_path: Path, text: str) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert syntax_rules(tmp_path, base) == []
+
+
+@needs_ast_grep
+def test_reguly_ast_grep_widza_tylko_dodane_linie_kazdego_pliku_src(tmp_path: Path) -> None:
+    old = 'def f() -> None:\n    """Opis.\n\n    Wzór z #808.\n    """\n\n\nx = 1  # stary komentarz\n'
+    files = (
+        "src/rozliczenia/stary.py",
+        "src/rozliczenia/stub.pyi",
+        "src/rozliczenia/.ukryty/stary.py",
+        "src/build/stary.py",
+        "tests/test_stary.py",
+    )
+    for path in files:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(old, encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("build/\n", encoding="utf-8")
+    _empty_base(tmp_path)
+    _git(tmp_path, "add", "-A", "-f")
+    _git(tmp_path, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "stare linie")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    assert syntax_rules(tmp_path, base) == []
+
+    new = old.replace("    Wzór z #808.\n", "    Wzór z #808.\n    Druga linia.\n").replace("x = 1", "y = 2  # nowy\nx = 1")
+    for path in files:
+        (tmp_path / path).write_text(new, encoding="utf-8")
+
+    assert [(finding.path, finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [
+        (path, line, rule) for path in sorted(files[:4]) for line, rule in ((5, _HISTORY), (9, _COMMENT))
+    ]
+
+
 _PAGE = "from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
 ZNANE_LUKI: Final = {
+    "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src": {
+        "dyrektywa ast-grep-ignore z nazwą reguły na linii, którą wyłącza": (
+            "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
+        ),
+        "docstring z historią i dyrektywą ast-grep-ignore obu reguł na jego linii": (
+            'def f() -> None:\n    """Z #123."""  # ast-grep-ignore: historia-w-docstringu, komentarz-w-src\n'
+        ),
+        "proza po mypy: jednym słowem obok kodu": "x = 1  # mypy: wyjaśnienie\n",
+        "skrót commitu z samych cyfr albo samych liter a-f": 'def f() -> None:\n    """Wzór z 4801234 i z deadbee."""\n',
+        "skrót commitu wielkimi literami": 'def f() -> None:\n    """Wzór z 5B2EDAF2F9."""\n',
+        "numer PR odmieniony albo słowem": 'def f() -> None:\n    """Z PR-u 1234 i z pull requestu numer 77."""\n',
+        "napis pod przypisaniem, czyli docstring atrybutu": 'LIMIT = 5\n"""Limit z #123."""\n',
+        "docstring w nawiasach": 'def f() -> None:\n    ("Z #123.")\n',
+    },
     "test_stan_pliku_w_src_tylko_przez_file_state": {
         # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
         "lista folderu z iterdir": """\
@@ -1027,6 +1208,7 @@ def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
 _ZAPADKI: Final = {
+    "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src": ("src/rozliczenia", syntax_rule_findings),
     "test_stan_pliku_w_src_tylko_przez_file_state": ("src/rozliczenia", file_state_bypasses),
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
     "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
