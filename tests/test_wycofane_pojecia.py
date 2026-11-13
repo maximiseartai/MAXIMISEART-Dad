@@ -52,6 +52,12 @@ RETIRED = (
         "0010",
         "tata pracuje tylko w Centrum rozliczeń; konsola to py -3 run_centrum.py, a skrót instaluje py -3 install_centrum_shortcut.py",
     ),
+    Retired(
+        re.compile(r"\b[Kk]onfiguracj\w* [Ww]ykonawc\w*"),
+        "0032",
+        "Lista Wykonawców w Ustawieniach Centrum (config/wykonawcy.yaml)",
+    ),
+    Retired(re.compile(r"\b[Uu]stawie\w* taty\b"), "0032", "Ustawienia Centrum"),
 )
 
 

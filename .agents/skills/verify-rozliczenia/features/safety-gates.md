@@ -12,7 +12,7 @@ Wzorzec rozliczenia pracownika, overwriting an existing output folder, or publis
 - `safety-rollback` removes staging files after a workbook processing failure.
 - `safety-template-changed` stops in Zapisywanie, removes staging, and publishes nothing when the Wzorzec rozliczenia pracownika changes after Sprawdzanie: opened in Excel, deleted, or unreadable gives `BLAD_KOPII_WZORCA`; data in its Wiersze danych, merged cells in the Wiersze danych being written (both write routes, `template_file._ensure_unmerged`), or a header without `WYKONAWCA` in `H17` gives `BLAD_SZABLONU_PRACOWNIKA`.
 - `safety-unreadable-source` stops on a damaged Plik zbiorczy with a safe Polish message and creates no output; a Plik zbiorczy the system will not hand over (no access, busy in another program, waiting for OneDrive) is `NIEDOSTEPNY_PLIK_ZBIORCZY`, never called damaged.
-- `safety-worker-config` stops in Sprawdzanie on an unreadable, non-YAML, or invalid Konfiguracja wykonawców and creates no output.
+- `safety-worker-config` stops in Sprawdzanie on an unreadable, non-YAML, or invalid Lista Wykonawców and creates no output.
 
 ## How to get to it (user POV)
 

@@ -96,7 +96,7 @@ class Run:
 
     @property
     def settings(self) -> Path:
-        """Ustawienia taty in the tool's ``config/``, by the name README gives them."""
+        """Ustawienia Centrum in the tool's ``config/``, by the name README gives them."""
 
         return self.tool / SETTINGS_FILE
 

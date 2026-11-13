@@ -76,3 +76,19 @@ docs/adr/0010-centrum-jedynym-wejsciem-taty.md	zostają: oznaczają Uruchomienia
 docs/adr/0010-centrum-jedynym-wejsciem-taty.md	CLI zostaje, bo opierają się na nim weryfikacja end-to-end, bramka czasu w CI
 docs/adr/0010-centrum-jedynym-wejsciem-taty.md	procesu bez terminala to osobna praca. Nie musi blokować uproszczenia pracy
 docs/adr/0010-centrum-jedynym-wejsciem-taty.md	- Zmiany CLI nie wymagają zmian instrukcji taty. Zmiana Komunikatu, który widać
+
+# starszy ADR sprzed ADR 0032, który wycofał pojęcia Konfiguracja wykonawców i Ustawienia taty; jego Status prowadzi do ADR 0032
+docs/adr/0004-centrum-rozliczen-adapter.md	launcherach: czytają one Ustawienia taty z Centrum rozliczeń.
+docs/adr/0004-centrum-rozliczen-adapter.md	Zdanie „Własne pliki Centrum to tylko ustawienia taty i dziennik pochodzenia
+docs/adr/0004-centrum-rozliczen-adapter.md	zostaje serwer. Własne pliki Centrum to tylko ustawienia taty i
+docs/adr/0006-uklad-folderow-taty-i-wspolne-ustawienia.md	# ADR 0006: Układ folderów taty i Ustawienia taty wspólne z launcherami
+docs/adr/0006-uklad-folderow-taty-i-wspolne-ustawienia.md	Zmieniona 2026-11-07: skoro czyta je tylko Centrum, plik Ustawień taty należy
+docs/adr/0006-uklad-folderow-taty-i-wspolne-ustawienia.md	[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Ustawienia taty do Ustawień Centrum, a folder okresów zapisuje
+docs/adr/0006-uklad-folderow-taty-i-wspolne-ustawienia.md	4. **Ustawienia taty są wspólne.** Plik `config/centrum-ustawienia.yaml` należy
+docs/adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md	- „Własne pliki Centrum to tylko ustawienia taty i dziennik pochodzenia
+docs/adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md	Ustawieniach taty, przed odczytem Rejestru zleceń, wzorców i plików okresu
+docs/adr/0009-aktualizacja-narzedzia-z-centrum.md	zachowuje i przywraca po przesunięciu klonu. Wzorce, Ustawienia taty, klucz
+docs/adr/0010-centrum-jedynym-wejsciem-taty.md	- [ADR 0006](0006-uklad-folderow-taty-i-wspolne-ustawienia.md): Ustawienia taty
+docs/adr/0011-bez-cli-i-adapterow-terminala.md	jako JSON w kształcie kontraktu Centrum. Nie czyta Ustawień taty i nie
+docs/adr/0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md	rozliczeń podają identyfikator Wykonawcy spoza konfiguracji wykonawców, bez
+docs/adr/0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md	- [ADR 0004](0004-centrum-rozliczen-adapter.md), zdanie „Własne pliki Centrum to tylko ustawienia taty i dziennik

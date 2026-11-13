@@ -16,6 +16,8 @@ odłożył „do czasu, aż Centrum przejmie całą pracę taty”. Zmienia:
 [ADR 0011](0011-bez-cli-i-adapterow-terminala.md) zmienia punkt „CLI zostaje
 jako narzędzie osoby utrzymującej”: CLI znika, a E2E, straż czasu i benchmark
 uruchamiają procesy skryptem dla maszyn przez rdzeń Uruchomienia procesu.
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) włącza Rejestr zleceń
+i folder okresów do Ustawień Centrum.
 
 ## Kontekst
 
