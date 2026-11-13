@@ -327,7 +327,11 @@ def test_pamiec_zielonych_nie_przepuszcza_zmiany_pliku_danych_pakietu(tmp_path: 
     assert "FAILED tests/test_strona.py::test_tytul" in after_change.stdout
 
 
-@pytest.mark.parametrize(("workers", "expected"), [(None, "4"), ("3", "3")], ids=["bez zmiennej", "ze zmienną"])
+@pytest.mark.parametrize(
+    ("workers", "expected"),
+    [(None, "4"), ("3", "3"), ("auto", str(os.cpu_count())), ("0", "1")],
+    ids=["bez zmiennej", "ze zmienną", "auto jak xdist to rdzenie", "zero to jeden"],
+)
 def test_pytest_bierze_cztery_workery_chyba_ze_zmienna_mowi_inaczej(tmp_path: Path, workers: str | None, expected: str) -> None:
     repo = _repo(tmp_path)
     _write(
@@ -414,7 +418,7 @@ def test_zmiana_konfiguracji_zostawia_ci_testy_ponad_budzet_i_mowi_ktore_w_kazdy
 @pytest.mark.parametrize(
     ("changed", "text", "cost_s", "failing"),
     [
-        # 400 s to ponad budżet dalszych (45 s na 4 workery), ale w ścianie odległości 1.
+        # 400 s to ponad budżet dalszych (45 s na każdego z 2 workerów), ale w ścianie odległości 1.
         ("src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n", 400.0, "tests/test_zawsze_pada.py::test_niedotkniety"),
         (
             "tests/test_konfiguracja.py",
@@ -441,17 +445,28 @@ def test_zmiana_konfiguracji_razem_z_innym_plikiem_uruchamia_zmieniony_test_zaws
     assert answered.returncode == 1
 
 
-def test_test_zalezny_wprost_ponad_sciane_zostaje_ci_i_szybko_go_nazywa(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("workers", "verdict"),
+    [
+        ("2", ["zostawione CI: 1 z 1 plików testów (~2500 s w CI): test_zawsze_pada.py", "SZYBKO OK"]),
+        ("10", ["SZYBKO FAIL | pytest"]),
+    ],
+    ids=["2 workery: ponad ścianą", "10 workerów: w ścianie"],
+)
+def test_test_zalezny_wprost_biegnie_w_scianie_na_tylu_workerach_ile_bierze_krok_pytest(
+    tmp_path: Path, workers: str, verdict: list[str]
+) -> None:
+    """Ściana to ``WALL_S`` na każdego workera kroku pytest: test zależny wprost, który kosztuje pięć ścian, zostaje CI
+    przy 2 workerach, a przy 10 biegnie (i pada, bo zmiana go psuje)."""
+
     repo = _repo(tmp_path)
     _write(repo, "README.md", "Repozytorium testu.\n")
-    _commit_times(repo, {"tests/test_zawsze_pada.py": szybko.WALL_S * czasy_ci.WORKERY_LOKALNE + 1})
+    _commit_times(repo, {"tests/test_zawsze_pada.py": szybko.WALL_S * 5})
     _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 0 + 1\n")
 
-    answered = _szybko(repo)
+    answered = _szybko(repo, workers=workers)
 
-    lines = answered.stdout.splitlines()
-    assert re.fullmatch(r"zostawione CI: 1 z 1 plików testów \(~2001 s w CI\): test_zawsze_pada\.py", lines[-2]), answered.stdout
-    assert (answered.returncode, lines[-1]) == (0, "SZYBKO OK"), answered.stdout
+    assert answered.stdout.splitlines()[-len(verdict) :] == verdict, answered.stdout
 
 
 @pytest.mark.parametrize(
@@ -476,7 +491,7 @@ def test_zmiana_konfiguracji_uruchamia_w_budzecie_testy_ktore_ja_czytaja_jak_w_o
     if also_changed:
         _write(repo, *also_changed)
 
-    answered = _szybko(repo)
+    answered = _szybko(repo, workers="4")
 
     assert "FAILED tests/test_konfiguracja.py::test_konfiguracja" in answered.stdout, answered.stdout
     name = re.escape(PurePosixPath(deferred).name)
@@ -553,7 +568,7 @@ def test_plan_bierze_odleglosc_1_w_scianie_a_dalsze_w_budzecie_i_nazywa_zostawio
 ) -> None:
     tests = sorted(path for path in FROZEN_DISTANCES if path.startswith("tests/"))
 
-    chosen = szybko.plan(tests, FROZEN_DISTANCES, czasy_ci.KosztyPlikow(FROZEN_TIMES), budget_s, wall_s)
+    chosen = szybko.plan(tests, FROZEN_DISTANCES, czasy_ci.KosztyPlikow(FROZEN_TIMES), workers=4, budget_s=budget_s, wall_s=wall_s)
 
     # Plik spoza tabeli kosztuje tyle, co mediana tabeli: 2,5 s.
     costs = {**dict.fromkeys(tests, 2.5), **FROZEN_TIMES}
@@ -569,7 +584,7 @@ def test_zmieniony_plik_testow_biegnie_ponad_sciane_i_zabiera_ja_zaleznym_wprost
     distances = {"tests/test_zmieniony.py": 0, "tests/test_zalezny.py": 1}
     costs = czasy_ci.KosztyPlikow({"tests/test_zmieniony.py": 900.0, "tests/test_zalezny.py": 1.0})
 
-    chosen = szybko.plan(sorted(distances), distances, costs, wall_s=200.0)
+    chosen = szybko.plan(sorted(distances), distances, costs, workers=4, wall_s=200.0)
 
     assert (chosen.run, chosen.deferred) == (("tests/test_zmieniony.py",), ("tests/test_zalezny.py",))
 
