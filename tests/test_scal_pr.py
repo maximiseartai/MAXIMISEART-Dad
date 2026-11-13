@@ -41,7 +41,8 @@ SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
 CHECKS_PASS = "print('CI LOKALNIE OK')\n"
 CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
-FAKE_GH = """\
+# Atrapa ``gh`` składa ``bodyHTML`` treści w odpowiedziach GraphQL z HTML renderera (``tests/fixtures/body_html.py``).
+FAKE_GH = f"import sys\nsys.path.insert(0, {str(TOOLS.parent)!r})\nfrom tests.fixtures.body_html import body_html\n" + """\
 import json, os, pathlib, re, subprocess, sys, time
 
 here = pathlib.Path(sys.argv[0]).parent
@@ -59,6 +60,15 @@ def git(*command):
 
 
 REPO = "maximiseartai/MAXIMISEART-Dad"
+
+
+def html_node(node, starts):
+    # Węzeł PR GraphQL z bodyHTML każdej treści; komentarze i recenzje (listy) po 100 od indeksu starts[kind].
+    found = {**node, "bodyHTML": body_html(node["body"], markdown)}
+    for kind, start in starts.items():
+        page = [{**verdict, "bodyHTML": body_html(verdict["body"], markdown)} for verdict in node[kind][start : start + 100]]
+        found[kind] = {"pageInfo": {"hasNextPage": start + 100 < len(node[kind]), "endCursor": str(start + 100)}, "nodes": page}
+    return found
 
 
 if arguments[:2] == ["pr", "view"]:
@@ -119,6 +129,26 @@ elif arguments[:2] == ["run", "list"]:
     runs = here / "runs.json"
     merged = arguments[arguments.index("--commit") + 1] == git("rev-parse", "refs/heads/main")
     print(runs.read_text() if merged and runs.exists() else "[]")
+elif arguments[:2] == ["api", "graphql"] and "label=chwast" in arguments:
+    # otwarte issues chwastów: po założeniu issue (weeds_after.json nie null) to issues innej publikacji i każde
+    # założone tu
+    writes = [json.loads(line) for line in (here / "writes.jsonl").read_text().splitlines()] if (here / "writes.jsonl").exists() else []
+    created = [{"number": 9001, "title": sent["title"], "body": sent["body"]} for method, path, sent in writes if [method, path] == ["POST", "repos/{owner}/{repo}/issues"]]
+    after = json.loads((here / "weeds_after.json").read_text())
+    found = [*after, *created] if created and after is not None else json.loads((here / "weeds.json").read_text())
+    nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in found]
+    print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
+elif arguments[:2] == ["api", "graphql"] and any(argument.startswith("number=") for argument in arguments):
+    # jeden PR z pulls.json (pola gh pr view) albo z graphql.json, komentarze i recenzje po 100 od kursora
+    variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
+    with (here / "pull_queries.jsonl").open("a") as out:
+        out.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
+    if variables["number"] in pulls:
+        node = {**pulls[variables["number"]], "mergedAt": None}
+    else:
+        node = next(node for node in json.loads((here / "graphql.json").read_text()) if str(node["number"]) == variables["number"])
+        node.update({kind: node[kind]["nodes"] for kind in ("comments", "reviews")})
+    print(json.dumps({"data": {"repository": {"pullRequest": html_node(node, {kind: 0 if variables[kind] == "null" else int(variables[kind]) for kind in ("comments", "reviews")})}}}))
 elif arguments[:2] == ["api", "graphql"]:
     # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek> i first; zmiana
     # z graphql_changes.json ("po": tyle wcześniejszych zapytań) zmienia PR między stronami.
@@ -138,20 +168,15 @@ elif arguments[:2] == ["api", "graphql"]:
         nodes = [node for node in nodes if (node[field + "At"] >= value if sign == ">=" else node[field + "At"] <= value)]
     field, direction = next(term for term in terms if term.startswith("sort:")).removeprefix("sort:").split("-")
     nodes.sort(key=lambda node: (node[field + "At"], node["number"]), reverse=direction == "desc")
-    print(json.dumps({"data": {"search": {"nodes": nodes[: int(variables["first"])]}}}))
+    found = [html_node({**node, **{kind: node[kind]["nodes"] for kind in ("comments", "reviews")}}, {"comments": 0, "reviews": 0}) for node in nodes[: int(variables["first"])]]
+    print(json.dumps({"data": {"search": {"nodes": found}}}))
 elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") for argument in arguments):
     method = arguments[arguments.index("--method") + 1] if "--method" in arguments else "GET"
     path = next(argument for argument in arguments if argument.startswith("repos/{owner}/{repo}/"))
     if method != "GET":
         with (here / "writes.jsonl").open("a") as log:
             log.write(json.dumps([method, path, json.loads(sys.stdin.read())]) + "\\n")
-    if method == "GET" and path.startswith("repos/{owner}/{repo}/issues?labels=chwast&state=open&"):
-        # po założeniu issue (weeds_after.json nie null) lista to issues innej publikacji i każde założone tu
-        writes = [json.loads(line) for line in (here / "writes.jsonl").read_text().splitlines()] if (here / "writes.jsonl").exists() else []
-        created = [{"number": 9001, "title": sent["title"], "body": sent["body"]} for method, path, sent in writes if [method, path] == ["POST", "repos/{owner}/{repo}/issues"]]
-        after = json.loads((here / "weeds_after.json").read_text())
-        print(json.dumps([*after, *created] if created and after is not None else json.loads((here / "weeds.json").read_text())))
-    elif method == "GET" and path.startswith("repos/{owner}/{repo}/labels?"):
+    if method == "GET" and path.startswith("repos/{owner}/{repo}/labels?"):
         print(json.dumps([{"name": name} for name in json.loads((here / "labels.json").read_text())]))
     elif method == "POST" and path == "repos/{owner}/{repo}/issues":
         print(json.dumps({"number": 9001}))
@@ -2513,6 +2538,22 @@ def test_rejestr_czyta_kazdy_pr_zmieniony_od_wdrozenia_takze_gdy_pr_zmienia_sie_
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert answered.stdout.splitlines()[-1] == f"CHWASTY OK | 30 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+
+
+def test_rejestr_doczytuje_komentarze_pr_ponad_pierwsza_setke_zapytaniem_o_ten_pr(tmp_path: Path) -> None:
+    """PR #1 ma 150 komentarzy, a werdykt ``FAIL`` z kodem to 101. z nich, więc strona wyszukiwania go nie podaje:
+    rejestr doczytuje komentarze tego PR z GraphQL po 100 od kursora, z HTML treści, bez renderowania."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/chwasty.py": (TOOLS / "chwasty.py").read_text(encoding="utf-8")})
+    comments = [*[("", AFTER_DEPLOYMENT)] * 100, (FAIL_W1, AFTER_DEPLOYMENT), *[("", AFTER_DEPLOYMENT)] * 49]
+    _registry(github, [MERGED_B, _node(comments, number=1)])
+
+    answered = _chwasty(github, dry=True)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == f"CHWASTY OK | 2 wystąpień, chwasty: {chwasty.CODE}", answered.stdout
+    assert [(query["number"], query["comments"]) for query in cast(list[dict[str, str]], github._log("pull_queries.jsonl"))] == [("1", "null"), ("1", "100")]
+    assert github.renders() == []
 
 
 def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path) -> None:

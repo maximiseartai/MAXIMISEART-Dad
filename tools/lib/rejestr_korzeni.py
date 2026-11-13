@@ -36,14 +36,20 @@ jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnien
 brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund; jego publikacja werdyktu sama
 czyta rejestr (``after_verdict``), a ``tools/chwasty.py`` uzupełnia go później.
 
-Koszt skanu rośnie z liczbą PR-ów zmienionych od wdrożenia (Q13 liczy powtórzenia od wdrożenia, więc skan go nie
-ucina): strona na każde ``PAGE - 1`` PR-ów i render każdego werdyktu PR-ów z werdyktem ``FAIL`` i opisu scalonego PR
-ze słowem „Korzeń”. 13.11.2026 skan 22 PR-ów to 2 strony, 30 renderów i 15 s, więc tydzień PR-ów (ok. 280 przy 40
-dziennie) to ok. 15 stron i kilka minut na każdą publikację ``FAIL`` z kodem i każdy merge z blokiem ze szczeblem.
-PR, który ma więcej komentarzy albo recenzji niż jedna strona GraphQL (100), doczytuje ``stan_pr.pull``
-(``gh pr view`` czyta wszystkie strony). Renderer GitHuba (``github.html_markdownu``, ``szablon_werdyktu.items``)
-czyta tylko werdykty PR-ów z werdyktem ``FAIL`` i opisy scalonych PR-ów ze słowem „Korzeń”. Granica: nagłówek sekcji
-zapisany encjami HTML (``Korze&#324;``) renderer pokazałby jako sekcję, a rejestr takiego opisu nie czyta.
+Treść skanu to HTML z GitHuba z tej samej strony GraphQL (``bodyHTML`` opisu, komentarza i recenzji, ``FIELDS``),
+więc rejestr nie woła renderera ``POST /markdown`` ani razu: werdykt czyta ``werdykt_pr.from_graphql``, a opis PR
+i treść issue chwastu (``weed_issues``) ``szablon_werdyktu.items`` z ich ``bodyHTML``. PR z więcej niż 100
+komentarzami albo recenzjami doczytuje ``pull_node`` (zapytanie na każde 100), a publikacja werdyktu czyta tak swój PR.
+Granica: nagłówek sekcji zapisany encjami HTML (``Korze&#324;``) GitHub pokazałby jako sekcję, a rejestr takiego opisu
+nie czyta. Renderer zostaje tylko w ``consents``, które czyta zgody w jednym PR bramki przy merge'u.
+
+Budżet: workflow tygodniowy biegnie z ``GITHUB_TOKEN``, który ma 1000 punktów GraphQL na godzinę na repozytorium
+(i osobno 1000 żądań REST). Strona skanu (``PAGE`` PR-ów z komentarzami i recenzjami) kosztuje 1 punkt (``rateLimit``
+13.11.2026: 1 punkt dla 20 i dla 50 PR-ów na stronę), a koszt skanu rośnie z liczbą PR-ów zmienionych od wdrożenia
+(Q13 liczy powtórzenia od wdrożenia, więc skan go nie ucina): strona na każde ``PAGE - 1`` PR-ów. Przy ok. 44 PR-ach
+dziennie to ok. 16 stron na tydzień PR-ów, czyli ok. 420 punktów na przebieg po pół roku (ok. 8000 PR-ów), do tego
+strona issues na każde 100 chwastów i ``pull_node`` na PR z ponad 100 komentarzami. Limit 1000 punktów przebieg
+przekroczy po ok. 14 miesiącach; wtedy ``PAGE`` 50 (ten sam 1 punkt na stronę) daje 2,6 raza mniej stron.
 
 Issue chwastu ma tytuł ``Chwast: R-KOD``, etykiety ``chwast`` i ``ready-for-agent`` (rejestr zakłada brakującą
 etykietę) i treść z szablonu Q15 bez wolnej prozy (``body``): sekcja „Korzeń” z opisem kodu z listy korzeni na bazie,
@@ -87,7 +93,14 @@ CONSENT_WORDS = "ZGODA KORZEŃ"
 ADMIN = "admin"
 WEED = "chwast"
 READY = "ready-for-agent"
-LABELS = {WEED: ("b60205", "Korzeń z Ważnym w co najmniej 2 PR-ach (ADR 0031)"), READY: ("0e8a16", "Gotowe do podjęcia przez agenta")}
+# Etykieta issue „Rejestr korzeni” z tygodniowym pomiarem (``tools/rejestr_korzeni_tydzien.py``), osobna od ``WEED``,
+# żeby lista issues z etykietą ``chwast`` miała same chwasty.
+REGISTRY = "rejestr-korzeni"
+LABELS = {
+    WEED: ("b60205", "Korzeń z Ważnym w co najmniej 2 PR-ach (ADR 0031)"),
+    READY: ("0e8a16", "Gotowe do podjęcia przez agenta"),
+    REGISTRY: ("5319e7", "Tygodniowy pomiar powtórzeń korzeni (ADR 0031)"),
+}
 TITLE = "Chwast: {code}"
 COLUMNS = ("PR", "Ważne", "Szczebel wyrwania", "Mechanizm")
 HEADINGS = ("Korzeń", "Wystąpienia", "Gotowe, gdy")
@@ -104,19 +117,35 @@ _ESCAPED = re.compile(r"([\\`*_\[\]<>|~&])")
 DUPLICATE = "Duplikat #{number}"
 SEARCH = "repo:{repository} is:pr updated:>={deployed} sort:created-asc"
 SINCE = " created:>={created}"
+# Pola PR z HTML treści (``bodyHTML``) opisu, komentarzy i recenzji, wspólne dla wyszukiwania i zapytania o jeden PR.
+FIELDS = """
+fragment Pull on PullRequest {
+  number title state isDraft isCrossRepository baseRefName headRefOid url body bodyHTML createdAt updatedAt mergedAt
+  comments(first: 100, after: $comments) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation createdAt includesCreatedEdit author { login } } }
+  reviews(first: 100, after: $reviews) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation state submittedAt includesCreatedEdit author { login } } }
+}
+"""
 QUERY = """
-query($q: String!, $first: Int!) {
-  search(query: $q, type: ISSUE, first: $first) {
-    nodes {
-      ... on PullRequest {
-        number title state isDraft isCrossRepository baseRefName headRefOid url body createdAt updatedAt mergedAt
-        comments(first: 100) { pageInfo { hasNextPage } nodes { body authorAssociation createdAt includesCreatedEdit author { login } } }
-        reviews(first: 100) { pageInfo { hasNextPage } nodes { body authorAssociation state submittedAt includesCreatedEdit author { login } } }
-      }
+query($q: String!, $first: Int!, $comments: String, $reviews: String) {
+  search(query: $q, type: ISSUE, first: $first) { nodes { ...Pull } }
+}
+""" + FIELDS
+PULL_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $comments: String, $reviews: String) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { ...Pull } }
+}
+""" + FIELDS
+ISSUES_QUERY = """
+query($owner: String!, $name: String!, $label: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    issues(labels: [$label], states: OPEN, first: 100, after: $after, orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number title body bodyHTML }
     }
   }
 }
 """
+CONNECTIONS = ("comments", "reviews")
 
 
 @dataclass(frozen=True)
@@ -238,8 +267,9 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
 @dataclass(frozen=True)
 class Occurrence:
     """Wystąpienie kodu ``code`` w PR ``pull``: Ważne (``W1 r2``) albo ``Czerwony main #N``, runda werdyktu, który dał
-    kod (0 dla czerwonego `main`), litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma) i chwila merge'a
-    PR (``None``: nie scalony)."""
+    kod (0 dla czerwonego `main`), litera szczebla i mechanizm wyrwania (``NONE``, gdy ich nie ma), chwila wystąpienia
+    ``when`` (Ważnego: utworzenie werdyktu ``FAIL`` jego rundy, ``Major.since``; czerwonego `main`: merge PR) i chwila
+    merge'a PR (``None``: nie scalony)."""
 
     code: str
     pull: int
@@ -247,6 +277,7 @@ class Occurrence:
     decided: int
     rung: str
     mechanism: str
+    when: datetime
     merged: datetime | None = None
 
 
@@ -259,25 +290,26 @@ def read(repository: str, deployed: datetime | None, *, skip: int | None = None)
     found = []
     for node in _pulls(repository, deployed):
         if node["number"] != skip:
-            merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
-            found.extend(occurrences(_pull(node), deployed, merged))
+            found.extend(occurrences(node if _complete(node) else pull_node(repository, node["number"]), deployed))
     return sorted(found, key=_order)
 
 
-def occurrences(pull: Pull, deployed: datetime, merged: datetime | None) -> list[Occurrence]:
-    """Wystąpienia kodów w ``pull`` po chwili wdrożenia ``deployed``; ``merged`` to chwila merge'a PR (``None``: nie
-    scalony), a tylko scalony PR ma szczebel i mechanizm wyrwania z sekcji ``## Korzeń``."""
+def occurrences(node: dict[str, Any], deployed: datetime) -> list[Occurrence]:
+    """Wystąpienia kodów w PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja) po chwili
+    wdrożenia ``deployed``; tylko PR scalony (``mergedAt``) ma szczebel i mechanizm wyrwania z sekcji ``## Korzeń``."""
 
-    blocks = _blocks(pull) if merged is not None else {}
+    pull = _pull(node)
+    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
+    blocks = _blocks(pull, str(node["bodyHTML"])) if merged is not None else {}
     found = []
     verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
     if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
-        rounds = werdykt_pr.rounds(pull)
+        rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
         for major in majors(rounds)[0].values():
             if major.code is not None and major.since is not None and major.since >= deployed:
-                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), merged))
+                found.append(Occurrence(major.code, pull.number, major.heading, major.decided, *_uprooting(blocks.get(major.heading)), major.since, merged))
     if merged is not None and merged >= deployed:
-        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))
+        found.extend(Occurrence(block.code, pull.number, heading, 0, *_uprooting(block), merged, merged) for heading, block in blocks.items() if heading.startswith("Czerwony"))
     return sorted(found, key=_order)
 
 
@@ -322,18 +354,19 @@ def _admin(login: str, repository: str, known: dict[str, bool]) -> bool:
     return known[login]
 
 
-def after_verdict(number: int, text: str, base: str, deployed: datetime | None) -> str:
-    """Dopisek linii ``WERDYKT OK`` po publikacji werdyktu ``text`` na PR ``number``: kody, które ten werdykt nadał
-    Ważnemu, z wystąpieniem w innym PR to chwasty, a dla każdego ``settle`` zakłada albo uzupełnia issue. Werdykt już
-    jest na PR, więc każdy błąd to tylko ostrzeżenie w dopisku."""
+def after_verdict(number: int, text: str, base: str, deployed: datetime | None, repository: str) -> str:
+    """Dopisek linii ``WERDYKT OK`` po publikacji werdyktu ``text`` na PR ``number`` repozytorium ``repository``: kody,
+    które ten werdykt nadał Ważnemu, z wystąpieniem w innym PR to chwasty, a dla każdego ``settle`` zakłada albo
+    uzupełnia issue. Werdykt już jest na PR, więc każdy błąd to tylko ostrzeżenie w dopisku."""
 
     command = "tools/chwasty.py"
     try:
-        current = stan_pr.pull(number)
+        node = pull_node(repository, number)
+        current = _pull(node)
         verdicts = [verdict for verdict in (werdykt_pr.read(verdict, current.head) for verdict in current.verdicts) if verdict is not None and verdict.decision is not None]
         if not verdicts or werdykt_pr.text_lines(verdicts[-1].body) != werdykt_pr.text_lines(text):
             return f" | UWAGA: GitHub nie podał jeszcze opublikowanego werdyktu, chwastów nie sprawdzono; uruchom {command}"
-        own = occurrences(current, deployed, None) if deployed is not None else []
+        own = occurrences(node, deployed) if deployed is not None else []
         codes = {occurrence.code for occurrence in own if occurrence.decided == len(verdicts)}
         if not codes:
             return ""
@@ -375,7 +408,7 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
     if not weeds:
         return []
     api = github.GhApi()
-    issues = {str(issue["title"]): issue for issue in sorted(github.issues(api, WEED, "open"), key=lambda issue: -int(issue["number"]))}
+    issues = {str(issue["title"]): issue for issue in sorted(weed_issues(repository), key=lambda issue: -int(issue["number"]))}
     described = _descriptions(base)
     actions: list[github.Akcja] = []
     notes = []
@@ -385,7 +418,7 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
         if issue is None:
             actions.append(github.Zaloz(TITLE.format(code=code), body(code, described.get(code, NONE), list(fresh.values())), (WEED, READY)))
             continue
-        kept = _rows(str(issue.get("body") or ""), repository)
+        kept = _rows(str(issue["bodyHTML"]), repository)
         if kept is None:
             notes.append(f"CHWAST | UWAGA: #{issue['number']} „{issue['title']}” nie ma treści w szablonie, dopisz wystąpienia ręcznie")
             continue
@@ -394,14 +427,9 @@ def settle(found: Sequence[Occurrence], codes: Iterable[str] | None, repository:
             notes.append(f"CHWAST | #{issue['number']} „{issue['title']}” ma już każde wystąpienie")
         else:
             actions.append(github.Edytuj(int(issue["number"]), body(code, described.get(code, NONE), rows)))
-    labels = _missing_labels(api) if any(isinstance(action, github.Zaloz) for action in actions) else []
+    lines = create_labels(api, (WEED, READY), "CHWAST", write=write) if any(isinstance(action, github.Zaloz) for action in actions) else []
     if not write:
-        return [*(f"CHWAST | bez zapisu: załóż etykietę {name}" for name in labels), *(f"CHWAST | bez zapisu: {github.opis(action)}" for action in actions), *notes]
-    lines = []
-    for name in labels:
-        color, description = LABELS[name]
-        api.wyslij("POST", f"{github.REPO}/labels", {"name": name, "color": color, "description": description})
-        lines.append(f"CHWAST | założona etykieta {name}")
+        return [*lines, *(f"CHWAST | bez zapisu: {github.opis(action)}" for action in actions), *notes]
     lines += github.wykonaj(api, actions, "CHWAST")
     created = [action.tytul for action in actions if isinstance(action, github.Zaloz)]
     return [*lines, *(_duplicates(api, created, repository, described) if created else []), *notes]
@@ -412,7 +440,7 @@ def _duplicates(api: github.GhApi, titles: Sequence[str], repository: str, descr
     z komentarzem ``Duplikat #<najstarsze>``, a jego wiersze dopisuje do najstarszego."""
 
     issues: dict[str, list[dict[str, Any]]] = {}
-    for issue in github.issues(api, WEED, "open"):
+    for issue in weed_issues(repository):
         if str(issue["title"]) in titles:
             issues.setdefault(str(issue["title"]), []).append(issue)
     actions: list[github.Akcja] = []
@@ -421,7 +449,7 @@ def _duplicates(api: github.GhApi, titles: Sequence[str], repository: str, descr
         if len(same) < 2:
             continue
         oldest, *newer = sorted(same, key=lambda issue: int(issue["number"]))
-        tables = [_rows(str(issue.get("body") or ""), repository) for issue in (oldest, *newer)]
+        tables = [_rows(str(issue["bodyHTML"]), repository) for issue in (oldest, *newer)]
         if any(table is None for table in tables):
             notes.append(f"CHWAST | UWAGA: „{title}” ma {len(same)} otwarte issues, a nie każde ma treść w szablonie; zostaw najstarsze #{oldest['number']} i dopisz wiersze ręcznie")
             continue
@@ -434,11 +462,33 @@ def _duplicates(api: github.GhApi, titles: Sequence[str], repository: str, descr
     return [*github.wykonaj(api, actions, "CHWAST"), *notes]
 
 
-def _missing_labels(api: github.GhApi) -> list[str]:
-    """Etykiety issue chwastu, których repozytorium jeszcze nie ma."""
+def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write: bool) -> list[str]:
+    """Zakłada etykiety ``names`` (z ``LABELS``), których repozytorium jeszcze nie ma; bez ``write`` tylko podaje,
+    co by założył. Linia ``<prefix> | …`` na każdą."""
 
     present = {str(label["name"]) for label in github.strony(api, f"{github.REPO}/labels")}
-    return [name for name in (WEED, READY) if name not in present]
+    lines = []
+    for name in (name for name in names if name not in present):
+        if write:
+            color, description = LABELS[name]
+            api.wyslij("POST", f"{github.REPO}/labels", {"name": name, "color": color, "description": description})
+        lines.append(f"{prefix} | założona etykieta {name}" if write else f"{prefix} | bez zapisu: załóż etykietę {name}")
+    return lines
+
+
+def weed_issues(repository: str, label: str = WEED) -> list[dict[str, Any]]:
+    """Otwarte issues ``repository`` z etykietą ``label``: numer, tytuł, treść i jej HTML (``bodyHTML``), w kolejności
+    założenia; strona GraphQL na 100 issues."""
+
+    owner, name = repository.split("/")
+    found: list[dict[str, Any]] = []
+    after = None
+    while True:
+        page = _graphql(ISSUES_QUERY, owner=owner, name=name, label=label, after=after)["repository"]["issues"]
+        found.extend(page["nodes"])
+        if not page["pageInfo"]["hasNextPage"]:
+            return found
+        after = page["pageInfo"]["endCursor"]
 
 
 def body(code: str, description: str, rows: Sequence[Row]) -> str:
@@ -459,12 +509,11 @@ def _row(occurrence: Occurrence) -> Row:
     return Row(occurrence.pull, occurrence.major, NONE if occurrence.rung == NONE else f"({occurrence.rung})", occurrence.mechanism)
 
 
-def _rows(text: str, repository: str) -> list[Row] | None:
-    """Wiersze tabeli „Wystąpienia” treści issue z renderera GitHuba; ``None``, gdy treść nie jest w szablonie: inne
+def _rows(html: str, repository: str) -> list[Row] | None:
+    """Wiersze tabeli „Wystąpienia” z HTML treści issue (``bodyHTML``); ``None``, gdy treść nie jest w szablonie: inne
     jednostki niż ``SHAPE``, inna liczba tabel niż jedna, inne kolumny albo wiersz bez jednego linku do PR tego
     repozytorium w pierwszej komórce."""
 
-    html = github.html_markdownu(text, repository)
     units = szablon_werdyktu.items(html)
     parser = _Table()
     parser.feed(html)
@@ -529,10 +578,7 @@ def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
     seen: set[int] = set()
     since = ""
     while True:
-        answer = json.loads(github.gh("api", "graphql", "-f", f"query={QUERY}", "-f", f"q={search}{since}", "-F", f"first={PAGE}"))
-        if answer.get("errors"):
-            raise ValueError(f"GraphQL: {answer['errors']}")
-        nodes = answer["data"]["search"]["nodes"]
+        nodes = _graphql(QUERY, q=f"{search}{since}", first=PAGE, comments=None, reviews=None)["search"]["nodes"]
         fresh = [node for node in nodes if node["number"] not in seen]
         seen.update(node["number"] for node in fresh)
         yield from fresh
@@ -543,17 +589,50 @@ def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
         since = SINCE.format(created=nodes[-1]["createdAt"])
 
 
+def pull_node(repository: str, number: int) -> dict[str, Any]:
+    """Węzeł GraphQL PR ``number`` (``FIELDS``) z każdym komentarzem i każdą recenzją: zapytanie na każde 100."""
+
+    owner, name = repository.split("/")
+    page = _graphql(PULL_QUERY, owner=owner, name=name, number=number, comments=None, reviews=None)["repository"]["pullRequest"]
+    found = {kind: list(page[kind]["nodes"]) for kind in CONNECTIONS}
+    cursors = {kind: page[kind]["pageInfo"]["endCursor"] for kind in CONNECTIONS if page[kind]["pageInfo"]["hasNextPage"]}
+    while cursors:
+        more = _graphql(PULL_QUERY, owner=owner, name=name, number=number, **{kind: cursors.get(kind) for kind in CONNECTIONS})["repository"]["pullRequest"]
+        for kind in list(cursors):
+            found[kind].extend(more[kind]["nodes"])
+            if more[kind]["pageInfo"]["hasNextPage"]:
+                cursors[kind] = more[kind]["pageInfo"]["endCursor"]
+            else:
+                del cursors[kind]
+    return {**page, **{kind: {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": found[kind]} for kind in CONNECTIONS}}
+
+
+def _complete(node: dict[str, Any]) -> bool:
+    return not any(node[kind]["pageInfo"]["hasNextPage"] for kind in CONNECTIONS)
+
+
+def _graphql(query: str, **variables: str | int | None) -> dict[str, Any]:
+    """Pole ``data`` odpowiedzi GraphQL; błąd z odpowiedzi to ``ValueError``."""
+
+    arguments = ["api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        arguments += ["-F", f"{key}=null"] if value is None else ["-F", f"{key}={value}"] if isinstance(value, int) else ["-f", f"{key}={value}"]
+    answer = json.loads(github.gh(*arguments))
+    if answer.get("errors"):
+        raise ValueError(f"GraphQL: {answer['errors']}")
+    data: dict[str, Any] = answer["data"]
+    return data
+
+
 def _pull(node: dict[str, Any]) -> Pull:
-    if node["comments"]["pageInfo"]["hasNextPage"] or node["reviews"]["pageInfo"]["hasNextPage"]:
-        return stan_pr.pull(int(node["number"]))
     view = {**node, "comments": node["comments"]["nodes"], "reviews": node["reviews"]["nodes"], "closingIssuesReferences": [], "statusCheckRollup": []}
     return stan_pr.from_view(view)
 
 
-def _blocks(pull: Pull) -> dict[str, Block]:
+def _blocks(pull: Pull, html: str) -> dict[str, Block]:
     if SECTION not in pull.body:
         return {}
-    found = section(szablon_werdyktu.items(github.html_markdownu(pull.body, pull.repository)))
+    found = section(szablon_werdyktu.items(html))
     return {} if found is None else {block.heading: block for block in found.blocks}
 
 
