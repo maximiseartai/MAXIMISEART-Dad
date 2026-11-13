@@ -918,14 +918,17 @@ def test_kanarek_utworzony_przed_setka_nowszych_runow_ci_dalej_wstrzymuje_ponowi
 @pytest.mark.parametrize(
     ("logi", "flaky", "linia"),
     [
-        ({"pytest (Python 3.14, Linux, 1/2)": DNS}, (), "awaria: DNS runnera, instalacja przeglądarek w próbie 2"),
-        ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA,), "ci_lokalnie.py --tylko pytest"),
+        ({"pytest (Python 3.14, Linux, 1/2)": DNS}, (), ("awaria: DNS runnera, instalacja przeglądarek w próbie 2", "gh pr close N i gh pr reopen N")),
+        ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA,), ("ci_lokalnie.py --tylko pytest",)),
     ],
     ids=["awaria-po-ponowieniu", "znany-flaky-po-ponowieniu"],
 )
 @pytest.mark.parametrize("koniec", ["2026-11-11T14:20:00Z", "2026-11-11T14:42:00Z"], ids=["po-przerwie", "przed-przerwa"])
-def test_porazka_ktora_wrocila_po_ponowieniu_runu_dostaje_odmowe_z_diagnoza(logi: dict[str, str], flaky: tuple[str, ...], linia: str, koniec: str) -> None:
-    """Zadanie PR samo ponawia padnięte testy raz, więc druga próba runu z tą samą porażką to już nie przypadek."""
+def test_porazka_ktora_wrocila_po_ponowieniu_runu_dostaje_odmowe_z_diagnoza(
+    logi: dict[str, str], flaky: tuple[str, ...], linia: tuple[str, ...], koniec: str
+) -> None:
+    """Zadanie PR samo ponawia padnięte testy raz, więc druga próba runu z tą samą porażką to już nie przypadek. Po awarii
+    odmowa wskazuje nowy run bez zmiany HEAD (close/reopen), bo push unieważniłby werdykt."""
 
     run = _run_ci(43033018567, proba=2, koniec=koniec)
     ponowienia = Ponowienia()
@@ -934,7 +937,7 @@ def test_porazka_ktora_wrocila_po_ponowieniu_runu_dostaje_odmowe_z_diagnoza(logi
 
     assert (wynik.kod, ponowienia.zapisane) == (1, [])
     assert wynik.linia.startswith("PONÓW ODMOWA | run 43033018567 |")
-    assert linia in wynik.linia
+    assert [fragment for fragment in linia if fragment not in wynik.linia] == []
 
 
 def _czerwone_main(otwarte: tuple[dict[str, Any], ...] = (), zamkniete: tuple[dict[str, Any], ...] = ()) -> dict[str, Any]:

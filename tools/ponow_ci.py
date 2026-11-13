@@ -226,7 +226,11 @@ def _odmowa_defektu(run: int, defekt: Defekt, dopisek: str = "") -> Wynik:
 def _odmowa_po_ponowieniu(run: dict[str, Any], werdykt: Awaria | ZnanyFlaky) -> Wynik:
     match werdykt:
         case Awaria():
-            dalej = f"awaria trwa dłużej niż jeden run: sprawdź log przez gh run view {run['id']} --log-failed, a nowy run CI da następny push"
+            dalej = (
+                f"awaria trwa dłużej niż jeden run: sprawdź log przez gh run view {run['id']} --log-failed; gdy minie (inne runy CI"
+                " znów przechodzą), nowy run PR na tym samym HEAD da gh pr close N i gh pr reopen N, więc werdykt dla HEAD zostaje"
+                " ważny (push zmienia HEAD i wymaga nowego werdyktu), a run main da następny merge"
+            )
         case ZnanyFlaky():
             dalej = "zadanie PR ponawia padnięte testy raz, więc test padł czwarty raz z rzędu: odtwórz go przez .venv/bin/python tools/ci_lokalnie.py --tylko pytest"
     return Wynik(
