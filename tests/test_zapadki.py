@@ -866,6 +866,18 @@ def test_reguly_ast_grep_przepuszczaja_tlumienie_z_powodem_i_napisy_bez_historii
 
 
 @needs_ast_grep
+def test_komunikat_kazdej_reguly_ast_grep_mowi_co_zrobic(tmp_path: Path) -> None:
+    base = _src_sample(tmp_path, 'def f() -> None:\n    """Z #1."""\n\n\nx = 1  # wyjaśnienie\ny = 2  # ast-grep-ignore\n')
+
+    messages = {finding.rule: finding.message for finding in syntax_rules(tmp_path, base)}
+
+    assert messages.keys() == {_COMMENT, _HISTORY, _BLANKET}
+    assert "lepszą nazwą albo testem" in messages[_COMMENT]
+    assert "w opisie PR albo w issue" in messages[_HISTORY]
+    assert messages[_BLANKET] == _BLANKET_HELPER
+
+
+@needs_ast_grep
 def test_reguly_ast_grep_widza_tylko_dodane_linie_kazdego_pliku_src(tmp_path: Path) -> None:
     old = 'def f() -> None:\n    """Opis.\n\n    Wzór z #808.\n    """\n\n\nx = 1  # stary komentarz\n'
     files = (
