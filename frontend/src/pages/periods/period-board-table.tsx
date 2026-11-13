@@ -27,6 +27,14 @@ export function PeriodBoardTable({
   periods: ReadonlyArray<PeriodRow>
   onStale: () => void
 }) {
+  // Rozwinięcie trwa do przeładowania strony; okresy, które się nie zaczęły, nie pokazują się nigdy.
+  const [showAll, setShowAll] = React.useState(false)
+  const hasOlder = periods.some((period) => period.board_place === "older")
+
+  const shown = periods.filter(
+    (period) => period.board_place === "recent" || (showAll && period.board_place === "older"),
+  )
+
   return (
     <Card>
       <CardHeader>
@@ -43,11 +51,18 @@ export function PeriodBoardTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {periods.map((period) => (
+            {shown.map((period) => (
               <PeriodBoardRow key={period.token} period={period} onStale={onStale} />
             ))}
           </TableBody>
         </Table>
+        {hasOlder && !showAll ? (
+          <div className="flex justify-center pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
+              Pokaż wszystkie
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
