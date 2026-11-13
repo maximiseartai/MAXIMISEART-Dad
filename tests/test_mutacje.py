@@ -628,6 +628,59 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
     assert re.fullmatch(rf"NIEWYKRYTA: mutacja → 1 passed[^(]* in [0-9.]+s {note}", answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
 
 
+LOOSE_OLD_TEST = "import rozliczenia\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 5\n"
+STRICT_NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert rozliczenia.WARTOSC == {value}\n"
+# Drugi test pada po mutacji tylko za pierwszym w tym samym procesie.
+NEIGHBOURS_TEST = (
+    "import rozliczenia\n\n\ndef test_sasiad():\n    rozliczenia.SLAD = rozliczenia.WARTOSC\n\n\n"
+    "def test_po_sasiedzie():\n    assert getattr(rozliczenia, 'SLAD', 0) < 5\n"
+)
+ALREADY_ADVICE = "dubluje go w tym błędzie: dopisz asercję do testu sprzed zmiany albo usuń nowy test"
+
+
+@pytest.mark.parametrize(
+    ("value", "old_at_base", "old_in_branch", "mutated", "selected", "line"),  # line: wzorzec re z {base}, skrótem merge-base
+    [
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", f"JUŻ ŁAPIE tests/test_stary.py::test_stary: ten test sprzed zmiany już łapie mutację „mutacja”, więc tests/test_n.py::test_nowy {ALREADY_ADVICE}"),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 1, "tests/test_n.py", None),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST.replace("< 5", "< 6"), 7, "tests/test_n.py", None),
+        (6, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_n.py", r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_stary sam daje z mutacją WYKRYTA \(1 failed in [0-9.]+s\), bez niej WYKRYTA \(1 failed in [0-9.]+s\), więc niczego nie dowodzi"),
+        (0, LOOSE_OLD_TEST, LOOSE_OLD_TEST, 7, "tests/test_stary.py", "JUŻ ŁAPIE NIESPRAWDZONE: mutacja: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {base}"),
+        (0, NEIGHBOURS_TEST, NEIGHBOURS_TEST, 7, "tests/test_n.py", r"JUŻ ŁAPIE NIESPRAWDZONE: mutacja: tests/test_stary.py::test_po_sasiedzie sam daje z mutacją NIEWYKRYTA \(1 passed in [0-9.]+s\), bez niej NIEWYKRYTA \(1 passed in [0-9.]+s\), więc niczego nie dowodzi"),
+    ],
+    ids=["stary-test-lapie", "lapie-tylko-nowy", "stary-test-zmieniony-w-galezi", "stary-test-czerwony-bez-mutacji", "polecenie-bez-nowego-testu", "stary-test-pada-tylko-za-sasiadem"],
+)
+def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werdykt_i_kod_zostaja(
+    tmp_path: Path, value: int, old_at_base: str, old_in_branch: str, mutated: int, selected: str, line: str | None
+) -> None:
+    """Gałąź dopisuje ścisły test, a test sprzed niej łapie mutację albo nie (T2: repro recenzenta na drugiej warstwie).
+
+    Linia na stderr nie zmienia stdout ani kodu wyjścia. Test zmieniony w gałęzi niczego nie dowodzi, tak samo test,
+    który pada też bez mutacji, albo po mutacji tylko za sąsiadem.
+    """
+
+    repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", "tests/test_stary.py": old_at_base})
+    forked = commit(repo, "baza")
+    git(repo, "branch", "glowna")
+    (repo / PACKAGE).write_text(f"WARTOSC = {value}\n", encoding="utf-8")
+    (repo / "tests" / "test_stary.py").write_text(old_in_branch, encoding="utf-8")
+    (repo / "tests" / "test_n.py").write_text(STRICT_NEW_TEST.format(value=value), encoding="utf-8")
+    commit(repo, "nowy test")
+    # Świeże czasy CI bez pomiarów: szybko.plan bierze każdy plik, a narzędzie nie pobiera czasów z GitHuba.
+    (repo / ".git" / "czasy-ci").mkdir()
+    (repo / ".git" / "czasy-ci" / "pobrane").touch()
+    command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected)
+    caller = {**WITHOUT_XDIST_WORKERS, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1"}
+
+    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, f"WARTOSC = {value}", f"WARTOSC = {mutated}", "--", *command, env=caller)
+
+    assert (answered.returncode, answered.stdout.splitlines()[1:]) == (0, ["MUTACJE OK"]), answered.stdout + answered.stderr
+    assert answered.stdout.startswith("WYKRYTA: mutacja → 1 failed"), answered.stdout
+    found = [found for found in answered.stderr.splitlines() if found.startswith("JUŻ ŁAPIE")]
+    expected = [] if line is None else [line.format(base=forked[:8])]
+    assert len(found) == len(expected) and all(map(re.fullmatch, expected, found)), answered.stderr
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGINT do jednego procesu jest sygnałem POSIX")
 def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -> None:
     repo, mutation, started, beats = _hanging_repository(tmp_path)
@@ -725,7 +778,11 @@ def test_skrypt_mutacji_skilla_daje_zagniezdzonemu_pytest_n_auto_jednego_workera
 
 
 # Narzędzie na komputerze z ``cores`` rdzeniami: ``os.cpu_count`` podmieniony przed jego startem.
-ON_CORES = "import os, runpy, sys; _, cores, *sys.argv = sys.argv; os.cpu_count = lambda: int(cores); runpy.run_path(sys.argv[0], run_name='__main__')"
+# Jak ``python tools/mutacje.py``: katalog skryptu na początku ``sys.path`` (runpy.run_path go nie dopisuje).
+ON_CORES = (
+    "import os, runpy, sys; _, cores, *sys.argv = sys.argv; os.cpu_count = lambda: int(cores); "
+    "sys.path.insert(0, os.path.dirname(sys.argv[0])); runpy.run_path(sys.argv[0], run_name='__main__')"
+)
 
 
 @pytest.mark.parametrize(("cores", "at_once"), [(3, 3), (16, 8)], ids=["runner-ci-mniej-rdzeni-niz-8", "mac-wiecej-rdzeni-niz-8"])
