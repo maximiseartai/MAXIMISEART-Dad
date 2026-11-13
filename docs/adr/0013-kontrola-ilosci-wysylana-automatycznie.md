@@ -14,6 +14,9 @@ który wdraża Reguły ilości bez trybu cienia. Zmienia dwa zdania
 Kontrolę ilości wysyła dziś wspólna kolejka Skrzynki Zgłoszeń
 ([ADR 0015](0015-logi-uruchomienia-uwagi-taty-i-powiadomienia.md)).
 
+[ADR 0033](0033-reguly-ilosci-naleza-do-taty.md) zmienia zdanie „Zmiana reguły wymaga potwierdzenia taty”: tata zmienia
+regułę sam i widzi różnice z Kontroli ilości w Centrum.
+
 ## Kontekst
 
 Plik zbiorczy ma dwa stany: Ilości usług wpisane przez Przygotowanie pliku

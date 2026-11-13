@@ -19,6 +19,9 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
 - „Co widzi przeglądarka”: widok Raporty pokazuje też pory wysłanych przypomnień i informację o brakującej stopce,
   bez adresów Wykonawców i bez treści maili.
 
+[ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia pory, godzinę pierwszego przypomnienia, stopkę i treść maila w
+Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały.
+
 ## Kontekst
 
 Wykonawcy nie zawsze wysyłają raport za dzień. Tata przypomina im o tym sam. Chce, żeby Centrum wysyłało
