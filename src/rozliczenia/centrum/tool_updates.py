@@ -79,7 +79,7 @@ class ToolUpdates:
     Wynik ``AKTUALNA`` dotyczy najnowszego Wydania, które Centrum znało w jego
     chwili (``release``, ta sama pamięć co w Konfiguracji); gdy Centrum zna już
     inne, wynik znika, żeby przy przycisku nowego Wydania nie było starego „Masz
-    najnowszą wersję.” (#373).
+    najnowszą wersję.”
 
     Po udanej aktualizacji Centrum uruchamia opiekuna ponownego startu
     (``guardian``) i zamyka się (``shutdown``); miejsca „jedno naraz” już nie
@@ -147,11 +147,11 @@ class ToolUpdates:
     def _after_restart(self) -> None:
         """Wynik od opiekuna ponownego startu: do dziennika i do karty, raz, bez czekania na sieć.
 
-        „ok” przy działającym commicie innym niż „po” to porażka nieoczekiwana: nowa wersja nie działa (#490). Porażkę
+        „ok” przy działającym commicie innym niż „po” to porażka nieoczekiwana: nowa wersja nie działa. Porażkę
         z pliku zapisał opiekun albo skrót po cofnięciu klonu do „przed”, więc przy działającym commicie innym niż
-        „przed” jest stara: dziennik ją zapisuje, a karta jej nie pokazuje (#725). Wynik, który dziennik już zgłosił,
+        „przed” jest stara: dziennik ją zapisuje, a karta jej nie pokazuje. Wynik, który dziennik już zgłosił,
         albo wynik starszej Aktualizacji (``CentrumLog.update_awaits``) Centrum pomija, bo dysk mógł nie dać usunąć jego
-        pliku (#491). Po porażce (np. cofnięcie nowej wersji) skrzynkę Zgłoszeń pyta w tle uchwyt Zgłoszenia: start
+        pliku. Po porażce (np. cofnięcie nowej wersji) skrzynkę Zgłoszeń pyta w tle uchwyt Zgłoszenia: start
         Centrum na nią nie czeka.
         """
 
