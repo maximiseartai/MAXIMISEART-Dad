@@ -2,8 +2,8 @@
 
 Notka to „Co nowego” dla taty jego językiem: krótkie zdanie wstępu (może go nie być) i punkty, każdy w linii ``- ``.
 Pod nią, gdy są, stoją nagłówek ``CASES_HEADING`` i rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w jednej linii
-``- ``: rodzaj sprawy (``CASE_KINDS``), spacja, „#” z numerem issue, dwukropek i tytuł w jednej linii. Przykładową
-notkę z dwiema sprawami czyta i pisze ``tests/test_notka_wydania.py``.
+``- ``: rodzaj sprawy (``CASE_KINDS``), spacja, „#” z numerem issue, dwukropek, spacja i tytuł w jednej linii.
+Przykładową notkę z dwiema sprawami czyta i pisze ``tests/test_notka_wydania.py``.
 
 Release jest publiczny, a Skrzynka prywatna, więc sprawa ma tylko numer i tytuł, nigdy treść. Ten moduł jest
 jedynym miejscem formatu: notkę pisze ``render`` (narzędzie Wydań), a czyta ``parse`` (Centrum).
