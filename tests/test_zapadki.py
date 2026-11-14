@@ -1543,12 +1543,18 @@ _PROBKI_LOKATORA: Final[list[tuple[str, list[int]]]] = [
     (f'{_LOCATOR}page.get_by_role("head\\x69ng")\n', [5]),
     (f'{_LOCATOR}(page.get_by_role)("heading")\n', [5]),
     (f'{_LOCATOR}page.get_by_role("heading", exact=True)\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", level=2)\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", name="")\n', [5]),
+    (f"{_LOCATOR}page.get_by_role('heading', level=2, name='')\n", [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", name=(r""))\n', [5]),
+    (_LOCATOR + 'page.get_by_role("heading", name=\'\'\'\'\'\')\n', [5]),
     (f'{_LOCATOR}page.get_by_role(  # nagłówek\n        "heading",\n    )\n', [5]),
     (f'{_LOCATOR}page.locator("main").get_by_role("heading").first\n', [5]),
     (f'{_LOCATOR}page.get_by_role(f"{{HEADING}}heading")\n', []),
     (f'{_LOCATOR}page.get_by_role(f"{{{{heading}}}}")\n', []),
     (f'{_LOCATOR}page.get_by_role(r"head\\x69ng")\n', []),
     (f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
+    (f'{_LOCATOR}page.get_by_role("heading", level=2, name="Okresy")\n', []),
     (f'{_LOCATOR}page.get_by_role(("heading"), name="Okresy")\n', []),
     (f'{_LOCATOR}page.get_by_role("button")\n', []),
     (f'{_LOCATOR}page.get_by_text("heading")\n', []),
@@ -1584,8 +1590,7 @@ ZNANE_LUKI_LOKATORA: Final[dict[str, str]] = {
     "rola nie jest literałem: rozpakowanie argumentów": f'{_LOCATOR}page.get_by_role(*ROLES)\n\n\nROLES = ("heading",)\n',
     "rola nie jest literałem: rozpakowanie słownika": f'{_LOCATOR}page.get_by_role(**{{"role": "heading"}})\n',
     "metoda pod inną nazwą": f'{_LOCATOR}by_role("heading")\n\n\nby_role = Page.get_by_role\n',
-    "zawężenie bez nazwy: sam poziom": f'{_LOCATOR}page.get_by_role("heading", level=2)\n',
-    "zawężenie bez nazwy: name= o wartości, która nie zawęża": f'{_LOCATOR}page.get_by_role("heading", name="")\n',
+    "pusta nazwa nie jest literałem: stała modułu": f'{_LOCATOR}page.get_by_role("heading", name=ANY)\n\n\nANY = ""\n',
     "kopia właściciela: lokator settings_title z name= poza drive/common.py": (
         f'import re\n\n{_LOCATOR}page.get_by_role("heading", name=re.compile(r"^Ustawienia "))\n'
     ),
@@ -1598,7 +1603,8 @@ ZNANE_LUKI_LOKATORA: Final[dict[str, str]] = {
 def test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
     """Reguła ``lokator-tytulu-okna`` czyta tylko literał roli: z miejsca albo ``role=``, po zdjęciu dowolnej liczby
     nawiasów, napis o wartości ``heading`` w dowolnym zapisie (cudzysłów, przedrostki ``r``, ``u``, ``f`` bez wstawki,
-    ucieczki), a ``name=`` i ``level=`` czyta tylko z obecności. Każda rola, która nie jest literałem, to jedna klasa
+    ucieczki), a zawężenie tylko z ``name=``, którego wartość nie jest literałem pustego napisu (``level=`` nie odróżnia
+    tytułu okna od tytułu powiadomienia, bo oba to ``<h2>``). Każda rola, która nie jest literałem, to jedna klasa
     znanej luki „rola nie jest literałem”, z próbką na rodzaj wyrażenia; bajty ``b"…"`` i szablon ``t"…"`` nie są
     napisem roli, więc nie są lukami."""
 

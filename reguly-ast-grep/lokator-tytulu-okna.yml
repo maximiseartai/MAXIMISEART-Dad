@@ -11,7 +11,7 @@ rule:
   # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553, powrót #1533 W1 r2).
   # Reguła czyta tylko literał roli: argument z miejsca albo role=, po zdjęciu dowolnej liczby nawiasów, to napis
   # o wartości heading w dowolnym zapisie literału. Każde inne wyrażenie roli (nazwa, sklejanie, operator, wywołanie,
-  # f-napis ze wstawką) to znana luka „rola nie jest literałem” w ZNANE_LUKI_REGUL_POWROTOW w tests/test_zapadki.py.
+  # f-napis ze wstawką) to znana luka „rola nie jest literałem” w ZNANE_LUKI_LOKATORA w tests/test_zapadki.py.
   kind: call
   all:
     - has:
@@ -30,15 +30,21 @@ rule:
                 - has:
                     field: value
                     matches: rola-naglowka
-    # name= albo level= zawęża nagłówek; reguła czyta obecność argumentu, nie jego wartość.
+    # Zawęża tylko name=, bo tytuł okna i tytuł powiadomienia to oba <h2>, więc level= niczego nie odróżnia.
+    # Wartość name= reguła czyta tylko wtedy, gdy to literał pustego napisu, który w Playwright pasuje do każdego nagłówka.
     - not:
         has:
           field: arguments
           has:
             kind: keyword_argument
-            has:
-              field: name
-              regex: '^(name|level)$'
+            all:
+              - has:
+                  field: name
+                  regex: '^name$'
+              - not:
+                  has:
+                    field: value
+                    matches: pusty-napis
 utils:
   metoda-get-by-role:
     any:
@@ -60,3 +66,10 @@ utils:
       - kind: parenthesized_expression
         has:
           matches: rola-naglowka
+  pusty-napis:
+    any:
+      - kind: string
+        regex: '^(?i:u|r|f|fr|rf)?(""|''''|""""""|'''''''''''')$'
+      - kind: parenthesized_expression
+        has:
+          matches: pusty-napis
