@@ -85,7 +85,7 @@ from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown
+from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown, tool
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
@@ -543,7 +543,7 @@ _PLIK: Final = """\
 from rozliczenia.client_data import LogsText
 
 
-def plik({komorka}, tekst: LogsText) -> ArchiveFile:
+def plik({komorka}, tekst: LogsText, plik: ArchiveFile) -> ArchiveFile:
     return ArchiveFile({pola})
 """
 _GOTOWY_PLIK: Final = "from rozliczenia.centrum.outbox import ArchiveFile\n\n\n"
@@ -553,11 +553,14 @@ _POSTEP: Final = (
 )
 _ARCHIWUM_POLA: Final = ("tag", "title", "description", "name", "text")
 _TEKST_NARZEDZIA: Final = ("tag", "title", "description", "name")
-"""Pola pliku w Archiwum z tekstem narzędzia (okres i nazwa pliku Logów), które są jeszcze ``str``."""
+"""Pola pliku w Archiwum z tekstem narzędzia (okres i nazwa pliku Logów), typu ``Outgoing``."""
 
 
 def _pola(z_komorki: str) -> str:
-    return ", ".join("komorka" if pole == z_komorki else ("tekst" if pole == "text" else '"t"') for pole in _ARCHIWUM_POLA)
+    """Pola pliku w Archiwum: ``z_komorki`` z komórki, tekst pliku po strażniku, a reszta z gotowego pliku ``plik`` (próbka w
+    ``src`` nie robi tekstu narzędzia, bo ``tool`` ma zakaz ruff)."""
+
+    return ", ".join("komorka" if pole == z_komorki else ("tekst" if pole == "text" else f"plik.{pole}") for pole in _ARCHIWUM_POLA)
 
 
 def _plik(pola: str, *, importy: str = "", komorka: str = "komorka: str") -> str:
@@ -603,20 +606,24 @@ _POSTEP_Z: Final = '    return NewIssue(etykieta, guard_text("Postęp.", "postę
 # Drogi wartości z komórki taty bez strażnika do pliku Logów, pliku w Archiwum Logów okresu, komentarza Uruchomienia i
 # z nich do innych celów wysyłki → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module src/rozliczenia/centrum.
 DROGI_DO_LOGOW: Final = {
+    **{
+        f"ArchiveFile.{pole} z komórki": (_plik(_pola(pole)), f'Argument {numer} to "ArchiveFile" has incompatible type "str"; expected "Outgoing"')
+        for numer, pole in enumerate(_TEKST_NARZEDZIA, start=1)
+    },
     "ArchiveFile.text z komórki": (
         _plik(_pola("text")),
         'Argument 5 to "ArchiveFile" has incompatible type "str"; expected "LogsText"',
     ),
     "tekst do wysyłki w pliku Archiwum": (
         _GOTOWY_PLIK.replace("\n\n\n", "\nfrom rozliczenia.client_data import Outgoing\n\n\n")
-        + 'def plik(tekst: Outgoing) -> ArchiveFile:\n    return ArchiveFile("t", "t", "d", "n", tekst)\n',
+        + 'def plik(tekst: Outgoing, plik: ArchiveFile) -> ArchiveFile:\n    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, tekst)\n',
         'Argument 5 to "ArchiveFile" has incompatible type "Outgoing"; expected "LogsText"',
     ),
     "tekst komentarza po guard_text w pliku Archiwum": (
         "from rozliczenia.centrum.outbox import ArchiveFile\nfrom rozliczenia.centrum.run_logs_guard import guard_text\n"
         "from rozliczenia.client_data import ForbiddenValues\n\n\n"
-        "def plik(komorka: str, pamiec: ForbiddenValues) -> ArchiveFile:\n"
-        '    return ArchiveFile("t", "t", "d", "n", guard_text("Postęp.", komorka, pamiec))\n',
+        "def plik(komorka: str, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:\n"
+        '    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_text("Postęp.", komorka, pamiec))\n',
         '; expected "LogsText"',  # tekst komentarza po guard_text
     ),
     "postęp z komórki": (
@@ -763,7 +770,9 @@ from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post
 # bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w
 # tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na ``origin/main``.
 ZNANE_LUKI_LOGOW: Final = {
-    **{f"ArchiveFile.{pole} z komórki": _plik(_pola(pole)) for pole in _TEKST_NARZEDZIA},
+    "konstrukcja bez __new__: str.__new__ z klasą Outgoing w tytule pliku Archiwum": _plik(
+        _pola("title").replace("komorka", "str.__new__(Outgoing, komorka)"), importy="from rozliczenia.client_data import Outgoing\n"
+    ),
     "str.__new__ z klasą LogsText w pliku Archiwum": _plik(_pola("text").replace("komorka", "str.__new__(LogsText, komorka)")),
     # Kontrola dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of, LogsOnDisk.write) sprawdza
     # obiekt tak, jak go zastaje, więc zmiana obiektu, klasy albo modułu sprawdzenia w chwili działania ją omija: jedna
@@ -778,10 +787,10 @@ class Obcy(str):
     __slots__ = ()
 
 
-def plik(komorka: str) -> ArchiveFile:
+def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
     tekst = Obcy(komorka)
     object.__setattr__(tekst, "__class__", LogsText)
-    return ArchiveFile("t", "t", "d", "n", cast(LogsText, tekst))
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, cast(LogsText, tekst))
 """,
     "zmiana obiektu w chwili działania: przypisanie __class__ typu tekstu po strażniku obcemu obiektowi, potem post_of": """from typing import Any
 
@@ -887,16 +896,16 @@ def zapis(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> str:
     + """from rozliczenia import client_data
 
 
-def plik(komorka: str) -> ArchiveFile:
-    return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
+def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, getattr(client_data, "logs_text")(komorka))
 """,
     'dowód z getattr modułu: LogsText z dowodem getattr(client_data, "_PASSED") w pliku Archiwum': _GOTOWY_PLIK
     + """from rozliczenia import client_data
 from rozliczenia.client_data import LogsText
 
 
-def plik(komorka: str) -> ArchiveFile:
-    return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
+def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, LogsText(komorka, getattr(client_data, "_PASSED")))
 """,
     "parser pliku kolejki z tekstem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
 from rozliczenia.centrum.outbox import ArchiveFile
@@ -911,8 +920,8 @@ from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenValues
 
 
-def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> ArchiveFile:
-    return ArchiveFile("t", "t", "d", "n", guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
+def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
 """,
     "pole str wywołującego w tekście narzędzia z prawem tool (okres postępu w post_of)": """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
 from rozliczenia.centrum.outbox import NewIssue, PeriodThread
@@ -956,30 +965,53 @@ _PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
 # Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
 # z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
 ODMOWY_LOGOW: Final = {
+    "atrapa pliku Archiwum z polami prawdziwego pliku": (
+        """from types import SimpleNamespace
+from typing import cast
+
+from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
+from rozliczenia.centrum.outbox import ArchiveFile, Post
+
+
+def wysylka(komorka: str, plik: ArchiveFile, postep: ProgressVersion) -> Post:
+    gotowa = post_of(postep)
+    pola = {pole: getattr(plik, pole) for pole in ("tag", "title", "description", "name", "text")}
+    atrapa = cast(ArchiveFile, SimpleNamespace(**pola, packed_name=komorka))
+    return Post(gotowa.target, gotowa.period, gotowa.run_id, gotowa.header, gotowa.parts, atrapa)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z rozliczenia.centrum.outbox, nie SimpleNamespace.",
+    ),
+    **{
+        f"cast na Outgoing w {pole} pliku Archiwum": (
+            _plik(_pola(pole).replace("komorka", "cast(Outgoing, komorka)"), importy="from typing import cast\n\nfrom rozliczenia.client_data import Outgoing\n"),
+            f"bieg TypeError: Pole ArchiveFile.{pole} w pliku kolejki ma typ str.",
+        )
+        for pole in _TEKST_NARZEDZIA
+    },
     "cast na LogsText w pliku Archiwum": (
         _plik(_pola("text").replace("komorka", "cast(LogsText, komorka)"), importy="from typing import cast\n\n"),
-        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+        "bieg TypeError: Pole ArchiveFile.text w pliku kolejki ma typ ",
     ),
     "wartość typu Any w pliku Archiwum": (
         _plik(_pola("text").replace("komorka", 'wiersz["ADRES"]'), importy="from typing import Any\n\n", komorka="wiersz: dict[str, Any]"),
-        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+        "bieg TypeError: Pole ArchiveFile.text w pliku kolejki ma typ ",
     ),
     "object.__setattr__ na pliku Archiwum": (
         _GOTOWY_PLIK
         + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
-        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+        "bieg TypeError: Pole ArchiveFile.text w pliku kolejki ma typ ",
     ),
     "zapis do __dict__ pliku Archiwum": (
         _GOTOWY_PLIK + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
-        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+        "bieg TypeError: Pole ArchiveFile.text w pliku kolejki ma typ ",
     ),
     "type.__new__ z bazą bez super(): podklasa LogsText w pliku Archiwum": (
         _PODKLASA
-        + """def plik(komorka: str) -> ArchiveFile:
+        + """def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
     tekst: Any = type.__new__(type(LogsText), "Tekst", (Mixin, LogsText), {"__new__": lambda cls, t: str.__new__(cls, t)})
-    return ArchiveFile("t", "t", "d", "n", tekst(komorka))
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, tekst(komorka))
 """,
-        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+        "bieg TypeError: Pole ArchiveFile.text w pliku kolejki ma typ ",
     ),
     "type() z pustym __post_init__: podklasa wersji postępu, potem post_of": (
         _PODKLASA
@@ -1087,7 +1119,7 @@ def _argumenty_logow() -> dict[str, object]:
         "komorka": _KOMORKA,
         "wiersz": {"ADRES": _KOMORKA},
         "tekst": guard_logs(logi, pamiec).text,
-        "plik": ArchiveFile("t", "t", "d", "n", guard_logs(logi, pamiec).text),
+        "plik": ArchiveFile(tool("t"), tool("t"), tool("d"), tool("n"), guard_logs(logi, pamiec).text),
         "logi": logi,
         "pamiec": pamiec,
         "etykieta": "zgloszenie",
