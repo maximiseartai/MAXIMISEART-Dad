@@ -730,47 +730,86 @@ RED_OLD_TESTS = {
         "def test_stary(nazwa):\n    assert rozliczenia.WARTOSC < 5\n"
     ),
     "blad-kolekcji": "import rozliczenia\nfrom rozliczenia import NAZWA\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 5\n",
-    "zawieszenie": (
-        "import time, pytest, rozliczenia\n\n\n@pytest.mark.timeout(2)\ndef test_stary():\n"
-        "    if not hasattr(rozliczenia, 'NAZWA'):\n        time.sleep(30)\n    assert rozliczenia.WARTOSC < 5\n"
-    ),
+    **{
+        name: (
+            f"import time, pytest, rozliczenia\n\n\n@pytest.mark.timeout(2{method})\ndef test_stary():\n"
+            "    if not hasattr(rozliczenia, 'NAZWA'):\n        time.sleep(30)\n    assert rozliczenia.WARTOSC < 5\n"
+        )
+        # Metoda domyślna systemu (signal na Macu i Linuksie, thread na Windows) i thread wprost, jak na Windows.
+        for name, method in (("zawieszenie", ""), ("zawieszenie-thread", ", method='thread'"))
+    },
 }
-RED_OLD_REFUSED = "MUTACJE: kod bez mutacji jest czerwony, więc MUTACJE OK byłoby fałszywe; napraw to, co padło, i powtórz"
+# Test sprzed zmiany pada bez mutacji tylko za sąsiadem w swoim pliku, a ``conftest.py`` podkatalogu nie da się
+# zaimportować (sondy przeglądu #1726 r1, W1).
+NEIGHBOUR_RED = (
+    "import rozliczenia\n\n\ndef test_sasiad():\n    rozliczenia.SLAD = getattr(rozliczenia, 'NAZWA', None)\n\n\n"
+    "def test_po_sasiedzie():\n    assert rozliczenia.WARTOSC < 5 and getattr(rozliczenia, 'SLAD', 'x') is not None\n"
+)
+GREEN_OLD = "import rozliczenia\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 100\n"
+SUB_CONFTEST = {
+    "tests/sub/__init__.py": "",
+    "tests/sub/conftest.py": "from rozliczenia import NAZWA\n",
+    "tests/sub/test_c.py": "import rozliczenia\n\n\ndef test_c():\n    assert rozliczenia.WARTOSC < 100\n",
+}
+# Test sprzed zmiany, który naprawdę łapie mutację, a stoi przed czerwonym, więc ``-x`` JUŻ ŁAPIE kończy się na nim.
+CATCHES_OLD = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_lapie():\n    assert rozliczenia.WARTOSC < 5\n"}
+BASE_RED = "MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi"
 
 
 @pytest.mark.parametrize(
-    ("old", "node", "last"),
+    ("old", "files", "shown"),
     [
-        (RED_OLD_TESTS["porazka"], "tests/test_stary.py::test_stary", r"1 failed in [0-9.]+s"),
-        (RED_OLD_TESTS["blad-przygotowania"], "tests/test_stary.py::test_stary", r"1 error in [0-9.]+s"),
-        (RED_OLD_TESTS["blad-kolekcji"], "tests/test_stary.py", r"1 error in [0-9.]+s"),
-        (RED_OLD_TESTS["zawieszenie"], "tests/test_stary.py::test_stary", re.escape("Failed: Timeout (>2.0s) from pytest-timeout.")),
+        *((old, {}, "tests/test_stary.py") for old in RED_OLD_TESTS.values()),
+        (NEIGHBOUR_RED, {}, "tests/test_stary.py::test_po_sasiedzie"),
+        (GREEN_OLD, SUB_CONFTEST, "tests/sub/conftest.py"),
+        (RED_OLD_TESTS["porazka"], CATCHES_OLD, "tests/test_stary.py::test_stary"),
     ],
-    ids=list(RED_OLD_TESTS),
+    ids=[*RED_OLD_TESTS, "sasiad-w-pliku", "conftest-podkatalogu", "za-testem-ktory-lapie"],
 )
-def test_test_sprzed_zmiany_czerwony_bez_mutacji_daje_odmowe_zamiast_mutacje_ok(tmp_path: Path, old: str, node: str, last: str) -> None:
-    """Jak #1719: obie mutacje padły w nowym teście, ale zmiana psuje test sprzed niej, który CI uruchomi (porażka, błąd
-    przygotowania, błąd kolekcji pliku, zawieszenie), więc narzędzie odmawia jedną linią na ten test zamiast ``MUTACJE OK``."""
+def test_test_sprzed_zmiany_czerwony_bez_mutacji_daje_odmowe_zamiast_mutacje_ok(tmp_path: Path, old: str, files: dict[str, str], shown: str) -> None:
+    """Jak #1719: zmiana psuje test sprzed niej z wyboru szybko, który CI uruchomi, a polecenie przechodzi. Wybór biegnie
+    raz bez mutacji w podstawie silnika, jak polecenie, więc każda postać czerwieni (porażka, błąd przygotowania albo
+    kolekcji, zawieszenie metodą domyślną i ``thread`` z Windows, porażka za sąsiadem, ``conftest.py`` podkatalogu, test
+    za tym, który łapie mutację) daje ``PODSTAWA CZERWONA`` i odmowę przed mutacjami, a stderr pokazuje, co padło."""
 
-    repo, _ = _branch_with_new_test(tmp_path, old, old, STRICT_NEW_TEST.format(value=0), files=WITH_NAME)
+    repo, _ = _branch_with_new_test(tmp_path, old, old, STRICT_NEW_TEST.format(value=0), files=WITH_NAME | files)
 
     answered = _two_mutations(repo, tmp_path, "tests/test_n.py")
 
+    listed = repo / ".git" / "mutacje-testy-sprzed-zmiany.txt"
+    red = rf"PODSTAWA CZERWONA: -m pytest -q -x -n 1 -p no:cacheprovider @{re.escape(str(listed.resolve()))} → .+"
     lines = answered.stdout.splitlines()
-    red = rf"PODSTAWA CZERWONA: -m pytest -q -n 0 -p no:cacheprovider {re.escape(node)} → {last} \(test sprzed zmiany z wyboru szybko pada albo wisi też bez mutacji\)"
-    assert answered.returncode == 2, answered.stdout + answered.stderr
-    assert [line.split(" → ")[0] for line in lines[:2]] == ["WYKRYTA: m1-ujemna", "WYKRYTA: m2-duza"], answered.stdout
-    assert (bool(re.fullmatch(red, lines[2])), lines[3:]) == (True, [RED_OLD_REFUSED]), answered.stdout
+    # Między nimi tylko ``PODSTAWA BEZ TESTU`` przy kodzie 4 pytest (``conftest.py``, którego nie da się zaimportować).
+    assert (answered.returncode, lines[-1], [line for line in lines[1:-1] if not line.startswith("PODSTAWA BEZ TESTU: ")]) == (2, BASE_RED, []), answered.stdout
+    assert (bool(re.fullmatch(red, lines[0])), shown in answered.stderr) == (True, True), answered.stdout + answered.stderr
 
 
-# Znane luki odmowy: test sprzed zmiany czerwony bez mutacji, a narzędzie i tak kończy się ``MUTACJE OK``, bo sprawdzenie
-# testami sprzed zmiany go nie uruchamia. Klucz to „klasa: postać”, wartość to polecenie i argumenty narzędzia; gdy
-# narzędzie zacznie tu odmawiać, przenieś próbkę do testu odmowy wyżej.
-CATCHES_OLD = {"tests/test_a.py": "import rozliczenia\n\n\ndef test_lapie():\n    assert rozliczenia.WARTOSC < 5\n"}
+def test_podstawa_testow_sprzed_zmiany_bez_wyniku_w_limicie_daje_odmowe_zamiast_mutacje_ok(tmp_path: Path) -> None:
+    """Test sprzed zmiany, zielony, ale dłuższy niż ``--podstawa-s``: bez wyniku podstawy ``MUTACJE OK`` nie mówiłoby,
+    że wybór przechodzi, więc narzędzie mówi ``PODSTAWA NIESPRAWDZONA`` i kończy się kodem 2."""
+
+    slow = "import time, rozliczenia\n\n\ndef test_stary():\n    time.sleep(30)\n    assert rozliczenia.WARTOSC < 100\n"
+    repo, _ = _branch_with_new_test(tmp_path, slow, slow, STRICT_NEW_TEST.format(value=0))
+
+    answered = _two_mutations(repo, tmp_path, "tests/test_n.py", "--podstawa-s", "3")
+
+    lines = answered.stdout.splitlines()
+    unchecked = "MUTACJE: podstawa bez wyniku w swoim limicie, więc MUTACJE OK byłoby niesprawdzone; podnieś jej limit albo uruchom ją sam"
+    assert (answered.returncode, lines[-1], len(lines)) == (2, unchecked, 2), answered.stdout + answered.stderr
+    assert re.fullmatch(r"PODSTAWA NIESPRAWDZONA: -m pytest -q -x -n 1 -p no:cacheprovider @.+ → brak wyniku po 3 s", lines[0]), answered.stdout
+
+
+# Znane luki odmowy: test sprzed zmiany czerwony bez mutacji, a narzędzie i tak kończy się ``MUTACJE OK``, bo wybór szybko
+# go nie ma albo podstawa wyboru nie biegnie. Klucz to „klasa: postać”, wartość to polecenie, argumenty narzędzia i
+# pliki merge-base; gdy narzędzie zacznie tu odmawiać, przenieś próbkę do testu odmowy wyżej.
+FAR_RED = {
+    "src/posrednik.py": "from rozliczenia import WARTOSC, NAZWA\n",
+    "tests/test_daleki.py": "import posrednik\n\n\ndef test_daleki():\n    assert posrednik.NAZWA\n",
+}
 ZNANE_LUKI = {
-    "sprawdzenie nie biegnie: polecenie nie wybiera testu dodanego ani zmienionego": ("tests/test_a.py", (), CATCHES_OLD),
-    "sprawdzenie nie biegnie: limit --juz-lapie-s minął przed nim": ("tests/test_n.py", ("--juz-lapie-s", "0"), {}),
-    "-x kończy sprawdzenie: test sprzed zmiany, który naprawdę łapie mutację, stoi przed czerwonym": ("tests/test_n.py", (), CATCHES_OLD),
+    "podstawa wyboru nie biegnie: polecenie nie wybiera testu dodanego ani zmienionego": ("tests/test_a.py", (), CATCHES_OLD),
+    "podstawa wyboru nie biegnie: limit --juz-lapie-s minął przed planem": ("tests/test_n.py", ("--juz-lapie-s", "0"), {}),
+    "wybór szybko bez pliku: czasy CI odkładają plik ponad budżet": ("tests/test_n.py", (), FAR_RED),
 }
 
 
@@ -778,7 +817,11 @@ ZNANE_LUKI = {
 def test_znane_luki_odmowy_na_czerwonym_tescie_sprzed_zmiany_koncza_sie_mutacje_ok(
     tmp_path: Path, selected: str, arguments: tuple[str, ...], files: dict[str, str]
 ) -> None:
-    repo, _ = _branch_with_new_test(tmp_path, RED_OLD_TESTS["porazka"], RED_OLD_TESTS["porazka"], STRICT_NEW_TEST.format(value=0), files=WITH_NAME | files)
+    old = GREEN_OLD if "tests/test_daleki.py" in files else RED_OLD_TESTS["porazka"]
+    repo, _ = _branch_with_new_test(tmp_path, old, old, STRICT_NEW_TEST.format(value=0), files=WITH_NAME | files)
+    seconds = {"tests/test_stary.py": 0.1, "tests/test_n.py": 0.1, "tests/test_daleki.py": 10_000.0}
+    lane = {f"pytest:{path}": [{"run": 1, "proba": 1, "zadanie": "z", "s": s, "status": "ok", "testy": 1}] for path, s in seconds.items()}
+    (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps({"runy": [{"run": 1}], "tory": {"linux-3.14": lane}}), encoding="utf-8")
 
     answered = _in_repository(
         repo, "--baza", "glowna", *arguments, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 7", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=ONE_WORKER
