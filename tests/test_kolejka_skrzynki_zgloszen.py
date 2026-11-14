@@ -76,7 +76,7 @@ def numbered(number: int, count: int, text: Outgoing) -> Outgoing:
 
 
 def post(blocks: list[str], *, frame: Frame = numbered, run_id: str = RUN_ID) -> Post:
-    return Post.of(THREAD, period="08_14_09_2026", run_id=run_id, blocks=[tool(block) for block in blocks], frame=frame)
+    return Post.of(THREAD, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(block) for block in blocks], frame=frame)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -163,7 +163,7 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
         Post.of(
             THREAD,
             period="08_14_09_2026",
-            run_id=RUN_ID,
+            run_id=tool(RUN_ID),
             blocks=[tool("x" * 60_000)],
             frame=lambda _number, _count, text: tool("nagłówek " * 1_000) + text,
         )
@@ -176,17 +176,17 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
 )
 def test_identyfikator_wysylki_pusty_dlugi_ze_spacja_albo_w_dwoch_liniach_to_blad_programu(run_id: str) -> None:
     # Znacznik wysyłki to jedna linia z identyfikatorem jako jednym słowem, w zapasie _MARK_RESERVE każdego komentarza.
-    assert Post(THREAD, period="08_14_09_2026", run_id="x" * 64, header=None, parts=(tool("treść"),)).run_id == "x" * 64
+    assert Post(THREAD, period="08_14_09_2026", run_id=tool("x" * 64), header=None, parts=(tool("treść"),)).run_id == "x" * 64
 
     with pytest.raises(ValueError, match="Identyfikator wysyłki"):
-        Post(THREAD, period="08_14_09_2026", run_id=run_id, header=None, parts=(tool("treść"),))
+        Post(THREAD, period="08_14_09_2026", run_id=tool(run_id), header=None, parts=(tool("treść"),))
 
 
 def test_granica_tresci_liczy_znaki_a_nie_bajty_takze_z_polskimi_literami() -> None:
     first_line = len(f"{THREAD.line}\n\n")
 
     def opening(text: str) -> Post:
-        return Post(THREAD, period="08_14_09_2026", run_id=RUN_ID, header=None, parts=(tool(text),))
+        return Post(THREAD, period="08_14_09_2026", run_id=tool(RUN_ID), header=None, parts=(tool(text),))
 
     longest = opening("ą" * (TEXT_LIMIT - first_line))
 
@@ -257,7 +257,7 @@ def test_watek_ktory_zostaje_po_zamknieciu_dostaje_czesci_jako_komentarze_w_zamk
     queue = Queue(tmp_path, box)
 
     queue.outbox.post(
-        Post.of(LOGS, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("logi\n")], frame=numbered, header=tool("Nagłówek"))
+        Post.of(LOGS, period="08_14_09_2026", run_id=tool(RUN_ID), blocks=[tool("logi\n")], frame=numbered, header=tool("Nagłówek"))
     )
 
     assert queue.box.wait_until(lambda box: bool(closed.comments))
@@ -662,7 +662,7 @@ def test_uwaga_ktorej_komentarz_skrzynka_odrzucila_dostaje_reszte_czesci_w_swoim
     tmp_path: Path,
 ) -> None:
     queue = Queue(tmp_path, FakeReportBox(comment_outcomes=[Rejected()]))
-    note = Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Część 1/2\n\na"), tool("Część 2/2\n\nb")))
+    note = Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Część 1/2\n\na"), tool("Część 2/2\n\nb")))
 
     queue.outbox.post(note)
     queue.passed()
@@ -831,7 +831,7 @@ def run_logs(
     kolejkuje nowszą wersję tej samej wysyłki (``RunComments.diagnosed``)."""
 
     parts = tuple(tool(f"Logi {version}, część {number}/{count}\n") for number in range(1, count + 1))
-    return Post(LOGS, "08_14_09_2026", run_id, None if header is None else tool(header), parts)
+    return Post(LOGS, "08_14_09_2026", tool(run_id), None if header is None else tool(header), parts)
 
 
 @pytest.mark.parametrize(
@@ -1040,7 +1040,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
         label="logi-uruchomienia", line=tool("- Logi Uruchomienia okresu: 08_14_09_2026"), closed="reuse", title=tool("Logi")
     )
     run_logs = Post.of(
-        logs, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("podsumowanie\n")], frame=numbered, header=tool("Logi okresu")
+        logs, period="08_14_09_2026", run_id=tool(RUN_ID), blocks=[tool("podsumowanie\n")], frame=numbered, header=tool("Logi okresu")
     )
 
     queue.outbox.post(run_logs)
@@ -1065,7 +1065,7 @@ REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRI
 
 
 def report(body: str = REPORT_BODY, *, run_id: str = RUN_ID) -> Post:
-    return Post.of(REPORT, period="08_14_09_2026", run_id=run_id, blocks=[tool(body)], frame=unframed)
+    return Post.of(REPORT, period="08_14_09_2026", run_id=tool(run_id), blocks=[tool(body)], frame=unframed)
 
 
 def test_zgloszenie_to_issue_z_trescia_podgladu_bez_dopisanego_wiersza(tmp_path: Path) -> None:
@@ -1218,13 +1218,13 @@ class FollowingUp(QueueListener):
         super().delivered(post, number)
         if not isinstance(post.target, NewIssue):
             return ()
-        return (Post(KnownIssue("uwaga-taty", number), None, "komentarz", None, (tool("Komentarz po Uwadze"),)),)
+        return (Post(KnownIssue("uwaga-taty", number), None, tool("komentarz"), None, (tool("Komentarz po Uwadze"),)),)
 
 
 def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1280,7 +1280,7 @@ def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_po
     queue = Queue(tmp_path, FakeReportBox(list_lag=True), listener=FollowingUp())
     fault(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1303,7 +1303,7 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
     _unreadable_at_comment_list(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1317,7 +1317,7 @@ def logs_with_file(run_id: str) -> Post:
     archive = ArchiveFile(
         tool("logi-08_14_09_2026"), tool("Logi Uruchomień 08_14_09_2026"), tool("Opis."), tool(f"{run_id}.json"), logs_text("{}\n")
     )
-    return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"podsumowanie {run_id}\n"),), archive)
+    return Post(LOGS, "08_14_09_2026", tool(run_id), tool("Logi okresu"), (tool(f"podsumowanie {run_id}\n"),), archive)
 
 
 def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_logow(tmp_path: Path) -> None:
@@ -1572,7 +1572,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pok
     issue pokaże to issue; Uwaga czeka wtedy na budzenie ``RETRY_S`` zamiast założyć drugie issue."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox.post(report())
@@ -1595,7 +1595,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_po
     (#879): nowe Centrum zna chwilę tamtego zakładania z pliku obok klucza i czeka na budzenie ``RETRY_S``."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, tool(RUN_ID), None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox = queue.restarted()
@@ -1615,9 +1615,9 @@ def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_li
 
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Pierwsza")), None, RUN_ID, None, (tool("Pierwsza"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Pierwsza")), None, tool(RUN_ID), None, (tool("Pierwsza"),)))
     queue.passed()
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Druga")), None, NEXT_RUN_IDS[0], None, (tool("Druga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Druga")), None, tool(NEXT_RUN_IDS[0]), None, (tool("Druga"),)))
     queue.passed()
 
     assert [note.body for note in queue.box.issues_with("uwaga-taty")] == ["Pierwsza", "Druga"]
@@ -1697,6 +1697,12 @@ def wyslij(kolejka: Outbox, post: Post) -> bool:
 """,
         "`copy.replace` is banned",
     ),
+    "identyfikator wysyłki z komórki": (
+        _GOTOWA + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    return kolejka.post(Post(post.target, None, komorka, None, post.parts))
+""",
+        'Argument 3 to "Post" has incompatible type "str"; expected "Outgoing"',
+    ),
     "__replace__ z polem złego typu": (
         _GOTOWA
         + """def wyslij(kolejka: Outbox, post: Post) -> bool:
@@ -1709,10 +1715,19 @@ def wyslij(kolejka: Outbox, post: Post) -> bool:
 # Znane luki kolejki (tests/fixtures/znane_luki.py): postaci, które zmieniają pole gotowej wysyłki albo dają kolejce
 # inny obiekt, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie łapią.
 ZNANE_LUKI: Final = {
-    # Pole wysyłki z typem str (run_id, period, state) nie jest typem-dowodem, więc plik kolejki bierze każdy napis.
-    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (run_id)": _GOTOWA
+    # Pola wysyłki period i state mają typ str, nie typ-dowód, więc plik kolejki bierze każdy napis; do Skrzynki nie idą
+    # wprost (okres trafia do dziennika Centrum, stan zostaje w pliku), a identyfikator wysyłki (run_id) ma typ Outgoing.
+    "konstrukcja bez __new__: str.__new__ z klasą Outgoing w identyfikatorze wysyłki": _GOTOWA
+    + """from rozliczenia.client_data import Outgoing
+
+
+def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    object.__setattr__(post, "run_id", str.__new__(Outgoing, komorka))
+    return kolejka.post(post)
+""",
+    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (period)": _GOTOWA
     + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
-    object.__setattr__(post, "run_id", komorka)
+    object.__setattr__(post, "period", komorka)
     return kolejka.post(post)
 """,
 }
@@ -1720,6 +1735,14 @@ ZNANE_LUKI: Final = {
 # Postaci, które bez kontroli dokładnego typu w chwili zapisu (outbox._queue_text) dawałyby plikowi kolejki wartość
 # komórki, a z nią dostają odmowę → fragment zgłoszenia biegu przez plik kolejki.
 ODMOWY_KOLEJKI: Final = {
+    "object.__setattr__ na gotowej wysyłce: identyfikator wysyłki z komórki": (
+        _GOTOWA
+        + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    object.__setattr__(post, "run_id", komorka)
+    return kolejka.post(post)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko identyfikator wysyłki Outgoing z rozliczenia.client_data, nie str.",
+    ),
     "zapis do __dict__ gotowej wysyłki": (
         _GOTOWA
         + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
@@ -1917,23 +1940,23 @@ ZNANE_LUKI_TEKSTU: Final = {
     + """from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (str.__new__(Outgoing, komorka),))
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, (str.__new__(Outgoing, komorka),))
 """,
     "dowód z getattr modułu": _POST
     + """from rozliczenia import client_data
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     tekst = client_data.Outgoing(komorka, getattr(client_data, "_PASSED"))
-    return Post(cel, None, "r", None, (tekst,))
+    return Post(cel, None, post.run_id, None, (tekst,))
 """,
     "tool zaimportowane z noqa": _POST
     + """from rozliczenia.client_data import tool  # noqa: TID251
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (tool(komorka),))
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, (tool(komorka),))
 """,
     # Kontrola w chwili zapisu pliku kolejki sprawdza typ obiektu tak, jak go zastaje, więc zmiana obiektu, klasy albo
     # modułu sprawdzenia w chwili działania ją omija: jedna próbka na klasę (#1551).
@@ -1947,17 +1970,17 @@ class Obcy(str):
     __slots__ = ()
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     tekst = Obcy(komorka)
     object.__setattr__(tekst, "__class__", Outgoing)
-    return Post(cel, None, "r", None, (cast(Outgoing, tekst),))
+    return Post(cel, None, post.run_id, None, (cast(Outgoing, tekst),))
 """,
     "zmiana modułu sprawdzenia w chwili działania: nazwa Outgoing w outbox": """from rozliczenia.centrum import outbox
 from rozliczenia.centrum.outbox import KnownIssue, Post
 
 
-def wysylka(komorka: str) -> str:
-    gotowa = Post(KnownIssue("uwaga-taty", 5), None, "r", None, (komorka,))  # type: ignore[arg-type]
+def wysylka(komorka: str, post: Post) -> str:
+    gotowa = Post(KnownIssue("uwaga-taty", 5), None, str(post.run_id), None, (komorka,))  # type: ignore[arg-type]
     zapamietaj = getattr(outbox, "Outgoing")
     setattr(outbox, "Outgoing", str)
     try:
@@ -1977,8 +2000,8 @@ ODMOWY_TEKSTU: Final = {
 from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (cast(Outgoing, komorka),))
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, (cast(Outgoing, komorka),))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
@@ -1987,22 +2010,22 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
         + """from typing import Any
 
 
-def wysylka(wiersz: dict[str, Any], cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (wiersz["ADRES"],))
+def wysylka(wiersz: dict[str, Any], cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, (wiersz["ADRES"],))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "goły napis z type: ignore": (
         _POST
-        + """def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (komorka,))  # type: ignore[arg-type]
+        + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, (komorka,))  # type: ignore[arg-type]
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "goły napis w nagłówku z type: ignore": (
         _POST
-        + """def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", komorka, (cel.title,))  # type: ignore[arg-type]
+        + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, komorka, (cel.title,))  # type: ignore[arg-type]
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
@@ -2029,7 +2052,7 @@ def wysylka(komorka: str, post: Post) -> Post:
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "type.__new__ z bazą bez super(): podklasa Outgoing w części": (
-        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (tekst(komorka),))\n',
+        _PODKLASA_TEKSTU + '    return Post(cel, None, post.run_id, None, (tekst(komorka),))\n',
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "przypisanie __bases__ obcej podklasie str: podklasa Outgoing w części": (
@@ -2039,11 +2062,11 @@ def wysylka(komorka: str, post: Post) -> Post:
 from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     klasa: Any = type("Tekst", (type("Baza", (str,), {"__slots__": ()}),), {"__slots__": ()})
     klasa.__bases__ = (Outgoing,)
     assert issubclass(klasa, Outgoing)
-    return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
+    return Post(cel, None, post.run_id, None, (str.__new__(klasa, komorka),))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
@@ -2059,19 +2082,19 @@ class Mixin:
         pass
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     rowna: Any = type("Rowna", (type(Outgoing),), {"__eq__": lambda cls, other: True, "__hash__": type.__hash__})
     klasa: Any = type.__new__(rowna, "Tekst", (Mixin, Outgoing), {})
-    return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
+    return Post(cel, None, post.run_id, None, (str.__new__(klasa, komorka),))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "sklejenie prawdziwego Outgoing z podklasą w części": (
-        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (post.parts[0] + tekst(komorka),))\n',
+        _PODKLASA_TEKSTU + '    return Post(cel, None, post.run_id, None, (post.parts[0] + tekst(komorka),))\n',
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "sklejenie podklasy z prawdziwym Outgoing w części": (
-        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (tekst(komorka) + post.parts[0],))\n',
+        _PODKLASA_TEKSTU + '    return Post(cel, None, post.run_id, None, (tekst(komorka) + post.parts[0],))\n',
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
     "cast: blok Post.of z komórki": (
@@ -2081,14 +2104,14 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
 from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post.of(cel, period=None, run_id="r", blocks=[cast(Outgoing, komorka)], frame=lambda n, c, t: t)
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post.of(cel, period=None, run_id=post.run_id, blocks=[cast(Outgoing, komorka)], frame=lambda n, c, t: t)
 """,
         "bieg TypeError: Wysyłka bierze tylko bloki Outgoing",
     ),
     "blok Post.of z podklasy Outgoing": (
         _PODKLASA_TEKSTU
-        + '    return Post.of(cel, period=None, run_id="r", blocks=[post.parts[0], tekst(komorka)], frame=lambda n, c, t: t)\n',
+        + '    return Post.of(cel, period=None, run_id=post.run_id, blocks=[post.parts[0], tekst(komorka)], frame=lambda n, c, t: t)\n',
         "bieg TypeError: Wysyłka bierze tylko bloki Outgoing",
     ),
     "części wysyłki z innym drugim przebiegiem": (
@@ -2113,8 +2136,8 @@ class Czesci(tuple[Outgoing, ...]):
         return super().__iter__() if self.przebiegi == 1 else iter((self.komorka,))  # type: ignore[arg-type]
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, Czesci((cel.title,), komorka))
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post(cel, None, post.run_id, None, Czesci((cel.title,), komorka))
 """,
         "bieg: plik kolejki bez wartości komórki",
     ),
@@ -2138,7 +2161,7 @@ class Bloki(list[Outgoing]):
 
 
 def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
-    return Post.of(cel, period=None, run_id="r", blocks=Bloki(list(post.parts), komorka), frame=lambda n, c, t: t)
+    return Post.of(cel, period=None, run_id=post.run_id, blocks=Bloki(list(post.parts), komorka), frame=lambda n, c, t: t)
 """,
         "bieg: plik kolejki bez wartości komórki",
     ),
@@ -2149,9 +2172,9 @@ from rozliczenia.centrum.outbox import NewIssue, OpenIssue, PeriodThread, Post
 from rozliczenia.client_data import ForbiddenValues, guarded
 
 
-def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
+def wysylka(komorka: str, pamiec: ForbiddenValues, post: Post) -> Post:
     tekst = guarded(pamiec, "Uwaga", "treść").text
-    return Post({cel}, None, "r", None, (tekst,))
+    return Post({cel}, None, post.run_id, None, (tekst,))
 """
 _GOTOWY_CEL: Final = "from rozliczenia.centrum.outbox import NewIssue, Post\n\n\n"
 
@@ -2183,8 +2206,8 @@ class Cel:
     title: str
 
 
-def wysylka(komorka: str, tekst: Outgoing) -> Post:
-    return Post(Cel("uwaga-taty", komorka), None, "r", None, (tekst,))
+def wysylka(komorka: str, tekst: Outgoing, post: Post) -> Post:
+    return Post(Cel("uwaga-taty", komorka), None, post.run_id, None, (tekst,))
 """,
         'Argument 1 to "Post" has incompatible type "Cel"',
     ),
@@ -2232,10 +2255,10 @@ def wysylka(komorka: str) -> OpenIssue:
 from rozliczenia.centrum.outbox import NewIssue, Post
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
     assert isinstance(znaleziony, NewIssue)
-    return Post(cel, None, "r", None, (znaleziony.title,))
+    return Post(cel, None, post.run_id, None, (znaleziony.title,))
 """,
         "Private member accessed: `_target`",
     ),
@@ -2245,7 +2268,7 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
 
 
 def wysylka(komorka: str, post: Post) -> str:
-    gotowa = Post(NewIssue("uwaga-taty", komorka), None, "r", None, post.parts)  # type: ignore[arg-type]
+    gotowa = Post(NewIssue("uwaga-taty", komorka), None, post.run_id, None, post.parts)  # type: ignore[arg-type]
     zapamietaj = outbox._FIELDS["Outgoing"]
     outbox._FIELDS["Outgoing"] = lambda wartosc: True
     try:
@@ -2265,23 +2288,23 @@ ZNANE_LUKI_CELU: Final = {
 
 
 def wysylka(komorka: str, post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", str.__new__(Outgoing, komorka)), None, "r", None, post.parts)
+    return Post(NewIssue("uwaga-taty", str.__new__(Outgoing, komorka)), None, post.run_id, None, post.parts)
 """,
     "parser pliku kolejki z tytułem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
 from rozliczenia.centrum.outbox import NewIssue, Post
 
 
-def wysylka(komorka: str, cel: NewIssue) -> Post:
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     znaleziony = cls._target({"label": "zgloszenie", "title": komorka}, "new_issue")
     assert isinstance(znaleziony, NewIssue)
-    return Post(cel, None, "r", None, (znaleziony.title,))
+    return Post(cel, None, post.run_id, None, (znaleziony.title,))
 """,
     "zmiana modułu sprawdzenia w chwili działania: sprawdzenie pola Outgoing w outbox pod nazwą cls": _GOTOWY_CEL
     + """from rozliczenia.centrum import outbox as cls
 
 
 def wysylka(komorka: str, post: Post) -> str:
-    gotowa = Post(NewIssue("uwaga-taty", komorka), None, "r", None, post.parts)  # type: ignore[arg-type]
+    gotowa = Post(NewIssue("uwaga-taty", komorka), None, post.run_id, None, post.parts)  # type: ignore[arg-type]
     zapamietaj = cls._FIELDS["Outgoing"]
     cls._FIELDS["Outgoing"] = lambda wartosc: True
     try:
@@ -2298,7 +2321,7 @@ ODMOWY_CELU: Final = {
         _GOTOWY_CEL
         + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     object.__setattr__(cel, "title", komorka)
-    return Post(cel, None, "r", None, post.parts)
+    return Post(cel, None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
@@ -2306,7 +2329,7 @@ ODMOWY_CELU: Final = {
         _GOTOWY_CEL
         + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
     cel.__dict__["title"] = komorka
-    return Post(cel, None, "r", None, post.parts)
+    return Post(cel, None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
@@ -2318,7 +2341,7 @@ from rozliczenia.client_data import Outgoing
 
 
 def wysylka(komorka: str, post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, "r", None, post.parts)
+    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
@@ -2328,7 +2351,7 @@ def wysylka(komorka: str, post: Post) -> Post:
 
 
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
+    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
@@ -2338,12 +2361,12 @@ def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
 
 
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
-    return Post(NewIssue(wiersz["ADRES"], post.parts[0]), None, "r", None, post.parts)
+    return Post(NewIssue(wiersz["ADRES"], post.parts[0]), None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Pole NewIssue.label w pliku kolejki ma typ str.",
     ),
     "type.__new__ z bazą bez super(): podklasa Outgoing w tytule celu": (
-        _PODKLASA_TEKSTU + '    return Post(NewIssue("uwaga-taty", tekst(komorka)), None, "r", None, post.parts)\n',
+        _PODKLASA_TEKSTU + '    return Post(NewIssue("uwaga-taty", tekst(komorka)), None, post.run_id, None, post.parts)\n',
         "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ Tekst.",
     ),
     "podklasa celu w biegu: type() z NewIssue i adnotacją title: int": (
@@ -2354,7 +2377,7 @@ from rozliczenia.centrum.outbox import NewIssue, Post
 
 def wysylka(komorka: str, post: Post) -> Post:
     cel: Any = type("Cel", (NewIssue,), {"__annotations__": {"title": int}})
-    return Post(cel("uwaga-taty", komorka), None, "r", None, post.parts)
+    return Post(cel("uwaga-taty", komorka), None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie Cel.",
     ),
@@ -2367,7 +2390,7 @@ from rozliczenia.centrum.outbox import NewIssue, Post
 def wysylka(komorka: str, post: Post) -> Post:
     cel: Any = type("Cel", (type("Baza", (), {}),), {})
     cel.__bases__ = (NewIssue,)
-    return Post(cel("uwaga-taty", komorka), None, "r", None, post.parts)
+    return Post(cel("uwaga-taty", komorka), None, post.run_id, None, post.parts)
 """,
         "bieg TypeError: Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie Cel.",
     ),
@@ -2381,7 +2404,7 @@ def _argumenty_wysylki() -> dict[str, object]:
         "komorka": _KOMORKA,
         "wiersz": {"ADRES": _KOMORKA},
         "cel": NewIssue("uwaga-taty", tool("Tytuł")),
-        "post": Post(NewIssue("uwaga-taty", tool("Tytuł")), None, "r", None, (tool("Treść"),)),
+        "post": Post(NewIssue("uwaga-taty", tool("Tytuł")), None, tool("r"), None, (tool("Treść"),)),
     }
 
 
@@ -2394,7 +2417,7 @@ def test_bieg_znanej_luki_przez_plik_kolejki_zglasza_probke_ktorej_komorka_nie_d
     tekst narzędzia, jest zgłoszeniem, więc nie zostałaby znaną luką (przegląd #1731, runda 1, D1)."""
 
     plik = tmp_path / "bez_komorki.py"
-    plik.write_text(_POST + 'def wysylka(komorka: str, cel: NewIssue) -> Post:\n    return Post(cel, None, "r", None, (cel.title,))\n', encoding="utf-8")
+    plik.write_text(_POST + 'def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:\n    return Post(cel, None, post.run_id, None, (cel.title,))\n', encoding="utf-8")
 
     assert _w_pliku_kolejki(plik) == ["bieg: plik kolejki bez wartości komórki"]
 
@@ -2473,7 +2496,7 @@ def test_wysylka_od_sluchacza_przechodzi_kontrole_typu_przed_skrzynka(opis: str,
     zmiana, odmowa = ODMOWY_SLUCHACZA[opis]
     queue = Queue(tmp_path, FakeReportBox(), listener=_Sluchacz(zmiana))
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Tytuł")), None, RUN_ID, None, (tool("Treść"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Tytuł")), None, tool(RUN_ID), None, (tool("Treść"),)))
     queue.passed()
 
     tekst = "".join(issue.text + "".join(issue.comment_texts) for issue in queue.box.issues)

@@ -652,7 +652,7 @@ class Reports:
         post = Post.of(
             report_target(fingerprint, preview.title),
             period=preview.period,
-            run_id=uuid.uuid4().hex,
+            run_id=tool(uuid.uuid4().hex),
             blocks=[preview.body],
             frame=_unframed,
         )

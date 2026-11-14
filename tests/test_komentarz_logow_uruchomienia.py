@@ -765,10 +765,11 @@ from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post
 
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
 # Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
-# łapią. Pola z tekstem narzędzia
-# (``_TEKST_NARZEDZIA``) dostaną typ w osobnym PR (#1551). Pola ``TOOL_TEXT`` Logów od wywołującego strażnik przepuszcza
-# bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w
-# tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na ``origin/main``.
+# łapią. Pola pliku w Archiwum z tekstem narzędzia (``_TEKST_NARZEDZIA``) mają typ ``Outgoing``, więc ich wartość z
+# komórki odrzuca mypy (``DROGI_DO_LOGOW``) i plik kolejki w chwili zapisu (``ODMOWY_LOGOW``). Pola ``TOOL_TEXT`` Logów
+# od wywołującego strażnik przepuszcza bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego,
+# które moduł z prawem ``tool`` wpisuje w tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na
+# ``origin/main``.
 ZNANE_LUKI_LOGOW: Final = {
     "konstrukcja bez __new__: str.__new__ z klasą Outgoing w tytule pliku Archiwum": _plik(
         _pola("title").replace("komorka", "str.__new__(Outgoing, komorka)"), importy="from rozliczenia.client_data import Outgoing\n"

@@ -613,7 +613,7 @@ def _post(
         tool(f"{first if number == 1 else ''}część {number}/{count} wysyłki {run_id}{version}")
         for number in range(1, count + 1)
     )
-    return Post(target, "08_14_09_2026", run_id, None if header is None else tool(header), parts)
+    return Post(target, "08_14_09_2026", tool(run_id), None if header is None else tool(header), parts)
 
 
 BOUNDS = Bounds(unreachable=2, lost=1, disk=1, kills=1)
@@ -624,13 +624,13 @@ def _archived(run_id: str, version: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum okresu (``comment_versions.post_of``)."""
 
     archive = ArchiveFile(tool(TAG), tool("Logi Uruchomień"), tool("Archiwum"), tool(f"{run_id}.json"), logs_text(f"Logi {run_id}{version}\n"))
-    return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),), archive)
+    return Post(LOGS, "08_14_09_2026", tool(run_id), tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),), archive)
 
 
 def _progress(run_id: str, version: str) -> Post:
     """Postęp Wyceny w efenix ``run_id`` (``comment_versions.ProgressVersion``): starsza wersja Logów, bez pliku."""
 
-    return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),))
+    return Post(LOGS, "08_14_09_2026", tool(run_id), tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),))
 
 
 # Logi z plikiem do Archiwum i ich Diagnoza: nowsza wersja tej samej wysyłki podmienia plik i zmienia komentarz.

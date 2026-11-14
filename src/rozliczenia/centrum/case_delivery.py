@@ -87,7 +87,7 @@ def note_post(note_id: str, title: Outgoing, body: Outgoing, *, logs_on_the_way:
     wysłaniem."""
 
     state = _LOGS_ON_THE_WAY if logs_on_the_way else None
-    return Post(NewIssue(NOTE.label, title), period=None, run_id=note_id, header=None, parts=(body,), state=state)
+    return Post(NewIssue(NOTE.label, title), period=None, run_id=tool(note_id), header=None, parts=(body,), state=state)
 
 
 class _CaseDelivery:
@@ -133,7 +133,7 @@ class _CaseDelivery:
         run_id = self._pinned_run(case_id) if post.state == _LOGS_REJECTED else None
         if run_id is None:
             return ()
-        return (Post(KnownIssue(NOTE.label, number), period=None, run_id=run_id, header=None, parts=(_logs_gone(run_id),)),)
+        return (Post(KnownIssue(NOTE.label, number), period=None, run_id=tool(run_id), header=None, parts=(_logs_gone(run_id),)),)
 
     def rejected(self, post: Post) -> None:
         case = _case(post)
