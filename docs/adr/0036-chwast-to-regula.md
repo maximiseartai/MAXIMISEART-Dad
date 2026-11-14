@@ -7,7 +7,7 @@ Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11
 Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026; „Cztery źródła” zostają źródłami wystąpień, ale żadne z nich nie zakłada już issue.
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
 
-Ten ADR wchodzi bez zmiany kodu, skilli i bramki. Każdą decyzję wdraża wykonawca z tabeli w sekcji „Wdrożenie”, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`.
+Ten ADR wchodzi bez zmiany kodu, skilli i bramki. Każdą decyzję wdraża wykonawca z tabeli w sekcji „Wdrożenie”, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`, z regułą przejściową pod tą tabelą.
 
 ## Kontekst
 
@@ -55,7 +55,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Sprawdza to `tools/scal_pr.py` bez osądu i bez linii zgody.
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
 - **Reguła chwastu niczego nie ukrywa poza właścicielem.** Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela z `AGENTS.md`.
-  Mechanizm, który to sprawdza w Required CI, i jego granicę wyznacza PR bramki ticketu #1676, a granicę pokazują próbki `ZNANE_LUKI` w jego teście, nie ten ADR. Formy, które musi rozstrzygnąć, zebrały przeglądy #1693 r1–r4 w [komentarzu #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075).
+  Mechanizm, który to sprawdza w Required CI, i jego granicę wyznacza PR kroku ukryć ticketu #1676, a granicę pokazują próbki `ZNANE_LUKI` w jego teście, nie ten ADR. Formy, które musi rozstrzygnąć, zebrały przeglądy #1693 r1–r4 w [komentarzu #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075).
   Powód: cztery rundy przeglądu tego ADR znalazły cztery formy ukrycia w prozie, w tym zwolnienie całego `TID251` dla 16 plików właścicieli, które istnieje już na `main`. Granicę mechanizmu da się sprawdzić tylko na kodzie z testem.
 - **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
@@ -92,7 +92,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 |---|---|---|
 | Chwast to reguła detektora | reguły ast-grep w Required CI: #1699 (scalony); kontrakty import-linter: #1612; `banned-api` ruff jest już w CI | reguła spoza tych narzędzi nie jest chwastem |
 | Warunek merge'a z polem `Idiom:`, dowód reguły w `tools/scal_pr.py`, usunięcie Q11 i `ZGODA KORZEŃ` | PR bramki ticketu #1676 (zmienia `tools/lib/bramka_korzenia.py`, `tools/scal_pr.py` i skille `przeglad` i `pr`) | bramka z ADR 0031 |
-| Reguła chwastu niczego nie ukrywa poza właścicielem | ten sam PR bramki, krok Required CI z kryteriami z [komentarza #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075) | tłumienie i zwolnienie w konfiguracji ukrywają odpalenie |
+| Reguła chwastu niczego nie ukrywa poza właścicielem | PR kroku ukryć ticketu #1676, krok Required CI z kryteriami z [komentarza #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075) | tłumienie i zwolnienie w konfiguracji ukrywają odpalenie przed CI; reguła przejściowa pod tabelą |
 | Bez nowych issues „Chwast” | ten sam PR bramki usuwa każdą drogę zakładania: `rejestr_korzeni.after_verdict` przy publikacji werdyktu i `tools/chwasty.py` (`settle`); spis zapachów #1627, którego zakres ten ADR zmienia, rosnący zapach podaje w raporcie, a nie w issue | publikacja werdyktu i `tools/chwasty.py` zakładają issues jak dziś |
 | Zamknięcie otwartych issues „Chwast” z odsyłaczem do raportu | właściciel #1676, jednorazowo zaraz po merge'u PR bramki | issues zostają otwarte |
 | Narzędzie dowodu reguły | #1697 (`tools/na_scalonych_pr.py --regula`), które samo żadnej reguły merge'a nie zmienia | dowód liczy się ręcznie |
@@ -100,7 +100,9 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 | Miara Q1: ucieczki, powroty idiomu, czekanie, fałszywe alarmy reguł, lista `Idiom: bez reguły` i pole „trigger” w poniedziałkowym raporcie | #1626, którego zakres ten ADR zmienia: zgody znikają, a zostają merge'e poza `tools/scal_pr.py` | raport liczy powtórzenia kodów jak w ADR 0031 |
 | Tickety, których przedmiotem jest issue „Chwast” albo stara miara: #1619, #1621, #1626, #1627, #1636, #1640 (decyzje ADR 0034 „Autor wyrywa swój chwast”, „Kolejka”, „Ogrodnik”, „Rejestr liczy zgody i obejścia”, spis zapachów i odczyt 11.12) | właściciel #1676: komentarz zmiany zakresu w każdym z nich przed merge'em tego ADR, a #1619 i #1640 zamyka po merge'u PR bramki | tickety stoją; #1619 i #1621 nie mają `ready-for-agent` |
 
-Wszystkie wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie obowiązuje bez zasady „niczego nie ukrywa” ani bez końca zakładania issues.
+Reguła przejściowa: do merge'a PR kroku ukryć tłumienie albo zwolnienie reguły chwastu na dodanej linii to Ważne w przeglądzie (punkt „Co jest porażką” skilla [`przeglad`](../../.agents/skills/przeglad/SKILL.md)).
+Sam warunek `Idiom:` nie otwiera nowej drogi ukrycia wobec stanu sprzed tego ADR, bo tłumienie i zwolnienie były możliwe także wtedy.
+Pozostałe wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie obowiązuje bez końca zakładania issues.
 
 ## Odrzucone warianty
 
@@ -116,7 +118,7 @@ Wszystkie wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie
 
 ## Konsekwencje
 
-- Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5).
+- Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5); od merge'a PR bramki do merge'a PR kroku ukryć łapie to tylko przegląd (reguła przejściowa).
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.

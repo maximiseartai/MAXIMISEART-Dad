@@ -4,7 +4,10 @@ Bez niej Git czyta konfigurację systemową i globalną komputera testów. Na Ma
 ``init.defaultBranch=main``, a Ubuntu w CI tworzy ``master``, więc test z ``git init --bare`` przechodził lokalnie i padał
 w CI. ``hermetic_git`` (sesja z ``tests/conftest.py``) wyłącza konfigurację systemową, podstawia globalną z ``CONFIG``
 i odrzuca każde uruchomienie gita z procesu testów ze środowiskiem, które ją gubi: przez ``subprocess`` (także przez
-``env``, powłokę i ``executable=``), ``os.posix_spawn`` i ``os.system``.
+``env``, powłokę i ``executable=``), ``os.posix_spawn`` i ``os.system``. Przechodzi też git bez żadnej konfiguracji
+komputera, jak ``repo.git(isolated=True)``: ``GIT_CONFIG_GLOBAL`` to ``os.devnull``, ``HOME`` pusty katalog, a
+``XDG_CONFIG_HOME`` nie ma. Granica: taki git nie ma tożsamości, więc jego ``git commit`` na Macu zgadnie ją z nazwy
+komputera, a w CI padnie.
 
 Proces, który uruchamia kod narzędzia (pakiet ``rozliczenia``), dostaje gita bez tożsamości, jak u taty: ``CONFIG``
 daje ją tylko gitowi testów i narzędzi Maksa.
@@ -165,10 +168,19 @@ def _popen_git(arguments: Mapping[str, Any]) -> Mapping[str, str] | None:
     return _command_git(words, environment)
 
 
+def _without_config(environment: Mapping[str, str]) -> bool:
+    """Czy git ze środowiskiem ``environment`` nie czyta żadnej konfiguracji użytkownika: pusty plik globalny i pusty
+    ``HOME`` bez ``XDG_CONFIG_HOME``, więc też bez plików ``~/.config/git``."""
+
+    home = environment.get("HOME")
+    empty_home = home is not None and Path(home).is_dir() and not any(Path(home).iterdir())
+    return environment.get("GIT_CONFIG_GLOBAL") == os.devnull and "XDG_CONFIG_HOME" not in environment and empty_home
+
+
 def _problem(environment: Mapping[str, str]) -> str | None:
     if environment.get("GIT_CONFIG_NOSYSTEM") != "1":
         return "GIT_CONFIG_NOSYSTEM nie jest 1, więc git czyta konfigurację systemową komputera"
-    if environment.get("GIT_CONFIG_GLOBAL") not in _configs:
+    if environment.get("GIT_CONFIG_GLOBAL") not in _configs and not _without_config(environment):
         return f"GIT_CONFIG_GLOBAL={environment.get('GIT_CONFIG_GLOBAL')!r} to nie konfiguracja testów"
     return None
 
