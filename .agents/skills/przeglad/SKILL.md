@@ -98,6 +98,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
+Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>, albo Idiom: bez reguły <brak-testu|stan-kroku> jak #N W<n> r<k>; tylko gdy idiom się powtarza)
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ## Sprawdzone
