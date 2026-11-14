@@ -137,8 +137,9 @@ def _mail(read: MailRead) -> LoggedMail:
 
 
 def _read(mail: LoggedMail) -> MailRead:
-    """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów (#1233) podaje
-    go procesowi jako mail w postaci kanonicznej (``worker_reports.as_mail``)."""
+    """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów
+    (``tools/odtworz_uruchomienie.py``) podaje go procesowi jako mail w postaci kanonicznej
+    (``worker_reports.as_mail``)."""
 
     match mail:
         case LoggedReportMail():
@@ -173,7 +174,7 @@ class LoggedOrderProblem(_Record):
     ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``repeated_number`` miejsce każdego zlecenia z tym
     numerem (``places``), przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy Przeniesienia (``bar``),
     a przy ``unknown_number`` powód, dla którego Centrum nie dopisało zlecenia (``bar``; Logi sprzed Zleceń dopisanych z
-    raportu go nie mają). Logi sprzed #1350 mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day``
+    raportu go nie mają). Starsze Logi mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day``
     z dniami zleceń z tym numerem (``order_days``): dziś to ``repeated_number``."""
 
     kind: Literal[
@@ -365,7 +366,7 @@ class LoggedAdded(_Record):
 class LoggedOrderless(_Record):
     """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia, także obok zlecenia tego
     numeru (``report_entering.Orderless``): arkusz i numer jak w ``LoggedOwnEntry``, a ``day`` dzień zlecenia, gdy każdy
-    przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start`` (Logi sprzed #1374 r4 go nie mają).
+    przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start`` (starsze Logi go nie mają).
     Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, z tym dniem i Wykonawcą, gdy ``day`` go ma, bo Kopia
     wejścia Wpisania raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
 
@@ -378,7 +379,7 @@ class LoggedOwnMove(_Record):
     """Pamięć zlecenia Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
     Centrum je zostawiło, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego Przeniesienia Centrum, chwila
     przyjścia najświeższego maila, na który Centrum zadziałało, czy tata zmienił Wykonawcę po Przeniesieniu Centrum
-    (Logi z gałęzi #1347 sprzed jej trzeciej rundy go nie mają) i czy Centrum dopisało to zlecenie (Logi sprzed Zleceń
+    (starsze Logi go nie mają) i czy Centrum dopisało to zlecenie (Logi sprzed Zleceń
     dopisanych z raportu go nie mają)."""
 
     number: int
@@ -410,15 +411,15 @@ class LoggedReports(_Record):
     """Wpisanie raportów (ADR 0028) bez adresów nadawców, tematów i treści maili poza Wpisami.
 
     ``today`` i okno dni od ``rollout`` (dzień wdrożenia tego kliknięcia; ``rollout_before`` z pamięci przed nim,
-    ``None``: pierwsze kliknięcie) bez dni okresów ``closed`` (tokeny okresów okna z Plikiem zbiorczym; Logi sprzed
-    #1229 ich nie mają, bo wtedy kliknięcie ich nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać, ``mails``
-    przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes`` komórki do wpisania,
-    ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw moją” tych zleceń z
-    migawki kliknięcia (komórka z treścią Wpisu jako ``value``; Logi sprzed #1231 ich nie mają), ``moves`` Przeniesienia
-    zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego kliknięcia (Logi sprzed #1347 nie
-    mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z Wpisem tego kliknięcia z
-    przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie mają obu), a ``written``
-    liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    ``None``: pierwsze kliknięcie) bez dni okresów ``closed`` (tokeny okresów okna z Plikiem zbiorczym; starsze Logi ich
+    nie mają, bo kliknięcie ich wtedy nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała
+    przeczytać, ``mails`` przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes``
+    komórki do wpisania, ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw
+    moją” tych zleceń z migawki kliknięcia (komórka z treścią Wpisu jako ``value``; starsze Logi ich nie mają),
+    ``moves`` Przeniesienia zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego
+    kliknięcia (starsze Logi nie mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z
+    Wpisem tego kliknięcia z przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie
+    mają obu), a ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
