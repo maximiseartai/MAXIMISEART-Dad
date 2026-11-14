@@ -3694,6 +3694,27 @@ def test_usuniecie_wykonawcy_z_loginem_w_okresie_jest_odmowa_z_propozycja_nieakt
     ], "odmowa nie ma wiersza Historii, przełącznik ma"
 
 
+def test_plik_zbiorczy_z_nazwa_w_innej_wielkosci_liter_zatrzymuje_usuniecie_wykonawcy(tmp_path: Path) -> None:
+    """Windows i macOS nie rozróżniają wielkości liter w nazwach plików: Plik zbiorczy, którego nazwa w Folderze okresu
+    różni się od nazwy okresu tylko wielkością liter, to Plik zbiorczy tego okresu, więc jego login zatrzymuje usunięcie
+    Wykonawcy. Na systemie plików, który rozróżnia wielkość liter, to inny plik, więc test nie ma tam czego sprawdzić."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    collective_file = centrum_.collective_file
+    collective_file.rename(collective_file.with_name(collective_file.name.upper()))
+    if not collective_file.is_file():
+        pytest.skip("system plików rozróżnia wielkość liter w nazwach plików")
+    before = centrum_.tool.worker_list.read_bytes()
+
+    refused_ = centrum_.client.delete(f"{WORKERS_API}/dariusz.fikcyjny2")
+
+    assert (refused_.status_code, refused_.json()) == (
+        409,
+        {"message": kept(f"Wykonawca ma zlecenia w okresie {PERIOD}, więc zostaje na Liście Wykonawców.")},
+    )
+    assert centrum_.tool.worker_list.read_bytes() == before
+
+
 @PATH_CHECKS
 @pytest.mark.parametrize(
     ("folder", "answer"),

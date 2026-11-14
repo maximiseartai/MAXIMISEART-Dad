@@ -72,10 +72,11 @@ def _frames(error: BaseException) -> tuple[CallFrame, ...]:
 
 
 def _tool_file(filename: str, root: Path) -> str | None:
-    """Plik ramki względem ``root``; ``None`` poza kodem narzędzia (biblioteki, środowisko Pythona)."""
+    """Plik ramki względem ``root``; ``None`` poza kodem narzędzia (biblioteki, środowisko Pythona) i dla ramki, której
+    nazwa nie jest ścieżką bezwzględną, np. „<frozen runpy>” albo „<string>”."""
 
     path = Path(filename)
-    if not path.is_absolute():  # np. „<frozen runpy>” albo „<string>”
+    if not path.is_absolute():
         return None
     try:
         relative = path.resolve().relative_to(root)

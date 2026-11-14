@@ -21,10 +21,10 @@ from . import workbook_messages
 from .workbook_files import WORKER_HEADER, LayoutFault, MergedCells, MissingHeader, WorkbookError
 from .workbook_messages import DadWorkbook, WorkbookMessages
 
-# Napisy Decyzji taty o niepełnym okresie; jej Komunikat to ``incomplete_period``, odmowa ``incomplete_period_refused``.
 INCOMPLETE_PERIOD_QUESTION: Final = "Kontynuować mimo niepełnego okresu?"
-# Liczby zleceń na dzień okresu, w Decyzji i w podsumowaniu; etykieta dnia to np. „wt 08.09.2026”.
+"""Napis Decyzji taty o niepełnym okresie; jej Komunikat to ``incomplete_period``, odmowa ``incomplete_period_refused``."""
 ORDERS_PER_DAY: Final = "Zlecenia na dzień"
+"""Liczby zleceń na dzień okresu, w Decyzji i w podsumowaniu; etykieta dnia to np. „wt 08.09.2026”."""
 _NOTHING_CREATED: Final = "Nie utworzono żadnego pliku."
 _STAGING_LEFT: Final = "Obok Folderu okresu został folder tymczasowy, którego nie udało się usunąć."
 
@@ -569,8 +569,8 @@ def columns_from_description(collective_filename: str, columns: Sequence[str]) -
     )
 
 
-# Dzień tygodnia w dopełniaczu, z przyimkiem (``date.weekday()``: 0 = poniedziałek).
 _FROM_WEEKDAY = ("z poniedziałku", "z wtorku", "ze środy", "z czwartku", "z piątku", "z soboty", "z niedzieli")
+"""Dzień tygodnia w dopełniaczu, z przyimkiem (``date.weekday()``: 0 = poniedziałek)."""
 
 
 def incomplete_period(
