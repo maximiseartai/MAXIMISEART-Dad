@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import pkgutil
 import subprocess
 import sys
 import tomllib
@@ -101,6 +102,18 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from importlib.util import spec_from_file_location": (ROOT / "pyproject.toml", (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
     'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
     'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
+    # Ładowacz z importlib.abc (przegląd #1705 r1, W1) i postacie jego importu, oraz moduły spoza importlib z tej rundy.
+    "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.abc"),
+    "from importlib.abc import SourceLoader": (SRC_CONFIG, ("rozliczenia",), "importlib.abc"),
+    "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
+    "import importlib.abc as ladowacze": (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.abc"),
+    'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
+        ROOT / "pyproject.toml",
+        TOOLS_PROBE,
+        "importlib.metadata",
+    ),
+    'import pydoc\nm = pydoc.locate("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "pydoc"),
+    'import doctest\ndoctest.testfile("tests/x.txt", module_relative=False)': (ROOT / "pyproject.toml", TOOLS_PROBE, "doctest"),
     # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
     # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
     'import importlib\n\nSERWER = importlib.import_module("fastapi")\n': (ROOT / "pyproject.toml", ("tools",), "importlib.import_module"),
@@ -371,21 +384,44 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
 DYNAMIC_IMPORT_OWNER = ROOT / "tools" / "lib" / "import_dynamiczny.py"
 # Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml), które testy niżej
 # uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
+# Nazwy pakietu importlib wynikają z biblioteki standardowej (test niżej); reszta to moduły spoza niego, które importują
+# po nazwie albo budują moduł z pliku.
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",
-    "builtins.__import__",
     "importlib.util",
     "importlib.machinery",
     "importlib._bootstrap",
     "importlib._bootstrap_external",
+    "importlib._abc",
+    "importlib.abc",
+    "importlib.metadata",
+    "importlib.readers",
+    "importlib.simple",
+    "importlib.reload",
+    "importlib.invalidate_caches",
+    "importlib.sys",
+    "importlib._imp",
+    "importlib._RELOADING",
+    "importlib._pack_uint32",
+    "importlib._unpack_uint32",
+    "builtins.__import__",
     "_frozen_importlib",
     "_frozen_importlib_external",
     "_imp",
     "runpy",
     "pkgutil",
     "zipimport",
+    "pydoc",
+    "doctest",
 )
+# Nazwy pakietu importlib, które kod poza tests/ bierze wprost, z powodem; reszta pakietu jest w DYNAMIC_IMPORT.
+IMPORTLIB_DOZWOLONE = {
+    "importlib.resources": (
+        "zasób pakietu taty czyta src/rozliczenia/quantity_rules_file.py; files() importuje pakiet po nazwie, więc ta "
+        "droga stoi próbką „import po drodze” w ZNANE_LUKI_IMPORTU"
+    ),
+}
 DYNAMIC_IMPORT_PROBE = 'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")  # noqa: TID251 - sonda\n'
 
 
@@ -402,6 +438,27 @@ def test_kazdy_zakaz_importu_w_trakcie_dzialania_jest_na_liscie_dynamic_import()
     owned = {name for name, entry in banned.items() if "tools/lib/import_dynamiczny.py" in entry["msg"]}
 
     assert sorted(owned ^ set(DYNAMIC_IMPORT)) == [], "DYNAMIC_IMPORT w tests/test_zakazy_ruff.py ma wymieniać każdy zakaz właściciela"
+
+
+def test_kazda_nazwa_pakietu_importlib_jest_zakazana_albo_dozwolona_z_powodem() -> None:
+    """Granica zakazu w pakiecie ``importlib`` wynika z biblioteki standardowej działającego Pythona, nie z wyliczenia:
+    każdy jego podmoduł (``pkgutil.iter_modules``, także prywatny) i każda nazwa modułu poza dunderami (i ``__import__``)
+    jest w ``DYNAMIC_IMPORT`` wprost albo przez zakazany moduł nadrzędny, albo w ``IMPORTLIB_DOZWOLONE`` z powodem."""
+    names = {f"importlib.{module.name}" for module in pkgutil.iter_modules(importlib.__path__)}
+    names |= {f"importlib.{name}" for name in vars(importlib) if not (name.startswith("__") and name.endswith("__"))}
+    names.add("importlib.__import__")
+    banned = [name for name in DYNAMIC_IMPORT if name.startswith("importlib.")]
+
+    open_names = sorted(
+        name for name in names if name not in IMPORTLIB_DOZWOLONE and not any(name == ban or name.startswith(f"{ban}.") for ban in banned)
+    )
+
+    assert open_names == [], (
+        f"importlib tego Pythona ma nazwy bez zakazu: {open_names}; dopisz każdą z komunikatem właściciela do banned-api "
+        "w pyproject.toml, src/ruff.toml i drive/ruff.toml oraz do DYNAMIC_IMPORT, albo do IMPORTLIB_DOZWOLONE z powodem "
+        "i próbką w ZNANE_LUKI_IMPORTU, gdy kod poza tests/ jej potrzebuje"
+    )
+    assert sorted(IMPORTLIB_DOZWOLONE.keys() - names) == [], "IMPORTLIB_DOZWOLONE wymienia nazwę, której importlib nie ma"
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
@@ -441,7 +498,9 @@ ZNANE_LUKI_IMPORTU = {
         'subprocess.run([sys.executable, "-c", "import tests.fixtures.znane_luki"], check=True)\n'
     ),
     "tłumienie ruff: exec z noqa": 'exec("import tests.fixtures.znane_luki")  # noqa: S102 - próbka\n',
-    "import po drodze: pydoc.locate": 'import pydoc\n\nFIXTURES = pydoc.locate("tests.fixtures.znane_luki")\n',
+    "kod w napisie: code.InteractiveInterpreter": (
+        'import code\n\ncode.InteractiveInterpreter().runsource("import tests.fixtures.znane_luki")\n'
+    ),
     "import po drodze: importlib.resources pakietu": (
         'from importlib import resources\n\nFIXTURES = resources.files("tests.fixtures")\n'
     ),

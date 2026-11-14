@@ -4,8 +4,11 @@ czy moduł jest (``jest_modul``).
 Kod spoza ``tests/`` nie importuje kodu testów (``tests/test_granice_importow.py``), więc ``modul`` i ``modul_z_pliku``
 odmawiają w biegu (``OdmowaImportuTestow``), zanim wykonają kod, modułu, którego plik albo katalog pakietu leży w
 katalogu ``tests/`` repozytorium, pod każdą nazwą i każdą ścieżką do niego. Reszta kodu poza ``tests/`` bierze import
-w trakcie działania tylko stąd: ruff ``TID251`` odrzuca tam drogi importu wymienione w ``banned-api`` z komunikatem,
-który kieruje do tego modułu, a ten moduł ma do nich prawo właściciela (``per-file-ignores`` w ``pyproject.toml``).
+w trakcie działania tylko stąd: ruff ``TID251`` odrzuca tam każdą nazwę pakietu ``importlib`` poza ``importlib.resources``
+oraz ``builtins.__import__``, ``_frozen_importlib``, ``_frozen_importlib_external``, ``_imp``, ``runpy``, ``pkgutil``,
+``zipimport``, ``pydoc`` i ``doctest``, z komunikatem, który kieruje do tego modułu, a ten moduł ma prawo właściciela
+(``per-file-ignores`` w ``pyproject.toml``). Znane luki zakazu stoją próbkami ``ZNANE_LUKI_IMPORTU`` w
+``tests/test_zakazy_ruff.py``.
 """
 
 from __future__ import annotations
