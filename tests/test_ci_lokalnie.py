@@ -18,6 +18,7 @@ import pytest
 import yaml
 
 from tests.fixtures.ci_workflow import action
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
@@ -121,15 +122,17 @@ def test_kazdy_commit_wskazuje_commit_ze_zlamanym_krokiem_choc_head_przechodzi(t
     assert (git(repo, "rev-parse", "HEAD"), git(repo, "worktree", "list", "--porcelain").count("worktree ")) == (head, 1)
 
 
-def test_kazdy_commit_przechodzi_gdy_kazdy_commit_przechodzi(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named", [True, False], ids=["baza-podana", "baza-domyslna-origin-main"])
+def test_kazdy_commit_przechodzi_gdy_kazdy_commit_przechodzi(tmp_path: Path, named: bool) -> None:
     repo = repository(tmp_path / "repo", {"tests/test_dobry.py": "def test_dobry() -> None:\n    pass\n"})
     base = commit(repo, "baza")
+    git(repo, "update-ref", "refs/remotes/origin/main", base)
     for name in ("drugi", "trzeci"):
         (repo / "tests" / f"test_{name}.py").write_text(f"def test_{name}() -> None:\n    pass\n", encoding="utf-8")
         commit(repo, name)
 
     answered = subprocess.run(
-        [sys.executable, str(repo / "tools" / "ci_lokalnie.py"), "--tylko", "pytest", "--kazdy-commit", base],
+        [sys.executable, str(repo / "tools" / "ci_lokalnie.py"), "--tylko", "pytest", "--kazdy-commit", *([base] if named else [])],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -137,6 +140,31 @@ def test_kazdy_commit_przechodzi_gdy_kazdy_commit_przechodzi(tmp_path: Path) -> 
     )
 
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "COMMITY OK (2)")
+
+
+def test_pomoc_kazdego_commitu_nazywa_domyslna_baze(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        ci_lokalnie.main(["--help"])
+
+    assert "Sprawdź każdy commit od BAZA (domyślnie origin/main) do HEAD" in " ".join(capsys.readouterr().out.split())
+
+
+def test_niezacommitowany_kontrakt_albo_build_frontendu_to_porazka_z_poleceniem_odswiezenia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = repository(tmp_path / "repo", {"frontend/src/api/centrum.ts": "export {};\n", "src/rozliczenia/centrum/static/index.html": "<p></p>\n"})
+    commit(repo, "baza")
+    (repo / "frontend" / "src" / "api" / "centrum.ts").write_text("export const nowe = 1;\n", encoding="utf-8")
+    npm = fake_cli(tmp_path / "bin", "npm", "")
+    monkeypatch.setenv("PATH", f"{npm.parent}{os.pathsep}{os.environ['PATH']}")
+
+    answered = subprocess.run(
+        [sys.executable, str(repo / "tools" / "ci_lokalnie.py"), "--tylko", "frontend"], capture_output=True, text=True, encoding="utf-8", check=False
+    )
+
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (1, "CI LOKALNIE FAIL | kontrakt i build zacommitowane")
+    assert "M frontend/src/api/centrum.ts" in answered.stdout
+    assert "Uruchom 'npm run contract' i 'npm run build' we frontend/" in answered.stdout
 
 
 def test_kazdy_commit_od_nieistniejacej_bazy_nazywa_baze_bez_tracebacku(tmp_path: Path) -> None:
