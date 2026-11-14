@@ -15,6 +15,43 @@ Use `gh` for all operations.
 - Infer the repository from the Git remote; `gh` runs inside this clone.
 - Take issues labelled `chwast` in the order of the one open issue labelled `kolejka-chwastow`, read by `rejestr_korzeni.queue` (`tools/lib/rejestr_korzeni.py`); only the head of that queue has `ready-for-agent` ([ADR 0034](../adr/0034-kod-jest-pamiecia.md)).
 
+## Decisions for Maks
+
+An open decision that only Maks can make lives as an issue labelled
+`decyzja-maksa` ([ADR 0034](../adr/0034-kod-jest-pamiecia.md)).
+
+- Create one without asking Maks, once ADRs, merged PRs and issue comments
+  show the decision is still open. This standing consent covers only issues
+  labelled `decyzja-maksa`; tickets of a spec still wait for Maks's yes.
+- A decision issue is not a ticket: no parent spec, no `ready-for-agent`, no
+  triage label. Its body is exactly this template, every line a fact or a link:
+
+  ```markdown
+  ## Pytanie
+  <one question Maks answers in one sentence>
+
+  ## Opcje
+  - **A. <name>:** <what happens after this answer>
+
+  ## Rekomendacja
+  <option>: <one sentence why>, or `brak`: <what is missing to recommend>
+
+  ## Co czeka na decyzję
+  - <issue, PR, ADR or work that moves after the answer>
+  ```
+
+- Every term, trial and number the question rests on is defined in the body
+  or linked to an ADR, PR or issue; run notes and agent memory are never its
+  source ([ADR 0034](../adr/0034-kod-jest-pamiecia.md), „Notatki biegów”).
+- The body holds public facts only: Dad's data, names, logins, addresses,
+  firm names, home paths and Zgłoszenie content stay out
+  ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)). A
+  decision that rests on such a fact names its subject and links the public
+  issue or file that holds its context.
+- Close it with a link to where the answer took effect (ADR, PR or ticket).
+- A read-out due on a date (a card check, a measurement after N days) stays a
+  scheduled T3 task.
+
 ## Specs, sub-issues, and dependencies
 
 - A published spec is the parent issue. Tickets derived from it must be native
