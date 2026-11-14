@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
+import szopa
 from wplyw_zmiany import Repository
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ("tools/ci_lokalnie.py", "tools/mutacje.py")
 AUTHOR = {name: value for role in ("AUTHOR", "COMMITTER") for name, value in ((f"GIT_{role}_NAME", "test"), (f"GIT_{role}_EMAIL", "test@example.com"))}
 
-__all__ = ["TOOLS", "built_once", "commit", "copy_files", "git", "repository", "with_imports"]
+__all__ = ["TOOLS", "built_once", "commit", "copy_files", "git", "mutation_repository", "repository", "with_imports"]
 
 
 def git(repo: Path, *arguments: str) -> str:
@@ -78,6 +79,13 @@ def repository(path: Path, files: dict[str, str], tools: Iterable[str] = TOOLS) 
         (path / name).write_text(text, encoding="utf-8")
     git(path, "init", "--quiet")
     return path
+
+
+def mutation_repository(path: Path, files: dict[str, str], tools: Iterable[str] = TOOLS) -> Path:
+    """``repository`` z listą dwóch szop, której podtabela ``szopa.PRZEPUSZCZA`` obejmuje całe ``tools/``, więc
+    ``tools/mutacje_zmiany.py`` psuje w nim zmienione pliki ``tools/`` jak ``src/``; ``files`` może dać własną listę."""
+
+    return repository(path, {szopa.LISTA: f'[maszyneria.{szopa.PRZEPUSZCZA}]\n"tools/" = []\n', **files}, tools)
 
 
 # Repozytoria zbudowane w tym procesie testów (każdy worker xdist ma swoje) według budowy i klucza; testy dostają kopie.

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 
-from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
+from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 ROOT = Path(__file__).resolve().parents[1]
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
@@ -17,7 +17,7 @@ SCRIPT = "import pathlib\nprint(pathlib.Path('src/dane.txt').read_text().strip()
 
 
 def _repo(tmp_path: Path) -> tuple[Path, str]:
-    repo = repository(tmp_path / "repo", {".gitignore": "__pycache__/\n", "src/dane.txt": "stare dane\n", "tools/wypisz.py": SCRIPT.format("stare narzędzie")})
+    repo = mutation_repository(tmp_path / "repo", {".gitignore": "__pycache__/\n", "src/dane.txt": "stare dane\n", "tools/wypisz.py": SCRIPT.format("stare narzędzie")})
     shutil.copy2(ROOT / "tools" / "na_scalonych_pr.py", repo / "tools" / "na_scalonych_pr.py")
     first = commit(repo, "pierwszy")
     (repo / "src" / "dane.txt").write_text("nowe dane\n", encoding="utf-8")
@@ -135,4 +135,4 @@ def test_mutacje_zmiany_biegna_na_commicie_takze_poza_ci(tmp_path: Path) -> None
     done = _run(repo, "--commit", "HEAD", "--", "tools/mutacje_zmiany.py", "--baza", "HEAD^1", env=outside_ci)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "| kod 0 | MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od HEAD^1 |" in done.stdout
+    assert "| kod 0 | MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od HEAD^1 |" in done.stdout

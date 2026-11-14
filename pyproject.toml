@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    # Reguły ast-grep z sgconfig.yml na dodanych liniach src (tests/test_zapadki.py, ADR 0034).
+    # Reguły ast-grep z sgconfig.yml na dodanych liniach repozytorium (tests/test_zapadki.py, ADR 0034).
     "ast-grep-cli==0.51.0",
     "fastapi==0.146.0",
     # explore_runs.py of verify-jedno-uruchomienie-naraz runs its modelled threads as greenlets (#565).
