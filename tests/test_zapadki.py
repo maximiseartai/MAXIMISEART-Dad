@@ -794,7 +794,6 @@ AST_GREP_RULES = "reguly-ast-grep"
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "lokator-tytulu-okna": "użyj settings_title(page)",
-    "regula-w-trasie": "użyj sprawdzenia u właściciela Ustawień",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
 }
 needs_ast_grep = pytest.mark.skipif(
@@ -1197,14 +1196,12 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # ``ruff.toml``.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "lokator-tytulu-okna": ((".agents", "skills", "verify-centrum-rozliczen", "scripts", "drive"), ".py"),
-    "regula-w-trasie": (("src", "rozliczenia", "centrum"), "_router.py"),
     "kotwica-konca-linii": (("tools",), ".py"),
 }
 _LOCATOR = "from playwright.sync_api import Locator, Page\n\n\ndef title(page: Page) -> Locator:\n    return "
-_REFUSAL = "from rozliczenia.centrum import refusal\n\n\ndef saved(problem: object) -> None:\n"
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
-# (#1533 W1 r2, #1585 W1 r1, #1577 W1 r3, #1584 W1 r1), i postać po poprawce, którą przepuszcza.
+# (#1533 W1 r2, #1584 W1 r1), i postać po poprawce, którą przepuszcza.
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading")\n', [5]),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(role="heading")\n', [5]),
@@ -1215,51 +1212,6 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(f"{{HEADING}}heading")\n', []),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("button")\n', []),
-    ("regula-w-trasie", f"{_REFUSAL}    if problem is not None:\n        raise refusal.setting_refused(problem)\n", [6]),
-    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        if len(str(problem)) > 1:\n            raise refusal.workers_unusable(None)\n", [7]),
-    ("regula-w-trasie", f"{_REFUSAL}    _ensure_not_in_periods(problem)\n", [5]),
-    ("regula-w-trasie", f"{_REFUSAL}    checks._ensure_not_in_periods(problem)\n", [5]),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    match problem:\n        case \"delete\":\n            if problem:\n"
-        "                raise refusal.worker_kept(problem, \"worker\")\n",
-        [8],
-    ),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    match problem:\n        case InPeriods():\n            if problem:\n"
-        "                raise refusal.worker_kept(problem, \"worker\")\n",
-        [8],
-    ),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    match problem:\n        case owner.KeptInPeriods(presence=presence):\n            if presence:\n"
-        "                raise refusal.worker_kept(presence, \"worker\")\n",
-        [],
-    ),
-    ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
-    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        raise refusal.device_component_unknown()\n", []),
-    ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, NotSaved):\n        raise refusal.autostart_not_changed()\n", []),
-    ("regula-w-trasie", f"{_REFUSAL}    if problem is None:\n        raise refusal.register_not_chosen()\n", []),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    match problem:\n        case Refused(problem=refused):\n            if refused:\n"
-        "                raise refusal.setting_refused(refused)\n",
-        [],
-    ),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n"
-        "    elif problem != 1:\n        raise refusal.setting_refused(problem)\n",
-        [8],
-    ),
-    (
-        "regula-w-trasie",
-        f"{_REFUSAL}    if problem is not None:\n        if isinstance(problem, FieldProblem):\n"
-        "            raise refusal.setting_refused(problem)\n",
-        [],
-    ),
-    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        for part in str(problem):\n            raise refusal.setting_refused(part)\n", [7]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
@@ -1306,42 +1258,6 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "rola w zmiennej": f'{_LOCATOR}page.get_by_role(HEADING)\n\n\nHEADING = "heading"\n',
         "selektor CSS zamiast roli": f'{_LOCATOR}page.locator("h2")\n',
         "rola sklejona z kilku napisów": f'{_LOCATOR}page.get_by_role("head" "ing")\n',
-    },
-    "regula-w-trasie": {
-        "uzupełnienie listy w funkcji zmiany trasy (#1577 W1 r2)": (
-            "from rozliczenia.centrum.settings.quantity_rules import completed_devices\n\n\n"
-            "def applied(current: tuple[object, ...], rules: tuple[object, ...]) -> tuple[object, ...]:\n"
-            "    return completed_devices(current, rules)\n"
-        ),
-        "odmowa reguły pod isinstance jak odmowa formularza": (
-            "from rozliczenia.centrum.device_forms import needed_by\nfrom rozliczenia.centrum.settings.files import FieldProblem\n"
-            f"{_REFUSAL}    needed = needed_by(problem)\n    if isinstance(needed, FieldProblem):\n"
-            "        raise refusal.setting_refused(needed)\n"
-        ),
-        "odmowa w except": (
-            f"{_REFUSAL}    try:\n        str(problem)\n    except ValueError as error:\n"
-            "        raise refusal.setting_refused(problem) from error\n"
-        ),
-        "funkcja odmowy importowana z nazwy": (
-            "from rozliczenia.centrum.refusal import setting_refused\n\n\ndef saved(problem: object) -> None:\n"
-            "    if problem is not None:\n        raise setting_refused(problem)\n"
-        ),
-        "odmowa bez warunku": f"{_REFUSAL}    raise refusal.setting_refused(problem)\n",
-        "odmowa w else gałęzi isinstance": (
-            f"{_REFUSAL}    if isinstance(problem, str):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n"
-        ),
-        "nazwa klasy wyniku właściciela u klasy spoza settings/owner.py: reguła czyta nazwę klasy w case, nie jej moduł": (
-            "from rozliczenia.centrum.report_box import Refused\n"
-            f"{_REFUSAL}    match problem:\n        case Refused():\n            if problem:\n"
-            "                raise refusal.setting_refused(problem)\n"
-        ),
-        "odmowa wprost w case spoza wyniku właściciela: reguła widzi tylko najbliższy if i elif": (
-            "from rozliczenia.centrum.periods import InPeriods\n"
-            f"{_REFUSAL}    match problem:\n        case InPeriods():\n            raise refusal.worker_kept(problem, \"worker\")\n"
-        ),
-        "sprawdzenie z innego modułu bez przedrostka _ensure_": (
-            "from rozliczenia.centrum import periods\n\n\ndef saved(problem: object) -> None:\n    periods.ensure_unused(problem)\n"
-        ),
     },
     "kotwica-konca-linii": {
         "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"PONOWIENIE$"\nFOUND = re.compile(LINE)\n',
