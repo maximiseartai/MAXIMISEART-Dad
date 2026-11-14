@@ -19,11 +19,8 @@ konfiguracji mypy z ``mypy.util.get_mypy_comments``, i liczy tokeny tłumień, n
   ``# mypy: ``, także w docstringu albo napisie, bo mypy czyta ją z surowych linii pliku.
 
 Napis „noqa” w docstringu albo w napisie nie jest komentarzem, więc się nie liczy, a postacie, których nie ma w
-repozytorium, stoją w ``PROBKI``. Czy tłumienie jest zasadne, ocenia przegląd. Granica: test porównuje saldo
-katalogu, więc zamiana (tłumienie usunięte i nowe dodane w tym samym katalogu) nie zmienia liczby i nowe tłumienie
-widać wtedy tylko w diffie linii (próbka w ``ZNANE_LUKI``). Zwolnienie w konfiguracji (``per-file-ignores`` ruff,
-``overrides`` mypy) nie stoi na linii kodu, więc test go nie liczy, a ``type: ignore`` w pliku, który sprawdza mypy,
-a nie ruff, jest poza testem.
+repozytorium, stoją w ``PROBKI``. Czy tłumienie jest zasadne, ocenia przegląd. Próbki ``ZNANE_LUKI`` pokazują
+znane luki: zmiany, które dodają tłumienie, a licznik ich nie widzi; nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations
@@ -160,12 +157,49 @@ PROBKI: Final = {
     "noqa w docstringu, który nie jest komentarzem": ('"""Moduł # noqa: E501."""\n', {"noqa": 0, "type: ignore": 0}),
 }
 
-# Znane luki licznika (tests/fixtures/znane_luki.py): opis zmiany → pliki drzewa przed nią i po niej, na których
-# licznik daje te same liczby, bo porównuje saldo katalogu.
+# Znane luki licznika (tests/fixtures/znane_luki.py): „klasa, którą przepuszcza licznik: zmiana” → pliki drzewa przed
+# zmianą i po niej, na których licznik daje te same liczby, choć zmiana dodaje tłumienie. Plik pyproject.toml próbki zastępuje konfigurację
+# repozytorium na jej drzewie, a jej ostatnia tabela to [tool.ruff].
+_KONFIGURACJA = '[tool.ruff]\ninclude = ["*.py"]\n'
 ZNANE_LUKI: Final = {
-    "zamiana w jednym katalogu: noqa usunięte w jednym pliku, nowe noqa dodane w drugim": (
+    "porównuje saldo katalogu, nie linie: noqa usunięte w jednym pliku, nowe dodane w drugim": (
         {"src/a.py": "import os  # noqa: F401 - próbka\n", "src/b.py": "y = 2\n"},
         {"src/a.py": "x = 1\n", "src/b.py": "import sys  # noqa: F401 - próbka\n"},
+    ),
+    "liczy linie kodu, nie konfigurację: per-file-ignores ruff": (
+        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {
+            "pyproject.toml": _KONFIGURACJA + '\n[tool.ruff.lint.per-file-ignores]\n"src/a.py" = ["F401"]\n',
+            "src/a.py": "import os\n",
+        },
+    ),
+    "liczy linie kodu, nie konfigurację: overrides mypy z ignore_errors": (
+        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x: int = 1\n"},
+        {
+            "pyproject.toml": _KONFIGURACJA + '\n[[tool.mypy.overrides]]\nmodule = ["a"]\nignore_errors = true\n',
+            "src/a.py": 'x: int = "1"\n',
+        },
+    ),
+    "czyta tylko pliki, które listuje ruff: noqa w pliku z extend-exclude": (
+        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {
+            "pyproject.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
+            "src/a.py": "x = 1\n",
+            "src/b.py": "import os  # noqa: F401 - próbka\n",
+        },
+    ),
+    "czyta tylko pliki, które listuje ruff: type: ignore w pliku, który sprawdza tylko mypy": (
+        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {
+            "pyproject.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
+            "src/a.py": "x = 1\n",
+            "src/b.py": 'y: int = "1"  # type: ignore[assignment]\n',
+        },
+    ),
+    # Dekorator typing.no_type_check, drugą postać tej klasy, odrzuca zakaz ruff TID251 (przegląd #1689, W1).
+    "liczy komentarze tłumień, nie tłumienie zapisane kodem: gałąź if not TYPE_CHECKING, której mypy nie sprawdza": (
+        {"src/a.py": "x = 1\n"},
+        {"src/a.py": 'from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n\n    def f() -> int:\n        return "1"\n'},
     ),
 }
 
