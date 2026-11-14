@@ -556,9 +556,7 @@ def _emmett(load: EmmettLoad) -> OrderPricing:
     Strona bez ilości po każdej innej propozycji, także po pustym oknie Emmetta po padniętej propozycji, to
     ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``: efenix odmówił „Załaduj do zlecenia” odpowiedzią 2xx, a
     skrypt efenix i tak przeładował stronę. Postaci propozycji ani treści tej odpowiedzi nikt nie zmierzył, więc werdykt ich
-    nie czyta. Prawdziwy efenix dał stronę z ilością i kwotą różną od 0 po każdym ze 108 załadowań przebiegu z 4.11.2026
-    (Logi Uruchomienia Wydania 0.4.2), więc Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś, zdarza się
-    najwyżej rzadko.
+    nie czyta.
 
     Emmett, który zaproponowałby same pozycje bez pola Ilość (karta ceny wpisywanej), dałby stronę bez ilości i
     Zatrzymanie, choć efenix go załadował. Takiej propozycji nikt nie zmierzył, a Zatrzymanie jest tu stroną bezpieczną, bo
