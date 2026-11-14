@@ -156,6 +156,7 @@ def _refuse_flow(tree: ast.Module, function: ast.FunctionDef, module: str) -> No
                 where = "in a condition"
             child = parent
         if where is not None:
+            assert isinstance(call.func, ast.Attribute)
             raise _refuse(module, call, f"run.{call.func.attr} of {function.name}() stands {where}, and the section prints "
                           "each step and check once: the command reads one only where it runs once, or once per loop over "
                           "a fixed list; move it out, or loop over a non-empty tuple or list literal")
