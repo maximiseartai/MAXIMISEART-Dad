@@ -36,3 +36,6 @@ under `STEP okno-ustawien` in `drive.txt` and screenshots `300`–`305`.
 ## Gotchas
 
 - The section `Narzędzie` and its group `Narzędzie` share a name: find the group in the listbox by role `group`.
+- The window makes the page under it inert, so role queries do not see that page: find it by `h1[data-page]`.
+- Back to Okresy after a close proves that the window closes through the browser's history: a close that replaced the
+  address instead would leave Metryki for Back.
