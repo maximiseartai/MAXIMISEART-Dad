@@ -199,6 +199,9 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import profile": (SRC_CONFIG, ("rozliczenia",), "profile"),
     "from cProfile import Profile": (SRC_CONFIG, ("rozliczenia", "centrum"), "cProfile"),
     "import _lsprof": (SRC_CONFIG, ("rozliczenia",), "_lsprof"),
+    # Handler sygnału dostaje ramkę przerwanej funkcji, a hak audytu biegnie w środku audytowanego wywołania (przegląd #1809, W1).
+    "import signal\nsignal.signal(signal.SIGALRM, obsluz)": (SRC_CONFIG, ("rozliczenia", "centrum"), "signal.signal"),
+    "from sys import addaudithook\naddaudithook(sluchaj)": (SRC_CONFIG, ("rozliczenia",), "sys.addaudithook"),
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
@@ -317,17 +320,27 @@ def test_znane_luki_zakazu_snu_w_napedzie_przechodza_przez_ruff(tmp_path: Path) 
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SNU)")
 
 
-# Kod między instrukcjami cudzej funkcji, którego zakaz śledzenia w src/ruff.toml nie widzi (#1551): zakaz zna tylko nazwę
-# z importu i obowiązuje tylko w src/.
+# Kod między instrukcjami cudzej funkcji, którego zakaz w src/ruff.toml nie widzi. Zakaz trzyma listę nazw haków, a nie
+# całą klasę: inny hak interpretera, C API i nazwa poza importem przechodzą, a nowo znaleziony członek klasy to nowa próbka
+# pod jedną z tych klas mechanizmu. Sondy (3.13, dane syntetyczne) podmieniają przez gc.callbacks i C API zmienną `parts`
+# w outbox._queue_text po kontroli (przegląd #1809).
 ZNANE_LUKI_SLEDZENIA = {
-    "nazwa w napisie: getattr(sys, \"settrace\")": 'import sys\n\ngetattr(sys, "settrace")(lambda ramka, zdarzenie, arg: None)\n',
-    "ramka własnego stosu: f_locals ramki wywołującego z inspect": (
+    "zakaz zna tylko nazwę z importu: getattr(sys, \"settrace\")": 'import sys\n\ngetattr(sys, "settrace")(lambda ramka, zdarzenie, arg: None)\n',
+    "zakaz zna tylko nazwy z listy: inny hak interpretera, gc.callbacks z ramką z inspect": (
+        "import gc\nimport inspect\n\n\ndef zwrotne(faza: str, info: dict[str, int]) -> None:\n"
+        "    ramka = inspect.currentframe()\n    if ramka is not None and ramka.f_back is not None:\n"
+        "        ramka.f_back.f_locals[\"parts\"] = ()\n\n\ngc.callbacks.append(zwrotne)\n"
+    ),
+    "zakaz zna tylko nazwy z listy: C API przez ctypes (PyEval_SetTrace)": (
+        "import ctypes\n\nctypes.pythonapi.PyEval_SetTrace(None, None)\n"
+    ),
+    "zakaz zna tylko nazwy z listy: ramka wywołującego z inspect": (
         "import inspect\n\n\ndef podmien() -> None:\n    ramka = inspect.currentframe()\n"
         "    if ramka is not None and ramka.f_back is not None:\n        ramka.f_back.f_locals[\"header\"] = \"x\"\n"
     ),
 }
 ZNANE_LUKI_SLEDZENIA_POZA_SRC = {
-    "kod spoza src/: sys.settrace w narzędziu tools/": "import sys\n\nsys.settrace(None)\n",
+    "zakaz obowiązuje tylko w src/: sys.settrace w narzędziu tools/": "import sys\n\nsys.settrace(None)\n",
 }
 
 

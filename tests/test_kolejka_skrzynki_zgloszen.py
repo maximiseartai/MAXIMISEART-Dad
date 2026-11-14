@@ -2447,6 +2447,8 @@ ODMOWY_SLUCHACZA: Final[dict[str, tuple[Callable[[Post], Post], bool]]] = {
     "część spoza typu-dowodu": (lambda post: replace(post, parts=(cast(Outgoing, _KOMORKA),)), True),
     "cel z podklasy NewIssue": (lambda post: replace(post, target=type("Cel", (NewIssue,), {})("uwaga-taty", tool("Tytuł"))), True),
     "części z indeksem innym niż przebieg": (lambda post: replace(post, parts=_Udawane(post.parts)), False),
+    # Plik kolejki zapisuje stan każdego typu, a jego odczyt bierze tylko napis (przegląd #1809, D1).
+    "stan wysyłki, którego odczyt pliku kolejki nie bierze": (lambda post: replace(post, state=cast(str, 1)), True),
 }
 
 
