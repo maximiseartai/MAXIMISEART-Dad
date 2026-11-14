@@ -708,11 +708,12 @@ ZNANE_LUKI_LOGOW: Final = {
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
     "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
-    "parser pliku kolejki z tekstem z komórki z importu prywatnej nazwy": """from rozliczenia.centrum.outbox import ArchiveFile, _archive_file
+    "parser pliku kolejki z tekstem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
+from rozliczenia.centrum.outbox import ArchiveFile
 
 
 def plik(komorka: str) -> ArchiveFile | None:
-    return _archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+    return cls._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
 """,
     "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog

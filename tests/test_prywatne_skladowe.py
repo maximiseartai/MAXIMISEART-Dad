@@ -5,7 +5,9 @@ Pilnuje tego ruff ``SLF001`` z ``pyproject.toml`` w każdym runie. Zapis Ustawie
 prywatne pola (``settings._places[…].write``, ``settings._history.append``, ``settings._memory.write``) omija reguły
 właściciela, a reguła ast-grep na nazwach pól musiałaby je wyliczać (#1727 r5, W1). Drogi ``DROGI`` ruff odrzuca
 w module Centrum, a postacie, których ``SLF001`` nie widzi, są próbkami ``ZNANE_LUKI``: ruff i mypy przepuszczają je na
-tej samej ścieżce.
+tej samej ścieżce. Import prywatnej nazwy innego modułu (``from m import _x``) odrzuca
+``tests/test_granice_importow.py::test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy``, a jego import względny
+jest próbką ``ZNANE_LUKI_IMPORTU_SRC`` tamże.
 """
 
 from __future__ import annotations
@@ -32,8 +34,7 @@ DROGI: Final = {
 }
 
 # Postać → moduł, w którym prywatna składowa innego obiektu albo modułu przechodzi przez ruff i mypy na ścieżce modułu
-# Centrum. SLF001 nie zgłasza odbiorcy pod nazwą self, cls ani mcs (także modułu zaimportowanego pod nią) ani importu
-# prywatnej nazwy.
+# Centrum. SLF001 nie zgłasza odbiorcy pod nazwą self, cls ani mcs, także modułu zaimportowanego pod nią.
 ZNANE_LUKI: Final = {
     "nazwa pola w napisie getattr": _USTAWIENIA
     + 'def places(settings: CentrumSettings) -> object:\n    return getattr(settings, "_places")\n',
@@ -46,12 +47,6 @@ ZNANE_LUKI: Final = {
 
 def miejsce() -> object:
     return cls._Place
-""",
-    "import prywatnej nazwy innego modułu": """from rozliczenia.centrum.settings.owner import _Place
-
-
-def miejsce() -> object:
-    return _Place
 """,
 }
 

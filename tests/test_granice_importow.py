@@ -89,6 +89,7 @@ from dataclasses import dataclass
 import importlib
 from pathlib import Path, PureWindowsPath
 import sys
+import tomllib
 import typing
 
 import pytest
@@ -1724,6 +1725,27 @@ GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
 BY_NAME: typing.Final = frozenset({"getattr", "setattr", "delattr"})
 
 
+def _private_imports(tree: ast.Module) -> list[tuple[int, str, str]]:
+    """Postacie 1 i 2 ``_private_reaches``: import prywatnej nazwy albo z prywatnego modułu ``rozliczenia``, z linią,
+    kodem i pełną nazwą (``rozliczenia.….x``). Import względny (``from .m import _x``) nie ma tu nazwy pakietu."""
+
+    found: list[tuple[int, str, str]] = []
+    for node in wezly(tree):
+        if isinstance(node, ast.Import):
+            found.extend(
+                (node.lineno, ast.unparse(node), alias.name)
+                for alias in node.names
+                if alias.name.split(".")[0] == SRC_PACKAGE and any(map(_private, alias.name.split(".")))
+            )
+        elif isinstance(node, ast.ImportFrom) and (module := node.module or "").split(".")[0] == SRC_PACKAGE:
+            found.extend(
+                (node.lineno, ast.unparse(node), f"{module}.{alias.name}")
+                for alias in node.names
+                if _private(alias.name) or any(map(_private, module.split(".")))
+            )
+    return found
+
+
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, w których kod sięga do prywatnej nazwy ``src`` w jednej z postaci wyliczonych niżej.
 
@@ -1778,19 +1800,12 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """
 
     bound: set[str] = set()
-    found: list[tuple[int, str]] = []
+    found = [(line, code) for line, code, _ in _private_imports(tree)]
     for node in wezly(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] == SRC_PACKAGE:
-                    bound.add(alias.asname or SRC_PACKAGE)
-                    if any(map(_private, alias.name.split("."))):
-                        found.append((node.lineno, ast.unparse(node)))
+            bound.update(alias.asname or SRC_PACKAGE for alias in node.names if alias.name.split(".")[0] == SRC_PACKAGE)
         elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == SRC_PACKAGE:
-            for alias in node.names:
-                if _private(alias.name) or any(map(_private, (node.module or "").split("."))):
-                    found.append((node.lineno, ast.unparse(node)))
-                bound.add(alias.asname or alias.name)
+            bound.update(alias.asname or alias.name for alias in node.names)
 
     def from_src(node: ast.expr) -> bool:
         while isinstance(node, ast.Attribute):
@@ -1852,6 +1867,64 @@ def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> Non
         "szew), a dane o świecie zewnętrznym kopiuje celowo (docs/agents/skille.md, „Co wyrocznia bierze z src”):\n"
         + "\n".join(reaches)
     )
+
+
+# Nazwy z banned-api src/ruff.toml (dowód katalogu, _PASSED i inne): ich import u właściciela pilnuje ruff TID251 z prawem
+# właściciela w per-file-ignores pyproject.toml.
+SRC_BANNED: typing.Final = frozenset(
+    tomllib.loads((SRC / "ruff.toml").read_text(encoding="utf-8"))["lint"]["flake8-tidy-imports"]["banned-api"]
+)
+
+
+def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
+    """Postacie 1 i 2 ``_private_reaches`` w ``src/``, bo ruff ``SLF001`` widzi ``m._x``, ale nie ``from m import _x``.
+    Nazwę z ``SRC_BANNED`` pilnuje ``TID251``. Import względny przechodzi: próbki ``ZNANE_LUKI_IMPORTU_SRC``."""
+
+    reaches = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
+        for path in sorted(SRC.rglob("*.py"))
+        for line, code, name in _private_imports(drzewo(path))
+        if name not in SRC_BANNED
+    ]
+
+    assert reaches == [], (
+        "moduł src importuje prywatną nazwę innego modułu: weź jego publiczną nazwę albo funkcję, a stan, który dzielą "
+        "klasy jednego modułu, daj prywatnej klasie tego modułu (CODING_STANDARDS.md, wiersz SLF001):\n" + "\n".join(reaches)
+    )
+
+
+# Postać → moduł src, którego import prywatnej nazwy innego modułu sprawdzenie wyżej odrzuca: siostry dróg, które ruff
+# SLF001 odrzuca w tests/test_regula_danych.py i tests/test_komentarz_logow_uruchomienia.py.
+IMPORTY_PRYWATNE_SRC: typing.Final = {
+    "prywatny parser celu kolejki": "from rozliczenia.centrum.outbox import _target\n",
+    "prywatny parser pliku kolejki": "from rozliczenia.centrum.outbox import _archive_file\n",
+    "prywatna tabela wartości pamięci reguły danych": "from rozliczenia.client_data import _WORDS\n",
+    "prywatny moduł pakietu": "from rozliczenia.worker_reports._model import Login\n",
+    "import prywatnego modułu": "import rozliczenia.worker_reports._model\n",
+}
+
+# Znane luki importu prywatnej nazwy w src (tests/fixtures/znane_luki.py): import względny z modułu Centrum, który
+# sprawdzenie importów i ruff przepuszczają. Mypy rozwiązuje go tylko w pakiecie, a prywatnej nazwy nie odrzuca.
+ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
+    "import względny prywatnego parsera celu kolejki": "from .outbox import _target\n\n\ndef cel() -> object:\n    return _target\n",
+    "import względny prywatnego parsera pliku kolejki": "from .outbox import _archive_file\n\n\ndef plik() -> object:\n    return _archive_file\n",
+    "import względny prywatnej tabeli pamięci": "from ..client_data import _WORDS\n\n\ndef tabela() -> object:\n    return _WORDS\n",
+}
+
+
+@pytest.mark.parametrize("code", IMPORTY_PRYWATNE_SRC.values(), ids=IMPORTY_PRYWATNE_SRC.keys())
+def test_sprawdzenie_importow_src_lapie_import_prywatnej_nazwy(code: str) -> None:
+    assert [name for _, _, name in _private_imports(ast.parse(code)) if name not in SRC_BANNED]
+
+
+@wymaga_ruff
+def test_znane_luki_importu_src_przechodza_przez_sprawdzenie_importow_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_IMPORTU_SRC, tmp_path)
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_importu.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"import: {code}" for _, code, _ in _private_imports(ast.parse(plik.read_text(encoding="utf-8")))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_IMPORTU_SRC)")
 
 
 # Każda droga do prywatnej nazwy src, którą zna sprawdzenie (spis N13 z 7.11.2026: explore_outbox, explore_intermax,

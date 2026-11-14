@@ -311,11 +311,12 @@ def wysylka(komorka: str, post: Post) -> Post:
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
 """,
-    "parser pliku kolejki z tytułem z komórki z importu prywatnej nazwy": """from rozliczenia.centrum.outbox import NewIssue, Post, _target
+    "parser pliku kolejki z tytułem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
+from rozliczenia.centrum.outbox import NewIssue, Post
 
 
 def wysylka(komorka: str, cel: NewIssue) -> Post:
-    znaleziony = _target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    znaleziony = cls._target({"label": "zgloszenie", "title": komorka}, "new_issue")
     assert isinstance(znaleziony, NewIssue)
     return Post(cel, None, "r", None, (znaleziony.title,))
 """,
@@ -393,11 +394,12 @@ from rozliczenia.dad_files import DadFiles
 def wysylka(komorka: str) -> str:
     return guarded(cast(ForbiddenValues, DadFiles().forbidden), komorka, "treść").text
 """,
-    "prywatna tabela wartości pamięci z importu prywatnej nazwy": """from rozliczenia.client_data import _WORDS, ForbiddenValues, guarded
+    "prywatna tabela wartości pamięci przez moduł pod nazwą cls": """from rozliczenia import client_data as cls
+from rozliczenia.client_data import ForbiddenValues, guarded
 
 
 def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    _WORDS[pamiec].columns.clear()
+    cls._WORDS[pamiec].columns.clear()
     return guarded(pamiec, komorka, "treść").text
 """,
 }
