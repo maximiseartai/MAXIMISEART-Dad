@@ -22,7 +22,6 @@ from drive.common import (
     Run,
     close_centrum,
     frontend_ms,
-    last_opened_is,
     move,
     next_step_names_current_step,
     period_files,
@@ -800,8 +799,12 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     run.step(FEATURE, "uzupelnienie-otworz")
     opened_before = len(run.lines(Log.OPENED))
     page.get_by_role("button", name="Otwórz Plik zbiorczy", exact=True).click()
-    until(last_opened_is(run, collective_file), "Otwórz Plik zbiorczy opened the period's Plik zbiorczy")
-    run.check(len(run.lines(Log.OPENED)) == opened_before + 1, "one click on „Otwórz Plik zbiorczy” opens it once")
+    # The last open before the click is often this Plik zbiorczy too, so the wait is for a new line, not for that path.
+    until(lambda: len(run.lines(Log.OPENED)) > opened_before, "the click on „Otwórz Plik zbiorczy” opened a file")
+    run.check(
+        run.lines(Log.OPENED)[opened_before:] == [{"path": str(collective_file)}],
+        "one click on „Otwórz Plik zbiorczy” opens the period's Plik zbiorczy, once",
+    )
     expect(page.get_by_text(collective_file.name, exact=True).last).to_be_visible()
 
     run.step(FEATURE, "uzupelnienie-powrot")
