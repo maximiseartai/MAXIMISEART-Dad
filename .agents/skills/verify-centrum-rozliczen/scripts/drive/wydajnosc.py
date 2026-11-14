@@ -32,6 +32,7 @@ from drive.common import (
     read_text,
     replace_file,
 )
+from drive.uzupelnienie import LIVE_TIMEOUT_MS
 from drive.waiting import Budget
 from atrapy.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
@@ -399,7 +400,7 @@ def _live_filling(browsing: Browsing, measured: Measured, collective_file: Path)
         page.wait_for_timeout(SETTLE_MS)
         mark, seen, before = len(requests), _fetch_count(page), script_ms(cdp)
         for _ in range(LIVE_CHECKS):
-            with page.expect_response(lambda response: urlsplit(response.url).path == VERSION_PATH, timeout=Budget.SCREEN.ms):
+            with page.expect_response(lambda response: urlsplit(response.url).path == VERSION_PATH, timeout=LIVE_TIMEOUT_MS):
                 pass
         page.wait_for_timeout(SETTLE_MS)
         checks = [end - start for path, start, end in _fetches(page, seen) if path == VERSION_PATH]
@@ -414,7 +415,7 @@ def _live_filling(browsing: Browsing, measured: Measured, collective_file: Path)
         _toggle_live_value(collective_file)
         page.wait_for_function(
             "([counter, shown]) => document.querySelector(counter).textContent !== shown",
-            arg=[counter, shown], polling="raf", timeout=Budget.SCREEN.ms,
+            arg=[counter, shown], polling="raf", timeout=LIVE_TIMEOUT_MS,
         )
         on_screen = float(page.evaluate("() => window.__wydajnosc.lastMutation"))
         page.wait_for_timeout(SETTLE_MS)

@@ -1,4 +1,4 @@
-"""Znane luki strażnika (ADR 0034): postać kodu, której strażnik nie łapie, jest próbką w jego teście.
+"""Znane luki strażnika (ADR 0034): znana postać, którą strażnik przepuszcza, jest próbką w jego teście.
 
 Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu („klasa: postać” → kod modułu), a test puszcza każdą przez
 prawdziwe mechanizmy strażnika: ``ruff check`` z konfiguracją repozytorium na ścieżce sondy, ``mypy`` z konfiguracją

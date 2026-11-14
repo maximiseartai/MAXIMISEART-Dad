@@ -186,6 +186,10 @@ extend-select = [
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc
 # odrzuca w niej API drugiego systemu (os.killpg, signal.SIGKILL w f7a2261 i d0008d3).
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+# Dekorator no_type_check wyłącza mypy na funkcji bez komentarza tłumienia, więc licznik tłumień
+# (tests/test_granice_wyjatkow.py) go nie widzi (przegląd #1689, W1).
+"typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+"typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 # Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED) i fabryka, która go wkłada (refusal._refused):
 # bez dowodu mypy odrzuca wywołanie, a ruff odrzuca ich import i atrybut modułu poza modułem, który je zna (getattr
 # z napisem nie).

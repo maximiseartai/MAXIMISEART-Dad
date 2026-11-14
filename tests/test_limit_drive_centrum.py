@@ -91,11 +91,13 @@ def test_zrzut_w_drive_centrum_idzie_tylko_przez_run_capture() -> None:
     )
 
 
+@pytest.mark.parametrize("failure", ["DriveFailure", "TimedOut"])
 def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
 ) -> None:
     """Po błędzie funkcji drive robi zrzut ``zz-failure.png``; gdy przeglądarka już padła, zrzut też pada, a ``DRIVE FAIL``
-    dalej podaje błąd funkcji, z dopiskiem, że zrzutu nie ma."""
+    dalej podaje błąd funkcji, z dopiskiem, że zrzutu nie ma. Czekanie ``until`` po budżecie (``TimedOut``) to też linia
+    ``DRIVE FAIL``, a nie traceback (przegląd #1703, D1)."""
 
     monkeypatch.syspath_prepend(str(SCRIPTS))
     spec = importlib.util.spec_from_file_location("drive_centrum", SCRIPTS / "drive_centrum.py")
@@ -122,7 +124,7 @@ def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
         yield SimpleNamespace(chromium=SimpleNamespace(launch=Browser))
 
     def failing(run: object, page: object) -> None:
-        raise drive_centrum.DriveFailure("funkcja nie zobaczyła przycisku")
+        raise getattr(drive_centrum, failure)("funkcja nie zobaczyła przycisku")
 
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=failing))
@@ -318,6 +320,7 @@ def test_expect_drive_bez_timeout_czeka_budzet_asercji(monkeypatch: pytest.Monke
             super().set_options(timeout=timeout)
 
     monkeypatch.setattr(playwright.sync_api, "Expect", Expect)
+    monkeypatch.syspath_prepend(str(SCRIPTS))
     spec = importlib.util.spec_from_file_location("waiting_w_tescie", DRIVE / "waiting.py")
     assert spec is not None and spec.loader is not None
     waiting = importlib.util.module_from_spec(spec)
@@ -362,6 +365,42 @@ def test_powtorzone_klikniecie_liczy_zadanie_ktore_wyszlo_z_karty_pozno(common: 
 
     assert common.settle(pozna, pozna.sent) == 1
     assert common.settle(bez_zadania, bez_zadania.sent, at_least=0) == 0
+
+
+class _KartaZZegarem:
+    """Karta w teście z zegarem, który przesuwa tylko jej czekanie: żądanie wychodzi z niej, gdy zegar minie
+    ``wychodzi_ms`` od kliknięcia, jak zapis karty w trybie wolnego runnera (``LATE_WRITE_MS``)."""
+
+    def __init__(self, wychodzi_ms: float) -> None:
+        self.sent: list[SimpleNamespace] = []
+        self.teraz_ms = 0.0
+        self.wychodzi_ms = wychodzi_ms
+
+    def wait_for_timeout(self, ms: float) -> None:
+        self.teraz_ms += ms
+        if not self.sent and self.teraz_ms >= self.wychodzi_ms:
+            self.sent.append(SimpleNamespace(response=lambda: None))
+
+
+@pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])
+def test_cisza_po_kliknieciu_ktore_ma_nic_nie_wyslac_obejmuje_spozniony_zapis_karty(
+    common: ModuleType, monkeypatch: pytest.MonkeyPatch, slow: bool
+) -> None:
+    """Kliknięcie, które ma nic nie wysłać, a jednak wysyła, w trybie wolnego runnera wysyła swój zapis ``LATE_WRITE_MS``
+    później: ``settle`` liczy go, bo cisza ``quiet_for`` trwa w trybie tyle dłużej (lista #1539, PR 5). Bez trybu
+    zapis wychodzi od razu, a cisza zostaje krótka."""
+
+    waiting = importlib.import_module("drive.waiting")
+    if slow:
+        monkeypatch.setenv(common.SLOW_RUNNER, "1")
+    else:
+        monkeypatch.delenv(common.SLOW_RUNNER, raising=False)
+    late_ms = waiting.LATE_WRITE_MS if slow else 0
+    # Drugie kliknięcie taty przychodzi w kilka milisekund po pierwszym, a zapis wychodzi z karty z opóźnieniem trybu.
+    karta = _KartaZZegarem(late_ms + 50)
+
+    assert common.settle(karta, karta.sent, at_least=0) == 1
+    assert karta.teraz_ms <= 2 * (waiting.REPEAT_SETTLE_MS + late_ms)
 
 
 @pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])

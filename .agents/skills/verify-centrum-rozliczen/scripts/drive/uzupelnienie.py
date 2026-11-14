@@ -32,7 +32,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, quiet_for
 from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -258,7 +258,7 @@ def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: P
 
         page.evaluate(HIDE_TAB)
         hidden_from = len(asked)
-        page.wait_for_timeout(HIDDEN_MS)
+        quiet_for(page, HIDDEN_MS)
         hidden = asked[hidden_from:]
         run.check(
             VERSION_API not in hidden and API not in hidden,

@@ -31,6 +31,7 @@ from drive.common import (
 )
 from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
+from drive.waiting import quiet_for
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from harness import Log
 
@@ -349,7 +350,7 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "przygotowanie-otwieranie")
     # The tab drops a repeat of the same file for a while after the server's answer, with nothing on screen; the Plik
     # zbiorczy was opened by the double click above.
-    page.wait_for_timeout(frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
+    quiet_for(page, frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
     period_file_list = page.get_by_role("list", name="Pliki okresu")
     opened_before = len(run.lines(Log.OPENED))
     for path in (internal_settlement, collective_file):

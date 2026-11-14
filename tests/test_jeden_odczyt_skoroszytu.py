@@ -21,7 +21,8 @@ atrapach łapie łatanie modułu ``workbook_files`` i atrybutu o tej nazwie w mo
 ``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł albo nazwa atrybutu stoi w tekście
 wywołania (które argumenty czyta, mówi ``_patches``), np. moduł po nazwie, aliasie importu, jako atrybut
 (``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
-Postacie, których nie łapie ani ruff, ani ten strażnik, są próbkami w ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW``.
+Próbki ``ZNANE_LUKI_SRC``, ``ZNANE_LUKI_MIEJSC`` i ``ZNANE_LUKI_TESTOW`` pokazują znane luki: postacie, które
+przepuszcza i ruff, i ten strażnik, a nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations
@@ -429,11 +430,11 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
 
 
-# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): opis postaci → moduł src/rozliczenia,
+# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src/rozliczenia,
 # który czyta bajty albo wartości pliku taty poza ``ONLY``, a mimo to przechodzi przez ruff z konfiguracją src/ i
 # ``_src_findings``.
 ZNANE_LUKI_SRC = {
-    "funkcja wzięta do zmiennej po imporcie z noqa": """\
+    "ufa tłumieniu ruff i zna tylko nazwę wywołania: funkcja w zmiennej po imporcie z noqa": """\
 from pathlib import Path
 
 from .workbook_files import file_bytes  # noqa: TID251 - sonda
@@ -444,7 +445,7 @@ czytaj = file_bytes
 def wartosci(path: Path) -> bytes:
     return czytaj(path)
 """,
-    "getattr modułu z napisem": """\
+    "refleksja po nazwie atrybutu: getattr modułu": """\
 from pathlib import Path
 
 from . import workbook_files
@@ -453,13 +454,30 @@ from . import workbook_files
 def wartosci(path: Path) -> bytes:
     return getattr(workbook_files, "file_bytes")(path)
 """,
-    "surowe open w trybie rb": """\
+    "zna tylko wywołania z ONLY: open w trybie rb": """\
 from pathlib import Path
 
 
 def wartosci(path: Path) -> bytes:
     with open(path, "rb") as plik:
         return plik.read()
+""",
+    "zna tylko wywołania z ONLY: Path.open w trybie rb": """\
+from pathlib import Path
+
+
+def wartosci(path: Path) -> bytes:
+    with path.open("rb") as plik:
+        return plik.read()
+""",
+    "refleksja po nazwie atrybutu: __dict__ modułu": """\
+from pathlib import Path
+
+from . import workbook_files
+
+
+def wartosci(path: Path) -> bytes:
+    return workbook_files.__dict__["file_bytes"](path)
 """,
 }
 
@@ -560,8 +578,29 @@ def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
 }
 
 
+# Znane luki tego strażnika w samym ``workbook_files.py``: „klasa: postać” → moduł, który czyta skoroszyt z dysku obok
+# ``file_bytes``, a mimo to przechodzi przez ruff i ``_src_findings`` jako ``rozliczenia/workbook_files.py``.
+ZNANE_LUKI_MIEJSC = {
+    "miejsce to plik i nazwa funkcji, nie jej klasa: metoda _open innej klasy": """\
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.workbook import Workbook
+
+
+class Kopia:
+    def _open(self, path: Path) -> Workbook:
+        return load_workbook(path)
+""",
+}
+
+
 def _src_reads(source: str) -> list[str]:
     return _src_findings({"rozliczenia/sonda_luki.py": source})[0]
+
+
+def _reads_in_workbook_files(source: str) -> list[str]:
+    return _src_findings({"rozliczenia/workbook_files.py": source})[0]
 
 
 def _test_patches(source: str) -> list[str]:
@@ -573,9 +612,10 @@ def _test_patches(source: str) -> list[str]:
     ("nazwa", "probki", "sonda", "straznik"),
     [
         ("ZNANE_LUKI_SRC", ZNANE_LUKI_SRC, SRC / "rozliczenia" / "sonda_luki.py", _src_reads),
+        ("ZNANE_LUKI_MIEJSC", ZNANE_LUKI_MIEJSC, SRC / "rozliczenia" / "workbook_files.py", _reads_in_workbook_files),
         ("ZNANE_LUKI_TESTOW", ZNANE_LUKI_TESTOW, TESTS / "test_sonda_luki.py", _test_patches),
     ],
-    ids=["odczyt-w-src", "latanie-w-testach"],
+    ids=["odczyt-w-src", "odczyt-w-workbook-files", "latanie-w-testach"],
 )
 def test_znane_luki_jednej_drogi_odczytu_przechodza_przez_ruff_i_straznika(
     tmp_path: Path, nazwa: str, probki: dict[str, str], sonda: Path, straznik: Callable[[str], list[str]]

@@ -154,7 +154,10 @@ behaviour, then exactly these H2s in order:
    called in the body of `drive(run, page)`. It refuses, with the file and the line,
    every other form of them and every other `.step` or `.check` attribute in the
    module, on whatever object. It does not see a check reached without such an
-   attribute, as `getattr(run, "check")`.
+   attribute, as `getattr(run, "check")`. A field of an f-string message prints
+   as `…`, except a module constant, which prints its value. A line with the ID
+   alone is a step without its own `run.check`: what it waits for (`run.wait_for`,
+   `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
    feature and where its proof stands in the evidence. A file whose
