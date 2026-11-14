@@ -400,6 +400,36 @@ class NoPreview(Exception):
     """„Wyślij do Maksa” przed pierwszym podglądem: nie ma czego wysłać."""
 
 
+class _Ear:
+    """Uchwyt Zgłoszenia tak, jak go słyszy ``Reports``: numer issue sprawy (``delivered``) i odrzucenie treści
+    (``rejected``). Ucho trzyma uchwyt słabo, a uchwyt ucho mocno, więc ``Reports`` słyszy tylko żywe uchwyty."""
+
+    def __init__(self, delivered: Callable[[], None], rejected: Callable[[], None]) -> None:
+        self._delivered = weakref.WeakMethod(delivered)
+        self._rejected = weakref.WeakMethod(rejected)
+
+    def delivered(self) -> None:
+        if (heard := self._delivered()) is not None:
+            heard()
+
+    def rejected(self) -> None:
+        if (heard := self._rejected()) is not None:
+            heard()
+
+
+@dataclass(frozen=True)
+class _Desk:
+    """To, co ``Reports`` daje swoim uchwytom Zgłoszeń (``Reports.handle``): stan problemu, podgląd źródła, pytanie
+    skrzynki, wysyłka przez kolejkę, sprawa czekająca w kolejce i ucho uchwytu na wieści ze Spraw taty."""
+
+    state_of: Callable[[str], diagnosis_contract.ReportState]
+    preview: Callable[[ReportSource], _Preview]
+    ask_box: Callable[[str], None]
+    queue: Callable[[_Preview], diagnosis_contract.ReportState]
+    pending: Callable[[str], bool]
+    listen: Callable[[str, _Ear], None]
+
+
 class ReportHandle:
     """Zgłoszenie jednego problemu z jednego źródła (``ReportSource``), od podglądu do wysyłki.
 
@@ -414,17 +444,19 @@ class ReportHandle:
     po odpowiedzi skrzynki, czeka na nią przez ``wait_for_box``.
     """
 
-    def __init__(self, reports: Reports, fingerprint: str, shown: ReportShown | None) -> None:
-        self._reports = reports
+    def __init__(self, desk: _Desk, fingerprint: str, shown: ReportShown | None) -> None:
+        self._desk = desk
         self._fingerprint = fingerprint
         self._shown = shown
         self._changed = threading.Condition()
-        self._state = reports._state_of(fingerprint)
+        self._state = desk.state_of(fingerprint)
         self._preview: _Preview | None = None
         self._asking: threading.Thread | None = None
         self._sends = 0  # wysyłki zaczęte do tej pory: odpowiedź skrzynki na pytanie sprzed wysyłki przepada
         self._sending = False
         self._returned = False  # powrót problemu już poszedł do kolejki: drugi z tego uchwytu by go dublował
+        self._ear = _Ear(self._delivered, self._rejected)
+        desk.listen(fingerprint, self._ear)
 
     @property
     def state(self) -> diagnosis_contract.ReportState:
@@ -438,7 +470,7 @@ class ReportHandle:
         Zatrzymania, którego problem czeka na naprawę, po odpowiedzi skrzynki idzie sam do kolejki jako powrót.
         """
 
-        preview = self._reports._preview(source)
+        preview = self._desk.preview(source)
         comeback = preview if isinstance(source, StopReport) else None
         with self._changed:
             self._preview = preview
@@ -460,16 +492,16 @@ class ReportHandle:
             asking.join()
 
     def _ask(self, sends: int, comeback: _Preview | None) -> None:
-        self._reports._ask_box(self._fingerprint)
+        self._desk.ask_box(self._fingerprint)
         with self._changed:
             if sends != self._sends:
                 return
-            self._show(self._state if self._done else self._reports._state_of(self._fingerprint))
+            self._show(self._state if self._done else self._desk.state_of(self._fingerprint))
             if comeback is None or self._returned or not isinstance(self._state, diagnosis_contract.ReportWaiting):
                 return
             self._returned = self._sending = True
         try:
-            self._reports._queue(comeback)
+            self._desk.queue(comeback)
         finally:
             with self._changed:
                 self._sending = False
@@ -492,7 +524,7 @@ class ReportHandle:
             self._sending = True
             self._sends += 1
         try:
-            state = self._reports._queue(preview)
+            state = self._desk.queue(preview)
         except BaseException:
             with self._changed:
                 self._sending = False
@@ -501,7 +533,7 @@ class ReportHandle:
         with self._changed:
             self._sending = False
             # Dostarczenie mogło przyjść tuż po końcu czekania, zanim uchwyt pokazał „czeka w kolejce”.
-            if isinstance(state, common_contract.Queued) and not self._reports._pending(self._fingerprint):
+            if isinstance(state, common_contract.Queued) and not self._desk.pending(self._fingerprint):
                 state = common_contract.Sent(state="sent")
             self._show(state)
             self._changed.notify_all()
@@ -565,7 +597,15 @@ class Reports:
         self._open: dict[str, int | None] = {}
         # Ile numerów issue dostały sprawy problemu w tej pracy Centrum: odpowiedź na pytanie sprzed numeru jest starsza.
         self._numbered: dict[str, int] = {}
-        self._handles: dict[str, weakref.WeakSet[ReportHandle]] = {}
+        self._ears: dict[str, weakref.WeakSet[_Ear]] = {}
+        self._desk = _Desk(
+            state_of=self._state_of,
+            preview=self._preview,
+            ask_box=self._ask_box,
+            queue=self._queue,
+            pending=self._pending,
+            listen=self._listen,
+        )
         cases.watch(REPORT, self._heard)
 
     def handle(self, fingerprint: ProblemFingerprint, *, shown: ReportShown | None = None) -> ReportHandle:
@@ -574,23 +614,24 @@ class Reports:
         ``shown`` dostaje każdy nowy stan; właściciel, który czyta ``ReportHandle.state`` sam, go nie podaje.
         """
 
-        handle = ReportHandle(self, fingerprint.digest, shown)
+        return ReportHandle(self._desk, fingerprint.digest, shown)
+
+    def _listen(self, fingerprint: str, ear: _Ear) -> None:
         with self._lock:
-            self._handles.setdefault(fingerprint.digest, weakref.WeakSet()).add(handle)
-        return handle
+            self._ears.setdefault(fingerprint, weakref.WeakSet()).add(ear)
 
     def _heard(self, news: CaseNews) -> None:
         with self._lock:
             if isinstance(news, CaseNumbered):
                 self._open[news.case_id] = news.number
                 self._numbered[news.case_id] = self._numbered.get(news.case_id, 0) + 1
-            handles = list(self._handles.get(news.case_id, ()))
-        for handle in handles:
+            ears = list(self._ears.get(news.case_id, ()))
+        for ear in ears:
             match news:
                 case CaseNumbered():
-                    handle._delivered()
+                    ear.delivered()
                 case CaseRejected():
-                    handle._rejected()
+                    ear.rejected()
 
     def _preview(self, source: ReportSource) -> _Preview:
         fingerprint = source.fingerprint.digest

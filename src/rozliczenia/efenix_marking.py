@@ -84,7 +84,8 @@ def mark_orders(path: Path, content: bytes, column: str, marks: Mapping[int, Mar
     """Stawia w komórce ``column`` (litera ``ADRES``) każdego wiersza z ``marks`` Pliku zbiorczego ``path`` jego Znacznik.
 
     ``content``: bajty pliku, z których pochodzą numery wierszy. ``None``, gdy każda z tych komórek ma swój Znacznik (albo
-    Znacznik przekazania) w pliku na dysku; inaczej ``Refusal``, a plik się nie zmienia.
+    Znacznik przekazania) w pliku na dysku; inaczej ``Refusal``, a plik się nie zmienia. Pliku tymczasowego, którego nie
+    da się utworzyć, nieudany zapis do niego i nieudana podmiana to ``Refusal.WRITE_FAILED``.
     """
 
     marked = _marked(content, column, marks)
@@ -104,7 +105,7 @@ def mark_orders(path: Path, content: bytes, column: str, marks: Mapping[int, Mar
 
     try:
         write_atomically(path, write)
-    except WorkbookSaveError:  # plik tymczasowy, jego zapis albo podmiana
+    except WorkbookSaveError:
         return Refusal.WRITE_FAILED
     return None
 

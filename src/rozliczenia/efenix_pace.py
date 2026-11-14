@@ -51,12 +51,14 @@ class Pace:
 
 
 class Pacing:
-    """Tempo ludzkie ``pace`` jednego przebiegu."""
+    """Tempo ludzkie ``pace`` jednego przebiegu.
+
+    Pamięta chwilę szukania poprzedniego zlecenia, w którym okno coś zapisało. Gdy poprzednie zlecenie nic nie zapisało
+    albo przebieg dopiero ruszył, takiej chwili nie ma i szukanie idzie bez przerwy.
+    """
 
     def __init__(self, pace: Pace) -> None:
         self._pace = pace
-        # Chwila szukania poprzedniego zlecenia, w którym okno coś zapisało; ``None``, gdy poprzednie zlecenie nic nie
-        # zapisało albo przebieg dopiero ruszył, więc szukanie idzie bez przerwy.
         self._written_search: float | None = None
 
     def window(self, efenix: Efenix) -> Efenix:

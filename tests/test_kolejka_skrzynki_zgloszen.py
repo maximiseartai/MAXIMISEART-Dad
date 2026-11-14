@@ -1768,6 +1768,8 @@ def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
 """,
         "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
     ),
+    # Podklasie z type() odmawia już metaklasa przy tworzeniu (client_data.WithoutSubclasses), a podklasie z type.__new__,
+    # który ją pomija, i bazą przed typem bez super() dopiero plik kolejki.
     "podklasa LogsPost w biegu z własnym to_json": (
         """from typing import Any
 
@@ -1777,6 +1779,25 @@ from rozliczenia.centrum.outbox import Outbox
 
 def wyslij(kolejka: Outbox, komorka: str) -> bool:
     klasa: Any = type("Moja", (LogsPost,), {"to_json": lambda self: komorka})
+    nowa: LogsPost = object.__new__(klasa)
+    return kolejka.post(nowa)
+""",
+        "bieg TypeError: Wysyłka Logów nie ma podklas: daje ją tylko post_of.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa LogsPost z własnym to_json": (
+        """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wyslij(kolejka: Outbox, komorka: str) -> bool:
+    klasa: Any = type.__new__(type(LogsPost), "Moja", (Mixin, LogsPost), {"to_json": lambda self: komorka})
     nowa: LogsPost = object.__new__(klasa)
     return kolejka.post(nowa)
 """,
@@ -1911,15 +1932,6 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
 def wysylka(komorka: str, cel: NewIssue) -> Post:
     return Post(cel, None, "r", None, (tool(komorka),))
 """,
-    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
-from rozliczenia.centrum.outbox import NewIssue, Post
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
-    assert isinstance(znaleziony, NewIssue)
-    return Post(cel, None, "r", None, (znaleziony.title,))
-""",
     # Kontrola w chwili zapisu pliku kolejki sprawdza typ obiektu tak, jak go zastaje, więc zmiana obiektu, klasy albo
     # modułu sprawdzenia w chwili działania ją omija: jedna próbka na klasę (#1551).
     "zmiana obiektu w chwili działania: przypisanie __class__ Outgoing napisowi obcej podklasy str": _POST
@@ -2044,15 +2056,9 @@ class Mixin:
         pass
 
 
-class Rowna(type):
-    def __eq__(cls, other: object) -> bool:
-        return True
-
-    __hash__ = type.__hash__
-
-
 def wysylka(komorka: str, cel: NewIssue) -> Post:
-    klasa: Any = type.__new__(Rowna, "Tekst", (Mixin, Outgoing), {})
+    rowna: Any = type("Rowna", (type(Outgoing),), {"__eq__": lambda cls, other: True, "__hash__": type.__hash__})
+    klasa: Any = type.__new__(rowna, "Tekst", (Mixin, Outgoing), {})
     return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
@@ -2218,6 +2224,34 @@ def wysylka(komorka: str) -> OpenIssue:
 """,
         'Argument 2 to "report_target" has incompatible type "str"; expected "Outgoing"',
     ),
+    "parser pliku kolejki z tytułem z komórki": (
+        """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
+        "Private member accessed: `_target`",
+    ),
+    "zmiana modułu sprawdzenia w chwili działania: sprawdzenie pola Outgoing w outbox": (
+        _GOTOWY_CEL
+        + """from rozliczenia.centrum import outbox
+
+
+def wysylka(komorka: str, post: Post) -> str:
+    gotowa = Post(NewIssue("uwaga-taty", komorka), None, "r", None, post.parts)  # type: ignore[arg-type]
+    zapamietaj = outbox._FIELDS["Outgoing"]
+    outbox._FIELDS["Outgoing"] = lambda wartosc: True
+    try:
+        return gotowa.to_json()
+    finally:
+        outbox._FIELDS["Outgoing"] = zapamietaj
+""",
+        "Private member accessed: `_FIELDS`",
+    ),
 }
 
 # Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
@@ -2230,18 +2264,27 @@ ZNANE_LUKI_CELU: Final = {
 def wysylka(komorka: str, post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", str.__new__(Outgoing, komorka)), None, "r", None, post.parts)
 """,
-    "zmiana modułu sprawdzenia w chwili działania: sprawdzenie pola Outgoing w outbox": _GOTOWY_CEL
-    + """from rozliczenia.centrum import outbox
+    "parser pliku kolejki z tytułem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = cls._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
+    "zmiana modułu sprawdzenia w chwili działania: sprawdzenie pola Outgoing w outbox pod nazwą cls": _GOTOWY_CEL
+    + """from rozliczenia.centrum import outbox as cls
 
 
 def wysylka(komorka: str, post: Post) -> str:
     gotowa = Post(NewIssue("uwaga-taty", komorka), None, "r", None, post.parts)  # type: ignore[arg-type]
-    zapamietaj = outbox._FIELDS["Outgoing"]
-    outbox._FIELDS["Outgoing"] = lambda wartosc: True
+    zapamietaj = cls._FIELDS["Outgoing"]
+    cls._FIELDS["Outgoing"] = lambda wartosc: True
     try:
         return gotowa.to_json()
     finally:
-        outbox._FIELDS["Outgoing"] = zapamietaj
+        cls._FIELDS["Outgoing"] = zapamietaj
 """,
 }
 

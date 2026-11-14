@@ -108,7 +108,8 @@ Ilości usług z Pliku zbiorczego. Prawdziwy jest Plik zbiorczy: ilość Emmetta
 mniejszą niż w pliku Wycena w efenix zastępuje ilością z pliku, a większą
 zostawia jako Ostrzeżenie Emmetta. Załadowanie Wyceny Emmetta czyści wycenę,
 którą zlecenie już ma, więc Wycena w efenix ładuje ją tylko do zlecenia bez
-żadnej ilości.
+żadnej ilości. To kliknięcie otwiera najpierw okno z propozycją Emmetta, a do
+zlecenia wpisuje ją dopiero „Załaduj do zlecenia” w tym oknie.
 
 ## Ostrzeżenie Emmetta
 

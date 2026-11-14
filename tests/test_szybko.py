@@ -44,6 +44,12 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
         "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
     ),
+    "tests/test_prywatne_skladowe.py::test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff_i_mypy": (
+        "sprawdza granicę ruff SLF001 na próbkach w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
+    ),
+    "tests/test_wyglad_wiersza_danych.py::test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl": (
+        "sprawdza kod row_look.py, który jego plik importuje, więc graf wybiera go przy zmianie tego modułu"
+    ),
     "tests/test_import_dynamiczny.py": (
         "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
     ),
@@ -100,6 +106,8 @@ RULE_GUARDS = frozenset(
     tests/test_dokumenty_regul.py
     tests/test_granice_importow.py
     tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow
+    tests/test_granice_importow.py::test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look
+    tests/test_granice_importow.py::test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy
     tests/test_granice_importow.py::test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy
     tests/test_jeden_odczyt_skoroszytu.py
     tests/test_jeden_zapis_skoroszytu.py
@@ -968,6 +976,9 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
 
     Węzeł ``plik::test`` z tabeli biegnie sam albo z całym plikiem, bo inny węzeł tego pliku w ``STRUCTURE`` go nie
     uruchamia; sam plik z tabeli wystarcza z dowolnym swoim węzłem.
+
+    Pytest zbiera każdy test z tabel razem ze ``STRUCTURE``, więc strażnik usunięty albo przemianowany bez zmiany
+    wiersza wywraca test.
     """
 
     rows = {path: _rule_rows(path.read_text(encoding="utf-8")) for path in RULE_TABLES}
@@ -984,7 +995,7 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
     files_with_node = {node.partition("::")[0] for node in STRUCTURE}
 
     collected = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE, *szybko.ZAPADKI],
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE, *szybko.ZAPADKI, *sorted(named)],
         cwd=ROOT,
         capture_output=True,
         text=True,

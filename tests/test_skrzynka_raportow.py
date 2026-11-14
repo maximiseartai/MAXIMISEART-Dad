@@ -782,6 +782,23 @@ def test_wyslane_przypomnienia_czyta_z_folderu_wyslane_tylko_do_odczytu_bez_zmia
     assert atrapa.flags == {101: {"\\Seen"}, 102: set(), 103: set(), 104: set()}
 
 
+def test_zepsuty_naglowek_adresata_w_wyslanych_to_nie_przypomnienie_a_przypomnienie_obok_zostaje(tmp_path: Path) -> None:
+    """Nagłówek ``To`` maila w „Wysłanych”, na którym pakiet ``email`` Pythona 3.11–3.14 zgłasza ``IndexError``, a nie
+    ``ValueError``: ten mail nie jest przypomnieniem, a odczyt oddaje przypomnienie, które leży obok niego."""
+
+    zepsuty = (
+        f"From: {SKRZYNKA}\r\nTo: \t[?, :c.]x\\<\r\nSubject: Przypomnienie: raport za dzień 08.11.2026\r\n"
+        f"Date: {format_datetime(WYSLANE_O)}\r\n\r\ntreść\r\n"
+    ).encode()
+    sent = [wyslany(101, "Przypomnienie: raport za dzień 09.11.2026"), AtrapaMail(102, WYSLANE_O, zepsuty, in_inbox=False)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).sent_reminders(date(2026, 11, 8))
+
+    assert outcome == SentReminders(
+        (SentReminder(frozenset({SenderAddress(WYKONAWCA)}), date(2026, 11, 9), WYSLANE_O.astimezone()),)
+    )
+
+
 def test_skrzynka_bez_folderu_wyslane_nie_daje_przypomnien_tylko_wynik_niedostepnej(tmp_path: Path) -> None:
     """Bez folderu ``\\Sent`` nie wiadomo, co już poszło, więc odczyt nie oddaje pustej listy, która wysłałaby wszystko."""
 
