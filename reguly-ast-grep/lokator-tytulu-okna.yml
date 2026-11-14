@@ -10,6 +10,28 @@ files:
 rule:
   # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553, powrót #1533 W1 r2). Postacie,
   # których reguła nie łapie, są próbkami ZNANE_LUKI_REGUL_POWROTOW w tests/test_zapadki.py.
-  any:
-    - pattern: $W.get_by_role("heading")
-    - pattern: $W.get_by_role(role="heading")
+  # Jedyny argument to rola nagłówka, podana z miejsca albo przez role=. Rola to treść napisu, nie jego zapis:
+  # apostrofy, potrójny cudzysłów i f-napis bez wstawek są tą samą rolą.
+  pattern: $W.get_by_role($ROLE)
+  has:
+    field: arguments
+    has:
+      any:
+        - matches: rola-naglowka
+        - kind: keyword_argument
+          all:
+            - has:
+                field: name
+                regex: '^role$'
+            - has:
+                field: value
+                matches: rola-naglowka
+utils:
+  rola-naglowka:
+    kind: string
+    has:
+      kind: string_content
+      regex: '^heading$'
+    not:
+      has:
+        kind: interpolation

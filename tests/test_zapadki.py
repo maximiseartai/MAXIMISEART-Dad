@@ -1208,11 +1208,35 @@ _PATTERN = "import re\n\nLINE = "
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading")\n', [5]),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(role="heading")\n', [5]),
+    ("lokator-tytulu-okna", f"{_LOCATOR}page.get_by_role('heading')\n", [5]),
+    ("lokator-tytulu-okna", f"{_LOCATOR}page.get_by_role(role='heading')\n", [5]),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(f"heading")\n', [5]),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("""heading""")\n', [5]),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(f"{{HEADING}}heading")\n', []),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
     ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("button")\n', []),
     ("regula-w-trasie", f"{_REFUSAL}    if problem is not None:\n        raise refusal.setting_refused(problem)\n", [6]),
     ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        if len(str(problem)) > 1:\n            raise refusal.workers_unusable(None)\n", [7]),
     ("regula-w-trasie", f"{_REFUSAL}    _ensure_not_in_periods(problem)\n", [5]),
+    ("regula-w-trasie", f"{_REFUSAL}    checks._ensure_not_in_periods(problem)\n", [5]),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    match problem:\n        case \"delete\":\n            if problem:\n"
+        "                raise refusal.worker_kept(problem, \"worker\")\n",
+        [8],
+    ),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    match problem:\n        case InPeriods():\n            if problem:\n"
+        "                raise refusal.worker_kept(problem, \"worker\")\n",
+        [8],
+    ),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    match problem:\n        case owner.KeptInPeriods(presence=presence):\n            if presence:\n"
+        "                raise refusal.worker_kept(presence, \"worker\")\n",
+        [],
+    ),
     ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
     ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        raise refusal.device_component_unknown()\n", []),
     ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, NotSaved):\n        raise refusal.autostart_not_changed()\n", []),
@@ -1281,6 +1305,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         ),
         "rola w zmiennej": f'{_LOCATOR}page.get_by_role(HEADING)\n\n\nHEADING = "heading"\n',
         "selektor CSS zamiast roli": f'{_LOCATOR}page.locator("h2")\n',
+        "rola sklejona z kilku napisów": f'{_LOCATOR}page.get_by_role("head" "ing")\n',
     },
     "regula-w-trasie": {
         "uzupełnienie listy w funkcji zmiany trasy (#1577 W1 r2)": (
@@ -1304,6 +1329,15 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "odmowa bez warunku": f"{_REFUSAL}    raise refusal.setting_refused(problem)\n",
         "odmowa w else gałęzi isinstance": (
             f"{_REFUSAL}    if isinstance(problem, str):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n"
+        ),
+        "nazwa klasy wyniku właściciela u klasy spoza settings/owner.py: reguła czyta nazwę klasy w case, nie jej moduł": (
+            "from rozliczenia.centrum.report_box import Refused\n"
+            f"{_REFUSAL}    match problem:\n        case Refused():\n            if problem:\n"
+            "                raise refusal.setting_refused(problem)\n"
+        ),
+        "odmowa wprost w case spoza wyniku właściciela: reguła widzi tylko najbliższy if i elif": (
+            "from rozliczenia.centrum.periods import InPeriods\n"
+            f"{_REFUSAL}    match problem:\n        case InPeriods():\n            raise refusal.worker_kept(problem, \"worker\")\n"
         ),
         "sprawdzenie z innego modułu bez przedrostka _ensure_": (
             "from rozliczenia.centrum import periods\n\n\ndef saved(problem: object) -> None:\n    periods.ensure_unused(problem)\n"
@@ -1336,7 +1370,7 @@ def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_p
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
-_PAGE ="from playwright.sync_api import Page\n\n\n"
+_PAGE = "from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
