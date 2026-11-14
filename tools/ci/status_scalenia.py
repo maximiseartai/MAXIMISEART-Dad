@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -38,10 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 import github
 import potomne
 from repo import ROOT
-from werdykt_scalenia import PullRequest, Verdict, base_problem, fetch, merge_verdict
-
-DESCRIPTION_LIMIT = 140  # GitHub odrzuca dłuższy opis statusu
-
+from werdykt_scalenia import PullRequest, base_problem, fetch, merge_verdict
 
 def _open_pull_requests(base: str) -> list[PullRequest]:
     listed = github.gh("pr", "list", "--state", "open", "--limit", "500", "--json", "number,title,headRefOid,baseRefName,isCrossRepository")
@@ -54,32 +50,6 @@ def _open_pull_requests(base: str) -> list[PullRequest]:
             continue
         pulls.append(PullRequest(pull["number"], pull["title"], pull["headRefOid"]))
     return pulls
-
-
-def _run_link() -> str | None:
-    names = ("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
-    if not all(os.environ.get(name) for name in names):
-        return None
-    return "{}/{}/actions/runs/{}".format(*(os.environ[name] for name in names))
-
-
-def _publish(context: str, pull: PullRequest, verdict: Verdict) -> str | None:
-    """Błąd GitHuba, gdy status nie przeszedł."""
-
-    description = verdict.description
-    if len(description) > DESCRIPTION_LIMIT:
-        description = description[: DESCRIPTION_LIMIT - 1] + "…"
-    fields = {"state": verdict.state, "context": context, "description": description}
-    if link := _run_link():
-        fields["target_url"] = link
-    flags = [part for name, value in fields.items() for part in ("-f", f"{name}={value}")]
-    try:
-        github.gh("api", "--method", "POST", "--silent", f"repos/{{owner}}/{{repo}}/statuses/{pull.head}", *flags)
-    except subprocess.TimeoutExpired:
-        return f"gh api bez odpowiedzi przez {github.LIMIT_S} s"
-    except subprocess.CalledProcessError as sent:
-        return sent.stderr.strip() or f"gh api: kod {sent.returncode}"
-    return None
 
 
 def _check_all(base_name: str, publish: bool) -> int:
@@ -99,7 +69,7 @@ def _check_all(base_name: str, publish: bool) -> int:
                 verdict = merge_verdict(copy, where, base, problem, pull)
                 print(f"#{pull.number} {verdict.state} | {verdict.description}", flush=True)
                 states[verdict.state] += 1
-                if publish and (error := _publish(context, pull, verdict)):
+                if publish and (error := github.ustaw_status(pull.head, context, verdict.state, verdict.description)):
                     print(f"#{pull.number} status niewysłany | {error}", flush=True)
                     unsent.append(f"#{pull.number}")
     counts = ", ".join(f"{state} {count}" for state, count in sorted(states.items()))
