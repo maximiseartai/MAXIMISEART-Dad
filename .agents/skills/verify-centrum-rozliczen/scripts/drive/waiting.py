@@ -141,11 +141,16 @@ def quiet_for(page: Page, ms: float = REPEAT_SETTLE_MS) -> None:
     page.wait_for_timeout(ms + (LATE_WRITE_MS if SLOW_RUNNER in os.environ else 0))
 
 
-def answer_late(route: Route, seconds: float, answer: Callable[[Route], None] = Route.continue_) -> None:
-    """From inside the handler of ``route``, answer it with ``answer`` ``seconds`` later, as a server that answers late.
+def answer_late(route: Route, seconds: float, answer: Callable[[Route], None] | None = None) -> None:
+    """From inside the handler of ``route``, answer it ``seconds`` later, as a server that answers late: with ``answer``,
+    or else by letting the request go on to Centrum.
 
-    The wait holds the drive's thread, so Playwright delivers no other event of the page before the answer.
+    The wait holds the drive's thread, so Playwright delivers no other event of the page before the answer. The default
+    is no attribute of Playwright's ``Route``, so the drive imports over a stand-in of Playwright without it.
     """
 
     time.sleep(seconds)
-    answer(route)
+    if answer is None:
+        route.continue_()
+    else:
+        answer(route)
