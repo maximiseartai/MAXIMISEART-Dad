@@ -35,6 +35,7 @@ from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 import czasy_ci
+from github import BladApi
 from jednostka import Czesc
 import mutacje_nocne
 import mutacje_zmiany
@@ -1605,6 +1606,18 @@ def test_zgloszenie_z_polecenia_workflow_zaklada_issue_i_konczy_sie_ok(
     assert kod == 0, wyjscie
     assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #22", *(["Przeżyte mutacje skilli z #21"] if ze_skryptami else [])]
     assert wyjscie[-1] == "MUTACJE NOCNE OK | części 1 | przeżyło 1" + (" | zadania skilli 2 | padło skryptów 1" if ze_skryptami else "")
+
+
+def test_prawdziwy_github_nocy_w_tescie_odmawia_bez_logowania_zamiast_czytac_repozytorium() -> None:
+    """Test, który dostał prawdziwego klienta nocy zamiast atrapy, nie sięga do prawdziwego repozytorium: zgłoszenie
+    pod mutacją ``noc = GITHUB`` założyło tak issue #1500–#1502. Sonda tylko czyta, więc bez straży nic nie pisze.
+    Odmowę poznać po kodzie 4 ``gh`` (brak logowania), bo jej tekst w GitHub Actions jest inny niż poza nim."""
+
+    sonda = f"{REPO}/issues?labels=przezyte-mutacje&state=all&per_page=1&page=1"
+    with pytest.raises(BladApi):
+        mutacje_nocne.GITHUB.json(sonda)
+    odmowa = subprocess.run(["gh", "api", sonda], capture_output=True, check=False)
+    assert odmowa.returncode == 4, odmowa.stderr
 
 
 @pytest.mark.parametrize("brak", ["polecenie", "--baza", "--zapisy", "--czesci", "--run"])

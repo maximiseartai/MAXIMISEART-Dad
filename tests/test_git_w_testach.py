@@ -95,6 +95,34 @@ def test_git_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test() -> None:
     subprocess.run(["git", "--version"], env=os.environ | {"LC_ALL": "C"}, capture_output=True, check=True)
 
 
+@pytest.mark.parametrize(
+    ("home_files", "xdg", "refused"),
+    [([], False, False), ([".gitconfig"], False, True), ([], True, True)],
+    ids=["pusty HOME", "HOME z plikiem", "z XDG_CONFIG_HOME"],
+)
+def test_git_bez_zadnej_konfiguracji_przechodzi_tylko_z_pustym_home_bez_xdg_config_home(
+    tmp_path: Path, home_files: list[str], xdg: bool, refused: bool
+) -> None:
+    """Git bez konfiguracji komputera, jak ``repo.git(isolated=True)``: ``GIT_CONFIG_GLOBAL`` to ``os.devnull``, a
+    ``HOME`` pusty katalog; plik w ``HOME`` albo ``XDG_CONFIG_HOME`` to znów pliki gita komputera."""
+
+    home = tmp_path / "home"
+    home.mkdir()
+    for name in home_files:
+        (home / name).write_text("", encoding="utf-8")
+    environment = {"PATH": os.environ["PATH"], "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+    if xdg:
+        environment["XDG_CONFIG_HOME"] = str(tmp_path)
+    if sys.platform == "win32":
+        environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+
+    if refused:
+        with pytest.raises(AssertionError, match="to nie konfiguracja testów"):
+            subprocess.run(["git", "--version"], env=environment, capture_output=True, check=True)
+    else:
+        subprocess.run(["git", "--version"], env=environment, capture_output=True, check=True)
+
+
 LAUNCHES: dict[str, Callable[[], object]] = {
     "lista bez env=": lambda: subprocess.run(["git", "--version"], check=True),
     "krotka": lambda: subprocess.run(("git", "--version"), check=True),

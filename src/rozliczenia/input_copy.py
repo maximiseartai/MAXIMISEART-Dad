@@ -1,13 +1,13 @@
-"""Kopia wejścia (#841): Wiersze danych, które Uruchomienie procesu przeczytało z plików taty, i odcisk każdego pliku.
+"""Kopia wejścia: Wiersze danych, które Uruchomienie procesu przeczytało z plików taty, i odcisk każdego pliku.
 
 Uruchomienie z Centrum ma swoją Kopię wejścia (``InputCopy``) w uchwycie plików taty (``dad_files.DadFiles``), a
 czytnik, który czyta dla niego plik taty, oddaje jej przez ten uchwyt bajty, z których czytał plik, zakazane kolumny
 każdego arkusza i każdy przeczytany wiersz z jego położeniami (``row_positions.RowPositions``): Rejestr zleceń w
 Przygotowaniu pliku zbiorczego (``register_file.OrderSheets.period_rows``), Plik zbiorczy w Przebiegu rozliczeń
 (``workbook_files.read_data_rows``), w Wycenie w efenix (``workbook_files.read_computed_rows``) i INTERMAX w
-Uporządkowaniu INTERMAX (``register_file.PasteArea.copy_paste``, #842). Zakazane kolumny to te, których komórki ten sam czytnik
-oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie ma, bo
-nie ma Logów.
+Uporządkowaniu INTERMAX (``register_file.PasteArea.copy_paste``). Zakazane kolumny to te, których komórki ten sam
+czytnik oddaje pamięci reguły danych (``client_data.ForbiddenValues``). Proces bez Centrum (Skrypt dla maszyn) Kopii nie
+ma, bo nie ma Logów.
 
 W trakcie odczytu Kopia trzyma tylko odwołania do bajtów i wartości, które czytnik i tak ma, i chwilę zmiany pliku,
 którą uchwyt bierze przed odczytem bajtów (``dad_files.DadFiles.read``). Plik po regule danych (``files``) powstaje po
@@ -108,7 +108,7 @@ class CopiedFile:
     """Przeczytany plik taty: sama nazwa (nigdy pełna ścieżka), odcisk i przeczytane arkusze.
 
     ``folders``: nazwy folderu nad folderem pliku i folderu pliku, od góry, bez pełnej ścieżki, żeby Uruchomienie
-    odtworzone z Kopii (#847) leżało w tych samych folderach i miało te same Komunikaty. Komunikaty Pliku zbiorczego
+    odtworzone z Kopii leżało w tych samych folderach i miało te same Komunikaty. Komunikaty Pliku zbiorczego
     pokazują oba (``message.folder_label``), a Komunikaty INTERMAX tylko folder pliku (``message.file_label``), więc
     folder nad nim jest w Kopii, a w Komunikatach go nie ma.
     """
@@ -179,7 +179,7 @@ class SheetCopy:
         ``positions.read``, gdy tam stoi w kolumnie, którą Kopia niesie, a w każdym położeniu z ``positions.known`` w
         kolumnie wklejenia (``span``), w obu razach nie pod zakazanym nagłówkiem. Data z godziną spod ``date_column``
         (czytana z przesunięciem ``read``) zostaje, bo nie jest wartością zakazanej kolumny, a bez niej odtworzenie nie
-        powtórzy Uruchomienia (#847)."""
+        powtórzy Uruchomienia."""
 
         numbered = _numbered(values)
         read, known = positions.read, positions.known

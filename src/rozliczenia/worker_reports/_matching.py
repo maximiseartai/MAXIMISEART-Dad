@@ -132,8 +132,8 @@ class Board:
     Przeniesieniem i po nim, a numer, który Centrum dopisało (``_added``, pamięć z ``OwnMove.added``), nie liczy się do
     progu wcale, gdziekolwiek stoi, jak numer bez zlecenia przed dopisaniem, więc kolejne kliknięcia dają to samo co
     jedno. Drogę jego Wpisu wybiera, jak przy każdym zleceniu, dzień jego zlecenia (``_other_day_number``), więc z dnia,
-    który nie jest otwarty, Wpis go nie przenosi, a przy pomylonym temacie zostaje ono w swoim dniu (``_other_day``,
-    przegląd #1374 r4). Miejsce zmienia tylko jedyne zlecenie numeru, który stoi w jednym przeczytanym wierszu, a czy
+    który nie jest otwarty, Wpis go nie przenosi, a przy pomylonym temacie zostaje ono w swoim dniu (``_other_day``).
+    Miejsce zmienia tylko jedyne zlecenie numeru, który stoi w jednym przeczytanym wierszu, a czy
     Wpis może zmienić jego dzień albo Wykonawcę, mówi reguła ``may_move`` dla pamięci tego numeru (``_movable``), a czy
     może dopisać numer, którego INTERMAX już nie ma, ta sama reguła (``_addable``); gdy nie może, nic się nie dzieje,
     bez problemu (ADR 0029 „Ręczna zmiana dalej wygrywa”). Numer w kilku przeczytanych wierszach (``present``): w
@@ -363,9 +363,9 @@ class Board:
 
     def _claim(self, found: _Placed, report: ReadReport, day: date, lost: SubjectLost | None) -> _Claim | list[ReportProblem]:
         """Wpis stawia zlecenie ``found`` w dniu ``day`` u nadawcy, gdy wolno: bez zmiany miejsca zawsze, a ze zmianą
-        tylko zlecenie bez ręcznej zmiany taty po Przeniesieniu Centrum (inaczej Wpis się nie liczy, tabela przejść
-        #1358) i tylko do Dnia uporządkowanego arkusza zlecenia poza okresem z Plikiem zbiorczym (inaczej Wpis liczy się
-        z odmową ``RefusedMove``)."""
+        tylko zlecenie bez ręcznej zmiany taty po Przeniesieniu Centrum (inaczej Wpis się nie liczy, tabela przejść,
+        wyrocznia ``_table`` w ``tests/test_rdzen_raportow.py``) i tylko do Dnia uporządkowanego arkusza zlecenia poza
+        okresem z Plikiem zbiorczym (inaczej Wpis liczy się z odmową ``RefusedMove``)."""
 
         order = found.order
         if (day, report.worker) == (order.key.day, order.key.worker):
