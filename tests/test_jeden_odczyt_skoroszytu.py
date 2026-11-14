@@ -22,7 +22,7 @@ atrapach łapie łatanie modułu ``workbook_files`` i atrybutu o tej nazwie w mo
 wywołania (które argumenty czyta, mówi ``_patches``), np. moduł po nazwie, aliasie importu, jako atrybut
 (``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
 Próbki ``ZNANE_LUKI_SRC``, ``ZNANE_LUKI_MIEJSC`` i ``ZNANE_LUKI_TESTOW`` pokazują znane luki: postacie, które
-przepuszcza i ruff, i ten strażnik.
+przepuszcza i ruff, i ten strażnik, a nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations

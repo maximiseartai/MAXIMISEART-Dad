@@ -861,7 +861,8 @@ ZNANE_LUKI_NAPISOW_UI: Final = {
     ),
 }
 # Znane luki tego strażnika po stronie Komunikatu: „klasa: postać” → moduł z fabryką, której gałąź cytuje napis spoza
-# UI_TEXTS i QUOTES_OUTSIDE_UI, i z krotką PROBKI, której Komunikaty tego cytatu nie mają.
+# UI_TEXTS i QUOTES_OUTSIDE_UI, i z krotką PROBKI, której Komunikaty tego cytatu nie mają; test dokłada moduł do
+# SENTENCES, więc strażnik czyta go tą samą drogą co katalogi repozytorium.
 ZNANE_LUKI_CYTATOW: Final = {
     "widzi tylko Komunikaty z próbek: cytat w gałęzi bez próbki": """\
 def komunikat(zapisany: bool) -> str:
@@ -875,13 +876,14 @@ PROBKI = (lambda: komunikat(zapisany=True),)
 }
 
 
-def _zgloszenia_napisow(rendered: str, ui_texts: Mapping[str, str]) -> list[str]:
-    """Linie zgłoszenia testu napisów przycisków, gdy próbki Komunikatów dają ``rendered``, a ``UI_TEXTS`` to
-    ``ui_texts``."""
+def _zgloszenia_napisow(
+    ui_texts: Mapping[str, str], sentences: Mapping[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]]
+) -> list[str]:
+    """Linie zgłoszenia testu napisów przycisków, gdy ``UI_TEXTS`` to ``ui_texts``, a ``SENTENCES`` to ``sentences``."""
 
     with pytest.MonkeyPatch.context() as podmiana:
-        podmiana.setitem(globals(), "_rendered", lambda: rendered)
         podmiana.setitem(globals(), "UI_TEXTS", ui_texts)
+        podmiana.setitem(globals(), "SENTENCES", sentences)
         try:
             test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum()
         except AssertionError as blad:
@@ -890,14 +892,13 @@ def _zgloszenia_napisow(rendered: str, ui_texts: Mapping[str, str]) -> list[str]
 
 
 def test_znane_luki_strazy_napisow_przyciskow_przechodza_przez_niego(tmp_path: Path) -> None:
-    rendered = _rendered()
     zgloszenia = {}
     for numer, (opis, kod) in enumerate(ZNANE_LUKI_NAPISOW_UI.items()):
         plik = tmp_path / f"znana_luka_{numer}.tsx"
         plik.write_text(kod, encoding="utf-8")
-        zgloszenia[opis] = _zgloszenia_napisow(rendered, {**UI_TEXTS, "Kontynuuj": plik.as_posix()})
+        zgloszenia[opis] = _zgloszenia_napisow({**UI_TEXTS, "Kontynuuj": plik.as_posix()}, SENTENCES)
     for opis, plik in zapisz(ZNANE_LUKI_CYTATOW, tmp_path).items():
-        cytaty = "\n".join(probka() for probka in modul(plik).PROBKI)
-        zgloszenia[opis] = _zgloszenia_napisow(f"{rendered}\n{cytaty}", UI_TEXTS)
+        probka = modul(plik)
+        zgloszenia[opis] = _zgloszenia_napisow(UI_TEXTS, {**SENTENCES, opis: (probka, {"komunikat": probka.PROBKI})})
 
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_NAPISOW_UI, ZNANE_LUKI_CYTATOW)")
