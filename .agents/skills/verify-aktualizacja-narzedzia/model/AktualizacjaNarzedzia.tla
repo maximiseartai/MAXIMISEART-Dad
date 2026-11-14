@@ -558,8 +558,8 @@ OpiekunPort ==
           /\ Idz("opiekun_start", "restart_guardian.main: port zwolniony; _record: write_result(ok) rzuca OSError, opiekun idzie dalej")
     /\ UNCHANGED <<dysk, nowa, centrum, klikniecia, karta, widzi>>
 
-\* _start_centrum (run_centrum.py --bez-okienek: skrót bez cofania), potem _answers. Nowe Centrum przy
-\* starcie czyta plik wyniku (StartCentrum). Gdy nowa wersja nie odpowie: _stop, potem usunięcie „ok”
+\* start_centrum (start w main, domyślnie _start_centrum: run_centrum.py --bez-okienek, skrót bez cofania), potem
+\* _answers. Nowe Centrum przy starcie czyta plik wyniku (StartCentrum). Gdy nowa wersja nie odpowie: _stop, potem usunięcie „ok”
 \* (OpiekunWycofanie) i _rolled_back, czyli ToolClone.roll_back -> _roll_back.
 \* Akcja to chwila, w której nowe Centrum zajmuje port w launcher._listen_when_released. Gdy
 \* port trzyma skrót, Centrum z --bez-okienek ponawia listen_locally przez _SHORTCUT_HOLDS_PORT_S,
@@ -612,7 +612,7 @@ OpiekunWynik ==
              /\ Idz(dalej, "restart_guardian.main: _record po cofnieciu, write_result rzuca OSError, opiekun idzie dalej")
     /\ UNCHANGED <<dysk, nowa, centrum, klikniecia, karta, widzi>>
 
-\* Po udanym cofnięciu: _port_released, potem _start_centrum i _answers(before), także po cofnięciu bez
+\* Po udanym cofnięciu: _port_released, potem start_centrum i _answers(before), także po cofnięciu bez
 \* zwolnionego portu (#726). Port po cofnięciu może trzymać Centrum, które skrót uruchomił, gdy dziennika
 \* już nie było: _port_released czeka na nie PORT_TIMEOUT_S, a potem opiekun pyta je _runs(before) i kończy
 \* bez okienka. Port bez Centrum i bez skrótu trzyma inny program (albo stare Centrum, które się nie

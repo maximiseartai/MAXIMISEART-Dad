@@ -144,13 +144,19 @@ def launch(copy: Path, restart: Restart) -> subprocess.Popen[bytes]:
     return _detached([_windowless_python(), "-I", "-B", "-c", _BOOT, str(copy), *restart.arguments()], restart.root)
 
 
-def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show_start_problem) -> int:
+def main(
+    argv: Sequence[str],
+    *,
+    show_problem: Callable[[str, str], None] = show_start_problem,
+    start: Callable[[Restart], subprocess.Popen[bytes]] | None = None,
+) -> int:
     """Ponowny start po aktualizacji: 0, gdy Centrum odpowiada (nowe albo cofnięte stare), inaczej 1.
 
     Wszystko albo nic: gdy nowa wersja nie odpowie (albo stare Centrum nie
     zwolni portu), klon wraca do commitu sprzed aktualizacji, a plik wyniku
     mówi, co się stało naprawdę, albo go nie ma, gdy dysk go nie przyjmie.
-    ``show_problem`` pokazuje natywne okienko (tytuł, treść).
+    ``show_problem`` pokazuje natywne okienko (tytuł, treść), a ``start`` uruchamia Centrum z klonu (domyślnie jak
+    skrót, bez karty i bez okienek).
 
     Wynik „ok” stoi w pliku, zanim nowe Centrum wystartuje, bo czyta go raz przy
     starcie; gdy nowa wersja nie odpowie, „ok” znika przed cofnięciem, bo
@@ -164,10 +170,11 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
     """
 
     restart = Restart.of_arguments(argv)
+    start_centrum = start or _start_centrum
     released = _port_released(restart.port)
     if released:
         _record(restart, UPDATED)
-        new = _start_centrum(restart)
+        new = start_centrum(restart)
         if _answers(new, restart.port, restart.after):
             ToolClone(restart.root).confirm_update()
             shutil.rmtree(restart.work, ignore_errors=True)
@@ -179,7 +186,7 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
     rolled_back = _rolled_back(restart)
     _record(restart, NEW_VERSION_FAILED if rolled_back else ROLLBACK_FAILED)
     if rolled_back and before is not None:
-        if _port_released(restart.port) and _answers(_start_centrum(restart), restart.port, before):
+        if _port_released(restart.port) and _answers(start_centrum(restart), restart.port, before):
             return 0
         if _runs(restart.port, before):
             return 0
