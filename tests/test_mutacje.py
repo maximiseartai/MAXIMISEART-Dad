@@ -185,11 +185,13 @@ def test_bez_polecenia_po_myslnikach_narzedzie_odmawia_z_podpowiedzia() -> None:
     assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, hint), answered.stdout
 
 
-def test_pomoc_podaje_domyslna_galaz_bazy_regresu() -> None:
+def test_pomoc_podaje_domyslna_galaz_bazy_regresu_i_co_drukuje_zasady() -> None:
     answered = _mutacje("--help")
 
     assert answered.returncode == 0
-    assert "--baza BAZA Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie origin/main)." in " ".join(answered.stdout.split())
+    words = " ".join(answered.stdout.split())
+    assert "--baza BAZA Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie origin/main)." in words
+    assert "--zasady Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i MUTACJE_CZESC." in words
 
 
 # Tyle linii ``--help`` czytali agenci pierwszym poleceniem (``| head -40``) w 143 ze 185 sesji implementacji (retro 6.11).

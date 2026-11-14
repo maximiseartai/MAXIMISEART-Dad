@@ -336,8 +336,19 @@ def test_w_zadaniu_podstawa_skilla_biegnie_przed_jego_skryptami_mutacji(monkeypa
     assert [job.jednostki for job in plan.zadania if job.tor == MUTACJE.nazwa] == [("skill:verify-c/ci", "skill:verify-c/check_c_mutations.py")]
 
 
+def test_w_zadaniu_czesci_podstawy_skilla_stoja_miedzy_jego_skryptami_po_kluczu(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(plan_ci, "CEL_S", 150.0)
+    [base, script] = _skill_steps(["verify-c/ci", "verify-c/check_c_mutations.py"])
+    lane = plan_ci.wycen_mutacje([KrokSkilla(base, "", Czesc.calosc(2)), KrokSkilla(script, "")], _with_skill_times(_times()))
+
+    plan = plan_ci.rozplanuj([lane], Zdarzenie.NOC)
+
+    assert [job.jednostki for job in plan.zadania] == [("skill:verify-c/check_c_mutations.py", "skill:verify-c/ci#1/2", "skill:verify-c/ci#2/2")]
+
+
 def test_ten_sam_stan_daje_ten_sam_plan_a_zadania_maja_rozne_nazwy() -> None:
-    first, again = _plan(_times(), [*FILES, LONG]), _plan(_times(), [*FILES, LONG])
+    # Ten sam stan to te same pliki w dowolnej kolejności; przy równych czasach plików o zadaniu decyduje klucz.
+    first, again = _plan(_times(), [*FILES, LONG]), _plan(_times(), [LONG, *reversed(FILES)])
 
     assert first.digest == again.digest
     assert len({job.nazwa for job in first.zadania}) == len({job.id for job in first.zadania}) == len(first.zadania)
@@ -473,7 +484,68 @@ def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow
     assert len(werdykt_required.werdykt(plan, {"plan": "success"}, other)) == len(plan.zadania)
 
 
-def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
+def test_plan_z_polem_zadania_spoza_planu_konczy_zadanie_i_required_linia_fail_z_przyczyna(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py",), 401.0)
+    foreign = json.loads(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,)).do_json())
+    foreign["zadania"][0]["obce"] = 1
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(foreign), encoding="utf-8")
+    monkeypatch.setenv("NEEDS", json.dumps({"plan": {"result": "success"}}))
+
+    executed = wykonaj_zadanie.main(["--plan", str(path), "--zadanie", job.id])
+    executed_out = capsys.readouterr().out
+    judged = werdykt_required.main(["--plan", str(path), "--zapisy", str(tmp_path / "zapisy")])
+    judged_out = capsys.readouterr().out
+
+    assert (executed, judged) == (1, 1)
+    assert executed_out.startswith(f"WYKONANIE FAIL | plan {path.as_posix()}: ") and "obce" in executed_out
+    assert judged_out.startswith(f"REQUIRED FAIL | plan CI: {path.as_posix()} nieczytelny (") and "obce" in judged_out
+
+
+def test_zepsuty_zapis_czasow_required_zglasza_linia_czasy_ci_fail_i_sadzi_po_pozostalych(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _plan(_times(), FILES[:2])
+    (tmp_path / "plan.json").write_text(plan.do_json(), encoding="utf-8")
+    records = tmp_path / "zapisy"
+    for job in plan.zadania:
+        (records / job.id).mkdir(parents=True)
+        (records / job.id / "zapis.json").write_text(json.dumps({"wersja": czasy_ci.WERSJA, **dataclasses.asdict(_record(plan, job, _reported(job)))}), encoding="utf-8")
+    (records / "bez-pol.json").write_text(json.dumps({"wersja": czasy_ci.WERSJA, "jednostki": []}), encoding="utf-8")
+    monkeypatch.setenv("NEEDS", json.dumps({"plan": {"result": "success"}, "pytest": {"result": "success"}}))
+
+    code = werdykt_required.main(["--plan", str(tmp_path / "plan.json"), "--zapisy", str(records)])
+
+    out = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert out[0].startswith("CZASY CI FAIL | bez-pol.json: TypeError(")
+    assert out[-1].startswith("REQUIRED OK | ")
+
+
+def test_required_bez_planu_albo_zapisow_w_wywolaniu_konczy_sie_kodem_2_z_ich_nazwami(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        werdykt_required.main([])
+
+    assert stopped.value.code == 2
+    assert capsys.readouterr().err.splitlines()[-1].endswith("the following arguments are required: --plan, --zapisy")
+
+
+def test_zadanie_spoza_planu_nie_wykonuje_niczego_i_konczy_sie_linia_fail_z_digest_planu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    plan = _plan(_times(), FILES[:2])
+
+    code = wykonaj_zadanie.wykonaj(plan, "linux-3.14-99", root=tmp_path)
+
+    assert code == 1
+    assert capsys.readouterr().out == f"WYKONANIE FAIL | plan {plan.digest[:12]} nie ma zadania linux-3.14-99\n"
+    assert not plan_runu.WYKONANIE.exists()
+
+
+def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_wypisuje_jednostki_zadan_i_daje_macierz(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
@@ -491,6 +563,12 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_i_daje_macierz(
     assert out[0] == "CZASY CI | pobranie czasy-ci z GitHuba: gh: not logged in; plan waży pracę bez pomiaru domyślnie"
     assert re.fullmatch(rf"PLAN CI \| push \| wszystkie pliki \| cel \d+ s \| (\d+) zadań runu \(limit {plan_ci.ZADANIA_RUNU_MAIN}\) \| czasy z runów main: brak \(wagi domyślne\)", out[1]), out[1]
     assert out[-1] == f"PLAN CI DIGEST | {plan.digest}"
+    # Linia zadania liczy całe pliki testów, a każdą inną jednostkę (krok CI, krok skilla, udział) wypisuje kluczem.
+    job_lines = {line.partition(": ")[0].strip(): line for line in out if line.startswith("  ")}
+    for job in plan.zadania:
+        named = [unit for unit in job.jednostki if not unit.startswith("pytest:") or "#" in unit]
+        assert all(f" {unit}" in job_lines[job.nazwa] for unit in named), job_lines[job.nazwa]
+    assert any("krok:" in line for line in job_lines.values()) and any("skill:" in line for line in job_lines.values())
     assert {unit for job in plan.zadania if job.tor == "linux-3.14" for unit in job.jednostki} == {f"pytest:{name}" for name in pliki_testow()}
     # Plik bez pomiaru waży ``DOMYSLNIE.plik_s``, więc pliki repozytorium nie mieszczą się w jednym zadaniu.
     assert len([job for job in plan.zadania if job.tor == "linux-3.14"]) > 1
@@ -656,12 +734,23 @@ FLAKY = (
 
 
 @pytest.mark.parametrize(
-    ("always", "second", "code", "flaky"),
-    [(True, "return", 0, ["tests/test_flaky.py::TestFlaky::test_pada_raz"]), (False, "return", 1, None), (True, "pytest.skip('drugi raz')", 1, None)],
+    ("always", "second", "code", "flaky", "retried"),
+    [
+        (True, "return", 0, ["tests/test_flaky.py::TestFlaky::test_pada_raz"], "OK   ponowienie"),
+        (False, "return", 1, None, "FAIL ponowienie"),
+        (True, "pytest.skip('drugi raz')", 1, None, "OK   ponowienie"),
+    ],
     ids=["flaky test", "dwie porazki", "pominiety po ponowieniu"],
 )
 def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_test_a_druga_porazka_to_porazka(
-    mini_repo: Path, monkeypatch: pytest.MonkeyPatch, always: bool, second: str, code: int, flaky: list[str] | None
+    mini_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    always: bool,
+    second: str,
+    code: int,
+    flaky: list[str] | None,
+    retried: str,
 ) -> None:
     (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=always, second=second), encoding="utf-8")
     monkeypatch.setenv("GITHUB_RUN_ID", "40380584486")
@@ -671,6 +760,7 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
     records = zapis_czasow._junit(wykonaj_zadanie.JUNIT)
 
     assert result == code
+    assert [line.partition(" (")[0] for line in capsys.readouterr().out.splitlines() if line.startswith(("OK ", "FAIL "))] == ["FAIL krok:pytest", retried]
     assert [(unit.klucz, unit.status) for unit in records] == [("pytest:tests/test_flaky.py", "ok" if code == 0 else "fail")]
     found = niestabilne_testy.FLAKY_TESTY
     assert (None if not found.exists() else [(flaky.test, flaky.run, flaky.zadanie) for flaky in niestabilne_testy.flaky_testy_z_json(found.read_text(encoding="utf-8"))[0]]) == (

@@ -58,7 +58,7 @@ przypomnienie nie nadrabia się od 17:00, żeby laptop włączony tuż przed 18:
 kilka minut (decyzja Maksa 12.11)."""
 
 DEFAULT_TEXT: Final = f"Poproszę o wysłanie raportu za dzień {DAY_FIELD}."
-"""Pierwsze zdanie przypomnienia ze speca #1344."""
+"""Pierwsze zdanie domyślnego tekstu przypomnienia."""
 
 EXAMPLE: Final = ("12345678 tak montaż ONT", "12345679 nie brak klienta")
 """Linie przykładu w treści przypomnienia."""
@@ -143,7 +143,7 @@ class ScheduleSince:
 
 OLD_VERSION_SCHEDULES: Final = frozenset({DEFAULT_SCHEDULE})
 """Pory przypomnień sprzed pierwszego sprawdzenia, które zapisało pory: wysyłała wtedy tylko wersja sprzed Ustawień
-Centrum, a ona znała jedne pory, stałe z ADR 0030 (przegląd #1568 r2 W1)."""
+Centrum, a ona znała jedne pory, stałe z ADR 0030."""
 
 
 @dataclass(frozen=True)

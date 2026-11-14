@@ -4,6 +4,10 @@ Jedyne miejsce, które zna nazwy plików narzędzia, adres i port Centrum rozlic
 repozytorium na GitHubie. Moduł używa tylko biblioteki standardowej, bo czyta go launcher przed FastAPI i opiekun
 ponownego startu ze swojej kopii (ADR 0009). Opiekun działa z kopii poza klonem, więc ścieżki klonu liczy od jego
 katalogu (``config_dir``, ``start_command``), a nie od ``TOOL_ROOT``.
+
+Port zajmuje ``listen_locally``, które od razu słucha, więc kolejne uruchomienie czeka na odpowiedź ``health``, zamiast
+dostać odmowę połączenia. ``SO_REUSEADDR`` gniazdo dostaje tylko poza Windows: na Windows dwa gniazda z tą opcją
+dostają ten sam port, więc drugie Centrum zajęłoby port, na którym słucha już działające Centrum.
 """
 
 from __future__ import annotations
@@ -13,8 +17,8 @@ import socket
 import sys
 from typing import Final
 
-# Katalog narzędzia (klon Gita z ``pyproject.toml``), w którym leży pakiet ``src/rozliczenia``.
 TOOL_ROOT: Final = Path(__file__).resolve().parents[2]
+"""Katalog narzędzia (klon Gita z ``pyproject.toml``), w którym leży pakiet ``src/rozliczenia``."""
 
 
 def config_dir(root: Path) -> Path:
@@ -52,14 +56,16 @@ REMINDERS_SCHEDULES: Final = "przypomnienia-pory.json"
 
 LOG_PATH: Final = log_path(TOOL_ROOT)
 
-HOST: Final = "127.0.0.1"  # wyłącznie ten komputer (ADR 0004)
+HOST: Final = "127.0.0.1"
+"""Centrum słucha wyłącznie na tym komputerze (ADR 0004)."""
 DEFAULT_PORT: Final = 47811
 
 REPOSITORY: Final = "maximiseartai/MAXIMISEART-Dad"
 REPOSITORY_URL: Final = f"https://github.com/{REPOSITORY}.git"
 
-# Flagi ``run_centrum.py``. Opiekun ze starej kopii startuje nimi nową wersję, więc to kontrakt między wersjami.
 PORT_FLAG: Final = "--port"
+"""Flaga ``run_centrum.py``, tak jak ``NO_BROWSER_FLAG`` i ``NO_DIALOGS_FLAG``. Opiekun ze starej kopii startuje nimi
+nową wersję, więc te trzy napisy to kontrakt między wersjami."""
 NO_BROWSER_FLAG: Final = "--no-browser"
 NO_DIALOGS_FLAG: Final = "--bez-okienek"
 
@@ -81,7 +87,7 @@ def listen_locally(port: int) -> socket.socket:
 
     listener = _bound(port)
     try:
-        listener.listen()  # kolejne uruchomienie czeka na health, zamiast dostać odmowę połączenia
+        listener.listen()
     except OSError:
         listener.close()
         raise
@@ -101,7 +107,7 @@ def port_free(port: int) -> bool:
 def _bound(port: int) -> socket.socket:
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        if sys.platform != "win32":  # na Windows SO_REUSEADDR pozwoliłby przejąć port działającego programu
+        if sys.platform != "win32":
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((HOST, port))
     except OSError:
