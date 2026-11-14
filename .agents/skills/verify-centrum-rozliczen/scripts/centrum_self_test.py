@@ -1069,7 +1069,7 @@ def _check_drop_report_key(errors: list[str]) -> None:
 
 
 def _check_performance_gate(errors: list[str]) -> None:
-    """The ``wydajnosc`` gate decides on made-up medians and API requests the way features/wydajnosc.md says."""
+    """The ``wydajnosc`` gate decides on made-up medians and API requests the way ``compare`` of drive/wydajnosc.py says."""
 
     from drive.wydajnosc import Measured, compare, over_budget
 
