@@ -158,10 +158,13 @@ extend-select = [
     "PTH101",
     "PTH116",
     "PTH208",
+    # Prywatna składowa (_nazwa) innego obiektu w src/ tylko w klasie, która ją definiuje, z prawem właściciela niżej:
+    # zapis obok właściciela przez jego pola (settings._places[…].write w #1727 r5) omija jego reguły.
+    "SLF001",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"!src/**" = ["ANN401", "T201"]
+"!src/**" = ["ANN401", "T201", "SLF001"]
 # Konsola startu Centrum i instalatora skrótu.
 "src/rozliczenia/centrum/launcher.py" = ["T201"]
 "src/rozliczenia/centrum/shortcut.py" = ["T201"]
@@ -182,6 +185,11 @@ extend-select = [
 "tests/fixtures/linie_watkow.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py" = ["TID251"]
+# Prawo właściciela do SLF001: wygląd Wiersza danych ustawia indeksy stylu openpyxl wprost w prywatnym StyleArray komórki
+# (fefef3619f), bo openpyxl nie ma do niego publicznego API, a przypisany styl szuka po hashu całego obiektu, co przy
+# tysiącach komórek trwa setki milisekund. Ruff zwalnia plik z całego SLF001, więc tests/test_wyglad_wiersza_danych.py
+# trzyma, że sięga tylko do _style, a tests/test_granice_importow.py, że innego pliku src konfiguracja ruff nie zwalnia.
+"src/rozliczenia/row_look.py" = ["SLF001"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc

@@ -126,8 +126,8 @@ def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(for
     assert wynik == expected, form.why
 
 
-# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy, które
-# każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy albo ruff,
+# które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_DO_PUSTEJ_PAMIECI: Final = {
     "pamięć świeżego uchwytu plików taty": (
         """from rozliczenia.client_data import guarded
@@ -172,6 +172,17 @@ def wysylka(komorka: str) -> str:
 """,
         'Missing positional argument "proof"',
     ),
+    "prywatna tabela wartości pamięci: wyczyszczenie zapamiętanych wartości": (
+        """from rozliczenia import client_data
+from rozliczenia.client_data import ForbiddenValues, guarded
+
+
+def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
+    client_data._WORDS[pamiec].columns.clear()
+    return guarded(pamiec, komorka, "treść").text
+""",
+        "Private member accessed: `_WORDS`",
+    ),
 }
 
 # Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
@@ -186,18 +197,12 @@ from rozliczenia.dad_files import DadFiles
 def wysylka(komorka: str) -> str:
     return guarded(cast(ForbiddenValues, DadFiles().forbidden), komorka, "treść").text
 """,
-    "prywatne pole pamięci: wyczyszczenie zapamiętanych wartości": """from rozliczenia.client_data import ForbiddenValues, guarded
+    "prywatna tabela wartości pamięci przez moduł pod nazwą cls": """from rozliczenia import client_data as cls
+from rozliczenia.client_data import ForbiddenValues, guarded
 
 
 def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    pamiec._columns.clear()
-    return guarded(pamiec, komorka, "treść").text
-""",
-    "prywatne pole pamięci: podmiana slotu przez object.__setattr__": """from rozliczenia.client_data import ForbiddenValues, guarded
-
-
-def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    object.__setattr__(pamiec, "_columns", {})
+    cls._WORDS[pamiec].columns.clear()
     return guarded(pamiec, komorka, "treść").text
 """,
 }
@@ -424,7 +429,7 @@ def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
     tekst = guarded(pamiec, "Postęp.", "postęp Wyceny w efenix").text
 
     class Obca:
-        __slots__ = ("_columns", "_lengths", "_lock")
+        __slots__ = ("__weakref__",)
 
         def guard(self, text: str, place: str) -> Guarded:
             return Guarded(tekst, (komorka,))
@@ -468,30 +473,6 @@ def test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straz
 # Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
 # komorka)`` daje tekst z wartością komórki (bez maski albo w uwadze technicznej), a ruff, mypy i bieg go nie zatrzymują.
 ZNANE_LUKI_UWAG: Final = {
-    # Odbiorca pamięci sprawdza dokładny typ obiektu tak, jak go zastaje (_memory), więc zmiana obiektu w chwili działania
-    # go omija (#1551).
-    "zmiana obiektu w chwili działania: przypisanie __class__ ForbiddenValues obcemu obiektowi z tymi samymi slotami": """import threading
-from typing import cast
-
-from rozliczenia.centrum.run_logs_guard import guard_text
-from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
-
-
-class Obca:
-    __slots__ = ("_columns", "_lengths", "_lock")
-
-    def __init__(self) -> None:
-        self._columns: dict[object, object] = {}
-        self._lengths: dict[object, object] = {}
-        self._lock = threading.Lock()
-
-
-def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
-    pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
-    pusta = Obca()
-    object.__setattr__(pusta, "__class__", ForbiddenValues)
-    return guard_text(f"Klient {komorka}.", "postęp Wyceny w efenix", cast(ForbiddenValues, pusta)).text
-""",
     'podmiana metody na klasie: setattr(ForbiddenValues, "remember_value", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 

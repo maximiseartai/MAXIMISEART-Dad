@@ -214,47 +214,6 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def _action(
-    part: PagePart,
-) -> Callable[[Callable[Concatenate[BrowserEfenix, _P], _R]], Callable[Concatenate[BrowserEfenix, _P], _R]]:
-    """Działanie okna na części ``part`` strony efenix: każdy błąd Playwrighta w działaniu to ``UnexpectedPage(part)``
-    z typem błędu i działaniem przeglądarki, które nazwał ``_doing`` (granica ``_within``), więc żadne czekanie na sieć
-    ani czytanie odpowiedzi jej nie omija.
-
-    Każdy wyjątek działania w karcie zamkniętej przed nim albo w jego trakcie to zamknięte okno (``WindowClosed``), a nie
-    lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage`` albo
-    ``open_list`` na ``EfenixUnreachable``. O zamknięciu mówi ``BrowserEfenix.closed``, które po jednym pytaniu
-    przeglądarki zna zamknięcie karty także wtedy, gdy błąd nawigacji wyprzedził wiadomość Playwrighta o nim.
-
-    Wyjątek okna (``WindowStop``) z działania ma ``sent``, gdy działanie przed nim kliknęło przycisk zmiany zlecenia
-    (``BrowserEfenix._answer``, ``SentChanges``).
-
-    Żądanie zmiany statusu, które strażnik przerwał przed działaniem albo w jego trakcie, kończy działanie
-    ``UnexpectedPage`` z ``StatusChangeBlocked`` zamiast jego wyniku albo wyjątku (``BrowserEfenix.raise_blocked``).
-    """
-
-    def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
-        @functools.wraps(action)
-        def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-            with efenix._sent.action():
-                efenix._part = part
-                efenix.raise_blocked()
-                try:
-                    with _within(part):
-                        done = action(efenix, *args, **kwargs)
-                except Exception as error:
-                    efenix.raise_blocked(error)
-                    if efenix.closed and not isinstance(error, WindowClosed):
-                        raise WindowStop.of(part, Closed.DURING_ACTION) from error
-                    raise
-                efenix.raise_blocked()
-                return done
-
-        return guarded
-
-    return decorate
-
-
 class BrowserEfenix:
     """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_window.Efenix``."""
 
@@ -325,6 +284,47 @@ class BrowserEfenix:
 
         if self._blocked is not None:
             raise WindowStop.of(self._part, self._blocked) from error
+
+    @staticmethod
+    def _action(
+        part: PagePart,
+    ) -> Callable[[Callable[Concatenate[BrowserEfenix, _P], _R]], Callable[Concatenate[BrowserEfenix, _P], _R]]:
+        """Działanie okna na części ``part`` strony efenix: każdy błąd Playwrighta w działaniu to ``UnexpectedPage(part)``
+        z typem błędu i działaniem przeglądarki, które nazwał ``_doing`` (granica ``_within``), więc żadne czekanie na sieć
+        ani czytanie odpowiedzi jej nie omija.
+
+        Każdy wyjątek działania w karcie zamkniętej przed nim albo w jego trakcie to zamknięte okno (``WindowClosed``), a nie
+        lista typów: Playwright zgłasza wtedy błąd, a granica mogła go już zamienić na ``UnexpectedPage`` albo
+        ``open_list`` na ``EfenixUnreachable``. O zamknięciu mówi ``BrowserEfenix.closed``, które po jednym pytaniu
+        przeglądarki zna zamknięcie karty także wtedy, gdy błąd nawigacji wyprzedził wiadomość Playwrighta o nim.
+
+        Wyjątek okna (``WindowStop``) z działania ma ``sent``, gdy działanie przed nim kliknęło przycisk zmiany zlecenia
+        (``BrowserEfenix._answer``, ``SentChanges``).
+
+        Żądanie zmiany statusu, które strażnik przerwał przed działaniem albo w jego trakcie, kończy działanie
+        ``UnexpectedPage`` z ``StatusChangeBlocked`` zamiast jego wyniku albo wyjątku (``BrowserEfenix.raise_blocked``).
+        """
+
+        def decorate(action: Callable[Concatenate[BrowserEfenix, _P], _R]) -> Callable[Concatenate[BrowserEfenix, _P], _R]:
+            @functools.wraps(action)
+            def guarded(efenix: BrowserEfenix, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+                with efenix._sent.action():
+                    efenix._part = part
+                    efenix.raise_blocked()
+                    try:
+                        with _within(part):
+                            done = action(efenix, *args, **kwargs)
+                    except Exception as error:
+                        efenix.raise_blocked(error)
+                        if efenix.closed and not isinstance(error, WindowClosed):
+                            raise WindowStop.of(part, Closed.DURING_ACTION) from error
+                        raise
+                    efenix.raise_blocked()
+                    return done
+
+            return guarded
+
+        return decorate
 
     @_action(PagePart.LIST)
     def open_list(self) -> None:
