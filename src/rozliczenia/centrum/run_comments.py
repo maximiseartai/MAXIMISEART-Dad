@@ -147,8 +147,7 @@ class CommentQueue(Protocol):
 class LeftBehindClosed:
     """Dowód, że start Centrum zamknął każdy dziennik Wyceny, który zostawiła poprzednia praca Centrum
     (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc
-    nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia. Kod, który go tworzy sam, omija tę
-    kolejność: to zostaje przeglądowi."""
+    nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia."""
 
 
 class RecordMaker:

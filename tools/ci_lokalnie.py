@@ -57,6 +57,7 @@ JOBS_ELSEWHERE = {
 }
 # Fragment polecenia `run:` w odtwarzanym zadaniu CI, którego narzędzie nie odtwarza, i co je zastępuje.
 COMMANDS_ELSEWHERE = {
+    "tests/test_zapadki.py::test_reguly_ast_grep": "reguły ast-grep na dodanych liniach: lokalnie biegną z zapadkami w tools/szybko.py",
     "tools/ci/zapis_czasow.py": "pomiar czasów zadania (artefakt czasy-ci), nic nie sprawdza",
     "tools/ci/zapis_narzedzi_tlc.py": "decyzja o zapisie cache narzędzi TLC (#940), nie sprawdza zmiany",
 }

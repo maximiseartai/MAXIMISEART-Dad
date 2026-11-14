@@ -32,7 +32,7 @@ import yaml
 
 from tests.fixtures.ci_workflow import chromium, jobs
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
+from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 import czasy_ci
 from jednostka import Czesc
@@ -41,6 +41,7 @@ import mutacje_zmiany
 import niestabilne_testy
 import plan_runu
 from silnik_mutacji import NearLimit
+import szopa
 from wplyw_zmiany import Context
 from zakres_runu import Zdarzenie
 
@@ -146,7 +147,7 @@ def _historia(tmp_path: Path) -> tuple[Path, str]:
     """``main``, na którym linie 1 i 5 zmieniły dwa commity scalonego merge'em PR #11, linię 2 squash PR #12, a linie
     3 i 4 commity bez numeru PR w temacie; zwraca repozytorium i bazę nocy sprzed tych zmian."""
 
-    repo = repository(tmp_path / "repo", {"src/a.py": "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\n"})
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza nocy")
     git(repo, "checkout", "--quiet", "-b", "feat/a")
@@ -463,7 +464,7 @@ def _warunek_z_dwoch_pr(tmp_path: Path) -> tuple[Path, str]:
     """``src/a.py`` z wielowierszowym ``if (`` sprzed nocy; noc scala najpierw PR #31 (tylko ``src/b.py``), potem PR #30,
     który zmienia tylko środkową linię 4 warunku; zwraca repozytorium i bazę nocy."""
 
-    repo = repository(tmp_path / "repo", {"src/a.py": WARUNEK, "src/b.py": "B = 1\n"})
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": WARUNEK, "src/b.py": "B = 1\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "Stary kod (#20)")
     git(repo, "checkout", "--quiet", "-b", "feat/b")
@@ -504,7 +505,7 @@ def test_mutacja_instrukcji_wielowierszowej_trafia_do_pr_ktory_zmienil_jej_linie
 def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], pierwsza: int, druga: int
 ) -> None:
-    repo = repository(tmp_path / "repo", {"src/a.py": WARUNEK})
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": WARUNEK})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "Stary kod (#20)")
     for numer, linia in ((40, pierwsza), (41, druga)):
@@ -549,7 +550,7 @@ def test_mutacja_zgloszona_przed_czerwona_noca_nie_wraca_gdy_nastepny_pr_przesun
 
 
 def _repo_z_datami(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict[str, str]]:
-    repo = repository(tmp_path / "repo", {"src/a.py": "a = 1\n"})
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": "a = 1\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     shas = {}
     for nazwa, data in (("przedwczoraj", "2026-10-27T10:00:00Z"), ("wczoraj", "2026-10-28T20:00:00Z")):
@@ -643,7 +644,7 @@ NOWA_FUNKCJA = "\n\ndef b(x: int) -> bool:\n    return x < 3\n"
 def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dopisane: str, na_czesc: int, mutacje: int, czesci: list[int]
 ) -> None:
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n"})
+    repo = mutation_repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n"})
     baza = commit(repo, "baza")
     if dopisane:
         with (repo / "src" / "pakiet" / "a.py").open("a", encoding="utf-8") as plik:
@@ -663,13 +664,38 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
     assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
 
 
+# Lista dwóch szop w kształcie ``tools/lib/szopa.toml``: w podtabeli ``przepuszcza`` bramka merge'a (plik) i silnik
+# (katalog), a poza nią pomiar.
+LISTA_ZAKRESU = '[maszyneria]\n"tools/pomiar.py" = []\nprzepuszcza."tools/bramka.py" = []\nprzepuszcza."tools/lib/silnik/" = []\n'
+
+
+@pytest.mark.parametrize(
+    ("plik", "mutacje"),
+    [("src/pakiet/a.py", 2), ("tools/bramka.py", 2), ("tools/lib/silnik/a.py", 2), ("tools/pomiar.py", 0), ("tools/lib/inny.py", 0)],
+    ids=["src", "jednostka-z-zakresu", "katalog-z-zakresu", "jednostka-spoza-zakresu", "plik-bez-wpisu"],
+)
+def test_plan_nocy_mutuje_src_i_jednostki_szopy_z_oznaczeniem_przepuszcza_a_reszty_narzedzi_nie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], plik: str, mutacje: int
+) -> None:
+    repo = mutation_repository(tmp_path / "repo", {szopa.LISTA: LISTA_ZAKRESU, plik: "def a(x: int) -> bool:\n    return x > 1\n"})
+    baza = commit(repo, "baza")
+    (repo / plik).write_text("def a(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
+    commit(repo, "zmiana")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None)
+
+    plan = capsys.readouterr().out.splitlines()[-1]
+    assert (kod, plan.split(" | ")[3:5]) == (0, [f"mutacje {mutacje}", f"części {min(mutacje, 1)}"]), plan
+
+
 def _plik_zwykly_i_plik_okna(tmp_path: Path) -> tuple[Path, str]:
     """Repozytorium i baza nocy, od której zmiana daje dwie części po dwie mutacje (granica porównania i cofnięcie
     fragmentu), każdą z jednego pliku: część 1 to ``a.py`` z ``tests/test_a.py``, a część 2 ``okno.py`` z
     ``tests/test_okno.py``, który sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce."""
 
     fixture = "from atrapy.atrapa_efenix import ATRAPA as OKNO\n"
-    repo = repository(
+    repo = mutation_repository(
         tmp_path / "repo",
         {
             "src/pakiet/__init__.py": "",
@@ -812,7 +838,7 @@ def _main_z_zalegloscia(tmp_path: Path, plikow: int) -> tuple[Path, str]:
     """``main`` z bazą nocy i plikami ``src/pakiet/m<k>.py``, w którym noc mutuje tylko commity PR-ów dopisujących funkcję
     (``_dopisz``); jego noce planują testy z częściami po 2 mutacje i najwyżej 2 częściami na noc."""
 
-    repo = repository(tmp_path / "repo", {f"src/pakiet/m{numer}.py": FUNKCJA for numer in range(1, plikow + 1)})
+    repo = mutation_repository(tmp_path / "repo", {f"src/pakiet/m{numer}.py": FUNKCJA for numer in range(1, plikow + 1)})
     git(repo, "checkout", "--quiet", "-b", "main")
     return repo, commit(repo, "baza")
 
@@ -897,7 +923,7 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     plan liczy je przy #2: noc do #2 miałaby 4 mutacje przy limicie 3, więc kończy się na #1."""
 
     b = "def b(x: int, y: int) -> bool:\n    c = x > 1\n    d = y > 1\n    return c and d\n"
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
+    repo = mutation_repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
     commity: list[str] = []
@@ -947,7 +973,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
         "tests/test_a.py": "from rozliczenia.a import a\n\n\ndef test_a() -> None:\n    assert a(3) is True\n    assert a(2) is False\n",
         "tests/test_b.py": test_b,
     }
-    repo = repository(tmp_path / "repo", pliki)
+    repo = mutation_repository(tmp_path / "repo", pliki)
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
@@ -996,7 +1022,7 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
         "tests/test_a.py": "from rozliczenia.a import a\n\n\ndef test_a() -> None:\n    assert a(3) is True\n    assert a(2) is False\n",
     }
     # Pliki wchodzą commitem po korzeniu, jak na ``main``: ``git blame`` skraca SHA commitu korzenia.
-    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
+    repo = mutation_repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     commit(repo, "korzeń")
     for sciezka, tresc in pliki.items():
@@ -1143,7 +1169,7 @@ def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_k
         "src/rozliczenia/warunek.py": PRZEBIEGI_BAZA,
         "tests/test_warunek.py": PRZEBIEGI_TESTY.format(folder=str(folder), workers=mutacje_zmiany.WORKERS),
     }
-    repo = repository(tmp_path / "repo", pliki)
+    repo = mutation_repository(tmp_path / "repo", pliki)
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     baza = commit(repo, "baza")
     (repo / "src" / "rozliczenia" / "warunek.py").write_text(PRZEBIEGI_BAZA.replace("return 0", "return 1"), encoding="utf-8")
@@ -1288,7 +1314,7 @@ def _historia_skilli(tmp_path: Path) -> tuple[Path, str]:
         ".agents/skills/verify-c/SKILL.md": f"---\nname: verify-c\npilnuje:\n  - src/*\nci: {PODSTAWA_C}\nci-czesci: 2\n---\n",
         PODSTAWA_C: "",
     }
-    repo = repository(tmp_path / "repo", {**skille, **podstawa, "src/a.py": "a = 1\n", "tools/ci/wykonaj_zadanie.py": "X = 1\n"})
+    repo = mutation_repository(tmp_path / "repo", {**skille, **podstawa, "src/a.py": "a = 1\n", "tools/ci/wykonaj_zadanie.py": "X = 1\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza nocy")
     git(repo, "checkout", "--quiet", "-b", "feat/skill")

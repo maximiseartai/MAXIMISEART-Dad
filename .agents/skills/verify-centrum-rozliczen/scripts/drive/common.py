@@ -150,7 +150,7 @@ class Run:
         self.feature = feature
         print(f"STEP {feature} | {name}", flush=True)
 
-    def check(self, condition: bool, message: str) -> None:
+    def check(self, condition: bool, message: str, /) -> None:
         if not condition:
             raise DriveFailure(message)
         print(f"  ok: {message}", flush=True)
