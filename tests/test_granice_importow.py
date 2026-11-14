@@ -135,7 +135,7 @@ PURE_VERSIONS = {
     ),
     # pamięć strażnika do adnotacji, tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku) i metaklasa
     # wersji bez podklas, bez plików
-    "rozliczenia.client_data": frozenset({"ForbiddenValues", "WithoutSubclasses", "tool"}),
+    "rozliczenia.client_data": frozenset({"ForbiddenValues", "Outgoing", "WithoutSubclasses", "tool"}),
     "rozliczenia.process_run": frozenset({"RunResult"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"

@@ -50,7 +50,7 @@ KONTROLA = Post.of(
         "kontrola-ilosci", tool("- Kontrola ilości okresu: 08_14_09_2026"), "new_issue", tool("Kontrola ilości 08_14_09_2026")
     ),
     period="08_14_09_2026",
-    run_id="3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c",
+    run_id=tool("3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c"),
     blocks=[tool("różnice\n")],
     frame=lambda _number, _count, text: text,
 )
