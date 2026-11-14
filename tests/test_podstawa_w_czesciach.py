@@ -259,7 +259,12 @@ def test_serwer_centrum_w_trybie_wolnego_runnera_bierze_api_pozniej_a_bez_trybu_
     else:
         monkeypatch.delenv(serve.SLOW_RUNNER, raising=False)
     served: list[Any] = []
-    monkeypatch.setattr(serve, "serve", lambda app, **_: served.append(app) or 0)
+
+    def serve_without_listening(app: Any, **_: object) -> int:
+        served.append(app)
+        return 0
+
+    monkeypatch.setattr(serve, "serve", serve_without_listening)
 
     assert serve.main(["--root", str(root), "--port", "0"]) == 0
     [app] = served
