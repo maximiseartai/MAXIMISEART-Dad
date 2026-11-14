@@ -94,6 +94,15 @@ ISSUES = {
     # issue z linkiem do PR 1 poza tabelą „Wystąpienia” (bramka chwastu treści issue nie czyta, #1619)
     "z-proza-o-pr-1": f"{ISSUE}\nWystąpienie w #1 dopisane ręcznie.\n",
 }
+# Treści issue kolejki chwastów (ADR 0034, #1620) z prawdziwymi issues chwastów: „## Kolejka” z punktami w kolejności
+# brania i „## Poza kolejką” z chwastami, które wyrywa program.
+QUEUE_ISSUE = 1640
+KOLEJKI = {
+    "pusta": _lines("## Kolejka", "", "## Poza kolejką", ""),
+    "czolo-1519": _lines("## Kolejka", "", "- #1519 R-API-PULAPKA", "", "## Poza kolejką", "", "- #1521 R-CI-RED", ""),
+    "czolo-1551": _lines("## Kolejka", "", "- #1551 R-WYCIEK", "- #1539 R-FLAKY", "- #1530 R-LISTA-KOPIA", "", "## Poza kolejką", "", "- #1541 R-MATCH-KOD", ""),
+    "z-proza": _lines("Kolejność chwastów:", "", "## Kolejka", "", "- #1519 R-API-PULAPKA", "", "## Poza kolejką", ""),
+}
 
 
 @functools.cache
@@ -111,7 +120,7 @@ def rendered() -> dict[str, str]:
 def bodies() -> list[str]:
     """Treści, których HTML muszą mieć testy."""
 
-    return [*WERDYKTY.values(), *ZGODY.values(), *OPISY.values(), *ISSUES.values()]
+    return [*WERDYKTY.values(), *ZGODY.values(), *OPISY.values(), *ISSUES.values(), *KOLEJKI.values()]
 
 
 def _refresh() -> None:

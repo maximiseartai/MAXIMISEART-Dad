@@ -52,7 +52,7 @@ class QuantityCheckAfterRun:
             Post.of(
                 PeriodThread(
                     label=LABEL,
-                    line=f"- Kontrola ilości okresu: {period}",
+                    line=tool(f"- Kontrola ilości okresu: {period}"),
                     closed="new_issue",
                     title=title.text,
                 ),

@@ -31,6 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from rozliczenia.centrum.opener import opener
 from rozliczenia.tool_files import REPOSITORY
 
 API: Final = "https://api.github.com"
@@ -116,7 +117,7 @@ def send(
     if key_after_redirect == "same-origin":
         handlers.append(_KeyToSameOrigin())
     try:
-        with urllib.request.build_opener(*handlers).open(sent, timeout=timeout_s) as response:
+        with opener(*handlers).open(sent, timeout=timeout_s) as response:
             body = response.read() if read_limit is None else response.read(read_limit)
             return HttpResponse(response.status, body, _lowered(response.headers.items()))
     except urllib.error.HTTPError as error:

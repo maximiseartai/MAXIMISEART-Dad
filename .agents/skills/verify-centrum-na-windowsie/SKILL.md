@@ -16,6 +16,7 @@ pilnuje:
   - src/rozliczenia/centrum/period_board.py
   - src/rozliczenia/centrum/update_messages.py
   - src/rozliczenia/centrum/version.py
+  - src/rozliczenia/centrum/opener.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/centrum/shutdown.py
   - src/rozliczenia/centrum/settings/*.py

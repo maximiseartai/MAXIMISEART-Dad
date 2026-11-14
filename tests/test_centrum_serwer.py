@@ -46,7 +46,7 @@ from tests.fixtures.linie_watkow import PYTEST_TIMEOUT_THREAD, new_line, started
 
 KONTROLA = Post.of(
     PeriodThread(
-        "kontrola-ilosci", "- Kontrola ilości okresu: 08_14_09_2026", "new_issue", "Kontrola ilości 08_14_09_2026"
+        "kontrola-ilosci", tool("- Kontrola ilości okresu: 08_14_09_2026"), "new_issue", tool("Kontrola ilości 08_14_09_2026")
     ),
     period="08_14_09_2026",
     run_id="3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c",
