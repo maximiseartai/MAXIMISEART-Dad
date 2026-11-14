@@ -116,6 +116,21 @@ Its boundary, which review checks:
 A false alarm is loud and names the helpers: form 1 on an object that is no file (`frame.rename(columns=…)`),
 form 2 on any object with a one-argument `replace` or `move` (`moment.replace(2026)`), form 3 on any object.
 
+## Slow runner mode
+
+`run_centrum_verification.py --wolny-runner --feature <feature>` drives as a slow CI runner would, with delays
+injected instead of load, so a check that depends on time fails on every run (#1539):
+
+| Delay | Value | Owner | Class it shows |
+|---|---|---|---|
+| animations of every page of `dad_context` (CDP `Animation.setPlaybackRate`) | `SLOW_ANIMATIONS` 0.2 | `drive/common.py` | a check of a state visible for a moment (#1534) |
+| each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/common.py` | a read right after a click, before its request arrives (#1570) |
+| each request of `/api/` waits before Centrum takes it | `API_DELAY_S` 0.3 | `serve_centrum.py` | a fixed sleep or limit shorter than the server's answer |
+
+Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
+The drive stops at its first failure, so drive one feature per run to find each failing place.
+The mode is a manual proof and runs neither in CI nor at night.
+
 ## Proof and skip reporting
 
 - Every step records its action, the screen (`screenshots/`, `aria/`), the
