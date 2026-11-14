@@ -840,8 +840,9 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
     access taken away); yields their paths and leaves the fixture's paths pointed again.
 
     chmod on Windows does not take away access to a folder (``NO_ACCESS_ON_WINDOWS`` in the tests), so there the page
-    gets the server's answer for such a folder from ``page.route``; elsewhere the folder really has no permissions and
-    ``GET /api/settings`` must report both paths ``inaccessible``.
+    gets the server's answer for such a folder from ``page.route`` and nothing asks the server; elsewhere the folder
+    really has no permissions and the drive waits until ``GET /api/settings`` reports both paths ``inaccessible``: a
+    wait, not a ``run.check``, so the section Sub-features is the same on every system.
     """
 
     if sys.platform == "win32":
@@ -854,9 +855,6 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
         page.route("**/api/settings", lambda route: route.fulfill(json=answer))
         try:
             yield register, periods
-            # chmod does not take access away here, so the answer the page gets stands for the server's: the check is
-            # the same on every system, as the section Sub-features from the run must be.
-            _reported_inaccessible(run, answer, register, periods)
         finally:
             page.unroute("**/api/settings")
         return
@@ -871,18 +869,18 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
     _point(run, page, "Folder okresów", "folder_okresow", str(periods))
     with unreadable(onedrive):
         yield register, periods
-        _reported_inaccessible(run, run.api("/api/settings", "ustawienia-niedostepna-sciezka"), register, periods)
+
+        def reported() -> bool:
+            settings = run.api("/api/settings", "ustawienia-niedostepna-sciezka")
+            return all(
+                settings[key] == {"state": "inaccessible", "path": str(path), "name": path.name}
+                for key, path in (("order_register", register), ("periods_directory", periods))
+            )
+
+        until(reported, "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing")
     _point(run, page, "Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
     _point(run, page, "Folder okresów", "folder_okresow", run.fixture["periods_directory"])
     remove_tree(onedrive)
-
-
-def _reported_inaccessible(run: Run, settings: dict[str, object], register: Path, periods: Path) -> None:
-    run.check(
-        settings["order_register"] == {"state": "inaccessible", "path": str(register), "name": register.name}
-        and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
-        "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
-    )
 
 
 def _point(run: Run, page: Page, label: str, key: str, path: str) -> None:

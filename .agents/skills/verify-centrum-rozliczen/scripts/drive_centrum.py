@@ -74,16 +74,17 @@ def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]
 
     A feature's section is the ``run.step`` and ``run.check`` calls of the drive modules of ``FEATURES`` (not of the
     helpers they share in ``drive/common.py``) made while the last ``run.step`` named the feature, whichever module
-    holds them: each step's place once, in the order of its first call, with its name and the checks that ran under it,
-    each check's place once under that step, in the order of its first call there, with the message of its call as
-    written in the module (``tools/lib/komunikat_mapy.py``; a message that rule cannot print prints as ``…``). So
-    that the section does not depend on the features a CI part drives before the feature, a check before the first
-    step of a drive and a step of a feature called from the drive of one it does not need fail the run.
+    holds them: each step once per place and name it ran with, in the order of its first call, with the checks that ran
+    under it, each check's place once under that step, in the order of its first call there, with the message of its
+    call as written in the module (``tools/lib/komunikat_mapy.py``), which is the same at every call of that place. A
+    message that rule cannot print fails the run, as do, so that the section does not depend on the features a CI part
+    drives before the feature, a check before the first step of a drive and a step of a feature called from the drive of
+    one it does not need.
     """
 
     modules = {each.module for each in FEATURES}
-    found: dict[str, dict[tuple[str, int, int], tuple[str, dict[tuple[str, int, int], Call]]]] = {}
-    current: dict[str, tuple[str, int, int]] = {}
+    found: dict[str, dict[tuple[str, str, int, int], dict[tuple[str, int, int], str]]] = {}
+    current: dict[str, tuple[str, str, int, int]] = {}
     for call, owner in zip(calls, owners, strict=True):
         if call.module not in modules:
             continue
@@ -97,20 +98,23 @@ def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]
             )
         place, steps = (call.module, call.line, call.column), found.setdefault(call.feature, {})
         if call.step is not None:
-            current[call.feature] = place
-            steps.setdefault(place, (call.step, {}))
+            current[call.feature] = (call.step, *place)
+            steps.setdefault(current[call.feature], {})
+        elif (printed := _messages(call.module)[call.line, call.column]) is None:
+            raise DriveFailure(f"{where}: the message of this run.check cannot be printed in the map; give it as a string "
+                               "literal, a module constant or an f-string")
         else:
-            steps[current[call.feature]][1].setdefault(place, call)
-    return {name: _section(name, found.get(name, {}).values()) for name in driven}
+            steps[current[call.feature]].setdefault(place, printed)
+    return {name: _section(name, found.get(name, {}).items()) for name in driven}
 
 
-def _section(name: str, steps: Iterable[tuple[str, dict[tuple[str, int, int], Call]]]) -> str:
+def _section(name: str, steps: Iterable[tuple[tuple[str, str, int, int], dict[tuple[str, int, int], str]]]) -> str:
     return "\n".join([
         "## Sub-features",
         "",
         f"Printed by `scripts/sub_features.py --feature {name}` from the drive's steps and checks; refresh the section with it.",
         "",
-        *(f"- `{step}`: {'; '.join(map(_message, checks.values()))}." if checks else f"- `{step}`." for step, checks in steps),
+        *(f"- `{step}`: {'; '.join(checks.values())}." if checks else f"- `{step}`." for (step, *_), checks in steps),
     ]) + "\n"
 
 
@@ -118,11 +122,6 @@ def _section(name: str, steps: Iterable[tuple[str, dict[tuple[str, int, int], Ca
 def _messages(module: str) -> dict[tuple[int, int], str | None]:
     # The source of the imported module, not of a path the frame names, so the section is the same on every system.
     return call_messages(inspect.getsource(sys.modules[module]))
-
-
-def _message(call: Call) -> str:
-    printed = _messages(call.module)[call.line, call.column]
-    return "…" if printed is None else printed
 
 
 def compare(evidence: Path, printed: dict[str, str]) -> None:

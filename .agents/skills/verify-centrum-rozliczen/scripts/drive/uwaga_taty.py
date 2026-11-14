@@ -728,12 +728,11 @@ def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: 
         "each row shows process, period, podgląd or zapis, date and result, newest first",
     )
     states = [radio.get_attribute("aria-checked") for radio in choices.get_by_role("radio").all()]
-    run.check(
-        states == ["true" if entry["run_id"] == checked else "false" for entry in offered],
-        f"exactly the Uruchomienie {checked} is checked"
-        if checked in [entry["run_id"] for entry in offered]
-        else f"no Uruchomienie is checked ({checked} is not in the list)",
-    )
+    expected = ["true" if entry["run_id"] == checked else "false" for entry in offered]
+    if checked in [entry["run_id"] for entry in offered]:
+        run.check(states == expected, f"exactly the Uruchomienie {checked} is checked")
+    else:
+        run.check(states == expected, f"no Uruchomienie is checked ({checked} is not in the list)")
 
 
 def _logs_comment(run: Run, run_id: str) -> str | None:

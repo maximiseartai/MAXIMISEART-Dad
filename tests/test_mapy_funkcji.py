@@ -261,6 +261,8 @@ def test_plik_funkcji_bez_sekcji_z_biegu_stoi_na_liscie_bez_porownania_a_lista_t
 def _naped_funkcji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, funkcja: str, zrodlo: str) -> ModuleType:
     """Napęd funkcji ``funkcja`` z ``zrodlo``, zaimportowany pod nazwą jej modułu zamiast prawdziwego."""
 
+    if "from drive.common import sprawdz_wspolne" in zrodlo:
+        _naped_funkcji(monkeypatch, tmp_path, "common", WSPOLNY_POMOCNIK)
     plik = tmp_path / f"{funkcja}.py"
     plik.write_text(zrodlo, encoding="utf-8")
     spec = importlib.util.spec_from_file_location("drive." + funkcja.replace("-", "_"), plik)
@@ -293,18 +295,31 @@ NAPED_PROBY: Final = '''\
 KOMUNIKAT = "ze stałej"
 
 
+from drive.common import sprawdz_wspolne
+
+
 def wspolne(run):
     run.check(True, "wspólne")
 
 
+def krok(run, nazwa):
+    run.step("okno-ustawien", nazwa)
+
+
 def drive(run, page):
-    run.step("okno-ustawien", "pierwszy")
+    krok(run, "pierwszy")
     for numer in range(2):
         run.check(True, f"obrót {numer} {KOMUNIKAT}")
         wspolne(run)
-    run.check(True, page)
-    run.step("okno-ustawien", "drugi")
+        sprawdz_wspolne(run)
+    run.check(True, f"{page}")
+    krok(run, "drugi")
     wspolne(run)
+'''
+# Wspólny pomocnik napędu (drive/common.py) ze sprawdzeniem, które nie należy do sekcji żadnej funkcji.
+WSPOLNY_POMOCNIK: Final = '''\
+def sprawdz_wspolne(run):
+    run.check(True, "ze wspólnego pomocnika")
 '''
 SEKCJA_PROBY: Final = """\
 ## Sub-features
@@ -320,9 +335,10 @@ Printed by `scripts/sub_features.py --feature okno-ustawien` from the drive's st
 def test_bieg_konczy_sie_drive_fail_gdy_sekcja_z_biegu_rozni_sie_od_pliku_mapy(
     naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], rozni_sie: bool
 ) -> None:
-    """Sekcja z biegu to miejsca kroków napędu, a pod każdym miejsca sprawdzeń, które przebiegły pod nim, każde raz, w
-    kolejności pierwszego wywołania, z komunikatem z wywołania w kodzie; trafia do dowodu, a bieg kończy się porażką z
-    różnicą, gdy plik mapy ma inną."""
+    """Sekcja z biegu to kroki napędu, każdy raz na miejsce i nazwę z biegu (pomocnik woła tu ``run.step`` z nazwą z
+    parametru), a pod każdym miejsca sprawdzeń, które przebiegły pod nim, każde raz, w kolejności pierwszego wywołania,
+    z komunikatem z wywołania w kodzie, bez sprawdzeń wspólnego pomocnika z ``drive/common.py``; trafia do dowodu, a bieg
+    kończy się porażką z różnicą, gdy plik mapy ma inną."""
 
     mapa = tmp_path / "features"
     mapa.mkdir()
@@ -401,20 +417,46 @@ def test_kroki_funkcji_z_napedu_innej_naleza_do_niej_przy_kazdym_podziale(
     assert sekcje[przygotowanie].endswith("\n- `przed`.\n- `po`.\n")
 
 
+def test_krok_funkcji_z_napedu_potrzebnej_posrednio_nalezy_do_niej(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Logi Uruchomienia potrzebują Przebiegu rozliczeń, a ten Przygotowania, więc krok Logów z napędu Przygotowania
+    biegnie zawsze przed nimi i należy do ich sekcji: potrzeba jest przechodnia."""
+
+    napedy = {
+        "logi-uruchomienia": _naped_funkcji(
+            monkeypatch, tmp_path, "logi-uruchomienia", NAPED_UZUPELNIENIA.replace('"uzupelnienie"', '"logi-uruchomienia"')
+        ),
+        "przebieg-rozliczen": _naped_funkcji(monkeypatch, tmp_path, "przebieg-rozliczen", 'def drive(run, page):\n    run.step("przebieg-rozliczen", "jeden")\n'),
+        "przygotowanie-pliku-zbiorczego": _naped_funkcji(
+            monkeypatch,
+            tmp_path,
+            "przygotowanie-pliku-zbiorczego",
+            NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja="przygotowanie-pliku-zbiorczego").replace("drive.uzupelnienie", "drive.logi_uruchomienia"),
+        ),
+    }
+
+    sekcje = _bieg(naped, monkeypatch, tmp_path, napedy, ["logi-uruchomienia"])
+
+    assert sekcje["logi-uruchomienia"].endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
+
+
 @pytest.mark.parametrize(
     ("zrodlo", "odmowa"),
     [
-        (NAPED_PROBY.replace('    run.step("okno-ustawien", "pierwszy")\n', '    run.check(True, "przed krokiem")\n    run.step("okno-ustawien", "pierwszy")\n'),
+        (NAPED_PROBY.replace('    krok(run, "pierwszy")\n', '    run.check(True, "przed krokiem")\n    krok(run, "pierwszy")\n'),
          "run.check before the first run.step of the drive of okno-ustawien"),
+        (NAPED_PROBY.replace('run.check(True, f"{page}")', "run.check(True, page)"), "the message of this run.check cannot be printed"),
         (NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja="okno-ustawien"), "the drive of okno-ustawien runs a step of uzupelnienie, which does not need okno-ustawien"),
     ],
-    ids=["sprawdzenie-przed-krokiem", "krok-funkcji-ktora-go-nie-potrzebuje"],
+    ids=["sprawdzenie-przed-krokiem", "komunikat-bez-wydruku", "krok-funkcji-ktora-go-nie-potrzebuje"],
 )
 def test_bieg_odmawia_sekcji_ktora_zalezy_od_funkcji_przed_nia_w_czesci_ci(
     naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, zrodlo: str, odmowa: str
 ) -> None:
-    """Bieg odmawia sekcji, która zależy od funkcji przejechanych przed nią w tym samym biegu: sprawdzenia przed
-    pierwszym krokiem napędu i kroku funkcji z napędu innej, której ta nie potrzebuje."""
+    """Bieg odmawia sekcji, która zależy od funkcji przejechanych przed nią w tym samym biegu (sprawdzenia przed
+    pierwszym krokiem napędu i kroku funkcji z napędu innej, której ta nie potrzebuje), i sprawdzenia, którego komunikatu
+    mapa nie wydrukuje."""
 
     przygotowanie = "przygotowanie-pliku-zbiorczego"
     napedy = {

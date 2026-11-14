@@ -154,10 +154,10 @@ behaviour, then exactly these H2s in order:
    `STEP <feature> | <id>` lines in `drive.txt`. A section that names
    `scripts/sub_features.py --feature <feature>` comes from the run: `drive_centrum.py` builds it from the
    `run.step(feature, "<id>")` and `run.check(condition, message)` calls the drive ran while the last step named the
-   feature, in whichever drive module but not in the shared `drive/common.py`: each step's place once, in the order of
-   its first call, with the checks that ran under it, each check's place once under that step, and a check with its
-   message as written at its call (a field of an f-string prints as `…`, except a module constant, which prints its
-   value; a message of another form prints as `…`). The run writes it to
+   feature, in whichever drive module but not in the shared `drive/common.py`: each step once per place and name it ran
+   with, in the order of its first call, with the checks that ran under it, each check's place once under that step,
+   with its message as written at its call (a field of an f-string prints as `…`, except a module constant, which
+   prints its value; a message of another form fails the run). The run writes it to
    `sekcje-z-biegu/<feature>.md` of its evidence and fails, printing the difference, when the file has another. A file
    without it stands in `NOT_COMPARED` of `scripts/drive/__init__.py`, which only shrinks. After a change of a drive,
    take the new section from a local run (`run_centrum_verification.py --feature <feature>`, then
