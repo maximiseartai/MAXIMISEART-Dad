@@ -53,21 +53,21 @@ _STREAM_POLL_SECONDS: Final = 0.05
 _KEEPALIVE_SECONDS: Final = 15.0
 _RECONNECT_MS: Final = 1000
 RUN_THREAD_PREFIX: Final = "uruchomienie-"
-# Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki.
 _RESULT_NOT_SHOWN: Final = Message.to_maintainer(
     code="BLAD_WYNIKU",
     what="Nie udało się pokazać wyniku Uruchomienia procesu.",
     where="Centrum rozliczeń",
     check="Folder okresu",
 )
+"""Ostatnia siatka adaptera: wyniku nie dało się pokazać, choć rdzeń zapisał już metryki."""
 
-# Tytuł wyniku przy Zatrzymaniu: tata poprawia sam, błąd do Maksa albo jego własna odmowa w Decyzji taty.
 _STOP_HEADLINES: Final[Mapping[runs_contract.StopKind, str]] = {
     "for_tata": "Do poprawy",
     "repeated": "Do poprawy",
     "for_maks": "Błąd",
     "declined": "Przerwano",
 }
+"""Tytuł wyniku przy Zatrzymaniu: tata poprawia sam, błąd do Maksa albo jego własna odmowa w Decyzji taty."""
 
 _NOT_YOUR_FILES: Final = "To nie wynika z Twoich plików."
 
@@ -88,10 +88,13 @@ def verdict(
     dry_run: bool,
     view: ProcessView[Any],
 ) -> tuple[str, runs_contract.NextAction]:
-    """Tytuł wyniku i jedyna akcja po nim: jedna reguła dla karty na żywo i karty z Logów Uruchomienia."""
+    """Tytuł wyniku i jedyna akcja po nim: jedna reguła dla karty na żywo i karty z Logów Uruchomienia.
+
+    Po błędzie podsumowania przy zapisie (``after_engine``) pliki już są, więc karta nie proponuje ponownego
+    Uruchomienia, tylko akcję po wyniku z zapisem.
+    """
 
     if stop_kind is not None:
-        # Po błędzie podsumowania przy zapisie pliki już są: nie proponujemy ponownego uruchomienia.
         return _STOP_HEADLINES[stop_kind], view.result_action if ending == "after_engine" and not dry_run else "rerun"
     if result == "WYMAGA_SPRAWDZENIA":
         if dry_run:
