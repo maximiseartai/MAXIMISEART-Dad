@@ -13,37 +13,36 @@ the browser shows the explanation and the list `Sprawdzono`.
 
 ## Sub-features
 
-- `aktualnosc-nowsza-wersja`: with another newest Wydanie on `main` on the scripted GitHub and no other cause, the explanation reads `Jest nowsza wersja narzędzia.` with `Zaktualizuj narzędzie` as its main action instead of `Uruchom ponownie` (`next_action` `update`) and no separate proposal.
-- `aktualnosc-brak-sieci`: without network the explanation is „Nie znalazłem przyczyny na tym komputerze”; `Aktualność narzędzia` reads `Nie sprawdzono: brak połączenia z GitHubem.` with the icon `nie sprawdzono`; region `Diagnoza` has no `Zaktualizuj narzędzie` (`update_proposal` `false`).
-- `onedrive-tylko-w-chmurze`: a Rejestr zleceń only in the cloud is the cause, naming the file and „Zawsze zachowuj na tym urządzeniu”, with `Uruchom ponownie`; the Rejestr zleceń is unchanged.
-- `aktualnosc-propozycja`: the Rejestr zleceń only in the cloud and a newer Wydanie together: the explanation stays the OneDrive one, and note `Propozycja aktualizacji` under it reads `Jest też nowsza wersja narzędzia.` with an outline `Zaktualizuj narzędzie` (`update_proposal` `true`).
-- `aktualnosc-aktualizacja-w-trakcie`: a click on that button starts the update; while it runs, the region shows `Pobieranie nowej wersji…`, the button is disabled, and a second click sends nothing; the update ends with `Masz najnowszą wersję.`
-- `aktualnosc-i-onedrive-przeszly`: an up-to-date tool and files on the computer pass both checks, and region `Diagnoza` has no `Zaktualizuj narzędzie`; the Centrum log has both causes by code.
+Printed by `scripts/sub_features.py --feature aktualnosc-i-onedrive` from the drive's steps and checks; refresh the section with it.
+
+- `aktualnosc-nowsza-wersja`: the stop without its Wzorzec is „do Maksa”; updating the tool is the explanation's main action; with no other cause a newer Wydanie on `main` explains the stop, and Dad updates the tool with the button.
+- `aktualnosc-brak-sieci`: without network the freshness is not checked, is no cause, and the Diagnoza offers no update.
+- `onedrive-tylko-w-chmurze`: a Rejestr zleceń only in the cloud explains the stop with „Zawsze zachowuj na tym urządzeniu”; the Diagnoza left the Rejestr zleceń as it was.
+- `aktualnosc-propozycja`: `Zaktualizuj narzędzie` in the proposal comes second, after the explanation's `Uruchom ponownie`; a newer Wydanie does not cover the Rejestr zleceń only in the cloud: it is only proposed under the explanation.
+- `aktualnosc-aktualizacja-w-trakcie`: the click on the disabled button during the update sends nothing; the server reports the update running; the click on the disabled button during the update started no second Aktualizacja narzędzia.
+- `aktualnosc-i-onedrive-przeszly`: an up-to-date tool and files kept on the computer pass both checks, and the Diagnoza offers no update; the Centrum log records both causes by code only.
 
 ## How to get to it (user POV)
 
-- Uruchomienia: a stop „do Maksa” (or a repeated stop) offers `Diagnoza` on the `Zatrzymanie` banner; the explanation `Wyjaśnienie Diagnozy`, the note `Propozycja aktualizacji` when there is one, and the collapsed list `Sprawdzono (11)` appear in region `Diagnoza`.
+When an Uruchomienie procesu on Uruchomienia stops „do Maksa”, or the same stop comes back, Dad clicks `Diagnoza` on
+the `Zatrzymanie` banner. The explanation, the note `Propozycja aktualizacji` when there is one, and the collapsed list
+`Sprawdzono (11)` appear in region `Diagnoza`.
 
 ## Driving it with Playwright for Python
 
-Preconditions:
-
-- Centrum is served for this run with `DOCTOR OK` by `serve_centrum.py`, whose scripted GitHub answers the tool's own commit for `main` (up to date) and whose scripted OneDrive keeps every file on the computer. Run alone, the drive points Centrum to the fixture's folder okresów and Rejestr zleceń itself. The tool is the run's clone `<root>/aktualizacja/klon`, so it has a commit.
-
-- **Zatrzymanie bez przyczyny na komputerze.** On `#/uruchomienia` (after `Nowe Uruchomienie procesu` when a result is shown) choose radio `Przygotowanie pliku zbiorczego` and option `wt 08.09 – pon 14.09 · Brak plików okresu · 08_14_09_2026`, rename `config/Wzorzec rozliczenia wewnętrznego.xlsx` aside, click `Podgląd bez zapisu` (exact), wait for `Nie znaleziono wzorca, z którego powstają pliki okresu.` and `stop_kind` `for_maks`, rename the Wzorzec back. Each step below reloads and clicks `Diagnoza` on the banner.
-- **Nowsza wersja.** Write 40 × `f` to `<root>/github/main-commit.txt`. `Wyjaśnienie Diagnozy` reads `Jest nowsza wersja narzędzia.` and `Kliknij „Zaktualizuj narzędzie”.` and holds button `Zaktualizuj narzędzie` (exact, enabled, primary) and no `Uruchom ponownie`; there is no note `Propozycja aktualizacji`. `POST /api/runs/{id}/diagnosis` with Centrum's `Origin` (`api/aktualnosc-nowsza-wersja.json`): `Aktualność narzędzia` `failed`, `next_action` `update`, `update_proposal` `false`.
-- **Brak sieci.** Delete `main-commit.txt`, create `<root>/github/brak-sieci`. The explanation reads `Nie znalazłem przyczyny na tym komputerze.`; click `Sprawdzono (11)`: item `Aktualność narzędzia` reads `Nie sprawdzono: brak połączenia z GitHubem.` with icon `nie sprawdzono`. Region `Diagnoza` holds no button `Zaktualizuj narzędzie`. The answer has `not_checked`, `next_action` `report` and `update_proposal` `false`.
-- **Tylko w chmurze.** Delete `brak-sieci`, write the Rejestr zleceń's full path to `<root>/onedrive/tylko-w-chmurze.txt`. The explanation reads `Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.`, `plik <Rejestr zleceń name>`, and „Zawsze zachowuj na tym urządzeniu”, with `Uruchom ponownie`. `Pliki w OneDrive` is `failed`; the Rejestr zleceń keeps its bytes and `st_mtime_ns`.
-- **Propozycja.** Keep `tylko-w-chmurze.txt` and write 40 × `f` to `main-commit.txt` again. `Wyjaśnienie Diagnozy` still reads `Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.` with `Uruchom ponownie`; under it note `Propozycja aktualizacji` reads `Jest też nowsza wersja narzędzia.` and holds button `Zaktualizuj narzędzie` (enabled, outline). The answer (`api/aktualnosc-propozycja.json`) has the OneDrive explanation, `Aktualność narzędzia` `failed`, `next_action` `rerun`, and `update_proposal` `true`.
-- **W trakcie aktualizacji.** Harness: point the local origin's `main` (`tool.origin`) at the clone's `HEAD` and make it the origin's only Wydanie `v0.1.0` (`release_only`), so the update changes nothing, and write `4000` to `<root>/pacing/aktualizacja-ms.txt`. Click `Zaktualizuj narzędzie` in the note: status `Pobieranie nowej wersji…` appears in region `Diagnoza` and the button is disabled; a forced second click sends no `POST /api/tool-update`, and `GET /api/tool-update` is `{"state": "running", "step": "fetching"}`. Screenshot `140` (live). Remove the pacing file (the update read it at its start, so it still waits the 4000 ms): status `Masz najnowszą wersję.` appears, the button is enabled again, and the log has exactly one more `aktualizacja-start`. Harness: the origin's `main` goes back to `tool.newest` (also in `finally`).
-- **Oba przeszły.** Delete `main-commit.txt` and `tylko-w-chmurze.txt`. Under `Sprawdzono (11)` item `Aktualność narzędzia` reads `Najnowsza wersja z GitHuba, commit …` and `Pliki w OneDrive` has icon `przeszło`. Region `Diagnoza` holds no button `Zaktualizuj narzędzie`, and the answer has `next_action` other than `update` and `update_proposal` `false`. The Centrum log has `przyczyna=NOWSZA_WERSJA_NARZEDZIA` and `przyczyna=PLIK_TYLKO_W_CHMURZE`.
-- **Proof.** Screenshots `76`–`79`, `81` and `140`, `api/aktualnosc-*.json`, `api/onedrive-*.json`, and the checks in `drive.txt`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualnosc-i-onedrive`
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
+under `STEP aktualnosc-i-onedrive` in `drive.txt`, screenshots `76`–`79`, `81` and `140`, `api/aktualnosc-*.json` and
+`api/onedrive-*.json`.
 
 ## Gotchas
 
-- Never let `serve_centrum.py` use the real GitHub source: the verification must not reach the internet. The real source's time limit is covered by `tests/test_aktualnosc_narzedzia.py` against a silent local server.
-- A newer Wydanie explains the stop only without another cause, so `Nowsza wersja` needs the Wzorzec renamed back first; remove `main-commit.txt` before `Oba przeszły`, or `Aktualność narzędzia` stays `failed` and becomes the explanation.
+- Remove `<root>/github/main-commit.txt` before `aktualnosc-i-onedrive-przeszly`: with no other cause the newer
+  Wydanie stays `failed` and becomes the explanation.
 - Restore the Wzorzec by renaming it back, never by copying: `diagnoza` compares modification times.
 - Opening `Sprawdzono (11)` twice collapses it again; open it once per Diagnoza.
-- The style of `Zaktualizuj narzędzie` follows the last Aktualizacja narzędzia of this Centrum: after a failed one it is primary only when that failure's next action is to try again, and the status beside it shows that failure with `Wyślij do Maksa`. The primary and outline checks hold because no earlier feature of `all` leaves a failed update behind.
-- The update in `W trakcie aktualizacji` is real: without the harness making the clone's `HEAD` the origin's only Wydanie, a run of this feature alone would move the clone and restart Centrum. Its result `Masz najnowszą wersję.` is about the newest Wydanie Centrum knew then, the scripted GitHub's stand-in in `main-commit.txt`, so the explanation can still say there is a newer version; the result stays only until Centrum knows another newest Wydanie (issue #373).
+- The primary and outline checks of `Zaktualizuj narzędzie` hold because no earlier feature of `all` leaves a failed
+  Aktualizacja narzędzia behind: after one, the button follows that failure.
+- The result `Masz najnowszą wersję.` of the update is about the newest Wydanie Centrum knew then, the scripted
+  GitHub's stand-in in `main-commit.txt`, so the explanation can still say there is a newer version; the result stays
+  only until Centrum knows another newest Wydanie (issue #373).
