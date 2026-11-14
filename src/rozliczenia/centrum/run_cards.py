@@ -68,7 +68,8 @@ class RunCards:
 
     def last(self, closed: LeftBehindClosed) -> runs_contract.PastRun | None:
         """Ostatnie Uruchomienie sprzed tego startu Centrum; ``None``: żadnego albo nie da się go odczytać. ``closed``:
-        start Centrum zamknął już dzienniki Wyceny, więc Urwana Wycena ma tu swoje Logi Urwanego Uruchomienia."""
+        start Centrum zamknął już dzienniki Wyceny, więc Urwana Wycena ma tu swoje Logi Urwanego Uruchomienia. Logi,
+        które są, ale są nieczytelne, to też ``None``: wynik był, tylko go nie znamy, więc to nie Urwane Uruchomienie."""
 
         started = self._disk.last_start()
         if started is None:
@@ -77,7 +78,6 @@ class RunCards:
             case Missing():
                 return self._recorded(started) or _interrupted(started, None)
             case Unreadable() | Refused():
-                # Logi są, ale nieczytelne: wynik był, tylko go nie znamy, więc to nie jest Urwane Uruchomienie.
                 return None
             case Found(logs=record) if record.ending == "interrupted":
                 return _interrupted(started, _orders(record))
@@ -107,9 +107,11 @@ class RunCards:
         return self._ended.of(process)
 
     def _ended_of(self, record: RunLog) -> LoggedRun | None:
+        """Zakończone Uruchomienie z Logów ``record``; ``None`` dla Urwanego. Po Zatrzymaniu Logi mają zlecenia sprzed
+        niego, ale Powiadomienie liczy zlecenia tylko Wyceny z podsumowaniem."""
+
         if record.ending == "interrupted":
             return None
-        # Po Zatrzymaniu Logi mają zlecenia sprzed niego, ale Powiadomienie liczy tylko Wycenę z podsumowaniem.
         orders = (
             None
             if record.efenix_orders is None or record.summary is None
@@ -168,6 +170,10 @@ class RunCards:
         ``CentrumRuns.remember``), więc karta go znajduje także wtedy, gdy nie ma jeszcze identyfikatora. Wcześniejsze
         Uruchomienia startowały przed nim, bo Centrum prowadzi jedno naraz. Uruchomienie spoza Centrum po starcie
         Urwanego Uruchomienia dałoby mu swój wynik; jak w ``remember`` to rzadkie.
+
+        Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
+        przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
+        pliku; ponowne Uruchomienie zostawia pliki, które powstały, i mówi, co z nimi zrobić.
         """
 
         row = self._row(started.process, started.started_at)
@@ -177,9 +183,6 @@ class RunCards:
         info = declaration.run_info(
             run_id=started.run_id, period=started.period, mode=started.mode, pricing=started.pricing
         )
-        # Bez ``stop_kind`` sposób zakończenia nie zmienia tytułu ani akcji. Wiersz Historii nie mówi, czy Zatrzymanie
-        # przyszło po silniku (``after_engine``), więc po zapisie karta proponuje ponowne Uruchomienie, nie otwarcie
-        # pliku; ponowne Uruchomienie zostawia pliki, które powstały, i mówi, co z nimi zrobić.
         headline, next_action = verdict(
             ending="stop",
             stop_kind=row.stop_kind,
@@ -238,9 +241,11 @@ def _interrupted_advice(title: str, period: str, *, dry_run: bool) -> common_con
 
 
 def run_cards_router(cards: RunCards) -> APIRouter:
+    """Trasa karty Uruchomienia; brak karty to zwykła odpowiedź (``missing``), nie 404, bo przeglądarka nie odróżniłaby
+    go od porażki odczytu."""
+
     router = APIRouter(prefix="/api/runs", tags=["uruchomienia"])
 
-    # Brak karty to zwykła odpowiedź, nie 404: przeglądarka nie odróżniłaby go od porażki odczytu.
     @router.get("/{run_id}/card", operation_id="getRunCard")
     def card(run_id: str) -> runs_contract.RunCard:
         return cards.card(run_id)
