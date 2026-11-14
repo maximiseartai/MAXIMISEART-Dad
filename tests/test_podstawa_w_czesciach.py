@@ -11,6 +11,7 @@ import asyncio
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
+from functools import partial
 import importlib.util
 import json
 import os
@@ -23,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.linie_watkow import new_line, threads_since
 from jednostka import ZMIENNA_CZESCI
 import kroki_skilli
 import skrypt_skilla
@@ -265,8 +267,13 @@ def test_serwer_centrum_w_trybie_wolnego_runnera_bierze_api_pozniej_a_bez_trybu_
         return 0
 
     monkeypatch.setattr(serve, "serve", serve_without_listening)
+    # Budzik zegara przebiegu śpi w pętli do końca procesu serwera, więc w procesie workera pytest zostałby po teście
+    # i spał między testami sąsiadów (#1783); ten test sprawdza tylko warstwy aplikacji.
+    monkeypatch.setattr(serve, "ScriptedClock", partial(serve.ScriptedClock, alarm=False))
+    since = new_line()
 
     assert serve.main(["--root", str(root), "--port", "0"]) == 0
+    assert threads_since(since) == []
     [app] = served
     assert [layer.cls for layer in app.user_middleware if layer.cls is serve._LateApi] == ([serve._LateApi] if slow else [])
 
