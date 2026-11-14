@@ -13,6 +13,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -198,4 +200,35 @@ def test_kazdy_plik_funkcji_i_modul_pakietu_ma_funkcje_w_kodzie_skilla(skill: Pa
     ]
 
     assert lists, f"{skill.name} ma pakiet funkcji bez krotki FEATURES w scripts/"
+    assert problems == [], "\n".join(problems)
+
+
+
+CENTRUM = SKILLS / "verify-centrum-rozliczen"
+SUB_FEATURES = ROOT / ".agents/skills/verify-centrum-rozliczen/scripts/sub_features.py"
+
+
+def _sub_features(feature: str) -> str:
+    done = subprocess.run(
+        [sys.executable, str(SUB_FEATURES), "--feature", feature], capture_output=True, timeout=60, check=False
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", errors="replace")
+    return done.stdout.decode("utf-8")
+
+
+def test_podfunkcje_mapy_centrum_sa_wynikiem_polecenia_z_kodu_napedu() -> None:
+    """Plik funkcji, który nazywa polecenie ``sub_features.py`` swojej funkcji, ma jego wynik jako całą sekcję
+    ``## Sub-features``, tuż przed ``## How to get to it (user POV)``."""
+
+    printed = [path for path in _feature_files(CENTRUM) if f"sub_features.py --feature {path.stem}`" in path.read_text(encoding="utf-8")]
+
+    problems = [
+        f"verify-centrum-rozliczen/features/{path.name}: sekcja ## Sub-features nie jest wynikiem kodu napędu; zastąp ją "
+        f"wynikiem `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/sub_features.py --feature {path.stem}` "
+        "(Windows: `py -3`)"
+        for path in printed
+        if f"\n{_sub_features(path.stem)}\n## How to get to it (user POV)\n" not in path.read_text(encoding="utf-8")
+    ]
+
+    assert printed, "żaden plik mapy verify-centrum-rozliczen nie nazywa polecenia sub_features.py swojej funkcji"
     assert problems == [], "\n".join(problems)

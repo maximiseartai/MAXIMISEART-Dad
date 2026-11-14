@@ -148,7 +148,8 @@ Each feature file starts with an H1 and one paragraph on the user-visible
 behaviour, then exactly these H2s in order:
 
 1. `Sub-features`: short IDs with one line each; the IDs match the
-   `STEP <feature> | <id>` lines in `drive.txt`.
+   `STEP <feature> | <id>` lines in `drive.txt`, and a section that names
+   `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: starts with `Preconditions:`, then
    labelled bullets pairing each action with the exact handle and the
