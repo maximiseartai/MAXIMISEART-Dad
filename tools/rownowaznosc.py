@@ -1,10 +1,11 @@
-"""Sprawdza, że refaktor nie zmienia wyniku procesów: te same scenariusze syntetyczne na bazie i na HEAD; użyj przy refaktorze src/.
+"""Sprawdza, że refaktor nie zmienia wyniku procesów (scenariusze syntetyczne na bazie i HEAD), a z --ast drzew składni src/; użyj przy refaktorze src/.
 
 Weryfikacja różnicowa refaktoru: te same scenariusze syntetyczne na commicie bazy i na HEAD dają ten sam wynik.
 
 Użycie (z katalogu repozytorium):
 
     .venv/bin/python tools/rownowaznosc.py [--baza COMMIT] [--glowa COMMIT] [--scenariusz NAZWA ...]
+    .venv/bin/python tools/rownowaznosc.py --ast [--baza COMMIT] [--glowa COMMIT]
 
 Całego zachowania procesów nie opisze żaden test, ale da się sprawdzić, że zmiana nic w nim nie zmienia. Narzędzie
 buduje raz scenariusze syntetyczne trzech procesów (Przebieg rozliczeń, Przygotowanie pliku zbiorczego,
@@ -40,11 +41,23 @@ wynik to ``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 scenariuszy`` (kod 2).
 W kopii ``tools/na_scalonych_pr.py`` drzewo robocze ma ``tools/`` z innego checkoutu, więc tam podaj obie strony:
 
     .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
+
+Z ``--ast`` narzędzie nie uruchamia scenariuszy, tylko porównuje drzewo składni (``ast.dump`` bez pozycji w źródle)
+każdego pliku ``src/`` zmienionego od bazy, po usunięciu każdej instrukcji, która jest samym napisem: docstringów
+modułu, klas i funkcji oraz napisów pod przypisaniem. Komentarzy drzewo nie ma, więc zmiana, która tylko przenosi komentarz do docstringu albo go
+usuwa, daje ``<plik> | TAK SAMO``, a każda inna ``<plik> | RÓŻNICA | <co>``: drzewo składni, plik tylko po jednej
+stronie, plik bez składni Pythona albo plik, który nie jest ``.py`` ani ``.pyi``. Wynik kończy linia
+``RÓWNOWAŻNOŚĆ OK | <n> plików`` (kod 0), ``RÓWNOWAŻNOŚĆ RÓŻNICA | <pliki>`` (kod 1) albo, bez zmienionego pliku,
+``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików`` (kod 2). Obie strony czyta ten sam Python, więc wynik nie zależy od jego
+wersji. Drzewo bez napisów nie widzi ``__doc__``, a docstringi klas Pydantic i tras trafiają do kontraktu, więc taka
+zmiana sprawdza też eksport kontraktu (``tools/ci/export_openapi.py``) i ``tools/przesun_model.py`` dla plików
+z modelem skilla ``verify-*``.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -417,6 +430,64 @@ def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario],
     return 0
 
 
+def _lone_string(node: ast.AST) -> bool:
+    return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+
+
+def syntax(source: str) -> str:
+    """Drzewo składni ``source`` bez instrukcji, które są samym napisem, i bez pozycji w źródle."""
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, list):
+                setattr(node, field, [item for item in value if not _lone_string(item)])
+    return ast.dump(tree)
+
+
+def _source(repository: Path, revision: str | None, path: str) -> str | None:
+    """Tekst pliku w commicie ``revision``, a bez niego w drzewie roboczym; ``None``, gdy pliku tam nie ma."""
+
+    if revision is None:
+        file = repository / path
+        return file.read_text(encoding="utf-8") if file.is_file() else None
+    if not repo.succeeds(repository, "cat-file", "-e", f"{revision}:{path}"):
+        return None
+    return repo.git(repository, "show", f"{revision}:{path}")
+
+
+def _syntax_difference(base: str | None, head: str | None) -> str | None:
+    if base is None or head is None:
+        return "plik tylko w " + ("HEAD" if base is None else "bazie")
+    try:
+        return None if syntax(base) == syntax(head) else "drzewo składni"
+    except SyntaxError:
+        return "plik bez składni Pythona"
+
+
+def syntax_equivalence(repository: Path, base: str, head: str | None) -> int:
+    """Linia każdego pliku ``src/`` zmienionego od ``base`` do ``head`` (bez niego do drzewa roboczego) i kod wyniku."""
+
+    paths = sorted(repo.changed(repository, base, head, paths=("src",)))
+    differing = []
+    for path in paths:
+        if Path(path).suffix in {".py", ".pyi"}:
+            difference = _syntax_difference(_source(repository, base, path), _source(repository, head, path))
+        else:
+            difference = "nie plik Pythona"
+        if difference:
+            differing.append(path)
+        print(f"{path} | RÓŻNICA | {difference}" if difference else f"{path} | TAK SAMO", flush=True)
+    if differing:
+        print(f"RÓWNOWAŻNOŚĆ RÓŻNICA | {', '.join(differing)}")
+        return 1
+    if not paths:
+        print("RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików")
+        return 2
+    print(f"RÓWNOWAŻNOŚĆ OK | {len(paths)} plików")
+    return 0
+
+
 def default_base(repository: Path, head: str | None) -> str:
     return repo.merge_base(repository, head or "HEAD", BASE)
 
@@ -428,10 +499,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", metavar="COMMIT", help="Commit bazy; domyślnie merge-base HEAD (albo --glowa) z origin/main.")
     parser.add_argument("--glowa", metavar="COMMIT", help="Commit HEAD zamiast drzewa roboczego z niezacommitowanymi zmianami.")
-    parser.add_argument("--scenariusz", action="append", choices=names, metavar="NAZWA", help=f"Tylko ten scenariusz; powtórz dla kilku: {', '.join(names)}.")
+    chosen = parser.add_mutually_exclusive_group()
+    chosen.add_argument("--scenariusz", action="append", choices=names, metavar="NAZWA", help=f"Tylko ten scenariusz; powtórz dla kilku: {', '.join(names)}.")
+    chosen.add_argument("--ast", action="store_true", help="Zamiast scenariuszy drzewa składni plików src/ zmienionych od bazy, bez docstringów i komentarzy.")
     args = parser.parse_args(argv)
     scenarios = [scenario for scenario in SCENARIOS if not args.scenariusz or scenario.name in args.scenariusz]
     base = args.baza or default_base(ROOT, args.glowa)
+    if args.ast:
+        return syntax_equivalence(ROOT, base, args.glowa)
     head = nullcontext(ROOT) if args.glowa is None else potomne.commit_copy(ROOT, args.glowa)
     with tempfile.TemporaryDirectory(prefix="rownowaznosc-") as work, potomne.commit_copy(ROOT, base) as base_tree, head as head_tree:
         return equivalence(base_tree, head_tree, scenarios, Path(work))

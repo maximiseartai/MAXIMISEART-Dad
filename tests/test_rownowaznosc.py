@@ -561,3 +561,77 @@ def test_pomoc_wymienia_kazdy_scenariusz_do_wyboru(capsys: pytest.CaptureFixture
     # Pomoc łamie długą linię także na łączniku nazwy, więc bez białych znaków każda nazwa jest w całości.
     shown = "".join(capsys.readouterr().out.split())
     assert [scenario.name for scenario in rownowaznosc.SCENARIOS if scenario.name not in shown] == []
+
+
+_MODULE = '''"""Moduł."""
+
+LIMIT = 10
+"""Tyle najwyżej."""
+
+
+def capped(value: int) -> int:
+    return min(value, LIMIT)  # ponad limit przepada
+'''
+
+
+def _repository_with_module(tmp_path: Path) -> tuple[Path, str]:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_text(_MODULE, encoding="utf-8")
+    return repository, commit(repository, "baza")
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("LIMIT = 10", "LIMIT = 11", (1, ["src/modul.py | RÓŻNICA | drzewo składni", "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py"])),
+        ('"""Tyle najwyżej."""', '"""Tyle najwyżej, a więcej przepada."""', (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+        ("  # ponad limit przepada", "", (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+        ('    return', '    """Ponad limit przepada."""\n\n    return', (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+    ],
+    ids=["zmieniona-stala", "sam-docstring", "sam-komentarz", "komentarz-do-docstringu-funkcji"],
+)
+def test_tryb_ast_zmieniona_stala_to_roznica_a_sam_docstring_albo_komentarz_to_tak_samo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], old: str, new: str, expected: tuple[int, list[str]]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    module = repository / "src" / "modul.py"
+    assert module.read_text(encoding="utf-8").count(old) == 1
+    module.write_text(module.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    code = rownowaznosc.main(["--ast", "--baza", base])
+
+    assert (code, capsys.readouterr().out.splitlines()) == expected
+
+
+def test_tryb_ast_z_glowa_nazywa_plik_po_jednej_stronie_bez_skladni_i_spoza_pythona_a_bez_zmian_jest_niesprawdzony(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    (repository / "src" / "stary.py").write_text("STARY = 1\n", encoding="utf-8")
+    (repository / "src" / "dane.toml").write_text("a = 1\n", encoding="utf-8")
+    base = commit(repository, "pliki bazy")
+    (repository / "src" / "stary.py").unlink()
+    (repository / "src" / "nowy.py").write_text("NOWY = 1\n", encoding="utf-8")
+    (repository / "src" / "dane.toml").write_text("a = 2\n", encoding="utf-8")
+    (repository / "src" / "modul.py").write_text("def capped(:\n", encoding="utf-8")
+    (repository / "poza_src.py").write_text("POZA = 1\n", encoding="utf-8")
+    head = commit(repository, "głowa")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    changed = rownowaznosc.main(["--ast", "--baza", base, "--glowa", head]), capsys.readouterr().out.splitlines()
+    unchanged = rownowaznosc.main(["--ast", "--baza", head, "--glowa", head]), capsys.readouterr().out.splitlines()
+
+    assert changed == (
+        1,
+        [
+            "src/dane.toml | RÓŻNICA | nie plik Pythona",
+            "src/modul.py | RÓŻNICA | plik bez składni Pythona",
+            "src/nowy.py | RÓŻNICA | plik tylko w HEAD",
+            "src/stary.py | RÓŻNICA | plik tylko w bazie",
+            "RÓWNOWAŻNOŚĆ RÓŻNICA | src/dane.toml, src/modul.py, src/nowy.py, src/stary.py",
+        ],
+    )
+    assert unchanged == (2, ["RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików"])
