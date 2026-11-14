@@ -1200,13 +1200,23 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
 }
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
-# (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
+# (#1584 W1 r1), i postać po poprawce, którą przepuszcza. Przepuszcza też ostatni atom przed $, który bierze \r
+# (``.``, ``\s``), więc linię CRLF wzorzec widzi z samego kształtu, a zgłasza pominiętą grupę i alternatywę, bo wtedy $
+# może stanąć za atomem, który \r nie bierze.
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [a-z]$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [^\\r\\n]$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\.$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE(: .*)?$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE (?:OK|BŁĄD.*)$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE[ \\t\\r]+$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [^|]+ .*$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
 ]
@@ -1245,6 +1255,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+        "napis bez r: reguła czyta tekst źródła jak surowy": f'{_PATTERN}re.compile("PONOWIENIE\\\\.$")\n',
     },
 }
 

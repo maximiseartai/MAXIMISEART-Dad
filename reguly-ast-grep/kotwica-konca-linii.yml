@@ -14,7 +14,11 @@ rule:
   kind: string
   regex: '[^\\]\$["'']$'
   not:
-    regex: '(\\r\?|\\s[*+?]|\\n)\$["'']$'
+    # Przepuszcza literał bez | poza ucieczką i klasą, którego ostatni atom przed $ bierze \r: ., \r, \s, klasa [^…]
+    # bez \r i \s albo klasa z \r lub \s, z kwantyfikatorem i nawiasami zamykającymi bez ? ani * po nich. Linię CRLF
+    # taki wzorzec widzi z samego kształtu, bo atom bierze \r, a $ pasuje przed końcowym \n.
+    regex: >-
+      ^[a-zA-Z]*("""|'''|"|')([^|\\\[]|\\.|\[([^\]\\]|\\.)*\])*(\.|\\[rs]|\[\^([^\]\\]|\\[^rs])*\]|\[(\\[rs]|([^\]\\^]|\\.)([^\]\\]|\\.)*?\\[rs])([^\]\\]|\\.)*\])([*+?]|\{[0-9,]*\})?\??(\)(\+|\{[1-9][0-9,]*\})?)*\$("""|'''|"|')$
   inside:
     kind: call
     stopBy: end
