@@ -214,8 +214,11 @@ def _statement(call: ast.Call, parents: dict[int, ast.AST]) -> ast.AST:
 def _fixed_loop(loop: ast.For, parents: dict[int, ast.AST], bound: Counter[str]) -> bool:
     """Whether ``loop`` runs its body at least once and as many times as the code says (see the module docstring)."""
 
-    def fixed(node: ast.expr, kinds: tuple[type[ast.expr], ...] = (ast.Tuple, ast.List)) -> bool:
-        return isinstance(node, kinds) and bool(node.elts) and not any(isinstance(e, ast.Starred) for e in node.elts)
+    def fixed(node: ast.expr, lists: bool = True) -> bool:
+        if not (isinstance(node, ast.Tuple) or (lists and isinstance(node, ast.List))):
+            return False
+        assert isinstance(node, ast.Tuple | ast.List)
+        return bool(node.elts) and not any(isinstance(e, ast.Starred) for e in node.elts)
 
     block = next(body for _, body in ast.iter_fields(parents[id(loop)]) if isinstance(body, list) and loop in body)
     earlier = block[: block.index(loop)]
@@ -223,7 +226,7 @@ def _fixed_loop(loop: ast.For, parents: dict[int, ast.AST], bound: Counter[str])
         isinstance(node, ast.Assign | ast.AnnAssign)
         and [ast.unparse(target) for target in getattr(node, "targets", [getattr(node, "target", None)])] == [loop.iter.id]
         and node.value is not None
-        and fixed(node.value, (ast.Tuple,))
+        and fixed(node.value, lists=False)
         for node in earlier
     )
     jumps = any(isinstance(node, ast.Break | ast.Continue) for part in loop.body for node in ast.walk(part))
