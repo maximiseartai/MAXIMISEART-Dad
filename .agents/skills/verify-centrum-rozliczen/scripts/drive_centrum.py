@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import DriveFailure, Run, dad_context
-from drive.waiting import Budget
+from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
 from import_dynamiczny import modul
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             finally:
                 browser.close()
-    except (DriveFailure, AssertionError, PlaywrightError) as exc:
+    except (DriveFailure, TimedOut, AssertionError, PlaywrightError) as exc:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
     finally:

@@ -325,3 +325,71 @@ def test_expect_drive_bez_timeout_czeka_budzet_asercji(monkeypatch: pytest.Monke
 
     assert isinstance(waiting.expect, Expect)
     assert defaults == [{"timeout": waiting.Budget.ASSERTION.ms}]
+
+
+class _Karta:
+    """Karta w teście: żądanie kliknięcia wychodzi z niej dopiero przy ``po_ilu``-tym czekaniu Playwrighta, jak zapis karty
+    w trybie wolnego runnera, a klient synchroniczny dostarcza zdarzenie tylko w swoim wywołaniu (#1682)."""
+
+    def __init__(self, po_ilu: int | None) -> None:
+        self.sent: list[SimpleNamespace] = []
+        self.czekania = 0
+        self.po_ilu = po_ilu
+
+    def wait_for_timeout(self, ms: float) -> None:
+        self.czekania += 1
+        if self.czekania == self.po_ilu:
+            self.sent.append(SimpleNamespace(response=lambda: None))
+
+
+def test_czekanie_na_zadanie_karty_czeka_w_playwright_wiec_zdarzenie_dochodzi(
+    common: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    waiting = importlib.import_module("drive.waiting")
+    monkeypatch.setattr(waiting, "time", _Zegar())
+    karta = _Karta(po_ilu=5)
+
+    assert waiting.until(lambda: len(karta.sent) >= 1, "the click sends its request", 1.0, page=karta) is True
+    assert karta.czekania == 5
+
+
+def test_powtorzone_klikniecie_liczy_zadanie_ktore_wyszlo_z_karty_pozno(common: ModuleType) -> None:
+    """``settle`` liczy żądania dopiero, gdy kliknięcie wysłało swoje: stały sen liczył za wcześnie (lista #1539, miejsce 4),
+    a kliknięcie, które ma nic nie wysłać (``at_least=0``), nie czeka na żądanie."""
+
+    pozna = _Karta(po_ilu=8)
+    bez_zadania = _Karta(po_ilu=None)
+
+    assert common.settle(pozna, pozna.sent) == 1
+    assert common.settle(bez_zadania, bez_zadania.sent, at_least=0) == 0
+
+
+@pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])
+def test_okno_taty_w_trybie_wolnego_runnera_wysyla_zapisy_pozno_i_zwalnia_animacje_a_bez_trybu_nie(
+    common: ModuleType, monkeypatch: pytest.MonkeyPatch, slow: bool
+) -> None:
+    """Przegląd #1682, D3: flaga ``--wolny-runner`` (``SLOW_RUNNER``) wpina w każde okno taty opóźnione zapisy karty i
+    wolne animacje każdej jego strony, a bez flagi okno jest zwykłe."""
+
+    if slow:
+        monkeypatch.setenv(common.SLOW_RUNNER, "1")
+    else:
+        monkeypatch.delenv(common.SLOW_RUNNER, raising=False)
+    scripts: list[str] = []
+    cdp: list[tuple[str, object]] = []
+    pages: list[Callable[[object], None]] = []
+    context = SimpleNamespace(
+        add_init_script=scripts.append,
+        on=lambda event, handler: pages.append(handler) if event == "page" else None,
+        new_cdp_session=lambda page: SimpleNamespace(send=lambda method, params: cdp.append((method, params))),
+    )
+
+    common.dad_context(SimpleNamespace(new_context=lambda **_: context))
+    for opened in pages:
+        opened(object())
+
+    slowed = (
+        [common.LATE_WRITES % common.LATE_WRITE_MS],
+        [("Animation.setPlaybackRate", {"playbackRate": common.SLOW_ANIMATIONS})],
+    )
+    assert (scripts, cdp) == (slowed if slow else ([], []))

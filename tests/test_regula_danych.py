@@ -183,14 +183,14 @@ def wysylka(komorka: str, post: Post) -> Post:
     object.__setattr__(post, "parts", (komorka,))
     return post
 """,
-    "plik Archiwum z komórki": """\
-from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post
-from rozliczenia.client_data import ForbiddenValues
+    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import NewIssue, Post
 
 
-def wysylka(komorka: str, pamiec: ForbiddenValues, cel: PeriodThread) -> Post:
-    plik = ArchiveFile("logi-08_14_09_2026", "Logi", "Opis", "logi.json", komorka)
-    return Post(cel, "08_14_09_2026", "r", None, (pamiec.guard("Logi", "treść").text,), plik)
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
 """,
 }
 

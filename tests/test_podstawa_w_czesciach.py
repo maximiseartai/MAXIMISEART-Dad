@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 from types import ModuleType, SimpleNamespace
@@ -209,12 +210,17 @@ def test_wolny_runner_dostaja_serwer_i_drive_a_bez_flagi_zaden_krok(
     assert environments == dict.fromkeys(("fixture", "server", "doctor", "drive", "cleanup", "self-test"), slow)
 
 
-def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(monkeypatch: pytest.MonkeyPatch) -> None:
+def _serve_centrum(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.syspath_prepend(str(CENTRUM / "scripts"))
     spec = importlib.util.spec_from_file_location("serve_centrum", CENTRUM / "scripts" / "serve_centrum.py")
     assert spec is not None and spec.loader is not None
     serve = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(serve)
+    return serve
+
+
+def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(monkeypatch: pytest.MonkeyPatch) -> None:
+    serve = _serve_centrum(monkeypatch)
     # Opóźnienie dłuższe niż każda odpowiedź samej strony, więc obie strony nierówności nie zależą od obciążenia.
     monkeypatch.setattr(serve, "API_DELAY_S", 1.0)
     taken: dict[str, float] = {}
@@ -231,6 +237,38 @@ def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(mo
 
     assert taken["/api/settings"] >= 1.0
     assert taken["/index.html"] - taken["/api/settings"] < 1.0
+
+
+@pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])
+def test_serwer_centrum_w_trybie_wolnego_runnera_bierze_api_pozniej_a_bez_trybu_od_razu(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, slow: bool
+) -> None:
+    """Przegląd #1682, D3: serwer przebiegu z ``SLOW_RUNNER`` (flaga ``--wolny-runner``) bierze każde zapytanie API przez
+    ``_LateApi``, a bez flagi bez niego. Serwer powstaje z prawdziwego fixture'a przebiegu, tylko bez nasłuchu."""
+
+    serve = _serve_centrum(monkeypatch)
+    root = tmp_path / "root"
+    subprocess.run(
+        [sys.executable, str(CENTRUM / "scripts" / "create_centrum_fixture.py"), "--root", str(root)],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    if slow:
+        monkeypatch.setenv(serve.SLOW_RUNNER, "1")
+    else:
+        monkeypatch.delenv(serve.SLOW_RUNNER, raising=False)
+    served: list[Any] = []
+
+    def serve_without_listening(app: Any, **_: object) -> int:
+        served.append(app)
+        return 0
+
+    monkeypatch.setattr(serve, "serve", serve_without_listening)
+
+    assert serve.main(["--root", str(root), "--port", "0"]) == 0
+    [app] = served
+    assert [layer.cls for layer in app.user_middleware if layer.cls is serve._LateApi] == ([serve._LateApi] if slow else [])
 
 
 def test_rejestr_funkcji_centrum_ma_kazdy_numer_zrzutu_w_jednej_funkcji_i_potrzeby_przed_funkcja(
