@@ -64,7 +64,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, LoggedOrder, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import GuardedLogs
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, exact_logs
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.file_state import folder_entries, remove_file
 from rozliczenia.wall_clock import utc_now
@@ -436,13 +436,12 @@ class LogsOnDisk:
     def write(self, logs: GuardedLogs) -> None:
         """Plik Logów ``logs`` (nowy albo nadpisany atomowo) z bajtami pliku w Archiwum Logów okresu
         (``ArchiveFile.packed``): ``text`` w UTF-8 bez zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows,
-        więc ``gunzip`` pliku z Archiwum daje plik z komputera taty bajt w bajt. Logi innego typu niż ``GuardedLogs`` (np.
-        sprzed strażnika przez ``Any``) rzucają ``TypeError`` (``run_logs_guard._MINTED``); ``OSError``: pliku nie udało się
-        zapisać."""
+        więc ``gunzip`` pliku z Archiwum daje plik z komputera taty bajt w bajt. Logi typu innego niż dokładnie
+        ``GuardedLogs`` (np. sprzed strażnika przez ``Any`` albo podklasa) rzucają ``TypeError`` (``exact_logs``);
+        ``OSError``: pliku nie udało się zapisać."""
 
-        if not isinstance(logs, GuardedLogs):
-            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
-        replace_atomically(self._logs / name_of(logs.record.start), logs.text, newline="")
+        checked = exact_logs(logs)
+        replace_atomically(self._logs / name_of(checked.record.start), checked.text, newline="")
 
     def last_start(self) -> StartFacts | None:
         """Ostatni start Uruchomienia przed tą pracą Centrum; ``None``: żadnego albo pliku nie da się odczytać."""
