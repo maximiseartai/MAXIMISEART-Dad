@@ -305,7 +305,8 @@ class _Playwright(ModuleType):
     @contextmanager
     def sync_playwright() -> Iterator[Any]:
         page = SimpleNamespace(set_default_timeout=lambda timeout: None)
-        browser = SimpleNamespace(new_context=lambda **options: SimpleNamespace(new_page=lambda: page), close=lambda: None)
+        context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+        browser = SimpleNamespace(new_context=lambda **options: context, close=lambda: None)
         yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
 
 

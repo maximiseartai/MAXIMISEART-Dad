@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
-from drive.common import DriveFailure, Run, dad_context
+from drive.common import DriveFailure, Run, dad_context, page_requests
 from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     selected = ALL if args.feature == ["all"] else tuple(args.feature)
     driven: list[str] = []
     try:
-        with sync_playwright() as playwright:
+        with sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch()
             try:
                 page = dad_context(browser).new_page()
@@ -80,9 +80,11 @@ def main(argv: list[str] | None = None) -> int:
                         page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
                     except PlaywrightError as shot:
                         exc.add_note(f"zz-failure.png not taken: {shot.message}")
+                page_requests.check(exc)
                 raise
             finally:
                 browser.close()
+        page_requests.check()
     except (DriveFailure, TimedOut, AssertionError, PlaywrightError) as exc:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
