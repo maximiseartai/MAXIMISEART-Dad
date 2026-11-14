@@ -10,7 +10,11 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
   ``Dowód: <tekst>`` z najwyżej 5 liniami treści po najwyżej 300 znaków (tekst pola ``Dowód:``, linie akapitu po nim
   i niepuste linie bloków kodu, do pola ``Korzeń:``), ``Korzeń: R-KOD - <zdanie>`` albo ``Korzeń: NOWY R-KOD -
   <opis>`` oraz ``Szczebel: (a) - <zdanie>`` ze szczeblem od ``(a)`` do ``(e)``; dłuższy dowód recenzent zapisuje
-  w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę;
+  w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; po Szczeblu może stać jeszcze pole ``Idiom:`` w jednej
+  z trzech postaci z [ADR 0036](../../docs/adr/0036-chwast-to-regula.md): ``Idiom: <id> jak #N W<n> r<k>`` (drugie
+  wystąpienie idiomu bez reguły, ``<id>`` to reguła, którą PR ma dodać), ``Idiom: <id>`` (ucieczka istniejącej reguły
+  ``<id>``) albo ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to
+  pole ``id`` reguły ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;
 - na końcu ``## Sprawdzone`` z 1 do 5 niepustymi punktami listy, a po nich nic; punkt, który zaczyna się od
@@ -57,14 +61,22 @@ CODE = re.compile(r"R-[A-Z0-9]+(?:-[A-Z0-9]+)*")
 HEADING = re.compile(r"([WD])(\d+)\. (\S.*)")
 ROOT_FIELD = re.compile(rf"Korzeń: (NOWY )?({CODE.pattern}) - (\S.*)")
 RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
+# Pole ``Idiom:`` Ważnego (ADR 0036, „Pole werdyktu”): id reguły, klasa idiomu bez reguły i wcześniejsze Ważne ``jak``.
+CLASSES = ("brak-testu", "stan-kroku")
+RULE_ID = r"[\w.-]+"
+_EARLIER = r" jak #(\d+) (W\d+) r(\d+)"
+IDIOM_LIKE = re.compile(rf"Idiom: ({RULE_ID}){_EARLIER}")
+IDIOM_ESCAPE = re.compile(rf"Idiom: ({RULE_ID})")
+IDIOM_NO_RULE = re.compile(rf"Idiom: bez reguły ({'|'.join(CLASSES)}){_EARLIER}")
 # Punkt „## Sprawdzone”, którym recenzent rozstrzyga kod Ważnego z wcześniejszej rundy (decyzja Q25).
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
-FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:")
+FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:", "Idiom:")
 # ``plik:linia`` albo ``plik:linia-linia`` pola ``Gdzie:`` (``places``).
 PLACE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]*\w|[\w-][\w.-]*\.[A-Za-z]\w*):(\d+)(?:[-–](\d+))?(?!\d)")
 ENTRY_KEYS = frozenset({"opis", "przyklad"})
 QUOTE = "cytat z polem albo nagłówkiem w Dowodzie ujmij w blok kodu ```"
+IDIOM_FORMS = f"Idiom: <id> jak #N W<n> r<k>”, „Idiom: <id>” ani „Idiom: bez reguły <{'|'.join(CLASSES)}> jak #N W<n> r<k>"
 # Bloki, które GitHub stawia w punkcie listy: luźna lista owija tekst punktu w akapit, a każdy inny blok to odmowa.
 _LOOSE_ITEM = "p"
 _VOID = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "source", "track", "wbr"})
@@ -90,12 +102,25 @@ class Root:
 
 
 @dataclass(frozen=True)
+class Idiom:
+    """Pole ``Idiom:`` Ważnego ``label``: ``rule`` to id reguły (``None`` w postaci ``bez reguły``), ``klass`` klasa
+    idiomu bez reguły (``None`` z regułą), a ``like`` wcześniejsze Ważne z ``jak #N W<n> r<k>``: PR, Ważne i runda
+    (``None`` w postaci ``Idiom: <id>``, czyli przy ucieczce istniejącej reguły)."""
+
+    label: str
+    rule: str | None
+    klass: str | None
+    like: tuple[int, str, int] | None
+
+
+@dataclass(frozen=True)
 class Findings:
     """Kody korzeni z treści werdyktu: ``majors`` po jednym na Ważne w kolejności, ``resolutions`` z punktów
-    rozstrzygnięcia w „## Sprawdzone”."""
+    rozstrzygnięcia w „## Sprawdzone”, a ``idioms`` z pól ``Idiom:`` Ważnych, które je mają."""
 
     majors: tuple[Root, ...]
     resolutions: tuple[Root, ...]
+    idioms: tuple[Idiom, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -279,7 +304,19 @@ def evidence_problems(label: str, evidence: str, items: Sequence[Item]) -> list[
     return problems
 
 
-def _major(label: str, block: Sequence[Item], roots: list[Root]) -> list[str]:
+def idiom(label: str, text: str) -> Idiom | None:
+    """Pole ``Idiom:`` Ważnego ``label`` z linii ``text`` w jednej z trzech postaci; ``None`` w każdej innej."""
+
+    if found := IDIOM_NO_RULE.fullmatch(text):
+        return Idiom(label, None, found[1], (int(found[2]), found[3], int(found[4])))
+    if found := IDIOM_LIKE.fullmatch(text):
+        return Idiom(label, found[1], None, (int(found[2]), found[3], int(found[4])))
+    if found := IDIOM_ESCAPE.fullmatch(text):
+        return Idiom(label, found[1], None, None)
+    return None
+
+
+def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Idiom]) -> list[str]:
     order = f"{label}: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel"
     where = _value(block[0], "Gdzie:") if block else None
     if where is None:
@@ -301,7 +338,13 @@ def _major(label: str, block: Sequence[Item], roots: list[Root]) -> list[str]:
         return [*problems, f"{order}, a po Korzeniu jest koniec"]
     if rest[1].kind != "line" or RUNG_FIELD.fullmatch(rest[1].text) is None:
         problems.append(f"{label}: {rest[1].shown()} to nie „Szczebel: (a) - zdanie” ze szczeblem od (a) do (e)")
-    return [*problems, *(f"{label}: po Szczeblu nic więcej, a jest {item.shown()}" for item in rest[2:])]
+    after = list(rest[2:])
+    if after and _value(after[0], "Idiom:") is not None:
+        if (found_idiom := idiom(label, after.pop(0).text)) is None:
+            problems.append(f"{label}: „{rest[2].text}” to nie „{IDIOM_FORMS}”")
+        else:
+            idioms.append(found_idiom)
+    return [*problems, *(f"{label}: po Szczeblu tylko pole Idiom:, a jest {item.shown()}" for item in after)]
 
 
 def _minor(label: str, block: Sequence[Item]) -> list[str]:
@@ -348,6 +391,7 @@ def findings(units: Sequence[Item]) -> Findings:
 def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list[str], Findings]:
     found: list[str] = []
     roots: list[Root] = []
+    idioms: list[Idiom] = []
     counts = {"W": 0, "D": 0}
     end = next((index for index, item in enumerate(units) if item.kind == "h2" and item.text == CHECKED), len(units))
     index = 0
@@ -367,7 +411,7 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list
         block = units[index + 1 : after]
         if kind == "W":
             roots.append(Root(label, False, None))
-            found.extend(_major(label, block, roots))
+            found.extend(_major(label, block, roots, idioms))
         else:
             found.extend(_minor(label, block))
         index = after
@@ -388,4 +432,4 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list
             found.append(f"punkt „{point.text}” to nie rozstrzygnięcie „Korzeń W<n> r<runda>: R-KOD - zdanie” (punkt „## {CHECKED}” nie zaczyna się od „{RESOLUTION_START.strip()}”, gdy nim nie jest)")
         else:
             resolutions.append(Root(resolved[1], bool(resolved[3]), resolved[4], int(resolved[2])))
-    return found, Findings(tuple(roots), tuple(resolutions))
+    return found, Findings(tuple(roots), tuple(resolutions), tuple(idioms))

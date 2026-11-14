@@ -28,6 +28,11 @@ liczy ``odpalenia_ast_grep.on_added_lines``, ta sama funkcja co zapadka ``syntax
 którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzła (odpala też ``severity: off``):
 
     .venv/bin/python tools/na_scalonych_pr.py --regula reguly-ast-grep/x.yml --wazne 1533/W1/r2 --ostatnie 20
+    .venv/bin/python tools/na_scalonych_pr.py --regula-id x --z-commita <SHA HEAD PR> --wazne 1533/W1/r2
+
+``--regula-id ID --z-commita REV`` bierze regułę o polu ``id`` równym ``ID`` z pliku ``*.yml`` albo ``*.yaml``
+katalogów ``ruleDirs`` pliku ``sgconfig.yml`` na commicie ``REV`` (tam, skąd czyta ją zapadka); commit bez takiej
+reguły to ``DOWÓD ODMOWA``, bo próbka ``ZNANE_LUKI`` reguły nie zastępuje. Tak uruchamia dowód ``tools/scal_pr.py``.
 
 1. Każde ``--wazne PR/W<n>/r<k>``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k`` PR-u (``werdykt_pr.rounds``), na
    liniach dodanych od ``merge-base`` bazy PR-u z SHA linii ``WERDYKT`` tego werdyktu do tego SHA. Ważne jest
@@ -40,9 +45,11 @@ którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzł
    ``.agents/``), tylko jako dana.
 
 Kończy się ``DOWÓD OK|ODMOWA | <id reguły> | złapane k/n | FP x w y z N PR (p%) | main z``, gdzie ``x`` to odpalenia
-w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; błąd
-GitHuba, brak werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to
-``DOWÓD ODMOWA | <reguła> | <błąd>``.
+w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; reguła bez
+niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``), błąd GitHuba, brak
+werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
+``DOWÓD OK`` znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
+z polem ``Idiom:`` (``bramka_idiomu``).
 """
 
 from __future__ import annotations
@@ -58,6 +65,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 import time
 
 import yaml
@@ -81,6 +89,7 @@ WHERE = "Gdzie:"
 WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
 FUNCTIONS = "id: funkcja\nlanguage: python\nrule:\n  kind: function_definition\n"  # także async def
 FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód przechodzi
+CONFIG = "sgconfig.yml"
 
 
 @dataclass(frozen=True)
@@ -258,8 +267,46 @@ def _fork(base: str, commit: str) -> str:
     return repo.merge_base(ROOT, f"{merges[-1]}^1" if merges else base, commit)
 
 
+def rule_on(commit: str, rule: str) -> dict[str, object] | None:
+    """Dokument reguły ast-grep o id ``rule`` z katalogów ``ruleDirs`` pliku ``CONFIG`` na ``commit``; ``None`` bez niej.
+    Błąd pobrania to ``ValueError``."""
+
+    if problem := fetched(commit):
+        raise ValueError(problem)
+    if not repo.succeeds(ROOT, "cat-file", "-e", f"{commit}:{CONFIG}"):
+        return None
+    directories = [str(folder) for folder in (yaml.safe_load(repo.git(ROOT, "show", f"{commit}:{CONFIG}")) or {}).get("ruleDirs") or []]
+    for path in repo.git(ROOT, "ls-tree", "-r", "--name-only", commit, "--", *directories).splitlines() if directories else []:
+        if path.endswith((".yml", ".yaml")):
+            for document in yaml.safe_load_all(repo.git(ROOT, "show", f"{commit}:{path}")):
+                if isinstance(document, dict) and str(document.get("id")) == rule:
+                    return document
+    return None
+
+
+def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
+    """Dowód reguły o id ``rule`` z ``commit`` (``rule_on``) jak ``proof``."""
+
+    try:
+        document = rule_on(commit, rule)
+    except (ValueError, subprocess.CalledProcessError, yaml.YAMLError) as error:
+        print(f"DOWÓD ODMOWA | {rule} | {error}")
+        return 1
+    if document is None:
+        print(f"DOWÓD ODMOWA | {rule} | na {commit[:8]} nie ma reguły ast-grep o id {rule} w katalogach ruleDirs {CONFIG}; próbka ZNANE_LUKI nie zastępuje reguły")
+        return 1
+    with tempfile.TemporaryDirectory(prefix="regula-") as folder:
+        path = Path(folder) / f"{rule}.yml"
+        path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        return proof(path, majors, numbers, last)
+
+
 def proof(rule: Path, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
-    name = str(yaml.safe_load(rule.read_text(encoding="utf-8"))["id"])
+    document = yaml.safe_load(rule.read_text(encoding="utf-8"))
+    name = str(document["id"])
+    if problem := odpalenia_ast_grep.unscoped(document):
+        print(f"DOWÓD ODMOWA | {name} | {problem}")
+        return 1
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         catches = sum(caught(rule, repository, *one) for one in majors)
@@ -293,13 +340,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--commit", action="append", default=[], help="Dowolny commit, np. HEAD PR-u z werdyktem FAIL.")
     parser.add_argument("--wyniki", type=Path, help="Katalog na pełne wyjście każdego PR-u.")
     parser.add_argument("--narzedzia", metavar="REV", help="Narzędzia z tego commitu zamiast z checkoutu, np. origin/main dla porównania.")
-    parser.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
+    rule = parser.add_mutually_exclusive_group()
+    rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
+    rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id z ruleDirs sgconfig.yml na --z-commita.")
+    parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     args = parser.parse_args(arguments[:split])
-    if args.regula is not None:
-        if command or not args.wazne:
-            parser.error("dowód reguły: --regula PLIK.yml i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")
-        return proof(args.regula, args.wazne, args.pr, args.ostatnie or (0 if args.pr else 20))
+    if args.regula is not None or args.regula_id is not None:
+        if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
+            parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")
+        last = args.ostatnie or (0 if args.pr else 20)
+        if args.regula_id is not None:
+            return proof_on(commit_of(args.z_commita), args.regula_id, args.wazne, args.pr, last)
+        return proof(args.regula, args.wazne, args.pr, last)
     if not command or not (args.pr or args.ostatnie or args.commit):
         parser.error("podaj PR-y (--pr, --ostatnie albo --commit) i polecenie po --, np. -- tools/mutacje_zmiany.py --baza HEAD^1")
     try:

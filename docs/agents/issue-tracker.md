@@ -13,7 +13,6 @@ Use `gh` for all operations.
 - Apply or remove labels with `gh issue edit <number> --add-label "..."` or `--remove-label "..."`.
 - Close an issue with `gh issue close <number> --comment "..."`.
 - Infer the repository from the Git remote; `gh` runs inside this clone.
-- Take issues labelled `chwast` in the order of the one open issue labelled `kolejka-chwastow`, read by `rejestr_korzeni.queue` (`tools/lib/rejestr_korzeni.py`); only the head of that queue has `ready-for-agent` ([ADR 0034](../adr/0034-kod-jest-pamiecia.md)).
 
 ## Specs, sub-issues, and dependencies
 

@@ -513,6 +513,7 @@ FAST_GIT = frozenset(
         "for-each-ref",
         "log",
         "ls-files",
+        "ls-tree",
         "merge-base",
         "merge-tree",
         "rev-list",

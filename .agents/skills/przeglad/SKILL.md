@@ -20,6 +20,7 @@ W tym repo Ważne były zwykle:
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
 - przypisanie albo zakres liczony od złej linii lub złego commitu (np. `git blame` pierwszej linii wielowierszowej instrukcji).
 - zmiana wspólnego elementu okna Centrum (sekcja okna Ustawień, menu, toast, okno dialogowe), która wywraca funkcję drive `verify-centrum-rozliczen` inną niż ta, którą autor uruchomił (#1517: nowa sekcja wywróciła `okno-ustawien`, które wymienia każdą sekcję).
+- tłumienie reguły chwastu na dodanej linii (`# noqa`, `# ruff: noqa`, `# ast-grep-ignore`, także z powodem, terminem i zgodą Maksa) albo jej zwolnienie poza prawem właściciela z `AGENTS.md` (nowy wpis `per-file-ignores` albo `ignores:`, zawężone `files:`, usunięta reguła), dopóki nie odmawia go krok Required CI PR kroku ukryć ticketu #1676 (#1720, [ADR 0036](../../../docs/adr/0036-chwast-to-regula.md), reguła przejściowa).
 
 Dziura w sprawdzeniu to też defekt zachowania.
 W PR, który dodaje albo zmienia sprawdzenie (test struktury, checker, hook, skrypt mutacji, bramka CI, reguła lintu), Ważne jest odtworzony przypadek, który według wiersza reguły, docstringu albo opisu PR to sprawdzenie powinno wywrócić, a ono go przepuszcza, i wywrócenie się sprawdzenia na poprawnym wejściu.
@@ -44,8 +45,9 @@ Ta sama reguła obowiązuje przy poprawce operatora.
 
 - **Korzeń** to to, co skłoniło agenta do błędu, a nie sam błąd: skopiowany najbliższy przykład, druga droga do tego samego, brak typu albo właściciela, instrukcja.
   Korzeń ma kod z zamkniętej listy [`korzenie.toml`](korzenie.toml), a każdy kod ma tam jedno zdanie i przykład PR.
-- **Chwast** to korzeń, który dał Ważne w co najmniej 2 różnych PR-ach.
-  Powrót korzenia w innym PR to porażka i zadanie.
+  Kod korzenia to kategoria, więc jego powrót w innym PR niczego nie blokuje ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)).
+- **Chwast** to reguła detektora: reguła ast-grep, klucz `banned-api` ruff albo kontrakt import-linter, z komunikatem „użyj X” i próbkami.
+  Prawdziwy powrót to odpalenie reguły na dodanej linii w Required CI, a ucieczka to wystąpienie idiomu po merge'u jego reguły, którego reguła nie złapała.
 - **Szczebel** to poziom, na którym korzeń wyrwano, od najwyższego:
   - (a) usuń drugą drogę i stare przykłady, daj jednego właściciela;
   - (b) typ, z którym zła droga nie przechodzi mypy, albo reguła ruff (`banned-api` z `msg` „użyj X”);
@@ -66,8 +68,6 @@ Reguły szczebla i dowodu:
   „Bez mechanizmu” nie jest szczeblem.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja z `tools/mutacje.py` albo cofnięcie poprawki).
   Recenzent następnej rundy powtarza ten dowód i jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
-- Korzeń, który wraca po wcześniejszym wyrwaniu, wyrywa się szczebel wyżej niż poprzednio.
-  Gdy wyższego nie ma, także po szczeblu (e), decyduje Maks.
 - Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie: punktem `Korzeń W<n> r<k>: R-KOD - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Rejestr korzeni i bramka korzenia biorą kod z ostatniego werdyktu, który dotyczy tego Ważnego.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
@@ -77,6 +77,18 @@ Reguły szczebla i dowodu:
   `tools/scal_pr.py --werdykt` przyjmuje `NOWY` tylko z kodem w postaci kodów listy, którego nie ma na liście HEAD PR, i z niepustym opisem.
   Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.
   NOWY kod musi być na liście przed merge'em PR, a bez niego `tools/scal_pr.py` odmawia merge'a.
+
+Drugie wystąpienie idiomu ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)):
+
+- Pole `Idiom:` pisze recenzent, nie autor, w Ważnym po polu `Szczebel:`, w jednej z trzech postaci:
+  - `Idiom: <id> jak #N W<n> r<k>`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
+  - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
+  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy żaden mechanizm z definicji chwastu nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
+- PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N W<n> r<k>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` i gdy jej dowód przechodzi.
+  Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły; wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
+  Dowód to `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>` z każdym przypadkiem tej reguły z historii jej pól `Idiom:`, a `tools/scal_pr.py` uruchamia go z kodu bazy przy merge'u; dziś umie tylko reguły ast-grep.
+- Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
+- Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela; do merge'a PR kroku ukryć ticketu #1676 to Ważne z sekcji „Co jest porażką”.
 
 ## Dowody
 
@@ -100,6 +112,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
+Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>, albo Idiom: bez reguły <brak-testu|stan-kroku> jak #N W<n> r<k>; tylko gdy idiom się powtarza)
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ## Sprawdzone
@@ -107,7 +120,7 @@ Gdzie: <plik:linia>
 ```
 
 Pierwsza linia to `WERDYKT: PASS <pełny SHA HEAD>` albo `WERDYKT: FAIL <pełny SHA HEAD>`, a druga `Znaleziska: N (Ważne a, Drobne b)`.
-Ważne (`### W1.`, `### W2.`) stoją przed Drobnymi (`### D1.`), każde z polami w kolejności szablonu.
+Ważne (`### W1.`, `### W2.`) stoją przed Drobnymi (`### D1.`), każde z polami w kolejności szablonu, a pole `Idiom:` stoi tylko w Ważnym, które go potrzebuje (sekcja „Korzeń i chwast”).
 `PASS` bez znalezisk ma tylko dwie pierwsze linie i `## Sprawdzone`.
 Punkt `## Sprawdzone`, który zaczyna się od `Korzeń `, to rozstrzygnięcie kodu Ważnego z wcześniejszej rundy (`- Korzeń W1 r1: R-KOD - zdanie`, sekcja „Korzeń i chwast”), a kod sprawdza się jak w polu `Korzeń:`.
 Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
@@ -142,7 +155,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
    ```
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
-3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
+3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), dla Ważnego z polem `Idiom: <id>` dodaj albo popraw regułę ast-grep o tym id z jej dowodem, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście albo dzielisz PR.
 
 ## Tryb recenzenta: werdykt na PR
@@ -157,7 +170,7 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
 2. Przejrzyj diff według sekcji „Co jest porażką” i „Dowody”, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
    Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu blokiem szablonu z sekcji „Postać werdyktu”, żeby przerwany przegląd zostawił znaleziska.
-   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml) i szczebel z sekcji „Korzeń i chwast”.
+   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml) i szczebel z sekcji „Korzeń i chwast”, a gdy idiom się powtarza albo ucieka regule, pole `Idiom:` z tej sekcji.
    Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku, Ważne z korzeniem i szczeblem.
 3. Dopisz na górę pliku dwie linie z sekcji „Postać werdyktu”, a na koniec `## Sprawdzone` z 1–5 punktami.
    Krok kończy się, gdy liczby w drugiej linii zgadzają się ze znaleziskami w pliku.
@@ -165,7 +178,6 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
    Narzędzie sprawdza obie linie, SHA HEAD i szablon, a gdy odmawia, popraw plik według jego komunikatu i wzoru i uruchom je ponownie.
    Werdykt sądzi kod `origin/<baza PR>`, jak przy merge'u, a nie kod Twojego checkoutu HEAD PR: narzędzie uruchamia się wtedy samo z kopii bazy i mówi to linią `SĘDZIA`.
    Gdy HEAD PR zmienił się w trakcie, przejrzyj diff od przejrzanego SHA do nowego HEAD, zanim zmienisz SHA w pliku.
-   Gdy kod Ważnego ma wystąpienie w innym PR, narzędzie zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do otwartego i podaje to w linii `WERDYKT OK` po `| CHWAST`.
    Krok kończy się linią `WERDYKT OK` z adresem komentarza: oddaj wywołującemu ścieżkę pliku i tę linię.
 
 ## Karta korzeni (poniedziałek)
