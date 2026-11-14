@@ -333,9 +333,9 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
     assume(not after[:1].isalnum() or (closing and not closing.isalnum()))
     assume(client_data.free_text(before + after) == before + after)
 
-    guarded = client_data.empty_memory().guard(f"{before}{opening}{written}{closing}{after}", "własność")
+    wynik = client_data.guarded(client_data.empty_memory(), f"{before}{opening}{written}{closing}{after}", "własność")
 
-    assert guarded == client_data.Guarded(client_data.tool(f"{before}{opening}{mask}{closing}{after}"), ())
+    assert wynik == client_data.Guarded(client_data.tool(f"{before}{opening}{mask}{closing}{after}"), ())
 
 
 @PROPERTY
@@ -352,9 +352,9 @@ def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_
     )
     assume(not before[-1:].isalnum())
 
-    guarded = forbidden.guard(f"{before}{written}, dalej", "komórka L6")
+    wynik = client_data.guarded(forbidden, f"{before}{written}, dalej", "komórka L6")
 
-    assert guarded == client_data.Guarded(
+    assert wynik == client_data.Guarded(
         client_data.tool(f"{before}[adres], dalej"), ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
     )
-    assert forbidden.guard(f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"
+    assert client_data.guarded(forbidden, f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"

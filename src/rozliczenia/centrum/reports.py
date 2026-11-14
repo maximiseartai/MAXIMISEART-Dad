@@ -287,7 +287,7 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
 
 
 def _guarded(report: Report, period: str | None, forbidden: ForbiddenValues) -> _Preview:
-    """Podgląd Zgłoszenia po strażniku reguły danych (``ForbiddenValues.guard``): tytuł i treść bez zakazanych wartości,
+    """Podgląd Zgłoszenia po strażniku reguły danych (``guarded``): tytuł i treść bez zakazanych wartości,
     z zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
 
     title = guarded(forbidden, report.title, "tytuł Zgłoszenia")

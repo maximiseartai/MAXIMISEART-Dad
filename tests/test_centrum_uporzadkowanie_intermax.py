@@ -24,7 +24,7 @@ import pytest
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import intermax_copies, preparation_register, workbook_files
-from rozliczenia.client_data import empty_memory
+from rozliczenia.client_data import empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
@@ -1451,4 +1451,4 @@ def test_diagnoza_intermax_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpise
 
     preparation_register.register_problem(path, DadFiles(forbidden=memory))
 
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not guarded(memory, value, "Uwaga taty").notes] == []

@@ -27,12 +27,12 @@ from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsT
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
-    """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
+    """Logi po strażniku reguły danych (``guarded``): każdy tekst i klucz bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
     Strażnik widzi każdy tekst pliku: także datę, kwotę i wartość ``Decimal``, które JSON zapisuje jako tekst. Liczbę
     sprawdza w polu z wartościami z komórek pliku taty albo ze strony efenix (``READ_VALUES``: komórki Kopii wejścia i
-    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
+    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``guarded_number``), i liczba z
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia

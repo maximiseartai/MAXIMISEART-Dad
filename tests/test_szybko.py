@@ -53,7 +53,7 @@ BY_CHANGE_ONLY = {
     "tests/test_regula_danych.py::test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz": (
         "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
     ),
-    "tests/test_regula_danych.py::test_metody_straznika_nie_da_sie_podmienic_na_pamieci": (
+    "tests/test_regula_danych.py::test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie": (
         "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
     ),
     "tests/test_regula_danych.py::test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem": (

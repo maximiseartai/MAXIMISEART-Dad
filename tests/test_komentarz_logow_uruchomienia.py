@@ -81,7 +81,7 @@ from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, shown
+from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
@@ -505,7 +505,8 @@ def _plik(pola: str, *, importy: str = "", komorka: str = "komorka: str") -> str
     return _PLIK.format(importy=importy, komorka=komorka, pola=pola)
 
 
-_PAMIEC_Z_UWAGA: Final = """
+_PAMIEC_Z_UWAGA: Final = """from rozliczenia.client_data import guarded
+
 
 class Pamiec(ForbiddenValues):
     def __init__(self, prawdziwa: ForbiddenValues, komorka: str) -> None:
@@ -513,12 +514,13 @@ class Pamiec(ForbiddenValues):
         self.komorka = komorka
 
     def guard(self, text: str, place: str) -> Guarded:
-        return Guarded(self.prawdziwa.guard(text, place).text, (self.komorka,))
+        return Guarded(guarded(self.prawdziwa, text, place).text, (self.komorka,))
 """
-_UWAGA_Z_KOMORKI: Final = """
+_UWAGA_Z_KOMORKI: Final = """from rozliczenia.client_data import guarded
+
 
 def zla(prawdziwa: ForbiddenValues, komorka: str) -> object:
-    return lambda text, place: Guarded(prawdziwa.guard(text, place).text, (komorka,))
+    return lambda text, place: Guarded(guarded(prawdziwa, text, place).text, (komorka,))
 """
 
 
@@ -1827,7 +1829,7 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
     logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
-    assert forbidden.guard(_json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
+    assert guarded(forbidden, _json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
 
     guarded_logs = guard_logs(logs, forbidden)
     kept = guarded_logs.record
@@ -1918,7 +1920,7 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
     for value in sorted({value for value, _ in scalars}, key=shown):
         forbidden = empty_memory()
         forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
-        if not forbidden.guard(shown(value), "").notes:
+        if not guarded(forbidden, shown(value), "").notes:
             continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
         swept += 1
 
@@ -1927,9 +1929,9 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
 
         assert post_of(OwnLogs(guarded_logs)).run_id == RUN_ID, value
         assert [place for place in TOOL_FIELD_VALUES if _json_at(kept, place) != _json_at(logs, place)] == [], value
-        if not forbidden.guard(tool_words, "").notes:
-            assert not forbidden.guard(kept.text, "").notes, f"{value!r} zostało w Logach"
-        if value in names and not forbidden.guard(texts, "").notes:
+        if not guarded(forbidden, tool_words, "").notes:
+            assert not guarded(forbidden, kept.text, "").notes, f"{value!r} zostało w Logach"
+        if value in names and not guarded(forbidden, texts, "").notes:
             assert kept == logs, value
     assert swept > len(names)
 
