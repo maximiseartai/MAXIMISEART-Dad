@@ -24,7 +24,7 @@ występuje dokładnie raz, z jego selektorem i liczbą, budowę strony, której 
 (``HttpStatus``), a przy błędzie Playwrighta typ jego wyjątku i działanie okna, w którym wystąpił (``Operation``), bez
 treści wyjątku i strony. Wpisanie numeru i Enter w polu ``Numer``, które się nie udały, bo pola nie ma już na stronie
 dokładnie raz, to element z jego liczbą, a nie błąd Playwrighta: odpowiedź szukania listy mogła w tym czasie włożyć do
-``#wyniki`` stronę listy (#971). Status HTTP daje każda odpowiedź efenix ze statusem błędu (4xx, 5xx), na którą okno czeka
+``#wyniki`` stronę listy. Status HTTP daje każda odpowiedź efenix ze statusem błędu (4xx, 5xx), na którą okno czeka
 (szukanie, zapis daty, „Załaduj do zlecenia”, zapis ilości), zanim okno ją przeczyta, i strona, którą okno otwiera
 (lista zleceń, także przy starcie, i strona zlecenia), gdy przyszła ze statusem błędu, a okno jej nie przeczytało
 (nawigacja nie zgłasza błędu przy 4xx i 5xx). Czy to
@@ -61,18 +61,18 @@ przeładowanie strony, które robi skrypt efenix, i czyta stronę od nowa. Odpow
 to ``LoggedOut``, ze statusem błędu (4xx, 5xx) ``UnexpectedPage`` ze statusem (``HttpStatus``), a z przekierowaniem gdzie
 indziej ``UnexpectedPage`` z odpowiedzią w budowie, której okno nie zna; po każdej z nich okno strony nie czyta. Po
 odpowiedzi 2xx skrypt przeładowuje stronę także wtedy, gdy efenix odmówił, a strona bez Wyceny Emmetta wygląda jak pusta
-Wycena Emmetta (#877, #889). Czy efenix załadował Wycenę Emmetta, okno nie rozstrzyga: oddaje werdyktowi Wyceny
+Wycena Emmetta. Czy efenix załadował Wycenę Emmetta, okno nie rozstrzyga: oddaje werdyktowi Wyceny
 (``efenix_pricing``) obserwacje (``EmmettLoad``), czyli stronę po przeładowaniu i to, co okno Emmetta pokazało przed
 kliknięciem „Załaduj do zlecenia” (``Proposal``), w tym samym działaniu okna. Treści odpowiedzi „Załaduj do zlecenia”
-okno nie czyta, bo Chromium porzuca ją, gdy przeładowanie wyprzedzi odczyt (#895), a jej postaci nikt nie zmierzył.
+okno nie czyta, bo Chromium porzuca ją, gdy przeładowanie wyprzedzi odczyt, a jej postaci nikt nie zmierzył.
 Okno Emmetta liczy dwa razy: zaraz po kliknięciu przycisku Emmetta (dokładnie jedno ``#dialog_emmett``), a gdy któreś
 okno Emmetta jest już widoczne, regułą ``efenix_page.emmett_window_fault`` (dokładnie jedno okno, potem dokładnie jedna
 propozycja w nim), tą samą, którą narzędzie zgodności mierzy efenix. Na pokazanie czeka więc na dowolne okno Emmetta, a
 nie na jedyne, bo drugie okno dopisane przed pokazaniem ma być tą różnicą budowy, a nie błędem Playwrighta.
 Propozycja w oknie Emmetta (``#emmett-propozycja``) nic nie pokazała, gdy nie ma w niej elementu ani tekstu, a przyszła cała,
 gdy odpowiedź ``action_fill_emmett.php`` przyszła cała ze statusem 2xx: okno Emmetta jest puste także po statusie błędu,
-przekierowaniu i zerwanym połączeniu, bo skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno pokazuje i tak
-(#908). Tę odpowiedź okno czyta po pokazaniu okna Emmetta, które skrypt efenix pokazuje dopiero po jej końcu albo
+przekierowaniu i zerwanym połączeniu, bo skrypt efenix wkłada propozycję tylko z odpowiedzi 2xx, a okno pokazuje i tak.
+Tę odpowiedź okno czyta po pokazaniu okna Emmetta, które skrypt efenix pokazuje dopiero po jej końcu albo
 zerwaniu (synchroniczne ``$.ajax``), a przed kliknięciem, po którym strona się przeładuje, więc odczyt na nic nie czeka i
 nie ściga się z przeładowaniem. Postaci propozycji okno nie czyta, bo tej też nikt nie zmierzył; po padniętej propozycji
 „Załaduj do zlecenia” i tak ładuje Wycenę Emmetta, bo efenix bierze ją u siebie, a nie z okna. Ilość wpisuje w polu i naciska Enter, a skrypt strony zapisuje ją przez ``action_save_index.php``:
@@ -84,7 +84,7 @@ na koniec żądania ``action_change_status.php`` i na przeładowanie strony, kt�
 „Załaduj do zlecenia”. Gdy skrypt efenix po przycisku Przekazania pokaże zamiast okna zmiany statusu okno informacji
 ``#dialog_info``, efenix odmówił Przekazania: okno czyta tekst ``#dialog_info_field_info`` jako ``ForwardRefusal``,
 zamyka okno informacji i oddaje odmowę, a „Tak” nie klika. Każde okno dialogowe okno zamyka dopiero po końcu jego animacji
-pokazania, bo bootstrap efenix (``.modal.fade``) nie zamyka okna w jej trakcie (#1084).
+pokazania, bo bootstrap efenix (``.modal.fade``) nie zamyka okna w jej trakcie.
 Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
 żądania ramek i kart, które otworzy strona: każde żądanie, w którego ścieżce jest ``action_change_status``, przepuszcza
 tylko wtedy, gdy okno jest w Przekazaniu do akceptacji, to jego pierwsze takie żądanie, a jest to POST z polem ``xstatus``
@@ -238,12 +238,11 @@ class BrowserEfenix:
         """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki.
 
         Najpierw pyta kartę o jej dokument (``:root``), bo karta zamknięta w trakcie nawigacji przerywa ją błędem, który
-        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` jest jeszcze fałszem, pomiar #878: 89 na 100
-        zamknięć karty, gdy okno czeka na stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało
-        nawigację, więc po niej ``Page.is_closed`` już je zna (pomiar #886: 247 z 247 zamknięć karty w trakcie
-        nawigacji). Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o zamknięciu mówi wtedy też
-        ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie odpowiada, inaczej zatrzymałaby
-        okno tu bez końca (#886).
+        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` jest jeszcze fałszem, gdy okno czeka na
+        stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało nawigację, więc po niej
+        ``Page.is_closed`` już je zna. Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o zamknięciu
+        mówi wtedy też ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie odpowiada,
+        inaczej zatrzymałaby okno tu bez końca.
         """
 
         with suppress(PlaywrightError):
@@ -360,8 +359,7 @@ class BrowserEfenix:
 
         Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
         zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie. Efenix pyta najwyżej co
-        ``LOGIN_POLL_MS``, także gdy karta nie stoi na stronie logowania i czekanie na zmianę jej adresu wraca od razu
-        (#891).
+        ``LOGIN_POLL_MS``, także gdy karta nie stoi na stronie logowania i czekanie na zmianę jej adresu wraca od razu.
         """
 
         try:
@@ -411,7 +409,7 @@ class BrowserEfenix:
         """Lista zleceń odpowiada w sesji okna bez przekierowania na logowanie; pytanie nie zmienia strony okna.
 
         Odpowiedź ze statusem błędu (4xx, 5xx) to ``UnexpectedPage`` listy z tym statusem, jak lista przy starcie: adres
-        odpowiada, a tata mógł się już zalogować, więc czekanie dalej nic nie da (#891). Pytanie bez odpowiedzi (błąd
+        odpowiada, a tata mógł się już zalogować, więc czekanie dalej nic nie da. Pytanie bez odpowiedzi (błąd
         Playwrighta) to ``_Failed`` otwarcia listy, jak przy starcie.
         """
 
@@ -471,8 +469,8 @@ class BrowserEfenix:
 
         Po odmowie „Załaduj do zlecenia” odpowiedzią z przekierowaniem albo statusem błędu okno nie czeka na przeładowanie
         i strony nie czyta. Przed kliknięciem okno czyta, czy okno Emmetta coś pokazało, a gdy nic, czy propozycja
-        przyszła cała ze statusem 2xx (#908). Treści odpowiedzi „Załaduj do zlecenia” okno nie czyta, więc
-        przeładowanie, które ją porzuca, nic nie zmienia (#895).
+        przyszła cała ze statusem 2xx. Treści odpowiedzi „Załaduj do zlecenia” okno nie czyta, więc
+        przeładowanie, które ją porzuca, nic nie zmienia.
         """
 
         button = self._element(Element.EMMETT_BUTTON, PagePart.EMMETT)
@@ -575,7 +573,7 @@ class BrowserEfenix:
         Strażnik przepuszcza je tylko w tym czasie. Okno czeka na koniec albo porażkę żądania zmiany statusu, a nie na
         samo żądanie, bo żądanie przerwane przez strażnika nie kończy się odpowiedzią: wtedy to ``StatusChangeBlocked``.
         Treści odpowiedzi okno nie czyta, a porażka po nagłówkach to odpowiedź, bo przeładowanie strony, które skrypt
-        robi zaraz po nagłówkach, porzuca treść (jak po „Załaduj do zlecenia”, #895). Żądanie bez nagłówków odpowiedzi w
+        robi zaraz po nagłówkach, porzuca treść (jak po „Załaduj do zlecenia”). Żądanie bez nagłówków odpowiedzi w
         czasie okna albo z zerwanym połączeniem to ``Shape.STATUS_NOT_ANSWERED``, a odpowiedź ze statusem błędu
         ``HttpStatus`` (``_ErrorAnswer``).
         """
@@ -648,8 +646,8 @@ class BrowserEfenix:
         """Działanie przeglądarki na elemencie ``selector``, który był na stronie dokładnie raz: gdy się nie udało, a
         elementu nie ma już dokładnie raz, strona zmieniła budowę między sprawdzeniem a działaniem, więc to
         ``ElementCount`` jak w ``single``, a nie błąd przeglądarki. Tak jest z polem ``Numer``, gdy odpowiedź szukania,
-        które lista wysyła sama, wkłada do ``#wyniki`` stronę listy, na którą przekierował ją efenix (#971). Liczenie ma
-        czas okna, bo strona, która nie odpowiada, zatrzymałaby okno tu bez końca (#886)."""
+        które lista wysyła sama, wkłada do ``#wyniki`` stronę listy, na którą przekierował ją efenix. Liczenie ma
+        czas okna, bo strona, która nie odpowiada, zatrzymałaby okno tu bez końca."""
 
         try:
             yield
@@ -796,7 +794,7 @@ def _came_whole(request: Request) -> bool:
 
     Na koniec żądania, które już się skończyło, Playwright nie czeka: odpowiedź bez nagłówków to ``None``, a treść
     zerwana w połowie to błąd odczytu treści (pomiar 5.11.2026 w Chromium Playwrighta, synchroniczne XHR jak efenix i
-    ``fetch`` jak Atrapa, #908). Każdy inny błąd odczytu, np. zamknięta karta, też znaczy, że okno odpowiedzi nie zna.
+    ``fetch`` jak Atrapa). Każdy inny błąd odczytu, np. zamknięta karta, też znaczy, że okno odpowiedzi nie zna.
     """
 
     with _doing(Operation.ANSWER):
@@ -920,8 +918,8 @@ def _playwright() -> Iterator[Playwright]:
     """Playwright okna na czas bloku; ``BrowserNotStarted`` z ``Operation.DRIVER``, gdy jego sterownik nie wystartował.
 
     Sterownik to osobny proces z własną pętlą zdarzeń, której start zgłasza ``OSError`` (np. ``socketpair`` pętli na
-    Windows bez wolnych gniazd, #975, albo brak programu sterownika) albo błąd Playwrighta. To droga startu okna, a nie
-    nieoczekiwany wyjątek: Logi Uruchomienia nazywają ją i niosą typ wyjątku z ramkami (#976).
+    Windows bez wolnych gniazd albo brak programu sterownika) albo błąd Playwrighta. To droga startu okna, a nie
+    nieoczekiwany wyjątek: Logi Uruchomienia nazywają ją i niosą typ wyjątku z ramkami.
     """
 
     try:
