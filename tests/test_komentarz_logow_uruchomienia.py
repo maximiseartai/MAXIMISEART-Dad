@@ -469,15 +469,53 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs.text)("ul. Syntetyczna 1", object())
 
 
-@pytest.mark.parametrize("kind", ["logi", "tekst", "plik"])
-def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
-    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku mogłaby podać tekst sprzed strażnika jako po
-    strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+def _proof_value(kind: str) -> object:
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów,
+    pamięć i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
 
-    value = guard_logs(record(), empty_memory()).text if kind == "plik" else _guarded(kind)
+    memory = empty_memory()
+    match kind:
+        case "postep" | "wynik-bez-logow" | "logi-z-pliku-albo-urwane" | "logi-z-wynikiem-albo-diagnoza":
+            return TAKES_GUARDED[kind](_guarded("logi" if "logi-z" in kind else "tekst"), Path())
+        case "plik":
+            return guard_logs(record(), memory).text
+        case "wysylka":
+            return guarded(memory, "Postęp.", "postęp").text
+        case "wysylka-logow":
+            return post_of(OwnLogs(guard_logs(record(), memory)))
+        case "pamiec":
+            return memory
+        case _:
+            return _guarded(kind)
+
+
+_DROGI_PODKLASY: Final[dict[str, Callable[[type, dict[str, object]], object]]] = {
+    "type": lambda proof, namespace: type("Inne", (proof,), namespace),
+    "type-z-baza-przed-bez-super": lambda proof, namespace: type("Inne", (_BezSuper, proof), namespace),
+    "type-new-z-metaklasa-typu": lambda proof, namespace: type.__new__(type(proof), "Inne", (proof,), namespace),
+}
+"""Drogi do podklasy typu-dowodu przy jej tworzeniu: dwie przez ``__new__`` metaklasy i jedna z jego pominięciem."""
+
+
+@pytest.mark.parametrize("droga", _DROGI_PODKLASY.keys())
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec",
+        "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+    ],
+)
+def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
+    """Typ-dowód i wersja komentarza odmawiają podklasy już przy tworzeniu przez ``type()`` (przegląd #1038, runda 2),
+    także z bazą przed typem, której ``__init_subclass__`` nie woła ``super()``, bo odmawia sama metaklasa
+    ``client_data.WithoutSubclasses``, a ``type.__new__`` z metaklasą typu, który ją pomija, zatrzymuje ``__init_subclass__``
+    typu. To wcześniejszy błąd; regułę trzyma kontrola dokładnego typu przy użyciu (#1551)."""
+
+    proof = type(_proof_value(kind))
+    namespace: dict[str, object] = {"text": property(lambda self: "ul. Syntetyczna 1")}
 
     with pytest.raises(TypeError, match="podklas"):
-        type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+        _DROGI_PODKLASY[droga](proof, namespace)
 
 
 _PLIK: Final = """\
@@ -919,7 +957,7 @@ ODMOWY_LOGOW: Final = {
     klasa: Any = type("Wersja", (ProgressVersion,), {_PUSTE_PRZYJECIE})
     return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
 """,
-        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+        "bieg TypeError: Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji.",
     ),
     "type.__new__ z bazą bez super() i pustym __post_init__: podklasa wersji z Logami, potem post_of": (
         _PODKLASA
