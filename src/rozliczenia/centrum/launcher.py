@@ -2,7 +2,8 @@
 
 Jedno Centrum na komputerze: gdy port jest zajęty, ``health`` rozstrzyga, czy
 to własne Centrum z tego samego commitu narzędzia (wtedy tylko otwiera kartę),
-Centrum innej wersji, czy inny program. Każdy błąd startu kończy się
+Centrum innej wersji (wtedy otwiera jego kartę, w której tata widzi przycisk
+„Zamknij Centrum rozliczeń”, i odmawia startu), czy inny program. Każdy błąd startu kończy się
 komunikatem w trzech częściach: bez konsoli w natywnym okienku, z konsolą w
 konsoli, a fakt trafia do dziennika Centrum. Ponowny start po Aktualizacji narzędzia (``--bez-okienek``)
 nie pokazuje okienka, tylko zapisuje fakt w dzienniku: tata widzi wtedy jeden
@@ -15,7 +16,8 @@ się takim komunikatem.
 Skrót, który zajmie port i zastanie dziennik „Aktualizacja w toku”, kończy
 Aktualizację narzędzia przerwaną wyłączeniem komputera: cofa klon do wersji
 sprzed niej, zostawia dla karty wynik porażki nieoczekiwanej i startuje od
-nowa w cofniętej wersji. Wtedy jeszcze nie wczytał niczego spoza biblioteki
+nowa z dysku w cofniętej wersji, bo ten proces ma w pamięci moduły wersji,
+którą właśnie cofnął. Wtedy jeszcze nie wczytał niczego spoza biblioteki
 standardowej, więc nowa wersja bez swoich bibliotek też da się cofnąć. Nie
 cofa, dopóki opiekun ponownego startu może jeszcze kończyć aktualizację, ani
 przy starcie nowej wersji przez samego opiekuna (``--bez-okienek``).
@@ -59,8 +61,12 @@ from rozliczenia.tool_files import (
 )
 from rozliczenia.wall_clock import epoch_s
 
-_HEALTH_TIMEOUT_S = 5  # drugie kliknięcie skrótu może trafić na Centrum, które jeszcze startuje
-_SHORTCUT_HOLDS_PORT_S = 10  # skrót kliknięty w trakcie ponownego startu oddaje port po odczycie dziennika (#246)
+_HEALTH_TIMEOUT_S = 5
+"""Tyle skrót czeka na ``health`` Centrum na zajętym porcie: drugie kliknięcie może trafić na Centrum, które jeszcze
+startuje."""
+_SHORTCUT_HOLDS_PORT_S = 10
+"""Tyle Centrum od opiekuna ponawia zajęcie portu: skrót kliknięty w trakcie ponownego startu oddaje go po odczycie
+dziennika."""
 _POLL_S = 0.1
 
 
@@ -122,7 +128,7 @@ def _start(
             _say(f"Centrum rozliczeń już działa: {url}")
             open_tab(url)
             return 0
-        open_tab(url)  # tata widzi starą kartę z przyciskiem „Zamknij Centrum rozliczeń”
+        open_tab(url)
         return refuse(start_problems.other_version_running(port, version_label(running.commit)))
 
     try:
@@ -137,7 +143,6 @@ def _start(
         listener.close()
         if guardian_may_run:
             return refuse(start_problems.update_finishing())
-        # Ten proces ma w pamięci moduły wersji, którą właśnie cofnął: Centrum startuje od nowa z dysku.
         return subprocess.call(restart_from_disk)
 
     try:

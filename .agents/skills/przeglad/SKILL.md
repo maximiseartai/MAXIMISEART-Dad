@@ -15,6 +15,7 @@ Ważne znalezisko to defekt zachowania z dowodem, który da się powtórzyć: po
 Tylko Ważne daje `FAIL`.
 W tym repo Ważne były zwykle:
 
+- issue `decyzja-maksa`, którego pytanie stoi na pojęciu, próbie albo liczbie bez definicji w treści i bez linku do ADR, PR albo issue, bo jego źródłem są notatki biegu albo pamięć agenta (#1784, [`issue-tracker.md`](../../../docs/agents/issue-tracker.md), „Decisions for Maks”);
 - test, który przestał sprawdzać to, co sprawdzał (pokrycie zgubione przy refaktorze, asercja na tekst zamiast na zachowanie);
 - zachowanie widoczne tylko na Windows albo na najstarszym Pythonie z `requires-python` (brak `tzdata`, krok zegara `time.monotonic()` pod dawnym minimum 3.11, import, który pada tylko pod najstarszym Pythonem);
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
