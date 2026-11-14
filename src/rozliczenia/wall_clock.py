@@ -10,14 +10,7 @@ Granica zakazu zegara. Ruff ``TID251`` (``src/ruff.toml``) odrzuca w ``src/`` po
 ruff rozwiązuje do pełnej nazwy wymienionej w ``src/ruff.toml`` (``datetime.datetime.now``, ``time.time``,
 ``email.utils.formatdate`` i reszta listy ``CLOCK`` w ``tests/test_zakazy_ruff.py``), także przez import z aliasem.
 ``tests/test_zakazy_ruff.py`` dokłada, że tej nazwy nie zwalnia ``noqa``, wyjątek w konfiguracji ruff ani wyłączenie
-pliku z lintu. Ruff nie zna typu wyrażenia ani wartości w czasie biegu, więc każde inne źródło chwili łapie tylko
-przegląd, na przykład:
-
-- dzień UTC z chwili tego modułu (``utc_now().date()``);
-- instancja albo podklasa ``datetime`` (``datetime.min.now()``, ``class X(datetime)`` i ``X.now()``);
-- reeksport (``from rozliczenia.wall_clock import datetime``);
-- nazwa podana napisem (``__import__``, ``getattr``, ``importlib``);
-- zegar modułu, którego ``src/ruff.toml`` nie wymienia.
+pliku z lintu, a granice zakazu pokazują tam próbki ``ZNANE_LUKI_ZEGARA``, każda za klasą nazwaną w swojej nazwie.
 """
 
 from __future__ import annotations

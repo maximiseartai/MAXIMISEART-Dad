@@ -29,7 +29,7 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from harness import Log, Pace
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER, UNKNOWN_WORKER
 from atrapy.workbooks import excel_lock
@@ -359,9 +359,9 @@ def drive(run: Run, page: Page) -> None:
     opened_before = len(run.lines(Log.OPENED))
     for file in files:
         settlements.get_by_role("button", name=f"Otwórz {file}", exact=True).click()
-        run.wait_for(last_opened_is(run, worker_settlements / file), f"Otwórz opens {file}")
+        until(last_opened_is(run, worker_settlements / file), f"Otwórz opens {file}")
     outcome.get_by_role("button", name="Otwórz folder rozliczeń pracowników", exact=True).click()
-    run.wait_for(last_opened_is(run, worker_settlements), "the main action opens the Folder rozliczeń pracowników")
+    until(last_opened_is(run, worker_settlements), "the main action opens the Folder rozliczeń pracowników")
     run.check(
         run.lines(Log.OPENED)[opened_before:]
         == [{"path": str(worker_settlements / file)} for file in files] + [{"path": str(worker_settlements)}],

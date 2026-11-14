@@ -42,7 +42,7 @@ from drive.common import (
     switch_theme,
     toggle_theme,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from harness import Pace, comment_address, issue_file, rejects
 from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract.common import ProcessKey
@@ -193,7 +193,7 @@ def _shown(figure: Locator) -> tuple[str, str]:
 
 def _shows(run: Run, figure: Locator, draft: dict[str, str], message: str) -> None:
     expected = (draft["title"], draft["shown_body"])
-    run.wait_for(lambda: _shown(figure) == expected, message)
+    until(lambda: _shown(figure) == expected, message)
 
 
 def _notes(config: Path) -> list[dict[str, object]]:
@@ -373,7 +373,7 @@ def _low_with_list(run: Run, page: Page, dialog: Locator, choices: Locator, what
     try:
         page.set_viewport_size(LOW_WINDOW)
         where = f"{LOW_WINDOW['width']}×{LOW_WINDOW['height']} {what}"
-        run.wait_for(
+        until(
             lambda: (box := dialog.bounding_box()) is not None and box["y"] >= 0
             and box["y"] + box["height"] <= LOW_WINDOW["height"],
             f"at {where} the open dialog fits the window",
@@ -412,7 +412,7 @@ def _drive_full_window_list(run: Run, page: Page) -> None:
         dialog = _open(page)
         _scope(dialog, "Do Uruchomienia").click()
         choices = dialog.get_by_role("radiogroup", name="Uruchomienie", exact=True)
-        run.wait_for(
+        until(
             lambda: choices.get_by_role("radio").count() >= FULL_LIST_RUNS,
             f"the list shows at least {FULL_LIST_RUNS} Uruchomienia from Centrum",
         )
@@ -501,7 +501,7 @@ def drive(run: Run, page: Page) -> None:
     expect(_scope(dialog, "Ogólna")).to_have_attribute("aria-pressed", "true")
     expect(dialog.get_by_role("radiogroup", name="Uruchomienie", exact=True)).to_have_count(0)
     empty = _draft(run, "", "", "uwaga-szkic-pusty")
-    run.wait_for(lambda: _shown(figure)[1] == empty["body"], "„Maks dostanie” shows the server's draft of an empty Uwaga")
+    until(lambda: _shown(figure)[1] == empty["body"], "„Maks dostanie” shows the server's draft of an empty Uwaga")
     run.check(_shown(figure)[0] == "Tytuł" and empty["title"] == "", "with no Tytuł the figure shows the placeholder")
     _write(dialog, "   ", "")
     expect(send).to_be_disabled()
@@ -637,7 +637,7 @@ def drive(run: Run, page: Page) -> None:
         == [(first["title"], first["body"]), (second["title"], second["body"])],
         "the skrzynka has both Uwagi as uwaga-taty issues, each exactly as its figure showed it",
     )
-    run.wait_for(lambda: queued_posts(run, LABEL, leaving=True) == [], "the waiting Uwaga left the queue in the same pass")
+    until(lambda: queued_posts(run, LABEL, leaving=True) == [], "the waiting Uwaga left the queue in the same pass")
     notes = _notes(config)
     run.check(
         [note["number"] for note in notes[notes_before:]] == [issue["number"] for issue in issues[issues_before:]],
@@ -717,7 +717,7 @@ def _result_word(entry: dict[str, Any]) -> str:
 
 def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: str) -> None:
     rows = choices.locator("label")
-    run.wait_for(lambda: rows.count() == len(offered), f"the list shows the server's {len(offered)} Uruchomienia")
+    until(lambda: rows.count() == len(offered), f"the list shows the server's {len(offered)} Uruchomienia")
     texts = [row.inner_text() for row in rows.all()]
     run.check(
         all(
@@ -792,10 +792,10 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     )
     about.hover()
     expect(page.get_by_text(ABOUT_RUN, exact=True)).to_be_visible()
-    run.wait_for(
+    until(
         lambda: _logs_comment(run, run_id) is not None,
         "with the key the preview's Logi reached the skrzynka at the end of the Uruchomienie",
-        timeout_s=Budget.BACKGROUND,
+        Budget.BACKGROUND,
     )
     run.capture(page, "190-uwaga-przycisk-na-karcie")
 
@@ -1070,7 +1070,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     rejecting.touch()
     try:
         run_id = _preview(run, page, period, "uwaga-podglad-logi-odrzucone")
-        run.wait_for(
+        until(
             lambda: run.log().count(rejection) == rejections + 1, "the Centrum log says the skrzynka rejected the preview's Logi"
         )
         run.check(len(queued(run, LOGS_LABEL, run_id)) == 1, "the rejected Logi wait in the queue")
@@ -1083,7 +1083,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             issue["body"] == body.removesuffix(_waiting_logs(run_id)) + rejected_line,
             "the sent Uwaga says its Logi did not arrive because the skrzynka rejected them, with the Uruchomienie's id",
         )
-        run.wait_for(
+        until(
             lambda: [post["target"] for post in queued_posts(run, LABEL, run_id)]
             == [{"kind": "known_issue", "label": LABEL, "number": issue["number"]}],
             "a comment to the Uwaga's issue waits in the queue for the rejected Logi",
@@ -1097,12 +1097,12 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     run.step(FEATURE, "uwaga-logi-dotarly")
     close_centrum(run, page)
     start_centrum(run, "uwaga-start-logi")
-    run.wait_for(
+    until(
         lambda: queued(run, LOGS_LABEL, run_id, leaving=True) == queued(run, LABEL, run_id, leaving=True) == [],
         "at the start the skrzynka took the Logi and then the comment",
-        timeout_s=Budget.WORK,
+        Budget.WORK,
     )
-    run.wait_for(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", timeout_s=Budget.WORK)
+    until(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", Budget.WORK)
     run.check(
         [(issue["title"], issue["body"]) for issue in box_issues(run, LABEL) if issue["title"] == REFUSED[0]]
         == [(REFUSED[0], read_json(run.evidence / "api" / "uwaga-szkic-odrzucona.json")["body"])],
@@ -1125,7 +1125,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     try:
         page.reload()
         missing = _preview(run, page, period, "uwaga-podglad-bez-logow")
-        run.wait_for(lambda: len(queued(run, LOGS_LABEL, missing)) == 1, "the preview's Logi wait in the queue")
+        until(lambda: len(queued(run, LOGS_LABEL, missing)) == 1, "the preview's Logi wait in the queue")
     finally:
         key_file.write_text(key, encoding="utf-8")
     print("  harness: Maks writes the key again; the Logi file leaves the queue, as when Centrum could not write it", flush=True)
@@ -1140,7 +1140,7 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
             + f"Logi Uruchomienia: nie powstały albo nie da się ich wysłać (Uruchomienie {missing})",
             "the sent Uwaga says its Logi were not made or cannot be sent, with the Uruchomienie's id",
         )
-        run.wait_for(lambda: queued(run, LABEL, missing, leaving=True) == [], "nothing of the Uwaga waits in the queue")
+        until(lambda: queued(run, LABEL, missing, leaving=True) == [], "nothing of the Uwaga waits in the queue")
         run.check(_issue(run, issue["number"]).get("comments", []) == [], "an Uwaga whose Logi were never queued gets no comment")
         _as_maks_sees(run, page, issue, "200-uwaga-logi-nie-powstaly")
     finally:

@@ -27,7 +27,7 @@ from drive.common import (
     Run,
     toggle_theme,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
 from atrapy.pliki_taty import DAD_CASES_FILE, NOTIFICATIONS_FILE, REPORT_KEY_FILE
 from harness import File, Log, Switch
@@ -209,7 +209,7 @@ def drive(run: Run, page: Page) -> None:
         expect(row.get_by_label("nowe", exact=True)).to_be_visible()
         run.check(row.get_attribute("data-fresh") == "true", "a new row keeps its light background while Dad stays")
     expect(_bell(page)).to_have_accessible_name(BELL)
-    run.wait_for(
+    until(
         lambda: run.api("/api/notifications", "powiadomienia-przeczytane")["unread"] == 0,
         "entering the view marks every Powiadomienie read",
     )
@@ -310,7 +310,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     expect(older.get_by_role("button")).to_have_count(0)
     expect(page.get_by_text("Nowa wersja 0.3.0")).to_have_count(0)
     expect(page.get_by_text("Uwaga z innego komputera")).to_have_count(0)
-    run.wait_for(
+    until(
         lambda: run.api("/api/notifications", "powiadomienia-nowa-wersja-przeczytane")["unread"] == 0,
         "entering the view marks the Wydania read",
     )
@@ -334,7 +334,7 @@ def _drive_new_version(run: Run, page: Page, note: dict[str, object], report: di
     release_only(Path(tool["origin"]), head)
     updates = run.log().count("aktualizacja-koniec")
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
-    run.wait_for(
+    until(
         lambda: run.log().count("aktualizacja-koniec") == updates + 1,
         "the card's button starts the Aktualizacja narzędzia",
     )
@@ -431,7 +431,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
             message = run.api("/api/notifications", "powiadomienia-plik-niedostepny")["message"]
             return isinstance(message, dict) and all(name in str(message["where"]) for name in STATE_FILES)
 
-        run.wait_for(both_named, "Powiadomienia name both state files Centrum could not save", timeout_s=Budget.SLOWED)
+        until(both_named, "Powiadomienia name both state files Centrum could not save", Budget.SLOWED)
         answer = run.api("/api/notifications", "powiadomienia-plik-niedostepny")
         message, items = answer["message"], answer["items"]
         assert isinstance(message, dict) and isinstance(items, list)

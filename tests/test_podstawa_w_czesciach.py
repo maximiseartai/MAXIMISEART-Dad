@@ -392,6 +392,55 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
     }
 
 
+@pytest.mark.parametrize(("zegar", "porazka"), [("padl", "czekanie"), ("zyje", "czekanie"), ("padl", "sprawdzenie")])
+def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazka_zegara(
+    drive_centrum: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    zegar: str,
+    porazka: str,
+) -> None:
+    """Czekanie, które minęło budżet, gdy wątek budzika zegara Centrum już padł, czekało na budzik, który nie zadzwoni:
+    ``DRIVE FAIL`` nazywa martwy zegar dla każdego ``until`` funkcji napędu, a przy żywym zegarze samo czekanie (#1539).
+    Porażka inna niż czekanie zostaje sobą także przy martwym zegarze."""
+
+    waiting = sys.modules["drive.waiting"]
+    harness = sys.modules["harness"]
+
+    def waits_past_its_budget(run: object, page: object) -> None:
+        if porazka == "sprawdzenie":
+            raise sys.modules["drive.common"].DriveFailure("the screen shows the queue")
+        raise waiting.TimedOut("timed out: a wake-up of the clock")
+
+    monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=waits_past_its_budget))
+    page = SimpleNamespace(set_default_timeout=lambda timeout: None, screenshot=lambda **options: b"")
+    context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+
+    @contextmanager
+    def playwright_fake() -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: SimpleNamespace(new_context=lambda **_: context, close=lambda: None)))
+
+    monkeypatch.setattr(drive_centrum, "sync_playwright", playwright_fake)
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+    if zegar == "padl":
+        died = harness.File.CLOCK_DIED.file(tmp_path)
+        died.parent.mkdir(parents=True)
+        died.write_text("ValueError: could not convert", encoding="utf-8")
+
+    code = drive_centrum.main(["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"), "--feature", "ustawienia"])
+
+    failure = capsys.readouterr().err
+    assert code == 1
+    assert failure == (
+        "DRIVE FAIL | the wake-up thread of Centrum's clock died, so no wake-up fires any more:\nValueError: could not convert\n"
+        if (zegar, porazka) == ("padl", "czekanie")
+        else "DRIVE FAIL | the screen shows the queue\n"
+        if porazka == "sprawdzenie"
+        else "DRIVE FAIL | timed out: a wake-up of the clock\n"
+    ), failure
+
+
 class _Page:
     """Strona, której ``Run.capture`` robi zrzut: zapisuje tylko ścieżki zrzutów."""
 
