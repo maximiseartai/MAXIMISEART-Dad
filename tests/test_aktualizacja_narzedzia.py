@@ -42,6 +42,7 @@ from tests.fixtures.tool_clone import (
     git,
     github_api_of,
     origin_asking_for_login,
+    origin_that_stalls,
     tool_repository,
     unreachable_origin,
 )
@@ -295,6 +296,59 @@ def test_github_proszacy_o_logowanie_konczy_sie_od_razu_bez_pytania_a_klon_zosta
     assert result == UpdateResult("LOGOWANIE", before=before, after=None)
     assert elapsed < 20
     assert not (tmp_path / "pomocnik-logowania-zapytany").exists()
+    assert repository.state() == unchanged
+
+
+def test_program_hasla_z_git_askpass_na_komputerze_nie_pyta_taty_gdy_github_prosi_o_logowanie(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asking = fake_cli(
+        tmp_path / "pytanie-o-haslo",
+        "pytanie_o_haslo",
+        "import pathlib\npathlib.Path(__file__).with_name('zapytany').touch()\nprint('tata')\n",
+    )
+    monkeypatch.setenv("GIT_ASKPASS", str(asking))
+    before = repository.head()
+
+    with origin_asking_for_login() as origin:
+        result = ToolClone(repository.clone, origin=origin).update()
+
+    assert result == UpdateResult("LOGOWANIE", before=before, after=None)
+    assert not (asking.parent / "zapytany").exists()
+
+
+def test_git_dir_innego_repozytorium_na_komputerze_nie_odciaga_aktualizacji_od_klonu_narzedzia(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tool_repository(tmp_path / "inne")
+    published = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    other_unchanged = other.state()
+
+    with monkeypatch.context() as computer:
+        computer.setenv("GIT_DIR", str(other.clone / ".git"))
+        computer.setenv("GIT_WORK_TREE", str(other.clone))
+        result = update(repository)
+
+    assert result.code == "ok"
+    assert repository.head() == published
+    assert other.state() == other_unchanged
+
+
+def test_pobranie_ktore_stoi_konczy_sam_git_zanim_minie_limit_czasu_pobrania(
+    repository: ToolRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tool_update, "_STALLED_FOR_S", 1)
+    monkeypatch.setattr(tool_update, "_FETCH_TIMEOUT_S", 60.0)
+    before = repository.head()
+    unchanged = repository.state()
+
+    with origin_that_stalls() as origin:
+        started = time.monotonic()
+        result = ToolClone(repository.clone, origin=origin).update()
+        elapsed = time.monotonic() - started
+
+    assert result == UpdateResult("BRAK_POLACZENIA", before=before, after=None)
+    assert elapsed < 30
     assert repository.state() == unchanged
 
 

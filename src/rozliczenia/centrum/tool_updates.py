@@ -11,7 +11,18 @@ nieoczekiwanej porażki, a dziennik tylko nazwę typu wyjątku. Przy każdej
 porażce karta dostaje też Zgłoszenie do Maksa z faktami dziennika, a jego stan
 czyta z uchwytu Zgłoszenia (``reports.ReportHandle``) przy każdym odczycie.
 Porażkę kliknięcia karta widzi dopiero ze stanem po odpowiedzi skrzynki
-Zgłoszeń (najwyżej termin szukania), a porażkę od opiekuna od razu.
+Zgłoszeń (najwyżej termin szukania), bo po pierwszym „failed” nie czyta już
+stanu, a porażkę od opiekuna od razu. Każdy wynik kliknięcia karta widzi
+dopiero z wolnym miejscem „jedno naraz”, żeby „jeszcze raz” nie dostało 409, a
+widok zmienia się pod tą samą blokadą co zwolnienie miejsca, żeby następne
+kliknięcie nie zobaczyło po swoim starcie wyniku poprzedniego.
+
+Bez Gita commit sprzed aktualizacji zna tylko Centrum. Pominięte Wydania
+dziennik dostaje przed ponownym startem, bo wynik w pliku opiekuna ich nie
+niesie. Plik wyniku od opiekuna, którego dysk nie dał usunąć, następny start
+zastaje znowu i pomija: stary wynik jak za pierwszym razem, wynik, o którym
+dziennik już wie, dzięki dziennikowi, a wynik, który właśnie trafił do karty,
+dzięki wpisowi ``update_result_kept``, jeśli nie było nowego kliknięcia.
 """
 
 from __future__ import annotations
@@ -50,8 +61,8 @@ from rozliczenia.centrum.tool_update import (
 )
 from rozliczenia.centrum.work import CentrumWork
 
-# Po udanej Aktualizacji narzędzia wątek kończy się, gdy opiekun wystartował i Centrum się zamknęło.
 UPDATE_THREAD: Final = "aktualizacja-narzedzia"
+"""Wątek Aktualizacji narzędzia; po udanej kończy się, gdy opiekun wystartował i Centrum się zamknęło."""
 
 GuardianLauncher = Callable[[Path, Restart], object]
 """Uruchamia opiekuna ponownego startu z kopii (``restart_guardian.launch``)."""
@@ -145,19 +156,19 @@ class ToolUpdates:
         running = self._commit()
         if result.code != UPDATED and running is not None and result.before is not None and result.before != running:
             self._log.update_result_stale(result=result.code, before=result.before, after=result.after)
-            with suppress(OSError):  # następny start zastaje ten sam stary wynik i znów go pomija
+            with suppress(OSError):
                 self._result_file.unlink()
             return
         if result.code == UPDATED and running is not None and running != result.after:
             result = replace(result, code=UNEXPECTED)
         if not self._log.update_awaits(result=result.code, before=result.before, after=result.after):
-            with suppress(OSError):  # dziennik już wie, że ten wynik nie jest nowy
+            with suppress(OSError):
                 self._result_file.unlink()
             return
         self._finished(result)
         try:
             self._result_file.unlink(missing_ok=True)
-        except OSError as failure:  # następny start zastaje ten wynik w dzienniku i go pomija, jeśli nie było nowego kliknięcia
+        except OSError as failure:
             self._log.update_result_kept(failure)
         self._view = _view_of(result) or self._failed(result, after_restart=True)
 
@@ -168,9 +179,8 @@ class ToolUpdates:
         newest: GitHubReleases | None = None
         try:
             result, guardian = self._result(clone, before, work)
-            if result.before is None:  # bez Gita commit zna tylko Centrum
+            if result.before is None:
                 result = replace(result, before=before)
-            # Przed ponownym startem: wynik w pliku opiekuna nie niesie pominiętych Wydań.
             if result.skipped:
                 self._log.update_skipped_releases(tags=result.skipped)
             if result.code == UPDATED and result.after is not None and guardian is not None:
@@ -187,22 +197,23 @@ class ToolUpdates:
                     newest = self._release()
                 if view is None:
                     failed = self._failed(result, after_restart=False)
-                    # Po pierwszym „failed” karta nie czyta już stanu, więc dostaje go po odpowiedzi skrzynki.
                     failed.report.wait_for_box()
                     view = failed
         finally:
             if not restarting:
                 shutil.rmtree(work, ignore_errors=True)
-                # Karta widzi wynik dopiero z wolnym miejscem „jedno naraz”, żeby „jeszcze raz” nie dostało 409;
-                # pod blokadą widoku, żeby następne kliknięcie nie zobaczyło po swoim starcie tego wyniku.
                 with self._lock:
                     self._runs.end_update()
                     if view is not None:
                         self._view, self._up_to_date_with = view, newest
 
     def _result(self, clone: ToolClone, before: str | None, work: Path) -> tuple[UpdateResult, Path | None]:
+        """Wynik ``clone.update`` i kopia opiekuna w ``work``; porażka, której nikt nie przewidział, to ``UNEXPECTED``.
+
+        Opiekun działa z kopii sprzed aktualizacji, więc kopia powstaje, zanim klon się zmieni.
+        """
+
         try:
-            # Opiekun działa z kopii sprzed aktualizacji, więc kopia powstaje, zanim klon się zmieni.
             guardian = restart_guardian.prepare(work)
             return clone.update(self._show_step), guardian
         except Exception as failure:
@@ -295,6 +306,12 @@ def _view_of(result: UpdateResult) -> tool_update_contract.ToolUpdate | None:
 
 
 def tool_update_router(updates: ToolUpdates) -> APIRouter:
+    """Trasy Aktualizacji narzędzia.
+
+    Start bierze port Centrum z ``server`` w ASGI, który daje go opcjonalnie, a gniazdo bez portu TCP jako
+    ``(ścieżka, None)``: bez portu aktualizacja się nie zaczyna (``refusal.update_without_port``).
+    """
+
     router = APIRouter(prefix="/api/tool-update", tags=["aktualizacja"])
 
     @router.post(
@@ -304,7 +321,6 @@ def tool_update_router(updates: ToolUpdates) -> APIRouter:
         responses={409: {"model": common_contract.Problem}, 500: {"model": common_contract.Problem}},
     )
     def start(request: Request) -> tool_update_contract.ToolUpdate:
-        # ASGI daje ``server`` opcjonalnie, a gniazdo bez portu TCP jako ``(ścieżka, None)``.
         match request.scope.get("server"):
             case (str(), int(port)):
                 return updates.start(port)

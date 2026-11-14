@@ -6,8 +6,8 @@ narzędzia taty na pierwszym commicie. ``publish`` dodaje do `main` w „origin�
 nowy commit i, jak Maks, wydaje go jako następne Wydanie (``released``);
 ``release`` robi to później. ``in_clone`` robi w klonie to, co mógłby zrobić ktoś przy
 komputerze taty; ``state`` to wszystko, co aktualizacja mogłaby w klonie
-zmienić. ``unreachable_origin`` i ``origin_asking_for_login`` to GitHub bez
-internetu i GitHub, który prosi o logowanie, oba na tym komputerze. Żaden
+zmienić. ``unreachable_origin``, ``origin_asking_for_login`` i ``origin_that_stalls`` to GitHub bez
+internetu, GitHub, który prosi o logowanie, i GitHub, którego odpowiedź stoi, wszystkie na tym komputerze. Żaden
 pomocnik nie łączy się z siecią.
 
 Każdy test dostaje własne trzy repozytoria, ale proces testów buduje Gitem każdą
@@ -318,6 +318,41 @@ def origin_asking_for_login() -> Iterator[str]:
     try:
         yield f"http://127.0.0.1:{server.server_address[1]}/MAXIMISEART-Dad.git"
     finally:
+        server.shutdown()
+        server.server_close()
+
+
+class _Stalling(BaseHTTPRequestHandler):
+    """Odpowiada Gitowi nagłówkiem i początkiem treści, a resztę trzyma, dopóki serwer nie ``released``."""
+
+    released: threading.Event
+
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-git-upload-pack-advertisement")
+        self.send_header("Content-Length", "100000")
+        self.end_headers()
+        self.wfile.write(b"001e# service=git-upload-pack\n")
+        self.wfile.flush()
+        self.released.wait()
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+@contextmanager
+def origin_that_stalls() -> Iterator[str]:
+    """Serwer HTTP na tym komputerze, który zaczyna odpowiadać Gitowi i staje: jak zerwane w trakcie łącze taty."""
+
+    released = threading.Event()
+    handler = type("_StallingUntilReleased", (_Stalling,), {"released": released})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/MAXIMISEART-Dad.git"
+    finally:
+        released.set()
         server.shutdown()
         server.server_close()
 
