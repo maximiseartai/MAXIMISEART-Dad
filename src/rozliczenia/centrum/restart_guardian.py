@@ -47,13 +47,13 @@ from rozliczenia.centrum.tool_update import (
 from rozliczenia.file_state import file_state
 from rozliczenia.tool_files import TOOL_ROOT, port_free, start_command
 
-# Tyle czekają: stare Centrum na zamknięcie (otwarte połączenia karty do 5 s) i nowa wersja na pierwszą odpowiedź.
 PORT_TIMEOUT_S: Final = 60.0
+"""Tyle opiekun czeka, aż stare Centrum się zamknie i zwolni port (otwarte połączenia karty do 5 s)."""
 START_TIMEOUT_S: Final = 60.0
+"""Tyle opiekun czeka na pierwszą odpowiedź nowej wersji."""
 _POLL_S: Final = 0.2
 _STOP_TIMEOUT_S: Final = 10.0
 _SOURCE: Final = TOOL_ROOT / "src"
-# Pakiet-szkielet kopii: tylko moduły bez bibliotek narzędzia, które opiekun importuje.
 _COPIED: Final = (
     "rozliczenia/__init__.py",
     "rozliczenia/file_state.py",
@@ -68,12 +68,13 @@ _COPIED: Final = (
     "rozliczenia/centrum/version.py",
     "rozliczenia/centrum/restart_guardian.py",
 )
+"""Pakiet-szkielet kopii: tylko moduły bez bibliotek narzędzia, które opiekun importuje."""
 _BOOT: Final = (
     "import sys; sys.path.insert(0, sys.argv[1]); "
     "from rozliczenia.centrum.restart_guardian import main; raise SystemExit(main(sys.argv[2:]))"
 )
-# Windows: proces bez konsoli, który przeżyje zamknięcie Centrum; gdzie indziej robi to osobna sesja.
 _DETACHED: Final = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+"""Windows: proces bez konsoli, który przeżyje zamknięcie Centrum; gdzie indziej robi to osobna sesja."""
 
 
 @dataclass(frozen=True)
@@ -134,9 +135,12 @@ def prepare(work: Path) -> Path:
 
 
 def launch(copy: Path, restart: Restart) -> subprocess.Popen[bytes]:
-    """Uruchamia opiekuna z kopii ``copy`` odłączonym procesem bez konsoli, który przeżyje zamknięcie Centrum."""
+    """Uruchamia opiekuna z kopii ``copy`` odłączonym procesem bez konsoli, który przeżyje zamknięcie Centrum.
 
-    # -I: ani katalog roboczy, ani PYTHONPATH nie podsuną modułów spoza kopii; -B: kopia bez __pycache__.
+    Python dostaje ``-I``, więc ani katalog roboczy, ani ``PYTHONPATH`` nie podsuną modułów spoza kopii, i ``-B``,
+    więc kopia zostaje bez ``__pycache__``.
+    """
+
     return _detached([_windowless_python(), "-I", "-B", "-c", _BOOT, str(copy), *restart.arguments()], restart.root)
 
 
@@ -147,12 +151,21 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
     zwolni portu), klon wraca do commitu sprzed aktualizacji, a plik wyniku
     mówi, co się stało naprawdę, albo go nie ma, gdy dysk go nie przyjmie.
     ``show_problem`` pokazuje natywne okienko (tytuł, treść).
+
+    Wynik „ok” stoi w pliku, zanim nowe Centrum wystartuje, bo czyta go raz przy
+    starcie; gdy nowa wersja nie odpowie, „ok” znika przed cofnięciem, bo
+    Centrum ze skrótu w trakcie cofania nie może go przeczytać. Po nieudanym
+    cofnięciu nie ma starej wersji. Po udanym opiekun startuje starą wersję,
+    gdy port jest wolny, także wtedy, gdy przed cofnięciem nie był: stare
+    Centrum mogło go oddać w trakcie cofania. Gdy port trzyma już stara
+    wersja, którą tata po cofnięciu uruchomił skrótem, opiekun kończy bez
+    okienka. Inaczej karta nie ma już z kim rozmawiać, więc tata widzi jedno
+    okienko zamiast ciszy.
     """
 
     restart = Restart.of_arguments(argv)
     released = _port_released(restart.port)
     if released:
-        # Nowe Centrum czyta wynik raz przy starcie, więc plik musi być gotowy, zanim ono wystartuje.
         _record(restart, UPDATED)
         new = _start_centrum(restart)
         if _answers(new, restart.port, restart.after):
@@ -160,21 +173,16 @@ def main(argv: Sequence[str], *, show_problem: Callable[[str, str], None] = show
             shutil.rmtree(restart.work, ignore_errors=True)
             return 0
         _stop(new)
-        # „ok” przestało być prawdą: Centrum ze skrótu w trakcie cofania nie może go przeczytać.
         with suppress(OSError):
             restart.result.unlink(missing_ok=True)
     before = restart.before
     rolled_back = _rolled_back(restart)
     _record(restart, NEW_VERSION_FAILED if rolled_back else ROLLBACK_FAILED)
-    # Po nieudanym cofnięciu nie ma starej wersji. Bez zwolnionego portu tak samo jak po nim: stare Centrum mogło
-    # oddać port w trakcie cofania (#726).
     if rolled_back and before is not None:
         if _port_released(restart.port) and _answers(_start_centrum(restart), restart.port, before):
             return 0
-        # Tata mógł po cofnięciu uruchomić starą wersję skrótem: zajęła port przed opiekunem i działa.
         if _runs(restart.port, before):
             return 0
-    # Karta nie ma już z kim rozmawiać: jedno okienko zamiast ciszy.
     problem = start_problems.not_started_after_update()
     show_problem(start_problems.TITLE, problem.text)
     return 1
