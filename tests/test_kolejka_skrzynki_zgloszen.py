@@ -1768,6 +1768,8 @@ def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
 """,
         "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
     ),
+    # Podklasie z type() odmawia już metaklasa przy tworzeniu (client_data.WithoutSubclasses), a podklasie z type.__new__,
+    # który ją pomija, i bazą przed typem bez super() dopiero plik kolejki.
     "podklasa LogsPost w biegu z własnym to_json": (
         """from typing import Any
 
@@ -1777,6 +1779,25 @@ from rozliczenia.centrum.outbox import Outbox
 
 def wyslij(kolejka: Outbox, komorka: str) -> bool:
     klasa: Any = type("Moja", (LogsPost,), {"to_json": lambda self: komorka})
+    nowa: LogsPost = object.__new__(klasa)
+    return kolejka.post(nowa)
+""",
+        "bieg TypeError: Wysyłka Logów nie ma podklas: daje ją tylko post_of.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa LogsPost z własnym to_json": (
+        """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wyslij(kolejka: Outbox, komorka: str) -> bool:
+    klasa: Any = type.__new__(type(LogsPost), "Moja", (Mixin, LogsPost), {"to_json": lambda self: komorka})
     nowa: LogsPost = object.__new__(klasa)
     return kolejka.post(nowa)
 """,
@@ -2044,15 +2065,9 @@ class Mixin:
         pass
 
 
-class Rowna(type):
-    def __eq__(cls, other: object) -> bool:
-        return True
-
-    __hash__ = type.__hash__
-
-
 def wysylka(komorka: str, cel: NewIssue) -> Post:
-    klasa: Any = type.__new__(Rowna, "Tekst", (Mixin, Outgoing), {})
+    rowna: Any = type("Rowna", (type(Outgoing),), {"__eq__": lambda cls, other: True, "__hash__": type.__hash__})
+    klasa: Any = type.__new__(rowna, "Tekst", (Mixin, Outgoing), {})
     return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
