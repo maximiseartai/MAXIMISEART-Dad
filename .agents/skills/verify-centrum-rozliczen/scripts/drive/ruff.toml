@@ -1,7 +1,7 @@
 # Ruff takes banned-api from the nearest configuration file whole instead of adding to its parent's table: the first
 # entries copy the table of pyproject.toml (tests/test_zakazy_ruff.py checks that none is lost), and the last ones
 # hold only in drive/, each with a sample in tests/test_zakazy_ruff.py. The helpers of common.py and waiting.py use the
-# banned names by the owner right in per-file-ignores of pyproject.toml.
+# banned names they own (OWNERS of tests/test_zakazy_ruff.py) by the owner right in per-file-ignores of pyproject.toml.
 extend = "../../../../../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]

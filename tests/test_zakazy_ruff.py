@@ -323,7 +323,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
-    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree", "time.sleep"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py": frozenset({"time.sleep"}),
 }
 # Zakaz z pyproject.toml, który obowiązuje w każdym katalogu (test zgodności wyżej), więc jego brak w zgłoszeniu znaczy

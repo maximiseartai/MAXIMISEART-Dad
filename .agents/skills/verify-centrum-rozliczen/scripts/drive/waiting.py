@@ -1,7 +1,8 @@
 """The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
 drive's ``expect`` of Playwright, whose assertions wait a budget too, the drive's one quiet: a time in which the page
-runs with nothing to wait for (``quiet_for``), and the one late answer of a route (``answer_late``). Ruff refuses
-``time.sleep`` in the rest of ``drive/``, but for the retry of ``while_open`` in ``drive/common.py``.
+runs with nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file
+the server holds open (``while_open``, for the file helpers of ``drive/common.py``). Ruff refuses ``time.sleep`` in the
+rest of ``drive/``.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -96,6 +97,29 @@ class TimedOut(Exception):
 
 
 T = TypeVar("T")
+
+
+# How long the file helpers of ``drive/common.py`` retry a file the server holds open on Windows; the server reads the harness's
+# files in milliseconds, so this only bounds a change that will never succeed.
+RETRY_OPEN_S = 10.0
+
+
+def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
+    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``limit_s``.
+
+    The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
+    skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
+    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
+    puts it in place (#1087)."""
+
+    deadline = time.monotonic() + limit_s
+    while True:
+        try:
+            return action()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN, *, page: Page | None = None) -> T:
