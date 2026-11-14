@@ -124,4 +124,4 @@ class ReportsView(Model):
     unknown_senders: list[UnknownReportSender]
     reminders_without_footer: bool
     """Ostatnie sprawdzenie pracy przypomnień nie znalazło pliku stopki taty, więc Przypomnienia o raporcie idą bez
-    niej (spec #1344, US 44); bez treści stopki."""
+    niej; bez treści stopki."""
