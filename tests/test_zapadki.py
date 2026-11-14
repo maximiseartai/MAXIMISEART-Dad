@@ -1647,7 +1647,18 @@ _PROBKI_STANU_PLIKU: Final[list[tuple[str, list[int]]]] = [
     (f'{_IN_TAKEN}    return old.name if file_state(old) == "file" else None\n', []),
     (f"{_IN_TAKEN}    if path_taken(self._state):\n        pass\n", []),
     (f"{_IN_TAKEN}    return [period_place_label(place) for place in places if observed.exists(place)]\n", []),
+    # os.path na atrybucie os i łamane przed kropką (#1868 r1); tekst każdej nazwy w komentarzu i napisie.
+    (f"{_IN_TAKEN}    return foo.os.path.exists(path)\n", [2]),
+    (f"{_IN_TAKEN}    return (os\n        .path.isdir(path))\n", [2]),
+    (f"{_IN_TAKEN}    return path  # old.is_file()\n", [2]),
+    (f"{_IN_TAKEN}    return path  # d.is_dir()\n", [2]),
+    (f'{_IN_TAKEN}    return "os.path.exists(p)"\n', [2]),
+    (f'{_IN_TAKEN}    return "os.path.lexists(p)"\n', [2]),
+    (f'{_IN_TAKEN}    return "os.path.isdir(p)"\n', [2]),
     (f"{_IN_TAKEN}    return disk.exists(copy.path)\n", []),
+    (f"{_IN_TAKEN}    return myos.path.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return foo.myos.path.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return os.extras.exists(path)\n", []),
 ]
 
 
@@ -1761,7 +1772,8 @@ def taken(path: str) -> bool:
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
     """Reguła ``stan-pliku-poza-file-state`` czyta wywołanie ``exists``, ``is_file`` albo ``is_dir`` bez argumentów na
-    dowolnym obiekcie, ``os.path.exists``, ``lexists``, ``isfile`` i ``isdir`` pod pełną nazwą oraz ten sam tekst
+    dowolnym obiekcie, ``exists``, ``lexists``, ``isfile`` i ``isdir`` na ``path`` modułu ``os`` albo atrybutu ``os``
+    (także łamane przed kropką) oraz ten sam tekst
     w komentarzu i napisie; metoda pod inną nazwą albo na klasie, ``os.path`` pod aliasem albo z from-importu
     i każda inna droga do stanu ścieżki to znane luki."""
 
@@ -1808,7 +1820,44 @@ _PROBKI_NAWIGACJI: Final[list[tuple[str, list[int]]]] = [
     # Linia napisu wielowierszowego, która wygląda jak nawigacja: węzeł napisu zaczyna się w linii 4.
     (f'{_PAGE}SKRYPT = """\npage.goto(url)\n"""\n', [4]),
     (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation():\n"""\n', [4]),
+    # Wynik, którego nikt nie odbiera, pod każdym wyrażeniem, które go gubi (#1868 r1 W1: nawias i wyrażenie warunkowe).
+    (f"{_PAGE}def f(page):\n    with (page.expect_navigation()):\n        pass\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    (page.goto(url))\n", [5]),
+    (f"{_PAGE}def f(page, url, ok):\n    page.goto(url) if ok else None\n", [5]),
+    (f"{_PAGE}def f(page, url, ok):\n    ok and page.goto(url)\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    not page.goto(url)\n", [5]),
+    (f"{_PAGE}async def f(page, url):\n    await page.goto(url)\n", [5]),
+    (f"{_PAGE}def f(page, url, ok):\n    page.goto(url), ok\n", [5]),
+    (f"{_PAGE}def f(page, url, ok):\n    (page.goto(url), ok)\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    [page.goto(url)]\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    {{page.goto(url)}}\n", [5]),
+    (f"{_PAGE}def f(page, urls):\n    [page.goto(url) for url in urls]\n", [5]),
+    (f"{_PAGE}def f(page, urls):\n    {{page.goto(url) for url in urls}}\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    page.goto(url).status\n", [5]),
+    (f"{_PAGE}def f(page, url):\n    page.goto(url).finished()\n", [5]),
+    (f"{_PAGE}def f(page, timed):\n    with timed(page.expect_navigation()):\n        pass\n", [5]),
+    (f"{_PAGE}async def f(page):\n    async with page.expect_navigation():\n        pass\n", [5]),
+    (f"{_PAGE}def f(page, other):\n    with (\n        other(),\n        page.expect_navigation(),\n    ):\n        pass\n", [7]),
+    # Linia napisu z każdą nazwą nawigacji i z każdym końcem bez as.
+    (f'{_PAGE}SKRYPT = """\npage.reload()\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\ntab.go_back()\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\ntab.go_forward()\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation()\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() , other():\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() and_more():\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() a\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() asx:\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation(timeout=f(1)):\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with other(), page.expect_navigation():\n"""\n', [4]),
     (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() as reload:\n"""\n', []),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() as\n"""\n', []),
+    (f"{_PAGE}def f(page):\n    with (page.expect_navigation() as nav):\n        pass\n", []),
+    (f"{_PAGE}def f(page):\n    with (page.expect_navigation()) as nav:\n        pass\n", []),
+    (f"{_PAGE}def f(page, timed):\n    with timed(page.expect_navigation()) as nav:\n        pass\n", []),
+    (f"{_PAGE}def f(page, other):\n    with (\n        other(),\n        page.expect_navigation() as nav,\n    ):\n        pass\n", []),
+    (f"{_PAGE}def f(page):\n    cm = page.expect_navigation()\n", []),
+    (f"{_PAGE}def f(page, url):\n    yield page.goto(url)\n", []),
+    (f"{_PAGE}def f(page, url):\n    g = lambda: page.goto(url)\n", []),
     (f'{_PAGE}def f(page, url):\n    response = page.goto(url, wait_until="load", timeout=timeout_ms)\n', []),
     (f'{_PAGE}def f(self, url):\n    return self._page.goto(url, wait_until="load", timeout=self._timeout_ms)\n', []),
     (
@@ -1852,6 +1901,7 @@ def test_regula_nawigacji_zglasza_tylko_pliki_src_z_importem_playwright(tmp_path
     for path, imports in {
         "src/rozliczenia/okno.py": "from playwright.sync_api import Page\n",
         "src/rozliczenia/okno_typow.py": "if TYPE_CHECKING:\n    from playwright.sync_api import Page",
+        "src/rozliczenia/okno_modulu.py": "import playwright.sync_api\n",
         "src/rozliczenia/ustawienia.py": "import importlib\n",
         "tests/test_okna.py": "from playwright.sync_api import Page\n",
         "tools/narzedzie.py": "from playwright.sync_api import Page\n",
@@ -1859,7 +1909,11 @@ def test_regula_nawigacji_zglasza_tylko_pliki_src_z_importem_playwright(tmp_path
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(f"{imports}\n\ndef open_order(page, url):\n    page.goto(url)\n", encoding="utf-8")
 
-    assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [("src/rozliczenia/okno.py", 5), ("src/rozliczenia/okno_typow.py", 5)]
+    assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [
+        ("src/rozliczenia/okno.py", 5),
+        ("src/rozliczenia/okno_modulu.py", 5),
+        ("src/rozliczenia/okno_typow.py", 5),
+    ]
 
 
 # Znane luki reguły ``odrzucona-nawigacja`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``src/``, który
@@ -1900,12 +1954,16 @@ class Tab(Protocol):
 def open_order(page: Tab, url: str) -> None:
     page.goto(url)
 """,
-    "element listy, której nikt nie czyta": _PAGE
+    "odpowiedź tylko jako warunek: if": _PAGE
     + """\
 def open_order(page: Page, url: str) -> None:
-    [
-        page.goto(url),
-    ]
+    if page.goto(url):
+        page.click("a")
+""",
+    "odpowiedź tylko jako warunek: assert": _PAGE
+    + """\
+def open_order(page: Page, url: str) -> None:
+    assert page.goto(url)
 """,
 }
 
@@ -1913,10 +1971,12 @@ def open_order(page: Page, url: str) -> None:
 @needs_ast_grep
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_znane_luki_reguly_nawigacji_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
-    """Reguła ``odrzucona-nawigacja`` czyta w pliku ``src/`` z importem playwright instrukcję, która jest samym
-    wywołaniem ``goto``, ``reload``, ``go_back`` albo ``go_forward``, element ``with`` z ``expect_navigation(…)`` bez
-    ``as`` i linię napisu wielowierszowego, która tak wygląda; metoda pod inną nazwą, czekanie na adres albo stan
-    strony, ``as _``, element listy, którego nikt nie czyta, i karta w pliku bez importu playwright to znane luki."""
+    """Reguła ``odrzucona-nawigacja`` czyta w pliku ``src/`` z importem playwright wynik ``goto``, ``reload``,
+    ``go_back`` albo ``go_forward``, którego nikt nie odbiera (nad wywołaniem do instrukcji stoją tylko wyrażenia, które
+    gubią wartość), wywołanie ``expect_navigation(…)`` w elemencie ``with`` bez ``as`` i linię napisu wielowierszowego,
+    która tak wygląda; metoda pod inną nazwą, czekanie na adres albo stan
+    strony, ``as _``, odpowiedź tylko jako warunek ``if`` albo ``assert`` i karta w pliku bez importu playwright to znane
+    luki."""
 
     from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
 
