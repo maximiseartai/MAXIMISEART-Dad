@@ -51,11 +51,14 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
   - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
   Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył. Autor nie wybiera postaci, więc nie może wybrać tańszej.
-- **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
+- **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N Wn rk` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły. Wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
   Sprawdza to `tools/scal_pr.py` bez osądu i bez linii zgody.
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
-- **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
+- **Reguła chwastu bez tłumienia.** Reguły chwastu nie wolno wyciszyć na linii. Krok Required CI uruchamia regułę na dodanych liniach z pominięciem komentarzy tłumienia (`noqa` z kodem albo bez, `ast-grep-ignore`, `type: ignore`), więc linia, na której reguła odpaliłaby bez komentarza, jest odpaleniem, a nie wyjątkiem.
+  Jedynym zwolnieniem jest prawo właściciela w konfiguracji reguły (`per-file-ignores`, `ignores` reguły ast-grep), a każda zmiana konfiguracji reguły, także zawężenie `files`, wyłączenie i usunięcie, jest zmianą reguły i przechodzi jej dowód.
+  Powód: przegląd #1693 r2 pokazał, że `banned-api` z `noqa: TID251` i podbitym saldem tłumień przechodzi ruff i testy salda, więc wystąpienie idiomu nie liczyłoby się ani jako powrót, ani jako ucieczka (#1371 zna tę lukę dla testów zastępowanych przez ruff).
+- **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
 - **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` idzie do mutacji zmienionych linii (#1634), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
   To jedyne miejsce osądu w pętli. Pisze je niezależny recenzent, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
@@ -70,7 +73,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 - **Status w Actions.** Status „Werdykt i bramka” w GitHub Actions liczy bramkę kodem bazy PR i na razie tylko raportuje.
   Włączenie go jako wymaganego w rulesecie należy do Maksa, bo 13.11.2026 wyłączył blokady po stronie serwera (ADR 0034, „Odrzucone warianty”), więc do tej decyzji stary checkout może ominąć bramkę.
-  Powód: 12 z 13 merge'y bez zgody przeszło przez `tools/scal_pr.py` sprzed bramki, a ślad tego zostaje tylko w lokalnych transkryptach.
+  Powód: 12 merge'y, których bramka z kodu `main` by odmówiła, przeszło przez `tools/scal_pr.py` sprzed bramki, a ślad tego zostaje tylko w lokalnych transkryptach.
 
 ### Miara
 
@@ -89,7 +92,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 - **Kod korzenia jako jednostka chwastu (ADR 0031).** 36 z 47 powrotów łączy tylko etykieta, więc bramka żąda szczebla wyżej od mechanizmu, którego wcześniejsze wyrwanie nie mogło objąć.
 - **Powrót kodu w obszarze kodu (#1678).** Zostawia 29 z 47 powrotów, dalej z samej etykiety, i rozszerza zgodę z konta, które scala.
 - **Zgoda koordynatora po `PASS` (#1678).** Linia z konta, które scala, niczego nie sprawdza ponad `PASS`.
-- **Zgoda tylko Maksa przed merge'em (ADR 0031).** 21 h czekania w jednej nocy, a 12 z 13 merge'y bez zgody i tak ją ominęło.
+- **Zgoda tylko Maksa przed merge'em (ADR 0031).** 21 h czekania w jednej nocy, a 12 merge'y, których bramka by odmówiła, i tak ją ominęło.
 - **Osobny korpus próbek `tests/chwasty/<rodzaj>/<reguła>/`.** Druga postać obok natywnych próbek reguł i `ZNANE_LUKI`, czyli dwie drogi do jednej rzeczy.
 - **Reguła bez pomiaru fałszywych alarmów.** Reguła `write_text` zatrzymałaby 6 z 20 poprawnych PR-ów, a agent uczy się obchodzić strażnika, który myli się często.
 - **Issues „Chwast” z kolejką (#1620) i ogrodnikiem (#1621).** Lista poza diffem daje najmniej naprawień, a u nas żadne z 26 nie jest zamknięte.
