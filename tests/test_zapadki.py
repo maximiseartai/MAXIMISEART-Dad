@@ -791,7 +791,12 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 # do końca, który kopiuje prawdziwy ``sgconfig.yml`` do drzewa tymczasowego.
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
-AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {"komentarz-w-src": "wyraź lepszą nazwą albo testem"}
+AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
+    "komentarz-w-src": "wyraź lepszą nazwą albo testem",
+    "lokator-tytulu-okna": "użyj settings_title(page)",
+    "regula-w-trasie": "użyj sprawdzenia u właściciela Ustawień",
+    "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+}
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
     reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
@@ -1186,7 +1191,152 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy")
 
 
-_PAGE = "from playwright.sync_api import Page\n\n\n"
+# Reguły ast-grep powrotów chwastów (#1676, ADR 0036) → katalog w zakresie ``files:`` reguły i przyrostek nazwy pliku
+# próbki. Katalog to części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest zależnością testu w grafie
+# wpływu zmiany (``tools/lib/wplyw_zmiany.py``); katalog skilla to prawdziwy katalog, więc ruff próbki czyta jego
+# ``ruff.toml``.
+_ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
+    "lokator-tytulu-okna": ((".agents", "skills", "verify-centrum-rozliczen", "scripts", "drive"), ".py"),
+    "regula-w-trasie": (("src", "rozliczenia", "centrum"), "_router.py"),
+    "kotwica-konca-linii": (("tools",), ".py"),
+}
+_LOCATOR = "from playwright.sync_api import Locator, Page\n\n\ndef title(page: Page) -> Locator:\n    return "
+_REFUSAL = "from rozliczenia.centrum import refusal\n\n\ndef saved(problem: object) -> None:\n"
+_PATTERN = "import re\n\nLINE = "
+# Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
+# (#1533 W1 r2, #1585 W1 r1, #1577 W1 r3, #1584 W1 r1), i postać po poprawce, którą przepuszcza.
+_PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading")\n', [5]),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(role="heading")\n', [5]),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
+    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("button")\n', []),
+    ("regula-w-trasie", f"{_REFUSAL}    if problem is not None:\n        raise refusal.setting_refused(problem)\n", [6]),
+    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        if len(str(problem)) > 1:\n            raise refusal.workers_unusable(None)\n", [7]),
+    ("regula-w-trasie", f"{_REFUSAL}    _ensure_not_in_periods(problem)\n", [5]),
+    ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
+    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        raise refusal.device_component_unknown()\n", []),
+    ("regula-w-trasie", f"{_REFUSAL}    if isinstance(problem, NotSaved):\n        raise refusal.autostart_not_changed()\n", []),
+    ("regula-w-trasie", f"{_REFUSAL}    if problem is None:\n        raise refusal.register_not_chosen()\n", []),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    match problem:\n        case Refused(problem=refused):\n            if refused:\n"
+        "                raise refusal.setting_refused(refused)\n",
+        [],
+    ),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n"
+        "    elif problem != 1:\n        raise refusal.setting_refused(problem)\n",
+        [8],
+    ),
+    (
+        "regula-w-trasie",
+        f"{_REFUSAL}    if problem is not None:\n        if isinstance(problem, FieldProblem):\n"
+        "            raise refusal.setting_refused(problem)\n",
+        [],
+    ),
+    ("regula-w-trasie", f"{_REFUSAL}    if problem:\n        for part in str(problem):\n            raise refusal.setting_refused(part)\n", [7]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+]
+
+
+def _probki_w_zakresie(root: Path, rule: str, probki: dict[str, str]) -> dict[str, Path]:
+    """Plik każdej próbki reguły ``rule`` w katalogu jej zakresu ``files:`` w ``root``, z przyrostkiem nazwy z
+    ``_ZAKRES_REGUL_POWROTOW``."""
+
+    parts, suffix = _ZAKRES_REGUL_POWROTOW[rule]
+    folder = root.joinpath(*parts)
+    folder.mkdir(parents=True, exist_ok=True)
+    pliki = {opis: folder / f"znana_luka_{numer}{suffix}" for numer, opis in enumerate(probki)}
+    for opis, plik in pliki.items():
+        plik.write_text(probki[opis], encoding="utf-8")
+    return pliki
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("rule", "text", "lines"), _PROBKI_REGUL_POWROTOW)
+def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
+    tmp_path: Path, rule: str, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    _probki_w_zakresie(tmp_path, rule, {"probka": text})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
+
+
+# Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
+# ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
+# konfiguracją swojego katalogu.
+ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
+    "lokator-tytulu-okna": {
+        "argument obok roli: nagłówek bez nazwy z poziomem": f'{_LOCATOR}page.get_by_role("heading", level=2)\n',
+        "kopia właściciela: lokator settings_title z name= poza drive/common.py": (
+            f'import re\n\n{_LOCATOR}page.get_by_role("heading", name=re.compile(r"^Ustawienia "))\n'
+        ),
+        "rola w zmiennej": f'{_LOCATOR}page.get_by_role(HEADING)\n\n\nHEADING = "heading"\n',
+        "selektor CSS zamiast roli": f'{_LOCATOR}page.locator("h2")\n',
+    },
+    "regula-w-trasie": {
+        "uzupełnienie listy w funkcji zmiany trasy (#1577 W1 r2)": (
+            "from rozliczenia.centrum.settings.quantity_rules import completed_devices\n\n\n"
+            "def applied(current: tuple[object, ...], rules: tuple[object, ...]) -> tuple[object, ...]:\n"
+            "    return completed_devices(current, rules)\n"
+        ),
+        "odmowa reguły pod isinstance jak odmowa formularza": (
+            "from rozliczenia.centrum.device_forms import needed_by\nfrom rozliczenia.centrum.settings.files import FieldProblem\n"
+            f"{_REFUSAL}    needed = needed_by(problem)\n    if isinstance(needed, FieldProblem):\n"
+            "        raise refusal.setting_refused(needed)\n"
+        ),
+        "odmowa w except": (
+            f"{_REFUSAL}    try:\n        str(problem)\n    except ValueError as error:\n"
+            "        raise refusal.setting_refused(problem) from error\n"
+        ),
+        "funkcja odmowy importowana z nazwy": (
+            "from rozliczenia.centrum.refusal import setting_refused\n\n\ndef saved(problem: object) -> None:\n"
+            "    if problem is not None:\n        raise setting_refused(problem)\n"
+        ),
+        "odmowa bez warunku": f"{_REFUSAL}    raise refusal.setting_refused(problem)\n",
+        "odmowa w else gałęzi isinstance": (
+            f"{_REFUSAL}    if isinstance(problem, str):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n"
+        ),
+        "sprawdzenie z innego modułu bez przedrostka _ensure_": (
+            "from rozliczenia.centrum import periods\n\n\ndef saved(problem: object) -> None:\n    periods.ensure_unused(problem)\n"
+        ),
+    },
+    "kotwica-konca-linii": {
+        "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"PONOWIENIE$"\nFOUND = re.compile(LINE)\n',
+        "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
+        "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
+        "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff
+
+    base = _empty_base(tmp_path)
+    zgloszenia: dict[str, list[str]] = {}
+    opisy: dict[str, str] = {}
+    for rule, probki in ZNANE_LUKI_REGUL_POWROTOW.items():
+        pliki = {f"{rule}: {opis}": plik for opis, plik in _probki_w_zakresie(tmp_path, rule, probki).items()}
+        zgloszenia |= ruff(pliki, sonda=ROOT.joinpath(*_ZAKRES_REGUL_POWROTOW[rule][0], "test_sonda_luki.py"))
+        opisy |= {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_PAGE ="from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.

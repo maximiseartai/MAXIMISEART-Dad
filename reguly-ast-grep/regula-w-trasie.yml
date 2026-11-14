@@ -1,0 +1,42 @@
+id: regula-w-trasie
+language: python
+severity: error
+message: >-
+  odmowa zmiany Ustawień w trasie HTTP to druga droga obok właściciela, którą „Cofnij” w Historii omija; użyj
+  sprawdzenia u właściciela Ustawień (CentrumSettings._checked albo _dad_change w settings/owner.py), a trasa niech
+  tylko tłumaczy jego wynik na odmowę (case Refused, if isinstance(wynik, NotSaved)); w trasie zostaje też odmowa
+  formularza (if isinstance(wynik, FieldProblem)), brak odczytu (if x is None) i 404 nieznanego id (refusal.*_unknown)
+files:
+  - src/rozliczenia/centrum/**/*router*.py
+rule:
+  # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty #1585 W1 r1 (_ensure_not_in_periods
+  # w trasie DELETE) i #1577 W1 r3 (odmowa needed_by w trasie formularza). Zakres to cały moduł *router*.py, bo trasy
+  # wołają zagnieżdżone funkcje pomocnicze bez dekoratora. Postacie, których reguła nie łapie, są próbkami
+  # ZNANE_LUKI_REGUL_POWROTOW w tests/test_zapadki.py.
+  any:
+    - pattern: raise refusal.$F($$$)
+      inside:
+        # Najbliższa gałąź nad odmową: if albo elif, którego warunek nie jest isinstance(…) ani … is None.
+        stopBy:
+          any:
+            - kind: if_statement
+            - kind: elif_clause
+            - kind: else_clause
+            - kind: case_clause
+        any:
+          - kind: if_statement
+          - kind: elif_clause
+        not:
+          has:
+            field: condition
+            any:
+              - pattern: isinstance($$$)
+              - pattern: $_ is None
+      not:
+        any:
+          - inside:
+              kind: case_clause
+              stopBy: end
+          - regex: '^raise refusal\.\w+_unknown\('
+    - pattern: $ENSURE($$$)
+      regex: '^_ensure_'
