@@ -22,6 +22,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 - Linia `LIMIT | krok:pytest` znaczy, że krok pytest przekroczył swój limit z planu (`limit_pytest_s` w `tools/lib/plan_runu.py`), czyli coś się zawiesiło: test, który wisiał, zostawił wyżej w logu stosy swoich wątków pod `Timeout (0:02:30)!` (`faulthandler_timeout` w `pyproject.toml`), a zawieszenie przy imporcie albo zbieraniu testów stosów nie zostawia.
 - Ciężkie zadania liczy GitHub w częściach: `mutations` po pushu, z samymi podstawami `ci:` skilli (stan pokazuje `tools/praca_w_toku.py` albo `gh pr checks`), a `change-mutations` i skrypty mutacji skilli tylko nocą na `main`.
   Część skryptu mutacji albo podstawy z planu (`#k/n` w nazwie jednostki) odtwarzasz przez `MUTACJE_CZESC=k/n` w środowisku polecenia tego skryptu albo polecenia `ci:`.
+  Nocne `change-mutations` mutują zmienione linie `src/` i tylko tych jednostek `tools/`, które `tools/lib/szopa.toml` stawia w podtabeli `przepuszcza`, bo ich fałszywe „OK” przepuszcza zły kod produktu (audyty #1623 i #1624).
 
 ## Status `scalenie z main`
 
