@@ -111,13 +111,15 @@ _PASSED: Final = object()
 
 
 class WithoutSubclasses(type):
-    """Metaklasa typów-dowodów reguły danych: klasę z bazą tej metaklasy odmawia ``__init_subclass__`` tej bazy, bo Python
-    wybiera metaklasę po bazach, więc odmowy nie przesłania baza z własnym ``__init_subclass__`` stojąca przed typem."""
+    """Metaklasa typów-dowodów reguły danych i wersji komentarza Uruchomienia: sama odmawia klasy z bazą tej metaklasy
+    (``class``, ``type()``, ``types.new_class``), bo Python wybiera metaklasę po bazach, więc odmowy nie przesłania ani baza
+    przed typem, ani ``__init_subclass__`` podmienione na klasie. ``type.__new__`` z tą metaklasą omija ją, a wtedy odmawia
+    ``__init_subclass__`` typu, które przesłania baza przed typem bez ``super()``."""
 
     def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> WithoutSubclasses:
         for base in bases:
             if isinstance(base, WithoutSubclasses):
-                base.__init_subclass__()
+                raise TypeError(f"{base.__name__} nie ma podklas: typ-dowód reguły danych daje tylko jego moduł.")
         return super().__new__(mcs, name, bases, namespace, **kwargs)
 
 

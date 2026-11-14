@@ -17,9 +17,11 @@ from rozliczenia.client_data import tool
 
 def tekst_pliku_kolejki(wynik: object) -> str:
     """Tekst pliku kolejki z wyniku próbki: wysyłki (``Post``, ``LogsPost``), celu wysyłki albo pliku w Archiwum, który
-    dostaje wysyłkę z tekstem narzędzia."""
+    dostaje wysyłkę z tekstem narzędzia; napis to tekst, który próbka sama przeczytała z dysku (plik Logów)."""
 
     match wynik:
+        case str():
+            return wynik
         case ArchiveFile():
             watek = PeriodThread("logi-uruchomienia", tool("- Logi"), "reuse", tool("Logi"))
             return Post(watek, "08_14_09_2026", "r", tool("Nagłówek"), (tool("Komentarz"),), wynik).to_json()

@@ -516,11 +516,16 @@ def test_typy_dowody_reguly_danych_nie_maja_podklas_takze_zrobionych_w_trakcie_d
         type("Inne", (_BezSuper, proof) if before else (proof,), {"text": property(lambda self: "ul. Syntetyczna 1")})
 
 
-def test_wersja_komentarza_nie_ma_podklasy_z_pustym_przyjeciem() -> None:
+@pytest.mark.parametrize("podmiana", [False, True], ids=["bez-podmiany", "po-podmianie-init-subclass"])
+def test_wersja_komentarza_nie_ma_podklasy_z_pustym_przyjeciem(podmiana: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """Podklasa wersji z pustym ``__post_init__`` ominęłaby sprawdzenie tekstu po strażniku i dała ``post_of`` tekst z
-    komórki (przegląd #1731, runda 1, W2), więc jej utworzenie odmawia."""
+    komórki (przegląd #1731, runda 1, W2), więc jej utworzenie odmawia metaklasa, także gdy ``__init_subclass__`` wersji
+    podmieniono na klasie (runda 2, W1)."""
 
-    with pytest.raises(TypeError, match="Wersja komentarza Uruchomienia nie ma podklas"):
+    if podmiana:
+        monkeypatch.setattr(ProgressVersion, "__init_subclass__", classmethod(lambda cls, **kwargs: None))
+
+    with pytest.raises(TypeError, match="ProgressVersion nie ma podklas"):
         type("Wersja", (ProgressVersion,), {"__post_init__": lambda self: None})
 
 
@@ -732,6 +737,13 @@ def wysylka(komorka: str, post: Post) -> Post:
     ),
 }
 
+_WERSJA_Z_ATRAPA: Final = """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+"""
+"""Początek próbki, która daje ``post_of`` wersję postępu z tekstem z komórki zamiast tekstu po strażniku."""
+
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
 # Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
 # łapią. Pola z tekstem narzędzia
@@ -781,6 +793,124 @@ class Mixin:
 def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
     klasa: Any = type.__new__(type(ProgressVersion), "Wersja", (Mixin, ProgressVersion), {"__post_init__": lambda self: None})
     return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+    "refleksja: przypisanie __class__ typu tekstu po strażniku obcemu obiektowi, potem post_of": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    slot = "_" + typ.__name__ + "__text"
+
+    class Obca:
+        __slots__ = (slot,)
+
+    obca: Any = object.__new__(Obca)
+    object.__setattr__(obca, slot, komorka)
+    object.__setattr__(obca, "__class__", typ)
+    return post_of(ProgressVersion(postep.progress, obca))
+""",
+    # Podmiana atrybutu klasy, metaklasy albo modułu w biegu: jedna próbka na cel (#1551, przegląd #1731, runda 2).
+    "podmiana w biegu: __init_subclass__ wersji, potem type.__new__ z jej metaklasą": _WERSJA_Z_ATRAPA
+    + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    zapamietaj = ProgressVersion.__dict__["__init_subclass__"]
+    type.__setattr__(ProgressVersion, "__init_subclass__", classmethod(lambda cls, **kwargs: None))
+    try:
+        klasa: Any = type.__new__(type(ProgressVersion), "Wersja", (ProgressVersion,), {"__post_init__": lambda self: None})
+    finally:
+        type.__setattr__(ProgressVersion, "__init_subclass__", zapamietaj)
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+    "podmiana w biegu: __new__ metaklasy WithoutSubclasses, potem type() z bazą bez super()": _WERSJA_Z_ATRAPA
+    + """
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    metaklasa: Any = type(ProgressVersion)
+    zapamietaj = metaklasa.__dict__["__new__"]
+    type.__setattr__(metaklasa, "__new__", lambda mcs, *args, **kwargs: type.__new__(mcs, *args, **kwargs))
+    try:
+        klasa: Any = type("Wersja", (Mixin, ProgressVersion), {"__post_init__": lambda self: None})
+    finally:
+        type.__setattr__(metaklasa, "__new__", zapamietaj)
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+    "podmiana w biegu: __post_init__ wersji na klasie": _WERSJA_Z_ATRAPA
+    + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = ProgressVersion.__dict__["__post_init__"]
+    type.__setattr__(ProgressVersion, "__post_init__", lambda self: None)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        type.__setattr__(ProgressVersion, "__post_init__", zapamietaj)
+""",
+    "podmiana w biegu: exact_text zaimportowane w comment_versions": """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum import comment_versions
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = getattr(comment_versions, "exact_text")
+    setattr(comment_versions, "exact_text", lambda tekst: tekst)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        setattr(comment_versions, "exact_text", zapamietaj)
+""",
+    "podmiana w biegu: wbudowane type w module właściciela sprawdzenia (run_logs_guard)": """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum import run_logs_guard
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(run_logs_guard.guard_text("Postęp.", "postęp", pamiec))
+    atrapa: Any = SimpleNamespace(text=komorka)
+    setattr(run_logs_guard, "type", lambda wartosc: typ)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        delattr(run_logs_guard, "type")
+""",
+    "podmiana w biegu: exact_logs zaimportowane w logs_disk, potem plik Logów": """from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum import logs_disk
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+
+
+def zapis(komorka: str, logi: RunLog) -> str:
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    atrapa: Any = SimpleNamespace(record=zle, text=zle.text)
+    zapamietaj = getattr(logs_disk, "exact_logs")
+    setattr(logs_disk, "exact_logs", lambda wartosc: wartosc)
+    try:
+        with tempfile.TemporaryDirectory() as katalog:
+            LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(atrapa)
+            return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+    finally:
+        setattr(logs_disk, "exact_logs", zapamietaj)
 """,
     "refleksja: object.__setattr__ Logów wersji po jej przyjęciu, przed post_of": """from types import SimpleNamespace
 
@@ -895,7 +1025,7 @@ def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> ArchiveFile:
 ODMOWY_PAMIECI_Z_PODKLASY: Final = {
     "podklasa ForbiddenValues z bazą przed nią: Logi po strażniku w pliku Archiwum": (
         _PODKLASA_PAMIECI.format(podklasa="class Pamiec(Mixin, ForbiddenValues):  # type: ignore[misc]\n    pass\n", pamiec="pamiec"),
-        "Pamięć reguły danych nie ma podklas",
+        "ForbiddenValues nie ma podklas",
     ),
     "podklasa ForbiddenValues z type.__new__ i bazą przed nią: Logi po strażniku w pliku Archiwum": (
         _PODKLASA_PAMIECI.format(

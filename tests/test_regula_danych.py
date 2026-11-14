@@ -276,6 +276,15 @@ PODKLASY_PAMIECI: Final = {
     "types.new_class z bazą przed ForbiddenValues": (
         'Pamiec = types.new_class("Pamiec", (Mixin, ForbiddenValues), {}, lambda ns: ns.update(guard=zla))\n'
     ),
+    # Odmowy metaklasy przy class i type() nie zdejmuje __init_subclass__ podmienione na klasie (przegląd #1731, runda 2).
+    "type() po podmianie __init_subclass__ na ForbiddenValues": (
+        'zapamietaj = ForbiddenValues.__dict__["__init_subclass__"]\n'
+        'type.__setattr__(ForbiddenValues, "__init_subclass__", classmethod(lambda cls, **kwargs: None))\n'
+        "try:\n"
+        '    Pamiec = type("Pamiec", (ForbiddenValues,), {"guard": zla})\n'
+        "finally:\n"
+        '    type.__setattr__(ForbiddenValues, "__init_subclass__", zapamietaj)\n'
+    ),
     "type.__new__ z metaklasą ForbiddenValues": (
         'Pamiec = type.__new__(type(ForbiddenValues), "Pamiec", (ForbiddenValues,), {"guard": zla})\n'
     ),
@@ -297,7 +306,7 @@ def test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz(
     plik = tmp_path / "podklasa.py"
     plik.write_text(_PAMIEC_W_BIEGU + kod, encoding="utf-8")
 
-    with pytest.raises(TypeError, match="Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded"):
+    with pytest.raises(TypeError, match="nie ma podklas"):
         modul(plik)
 
 

@@ -72,6 +72,8 @@ class ResultWithoutLogs:
 
 
 _NO_VERSION_SUBCLASSES: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
+"""Odmowa podklasy wersji zrobionej przez ``type.__new__`` z metaklasą ``WithoutSubclasses``, którą omija; ``class`` i
+``type()`` odmawia sama metaklasa."""
 
 
 @final
