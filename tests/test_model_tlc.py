@@ -39,6 +39,7 @@ import model_tlc
 import narzedzia_tlc
 import rozjazd_modelu
 import potomne
+import silnik_mutacji
 
 ROOT = Path(__file__).resolve().parents[1]
 ZAPIS = ROOT / "tools" / "ci" / "zapis_narzedzi_tlc.py"
@@ -554,6 +555,8 @@ def test_przebieg_tlc_w_kopii_mutacji_ma_limit_300_s_a_poza_nia_1200_s_i_czas_na
 
     assert model_tlc.main(model, []) == 0
     assert timeouts == [limit_s + model_tlc.ZRZUT_S]
+    assert model_tlc.LIMIT_MUTANTA_S + model_tlc.ZRZUT_S < silnik_mutacji.TIMEOUT
+
 
 def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_strumienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     spec = tmp_path / "M.tla"
@@ -580,55 +583,65 @@ JAVA_STOI = (
     "here.with_name('argumenty').write_text(' '.join(sys.argv[1:]), encoding='utf-8')\n"
     "time.sleep(60)\n"
 )
-# Atrapa jcmd: ``-l`` podaje JVM jcmd, a JVM przebiegu z jego argumentami tylko wtedy, gdy drzewo atrapy Javy żyje (plik
-# ``bicie`` rośnie), bo prawdziwy jcmd nie zna JVM, która już zginęła; ``4242 Thread.print`` to zrzut jednego wątku.
+# Atrapa jcmd jak prawdziwy jcmd: ``-l`` nie czeka na JVM, tylko podaje JVM jcmd i JVM przebiegu z jego argumentami,
+# gdy ta już jest i jej drzewo żyje (plik ``bicie`` rośnie), bo JVM, która zginęła, jcmd nie zna; ``4242 Thread.print``
+# to zrzut jednego wątku, a chwilę zrzutu zapisuje w ``zrzut-czas``.
 JCMD = (
     "import pathlib, sys, time\n"
     "here = pathlib.Path(__file__)\n"
     "args, beats = here.with_name('argumenty'), here.with_name('bicie')\n"
     "if sys.argv[1:] == ['-l']:\n"
-    "    while not (args.exists() and beats.exists()):\n"
-    "        time.sleep(0.05)\n"
-    "    before = beats.stat().st_size\n"
-    "    time.sleep(0.5)\n"
     "    print('11 jdk.jcmd/sun.tools.jcmd.JCmd -l')\n"
-    "    if beats.stat().st_size != before:\n"
-    "        print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
+    "    if args.exists() and beats.exists():\n"
+    "        before = beats.stat().st_size\n"
+    "        time.sleep(0.5)\n"
+    "        if beats.stat().st_size != before:\n"
+    "            print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
     "elif sys.argv[1:] == ['4242', 'Thread.print']:\n"
+    "    here.with_name('zrzut-czas').write_text(repr(time.time()), encoding='utf-8')\n"
     "    print('\"TLCWorker1\" #21 prio=5 waiting on condition')\n"
 )
 JCMD_STOI = "import time\ntime.sleep(60)\n"
 
 
 @pytest.mark.parametrize(
-    ("jcmd", "said"),
-    [(JCMD, '"TLCWorker1" #21 prio=5 waiting on condition'), (None, "ZRZUT WĄTKÓW: brak jcmd"), (JCMD_STOI, "nie odpowiedział w 3 s")],
+    ("jcmd", "said", "limit_s"),
+    [
+        (JCMD, '"TLCWorker1" #21 prio=5 waiting on condition', 3.0),
+        (None, "ZRZUT WĄTKÓW: brak jcmd", 0.5),
+        (JCMD_STOI, "nie odpowiedział w 3 s", 0.5),
+    ],
     ids=["zrzut", "bez-jcmd", "jcmd-stoi"],
 )
 def test_przebieg_tlc_bez_wyniku_w_limicie_konczy_sprawdzenie_zawieszeniem_ze_zrzutem_watkow_i_zabija_drzewo_tlc(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], jcmd: str | None, said: str
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], jcmd: str | None, said: str, limit_s: float
 ) -> None:
     """Zawieszony mutant czekał dotąd na limit polecenia mutacji (600 s) i kończył się bez śladu, czemu stoi (runy
-    42335147260 i 42393988844). Zrzutu, którego nie da się zrobić, sprawdzenie nie czeka dłużej niż swój czas."""
+    42335147260 i 42393988844). Zrzut powstaje w chwili zawieszenia, czyli po limicie: prawdziwy jcmd zna JVM przebiegu
+    już w pierwszej sekundzie jej życia, więc zrzut zrobiony wcześniej by się udał, tylko pokazałby przebieg, który
+    jeszcze nie stał. Limit przypadku ``zrzut`` ma zapas na start atrapy Javy na wolnym runnerze. Zrzutu, którego nie da
+    się zrobić, sprawdzenie nie czeka dłużej niż swój czas."""
 
     model = _model(tmp_path, {"f": _config()})
     java = fake_cli(tmp_path / "bin", "java", JAVA_STOI)
     if jcmd is not None:
         fake_cli(tmp_path / "bin", "jcmd", jcmd)
     spec = model.skill / "model" / "M.tla"
-    started = time.perf_counter()
+    started, started_at = time.perf_counter(), time.time()
 
     code = model_tlc.sprawdz(
         model,
         model_tlc.konfiguracje(model),
-        lambda name, text: model_tlc.tlc(str(java), tmp_path / "tla2tools.jar", spec, name, text, limit_s=0.5, zrzut_s=6),
+        lambda name, text: model_tlc.tlc(str(java), tmp_path / "tla2tools.jar", spec, name, text, limit_s=limit_s, zrzut_s=6),
     )
 
     took = time.perf_counter() - started
     out = capsys.readouterr().out
     assert (code, out.splitlines()[-1]) == (2, "MODEL M: ZAWIESZENIE TLC (1)")
-    assert "ZAWIESZENIE TLC: przebieg TLC bez wyniku po 0.5 s, drzewo TLC zabite." in out
+    assert f"ZAWIESZENIE TLC: przebieg TLC bez wyniku po {limit_s:g} s, drzewo TLC zabite." in out
     assert said in out.split("Zrzut wątków JVM tego przebiegu:", 1)[1]
+    if jcmd == JCMD:
+        assert float((tmp_path / "bin" / "zrzut-czas").read_text(encoding="utf-8")) - started_at >= limit_s
     assert took < 30
     assert not beating(tmp_path / "bin" / "bicie")
 
