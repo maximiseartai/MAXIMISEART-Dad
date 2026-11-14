@@ -21,7 +21,6 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import time
 from types import ModuleType
 import urllib.error
 
@@ -31,6 +30,7 @@ import yaml
 from tests.fixtures.ci_workflow import action
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+from tests.fixtures.sen import sleep_in_test_thread
 import model_tlc
 import narzedzia_tlc
 import rozjazd_modelu
@@ -437,7 +437,7 @@ def _download_answers(
         return io.BytesIO(JAR)
 
     monkeypatch.setattr("urllib.request.urlopen", urlopen)
-    monkeypatch.setattr(time, "sleep", (clock or ManualClock()).pause)
+    sleep_in_test_thread(monkeypatch, (clock or ManualClock()).pause)
     monkeypatch.setattr(narzedzia_tlc, "TLA_SHA256", hashlib.sha256(JAR).hexdigest())
     return calls
 
