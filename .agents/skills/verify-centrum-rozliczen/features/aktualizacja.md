@@ -55,7 +55,7 @@ Printed by `scripts/sub_features.py --feature aktualizacja` from the drive's ste
 - `aktualizacja-najnowsza`: the server reports the newest version; the clone stays on the newest commit; the Centrum log has the update that changed nothing.
 - `aktualizacja-instalowanie`: with a newer Wydanie than the one the last update was up to date with, the server forgets that result; the server reports the step `installing`.
 - `aktualizacja-instalacja-nieudana`: the server reports the three-part Komunikat of the failed installation, to be tried again; the clone is back on the commit before the click; the new version's requirements left with it; the clone has no changes left; Dad's files in the tool's config/ keep exactly their content, the changed old Wykonawcy file too; the new version no longer tracks the old Wykonawcy file that Dad still has; the run's configuration directory is untouched; the Centrum log has the failed installation with both commits, and no path or pip output.
-- `aktualizacja-nie-wystartowala-ponowny-start`.
+- `aktualizacja-nie-wystartowala-ponowny-start`: while no Centrum answers, the card says „Ponowne uruchamianie Centrum…” and the update button waits.
 - `aktualizacja-nie-wystartowala`: the tab reloaded by itself; the tab reloaded on Uruchomienia, a page with no button of its own, and shows the Komunikat there; `Wyślij do Maksa` is the main action; a new Centrum answers on the same address, in the old version; the old version reports the Komunikat in three parts and a Zgłoszenie to Maks; the guardian moved the clone back to the commit before the click; the clone has no changes left; Dad's files in the tool's config/ keep exactly their content, the changed old Wykonawcy file too; the new version no longer tracks the old Wykonawcy file that Dad still has; the run's configuration directory is untouched; the old version read the result once; the Centrum log has the update and its end in the old version, with both commits and no path; the Centrum before the click logged its stop; only the old version started again, the new one never logged a start; in Ustawienia the same Komunikat stands once, in the section Narzędzie, with the old version.
 - `aktualizacja-start-ze-skrotu`: `Wyślij do Maksa` is the main action; a tab the restart did not reload shows the Komunikat under the title of Okresy, where Dad lands.
 - `aktualizacja-ok-przy-starej-wersji`: the harness put „ok” back before the old version started; the tab reloaded by itself; the section Narzędzie shows the failure, no `Zaktualizowano`, and the old version; „ok” read by the old version is the unexpected failure, to be tried again; the old version runs; the clone stands on the commit before the click; the old version read the result once; the Centrum log has the update's end as the unexpected failure, with both commits; after the failed installation the tool is up to date on the newest commit; with GitHub's newest Wydanie on the tool's commit, Ustawienia show it current, with no button and no alert; the card no longer says „…”; with GitHub's newest Wydanie on the tool's commit, the server forgets the result about the other Wydanie.
@@ -69,9 +69,9 @@ Printed by `scripts/sub_features.py --feature aktualizacja` from the drive's ste
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualizacja`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP aktualizacja` in `drive.txt`, screenshots `93`, `94`, `96`, `100`, `101`, `115`–`117`, `130`–`132` and
-`135`–`138`, and `api/aktualizacja-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP aktualizacja` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/aktualizacja-*.json`.
 
 ## Gotchas
 

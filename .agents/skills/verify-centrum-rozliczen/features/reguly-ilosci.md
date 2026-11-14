@@ -26,8 +26,9 @@ a bookmark of `#/ustawienia/reguly-ilosci` or `#/ustawienia/urzadzenia` opens th
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature reguly-ilosci`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP reguly-ilosci` in `drive.txt`, screenshots `350`–`354` and `api/reguly-ilosci.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP reguly-ilosci` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/reguly-ilosci.json`.
 
 ## Gotchas
 

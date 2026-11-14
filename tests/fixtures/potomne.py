@@ -1,6 +1,10 @@
 """Wnuk polecenia co 0,1 s dopisuje znak do pliku; plik, który przestał rosnąć, znaczy, że wnuk nie żyje.
 
 Na Windows ``os.kill(pid, 0)`` nie sprawdza procesu, tylko wysyła mu Ctrl+C (``CTRL_C_EVENT`` to 0).
+
+Żywy proces bez okna czasu: ``hold_lock`` trzyma blokadę pliku do końca życia procesu, a ``held`` pyta, czy ktoś ją
+trzyma. Blokadę zwalnia system, gdy proces ginie, także zabity, więc odpowiedź nie zależy od tego, czy proces dostał
+ostatnio procesor (bicie z ``beating`` zależy).
 """
 
 from __future__ import annotations
@@ -9,11 +13,12 @@ from collections.abc import Callable
 from pathlib import Path
 import sys
 import time
-from typing import TypeVar
+from typing import IO, TypeVar
 
 from tests.fixtures.git_repo import git
+import potomne
 
-__all__ = ["beating", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["beating", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
 
@@ -36,6 +41,29 @@ def with_grandchild(beats: Path, then: str) -> list[str]:
 def beating(beats: Path) -> bool:
     before = beats.stat().st_size
     return wait_for(lambda: beats.stat().st_size != before, 2)
+
+
+def hold_lock(path: Path) -> IO[bytes]:
+    """Blokada pliku ``path`` dla tego procesu do końca jego życia, tym samym mechanizmem co zamek ``potomne``
+    (``fcntl.flock`` na POSIX, ``msvcrt.locking`` na Windows); wołający trzyma zwrócony plik otwarty."""
+
+    lock = path.open("ab")
+    if not potomne._locked(lock):
+        raise RuntimeError(f"blokadę {path} trzyma już inny proces")
+    return lock
+
+
+def held(path: Path) -> bool:
+    """Czy blokadę pliku ``path`` (``hold_lock``) trzyma żywy proces. Na Windows system zwalnia blokadę zabitego
+    procesu z opóźnieniem zależnym od zasobów, więc po zabiciu pytaj ``wait_for(lambda: not held(path), s)``."""
+
+    if not path.exists():
+        return False
+    with path.open("ab") as lock:
+        if not potomne._locked(lock):
+            return True
+        potomne._unlock(lock)
+    return False
 
 
 def wait_for(condition: Callable[[], bool], seconds: float = 60, *, every: float = 0.05) -> bool:

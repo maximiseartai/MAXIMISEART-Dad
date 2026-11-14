@@ -492,6 +492,10 @@ def _drive_new_version_not_starting(
     expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.SLOWED.ms)
     expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
     until(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
+    run.check(
+        _status(page, RESTARTING).is_visible() and card.get_by_role("button", name=UPDATE_BUTTON, exact=True).is_disabled(),
+        f"while no Centrum answers, the card says „{RESTARTING}” and the update button waits",
+    )
     _entered(_status(page, RESTARTING))
     run.capture(page, "135-aktualizacja-nie-wystartowala-ponowny-start", live=True)
     print("  Dad closes Ustawienia and goes to Uruchomienia while Centrum restarts", flush=True)

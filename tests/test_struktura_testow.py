@@ -998,6 +998,8 @@ rule:
   pattern: zakazane()
 """
 _AST_GREP_ANCHOR = 'AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))'
+# Zadanie bez dodatku dev w ``tests/test_zapadki.py``: bieg bez ast-grep udaje zadanie pytest na Windows, także poza nim.
+_BEZ_DODATKU_DEV_ANCHOR = 'BEZ_DODATKU_DEV = sys.platform == "win32"'
 _AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 
 
@@ -1039,8 +1041,9 @@ def test_bieg_pustego_drzewa_przechodzi_z_regula_ast_grep_i_jej_starym_wystapien
     zapadki = root / "tests" / "test_zapadki.py"
     text = zapadki.read_text(encoding="utf-8")
     assert text.count(_AST_GREP_ANCHOR) == 1, f"tests/test_zapadki.py nie ma już linii {_AST_GREP_ANCHOR}"
+    assert text.count(_BEZ_DODATKU_DEV_ANCHOR) == 1, f"tests/test_zapadki.py nie ma już linii {_BEZ_DODATKU_DEV_ANCHOR}"
     if not ast_grep:
-        text = text.replace(_AST_GREP_ANCHOR, "AST_GREP = None")
+        text = text.replace(_AST_GREP_ANCHOR, "AST_GREP = None").replace(_BEZ_DODATKU_DEV_ANCHOR, "BEZ_DODATKU_DEV = True")
     zapadki.write_text(text + '\nAST_GREP_INSTRUCTIONS["zakazane-wywolanie"] = "na dozwolone()"\n', encoding="utf-8")
 
     assert _empty_tree_problems(root) == []
