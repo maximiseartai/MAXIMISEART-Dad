@@ -797,7 +797,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 # do końca, który kopiuje prawdziwy ``sgconfig.yml`` do drzewa tymczasowego.
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
-AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {}
+AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {"historia-w-docstringu": "zostaw w opisie PR albo w issue"}
 # Wbudowane reguły ast-grep o dyrektywie ``ast-grep-ignore`` → komunikat zamiast angielskiego komunikatu ast-grep.
 _AST_GREP_BUILTIN_MESSAGES: Final = {
     "no-suppress-all": "dyrektywa ast-grep-ignore bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
@@ -1101,6 +1101,91 @@ def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(t
 
     with pytest.raises(AssertionError, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
         syntax_rules(tmp_path, base, config)
+
+
+_IN_FUNCTION = "def f() -> None:\n    "
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "lines"),
+    [
+        ('"""Moduł z #1614."""\n', [1]),
+        (f'{_IN_FUNCTION}"""Wzór z (#1614)."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Wzór z issue #1614 i PR#12."""\n', [2]),
+        ('class K:\n    """Od o/r#1614."""\n', [2]),
+        ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [1]),
+        (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. https://gist.github.com/o/1."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. https://api.github.com/repos/o/r/issues/1614."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. https://uploads.github.com/o."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. https://redirect.github.com/o/r/compare/a...b."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Zob. git@github.com:o/r."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Repozytorium jest na github.com."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Naprawione w 5b2edaf2f9."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Naprawione w 2FF78B6B3."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Naprawione w 8d3f7b66dfe85c4f3e0fae27b05a66340c076deb."""\n', [2]),
+        *((f'{_IN_FUNCTION}"""Naprawione w {short}."""\n', [2]) for short in ("deadbee", "1abcdef", "12abcde", "123abcd", "1234abc", "12345ab", "123456a", "1234567a")),
+        ('#!/usr/bin/env python3\n"""Moduł z #1614."""\n', [2]),
+        (f'{_IN_FUNCTION}"""Opis.\n\n    Wzór z #808.\n    """\n', [2]),
+        (f'{_IN_FUNCTION}"Część z #1 " "i dalej"\n', [2]),
+        (f"{_IN_FUNCTION}r'''Z a1b2c3d.'''\n", [2]),
+        (f'{_IN_FUNCTION}b"""Z #1614."""\n', [2]),
+        ('def f(x: int) -> None:\n    f"""Z #1614 i {x}."""\n', [2]),
+        ('class K:\n    @staticmethod\n    async def f() -> None:\n        """Z #1614."""\n', [4]),
+        (f'{_IN_FUNCTION}def g() -> None:\n        """Z #1614."""\n', [3]),
+        ('"""Moduł bez historii: 600 s, 2026-11-14, telefon 48600123456, słowa added i deadbe, 0xdeadbeef1."""\n', []),
+        ('"""Kolor #fff, kotwica #L12 i sekcja #opis."""\n', []),
+        (f'{_IN_FUNCTION}"""Adresy notgithub.com, my-github.com, github.com.pl, github.company i githubusercontent.com."""\n', []),
+        ('w = "#123 w napisie, który nie jest docstringiem"\n', []),
+        ('def f() -> str:\n    s = "zwykły napis"\n    """Drugi napis z #9 nie jest docstringiem."""\n    return s\n', []),
+        ('if True:\n    """Napis z #9 w bloku if nie jest docstringiem."""\n', []),
+    ],
+)
+def test_historia_w_docstringu_zglasza_docstring_z_numerem_adresem_github_albo_skrotem_commitu(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == lines
+
+
+# Znane luki reguły ``historia-w-docstringu`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z
+# docstringiem, który mówi o historii, a mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+ZNANE_LUKI_HISTORII: Final = {
+    "numer po słowie: PR 12": '"""Wzór z PR 12."""\n',
+    "numer po słowie: issue 1614": '"""Wzór z issue 1614."""\n',
+    "numer po słowie: PRy 12": '"""Wzór z PRy 12."""\n',
+    "numer po słowie: PRów 12": '"""Wzór z PRów 12."""\n',
+    "numer po słowie: GH-1614": '"""Wzór z GH-1614."""\n',
+    "znak # z odstępem: # 1614": '"""Wzór z # 1614."""\n',
+    "ścieżka bez hosta: /issues/1614": '"""Zob. o/r/issues/1614."""\n',
+    "ścieżka bez hosta: /pull/77": '"""Zob. /pull/77."""\n',
+    "skrót commitu: same cyfry": '"""Naprawione w 4801234."""\n',
+    "skrót commitu: krótszy niż 7 znaków": '"""Naprawione w abc123."""\n',
+    "historia słowami: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
+    "miejsce docstringu: w nawiasach": '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n',
+    "miejsce docstringu: napis pod przypisaniem atrybutu": '"""Moduł."""\n\nLIMIT = 5\n"""Limit z #1614."""\n',
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_HISTORII, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(
+        zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff"
+    )
 
 
 @needs_ast_grep
