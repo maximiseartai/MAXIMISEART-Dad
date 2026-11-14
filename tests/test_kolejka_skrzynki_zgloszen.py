@@ -2082,6 +2082,33 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
         + '    return Post.of(cel, period=None, run_id="r", blocks=[post.parts[0], tekst(komorka)], frame=lambda n, c, t: t)\n',
         "bieg TypeError: Wysyłka bierze tylko bloki Outgoing",
     ),
+    "części wysyłki z innym drugim przebiegiem": (
+        _POST
+        + """from collections.abc import Iterator
+
+from rozliczenia.client_data import Outgoing
+
+
+class Czesci(tuple[Outgoing, ...]):
+    def __new__(cls, prawdziwe: tuple[Outgoing, ...], komorka: str) -> "Czesci":
+        czesci = super().__new__(cls, prawdziwe)
+        czesci.przebiegi = 0
+        czesci.komorka = komorka
+        return czesci
+
+    przebiegi: int
+    komorka: str
+
+    def __iter__(self) -> Iterator[Outgoing]:
+        self.przebiegi += 1
+        return super().__iter__() if self.przebiegi == 1 else iter((self.komorka,))  # type: ignore[arg-type]
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, Czesci((cel.title,), komorka))
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
     "bloki Post.of z innym drugim przebiegiem": (
         _POST
         + """from collections.abc import Iterator
