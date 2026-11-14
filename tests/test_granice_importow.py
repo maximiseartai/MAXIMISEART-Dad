@@ -408,13 +408,16 @@ def skrzynka() -> ssl.SSLSocket:
 
 
 def _contract_tree(src: Path) -> None:
-    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``."""
+    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``, i
+    moduł ``kontrola``, który łamie oba kontrakty importem wprost: jego zgłoszenie dowodzi, że ``lint-imports`` czytał
+    to drzewo."""
 
     for name, code in {
         "__init__.py": "",
         "centrum/__init__.py": "",
         "centrum/runs.py": "",
         "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
+        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
         (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
@@ -434,7 +437,8 @@ def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tm
     for opis, plik in pliki.items():
         zgloszenia[opis] += [line for line in wynik.splitlines() if f"rozliczenia.{plik.stem}" in line]
 
-    assert "\nContracts: " in wynik, wynik
+    assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
+    assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
