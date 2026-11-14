@@ -301,6 +301,29 @@ def test_porazka_dla_calej_kolejki_zatrzymuje_przejscie_i_ponawia_je_po_minucie_
     assert (queue.box.issues, queue.clock.wakes) == ([], 1)
 
 
+def test_zamiana_pliku_ktorej_windows_odmawia_probuje_piec_razy_w_0_75_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plik otwarty chwilę w innym programie (antywirus, OneDrive) blokuje zamianę; zapis czeka i próbuje jeszcze raz."""
+
+    replace = Path.replace
+    refusals = [4]
+
+    def blocked(self: Path, target: Path) -> Path:
+        if refusals[0]:
+            refusals[0] -= 1
+            raise PermissionError("plik otwarty w innym programie")
+        return replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", blocked)
+    waited: list[float] = []
+
+    replace_atomically(tmp_path / "stan.json", "treść", pause=waited.append)
+
+    assert ((tmp_path / "stan.json").read_text(encoding="utf-8"), len(waited) + 1) == ("treść", 5)
+    assert sum(waited) == pytest.approx(0.75)
+
+
 def test_po_braku_sieci_kolejka_ponawia_po_minucie_bez_kolejnej_wysylki(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
     queue.outbox.post(post(["treść\n"]))
