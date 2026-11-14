@@ -68,5 +68,7 @@ def test_plan_bramki_wzorcowego_pr_miesci_sie_w_limicie_testow_zadan_i_prognozy_
     assert (len(praca.pliki) <= limit.testy, zadania <= limit.zadania, sciana <= limit.sciana_s) == (True, True, True), (
         f"przypadek {przypadek}: {len(praca.pliki)} testów na torze (limit {limit.testy}), {zadania} zadań runu (limit {limit.zadania}),"
         f" prognoza ściany {sciana:.1f} s (limit {limit.sciana_s} s),"
-        f" {praca.zrodlo}; podniesienie limitu to decyzja Maksa"
+        f" {praca.zrodlo}; nowy test dopisz do pliku, który ten przypadek już wybiera, a plik wciągnięty nowym importem"
+        f" pokaże zakres(Zdarzenie.PULL_REQUEST, zmiana z {przypadek}.txt) na bazie i na HEAD;"
+        f" podniesienie limitu to decyzja Maksa"
     )
