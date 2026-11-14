@@ -1120,9 +1120,19 @@ def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
         ),
         ("probka.py", _WLASCICIEL, '\n\ndef undo(settings: CentrumSettings) -> None:\n    settings.undo("row")\n', [6, 8]),
         ("probka.py", _WLASCICIEL, "\n\ndef release(settings: CentrumSettings) -> None:\n    settings.apply_release_changes()\n", [6, 8]),
+        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "change")()\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings._dad_change()\n", [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    write = settings._checked\n", [6, 8]),
+        (
+            "probka.py",
+            "from collections.abc import Callable\n",
+            "\n\ndef apply(settings: object, run: Callable[[object], None]) -> None:\n    run(settings.change)\n",
+            [6, 8],
+        ),
         ("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", [6, 8]),
         ("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", []),
         ("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
+        ("probka.py", "", '\n\ndef apply(settings: object) -> None:\n    """Zapis: settings.change w trasie."""\n', []),
     ],
 )
 def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poza_wlascicielem(
@@ -1130,9 +1140,10 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poz
 ) -> None:
     """Zakres reguły wynika z własności, nie ze składni trasy: sondy #1727 r1 W1 (``quantity_differences.py`` bez
     ``router`` w nazwie), r2 W1 (router z parametru) i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``, adnotacja
-    napisem ``"fastapi.APIRouter"``) i moduł bez trasy, który woła którąkolwiek metodę zapisu właściciela, są
-    zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``) i w module
-    bez zapisu Ustawień nie."""
+    napisem ``"fastapi.APIRouter"``), sondy r4 W1 (``getattr`` z nazwą metody zapisu w literale, prywatna metoda
+    właściciela) i moduł bez trasy, który nazywa którąkolwiek metodę zapisu właściciela, także przekazaną bez
+    wywołania, są zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``),
+    w module bez zapisu Ustawień i w module, którego napis tylko wspomina metodę zapisu, nie."""
 
     base = _empty_base(tmp_path)
     plik = tmp_path.joinpath(*_CENTRUM, *modul.split("/"))
@@ -1251,10 +1262,10 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         'def apply(settings: object, problem: object) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
         "    settings_writes.save(settings)\n"
     ),
-    "zakres: metoda zapisu właściciela przekazana bez wywołania, reguła czyta wywołanie": (
-        "from collections.abc import Callable\n\nfrom rozliczenia.centrum import refusal\n\n\n"
-        "def apply(settings: object, problem: object, run: Callable[[object], None]) -> None:\n    if problem:\n"
-        '        raise refusal.worker_kept(problem, "worker")\n    run(settings.change)\n'
+    "zakres: nazwa metody zapisu właściciela nie jest literałem, np. getattr ze zmienną": (
+        "from rozliczenia.centrum import refusal\n\n\n"
+        "def apply(settings: object, problem: object, operation: str) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, operation)(problem)\n'
     ),
 }
 
