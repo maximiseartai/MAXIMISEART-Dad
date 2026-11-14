@@ -120,8 +120,8 @@ _TOKENY_GH = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPR
 
 @pytest.fixture(autouse=True, scope="session")
 def gh_bez_logowania(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
-    """``gh`` w procesie testów i w jego potomkach nie ma logowania ani tokenu, więc ``gh api`` odmawia („gh auth
-    login”, kod 4), zamiast pisać do prawdziwego repozytorium jako zalogowany agent.
+    """``gh`` w procesie testów i w jego potomkach nie ma logowania ani tokenu, więc ``gh api`` odmawia kodem 4 (tekst
+    odmowy w GitHub Actions jest inny niż poza nim), zamiast pisać do prawdziwego repozytorium jako zalogowany agent.
 
     Prawdziwy klient ``GhApi`` w miejscu atrapy (mutacja ``noc = GITHUB`` z ``tools/mutacje.py`` założyła tak issue
     #1500–#1502) pada w teście. Granica: potomek z ``env`` zbudowanym od zera z prawdziwym ``HOME`` albo z tokenem
