@@ -157,11 +157,12 @@ class Structure:
             return Structure(text=text, plain=text and value[1].upper() == b"PLAIN")
         return None
 
-    def _leaves(self) -> Iterator[Structure]:
-        if not self.multipart:
-            yield self
-        for part in self.parts:
-            yield from part._leaves()
+
+def _leaves(structure: Structure) -> Iterator[Structure]:
+    if not structure.multipart:
+        yield structure
+    for part in structure.parts:
+        yield from _leaves(part)
 
 
 def sections(structure: Structure) -> tuple[str, ...]:
@@ -174,7 +175,7 @@ def sections(structure: Structure) -> tuple[str, ...]:
 
     if not structure.multipart:
         return ("TEXT",) if structure.text else ()
-    with_plain = any(leaf.plain for leaf in structure._leaves())
+    with_plain = any(leaf.plain for leaf in _leaves(structure))
     return tuple(_sections(structure, "", with_plain))
 
 

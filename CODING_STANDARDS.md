@@ -36,6 +36,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Rule | Guard |
 |---|---|
 | The import graph of `src/`, tools, tests and skill scripts keeps the boundaries listed in the module docstring of its guard: the engine never imports Centrum rozliczeń, the process core never reaches the workbook layer, and only `Catalog.prepared` builds a `PreparedRun`. | `tests/test_granice_importow.py` (known gaps: `ZNANE_LUKI_GRAFU`, `ZNANE_LUKI_SKRYPTU`, `ZNANE_LUKI_STRAZNIKA` and `ZNANE_LUKI_WYSYLKI` in the same file, each run by the `test_znane_luki_…` test right after it; the check of `PreparedRun` keeps its boundary in the module docstring) |
+| Code in `src/` reaches a private member (`_name`) of another object or module only in the module that defines it: a file with owner right to `SLF001` in `per-file-ignores` of `pyproject.toml` reaches only the members its row in `OWNERS` names. | ruff `SLF001`, `tests/test_prywatne_skladowe.py` (known gaps: `ZNANE_LUKI`, run by `test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff` in the same file) |
 | Code outside `tests/` (`src/`, `tools/` with its libraries, CI scripts and hooks, skill scripts and the Python files in the root) never imports the package `tests`. | `tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow` (boundary: docstring of `_tests_imports`) |
 
 ## Error Ownership
