@@ -1,0 +1,75 @@
+id: lokator-tytulu-okna
+language: python
+severity: error
+message: >-
+  get_by_role("heading") bez nazwy w skrypcie skilla łapie też tytuł powiadomienia („Zapisano”, „Cofnięto”), który stoi
+  w oknie Ustawień jako osobny nagłówek; tytuł okna Ustawień czytaj tylko przez jego właściciela: użyj
+  settings_title(page) z drive/common.py, a inny nagłówek nazwij przez name=
+files:
+  - .agents/skills/**/scripts/**/*.py
+rule:
+  # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553, powrót #1533 W1 r2).
+  # Reguła czyta tylko literał roli: argument z miejsca albo role=, po zdjęciu dowolnej liczby nawiasów, to napis
+  # o wartości heading w dowolnym zapisie literału. Każde inne wyrażenie roli (nazwa, sklejanie, operator, wywołanie,
+  # f-napis ze wstawką) to znana luka „rola nie jest literałem” w ZNANE_LUKI_LOKATORA w tests/test_zapadki.py.
+  kind: call
+  all:
+    - has:
+        field: function
+        matches: metoda-get-by-role
+    - has:
+        field: arguments
+        has:
+          any:
+            - matches: rola-naglowka
+            - kind: keyword_argument
+              all:
+                - has:
+                    field: name
+                    regex: '^role$'
+                - has:
+                    field: value
+                    matches: rola-naglowka
+    # Zawęża tylko name=, bo tytuł okna i tytuł powiadomienia to oba <h2>, więc level= niczego nie odróżnia.
+    # Wartość name= reguła czyta tylko wtedy, gdy to literał pustego napisu, który w Playwright pasuje do każdego nagłówka.
+    - not:
+        has:
+          field: arguments
+          has:
+            kind: keyword_argument
+            all:
+              - has:
+                  field: name
+                  regex: '^name$'
+              - not:
+                  has:
+                    field: value
+                    matches: pusty-napis
+utils:
+  metoda-get-by-role:
+    any:
+      - kind: attribute
+        has:
+          field: attribute
+          regex: '^get_by_role$'
+      - kind: parenthesized_expression
+        has:
+          matches: metoda-get-by-role
+  rola-naglowka:
+    any:
+      # Literał napisu (bez b i t, bo bajty i szablon nie są napisem roli) o treści heading w każdym cudzysłowie.
+      - kind: string
+        regex: '^(?i:u|r|f|fr|rf)?("heading"|''heading''|"""heading"""|''''''heading'''''')$'
+      # Literał bez r z ukośnikiem: reguła nie dekoduje sekwencji ucieczki, a prawdziwa rola ich nie potrzebuje.
+      - kind: string
+        regex: '^(?i:u|f)?["''][\s\S]*\\'
+      - kind: parenthesized_expression
+        has:
+          matches: rola-naglowka
+  pusty-napis:
+    any:
+      - kind: string
+        regex: '^(?i:u|r|f|fr|rf)?(""|''''|""""""|'''''''''''')$'
+      - kind: parenthesized_expression
+        has:
+          matches: pusty-napis

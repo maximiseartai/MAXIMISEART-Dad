@@ -72,8 +72,6 @@ _VIEW: Final[PeriodProcessView[PreparationSummary]] = PeriodProcessView(
     _figures=_figures,
     _summary=_summary,
 )
-# OneDrive idzie przed sprawdzeniami, które otwierają Rejestr zleceń, Wzorce i pliki okresu: plik tylko w chmurze
-# może się nie otworzyć, a wtedy przyczyną jest OneDrive, nie uszkodzony plik.
 KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodProcessKind(
     key="preparation",
     short_title="Przygotowanie",
@@ -99,3 +97,6 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
     ),
     quantity_rules=True,
 )
+"""Przygotowanie pliku zbiorczego w Centrum. Sprawdzenie OneDrive (``files_in_onedrive``) idzie przed sprawdzeniami,
+które otwierają Rejestr zleceń, Wzorce i pliki okresu: plik tylko w chmurze może się nie otworzyć, a wtedy przyczyną
+jest OneDrive, nie uszkodzony plik."""

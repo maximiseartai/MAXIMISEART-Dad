@@ -27,7 +27,7 @@ from drive.common import (
     settings_title,
     version_line,
 )
-from drive.waiting import Budget, expect
+from drive.waiting import Budget, expect, until
 from harness import File, Pace, Switch
 from drive.teksty import FETCHING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.pliki_taty import UPDATE_RESULT_FILE, WORKER_MAPPING_FILE as WORKER_MAPPING
@@ -298,7 +298,7 @@ def drive(run: Run, page: Page) -> None:
         expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
         # The card shows the restart once the server says it restarts, before the old Centrum closes its port;
         # on Windows the old one still answers then.
-        run.wait_for(lambda: not answers(run.url), "the old Centrum has closed and the new one is not up yet")
+        until(lambda: not answers(run.url), "the old Centrum has closed and the new one is not up yet")
         run.check(_log_events(run)[-3:] == ["aktualizacja-start", "zamkniecie", "stop"], "the old Centrum closed itself and logged its stop")
         run.check(
             "zamkniecie z=aktualizacja" in run.log(),
@@ -491,7 +491,7 @@ def _drive_new_version_not_starting(
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.SLOWED.ms)
     expect(card.get_by_role("button", name=UPDATE_BUTTON, exact=True)).to_be_disabled()
-    run.wait_for(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
+    until(lambda: not answers(run.url), "the old Centrum has closed, and no Centrum answers yet")
     _entered(_status(page, RESTARTING))
     run.capture(page, "135-aktualizacja-nie-wystartowala-ponowny-start", live=True)
     print("  Dad closes Ustawienia and goes to Uruchomienia while Centrum restarts", flush=True)
@@ -583,10 +583,10 @@ def _drive_ok_on_old_version(run: Run, page: Page, not_starting: str) -> None:
     page.evaluate("window.przedPonownymStartem = true")
     card.get_by_role("button", name=UPDATE_BUTTON, exact=True).click()
     expect(_status(page, RESTARTING)).to_be_visible(timeout=Budget.SLOWED.ms)
-    run.wait_for(
+    until(
         lambda: result.exists() and read_json(result)["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA",
         "the guardian moved the clone back and wrote the failure",
-        timeout_s=Budget.SLOWED,
+        Budget.SLOWED,
     )
     print(
         "  harness: the disk refused the guardian both the removal of „ok” and the write of the failure, so „ok” stays",

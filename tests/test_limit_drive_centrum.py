@@ -377,11 +377,15 @@ class _KartaZZegarem:
         self.sent: list[SimpleNamespace] = []
         self.teraz_ms = 0.0
         self.wychodzi_ms = wychodzi_ms
+        self.odpowiedzi_czekane = 0
 
     def wait_for_timeout(self, ms: float) -> None:
         self.teraz_ms += ms
         if not self.sent and self.teraz_ms >= self.wychodzi_ms:
-            self.sent.append(SimpleNamespace(response=lambda: None))
+            self.sent.append(SimpleNamespace(response=self._odpowiedz))
+
+    def _odpowiedz(self) -> None:
+        self.odpowiedzi_czekane += 1
 
 
 @pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])
@@ -390,7 +394,8 @@ def test_cisza_po_kliknieciu_ktore_ma_nic_nie_wyslac_obejmuje_spozniony_zapis_ka
 ) -> None:
     """Kliknięcie, które ma nic nie wysłać, a jednak wysyła, w trybie wolnego runnera wysyła swój zapis ``LATE_WRITE_MS``
     później: ``settle`` liczy go, bo cisza ``quiet_for`` trwa w trybie tyle dłużej (lista #1539, PR 5). Bez trybu
-    zapis wychodzi od razu, a cisza zostaje krótka."""
+    zapis wychodzi od razu, a cisza zostaje krótka. Już pierwsza cisza obejmuje spóźniony zapis, więc ``settle`` czeka
+    na jego odpowiedź, zanim druga cisza da jej dojść na ekran (przegląd #1712, D1)."""
 
     waiting = importlib.import_module("drive.waiting")
     if slow:
@@ -402,6 +407,7 @@ def test_cisza_po_kliknieciu_ktore_ma_nic_nie_wyslac_obejmuje_spozniony_zapis_ka
     karta = _KartaZZegarem(late_ms + 50)
 
     assert common.settle(karta, karta.sent, at_least=0) == 1
+    assert karta.odpowiedzi_czekane == 1
     assert karta.teraz_ms <= 2 * (waiting.REPEAT_SETTLE_MS + late_ms)
 
 
@@ -438,7 +444,7 @@ def test_okno_taty_w_trybie_wolnego_runnera_wysyla_zapisy_pozno_i_zwalnia_animac
 
 STRONA_CENTRUM = (
     '<!doctype html><html><head><link rel="icon" href="data:,"><link rel="stylesheet" href="/assets/index.css">'
-    "</head><body><h1>Okresy</h1></body></html>"
+    '<link rel="stylesheet" href="http://czcionki.test/font.css"></head><body><h1>Okresy</h1></body></html>'
 )
 
 
@@ -453,7 +459,8 @@ def test_strona_napedu_zapisuje_utracone_zadania_a_bez_arkusza_stylow_konczy_prz
     """Run 43561009106: ``index.css`` nie doszedł, a kliknięcie w oknie Ustawień czekało 10 s za tłem okna Base UI i
     nie nazwało przyczyny (#1539). Każda karta okna taty zapisuje nieudane żądanie i odpowiedź 400 lub wyższą, adres bez
     zapytania (żądanie, które strona sama porzuciła, jak strumień Uruchomień przy przejściu, nic nie straciło), a strona
-    bez arkusza stylów kończy przebieg porażką, która go nazywa i wskazuje ten plik."""
+    bez arkusza stylów kończy przebieg porażką, która go nazywa i wskazuje ten plik. Arkusza z innego origin strona nigdy
+    nie odczyta, więc doszły nie jest porażką (przegląd #1714, D2)."""
 
     def arkusz_stylow(route: playwright.sync_api.Route) -> None:
         if arkusz == "doszedl":
@@ -468,6 +475,7 @@ def test_strona_napedu_zapisuje_utracone_zadania_a_bez_arkusza_stylow_konczy_prz
                 context = common.dad_context(browser)
                 context.route("http://centrum.test/", lambda route: route.fulfill(body=STRONA_CENTRUM, content_type="text/html"))
                 context.route("http://centrum.test/assets/index.css", arkusz_stylow)
+                context.route("http://czcionki.test/font.css", lambda route: route.fulfill(body="h1 {}", content_type="text/css"))
                 context.route("http://centrum.test/api/brak**", lambda route: route.fulfill(status=404, body="{}"))
                 context.route("http://centrum.test/api/runs/events", lambda route: route.abort("aborted"))
                 page = context.new_page()
@@ -498,8 +506,9 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], funkcja: str
 ) -> None:
     """``DRIVE FAIL`` przebiegu, którego strona nie dostała arkusza, zaczyna się od arkusza i pliku utraconych żądań, a
-    błąd funkcji (kliknięcie za tłem okna) zostaje po nim, jak w runie 43561009106 (#1539). Funkcja, która mimo to
-    przeszła, też kończy przebieg porażką: jej zrzuty nie pokazują ekranu taty."""
+    błąd funkcji (kliknięcie za tłem okna) zostaje po nim z notatkami (zrzut porażki, którego nie zrobiono), jak w runie
+    43561009106 (#1539, przegląd #1714, D1). Funkcja, która mimo to przeszła, też kończy przebieg porażką: jej zrzuty
+    nie pokazują ekranu taty."""
 
     monkeypatch.syspath_prepend(str(SCRIPTS))
     spec = importlib.util.spec_from_file_location("drive_centrum", SCRIPTS / "drive_centrum.py")
@@ -514,7 +523,7 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
             pass
 
         def screenshot(self, **options: object) -> bytes:
-            return b""
+            raise PlaywrightError("Page.screenshot: Target closed")
 
     class Browser:
         def new_context(self, **options: object) -> SimpleNamespace:
@@ -545,7 +554,7 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
     assert line == (
         "DRIVE FAIL | the page got no stylesheet (http://127.0.0.1:9/assets/index.css), so Base UI windows lie under "
         "their backdrop; its failed requests and error answers are in zadania-strony.txt"
-        + (" | Locator.click: Timeout 10000ms exceeded." if funkcja == "pada" else "")
+        + (" | Locator.click: Timeout 10000ms exceeded. | zz-failure.png not taken: Page.screenshot: Target closed" if funkcja == "pada" else "")
     ), line
     assert _bez_chwili(evidence / "zadania-strony.txt") == ["page without stylesheet http://127.0.0.1:9/assets/index.css"]
 

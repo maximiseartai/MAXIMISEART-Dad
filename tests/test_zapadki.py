@@ -104,6 +104,7 @@ PARSERS = frozenset(
     tools/lib/rozjazd_modelu.py
     tools/lib/wplyw_zmiany.py
     tools/mutacje_zmiany.py
+    tools/rownowaznosc.py
     """.split()
 )
 PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
@@ -791,7 +792,11 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 # do końca, który kopiuje prawdziwy ``sgconfig.yml`` do drzewa tymczasowego.
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
-AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {"komentarz-w-src": "wyraź lepszą nazwą albo testem"}
+AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
+    "komentarz-w-src": "wyraź lepszą nazwą albo testem",
+    "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "lokator-tytulu-okna": "użyj settings_title(page)",
+}
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
     reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
@@ -1186,6 +1191,82 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy")
 
 
+# Reguły ast-grep powrotów chwastów (#1676, ADR 0036) → katalog w zakresie ``files:`` reguły i przyrostek nazwy pliku
+# próbki. Katalog to części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest zależnością testu w grafie
+# wpływu zmiany (``tools/lib/wplyw_zmiany.py``); katalog to prawdziwy katalog repo, więc ruff próbki czyta jego
+# konfigurację.
+_ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
+    "kotwica-konca-linii": (("tools",), ".py"),
+}
+_PATTERN = "import re\n\nLINE = "
+# Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
+# (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
+_PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+]
+
+
+def _probki_w_zakresie(root: Path, rule: str, probki: dict[str, str]) -> dict[str, Path]:
+    """Plik każdej próbki reguły ``rule`` w katalogu jej zakresu ``files:`` w ``root``, z przyrostkiem nazwy z
+    ``_ZAKRES_REGUL_POWROTOW``."""
+
+    parts, suffix = _ZAKRES_REGUL_POWROTOW[rule]
+    folder = root.joinpath(*parts)
+    folder.mkdir(parents=True, exist_ok=True)
+    pliki = {opis: folder / f"znana_luka_{numer}{suffix}" for numer, opis in enumerate(probki)}
+    for opis, plik in pliki.items():
+        plik.write_text(probki[opis], encoding="utf-8")
+    return pliki
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("rule", "text", "lines"), _PROBKI_REGUL_POWROTOW)
+def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
+    tmp_path: Path, rule: str, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    _probki_w_zakresie(tmp_path, rule, {"probka": text})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
+
+
+# Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
+# ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
+# konfiguracją swojego katalogu.
+ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
+    "kotwica-konca-linii": {
+        "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"PONOWIENIE$"\nFOUND = re.compile(LINE)\n',
+        "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
+        "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
+        "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff
+
+    base = _empty_base(tmp_path)
+    zgloszenia: dict[str, list[str]] = {}
+    opisy: dict[str, str] = {}
+    for rule, probki in ZNANE_LUKI_REGUL_POWROTOW.items():
+        pliki = {f"{rule}: {opis}": plik for opis, plik in _probki_w_zakresie(tmp_path, rule, probki).items()}
+        zgloszenia |= ruff(pliki, sonda=ROOT.joinpath(*_ZAKRES_REGUL_POWROTOW[rule][0], "test_sonda_luki.py"))
+        opisy |= {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
 _PAGE = "from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
@@ -1513,3 +1594,106 @@ def test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff(tmp_path: Path, zapa
         zgloszenia[opisy[linia.split(":", 1)[0]]].append(f"{zapadka}: {linia}")
 
     assert_znane_luki(zgloszenia, f"tests/test_zapadki.py::{zapadka}")
+
+
+# Katalog skryptu skilla w zakresie ``files:`` reguły ``lokator-tytulu-okna`` jako części ścieżki, nie napis z ``/``,
+# bo napis ścieżki w pliku testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``); to
+# prawdziwy katalog, więc ruff próbki czyta jego ``ruff.toml``.
+_KATALOG_LOKATORA: Final = (".agents", "skills", "verify-centrum-rozliczen", "scripts", "drive")
+_LOCATOR = "from playwright.sync_api import Locator, Page\n\n\ndef title(page: Page) -> Locator:\n    return "
+# Tekst dodanego skryptu skilla → linie, które reguła ``lokator-tytulu-okna`` zgłasza: rola nagłówka z powrotu #1533
+# W1 r2 w każdym zapisie literału i w nawiasach, i lokatory zawężone albo innej roli, które przepuszcza.
+_PROBKI_LOKATORA: Final[list[tuple[str, list[int]]]] = [
+    (f'{_LOCATOR}page.get_by_role("heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(role="heading")\n', [5]),
+    (f"{_LOCATOR}page.get_by_role('heading')\n", [5]),
+    (f"{_LOCATOR}page.get_by_role(role='heading')\n", [5]),
+    (f'{_LOCATOR}page.get_by_role(f"heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("""heading""")\n', [5]),
+    (_LOCATOR + "page.get_by_role('''heading''')\n", [5]),
+    (f'{_LOCATOR}page.get_by_role(r"heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(u"heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(rf"heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(("heading"))\n', [5]),
+    (f'{_LOCATOR}page.get_by_role((("heading")))\n', [5]),
+    (f"{_LOCATOR}page.get_by_role(role=('heading'))\n", [5]),
+    (f'{_LOCATOR}page.get_by_role(role=(("heading")))\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("head\\x69ng")\n', [5]),
+    (f'{_LOCATOR}(page.get_by_role)("heading")\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", exact=True)\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", level=2)\n', [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", name="")\n', [5]),
+    (f"{_LOCATOR}page.get_by_role('heading', level=2, name='')\n", [5]),
+    (f'{_LOCATOR}page.get_by_role("heading", name=(r""))\n', [5]),
+    (_LOCATOR + 'page.get_by_role("heading", name=\'\'\'\'\'\')\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(  # nagłówek\n        "heading",\n    )\n', [5]),
+    (f'{_LOCATOR}page.locator("main").get_by_role("heading").first\n', [5]),
+    (f'{_LOCATOR}page.get_by_role(f"{{HEADING}}heading")\n', []),
+    (f'{_LOCATOR}page.get_by_role(f"{{{{heading}}}}")\n', []),
+    (f'{_LOCATOR}page.get_by_role(r"head\\x69ng")\n', []),
+    (f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
+    (f'{_LOCATOR}page.get_by_role("heading", level=2, name="Okresy")\n', []),
+    (f'{_LOCATOR}page.get_by_role(("heading"), name="Okresy")\n', []),
+    (f'{_LOCATOR}page.get_by_role("button")\n', []),
+    (f'{_LOCATOR}page.get_by_text("heading")\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_LOKATORA)
+def test_lokator_tytulu_okna_zglasza_literal_roli_naglowka_bez_nazwy_w_kazdym_zapisie(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    from tests.fixtures.znane_luki import zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path.joinpath(*_KATALOG_LOKATORA)).mkdir(parents=True)
+    zapisz({"probka": text}, folder)
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "lokator-tytulu-okna") for line in lines]
+
+
+# Znane luki reguły ``lokator-tytulu-okna`` (tests/fixtures/znane_luki.py): „klasa: postać” → dodany skrypt skilla
+# z nagłówkiem bez nazwy albo kopią tytułu okna, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff.
+ZNANE_LUKI_LOKATORA: Final[dict[str, str]] = {
+    "rola nie jest literałem: nazwa zmiennej": f'{_LOCATOR}page.get_by_role(role)\n\n\nrole = "heading"\n',
+    "rola nie jest literałem: stała modułu": f'{_LOCATOR}page.get_by_role(HEADING)\n\n\nHEADING = "heading"\n',
+    "rola nie jest literałem: atrybut": f'{_LOCATOR}page.get_by_role(Roles.HEADING)\n\n\nclass Roles:\n    HEADING = "heading"\n',
+    "rola nie jest literałem: sklejone napisy": f'{_LOCATOR}page.get_by_role("head" "ing")\n',
+    "rola nie jest literałem: operator +": f'{_LOCATOR}page.get_by_role("head" + "ing")\n',
+    "rola nie jest literałem: wywołanie": f'{_LOCATOR}page.get_by_role("HEADING".lower())\n',
+    "rola nie jest literałem: f-napis ze wstawką": _LOCATOR + "page.get_by_role(f\"{'heading'}\")\n",
+    "rola nie jest literałem: wyrażenie warunkowe": f'{_LOCATOR}page.get_by_role("heading" if page else "button")\n',
+    "rola nie jest literałem: indeks": f'{_LOCATOR}page.get_by_role(ROLES[0])\n\n\nROLES = ("heading",)\n',
+    "rola nie jest literałem: rozpakowanie argumentów": f'{_LOCATOR}page.get_by_role(*ROLES)\n\n\nROLES = ("heading",)\n',
+    "rola nie jest literałem: rozpakowanie słownika": f'{_LOCATOR}page.get_by_role(**{{"role": "heading"}})\n',
+    "metoda pod inną nazwą": f'{_LOCATOR}by_role("heading")\n\n\nby_role = Page.get_by_role\n',
+    "pusta nazwa nie jest literałem: stała modułu": f'{_LOCATOR}page.get_by_role("heading", name=ANY)\n\n\nANY = ""\n',
+    "kopia właściciela: lokator settings_title z name= poza drive/common.py": (
+        f'import re\n\n{_LOCATOR}page.get_by_role("heading", name=re.compile(r"^Ustawienia "))\n'
+    ),
+    "selektor zamiast roli": f'{_LOCATOR}page.locator("h2")\n',
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``lokator-tytulu-okna`` czyta tylko literał roli: z miejsca albo ``role=``, po zdjęciu dowolnej liczby
+    nawiasów, napis o wartości ``heading`` w dowolnym zapisie (cudzysłów, przedrostki ``r``, ``u``, ``f`` bez wstawki,
+    ucieczki), a zawężenie tylko z ``name=``, którego wartość nie jest literałem pustego napisu (``level=`` nie odróżnia
+    tytułu okna od tytułu powiadomienia, bo oba to ``<h2>``). Każda rola, która nie jest literałem, to jedna klasa
+    znanej luki „rola nie jest literałem”, z próbką na rodzaj wyrażenia; bajty ``b"…"`` i szablon ``t"…"`` nie są
+    napisem roli, więc nie są lukami."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path.joinpath(*_KATALOG_LOKATORA)).mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_LOKATORA, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*_KATALOG_LOKATORA, "test_sonda_luki.py"))
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff")

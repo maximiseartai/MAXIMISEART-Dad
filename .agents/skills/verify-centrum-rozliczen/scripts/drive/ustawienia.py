@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 import shutil
 import sys
-import time
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, expect
@@ -33,7 +32,7 @@ from drive.common import (
     settle,
     unreadable,
 )
-from drive.waiting import Budget, quiet_for, until
+from drive.waiting import Budget, answer_late, quiet_for, until
 from harness import INBOX_ADDRESS, INBOX_PASSWORD, File, Log, Switch
 
 
@@ -96,7 +95,7 @@ def drive(run: Run, page: Page) -> None:
         for route in held:
             route.continue_()
         page.unroute("**/api/settings/*/choose")
-    run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
+    until(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
     for name in pickers:
         expect(window.get_by_role("button", name=name, exact=True)).to_be_enabled()
     run.check(run.settings_text() == before, "after the cancelled picker every picker button works again, nothing set")
@@ -163,7 +162,7 @@ def drive(run: Run, page: Page) -> None:
             for click, theme in (("Jasny", "light"), ("Ciemny", "dark")):
                 themes.get_by_role("button", name=click, exact=True).click()
                 expect(themes.get_by_role("button", name=click, exact=True)).to_have_attribute("aria-pressed", "true")
-                run.wait_for(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
+                until(lambda: run.remembered("motyw") == theme, f"the settings file remembers {theme}")
             # A remount on the server's answer would read the start again once that answer reached the page.
             settle(page, saves)
         close_settings(page)
@@ -179,7 +178,7 @@ def drive(run: Run, page: Page) -> None:
     before = run.settings_text()
     dialogs = len(run.lines(Log.DIALOGS))
     open_settings(page, "Foldery").get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
-    run.wait_for(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
+    until(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
     expect(window.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     expect(register.get_by_text(register_name)).to_be_visible()
     run.check(run.settings_text() == before, "a cancelled picker leaves the settings file unchanged")
@@ -229,14 +228,14 @@ def drive(run: Run, page: Page) -> None:
     themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
     themes.get_by_role("button", name="Jasny", exact=True).click()
     expect(page.locator("html")).not_to_have_class("dark")
-    run.wait_for(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
+    until(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
     page.reload()
     expect(themes.get_by_role("button", name="Jasny", exact=True)).to_have_attribute("aria-pressed", "true")
     expect(page.locator("html")).not_to_have_class("dark")
     run.capture(page, "05-ustawienia-motyw-jasny")
     themes.get_by_role("button", name="Ciemny", exact=True).click()
     expect(page.locator("html")).to_have_class("dark")
-    run.wait_for(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
+    until(lambda: run.remembered("motyw") == "dark", "the dark theme is remembered again")
     close_settings(page)
 
     _saved_and_undo(run, page)
@@ -272,7 +271,7 @@ def _saved_and_undo(run: Run, page: Page) -> None:
         page.set_viewport_size(viewport)
         try:
             themes.get_by_role("button", name="Jasny", exact=True).click()
-            run.wait_for(lambda: run.remembered("motyw") == "light", "the switch saves at once")
+            until(lambda: run.remembered("motyw") == "light", "the switch saves at once")
             saved = _toast(page, "Zapisano")
             expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
             run.check(True, f"the switch shows „Zapisano · Cofnij” ({viewport['width']} px)")
@@ -284,7 +283,7 @@ def _saved_and_undo(run: Run, page: Page) -> None:
             expect(_toast(settings_window(page), "Cofnięto")).to_be_visible()
             expect(page.locator("html")).to_have_class("dark")
             expect(themes.get_by_role("button", name="Ciemny", exact=True)).to_have_attribute("aria-pressed", "true")
-            run.wait_for(lambda: run.remembered("motyw") == "dark", "„Cofnij” in the toast takes the theme back")
+            until(lambda: run.remembered("motyw") == "dark", "„Cofnij” in the toast takes the theme back")
             close_settings(page)
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
@@ -303,8 +302,7 @@ def _failure_in_window(run: Run, page: Page) -> None:
     themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
 
     def late_failure(route: Route) -> None:
-        time.sleep(LATE_ANSWER_S)
-        route.fulfill(status=500, body="")
+        answer_late(route, LATE_ANSWER_S, lambda failed: failed.fulfill(status=500, body=""))
 
     page.route(theme, late_failure)
     try:
@@ -313,10 +311,10 @@ def _failure_in_window(run: Run, page: Page) -> None:
         expect(failure).to_be_visible()
         expect(error_toasts(page)).to_have_count(1)
         # Sliding in, the notification is visible while its centre is still under the window's edge (#1518).
-        run.wait_for(
+        until(
             lambda: failure.evaluate(CENTRE_TAKES_CLICK),
             "a failed save is a notification in the window Ustawienia that nothing covers",
-            timeout_s=Budget.TRANSIENT,
+            Budget.TRANSIENT,
         )
         run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
         expect(page.locator("html")).to_have_class("dark")
@@ -422,7 +420,7 @@ def _history(run: Run, page: Page) -> None:
     outside.get_by_role("button", name="Cofnij: Folder okresów", exact=True).click()
     expect(rows.first).to_contain_text("Załączniki → INEA")
     expect(rows.first).to_contain_text("cofnięcie")
-    run.wait_for(lambda: run.remembered("folder_okresow") == periods, "„Cofnij” points the folder okresów back to INEA")
+    until(lambda: run.remembered("folder_okresow") == periods, "„Cofnij” points the folder okresów back to INEA")
     run.check(True, "the undo is a new row on top, and the row it undid stays")
 
     with unreadable(settings):
@@ -619,7 +617,7 @@ def _autostart(run: Run, page: Page) -> None:
     switch = row.get_by_role("switch", name=AUTOSTART, exact=True)
     expect(switch).not_to_be_checked()
     switch.click()
-    run.wait_for(shortcut.exists, "the switch writes Centrum's shortcut in the Autostart folder")
+    until(shortcut.exists, "the switch writes Centrum's shortcut in the Autostart folder")
     expect(switch).to_be_checked()
     expect(_toast(page, "Zapisano").get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
     shown = run.api("/api/settings", "ustawienia-autostart-wlaczony")["autostart"]
@@ -645,11 +643,11 @@ def _autostart(run: Run, page: Page) -> None:
     run.check(True, "the removed shortcut is the newest row of Historia, marked „spoza Centrum”")
     run.capture(page, "332-ustawienia-autostart-spoza", full_page=False)
     outside.get_by_role("button", name="Cofnij: Start razem z Windows", exact=True).click()
-    run.wait_for(shortcut.exists, "„Cofnij” on that row writes the shortcut back")
+    until(shortcut.exists, "„Cofnij” on that row writes the shortcut back")
     window.get_by_role("link", name="Narzędzie", exact=True).click()
     expect(switch).to_be_checked()
     switch.click()
-    run.wait_for(lambda: not shortcut.exists(), "the switch off removes the shortcut")
+    until(lambda: not shortcut.exists(), "the switch off removes the shortcut")
     expect(switch).not_to_be_checked()
 
     run.step(FEATURE, "ustawienia-autostart-bez-windows")
@@ -790,7 +788,7 @@ def _reminders(run: Run, page: Page) -> None:
 
     window.get_by_role("button", name="Zapisz przypomnienia", exact=True).click()
     expect(_toast(window, "Zapisano")).to_be_visible()
-    run.wait_for(lambda: reminders.exists() and "'12:00'" in read_text(reminders), "the file has the new morning")
+    until(lambda: reminders.exists() and "'12:00'" in read_text(reminders), "the file has the new morning")
     switch.click()
     expect(switch).to_be_checked()
 
@@ -805,7 +803,7 @@ def _reminders(run: Run, page: Page) -> None:
         )
 
     # The switch shows its state at once, before its save reaches Centrum.
-    run.wait_for(saved, "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer")
+    until(saved, "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer")
     expect(window.get_by_role("listitem", name="Przypomnienia o raporcie")).to_contain_text("Idą od ")
     run.capture(page, "362-ustawienia-przypomnienia", full_page=False)
 
@@ -832,7 +830,7 @@ def _reminders(run: Run, page: Page) -> None:
         after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
         return isinstance(after, dict) and after["enabled"] is False
 
-    run.wait_for(switched_off, "the step switches the reminders off again, so their work leaves config alone for the rest of the run")
+    until(switched_off, "the step switches the reminders off again, so their work leaves config alone for the rest of the run")
     close_settings(page)
 
 
@@ -886,4 +884,4 @@ def _point(run: Run, page: Page, label: str, key: str, path: str) -> None:
 
     run.answer_picker(path)
     settings_window(page).get_by_role("button", name=f"Zmień {label}", exact=True).click()
-    run.wait_for(lambda: run.remembered(key) == path, f"the settings file remembers {Path(path).name} ({key})")
+    until(lambda: run.remembered(key) == path, f"the settings file remembers {Path(path).name} ({key})")
