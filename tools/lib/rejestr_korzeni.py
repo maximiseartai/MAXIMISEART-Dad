@@ -26,8 +26,9 @@ między stronami przeskakuje przed kursor i znika ze skanu. Nowe wyszukiwanie za
 jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnienia, a ``updatedAt`` tylko rośnie, więc
 brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund. Warunek merge'a z polem
 ``Idiom:`` (``idioms``) dokłada do wyszukiwania frazę ``"Idiom: <id>"``, bo potrzebuje tylko PR-ów z polem tego id:
-wyszukiwarka GitHuba szuka jej w tytule, opisie i komentarzach PR (``gh api -X GET search/issues -f q='repo:<repo>
-is:pr "Idiom: kotwica-konca-linii"'`` 14.11.2026 znajduje #1806, który ma ją tylko w komentarzu).
+wyszukiwarka GitHuba szuka jej w tytule, opisie, komentarzach i recenzjach PR (``gh api -X GET search/issues -f
+q='repo:<repo> is:pr "Idiom: kotwica-konca-linii"'`` 14.11.2026 znajduje #1806, który ma ją tylko w komentarzu,
+a słowo z samej treści recenzji #1818 znajduje #1818).
 
 Treść skanu to HTML z GitHuba z tej samej strony GraphQL (``bodyHTML`` opisu, komentarza i recenzji, ``FIELDS``),
 więc rejestr nie woła renderera ``POST /markdown`` ani razu: werdykt czyta ``werdykt_pr.from_graphql``, a opis PR

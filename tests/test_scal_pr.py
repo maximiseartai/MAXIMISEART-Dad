@@ -146,7 +146,7 @@ elif arguments[:2] == ["api", "graphql"] and any(argument.startswith("number=") 
     print(json.dumps({"data": {"repository": {"pullRequest": html_node(node, {kind: 0 if variables[kind] == "null" else int(variables[kind]) for kind in ("comments", "reviews")})}}}))
 elif arguments[:2] == ["api", "graphql"]:
     # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek>, fraza w cudzysłowie
-    # (PR z nią w tytule, opisie albo komentarzu) i first; zmiana z graphql_changes.json ("po": tyle wcześniejszych
+    # (PR z nią w tytule, opisie, komentarzu albo recenzji) i first; zmiana z graphql_changes.json ("po": tyle wcześniejszych
     # zapytań) zmienia PR między stronami.
     variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
     log = here / "graphql.jsonl"
@@ -161,7 +161,7 @@ elif arguments[:2] == ["api", "graphql"]:
             next(node for node in nodes if node["number"] == change["number"]).update(change["pola"])
     phrases = re.findall(r'"([^"]+)"', variables["q"])
     terms = re.sub(r'"[^"]+"', " ", variables["q"]).split()
-    nodes = [node for node in nodes if all(any(phrase in text for text in [node["title"], node["body"], *(comment["body"] for comment in node["comments"]["nodes"])]) for phrase in phrases)]
+    nodes = [node for node in nodes if all(any(phrase in text for text in [node["title"], node["body"], *(item["body"] for kind in ("comments", "reviews") for item in node[kind]["nodes"])]) for phrase in phrases)]
     if f"repo:{REPO}" not in terms or "is:pr" not in terms:
         sys.exit(f"atrapa gh nie zna wyszukiwania: {terms}")
     for field, sign, value in (re.fullmatch(r"(updated|created):([<>]=)(.+)", term).groups() for term in terms if re.fullmatch(r"(updated|created):[<>]=.+", term)):
