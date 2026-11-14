@@ -27,7 +27,7 @@ import yaml
 
 from drive import feature
 from drive.waiting import Budget, TimedOut, expect, until
-from harness import File, Log, issue_file, report_box
+from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
@@ -178,7 +178,7 @@ class Run:
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
     def api(self, path: str, name: str) -> dict[str, object]:
-        with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=10) as response:
+        with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=Budget.SCREEN.value) as response:
             body = json.load(response)
         (self.evidence / "api" / f"{name}.json").write_text(
             json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -199,7 +199,7 @@ class Run:
 
     def _send(self, request: urllib.request.Request, name: str) -> Answer:
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=Budget.SCREEN.value) as response:
                 status, body = int(response.status), response.read()
         except urllib.error.HTTPError as error:
             status, body = error.code, error.read()
@@ -330,7 +330,7 @@ def capture_quantity_rules(
     marker."""
 
     run.capture(page, name, full_page=full_page)
-    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=10) as response:
+    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=Budget.SCREEN.value) as response:
         listed: dict[str, Any] = json.load(response)
     shown = (*texts, *(difference[key] for difference in listed.get("differences", []) for key in ("devices", "activities")))
     snapshot = run.evidence / "aria" / f"{name}.txt"
@@ -595,7 +595,7 @@ def advance_clock(run: Run, minutes: float, why: str) -> None:
 
 def answers(url: str) -> bool:
     try:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=2):
+        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=Budget.PROBE.value):
             return True
     except OSError:
         return False
@@ -629,7 +629,7 @@ def start_centrum(run: Run, name: str) -> None:
             stdout=console,
             stderr=subprocess.STDOUT,
         )
-    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=30)
+    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=Budget.WORK)
 
 
 def kill_centrum(run: Run) -> None:
@@ -653,10 +653,34 @@ def local_time(moment: str) -> str:
     return datetime.fromisoformat(moment).astimezone(DAD_TIME_ZONE).strftime("%d.%m.%Y, %H:%M")
 
 
-def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
-    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``."""
+# The browser of the mode „wolny runner” (SLOW_RUNNER): animations run at this rate, so a notification that closes stays
+# on the screen five times longer (#1534), and each write of the tab leaves it this late, as the start of #1570 did.
+SLOW_ANIMATIONS = 0.2
+LATE_WRITE_MS = 1500
+LATE_WRITES = """(() => {
+    const send = window.fetch
+    window.fetch = (input, init) => {
+        const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
+        if (method === "GET") return send(input, init)
+        return new Promise(resolve => setTimeout(resolve, %d)).then(() => send(input, init))
+    }
+})()"""
 
-    return browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+
+def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
+    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``; in the
+    mode „wolny runner” its pages run animations slowly and send writes late."""
+
+    context = browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+    if SLOW_RUNNER in os.environ:
+        # A late write in the page, not in context.route: a handler of the sync client that sleeps holds the drive too.
+        context.add_init_script(LATE_WRITES % LATE_WRITE_MS)
+
+        def slow_animations(page: Page) -> None:
+            context.new_cdp_session(page).send("Animation.setPlaybackRate", {"playbackRate": SLOW_ANIMATIONS})
+
+        context.on("page", slow_animations)
+    return context
 
 
 @contextmanager
@@ -819,7 +843,9 @@ def ended_run_shown(view: dict[str, object]) -> bool:
     return view["state"] == "finished" or (view["state"] == "idle" and view["previous"] is not None)
 
 
-def finished_view(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
+def finished_view(
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+) -> dict[str, Any]:
     """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
 
     ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
@@ -838,7 +864,9 @@ def finished_view(run: Run, name: str, *, replacing: str | None = None, timeout_
     return seen
 
 
-def finished_result(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
+def finished_result(
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+) -> dict[str, Any]:
     result = finished_view(run, name, replacing=replacing, timeout_s=timeout_s)["result"]
     assert isinstance(result, dict)
     return result

@@ -476,7 +476,7 @@ def test_ponowne_dostarczenie_tej_samej_sprawy_nie_zmienia_stanu_wyslanych(compu
     [case] = cases
     report = source(computer)
     post = Post(
-        report_target(report.fingerprint.digest, "tytuł"),
+        report_target(report.fingerprint.digest, tool("tytuł")),
         period=None,
         run_id="ponowna-wysylka",
         header=None,

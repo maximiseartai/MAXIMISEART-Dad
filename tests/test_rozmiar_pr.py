@@ -2,18 +2,20 @@
 bazy scalenia, pliki testów pominięte w PR mieszanym, a w PR z samymi testami liczone, i jedna etykieta ``size:*`` na PR.
 Licznik szopy (ADR 0034): grupę pliku daje reguła katalogu, a lista dwóch szop bazy tylko wyjątki od niej; licznik podaje
 linie maszynerii procesu i weryfikacji produktu osobno oraz dwa stosunki testów do ``src``, a atrybuty ``.gitattributes``
-nie zmieniają jego liczb."""
+nie zmieniają jego liczb. PR, który dodaje więcej linii maszynerii procesu, niż usuwa, dostaje etykietę informacyjną;
+przeniesienia między grupami licznik nie rozpoznaje, więc ich postacie są próbkami ``ZNANE_LUKI``."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
 from tests.fixtures.git_repo import commit, git
+from tests.fixtures.znane_luki import assert_znane_luki
 
 import rozmiar_pr
 from github import REPO
@@ -193,13 +195,13 @@ _LISTA = """[weryfikacja]
 """
 
 
-@pytest.fixture
-def szopa(tmp_path: Path) -> Path:
+def _repo_szopy(katalog: Path) -> Path:
     """Repozytorium z listą ``_LISTA`` na gałęzi ``main`` i gałęzią ``pr`` z niej."""
 
-    git(tmp_path, "init", "--quiet", "--initial-branch", "main")
+    katalog.mkdir(exist_ok=True)
+    git(katalog, "init", "--quiet", "--initial-branch", "main")
     _zapisz(
-        tmp_path,
+        katalog,
         {
             "src/stary.py": _linie(20),
             "tests/test_stary.py": _linie(5),
@@ -211,9 +213,14 @@ def szopa(tmp_path: Path) -> Path:
             rozmiar_pr.LISTA: _LISTA,
         },
     )
-    commit(tmp_path, "baza")
-    git(tmp_path, "switch", "--quiet", "--create", "pr")
-    return tmp_path
+    commit(katalog, "baza")
+    git(katalog, "switch", "--quiet", "--create", "pr")
+    return katalog
+
+
+@pytest.fixture
+def szopa(tmp_path: Path) -> Path:
+    return _repo_szopy(tmp_path)
 
 
 def _szopa(repo: Path) -> str:
@@ -328,6 +335,142 @@ def test_atrybut_diff_albo_binary_spoza_bajtow_pliku_nie_zeruje_linii_licznika_s
         "maszyneria procesu z testami +40 -0, weryfikacja produktu z testami +0 -0"
         ", testy zachowania src / src 5/20 = 0,25, testy szopy / src 10/20 = 0,50"
     )
+
+
+_POWIEKSZA = rozmiar_pr.POWIEKSZA
+# Linie licznika i wywołania GitHuba dla etykiety ``POWIEKSZA``.
+_Akcje = tuple[list[str], list[tuple[str, str, Mapping[str, object]]]]
+_ZALOZONA_I_NADANA: _Akcje = (
+    [f"SZOPA | założona etykieta {_POWIEKSZA.nazwa}", f"SZOPA | nadana {_POWIEKSZA.nazwa} #7"],
+    [
+        ("POST", f"{REPO}/labels", {"name": _POWIEKSZA.nazwa, "color": _POWIEKSZA.kolor, "description": _POWIEKSZA.opis}),
+        ("POST", f"{REPO}/issues/7/labels", {"labels": [_POWIEKSZA.nazwa]}),
+    ],
+)
+_ZDJETA: _Akcje = (
+    [f"SZOPA | zdjęta {_POWIEKSZA.nazwa} z #7"],
+    [("DELETE", f"{REPO}/issues/7/labels/powi%C4%99ksza%20maszyneri%C4%99%20procesu", {})],
+)
+
+
+@pytest.mark.parametrize(
+    ("pliki", "na_pr", "maszyneria", "etykieta"),
+    [
+        ({"tools/bramka.py": _linie(30) + _linie(40, "y")}, [], "+40 -0", _ZALOZONA_I_NADANA),
+        ({"tools/bramka.py": _linie(30) + _linie(40, "y")}, [_POWIEKSZA.nazwa], "+40 -0", ([], [])),
+        ({"tools/bramka.py": _linie(22), "tests/test_bramka.py": _linie(10) + _linie(8, "y")}, [_POWIEKSZA.nazwa], "+8 -8", _ZDJETA),
+        ({"tools/bramka.py": _linie(18), "tools/nowa.py": _linie(5)}, [_POWIEKSZA.nazwa], "+5 -12", _ZDJETA),
+        ({"tools/bramka.py": _linie(18), "tools/nowa.py": _linie(5)}, [], "+5 -12", ([], [])),
+    ],
+    ids=["wiecej-dodanych-dostaje", "wiecej-dodanych-z-etykieta-bez-zmian", "remis-traci", "ubytek-traci", "ubytek-bez-etykiety-bez-zmian"],
+)
+def test_pr_z_wiecej_dodanymi_niz_usunietymi_liniami_maszynerii_ma_etykiete_a_remis_i_ubytek_ja_traca(
+    szopa: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pliki: Mapping[str, str],
+    na_pr: list[str],
+    maszyneria: str,
+    etykieta: _Akcje,
+) -> None:
+    _zapisz(szopa, pliki)
+    commit(szopa, "maszyneria")
+    github = _GitHub(w_repo=[], na_pr=na_pr)
+    monkeypatch.setattr("repo.ROOT", szopa)
+    monkeypatch.setattr(rozmiar_pr, "GhApi", lambda: github)
+
+    assert rozmiar_pr.main(["--baza", "main", "--glowa", "pr", "--pr", "7"]) == 0
+
+    szopa_linie = [linia for linia in capsys.readouterr().out.splitlines() if linia.startswith("SZOPA")]
+    assert (szopa_linie[0].split(", ")[0], szopa_linie[1:]) == (f"SZOPA | #7 | maszyneria procesu z testami {maszyneria}", etykieta[0])
+    assert [wywolanie for wywolanie in github.wyslane if "size" not in wywolanie[1] + str(wywolanie[2])] == etykieta[1]
+
+
+def test_bez_numeru_pr_licznik_tylko_drukuje_i_nie_pyta_githuba(
+    szopa: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def bez_githuba() -> None:
+        raise AssertionError("bez --pr narzędzie nie pyta GitHuba")
+
+    _zapisz(szopa, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
+    commit(szopa, "więcej maszynerii")
+    monkeypatch.setattr("repo.ROOT", szopa)
+    monkeypatch.setattr(rozmiar_pr, "GhApi", bez_githuba)
+
+    assert rozmiar_pr.main(["--baza", "main", "--glowa", "pr"]) == 0
+
+    assert [linia.split(" | ")[:2] for linia in capsys.readouterr().out.splitlines()] == [["ROZMIAR PR", "pr"], ["SZOPA", "pr"]]
+
+
+def _nowe_linie_maszynerii(repo: Path) -> None:
+    _zapisz(repo, {"tools/bramka.py": _linie(30) + _linie(40, "y")})
+
+
+def _git_mv_do_katalogu_weryfikacji(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    git(repo, "mv", "tools/inna.py", "tools/lib/atrapy/inna.py")
+
+
+def _git_mv_poza_szope(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    (repo / ".github/scripts").mkdir(parents=True)
+    git(repo, "mv", "tools/inna.py", ".github/scripts/inna.py")
+
+
+def _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    _zapisz(repo, {"tools/lib/atrapy/inna.py": (repo / "tools/inna.py").read_text(encoding="utf-8")})
+    _zapisz(repo, {"tools/inna.py": "from atrapy.inna import *\n"})
+
+
+def _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji(repo: Path) -> None:
+    _nowe_linie_maszynerii(repo)
+    (repo / "tools/inna.py").unlink()
+    _zapisz(repo, {"tools/lib/atrapy/inna.py": _linie(60, "z")})
+
+
+def _lista_przenosi_plik_do_weryfikacji_a_nastepny_pr_dodaje_jego_linie(repo: Path) -> None:
+    _zapisz(repo, {rozmiar_pr.LISTA: _LISTA.replace("[maszyneria]", '"tools/inna.py" = []\n\n[maszyneria]')})
+    commit(repo, "lista przenosi tools/inna.py do weryfikacji")
+    git(repo, "branch", "--force", "main", "pr")
+    _zapisz(repo, {"tools/inna.py": _linie(60) + _linie(40, "y")})
+
+
+def _nowy_test_maszynerii_bez_wpisu(repo: Path) -> None:
+    _zapisz(repo, {"tests/test_inna.py": _linie(20)})
+
+
+# Znane luki etykiety (tests/fixtures/znane_luki.py): opis postaci → zmiana PR, która powiększa maszynerię procesu, a mimo
+# to przechodzi przez licznik bez etykiety. Licznik liczy linie według ścieżek i listy bazy, więc kod przeniesiony między
+# grupami odejmuje linie maszynerii, a recenzent widzi go w liczbach obu grup.
+ZNANE_LUKI: Final[dict[str, Callable[[Path], None]]] = {
+    "nowe linie maszynerii i git mv jej pliku do katalogu weryfikacji z listy bazy (przegląd #1646 r1, W1)": (
+        _git_mv_do_katalogu_weryfikacji
+    ),
+    "nowe linie maszynerii i git mv jej pliku poza szopę": _git_mv_poza_szope,
+    "nowe linie maszynerii i kopia jej pliku do katalogu weryfikacji, a w starym pliku jedna linia importu (przegląd #1646 r2, W1)": (
+        _kopia_do_katalogu_weryfikacji_z_importem_w_starym_pliku
+    ),
+    "nowe linie maszynerii i jej plik usunięty i napisany od nowa pod ścieżką weryfikacji": (
+        _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji
+    ),
+    "PR zmienia tylko listę i przenosi plik maszynerii do weryfikacji, a następny PR dodaje jego linie (przegląd #1646 r1, W2)": (
+        _lista_przenosi_plik_do_weryfikacji_a_nastepny_pr_dodaje_jego_linie
+    ),
+    "nowy test maszynerii bez wpisu na liście liczy się jako test produktu": _nowy_test_maszynerii_bez_wpisu,
+}
+
+
+def test_znane_luki_etykiety_maszynerii_przechodza_przez_licznik_bez_etykiety(tmp_path: Path) -> None:
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, zmiana) in enumerate(ZNANE_LUKI.items()):
+        repo = _repo_szopy(tmp_path / str(numer))
+        zmiana(repo)
+        commit(repo, opis)
+        szopa = rozmiar_pr.zmierz_szope(repo, "main", "pr")
+        zgloszenia[opis] = [f"licznik: {szopa.opis()} | {_POWIEKSZA.nazwa}"] if szopa.powieksza else []
+
+    assert_znane_luki(zgloszenia, "tests/test_rozmiar_pr.py")
 
 
 @pytest.mark.parametrize(

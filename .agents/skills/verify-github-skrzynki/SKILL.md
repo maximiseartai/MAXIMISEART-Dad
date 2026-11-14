@@ -3,6 +3,7 @@ name: verify-github-skrzynki
 description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, bad key, deleted issue, content limits) on the private empty trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, the Archiwum Logów okresu (`archive`, `open_archive`, `upload`, `remove` and `archive_url` - a Release with files over a page, a tag or file of the same name, the replaced file, the download link) on the trial repository with a commit `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `github.py`, `report_box.py`, `keyed_box.py`, `tool_freshness.py`, their test fakes, or when a review asks what GitHub really answers.
 pilnuje:
   - src/rozliczenia/centrum/github.py
+  - src/rozliczenia/centrum/opener.py
   - src/rozliczenia/centrum/report_box.py
   - src/rozliczenia/centrum/keyed_box.py
   - src/rozliczenia/centrum/tool_freshness.py
