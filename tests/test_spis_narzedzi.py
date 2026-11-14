@@ -596,7 +596,8 @@ def _system_python_scripts(root: Path = ROOT) -> set[Path]:
 
 
 def _uses(dane: object) -> Iterator[object]:
-    """Każda wartość klucza ``uses`` w drzewie YAML, na dowolnej głębokości."""
+    """Każda wartość klucza ``uses`` w drzewie YAML, na dowolnej głębokości, więc także wejście akcji albo zmienna o tej
+    nazwie (``with: {uses: …}``, ``env: {uses: …}``), która wywraca strażnika jak ``uses`` kroku bez znanej postaci."""
 
     if isinstance(dane, dict):
         for klucz, wartosc in dane.items():
