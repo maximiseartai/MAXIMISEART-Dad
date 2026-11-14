@@ -19,8 +19,10 @@ grupy ``produkt``) do linii ``src`` i linie testów szopy (pozostałe pliki ``te
 to same liczby: niczego nie ocenia, a testy produktu dostają tylko liczbę.
 
 Z ``--pr N`` narzędzie zakłada brakującą etykietę rozmiaru (albo poprawia jej opis i kolor), nadaje ją PR-owi i zdejmuje
-z niego inne etykiety ``size:*``; inne etykiety zostawia. Bez ``--pr`` tylko drukuje rozmiar i licznik szopy. Niczego nie blokuje:
-etykieta to informacja dla autora i recenzenta, nie warunek merge'u.
+z niego inne etykiety ``size:*``; inne etykiety zostawia. PR, który dodaje więcej linii maszynerii procesu z testami, niż
+usuwa, dostaje też etykietę ``POWIEKSZA``, a inny ją traci; licznik liczy ścieżki, więc przeniesienie pliku poza grupę
+odejmuje jej linie (próbki ``ZNANE_LUKI`` w ``tests/test_rozmiar_pr.py``). Bez ``--pr`` tylko drukuje rozmiar i licznik
+szopy. Niczego nie blokuje: etykiety to informacja dla autora i recenzenta, nie warunek merge'u.
 
 Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR jako dane gita: nie uruchamia ich kodu.
 
@@ -61,6 +63,9 @@ PROGI = (
 )
 XXL = Etykieta("size:XXL", "b60205", f"1000+ {_DOPISEK}")
 ETYKIETY = (*(etykieta for _, etykieta in PROGI), XXL)
+POWIEKSZA = Etykieta(
+    "powiększa maszynerię procesu", "5319e7", "Dodaje więcej linii maszynerii procesu z testami, niż usuwa (ADR 0034)"
+)
 # Pliki testów repozytorium: pytest w tests/, plik test_*.py gdziekolwiek i testy frontendu (*.test.*, *.spec.*).
 TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec.*")
 
@@ -180,7 +185,7 @@ def _lista(root: Path, rewizja: str) -> dict[str, str]:
 def _pliki(root: Path, *diff: str) -> list[tuple[str, int, int]]:
     """Ścieżka, dodane i usunięte linie każdego pliku z ``git diff --numstat`` bez prozy; plik binarny ma 0 linii.
 
-    Atrybuty biorą się z pustego drzewa (``attr.tree``, git ≥ 2.48), a plik atrybutów z konfiguracji jest pusty, więc
+    Atrybuty biorą się z pustego drzewa (``attr.tree``, git ≥ 2.43), a plik atrybutów z konfiguracji jest pusty, więc
     o tym, czy plik jest binarny, decyduje git z jego bajtów, nie ``-diff`` ani ``binary`` z ``.gitattributes``."""
 
     pliki = []
@@ -208,6 +213,10 @@ class Szopa:
     testy_src: int
     testy_szopy: int
 
+    @property
+    def powieksza(self) -> bool:
+        return self.maszyneria[0] > self.maszyneria[1]
+
     def opis(self) -> str:
         return (
             f"maszyneria procesu z testami +{self.maszyneria[0]} -{self.maszyneria[1]}"
@@ -230,8 +239,8 @@ def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
     return Szopa(szopy[MASZYNERIA], szopy[WERYFIKACJA], linie[SRC], linie[PRODUKT], linie[MASZYNERIA])
 
 
-def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
-    """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
+def _zaloz(github: GitHub, nowa: Etykieta) -> list[str]:
+    """Zakłada albo poprawia w repozytorium etykietę ``nowa``; linia na akcję."""
 
     linie = []
     w_repo = {wpis["name"]: wpis for wpis in strony(github, f"{REPO}/labels")}
@@ -253,6 +262,13 @@ def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
             {"color": nowa.kolor, "description": nowa.opis},
         )
         linie.append(f"poprawiona etykieta {nowa.nazwa}")
+    return linie
+
+
+def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
+    """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
+
+    linie = _zaloz(github, nowa)
     na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
     for stara in sorted(na_pr & {e.nazwa for e in ETYKIETY} - {nowa.nazwa}):
         github.wyslij(
@@ -265,6 +281,20 @@ def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
         github.wyslij("POST", f"{REPO}/issues/{pr}/labels", {"labels": [nowa.nazwa]})
         linie.append(f"nadana {nowa.nazwa} #{pr}")
     return linie
+
+
+def oznacz(github: GitHub, pr: int, powieksza: bool) -> list[str]:
+    """Etykieta ``POWIEKSZA`` jest na PR ``pr`` wtedy i tylko wtedy, gdy ``powieksza``; linia na akcję."""
+
+    na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
+    if powieksza and POWIEKSZA.nazwa not in na_pr:
+        linie = _zaloz(github, POWIEKSZA)
+        github.wyslij("POST", f"{REPO}/issues/{pr}/labels", {"labels": [POWIEKSZA.nazwa]})
+        return [*linie, f"nadana {POWIEKSZA.nazwa} #{pr}"]
+    if not powieksza and POWIEKSZA.nazwa in na_pr:
+        github.wyslij("DELETE", f"{REPO}/issues/{pr}/labels/{urllib.parse.quote(POWIEKSZA.nazwa, safe='')}", {})
+        return [f"zdjęta {POWIEKSZA.nazwa} z #{pr}"]
+    return []
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -280,17 +310,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--pr",
         type=int,
-        help="numer PR, któremu nadać etykietę rozmiaru; bez niego tylko drukuje rozmiar i licznik szopy",
+        help="numer PR, któremu nadać etykiety; bez niego tylko drukuje rozmiar i licznik szopy",
     )
     args = parser.parse_args(argv)
 
     znak = f"#{args.pr}" if args.pr else args.glowa
-    rozmiar = zmierz(repo.ROOT, args.baza, args.glowa)
+    rozmiar, szopa = zmierz(repo.ROOT, args.baza, args.glowa), zmierz_szope(repo.ROOT, args.baza, args.glowa)
     print(f"ROZMIAR PR | {znak} | {rozmiar.opis()}")
+    print(f"SZOPA | {znak} | {szopa.opis()}")
     if args.pr:
-        for linia in nadaj(GhApi(), args.pr, rozmiar.etykieta):
+        github = GhApi()
+        for linia in nadaj(github, args.pr, rozmiar.etykieta):
             print(f"ROZMIAR PR | {linia}")
-    print(f"SZOPA | {znak} | {zmierz_szope(repo.ROOT, args.baza, args.glowa).opis()}")
+        for linia in oznacz(github, args.pr, szopa.powieksza):
+            print(f"SZOPA | {linia}")
     return 0
 
 
