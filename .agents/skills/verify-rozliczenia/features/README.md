@@ -55,16 +55,11 @@ command and the exit code it expects. A real run fails when the steps it ran dif
 plan of every variant it runs; nothing compares the plan of a variant on the real Wzorce with a run. Everything
 outside the section is prose the command does not confirm: `How to get to it` is a few sentences from Dad's point of
 view, `Driving it` the one command and where its evidence is, and `Gotchas` only traps the code does not handle, such
-as what the variant does not reach and which test proves it. Files without the command still describe their features
-in prose (#1630).
+as what the variant does not reach and which test proves it. Every feature file's section comes from the command.
 
 ## Features
 
-- [Workbook preparation](./prepare-workbooks.md) covers Wzorzec rozliczenia pracownika copies and all-or-nothing publication.
-- [Dry-run planning](./dry-run.md) covers safe inspection before writing.
-- [Worker settlement](./settle-workbooks.md) covers fan-out into mapped templates and preserved formulas.
-- [Safety gates](./safety-gates.md) covers unknown workers, the Wzorzec rozliczenia pracownika, existing data, Excel locks, and the stop on an unreadable Plik zbiorczy.
-- [Progress and telemetry](./progress-and-metrics.md) covers observable phases, counters, exit semantics, and safe metrics.
+- [Przebieg rozliczeń](./settlement.md) covers the Plik zbiorczy to Rozliczenia pracowników process, its dry-run, and the stops for an existing folder, a locked Wzorzec and an unmapped WYKONAWCA.
 - [Przygotowanie pliku zbiorczego](./prepare-collective-file.md) covers the Rejestr zleceń to Rozliczenie wewnętrzne and Plik zbiorczy process, and its dry-run.
 - [From Rejestr zleceń to Rozliczenia pracowników](./prepare-and-settle.md) covers both processes in turn, and the Gotowość hand-over.
 - [Uporządkowanie INTERMAX](./order-intermax.md) covers the JSON result of `intermax`, its Kopia INTERMAX, and the ordered pasted day.
