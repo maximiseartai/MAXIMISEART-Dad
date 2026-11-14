@@ -11,8 +11,8 @@ from rozliczenia.centrum.contract.common import Message, Model, Sending
 from rozliczenia.centrum.contract.runs import Count, Pricing
 
 
-# Rodzaj sprawy taty: Uwaga taty albo Zgłoszenie.
 CaseKey = Literal["uwaga", "zgloszenie"]
+"""Rodzaj sprawy taty: Uwaga taty albo Zgłoszenie."""
 
 
 class Resolved(Model):
@@ -27,9 +27,9 @@ class ReadByMaks(Model):
     state: Literal["read"]
 
 
-# Stan sprawy taty (Uwagi albo Zgłoszenia) w Powiadomieniu: stan jej wysyłki (``SendState``), a po wysłaniu to, co
-# zrobił z nią Maks.
 CaseState = Annotated[Sending | Resolved | ReadByMaks, Field(discriminator="state")]
+"""Stan sprawy taty (Uwagi albo Zgłoszenia) w Powiadomieniu: stan jej wysyłki (``SendState``), a po wysłaniu to, co
+zrobił z nią Maks."""
 
 
 class _Notification(Model):

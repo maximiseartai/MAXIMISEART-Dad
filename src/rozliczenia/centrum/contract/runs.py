@@ -35,14 +35,14 @@ class PeriodChoice(Model):
     monday: date
     status_label: str
     last_complete: bool
-    # W historii metryk jest udany podgląd bez zapisu tego procesu i okresu.
     previewed: bool
-    # Nazwa Pliku zbiorczego okresu, gdy proces go czyta (Przebieg rozliczeń); tata go nie wskazuje.
+    """W historii metryk jest udany podgląd bez zapisu tego procesu i okresu."""
     collective_file: str | None
-    # Zdania o skoroszytach wejściowych procesu otwartych w Excelu: najpierw plik danych, potem Wzorce.
+    """Nazwa Pliku zbiorczego okresu, gdy proces go czyta (Przebieg rozliczeń); tata go nie wskazuje."""
     open_in_excel: list[str]
-    # Przypomnienie w stopce karty startu przy tym okresie; brak, gdy „Uruchom” blokuje tylko otwarty Wzorzec.
+    """Zdania o skoroszytach wejściowych procesu otwartych w Excelu: najpierw plik danych, potem Wzorce."""
     reminder: str | None
+    """Przypomnienie w stopce karty startu przy tym okresie; brak, gdy „Uruchom” blokuje tylko otwarty Wzorzec."""
 
 
 class ProcessSetup(Model):
@@ -200,11 +200,11 @@ class RunSummary(Model):
     """Nazwa Kopii INTERMAX sprzed zapisu Uporządkowania INTERMAX; ``None`` w innych procesach i w Logach sprzed niej."""
 
 
-# Rodzaj Zatrzymania: ``for_tata`` usuwa tata sam według Komunikatu, ``for_maks`` każe przekazać Komunikat
-# osobie utrzymującej narzędzie (także nieoczekiwany wyjątek), ``repeated`` to ten sam Komunikat „dla taty”
-# drugi raz z rzędu w tym samym procesie. Przy ``for_maks`` i ``repeated`` Centrum proponuje Diagnozę.
-# ``declined`` to Zatrzymanie po odmowie w Decyzji taty: w metrykach „dla taty”, nigdy Powtórka ani błąd.
 StopKind = Literal[domain.StopKind, "repeated", "declined"]
+"""Rodzaj Zatrzymania: ``for_tata`` usuwa tata sam według Komunikatu, ``for_maks`` każe przekazać Komunikat Maksowi
+(także nieoczekiwany wyjątek), ``repeated`` to ten sam Komunikat „dla taty” drugi raz z rzędu w tym samym procesie.
+Przy ``for_maks`` i ``repeated`` Centrum proponuje Diagnozę. ``declined`` to Zatrzymanie po odmowie w Decyzji taty:
+w metrykach „dla taty”, nigdy Powtórka ani błąd."""
 
 
 ResultTone = Literal["ok", "needs_review", "stopped", "failed"]
@@ -240,15 +240,15 @@ def result_word(tone: ResultTone) -> str:
     return _RESULT_WORDS[tone]
 
 
-# Diagnoza przy Zatrzymaniu: ``on_request`` to przycisk „Diagnoza” zamiast następnej akcji, ``automatic`` to
-# nieoczekiwany wyjątek, przy którym przeglądarka zaczyna Diagnozę od razu po pokazaniu wyniku.
 DiagnosisOffer = Literal["on_request", "automatic"]
+"""Diagnoza przy Zatrzymaniu: ``on_request`` to przycisk „Diagnoza” zamiast następnej akcji, ``automatic`` to
+nieoczekiwany wyjątek, przy którym przeglądarka zaczyna Diagnozę od razu po pokazaniu wyniku."""
 
 
-# Otwarcie tego, co proces zapisał: akcja po wyniku z zapisem, którą deklaruje proces (``run_view``).
 ResultAction = Literal[
     "open_collective_file", "open_worker_settlements_folder", "open_order_register", "open_reports_view"
 ]
+"""Otwarcie tego, co proces zapisał: akcja po wyniku z zapisem, którą deklaruje proces (``run_view``)."""
 
 
 NextAction = Literal["run", "rerun", ResultAction]
@@ -379,8 +379,8 @@ class RunRecorded(Model):
     next_action: NextAction
 
 
-# Ostatnie Uruchomienie sprzed tego startu Centrum, z dysku.
 PastRun = Annotated[RunRestored | RunRecorded | RunInterrupted, Field(discriminator="state")]
+"""Ostatnie Uruchomienie sprzed tego startu Centrum, z dysku."""
 
 
 class RunIdle(Model):
@@ -427,8 +427,8 @@ class RunCardMissing(Model):
     state: Literal["missing"]
 
 
-# Karta Uruchomienia z wiersza Historii.
 RunCard = Annotated[RunRestored | RunCardMissing, Field(discriminator="state")]
+"""Karta Uruchomienia z wiersza Historii."""
 
 
 class RunEvent(Model):
