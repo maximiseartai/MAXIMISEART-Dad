@@ -82,6 +82,7 @@ PARSERS = frozenset(
     """
     .agents/skills/verify-centrum-rozliczen/scripts/centrum_self_test.py
     .agents/skills/verify-centrum-rozliczen/scripts/sub_features.py
+    .agents/skills/verify-rozliczenia/scripts/workflow_sub_features.py
     tests/fixtures/skladnia.py
     tests/test_decyzje_na_faktach.py
     tests/test_eksplorator_w_procesie.py
@@ -99,6 +100,7 @@ PARSERS = frozenset(
     tests/test_struktura_testow.py
     tests/test_tabela_zatrzyman_efenix.py
     tests/test_wywolanie_skryptow_skilli.py
+    tools/lib/komunikat_mapy.py
     tools/lib/kroki_skilli.py
     tools/lib/niestabilne_testy.py
     tools/lib/rozjazd_modelu.py

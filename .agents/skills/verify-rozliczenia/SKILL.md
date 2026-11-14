@@ -463,6 +463,9 @@ already performs both checks and prints `scratch_removed=true`.
 - `scripts/quantity_rules_conformance.py` runs the test of every line of Dad's
   instruction in `tests/test_ilosci_uslug.py` and ends with `ILOŚCI USŁUG OK`.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\quantity_rules_conformance.py`.
+- `scripts/workflow_sub_features.py` prints the `## Sub-features` section of a feature file from the workflow of its
+  process (`features/README.md`, Feature entry contract).
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\workflow_sub_features.py --feature order-intermax`.
 - `scripts/check_quantity_rules_mutations.py` is the mutation table of Reguły
   ilości (see that section). Invocation:
   `py -3 .agents\skills\verify-rozliczenia\scripts\check_quantity_rules_mutations.py`.

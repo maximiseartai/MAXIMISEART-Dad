@@ -48,9 +48,11 @@ Workflow = Callable[["WorkflowVariant", Path, Path, "Path | None"], None]
 
 @dataclass(frozen=True)
 class WorkflowProcess:
-    """A process the workflow runs: its workflow (variant, run root, evidence root, real Wzorce or ``None``), the steps
-    of the process and the helper steps whose evidence a successful run leaves, and the real Wzorce it copies."""
+    """A process the workflow runs: its feature of the map (``features/<feature>.md``), its workflow (variant, run root,
+    evidence root, real Wzorce or ``None``), the steps of the process and the helper steps whose evidence a successful
+    run leaves, and the real Wzorce it copies."""
 
+    feature: str
     run: Workflow
     process_steps: tuple[str, ...]
     helper_steps: tuple[str, ...]
@@ -523,18 +525,25 @@ def _run_intermax_workflow(
     )
 
 
-SETTLEMENT = WorkflowProcess(_run_settlement_workflow, ("dry-run", "run"), ("fixture", "doctor", "cleanup"))
+SETTLEMENT = WorkflowProcess(
+    "settlement", _run_settlement_workflow, ("dry-run", "run"), ("fixture", "doctor", "cleanup")
+)
 PREPARATION = WorkflowProcess(
-    _run_preparation_workflow, ("dry-run", "run"), ("fixture", "doctor", "cleanup"), PREPARATION_TEMPLATE_NAMES
+    "prepare-collective-file",
+    _run_preparation_workflow,
+    ("dry-run", "run"),
+    ("fixture", "doctor", "cleanup"),
+    PREPARATION_TEMPLATE_NAMES,
 )
 CHAIN = WorkflowProcess(
+    "prepare-and-settle",
     _run_chain_workflow,
     ("preparation-dry-run", "preparation-run", "settlement-dry-run", "settlement-run"),
     ("fixture", "doctor", "readiness", "cleanup"),
     (*PREPARATION_TEMPLATE_NAMES, WORKER_TEMPLATE_NAME),
 )
 # Uporządkowanie INTERMAX has no preview without saving, so one run; its Sprawdzanie is the preflight.
-INTERMAX = WorkflowProcess(_run_intermax_workflow, ("run",), ("fixture", "cleanup"))
+INTERMAX = WorkflowProcess("order-intermax", _run_intermax_workflow, ("run",), ("fixture", "cleanup"))
 WORKFLOW_VARIANTS = {
     "default": WorkflowVariant(SETTLEMENT),
     "existing": WorkflowVariant(
