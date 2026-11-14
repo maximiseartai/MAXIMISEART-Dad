@@ -34,7 +34,7 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal, Retry
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
-from rozliczenia.centrum.process_kind import PreparedRun
+from rozliczenia.centrum.process_kind import PreparedRun, startable
 from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
@@ -461,7 +461,7 @@ class Run:
 
     def __init__(self, host: RunHost, prepared: PreparedRun[Any, Any], stops: Stops, threads: Threading) -> None:
         self._host = host
-        self._prepared = prepared
+        self._prepared = startable(prepared)
         self._stops = stops
         self.info = prepared.info(uuid.uuid4().hex)
         self.started_at = utc_now()
@@ -486,7 +486,7 @@ class Run:
         core: Outcome[Shown[Any]] | None = None
         since = self.started_at
         try:
-            core = prepared.conduct(self)
+            core = startable(prepared).conduct(self)
             self._host.remember(prepared, self.info.id, since)
             ended = self._ended(core, None if isinstance(core.ending, Finished) else core.ending, since)
             result = ended.card(prepared.kind.view)
