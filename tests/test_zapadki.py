@@ -796,6 +796,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1069,6 +1070,257 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
     assert syntax_rules(tmp_path, base, config) == [
         odpalenia_ast_grep.Finding("src/rozliczenia/probka.py", 1, rule, odpalenia_ast_grep.BUILTIN_MESSAGES[rule]) for rule in rules
     ]
+
+
+# Katalog Centrum w zakresie ``files:`` reguły ``regula-w-trasie`` jako części ścieżki, bo napis ścieżki w pliku
+# testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``).
+_CENTRUM: Final = ("src", "rozliczenia", "centrum")
+_ODMOWA = "from rozliczenia.centrum import refusal\n\n\ndef changed(problem: object) -> None:\n"
+# Moduł w zakresie reguły: woła metodę zapisu właściciela Ustawień, bez żadnej trasy.
+_ZAPIS_USTAWIEN = "\n\ndef apply(settings: object) -> None:\n    settings.change()\n"
+_WLASCICIEL = "from rozliczenia.centrum.settings.owner import CentrumSettings\n"
+
+
+def _modul_zapisu(text: str) -> str:
+    return f"{text}{_ZAPIS_USTAWIEN}"
+
+
+def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
+    """Nowy moduł każdej próbki w katalogu Centrum ``root``, bez ``router`` w nazwie."""
+
+    folder = root.joinpath(*_CENTRUM)
+    folder.mkdir(parents=True, exist_ok=True)
+    pliki = {opis: folder / f"probka_{numer}.py" for numer, opis in enumerate(probki)}
+    for opis, plik in pliki.items():
+        plik.write_text(probki[opis], encoding="utf-8")
+    return pliki
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("modul", "naglowek", "zapis", "lines"),
+    [
+        (
+            "quantity_differences.py",
+            "from fastapi import APIRouter\n",
+            "\n\ndef add_worker_routes(router: APIRouter, settings: object) -> None:\n    settings.change()\n",
+            [6, 8],
+        ),
+        (
+            "app.py",
+            "from fastapi import FastAPI\n",
+            '\n\ndef add_delete(app: FastAPI, settings: object) -> None:\n    @app.delete("/api/settings/workers/{name}")\n'
+            "    def delete_worker(name: str) -> None:\n        settings.change(name)\n",
+            [6, 8],
+        ),
+        (
+            "probka.py",
+            "import fastapi\n",
+            '\n\ndef add_worker_routes(router: "fastapi.APIRouter", settings: object) -> None:\n    settings.change_with_used_keys()\n',
+            [6, 8],
+        ),
+        ("probka.py", _WLASCICIEL, '\n\ndef undo(settings: CentrumSettings) -> None:\n    settings.undo("row")\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef release(settings: CentrumSettings) -> None:\n    settings.apply_release_changes()\n", [6, 8]),
+        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "change")()\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, r"change")()\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, '''change''')()\n", [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings._dad_change()\n", [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    write = settings._checked\n", [6, 8]),
+        (
+            "probka.py",
+            "from collections.abc import Callable\n",
+            "\n\ndef apply(settings: object, run: Callable[[object], None]) -> None:\n    run(settings.change)\n",
+            [6, 8],
+        ),
+        ("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", [6, 8]),
+        ("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", []),
+        ("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
+        ("probka.py", "", '\n\ndef apply(settings: object) -> None:\n    """Zapis: settings.change w trasie."""\n', []),
+    ],
+)
+def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poza_wlascicielem(
+    tmp_path: Path, modul: str, naglowek: str, zapis: str, lines: list[int]
+) -> None:
+    """Zakres reguły wynika z własności, nie ze składni trasy: sondy #1727 r1 W1 (``quantity_differences.py`` bez
+    ``router`` w nazwie), r2 W1 (router z parametru) i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``, adnotacja
+    napisem ``"fastapi.APIRouter"``), sondy r4 W1 (``getattr`` z nazwą metody zapisu w literale, prywatna metoda
+    właściciela), sondy r5 W2 (literał z przedrostkiem ``r`` i w potrójnym cudzysłowie) i moduł bez trasy, który nazywa którąkolwiek metodę zapisu właściciela, także przekazaną bez
+    wywołania, są zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``),
+    w module bez zapisu Ustawień i w module, którego napis tylko wspomina metodę zapisu, nie."""
+
+    base = _empty_base(tmp_path)
+    plik = tmp_path.joinpath(*_CENTRUM, *modul.split("/"))
+    plik.parent.mkdir(parents=True)
+    plik.write_text(
+        f'{naglowek}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{zapis}',
+        encoding="utf-8",
+    )
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "lines"),
+    [
+        (f"{_ODMOWA}    _ensure_not_in_periods(problem)\n", [5]),
+        (f"{_ODMOWA}    checks._ensure_not_in_periods(problem)\n", [5]),
+        (f"{_ODMOWA}    needed = needed_by(problem)\n    if needed is not None:\n        raise refusal.setting_refused(needed)\n", [7]),
+        (
+            f'{_ODMOWA}    match problem:\n        case "delete":\n            if problem:\n'
+            '                raise refusal.worker_kept(problem, "worker")\n',
+            [8],
+        ),
+        (f'{_ODMOWA}    match problem:\n        case "delete" if problem:\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (f'{_ODMOWA}    if problem:\n        return\n    else:\n        raise refusal.worker_kept(problem, "worker")\n', [8]),
+        (f"{_ODMOWA}    match problem:\n        case Refused(problem=refused) if refused:\n            raise refusal.setting_refused(refused)\n", [7]),
+        (f"{_ODMOWA}    match problem:\n        case Saved() | InPeriods():\n            raise refusal.setting_refused(problem)\n", [7]),
+        (f'{_ODMOWA}    match problem:\n        case InPeriods():\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (
+            f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            if refused:\n"
+            "                raise refusal.setting_refused(refused)\n",
+            [8],
+        ),
+        (f'{_ODMOWA}    if isinstance(problem, InPeriods):\n        raise refusal.worker_kept(problem, "worker")\n', [6]),
+        (f"{_ODMOWA}    if isinstance(problem, FieldProblem) and problem:\n        raise refusal.setting_refused(problem)\n", [6]),
+        (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n", [8]),
+        (f"{_ODMOWA}    if problem is None:\n        for part in str(problem):\n            raise refusal.setting_refused(part)\n", [7]),
+        (
+            f"{_ODMOWA}    if isinstance(problem, NotUndoable):\n"
+            "        raise refusal.settings_change_not_undoable() if problem else refusal.settings_not_saved()\n",
+            [6, 6],
+        ),
+        (f"{_ODMOWA}    try:\n        str(problem)\n    except ValueError as error:\n        raise refusal.setting_refused(problem) from error\n", [8]),
+        (f"{_ODMOWA}    raise refusal.setting_refused(problem)\n", [5]),
+        (f"{_ODMOWA}    return refusal.setting_refused(problem)\n", [5]),
+        (f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            raise refusal.setting_refused(refused)\n", []),
+        (
+            f"{_ODMOWA}    match problem:\n        case owner.KeptInPeriods(presence=presence, what=what):\n"
+            "            raise refusal.worker_kept(presence, what)\n",
+            [],
+        ),
+        (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
+        (f"{_ODMOWA}    if isinstance(problem, NotSaved):\n        raise refusal.settings_not_saved()\n", []),
+        (f'{_ODMOWA}    if problem:\n        if problem.found is None:\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (f"{_ODMOWA}    with problem:\n        if problem is None:\n            raise refusal.register_not_chosen()\n", [7]),
+        (
+            f'{_ODMOWA}    match problem:\n        case "delete":\n            if isinstance(problem, FieldProblem):\n'
+            "                raise refusal.setting_refused(problem)\n",
+            [8],
+        ),
+        (f"{_ODMOWA}    if problem is None:\n        raise refusal.register_not_chosen()\n", []),
+        (
+            f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            if isinstance(refused, FieldProblem):\n"
+            "                raise refusal.setting_refused(refused)\n",
+            [],
+        ),
+        (f"{_ODMOWA}    if problem:\n        raise refusal.device_component_unknown()\n", []),
+    ],
+)
+def test_regula_w_trasie_zglasza_odmowe_trasy_poza_kazdym_dozwolonym_ksztaltem(tmp_path: Path, text: str, lines: list[int]) -> None:
+    """Powroty #1585 W1 r1 (``_ensure_*``) i #1577 W1 r3 (odmowa ``needed_by``), sondy werdyktów #1724 r1 i r2 (``case``
+    napisu z ``if`` w ciele i ze strażnikiem, ``else``), sonda #1727 r1 D2 (dozwolony ``if`` pod ``if``) i każda odmowa
+    poza dozwolonym kształtem są zgłoszone; kształty dozwolone (``raise`` wprost w ``case`` klasy wyniku właściciela i
+    pod ``if isinstance``/``is None`` wprost w ciele funkcji albo w takim ``case``, 404) nie."""
+
+    base = _empty_base(tmp_path)
+    _moduly_centrum(tmp_path, {"probka": _modul_zapisu(text)})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
+
+
+_FIELD_PROBLEM = "from rozliczenia.centrum.settings.files import FieldProblem\n"
+# Znane luki reguły ``regula-w-trasie`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy moduł z odmową
+# reguły domeny Ustawień obok zapisu poza właścicielem, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+ZNANE_LUKI_REGULY_W_TRASIE: Final = {
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta klasę w isinstance, nie źródło wartości": _modul_zapisu(
+        f"from rozliczenia.centrum.device_forms import needed_by\n{_FIELD_PROBLEM}"
+        f"{_ODMOWA}    needed = needed_by(problem)\n    if isinstance(needed, FieldProblem):\n"
+        "        raise refusal.setting_refused(needed)\n"
+    ),
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta is None, nie źródło wartości": _modul_zapisu(
+        "from rozliczenia import worker_periods\n"
+        f'{_ODMOWA}    found = worker_periods.unused(problem)\n    if found is None:\n        raise refusal.worker_kept(problem, "worker")\n'
+    ),
+    "nazwa: funkcja katalogu odmów importowana z nazwy": _modul_zapisu(
+        "from rozliczenia.centrum.refusal import setting_refused\n\n\ndef changed(problem: object) -> None:\n"
+        "    raise setting_refused(problem)\n"
+    ),
+    "nazwa: katalog odmów pod inną nazwą modułu": _modul_zapisu(
+        "from rozliczenia.centrum import refusal as odmowy\n\n\ndef changed(problem: object) -> None:\n"
+        '    raise odmowy.worker_kept(problem, "worker")\n'
+    ),
+    "nazwa: odmowa z funkcji spoza katalogu odmów": _modul_zapisu(
+        "from rozliczenia.centrum import periods\n\n\ndef changed(problem: object) -> None:\n    raise periods.kept(problem)\n"
+    ),
+    "nazwa: sprawdzenie z innego modułu bez przedrostka _ensure_": _modul_zapisu(
+        "from rozliczenia import worker_periods\n\n\ndef changed(problem: object) -> None:\n    worker_periods.ensure_unused(problem)\n"
+    ),
+    "nazwa: klasa wyniku o nazwie klasy właściciela spoza settings/owner.py": _modul_zapisu(
+        "from rozliczenia.centrum.report_box import Refused\n"
+        f"{_ODMOWA}    match problem:\n        case Refused():\n            raise refusal.setting_refused(problem)\n"
+    ),
+    "zakres: moduł zmienia Ustawienia funkcją innego modułu, nie metodą zapisu właściciela": (
+        "from rozliczenia.centrum import refusal, settings_writes\n\n\n"
+        'def apply(settings: object, problem: object) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+        "    settings_writes.save(settings)\n"
+    ),
+    "zakres: nazwa metody zapisu właściciela sklejona z dwóch literałów": (
+        "from rozliczenia.centrum import refusal\n\n\n"
+        "def apply(settings: object, problem: object) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "chan" "ge")(problem)\n'
+    ),
+    "zakres: nazwa metody zapisu właściciela nie jest literałem, np. getattr ze zmienną": (
+        "from rozliczenia.centrum import refusal\n\n\n"
+        "def apply(settings: object, problem: object, operation: str) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, operation)(problem)\n'
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff
+
+    base = _empty_base(tmp_path)
+    pliki = _moduly_centrum(tmp_path, ZNANE_LUKI_REGULY_W_TRASIE)
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*_CENTRUM, "test_sonda_luki_zapisu.py"))
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff")
+
+
+# Zapis Ustawień obok odmowy przez prywatne pola właściciela (sondy #1727 r5 W1): ruff SLF001 łapie każdą prywatną
+# składową obiektu spoza modułu właściciela (#1737), więc reguła ich nazw nie wylicza.
+_ZAPIS_PRZEZ_POLA: Final = {
+    "miejsce pliku": "settings._places[WORKERS.name].write(problem)",
+    "Historia Ustawień": "settings._history.append(problem)",
+    "pamięć właściciela": "settings._memory.write(problem, problem)",
+}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_zapis_ustawien_obok_odmowy_przez_prywatne_pola_wlasciciela_pada_w_ruff(tmp_path: Path) -> None:
+    """Moduł Centrum z odmową i zapisem przez prywatne pole ``CentrumSettings`` pada w ruff na ``SLF001`` tego pola."""
+
+    from tests.fixtures.znane_luki import ruff
+
+    probki = {
+        opis: _WLASCICIEL
+        + ("from rozliczenia.centrum.settings.workers import WORKERS\n" if "WORKERS" in zapis else "")
+        + "from rozliczenia.centrum import refusal\n\n\n"
+        + 'def delete_worker(settings: CentrumSettings, problem: str) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+        + f"    {zapis}\n"
+        for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
+    }
+    zgloszenia = ruff(_moduly_centrum(tmp_path, probki), sonda=ROOT.joinpath(*_CENTRUM, "test_sonda_luki_zapisu.py"))
+
+    assert zgloszenia == {
+        opis: [f"ruff SLF001: Private member accessed: `{zapis.split('.')[1].split('[')[0]}`"] for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
+    }
 
 
 _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
