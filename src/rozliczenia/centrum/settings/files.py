@@ -1,8 +1,8 @@
 """Plik Ustawień Centrum w ``config``: jak go przeczytać, zapisać, porównać i cofnąć, ten sam opis dla każdego pliku.
 
 Każdy plik ma jedną regułę ``parse``: sprawdza zapis taty, cofnięcie i plik zmieniony ręcznie, więc zła wartość nie
-wchodzi żadną drogą. Brak pliku to wartość domyślna. Rejestr ``SETTINGS_FILES`` wymienia pliki, które ma właściciel
-(``CentrumSettings``); kolejny plik to kolejny wpis z własnym ``parse``, ``dump``, ``diff`` i ``restore``.
+wchodzi żadną drogą. Brak pliku to wartość domyślna. Pliki, które ma właściciel (``CentrumSettings``), wymienia jego
+``_FILES``, a każdy z nich to opis z własnym ``parse``, ``dump``, ``diff`` i ``restore``.
 """
 
 from __future__ import annotations
