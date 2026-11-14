@@ -478,11 +478,13 @@ class _BezSuper:
 
 
 def _proof_value(kind: str) -> object:
-    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów
-    i pamięć."""
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów,
+    pamięć i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
 
     memory = empty_memory()
     match kind:
+        case "postep" | "wynik-bez-logow" | "logi-z-pliku-albo-urwane" | "logi-z-wynikiem-albo-diagnoza":
+            return TAKES_GUARDED[kind](_guarded("logi" if "logi-z" in kind else "tekst"), Path())
         case "plik":
             return guard_logs(record(), memory).text
         case "wysylka":
@@ -496,7 +498,13 @@ def _proof_value(kind: str) -> object:
 
 
 @pytest.mark.parametrize("before", [False, True], ids=["bez-bazy-przed", "z-baza-przed-bez-super"])
-@pytest.mark.parametrize("kind", ["logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec",
+        "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+    ],
+)
 def test_typy_dowody_reguly_danych_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str, before: bool) -> None:
     """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku, tekstu do wysyłki, wysyłki Logów albo pamięci mogłaby
     podać tekst sprzed strażnika jako po strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie
@@ -506,6 +514,14 @@ def test_typy_dowody_reguly_danych_nie_maja_podklas_takze_zrobionych_w_trakcie_d
 
     with pytest.raises(TypeError, match="podklas"):
         type("Inne", (_BezSuper, proof) if before else (proof,), {"text": property(lambda self: "ul. Syntetyczna 1")})
+
+
+def test_wersja_komentarza_nie_ma_podklasy_z_pustym_przyjeciem() -> None:
+    """Podklasa wersji z pustym ``__post_init__`` ominęłaby sprawdzenie tekstu po strażniku i dała ``post_of`` tekst z
+    komórki (przegląd #1731, runda 1, W2), więc jej utworzenie odmawia."""
+
+    with pytest.raises(TypeError, match="Wersja komentarza Uruchomienia nie ma podklas"):
+        type("Wersja", (ProgressVersion,), {"__post_init__": lambda self: None})
 
 
 _PLIK: Final = """\
@@ -751,6 +767,21 @@ def plik(komorka: str) -> ArchiveFile:
     return ArchiveFile("t", "t", "d", "n", tekst(komorka))
 """,
     # Wersja sprawdza tekst przy przyjęciu, a post_of czyta go później (#1551).
+    "type.__new__ z metaklasą: podklasa wersji z bazą przed nią bez super() i pustym __post_init__": """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    klasa: Any = type.__new__(type(ProgressVersion), "Wersja", (Mixin, ProgressVersion), {"__post_init__": lambda self: None})
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
     "refleksja: object.__setattr__ Logów wersji po jej przyjęciu, przed post_of": """from types import SimpleNamespace
 
 from rozliczenia.centrum.comment_versions import LogsPost, OwnLogs, post_of

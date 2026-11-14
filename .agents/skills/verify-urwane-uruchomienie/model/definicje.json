@@ -10,10 +10,10 @@
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
-    "ProgressVersion": "06a0c6e965a7edc9",
-    "OwnLogs": "d74da43b6f1f0893",
-    "StandInLogs": "9f9d00d7a8b7553b",
-    "WithoutLogsVersion": "92868149b99a61ae",
+    "ProgressVersion": "14576cb800cf6fcd",
+    "OwnLogs": "e31d03db3daeae80",
+    "StandInLogs": "bebf5c21e7b672a1",
+    "WithoutLogsVersion": "92b9e4d6e8eea63e",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
     "post_of": "2bbb50689868bd71",
@@ -47,7 +47,7 @@
     "LogsOnDisk.started": "3ccf23d17059de9b",
     "LogsOnDisk.left_behind": "6575679b81ab383e",
     "LogsOnDisk.remove_journal": "68bae958d9af8c30",
-    "LogsOnDisk.write": "6f95d520781d9905",
+    "LogsOnDisk.write": "d5e1173e97618d13",
     "name_of": "d7dce93561713660"
   },
   "src/rozliczenia/file_state.py": {

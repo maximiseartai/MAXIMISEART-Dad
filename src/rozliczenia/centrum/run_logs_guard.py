@@ -349,8 +349,8 @@ pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``,
   ``TypeError``.
 - Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``: typ jej
   nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``LogsOnDisk.write``), jedyne miejsca,
-  które biorą Logi albo tekst po strażniku, sprawdzają dokładny typ i rzucają ``TypeError``.
-- ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem, ``isinstance`` i ``type(…) is`` (np.
+  które biorą Logi albo tekst po strażniku, sprawdzają dokładny typ przez ``exact_logs`` i ``exact_text``.
+- ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem i ``isinstance`` (np.
   ``object.__new__(GuardedLogs)``, ``cast(GuardedLogs, …)``, napis ze slotem ``_GuardedLogs__…``): łapie test
   ``tests/test_granice_importow.py``.
 - Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
@@ -410,6 +410,14 @@ def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
     return GuardedLogs(_guarded(record, forbidden), record, _MINTED)
 
 
+def exact_logs(logs: object) -> GuardedLogs:
+    """Logi tuż przed zapisem pliku Logów albo przyjęciem do wersji komentarza: wartość, której typ nie jest dokładnie
+    ``GuardedLogs`` (Logi sprzed strażnika przez ``Any``, podklasa z ``type.__new__``), daje ``TypeError``."""
+
+    if type(logs) is not GuardedLogs:
+        raise TypeError(f"Logi po strażniku daje tylko guard_logs, nie {type(logs).__name__}.")
+    return logs
+
 @final
 class GuardedText(metaclass=WithoutSubclasses):
     """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
@@ -436,6 +444,14 @@ class GuardedText(metaclass=WithoutSubclasses):
     def __delattr__(self, name: str) -> None:
         raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
 
+
+def exact_text(text: object) -> GuardedText:
+    """Tekst po strażniku tuż przed przyjęciem do wersji komentarza: wartość, której typ nie jest dokładnie ``GuardedText``,
+    daje ``TypeError``."""
+
+    if type(text) is not GuardedText:
+        raise TypeError(f"Tekst po strażniku daje tylko guard_text, nie {type(text).__name__}.")
+    return text
 
 def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText:
     """Tekst ``text`` po strażniku reguły danych ``forbidden``: zamaskowana wartość to uwaga techniczna na jego końcu, z

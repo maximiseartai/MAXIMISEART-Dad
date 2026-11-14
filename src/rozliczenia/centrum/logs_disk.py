@@ -64,7 +64,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, LoggedOrder, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import GuardedLogs
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, exact_logs
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.file_state import folder_entries, remove_file
 from rozliczenia.wall_clock import utc_now
@@ -440,9 +440,7 @@ class LogsOnDisk:
         sprzed strażnika przez ``Any``) rzucają ``TypeError`` (``run_logs_guard._MINTED``); ``OSError``: pliku nie udało się
         zapisać."""
 
-        if type(logs) is not GuardedLogs:
-            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
-        replace_atomically(self._logs / name_of(logs.record.start), logs.text, newline="")
+        replace_atomically(self._logs / name_of(exact_logs(logs).record.start), logs.text, newline="")
 
     def last_start(self) -> StartFacts | None:
         """Ostatni start Uruchomienia przed tą pracą Centrum; ``None``: żadnego albo pliku nie da się odczytać."""

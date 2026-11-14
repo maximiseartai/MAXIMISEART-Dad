@@ -39,7 +39,7 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.client_data import WithoutSubclasses, tool
 
@@ -71,60 +71,63 @@ class ResultWithoutLogs:
     logs: LogsMissing
 
 
+_NO_VERSION_SUBCLASSES: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
+
+
+@final
 @dataclass(frozen=True)
-class ProgressVersion:
+class ProgressVersion(metaclass=WithoutSubclasses):
     progress: PricingProgress
     text: GuardedText
 
     def __post_init__(self) -> None:
-        _require_text(self.text)
+        exact_text(self.text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class OwnLogs:
+class OwnLogs(metaclass=WithoutSubclasses):
     """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem i plik w Archiwum."""
 
     logs: GuardedLogs
 
     def __post_init__(self) -> None:
-        _require_logs(self.logs)
+        exact_logs(self.logs)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class StandInLogs:
+class StandInLogs(metaclass=WithoutSubclasses):
     """Logi, które start Centrum wysyła z dziennika Wyceny: z pliku albo Logi Urwanego Uruchomienia."""
 
     logs: GuardedLogs
 
     def __post_init__(self) -> None:
-        _require_logs(self.logs)
+        exact_logs(self.logs)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class WithoutLogsVersion:
+class WithoutLogsVersion(metaclass=WithoutSubclasses):
     """Wynik bez Logów ``final`` z tekstem komentarza po strażniku (``text``), bez pliku w Archiwum."""
 
     final: ResultWithoutLogs
     text: GuardedText
 
     def __post_init__(self) -> None:
-        _require_text(self.text)
+        exact_text(self.text)
 
-
-def _require_logs(logs: object) -> None:
-    """Wersja z Logami bierze tylko Logi po strażniku (``run_logs_guard._MINTED``): Logi sprzed strażnika podane przez
-    ``Any`` typ przepuszcza, a tu rzucają ``TypeError``."""
-
-    if type(logs) is not GuardedLogs:
-        raise TypeError("Wersja komentarza Uruchomienia bierze tylko Logi po strażniku z guard_logs.")
-
-
-def _require_text(text: object) -> None:
-    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs_guard._MINTED``), także gdy typ go nie
-    widzi."""
-
-    if type(text) is not GuardedText:
-        raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
 StandInVersion = StandInLogs | WithoutLogsVersion

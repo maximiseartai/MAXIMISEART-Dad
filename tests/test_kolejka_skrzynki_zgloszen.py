@@ -2024,6 +2024,16 @@ def wysylka(komorka: str, post: Post) -> Post:
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
 """,
+    # Cele są final tylko dla mypy, więc podklasa w biegu niesie tytuł z komórki (przegląd #1723, runda 2, W1).
+    "podklasa celu w biegu: type() z NewIssue i adnotacją title: int": """from typing import Any
+
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    cel: Any = type("Cel", (NewIssue,), {"__annotations__": {"title": int}})
+    return Post(cel("uwaga-taty", komorka), None, "r", None, post.parts)
+""",
     "konstrukcja bez __new__: str.__new__ z klasą Outgoing w tytule celu": _GOTOWY_CEL
     + """from rozliczenia.client_data import Outgoing
 
@@ -2047,6 +2057,16 @@ def _argumenty_wysylki() -> dict[str, object]:
 
 def _w_pliku_kolejki(plik: Path) -> list[str]:
     return bieg_do_pliku_kolejki(modul(plik), _argumenty_wysylki(), _KOMORKA)
+
+
+def test_bieg_znanej_luki_przez_plik_kolejki_zglasza_probke_ktorej_komorka_nie_dochodzi_do_pliku(tmp_path: Path) -> None:
+    """Próbka znanej luki przechodzi bieg tylko wtedy, gdy wartość komórki stoi w pliku kolejki; próbka, która wysyła sam
+    tekst narzędzia, jest zgłoszeniem, więc nie zostałaby znaną luką (przegląd #1731, runda 1, D1)."""
+
+    plik = tmp_path / "bez_komorki.py"
+    plik.write_text(_POST + 'def wysylka(komorka: str, cel: NewIssue) -> Post:\n    return Post(cel, None, "r", None, (cel.title,))\n', encoding="utf-8")
+
+    assert _w_pliku_kolejki(plik) == ["bieg: plik kolejki bez wartości komórki"]
 
 
 @wymaga_ruff_i_mypy
