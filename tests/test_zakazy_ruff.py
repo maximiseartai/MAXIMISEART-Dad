@@ -25,6 +25,8 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+
 ROOT = Path(__file__).resolve().parents[1]
 # Każdy plik konfiguracji ruff poza pyproject.toml w korzeniu, literałem, żeby tools/szybko.py wybierał ten test przy
 # zmianie któregoś z nich.
@@ -32,6 +34,8 @@ SRC_CONFIG = ROOT / "src" / "ruff.toml"
 TESTS_CONFIG = ROOT / "tests" / "ruff.toml"
 DRIVE_CONFIG = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "drive" / "ruff.toml"
 DIRECTORY_CONFIGS = (SRC_CONFIG, TESTS_CONFIG, DRIVE_CONFIG)
+# Sonda kodu narzędzi, który bierze konfigurację ruff z pyproject.toml w korzeniu.
+TOOLS_PROBE = ("tools", "lib")
 # Katalogi, które ruff sprawdza (``include`` w ``pyproject.toml``), i nazwy plików konfiguracji ruff.
 CHECKED = ("src", "tests", "tools", ".agents/skills")
 NAMES = ("ruff.toml", ".ruff.toml", "pyproject.toml")
@@ -84,6 +88,19 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import sys\nsys.path[:0] = [x]": (TESTS_CONFIG, (), "sys.path"),
     "import sys as s\ns.path.append(x)": (TESTS_CONFIG, (), "sys.path"),
     "from sys import path as p": (TESTS_CONFIG, (), "sys.path"),
+    # Import w trakcie działania obok tools/lib/import_dynamiczny.py: postacie z przeglądu #1680 (r1–r3, W1).
+    'import importlib\nm = importlib.import_module(name="tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.import_module"),
+    'import importlib\nm = importlib.import_module(".znane_luki", "tests.fixtures")': (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.import_module"),
+    'from importlib import import_module\nm = import_module(".znane_luki", package="tests.fixtures")': (
+        ROOT / "pyproject.toml",
+        TOOLS_PROBE,
+        "importlib.import_module",
+    ),
+    'import importlib as il\nm = il.import_module("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", (), "importlib.import_module"),
+    'import builtins\nm = builtins.__import__("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "builtins.__import__"),
+    "from importlib.util import spec_from_file_location": (ROOT / "pyproject.toml", (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
+    'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
+    'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
     "import threading\nstart = threading.Thread.start": (TESTS_CONFIG, (), "threading.Thread.start"),
     "from threading import Thread as Worker\nWorker.start = counted": (TESTS_CONFIG, ("fixtures",), "threading.Thread.start"),
     "import threading\nassert threading.active_count() == before": (TESTS_CONFIG, (), "threading.active_count"),
@@ -174,7 +191,11 @@ def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_z_pyproject() -> 
         if (path.parent / config.get("extend", "")).resolve() != ROOT / "pyproject.toml":
             problems.append(f"{where}: extend nie wskazuje pyproject.toml repozytorium")
         local = _banned(config.get("lint", {}))
-        problems += [f"{where}: brak zakazu {name} z pyproject.toml" for name, entry in root.items() if local.get(name) != entry]
+        problems += [
+            f"{where}: brak zakazu {name} z pyproject.toml"
+            for name, entry in root.items()
+            if local.get(name) != entry and not (path == TESTS_CONFIG and name in DYNAMIC_IMPORT)
+        ]
 
     assert problems == [], "\n".join(
         [*problems, "ruff bierze banned-api z najbliższego pliku konfiguracji w całości: skopiuj tam wpis z pyproject.toml"]
@@ -242,6 +263,7 @@ OWNERS: dict[str, frozenset[str]] = {
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}
     ),
     "src/rozliczenia/centrum/opener.py": frozenset({"urllib.request.build_opener"}),
+    "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
@@ -322,6 +344,96 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
         f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
         "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS"
     )
+
+
+# Właściciel importu w trakcie działania poza tests/: jedyny plik z prawem do jego dróg (OWNERS).
+DYNAMIC_IMPORT_OWNER = ROOT / "tools" / "lib" / "import_dynamiczny.py"
+# Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml), które testy niżej
+# uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
+DYNAMIC_IMPORT = (
+    "importlib.import_module",
+    "importlib.__import__",
+    "builtins.__import__",
+    "importlib.util",
+    "importlib.machinery",
+    "importlib._bootstrap",
+    "importlib._bootstrap_external",
+    "_frozen_importlib",
+    "_frozen_importlib_external",
+    "_imp",
+    "runpy",
+    "pkgutil",
+    "zipimport",
+)
+DYNAMIC_IMPORT_PROBE = 'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")  # noqa: TID251 - sonda\n'
+
+
+def _dynamic_imports(*arguments: str, code: str | None = None) -> list[str]:
+    """``plik`` każdego zakazu z ``DYNAMIC_IMPORT``, który ``ruff check`` z ``--ignore-noqa`` zgłasza poza ``tests/``."""
+    return sorted(
+        {name for name, banned in _banned_names(*arguments, code=code) if banned in DYNAMIC_IMPORT and not name.startswith("tests/")}
+    )
+
+
+def test_kazdy_zakaz_importu_w_trakcie_dzialania_jest_na_liscie_dynamic_import() -> None:
+    """Zakazem importu w trakcie działania jest wpis ``pyproject.toml``, którego komunikat odsyła do właściciela."""
+    banned = _banned(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["lint"])
+    owned = {name for name, entry in banned.items() if "tools/lib/import_dynamiczny.py" in entry["msg"]}
+
+    assert sorted(owned ^ set(DYNAMIC_IMPORT)) == [], "DYNAMIC_IMPORT w tests/test_zakazy_ruff.py ma wymieniać każdy zakaz właściciela"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa() -> None:
+    """``# noqa: TID251`` przy ``importlib.import_module`` byłoby drugą drogą obok właściciela, który odmawia modułu z
+    ``tests/``, więc te zakazy biegną z ``--ignore-noqa`` na całym kodzie, który ruff sprawdza; ``tests/`` importuje w
+    trakcie działania własne moduły i ma je poza zakazem."""
+
+    assert _dynamic_imports() == [], "import w trakcie działania bierz z tools/lib/import_dynamiczny.py, bez noqa"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_noqa_nie_zwalnia_z_zakazu_importu_w_trakcie_dzialania_a_wlasciciel_jest_zwolniony() -> None:
+    probe = ROOT.joinpath(*TOOLS_PROBE, "sonda_zakazu.py")
+
+    assert _dynamic_imports("--stdin-filename", str(probe), "-", code=DYNAMIC_IMPORT_PROBE) == ["tools/lib/sonda_zakazu.py"]
+    assert _dynamic_imports("--stdin-filename", str(DYNAMIC_IMPORT_OWNER), "-", code=DYNAMIC_IMPORT_PROBE) == []
+
+
+# Znane luki zakazu importu w trakcie działania (tests/fixtures/znane_luki.py): „klasa: postać” → moduł narzędzi, który
+# wykonuje kod z tests/ obok tools/lib/import_dynamiczny.py, a mimo to przechodzi przez ruff i mypy.
+ZNANE_LUKI_IMPORTU = {
+    "wbudowana bez modułu: __import__ z nazwą w argumencie nazwanym": (
+        'FIXTURES = __import__(name="tests.fixtures.znane_luki", fromlist=["zapisz"])\n'
+    ),
+    "nazwa z napisu: getattr na module importlib": (
+        'import importlib\n\nFIXTURES = getattr(importlib, "import_module")("tests.fixtures.znane_luki")\n'
+    ),
+    "maszyneria z obiektu: klasa loadera z __spec__ modułu": (
+        "import json\nfrom typing import Any\n\n"
+        "LOADER: Any = type(json.__spec__.loader)\n"
+        'FIXTURES = LOADER("znane_luki", "tests/fixtures/znane_luki.py").load_module()\n'
+    ),
+    "kod w napisie: exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.znane_luki")\n',
+    "kod w napisie: polecenie python -c": (
+        "import subprocess\nimport sys\n\n"
+        'subprocess.run([sys.executable, "-c", "import tests.fixtures.znane_luki"], check=True)\n'
+    ),
+    "tłumienie ruff: exec z noqa": 'exec("import tests.fixtures.znane_luki")  # noqa: S102 - próbka\n',
+    "import po drodze: pydoc.locate": 'import pydoc\n\nFIXTURES = pydoc.locate("tests.fixtures.znane_luki")\n',
+    "import po drodze: importlib.resources pakietu": (
+        'from importlib import resources\n\nFIXTURES = resources.files("tests.fixtures")\n'
+    ),
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_zakazu_importu_w_trakcie_dzialania_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_IMPORTU, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_IMPORTU)")
 
 
 # Właściciel zegara ściennego w src/: jedyny plik z prawem do nazw zegara (OWNERS).
