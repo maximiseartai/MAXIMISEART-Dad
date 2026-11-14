@@ -463,7 +463,10 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
     ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
-    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
+    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``). Nie ma podklas: podklasa z własnym ``__init__`` albo
+    ``conduct`` składałaby się sama, bez katalogu, więc ``__init_subclass__`` rzuca ``TypeError`` przy każdej, pod
+    każdą nazwą i także zrobionej w trakcie działania (``type(gotowe)``, ``type()``, ``types.new_class``); typ
+    ``PreparedRun[…]`` w adnotacji podklasy nie robi.
     """
 
     __slots__ = (
@@ -503,6 +506,12 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.settings: Final = settings
         self.warnings: Final = warnings
         self.quantity_rules: Final = quantity_rules
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(
+            "Uruchomienie gotowe do startu nie ma podklas: składa je tylko Catalog.prepared, a rdzeń, plik metryk "
+            "i silnik procesu podmienia Catalog.steered, Catalog.with_metrics i Catalog.with_engine."
+        )
 
     @property
     def dry_run(self) -> bool:

@@ -25,7 +25,7 @@ nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy o
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
 katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
-z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter), w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
 plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
 ``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
 prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
@@ -648,9 +648,9 @@ _COPYING_MODULES: typing.Final = frozenset({"dataclasses", "copy"})
 
 def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
-    atrybut ``PreparedRun``), podklasa (składa się sama, ``cls(...)``) i kopia przez ``replace`` z ``dataclasses`` albo
+    atrybut ``PreparedRun``) i kopia przez ``replace`` z ``dataclasses`` albo
     ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z wyrażenia, którego tekst ma
-    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
+    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``), a podklasy odmawia samo ``PreparedRun`` w trakcie działania (``__init_subclass__``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
     wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
@@ -667,12 +667,6 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
             copies |= {f"{alias.asname}.replace" for alias in node.names if alias.name in _COPYING_MODULES and alias.asname}
     found: list[tuple[int, str]] = []
     for node in wezly(tree):
-        if isinstance(node, ast.ClassDef):
-            for base in node.bases:
-                named = base.value if isinstance(base, ast.Subscript) else base
-                if (named.id if isinstance(named, ast.Name) else getattr(named, "attr", None)) in builds:
-                    found.append((node.lineno, f"class {node.name}({ast.unparse(base)})"))
-            continue
         if not isinstance(node, ast.Call):
             continue
         func = node.func
@@ -702,7 +696,7 @@ def test_uruchomienie_gotowe_do_startu_sklada_tylko_katalog_procesow() -> None:
         [
             *sorted(found),
             "PreparedRun składa tylko Catalog.prepared (src/rozliczenia/centrum/catalog.py), także kopią "
-            "(dataclasses.replace z metrics= albo z wartości prepared) i podklasą: rdzeń, historia metryk i silnik "
+            "(dataclasses.replace z metrics= albo z wartości prepared): rdzeń, historia metryk i silnik "
             "procesu pochodzą z katalogu, więc Centrum, Skrypt dla maszyn, odtworzenie, testy i skrypty skilli "
             "podmieniają je tylko przez Catalog.with_metrics, Catalog.steered i Catalog.with_engine.",
         ]
@@ -720,9 +714,6 @@ PREPARED_RUN_BUILDS: typing.Final = {
     "dunder-replace": "run = PREPARED.__replace__(kind=other)",
     "replace-pod-nazwa-z-importu": "from dataclasses import replace as _r\nrun = _r(run, metrics=None)",
     "modul-pod-nazwa-z-importu": "import dataclasses as dc\nrun = dc.replace(run, metrics=store)",
-    # Przegląd #1127, runda 1: podklasa z własnym conduct składała się przez cls(**pola).
-    "podklasa-z-modulu": "class Modelled(process_kind.PreparedRun[Any, Any]):\n    pass",
-    "podklasa-pod-nazwa-z-importu": "from rozliczenia.centrum.process_kind import PreparedRun as _G\nclass M(_G):\n    pass",
 }
 # Kopie innych wartości, napisy i nazwy typu, które sprawdzenie przepuszcza.
 PREPARED_RUN_ALLOWED: typing.Final = {
@@ -731,7 +722,6 @@ PREPARED_RUN_ALLOWED: typing.Final = {
     "replace-bez-wartosci-w-argumencie": "copy = replace(**changes)",
     "replace-innej-funkcji-pod-ta-nazwa": "from os import replace as swap\nswap(prepared, target)",
     "adnotacja-i-isinstance": "def f(run: PreparedRun) -> bool:\n    return isinstance(run, PreparedRun)\n",
-    "podklasa-innej-klasy-generycznej": "class Shown(Generic[SummaryT]):\n    pass",
 }
 
 

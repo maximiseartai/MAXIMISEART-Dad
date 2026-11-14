@@ -29,6 +29,7 @@ from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
+from tests.fixtures.znane_luki import modul
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
 
@@ -39,6 +40,53 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
 
     assert sorted(keys) == sorted(get_args(common_contract.ProcessKey))
     assert sorted(period_keys) == sorted(get_args(common_contract.PeriodProcessKey))
+
+
+_GOTOWE_URUCHOMIENIE: Final = (
+    "import types\nimport typing\nfrom typing import Any\n\nfrom rozliczenia.centrum import process_kind\n"
+    "from rozliczenia.centrum.process_kind import PreparedRun\n\ngotowe = object.__new__(PreparedRun)\n\n\n"
+)
+# Każda postać podklasy, o której wiemy (przegląd #1680, runda 2: nazwa przypisana poza importem i type(gotowe)
+# przechodziły ruff, mypy z type: ignore i sprawdzenie katalogu w tests/test_granice_importow.py).
+PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
+    "nazwa z importu": "class Moja(PreparedRun[Any, Any]):\n    pass\n",
+    "nazwa z importu pod aliasem": "from rozliczenia.centrum.process_kind import PreparedRun as _G\n\n\nclass Moja(_G):\n    pass\n",
+    "atrybut modułu": "class Moja(process_kind.PreparedRun[Any, Any]):\n    pass\n",
+    "nazwa przypisana poza importem": "ZLOZ = PreparedRun\n\n\nclass Moja(ZLOZ[Any, Any]):\n    pass\n",
+    "type(gotowe)": "class Moja(type(gotowe)):\n    pass\n",
+    "type z trzema argumentami": 'Moja = type("Moja", (PreparedRun,), {"conduct": lambda self, interlocutor: None})\n',
+    "types.new_class": 'Moja = types.new_class("Moja", (PreparedRun[Any, Any],))\n',
+}
+
+
+@pytest.mark.parametrize("podklasa", PODKLASY_GOTOWEGO_URUCHOMIENIA.values(), ids=PODKLASY_GOTOWEGO_URUCHOMIENIA.keys())
+def test_uruchomienie_gotowe_do_startu_nie_ma_podklas_takze_zrobionych_w_trakcie_dzialania(
+    podklasa: str, tmp_path: Path
+) -> None:
+    """Podklasa ``PreparedRun`` składałaby się sama, z własnym rdzeniem albo ``conduct``, bez katalogu procesów, więc
+    jej utworzenie odmawia pod każdą nazwą, także w trakcie działania, a odmowa mówi, czym podmienić rdzeń, plik metryk
+    i silnik."""
+
+    plik = tmp_path / "podklasa.py"
+    plik.write_text(_GOTOWE_URUCHOMIENIE + podklasa, encoding="utf-8")
+
+    with pytest.raises(TypeError, match="nie ma podklas: składa je tylko Catalog.prepared"):
+        modul(plik)
+
+
+def test_typ_uruchomienia_gotowego_do_startu_w_adnotacji_nie_jest_podklasa(tmp_path: Path) -> None:
+    """``PreparedRun[…]`` to typ w adnotacji, nie podklasa, więc wyliczony w trakcie działania nie odmawia."""
+
+    plik = tmp_path / "adnotacja.py"
+    plik.write_text(
+        _GOTOWE_URUCHOMIENIE + "def start(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:\n    return run\n\n\n"
+        "TYPY = [typing.get_origin(typ) for typ in typing.get_type_hints(start).values()]\n",
+        encoding="utf-8",
+    )
+
+    wykonany = modul(plik)
+
+    assert wykonany.TYPY == [wykonany.PreparedRun, wykonany.PreparedRun]
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
