@@ -134,6 +134,11 @@ Naprawa odbywa się w publicznym repozytorium narzędzia. PR odwołuje się do
 Zgłoszenia samym numerem, a przypadek testowy powstaje na danych syntetycznych;
 treść Zgłoszenia nie trafia do publicznych PR-ów, commitów ani issue.
 
+Samo imię pracownika taty może stać w publicznym issue, bo go nie identyfikuje,
+a pliki repozytorium piszą „pracownik taty”; nazwisko, login i adresy nie
+trafiają do publicznego repozytorium nigdy (decyzja Maksa z 9.11.2026 po
+werdykcie przeglądu #1225).
+
 ## Zagrożenia, przed którymi chroni prywatne repo
 
 - Wyciek: nawet bezpieczna treść mówi o pracy taty (okresy, nazwy plików,

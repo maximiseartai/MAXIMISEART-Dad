@@ -72,6 +72,8 @@ from rozliczenia.wall_clock import utc_now
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _JOURNALS: Final = "dzienniki-wyceny"
 _JOURNAL_SUFFIX: Final = ".jsonl"
+_STARTER: Final = object()
+"""Dowód ``LogsOnDisk.started``: tylko z nim ``Journal.run_started`` startuje dziennik."""
 # Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku.
 _RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
 # Nazwa pliku Logów (``name_of``).
@@ -210,10 +212,14 @@ class Journal:
         self._total: int | None = None
         self._current: int | None = None
 
-    def _run_started(self, start: StartFacts) -> None:
+    def run_started(self, start: StartFacts, proof: object) -> None:
         """Start Uruchomienia z Centrum, zanim ruszy jego wątek: Uruchomienie procesu ``process`` dostaje dziennik z
-        pierwszą linią na dysku, a następne wpisy idą do niego; inne Uruchomienie dziennika nie ma."""
+        pierwszą linią na dysku, a następne wpisy idą do niego; inne Uruchomienie dziennika nie ma. Bez dowodu
+        ``LogsOnDisk.started`` (``_STARTER``) ``TypeError``, bo start bez pliku ostatniego startu gubi Urwane
+        Uruchomienie."""
 
+        if proof is not _STARTER:
+            raise TypeError("Dziennik Wyceny w efenix startuje tylko LogsOnDisk.started.")
         with self._lock:
             self._done, self._total, self._current = [], None, None
             if start.process != self.process:
@@ -337,11 +343,11 @@ class JournalRead:
         return PricingProgress(self.started, done, self.total, self.interruption.row)
 
 
-@dataclass(frozen=True)
 class JournalKey:
-    """Jeden dziennik na dysku, który zostawiła poprzednia praca Centrum; ścieżkę zna tylko ``LogsOnDisk``."""
+    """Jeden dziennik na dysku, który zostawiła poprzednia praca Centrum; ścieżkę zna tylko ``LogsOnDisk``, który dał
+    klucz (``left_behind``)."""
 
-    _path: Path
+    __slots__ = ()
 
 
 @dataclass(frozen=True)
@@ -419,6 +425,7 @@ class LogsOnDisk:
         self._journals = log.directory / _JOURNALS
         self._log = log
         self._journal = Journal(self._journals, log, process=journaled)
+        self._left: dict[JournalKey, Path] = {}
 
     @property
     def journal(self) -> Journal:
@@ -429,7 +436,7 @@ class LogsOnDisk:
         Centrum), potem plik ostatniego startu z jego faktami, nadpisany atomowo; ``OSError``: pliku ostatniego startu nie
         udało się zapisać."""
 
-        self.journal._run_started(start)
+        self.journal.run_started(start, _STARTER)
         started = _StartedFile(**dict(start.start), schema_version=2)
         replace_atomically(self._last_started, started.model_dump_json(indent=2) + "\n")
 
@@ -503,13 +510,15 @@ class LogsOnDisk:
                 self._log.pricing_journal_unavailable(failure, where="start")
                 continue
             logs = Missing() if read is None else self.logs(read.started.run_id)
-            yield LeftJournal(JournalKey(path), read, logs)
+            key = JournalKey()
+            self._left[key] = path
+            yield LeftJournal(key, read, logs)
 
     def remove_journal(self, key: JournalKey) -> None:
-        """Usuwa dziennik ``key``, który zostawiła poprzednia praca Centrum; ``OSError`` zostawia go z linią dziennika
-        Centrum."""
+        """Usuwa dziennik ``key`` z ``left_behind``, który zostawiła poprzednia praca Centrum; ``OSError`` zostawia go
+        z linią dziennika Centrum."""
 
-        _remove(key._path, self._log, where="start")
+        _remove(self._left.pop(key), self._log, where="start")
 
 
 class ViewedLogs(Generic[T]):
