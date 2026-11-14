@@ -146,8 +146,9 @@ class Outgoing(str, metaclass=WithoutSubclasses, refusal=_NO_OUTGOING_SUBCLASSES
     """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
 
     Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``. Podklasie przy tworzeniu odmawia metaklasa
-    (``WithoutSubclasses``, a ``type.__new__`` z jej pominięciem ``__init_subclass__``), co daje wcześniejszy błąd, a
-    regułę trzyma plik kolejki, który bierze tylko dokładny typ (``outbox._queue_text``). Inna metoda ``str`` (wycinek,
+    (``WithoutSubclasses``; ``class`` z własną metaklasą, która woła ``type.__new__`` wprost, ją omija), a przy
+    ``type.__new__`` z jej pominięciem ``__init_subclass__``, chyba że przesłania go baza bez ``super()`` przed typem. To
+    wcześniejszy błąd, a regułę trzyma plik kolejki, który bierze tylko dokładny typ (``outbox._queue_text``). Inna metoda ``str`` (wycinek,
     f-napis, ``join``, ``+`` z gołym ``str`` albo z podklasą) daje ``str``, którego kolejka nie przyjmuje.
     """
 
@@ -223,8 +224,8 @@ class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Wartości nie są polami pamięci, tylko jej wpisem
     w tabeli modułu (``_WORDS``). Pamięć nie ma też podklas ani przypisanej metody: mypy odrzuca ``class`` (``final``),
     metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także ``type()``
-    i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą metaklasą,
-    a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
+    i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą metaklasą, gdy
+    nie przesłania go baza bez ``super()`` przed pamięcią (taką podklasę odrzuca ``_memory``), a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
     przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
 

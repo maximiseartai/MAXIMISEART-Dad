@@ -11,6 +11,7 @@ pilnuje:
   - src/rozliczenia/settlement_files.py
   - src/rozliczenia/input_checks.py
   - src/rozliczenia/centrum/app.py
+  - src/rozliczenia/centrum/http_guard.py
   - src/rozliczenia/centrum/filling.py
   - src/rozliczenia/centrum/quantity_rules_preview.py
   - src/rozliczenia/centrum/quantity_differences.py

@@ -51,7 +51,7 @@ from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
-from rozliczenia.efenix_window import ForwardRefusal, WindowAction
+from rozliczenia.efenix_window import ForwardRefusal, StatusChangeBlocked, WindowAction
 from rozliczenia.client_data import empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
@@ -72,6 +72,7 @@ from atrapy.atrapa_efenix import (
     AtrapaOrder,
     Changed,
     Outage,
+    StatusChange,
     amount_of,
     atrapa_efenix,
 )
@@ -2195,6 +2196,20 @@ def test_logi_zatrzymania_okna_efenix_na_elemencie_strony_nie_dokladnie_raz_maja
         "count": 0,
     }
     assert (stop["row"], stop["failed"]["action"]) == (19, "Wycena Emmetta")
+
+
+def test_logi_zatrzymania_okna_efenix_na_zmianie_statusu_przerwanej_przez_straznika_nazywaja_te_przyczyne(tmp_path: Path) -> None:
+    """Strona zlecenia sama wysyła zmianę statusu, a strażnik okna ją przerywa: Logi Uruchomienia mówią Maksowi, że
+    Wycena stanęła na przerwanej zmianie statusu i przy której części strony."""
+
+    with atrapa_efenix([PRICED[0].in_efenix("611")], status_change=StatusChange.ON_LOAD) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED[:1])
+        assert _start_pricing(centrum).status_code == 200
+        finished_view(centrum.client)
+    [record] = records(centrum)
+    cause = {key: value for key, value in record["efenix_stop"]["cause"].items() if value is not None}
+
+    assert cause == {"part": "ORDER", "what": StatusChangeBlocked.OUTSIDE_FORWARD.value}
 
 
 @dataclass(frozen=True)

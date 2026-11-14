@@ -193,9 +193,12 @@ def test_numer_budynku_z_ukosnikiem_rozni_sie_od_numeru_bez_niego_i_od_innej_cze
         pytest.param("UL. TESTOWA 1//3", id="pusta-czesc-numeru"),
         pytest.param("UL. TESTOWA 1/2/", id="pusty-lokal"),
         pytest.param("Poznań ul.Testowa 13/A Lokal 4", id="druga-czesc-numeru-bez-cyfry"),
+        pytest.param("UL. TESTOWA 1/2 3", id="ukosnik-przed-numerem"),
     ],
 )
 def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest_rowny_nawet_sobie(address: str) -> None:
+    """Ukośnik stoi tylko w numerze budynku i lokalu, więc słowo z ukośnikiem przed numerem nie jest słowem nazwy ulicy."""
+
     assert not same_address(address, address)
 
 
