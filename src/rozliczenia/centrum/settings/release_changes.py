@@ -25,7 +25,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
 def periods_directory_from_layout_root(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:
     """Folder okresów zapisany w środku układu folderów taty (tydzień, ``INEA``, miesiąc) zamienia się na korzeń
-    układu (``Załączniki``), od którego Centrum i tak liczy (ADR 0032, #1472); tata może to cofnąć.
+    układu (``Załączniki``), od którego Centrum i tak liczy (ADR 0032); tata może to cofnąć.
 
     Korzeń i układ płaski zostają bez wiersza. Na później zostaje plik Ustawień zły albo nieczytelny (zmiana nie
     nadpisuje go ostatnią dobrą wartością), folder bez dostępu i folder, którego nie ma, a nad nim nie widać układu
