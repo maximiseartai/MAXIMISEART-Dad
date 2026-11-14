@@ -609,7 +609,7 @@ def test_skrypt_dla_maszyn_nie_wczytuje_serwera() -> None:
 # ruff w ``tools/`` i przez ``test_skrypt_dla_maszyn_nie_wczytuje_serwera``.
 ZNANE_LUKI_SKRYPTU: typing.Final = {
     "tylko moduły src: moduł tools/lib, który wczytuje serwer": "import serwer_atrapy\n\nSERWER = serwer_atrapy\n",
-    "tylko instrukcja import: importlib.import_module": 'import importlib\n\nSERWER = importlib.import_module("fastapi")\n',
+    "tylko instrukcja import: modul właściciela importu w trakcie działania": 'from import_dynamiczny import modul\n\nSERWER = modul("fastapi")\n',
     "tylko instrukcja import: __import__": 'SERWER = __import__("uvicorn")\n',
 }
 
@@ -828,9 +828,7 @@ def test_sprawdzenie_rdzenia_przepuszcza_biblioteke_standardowa_i_moduly_bez_sko
 # moduł rdzenia drzewa ``_source_tree``, który wczytuje skoroszyt, a mimo to przechodzi przez ruff w ``src/``,
 # domknięcie ``_workbook_chains`` i ``_imported_modules``.
 ZNANE_LUKI_GRAFU: typing.Final = {
-    "tylko instrukcja import: importlib.import_module": 'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n',
     "tylko instrukcja import: __import__": 'SKOROSZYT = __import__("openpyxl")\n',
-    "tylko instrukcja import: nazwa modułu src złożona w trakcie działania": 'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n',
     "tylko moduły src: biblioteka spoza src, która sama wczytuje openpyxl": "import pandas\n\nARKUSZ = pandas.read_excel\n",
     "tylko openpyxl i template_file: skoroszyt czytany bez openpyxl": """\
 import zipfile

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
 from collections.abc import Mapping, Sequence
-import importlib.util
 import io
 import json
 import os
@@ -26,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, broken_rules, feature
 from harness import SLOW_RUNNER, File
+from import_dynamiczny import jest_modul
 from quiet_machine import MachineBusy, QuietMachine
 from skrypt_skilla import Parser, child_environment, new_run, part
 
@@ -140,7 +140,7 @@ def _preflight() -> None:
         raise VerificationFailure("; ".join(broken))
     if not (REPO_ROOT / "src" / "rozliczenia" / "centrum" / "static" / "index.html").exists():
         raise VerificationFailure("the built frontend is missing; run `npm ci && npm run build` in frontend/")
-    if importlib.util.find_spec("playwright") is None:
+    if not jest_modul("playwright"):
         raise VerificationFailure(
             "Playwright for Python is missing; run `pip install playwright` and `python -m playwright install chromium`"
         )
