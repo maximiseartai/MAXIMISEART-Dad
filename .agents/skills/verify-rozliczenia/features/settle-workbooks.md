@@ -36,7 +36,7 @@ Preconditions:
 - The configured shared Wzorzec rozliczenia pracownika is copied into each new workbook and is
   never modified. The final output folder appears only after all files are ready.
 - The proof must inspect formulas with `data_only=False`; cached formula results are not the template-preservation proof.
-- The default fixture's Plik zbiorczy carries a Hiperłącze in `F` of every Wiersz danych (`caseId=SYNTHETIC-LINK`); `self_test.py` rejects that marker in the evidence, so an address leaking into the JSON result or metrics fails the proof. The `chain` variants carry the Rejestr's Hiperłącza through Przygotowanie pliku zbiorczego (`chain-hyperlinks`).
+- The default fixture's Plik zbiorczy carries a Hiperłącze in `F` of every Wiersz danych (`caseId=SYNTHETIC-LINK`); `self_test.py` rejects that marker in the evidence, so an address leaking into the JSON result or metrics fails the proof. The `chain` variants carry the Rejestr's Hiperłącza through Przygotowanie pliku zbiorczego (`--variant chain`).
 - The default fixture's Plik zbiorczy has no Wyróżnienia, so `settle-highlights` is proven by `chain` (`highlights_equal_plik_zbiorczy=A:AT`), whose Plik zbiorczy carries the Rejestr's highlighted cells and the Wzorzec pliku zbiorczego's fills. When comparing looks with openpyxl, take the set of cells in the file right after loading: `iter_rows` on a full workbook adds the missing cells, which then show the default font instead of no Wyróżnienia.
 - An unmapped WYKONAWCA stops the real run before creating the output folder;
   verify that path with `--variant unmapped` under the safety-gates feature.
