@@ -2853,8 +2853,8 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     albo efenix odpowiada wolniej niż czas okna (tu 2 s), aż połączenie wróci. Wycena nigdy nie wisi i nie kończy się
     nieoczekiwanym błędem: lista zleceń, której okno nie otworzyło przy starcie, to „Nie udało się otworzyć efenix” dla
     taty, a każde późniejsze odcięcie to jedno Zatrzymanie okna do Maksa, z Diagnozą i Zgłoszeniem, bez zgadywania
-    przyczyny. Zerwana lista zleceń, przy starcie i przy kolejnym zleceniu, to Zatrzymanie na liście zleceń z nieudanym
-    otwarciem strony. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
+    przyczyny. Zerwana lista zleceń, przy starcie i przy kolejnym zleceniu, ma w Logach część strony lista zleceń i
+    przyczynę: nieudane otwarcie strony. Logi Uruchomienia mają przyczynę techniczną (przy błędzie przeglądarki z nazwanym działaniem), wiersz
     zlecenia, przy którym okno stanęło, z jego miejscem w przebiegu i działaniem, które się nie udało, oraz ślad każdego
     zlecenia przed nim, a działanie, które się nie udało, trwa krócej niż dwa czasy okna. Komunikat, że w efenix nic się
     nie zmieniło, mówi prawdę. Ponowne uruchomienie po powrocie połączenia, w nowym oknie efenix jak u taty, kończy się

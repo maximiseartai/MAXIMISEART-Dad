@@ -1,10 +1,11 @@
 """Tabela decyzji Zatrzymań okna efenix: który wyjątek okna, z jaką częścią strony i przyczyną z zamkniętej listy
 (``efenix_window.WindowCause``) daje klasyfikator ``efenix_window.WindowStop.of`` z dowodu awarii.
 
-Wyjątek okna buduje tylko ten klasyfikator, a konstruktora bez jego dowodu nie przepuszcza mypy. Że miejsce okna zbiera
-właściwy dowód i przyczyna dochodzi do Logów Uruchomienia, pokazują testy zachowania: ``CHANGED``, ``ANSWERED``,
-``UNREAD`` i przegląd odcięć w ``tests/test_wycena_efenix.py``, kontrakt okien w ``tests/test_atrapa_efenix.py`` oraz
-hipotezy B–E w ``tests/test_centrum_logi_uruchomienia.py``.
+Wyjątek okna buduje tylko ten klasyfikator, a konstruktora bez jego dowodu nie przepuszcza mypy. Część strony i
+przyczynę, z którymi miejsca okna wołają klasyfikator, sprawdzają testy zachowania, które do nich dochodzą, m.in.
+``CHANGED``, ``ANSWERED``, ``UNREAD`` i przegląd odcięć w ``tests/test_wycena_efenix.py``, kontrakt okien w
+``tests/test_atrapa_efenix.py`` oraz hipotezy B, D i E w ``tests/test_centrum_logi_uruchomienia.py``. Błąd Playwrighta
+bez nazwanego działania w ``efenix_browser._within`` nie ma takiego testu.
 """
 
 from __future__ import annotations
