@@ -22,6 +22,7 @@ from drive.common import (
     sent_requests,
     settle,
 )
+from drive.waiting import until
 from atrapy.scenariusz_centrum import NEEDS_CHECK
 from harness import Log
 
@@ -129,7 +130,7 @@ def drive(run: Run, page: Page) -> None:
     ]
     for name, path in clicks:
         page.get_by_role("button", name=name, exact=True).click()
-        run.wait_for(last_opened_is(run, path), f"{name} opened {path.name}")
+        until(last_opened_is(run, path), f"{name} opened {path.name}")
         expect(page.get_by_text(path.name, exact=True).last).to_be_visible()
     run.check(len(run.lines(Log.OPENED)) == opened_before + len(clicks), "one open per click, nothing else")
     run.capture(page, "07-tablica-otwieranie", full_page=False)
