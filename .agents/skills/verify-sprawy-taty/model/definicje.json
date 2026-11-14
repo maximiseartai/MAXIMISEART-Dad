@@ -44,7 +44,7 @@
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.resume": "2a67b7d7c8f5622c",
-    "Outbox.post": "5256e2e151b13327",
+    "Outbox.post": "083f22f284c67464",
     "Outbox.wait_delivered": "1d38b4544e2ddfc4",
     "Outbox._send_all": "6ce16b9dc87b40f0",
     "Outbox._mark_delivered": "03180b6b20fe0ccc"

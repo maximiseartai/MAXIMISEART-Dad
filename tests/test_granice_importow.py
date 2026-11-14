@@ -122,7 +122,7 @@ PURE_VERSIONS = {
     "rozliczenia.centrum.run_logs": frozenset({"LoggedDiagnosis", "LoggedMessage", "RunLog", "StartFacts"}),
     "rozliczenia.centrum.pricing_progress": frozenset({"PricingProgress"}),
     # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
-    "rozliczenia.centrum.run_logs_guard": frozenset({"GuardedLogs", "GuardedText", "guard_logs", "guard_text"}),
+    "rozliczenia.centrum.run_logs_guard": frozenset({"GuardedLogs", "GuardedText", "exact_logs", "exact_text", "guard_logs", "guard_text"}),
     # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki, i nazwa
     # pliku Logów w Archiwum Logów okresu (name_of liczy ją z faktów startu, bez plików)
     "rozliczenia.centrum.logs_disk": frozenset(

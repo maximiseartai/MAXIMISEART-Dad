@@ -10,13 +10,13 @@
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
-    "ProgressVersion": "06a0c6e965a7edc9",
-    "OwnLogs": "d74da43b6f1f0893",
-    "StandInLogs": "9f9d00d7a8b7553b",
-    "WithoutLogsVersion": "92868149b99a61ae",
+    "ProgressVersion": "4a5e59ab46386d1b",
+    "OwnLogs": "1f74898f4d8861bc",
+    "StandInLogs": "cde5f279cd59e119",
+    "WithoutLogsVersion": "5cd3b843a8932ea3",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "2bbb50689868bd71",
+    "post_of": "dd08dbd5ece506ab",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },
@@ -47,7 +47,7 @@
     "LogsOnDisk.started": "75738ee9bb3ba332",
     "LogsOnDisk.left_behind": "bcc9dd8fefc30a28",
     "LogsOnDisk.remove_journal": "3342b6cf4e34752b",
-    "LogsOnDisk.write": "06579a5e26974e34",
+    "LogsOnDisk.write": "0fb10f92472fe375",
     "name_of": "d7dce93561713660"
   },
   "src/rozliczenia/file_state.py": {
@@ -74,7 +74,7 @@
     "PreparedRun.conduct": "197b9ba739afa456"
   },
   "src/rozliczenia/centrum/outbox.py": {
-    "Outbox.post": "5256e2e151b13327",
+    "Outbox.post": "083f22f284c67464",
     "Outbox.resume": "2a67b7d7c8f5622c",
     "Rank": "d27ac44226b11a48",
     "Version": "b20196684cf428b5",

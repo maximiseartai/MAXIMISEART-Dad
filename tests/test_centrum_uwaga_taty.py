@@ -294,10 +294,11 @@ def test_uwaga_bez_tytulu_jest_odrzucona(tmp_path: Path, title: str) -> None:
     assert_nothing_sent(started, tmp_path)
 
 
-def test_tytul_uwagi_w_dwoch_liniach_jest_odrzucony(tmp_path: Path) -> None:
+@pytest.mark.parametrize("line_break", ["\n", "\r", "\r\n"], ids=["lf", "cr", "crlf"])
+def test_tytul_uwagi_w_dwoch_liniach_jest_odrzucony(tmp_path: Path, line_break: str) -> None:
     started = centrum_with_key(tmp_path)
 
-    response = started.client.post("/api/dad-notes", json={"title": "Plik zbiorczy\notwiera się długo"})
+    response = started.client.post("/api/dad-notes", json={"title": f"Plik zbiorczy{line_break}otwiera się długo"})
 
     assert response.status_code == 422
     assert_nothing_sent(started, tmp_path)

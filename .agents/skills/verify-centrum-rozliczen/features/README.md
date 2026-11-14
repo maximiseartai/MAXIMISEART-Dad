@@ -128,8 +128,9 @@ injected instead of load, so a check that depends on time fails on every run (#1
 | each request of `/api/` waits before Centrum takes it | `API_DELAY_S` 0.3 | `serve_centrum.py` | a fixed sleep or limit shorter than the server's answer |
 
 Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
-The drive waits for a condition only through `until` of `drive/waiting.py`, for the screen through its `expect`, and lets the page run through `quiet_for`.
-No other way to wait for a condition is left to copy (`Run.wait_for` is gone, #1539). Ruff refuses `time.sleep` outside `drive/waiting.py` and `drive/common.py`, in `drive/common.py` the test of `OWNERS` in `tests/test_zakazy_ruff.py` does, and `page.wait_for_timeout` passes both (`ZNANE_LUKI_SNU`); a new function that wraps `until` around a condition it takes, nothing refuses today.
+The drive waits for a condition through `until` of `drive/waiting.py` and also through Playwright's `page.wait_for_function`, which polls a condition inside the page for the page's default limit (`Budget.SCREEN` for the drive's page, what `dad_tab` or `wydajnosc` set for theirs, Playwright's own 30 s for a tab opened without `set_default_timeout`); it waits for the screen through its `expect` and lets the page run through `quiet_for`.
+`Run.wait_for` is gone (#1539), so the drive has no way of its own beside `until` to copy, and a new function that wraps `until` around a condition it takes, nothing refuses today.
+Ruff refuses `time.sleep` in `drive/` but for `drive/waiting.py` and `drive/common.py` (`drive/ruff.toml`; the scripts outside `drive/` have no such ban), in `drive/common.py` the test of `OWNERS` in `tests/test_zakazy_ruff.py` does, and `page.wait_for_timeout` passes both (`ZNANE_LUKI_SNU`).
 The drive stops at its first failure, so drive one feature per run to find each failing place.
 The mode is a manual proof and runs neither in CI nor at night.
 
