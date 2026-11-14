@@ -659,9 +659,9 @@ def rows_dated_between(
     pozostałe części są przepisane bez zmian. Uszkodzenie
     skoroszytu zgłaszają ``zipfile`` (np. ``BadZipFile``), ``zlib``, brak części
     ``KeyError`` albo ``expat`` (``ExpatError``). Komórka bez typu innego niż ``n`` z liczbą zapisaną samymi cyframi,
-    której część całkowita jest spoza dni zakresu, ma liczbę spoza [``low``, ``high``] (``float`` zaokrągla ją
-    najwyżej do części całkowitej plus 1), więc parser wyrażeń jej nie oddaje, a ``_is_number_between`` sprawdza
-    resztę.
+    której część całkowita jest spoza dni od ``floor(low) - 1`` do ``floor(high)``, ma liczbę spoza [``low``,
+    ``high``]: ``float`` zaokrągla ją najwyżej do części całkowitej plus 1, więc zakres dni ma dzień zapasu przed
+    ``floor(low)``. Takiej komórki parser wyrażeń nie oddaje, a ``_is_number_between`` sprawdza resztę.
     """
 
     ranges: dict[str, range] = {}

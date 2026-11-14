@@ -322,7 +322,7 @@ class TemplateCopy:
 
 def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
     """Wzorzec ``content`` wczytany do kopii; ``ZipFile.read`` sprawdza sumę kontrolną CRC-32 każdej części, więc
-    zepsuta część to ``zipfile.BadZipFile``."""
+    część, której rozpakowane bajty mają inną sumę niż zapisana, to ``zipfile.BadZipFile``."""
 
     archive = zipfile.ZipFile(BytesIO(content))
     infos = archive.infolist()
@@ -705,8 +705,8 @@ class _Sheet:
     def with_rows(
         self, rows: Sequence[Row], styles: _StyleAdditions, look: RowLook, hyperlinks: bytes, filter_ref: str | None
     ) -> _Part:
-        """Część arkusza kopii z ``rows``; przedostatni kawałek zaczyna się od autofiltra (granica z ``__init__``) i
-        sięga do bloku Hiperłączy."""
+        """Część arkusza kopii z ``rows``; w pliku okresu przedostatni kawałek zaczyna się od autofiltra (granica z
+        ``__init__``) i sięga do bloku Hiperłączy."""
 
         xml = self._xml
         first_row = self._layout.first_data_row
@@ -805,8 +805,8 @@ class _Sheet:
         look: CellLook | None,
         styles: _StyleAdditions,
     ) -> bytes:
-        """Komórka ``reference`` z wartością ``value``; pustej komórki bez stylu nie zapisuje, jak openpyxl, a Excel
-        daje jej styl kolumny."""
+        """Komórka ``reference`` z wartością ``value``; pustej komórki bez stylu, której nie ma we Wzorcu, nie zapisuje,
+        jak openpyxl, a Excel daje jej styl kolumny."""
 
         template_style = _cell_style(existing)
 

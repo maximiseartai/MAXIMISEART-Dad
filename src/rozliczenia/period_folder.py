@@ -57,7 +57,8 @@ _COLLECTIVE_FILE_NAME = re.compile(
 )
 
 _YEAR_FOLDER = re.compile(r"Rozliczenia \d{4}")
-"""Układ folderów taty: ``Rozliczenia {rok}\\{miesiąc}\\INEA\\{token}``."""
+"""Nazwa folderu roku w układzie folderów taty ``Rozliczenia {rok}\\{miesiąc}\\INEA\\{token}``; ``INEA`` to
+``_MONTH_PERIODS_FOLDER``."""
 _MONTH_PERIODS_FOLDER = "INEA"
 
 PeriodStatus = Literal["no_period_files", "collective_file_prepared", "worker_settlements_ready"]
@@ -66,7 +67,7 @@ PeriodPlace = Literal["internal_settlement", "collective_file", "period_folder",
 WorkerNameCheck = Literal["fine", "invalid", "too_long"]
 _FORBIDDEN_IN_FILE_NAME = frozenset('<>:"/\\|?*')
 _MAX_FILE_NAME_CODE_UNITS = 255
-"""Najdłuższa nazwa pliku na Windows, liczona w jednostkach UTF-16."""
+"""Największa długość nazwy pliku na Windows, w jednostkach UTF-16."""
 _ANY_TOKEN = "00_00_00_0000"
 """Token o długości każdego tokenu okresu."""
 
