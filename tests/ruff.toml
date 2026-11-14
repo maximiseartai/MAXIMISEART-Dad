@@ -25,8 +25,8 @@ extend = "../pyproject.toml"
 "rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
 "rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
 # Wątki procesu workera pytest bez linii testu: worker trzyma też wątki wcześniejszych testów i timer pytest-timeout
-# (#633, czerwony main w 0e304aec7). Formę w napisie, np. setattr(threading.Thread, "start", …), łapie zapadka
-# test_watki_testu_tylko_przez_linie_watkow w tests/test_zapadki.py.
+# (#633, czerwony main w 0e304aec7). Formę w napisie, np. setattr(threading.Thread, "start", …), łapie reguła ast-grep
+# reguly-ast-grep/watki-workera.yml.
 "threading.Thread.start".msg = "o wątki testu pytaj tests/fixtures/linie_watkow.py (new_line i threads_since o wątki, które żyją, started_threads o wątki uruchomione w bloku)"
 "threading.active_count".msg = "o wątki testu pytaj tests/fixtures/linie_watkow.py (new_line i threads_since o wątki, które żyją, started_threads o wątki uruchomione w bloku)"
 # Druga wstawka katalogu narzędzi w module testu tylko powtarza conftest i kusi, żeby fixture re-eksportował narzędzie

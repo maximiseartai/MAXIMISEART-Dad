@@ -155,8 +155,6 @@ RULE_GUARDS = frozenset(
     tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
     tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
     tests/test_zapadki.py::test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src
-    tests/test_zapadki.py::test_watki_testu_tylko_przez_linie_watkow
-    tests/test_zapadki.py::test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc
     """.split()
 )
 

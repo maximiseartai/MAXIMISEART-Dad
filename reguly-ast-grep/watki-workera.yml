@@ -1,0 +1,34 @@
+id: watki-workera
+language: python
+severity: error
+message: >-
+  wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o
+  wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów
+  i timer pytest-timeout
+files:
+  - tests/**/*.py
+ignores:
+  - tests/fixtures/linie_watkow.py
+  - tests/test_zakazy_ruff.py
+  - tests/test_zapadki.py
+rule:
+  # Wątki procesu workera pytest poza linie_watkow, jak monkeypatch.setattr(threading.Thread, "start", counted)
+  # w 0e304aec7 (#633). W kodzie threading.Thread.start i threading.active_count odrzuca ruff TID251 (tests/ruff.toml),
+  # ale nie na linii z # noqa: TID251, nie w napisie i nie pod samą nazwą z from-importu, więc reguła czyta: wywołanie
+  # active_count (samo albo po kropce), atrybut Thread.start (sam albo po kropce), argumenty z Thread, i napisem start
+  # (także w kilku liniach) oraz ten sam tekst w komentarzu i napisie. threading.enumerate, sys._current_frames,
+  # threading._active, klasa wątku w zmiennej i podmiana run albo __init__ to znane luki w ZNANE_LUKI_WATKOW
+  # w tests/test_zapadki.py.
+  any:
+    - kind: call
+      has:
+        field: function
+        regex: '(^|\.)active_count$'
+    - kind: attribute
+      regex: '(^|\.)Thread\.start$'
+    - kind: argument_list
+      regex: '\bThread,\s*["'']start["'']'
+    - any:
+        - kind: comment
+        - kind: string
+      regex: '\bactive_count\(|\bThread\.start\b|\bThread,\s*["'']start["'']'

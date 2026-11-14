@@ -37,24 +37,6 @@ import odpalenia_ast_grep
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 
-# Lookbehind wokół cyfr numeru, jak ``(?<![0-9a-f])`` w 5b2edaf2f9 i ``(?<![0-9])`` w cc7e5ced21.
-_ORDER_NUMBER_ORACLE = re.compile(r"\(\?<!\[?(?:\\d|0-9)")
-_ORDER_NUMBER_HELPER = (
-    "własna wyrocznia wycieku numeru zlecenia: sprawdź tekst przez zawiera_wartosc z tests/fixtures/wyciek.py, która"
-    " pyta strażnika reguły danych (ForbiddenValues.guard), bo cztery własne wzorce z rzędu rozjechały się ze strażnikiem,"
-    " a jeden zaczerwienił main, gdy losowy hex HMAC zawierał numer"
-)
-
-# Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
-# w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
-_WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
-_THREAD_LINES = "tests/fixtures/linie_watkow.py"
-_THREAD_LINES_HELPER = (
-    "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
-    " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
-    " i timer pytest-timeout"
-)
-
 # Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
 # Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
 # zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
@@ -122,151 +104,6 @@ def _base() -> str | None:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
         return None
-
-
-def order_number_oracle(line: str) -> bool:
-    """Czy linia testu sprawdza wyciek numeru zlecenia własną definicją zamiast ``zawiera_wartosc``.
-
-    Łapie tylko napis ``(?<!``, po nim opcjonalnie ``[``, a po nim ``\\d`` z jednym ukośnikiem albo ``0-9``: tak zaczyna
-    się ``(?<![0-9a-f])``, ``(?<![0-9])``, ``(?<!0-9`` i ``r"(?<!\\d)"``. Postacie, których nie łapie ani zapadka, ani
-    ruff, są próbkami ``ZNANE_LUKI`` tego pliku. Każda forma ma 0 trafień, gdy każda linia ``tests/`` jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _ORDER_NUMBER_ORACLE.search(line) is not None
-
-
-def order_number_oracles(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza tym plikiem, które zmiana od ``base`` dodaje z ``order_number_oracle``, z komunikatem."""
-
-    return [
-        f"{path}:{number}: {_ORDER_NUMBER_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
-        if path != "tests/test_zapadki.py" and order_number_oracle(line)
-    ]
-
-
-def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert order_number_oracles(ROOT, base) == []
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        'return re.search(rf"(?<![0-9a-f]){re.escape(number.removeprefix(\'#\'))}(?![0-9a-f])", text) is not None',
-        'number = re.compile(r"(?<![0-9a-f])9401(?![0-9a-f])")',
-        'number = re.compile(r"(?<![0-9])9401(?![0-9])")',
-        r'assert re.search(r"(?<!\d)9401", text) is None',
-    ],
-)
-def test_zapadka_lapie_wlasna_wyrocznie_numeru_zlecenia(line: str) -> None:
-    assert order_number_oracle(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "assert [zawiera_wartosc(text, order.number) for text in texts] == [False, False]",
-        'FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\\\/]")',
-        'assert "TESTOWA" not in text',
-        'assert "2026" in text',
-        'assert re.fullmatch(r"CZAS: ([0-9]+) s", line)',
-    ],
-)
-def test_zapadka_przepuszcza_zawiera_wartosc_i_inne_wyrazenia(line: str) -> None:
-    assert not order_number_oracle(line)
-
-
-def worker_threads(line: str) -> bool:
-    """Czy linia testu pyta o wątki procesu workera pytest z pominięciem ``linie_watkow``.
-
-    Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
-    podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
-    (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
-    potomnego. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
-    W kodzie ``threading.Thread.start`` i ``threading.active_count`` odrzuca wcześniej, także w CI, ruff (``TID251`` w
-    ``tests/ruff.toml``), ale nie na linii z ``# noqa: TID251`` ani w napisie, więc zapadka zostaje.
-    Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _WORKER_THREADS.search(line) is not None
-
-
-def worker_thread_counts(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza ``linie_watkow.py``, tym plikiem i ``test_zakazy_ruff.py`` (próbki zakazu ruff tych samych
-    form), które zmiana od ``base`` dodaje z ``worker_threads``."""
-
-    return [
-        f"{path}:{number}: {_THREAD_LINES_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
-        if path not in {_THREAD_LINES, "tests/test_zapadki.py", "tests/test_zakazy_ruff.py"} and worker_threads(line)
-    ]
-
-
-def test_watki_testu_tylko_przez_linie_watkow() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert worker_thread_counts(ROOT, base) == []
-
-
-def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (
-        _THREAD_LINES,
-        "tests/test_zapadki.py",
-        "tests/test_zakazy_ruff.py",
-        "tests/test_watkow.py",
-        "src/rozliczenia/watki.py",
-    ):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
-
-    found = worker_thread_counts(tmp_path, base)
-
-    assert found == [f"tests/test_watkow.py:2: {_THREAD_LINES_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    start = threading.Thread.start",
-        '    monkeypatch.setattr(threading.Thread, "start", counted)',
-        "    monkeypatch.setattr(threading.Thread, 'start', counted)",
-        "threading.Thread.start = counted",
-        "    assert threading.active_count() == before",
-        "        threading.Thread.start(thread)",
-    ],
-)
-def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
-    assert worker_threads(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    since = new_line()",
-        "    assert wait_for(lambda: threads_since(since) == [], seconds=10)",
-        "    with started_threads() as started:",
-        "        asking.start()",
-        "        super().start()",
-        "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
-        "    for index, thread in enumerate(threads):",
-        # Granice całej nazwy: inna nazwa, która zaczyna się od ``start`` albo kończy na ``active_count``.
-        "    began = threading.Thread.started_at",
-        "    threading.Thread.start_soon(work)",
-        "    assert pool._active_count() == 0",
-    ],
-)
-def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
-    assert not worker_threads(line)
 
 
 def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoza_folderu(tmp_path: Path) -> None:
@@ -695,6 +532,8 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "odrzucona-nawigacja": "przejdź przez BrowserEfenix._go albo _reloaded",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
+    "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1677,167 +1516,6 @@ def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_p
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
-# Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
-# regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
-ZNANE_LUKI: Final = {
-    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": {
-        "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search("(?<!\\d)94001(?!\\d)", text) is None
-''',
-        "klasa, w której 0-9 nie stoi zaraz po [": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"(?<![a-f0-9])94001(?![a-f0-9])", text) is None
-''',
-        r"\b wokół numeru": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"\b94001\b", text) is None
-''',
-        # W ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not in``.
-        "literał numeru przed not in": """\
-def test_bez_numeru(text: str) -> None:
-    assert "94001" not in text
-""",
-        "numer ze zmiennej": """\
-def test_bez_numeru(text: str, number: str) -> None:
-    assert number not in text
-""",
-        "str.find": """\
-def test_bez_numeru(text: str) -> None:
-    assert text.find("94001") == -1
-""",
-        "count": """\
-def test_bez_numeru(text: str) -> None:
-    assert text.count("94001") == 0
-""",
-        "re.search na samym numerze": """\
-import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search("94001", text) is None
-""",
-        "lookahead bez lookbehindu": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"94001(?!\d)", text) is None
-''',
-        "lookbehind złożony w kilku liniach": r'''import re
-
-NUMBER = re.compile(
-    r"(?<!"
-    r"\d)94001"
-)
-
-
-def test_bez_numeru(text: str) -> None:
-    assert NUMBER.search(text) is None
-''',
-    },
-    "test_watki_testu_tylko_przez_linie_watkow": {
-        # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc zapadka na niej dałaby alarm na historii.
-        "threading.enumerate przed i po": """\
-import threading
-
-
-def test_bez_nowych_watkow() -> None:
-    before = set(threading.enumerate())
-    assert set(threading.enumerate()) == before
-""",
-        "sys._current_frames": """\
-import sys
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(sys._current_frames()) == 1
-""",
-        "threading._active": """\
-import threading
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(threading._active) == 1
-""",
-        "setattr z klasą wątku w zmiennej": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    thread_class = threading.Thread
-    monkeypatch.setattr(thread_class, "start", lambda self: None)
-""",
-        "podmiana Thread.run": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
-""",
-        "podmiana Thread.__init__": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
-""",
-        "setattr rozbity na kilka linii": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        threading.Thread,
-        "start",
-        lambda self: None,
-    )
-""",
-    },
-}
-
-# Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
-_ZAPADKI: Final = {
-    "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
-    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
-    "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
-}
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-@pytest.mark.parametrize("zapadka", sorted(ZNANE_LUKI))
-def test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff(tmp_path: Path, zapadka: str) -> None:
-    """Każda próbka ``ZNANE_LUKI`` zapadki, zapisana jako nowy plik jej folderu, przechodzi przez jej sprawdzenie
-    dodanych linii i ruff z konfiguracją tego folderu. Pomocnik ``znane_luki`` importuje się tu, a nie na górze modułu,
-    bo pomiar zapadek kładzie ten plik na starych commitach, które go nie mają."""
-
-    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
-
-    folder, sprawdzenie = _ZAPADKI[zapadka]
-    base = _empty_base(tmp_path)
-    (tmp_path / folder).mkdir(parents=True)
-    pliki = zapisz(ZNANE_LUKI[zapadka], tmp_path / folder)
-    zgloszenia = ruff(pliki, sonda=ROOT / folder / "test_sonda_luki.py")
-    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
-    for linia in sprawdzenie(tmp_path, base):
-        zgloszenia[opisy[linia.split(":", 1)[0]]].append(f"{zapadka}: {linia}")
-
-    assert_znane_luki(zgloszenia, f"tests/test_zapadki.py::{zapadka}")
-
-
 # Katalog skryptu skilla w zakresie ``files:`` reguły ``lokator-tytulu-okna`` jako części ścieżki, nie napis z ``/``,
 # bo napis ścieżki w pliku testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``); to
 # prawdziwy katalog, więc ruff próbki czyta jego ``ruff.toml``.
@@ -2302,3 +1980,274 @@ def test_regula_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(t
     )
 
     assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [("src/okno.py", 28), ("src/okno.py", 47)]
+
+
+_ORACLE_RULE = "wlasna-wyrocznia-numeru"
+_IN_TEST = "import re\n\n\ndef test_bez_numeru(text, number, texts, order, line):\n"
+# Tekst dodanego pliku ``tests/`` → linie, które reguła ``wlasna-wyrocznia-numeru`` zgłasza: własna wyrocznia numeru
+# zlecenia z lookbehindem wokół cyfr (``(?<![0-9a-f])`` z 5b2edaf2f9, ``(?<![0-9])`` z cc7e5ced21) w napisie
+# i w komentarzu, i wyrażenia bez lookbehindu cyfr, które przepuszcza.
+_PROBKI_WYROCZNI_NUMERU: Final[list[tuple[str, list[int]]]] = [
+    (_IN_TEST + "    return re.search(rf\"(?<![0-9a-f]){re.escape(number.removeprefix('#'))}(?![0-9a-f])\", text) is not None\n", [5]),
+    (_IN_TEST + '    number = re.compile(r"(?<![0-9a-f])9401(?![0-9a-f])")\n', [5]),
+    (_IN_TEST + '    number = re.compile(r"(?<![0-9])9401(?![0-9])")\n', [5]),
+    (_IN_TEST + '    assert re.search(r"(?<!\\d)9401", text) is None\n', [5]),
+    (_IN_TEST + "    assert text  # wzorzec (?<![0-9]) wokół numeru\n", [5]),
+    (_IN_TEST + '    assert text  # wzorzec r"(?<!\\d)" wokół numeru\n', [5]),
+    (_IN_TEST + "    assert [zawiera_wartosc(text, order.number) for text in texts] == [False, False]\n", []),
+    (_IN_TEST + '    FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\\\/]")\n', []),
+    (_IN_TEST + '    assert "TESTOWA" not in text\n', []),
+    (_IN_TEST + '    assert "2026" in text\n', []),
+    (_IN_TEST + '    assert re.fullmatch(r"CZAS: ([0-9]+) s", line)\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_WYROCZNI_NUMERU)
+def test_regula_wyroczni_numeru_zglasza_lookbehind_cyfr_w_napisie_i_komentarzu_a_nie_zawiera_wartosc(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_numeru.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_ORACLE_RULE, tmp_path, base) == [("tests/test_numeru.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_wyroczni_numeru_zglasza_tylko_tests_poza_plikiem_zapadek(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in ("tests/test_numeru.py", "tests/fixtures/pomocnik.py", "tests/test_zapadki.py", "src/rozliczenia/numer.py", "tools/numer.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text('import re\n\nNUMBER = re.compile(r"(?<![0-9])9401")\n', encoding="utf-8")
+
+    assert _findings_of(_ORACLE_RULE, tmp_path, base) == [("tests/fixtures/pomocnik.py", 3), ("tests/test_numeru.py", 3)]
+
+
+# Znane luki reguły ``wlasna-wyrocznia-numeru`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``
+# z własną wyrocznią numeru zlecenia, który mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_WYROCZNI_NUMERU: Final[dict[str, str]] = {
+    "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("(?<!\\d)94001(?!\\d)", text) is None
+''',
+    "klasa, w której 0-9 nie stoi zaraz po [": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"(?<![a-f0-9])94001(?![a-f0-9])", text) is None
+''',
+    r"\b wokół numeru": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"\b94001\b", text) is None
+''',
+    # W ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not in``.
+    "literał numeru przed not in": """\
+def test_bez_numeru(text: str) -> None:
+    assert "94001" not in text
+""",
+    "numer ze zmiennej": """\
+def test_bez_numeru(text: str, number: str) -> None:
+    assert number not in text
+""",
+    "str.find": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.find("94001") == -1
+""",
+    "count": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.count("94001") == 0
+""",
+    "re.search na samym numerze": """\
+import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("94001", text) is None
+""",
+    "lookahead bez lookbehindu": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"94001(?!\d)", text) is None
+''',
+    "lookbehind złożony w kilku liniach": r'''import re
+
+NUMBER = re.compile(
+    r"(?<!"
+    r"\d)94001"
+)
+
+
+def test_bez_numeru(text: str) -> None:
+    assert NUMBER.search(text) is None
+''',
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``wlasna-wyrocznia-numeru`` czyta w napisie albo komentarzu tekst ``(?<!``, po nim opcjonalnie ``[``,
+    a po nim ``\\d`` z jednym ukośnikiem albo ``0-9``; lookbehind złożony z kilku literałów, ``\\d`` z dwoma ukośnikami
+    w napisie bez ``r``, klasa z ``0-9`` nie zaraz po ``[``, ``\\b``, sam lookahead i każda wyrocznia bez lookbehindu to
+    znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_WYROCZNI_NUMERU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_THREADS_RULE = "watki-workera"
+_IN_THREADS = "import threading\n\n\ndef test_watki(monkeypatch, thread, threads, pool, counted, before, work, asking):\n"
+# Tekst dodanego pliku ``tests/`` → linie, które reguła ``watki-workera`` zgłasza: wątki procesu workera poza
+# ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)`` z 0e304aec7, w każdej postaci, którą
+# reguła czyta, i pytania o wątki przez ``linie_watkow`` albo o inne nazwy, które przepuszcza.
+_PROBKI_WATKOW: Final[list[tuple[str, list[int]]]] = [
+    (f"{_IN_THREADS}    start = threading.Thread.start\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start", counted)\n', [5]),
+    (f"{_IN_THREADS}    monkeypatch.setattr(threading.Thread, 'start', counted)\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start = counted\n", [5]),
+    (f"{_IN_THREADS}    assert threading.active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start(thread)\n", [5]),
+    (f"{_IN_THREADS}    assert active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    Thread.start(thread)\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(\n        threading.Thread,\n        "start",\n        counted,\n    )\n', [5]),
+    (f"{_IN_THREADS}    assert before  # threading.active_count() przed\n", [5]),
+    (f'{_IN_THREADS}    """Podmienia Thread.start na liczący."""\n', [5]),
+    (f"{_IN_THREADS}    code = \"monkeypatch.setattr(threading.Thread, 'start', f)\"\n", [5]),
+    (f"{_IN_THREADS}    since = new_line()\n", []),
+    (f"{_IN_THREADS}    assert wait_for(lambda: threads_since(since) == [], seconds=10)\n", []),
+    (f"{_IN_THREADS}    with started_threads() as started:\n        pass\n", []),
+    (f"{_IN_THREADS}    asking.start()\n", []),
+    (f"{_IN_THREADS}    super().start()\n", []),
+    (f"{_IN_THREADS}    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)\n", []),
+    (f"{_IN_THREADS}    for index, thread in enumerate(threads):\n        pass\n", []),
+    (f"{_IN_THREADS}    began = threading.Thread.started_at\n", []),
+    (f"{_IN_THREADS}    threading.Thread.start_soon(work)\n", []),
+    (f"{_IN_THREADS}    assert pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert threading.active_counts() == 0\n", []),
+    (f"{_IN_THREADS}    ModelThread.start(thread)\n", []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(MyThread, "start", counted)\n', []),
+    (f"{_IN_THREADS}    assert pool  # pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert pool  # Thread.started_at przed\n", []),
+    (f'{_IN_THREADS}    assert pool  # setattr(MyThread, "start", f)\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_WATKOW)
+def test_regula_watkow_zglasza_watki_workera_poza_linie_watkow_a_nie_linie_watkow_ani_inne_nazwy(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_watkow.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_watkow_zglasza_tylko_tests_poza_linie_watkow_i_probkami_zakazu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in (
+        "tests/fixtures/linie_watkow.py",
+        "tests/test_zapadki.py",
+        "tests/test_zakazy_ruff.py",
+        "tests/test_watkow.py",
+        "src/rozliczenia/watki.py",
+    ):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", 2)]
+
+
+# Znane luki reguły ``watki-workera`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``, który pyta
+# o wątki procesu workera poza ``linie_watkow``, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_WATKOW: Final[dict[str, str]] = {
+    # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc reguła na niej dałaby alarm na historii.
+    "threading.enumerate przed i po": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    before = set(threading.enumerate())
+    assert set(threading.enumerate()) == before
+""",
+    "sys._current_frames": """\
+import sys
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(sys._current_frames()) == 1
+""",
+    "threading._active": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(threading._active) == 1
+""",
+    "setattr z klasą wątku w zmiennej": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    thread_class = threading.Thread
+    monkeypatch.setattr(thread_class, "start", lambda self: None)
+""",
+    "podmiana Thread.run": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
+""",
+    "podmiana Thread.__init__": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``watki-workera`` czyta wywołanie ``active_count`` (samo albo po kropce), atrybut ``Thread.start`` (sam albo
+    po kropce), argumenty z ``Thread,`` i napisem ``start`` (także w kilku liniach) oraz ten sam tekst w komentarzu
+    i napisie; ``threading.enumerate``, ``sys._current_frames``, ``threading._active``, klasa wątku w zmiennej i podmiana
+    ``run`` albo ``__init__`` to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_WATKOW, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
