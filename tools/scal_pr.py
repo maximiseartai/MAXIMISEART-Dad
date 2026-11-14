@@ -59,10 +59,11 @@ z prawem zapisu statusów; scalenie z ruff i mypy pokazuje status ``scalenie z m
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
 merge'a, i po fakcie pokazuje merge bez zielonego statusu. Gdy każda przyczyna to oczekiwanie na coś, co przyjdzie
 bez zmiany w PR (CI na HEAD w toku albo jeszcze nie ruszyło, HEAD bez werdyktu), status to ``pending`` z opisem od
-„oczekuje:”; ruleset `main` wymaga go w stanie ``success``, więc merge blokuje i ``pending``, i ``failure``. Kod 0
+„oczekuje:”. PR bez runu CI, którego ``mergeable`` to ``CONFLICTING``, dostaje ``failure`` z przyczyną konfliktu:
+GitHub nie uruchamia CI na PR z konfliktem, a status ``scalenie z main`` powstaje tylko po pushu do `main`; ruleset `main` wymaga go w stanie ``success``, więc merge blokuje i ``pending``, i ``failure``. Kod 0
 znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.
 
-Komentarze, recenzje i checki pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
+Komentarze, recenzje, checki i ``mergeable`` pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
 

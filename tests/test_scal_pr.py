@@ -261,6 +261,7 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
         "mergeCommit": None,
         "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
         "closingIssuesReferences": [],
+        "mergeable": "MERGEABLE",
         **fields,
     }
 
@@ -2885,6 +2886,8 @@ FAIL_FOR_HEAD = "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)"
         ({"statusCheckRollup": [_check_run("COMPLETED", "SUCCESS", name="Ruff"), _check_run("IN_PROGRESS", None)]}, PASS, "pending"),
         ({"statusCheckRollup": [_check_run("COMPLETED", "SUCCESS", name="Ruff")]}, PASS, "pending"),
         ({"statusCheckRollup": []}, PASS, "pending"),
+        ({"statusCheckRollup": [], "mergeable": "CONFLICTING"}, PASS, "failure"),
+        ({"statusCheckRollup": [], "mergeable": "UNKNOWN"}, PASS, "pending"),
         ({"statusCheckRollup": [_check_run("IN_PROGRESS", None, name="Ruff"), _check_run("COMPLETED", "SUCCESS")]}, None, "pending"),
     ],
     ids=[
@@ -2897,6 +2900,8 @@ FAIL_FOR_HEAD = "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)"
         "required-ci-w-toku",
         "run-ci-bez-required",
         "ci-bez-runu",
+        "ci-bez-runu-z-konfliktem",
+        "ci-bez-runu-i-scalenie-liczone",
         "bez-werdyktu-i-zadanie-ci-w-toku",
     ],
 )
@@ -2914,6 +2919,7 @@ def test_status_pr_niegotowego_ma_przyczyny_odmowy_bez_merge_a_oczekuje_tylko_gd
 
     reasons = _last_line(refused).removeprefix(f"SCAL ODMOWA | #1 {head[:7]} | ")
     assert reasons != _last_line(refused), refused.stdout + refused.stderr
+    assert ("konflikt z main: zrób merge origin/main" in reasons) is (fields.get("mergeable") == "CONFLICTING"), reasons
     description = f"oczekuje: {reasons}" if state == "pending" else reasons
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert _last_line(answered) == f"STATUS {state} | #1 {head[:7]} | {description}"

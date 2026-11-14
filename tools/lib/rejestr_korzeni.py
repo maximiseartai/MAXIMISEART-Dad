@@ -681,7 +681,7 @@ def pull(repository: str, number: int) -> Pull:
 
 
 def _pull(node: dict[str, Any]) -> Pull:
-    view = {**node, "comments": node["comments"]["nodes"], "reviews": node["reviews"]["nodes"], "closingIssuesReferences": [], "statusCheckRollup": []}
+    view = {**node, "comments": node["comments"]["nodes"], "reviews": node["reviews"]["nodes"], "closingIssuesReferences": [], "statusCheckRollup": [], "mergeable": "UNKNOWN"}
     return stan_pr.from_view(view)
 
 
