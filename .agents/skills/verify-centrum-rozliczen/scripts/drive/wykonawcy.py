@@ -19,7 +19,6 @@ from drive.common import (
     read_text,
     settings_window,
 )
-from drive.waiting import until
 
 FEATURE = "wykonawcy"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -244,7 +243,7 @@ def drive(run: Run, page: Page) -> None:
         return (workers[D]["active"], workers[C]["reminders"]) == (False, False)
 
     # A switch shows its state at once, before its save reaches Centrum.
-    until(switched, "Nieaktywny and Przypomnienia are saved at once, without Zapisz")
+    run.wait_for(switched, "Nieaktywny and Przypomnienia are saved at once, without Zapisz")
     names = window.get_by_role("list", name="Wykonawcy").get_by_role("listitem").evaluate_all(
         "items => items.map((item) => item.getAttribute('aria-label'))"
     )

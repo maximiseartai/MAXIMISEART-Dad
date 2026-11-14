@@ -22,7 +22,7 @@ from typing import Final
 
 from fastapi import APIRouter
 
-from rozliczenia.client_data import ForbiddenValues, Outgoing, tool
+from rozliczenia.client_data import ForbiddenValues, Outgoing, guarded, tool
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
@@ -77,8 +77,8 @@ def note_issue(
     """
 
     version = f"wersja narzędzia {version_label(commit)}"
-    title_guarded = forbidden.guard(title, "tytuł Uwagi taty")
-    body_guarded = forbidden.guard(body, "treść Uwagi taty")
+    title_guarded = guarded(forbidden, title, "tytuł Uwagi taty")
+    body_guarded = guarded(forbidden, body, "treść Uwagi taty")
     notes = "".join(f"\n{note}" for note in (*title_guarded.notes, *body_guarded.notes))
     text = f"{body_guarded.text}{notes}".strip("\n")
 

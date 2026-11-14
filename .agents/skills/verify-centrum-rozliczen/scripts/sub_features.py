@@ -3,13 +3,15 @@
 Each sub-feature is a ``run.step(feature, "<id>")`` in ``drive(run, page)`` of ``drive/<feature>.py``, in source
 order, and its line joins the messages of the ``run.check`` calls after it, which the drive prints as ``ok:`` under
 ``STEP <feature> | <id>`` in ``drive.txt``. A message is a string literal, a module constant (a name the module binds
-only once, at its top level, to a string) or an f-string of those; any other placeholder of an f-string is printed as
-its source in braces.
+only once, at its top level, to a string) or an f-string. A placeholder of the f-string that is such a constant, with
+no conversion and no format spec, prints its value; every other placeholder prints as ``…``, whatever its expression,
+conversion or format spec, because the value is known only when the drive runs. The literal text prints as it is,
+``{{`` as ``{``.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
-one, a step name that is no string literal, a message of another kind, a placeholder with a conversion or a format
-spec, a check before the first step, and any attribute ``.step`` or ``.check`` in the module, on whatever object, that
+one, a step name that is no string literal, a message of another kind,
+a check before the first step, and any attribute ``.step`` or ``.check`` in the module, on whatever object, that
 is not the called function of such a call on ``run`` in the body of ``drive`` itself (outside any function, lambda or
 class in it). It does not see a check reached without such an attribute, as ``getattr(run, "check")``. Checks in the
 shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the section: the
@@ -96,14 +98,9 @@ def _message(node: ast.expr, constants: dict[str, str], module: str) -> str:
             parts.append(part.value)
         elif isinstance(part, ast.FormattedValue) and part.conversion == -1 and part.format_spec is None:
             value = part.value
-            parts.append(constants[value.id] if isinstance(value, ast.Name) and value.id in constants else f"{{{ast.unparse(value)}}}")
+            parts.append(constants[value.id] if isinstance(value, ast.Name) and value.id in constants else "…")
         else:
-            raise _refuse(
-                module,
-                node,
-                "run.check has an f-string placeholder with a conversion or a format spec; format the value before the "
-                "f-string, so the map prints what the drive prints",
-            )
+            parts.append("…")
     return "".join(parts)
 
 

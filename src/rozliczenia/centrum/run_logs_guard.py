@@ -23,16 +23,16 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
-from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, logs_text
+from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, guarded, guarded_number, logs_text
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
-    """Logi po strażniku reguły danych (``ForbiddenValues.guard``): każdy tekst i klucz bez zakazanych wartości, z
+    """Logi po strażniku reguły danych (``guarded``): każdy tekst i klucz bez zakazanych wartości, z
     zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna z kolumną i polem pliku.
 
     Strażnik widzi każdy tekst pliku: także datę, kwotę i wartość ``Decimal``, które JSON zapisuje jako tekst. Liczbę
     sprawdza w polu z wartościami z komórek pliku taty albo ze strony efenix (``READ_VALUES``: komórki Kopii wejścia i
-    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``ForbiddenValues.guard_number``), i liczba z
+    ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``guarded_number``), i liczba z
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
@@ -56,10 +56,10 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         return found.text
 
     def text(value: str, place: str) -> str:
-        return noted(forbidden.guard(value, place or "Logi"), place)
+        return noted(guarded(forbidden, value, place or "Logi"), place)
 
     def number(value: int | float, place: str) -> object:
-        found = forbidden.guard_number(value, place)
+        found = guarded_number(forbidden, value, place)
         return value if found is None else noted(found, place)
 
     def walk(source: object, value: object, place: str, read: bool) -> object:
@@ -441,5 +441,5 @@ def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText
     """Tekst ``text`` po strażniku reguły danych ``forbidden``: zamaskowana wartość to uwaga techniczna na jego końcu, z
     miejscem ``place``."""
 
-    found = forbidden.guard(text, place)
+    found = guarded(forbidden, text, place)
     return GuardedText(found.text + "".join(f"\n- Uwaga techniczna: {note}" for note in found.notes), _MINTED)

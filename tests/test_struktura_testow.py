@@ -26,7 +26,15 @@ from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
 from tests.fixtures.skladnia import dotted, drzewo, imports, pamiec_drzew, wezly
-from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
+from tests.fixtures.znane_luki import (
+    assert_znane_luki,
+    platformy_mypy_ci,
+    ruff,
+    ruff_i_mypy,
+    wymaga_ruff,
+    wymaga_ruff_i_mypy,
+    zapisz,
+)
 
 TESTS = Path(__file__).resolve().parent
 # Atrapy wspólne z testami żyją poza tests/ (granica N13d), ale reguły czekania i limitów czasu obejmują je jak testy.
@@ -306,6 +314,23 @@ def test_znane_luki_sprawdzenia_sys_path_przechodza_przez_ruff_i_sprawdzenie(tmp
         zgloszenia[opis] += [f"_tools_on_path: linia {line}" for line in _tools_on_path(drzewo(plik))]
 
     assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_SYS_PATH)")
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_licza_mypy_na_kazdej_platformie_krokow_ci(tmp_path: Path) -> None:
+    """Required CI liczy mypy z ``--platform`` każdego kroku zadania „Ruff, mypy”, więc próbka-kontrola z błędem typu
+    w gałęzi ``sys.platform == platforma`` ma zgłoszenie tylko tej platformy, na każdym systemie, na którym biegnie test."""
+
+    platformy = platformy_mypy_ci()
+    assert {"linux", "win32"} <= set(platformy), platformy
+    kontrole = {platforma: f'import sys\n\nif sys.platform == "{platforma}":\n    x: int = "a"\n' for platforma in platformy}
+
+    zgloszenia = ruff_i_mypy(zapisz(kontrole, tmp_path), sonda=TESTS / "test_sonda_luki.py")
+
+    assert {platforma: [z.partition(" ")[0] for z in lista] for platforma, lista in zgloszenia.items()} == {
+        platforma: [f"mypy[{platforma}]"] for platforma in platformy
+    }, zgloszenia
+    assert all(lista[0].endswith("[assignment]") for lista in zgloszenia.values()), zgloszenia
 
 
 # Pliki, w których nazwa pliku narzędzia albo stanu Centrum zostaje literałem, z powodem.

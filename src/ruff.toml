@@ -5,14 +5,16 @@ extend = "../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+"typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+"typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 "rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.process_kind._CATALOG".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
 "rozliczenia.centrum.process_kind._Catalog".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
-"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: ForbiddenValues.guard(…).text, tool(tekst narzędzia) i + takich tekstów"
-"rozliczenia.client_data.tool".msg = "tekst do wysyłki z pliku taty daje strażnik pracy Centrum (CentrumWork.forbidden.guard(tekst, miejsce).text); tool(…) na stałe i liczby narzędzia ma tylko moduł z prawem właściciela w per-file-ignores pyproject.toml"
+"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
+"rozliczenia.client_data.tool".msg = "tekst do wysyłki z pliku taty daje strażnik pracy Centrum (guarded(CentrumWork.forbidden, tekst, miejsce).text); tool(…) na stałe i liczby narzędzia ma tylko moduł z prawem właściciela w per-file-ignores pyproject.toml"
 "rozliczenia.client_data.logs_text".msg = "tekst pliku w Archiwum Logów okresu daje tylko strażnik Logów (GuardedLogs.text z rozliczenia.centrum.run_logs_guard); logs_text(…) ma tylko moduł z prawem właściciela w per-file-ignores pyproject.toml"
 "rozliczenia.client_data.empty_memory".msg = "pamięć reguły danych jest jedna na pracę Centrum: weź CentrumWork.forbidden (pusta pamięć bez plików taty przepuszcza ich wartości)"
 "copy.replace".msg = "zmienioną kopię dataclassy daje dataclasses.replace: mypy sprawdza typ każdego zmienionego pola, a copy.replace bierze je jako Any"

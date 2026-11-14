@@ -109,6 +109,8 @@ Diagnoza too, as a real one that does not go away would. No synthetic file cause
 because every known problem has its own Komunikat.
 
 Once the port is bound, ``File.SERVER`` records this process and URL.
+Each HTTP request it answered is a line ``REQUEST <moment> <method> <path> <status>`` on its console (``_RequestLog``),
+which the run keeps as ``server.txt`` or ``api/<name>-server.txt`` of the evidence.
 The Centrum log goes where the tool keeps it in the run root (``log_path``), and the button
 „Zamknij Centrum rozliczeń” stops this process the way it stops Dad's.
 
@@ -130,7 +132,7 @@ import asyncio
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from functools import partial
 import imaplib
 import json
@@ -141,6 +143,7 @@ import threading
 import time
 import traceback
 from typing import Any
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
@@ -184,7 +187,7 @@ from rozliczenia.tool_files import listen_locally, log_path
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
 from skrypt_skilla import Parser
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from harness import (
     INBOX_ADDRESS,
     INBOX_PASSWORD,
@@ -594,6 +597,36 @@ class ScriptedClock:
             raise
 
 
+class _RequestLog:
+    """Each HTTP request on the console once answered: the moment it came (UTC), the method, the path without its query
+    and the answer's status, or how the answer broke off. The evidence then shows whether a request the page lost
+    (``zadania-strony.txt`` of the drive) reached Centrum (#1539). Only these: a query or a body may carry a value of
+    a file."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        came = datetime.now(UTC).isoformat(timespec="milliseconds")
+        status: list[int] = []
+
+        async def answer(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status.append(message["status"])
+            await send(message)
+
+        line = f"REQUEST {came} {scope['method']} {quote(scope['path'])}"
+        try:
+            await self.app(scope, receive, answer)
+        except BaseException as broken:
+            print(f"{line} {status[0] if status else '-'} broken off: {type(broken).__name__}", flush=True)
+            raise
+        print(f"{line} {status[0] if status else 'no answer'}", flush=True)
+
+
 class _LateApi:
     """Each request of ``/api/`` waits ``API_DELAY_S`` before Centrum takes it; the page itself does not."""
 
@@ -738,6 +771,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
 
     if SLOW_RUNNER in os.environ:
         app.add_middleware(_LateApi)
+    app.add_middleware(_RequestLog)
 
     def record_bound_server(url: str) -> None:
         """The run waits for the record as soon as it exists, so it is put in place whole (``replace_atomically``)."""

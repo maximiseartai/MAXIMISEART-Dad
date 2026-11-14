@@ -102,7 +102,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.client_data.logs_text",
     ),
-    "from rozliczenia import client_data\nguarded = client_data.empty_memory().guard(cell, 'komórka')": (
+    "from rozliczenia import client_data\nwynik = client_data.guarded(client_data.empty_memory(), cell, 'komórka')": (
         SRC_CONFIG,
         ("rozliczenia", "centrum"),
         "rozliczenia.client_data.empty_memory",
@@ -137,6 +137,9 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         "urllib.request.build_opener",
     ),
     "from urllib.request import urlopen\nhealth = urlopen(url, timeout=1)": (SRC_CONFIG, ("rozliczenia",), "urllib.request.urlopen"),
+    # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
+    "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
+    "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
 }
 
 

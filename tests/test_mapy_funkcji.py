@@ -275,8 +275,6 @@ ODMOWY: Final = {
     "check: komunikat konkatenacją": 'run.check(True, "x" + "y")  # tu',
     "check: komunikat wywołaniem": 'run.check(True, "x {}".format(1))  # tu',
     "check: komunikat warunkiem": 'run.check(True, "x" if True else "y")  # tu',
-    "check: pole f-stringu z konwersją": 'run.check(True, f"x {SHOW_ALL!r}")  # tu',
-    "check: pole f-stringu z formatem": 'run.check(True, f"x {SHOW_ALL:>20}")  # tu',
     "check: w funkcji zagnieżdżonej": 'def _pomocnik() -> None:\n        run.check(True, "x")  # tu',
     "check: w lambdzie": '_pomocnik = lambda: run.check(True, "x")  # tu',
     "check: w ciele klasy": 'class _Pomocnik:\n        run.check(True, "x")  # tu',
@@ -335,9 +333,9 @@ def test_polecenie_podfunkcji_odmawia_postaci_run_ktorej_nie_czyta_z_plikiem_i_l
 
 
 def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polecenie: ModuleType) -> None:
-    """Komunikat to literał, stała modułu (także z adnotacją) albo f-string z nich; pole f-stringu spoza stałych, w tym
+    """Komunikat to literał, stała modułu (także z adnotacją) albo f-string; pole f-stringu spoza stałych, w tym
     nazwa, którą moduł wiąże drugi raz (przypisaniem, importem, parametrem, ``def``, ``except ... as``, wzorcem
-    ``match``, parametrem typu), jest jego źródłem w nawiasach."""
+    ``match``, parametrem typu), jest wielokropkiem."""
 
     zrodlo = NAPED.format(
         wstawka="\n    ".join(
@@ -378,14 +376,36 @@ def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polec
                 "pierwszy",
                 "Pokaż wszystkie",
                 "z adnotacją",
-                "Pokaż wszystkie i {feature}",
-                "{DWA_RAZY}",
-                "{LOKALNA} {IMPORT} {PARAMETR} {FUNKCJA} {WYJATEK}",
-                "{WZORZEC} {GWIAZDKA} {RESZTA} {TYP} {SPEC} {KROTKA}",
+                "Pokaż wszystkie i …",
+                "…",
+                "… … … … …",
+                "… … … … … …",
             ],
         ),
         ("sonda-drugi", []),
     ]
+
+
+# Pole f-stringu komunikatu → jak stoi w sekcji: stała modułu bez konwersji i formatu daje swoją wartość, każde inne
+# pole wielokropek, bez wyrażenia i formatu, bo wartość zna dopiero przebieg napędu (D2 #1708).
+POLA: Final = {
+    "pole proste": ('f"każda z {len(feature)} reguł"', "każda z … reguł"),
+    "pole z formatem": ('f"po {len(feature):>3} s"', "po … s"),
+    "pole z konwersją": ('f"adres {feature!r}"', "adres …"),
+    "pole zagnieżdżone": ('f"szerokość {feature:{len(feature)}} i {f\'{feature}\'}"', "szerokość … i …"),
+    "podwójne klamry": ('f"{{wiersz}} {feature} }}"', "{wiersz} … }"),
+    "stała z formatem": ('f"{SHOW_ALL:>20}"', "…"),
+    "stała z konwersją": ('f"{SHOW_ALL!r}"', "…"),
+}
+
+
+@pytest.mark.parametrize("opis", list(POLA))
+def test_polecenie_podfunkcji_drukuje_pole_f_stringu_spoza_stalych_wielokropkiem(polecenie: ModuleType, opis: str) -> None:
+    komunikat, sekcja = POLA[opis]
+
+    czytane = polecenie.sub_features(NAPED.format(wstawka=f"run.check(True, {komunikat})"), "sonda.py")
+
+    assert czytane == [("sonda-krok", ["pierwszy", sekcja])]
 
 
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → napęd, którego run.check nie trafia do
