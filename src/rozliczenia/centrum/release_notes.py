@@ -26,15 +26,15 @@ from typing import Final
 
 from rozliczenia.centrum.dad_cases import KINDS
 
-# Etykieta sprawy w Skrzynce Zgłoszeń → jej rodzaj w notce.
 CASE_KINDS: Final[Mapping[str, str]] = {kind.label: kind.name for kind in KINDS}
+"""Etykieta sprawy w Skrzynce Zgłoszeń → jej rodzaj w notce."""
 CASES_HEADING: Final = "## Rozwiązane sprawy taty"
-# Maks poprawia notkę ręcznie na GitHubie, więc nagłówek spraw może mieć inny poziom i spacje na końcu.
 _CASES_HEADING_LINE: Final = re.compile(rf"^#+[ \t]+{re.escape(CASES_HEADING.lstrip('# '))}[ \t]*$", re.MULTILINE)
+"""Maks poprawia notkę ręcznie na GitHubie, więc nagłówek spraw może mieć inny poziom i spacje na końcu."""
 
 _CASE_LINE: Final = re.compile(r"- (?P<kind>.+?) #(?P<number>[1-9][0-9]*): (?P<title>.+)")
-# Punkt „Co nowego”; Maks poprawia notkę na GitHubie, więc punkt może zaczynać też ``*`` i mieć wcięcie.
 _POINT_LINE: Final = re.compile(r"[-*][ \t]+(?P<text>.+)")
+"""Punkt „Co nowego”; Maks poprawia notkę na GitHubie, więc punkt może zaczynać też ``*`` i mieć wcięcie."""
 
 
 @dataclass(frozen=True)

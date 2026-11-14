@@ -12,6 +12,8 @@ gospodarza. Kartę przed startem procesu z okresem składa ``period_start.Period
 ADR 0019, i ``report_entering_run``, ADR 0028).
 
 Moduł nie robi I/O przy wczytaniu, a granicę jego importów opisuje i sprawdza ``tests/test_granice_importow.py``.
+Tylko ten moduł importuje dowód katalogu procesów ``process_kind._CATALOG`` (docstring ``_CATALOG``), więc tylko on
+składa ``PreparedRun``.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from typing import Any, Final
 
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
-# Dowód katalogu procesów (docstring process_kind._CATALOG): tylko ten moduł składa PreparedRun.
 from rozliczenia.centrum.process_kind import _CATALOG
 from rozliczenia.centrum.processes import efenix, intermax, preparation, report_entering, settlement
 from rozliczenia.process_run import Process, run_process
