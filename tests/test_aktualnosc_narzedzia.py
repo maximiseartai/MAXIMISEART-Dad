@@ -37,7 +37,7 @@ from rozliczenia.centrum.tool_freshness import (
     releases_from,
 )
 from rozliczenia.centrum.tool_update import Release
-from rozliczenia.centrum.version import running_centrum, tool_commit
+from rozliczenia.centrum.version import SERVICE, RunningCentrum, running_centrum, tool_commit
 from tests.fixtures.github_api import Answer, github_api, newest_on_main
 
 from tests.fixtures.proxy_systemu import system_proxy
@@ -309,6 +309,33 @@ def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_system
         assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
 
     assert proxied == []
+
+
+def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Health(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps({"service": SERVICE, "commit": "a" * 40}).encode()
+            self.send_response(200 if self.path == "/api/health" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Health)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    thread.start()
+    try:
+        with system_proxy(monkeypatch) as proxied:
+            running = running_centrum(server.server_address[1], timeout_s=30)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert (running, proxied) == (RunningCentrum("a" * 40), [])
 
 
 def test_sprawdzenia_wydan_i_health_wczytuja_certyfikaty_systemu_najwyzej_raz_na_proces(monkeypatch: pytest.MonkeyPatch) -> None:

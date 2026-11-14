@@ -2416,6 +2416,29 @@ def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zda
     assert history_rows(app) == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Plik bez prawa odczytu daje się tak zrobić tylko poza Windows.")
+def test_podglad_nowej_reguly_dziala_takze_gdy_historii_ustawien_nie_da_sie_przeczytac_a_zapis_sie_nie_udaje(
+    tmp_path: Path,
+) -> None:
+    """Historia, której nie da się przeczytać, nie daje id do pominięcia: podgląd i tak pokazuje regułę, a zapis
+    odmawia, więc inne id w podglądzie niż przy zapisie nigdy nie trafia do pliku."""
+
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    history = app.tool.config / HISTORY_FILE
+    assert history.exists()
+    history.chmod(0)
+    try:
+        previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "add", "rule": EDITOR_RULE})
+        saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    finally:
+        history.chmod(0o644)
+
+    assert previewed.status_code == 200, previewed.json()
+    assert saved.status_code == 500
+    assert not (app.tool.config / RULES_FILE).exists()
+
+
 def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
