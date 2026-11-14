@@ -183,6 +183,22 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         "urllib.request.build_opener",
     ),
     "from urllib.request import urlopen\nhealth = urlopen(url, timeout=1)": (SRC_CONFIG, ("rozliczenia",), "urllib.request.urlopen"),
+    # Kod między instrukcjami cudzej funkcji zmienia jej zmienne po sprawdzeniu (sonda przeglądu #1762: sys.settrace
+    # podmienia nagłówek wysyłki w outbox._queue_text po kontroli dokładnego typu).
+    "import sys\nsys.settrace(sledz)": (SRC_CONFIG, ("rozliczenia", "centrum"), "sys.settrace"),
+    "from sys import setprofile as profiluj": (SRC_CONFIG, ("rozliczenia",), "sys.setprofile"),
+    "import sys\nsys.monitoring.register_callback(2, 1, sledz)": (SRC_CONFIG, ("rozliczenia",), "sys.monitoring"),
+    "import sys\nramki = sys._current_frames()": (SRC_CONFIG, ("rozliczenia",), "sys._current_frames"),
+    "import threading\nthreading.settrace(sledz)": (SRC_CONFIG, ("rozliczenia",), "threading.settrace"),
+    "from threading import setprofile": (SRC_CONFIG, ("rozliczenia",), "threading.setprofile"),
+    "import threading\nthreading.settrace_all_threads(sledz)": (SRC_CONFIG, ("rozliczenia",), "threading.settrace_all_threads"),
+    "import threading as watki\nwatki.setprofile_all_threads(sledz)": (SRC_CONFIG, ("rozliczenia",), "threading.setprofile_all_threads"),
+    "import bdb\nclass Debuger(bdb.Bdb): ...": (SRC_CONFIG, ("rozliczenia",), "bdb"),
+    "import pdb": (SRC_CONFIG, ("rozliczenia",), "pdb"),
+    "from trace import Trace": (SRC_CONFIG, ("rozliczenia",), "trace"),
+    "import profile": (SRC_CONFIG, ("rozliczenia",), "profile"),
+    "from cProfile import Profile": (SRC_CONFIG, ("rozliczenia", "centrum"), "cProfile"),
+    "import _lsprof": (SRC_CONFIG, ("rozliczenia",), "_lsprof"),
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
@@ -299,6 +315,29 @@ def test_znane_luki_zakazu_snu_w_napedzie_przechodza_przez_ruff(tmp_path: Path) 
     zgloszenia = ruff(pliki, sonda=DRIVE_CONFIG.parent / "sonda_luki.py")
 
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SNU)")
+
+
+# Kod między instrukcjami cudzej funkcji, którego zakaz śledzenia w src/ruff.toml nie widzi (#1551): zakaz zna tylko nazwę
+# z importu i obowiązuje tylko w src/.
+ZNANE_LUKI_SLEDZENIA = {
+    "nazwa w napisie: getattr(sys, \"settrace\")": 'import sys\n\ngetattr(sys, "settrace")(lambda ramka, zdarzenie, arg: None)\n',
+    "ramka własnego stosu: f_locals ramki wywołującego z inspect": (
+        "import inspect\n\n\ndef podmien() -> None:\n    ramka = inspect.currentframe()\n"
+        "    if ramka is not None and ramka.f_back is not None:\n        ramka.f_back.f_locals[\"header\"] = \"x\"\n"
+    ),
+}
+ZNANE_LUKI_SLEDZENIA_POZA_SRC = {
+    "kod spoza src/: sys.settrace w narzędziu tools/": "import sys\n\nsys.settrace(None)\n",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff(tmp_path: Path) -> None:
+    (tmp_path / "poza").mkdir()
+    w_src = ruff(zapisz(ZNANE_LUKI_SLEDZENIA, tmp_path), sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
+    poza = ruff(zapisz(ZNANE_LUKI_SLEDZENIA_POZA_SRC, tmp_path / "poza"), sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
+
+    assert_znane_luki(w_src | poza, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SLEDZENIA)")
 
 
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,

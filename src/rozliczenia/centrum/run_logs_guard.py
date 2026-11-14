@@ -346,8 +346,10 @@ pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``,
   odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
   ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
 - Podklasa: mypy odrzuca ``class`` (``final``), metaklasa ``client_data.WithoutSubclasses`` rzuca ``TypeError`` przy
-  ``class`` i ``type()``, a ``__init_subclass__`` przy ``type.__new__`` z jej pominięciem. To wcześniejszy błąd;
-  podklasę z każdej drogi (także ``__bases__``) odrzuca dopiero kontrola dokładnego typu przy użyciu, punkt niżej.
+  ``class`` i ``type()`` (``class`` z własną metaklasą, która woła ``type.__new__`` wprost, ją omija), a
+  ``__init_subclass__`` przy ``type.__new__`` z jej pominięciem, chyba że przesłania go baza bez ``super()`` przed
+  typem. To wcześniejszy błąd; podklasę z każdej drogi (także ``__bases__``) odrzuca dopiero kontrola dokładnego typu
+  przy użyciu, punkt niżej.
 - Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``, i
   podklasa, jakkolwiek powstała: typ jej nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``: przy
   przyjęciu i w ``post_of`` tuż przed użyciem) i plik Logów (``LogsOnDisk.write``), jedyne miejsca, które biorą Logi albo

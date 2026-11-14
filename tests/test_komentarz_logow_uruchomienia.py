@@ -499,6 +499,20 @@ _DROGI_PODKLASY: Final[dict[str, Callable[[type, dict[str, object]], object]]] =
 """Drogi do podklasy typu-dowodu przy jej tworzeniu: dwie przez ``__new__`` metaklasy i jedna z jego pominięciem."""
 
 
+_WERSJA_BEZ_PODKLAS: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
+_ODMOWY_PODKLASY: Final = {
+    "logi": "Logi po strażniku nie mają podklas: daje je tylko guard_logs.",
+    "tekst": "Tekst po strażniku nie ma podklas: daje go tylko guard_text.",
+    "plik": "Tekst pliku Logów nie ma podklas.",
+    "wysylka": "Tekst do wysyłki nie ma podklas.",
+    "wysylka-logow": "Wysyłka Logów nie ma podklas: daje ją tylko post_of.",
+    "pamiec": "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded.",
+    **dict.fromkeys(("postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza"), _WERSJA_BEZ_PODKLAS),
+}
+"""Odmowa podklasy każdego typu-dowodu z nagłówka jego klasy: inna odmowa (np. „Klasa bez podklas podaje odmowę”, gdy
+metaklasa nie przejrzy bazy za klasą pomocniczą) to inny błąd niż odmowa tej klasy."""
+
+
 @pytest.mark.parametrize("droga", _DROGI_PODKLASY.keys())
 @pytest.mark.parametrize(
     "kind",
@@ -516,8 +530,10 @@ def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, 
     proof = type(_proof_value(kind))
     namespace: dict[str, object] = {"text": property(lambda self: "ul. Syntetyczna 1")}
 
-    with pytest.raises(TypeError, match="podklas"):
+    with pytest.raises(TypeError) as odmowa:
         _DROGI_PODKLASY[droga](proof, namespace)
+
+    assert str(odmowa.value) == _ODMOWY_PODKLASY[kind]
 
 
 _PLIK: Final = """\
