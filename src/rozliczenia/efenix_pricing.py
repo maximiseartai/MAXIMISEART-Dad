@@ -331,7 +331,7 @@ def price_orders(inputs: EfenixInputs, context: RunContext) -> PricingSummary:
     Zgłasza ``StopError``, gdy nie można działać bezpiecznie. Zegar Uruchomienia ``context.clock`` liczy czasy etapów i
     śladu zleceń i stoi na czas czekania na logowanie taty. Plik zbiorczy czyta uchwyt plików taty ``context.files``:
     komórki zakazanych kolumn Pliku zbiorczego i dane adresowe z listy wyników efenix zna pamięć reguły danych (ADR
-    0025), a odczyt Pliku zbiorczego Kopia wejścia Uruchomienia (#841).
+    0025), a odczyt Pliku zbiorczego Kopia wejścia Uruchomienia.
     """
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
@@ -554,7 +554,7 @@ def _emmett(load: EmmettLoad) -> OrderPricing:
     Emmett nic nie zaproponował (``Proposal.NOTHING``), bo proces ładuje Wycenę Emmetta tylko do strony bez wyceny.
 
     Strona bez ilości po każdej innej propozycji, także po pustym oknie Emmetta po padniętej propozycji, to
-    ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``: efenix odmówił „Załaduj do zlecenia” odpowiedzią 2xx (#877, #889), a
+    ``UnexpectedPage`` z ``Shape.EMMETT_NOT_LOADED``: efenix odmówił „Załaduj do zlecenia” odpowiedzią 2xx, a
     skrypt efenix i tak przeładował stronę. Postaci propozycji ani treści tej odpowiedzi nikt nie zmierzył, więc werdykt ich
     nie czyta. Prawdziwy efenix dał stronę z ilością i kwotą różną od 0 po każdym ze 108 załadowań przebiegu z 4.11.2026
     (Logi Uruchomienia Wydania 0.4.2), więc Zatrzymanie przy pustej propozycji, którą efenix pokazałby czymś, zdarza się
