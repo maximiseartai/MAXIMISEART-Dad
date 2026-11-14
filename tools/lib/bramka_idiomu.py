@@ -17,9 +17,12 @@ zatrzymuje zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
 Granica: dowód umie dziś tylko ast-grep, więc ``<id>``, które jest kluczem ``banned-api`` ruff albo kontraktem
 import-linter, to odmowa, dopóki na HEAD nie stanie reguła ast-grep o tym id. Przypadek ``jak #N W<n> r<k>`` sprzed
 szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
-ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Moduł bierze tylko bibliotekę
-standardową, bo status „Werdykt i bramka” uruchamia ``tools/scal_pr.py`` systemowym ``python3``; regułę ładuje
-ast-grep w dowodzie.
+ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Przyczyna, przy której dowód
+nie ma jeszcze danych (GitHub nie wyrenderował werdyktów albo nie podał rejestru), to ``stan_pr.Waiting``, bo mija
+przy następnym runie bez zmiany w PR; odmowa dowodu i jego przekroczony czas wymagają reguły albo poprawki autora.
+Granica: błąd GitHuba wewnątrz dowodu kończy się linią ``DOWÓD ODMOWA`` jak brak reguły, więc to zwykła przyczyna.
+Moduł bierze tylko bibliotekę standardową, bo status „Werdykt i bramka” uruchamia ``tools/scal_pr.py`` Pythonem
+runnera; regułę ładuje ast-grep w dowodzie, który workflow statusu instaluje z dodatku dev.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ import potomne
 import rejestr_korzeni
 from rejestr_korzeni import IdiomCase
 from repo import ROOT
-from stan_pr import Pull
+from stan_pr import Pull, Waiting
 import szablon_werdyktu
 import werdykt_pr
 
@@ -53,7 +56,7 @@ def problems(pull: Pull) -> list[str]:
     try:
         rounds = werdykt_pr.rounds(pull, werdykt_pr.rendered(pull))
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
-        return [f"idiom: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
+        return [Waiting(f"idiom: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie")]
     own = rejestr_korzeni.idiom_cases(pull.number, rounds)
     wanted = sorted({case.idiom.rule for case in own if case.idiom.rule is not None})
     if not wanted:
@@ -61,7 +64,7 @@ def problems(pull: Pull) -> list[str]:
     try:
         history = rejestr_korzeni.idioms(pull.repository, deployed)
     except Exception as error:  # noqa: BLE001 - każdy błąd GitHuba to odmowa z przyczyną
-        return [f"idiom: GitHub nie podał rejestru korzeni ({error}), więc nie wiadomo, które przypadki dowód ma złapać; uruchom ponownie"]
+        return [Waiting(f"idiom: GitHub nie podał rejestru korzeni ({error}), więc nie wiadomo, które przypadki dowód ma złapać; uruchom ponownie")]
     every = [*own, *(case for case in history if case.pull != pull.number)]
     found = []
     for rule in wanted:

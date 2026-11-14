@@ -7,7 +7,7 @@ może wysłać, są znacznikami. Żaden test nie łączy się z GitHubem.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, time, timezone
 import json
 from pathlib import Path
 import shutil
@@ -37,6 +37,7 @@ from tests.fixtures.centrum import (
     write_report_key,
 )
 from tests.fixtures.centrum_processes import (
+    TODAY,
     SettlingCentrum,
     run_to_end,
     settling_centrum,
@@ -44,6 +45,7 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.potomne import wait_for
+from tests.fixtures.zegar_scienny import wall_clock_from
 from atrapy import pliki_taty
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
@@ -1063,11 +1065,14 @@ def test_zly_plik_wyjatkow_ma_zdanie_w_sekcji_a_lista_pokazuje_rowniez_roznice_b
 
 
 def test_roznice_i_wyjatek_w_historii_i_zgloszeniu_nie_maja_adresu_numerow_wykonawcy_daty_ani_tresci_wiersza(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Lista różnic pokazuje tacie URZĄDZENIA i CZYNNOŚCI jak podgląd, bez UMOWA; wyjątek w Historii Ustawień, w
     Logach Centrum i w Zgłoszeniu ma tylko okres, wiersz, kolumnę i wpis taty (ADR 0013, ADR 0032)."""
 
+    # Historia, Logi i Zgłoszenie mają chwilę zegara, a ``FORBIDDEN`` godzinę 13:45 komórki DATA: zegar od południa UTC
+    # dnia Centrum nie pokaże jej w żadnej strefie (13:45 dałaby tylko strefa +1:45, której nie ma).
+    wall_clock_from(monkeypatch, datetime.combine(TODAY, time(12), timezone.utc))
     centrum = centrum_with(tmp_path, [MARKED])
     run_to_end(centrum, dry_run=False)
     response = centrum.client.get(DIFFERENCES_URL).text
