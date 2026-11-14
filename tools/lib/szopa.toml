@@ -56,7 +56,6 @@
 "tests/test_zakazy_ruff.py" = ["tests/ruff.toml"]
 "tests/test_zapadki.py" = []
 "tools/benchmark_przebiegu.py" = ["tests/fixtures/benchmark.py", "tests/test_benchmark_przebiegu.py"]
-"tools/chwasty.py" = ["tests/fixtures/chwasty.json", "tests/fixtures/chwasty.py"]
 przepuszcza."tools/ci/export_openapi.py" = []
 "tools/ci/rozmiar_pr.py" = ["tests/test_rozmiar_pr.py"]
 przepuszcza."tools/ci/status_scalenia.py" = ["tests/test_status_scalenia.py"]

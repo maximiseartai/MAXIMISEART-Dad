@@ -212,8 +212,7 @@ def _publish_verdict(pull: Pull, path: Path) -> int:
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(pull.number), "--body-file", str(path)).strip()
-    weeds = rejestr_korzeni.after_verdict(pull.number, text, pull.base, deployed, pull.repository)
-    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}{weeds}")
+    print(f"WERDYKT OK | #{pull.number} {pull.head[:7]} | {werdykt_pr.text_lines(text)[0].split()[1]} | {url}")
     return 0
 
 

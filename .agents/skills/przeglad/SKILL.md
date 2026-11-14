@@ -66,8 +66,6 @@ Reguły szczebla i dowodu:
   „Bez mechanizmu” nie jest szczeblem.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja z `tools/mutacje.py` albo cofnięcie poprawki).
   Recenzent następnej rundy powtarza ten dowód i jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
-- Korzeń, który wraca po wcześniejszym wyrwaniu, wyrywa się szczebel wyżej niż poprzednio.
-  Gdy wyższego nie ma, także po szczeblu (e), decyduje Maks.
 - Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie: punktem `Korzeń W<n> r<k>: R-KOD - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Rejestr korzeni i bramka korzenia biorą kod z ostatniego werdyktu, który dotyczy tego Ważnego.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
@@ -165,7 +163,6 @@ Recenzent pracuje we własnym odłączonym checkoucie HEAD PR (`git fetch origin
    Narzędzie sprawdza obie linie, SHA HEAD i szablon, a gdy odmawia, popraw plik według jego komunikatu i wzoru i uruchom je ponownie.
    Werdykt sądzi kod `origin/<baza PR>`, jak przy merge'u, a nie kod Twojego checkoutu HEAD PR: narzędzie uruchamia się wtedy samo z kopii bazy i mówi to linią `SĘDZIA`.
    Gdy HEAD PR zmienił się w trakcie, przejrzyj diff od przejrzanego SHA do nowego HEAD, zanim zmienisz SHA w pliku.
-   Gdy kod Ważnego ma wystąpienie w innym PR, narzędzie zakłada issue „Chwast: R-KOD” albo dopisuje wiersz do otwartego i podaje to w linii `WERDYKT OK` po `| CHWAST`.
    Krok kończy się linią `WERDYKT OK` z adresem komentarza: oddaj wywołującemu ścieżkę pliku i tę linię.
 
 ## Karta korzeni (poniedziałek)
