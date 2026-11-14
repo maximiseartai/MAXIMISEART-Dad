@@ -472,9 +472,11 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
 
     Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Regułę trzyma
-    start Uruchomienia w Centrum: ``runs.Run`` przyjmuje tylko obiekt, którego typ to dokładnie ``PreparedRun``
-    (``startable``), bez względu na to, jak powstała jego klasa. ``__init_subclass__`` tylko mówi tę regułę wcześniej,
-    przy tworzeniu podklasy; typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Znane luki odmowy startu są
+    kontrola w chwili użycia (``startable``: typ dokładnie ``PreparedRun``, bez względu na to, jak powstała klasa
+    obiektu): przed ``conduct`` w każdym miejscu, które go woła (``runs.Run.work``, Skrypt dla maszyn
+    ``tools/uruchom_proces.py``, odtworzenie z Logów ``tools/lib/odtworzenie.py``), i na początku samego ``conduct``.
+    ``__init_subclass__`` i ``startable`` w ``runs.Run.__init__`` tylko mówią tę regułę wcześniej: przy tworzeniu
+    podklasy i przy starcie w Centrum. Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Znane luki kontroli są
     próbkami ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
     """
 
@@ -535,6 +537,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         )
 
     def conduct(self, interlocutor: Interlocutor) -> Outcome[Shown[SummaryT]]:
+        startable(self)
         return self.engine(
             self.kind.core,
             self.inputs,
@@ -549,8 +552,9 @@ class PreparedRun(Generic[InputsT, SummaryT]):
 
 
 def startable(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:
-    """``run``, gdy jego typ to dokładnie ``PreparedRun``; podklasa, jakkolwiek powstała, i obiekt z podmienionym
-    ``__class__`` dają ``TypeError`` z drogą naprawy. Woła je start Uruchomienia w Centrum (``runs.Run``)."""
+    """``run``, gdy w chwili tego wywołania jego typ to dokładnie ``PreparedRun``; obiekt podklasy, jakkolwiek powstała,
+    także z ``__class__`` podmienionym przed tym wywołaniem, daje ``TypeError`` z drogą naprawy. Miejsca, które wołają
+    ``conduct``, wołają je na wyniku tej funkcji (``startable(run).conduct(…)``)."""
 
     if type(run) is not PreparedRun:
         raise TypeError(f"{_NO_SUBCLASSES} Start dostał {type(run).__qualname__}.")

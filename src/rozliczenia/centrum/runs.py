@@ -486,7 +486,7 @@ class Run:
         core: Outcome[Shown[Any]] | None = None
         since = self.started_at
         try:
-            core = prepared.conduct(self)
+            core = startable(prepared).conduct(self)
             self._host.remember(prepared, self.info.id, since)
             ended = self._ended(core, None if isinstance(core.ending, Finished) else core.ending, since)
             result = ended.card(prepared.kind.view)
