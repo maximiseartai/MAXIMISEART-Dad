@@ -29,7 +29,7 @@ from pathlib import Path
 import threading
 import time
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Final
 
 import playwright.sync_api
 from playwright.sync_api import Error as PlaywrightError
@@ -39,6 +39,7 @@ import yaml
 from atrapy.pliki_taty import UPDATE_RESULT_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
+from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts"
@@ -209,6 +210,30 @@ def _refused(path: Path) -> object:
     """Windows na chwilę odmawia odczytu pliku, który serwer właśnie podmienia (#1087)."""
 
     raise PermissionError(13, "Permission denied", str(path))
+
+
+# Znane luki czekania ``until`` (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z predykatem ``gotowe``, który
+# zwraca leniwy iterator bez żadnego elementu. ``until`` czeka, dopóki wartość nie jest prawdziwa, a leniwy iterator jest
+# prawdziwy, zanim cokolwiek odda, więc czekanie kończy się od razu; dziś żadne wywołanie napędu go nie zwraca (#1857 r3).
+ZNANE_LUKI_UNTIL: Final = {
+    "leniwy iterator jest prawdziwy, zanim cokolwiek odda: pusty generator": "def gotowe():\n    return (wpis for wpis in [])\n",
+    "leniwy iterator jest prawdziwy, zanim cokolwiek odda: filter": "def gotowe():\n    return filter(None, [])\n",
+    "leniwy iterator jest prawdziwy, zanim cokolwiek odda: map": "def gotowe():\n    return map(str, [])\n",
+    "leniwy iterator jest prawdziwy, zanim cokolwiek odda: iter": "def gotowe():\n    return iter([])\n",
+}
+
+
+def test_znane_luki_czekania_until_przechodza_przez_until(common: ModuleType, tmp_path: Path) -> None:
+    waiting = importlib.import_module("drive.waiting")
+    zgloszenia: dict[str, list[str]] = {}
+    for opis, plik in zapisz(ZNANE_LUKI_UNTIL, tmp_path).items():
+        zgloszenia[opis] = []
+        try:
+            waiting.until(modul(plik).gotowe, "the first entry comes", 0.3)
+        except waiting.TimedOut:
+            zgloszenia[opis].append("until czeka na pierwszy element leniwego iteratora")
+
+    assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_UNTIL)")
 
 
 class _Dlugosc:
