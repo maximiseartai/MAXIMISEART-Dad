@@ -7,6 +7,7 @@ uruchamia go Centrum po udanej Aktualizacji narzędzia.
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import sys
 import threading
 import time
 import urllib.request
+import warnings
 
 import pytest
 
@@ -187,6 +189,20 @@ def test_port_zajety_przez_centrum_przyjmuje_polaczenie_zanim_serwer_zacznie_je_
     with tool_files.listen_locally(0) as listener:
         with socket.create_connection(listener.getsockname(), timeout=5):
             pass
+
+
+def test_port_zajety_przez_centrum_nie_jest_wolny_a_jego_sprawdzenie_zamyka_gniazdo() -> None:
+    # Opiekun pyta o port co 0,2 s przez minutę, czekając, aż stare Centrum go zwolni (restart_guardian._port_released).
+    with tool_files.listen_locally(0) as listener:
+        port = listener.getsockname()[1]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", ResourceWarning)
+            taken_free = tool_files.port_free(port)
+            gc.collect()
+
+    assert taken_free is False
+    assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
+    assert tool_files.port_free(port)
 
 
 def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu(
