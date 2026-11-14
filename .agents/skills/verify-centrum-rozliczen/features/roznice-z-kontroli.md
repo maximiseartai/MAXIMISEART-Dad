@@ -10,45 +10,27 @@ conditions come from URZĄDZENIA of that difference, not saved until „Zapisz�
 
 ## Sub-features
 
-- `roznice-lista`: the region `Tu wpisałeś inaczej niż reguła` has the server's first difference with `reguła <rule> ·
-  wpisałeś <tata>` and `<period> · wiersz <row> · <when>`.
-- `roznice-popraw-regule`: its „Popraw regułę” opens „Nowa reguła” with as many conditions as the server's form, and
-  „Zapisz” is enabled; „Anuluj” returns to the list with the server's rules and the rules file unchanged.
-- `roznice-wyjatek`: its „To był wyjątek” takes it off the list and off the server's list, writes its id into
-  `config/wyjatki-ilosci.yaml` and shows „Zapisano” with „Cofnij”.
-- `roznice-historia`: the newest row of Historia reads `Wyjątek Kontroli ilości` and `Dodano: To był wyjątek: okres
-  <period>, wiersz <row>`; its „Cofnij” adds `Usunięto: …` and the server lists the difference again.
-- `roznice-waskie-okno`: at 420×860 `#/ustawienia/reguly-ilosci` shows the difference without a horizontal scroll.
+Printed by `scripts/sub_features.py --feature roznice-z-kontroli` from the drive's steps and checks; refresh the section with it.
+
+- `roznice-lista`: the server lists … differences of the Kontrola ilości of the settled period; the first difference shows the server's column, rule value, Dad's entry and row, without UMOWA.
+- `roznice-popraw-regule`: „Popraw regułę” opens a new rule with the conditions of the server's form for this difference; the form from a difference is unsaved from the start, so „Zapisz” takes it as it is; the rule from a difference is not saved until Dad presses „Zapisz”.
+- `roznice-wyjatek`: „To był wyjątek” hides the difference on the server; the exception is a setting in config/wyjatki-ilosci.yaml; the exception says „Zapisano” with „Cofnij” like every change of Ustawienia.
+- `roznice-historia`: Historia reads the exception as a sentence with the period, the row and the column; „Cofnij” in Historia brings the difference back.
+- `roznice-waskie-okno`: on a narrow window the list of differences wraps without a horizontal scroll.
 
 ## How to get to it (user POV)
 
-- The gear in the menu's footer, then `Reguły ilości` in the group Ilości; the list stands above the rules.
+Dad opens Ustawienia (the gear in the menu's footer) and chooses `Reguły ilości` in the group Ilości; the list stands
+above the rules. A bookmark of `#/ustawienia/reguly-ilosci` opens it too.
 
 ## Driving it with Playwright for Python
 
-Preconditions: Centrum is served for this run with `DOCTOR OK`; `przebieg-rozliczen` settled `06_12_10_2026`, whose
-Plik zbiorczy has Wiersze danych with a component outside the Lista Urządzeń, so the Reguły ilości z Wydania give V where
-Dad wrote nothing; run alone (`--feature roznice-z-kontroli`) the drive runs `przebieg-rozliczen` first.
-
-- **List.** The harness reads `GET /api/settings/quantity-rules/differences` (evidence `api/roznice-lista.json` with the
-  row texts replaced): ready, with differences. `open_settings` on `Reguły ilości`; the item `<column>, wiersz <row>` of
-  the server's first difference in the region `Tu wpisałeś inaczej niż reguła` has the values and the row. Screenshot
-  `400`.
-- **Fix the rule.** Its `Popraw regułę`: heading `Nowa reguła`, the list `Warunki` has `Warunek 1` up to the number of
-  the server's conditions and no more; `Zapisz` is enabled. Screenshot `401`. `Anuluj`: the list again; the server's
-  rules and `config/reguly-ilosci.yaml` as before.
-- **Exception.** Its `To był wyjątek`: the item goes; the server's list has no such id; `config/wyjatki-ilosci.yaml`
-  has it; the toast `Zapisano` has `Cofnij`. Screenshot `402`.
-- **Historia.** `open_settings` on `Historia`: the first item of list `Zmiany` has `Wyjątek Kontroli ilości` and the
-  sentence. Screenshot `403`. Its `Cofnij: Wyjątek Kontroli ilości` adds `Usunięto: To był wyjątek` on top, and the
-  server lists the id again.
-- **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/reguly-ilosci`: the item, no horizontal scroll. Screenshot
-  `404`, then the viewport goes back to 1440×1000 (also in `finally`).
-- **Proof.** Screenshots `400`–`404` and the checks in `drive.txt`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature roznice-z-kontroli`
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
+under `STEP roznice-z-kontroli` in `drive.txt`, screenshots `400`–`404` and `api/roznice-*.json`.
 
 ## Gotchas
 
-- URZĄDZENIA and CZYNNOŚCI of the synthetic Plik zbiorczy carry the fixture's row marker: the drive replaces them in
-  the ARIA snapshots and in the saved answers (`_capture`, `_differences`), like `edytor-regul-ilosci`.
-- The feature saves no rule: `edytor-regul-ilosci` after it in `all` expects its new rule to get `regula-1`.
-- It ends with `config/wyjatki-ilosci.yaml` without exceptions and two rows in Historia.
+- The differences come from the fixture, not the drive: the Plik zbiorczy of `06_12_10_2026` that `przebieg-rozliczen`
+  settles has Wiersze danych with a component outside the Lista Urządzeń, so the Reguły ilości z Wydania give V where
+  Dad wrote nothing. A fixture without them fails the first check with no differences.
