@@ -531,6 +531,30 @@ def test_liveness_poza_mutacja_tylko_na_pelnym_grafie_a_w_mutacji_takze_w_trakci
     assert [command[command.index("-lncheck") + 1] for command in commands] == [lncheck, lncheck]
 
 
+
+@pytest.mark.parametrize(("mutation", "limit_s"), [("", 1200), ("1", 300)], ids=["sprawdzenie", "mutacja"])
+def test_przebieg_tlc_w_kopii_mutacji_ma_limit_300_s_a_poza_nia_1200_s_i_czas_na_zrzut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, limit_s: int
+) -> None:
+    """Limit przebiegu mutanta mieści się z czasem na zrzut w 600 s polecenia mutacji silnika, po których zawieszony
+    mutant dostawał PRZEKROCZONY CZAS bez zrzutu, a limit pełnego sprawdzenia nie skraca jego najdłuższych biegów."""
+
+    model = _model(tmp_path, {"f": _config()})
+    _without_drift_or_tools(monkeypatch)
+    monkeypatch.setenv(model_tlc.JAVA, "java")
+    monkeypatch.setenv(model_tlc.JAR, str(tmp_path / "tla2tools.jar"))
+    monkeypatch.setenv(model_tlc.MUTACJA, mutation)
+    timeouts: list[float] = []
+
+    def run(command: Sequence[str], *, cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
+        timeouts.append(timeout)
+        return subprocess.CompletedProcess(command, 0, PASSED, "")
+
+    monkeypatch.setattr(potomne, "run", run)
+
+    assert model_tlc.main(model, []) == 0
+    assert timeouts == [limit_s + model_tlc.ZRZUT_S]
+
 def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_strumienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     spec = tmp_path / "M.tla"
     spec.write_text(SPEC, encoding="utf-8")
@@ -556,15 +580,20 @@ JAVA_STOI = (
     "here.with_name('argumenty').write_text(' '.join(sys.argv[1:]), encoding='utf-8')\n"
     "time.sleep(60)\n"
 )
-# Atrapa jcmd: ``-l`` podaje JVM jcmd i JVM przebiegu z jego argumentami, a ``4242 Thread.print`` zrzut jednego wątku.
+# Atrapa jcmd: ``-l`` podaje JVM jcmd, a JVM przebiegu z jego argumentami tylko wtedy, gdy drzewo atrapy Javy żyje (plik
+# ``bicie`` rośnie), bo prawdziwy jcmd nie zna JVM, która już zginęła; ``4242 Thread.print`` to zrzut jednego wątku.
 JCMD = (
     "import pathlib, sys, time\n"
-    "args = pathlib.Path(__file__).with_name('argumenty')\n"
+    "here = pathlib.Path(__file__)\n"
+    "args, beats = here.with_name('argumenty'), here.with_name('bicie')\n"
     "if sys.argv[1:] == ['-l']:\n"
-    "    while not args.exists():\n"
+    "    while not (args.exists() and beats.exists()):\n"
     "        time.sleep(0.05)\n"
+    "    before = beats.stat().st_size\n"
+    "    time.sleep(0.5)\n"
     "    print('11 jdk.jcmd/sun.tools.jcmd.JCmd -l')\n"
-    "    print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
+    "    if beats.stat().st_size != before:\n"
+    "        print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
     "elif sys.argv[1:] == ['4242', 'Thread.print']:\n"
     "    print('\"TLCWorker1\" #21 prio=5 waiting on condition')\n"
 )
