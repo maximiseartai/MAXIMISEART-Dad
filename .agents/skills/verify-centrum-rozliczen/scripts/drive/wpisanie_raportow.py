@@ -33,6 +33,7 @@ from drive.common import (
     stop_banner,
     switch_theme,
 )
+from drive.waiting import until
 
 FEATURE = "wpisanie-raportow"
 BUTTON = "Wpisz raporty z maili"
@@ -237,7 +238,7 @@ def _assign_stranger(run: Run, page: Page, address: str) -> None:
     window = open_settings(page, "Historia")
     newest = window.get_by_role("list", name="Zmiany").get_by_role("listitem").first
     newest.get_by_role("button", name=f"Cofnij: wykonawcy[{ASSIGNED_LOGIN}]", exact=True).click()
-    run.wait_for(lambda: read_bytes(worker_list) == before, "„Cofnij” in Historia takes the address back")
+    until(lambda: read_bytes(worker_list) == before, "„Cofnij” in Historia takes the address back")
     window.get_by_role("button", name="Zamknij Ustawienia").click()
     expect(window).to_have_count(0)
     expect(region.get_by_role("button", name=ASSIGN, exact=True)).to_be_visible()

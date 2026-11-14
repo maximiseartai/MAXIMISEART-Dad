@@ -352,7 +352,7 @@ def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
     window = open_settings(page, "Foldery")
     run.answer_picker(path)
     window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$")).click()
-    run.wait_for(lambda: run.remembered(key) == path, f"{label} set in Ustawienia")
+    until(lambda: run.remembered(key) == path, f"{label} set in Ustawienia")
     expect(window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$"))).to_be_enabled()
     close_settings(page)
 
@@ -578,7 +578,7 @@ def close_centrum(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Zamknij Centrum rozliczeń", exact=True).click()
     page.get_by_role("button", name="Zamknij Centrum", exact=True).click()
     expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
-    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+    until(lambda: not answers(run.url), "Centrum stops serving")
 
 
 def start_centrum(run: Run, name: str) -> None:
@@ -599,7 +599,7 @@ def start_centrum(run: Run, name: str) -> None:
             stdout=console,
             stderr=subprocess.STDOUT,
         )
-    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=Budget.WORK)
+    until(lambda: answers(run.url), "Centrum answers again after the start", Budget.WORK)
 
 
 def kill_centrum(run: Run) -> None:
@@ -614,7 +614,7 @@ def kill_centrum(run: Run) -> None:
         os.kill(pid, signal.SIGTERM)
     else:
         os.kill(pid, signal.SIGKILL)
-    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+    until(lambda: not answers(run.url), "Centrum stops serving")
 
 
 def local_time(moment: str) -> str:
@@ -928,7 +928,7 @@ def finished_view(
         seen.update(current_run(run, name))
         return bool(seen["state"] == "finished" and seen["run"]["id"] != replacing)
 
-    run.wait_for(finished, "the Uruchomienie procesu finished", timeout_s=timeout_s)
+    until(finished, "the Uruchomienie procesu finished", timeout_s)
     return seen
 
 
