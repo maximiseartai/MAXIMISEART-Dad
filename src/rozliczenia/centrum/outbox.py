@@ -362,9 +362,8 @@ class Version:
 
     @property
     def text(self) -> str:
-        """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer,
-        jak tekst wersji, zanim powstały stopnie, a niższy stopień z numerem stopnia przed nimi
-        (``1:20261105T063021123456Z-0001``)."""
+        """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer, a niższy
+        stopień z numerem stopnia przed nimi (``1:20261105T063021123456Z-0001``)."""
 
         return self.name if self.rank is Rank.OWN else f"{self.rank.value}:{self.name}"
 
