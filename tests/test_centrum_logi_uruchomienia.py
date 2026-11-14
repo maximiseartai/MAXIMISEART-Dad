@@ -52,7 +52,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
-from rozliczenia.client_data import empty_memory
+from rozliczenia.client_data import empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.workbook_files import ByteSource
@@ -1156,7 +1156,7 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
 
     register_problem(register, DadFiles(forbidden=memory))
 
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not guarded(memory, value, "Uwaga taty").notes] == []
 
 
 def _typed_at_top(register: Path) -> None:
@@ -1198,7 +1198,7 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
 
     register_problem(register, DadFiles(forbidden=memory))
 
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not guarded(memory, value, "Uwaga taty").notes] == []
 
 
 TYPED_INTO_REMARKS: dict[str, tuple[str, datetime | None]] = {
@@ -1253,7 +1253,7 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
     [sheet] = period_sheets(read(register, DadFiles(forbidden=memory)), parse_period_token(PERIOD))
 
     assert sheet.register_rows[0].number == len(earlier) + 2, "odczyt okresu zaczyna się od wiersza próbnego"
-    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not memory.guard(value, "Uwaga taty").notes] == []
+    assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if not guarded(memory, value, "Uwaga taty").notes] == []
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:

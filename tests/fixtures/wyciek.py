@@ -9,7 +9,7 @@ przeglądy #765 i #1048); zapadka ``tests/test_zapadki.py`` odrzuca nowe.
 
 from __future__ import annotations
 
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, empty_memory
+from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, empty_memory, guarded
 
 
 def zawiera_wartosc(tekst: str, wartosc: str) -> bool:
@@ -24,6 +24,6 @@ def zawiera_wartosc(tekst: str, wartosc: str) -> bool:
 
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, wartosc)
-    if not pamiec.guard(wartosc, "wartość").notes:
+    if not guarded(pamiec, wartosc, "wartość").notes:
         raise ValueError(f"strażnik nie szuka wartości krótszej niż {MIN_VALUE} znaków od pierwszego słowa ({len(wartosc)} znaków)")
-    return bool(pamiec.guard(tekst, "tekst testu").notes)
+    return bool(guarded(pamiec, tekst, "tekst testu").notes)

@@ -12,7 +12,7 @@ każdego wiersza listy wyników jako wartość ``ADRES``. Pamięć tylko rośnie
 chroni każdą wysyłkę przed wartością z każdego pliku, który ta praca Centrum przeczytała, także Uwagę taty, która nie
 ma swojego Uruchomienia. Proces bez Centrum (Skrypt dla maszyn) nie ma pamięci, bo niczego nie wysyła.
 
-Strażnik (``ForbiddenValues.guard``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
+Strażnik (``guarded``) przed zapisem pliku Logów i przed każdą wysyłką maskuje w tekście każdą znaną
 wartość jako ``[adres]`` albo ``[numer Orange]`` i oddaje uwagę techniczną z nazwą kolumny i miejscem w tekście, bez
 wartości. Wartość to ciąg jej słów: tekst ją zawiera, gdy ma te słowa po kolei, całe i bez wielkości liter, a między
 nimi dowolne znaki spoza słów. Wartość w kilku liniach komórki, z „⏎” albo „\\|” tabeli Markdown, w cudzysłowie albo
@@ -24,7 +24,7 @@ technika to zwykła treść, nie wyciek kolumny.
 
 Komórka, którą Excel trzyma jako liczbę (numer Orange albo telefon wpisany bez innego tekstu), ma tekst, który Excel
 pokazuje (``shown``): liczba całkowita zapisana jako ułamek to jej cyfry. Tak ją zapamiętuje pamięć i tak ją sprawdza
-strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
+strażnik liczby (``guarded_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
 General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
 ``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
 
@@ -54,7 +54,7 @@ _Position = TypeVar("_Position")
 
 class _ReadValues:
     """Znacznik pola Logów Uruchomienia (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze
-    strony efenix, także liczby: strażnik Logów sprawdza w nim liczbę (``guard_number``) i maskuje ją z zakazaną
+    strony efenix, także liczby: strażnik Logów sprawdza w nim liczbę (``guarded_number``) i maskuje ją z zakazaną
     wartością albo telefonem jak tekst. Każda inna liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba,
     którą policzyło narzędzie."""
 
@@ -122,7 +122,7 @@ class Outgoing(str):
 
     def __new__(cls, text: str, proof: object) -> Outgoing:
         if proof is not _PASSED:
-            raise TypeError("Tekst do wysyłki daje tylko rozliczenia.client_data: ForbiddenValues.guard albo tool.")
+            raise TypeError("Tekst do wysyłki daje tylko rozliczenia.client_data: guarded albo tool.")
         return super().__new__(cls, text)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -174,13 +174,40 @@ class Guarded:
     notes: tuple[str, ...]
 
 
-class ForbiddenValues:
+_NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
+
+
+class _WithoutSubclasses(type):
+    """Metaklasa ``ForbiddenValues``: odmawia klasy z jej bazą, bo Python wybiera metaklasę po bazach, więc odmowy nie
+    przesłania baza z własnym ``__init_subclass__`` stojąca przed ``ForbiddenValues``."""
+
+    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> _WithoutSubclasses:
+        if any(isinstance(base, _WithoutSubclasses) for base in bases):
+            raise TypeError(_NO_SUBCLASSES)
+        return super().__new__(mcs, name, bases, namespace, **kwargs)
+
+
+@final
+class ForbiddenValues(metaclass=_WithoutSubclasses):
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego
     się zaczynają, od najdłuższej, więc strażnik w każdym miejscu tekstu sprawdza tylko kilka krotek, ile by wartości
     nie było. Czytniki z wątków Uruchomień i producenci z wątków Centrum dzielą ją pod jednym zamkiem.
+
+    Maskowanie i uwagi techniczne daje tylko strażnik modułu, ``guarded`` i ``guarded_number``: pamięć nie ma własnej
+    metody strażnika, więc mypy odrzuca jej wywołanie (``attr-defined``), a oba tuż przed maskowaniem odmawiają obiektu
+    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Pamięć nie ma też podklas ani przypisanej metody: mypy
+    odrzuca ``class`` (``final``), metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także
+    ``type()`` i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą
+    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
+    przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
+
+    __slots__ = ("_columns", "_lengths", "_lock")
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_SUBCLASSES)
 
     def __init__(self, proof: object) -> None:
         if proof is not _PASSED:
@@ -204,67 +231,80 @@ class ForbiddenValues:
             if len(words) not in lengths:
                 self._lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
 
-    def guard(self, text: str, place: str) -> Guarded:
-        """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej.
 
-        Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
-        """
+def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
+    """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej.
 
-        masked, columns = self._masked(text)
-        return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
+    Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
+    """
 
-    def guard_number(self, value: int | float, place: str) -> Guarded | None:
-        """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``).
+    masked, columns = _masked(_memory(forbidden), text)
+    return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
-        ``None``: tekst liczby nie ma zakazanej wartości ani telefonu. Inaczej cała liczba staje się maską: zakazanej
-        kolumny z uwagą techniczną jak w ``guard`` albo ``[telefon]`` bez uwagi, więc z liczby nie zostaje żadna cyfra.
-        Telefonem jest tylko liczba całkowita (także zapisana jako ułamek), bo telefon wpisany w komórkę nie ma części
-        ułamkowej: 9 cyfr albo ``48`` i 9 cyfr, gdy Excel zgubił ``+`` albo ``00`` przed ``48``.
-        """
 
-        text = shown(value)
-        _, columns = self._masked(text)
-        if columns:
-            return Guarded(Outgoing(" ".join(column.mask for column in _ordered(columns)), _PASSED), _notes(columns, place))
-        if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
-            return Guarded(Outgoing(_PHONE_MASK, _PASSED), ())
-        return None
+def guarded_number(forbidden: ForbiddenValues, value: int | float, place: str) -> Guarded | None:
+    """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``).
 
-    def _masked(self, text: str) -> tuple[str, set[ForbiddenColumn]]:
-        words = list(_WORD.finditer(text))
-        folded = [word.group(0).casefold() for word in words]
-        pieces: list[str] = []
-        masked: set[ForbiddenColumn] = set()
-        position = index = 0
-        with self._lock:
-            while index < len(words):
-                hit = self._longest(folded, index)
-                if hit is None:
-                    index += 1
-                    continue
-                length, column = hit
-                pieces += [text[position : words[index].start()], column.mask]
-                masked.add(column)
-                position = words[index + length - 1].end()
-                index += length
-        pieces.append(text[position:])
-        return "".join(pieces), masked
+    ``None``: tekst liczby nie ma zakazanej wartości ani telefonu. Inaczej cała liczba staje się maską: zakazanej
+    kolumny z uwagą techniczną jak w ``guarded`` albo ``[telefon]`` bez uwagi, więc z liczby nie zostaje żadna cyfra.
+    Telefonem jest tylko liczba całkowita (także zapisana jako ułamek), bo telefon wpisany w komórkę nie ma części
+    ułamkowej: 9 cyfr albo ``48`` i 9 cyfr, gdy Excel zgubił ``+`` albo ``00`` przed ``48``.
+    """
 
-    def _longest(self, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
-        """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
+    text = shown(value)
+    _, columns = _masked(_memory(forbidden), text)
+    if columns:
+        return Guarded(Outgoing(" ".join(column.mask for column in _ordered(columns)), _PASSED), _notes(columns, place))
+    if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
+        return Guarded(Outgoing(_PHONE_MASK, _PASSED), ())
+    return None
 
-        for length in self._lengths.get(folded[index], ()):
-            if index + length <= len(folded):
-                column = self._columns.get(tuple(folded[index : index + length]))
-                if column is not None:
-                    return length, column
-        return None
 
+def _masked(memory: ForbiddenValues, text: str) -> tuple[str, set[ForbiddenColumn]]:
+    words = list(_WORD.finditer(text))
+    folded = [word.group(0).casefold() for word in words]
+    pieces: list[str] = []
+    masked: set[ForbiddenColumn] = set()
+    position = index = 0
+    with memory._lock:
+        while index < len(words):
+            hit = _longest(memory, folded, index)
+            if hit is None:
+                index += 1
+                continue
+            length, column = hit
+            pieces += [text[position : words[index].start()], column.mask]
+            masked.add(column)
+            position = words[index + length - 1].end()
+            index += length
+    pieces.append(text[position:])
+    return "".join(pieces), masked
+
+
+def _longest(memory: ForbiddenValues, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
+    """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
+
+    for length in memory._lengths.get(folded[index], ()):
+        if index + length <= len(folded):
+            column = memory._columns.get(tuple(folded[index : index + length]))
+            if column is not None:
+                return length, column
+    return None
 
 def empty_memory() -> ForbiddenValues:
     """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
 
     return ForbiddenValues(_PASSED)
+
+
+def _memory(forbidden: ForbiddenValues) -> ForbiddenValues:
+    """Pamięć tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa albo owijka
+    podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo jego ``_masked``
+    dałby własne maskowanie i uwagi techniczne."""
+
+    if type(forbidden) is not ForbiddenValues:
+        raise TypeError(f"Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie {type(forbidden).__name__}.")
+    return forbidden
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:
