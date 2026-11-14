@@ -345,7 +345,7 @@ pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``,
   ``__delattr__`` rzucają ``AttributeError``. Dlatego ``copy.copy``, ``copy.deepcopy`` i ``pickle.loads`` też rzucają:
   odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
   ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
-- Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a metaklasa ``WithoutSubclasses`` rzuca
+- Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a ``__init_subclass__`` rzuca
   ``TypeError``.
 - Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``: typ jej
   nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``) i plik Logów (``LogsOnDisk.write``), jedyne miejsca,

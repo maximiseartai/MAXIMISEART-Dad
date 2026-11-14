@@ -228,7 +228,7 @@ alias albo pełną ścieżkę), tak samo ``_Versions``.
 
 ``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
 wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
-``TypeError``. Podklasę odrzuca mypy (``final``) i metaklasa ``client_data.WithoutSubclasses``. Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
+``TypeError``. Podklasę odrzuca mypy (``final``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
 ``Outbox.post`` bierze też gołą ``Post``, a łapie ją ``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w
 ``<kolejka>.post(post_of(…))``, więc nikt nie czyta jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko
 podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmów pokazują tam próbki
@@ -291,20 +291,17 @@ class LogsPost(metaclass=WithoutSubclasses):
 
 def post_of(version: CommentVersion) -> LogsPost:
     """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
-    Archiwum Logów okresu, w stopniu ``rank_of``. Tekst i Logi wersji sprawdza tu drugi raz, bo ``object.__setattr__``
-    zmienia je po przyjęciu wersji."""
+    Archiwum Logów okresu, w stopniu ``rank_of``."""
 
     start: StartFacts
+    version.__post_init__()
     match version:
         case ProgressVersion(progress=progress, text=text):
-            _require_text(text)
             start, comment, archive = progress.started, text.text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
-            _require_logs(logs)
             record = logs.record
             start, comment, archive = record.start, summary_markdown(logs), _archive_file(logs)
         case WithoutLogsVersion(final=final, text=text):
-            _require_text(text)
             start, comment, archive = final.journal.started, text.text, None
         case _:
             assert_never(version)

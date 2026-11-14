@@ -68,8 +68,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
-from types import UnionType
-from typing import TYPE_CHECKING, Any, BinaryIO, Final, Literal, Protocol, Union, assert_never, final, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, BinaryIO, Final, Literal, Protocol, assert_never, final, get_args, get_origin, get_type_hints
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.clock import Clock
@@ -491,31 +490,23 @@ def _file_name(version: str, label: str, run_id: str) -> str:
 
 
 def _outgoing_fields(kind: type) -> tuple[str, ...]:
-    """Pola celu ``kind``, których tekst idzie do wysyłki: ``Outgoing`` w typie pola (sam, w unii z ``None``, pod aliasem).
-    Pole innego typu niż ``int`` i ``Literal`` daje ``TypeError`` z nazwą pola, bo plik kolejki nie wie, czy je sprawdzić."""
+    """Pola celu z ``Outgoing`` w typie (także w unii z ``None``, pod aliasem); pole innego typu niż ``int`` i ``Literal`` to ``TypeError``."""
 
     texts = []
     for name, hint in get_type_hints(kind).items():
-        types = get_args(hint) if get_origin(hint) in (Union, UnionType) else (hint,)
-        if Outgoing in types:
+        if Outgoing in (get_args(hint) or (hint,)):
             texts.append(name)
-        elif not all(part is int or get_origin(part) is Literal for part in types):
+        elif hint is not int and get_origin(hint) is not Literal:
             raise TypeError(f"Pole celu {kind.__name__}.{name} ma typ {hint}, którego plik kolejki nie umie sprawdzić.")
     return tuple(texts)
 
 
-_TARGET_TEXTS: Final = {kind: _outgoing_fields(kind) for kind in get_args(Target)}
-"""Pola z tekstem do wysyłki każdego celu; pole, którego plik kolejki nie umie sprawdzić, wywraca wczytanie modułu."""
-
-
 def _written(post: Post) -> Post:
-    """Wysyłka tuż przed zapisem pliku kolejki, którego parser daje tekstom ``Outgoing`` od nowa: tekst wysyłki i pole celu
-    z ``Outgoing`` w typie (``_outgoing_fields``), których typ nie jest dokładnie ``Outgoing``, i tekst pliku Archiwum
-    inny niż ``LogsText`` dają ``TypeError`` (napis przez ``cast``, ``Any`` albo ``object.__setattr__``, podklasa z
-    ``type.__new__``)."""
+    """Wysyłka tuż przed zapisem pliku kolejki, którego parser daje tekstom ``Outgoing`` od nowa: tekst wysyłki albo pola
+    celu (``_outgoing_fields``) inny niż dokładnie ``Outgoing`` i tekst pliku Archiwum inny niż ``LogsText`` to ``TypeError``."""
 
     target = post.target
-    texts = [post.header, *post.parts, *(getattr(target, name) for name in _TARGET_TEXTS[type(target)])]
+    texts = [post.header, *post.parts, *(getattr(target, name) for name in _outgoing_fields(type(target)))]
     wrong = [type(text) for text in texts if text is not None and type(text) is not Outgoing]
     if post.archive is not None and type(post.archive.text) is not LogsText:
         wrong.append(type(post.archive.text))
@@ -719,8 +710,7 @@ def _optional_string(value: object) -> str | None:
 
 
 def _pack(blocks: Sequence[Outgoing], budget: int) -> tuple[Outgoing, ...]:
-    """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony. Części
-    dostają ``Outgoing`` od nowa, więc blok, którego typ nie jest dokładnie ``Outgoing``, daje ``TypeError``."""
+    """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony."""
 
     if wrong := [type(block) for block in blocks if type(block) is not Outgoing]:
         raise TypeError(f"Wysyłka bierze tylko bloki Outgoing z rozliczenia.client_data, nie {wrong[0].__name__}.")
