@@ -11,6 +11,14 @@ Narzędzie pyta gita tylko przez ten moduł, a ``tests/test_potomne.py`` odrzuca
   ``potomne.commit_copy`` (#312);
 - z limitem czasu ``TIMEOUT_S``, więc zawieszony git kończy się ``subprocess.TimeoutExpired``.
 
+``git(..., isolated=True)`` daje gitowi środowisko z listy dozwolonych zamiast środowiska wołającego: ``PATH``
+i ``SYSTEMROOT`` (Windows) wołającego, pusty katalog jako ``HOME``, ``LANG=C``, ``GIT_CONFIG_NOSYSTEM=1``,
+``GIT_ATTR_NOSYSTEM=1``, ``GIT_CONFIG_GLOBAL`` równe ``os.devnull`` i ``GIT_WORK_TREE`` równe ``root``. Taki git nie
+czyta więc żadnej zmiennej ``GIT_*`` ani ``XDG_CONFIG_HOME`` wołającego, konfiguracji ani atrybutów systemu,
+konfiguracji użytkownika ani plików ``ignore`` i ``attributes`` z ``~/.config/git``, a drzewem roboczym jest ``root``
+także wbrew ``core.worktree``; czyta tylko konfigurację repozytorium (``.git/config``) i ``.git/info``, których żadna
+zmienna nie wyłącza.
+
 ``git`` i ``succeeds`` to szybkie, lokalne podpolecenia (``FAST_GIT`` w ``tests/test_potomne.py``). Polecenie, które
 trwa albo sięga sieci (fetch, push, zapis drzewa), idzie przez ``run_git``, czyli ``potomne.run``. Brama pre-push
 i ``setup_worktree.py`` biegną systemowym Pythonem, więc ten plik działa pod Pythonem 3.9
@@ -26,11 +34,13 @@ nie zależy od niego.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import threading
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +50,8 @@ BASE = f"{REMOTE}/{MAIN}"
 TIMEOUT_S = 60.0
 # Push tagu Wydania przechodzi bramę pre-push tylko z tą zmienną równą 1; ustawia ją tylko narzędzie Wydań (ADR 0014).
 RELEASE_OVERRIDE = "MAXIMISEART_WYDANIE"
+# Zmienne wołającego, które dostaje ``git(isolated=True)``: bez nich git nie wystartuje.
+_ISOLATED_KEPT = ("PATH", "SYSTEMROOT")
 
 __all__ = [
     "BASE",
@@ -80,16 +92,18 @@ class Worktree:
     missing: bool
 
 
-def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S) -> str:
+def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S, isolated: bool = False) -> str:
     """Wyjście szybkiego, lokalnego polecenia gita w ``root``; kod różny od zera to ``subprocess.CalledProcessError``
-    z tekstem ``stderr``, a limit czasu ``subprocess.TimeoutExpired``, oba z poleceniem ``["git", *arguments]``."""
+    z tekstem ``stderr``, a limit czasu ``subprocess.TimeoutExpired``, oba z poleceniem ``["git", *arguments]``.
+    ``isolated``: git bez środowiska wołającego i bez konfiguracji systemu i użytkownika (docstring modułu)."""
 
-    try:
-        done = subprocess.run(
-            ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=_environment(), capture_output=True, timeout=timeout, check=False
-        )
-    except subprocess.TimeoutExpired as expired:
-        raise subprocess.TimeoutExpired(["git", *arguments], expired.timeout, expired.output, expired.stderr) from None
+    with _isolated(root) if isolated else nullcontext(_environment(os.environ)) as environment:
+        try:
+            done = subprocess.run(
+                ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=environment, capture_output=True, timeout=timeout, check=False
+            )
+        except subprocess.TimeoutExpired as expired:
+            raise subprocess.TimeoutExpired(["git", *arguments], expired.timeout, expired.output, expired.stderr) from None
     if done.returncode:
         raise subprocess.CalledProcessError(done.returncode, ["git", *arguments], _text(done.stdout), _text(done.stderr))
     return _text(done.stdout)
@@ -97,7 +111,7 @@ def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S) -> str:
 
 def succeeds(root: Path, *arguments: str) -> bool:
     done = subprocess.run(
-        ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=_environment(), capture_output=True, timeout=TIMEOUT_S, check=False
+        ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=_environment(os.environ), capture_output=True, timeout=TIMEOUT_S, check=False
     )
     return done.returncode == 0
 
@@ -114,7 +128,7 @@ def run_git(
 
     import potomne
 
-    environment = {**_environment(), **(extra_env or {})}
+    environment = {**_environment(os.environ), **(extra_env or {})}
     return potomne.run(["git", *arguments], cwd=root, env=environment, timeout=timeout, stop=stop)
 
 
@@ -240,14 +254,24 @@ def worktrees(root: Path) -> list[Worktree]:
     return trees
 
 
-def _environment() -> dict[str, str]:
-    environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+def _environment(base: Mapping[str, str]) -> dict[str, str]:
+    environment = {**base, "GIT_OPTIONAL_LOCKS": "0"}
     # Za wpisami ``GIT_CONFIG_*`` wołającego, bo ``GIT_CONFIG_COUNT`` liczy je wszystkie.
     index = int(environment.get("GIT_CONFIG_COUNT") or 0)
     environment.update(
         {"GIT_CONFIG_COUNT": str(index + 1), f"GIT_CONFIG_KEY_{index}": "maintenance.auto", f"GIT_CONFIG_VALUE_{index}": "false"}
     )
     return environment
+
+
+@contextmanager
+def _isolated(root: Path) -> Iterator[dict[str, str]]:
+    """Środowisko ``git(isolated=True)`` w ``root``: pusty katalog ``HOME`` istnieje do końca bloku."""
+
+    with tempfile.TemporaryDirectory(prefix="git-bez-konfiguracji-") as home:
+        kept = {name: os.environ[name] for name in _ISOLATED_KEPT if name in os.environ}
+        machine = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+        yield _environment({**kept, **machine, "HOME": home, "LANG": "C", "GIT_WORK_TREE": str(root.resolve())})
 
 
 def _text(output: bytes) -> str:

@@ -637,43 +637,112 @@ def _committed(root: Path, files: Mapping[str, str]) -> str:
     return _git(root, "rev-parse", "HEAD").strip()
 
 
-# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej pozycję w bazie: pliki zmiany
-# (``.gitattributes`` z PR, ``.git/info/attributes`` i plik atrybutów z konfiguracji) → wpisy ``git config`` checkoutu.
+# Fikstura różnicy: dwa bliskie hunki i usunięta linia (a.py), ostatnia linia bez końca zamieniona na dwie (b.py,
+# znacznik „\ No newline at end of file” w środku hunka), plik nieśledzony (c.py), przeniesiona linia, którą inny
+# algorytm różnicy liczy jako starą (d.py), i dodana linia, którą bez heurystyki wcięć git przesuwa o jedną (e.py).
+_DIFF_BASE: Final = {
+    "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nX8 = 8\nX9 = 9\nX10 = 10\nX11 = 11\nX12 = 12\n",
+    "src/rozliczenia/b.py": "Y1 = 1\nY2 = 2",
+    "src/rozliczenia/d.py": "Z = 0\nE = 5  # komentarz\nZ = 0\n",
+    "src/rozliczenia/e.py": "\nX = 1  # komentarz\nA = 1\nB = 2\n",
+}
+_DIFF_HEAD: Final = {
+    "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nA = 1\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nB = 2  # komentarz\nX8 = 8\nX10 = 10\nX11 = 11\nX12 = 12\n",
+    "src/rozliczenia/b.py": "Y1 = 1\nY3 = 3\nC = 3  # komentarz",
+    "src/rozliczenia/c.py": "D = 4  # komentarz\n",
+    "src/rozliczenia/d.py": "Z = 0\nZ = 0\nE = 5  # komentarz\n",
+    "src/rozliczenia/e.py": "\nX = 1  # komentarz\nX = 1  # komentarz\nA = 1\n",
+}
+# Linie dodane i numer w bazie każdej linii zmiany (``None``: dodana) w różnicy gita bez konfiguracji, jak w CI.
+_DIFF_ADDED: Final = [
+    ("src/rozliczenia/a.py", 3, "A = 1"),
+    ("src/rozliczenia/a.py", 9, "B = 2  # komentarz"),
+    ("src/rozliczenia/b.py", 2, "Y3 = 3"),
+    ("src/rozliczenia/b.py", 3, "C = 3  # komentarz"),
+    ("src/rozliczenia/c.py", 1, "D = 4  # komentarz"),
+    ("src/rozliczenia/d.py", 3, "E = 5  # komentarz"),
+    ("src/rozliczenia/e.py", 2, "X = 1  # komentarz"),
+]
+_DIFF_OLD: Final = {
+    "src/rozliczenia/a.py": [1, 2, None, 3, 4, 5, 6, 7, None, 8, 10, 11, 12],
+    "src/rozliczenia/b.py": [1, None, None],
+    "src/rozliczenia/c.py": [None],
+    "src/rozliczenia/d.py": [1, 3, None],
+    "src/rozliczenia/e.py": [1, None, 2, 3],
+}
+# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej numer lub pozycję w bazie:
+# pliki (``.gitattributes`` z PR, ``.git/info/attributes``, pliki konfiguracji komputera), wpisy ``git config``
+# checkoutu i zmienne środowiska wołającego; ``{root}`` to katalog repozytorium.
 _TEXTCONV = {"diff.ukryj.textconv": "true"}
-_DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str]]]] = {
-    "-diff w .gitattributes": ({".gitattributes": "src/a.py -diff\n"}, {}),
-    "binary w .gitattributes podkatalogu": ({"src/.gitattributes": "a.py binary\n"}, {}),
-    "diff= z textconv w .gitattributes": ({".gitattributes": "src/a.py diff=ukryj\n"}, _TEXTCONV),
-    "filter= z czyszczeniem w .gitattributes": ({".gitattributes": "src/a.py filter=ukryj\n"}, {"filter.ukryj.clean": "true"}),
-    "-diff w .git/info/attributes": ({".git/info/attributes": "src/a.py -diff\n"}, {}),
-    "diff= ze sterownikiem binarnym w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, {"diff.ukryj.binary": "true"}),
-    "diff= z textconv w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, _TEXTCONV),
-    "diff= z zewnętrznym programem w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, {"diff.ukryj.command": "true"}),
-    "filter= z pliku core.attributesFile": ({"atrybuty": "src/a.py filter=ukryj\n"}, {"core.attributesFile": "atrybuty", "filter.ukryj.clean": "true"}),
-    "przedrostki z diff.mnemonicPrefix": ({}, {"diff.mnemonicPrefix": "true"}),
-    "kolory z color.diff": ({}, {"color.diff": "always"}),
+_DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str], dict[str, str]]]] = {
+    "-diff w .gitattributes": ({".gitattributes": "*.py -diff\n"}, {}, {}),
+    "binary w .gitattributes podkatalogu": ({"src/.gitattributes": "*.py binary\n"}, {}, {}),
+    "diff= z textconv w .gitattributes": ({".gitattributes": "*.py diff=ukryj\n"}, _TEXTCONV, {}),
+    "filter= z czyszczeniem w .gitattributes": ({".gitattributes": "*.py filter=ukryj\n"}, {"filter.ukryj.clean": "true"}, {}),
+    "-diff w .git/info/attributes": ({".git/info/attributes": "*.py -diff\n"}, {}, {}),
+    "diff= ze sterownikiem binarnym w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, {"diff.ukryj.binary": "true"}, {}),
+    "diff= z textconv w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, _TEXTCONV, {}),
+    "diff= z zewnętrznym programem w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, {"diff.ukryj.command": "true"}, {}),
+    "filter= z pliku core.attributesFile": (
+        {"atrybuty": "*.py filter=ukryj\n"},
+        {"core.attributesFile": "{root}/atrybuty", "filter.ukryj.clean": "true"},
+        {},
+    ),
+    "przedrostki z diff.mnemonicPrefix": ({}, {"diff.mnemonicPrefix": "true"}, {}),
+    "kolory z color.diff": ({}, {"color.diff": "always"}, {}),
+    "kontekst między bliskimi hunkami z diff.interHunkContext": ({}, {"diff.interHunkContext": "10"}, {}),
+    "pusta linia kontekstu z diff.suppressBlankEmpty": ({}, {"diff.interHunkContext": "10", "diff.suppressBlankEmpty": "true"}, {}),
+    "kontekst z diff.context": ({}, {"diff.context": "5"}, {}),
+    "algorytm z diff.algorithm": ({}, {"diff.algorithm": "patience"}, {}),
+    "heurystyka wcięć z diff.indentHeuristic": ({}, {"diff.indentHeuristic": "false"}, {}),
+    "kontekst z GIT_DIFF_OPTS": ({}, {}, {"GIT_DIFF_OPTS": "--unified=3"}),
+    "dosłowne ścieżki z GIT_LITERAL_PATHSPECS": ({}, {}, {"GIT_LITERAL_PATHSPECS": "1"}),
+    "ścieżki glob z GIT_GLOB_PATHSPECS": ({}, {}, {"GIT_GLOB_PATHSPECS": "1"}),
+    "ścieżki bez glob z GIT_NOGLOB_PATHSPECS": ({}, {}, {"GIT_NOGLOB_PATHSPECS": "1"}),
+    "wpis core.excludesFile z GIT_CONFIG_COUNT": (
+        {"wykluczone": "c.py\n"},
+        {},
+        {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.excludesFile", "GIT_CONFIG_VALUE_0": "{root}/wykluczone"},
+    ),
+    "plik ignore gita z XDG_CONFIG_HOME": ({"xdg/git/ignore": "c.py\n"}, {}, {"XDG_CONFIG_HOME": "{root}/xdg"}),
+    "plik ignore gita w HOME": ({"dom/.config/git/ignore": "c.py\n"}, {}, {"HOME": "{root}/dom"}),
+    "core.excludesFile w konfiguracji checkoutu": ({"wykluczone": "c.py\n"}, {"core.excludesFile": "{root}/wykluczone"}, {}),
+    "drzewo robocze z core.worktree": ({"inne/.keep": ""}, {"core.worktree": "{root}/inne"}, {}),
 }
 
 
-@pytest.mark.parametrize(("files", "config"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
-def test_linie_dodane_i_ich_pozycje_w_bazie_nie_zaleza_od_atrybutow_ani_konfiguracji_roznicy(
-    tmp_path: Path, files: dict[str, str], config: dict[str, str]
-) -> None:
-    """Atrybut z drzewa zmiany (``.gitattributes``, także w podkatalogu), atrybut ``diff`` spoza drzewa ani
-    konfiguracja różnicy nie chowa linii dodanej przed zapadką, krokiem „niczego nie ukrywa” i dowodem reguły, bo każde
-    z nich bierze je z ``Changes``."""
+def _disguised(root: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str], config: dict[str, str], environment: dict[str, str]) -> str:
+    """Fikstura ``_DIFF_BASE`` w commicie bazy repozytorium ``root``, w drzewie roboczym ``_DIFF_HEAD`` i postać
+    ``_DIFF_DISGUISES``: jej pliki, wpisy ``git config`` checkoutu i zmienne środowiska testu; zwraca bazę."""
 
-    base = _committed(tmp_path, {"src/a.py": "a = 1\n"})
-    (tmp_path / "src" / "a.py").write_text("a = 1\nnowa = 2\n", encoding="utf-8")
-    for name, text in files.items():
-        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_text(text, encoding="utf-8")
+    base = _committed(root, _DIFF_BASE)
+    for name, text in {**_DIFF_HEAD, **files}.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
     for key, value in config.items():
-        _git(tmp_path, "config", key, str(tmp_path / value) if key == "core.attributesFile" else value)
+        _git(root, "config", key, value.format(root=root))
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value.format(root=root))
+    return base
+
+
+@pytest.mark.parametrize(("files", "config", "environment"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+def test_linie_dodane_i_ich_pozycje_w_bazie_nie_zaleza_od_atrybutow_konfiguracji_ani_srodowiska_gita(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str], config: dict[str, str], environment: dict[str, str]
+) -> None:
+    """Atrybut z drzewa zmiany (``.gitattributes``, także w podkatalogu), atrybut ``diff`` spoza drzewa, konfiguracja
+    różnicy w checkoucie ani zmienna środowiska nie chowa linii dodanej przed zapadką, krokiem „niczego nie ukrywa”
+    i dowodem reguły, nie zmienia jej numeru ani pozycji w bazie innej linii, bo każde z nich bierze je z ``Changes``:
+    linie dodane i pozycje są takie, jak w różnicy gita bez konfiguracji, czyli w CI."""
+
+    base = _disguised(tmp_path, monkeypatch, files, config, environment)
     changes = odpalenia_ast_grep.Changes(tmp_path, base)
 
-    assert list(odpalenia_ast_grep.added_lines(tmp_path, base, "src")) == [("src/a.py", 2, "nowa = 2")]
-    assert (changes.old("src/a.py", 1), changes.old("src/a.py", 2), changes.base_path("src/a.py")) == (("src/a.py", 1), None, "src/a.py")
+    assert sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "src")) == _DIFF_ADDED
+    assert sorted(line for line in odpalenia_ast_grep.added_lines(tmp_path, base, ".", "*") if line[0] in _DIFF_HEAD) == _DIFF_ADDED
+    positions = {path: [changes.old(path, number) for number in range(1, len(text.splitlines()) + 1)] for path, text in _DIFF_HEAD.items()}
+    assert positions == {path: [None if old is None else (path, old) for old in olds] for path, olds in _DIFF_OLD.items()}
+    assert [changes.base_path(path) for path in _DIFF_HEAD] == [path if path in _DIFF_BASE else None for path in _DIFF_HEAD]
 
 
 @pytest.mark.parametrize("separator", ["\x1c", "\x0c", "\r", " "], ids=["x1c", "x0c", "samotne-r", "u2028"])
@@ -905,6 +974,20 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
     assert syntax_rule_findings(ROOT, base) == []
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("files", "config", "environment"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_konfiguracji_i_srodowiska_gita(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str], config: dict[str, str], environment: dict[str, str]
+) -> None:
+    """Zapadka reguł ast-grep z prawdziwą regułą ``komentarz-w-src`` zgłasza w każdej postaci ``_DIFF_DISGUISES``
+    każdy komentarz, który fikstura różnicy dodaje w ``src/``, na jego linii, jak w CI."""
+
+    base = _disguised(tmp_path, monkeypatch, files, config, environment)
+
+    found = [(finding.path, finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)]
+    assert found == [(path, number, "komentarz-w-src") for path, number, text in _DIFF_ADDED if "#" in text]
 
 
 def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
@@ -1774,8 +1857,9 @@ def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -
 
 
 # Znane luki kroku „niczego nie ukrywa”: obejście, które nie ukrywa zgłoszenia, tylko omija wzorzec albo zakres
-# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów, i atrybut spoza drzewa, którego PR nie zmienia,
-# a który zmienia linie dodane (``odpalenia_ast_grep.Changes``). Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
+# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów, oraz plik ``.git/info`` checkoutu, którego PR nie
+# zmienia, a żadna zmienna ani opcja gita nie wyłącza, więc zmienia linie dodane (``odpalenia_ast_grep.Changes``).
+# Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
 ZNANE_LUKI_UKRYC: Final = {
     "obejście wzorca: zakazana nazwa przez getattr z napisem": {"src/a.py": 'import os\n\nX = getattr(os, "na" + "me")\n'},
     "obejście zakresu: kod w pliku bez rozszerzenia .py": {"src/a": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n"},
@@ -1783,6 +1867,10 @@ ZNANE_LUKI_UKRYC: Final = {
     "atrybut spoza drzewa: working-tree-encoding z .git/info/attributes": {
         ".git/info/attributes": "src/a.py working-tree-encoding=UTF-16LE\n",
         "src/a.py": "X = 1\n\nzakazane()\n",
+    },
+    "wykluczenie spoza drzewa: plik nieśledzony z .git/info/exclude": {
+        ".git/info/exclude": "src/nowy.py\n",
+        "src/nowy.py": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n",
     },
 }
 
