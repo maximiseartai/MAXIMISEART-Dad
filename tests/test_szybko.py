@@ -44,6 +44,9 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
         "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
     ),
+    "tests/test_prywatne_skladowe.py::test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff": (
+        "sprawdza ruff SLF001 na próbce modułu Centrum w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
+    ),
     "tests/test_prywatne_skladowe.py::test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff_i_mypy": (
         "sprawdza granicę ruff SLF001 na próbkach w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
     ),

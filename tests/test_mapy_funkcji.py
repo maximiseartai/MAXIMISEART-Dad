@@ -345,7 +345,11 @@ ODMOWY_POMOCNIKA: Final = {
     "else po try": "try:\n        pass\n    except ValueError:\n        pass\n    else:\n        _pomocnik(run)  # tu",
     "przypadek match": "match feature:\n        case _:\n            _pomocnik(run)  # tu",
     "komunikat assert": "assert feature, _pomocnik(run)  # tu",
-    "drugie wywołanie": "_pomocnik(run)\n    _pomocnik(run)  # tu",
+    "try z else": "try:\n        _pomocnik(run)  # tu\n    except ValueError:\n        pass\n    else:\n        pass",
+    "try zagnieżdżony w try z finally": "try:\n        try:\n            _pomocnik(run)  # tu\n        finally:\n"
+    "            pass\n    finally:\n        pass",
+    "try z finally, które zwraca": "try:\n        _pomocnik(run)  # tu\n    finally:\n        return",
+    "drugie wywołanie w pętli": "_pomocnik(run)\n    for _ in range(2):\n        _pomocnik(run)  # tu",
     "lambda w drive()": "(lambda: _pomocnik(run))()  # tu",
     "funkcja w drive()": "def _w_drive() -> None:\n        _pomocnik(run)  # tu\n\n    _w_drive()",
     "inna nazwa": "inny = _pomocnik  # tu\n    inny(run)",
@@ -491,6 +495,11 @@ CZYTANE_POMOCNIKI: Final = {
     )
     + POMOCNIK,
     "return drive() po pomocniku": NAPED.format(wstawka="_pomocnik(run)\n    return") + POMOCNIK,
+    "dwa wywołania": NAPED.format(wstawka='_pomocnik(run)\n    run.check(True, "między")\n    wynik = _pomocnik(run)') + POMOCNIK,
+    "ciało try z samym finally": NAPED.format(
+        wstawka='try:\n        _pomocnik(run)\n        run.check(True, "w try")\n    finally:\n        run.check(True, "w finally")'
+    )
+    + POMOCNIK,
     "kroki pomocników między krokami drive()": NAPED.format(
         wstawka="\n    ".join(
             [
@@ -537,6 +546,34 @@ def test_polecenie_podfunkcji_drukuje_pomocnika_tak_jak_bieg_napedu(polecenie: M
     czytane = polecenie.sub_features(zrodlo, "sonda.py")
 
     assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
+
+
+# Ciało drive() i ciało try z samym finally, w którym instrukcja przed pomocnikiem rzuca wyjątek.
+RZUCA_PRZED_POMOCNIKIEM: Final = {
+    "ciało drive()": 'run.check(True, "przed")\n    raise ValueError("w próbce")\n    _pomocnik(run)',
+    "ciało try z samym finally": 'try:\n        run.check(True, "przed")\n        raise ValueError("w próbce")\n        _pomocnik(run)\n'
+    "    finally:\n        pass",
+}
+
+
+def test_wyjatek_przed_pomocnikiem_konczy_bieg_w_try_z_finally_jak_w_ciele_drive(polecenie: ModuleType, tmp_path: Path) -> None:
+    """Wyjątek przed pomocnikiem przechodzi przez samo finally i kończy drive(), więc bieg drukuje początek sekcji i pada,
+    jak w ciele drive(): w obu postaciach polecenie drukuje tę samą sekcję, a bieg jej początek."""
+
+    biegi: list[list[tuple[str, str]]] = []
+    sekcje: list[list[tuple[str, list[str]]]] = []
+    for opis, wstawka in RZUCA_PRZED_POMOCNIKIEM.items():
+        zrodlo = NAPED.format(wstawka=wstawka) + POMOCNIK
+        plik = tmp_path / f"sonda_{len(biegi)}.py"
+        plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
+        run = _Zapis()
+        with pytest.raises(ValueError, match="w próbce"):
+            modul(plik).drive(run, None)
+        biegi.append(run.bieg)
+        sekcje.append(polecenie.sub_features(zrodlo, "sonda.py"))
+
+    assert biegi[0] == biegi[1] == [("step", "sonda-krok"), ("check", "pierwszy"), ("check", "przed")]
+    assert sekcje[0] == sekcje[1] == [("sonda-krok", ["pierwszy", "przed", "z pomocnika"])]
 
 
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → (napęd, ile razy jego bieg drukuje

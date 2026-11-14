@@ -17,10 +17,11 @@ import sys
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.git_repo import built_once, commit, copy_files, repository, with_imports
+from tests.fixtures.git_repo import built_once, commit, copy_files, git, repository, with_imports
 from tests.fixtures.potomne import wait_for
 
 import repo
+import setup_worktree
 from skille_dla_zmiany import WHAT_NEXT
 
 HOOK = Path(__file__).resolve().parents[1] / "tools" / "hooks" / "pre-push"
@@ -84,6 +85,25 @@ def _build_checkout(directory: Path) -> None:
     commit(checkout, "start")
     _git(checkout, "config", "core.hooksPath", "tools/hooks")
     _git(checkout, "remote", "add", "origin", str(remote))
+
+
+def test_setup_worktree_wlacza_brame_raz_i_ostrzega_o_hookach_ktore_przestaja_dzialac(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    git(checkout, "init", "--quiet")
+    (checkout / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+
+    setup_worktree._gate_pushes(checkout)
+    first = capsys.readouterr()
+    setup_worktree._gate_pushes(checkout)
+    second = capsys.readouterr()
+
+    assert repo.git(checkout, "config", "--get", "core.hooksPath").strip() == "tools/hooks"
+    assert first.out == "OK: push sprawdza tools/hooks/pre-push.\n"
+    assert "wyłącza hooki z" in first.err and first.err.rstrip().endswith(": pre-commit.")
+    assert (second.out, second.err) == ("", "")
 
 
 def _venv_python(checkout: Path, body: str) -> None:

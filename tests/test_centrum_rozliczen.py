@@ -18,7 +18,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -70,6 +70,7 @@ from rozliczenia.centrum.settings.proposal import (
     ReleaseInputs,
 )
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
@@ -84,6 +85,7 @@ from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import (
     CENTRUM,
+    FakeReportBox,
     TOOL_COMMIT,
     Centrum,
     CentrumClient,
@@ -93,6 +95,7 @@ from tests.fixtures.centrum import (
     centrum,
     centrum_app,
     view_timing,
+    write_report_key,
 )
 from tests.fixtures.centrum_processes import (
     PERIOD_MONDAY,
@@ -106,6 +109,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
     write_dad_quantity_rules,
 )
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.pliki_taty import REGISTER_NAME
@@ -2815,6 +2819,75 @@ def light_theme(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
 
 
 LIGHT_THEME = ReleaseChange("2026-11-motyw-jasny", FOLDERS, light_theme)
+
+
+@dataclass
+class _SettingsAtRhythmStart:
+    """Rytm Przypomnień o raporcie, który przy starcie czyta plik Ustawień Centrum, jak sprawdzenie Przypomnień."""
+
+    tool: ToolDirectory
+    seen: list[str] = field(default_factory=list)
+
+    def start(self, check: Callable[[], None]) -> None:
+        self.seen.append(self.tool.settings.read_text(encoding="utf-8") if self.tool.settings.exists() else "")
+
+    def stop(self) -> None:
+        pass
+
+
+def test_przypomnienia_startuja_po_zmianach_ustawien_z_wydania(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    rhythm = _SettingsAtRhythmStart(tool)
+
+    started(tool, (LIGHT_THEME,), reminder_rhythm=rhythm).stop()
+
+    [at_start] = rhythm.seen
+    assert "light" in at_start
+
+
+def test_start_centrum_sprawdza_klucz_do_zgloszen_w_tle_zanim_karta_o_cokolwiek_zapyta(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    write_report_key(tool)
+    box = FakeReportBox()
+    client = CentrumClient(centrum_app(tool, report_box=box))
+
+    client.start()
+    try:
+        asked = wait_for(lambda: (REPORT_LABEL, False) in box.listed, 30)
+    finally:
+        client.stop()
+
+    assert asked
+
+
+def test_centrum_nie_podaje_dokumentacji_api_ani_kontraktu_pod_adresami_fastapi(tmp_path: Path) -> None:
+    client = centrum(tmp_path).client
+
+    pages = {path: client.get(path) for path in ("/docs", "/redoc", "/openapi.json")}
+
+    assert {path: ("swagger" in page.text.lower(), '"openapi"' in page.text) for path, page in pages.items()} == {
+        path: (False, False) for path in pages
+    }
+
+
+def test_wiersz_historii_ustawien_ma_chwile_zegara_sciennego_a_nie_zegara_uruchomien(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    runs_moment = datetime(2020, 1, 6, 9, 0).astimezone()
+    client = CentrumClient(centrum_app(tool, now=lambda: runs_moment))
+
+    assert client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    rows = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+
+    [at] = [datetime.fromisoformat(row["at"]) for row in rows]
+    assert at > runs_moment + timedelta(days=365)
+
+
+def test_bez_zbudowanego_frontendu_centrum_podaje_samo_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app, "STATIC_DIRECTORY", tmp_path / "bez-buildu")
+    client = centrum(tmp_path / "narzedzie").client
+
+    assert (client.get("/api/health").status_code, client.get("/").status_code) == (200, 404)
 
 
 def test_start_centrum_z_wydania_bez_zmian_ustawien_zostawia_pliki_config_bajt_w_bajt(tmp_path: Path) -> None:

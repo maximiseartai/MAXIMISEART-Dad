@@ -186,7 +186,7 @@ JUNIT = ROOT / ".ci-niestabilne" / "junit-pokrycia.xml"
 RETRY_JUNIT = ROOT / ".ci-niestabilne" / "junit-ponowienia.xml"
 # Linia poleceń Windows ma najwyżej 32 767 znaków; dłuższa lista testów idzie jako pliki testów.
 COMMAND_LIMIT = 20_000
-EXCEPTION = re.compile(r"#\s*mutacje-zmiany:(?P<rest>.*)$")
+EXCEPTION = re.compile(r"#\s*mutacje-zmiany:(?P<rest>.*)\r?$")
 EXCEPTION_FORM = re.compile(r"\s*(?P<reason>[^|]*\S)\s*\|\s*do\s+(?P<until>\d{4}-\d{2}-\d{2})\s*\|\s*zgoda\s+(?P<who>\S.*?)\s*$")
 Node = ast.expr | ast.stmt
 _HUNK = re.compile(r"^@@ -(?P<old>\d+)(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:,(?P<new_count>\d+))? @@")

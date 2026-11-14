@@ -27,6 +27,7 @@ import gzip
 import json
 from pathlib import Path
 import pickle
+import threading
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
@@ -60,7 +61,7 @@ from rozliczenia.centrum.contract.runs import RunInfo
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
-from rozliczenia.centrum.diagnosis import Diagnosis
+from rozliczenia.centrum.diagnosis import CheckResult, Diagnosis
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import (
     EndEntry,
@@ -78,6 +79,7 @@ from rozliczenia.centrum.logs_disk import (
 )
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
 from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
+from rozliczenia.centrum import run_comments
 from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
@@ -1921,6 +1923,82 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
     assert diagnosed.archive is not None and gzip.decompress(diagnosed.archive.packed()) == file.read_bytes()
     assert RunLog.model_validate_json(file.read_text(encoding="utf-8")).diagnosis is not None
 
+
+def test_wpis_dziennika_wyceny_bez_startu_wyceny_z_centrum_nie_zapisuje_niczego(tmp_path: Path) -> None:
+    """Wpis silnika bez startu Wyceny z Centrum nie ma dziennika, do którego by należał: Wycena biegnie dalej, a na dysku
+    i w dzienniku Centrum nic nie przybywa."""
+
+    directory = tmp_path / "dzienniki-wyceny"
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+    journal = Journal(directory, log, process="efenix")
+
+    journal.begun(row=19, place=1, total=2)
+
+    assert (directory.exists(), log.recent(10)) == (False, [])
+
+
+class _WatchedLock:
+    """``threading.Lock``, który woła ``on_wait``, gdy wątek musi na nią czekać, zanim zacznie czekać."""
+
+    def __init__(self, on_wait: Callable[[], None]) -> None:
+        self._lock = threading.Lock()
+        self._on_wait = on_wait
+
+    def __enter__(self) -> None:
+        if not self._lock.acquire(blocking=False):
+            self._on_wait()
+            self._lock.acquire()
+
+    def __exit__(self, *exc: object) -> None:
+        self._lock.release()
+
+
+def test_dwie_diagnozy_naraz_pisza_plik_i_komentarz_logow_jedna_po_drugiej(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Druga Diagnoza (druga karta) czeka, aż pierwsza odda plik Logów i jego komentarz kolejce, więc ostatni komentarz
+    ma bajty pliku Logów na dysku."""
+
+    first_posting, release, moved = threading.Event(), threading.Event(), threading.Event()
+    seen: list[str] = []
+
+    def second_moves(what: str) -> None:
+        seen.append(what)
+        moved.set()
+
+    lock = _WatchedLock(lambda: second_moves("czeka na blokadę"))
+    monkeypatch.setattr(run_comments, "threading", SimpleNamespace(Lock=lambda: lock))
+
+    class HoldingFirstDiagnosis(RecordingQueue):
+        def post(self, post: LogsPost) -> bool:
+            if len(self.posts) == 1 and not first_posting.is_set():
+                first_posting.set()
+                release.wait()
+            elif len(self.posts) == 1:
+                second_moves("wysyła komentarz")
+            return super().post(post)
+
+    queue = HoldingFirstDiagnosis()
+    comments = _comments(tmp_path, queue)
+    comments.run_ended(_ended(PRICING.model_copy(update={"process": "preparation"})))
+    first = threading.Thread(target=comments.diagnosed, args=(RUN_ID, Diagnosis((CheckResult.passed("Ustawienia Centrum", "pierwsza karta"),), ())))
+    second = threading.Thread(target=comments.diagnosed, args=(RUN_ID, Diagnosis((CheckResult.passed("Folder okresu", "druga karta"),), ())))
+    first.start()
+    try:
+        assert first_posting.wait(30)
+        second.start()
+        assert moved.wait(30)
+    finally:
+        release.set()
+        first.join()
+        if second.ident is not None:
+            second.join()
+
+    [file] = (tmp_path / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
+    last = queue.posts[-1]
+    assert seen[0] == "czeka na blokadę"
+    assert len(queue.posts) == 3
+    assert last.archive is not None and gzip.decompress(last.archive.packed()) == file.read_bytes()
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
     forbidden = empty_memory()

@@ -19,8 +19,8 @@ _JOB_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/(?P<run>[0-
 
 
 class Waiting(str):
-    """Przyczyna odmowy merge'a, która minie bez zmiany w PR: CI na HEAD jeszcze nie skończyło albo HEAD nie ma
-    jeszcze werdyktu; każdą inną przyczynę usuwa dopiero działanie autora. Rodzaj nadaje ten, kto przyczynę tworzy,
+    """Przyczyna odmowy merge'a, która minie bez zmiany w PR: CI na HEAD jeszcze nie skończyło, HEAD nie ma jeszcze
+    werdyktu albo dowód pola ``Idiom:`` nie dostał danych od GitHuba; każdą inną przyczynę usuwa dopiero działanie autora. Rodzaj nadaje ten, kto przyczynę tworzy,
     a ``tools/scal_pr.py --status`` daje ``pending`` zamiast ``failure``, gdy każda przyczyna jest tego typu."""
 
 
