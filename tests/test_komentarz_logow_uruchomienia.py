@@ -586,6 +586,12 @@ ZNANE_LUKI_LOGOW: Final = {
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
     "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+    "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
+
+
+def plik(komorka: str) -> outbox.ArchiveFile | None:
+    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
     "cast na Outgoing w postępie": "from typing import cast\n\n"
     + _POSTEP
     + "from rozliczenia.client_data import Outgoing\n\n\n"
