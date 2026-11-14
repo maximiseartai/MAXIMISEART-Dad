@@ -56,6 +56,11 @@ class Pace(Enum):
             time.sleep(int(path.read_text(encoding="utf-8")) / 1000)
 
 
+SLOW_RUNNER = "CENTRUM_WOLNY_RUNNER"
+"""While this variable of the environment is set (``run_centrum_verification.py --wolny-runner``), the served Centrum
+answers each request of its API late and the drive's browser (``dad_context``) runs animations slowly and sends each
+write late, so a check that depends on time fails on every run, not only on a slow runner."""
+
 INBOX_ADDRESS = "raporty@przyklad.invalid"
 INBOX_PASSWORD = "nowehaslotaty"
 """The skrzynka raportów the served Centrum logs in to (an ``AtrapaImap``, never Dad's Gmail) and the one password it
