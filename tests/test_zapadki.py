@@ -793,7 +793,6 @@ AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
-    "lokator-tytulu-okna": "użyj settings_title(page)",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
 }
 needs_ast_grep = pytest.mark.skipif(
@@ -1192,26 +1191,15 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 
 # Reguły ast-grep powrotów chwastów (#1676, ADR 0036) → katalog w zakresie ``files:`` reguły i przyrostek nazwy pliku
 # próbki. Katalog to części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest zależnością testu w grafie
-# wpływu zmiany (``tools/lib/wplyw_zmiany.py``); katalog skilla to prawdziwy katalog, więc ruff próbki czyta jego
-# ``ruff.toml``.
+# wpływu zmiany (``tools/lib/wplyw_zmiany.py``); katalog to prawdziwy katalog repo, więc ruff próbki czyta jego
+# konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
-    "lokator-tytulu-okna": ((".agents", "skills", "verify-centrum-rozliczen", "scripts", "drive"), ".py"),
     "kotwica-konca-linii": (("tools",), ".py"),
 }
-_LOCATOR = "from playwright.sync_api import Locator, Page\n\n\ndef title(page: Page) -> Locator:\n    return "
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
-# (#1533 W1 r2, #1584 W1 r1), i postać po poprawce, którą przepuszcza.
+# (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading")\n', [5]),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(role="heading")\n', [5]),
-    ("lokator-tytulu-okna", f"{_LOCATOR}page.get_by_role('heading')\n", [5]),
-    ("lokator-tytulu-okna", f"{_LOCATOR}page.get_by_role(role='heading')\n", [5]),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(f"heading")\n', [5]),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("""heading""")\n', [5]),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role(f"{{HEADING}}heading")\n', []),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("heading", name="Okresy", exact=True)\n', []),
-    ("lokator-tytulu-okna", f'{_LOCATOR}page.get_by_role("button")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
@@ -1250,15 +1238,6 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
 # ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
 # konfiguracją swojego katalogu.
 ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
-    "lokator-tytulu-okna": {
-        "argument obok roli: nagłówek bez nazwy z poziomem": f'{_LOCATOR}page.get_by_role("heading", level=2)\n',
-        "kopia właściciela: lokator settings_title z name= poza drive/common.py": (
-            f'import re\n\n{_LOCATOR}page.get_by_role("heading", name=re.compile(r"^Ustawienia "))\n'
-        ),
-        "rola w zmiennej": f'{_LOCATOR}page.get_by_role(HEADING)\n\n\nHEADING = "heading"\n',
-        "selektor CSS zamiast roli": f'{_LOCATOR}page.locator("h2")\n',
-        "rola sklejona z kilku napisów": f'{_LOCATOR}page.get_by_role("head" "ing")\n',
-    },
     "kotwica-konca-linii": {
         "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"PONOWIENIE$"\nFOUND = re.compile(LINE)\n',
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
