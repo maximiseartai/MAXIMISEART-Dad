@@ -767,12 +767,16 @@ def test_zawieszenie_czeka_na_zrzut_konczacy_sie_po_smierci_drzewa_a_kazde_polec
 
 def test_przebieg_tlc_w_limicie_konczy_watek_zrzutu_bez_wolania_jcmd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Przebieg, który skończył się przed limitem, kończy też czekanie na zawieszenie: po powrocie ``tlc`` wątek zrzutu
-    już nie żyje i nie zawołał jcmd, zamiast czekać limit i zrzucać wątki przebiegu, który już nie istnieje."""
+    już nie żyje i nie zawołał jcmd, zamiast czekać limit i zrzucać wątki przebiegu, który już nie istnieje.
+
+    ``tlc``, które czeka na wątek zrzutu, zanim skończy jego czekanie (``watcher.join`` przed ``done.set()``), czeka
+    tu ``zrzut_s`` = 600 s, a w tym czasie nie woła żadnej atrapy, więc żadne zdarzenie go nie zdradza: łapie je limit
+    czasu testu (pytest-timeout)."""
 
     przebieg = _Przebieg(lambda przebieg, command, timeout: subprocess.CompletedProcess(command, 0, PASSED, ""))
     before = set(threading.enumerate())
 
-    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=600, zrzut_s=1) == PASSED
+    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=600, zrzut_s=600) == PASSED
     assert [thread for thread in threading.enumerate() if thread not in before] == []
     assert przebieg.jcmd_limits == []
 
