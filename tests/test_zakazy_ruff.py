@@ -101,6 +101,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     'import builtins\nm = builtins.__import__("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "builtins.__import__"),
     "from importlib.util import spec_from_file_location": (ROOT / "pyproject.toml", (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
     'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
+    'import runpy\nrunpy.run_path("tests/fixtures/znane_luki.py")': (ROOT / "pyproject.toml", TOOLS_PROBE, "runpy"),
     'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
     "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.abc"),
@@ -641,6 +642,36 @@ def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
         "src/rozliczenia/sonda_zakazu.py:3",
     ]
     assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == ["src/rozliczenia/wall_clock.py:3"]
+
+
+# Znane luki zakazu zegara ściennego (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który bierze chwilę
+# „teraz” albo dzień obok ``rozliczenia.wall_clock``, a mimo to przechodzi przez ruff, mypy i ``_clock_findings``.
+ZNANE_LUKI_ZEGARA = {
+    "nazwa, nie typ wyrażenia: dzień UTC z chwili wall_clock": "from rozliczenia.wall_clock import utc_now\n\nDZIEN = utc_now().date()\n",
+    "nazwa, nie typ wyrażenia: instancja datetime": "from datetime import datetime\n\nTERAZ = datetime.min.now()\n",
+    "nazwa, nie typ wyrażenia: podklasa datetime": "from datetime import datetime\n\n\nclass Chwila(datetime):\n    pass\n\n\nTERAZ = Chwila.now()\n",
+    "refleksja po nazwie: __import__": 'TERAZ = __import__("time").time()\n',
+    "refleksja po nazwie: getattr modułu": 'import time\n\nTERAZ = getattr(time, "time")()\n',
+    "refleksja po nazwie: getattr z nazwą złożoną": 'import time\n\nTERAZ = getattr(time, "ti" + "me")()\n',
+    "tylko zegary z listy: zegar modułu, którego src/ruff.toml nie wymienia": "import logging\n\nTERAZ = logging.makeLogRecord({}).created\n",
+    "tłumienie mypy: reeksport z type: ignore": "from rozliczenia.wall_clock import datetime  # type: ignore[attr-defined]  # próbka\n\nTERAZ = datetime.now()\n",
+    "tłumienie mypy: reeksport time z type: ignore": "from rozliczenia.wall_clock import time  # type: ignore[attr-defined]  # próbka\n\nTERAZ = time.time()\n",
+    "tłumienie mypy: reeksport przez atrybut modułu z type: ignore": (
+        "from rozliczenia import wall_clock\n\nTERAZ = wall_clock.datetime.now()  # type: ignore[attr-defined]  # próbka\n"
+    ),
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_zakazu_zegara_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
+    pliki = zapisz(ZNANE_LUKI_ZEGARA, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=probe)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += _clock_findings("--stdin-filename", str(probe), "-", code=plik.read_text(encoding="utf-8"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZEGARA)")
 
 
 def _src_files() -> set[str]:

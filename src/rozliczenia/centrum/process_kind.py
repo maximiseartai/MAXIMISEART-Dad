@@ -447,11 +447,10 @@ odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``pro
 pełną ścieżkę), tak samo ``_Catalog``.
 
 ``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
-plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Łapie tylko te postacie: nie łapie
-``getattr(process_kind, "_CATALOG")``, wartości ``Any``, ``copy.copy`` gotowego Uruchomienia ani dowodu zaimportowanego
-z ``# noqa: TID251``. Konstruktor ``PreparedRun`` poza ``catalog.py``, także z takim dowodem, łapie po nazwie albo
-atrybucie ``PreparedRun`` ``tests/test_granice_importow.py``, ale nie ``type(gotowe)(…, _CATALOG)``; to zostaje
-przeglądowi."""
+plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Konstruktor ``PreparedRun`` poza ``catalog.py``
+łapie po nazwie ``PreparedRun``, nazwie z importu albo atrybucie ``tests/test_granice_importow.py``, a podklasie odmawia
+``PreparedRun.__init_subclass__``. Granice tych mechanizmów pokazują tam próbki ``ZNANE_LUKI_KATALOGU``, każda za
+klasą nazwaną w swojej nazwie."""
 
 
 _NO_SUBCLASSES: Final = (

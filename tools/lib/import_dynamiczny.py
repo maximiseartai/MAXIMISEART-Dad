@@ -3,7 +3,7 @@ czy moduł jest (``jest_modul``).
 
 Kod spoza ``tests/`` nie importuje kodu testów (``tests/test_granice_importow.py``), więc ``modul`` i ``modul_z_pliku``
 odmawiają w biegu (``OdmowaImportuTestow``), zanim wykonają kod, modułu, którego plik albo katalog pakietu leży w
-katalogu ``tests/`` repozytorium, pod każdą nazwą i każdą ścieżką do niego. Reszta kodu poza ``tests/`` bierze import
+katalogu ``tests/`` repozytorium, pod każdą nazwą i także przez dowiązanie symboliczne. Reszta kodu poza ``tests/`` bierze import
 w trakcie działania tylko stąd: ruff ``TID251`` odrzuca tam pakiet ``importlib`` (poza ``IMPORTLIB_DOZWOLONE``) i moduły,
 których zadaniem jest import albo wykonanie modułu (``builtins.__import__``, ``_frozen_importlib``,
 ``_frozen_importlib_external``, ``_imp``, ``runpy``, ``pkgutil``, ``zipimport``), z komunikatem, który kieruje do tego
