@@ -253,7 +253,7 @@ class Window:
         """Granica dni, od której proces czyta numer każdego wiersza INTERMAX (``ReportInputs.present``): ``first`` i
         tydzień przed nim, także sprzed dnia wdrożenia. W tygodniach po wdrożeniu ``start`` to dzień wdrożenia, a
         Wykonawca może przysłać numer zlecenia, które tata wkleił dzień albo kilka dni przed wdrożeniem: bez tego
-        tygodnia Centrum dopisałoby je drugi raz (przegląd #1374 r3)."""
+        tygodnia Centrum dopisałoby je drugi raz."""
 
         return self.first - timedelta(days=7)
 
@@ -278,7 +278,7 @@ class OwnEntry:
 @dataclass(frozen=True)
 class OwnMove:
     """Pamięć zlecenia ``number``, na które Wpisanie raportów już zadziałało (ADR 0029 „Ręczna zmiana dalej wygrywa”,
-    tabela przejść w opisie #1358, z miejscem = Wykonawca i dzień).
+    tabela przejść z miejscem = Wykonawca i dzień, wyrocznia ``_table`` w ``tests/test_rdzen_raportow.py``).
 
     ``day`` i ``worker``: gdzie Centrum zostawiło zlecenie, czyli przeniosło je tam albo przyjęło tam Wpis, gdy pamięć
     numeru była pusta; ręczna zmiana taty go nie przesuwa. ``origin_day``, ``origin_worker`` i ``origin_name`` (pisownia
@@ -320,7 +320,7 @@ class OwnMove:
 def may_move(memory: Iterable[OwnMove], worker: Login, day: date, arrived: datetime) -> bool:
     """Reguła „Ręczna zmiana dalej wygrywa” (ADR 0029) w jednym miejscu: czy Wpis innego Wykonawcy z maila z chwilą
     ``arrived`` może przenieść zlecenie, które INTERMAX ma teraz u ``worker`` w dniu ``day``, przy pamięci jego numeru
-    ``memory`` (``memories_of``, tabela przejść w opisie #1358).
+    ``memory`` (``memories_of``, tabela przejść, wyrocznia ``_table`` w ``tests/test_rdzen_raportow.py``).
 
     Bez pamięci (Centrum jeszcze nic z tym zleceniem nie zrobiło, także ręczny ``WYKONAWCA`` sprzed raportu, US 16)
     przenosi każdy mail. Z pamięcią tylko mail świeższy niż ``since`` każdej z nich (ściśle: mail, na który Centrum już
@@ -336,7 +336,7 @@ def memories_of(moves: Iterable[OwnMove], number: OrderNumber) -> tuple[OwnMove,
     Excel nie mówi, który wiersz numeru tata przeniósł albo usunął, więc pamięć nie należy do jednego wiersza. Brak
     pamięci znaczy „każdy mail przenosi”, więc bezpieczny kierunek to pamięć dla każdego zlecenia numeru: Przeniesienie
     jedynego zlecenia czeka na ``may_move`` każdej. Wpisanie raportów zakłada pamięć numeru tylko wtedy, gdy numer nie ma
-    żadnej, więc kilka pamięci jednego numeru ma tylko pamięć zapisana przed #1367 r4."""
+    żadnej, więc kilka pamięci jednego numeru ma tylko pamięć zapisana przez wcześniejszą wersję narzędzia."""
 
     return tuple(sorted((move for move in moves if move.number == number), key=lambda move: move.day))
 
@@ -376,10 +376,10 @@ OwnEntries.EMPTY = OwnEntries(frozenset())
 @dataclass(frozen=True)
 class OlderOwnEntries:
     """Pamięć własnych wpisów z pliku stanu w wersji 1–3 (wersję 1 zapisują Wydania v0.7.0 i v0.8.0, wersję 3
-    ``main`` przed #1367): jej pisarz zapisywał wpisy do zlecenia nadawcy także przy numerze w kilku zleceniach, więc
-    wpis należy do miejsca z chwili zapisu (numer, dzień, Wykonawca), a nie do numeru, i nie spełnia obietnicy
-    ``OwnEntries``. Rdzeń jej nie przyjmuje: proces zamienia ją na ``OwnEntries`` przez ``upgraded`` przy odczytanych
-    zleceniach."""
+    kod ``main`` sprzed pamięci po numerze zlecenia): jej pisarz zapisywał wpisy do zlecenia nadawcy także przy numerze
+    w kilku zleceniach, więc wpis należy do miejsca z chwili zapisu (numer, dzień, Wykonawca), a nie do numeru, i nie
+    spełnia obietnicy ``OwnEntries``. Rdzeń jej nie przyjmuje: proces zamienia ją na ``OwnEntries`` przez ``upgraded``
+    przy odczytanych zleceniach."""
 
     memory: OwnEntries
 
@@ -438,7 +438,7 @@ class ReportInputs:
     INTERMAX ma numer, więc numeru z niego rdzeń nigdy nie dopisuje, i tylko ``present`` mówi, czy numer stoi w
     kilku wierszach, więc zlecenia takiego numeru rdzeń nie przenosi; ``orders`` mówią, które z tych wierszy są
     zleceniami, a okno, do których z nich wolno pisać. Pole nie ma wartości domyślnej, bo bez niego rdzeń
-    dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy (przegląd #1374 r3)."""
+    dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses

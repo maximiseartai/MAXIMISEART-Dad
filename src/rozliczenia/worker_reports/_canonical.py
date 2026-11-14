@@ -1,6 +1,6 @@
 """Postać kanoniczna Raportu wykonawcy: mail, z którego rdzeń czyta z powrotem ten sam odczyt (``MailRead``).
 
-Odtworzenie Uruchomienia z Logów (#1233) ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
+Odtworzenie Uruchomienia z Logów ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
 w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod
 nimi pusta linia i ``_CLOSING``. Mail z nieczytelnym tematem ma w treści sam numer w linii na każdy numer jego Wpisów.
 """

@@ -61,8 +61,9 @@ def moved(
     window: Window,
 ) -> Moved:
     """Zlecenia zwycięskich Wpisów ``accepted`` (zlecenie, nadawca, dzień po kliknięciu, chwila przyjścia maila) u ich
-    nadawców i w ich dniach oraz pamięć zleceń po kliknięciu według tabeli przejść (opis #1358, miejsce = Wykonawca i
-    dzień); ``orders``: każde zlecenie, które proces odczytał z INTERMAX.
+    nadawców i w ich dniach oraz pamięć zleceń po kliknięciu według tabeli przejść (wyrocznia ``_table`` w
+    ``tests/test_rdzen_raportow.py``, miejsce = Wykonawca i dzień); ``orders``: każde zlecenie, które proces odczytał z
+    INTERMAX.
 
     Zlecenie w innym miejscu przechodzi do nadawcy i na dzień po kliknięciu i dostaje pisownię ``WYKONAWCA`` z
     ostatniego zlecenia nadawcy w dniu docelowym, bez niego z jego najpóźniejszego odczytanego zlecenia, bez niego z
