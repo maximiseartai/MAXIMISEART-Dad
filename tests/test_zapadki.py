@@ -793,6 +793,7 @@ AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
+    "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
 }
 needs_ast_grep = pytest.mark.skipif(
@@ -1187,6 +1188,82 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy")
+
+
+# Reguły ast-grep powrotów chwastów (#1676, ADR 0036) → katalog w zakresie ``files:`` reguły i przyrostek nazwy pliku
+# próbki. Katalog to części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest zależnością testu w grafie
+# wpływu zmiany (``tools/lib/wplyw_zmiany.py``); katalog to prawdziwy katalog repo, więc ruff próbki czyta jego
+# konfigurację.
+_ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
+    "kotwica-konca-linii": (("tools",), ".py"),
+}
+_PATTERN = "import re\n\nLINE = "
+# Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
+# (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
+_PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+]
+
+
+def _probki_w_zakresie(root: Path, rule: str, probki: dict[str, str]) -> dict[str, Path]:
+    """Plik każdej próbki reguły ``rule`` w katalogu jej zakresu ``files:`` w ``root``, z przyrostkiem nazwy z
+    ``_ZAKRES_REGUL_POWROTOW``."""
+
+    parts, suffix = _ZAKRES_REGUL_POWROTOW[rule]
+    folder = root.joinpath(*parts)
+    folder.mkdir(parents=True, exist_ok=True)
+    pliki = {opis: folder / f"znana_luka_{numer}{suffix}" for numer, opis in enumerate(probki)}
+    for opis, plik in pliki.items():
+        plik.write_text(probki[opis], encoding="utf-8")
+    return pliki
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("rule", "text", "lines"), _PROBKI_REGUL_POWROTOW)
+def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
+    tmp_path: Path, rule: str, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    _probki_w_zakresie(tmp_path, rule, {"probka": text})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
+
+
+# Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
+# ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
+# konfiguracją swojego katalogu.
+ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
+    "kotwica-konca-linii": {
+        "wzorzec w stałej poza wywołaniem re": f'{_PATTERN}r"PONOWIENIE$"\nFOUND = re.compile(LINE)\n',
+        "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
+        "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
+        "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff
+
+    base = _empty_base(tmp_path)
+    zgloszenia: dict[str, list[str]] = {}
+    opisy: dict[str, str] = {}
+    for rule, probki in ZNANE_LUKI_REGUL_POWROTOW.items():
+        pliki = {f"{rule}: {opis}": plik for opis, plik in _probki_w_zakresie(tmp_path, rule, probki).items()}
+        zgloszenia |= ruff(pliki, sonda=ROOT.joinpath(*_ZAKRES_REGUL_POWROTOW[rule][0], "test_sonda_luki.py"))
+        opisy |= {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
 _PAGE = "from playwright.sync_api import Page\n\n\n"
