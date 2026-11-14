@@ -3424,7 +3424,7 @@ def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak
 ) -> None:
     """Chromium Playwrighta, którego nie ma na komputerze, to w oknie Skryptu dla maszyn (``chromium``) ta sama droga startu
     co w oknie taty (``chrome``): Zatrzymanie z Komunikatem o przeglądarce, a nie nieoczekiwany wyjątek (#976), a Logi
-    Uruchomienia nazywają start przeglądarki, nie start sterownika Playwrighta."""
+    Uruchomienia nazywają typ błędu Playwrighta i start przeglądarki, nie start sterownika Playwrighta."""
 
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "bez-przegladarek"))
     source = write_collective_file(tmp_path / "bez-chromium", [Order("#5501", cells={"O": 1}, amount=_au({"012": 1}))])
@@ -3434,8 +3434,7 @@ def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak
 
     assert (_stop(outcome), _kept(outcome)) == ("EFENIX_BRAK_PRZEGLADARKI", False)
     assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
-    cause = outcome.ending.facts.cause
-    assert isinstance(cause, BrowserFailure) and cause.operation is Operation.START, cause
+    assert outcome.ending.facts.cause == BrowserFailure("playwright._impl._errors.Error", Operation.START)
 
 
 def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:
