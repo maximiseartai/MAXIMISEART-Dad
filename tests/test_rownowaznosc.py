@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import warnings
 import zipfile
 
 from openpyxl import load_workbook
@@ -561,3 +562,190 @@ def test_pomoc_wymienia_kazdy_scenariusz_do_wyboru(capsys: pytest.CaptureFixture
     # Pomoc łamie długą linię także na łączniku nazwy, więc bez białych znaków każda nazwa jest w całości.
     shown = "".join(capsys.readouterr().out.split())
     assert [scenario.name for scenario in rownowaznosc.SCENARIOS if scenario.name not in shown] == []
+
+
+_BROKEN = b"def capped(:\n"
+_MODULE = '''"""Moduł."""
+
+LIMIT = 10
+"""Tyle najwyżej."""
+
+
+def capped(value: int) -> int:
+    return min(value, LIMIT)  # ponad limit przepada
+'''
+
+
+def _repository_with_module(tmp_path: Path) -> tuple[Path, str]:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_text(_MODULE, encoding="utf-8")
+    return repository, commit(repository, "baza")
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("LIMIT = 10", "LIMIT = 11", (1, ["src/modul.py | RÓŻNICA | drzewo składni", "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py"])),
+        ('"""Tyle najwyżej."""', '"""Tyle najwyżej, a więcej przepada."""', (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+        ("  # ponad limit przepada", "", (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+        ('    return', '    """Ponad limit przepada."""\n\n    return', (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])),
+    ],
+    ids=["zmieniona-stala", "sam-docstring", "sam-komentarz", "komentarz-do-docstringu-funkcji"],
+)
+def test_tryb_ast_zmieniona_stala_to_roznica_a_sam_docstring_albo_komentarz_to_tak_samo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], old: str, new: str, expected: tuple[int, list[str]]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    module = repository / "src" / "modul.py"
+    assert module.read_text(encoding="utf-8").count(old) == 1
+    module.write_text(module.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    code = rownowaznosc.main(["--ast", "--baza", base])
+
+    assert (code, capsys.readouterr().out.splitlines()) == expected
+
+
+def test_tryb_ast_z_glowa_nazywa_plik_po_jednej_stronie_bez_skladni_i_spoza_pythona_a_bez_zmian_jest_niesprawdzony(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    (repository / "src" / "stary.py").write_text("STARY = 1\n", encoding="utf-8")
+    (repository / "src" / "dane.toml").write_text("a = 1\n", encoding="utf-8")
+    base = commit(repository, "pliki bazy")
+    (repository / "src" / "stary.py").unlink()
+    (repository / "src" / "nowy.py").write_text("NOWY = 1\n", encoding="utf-8")
+    (repository / "src" / "dane.toml").write_text("a = 2\n", encoding="utf-8")
+    (repository / "src" / "modul.py").write_bytes(_BROKEN)
+    (repository / "poza_src.py").write_text("POZA = 1\n", encoding="utf-8")
+    head = commit(repository, "głowa")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    changed = rownowaznosc.main(["--ast", "--baza", base, "--glowa", head]), capsys.readouterr().out.splitlines()
+    unchanged = rownowaznosc.main(["--ast", "--baza", head, "--glowa", head]), capsys.readouterr().out.splitlines()
+
+    assert changed == (
+        1,
+        [
+            "src/dane.toml | RÓŻNICA | nie plik Pythona",
+            f"src/modul.py | RÓŻNICA | plik nie kompiluje się w HEAD: {_compiler_refusal(_BROKEN)}",
+            "src/nowy.py | RÓŻNICA | plik tylko w HEAD",
+            "src/stary.py | RÓŻNICA | plik tylko w bazie",
+            "RÓWNOWAŻNOŚĆ RÓŻNICA | src/dane.toml, src/modul.py, src/nowy.py, src/stary.py",
+        ],
+    )
+    assert unchanged == (2, ["RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików"])
+
+
+_UTF8 = 'NAZWA = "Centrum rozliczeń"\n'.encode()
+_LATIN1 = b"# -*- coding: latin-1 -*-\n"
+_SAME = (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])
+_DIFFERENT = (1, ["src/modul.py | RÓŻNICA | drzewo składni", "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py"])
+_FUTURE = '"""Moduł."""\n\nfrom __future__ import annotations\n\nX: int = 1\n'.encode()
+_STRING_BEFORE_FUTURE = '"""Moduł."""\n\n"""Komentarz przeniesiony w napis."""\n\nfrom __future__ import annotations\n\nX: int = 1\n'.encode()
+
+
+_ESCAPE_COMMENT = 'PATH = "Praca"  # folder Praca Maks\\Reguły ilości\n'.encode()
+_ESCAPE_STRING = 'PATH = "Praca"\n"""folder Praca Maks\\Reguły ilości"""\n'.encode()
+
+
+def _compiler_refusal(source: bytes) -> str:
+    """Komunikat, którym kompilator tego Pythona odrzuca ``source`` albo, z ostrzeżeniami jako błędami, ostrzega o nim:
+    jego tekst zależy od wersji Pythona."""
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(SyntaxError) as refused:
+            compile(source, "src/modul.py", "exec", dont_inherit=True)
+    return str(refused.value.msg)
+
+
+def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
+    return 1, [f"src/modul.py | RÓŻNICA | plik nie kompiluje się w {side}: {_compiler_refusal(source)}", "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py"]
+
+
+@pytest.mark.parametrize(
+    ("base", "head", "expected"),
+    [
+        (_LATIN1 + b'X = "\xe9"\n', _LATIN1 + b'X = "\xe8"\n', _DIFFERENT),
+        (_UTF8, _LATIN1 + _UTF8, _DIFFERENT),
+        (_UTF8, b"\xef\xbb\xbf" + _UTF8, _SAME),
+        (b"X: int = 1\n", b"from __future__ import annotations\n\nX: int = 1\n", _DIFFERENT),
+        (b"X = 1\n", b"X = 1\n...\n", _DIFFERENT),
+        (b'def f() -> None:\n    """Nic."""\n', b"def f() -> None:\n    pass\n", _DIFFERENT),
+        (b"import os\nX = os.sep\n", b"import os  # noqa: F401 - powod\nX = os.sep  # type: ignore[misc]  # pragma: no cover\n", _SAME),
+        (_FUTURE, _STRING_BEFORE_FUTURE, _refused("HEAD", _STRING_BEFORE_FUTURE)),
+        (b"X = 1\nreturn X\n", b"X = 1\nreturn X  # komentarz\n", _refused("bazie", b"X = 1\nreturn X\n")),
+        (_ESCAPE_COMMENT, _ESCAPE_STRING, _refused("HEAD", _ESCAPE_STRING)),
+    ],
+    ids=[
+        "stala-pod-deklaracja-latin-1",
+        "dopisana-deklaracja-kodowania",
+        "sam-bom",
+        "from-future",
+        "samotna-stala-inna-niz-napis",
+        "napis-jedynej-instrukcji-na-pass",
+        "dyrektywy-komentarzy",
+        "napis-przed-from-future",
+        "obie-strony-odrzuca-kompilator",
+        "ostrzezenie-kompilatora",
+    ],
+)
+def test_tryb_ast_czyta_bajty_jak_interpreter_i_widzi_kazda_zmiane_drzewa_poza_napisami(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], base: bytes, head: bytes, expected: tuple[int, list[str]]
+) -> None:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_bytes(base)
+    based = commit(repository, "baza")
+    (repository / "src" / "modul.py").write_bytes(head)
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    working_tree = rownowaznosc.main(["--ast", "--baza", based]), capsys.readouterr().out.splitlines()
+    committed = rownowaznosc.main(["--ast", "--baza", based, "--glowa", commit(repository, "głowa")]), capsys.readouterr().out.splitlines()
+
+    assert (working_tree, committed) == (expected, expected)
+
+
+def test_tryb_ast_bez_glowy_widzi_plik_usuniety_i_przeniesiony_w_drzewie_roboczym(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    (repository / "src" / "stary.py").write_text("STARY = 1\n", encoding="utf-8")
+    base = commit(repository, "pliki bazy")
+    (repository / "src" / "modul.py").unlink()
+    git(repository, "mv", "src/stary.py", "src/nowy.py")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    code = rownowaznosc.main(["--ast", "--baza", base])
+
+    assert (code, capsys.readouterr().out.splitlines()) == (
+        1,
+        [
+            "src/modul.py | RÓŻNICA | plik tylko w bazie",
+            "src/nowy.py | RÓŻNICA | plik tylko w HEAD",
+            "src/stary.py | RÓŻNICA | plik tylko w bazie",
+            "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py, src/nowy.py, src/stary.py",
+        ],
+    )
+
+
+def test_tryb_ast_widzi_ostrzezenie_kompilatora_takze_w_drugim_porownaniu_w_tym_samym_procesie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_bytes(_ESCAPE_COMMENT)
+    based = commit(repository, "baza")
+    (repository / "src" / "modul.py").write_bytes(_ESCAPE_STRING)
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    seen = []
+    for _ in range(2):
+        seen.append((rownowaznosc.main(["--ast", "--baza", based]), capsys.readouterr().out.splitlines()))
+
+    assert seen == [_refused("HEAD", _ESCAPE_STRING)] * 2

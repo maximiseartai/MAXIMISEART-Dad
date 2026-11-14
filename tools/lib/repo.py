@@ -50,6 +50,7 @@ __all__ = [
     "TIMEOUT_S",
     "Merged",
     "Worktree",
+    "blob",
     "changed",
     "command",
     "commit",
@@ -84,6 +85,19 @@ def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S) -> str:
     """Wyjście szybkiego, lokalnego polecenia gita w ``root``; kod różny od zera to ``subprocess.CalledProcessError``
     z tekstem ``stderr``, a limit czasu ``subprocess.TimeoutExpired``, oba z poleceniem ``["git", *arguments]``."""
 
+    return _text(_output(root, *arguments, timeout=timeout))
+
+
+def blob(root: Path, revision: str, path: str) -> bytes | None:
+    """Bajty pliku ``path`` w commicie ``revision``, bez dekodowania, jak leżą w repozytorium; ``None``, gdy commit nie ma
+    tego pliku."""
+
+    if not succeeds(root, "cat-file", "-e", f"{revision}:{path}"):
+        return None
+    return _output(root, "cat-file", "blob", f"{revision}:{path}", timeout=TIMEOUT_S)
+
+
+def _output(root: Path, *arguments: str, timeout: float | None) -> bytes:
     try:
         done = subprocess.run(
             ["git", "-c", "core.quotePath=false", *arguments], cwd=root, env=_environment(), capture_output=True, timeout=timeout, check=False
@@ -92,7 +106,7 @@ def git(root: Path, *arguments: str, timeout: float | None = TIMEOUT_S) -> str:
         raise subprocess.TimeoutExpired(["git", *arguments], expired.timeout, expired.output, expired.stderr) from None
     if done.returncode:
         raise subprocess.CalledProcessError(done.returncode, ["git", *arguments], _text(done.stdout), _text(done.stderr))
-    return _text(done.stdout)
+    return done.stdout
 
 
 def succeeds(root: Path, *arguments: str) -> bool:
