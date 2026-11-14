@@ -53,8 +53,8 @@ InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 
 SettingField = Literal["register", "periods_directory"]
-# Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą.
 TemplateRole = Literal["internal", "collective", "worker"]
+"""Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą."""
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
 ConfigurationNeed = TemplateNeed
 """Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
@@ -222,7 +222,6 @@ class NeededSetting:
                 return settings.periods_directory_state
 
 
-# Sprawdzenia Diagnozy jako dane: Diagnoza zamienia każdy krok na swoje sprawdzenie, a jego treść zostaje w niej.
 SimpleCheck = Literal[
     "tata_settings",
     "files_in_onedrive",
@@ -235,6 +234,7 @@ SimpleCheck = Literal[
     "centrum_log",
     "worker_list",
 ]
+"""Sprawdzenia Diagnozy jako dane: Diagnoza zamienia każdy krok na swoje sprawdzenie, a jego treść zostaje w niej."""
 
 
 @dataclass(frozen=True)
@@ -250,10 +250,10 @@ CheckStep = SimpleCheck | PeriodFolderCheck
 PERIODS_DIRECTORY: Final = NeededSetting(
     "folder okresów", "periods_directory", preparation_messages.periods_directory_missing
 )
-# Ogon każdej Diagnozy, po plikach taty: nowsze Wydanie wyjaśnia tylko bez innej przyczyny, bo przyczyny w plikach
-# taty nowa wersja nie usuwa (ADR 0009); Token do Zgłoszeń nigdy nie wyjaśnia, tylko idzie do Zgłoszenia; dziennik
-# idzie ostatni, po wpisach o sprawdzeniach, które same się nie udały.
 TAIL: Final[tuple[CheckStep, ...]] = ("tool_freshness", "report_key", "centrum_log")
+"""Ogon każdej Diagnozy, po plikach taty: nowsze Wydanie wyjaśnia tylko bez innej przyczyny, bo przyczyny w plikach
+taty nowa wersja nie usuwa (ADR 0009); Token do Zgłoszeń nigdy nie wyjaśnia, tylko idzie do Zgłoszenia; dziennik idzie
+ostatni, po wpisach o sprawdzeniach, które same się nie udały."""
 
 
 @dataclass(frozen=True)
@@ -313,8 +313,10 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     quantity_rules: bool = False
 
     def __post_init__(self) -> None:
+        """Pierwszy tryb Wyceny to ``DEFAULT_PRICING``: Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez
+        Przekazania (ADR 0027)."""
+
         modes = self.view.pricing_modes
-        # Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez Przekazania (ADR 0027): pierwszy tryb to ten.
         assert not modes or modes[0] == runs_contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {runs_contract.DEFAULT_PRICING}"
 
     @property
