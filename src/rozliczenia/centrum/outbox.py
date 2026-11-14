@@ -618,6 +618,17 @@ def _parse(text: str) -> _Queued | None:
     return _Queued(post, delivered_parts, archived)
 
 
+def _checked(post: Post) -> Post:
+    """Wysyłka po słuchaczu (``Listener.prepare``) tuż przed Skrzynką: ta sama kontrola dokładnego typu co przy zapisie
+    pliku kolejki (``_queue_text``, ``TypeError``), a do Skrzynki idzie jej odczyt z tego tekstu (``_parse``), więc
+    wysyłka nie niesie nic poza tym, co kontrola przeczytała."""
+
+    queued = _parse(_queue_text(post, delivered_parts=0, archived=False))
+    if queued is None:
+        raise TypeError("Słuchacz kolejki oddał wysyłkę, której plik kolejki nie odczytuje.")
+    return queued.post
+
+
 def _rank(entry: object) -> Rank:
     """Stopień wersji z pliku kolejki; inna wartość niż numer stopnia to ``TypeError`` albo ``ValueError`` (plik
     nieczytelny)."""
@@ -1140,8 +1151,8 @@ class Deliveries(Protocol):
 class Listener(Protocol):
     """Kto nadaje wysyłce znaczenie poza kolejką; wszystko w wątku wysyłki, bez blokady kolejki.
 
-    ``prepare`` dostaje wysyłkę z pliku tuż przed wysłaniem i zwraca tę, która pójdzie, albo ``None``: wysyłka czeka na
-    inną i zostaje w kolejce do następnego przejścia. ``delivered`` dostaje każdą wysyłkę przyjętą przez skrzynkę i
+    ``prepare`` dostaje wysyłkę z pliku tuż przed wysłaniem i zwraca tę, która pójdzie po kontroli ``_checked``, albo
+    ``None``: wysyłka czeka na inną i zostaje w kolejce do następnego przejścia. ``delivered`` dostaje każdą wysyłkę przyjętą przez skrzynkę i
     numer jej issue, zanim ``wait_delivered`` się obudzi i plik dostanie znacznik, i zwraca wysyłki następcze, które
     kolejka kładzie wtedy w swoich plikach. ``rejected`` dostaje każdą wysyłkę, której treść skrzynka odrzuciła, zanim
     przejście pójdzie dalej. Wysyłka może nieść stan, który słuchacz nadaje i czyta (``Post.state``).
@@ -1397,9 +1408,10 @@ class Outbox:
                 # Znacznik jak po wysłaniu: plik, którego nie da się usunąć, nie czeka w kolejce bez niego.
                 self._mark_delivered(path, queued.post)
                 continue
-            post = self._listener.prepare(queued.post, self)
-            if post is None:
+            prepared = self._listener.prepare(queued.post, self)
+            if prepared is None:
                 continue
+            post = _checked(prepared)
             label, period = post.target.label, post.period
             if queued.commented:
                 step = _deliver_archive(post, _version_of(path, post), self._box, archive_open=not self._archive_refused)

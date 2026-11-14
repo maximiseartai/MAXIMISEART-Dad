@@ -18,7 +18,7 @@ import shutil
 import sys
 import threading
 import time
-from typing import Final
+from typing import Final, cast
 
 import pytest
 
@@ -32,6 +32,7 @@ from rozliczenia.centrum.outbox import (
     RETRY_S,
     TEXT_LIMIT,
     ArchiveFile,
+    Deliveries,
     Frame,
     KnownIssue,
     NewIssue,
@@ -2432,3 +2433,50 @@ def test_plik_kolejki_odmawia_tekstu_i_celu_innego_typu_niz_dokladnie_outgoing_w
     zgloszenia = _w_pliku_kolejki(plik)
 
     assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
+
+
+_Udawane: Final[Callable[[tuple[Outgoing, ...]], tuple[Outgoing, ...]]] = type(
+    "_Udawane", (tuple,), {"__getitem__": lambda self, key: _KOMORKA}
+)
+"""Części, których przebieg daje tekst narzędzia, a indeks (``parts[0]``, którego używa dostarczenie) wartość komórki."""
+
+
+# Słuchacz kolejki (Listener.prepare) oddaje inną wysyłkę niż ta z pliku → czy kontrola przed Skrzynką odmawia (TypeError,
+# Skrzynka nie dostaje nic), czy wysyła odczyt sprawdzonego tekstu (bez wartości komórki).
+ODMOWY_SLUCHACZA: Final[dict[str, tuple[Callable[[Post], Post], bool]]] = {
+    "część spoza typu-dowodu": (lambda post: replace(post, parts=(cast(Outgoing, _KOMORKA),)), True),
+    "cel z podklasy NewIssue": (lambda post: replace(post, target=type("Cel", (NewIssue,), {})("uwaga-taty", tool("Tytuł"))), True),
+    "części z indeksem innym niż przebieg": (lambda post: replace(post, parts=_Udawane(post.parts)), False),
+    # Plik kolejki zapisuje stan każdego typu, a jego odczyt bierze tylko napis (przegląd #1809, D1).
+    "stan wysyłki, którego odczyt pliku kolejki nie bierze": (lambda post: replace(post, state=cast(str, 1)), True),
+}
+
+
+class _Sluchacz(QueueListener):
+    """Słuchacz kolejki, który tuż przed wysłaniem oddaje wysyłkę zmienioną przez ``zmiana``."""
+
+    def __init__(self, zmiana: Callable[[Post], Post]) -> None:
+        super().__init__()
+        self.zmiana = zmiana
+
+    def prepare(self, post: Post, sent: Deliveries) -> Post | None:
+        return self.zmiana(post)
+
+
+@pytest.mark.parametrize("opis", ODMOWY_SLUCHACZA.keys())
+def test_wysylka_od_sluchacza_przechodzi_kontrole_typu_przed_skrzynka(opis: str, tmp_path: Path) -> None:
+    """Słuchacz zmienia wysyłkę po pliku kolejki, więc kontrola dokładnego typu z zapisu pliku (``_queue_text``) biegnie też
+    na jego wyniku przed Skrzynką, a do Skrzynki idzie odczyt sprawdzonego tekstu (#1551)."""
+
+    zmiana, odmowa = ODMOWY_SLUCHACZA[opis]
+    queue = Queue(tmp_path, FakeReportBox(), listener=_Sluchacz(zmiana))
+
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Tytuł")), None, RUN_ID, None, (tool("Treść"),)))
+    queue.passed()
+
+    tekst = "".join(issue.text + "".join(issue.comment_texts) for issue in queue.box.issues)
+    assert _KOMORKA not in tekst
+    if odmowa:
+        assert (queue.box.issues, len(queue.files()), "TypeError" in queue.log()) == ([], 1, True)
+    else:
+        assert queue.files() == []

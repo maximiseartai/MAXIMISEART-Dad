@@ -58,6 +58,7 @@ from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE
 from rozliczenia.centrum.shutdown import Shutdown
+from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, RateLimited, ReleaseAnswer, ToolFreshness
 from rozliczenia.centrum.tool_update import Release, ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher
@@ -610,6 +611,7 @@ def centrum_app(
     reminder_mailbox: ReminderMailbox | Fake = FAKE,
     reminder_rhythm: ReminderRhythm | Fake = FAKE,
     release_changes: tuple[ReleaseChange[Any], ...] = (),
+    update_threads: Threading = threading,
 ) -> FastAPI:
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
@@ -660,6 +662,7 @@ def centrum_app(
         reminder_mailbox=FakeMailbox() if isinstance(reminder_mailbox, Fake) else reminder_mailbox,
         reminder_rhythm=HandRhythm() if isinstance(reminder_rhythm, Fake) else reminder_rhythm,
         release_changes=release_changes,
+        update_threads=update_threads,
     )
 
 

@@ -28,6 +28,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import Unreachable
+from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.tool_updates import UPDATE_THREAD
 from rozliczenia.centrum.tool_update import (
     LIBRARIES_FAILED,
@@ -75,6 +76,7 @@ def updating_centrum(
     incomplete_period: bool = False,
     installer: FakeInstaller | None = None,
     guardian_failure: Callable[[ToolRepository], None] | None = None,
+    update_threads: Threading = threading,
 ) -> tuple[PreparingCentrum, ToolRepository]:
     repository = tool_repository(tmp_path / "repozytoria")
     surroundings = Surroundings(
@@ -82,6 +84,7 @@ def updating_centrum(
         tool=repository,
         update_hold=hold,
         installer=installer or FakeInstaller(),
+        update_threads=update_threads,
     )
     rows = incomplete_period_rows() if incomplete_period else None
     return preparing_centrum(tmp_path, rows, surroundings=surroundings), repository
@@ -560,6 +563,79 @@ def test_karta_widzi_porazke_dopiero_gdy_ponowne_klikniecie_jest_przyjete(
 
     assert failed["state"] == "failed"
     assert again.status_code == 202, again.json()
+
+
+class _LockAroundUpdateThread:
+    """Blokada widoku ``ToolUpdates``: wątek aktualizacji woła ``entering`` przed każdym wejściem i ``left`` po każdym
+    wyjściu, inne wątki nie."""
+
+    def __init__(self, entering: Callable[[], None], left: Callable[[], None]) -> None:
+        self._lock = threading.Lock()
+        self._entering, self._left = entering, left
+
+    def __enter__(self) -> None:
+        if threading.current_thread().name == UPDATE_THREAD:
+            self._entering()
+        self._lock.acquire()
+
+    def __exit__(self, *exc: object) -> None:
+        self._lock.release()
+        if threading.current_thread().name == UPDATE_THREAD:
+            self._left()
+
+
+class _ThreadingWithLock:
+    """Moduł ``threading`` z jedną blokadą ``lock`` zamiast nowej przy każdym ``Lock()``."""
+
+    def __init__(self, lock: _LockAroundUpdateThread) -> None:
+        self.Lock = lambda: lock
+        self.Event = threading.Event
+        self.Thread = threading.Thread
+
+
+def test_wynik_klikniecia_karta_widzi_dopiero_z_wolnym_miejscem_a_nastepne_klikniecie_go_nie_widzi(
+    tmp_path: Path,
+) -> None:
+    """Wątek aktualizacji zatrzymany przed każdym wejściem w blokadę widoku: karta nigdy nie widzi wyniku, gdy „jeszcze
+    raz” dostałoby 409. Zatrzymany po wyjściu z blokady, w której karta pierwszy raz widzi wynik: następne kliknięcie
+    jest przyjęte, a pierwszy wątek nie zastępuje już jego widoku swoim wynikiem."""
+
+    hold = threading.Event()
+    hold.set()
+    refused_with_result: list[tuple[str, int]] = []
+    again: list[int] = []
+    first: list[threading.Thread] = []
+    box: list[PreparingCentrum] = []
+
+    def entering() -> None:
+        first[:] = first or [threading.current_thread()]
+        state = box[0].client.get("/api/tool-update").json()["state"]
+        if state != "running":
+            refused_with_result.append((state, box[0].client.post("/api/tool-update").status_code))
+
+    def left() -> None:
+        if again or box[0].client.get("/api/tool-update").json()["state"] == "running":
+            return
+        hold.clear()
+        again.append(box[0].client.post("/api/tool-update").status_code)
+
+    threads = _ThreadingWithLock(_LockAroundUpdateThread(entering, left))
+    centrum, repository = updating_centrum(tmp_path, hold=hold, update_threads=threads)
+    box.append(centrum)
+    repository.in_clone("update-ref", "-d", "refs/heads/main")
+
+    assert centrum.client.post("/api/tool-update").status_code == 202
+    try:
+        assert wait_for(lambda: bool(first), UPDATE_WAIT_S)
+        first[0].join(UPDATE_WAIT_S)
+        after_first = centrum.client.get("/api/tool-update").json()["state"]
+    finally:
+        hold.set()
+    tool_update_until(centrum, lambda view: view["state"] != "running")
+
+    assert refused_with_result == []
+    assert (again, after_first) == ([202], "running")
+
 
 STILL_WORKS = "Narzędzie działa dalej w poprzedniej wersji."
 TO_MAKS = f"{STILL_WORKS} Przekaż sprawę Maksowi: kliknij „Wyślij do Maksa”."
