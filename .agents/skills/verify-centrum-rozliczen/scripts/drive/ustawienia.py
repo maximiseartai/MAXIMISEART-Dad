@@ -236,11 +236,11 @@ def drive(run: Run, page: Page) -> None:
     expect(page.locator("html")).not_to_have_class("dark")
     until(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
     page.reload()
-    light = themes.get_by_role("button", name="Jasny", exact=True)
-    expect(light).to_be_visible()
+    # The page starts dark and turns light once it has read the settings file.
+    expect(themes.get_by_role("button", name="Jasny", exact=True)).to_have_attribute("aria-pressed", "true")
     run.check(
-        light.get_attribute("aria-pressed") == "true" and "dark" not in (page.locator("html").get_attribute("class") or "").split(),
-        "after a reload the page reads the light theme from the settings file",
+        "dark" not in (page.locator("html").get_attribute("class") or "").split(),
+        "after a reload the page reads the light theme from the settings file and drops the dark class",
     )
     run.capture(page, "05-ustawienia-motyw-jasny")
     themes.get_by_role("button", name="Ciemny", exact=True).click()
