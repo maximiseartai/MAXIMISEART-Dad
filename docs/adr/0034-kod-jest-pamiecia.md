@@ -3,6 +3,7 @@
 ## Status
 
 Zaakceptowana (decyzje Maksa ze specyfikacji #1597, 13.11.2026).
+Zmieniona 14.11.2026 decyzją Maksa w #1622: „Maszyneria maleje” pokazuje etykieta zamiast zgody `ZGODA SZOPA`.
 Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek.
 Zmienia sekcję „Reguły i co ich pilnuje” w [`AGENTS.md`](../../AGENTS.md): granicę strażnika, wyjątek na linii i źródła korzenia, a dokłada zakaz pamięci agentów poza repo.
 Zmienia zakres nocnych mutacji z [ADR 0021](0021-mutacje-noca.md).
@@ -104,8 +105,8 @@ Weryfikacja produktu to jej część, która wydaje wyrok o zachowaniu produktu,
 - **Dwie szopy.** Jedna lista w repo przypisuje każdą jednostkę szopy do weryfikacji produktu albo do maszynerii procesu, a każda z nich ma osobny cel.
   Powód: wspólny cel karałby weryfikację, która łapie błędy produktu, tak samo jak kolejną bramkę.
   Wchodzi w #1622.
-- **Maszyneria maleje.** PR z nowym kodem maszynerii procesu usuwa więcej jej linii i linii jej testów, niż dodaje, chyba że konto z prawem `admin` napisze komentarz `ZGODA SZOPA`.
-  Powód: szopa ma więcej linii niż `src` i sama tworzy sobie pracę, skoro tylko 4 z 50 issues `czerwony-main` miały naprawę w `src`.
+- **Maszyneria maleje.** PR, który dodaje więcej linii maszynerii procesu z jej testami, niż usuwa, dostaje etykietę informacyjną „powiększa maszynerię procesu”, która niczego nie blokuje.
+  Powód: szopa ma więcej linii niż `src` i sama tworzy sobie pracę, skoro tylko 4 z 50 issues `czerwony-main` miały naprawę w `src`, więc recenzent i Maks mają widzieć każdy PR, który ją powiększa.
   Wchodzi w #1622.
 - **Audyt szopy.** Każda jednostka szopy dostaje wyrok usunąć, scalić z bliźniakiem, zastąpić zmianą API albo typem, albo zostawić, „zostawić” wymaga bilansu złapań błędów produktu do własnych awarii, a Maks zatwierdza listę raz, zanim cokolwiek zniknie.
   Powód: jednostka, która częściej czerwieni `main` albo pada w przeglądzie, niż zatrzymuje błąd produktu, kosztuje więcej, niż daje.
@@ -117,6 +118,8 @@ Weryfikacja produktu to jej część, która wydaje wyrok o zachowaniu produktu,
 ## Odrzucone warianty
 
 - **Osobne konto dla agentów i blokady po stronie serwera.** Maks wyłączył je z zakresu 13.11.2026, więc zgody od konta z prawem `admin` zostają konwencją, którą liczy rejestr.
+- **Zgoda `ZGODA SZOPA` na powiększenie maszynerii.** Maks odrzucił ją 14.11.2026 (#1622): pełny mechanizm zgody to kilkaset linii nowej maszynerii, która niczego nie blokuje, a trzy rundy przeglądu PR #1646 znalazły trzy drogi jego obejścia.
+  Przeniesienie pliku między grupami recenzent ocenia z liczb obu grup, które licznik już drukuje.
 - **Przeniesienie wszystkich sprawdzeń struktury do gotowych narzędzi.** Z 71 sprawdzeń gotowe narzędzie wyrazi 33, a bez utraty postaci tylko 17, więc reszta czeka na audyt szopy, zamiast tracić postacie, które dziś łapie.
 - **Macierz „mutant × test” dla całego `src` przed cięciem testów produktu.** Szacunek to 405–1120 godzin runnera, więc cięcie zaczyna pilot na jednym pliku testów (#1635).
 
