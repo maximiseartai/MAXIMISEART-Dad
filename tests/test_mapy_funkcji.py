@@ -212,9 +212,9 @@ CENTRUM = SKILLS / "verify-centrum-rozliczen"
 SUB_FEATURES = ROOT / ".agents/skills/verify-centrum-rozliczen/scripts/sub_features.py"
 
 
-def _sub_features(feature: str) -> str:
+def _sub_features(feature: str, polecenie: Path = SUB_FEATURES) -> str:
     done = subprocess.run(
-        [sys.executable, str(SUB_FEATURES), "--feature", feature], capture_output=True, timeout=60, check=False
+        [sys.executable, str(polecenie), "--feature", feature], capture_output=True, timeout=60, check=False
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", errors="replace")
     return done.stdout.decode("utf-8")
@@ -583,5 +583,204 @@ def test_znane_luki_polecenia_podfunkcji_przechodza_przez_kazdy_jego_mechanizm(p
             razy = ZNANE_LUKI[opis][1]
             if razy is not None and [komunikat for _, komunikaty in czytane for komunikat in komunikaty].count("LUKA") == razy:
                 zgloszenia[opis].append(f"sub_features.py: drukuje LUKA {razy} raz(y), jak bieg napędu")
+
+    assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
+
+
+ROZLICZENIA = SKILLS / "verify-rozliczenia"
+WORKFLOW_SUB_FEATURES = ROOT / ".agents/skills/verify-rozliczenia/scripts/workflow_sub_features.py"
+
+
+def test_podfunkcje_mapy_rozliczen_sa_wynikiem_polecenia_z_workflow_procesu() -> None:
+    """Plik funkcji ``verify-rozliczenia``, który nazywa polecenie ``workflow_sub_features.py`` swojej funkcji, ma jego
+    wynik jako całą sekcję ``## Sub-features``, tuż przed ``## How to get to it (user POV)`` (#1630)."""
+
+    printed = [
+        path
+        for path in _feature_files(ROZLICZENIA)
+        if f"workflow_sub_features.py --feature {path.stem}`" in path.read_text(encoding="utf-8")
+    ]
+
+    problems = [
+        f"verify-rozliczenia/features/{path.name}: sekcja ## Sub-features nie jest wynikiem workflow procesu; zastąp ją "
+        f"wynikiem `.venv/bin/python .agents/skills/verify-rozliczenia/scripts/workflow_sub_features.py --feature "
+        f"{path.stem}` (Windows: `py -3`)"
+        for path in printed
+        if f"\n{_sub_features(path.stem, WORKFLOW_SUB_FEATURES)}\n## How to get to it (user POV)\n"
+        not in path.read_text(encoding="utf-8")
+    ]
+
+    assert printed, "żaden plik mapy verify-rozliczenia nie nazywa polecenia workflow_sub_features.py swojej funkcji"
+    assert problems == [], "\n".join(problems)
+
+
+@pytest.fixture
+def polecenie_rozliczen(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.syspath_prepend(str(WORKFLOW_SUB_FEATURES.parent))
+    spec = importlib.util.spec_from_file_location("workflow_sub_features", WORKFLOW_SUB_FEATURES)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "workflow_sub_features", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+WORKFLOW: Final = """\
+from pathlib import Path
+
+from run_verification import WorkflowProcess, WorkflowVariant
+
+HELPER_DIRECTORY = Path("scripts")
+
+
+def _run_step(name: str, arguments: list[str], *, expected_exit: int) -> None:
+    del name, arguments, expected_exit
+
+
+def _run_process_step(name: str, arguments: list[str], *, expected_exit: int) -> None:
+    del name, arguments, expected_exit
+
+
+def _etap() -> None:
+    _run_step("etap", [str(HELPER_DIRECTORY / "sonda_fixture.py")], expected_exit=0)
+
+
+def _sonda_workflow(nazwa: str, polecenie: str) -> None:
+    _run_step("fixture", [str(HELPER_DIRECTORY / "sonda_fixture.py"), "--root", nazwa], expected_exit=0)
+    _run_process_step("run", ["intermax", "--register", polecenie], expected_exit=1)
+    _run_step("assert-run", [str(HELPER_DIRECTORY / "assert_sonda.py")], expected_exit=0)
+    {wstawka}
+
+
+SONDA = WorkflowProcess("sonda", _sonda_workflow)
+INNY = WorkflowProcess("inny", _sonda_workflow)
+WORKFLOW_VARIANTS = {"sonda": WorkflowVariant(SONDA), "obca": WorkflowVariant(INNY, run_exit=1), "druga": WorkflowVariant(SONDA)}
+"""
+def _sonda(wstawka: str = "pass") -> dict[str, str]:
+    """Plik workflow sondy z wstawką w ciele workflow."""
+
+    return {"run_verification.py": WORKFLOW.replace("{wstawka}", wstawka)}
+
+
+def test_polecenie_mapy_rozliczen_czyta_kroki_workflow(polecenie_rozliczen: ModuleType) -> None:
+    """Krok to instrukcja ciała workflow z literałem nazwy, skryptu i kodu wyjścia, w kolejności źródła; warianty to
+    klucze ``WORKFLOW_VARIANTS`` tego procesu, a pola wariantu innego procesu nie przeszkadzają."""
+
+    variants, steps = polecenie_rozliczen.sub_features("sonda", _sonda().__getitem__)
+
+    assert variants == ["sonda", "druga"]
+    assert [(step.name, step.runs, step.exit_code) for step in steps] == [
+        ("fixture", "sonda_fixture.py", 0),
+        ("run", "tools/uruchom_proces.py intermax", 1),
+        ("assert-run", "assert_sonda.py", 0),
+    ]
+
+
+ZAPIS = 'str(HELPER_DIRECTORY / "sonda_fixture.py")'
+# Postać → (plik, pliki sondy); linia, którą odmowa wskazuje, ma komentarz `# tu`.
+ODMOWY_ROZLICZEN: Final = {
+    "krok: nazwa zmienną": ("run_verification.py", {"workflow": f"_run_step(nazwa, [{ZAPIS}], expected_exit=0)  # tu"}),
+    "krok: nazwa f-stringiem": ("run_verification.py", {"workflow": f'_run_step(f"{{nazwa}}-run", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: nazwa nazwana": ("run_verification.py", {"workflow": f'_run_step(name="x", arguments=[{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: argumenty zmienną": ("run_verification.py", {"workflow": '_run_step("x", polecenie, expected_exit=0)  # tu'}),
+    "krok: skrypt nie pierwszy": ("run_verification.py", {"workflow": f'_run_step("x", ["--root", {ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: skrypt bez HELPER_DIRECTORY": ("run_verification.py", {"workflow": '_run_step("x", [str(Path("inne") / "a.py")], expected_exit=0)  # tu'}),
+    "krok: skrypt zmienną": ("run_verification.py", {"workflow": '_run_step("x", [str(HELPER_DIRECTORY / nazwa)], expected_exit=0)  # tu'}),
+    "krok procesu: polecenie zmienną": ("run_verification.py", {"workflow": '_run_process_step("x", [polecenie], expected_exit=0)  # tu'}),
+    "krok: bez expected_exit": ("run_verification.py", {"workflow": f'_run_step("x", [{ZAPIS}])  # tu'}),
+    "krok: expected_exit z pola wariantu": ("run_verification.py", {"workflow": f'_run_step("x", [{ZAPIS}], expected_exit=nazwa.run_exit)  # tu'}),
+    "krok: expected_exit True": ("run_verification.py", {"workflow": f'_run_step("x", [{ZAPIS}], expected_exit=True)  # tu'}),
+    "krok: w if": ("run_verification.py", {"workflow": f'if nazwa:\n        _run_step("x", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: w pętli": ("run_verification.py", {"workflow": f'for _ in nazwa:\n        _run_step("x", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: w funkcji zagnieżdżonej": ("run_verification.py", {"workflow": f'def _krok() -> None:\n        _run_step("x", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: w lambdzie": ("run_verification.py", {"workflow": f'krok = lambda: _run_step("x", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: jako wartość": ("run_verification.py", {"workflow": "krok = _run_step  # tu"}),
+    "krok: wynik przypisany": ("run_verification.py", {"workflow": f'wynik = _run_step("x", [{ZAPIS}], expected_exit=0)  # tu'}),
+    "krok: w funkcji modułu": ("run_verification.py", {"workflow": "_etap()  # tu"}),
+    "krok: funkcja modułu jako wartość": ("run_verification.py", {"workflow": "etap = _etap  # tu"}),
+}
+# Postać → (plik, zamiany (stary tekst, nowy) w pliku sondy) dla miejsca poza wstawką.
+ODMOWY_MODULU_ROZLICZEN: Final = {
+    "proces bez nazwy literałem": ("run_verification.py", (('SONDA = WorkflowProcess("sonda", _sonda_workflow)', "SONDA = WorkflowProcess(Path.name, _sonda_workflow)  # tu"),)),
+    "workflow spoza modułu": ("run_verification.py", (('SONDA = WorkflowProcess("sonda", _sonda_workflow)', 'SONDA = WorkflowProcess("sonda", Path.cwd)  # tu'),)),
+    "funkcja bez procesu": ("run_verification.py", (('SONDA = WorkflowProcess("sonda", _sonda_workflow)', 'SONDA = WorkflowProcess("inna", _sonda_workflow)'),)),
+    "wariant z polem": ("run_verification.py", (('"druga": WorkflowVariant(SONDA)}', '"druga": WorkflowVariant(SONDA, run_exit=1)}  # tu'),)),
+    "wariant nie wywołaniem": ("run_verification.py", (('"druga": WorkflowVariant(SONDA)}', '"druga": SONDA}  # tu'),)),
+    "workflow bez kroku": (
+        "run_verification.py",
+        (
+            (
+                WORKFLOW[WORKFLOW.index("def _sonda_workflow") : WORKFLOW.index("\n\n\nSONDA")].replace("{wstawka}", "pass"),
+                "def _sonda_workflow() -> None:  # tu\n    pass",
+            ),
+        ),
+    ),
+}
+
+
+def _odmowa_rozliczen(opis: str) -> tuple[str, dict[str, str]]:
+    if opis in ODMOWY_ROZLICZEN:
+        plik, wstawki = ODMOWY_ROZLICZEN[opis]
+        return plik, _sonda(wstawki["workflow"])
+    plik, zamiany = ODMOWY_MODULU_ROZLICZEN[opis]
+    pliki = _sonda()
+    for stary, nowy in zamiany:
+        assert pliki[plik].count(stary) == 1, (opis, stary)
+        pliki[plik] = pliki[plik].replace(stary, nowy)
+    if opis == "funkcja bez procesu":
+        pliki[plik] = "# tu\n" + pliki[plik]
+    return plik, pliki
+
+
+@pytest.mark.parametrize("opis", [*ODMOWY_ROZLICZEN, *ODMOWY_MODULU_ROZLICZEN])
+def test_polecenie_mapy_rozliczen_odmawia_postaci_ktorej_nie_czyta_z_plikiem_i_linia(
+    polecenie_rozliczen: ModuleType, opis: str
+) -> None:
+    """Krok albo sprawdzenie w postaci spoza tych, które polecenie czyta, czerwieni je zdaniem z plikiem i linią, zamiast
+    zgubić je z sekcji mapy po cichu (#1630)."""
+
+    plik, pliki = _odmowa_rozliczen(opis)
+    linia = next(numer for numer, tekst in enumerate(pliki[plik].splitlines(), start=1) if "# tu" in tekst)
+
+    with pytest.raises(polecenie_rozliczen.Unreadable) as odmowa:
+        polecenie_rozliczen.sub_features("sonda", pliki.__getitem__)
+
+    assert str(odmowa.value).startswith(f"{plik}:{linia}: "), str(odmowa.value)
+
+
+# Znane luki polecenia mapy rozliczeń (tests/fixtures/znane_luki.py): opis postaci → (plik sondy, jego tekst) z krokiem
+# albo sprawdzeniem „LUKA”, którego sekcja nie pokazuje, choć skill go wykonuje, a próbka przechodzi przez ruff
+# z konfiguracją scripts/ skilla i przez polecenie.
+ZNANE_LUKI_ROZLICZEN: Final = {
+    "krok bez _run_step: polecenie zna tylko dwie funkcje kroków": (
+        "run_verification.py",
+        WORKFLOW.replace("{wstawka}", 'subprocess.run(["LUKA"], check=True)').replace(
+            "from pathlib import Path\n", "from pathlib import Path\nimport subprocess\n"
+        ),
+    ),
+    "krok przez odbicie po nazwie": (
+        "run_verification.py",
+        WORKFLOW.replace("{wstawka}", f'getattr(sys.modules[__name__], "_run_step")("LUKA", [{ZAPIS}], expected_exit=0)').replace(
+            "from pathlib import Path\n", "from pathlib import Path\nimport sys\n"
+        ),
+    ),
+}
+
+
+@wymaga_ruff
+def test_znane_luki_polecenia_mapy_rozliczen_przechodza_przez_kazdy_jego_mechanizm(
+    polecenie_rozliczen: ModuleType, tmp_path: Path
+) -> None:
+    pliki = zapisz({opis: tekst for opis, (_, tekst) in ZNANE_LUKI_ROZLICZEN.items()}, tmp_path)
+    zgloszenia = ruff(pliki, sonda=WORKFLOW_SUB_FEATURES.parent / "sonda_luki.py")
+    for opis, (nazwa, _) in ZNANE_LUKI_ROZLICZEN.items():
+        sonda = {**_sonda(), nazwa: pliki[opis].read_text(encoding="utf-8")}
+        try:
+            _, kroki = polecenie_rozliczen.sub_features("sonda", sonda.__getitem__)
+        except polecenie_rozliczen.Unreadable as odmowa:
+            zgloszenia[opis].append(f"workflow_sub_features.py: {odmowa}")
+        else:
+            if any("LUKA" in krok.name for krok in kroki):
+                zgloszenia[opis].append("workflow_sub_features.py: czyta lukę")
 
     assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
