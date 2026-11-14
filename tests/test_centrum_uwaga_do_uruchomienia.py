@@ -101,6 +101,23 @@ def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komenta
     assert draft.json() == {"title": TITLE, "body": expected, "shown_body": shown}
 
 
+def test_linia_logow_w_drodze_wklejona_w_tekst_uwagi_po_logach_zostaje_tekstem_taty(tmp_path: Path) -> None:
+    """Tata wkleja w nową Uwagę do tego Uruchomienia linię Logów w drodze z podglądu wcześniejszej Uwagi, gdy Logi już
+    doszły: Uwaga wychodzi z jego tekstem bez zmian i z odnośnikiem w stopce."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(centrum.tool)
+    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
+    logs = logs_comment(centrum, run_id)
+    pasted = f"{BODY}\nLogi Uruchomienia: w drodze (Uruchomienie {run_id})"
+
+    sent = centrum.client.post("/api/dad-notes", json={"title": TITLE, "body": pasted, "run_id": run_id})
+
+    assert sent.json() == {"state": "sent"}
+    [issue] = box(centrum).issues_with("uwaga-taty")
+    assert issue.body == f"{pasted}\n\n{run_line(centrum, 'podgląd', 'OK')}\n[Logi Uruchomienia]({logs})"
+
+
 def _as_is(centrum: SettlingCentrum) -> None:
     return None
 

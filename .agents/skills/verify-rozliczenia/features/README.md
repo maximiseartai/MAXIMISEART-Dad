@@ -42,6 +42,22 @@ contract model `ProcessResult`.
 - `VERIFY SKIP` from `preparation-real-templates` or `chain-real-templates` is a skip: report it as one.
 - Run cleanup after every failed iteration and confirm the evidence directory still exists.
 
+## Feature entry contract
+
+A feature file has the four H2 `## Sub-features`, `## How to get to it (user POV)`, `## Driving it with PowerShell
+and the machine script` and `## Gotchas`, in this order. In a file whose section names
+`scripts/workflow_sub_features.py --feature <feature>`, the section is that command's output, and
+`tests/test_mapy_funkcji.py` fails when it differs. It is the plan of each variant of the feature's process
+(`WorkflowProcess` in `run_verification.py`): the workflow runs, but every step and every change it makes to the run
+root between steps is recorded instead of run, with the run's folders as `<run-root>`, `<evidence>`, `<templates>`
+and `<run-dir>`. So it lists what a variant runs, in order, `cleanup` and `self-test` included, each step with its
+command and the exit code it expects. A real run fails when the steps it ran differ from its plan, so CI proves the
+plan of every variant it runs; nothing compares the plan of a variant on the real Wzorce with a run. Everything
+outside the section is prose the command does not confirm: `How to get to it` is a few sentences from Dad's point of
+view, `Driving it` the one command and where its evidence is, and `Gotchas` only traps the code does not handle, such
+as what the variant does not reach and which test proves it. Files without the command still describe their features
+in prose (#1630).
+
 ## Features
 
 - [Workbook preparation](./prepare-workbooks.md) covers Wzorzec rozliczenia pracownika copies and all-or-nothing publication.

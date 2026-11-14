@@ -7,6 +7,7 @@ uruchamia go Centrum po udanej Aktualizacji narzędzia.
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import sys
 import threading
 import time
 import urllib.request
+import warnings
 
 import pytest
 
@@ -135,6 +137,27 @@ def test_opiekun_z_kopii_nie_wczytuje_modulu_z_katalogu_roboczego_ani_nie_zapisu
     assert sorted(path.relative_to(copy).as_posix() for path in copy.rglob("__pycache__")) == []
 
 
+def test_nowe_centrum_zastaje_wynik_ok_w_pliku_juz_w_chwili_swojego_startu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nowe Centrum czyta wynik aktualizacji raz przy starcie, więc opiekun zapisuje „ok”, zanim je uruchomi."""
+
+    monkeypatch.setattr(restart_guardian, "START_TIMEOUT_S", 0.0)
+    root, work = tmp_path / "narzedzie", tmp_path / "praca"
+    root.mkdir()
+    work.mkdir()
+    restart = Restart(free_port(), "1" * 40, "2" * 40, root, tmp_path / RESULT_FILE, False, work)
+    at_start: list[UpdateResult | None] = []
+
+    def start(started: Restart) -> subprocess.Popen[bytes]:
+        at_start.append(read_result(started.result))
+        return subprocess.Popen([sys.executable, "-c", ""])
+
+    main(restart.arguments(), show_problem=lambda title, text: None, start=start)
+
+    assert at_start[:1] == [UpdateResult(UPDATED, restart.before, restart.after, False)]
+
+
 def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> None:
     # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), więc nazwy przypina literał.
     files = {
@@ -187,6 +210,20 @@ def test_port_zajety_przez_centrum_przyjmuje_polaczenie_zanim_serwer_zacznie_je_
     with tool_files.listen_locally(0) as listener:
         with socket.create_connection(listener.getsockname(), timeout=5):
             pass
+
+
+def test_port_zajety_przez_centrum_nie_jest_wolny_a_jego_sprawdzenie_zamyka_gniazdo() -> None:
+    # Opiekun pyta o port co 0,2 s przez minutę, czekając, aż stare Centrum go zwolni (restart_guardian._port_released).
+    with tool_files.listen_locally(0) as listener:
+        port = listener.getsockname()[1]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", ResourceWarning)
+            taken_free = tool_files.port_free(port)
+            gc.collect()
+
+    assert taken_free is False
+    assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
+    assert tool_files.port_free(port)
 
 
 def test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu(

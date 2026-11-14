@@ -1,8 +1,8 @@
-import { CheckIcon, CircleAlertIcon, ClockIcon, MailIcon, type LucideIcon } from "lucide-react"
+import { BellIcon, CheckIcon, CircleAlertIcon, ClockIcon, MailIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
 import { Badge } from "@/components/ui/badge"
-import type { Status } from "@/pages/worker-reports/day-state"
+import type { Choice, Status } from "@/pages/worker-reports/day-state"
 
 type Look = {
   label: string
@@ -16,7 +16,7 @@ type Look = {
 /** Stany z wynikiem kliknięcia w kolejności listy filtra Status: najpierw to, co wymaga ręki taty. */
 export const STATUSES: ReadonlyArray<Status> = ["problem", "without_report", "waiting", "complete"]
 
-const LOOKS: Readonly<Record<Status, Look>> = {
+const LOOKS: Readonly<Record<Choice, Look>> = {
   problem: {
     label: "Problem",
     icon: CircleAlertIcon,
@@ -36,10 +36,16 @@ const LOOKS: Readonly<Record<Status, Look>> = {
     tile: "bg-success-tile text-success-tile-foreground",
     color: "var(--success)",
   },
+  reminded: {
+    label: "Przypomniane",
+    icon: BellIcon,
+    tile: "bg-reminder-tile text-reminder-tile-foreground",
+    color: "var(--reminder)",
+  },
 }
 
-export function look(status: Status): Look {
-  return LOOKS[status]
+export function look(choice: Choice): Look {
+  return LOOKS[choice]
 }
 
 /** Znaczek stanu: nazwa stanu (albo `label`, np. „Wpisane” przy zleceniu) w kolorze kafelka, nigdy sam kolor. */

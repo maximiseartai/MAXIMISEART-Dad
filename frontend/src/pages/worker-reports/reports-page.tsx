@@ -15,7 +15,7 @@ import { dateTime, plural } from "@/lib/format"
 import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { REMINDERS_SECTION } from "@/pages/settings/reminders-section"
-import { type DayState, dayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
+import { type Choice, dayState, hasStatus, isChosen } from "@/pages/worker-reports/day-state"
 import type { Keep } from "@/pages/worker-reports/day-details"
 import { type DayRange, rangeFromPath } from "@/pages/worker-reports/days"
 import { type HeatRow, HeatMap } from "@/pages/worker-reports/heat-map"
@@ -121,11 +121,12 @@ function NoReports({ className }: { className: string | undefined }) {
   )
 }
 
-const NO_STATUS: Readonly<Record<Status, number>> = { problem: 0, without_report: 0, waiting: 0, complete: 0 }
+const NO_CHOICE: Readonly<Record<Choice, number>> = { problem: 0, without_report: 0, waiting: 0, complete: 0, reminded: 0 }
 
 /**
  * Pasek narzędzi (wyszukiwarka, filtr Status) i Mapa cieplna dni zakresu, pod nią Raporty spoza listy adresów z tych
- * dni. Wykonawcy zawsze alfabetycznie; filtr Status zostawia tych, którzy mają w zakresie dzień wybranego stanu.
+ * dni. Wykonawcy zawsze alfabetycznie; filtr Status zostawia tych, którzy mają w zakresie dzień wybranego stanu albo,
+ * przy Przypomnianych, dzień z Przypomnieniem o raporcie.
  */
 function ReportsMap({
   view,
@@ -141,7 +142,7 @@ function ReportsMap({
   className: string | undefined
 }) {
   const [query, setQuery] = React.useState("")
-  const [chosen, setChosen] = React.useState<ReadonlySet<Status>>(new Set())
+  const [chosen, setChosen] = React.useState<ReadonlySet<Choice>>(new Set())
   const columns = view.days.filter((column) => column.day >= range.from && column.day <= range.to)
 
   const rows: ReadonlyArray<HeatRow> = view.workers
@@ -158,11 +159,12 @@ function ReportsMap({
       })),
     }))
 
-  const counts = { ...NO_STATUS }
+  const counts = { ...NO_CHOICE }
 
   for (const { state } of rows.flatMap((row) => row.cells)) {
     if (hasStatus(state)) {
       counts[state.kind] += 1
+      counts.reminded += state.day.reminders.length > 0 ? 1 : 0
     }
   }
 
@@ -171,7 +173,7 @@ function ReportsMap({
   const shown = rows.filter(
     (row) =>
       row.worker.toLocaleLowerCase("pl").includes(needle) &&
-      (chosen.size === 0 || row.cells.some((cell) => hasChosen(cell.state, chosen)))
+      (chosen.size === 0 || row.cells.some((cell) => isChosen(cell.state, chosen)))
   )
 
   const unknown = view.unknown_senders.filter((sender) => columns.some((column) => column.day === sender.day))
@@ -210,8 +212,4 @@ function ReportsMap({
       <UnknownSenders senders={unknown} />
     </div>
   )
-}
-
-function hasChosen(state: DayState, chosen: ReadonlySet<Status>): boolean {
-  return hasStatus(state) && chosen.has(state.kind)
 }

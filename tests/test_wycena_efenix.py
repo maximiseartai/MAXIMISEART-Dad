@@ -47,18 +47,28 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
 from playwright.sync_api import Browser, Error as PlaywrightError, Locator, Page, Request as PlaywrightRequest, Route
 from playwright.sync_api import Response as PlaywrightResponse, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 import pytest
 
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
-from rozliczenia import efenix_browser, efenix_process, efenix_trace
+from rozliczenia import efenix_browser, efenix_messages, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
-from rozliczenia.efenix_checks import ListedRead
-from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingStopped, PricingSummary
+from rozliczenia.efenix_checks import ListedRead, Settled
+from rozliczenia.efenix_positions import Excess
+from rozliczenia.efenix_pricing import (
+    EfenixInputs,
+    EmmettWarning,
+    OrderKind,
+    OrderResult,
+    PricingMode,
+    PricingStopped,
+    PricingSummary,
+)
 from rozliczenia.efenix_window import (
     BrowserFailure,
     StatusChangeBlocked,
@@ -1034,6 +1044,19 @@ def test_znacznik_przekazania_zastepuje_znacznik_efenix_a_znacznik_efenix_nigdy_
     assert _address_fills(source) == {18: FORWARDED_RGB, 19: FORWARDED_RGB}
 
 
+def test_zlecenie_do_akceptacji_z_adresem_juz_w_kolorze_znacznika_przekazania_zostaje_a_plik_sie_nie_zmienia(tmp_path: Path) -> None:
+    """Znacznik przekazania nie zastępuje Znacznika przekazania: komórka, która już go ma, zostaje bez zmian, a Plik
+    zbiorczy nie jest zapisywany od nowa."""
+
+    order = Order("#8333", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=FORWARDED_RGB)
+    source = write_collective_file(tmp_path, [order])
+    _packed_like_excel(source)
+    before = source.read_bytes()
+    outcome = _run_in_process(source, StanEfenix([replace(order.in_efenix("901"), execution_date=DAY, status="Do akceptacji")]))
+
+    assert (outcome.result, _address_fills(source), source.read_bytes() == before) == ("OK", {18: FORWARDED_RGB}, True)
+
+
 class _Before:
     """Okno efenix ``efenix``, w którym ``before`` biegnie tuż przed każdym działaniem okna, pod śladem zlecenia: jego
     skutek (zamknięta karta, skrypt strony, wyjątek okna) i czas to skutek i czas tego działania; implementuje
@@ -1224,6 +1247,9 @@ def test_przycisk_przekazania_ktorego_tak_wysyla_anulowane_nie_dochodzi_do_efeni
         pytest.param(StatusChange.FORWARD_GET, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="get"),
         pytest.param(StatusChange.FORWARD_TWO_STATUSES, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="dwa-statusy"),
         pytest.param(StatusChange.FORWARD_STATUS_IN_URL, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="status-w-adresie"),
+        pytest.param(StatusChange.FORWARD_EMPTY_STATUS_IN_URL, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="pusty-status-w-adresie"),
+        pytest.param(StatusChange.FORWARD_EMPTY_ORDER, StatusChangeBlocked.OTHER_ORDER, [], "Do wyceny", id="puste-zlecenie-w-tresci"),
+        pytest.param(StatusChange.FORWARD_UNREADABLE, StatusChangeBlocked.OTHER_STATUS, [], "Do wyceny", id="tresc-nie-tekst"),
         pytest.param(
             StatusChange.FORWARD_TWICE,
             StatusChangeBlocked.OUTSIDE_FORWARD,
@@ -1238,7 +1264,8 @@ def test_w_przekazaniu_do_efenix_dochodzi_tylko_jedno_zadanie_post_do_akceptacji
 ) -> None:
     """Przekazanie innego zlecenia też jest nieodwracalne, więc strażnik przepuszcza tylko pierwsze żądanie, POST z
     jednym ``xstatus`` „Do akceptacji” i jednym ``order_id`` zlecenia otwartego w oknie; następne zlecenie efenix bez
-    wyceny zostaje nietknięte."""
+    wyceny zostaje nietknięte. Puste pole też jest jego wartością, a treść żądania, która nie jest tekstem, nie jest
+    Przekazaniem otwartego zlecenia."""
 
     order = Order("#8381", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
     source = write_collective_file(tmp_path, [order])
@@ -1269,6 +1296,51 @@ def test_zmiana_statusu_po_ostatnim_dzialaniu_okna_nie_dochodzi_do_efenix_a_okno
     assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [])
 
 
+def test_zmiana_statusu_przerwana_miedzy_dzialaniami_okna_zatrzymuje_nastepne_dzialanie_zanim_dojdzie_do_efenix(page: Page) -> None:
+    """Strażnik przerwał żądanie zmiany statusu, gdy okno nie działało: następne działanie okna kończy się
+    Zatrzymaniem, zanim cokolwiek wyśle, bo strona, która sama zmienia status, nie jest stroną efenix, którą okno zna."""
+
+    def search_after_blocked_change(url: str) -> None:
+        with efenix_browser.window(page, url) as efenix:
+            page.evaluate(
+                "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Anulowane'})"
+                ".catch(() => 'przerwane')"
+            )
+            efenix.search("#8392")
+
+    with atrapa_efenix([Order("#8392").in_efenix("901")]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            search_after_blocked_change(atrapa.url)
+        searched = atrapa.searched()
+
+    assert (stopped.value.part, stopped.value.cause, searched) == (PagePart.RESULTS, StatusChangeBlocked.OUTSIDE_FORWARD, [])
+
+
+def test_przekazanie_otwartego_zlecenia_wyslane_przez_strone_po_udanym_przekazaniu_nie_dochodzi_do_efenix_a_okno_konczy_sie_zatrzymaniem(
+    page: Page,
+) -> None:
+    """Strażnik przepuszcza żądanie Przekazania do akceptacji tylko wtedy, gdy okno na nie czeka: po udanym Przekazaniu
+    to samo żądanie, wysłane przez stronę, nie dochodzi do efenix, a okno kończy się Zatrzymaniem."""
+
+    def forward_then_page_forwards_again(url: str) -> None:
+        with efenix_browser.window(page, url) as efenix:
+            [listed] = efenix.search("8399")
+            efenix.open_order(listed)
+            assert efenix.forward_to_accept() is None
+            page.evaluate(
+                "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Do%20akceptacji&comment='})"
+                ".catch(() => 'przerwane')"
+            )
+
+    order = Order("#8399", cells={"O": 1}, quantities={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            forward_then_page_forwards_again(atrapa.url)
+        requests = atrapa.status_requests()
+
+    assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [("POST", "Do akceptacji")])
+
+
 @pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
 @pytest.mark.parametrize("status_change", [StatusChange.ON_LOAD, StatusChange.POPUP], ids=lambda change: change.name.lower())
 def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_efenix_takze_z_nowego_okna_strony(
@@ -1289,6 +1361,22 @@ def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_ef
     assert isinstance(facts, PricingStopped)
     assert (_stop(outcome), outcome.ending.stop_kind, facts.cause) == ("EFENIX_OKNO_ZATRZYMANE", "for_maks", StatusChangeBlocked.OUTSIDE_FORWARD)
     assert (requests, in_efenix.status, _address_fills(source)) == ([], "Do wyceny", {18: None})
+
+
+def test_zmiana_statusu_przy_wczytaniu_strony_zlecenia_w_innej_budowie_to_zatrzymanie_o_zmianie_statusu(tmp_path: Path, page: Page) -> None:
+    """Strażnik przerwał zmianę statusu w działaniu okna, które i tak się nie udało: Zatrzymanie podaje przerwaną zmianę
+    statusu, a nie inną budowę strony, bo strona, która sama zmienia status zlecenia, nie jest stroną efenix."""
+
+    order = Order("#8373", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    in_efenix = replace(order.in_efenix("901"), execution_date=DAY, changed=Changed.DATE_FORMAT)
+    with atrapa_efenix([in_efenix], status_change=StatusChange.ON_LOAD) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, [order]), page, atrapa.url, timeout_ms=3_000)
+        requests = atrapa.status_requests()
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), facts.part, facts.cause, requests) == ("EFENIX_OKNO_ZATRZYMANE", PagePart.ORDER, StatusChangeBlocked.OUTSIDE_FORWARD, [])
 
 
 @pytest.mark.parametrize(
@@ -1513,6 +1601,13 @@ ANSWERED = {
         _answering(CHANGE_STATUS, _to_login),
         ("EFENIX_WYLOGOWANY", PagePart.FORWARD, LoginSign.REDIRECT, WindowAction.FORWARD),
     ),
+    "przekazanie-ze-statusem-400": (
+        _READY,
+        _READY.in_efenix("952"),
+        PricingMode.FORWARD,
+        _answering(CHANGE_STATUS, lambda route: route.fulfill(status=HTTPStatus.BAD_REQUEST)),
+        ("EFENIX_OKNO_ZATRZYMANE", PagePart.FORWARD, HttpStatus(HTTPStatus.BAD_REQUEST), WindowAction.FORWARD),
+    ),
 }
 
 
@@ -1526,9 +1621,10 @@ def test_dzialanie_okna_bez_kalendarza_bez_odpowiedzi_albo_z_przekierowaniem_na_
     prepare: Callable[[Page], Callable[[Efenix], Efenix]],
     stopped: tuple[str, PagePart, WindowCause, WindowAction],
 ) -> None:
-    """Pole daty bez kalendarza to inna budowa strony, żądanie Przekazania do akceptacji bez odpowiedzi to Zatrzymanie
-    okna, a odpowiedź zapisu ilości albo „Tak” Przekazania przekierowana na stronę logowania to wylogowanie. Fakty
-    Zatrzymania dla Logów Uruchomienia mają część strony, przyczynę techniczną i działanie okna, które się nie udało."""
+    """Pole daty bez kalendarza to inna budowa strony, żądanie Przekazania do akceptacji bez odpowiedzi albo z odpowiedzią
+    ze statusem błędu (od 400) to Zatrzymanie okna, a odpowiedź zapisu ilości albo „Tak” Przekazania przekierowana na
+    stronę logowania to wylogowanie. Fakty Zatrzymania dla Logów Uruchomienia mają część strony, przyczynę techniczną i
+    działanie okna, które się nie udało."""
 
     with atrapa_efenix([in_efenix]) as atrapa:
         outcome = _run(write_collective_file(tmp_path, [order]), page, atrapa.url, timeout_ms=3_000, window=prepare(page), mode=mode)
@@ -1539,6 +1635,47 @@ def test_dzialanie_okna_bez_kalendarza_bez_odpowiedzi_albo_z_przekierowaniem_na_
     failed = facts.stopped_at.failed
     assert failed is not None
     assert (_stop(outcome), facts.part, facts.cause, failed.action) == stopped
+
+
+def test_zerwane_zadanie_przekazania_zatrzymuje_wycene_od_razu_a_nie_po_czasie_okna(tmp_path: Path, page: Page) -> None:
+    """Okno czeka na koniec albo porażkę żądania Przekazania do akceptacji, więc żądanie, które padło, kończy czekanie od
+    razu: Zatrzymanie przychodzi przed czasem okna efenix taty (``TIMEOUT_MS``), a nie po nim."""
+
+    with atrapa_efenix([_READY.in_efenix("952")]) as atrapa:
+        outcome = _run(
+            write_collective_file(tmp_path, [_READY]),
+            page,
+            atrapa.url,
+            timeout_ms=efenix_browser.TIMEOUT_MS,
+            window=_answering(CHANGE_STATUS, lambda route: route.abort())(page),
+            mode=PricingMode.FORWARD,
+        )
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
+    failed = facts.stopped_at.failed
+    assert failed is not None
+    assert (facts.cause, failed.action) == (OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD)
+    assert failed.duration_ms < efenix_browser.TIMEOUT_MS / 2, failed
+
+
+def test_wylogowanie_zaraz_po_przekazaniu_zatrzymuje_wycene_na_przekazaniu_a_zlecenie_jest_juz_do_akceptacji(
+    tmp_path: Path, page: Page
+) -> None:
+    """Sesja, która wygasła zaraz po żądaniu Przekazania, daje po przeładowaniu strony formularz logowania: Wycena
+    zatrzymuje się jako wylogowanie na Przekazaniu, które już doszło do efenix, a nie dopiero przy następnym szukaniu."""
+
+    order = Order("#8396", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1})
+    source = write_collective_file(tmp_path, [order])
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)], expire_after=(ORDER_PAGE, 1)) as atrapa:
+        outcome = _run(source, page, atrapa.url, mode=PricingMode.FORWARD, timeout_ms=3_000)
+        [in_efenix], _logged_in = atrapa.state()
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped)
+    assert (_stop(outcome), facts.part, facts.cause, in_efenix.status) == ("EFENIX_WYLOGOWANY", PagePart.FORWARD, LoginSign.PAGE, "Do akceptacji")
 
 
 _DIALOG = '<div id="dialog_emmett">{}</div>'
@@ -3458,6 +3595,34 @@ def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: 
     assert shown == [atrapa.url]
 
 
+def test_strona_efenix_w_oknie_taty_ma_rozmiar_okna_przegladarki(tmp_path: Path) -> None:
+    """Okno taty nie narzuca stronie własnego rozmiaru: strona efenix wypełnia okno przeglądarki, które tata ustawia, a
+    nie stały prostokąt Playwrighta (1280×720), który przy innym oknie zostawia pasy albo ucina stronę."""
+
+    profile = tmp_path / "profil"
+
+    def size(url: str) -> list[int]:
+        arguments = ["--remote-debugging-port=0", "--window-size=900,700"]
+        with efenix_browser.chrome(url, profile, nullcontext, channel=None, headless=True, arguments=arguments):
+            port = (profile / "DevToolsActivePort").read_text(encoding="utf-8").split()[0]
+            # Strona okna widziana z zewnątrz, przez port debugowania, jak przez narzędzia przeglądarki; drugi Playwright
+            # biegnie we własnym wątku, bo ten ma już Playwright okna.
+            with ThreadPoolExecutor(max_workers=1) as outside:
+                return outside.submit(outside_size, port, url).result(timeout=60)
+
+    def outside_size(port: str, url: str) -> list[int]:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            [page] = [page for context in browser.contexts for page in context.pages if page.url == url]
+            return cast(list[int], page.evaluate("[innerWidth, innerHeight]"))
+
+    with atrapa_efenix([]) as atrapa:
+        with ThreadPoolExecutor(max_workers=1) as own_thread:
+            shown = own_thread.submit(size, atrapa.url).result(timeout=120)
+
+    assert shown == [900, 700]
+
+
 def test_okno_czeka_na_logowanie_taty_15_minut_a_potem_daje_wylogowanie(page: Page) -> None:
     """Domyślny limit czekania na logowanie to 15 minut: tata, który loguje się w 14. minucie i 59. sekundzie, zaczyna
     Wycenę, a bez logowania okno kończy czekanie w 15. minucie (``LoggedOut``), nie później. Czas czekania mierzy
@@ -3841,6 +4006,24 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
         23: ("solid", YELLOW),
     }
     assert (font.color.rgb, font.b, font.i) == ("FFFF0000", True, True)
+
+
+
+def test_wynik_zlecenia_ma_komunikat_wtedy_i_tylko_wtedy_gdy_zlecenie_zostalo_tacie(tmp_path: Path) -> None:
+    """Komunikat w wyniku zlecenia ma tylko zlecenie, które zostało tacie (błąd zlecenia, Ostrzeżenie Emmetta), bo z
+    niego Logi Uruchomienia i karta mówią tacie, co zrobić: wynik bez tej zgodności nie powstaje."""
+
+    order = CollectiveOrder(18, "9901", "adrian.testowy", "UL. TESTOWA 1", DAY, {}, Decimal(0))
+    warning = EmmettWarning((Excess("012", efenix=2, file=1),))
+    settled = Settled(ListedOrder("9901", "Rozliczone", "adrian.testowy", "UL. TESTOWA 1", "1"))
+    message = efenix_messages.emmett_warning(tmp_path / "plik zbiorczy.xlsx", 18, warning.excess)
+
+    assert OrderResult(order, warning, (), message, None).kind is OrderKind.WARNING
+    assert OrderResult(order, settled, (), None, None).kind is OrderKind.SETTLED
+    with pytest.raises(ValueError, match="z Komunikatem: False"):
+        OrderResult(order, warning, (), None, None)
+    with pytest.raises(ValueError, match="z Komunikatem: True"):
+        OrderResult(order, settled, (), message, None)
 
 
 _TRACE_START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)

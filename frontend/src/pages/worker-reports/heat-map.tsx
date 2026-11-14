@@ -1,12 +1,12 @@
 import { cn } from "cn"
-import { ClockIcon } from "lucide-react"
+import { BellIcon, ClockIcon } from "lucide-react"
 
 import type { ReportsDay } from "@/api/generated"
 import { Card } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { plural } from "@/lib/format"
-import { type DayState, hasStatus, type Status } from "@/pages/worker-reports/day-state"
+import { dayMonth, plural } from "@/lib/format"
+import { type Choice, type DayState, hasStatus, isChosen, type Status } from "@/pages/worker-reports/day-state"
 import { DayDetails, type Keep, WorkerAvatar } from "@/pages/worker-reports/day-details"
 import { columnLabel, shortDay } from "@/pages/worker-reports/days"
 import { look } from "@/pages/worker-reports/status"
@@ -16,9 +16,11 @@ export type HeatRow = { worker: string; cells: ReadonlyArray<{ column: ReportsDa
 
 /**
  * Mapa cieplna Raportów: wiersz to Wykonawca, kolumna to dzień zakresu, kafelek „wpisane/zlecenia” w kolorze stanu z
- * popoverem dnia, na końcu pierścień wpisanych w zakresie. Kolumna Wykonawcy bierze wolne miejsce, kolumny dni mają
- * stałą szerokość, a na wąskim ekranie tabela przewija się w bok wewnątrz karty.
- * `dimmed` to filtr Status: kafelki innych stanów i dni przyszłe przygasają.
+ * popoverem dnia i znaczkiem dzwonka, gdy za ten dzień poszło Przypomnienie o raporcie, na końcu pierścień wpisanych
+ * w zakresie. Kolumna Wykonawcy bierze wolne miejsce, kolumny dni mają stałą szerokość, a na wąskim ekranie tabela
+ * przewija się w bok wewnątrz karty.
+ * `dimmed` to filtr Status: kafelki niewybranych dni i dni przyszłe przygasają, a przy Przypomnianych linia pod
+ * Wykonawcą liczy jego przypomnienia.
  */
 export function HeatMap({
   columns,
@@ -32,7 +34,7 @@ export function HeatMap({
   columns: ReadonlyArray<ReportsDay>
   today: string
   rows: ReadonlyArray<HeatRow>
-  dimmed: ReadonlySet<Status> | null
+  dimmed: ReadonlySet<Choice> | null
   empty: string
   keeping: Keep | null
   onKeep: (cell: Keep) => void
@@ -116,12 +118,12 @@ function WorkerRow({
 }: {
   row: HeatRow
   today: string
-  dimmed: ReadonlySet<Status> | null
+  dimmed: ReadonlySet<Choice> | null
   keeping: Keep | null
   onKeep: (cell: Keep) => void
 }) {
   const totals = totalsOf(row.cells.map((cell) => cell.state))
-  const line = summary(totals)
+  const line = dimmed?.has("reminded") ? remindersLine(totals) : summary(totals)
 
   return (
     <TableRow aria-label={row.worker}>
@@ -150,7 +152,7 @@ function WorkerRow({
   )
 }
 
-const TILE = "grid h-11 w-full place-items-center rounded-lg text-[0.72rem] font-semibold tabular-nums"
+const TILE = "relative grid h-11 w-full place-items-center rounded-lg text-[0.72rem] font-semibold tabular-nums"
 
 function Tile({
   worker,
@@ -161,7 +163,7 @@ function Tile({
 }: {
   worker: string
   state: DayState
-  dimmed: ReadonlySet<Status> | null
+  dimmed: ReadonlySet<Choice> | null
   keeping: Keep | null
   onKeep: (cell: Keep) => void
 }) {
@@ -176,21 +178,21 @@ function Tile({
   }
 
   const { day } = state
-  const label = `${worker}, ${shortDay(day.day)}: ${look(state.kind).label}, wpisane ${day.entered} z ${day.orders}`
 
   return (
     <Popover>
       <PopoverTrigger
-        aria-label={label}
+        aria-label={tileLabel(worker, state)}
         data-status={state.kind}
         className={cn(
           TILE,
           look(state.kind).tile,
           "cursor-pointer transition-transform duration-150 ease-out outline-none hover:brightness-95 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-95 data-popup-open:ring-2 data-popup-open:ring-foreground dark:hover:brightness-115",
-          dimmed !== null && !dimmed.has(state.kind) && "opacity-15"
+          dimmed !== null && !isChosen(state, dimmed) && "opacity-15"
         )}
       >
         {state.kind === "waiting" ? <ClockIcon className="size-4" aria-hidden /> : `${day.entered}/${day.orders}`}
+        {day.reminders.length > 0 ? <ReminderPin /> : null}
       </PopoverTrigger>
       <PopoverContent
         aria-label={`${worker}, ${shortDay(day.day)}`}
@@ -202,11 +204,45 @@ function Tile({
   )
 }
 
-type Totals = { orders: number; entered: number; problems: number; withoutReport: number; waiting: boolean; any: boolean }
+/** Nazwa kafelka: `wykonawca.b, cz. 05.11: Bez raportu, wpisane 1 z 2`, z liczbą wysłanych Przypomnień o raporcie. */
+function tileLabel(worker: string, state: Extract<DayState, { kind: Status }>): string {
+  const { day } = state
+  const shown = `${worker}, ${shortDay(day.day)}: ${look(state.kind).label}, wpisane ${day.entered} z ${day.orders}`
+  const count = day.reminders.length
+
+  if (count === 0) {
+    return shown
+  }
+
+  return `${shown}, ${count} ${plural(count, { one: "przypomnienie wysłane", few: "przypomnienia wysłane", many: "przypomnień wysłanych" })}`
+}
+
+/** Znaczek dzwonka w rogu kafelka: za ten dzień poszło Przypomnienie o raporcie. */
+function ReminderPin() {
+  return (
+    <span
+      data-reminder-pin
+      className="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-full bg-reminder text-white ring-2 ring-card"
+      aria-hidden
+    >
+      <BellIcon className="size-2.5" strokeWidth={2.4} />
+    </span>
+  )
+}
+
+type Totals = {
+  orders: number
+  entered: number
+  problems: number
+  withoutReport: number
+  waiting: boolean
+  any: boolean
+  reminders: string[]
+}
 
 /** Liczby Wykonawcy w zakresie: dni z wynikiem kliknięcia, bez dni przyszłych. */
 function totalsOf(states: ReadonlyArray<DayState>): Totals {
-  const totals: Totals = { orders: 0, entered: 0, problems: 0, withoutReport: 0, waiting: false, any: false }
+  const totals: Totals = { orders: 0, entered: 0, problems: 0, withoutReport: 0, waiting: false, any: false, reminders: [] }
 
   for (const state of states) {
     if (!hasStatus(state)) {
@@ -219,9 +255,24 @@ function totalsOf(states: ReadonlyArray<DayState>): Totals {
     totals.problems += state.day.problems.length
     totals.withoutReport += state.kind === "waiting" ? 0 : state.day.without_report.length
     totals.waiting ||= state.kind === "waiting"
+    totals.reminders.push(...state.day.reminders)
   }
 
   return totals
+}
+
+/** Linia pod nazwą Wykonawcy przy filtrze Przypomniane: `3 przypomnienia · ost. 13.11` albo `Bez przypomnień`. */
+function remindersLine(totals: Totals): Summary {
+  const last = totals.reminders.toSorted((left, right) => Date.parse(left) - Date.parse(right)).at(-1)
+
+  if (last === undefined) {
+    return { text: "Bez przypomnień", tone: "text-muted-foreground" }
+  }
+
+  const count = totals.reminders.length
+  const word = plural(count, { one: "przypomnienie", few: "przypomnienia", many: "przypomnień" })
+
+  return { text: `${count} ${word} · ost. ${dayMonth(last)}`, tone: "text-reminder-tile-foreground" }
 }
 
 /** Linia pod nazwą Wykonawcy: tekst i jego kolor. */
