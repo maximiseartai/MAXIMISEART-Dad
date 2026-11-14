@@ -426,7 +426,8 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
     (``TID251``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
     ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
-    Próbki ``ZNANE_LUKI`` pokazują klasy postaci, które przepuszczają wszystkie te mechanizmy, a nazwa próbki mówi klasę.
+    Próbki ``ZNANE_LUKI`` pokazują znane luki: postacie, które przepuszczają wszystkie te mechanizmy, a nazwa próbki
+    mówi ich klasę.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
     odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
@@ -460,6 +461,13 @@ from rozliczenia.centrum.refusal import _CATALOG, Refusal  # noqa: TID251
 
 def odmowa(wzor: Refusal) -> Refusal:
     return type(wzor)(500, "Zdanie spoza katalogu odmów.", _CATALOG)
+""",
+    "ufa tłumieniu mypy: konstruktor bez dowodu z type: ignore": """\
+from rozliczenia.centrum.refusal import Refusal
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor)(500, "Zdanie spoza katalogu odmów.", None)  # type: ignore[arg-type]  # próbka
 """,
     "refleksja po nazwie atrybutu: dowód z getattr modułu": """\
 from rozliczenia.centrum import refusal
@@ -817,8 +825,8 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
     Cytaty są z próbek wszystkich katalogów (``_rendered``), więc zmiana cytatu w Pythonie albo napisu w pliku TSX
     czerwieni ten test; nowy cytat dostaje wpis w ``UI_TEXTS`` albo powód w ``QUOTES_OUTSIDE_UI``.
     Plik UI ma napis w jednej z postaci: dziecko JSX, ``label="…"``, ``label={"…"}`` albo ``label: "…"``.
-    Próbki ``ZNANE_LUKI_NAPISOW_UI`` i ``ZNANE_LUKI_CYTATOW`` pokazują klasy postaci, które test przepuszcza bez
-    przycisku z cytowanym napisem, a nazwa próbki mówi klasę.
+    Próbki ``ZNANE_LUKI_NAPISOW_UI`` i ``ZNANE_LUKI_CYTATOW`` pokazują znane luki: postacie, które test przepuszcza bez
+    przycisku z cytowanym napisem, a nazwa próbki mówi ich klasę.
     """
 
     quoted = set(re.findall(r"„([^”]*)”", _rendered()))
@@ -847,6 +855,9 @@ ZNANE_LUKI_NAPISOW_UI: Final = {
     ),
     "nie wykonuje warunków JSX: przycisk w gałęzi, która się nie renderuje": (
         "export function Okno() {\n  return <div>{false && <Button>Kontynuuj</Button>}</div>\n}\n"
+    ),
+    "czyta plik z UI_TEXTS, nie to, czy ktoś go renderuje: przycisk w komponencie, którego nic nie importuje": (
+        "export function StareOkno() {\n  return <Button>Kontynuuj</Button>\n}\n"
     ),
 }
 # Znane luki tego strażnika po stronie Komunikatu: „klasa: postać” → moduł z fabryką, której gałąź cytuje napis spoza

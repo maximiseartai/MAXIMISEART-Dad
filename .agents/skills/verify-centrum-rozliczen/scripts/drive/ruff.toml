@@ -6,6 +6,8 @@ extend = "../../../../../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+"typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+"typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 "rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"

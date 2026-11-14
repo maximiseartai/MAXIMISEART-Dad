@@ -60,8 +60,7 @@ SAME_WORDS = 3
 CI_TOOLS = "tools/ci/"
 # Polecenie, które uruchamia skrypt z tools/ci/: interpreter (python3, .venv/bin/python, py -3) albo `--` przed nim.
 RUNS_CI_TOOL = re.compile(r"(?:python[\d.]*|py -3|--)\s+tools/ci/")
-WORKFLOWS = ROOT / ".github" / "workflows"
-# Skrypt w kroku workflow uruchamiany systemowym python3 runnera, bez zależności projektu.
+# Skrypt w kroku workflow albo akcji złożonej uruchamiany systemowym python3 runnera, bez zależności projektu.
 SYSTEM_PYTHON = re.compile(r"\bpython3\s+(tools/\S+\.py)\b")
 # Katalogi, z których skrypt z tools/ importuje moduły projektu (sys.path jego i testów).
 MODULE_DIRS = (TOOLS / "lib", TOOLS, TOOLS / "ci")
@@ -552,7 +551,10 @@ def test_znane_luki_kierunku_zaleznosci_tools_przechodza_przez_straznikow(
 
 
 def _system_python_scripts() -> set[Path]:
-    return {ROOT / script for workflow in sorted(WORKFLOWS.glob("*.yml")) for script in SYSTEM_PYTHON.findall(workflow.read_text(encoding="utf-8"))}
+    """Skrypty ``python3 tools/….py`` z każdego YAML pod ``.github``: workflowów i akcji złożonych (przegląd #1689, W3)."""
+
+    github = ROOT / ".github"
+    return {ROOT / script for plik in sorted([*github.rglob("*.yml"), *github.rglob("*.yaml")]) for script in SYSTEM_PYTHON.findall(plik.read_text(encoding="utf-8"))}
 
 
 def _outside_stdlib(scripts: set[Path], root: Path = ROOT) -> list[str]:
@@ -584,6 +586,17 @@ def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standa
     )
 
 
+def test_skrypt_systemowego_python3_w_akcji_zlozonej_spoza_biblioteki_wywraca_straznika(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    akcja = tmp_path / ".github" / "actions" / "a" / "action.yaml"
+    akcja.parent.mkdir(parents=True)
+    akcja.write_text("runs:\n  using: composite\n  steps:\n    - run: python3 tools/skrypt.py\n      shell: bash\n", encoding="utf-8")
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "skrypt.py").write_text("import yaml\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", tmp_path)
+
+    assert _outside_stdlib(_system_python_scripts(), tmp_path) == ["tools/skrypt.py: yaml"]
+
+
 def test_domkniecie_importow_skryptu_widzi_import_spoza_biblioteki_w_module_ktory_importuje(tmp_path: Path) -> None:
     (tmp_path / "skrypt.py").write_text("import json\nimport modul\n", encoding="utf-8")
     (tmp_path / "modul.py").write_text("def f() -> None:\n    import yaml\n", encoding="utf-8")
@@ -598,6 +611,8 @@ ZNANE_LUKI_SYSTEMOWEGO_PYTHONA = {
     "czyta tylko instrukcje importu: importlib.import_module": ("run: python3 tools/skrypt.py", 'import importlib\n\nYAML = importlib.import_module("yaml")\n'),
     "zna tylko dosłowne python3 tools/….py w kroku: polecenie złożone w biegu": ('run: S=tools/skrypt.py; python3 "$S"', "import yaml\n"),
     "zna tylko dosłowne python3 tools/….py w kroku: flaga interpretera przed skryptem": ("run: python3 -u tools/skrypt.py", "import yaml\n"),
+    # dbm.sqlite3 jest od Pythona 3.13, a python3 runnera ubuntu-latest (Ubuntu 24.04) to 3.12.
+    "zna najwyższą nazwę modułu i bibliotekę standardową Pythona testu, nie python3 runnera: dbm.sqlite3": ("run: python3 tools/skrypt.py", "import dbm.sqlite3\n"),
 }
 
 
@@ -610,7 +625,6 @@ def test_znane_luki_skryptow_systemowego_pythona_przechodza_przez_straznika(tmp_
         (korzen / ".github" / "workflows" / "ci.yml").write_text(f"jobs:\n  a:\n    steps:\n      - {krok}\n", encoding="utf-8")
         (korzen / "tools" / "skrypt.py").write_text(skrypt, encoding="utf-8")
         monkeypatch.setattr(sys.modules[__name__], "ROOT", korzen)
-        monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", korzen / ".github" / "workflows")
         zgloszenia[opis] = _outside_stdlib(_system_python_scripts(), korzen)
 
     assert_znane_luki(zgloszenia, "tests/test_spis_narzedzi.py (ZNANE_LUKI_SYSTEMOWEGO_PYTHONA)")

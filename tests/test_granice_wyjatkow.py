@@ -20,7 +20,7 @@ konfiguracji mypy z ``mypy.util.get_mypy_comments``, i liczy tokeny tłumień, n
 
 Napis „noqa” w docstringu albo w napisie nie jest komentarzem, więc się nie liczy, a postacie, których nie ma w
 repozytorium, stoją w ``PROBKI``. Czy tłumienie jest zasadne, ocenia przegląd. Próbki ``ZNANE_LUKI`` pokazują
-klasy zmian, które dodają tłumienie, a licznik ich nie widzi; nazwa próbki mówi klasę.
+znane luki: zmiany, które dodają tłumienie, a licznik ich nie widzi; nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations
@@ -195,6 +195,11 @@ ZNANE_LUKI: Final = {
             "src/a.py": "x = 1\n",
             "src/b.py": 'y: int = "1"  # type: ignore[assignment]\n',
         },
+    ),
+    # Dekorator typing.no_type_check, drugą postać tej klasy, odrzuca zakaz ruff TID251 (przegląd #1689, W1).
+    "liczy komentarze tłumień, nie tłumienie zapisane kodem: gałąź if not TYPE_CHECKING, której mypy nie sprawdza": (
+        {"src/a.py": "x = 1\n"},
+        {"src/a.py": 'from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n\n    def f() -> int:\n        return "1"\n'},
     ),
 }
 

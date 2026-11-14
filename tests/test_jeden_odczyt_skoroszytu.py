@@ -19,9 +19,10 @@ Ruff ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` linię importu i atrybut 
 ``workbook_files.py``, w pliku z prawem właściciela i po nazwie re-eksportowanej przez inny moduł. W testach i
 atrapach łapie łatanie modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz
 ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w wywołaniu po nazwie, aliasie importu, jako atrybut
-(``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
-Próbki ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW`` pokazują klasy postaci, które przepuszcza i ruff, i ten strażnik,
-a nazwa próbki mówi klasę.
+(``rozliczenia.workbook_files``) albo jako człon napisu ``"rozliczenia.workbook_files…"``, oraz łatanie atrybutu o
+nazwie ``workbook_files`` w module, który go importuje.
+Próbki ``ZNANE_LUKI_SRC``, ``ZNANE_LUKI_MIEJSC`` i ``ZNANE_LUKI_TESTOW`` pokazują znane luki: postacie, które
+przepuszcza i ruff, i ten strażnik, a nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations
@@ -189,9 +190,7 @@ def _patches(source: str) -> list[tuple[int, str]]:
             return target.id in names
         if isinstance(target, ast.Attribute):
             return target.attr == MODULE
-        return isinstance(target, ast.Constant) and str(target.value).startswith(
-            f"rozliczenia.{MODULE}"
-        )
+        return isinstance(target, ast.Constant) and MODULE in str(target.value).split(".")
 
     found = []
     for node in ast.walk(tree):
@@ -202,7 +201,17 @@ def _patches(source: str) -> list[tuple[int, str]]:
             if node.args
             else next((kw.value for kw in node.keywords if kw.arg == "target"), None)
         )
-        if is_module(target):
+        # Łatany atrybut o nazwie modułu podmienia moduł w module, który go importuje (przegląd #1689, W2).
+        attribute = (
+            node.args[1]
+            if len(node.args) > 1
+            else next((kw.value for kw in node.keywords if kw.arg in {"name", "attribute"}), None)
+        )
+        if (
+            is_module(target)
+            or (isinstance(attribute, ast.Constant) and attribute.value == MODULE)
+            or any(kw.arg == MODULE for kw in node.keywords)
+        ):
             found.append((node.lineno, ast.unparse(node)))
     return found
 
@@ -361,6 +370,26 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
 
 
+def test_latanie_atrybutu_o_nazwie_modulu_skoroszytu_w_module_konsumenta_wywraca_straznika() -> None:
+    """``intermax_restore`` czyta bajty przez swój atrybut ``workbook_files``, więc łatanie tego atrybutu podmienia
+    moduł skoroszytu tak samo jak łatanie samego modułu (przegląd #1689, W2)."""
+
+    test = (
+        "from unittest import mock\n"
+        "from rozliczenia import intermax_restore\n"
+        "def test_lata(monkeypatch):\n"
+        "    monkeypatch.setattr(intermax_restore, 'workbook_files', None)\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook_files')\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook_files.workbook_content')\n"
+        "    mock.patch.object(intermax_restore, attribute='workbook_files')\n"
+        "    mock.patch.multiple('rozliczenia.intermax_restore', workbook_files=None)\n"
+        "    monkeypatch.setattr(intermax_restore, 'workbook_files_kopia', None)\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook')\n"
+    )
+
+    assert sorted(line for line, _ in _patches(test)) == [4, 5, 6, 7, 8]
+
+
 # Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src/rozliczenia,
 # który czyta bajty albo wartości pliku taty poza ``ONLY``, a mimo to przechodzi przez ruff z konfiguracją src/ i
 # ``_src_findings``.
@@ -409,6 +438,22 @@ from . import workbook_files
 
 def wartosci(path: Path) -> bytes:
     return workbook_files.__dict__["file_bytes"](path)
+""",
+}
+
+# Znane luki tego strażnika w samym ``workbook_files.py``: „klasa: postać” → moduł, który czyta skoroszyt z dysku obok
+# ``file_bytes``, a mimo to przechodzi przez ruff i ``_src_findings`` jako ``rozliczenia/workbook_files.py``.
+ZNANE_LUKI_MIEJSC = {
+    "miejsce to plik i nazwa funkcji, nie jej klasa: metoda _open innej klasy": """\
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.workbook import Workbook
+
+
+class Kopia:
+    def _open(self, path: Path) -> Workbook:
+        return load_workbook(path)
 """,
 }
 
@@ -482,6 +527,10 @@ def _src_reads(source: str) -> list[str]:
     return _src_findings({"rozliczenia/sonda_luki.py": source})[0]
 
 
+def _reads_in_workbook_files(source: str) -> list[str]:
+    return _src_findings({"rozliczenia/workbook_files.py": source})[0]
+
+
 def _test_patches(source: str) -> list[str]:
     return [f"_patches: linia {line}: {text}" for line, text in _patches(source)]
 
@@ -491,9 +540,10 @@ def _test_patches(source: str) -> list[str]:
     ("nazwa", "probki", "sonda", "straznik"),
     [
         ("ZNANE_LUKI_SRC", ZNANE_LUKI_SRC, SRC / "rozliczenia" / "sonda_luki.py", _src_reads),
+        ("ZNANE_LUKI_MIEJSC", ZNANE_LUKI_MIEJSC, SRC / "rozliczenia" / "workbook_files.py", _reads_in_workbook_files),
         ("ZNANE_LUKI_TESTOW", ZNANE_LUKI_TESTOW, TESTS / "test_sonda_luki.py", _test_patches),
     ],
-    ids=["odczyt-w-src", "latanie-w-testach"],
+    ids=["odczyt-w-src", "odczyt-w-workbook-files", "latanie-w-testach"],
 )
 def test_znane_luki_jednej_drogi_odczytu_przechodza_przez_ruff_i_straznika(
     tmp_path: Path, nazwa: str, probki: dict[str, str], sonda: Path, straznik: Callable[[str], list[str]]
