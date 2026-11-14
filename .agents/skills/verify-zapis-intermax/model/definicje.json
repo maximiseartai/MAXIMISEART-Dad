@@ -21,7 +21,7 @@
     "RegisterFile": "d1b97755195581e4"
   },
   "src/rozliczenia/dad_files.py": {
-    "DadFiles.read": "cb459940915004bd"
+    "DadFiles.read": "1d9700caf3b493ef"
   },
   "src/rozliczenia/workbook_save.py": {
     "write_atomically": "7c4a69cada0c1787"
