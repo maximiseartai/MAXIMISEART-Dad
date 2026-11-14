@@ -751,6 +751,20 @@ def plik(komorka: str) -> ArchiveFile:
     return ArchiveFile("t", "t", "d", "n", tekst(komorka))
 """,
     # Wersja sprawdza tekst przy przyjęciu, a post_of czyta go później (#1551).
+    "refleksja: object.__setattr__ Logów wersji po jej przyjęciu, przed post_of": """from types import SimpleNamespace
+
+from rozliczenia.centrum.comment_versions import LogsPost, OwnLogs, post_of
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    wersja = OwnLogs(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    object.__setattr__(wersja, "logs", SimpleNamespace(record=zle, text=zle.text))
+    return post_of(wersja)
+""",
     "refleksja: object.__setattr__ tekstu wersji po jej przyjęciu, przed post_of": """from types import SimpleNamespace
 
 from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
