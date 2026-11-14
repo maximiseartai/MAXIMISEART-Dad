@@ -34,7 +34,7 @@ from rozliczenia.centrum.report_box import (
     Rejected,
     Removed,
 )
-from rozliczenia.client_data import logs_text
+from rozliczenia.client_data import logs_text, tool
 
 from github_przypadki_skrzynki import BAD_KEY, Client, archive_tag, marker
 from github_wymiana import (
@@ -164,10 +164,10 @@ def packed_name(run: str, index: int) -> str:
 
 def _file(facts: Facts, text_key: str) -> ArchiveFile:
     return ArchiveFile(
-        str(facts["tag"]),
-        str(facts["tytul"]),
-        str(facts["opis"]),
-        str(facts["nazwa"]).removesuffix(".gz"),
+        tool(str(facts["tag"])),
+        tool(str(facts["tytul"])),
+        tool(str(facts["opis"])),
+        tool(str(facts["nazwa"]).removesuffix(".gz")),
         logs_text(str(facts[text_key])),
     )
 

@@ -301,6 +301,29 @@ def test_porazka_dla_calej_kolejki_zatrzymuje_przejscie_i_ponawia_je_po_minucie_
     assert (queue.box.issues, queue.clock.wakes) == ([], 1)
 
 
+def test_zamiana_pliku_ktorej_windows_odmawia_probuje_piec_razy_w_0_75_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plik otwarty chwilę w innym programie (antywirus, OneDrive) blokuje zamianę; zapis czeka i próbuje jeszcze raz."""
+
+    replace = Path.replace
+    refusals = [4]
+
+    def blocked(self: Path, target: Path) -> Path:
+        if refusals[0]:
+            refusals[0] -= 1
+            raise PermissionError("plik otwarty w innym programie")
+        return replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", blocked)
+    waited: list[float] = []
+
+    replace_atomically(tmp_path / "stan.json", "treść", pause=waited.append)
+
+    assert ((tmp_path / "stan.json").read_text(encoding="utf-8"), len(waited) + 1) == ("treść", 5)
+    assert sum(waited) == pytest.approx(0.75)
+
+
 def test_po_braku_sieci_kolejka_ponawia_po_minucie_bez_kolejnej_wysylki(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()))
     queue.outbox.post(post(["treść\n"]))
@@ -1314,7 +1337,9 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
 def logs_with_file(run_id: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``comment_versions.post_of``."""
 
-    archive = ArchiveFile("logi-08_14_09_2026", "Logi Uruchomień 08_14_09_2026", "Opis.", f"{run_id}.json", logs_text("{}\n"))
+    archive = ArchiveFile(
+        tool("logi-08_14_09_2026"), tool("Logi Uruchomień 08_14_09_2026"), tool("Opis."), tool(f"{run_id}.json"), logs_text("{}\n")
+    )
     return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"podsumowanie {run_id}\n"),), archive)
 
 
@@ -2298,7 +2323,7 @@ ODMOWY_CELU: Final = {
     object.__setattr__(cel, "title", komorka)
     return Post(cel, None, "r", None, post.parts)
 """,
-        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
     "zapis do __dict__ gotowego celu": (
         _GOTOWY_CEL
@@ -2306,7 +2331,7 @@ ODMOWY_CELU: Final = {
     cel.__dict__["title"] = komorka
     return Post(cel, None, "r", None, post.parts)
 """,
-        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
     "cast na Outgoing w tytule celu": (
         _GOTOWY_CEL
@@ -2318,7 +2343,7 @@ from rozliczenia.client_data import Outgoing
 def wysylka(komorka: str, post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, "r", None, post.parts)
 """,
-        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
     "tytuł celu typu Any": (
         _GOTOWY_CEL
@@ -2328,7 +2353,7 @@ def wysylka(komorka: str, post: Post) -> Post:
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
 """,
-        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ str.",
     ),
     "etykieta celu typu Any": (
         _GOTOWY_CEL
@@ -2338,11 +2363,11 @@ def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue(wiersz["ADRES"], post.parts[0]), None, "r", None, post.parts)
 """,
-        "bieg TypeError: Pole celu NewIssue.label w pliku kolejki ma typ str.",
+        "bieg TypeError: Pole NewIssue.label w pliku kolejki ma typ str.",
     ),
     "type.__new__ z bazą bez super(): podklasa Outgoing w tytule celu": (
         _PODKLASA_TEKSTU + '    return Post(NewIssue("uwaga-taty", tekst(komorka)), None, "r", None, post.parts)\n',
-        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ Tekst.",
+        "bieg TypeError: Pole NewIssue.title w pliku kolejki ma typ Tekst.",
     ),
     "podklasa celu w biegu: type() z NewIssue i adnotacją title: int": (
         """from typing import Any
