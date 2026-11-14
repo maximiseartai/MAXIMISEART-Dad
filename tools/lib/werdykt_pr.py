@@ -53,7 +53,7 @@ from typing import Literal
 import github
 from repo import REMOTE, ROOT
 import repo
-from stan_pr import Pull
+from stan_pr import Pull, Waiting
 import szablon_werdyktu
 
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
@@ -120,7 +120,7 @@ def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
         found = read(verdict, head)
         latest = found if found is not None and found.stance is not None else latest
     if latest is None:
-        return f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}"
+        return Waiting(f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}")
     problems = list(latest.problems)
     if latest.stance is Stance.CONSENT and rule_applies(pull, deployed):
         problems = _template_problems(latest.body, pull)

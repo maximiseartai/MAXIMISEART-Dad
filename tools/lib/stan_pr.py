@@ -18,6 +18,12 @@ JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 _JOB_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/(?P<run>[0-9]+)/job/[0-9]+")
 
 
+class Waiting(str):
+    """Przyczyna odmowy merge'a, która minie bez zmiany w PR: CI na HEAD jeszcze nie skończyło albo HEAD nie ma
+    jeszcze werdyktu; każdą inną przyczynę usuwa dopiero działanie autora. Rodzaj nadaje ten, kto przyczynę tworzy,
+    a ``tools/scal_pr.py --status`` daje ``pending`` zamiast ``failure``, gdy każda przyczyna jest tego typu."""
+
+
 @dataclass(frozen=True)
 class Pull:
     number: int
@@ -133,14 +139,15 @@ def ci_problem(pull: Pull) -> str | None:
     except UnknownRun as unknown:
         return f"CI: check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora runu w detailsUrl {unknown.url}"
     if run is None:
-        return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
+        return Waiting(f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD")
     check = run.required
     if check is None:
-        return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa"
-    result = (check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?"
-    if result != "SUCCESS":
+        return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa")
+    if check.get("status") != "COMPLETED":
+        return Waiting(f"CI: „{github.REQUIRED}” {check.get('status') or '?'}")
+    if (result := check.get("conclusion") or "?") != "SUCCESS":
         return f"CI: „{github.REQUIRED}” {result}"
-    return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa" if run.running else None
+    return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa") if run.running else None
 
 
 def ci_line(pull: Pull) -> str:
