@@ -44,7 +44,7 @@ def inbox_access_unreadable() -> Message:
 
 
 def password_rejected() -> Message:
-    """Gmail odrzucił hasło aplikacji: nowe hasło może dać tylko Maks (spec #1224, US 47)."""
+    """Gmail odrzucił hasło aplikacji: nowe hasło może dać tylko Maks."""
 
     return Message.to_maintainer(
         code="RAPORTY_HASLO_ODRZUCONE",

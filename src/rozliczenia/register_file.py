@@ -22,7 +22,7 @@ rozpoznania (``workbook_parts.rows_dated_between``), bo wartości, Wyróżnienia
 Przygotowanie pliku zbiorczego przenosi do plików okresu. Ich pamięć i Kopię prowadzi ta sama reguła położenia, a
 pierwszy wiersz bloku daje ``raw_orders.first_in_block`` na wierszach okna od dołu.
 
-Kopia wejścia Uruchomienia z Centrum (#841, #842) dostaje bajty Rejestru z chwilą zmiany sprzed odczytu zaraz po
+Kopia wejścia Uruchomienia z Centrum dostaje bajty Rejestru z chwilą zmiany sprzed odczytu zaraz po
 odczycie, a z każdego obszaru wklejania nagłówki i wklejenie (``raw_orders.pasted_rows``): te same fakty wierszy, które
 rozpoznaje Planowanie, nie cały Rejestr. Wiersz ma w Kopii komórki od A do ``UWAGI``, te, które Uporządkowanie przenosi
 do dnia, pod nagłówkiem, pod którym czyta je rozpoznanie, także przesunięty pierwszy wiersz, bez zakazanych kolumn
@@ -31,7 +31,7 @@ dozwolone w obu położeniach i datę z godziną spod ``DATA GODZ. POCZ.``, a wi
 faktach wklejenia (``input_copy.PasteFacts.traced_rows``). Kolumn z aplikacji za ``UWAGI`` Kopia nie ma: Uporządkowanie
 ich nie zapisuje, nie mają nagłówka, a jedna z nich u taty niesie części adresu ze słowami sklejonymi ``_``, których
 strażnik nie rozpozna jako wartości ``ADRES``. Nad wklejeniem Kopia ma tylko numery ostatniego uporządkowanego i żółtego
-wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści (#847). Wpisanie raportów
+wiersza (``raw_orders.above_paste``), od których Planowanie liczy wiersz dnia, bez ich treści. Wpisanie raportów
 daje Kopii zamiast wklejenia uporządkowane wiersze, które przeczytało (``PasteArea.copy_rows``), w tych samych kolumnach
 i bez zakazanych kolumn.
 
