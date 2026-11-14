@@ -1,14 +1,13 @@
 """Aplikacja HTTP Centrum rozliczeń: API pod ``/api`` i zbudowany frontend pod ``/``.
 
-Każda grupa zasobów ma własny router; ``create_app`` składa je, pilnuje nagłówków ``Host`` i ``Origin`` (ADR 0004),
-zamienia odmowy (``Refusal``) i folder okresów, którego nie da się odczytać, na bezpieczne odpowiedzi ``Problem``,
-nieoczekiwany wyjątek na wpis w dzienniku Centrum i odpowiedź bez treści wyjątku, a każdej odpowiedzi API dodaje czas
-obsługi w ``Server-Timing`` (``timing``).
+Każda grupa zasobów ma własny router; ``create_app`` składa je i zakłada straż HTTP (``http_guard``): nagłówki ``Host``
+i ``Origin`` (ADR 0004), odmowy (``Refusal``), folder okresów, którego nie da się odczytać, i nieoczekiwany wyjątek jako
+bezpieczne odpowiedzi ``Problem`` oraz czas obsługi każdej odpowiedzi API w ``Server-Timing`` (``timing``).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
+from collections.abc import AsyncIterator, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date, datetime
@@ -16,10 +15,8 @@ from pathlib import Path
 from typing import Any
 import time
 import uuid
-from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from rozliczenia.centrum.catalog import CATALOG, Catalog
@@ -29,20 +26,19 @@ from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.configuration_router import CONFIGURATION_WAIT_S, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
 from rozliczenia.centrum.contract.centrum import Health
-from rozliczenia.centrum.contract.common import Problem
-from rozliczenia.centrum import refusal
-from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
 from rozliczenia.centrum.diagnosis import Surroundings, diagnose, files_of_process
 from rozliczenia.centrum.efenix_chrome import EfenixWindow
 from rozliczenia.centrum.filling import FillingReads, filling_router
+from rozliczenia.centrum.http_guard import guard
 from rozliczenia.centrum.intermax_run import IntermaxEntry, intermax_copies_router, intermax_router
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LogsOnDisk
 from rozliczenia.centrum.metrics import History, metrics_router
 from rozliczenia.centrum.notifications import Notifications, notifications_router
+from rozliczenia.centrum.order_register_router import order_register_router
 from rozliczenia.centrum.period_board import periods_router
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.platform import Autostart, Platform
@@ -70,7 +66,7 @@ from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.stops import Stops
-from rozliczenia.centrum.timing import server_timing, timing_router
+from rozliczenia.centrum.timing import timing_router
 from rozliczenia.centrum.tool_freshness import RememberedRelease, ToolFreshness
 from rozliczenia.centrum import restart_guardian
 from rozliczenia.centrum.tool_update import ToolClone
@@ -83,8 +79,6 @@ from rozliczenia.file_state import path_state
 from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
 from rozliczenia.intermax_copies import default_directory as default_intermax_copies
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
-from rozliczenia.period_folder import PeriodFolderInaccessible
-from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource
 from rozliczenia.worker_periods import WorkerPeriods
@@ -92,8 +86,6 @@ from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMail
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
-_LOCAL_HOSTNAMES = frozenset({HOST, "localhost"})
-_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def create_app(
@@ -158,38 +150,7 @@ def create_app(
         dependencies=[Depends(dad_actions.observe)],
     )
 
-    @app.middleware("http")
-    async def only_local_browser(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        host = request.headers.get("host", "")
-        if urlsplit(f"//{host}").hostname not in _LOCAL_HOSTNAMES:
-            return _problem(refusal.not_local_address())
-        if request.method not in _SAFE_METHODS and request.headers.get("origin") != f"http://{host}":
-            return _problem(refusal.not_from_centrum_card())
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def unexpected_failure(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        try:
-            return await call_next(request)
-        except Exception as failure:
-            route = request.scope.get("route")
-            log.unexpected_failure(failure, where=f"{request.method} {getattr(route, 'path', 'poza API')}")
-            return _problem(refusal.unexpected_failure())
-
-    # Ostatni dodany middleware jest zewnętrzny: czas obejmuje też odmowy Host/Origin i nieoczekiwane wyjątki.
-    app.middleware("http")(server_timing)
-
-    @app.exception_handler(Refusal)
-    async def refused(request: Request, refused: Refusal) -> Response:
-        return _problem(refused)
-
-    @app.exception_handler(PeriodFolderInaccessible)
-    async def inaccessible_folder(request: Request, inaccessible: PeriodFolderInaccessible) -> Response:
-        return _problem(refusal.period_folder_unreadable(inaccessible.folder.name))
+    guard(app, log)
 
     # Każdy start Centrum ma własny identyfikator: karta po aktualizacji rozpozna po nim nowe Centrum.
     instance = uuid.uuid4().hex
@@ -221,6 +182,7 @@ def create_app(
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
     app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
+    app.include_router(order_register_router(settings, platform))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
@@ -371,11 +333,6 @@ def create_app(
     if path_state(STATIC_DIRECTORY) == "folder":  # bez buildu (np. świeży katalog roboczy frontendu) działa samo API
         app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
     return app
-
-
-def _problem(refused: Refusal) -> Response:
-    problem = Problem(message=refused.message, field=refused.field)
-    return JSONResponse(problem.model_dump(exclude_none=True), status_code=refused.status_code)
 
 
 class _Frontend(StaticFiles):
