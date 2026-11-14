@@ -38,6 +38,7 @@ import yaml
 
 from atrapy.pliki_taty import UPDATE_RESULT_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.efenix_browser import launch_options
 from rozliczenia.tool_files import config_dir
 from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 
@@ -533,7 +534,7 @@ def test_strona_napedu_zapisuje_utracone_zadania_a_bez_arkusza_stylow_konczy_prz
             route.abort()
 
     with playwright.sync_api.sync_playwright() as przegladarki:
-        browser = przegladarki.chromium.launch()
+        browser = przegladarki.chromium.launch(**launch_options(przegladarki))
         try:
             with common.page_requests.recording(tmp_path):
                 context = common.dad_context(browser)
