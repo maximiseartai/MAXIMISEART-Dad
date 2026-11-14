@@ -311,7 +311,8 @@ def _old_reports(document: object) -> object:
 
 
 def _old_notes(document: object) -> object:
-    """Wpisy ``uwagi-taty.json``: czas „Wyślij” w ``written_at``, a wpisy sprzed #322 bez Uruchomienia."""
+    """Wpisy ``uwagi-taty.json``: czas „Wyślij” w ``written_at``, a wpisy z wersji, która Uruchomienia jeszcze nie
+    zapisywała, bez niego."""
 
     if not isinstance(document, dict) or document.get("schema_version") != _OLD_NOTES_SCHEMA:
         return None

@@ -1,7 +1,8 @@
 """Notka Wydania: tekst GitHub Release, który czyta też Powiadomienie o nowej wersji (ADR 0015).
 
 Notka to „Co nowego” dla taty jego językiem: krótkie zdanie wstępu (może go nie być) i punkty, każdy w linii ``- ``,
-a pod nią, gdy są, rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w jednej linii z rodzajem, numerem i tytułem::
+a pod nią, gdy są, rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w jednej linii z rodzajem, numerem po „#” i
+tytułem::
 
     Ta wersja oszczędza Ci wpisywania.
 
@@ -10,8 +11,8 @@ a pod nią, gdy są, rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w je
 
     ## Rozwiązane sprawy taty
 
-    - Uwaga taty #12: Brakuje ilości przy montażu
-    - Zgłoszenie #7: Zatrzymanie przy pustym ADRES
+    - Uwaga taty #<numer>: Brakuje ilości przy montażu
+    - Zgłoszenie #<numer>: Zatrzymanie przy pustym ADRES
 
 Release jest publiczny, a Skrzynka prywatna, więc sprawa ma tylko numer i tytuł, nigdy treść. Ten moduł jest
 jedynym miejscem formatu: notkę pisze ``render`` (narzędzie Wydań), a czyta ``parse`` (Centrum).

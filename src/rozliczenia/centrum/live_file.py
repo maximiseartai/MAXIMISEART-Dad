@@ -1,4 +1,4 @@
-"""Plik zbiorczy na żywo dla stron Uzupełnienia (#419, ADR 0016): znacznik zapisu i ostatni dobry odczyt.
+"""Plik zbiorczy na żywo dla stron Uzupełnienia (ADR 0016): znacznik zapisu i ostatni dobry odczyt.
 
 Przeglądarka co kilka sekund pyta o znacznik zapisu (``saved_version``), który daje ``stat`` bez otwierania
 skoroszytu, a pełny widok pobiera dopiero po jego zmianie. Gdy odczyt się nie uda (synchronizacja OneDrive, zapis

@@ -1,4 +1,4 @@
-"""Postęp Wyceny w efenix w trakcie Uruchomienia (#846): to, co ma jej dziennik na dysku (``logs_disk``), a pokazuje
+"""Postęp Wyceny w efenix w trakcie Uruchomienia: to, co ma jej dziennik na dysku (``logs_disk``), a pokazuje
 komentarz Uruchomienia (``comment_versions.ProgressVersion``)."""
 
 from __future__ import annotations
@@ -26,9 +26,9 @@ class OrderDone:
 
 @dataclass(frozen=True)
 class PricingProgress:
-    """Postęp Wyceny w efenix w trakcie Uruchomienia (#846): to, co ma jej dziennik na dysku.
+    """Postęp Wyceny w efenix w trakcie Uruchomienia: to, co ma jej dziennik na dysku.
 
-    ``done``: zlecenia skończone po kolei; ``total``: ile zleceń ma przebieg, z ostatniego wpisu „zaczynam zlecenie”
+    ``done``: zlecenia skończone po kolei; ``total``: ile zleceń ma Wycena, z ostatniego wpisu „zaczynam zlecenie”
     (``None`` przed pierwszym, np. gdy okno efenix czeka na logowanie taty, albo gdy dziennika nie da się zapisać);
     ``current``: wiersz zlecenia zaczętego bez wyniku (``None`` między zleceniami).
     """

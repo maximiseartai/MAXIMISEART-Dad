@@ -8,18 +8,17 @@ liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 00
 INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, a z
 Wpisania raportów Wpisy, problemy i zmiany komórek bez adresów, tematów i treści maili (``report_entering_logs``, ADR
 0028). Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``) z działaniami okna efenix i odczytem
-strony po każdym (``LoggedStep``, #843), bez numeru zlecenia i bez danych adresowych z pliku i z efenix.
-Zatrzymanie okna efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``:
-przyczynę techniczną z zamkniętej listy, wiersz i miejsce zlecenia w przebiegu oraz jego działania aż do tego, które się
-nie udało; a każde Zatrzymanie z przyczyną w wyjątku, także dla taty, ma ślad wywołań z łańcuchem przyczyn, więc
-Zatrzymanie przy starcie okna efenix nazywa drogę startu, która zawiodła, i typ jej wyjątku (#976).
-Wiersze danych niesie tylko Kopia wejścia (``input_copy``, #841): każdy plik taty, który Uruchomienie przeczytało, z
-odciskiem i przeczytanymi wierszami bez kolumn ``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze,
-#842). Poza nią komórkę cytuje tylko Komunikat (``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Plik i
-wysyłka biorą tylko Logi po strażniku reguły danych (``run_logs_guard``, ADR 0025). Skrypt dla maszyn nie ma działań po
-wyniku, więc Logów nie tworzy.
+strony po każdym (``LoggedStep``), bez numeru zlecenia i bez danych adresowych z pliku i z efenix. Zatrzymanie okna
+efenix (``efenix_pricing.PricingStopped``) daje ślad zleceń sprzed niego i ``LoggedWindowStop``: przyczynę techniczną z
+zamkniętej listy, wiersz i miejsce zlecenia w Uruchomieniu oraz jego działania aż do tego, które się nie udało; a każde
+Zatrzymanie z przyczyną w wyjątku, także dla taty, ma ślad wywołań z łańcuchem przyczyn, więc Zatrzymanie przy starcie
+okna efenix nazywa drogę startu, która zawiodła, i typ jej wyjątku. Wiersze danych niesie tylko Kopia wejścia
+(``input_copy``): każdy plik taty, który Uruchomienie przeczytało, z odciskiem i przeczytanymi wierszami bez kolumn
+``ADRES`` i numeru Orange (w Uporządkowaniu INTERMAX wklejone wiersze). Poza nią komórkę cytuje tylko Komunikat
+(``ZLE_SKUTECZNE``), a pliki mają tylko nazwę, nigdy pełną ścieżkę. Plik i wysyłka biorą tylko Logi po strażniku reguły
+danych (``run_logs_guard``, ADR 0025). Skrypt dla maszyn nie ma działań po wyniku, więc Logów nie tworzy.
 
-Schemat 2 (#839) daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
+Schemat 2 daje każdemu krokowi śladu godzinę (UTC) obok czasu trwania: etap ma chwilę rozpoczęcia i końca,
 Przetworzenie Szablonu pracownika też, a działanie okna efenix chwilę rozpoczęcia, więc widać przerwy i czekanie, których
 czasy trwania nie liczą. Dochodzi dziennik działań taty w Centrum (``dad_actions``) od Logów poprzedniego Uruchomienia do
 końca tego, bez treści zapytań, więc bez treści Uwagi taty. Plik schematu 1 nie ma godzin ani dziennika, a te pola są
@@ -31,7 +30,7 @@ pliku przed resztą pól. Karta z Logów, Historia, odtworzenie i Uwaga taty czy
 schematu 1–2 to ten sam tryb (``StoredRunMode``).
 
 Plik leży w katalogu Logów obok dziennika Centrum (``logs_disk``), poza Gitem i OneDrive, bez rotacji. Urwana Wycena w
-efenix (#845) ma Logi z dziennika Wyceny (``RunLog.interrupted``): sposób zakończenia ``interrupted``, bez wyniku, czasu,
+efenix ma Logi z dziennika Wyceny (``RunLog.interrupted``): sposób zakończenia ``interrupted``, bez wyniku, czasu,
 etapów i Komunikatów, ze śladem zleceń skończonych przed zgaśnięciem Centrum i ze zleceniem zaczętym bez wyniku
 (``LoggedInterruption``); ich koniec to ostatni wpis dziennika, bo chwili zgaśnięcia nikt nie zapisał.
 
@@ -556,11 +555,11 @@ class LoggedSheet(_Record):
 
     Fakty wklejenia INTERMAX (``input_copy.PasteFacts``) poza wierszami ze śladem przesunięcia, które idą do uwag
     (``RunLog.input_copy_notes``), stoją płasko w arkuszu. ``shifted_row``: przesunięty pierwszy wiersz wklejenia
-    INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie kolumny na lewo od nagłówka, a tu stoją pod nim; ``None``:
-    bez niego i pliki sprzed #842. ``uncertain_rows``: wiersze wklejenia bez pewnego położenia, które mają tylko komórki
-    dozwolone w każdym ich możliwym położeniu. ``last_ordered_row`` i ``yellow_row``: ostatni uporządkowany i żółty
-    wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz dnia, bez treści; ``None``: bez takiego wiersza,
-    inne pliki i pliki sprzed #847.
+    INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie kolumny na lewo od nagłówka, a tu stoją pod nim;
+    ``None``: bez niego i pliki, które tego pola jeszcze nie miały. ``uncertain_rows``: wiersze wklejenia bez pewnego
+    położenia, które mają tylko komórki dozwolone w każdym ich możliwym położeniu. ``last_ordered_row`` i
+    ``yellow_row``: ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz
+    dnia, bez treści; ``None``: bez takiego wiersza, inne pliki i pliki, które tych pól jeszcze nie miały.
     """
 
     sheet: str
@@ -605,7 +604,7 @@ class LoggedInputFile(_Record):
     """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
 
     ``folders``: nazwy folderu nad folderem pliku i folderu pliku (``input_copy.CopiedFile.folders``; Komunikaty
-    INTERMAX pokazują tylko folder pliku); pusta lista w plikach sprzed #847.
+    INTERMAX pokazują tylko folder pliku); pusta lista w plikach, które tego pola jeszcze nie miały.
     """
 
     name: str
@@ -684,9 +683,10 @@ class RunLog(StartFacts):
     interruption: LoggedInterruption | None = None
     """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
     input_copy: list[LoggedInputFile] | None = None
-    """Kopia wejścia (``input_copy``, #841): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
+    """Kopia wejścia (``input_copy``): pliki taty, które Uruchomienie przeczytało, w kolejności odczytu, każdy z
     odciskiem i przeczytanymi Wierszami danych po regule danych. Pusta lista: Uruchomienie skończyło się przed odczytem.
-    ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX sprzed #842."""
+    ``None``: Logi Urwanego Uruchomienia, pliki sprzed tego pola i Uporządkowania INTERMAX z wersji, która ich Kopii
+    wejścia jeszcze nie pisała."""
     input_copy_notes: list[str] = []
     """Uwagi techniczne o Kopii wejścia, osobno od ``technical_notes``, które pokazuje karta Uruchomienia z Logów: wiersz
     ze śladem przesunięcia, który łamie fakt domeny (``logs_of_run.logs_of``), i uwagi strażnika reguły danych o

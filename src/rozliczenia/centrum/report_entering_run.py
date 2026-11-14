@@ -9,15 +9,14 @@ w czasie innego Uruchomienia, Aktualizacji narzędzia ani przywracania Kopii INT
 
 Bez pliku dostępu do skrzynki raportów karta mówi, że go brakuje, a bez adresu żadnego Wykonawcy na Liście Wykonawców,
 że trzeba je dopisać; start jest wtedy odrzucony. Kopię konfliktu OneDrive obok INTERMAX karta pokazuje z instrukcją i blokuje przycisk, a kliknięcie ze
-starej karty kończy się Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę (spec #1224,
-US 46 i 51).
+starej karty kończy się Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę.
 
-Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, dla całego okna
-tego kliknięcia: każdy dzień z nazwą święta (``public_holidays``), a przy każdym Wykonawcy jego dni z liczbami,
-problemami, informacjami o Przeniesieniach zleceń i zleceniami dnia (#1319, #1322, #1347). Problemy łączy przy odczycie z decyzjami „Zostaw moją”: różnica, przy
-której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik pochodzi z
-kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji, nigdy w
-INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia (spec #1224, US 38–39 i 52–58).
+Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, dla całego okna tego
+kliknięcia: każdy dzień z nazwą święta (``public_holidays``), a przy każdym Wykonawcy jego dni z liczbami, problemami,
+informacjami o Przeniesieniach zleceń i zleceniami dnia. Problemy łączy przy odczycie z decyzjami „Zostaw moją”:
+różnica, przy której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik
+pochodzi z kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji,
+nigdy w INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia.
 """
 
 from __future__ import annotations

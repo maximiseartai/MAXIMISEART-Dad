@@ -15,7 +15,7 @@ niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (`
 Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
 czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z Ustawień: zmiana pór otwiera porę na jedno
 nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane”. Nazwaną porę przypomnienia z
-„Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa W1 w #1568): poranne wysłane o 8:05 zamyka
+„Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa): poranne wysłane o 8:05 zamyka
 poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego sprawdzenie w porze zapisuje przed wysyłką
 pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
 Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
@@ -36,7 +36,7 @@ otwarta. Wynik ostatniego sprawdzenia w porze z dniem wdrożenia leży w ``REMIN
 nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` (stopka w Ustawieniach pusta) albo ``null``, gdy
 sprawdzenie nie doszło do przypomnień. Widok Raporty
 czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
-ostatnie sprawdzenie nie znalazło stopki (#1351).
+ostatnie sprawdzenie nie znalazło stopki.
 """
 
 from __future__ import annotations

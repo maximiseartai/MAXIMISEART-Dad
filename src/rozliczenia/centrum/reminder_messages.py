@@ -11,7 +11,7 @@ _REMINDERS: Final = "Przypomnienia o raporcie"
 
 
 def password_rejected() -> Message:
-    """Gmail odrzucił hasło aplikacji przy pracy przypomnień: nowe hasło może dać tylko Maks (spec #1344, US 47)."""
+    """Gmail odrzucił hasło aplikacji przy pracy przypomnień: nowe hasło może dać tylko Maks."""
 
     return Message.to_maintainer(
         code="PRZYPOMNIENIA_HASLO_ODRZUCONE",

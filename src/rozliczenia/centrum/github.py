@@ -6,7 +6,7 @@ składają żądanie z ``headers`` i wysyłają je przez ``send``, więc nowy na
 ląduje tutaj. Klucz w ``Authorization`` nigdy nie idzie za przekierowaniem na inny origin (schemat, host, port), a za
 przekierowaniem na ten sam origin idzie tylko w kliencie, który tak mówi (``KeyAfterRedirect``): GitHub przekierowuje
 przeniesione repozytorium na ``/repositories/<id>/…`` tego samego hosta, a prywatne repozytorium Zgłoszeń bez klucza
-odpowiada 404, więc Skrzynka niesie klucz dalej (``"same-origin"``). Aktualność od #1097 nie niesie tokenu za żadnym
+odpowiada 404, więc Skrzynka niesie klucz dalej (``"same-origin"``). Aktualność nie niesie tokenu za żadnym
 przekierowaniem (``"nowhere"``): publiczne repozytorium narzędzia odpowiada też bez niego.
 
 Proxy z ustawień systemu klienty traktują różnie, jak przed wydzieleniem tego modułu: Aktualność łączy się wprost

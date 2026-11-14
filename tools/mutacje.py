@@ -173,6 +173,11 @@ ALREADY_S = 300.0
 COLLECT_S = 120.0
 # Podstawa wyboru szybko w zwykłym użyciu trwała 73 s (10 plików) i 208 s (21 plików) na 2 workerach (#1726 r2).
 BASE_S = 120.0
+# Wybór podstawy bierze czasów CI na workera najwyżej limit podstawy przez ten zapas. Z budżetem kroku szybko wybierał
+# 3–5 razy więcej, niż mieścił limit; przy zmianie outbox.py (14.11.2026, 4 workery, load ~30) podstawa trwała 2,5× czasu
+# CI na workera (100 s z 40 s), a przy 2 ponad 120 s (136 s z 60 s). Mniejszy budżet niewiele skraca: 30 s dało 88 s,
+# bo testy struktury biegną lokalnie po ~45 s, a w CI cały ich plik waży 17 s.
+BASE_LOAD = 3.0
 
 
 class _Probe(NamedTuple):
@@ -202,10 +207,17 @@ def _command_tests(command: Sequence[str], deadline: float) -> list[str] | str:
 
 
 def _probe(
-    mutation: Mutation, selected: Sequence[str], base: str, changed: frozenset[str], scanned: wplyw_zmiany.Repository, costs: czasy_ci.KosztyPlikow
+    mutation: Mutation,
+    selected: Sequence[str],
+    base: str,
+    changed: frozenset[str],
+    scanned: wplyw_zmiany.Repository,
+    costs: czasy_ci.KosztyPlikow,
+    budget_s: float,
 ) -> _Probe | None:
-    """Testy sprzed zmiany, którymi ``_check`` sprawdza mutację z polecenia, które wybiera testy ``selected``; ``None``,
-    gdy żaden z nich nie jest dodany ani zmieniony od ``base``."""
+    """Testy sprzed zmiany, którymi ``_check`` sprawdza mutację z polecenia, które wybiera testy ``selected``, z wyboru
+    szybko w ``budget_s`` s czasów CI na workera; ``None``, gdy żaden z testów ``selected`` nie jest dodany ani zmieniony
+    od ``base``."""
 
     unchanged = cache(partial(wplyw_zmiany.unchanged_tests, ROOT, base))
     if not any((key := _key(node))[0] in changed and key[1] not in unchanged(key[0]) for node in selected):
@@ -215,7 +227,7 @@ def _probe(
         return [f"{path}::{name}" for name in sorted(unchanged(path))] if path in changed else [path]
 
     impact = scanned.impact(frozenset(edit.file.as_posix() for edit in mutation.edits))
-    chosen = szybko.plan(impact.tests, impact.distances, costs, workers=czasy_ci.workery_lokalne())
+    chosen = szybko.plan(impact.tests, impact.distances, costs, workers=czasy_ci.workery_lokalne(), wall_s=budget_s, budget_s=budget_s)
     tests = [test for path in sorted(chosen.run, key=lambda path: (impact.distances.get(path, 0), path)) for test in old(path)]
     return _Probe(tuple(tests), sum(1 for path in chosen.deferred if old(path)))
 
@@ -269,9 +281,12 @@ def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -
     )
 
 
-def _planned(mutations: Sequence[Mutation], base: str, already_s: float) -> list[tuple[Mutation, _Probe | str]]:
+def _planned(mutations: Sequence[Mutation], base: str, already_s: float, base_s: float) -> list[tuple[Mutation, _Probe | str]]:
     """Testy sprzed zmiany każdej mutacji z poleceniem pytest bez oczekiwanej linii albo przyczyna, z którą ich nie ma, w
-    ``already_s`` s, ze skanem zmian i czasami CI."""
+    ``already_s`` s, ze skanem zmian i czasami CI.
+
+    Podstawa (``_base_commands``) biegnie raz dla wszystkich mutacji w limicie ``base_s``, więc wybory mutacji w różnych
+    plikach dzielą ``base_s / BASE_LOAD`` czasów CI na workera po równo, a to, czego nie mieszczą, szybko odkłada."""
 
     deadline = time.monotonic() + already_s
     checked = [mutation for mutation in mutations if ("-m", "pytest") in pairwise(mutation.command) and mutation.expected is None]
@@ -287,6 +302,7 @@ def _planned(mutations: Sequence[Mutation], base: str, already_s: float) -> list
         return []
     changed, scanned = repo.changed(ROOT, commit), wplyw_zmiany.Repository.scan(ROOT)
     costs, _ = czasy_ci.lokalne(ROOT)
+    budget_s = base_s / BASE_LOAD / len({frozenset(edit.file for edit in mutation.edits) for mutation in checked})
     probes: list[tuple[Mutation, _Probe | str]] = []
     for mutation in checked:
         if time.monotonic() >= deadline:
@@ -294,7 +310,7 @@ def _planned(mutations: Sequence[Mutation], base: str, already_s: float) -> list
         elif isinstance(selected := _command_tests(mutation.command, deadline), str):
             probes.append((mutation, selected))
         else:
-            probe = _probe(mutation, selected, commit, changed, scanned, costs)
+            probe = _probe(mutation, selected, commit, changed, scanned, costs, budget_s)
             probes.append((mutation, probe or f"polecenie nie wybiera testu dodanego ani zmienionego od merge-base {commit[:8]}"))
     return probes
 
@@ -347,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
     )
     parser.add_argument(
-        "--podstawa-s", type=float, default=BASE_S, help=f"Limit podstawy testów sprzed zmiany w sekundach (domyślnie {BASE_S:g}; po nim kod 2)."
+        "--podstawa-s", type=float, default=BASE_S, help=f"Limit podstawy testów sprzed zmiany w sekundach (domyślnie {BASE_S:g}; po nim kod 2); jej wybór bierze najwyżej 1/{BASE_LOAD:g} tego czasów CI na workera."
     )
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie {BASE}).")
     parser.add_argument(
@@ -385,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    planned = [] if jak_ci else _planned(mutations, args.baza, args.juz_lapie_s)
+    planned = [] if jak_ci else _planned(mutations, args.baza, args.juz_lapie_s, args.podstawa_s)
     code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, base_commands=_base_commands(planned, args.podstawa_s))
     if code == 0:
         _already_caught(planned, args.limit_s, args.juz_lapie_s)

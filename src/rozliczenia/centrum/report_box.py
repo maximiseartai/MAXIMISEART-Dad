@@ -56,10 +56,13 @@ from rozliczenia.centrum.github import (
 
 Label = Literal["zgloszenie", "kontrola-ilosci", "logi-uruchomienia", "uwaga-taty"]
 """Etykieta issue w Skrzynce Zgłoszeń; etykiety zakłada Maks w repozytorium Zgłoszeń, kod ich nie tworzy."""
-# Najwięcej znaków (jak ``len``) w treści issue i komentarza. Dokumentacja REST GitHuba limitu nie podaje; pomiar na
-# repozytorium Zgłoszeń 2026-10-24 (#332): nowe issue przyjmuje 65 536 znaków (także „ą” i emoji), a 65 537 odrzuca
-# kodem 422; komentarz przyjmuje do 262 144 bajtów UTF-8, czyli każdy tekst do 65 536 znaków (najwyżej 4 bajty na znak).
 COMMENT_LIMIT: Final = 65_536
+"""Najwięcej znaków (jak ``len``) w treści issue i komentarza.
+
+Dokumentacja REST GitHuba limitu nie podaje; pomiar na repozytorium Zgłoszeń 2026-10-24: nowe issue przyjmuje 65 536
+znaków (także „ą” i emoji), a 65 537 odrzuca kodem 422; komentarz przyjmuje do 262 144 bajtów UTF-8, czyli każdy tekst
+do 65 536 znaków (najwyżej 4 bajty na znak).
+"""
 
 
 @dataclass(frozen=True)
@@ -148,10 +151,10 @@ SendOutcome = Sent | Refused | Rejected | Unreachable
 CommentOutcome = Commented | Refused | Rejected | Unreachable
 IssuesOutcome = tuple[Issue, ...] | Refused | Unreachable
 CommentsOutcome = tuple[Comment, ...] | Refused | Unreachable
-# Numer znalezionego issue albo ``None``, gdy issue z tym wierszem nie ma (nigdy nie było albo Maks je zamknął).
 FindOutcome = int | None | Refused | Unreachable
-# Archiwum z tym tagiem albo ``None``, gdy go jeszcze nie ma.
+"""Numer znalezionego issue albo ``None``, gdy issue z tym wierszem nie ma (nigdy nie było albo Maks je zamknął)."""
 ArchiveOutcome = Archive | None | Refused | Unreachable
+"""Archiwum z tym tagiem albo ``None``, gdy go jeszcze nie ma."""
 OpenArchiveOutcome = Archive | Refused | Rejected | Unreachable
 UploadOutcome = Asset | Refused | Rejected | Unreachable
 RemoveOutcome = Removed | Refused | Unreachable
@@ -201,15 +204,15 @@ class ReportBox(Protocol):
 REPOSITORY: Final = "MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia"
 _TIMEOUT_S: Final = 15.0
 _REFUSALS: Final = frozenset({401, 403, 404})
-# GitHub odpowiada na przekroczony limit zapytań (podstawowy i „secondary”) kodem 403 z „rate limit” w ``message``
-# (429 nie jest odmową, więc i tak jest ``Unreachable``). Skrzynka rozpoznaje limit po treści, nie po nagłówkach
-# (``github.rate_limit_reset``): nagrania ``verify-github-skrzynki`` nagłówków odpowiedzi nie niosą.
 _RATE_LIMIT: Final = b"rate limit"
-# Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć.
+"""GitHub odpowiada na przekroczony limit zapytań (podstawowy i „secondary”) kodem 403 z „rate limit” w ``message``
+(429 nie jest odmową, więc i tak jest ``Unreachable``). Skrzynka rozpoznaje limit po treści, nie po nagłówkach
+(``github.rate_limit_reset``): nagrania ``verify-github-skrzynki`` nagłówków odpowiedzi nie niosą."""
 _REJECTIONS: Final = frozenset({400, 413, 422})
-# Odpowiedź na założenie Release w repozytorium bez commitu, którą raz dała Skrzynka 2026-11-04 („Git Repository is
-# empty.”); repozytorium próbne odpowiada 422 (``_REJECTIONS``), nagrania ``verify-github-skrzynki``.
+"""Odpowiedzi na treść wysyłki (zła albo za długa), nie na klucz ani sieć."""
 _EMPTY_REPOSITORY: Final = 409
+"""Odpowiedź na założenie Release w repozytorium bez commitu, którą raz dała Skrzynka 2026-11-04 („Git Repository is
+empty.”); repozytorium próbne odpowiada 422 (``_REJECTIONS``), nagrania ``verify-github-skrzynki``."""
 _CLOSE_REASONS: Final[Mapping[str, CloseReason]] = {reason: reason for reason in get_args(CloseReason)}
 
 
@@ -367,9 +370,12 @@ class GitHubReportBox:
         return Rejected() if isinstance(answer, HttpResponse) and answer.status in _REJECTIONS else answer
 
     def _exchange(self, request: HttpRequest) -> HttpResponse | Refused | Unreachable:
-        """Limit zapytań GitHuba to ``Unreachable``: klucz działa, a skrzynka każe poczekać jak bez sieci."""
+        """Limit zapytań GitHuba to ``Unreachable``: klucz działa, a skrzynka każe poczekać jak bez sieci.
 
-        transport = self._transport or urllib_transport  # odczyt przy każdym żądaniu: testy blokują go w conftest
+        ``urllib_transport`` odczytuje przy każdym żądaniu, bo testy blokują go w ``tests/conftest.py``.
+        """
+
+        transport = self._transport or urllib_transport
         try:
             response = transport(request)
         except (OSError, http.client.HTTPException):

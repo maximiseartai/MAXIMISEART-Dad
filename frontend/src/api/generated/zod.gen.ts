@@ -1623,7 +1623,7 @@ export const zPinnableRun = z.object({
  * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
  * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
  * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
- * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
+ * Uruchomieniu z Centrum z wersji narzędzia, która identyfikatora jeszcze nie zapamiętywała.
  */
 export const zProcessRun = z.object({
     process: z.enum([
@@ -2907,7 +2907,7 @@ export const zPinnableRunWritable = z.object({
  * ``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego
  * rekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego
  * Logach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy
- * Uruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało.
+ * Uruchomieniu z Centrum z wersji narzędzia, która identyfikatora jeszcze nie zapamiętywała.
  */
 export const zProcessRunWritable = z.object({
     process: z.enum([
