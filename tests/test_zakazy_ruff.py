@@ -101,6 +101,20 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from importlib.util import spec_from_file_location": (ROOT / "pyproject.toml", (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
     'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
     'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
+    # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
+    # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
+    'import importlib\n\nSERWER = importlib.import_module("fastapi")\n': (ROOT / "pyproject.toml", ("tools",), "importlib.import_module"),
+    'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
+    'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n': (
+        SRC_CONFIG,
+        ("rozliczenia",),
+        "importlib.import_module",
+    ),
+    'import importlib\n\ntekst = importlib.import_module("rozliczenia.client_data").tool(komorka)\n': (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "importlib.import_module",
+    ),
     "import threading\nstart = threading.Thread.start": (TESTS_CONFIG, (), "threading.Thread.start"),
     "from threading import Thread as Worker\nWorker.start = counted": (TESTS_CONFIG, ("fixtures",), "threading.Thread.start"),
     "import threading\nassert threading.active_count() == before": (TESTS_CONFIG, (), "threading.active_count"),
