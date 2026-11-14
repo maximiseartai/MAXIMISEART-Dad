@@ -20,34 +20,57 @@ rule:
           regex: '^from\s+playwright\b'
         - kind: import_statement
           regex: '^import\s+playwright\b'
-  # Odpowiedź odrzuca instrukcja, która jest samym wywołaniem goto, reload, go_back albo go_forward na dowolnym obiekcie,
-  # i element with z expect_navigation(…) bez as. Odpowiedź przypisana, zwrócona, podana jako argument albo element
-  # przechodzi. Metoda pod inną nazwą, wait_for_url, wait_for_load_state, as _, element listy, którego nikt nie czyta, i
-  # karta w pliku bez importu playwright to znane luki w ZNANE_LUKI_NAWIGACJI w tests/test_zapadki.py.
   any:
-    - kind: expression_statement
+    # Wynik goto, reload, go_back albo go_forward, którego nikt nie odbiera: od wywołania w górę stoją tylko wyrażenia,
+    # które jego wartość gubią (nawias, wyrażenie warunkowe, and/or, not, await, krotka, lista, zbiór, komprehensja,
+    # atrybut albo metoda wyniku), aż do instrukcji wyrażenia. Wywołanie, którego wynik trafia do nazwy, return, yield,
+    # argumentu albo lambdy, przechodzi. Metoda pod inną nazwą, czekanie na adres albo stan strony, as _, odpowiedź tylko
+    # jako warunek if albo assert i karta w pliku bez importu playwright to znane luki w ZNANE_LUKI_NAWIGACJI
+    # w tests/test_zapadki.py.
+    - kind: call
       has:
-        kind: call
+        field: function
+        kind: attribute
         has:
-          field: function
-          kind: attribute
-          has:
-            field: attribute
-            regex: '^(goto|reload|go_back|go_forward)$'
-    # Wywołanie jest bezpośrednim dzieckiem elementu with tylko bez as; z as jego dzieckiem jest as_pattern.
-    - kind: with_item
+          field: attribute
+          regex: '^(goto|reload|go_back|go_forward)$'
+      inside:
+        kind: expression_statement
+        stopBy:
+          not:
+            any:
+              - kind: parenthesized_expression
+              - kind: conditional_expression
+              - kind: boolean_operator
+              - kind: not_operator
+              - kind: await
+              - kind: tuple
+              - kind: list
+              - kind: set
+              - kind: list_comprehension
+              - kind: set_comprehension
+              - kind: attribute
+              - kind: call
+    # Wywołanie expect_navigation w elemencie with, który nie zapisuje wyniku przez as: zdarzenie nawigacji ginie.
+    # Wynik zapisany przez as (także w nawiasie i w kilku elementach) przechodzi.
+    - kind: call
       has:
-        kind: call
+        field: function
+        kind: attribute
         has:
-          field: function
-          kind: attribute
-          has:
-            field: attribute
-            regex: '^expect_navigation$'
+          field: attribute
+          regex: '^expect_navigation$'
+      inside:
+        kind: with_item
+        stopBy: end
+      not:
+        inside:
+          kind: as_pattern
+          stopBy: end
     # Linia napisu wielowierszowego, która zaczyna się od kropkowanej nazwy z jednym z tych wywołań albo od with
-    # z expect_navigation(…) bez as. Regex ast-grep nie ma lookahead, więc „bez as” to: za nawiasem koniec linii,
-    # znak niebiały albo odstępy i coś innego niż słowo as.
+    # z expect_navigation(…) bez as. Regex ast-grep nie ma lookahead, więc „bez as” to: za nawiasem znak, który nie jest
+    # odstępem, koniec linii po odstępach albo odstępy i coś innego niż słowo as (\r końca CRLF to znak, nie odstęp).
     - kind: string
       regex: '(?m)^[ \t]*[A-Za-z_][\w.]*\.(goto|reload|go_back|go_forward)\('
     - kind: string
-      regex: '(?m)^[ \t]*with\b.*\bexpect_navigation\((?:[^()\n]|\([^()\n]*\))*\)(?:\r?$|[^ \t\r\n]|[ \t]+(?:\r?$|[^ \t\r\na]|a\r?$|a[^s]|as\w))'
+      regex: '(?m)^[ \t]*with\b.*\bexpect_navigation\((?:[^()\n]|\([^()\n]*\))*\)(?:[^ \t\n]|[ \t]*$|[ \t]+(?:[^ \t\na]|a(?:[^s\n]|$)|as\w))'
