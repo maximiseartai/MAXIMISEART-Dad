@@ -24,8 +24,11 @@ dev = [
     "fastapi==0.146.0",
     # explore_runs.py of verify-jedno-uruchomienie-naraz runs its modelled threads as greenlets (#565).
     "greenlet==3.5.6",
+    # Graf importów kontraktów .importlinter (tests/test_granice_importow.py); od grimp zależy, które importy graf widzi.
+    "grimp==3.20",
     "httpx2==2.14.0",
     "hypothesis==6.170.5",
+    "import-linter==2.16",
     "mypy==2.0.0",
     "playwright==1.64.0",
     "pydantic==2.14.1",

@@ -99,6 +99,7 @@ RULE_GUARDS = frozenset(
     tests/test_decyzje_na_faktach.py
     tests/test_dokumenty_regul.py
     tests/test_granice_importow.py
+    tests/test_granice_importow.py::test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow
     tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow
     tests/test_granice_importow.py::test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy
     tests/test_jeden_odczyt_skoroszytu.py
