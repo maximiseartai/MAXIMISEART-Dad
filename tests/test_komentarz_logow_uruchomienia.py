@@ -57,6 +57,7 @@ from rozliczenia.centrum.comment_versions import (
 )
 from rozliczenia.centrum.contract.runs import Progress
 from rozliczenia.centrum.contract.runs import RunInfo
+from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
@@ -76,7 +77,8 @@ from rozliczenia.centrum.logs_disk import (
     name_of,
 )
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
-from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
+from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
+from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
@@ -1376,15 +1378,20 @@ def _started(comments: RunComments) -> None:
 
 
 def _comments(
-    directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None, clock: ManualClock | None = None
+    directory: Path,
+    queue: RecordingQueue,
+    disk: LogsOnDisk | None = None,
+    clock: ManualClock | None = None,
+    files: ProcessFiles = lambda process, period, settings: [],
 ) -> RunComments:
-    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
+    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu, a pliki procesu
+    z ``files`` (domyślnie żadnych)."""
 
     work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
-        files=lambda process, period, settings: [],
+        files=files,
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
     )
@@ -1544,6 +1551,104 @@ def _priced(comments: RunComments, disk: LogsOnDisk) -> None:
 
     comments.run_started(PRICING, STARTED_AT)
     disk.journal.begun(19, 1, 1)
+
+
+def _logs_file(directory: Path) -> dict[str, Any]:
+    [path] = (directory / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
+    logs: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return logs
+
+
+@pytest.mark.parametrize(
+    "failure", [OSError("brak dostępu"), PeriodFolderInaccessible(Path("08_14_09_2026"))], ids=["oserror", "folder-okresu"]
+)
+def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczekiwanego_wyjatku(
+    tmp_path: Path, failure: Exception
+) -> None:
+    """Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: Logi Uruchomienia mają wtedy pliki ``None``,
+    a dziennik Centrum nie ma wpisu, który Diagnoza by zgłosiła."""
+
+    def files(process: object, period: object, settings: object) -> list[Path]:
+        raise failure
+
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, RecordingQueue(), disk, files=files)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["environment"]["files"] is None
+    log = tmp_path / "centrum-rozliczen.log"
+    assert UNEXPECTED_FAILURE_EVENT not in (log.read_text(encoding="utf-8") if log.exists() else "")
+
+
+def test_krok_konca_wyceny_z_nieoczekiwanym_wyjatkiem_nie_pomija_logow_z_wynikiem_ani_ich_wysylki(tmp_path: Path) -> None:
+    """Każdy krok końca Wyceny biegnie we własnej osłonie: wpis końca w dzienniku, który rzucił nieoczekiwanym wyjątkiem,
+    trafia do dziennika Centrum, a plik Logów z wynikiem i jego wysyłka i tak powstają."""
+
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+
+    class BrokenEndJournal(Journal):
+        def end(self, run_id: str, result: RunResult) -> None:
+            raise RuntimeError("syntetyczna awaria wpisu końca")
+
+    journal = BrokenEndJournal(tmp_path / "dzienniki-wyceny", log, process="efenix")
+
+    class Disk(LogsOnDisk):
+        @property
+        def journal(self) -> Journal:
+            return journal
+
+    disk = Disk(log, journaled="efenix")
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue, disk)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["run_id"] == RUN_ID
+    assert Rank.OWN in [post.rank for post in queue.posts]
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
+
+
+def test_logi_urwanego_uruchomienia_ktorych_pliku_katalog_logow_nie_przyjal_i_tak_ida_do_maksa(tmp_path: Path) -> None:
+    """Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia, nie zatrzymuje tych Logów
+    w drodze do Maksa: wersja zastępcza idzie do Kolejki wysyłki, a dziennik znika za nią."""
+
+    journal = _urwane(tmp_path)
+    queue = RecordingQueue()
+
+    class Refusing(LogsOnDisk):
+        def write(self, logs: GuardedLogs) -> None:
+            raise PermissionError("katalog Logów nie przyjmuje pliku")
+
+    _started(_comments(tmp_path, queue, Refusing(CentrumLog(tmp_path / "centrum-rozliczen.log"), journaled="efenix")))
+
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+
+
+def test_wyjatek_wysylki_wersji_zastepczej_zostawia_dziennik_na_dysku_a_wersja_idzie_przy_nastepnym_starcie(
+    tmp_path: Path,
+) -> None:
+    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej trafia do dziennika Centrum i zostawia jej dziennik na
+    dysku, więc następny start wysyła tę wersję raz."""
+
+    journal = _urwane(tmp_path)
+
+    class FailingQueue(RecordingQueue):
+        def post(self, post: LogsPost) -> bool:
+            raise RuntimeError("syntetyczna awaria kolejki")
+
+    _started(_comments(tmp_path, FailingQueue()))
+    after_failure = journal.exists()
+    queue = RecordingQueue()
+    _started(_comments(tmp_path, queue))
+
+    assert after_failure
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
 
 
 # Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
