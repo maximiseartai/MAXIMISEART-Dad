@@ -148,7 +148,8 @@ class QuantitiesToFill:
 
 def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, settled: bool) -> QuantitiesToFill:
     """``rules``: Reguły ilości, którymi liczyć; ``settled``: Przebieg rozliczeń okresu się odbył, więc wiersz bez wpisu
-    taty jest „bez ilości”."""
+    taty jest „bez ilości”. Kontrola ilości (``check``) nie porównuje tylko przy brakujących nagłówkach, więc tu zawsze
+    daje ``QuantityCheck``."""
 
     listed: dict[FillKind, list[RowToFill]] = {kind: [] for kind in FillKind}
     for row in rows:
@@ -160,7 +161,7 @@ def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, s
         if kind is not None:
             listed[kind].append(_row(row, rule, rules, settled=settled))
     control = check(tuple(row.order for row in rows), rules)
-    assert isinstance(control, QuantityCheck)  # ``check`` nie porównuje tylko przy brakujących nagłówkach
+    assert isinstance(control, QuantityCheck)
     return QuantitiesToFill(
         tuple(KindToFill(kind, tuple(found)) for kind, found in listed.items()),
         {column: control.description_filled[column] for column in DESCRIPTION_COLUMNS},

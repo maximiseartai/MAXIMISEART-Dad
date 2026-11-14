@@ -318,8 +318,8 @@ class EfenixInputs:
         return collective_period_token(self.source)
 
 
-# Kroki Zapisywania na karcie Uruchomienia.
 _LOGIN: Final = "Zaloguj się w oknie efenix"
+"""Krok Zapisywania na karcie Uruchomienia, tak jak ``_ORDERS`` i ``_MARKING``."""
 _ORDERS: Final = "Zlecenia"
 _MARKING: Final = "Znaczniki efenix w Pliku zbiorczym"
 
