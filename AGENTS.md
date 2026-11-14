@@ -69,3 +69,8 @@ Regułę i drogę naprawy mówi komunikat strażnika (asercja testu, `msg` w `ba
 Granicę nowego i zmienianego strażnika pokazują próbki `ZNANE_LUKI` w jego teście: próbka to kod postaci, którą strażnik przepuszcza, nazwany klasą mechanizmu, który ją przepuszcza (np. „zna tylko nazwę z importu”), a `tests/fixtures/znane_luki.py` puszcza ją przez prawdziwe mechanizmy strażnika i każe ją usunąć, gdy strażnik zaczyna ją łapać; próbki to luki znane, nie pełna lista postaci ani klas, więc nowo znaleziona luka staje się nową próbką albo zamyka ją konstrukcja (typ, zakaz ruff, odmowa w biegu), a wiersz tabeli wskazuje ten test; wiersz strażnika, który trzyma granicę jeszcze prozą, podaje jej miejsce po `boundary:` (wypisuje je `grep -n "(boundary[:]" CODING_STANDARDS.md`), strażnik bez wiersza w tabelach `CODING_STANDARDS.md` trzyma granicę w docstringu do swojej najbliższej zmiany, a reguły `npm run rules` w komentarzu `frontend/scripts/rules.mjs`, bo zadania pytest nie instalują zależności frontendu.
 Prawo właściciela, czyli stałe użycie zakazanego API przez moduł, do którego komunikat zakazu kieruje resztę kodu, zapisz w konfiguracji reguły (dla `TID251`: `per-file-ignores` w `pyproject.toml` i `OWNERS` w `tests/test_zakazy_ruff.py`).
 Wyjątek tymczasowy zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
+
+## Stałe prośby Maksa
+
+- Tickety: podział specyfikacji (tytuł, blokady, co daje) pokazujesz Maksowi i publikujesz dopiero po jego „tak” na tę listę, a issue specyfikacji, także jego etykiety, zostaje bez zmian.
+- Długi bieg (hillclimb, noc, program wielu PR-ów) kończysz spokojną wizualizacją HTML wyniku w wątku T3 (`html_render`).
