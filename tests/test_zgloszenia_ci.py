@@ -845,6 +845,9 @@ GRUPA_Z_WYJSCIA = _wykonany(
     "success",
     "2026-11-13T14:09:30.1Z ##[group]Run skryptu mutacji\n2026-11-13T14:09:30.2Z urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n",
 )
+# Krok, który padł, sam drukuje niezamknięty ``##[start-action``: z nagłówkiem z wyjścia ``GRUPA_Z_WYJSCIA`` liczba
+# nagłówków zgadza się z krokami, ale drugi nagłówek to cytat sprzed startu kroku, który padł, w kroku z HTTP 503.
+FAIL_SKILLA_Z_PODKROKIEM = _wykonany("Run the planned units", "failure", "2026-11-13T14:09:37Z ##[start-action display=cytat;id=x]\n" + FAIL_SKILLA)
 # Krok ``Post`` akcji po krokach zadania zaczyna się linią ``Post job cleanup.`` bez nagłówka ``##[group]Run``.
 PO_KROKACH_503 = (
     "Post Restore TLC tools",
@@ -998,6 +1001,8 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"pytest (Python 3.14, Linux, 5/8)": [_wykonany("Install test dependencies (Linux)", "failure", DNS), WYSLANIE_CZASOW]}, (), "awaria: DNS runnera, instalacja przeglądarek |", True),
         ({"pytest (Python 3.13, 1/20)": [CHROMIUM, _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU)]}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"Mutation checks (6/6)": [GRUPA_Z_WYJSCIA, _wykonany("Upload the mutation record", "failure", ARTEFAKT_HTTP_403)]}, (), "defekt: Mutation checks (6/6) |", False),
+        ({"Mutation checks (1/22)": [GRUPA_Z_WYJSCIA, FAIL_SKILLA_Z_PODKROKIEM, DOWODY_BAZY]}, (), "defekt: Mutation checks (1/22) |", False),
+        ({"pytest (Python 3.14, Linux, 5/8)": [("Install test dependencies (Linux)", "failure", f"##[group]Run apt-get install\n{DNS}")]}, (), "defekt: pytest (Python 3.14, Linux, 5/8) |", False),
         ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_E2E), PO_KROKACH_503]}, (), "defekt: Mutation checks (6/6) |", False),
         ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_503}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"pytest (Python 3.13, 1/20)": ARTEFAKT_HTTP_403}, (), "defekt: pytest (Python 3.13, 1/20) |", False),
@@ -1011,17 +1016,20 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         "defekt-po-http-503-continue-on-error-w-sekundzie-startu", "defekt-skilla-przed-wyslaniem-dowodow-if-failure-etimedout",
         "defekt-e2e-przed-wyslaniem-dowodow-if-failure-etimedout", "defekt-skilla-przed-http-503-i-dowodami-403-w-tej-samej-sekundzie",
         "awaria-dns-przed-wyslaniem-czasow-continue-on-error", "pobranie-artefaktu-po-akcji-zlozonej", "nadmiarowy-naglowek-z-wyjscia-kroku",
+        "naglowek-i-niezamkniety-podkrok-z-wyjscia-krokow-wyrownuja-liczbe",
+        "naglowek-kroku-bez-znacznika-czasu",
         "linia-kroku-post-po-kroku-ktory-padl",
         "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
     ],
 )
-@pytest.mark.parametrize("koniec_linii", ["\n", "\r\n"], ids=["lf", "crlf-windows"])
+@pytest.mark.parametrize("koniec_linii", ["\n", "\r\n", "\r", "\r\r\n"], ids=["lf", "crlf-windows", "cr", "cr-crlf"])
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
     logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool, koniec_linii: str
 ) -> None:
     """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
     z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
-    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem. Log zadania Windows (``\\r\\n``) daje
+    a gdy nagłówki kroków w logu nie pasują do kroków z API (ich liczba albo sekunda nagłówka kroku, który padł, wobec
+    jego czasów w API), porażka jest defektem. Log zadania Windows (``\\r\\n``) i log z samym ``\\r`` albo ``\\r\\r\\n`` dają
     ten sam wynik co log z Linuksa."""
 
     run = _run_ci(42435998596)

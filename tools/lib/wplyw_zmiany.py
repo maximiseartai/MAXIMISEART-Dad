@@ -501,7 +501,7 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
     (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
 
-    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request tylko wtedy, gdy graf
+    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request, gdy graf
     (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring
     nie wylicza form, które graf widzi: wyznaczają je przypadki ``test_test_widzi_plik_spod_tests_czytany_droga_grafu``
     (widziane) i ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu`` (przykłady niewidzianych, nie pełna
