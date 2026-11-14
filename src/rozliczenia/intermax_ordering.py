@@ -120,7 +120,7 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
     fakt Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
     INTERMAX czyta uchwyt plików taty ``context.files``: komórki zakazanych kolumn przeczytanych wierszy zna pamięć
     reguły danych (ADR 0025), a wklejone wiersze, które rozpoznaje Planowanie, i odcisk przeczytanego INTERMAX Kopia
-    wejścia Uruchomienia (#842).
+    wejścia Uruchomienia.
     """
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)

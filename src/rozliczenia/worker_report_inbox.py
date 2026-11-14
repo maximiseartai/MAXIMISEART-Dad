@@ -25,7 +25,7 @@ dostępu, a porażkę oddaje jako wynik: odrzucone hasło (``SMTPAuthenticationE
 (``OSError``, zerwane albo nienawiązane połączenie SMTP) to ``InboxUnreachable``, a każda inna odmowa serwera SMTP to
 ``MailRefused``; każdy wynik niesie tylko nazwę typu wyjątku.
 
-``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``, #1234): flagi maili i liczby maili
+``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``): flagi maili i liczby maili
 ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
 wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
 """
