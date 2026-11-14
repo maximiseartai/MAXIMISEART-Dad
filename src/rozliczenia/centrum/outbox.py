@@ -276,6 +276,7 @@ Target = PeriodThread | NewIssue | KnownIssue | OpenIssue
 """Dokąd w Skrzynce Zgłoszeń idzie wysyłka."""
 
 
+@final
 @dataclass(frozen=True)
 class ArchiveFile:
     """Plik wysyłki w Archiwum okresu (GitHub Release z tagiem ``tag`` w repozytorium Skrzynki Zgłoszeń).
@@ -289,7 +290,7 @@ class ArchiveFile:
     title: str
     description: str
     name: str
-    text: str
+    text: Outgoing
 
     @property
     def packed_name(self) -> str:
@@ -622,7 +623,7 @@ def _archive_file(entry: object) -> ArchiveFile | None:
         _string(entry["title"]),
         _string(entry["description"]),
         _string(entry["name"]),
-        _string(entry["text"]),
+        tool(_string(entry["text"])),
     )
 
 

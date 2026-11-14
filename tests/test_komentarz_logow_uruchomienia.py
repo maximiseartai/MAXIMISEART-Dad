@@ -87,7 +87,9 @@ from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 from tests.fixtures.praca_centrum import centrum_work
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
+ROOT = Path(__file__).resolve().parents[1]
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
 
@@ -202,7 +204,7 @@ SUMMARY_LINES: dict[str, tuple[dict[str, Any], list[str]]] = {
 def test_podsumowanie_nazywa_wynik_sposob_zakonczenia_i_kody_komunikatow(
     changes: dict[str, Any], lines: list[str]
 ) -> None:
-    summary = summary_markdown(record(**changes)).splitlines()
+    summary = summary_markdown(guard_logs(record(**changes), empty_memory())).splitlines()
 
     assert [line for line in lines if line not in summary] == []
 
@@ -297,7 +299,7 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     name = f"20261023T204720Z-settlement-{RUN_ID}.json.gz"
     link = f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/{name}"
     [comment] = post.parts
-    assert comment == f"{summary_markdown(logs)}\n"
+    assert comment == f"{summary_markdown(guard_logs(logs, empty_memory()))}\n"
     assert comment.splitlines()[-1] == f"- Pełne Logi: [{name}]({link})"
     assert post.archive is not None
     assert (post.archive.tag, post.archive.packed_name, post.archive.link) == ("logi-08_14_09_2026", name, link)
@@ -434,7 +436,7 @@ def _slot(value: object) -> str:
 
     kind = type(value)
     slots: tuple[str, ...] = getattr(kind, "__slots__")
-    return f"_{kind.__name__}{slots[0]}"
+    return f"_{kind.__name__}{slots[0]}" if slots else "_Outgoing__text"
 
 
 @pytest.mark.parametrize("make", NOT_FROM_GUARD.values(), ids=NOT_FROM_GUARD.keys())
@@ -446,12 +448,12 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
     pola odmawiają, bo wartość, która ich nie przeszła, przeszłaby jako po strażniku (przegląd #1038, runda 1)."""
 
     value = _guarded(kind)
-    text = value.text
+    text = str(getattr(value, "text", value))  # tekst po strażniku to sam ``Outgoing``
 
     with pytest.raises((TypeError, AttributeError)):
         make(value)
 
-    assert value.text == text
+    assert str(getattr(value, "text", value)) == text
 
 
 def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_straznika() -> None:
@@ -460,7 +462,7 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
 
     with pytest.raises(TypeError, match="guard_logs"):
         type(logs)(logs.record, logs.record, object())
-    with pytest.raises(TypeError, match="guard_text"):
+    with pytest.raises(TypeError, match="client_data"):
         type(text)("ul. Syntetyczna 1", object())
 
 
@@ -473,6 +475,139 @@ def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_d
 
     with pytest.raises(TypeError, match="podklas"):
         type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+
+
+_PLIK: Final = """\
+{importy}from rozliczenia.centrum.outbox import ArchiveFile
+from rozliczenia.client_data import Outgoing
+
+
+def plik({komorka}, tekst: Outgoing) -> ArchiveFile:
+    return ArchiveFile({pola})
+"""
+_GOTOWY_PLIK: Final = "from rozliczenia.centrum.outbox import ArchiveFile\n\n\n"
+_POSTEP: Final = (
+    "from rozliczenia.centrum.comment_versions import ProgressVersion\n"
+    "from rozliczenia.centrum.pricing_progress import PricingProgress\n"
+)
+_ARCHIWUM_POLA: Final = ("tag", "title", "description", "name", "text")
+_TEKST_NARZEDZIA: Final = ("tag", "title", "description", "name")
+"""Pola pliku w Archiwum z tekstem narzędzia (okres i nazwa pliku Logów), które są jeszcze ``str``."""
+
+
+def _pola(z_komorki: str) -> str:
+    return ", ".join("komorka" if pole == z_komorki else ("tekst" if pole == "text" else '"t"') for pole in _ARCHIWUM_POLA)
+
+
+def _plik(pola: str, *, importy: str = "", komorka: str = "komorka: str") -> str:
+    return _PLIK.format(importy=importy, komorka=komorka, pola=pola)
+
+
+# Drogi wartości z komórki taty bez strażnika do pliku Logów, pliku w Archiwum Logów okresu i komentarza Uruchomienia
+# (każde pole i formy siostrzane) → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module src/rozliczenia/centrum.
+DROGI_DO_LOGOW: Final = {
+    "ArchiveFile.text z komórki": (
+        _plik(_pola("text")),
+        'Argument 5 to "ArchiveFile" has incompatible type "str"; expected "Outgoing"',
+    ),
+    "postęp z komórki": (
+        _POSTEP + "\n\ndef wersja(komorka: str, postep: PricingProgress) -> ProgressVersion:\n"
+        "    return ProgressVersion(postep, komorka)\n",
+        'Argument 2 to "ProgressVersion" has incompatible type "str"; expected "Outgoing"',
+    ),
+    "wynik bez Logów z komórki": (
+        "from rozliczenia.centrum.comment_versions import ResultWithoutLogs, WithoutLogsVersion\n\n\n"
+        "def wersja(komorka: str, wynik: ResultWithoutLogs) -> WithoutLogsVersion:\n"
+        "    return WithoutLogsVersion(wynik, komorka)\n",
+        'Argument 2 to "WithoutLogsVersion" has incompatible type "str"; expected "Outgoing"',
+    ),
+    "dataclasses.replace postępu": (
+        "import dataclasses\n\nfrom rozliczenia.centrum.comment_versions import ProgressVersion\n\n\n"
+        "def wersja(komorka: str, postep: ProgressVersion) -> ProgressVersion:\n"
+        "    return dataclasses.replace(postep, text=komorka)\n",
+        'Argument "text" to "replace" of "ProgressVersion" has incompatible type "str"',
+    ),
+    "dataclasses.replace pliku Archiwum": (
+        "import dataclasses\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    return dataclasses.replace(plik, text=komorka)\n",
+        'Argument "text" to "replace" of "ArchiveFile" has incompatible type "str"',
+    ),
+    "__replace__ pliku Archiwum": (
+        _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    return plik.__replace__(text=komorka)\n",
+        'Argument "text" to "__replace__" of "ArchiveFile" has incompatible type "str"',
+    ),
+    "copy.replace pliku Archiwum": (
+        "import copy\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    return copy.replace(plik, text=komorka)\n",
+        "`copy.replace` is banned",
+    ),
+    "podklasa pliku Archiwum": (_GOTOWY_PLIK + "class Plik(ArchiveFile):\n    pass\n", 'Cannot inherit from final class "ArchiveFile"'),
+    "własny plik Archiwum": (
+        """from dataclasses import dataclass
+
+from rozliczenia.centrum.outbox import Post
+
+
+@dataclass(frozen=True)
+class Plik:
+    tag: str
+    title: str
+    description: str
+    name: str
+    text: str
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    return Post(post.target, post.period, post.run_id, None, post.parts, Plik("t", "t", "d", "n", komorka))
+""",
+        'Argument 6 to "Post" has incompatible type "Plik"; expected "ArchiveFile | None"',
+    ),
+    "plik Logów z Logów sprzed strażnika": (
+        "from rozliczenia.centrum.logs_disk import LogsOnDisk\nfrom rozliczenia.centrum.run_logs import RunLog\n\n\n"
+        "def zapis(dysk: LogsOnDisk, logi: RunLog) -> None:\n    dysk.write(logi)\n",
+        'Argument 1 to "write" of "LogsOnDisk" has incompatible type "RunLog"',
+    ),
+}
+
+# Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
+# Uruchomienia wartość z komórki taty bez strażnika, a mypy i ruff ich nie łapią. Wersję komentarza z ``cast`` łapie
+# dopiero jej konstruktor (``TypeError``), plik w Archiwum nie. Pola z tekstem narzędzia (``_TEKST_NARZEDZIA``) dostaną
+# ``Outgoing`` w osobnym PR (#1551).
+ZNANE_LUKI_LOGOW: Final = {
+    **{f"ArchiveFile.{pole} z komórki": _plik(_pola(pole)) for pole in _TEKST_NARZEDZIA},
+    "cast na Outgoing w pliku Archiwum": _plik(
+        _pola("text").replace("komorka", "cast(Outgoing, komorka)"), importy="from typing import cast\n\n"
+    ),
+    "wartość typu Any w pliku Archiwum": _plik(
+        _pola("text").replace("komorka", 'wiersz["ADRES"]'), importy="from typing import Any\n\n", komorka="wiersz: dict[str, Any]"
+    ),
+    "str.__new__ z klasą Outgoing w pliku Archiwum": _plik(_pola("text").replace("komorka", "str.__new__(Outgoing, komorka)")),
+    "object.__setattr__ na pliku Archiwum": _GOTOWY_PLIK
+    + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
+    "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
+    + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+    "cast na Outgoing w postępie": "from typing import cast\n\n"
+    + _POSTEP
+    + "from rozliczenia.client_data import Outgoing\n\n\n"
+    "def wersja(komorka: str, postep: PricingProgress) -> ProgressVersion:\n"
+    "    return ProgressVersion(postep, cast(Outgoing, komorka))\n",
+}
+
+@wymaga_ruff_i_mypy
+def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza(
+    tmp_path: Path,
+) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_LOGOW.items()} | ZNANE_LUKI_LOGOW
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
+
+    assert {
+        opis: zgloszenia[opis]
+        for opis, (_, odrzucenie) in DROGI_DO_LOGOW.items()
+        if not any(odrzucenie in zgloszenie for zgloszenie in zgloszenia[opis])
+    } == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_LOGOW}, "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)"
+    )
 
 
 def _logs_on_disk(directory: Path) -> LogsOnDisk:

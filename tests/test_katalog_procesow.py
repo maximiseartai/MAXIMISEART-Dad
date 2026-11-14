@@ -21,6 +21,8 @@ from rozliczenia.centrum.efenix_chrome import atrapa_opening
 from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, ProcessKind, Start
 from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import empty_memory
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
@@ -252,7 +254,8 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
         declaration.view.register_name,
     )
     assert card["run"] == run
-    assert summary_markdown(RunLog.model_validate_json(log_file.read_text(encoding="utf-8"))).startswith(
+    logs = guard_logs(RunLog.model_validate_json(log_file.read_text(encoding="utf-8")), empty_memory())
+    assert summary_markdown(logs).startswith(
         f"**Logi Uruchomienia**: {declaration.title}, "
     )
     assert [row["process_label"] for row in metrics["runs"] if row["run_id"] == run["id"]] == [declaration.title]

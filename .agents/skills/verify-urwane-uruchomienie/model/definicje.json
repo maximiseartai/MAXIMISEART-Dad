@@ -6,17 +6,17 @@
   "src/rozliczenia/centrum/run_logs_guard.py": {
     "_guarded": "bc88e1516be7306e",
     "guard_logs": "220c4b2868ecc3fc",
-    "GuardedLogs": "5fdd32a040cfba44"
+    "GuardedLogs": "5c408e364beb1e55"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
-    "ProgressVersion": "06a0c6e965a7edc9",
+    "ProgressVersion": "121f877af38d44ca",
     "OwnLogs": "d74da43b6f1f0893",
     "StandInLogs": "9f9d00d7a8b7553b",
-    "WithoutLogsVersion": "92868149b99a61ae",
+    "WithoutLogsVersion": "46c4643c2385c011",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "b6e7cf7bfece3230",
+    "post_of": "8ea36171cf7871da",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },

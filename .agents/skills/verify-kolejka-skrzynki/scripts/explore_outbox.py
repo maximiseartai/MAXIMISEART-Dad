@@ -623,7 +623,7 @@ TAG = "logi-08_14_09_2026"
 def _archived(run_id: str, version: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum okresu (``comment_versions.post_of``)."""
 
-    archive = ArchiveFile(TAG, "Logi Uruchomień", "Archiwum", f"{run_id}.json", f"Logi {run_id}{version}\n")
+    archive = ArchiveFile(TAG, "Logi Uruchomień", "Archiwum", f"{run_id}.json", tool(f"Logi {run_id}{version}\n"))
     return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),), archive)
 
 

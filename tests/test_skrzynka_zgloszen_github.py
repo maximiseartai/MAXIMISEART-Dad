@@ -886,7 +886,7 @@ LOGS = PeriodThread("logi-uruchomienia", "- Logi Uruchomienia okresu: 08_14_09_2
 
 
 def logs_post(text: str) -> Post:
-    archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), text)
+    archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), tool(text))
     return Post(LOGS, "08_14_09_2026", "627b45fe219e4274b722953c34d4af54", tool("Logi okresu"), (tool("podsumowanie\n"),), archive)
 
 

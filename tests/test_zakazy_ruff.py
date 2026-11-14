@@ -237,6 +237,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/quantity_check_run.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/reports.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/run_logs_guard.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
     "src/rozliczenia/template_file.py": frozenset(
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}

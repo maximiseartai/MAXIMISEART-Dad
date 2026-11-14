@@ -2,7 +2,7 @@
 
 Przed zapisem pliku Logów i przed wysyłką Logi przechodzą przez strażnika (``guard_logs``), a plik (``LogsOnDisk.write``)
 i wysyłka (``comment_versions.post_of``) biorą tylko Logi z niego (``GuardedLogs``) i tekst komentarza z niego
-(``GuardedText``, ``guard_text``): wartość ``ADRES`` albo numeru Orange z przeczytanych plików, także wpisana w inną
+(``client_data.Outgoing``, ``guard_text``): wartość ``ADRES`` albo numeru Orange z przeczytanych plików, także wpisana w inną
 komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą techniczną, a telefony i ulice w
 tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (``TOOL_FIELDS``), i nazwy pól schematu
 zostają bez maski (#936). Pole typowane, które maski nie przyjmuje, traci wartość (``GuardCut``), a uwaga o tym jest
@@ -23,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
-from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded
+from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, Outgoing, tool
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
@@ -334,8 +334,7 @@ _FIELD_NAME: Final = re.compile(r"[a-z_]+")
 
 
 _MINTED: Final = object()
-"""Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
-``guard_text``.
+"""Dowód, że Logi wyszły ze strażnika reguły danych: ``GuardedLogs`` daje tylko ``guard_logs``.
 
 Sprawdzenia łapią błąd kodu, który zapomniał strażnika albo przerobił wartość, która go przeszła (Logi Urwanego
 Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to zostaje przeglądowi.
@@ -388,8 +387,8 @@ class GuardedLogs:
         return self.__record
 
     @property
-    def text(self) -> str:
-        return self.__record.text
+    def text(self) -> Outgoing:
+        return tool(self.__record.text)
 
     def with_diagnosis(self, diagnosis: LoggedDiagnosis, forbidden: ForbiddenValues) -> GuardedLogs | None:
         """Te Logi z Diagnozą ``diagnosis``, przepuszczone przez strażnika drugi raz razem z nią, jak Logi z wynikiem;
@@ -414,36 +413,9 @@ def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
     return GuardedLogs(_guarded(record, forbidden), record, _MINTED)
 
 
-@final
-class GuardedText:
-    """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
-    (``_MINTED``)."""
-
-    __slots__ = ("__text",)
-    __text: str
-
-    def __init__(self, text: str, proof: object) -> None:
-        if proof is not _MINTED:
-            raise TypeError("Tekst po strażniku daje tylko guard_text.")
-        object.__setattr__(self, "_GuardedText__text", text)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst po strażniku nie ma podklas: daje go tylko guard_text.")
-
-    @property
-    def text(self) -> str:
-        return self.__text
-
-    def __setattr__(self, name: str, value: object) -> None:
-        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
-
-    def __delattr__(self, name: str) -> None:
-        raise AttributeError("Tekst po strażniku jest niezmienny: nowy daje guard_text.")
-
-
-def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> GuardedText:
+def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> Outgoing:
     """Tekst ``text`` po strażniku reguły danych ``forbidden``: zamaskowana wartość to uwaga techniczna na jego końcu, z
     miejscem ``place``."""
 
     found = forbidden.guard(text, place)
-    return GuardedText(found.text + "".join(f"\n- Uwaga techniczna: {note}" for note in found.notes), _MINTED)
+    return found.text + tool("".join(f"\n- Uwaga techniczna: {note}" for note in found.notes))

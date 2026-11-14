@@ -199,16 +199,6 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
     tekst = pamiec.guard("Uwaga", "treść").text
     return Post(NewIssue("uwaga-taty", komorka), None, "r", None, (tekst,))
 """,
-    "plik Archiwum z komórki": """\
-from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post
-from rozliczenia.client_data import ForbiddenValues
-
-
-def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
-    cel = PeriodThread("logi-uruchomienia", "- Logi", "reuse", "Logi")
-    plik = ArchiveFile("logi-08_14_09_2026", "Logi", "Opis", "logi.json", komorka)
-    return Post(cel, "08_14_09_2026", "r", None, (pamiec.guard("Logi", "treść").text,), plik)
-""",
 }
 
 

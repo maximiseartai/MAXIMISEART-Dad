@@ -14,7 +14,7 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
-(``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
+(``run_logs_guard.GuardedLogs``, ``client_data.Outgoing``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
 potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w
 konstruktorze wersji. Wysyłkę daje tylko ``post_of`` jako ``LogsPost``, której nikt nie zmieni przed kolejką
 (docstring ``_VERSIONS``). Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
@@ -39,9 +39,9 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import Outgoing, tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -74,7 +74,7 @@ class ResultWithoutLogs:
 @dataclass(frozen=True)
 class ProgressVersion:
     progress: PricingProgress
-    text: GuardedText
+    text: Outgoing
 
     def __post_init__(self) -> None:
         _require_text(self.text)
@@ -105,7 +105,7 @@ class WithoutLogsVersion:
     """Wynik bez Logów ``final`` z tekstem komentarza po strażniku (``text``), bez pliku w Archiwum."""
 
     final: ResultWithoutLogs
-    text: GuardedText
+    text: Outgoing
 
     def __post_init__(self) -> None:
         _require_text(self.text)
@@ -120,10 +120,10 @@ def _require_logs(logs: object) -> None:
 
 
 def _require_text(text: object) -> None:
-    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs_guard._MINTED``), także gdy typ go nie
+    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``client_data.Outgoing``), także gdy typ go nie
     widzi."""
 
-    if not isinstance(text, GuardedText):
+    if not isinstance(text, Outgoing):
         raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
 
 
@@ -295,12 +295,12 @@ def post_of(version: CommentVersion) -> LogsPost:
     start: StartFacts
     match version:
         case ProgressVersion(progress=progress, text=text):
-            start, comment, archive = progress.started, text.text, None
+            start, comment, archive = progress.started, text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
             record = logs.record
-            start, comment, archive = record.start, summary_markdown(record), _archive_file(record)
+            start, comment, archive = record.start, tool(summary_markdown(logs)), _archive_file(logs)
         case WithoutLogsVersion(final=final, text=text):
-            start, comment, archive = final.journal.started, text.text, None
+            start, comment, archive = final.journal.started, text, None
         case _:
             assert_never(version)
     period = start.period
@@ -317,7 +317,7 @@ def post_of(version: CommentVersion) -> LogsPost:
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
             f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
         ),
-        parts=(tool(comment + "\n"),),
+        parts=(comment + tool("\n"),),
         archive=archive,
         rank=rank_of(version),
     )
@@ -374,7 +374,8 @@ def _orders_done(progress: PricingProgress) -> str | None:
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 
-def _archive_file(record: RunLog) -> ArchiveFile:
+def _archive_file(logs: GuardedLogs) -> ArchiveFile:
+    record = logs.record
     period = record.period
     return ArchiveFile(
         tag=f"logi-{period}",
@@ -384,14 +385,15 @@ def _archive_file(record: RunLog) -> ArchiveFile:
             "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
         ),
         name=name_of(record.start),
-        text=record.text,
+        text=logs.text,
     )
 
 
-def summary_markdown(record: RunLog) -> str:
+def summary_markdown(logs: GuardedLogs) -> str:
+    record = logs.record
     commit = "nieznany" if record.tool.commit is None else short_commit(record.tool.commit)
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
-    archive = _archive_file(record)
+    archive = _archive_file(logs)
     return (
         _comment_title(record)
         + f"- Wynik: {_result(record)}\n"
