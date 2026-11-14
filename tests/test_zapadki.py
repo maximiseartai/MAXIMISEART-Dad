@@ -1390,6 +1390,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
         "napis bez r: reguła czyta tekst źródła jak surowy": f'{_PATTERN}re.compile("PONOWIENIE\\\\.$")\n',
+        "lookaround tuż przed $: reguła czyta ostatni atom w nim": f'{_PATTERN}re.compile(r"PONOWIENIE(?<!\\s)$")\n',
     },
 }
 
