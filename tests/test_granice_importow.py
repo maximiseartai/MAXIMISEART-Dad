@@ -960,8 +960,8 @@ def _python_files() -> Iterator[Path]:
 
 
 def _type_nodes(tree: ast.AST) -> set[ast.AST]:
-    """Węzły adnotacji (argumentu, wyniku, zmiennej), importów, typu w ``isinstance`` i typu porównanego z ``type(…)``
-    przez ``is`` albo ``is not``: nazwa typu niczego tam nie buduje."""
+    """Węzły adnotacji (argumentu, wyniku, zmiennej), importów, typu w ``isinstance`` i nazwy typu porównanej z
+    ``type(…)``: nazwa typu niczego tam nie buduje."""
 
     roots: list[ast.AST] = []
     for node in wezly(tree):
@@ -975,12 +975,7 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
             roots.append(node)
         elif isinstance(node, ast.Call) and ast.unparse(node.func) == "isinstance" and len(node.args) == 2:
             roots.append(node.args[1])
-        elif (
-            isinstance(node, ast.Compare)
-            and isinstance(node.left, ast.Call)
-            and ast.unparse(node.left.func) == "type"
-            and all(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops)
-        ):
+        elif isinstance(node, ast.Compare) and isinstance(node.left, ast.Call) and ast.unparse(node.left.func) == "type":
             roots += [comparator for comparator in node.comparators if isinstance(comparator, (ast.Name, ast.Attribute))]
     return {node for root in roots for node in ast.walk(root)}
 
