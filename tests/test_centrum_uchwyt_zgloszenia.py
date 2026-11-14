@@ -41,7 +41,7 @@ from rozliczenia.centrum.reports import (
 )
 from rozliczenia.centrum.stops import Stops, plain
 from rozliczenia.client_data import tool
-from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
+from rozliczenia.centrum.tool_update import LOGIN, NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.efenix_window import PagePart
 from rozliczenia.process_run import Stop
 
@@ -206,8 +206,9 @@ LONG_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d} {'x
 SHORT_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d}" for minute in range(20))
 
 
-def stop_report(entries: tuple[str, ...]) -> StopReport:
-    """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku z bardzo długim śladem wywołań i dziennikiem ``entries``."""
+def stop_report(entries: tuple[str, ...], frames: tuple[CallFrame, ...] = LONG_FRAMES) -> StopReport:
+    """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku ze śladem wywołań ``frames`` (domyślnie bardzo długim) i
+    dziennikiem ``entries``."""
 
     run = runs_contract.RunInfo(
         id="3f2a9c1b8e7d4f0a",
@@ -220,7 +221,7 @@ def stop_report(entries: tuple[str, ...]) -> StopReport:
         register_name="Rejestr zleceń",
     )
     message = preparation_messages.unexpected_failure()
-    stop = Stop("unexpected", message, trace=CallTrace("KeyError", LONG_FRAMES))
+    stop = Stop("unexpected", message, trace=CallTrace("KeyError", frames))
     return StopReport(run, stop, ProblemFingerprint.of("preparation", message), Diagnosis((), entries), logs=None)
 
 
@@ -385,6 +386,36 @@ def test_zgloszenie_dokladnie_na_granicy_jednej_czesci_wysylki_jest_cale(compute
     body = sent_alone(computer, update_report(result, (entry,)))
 
     assert (len(body), f"\n{entry}\n" in body, "Pominięte najstarsze wpisy" in body) == (PART_LIMIT, True, False)
+
+
+def test_zgloszenie_ktore_miesci_sie_cale_choc_bez_jednej_ramki_juz_nie_ma_caly_slad(computer: Computer) -> None:
+    """Dopisek o pominiętych ramkach jest dłuższy niż krótka ramka, więc Zgłoszenie, które mieści się w jednej części
+    wysyłki tylko w całości, zostaje całe, zamiast tracić ramki."""
+
+    frames = tuple(CallFrame("src/rozliczenia/a.py", line, "f") for line in range(1, 21))
+    empty = stop_report(("",), frames)
+    frame = computer.reports().handle(empty.fingerprint).prepare(empty).body
+    entry = "x" * (PART_LIMIT - len(frame))
+
+    body = sent_alone(computer, stop_report((entry,), frames))
+
+    assert (len(body), "Pominięte" in body) == (PART_LIMIT, False)
+    assert all(f"\n{f.file}:{f.line} w {f.function}\n" in body for f in frames)
+
+
+def test_zgloszenie_nieudanej_aktualizacji_ma_20_ostatnich_wpisow_dziennika_jak_zgloszenie_z_diagnozy(
+    computer: Computer,
+) -> None:
+    log = computer.log
+    log.started(port=47811, version="abc1234", console=False)
+    for _ in range(30):
+        log.unexpected_failure(KeyError(), where="aktualizacja narzędzia")
+    entries = log.recent(100)
+
+    report = source(computer)
+
+    assert len(entries) > 20
+    assert report.log_entries == tuple(entries[-20:])
 
 
 def test_bez_sieci_zgloszenie_czeka_w_kolejce_i_dostaje_numer_po_dostarczeniu(computer: Computer) -> None:
@@ -797,6 +828,39 @@ def test_podglad_nie_czeka_na_skrzynke_a_spozniona_odpowiedz_to_brak_odpowiedzi(
 
     assert not box_answered_first
     assert owner.states == [WAITING]
+
+
+def test_pytanie_skrzynki_o_jeden_problem_nie_wstrzymuje_stanu_zgloszenia_innego_problemu(computer: Computer) -> None:
+    """Blokada ``Reports`` chroni tylko stan w pamięci: gdy skrzynka długo nie odpowiada na pytanie podglądu, uchwyt i
+    stan Zgłoszenia innego problemu są od razu."""
+
+    computer.with_key()
+    computer.search_deadline_s = 60
+    box = computer.box
+    box.search_hold = threading.Event()
+    reports = computer.reports()
+    other = source(computer, LOGIN)
+    states: list[dict[str, Any]] = []
+    read = threading.Event()
+
+    def other_state() -> None:
+        states.append(dump(reports.handle(other.fingerprint).state))
+        read.set()
+
+    asking = reports.handle(source(computer).fingerprint)
+    reader = threading.Thread(target=other_state)
+    try:
+        asking.prepare(source(computer))
+        assert box.searching.wait(30)
+        reader.start()
+        answered_while_box_silent = read.wait(30)
+    finally:
+        box.search_hold.set()
+        if reader.ident is not None:
+            reader.join()
+
+    assert answered_while_box_silent
+    assert states == [READY]
 
 
 @dataclass

@@ -1924,6 +1924,19 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
     assert RunLog.model_validate_json(file.read_text(encoding="utf-8")).diagnosis is not None
 
 
+def test_wpis_dziennika_wyceny_bez_startu_wyceny_z_centrum_nie_zapisuje_niczego(tmp_path: Path) -> None:
+    """Wpis silnika bez startu Wyceny z Centrum nie ma dziennika, do którego by należał: Wycena biegnie dalej, a na dysku
+    i w dzienniku Centrum nic nie przybywa."""
+
+    directory = tmp_path / "dzienniki-wyceny"
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+    journal = Journal(directory, log, process="efenix")
+
+    journal.begun(row=19, place=1, total=2)
+
+    assert (directory.exists(), log.recent(10)) == (False, [])
+
+
 class _WatchedLock:
     """``threading.Lock``, który woła ``on_wait``, gdy wątek musi na nią czekać, zanim zacznie czekać."""
 
