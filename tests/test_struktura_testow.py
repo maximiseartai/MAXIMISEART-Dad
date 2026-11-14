@@ -552,6 +552,10 @@ CONSTANT_TIME_BOUNDS = {
         "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
         "Powiadomienia, które czekają dwa razy dłużej"
     ),
+    "test_model_tlc.py::test_przebieg_tlc_bez_wyniku_w_limicie_konczy_sprawdzenie_zawieszeniem_ze_zrzutem_watkow_i_zabija_drzewo_tlc"
+    "::took < 30": (
+        "granica 30 s oddziela koniec od zawieszenia: atrapa Javy śpi 60 s, a limit przebiegu z czasem na zrzut to 6,5 s"
+    ),
     "test_mutacje.py::test_polecenie_bez_wyniku_w_limicie_czasu_narzedzia_daje_przekroczony_czas::2 <= int(spent[1]) < 4": (
         "polecenie mutacji śpi 60 s, linia CZAS mierzy samo polecenie (bez startu narzędzia i kopii), a granica poniżej "
         "dwóch limitów --limit-s (2 s) łapie silnik, który kończy je dwa razy później"
