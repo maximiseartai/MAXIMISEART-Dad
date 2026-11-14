@@ -761,7 +761,8 @@ BASE_RED = "MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc w
     [
         *((old, {}, "tests/test_stary.py") for old in RED_OLD_TESTS.values()),
         (NEIGHBOUR_RED, {}, "tests/test_stary.py::test_po_sasiedzie"),
-        (GREEN_OLD, SUB_CONFTEST, "tests/sub/conftest.py"),
+        # Ścieżka pliku, nie id testu: pytest drukuje ją z separatorem systemu (``tests\sub\conftest.py`` na Windows).
+        (GREEN_OLD, SUB_CONFTEST, str(Path("tests/sub/conftest.py"))),
         (RED_OLD_TESTS["porazka"], CATCHES_OLD, "tests/test_stary.py::test_stary"),
     ],
     ids=[*RED_OLD_TESTS, "sasiad-w-pliku", "conftest-podkatalogu", "za-testem-ktory-lapie"],
