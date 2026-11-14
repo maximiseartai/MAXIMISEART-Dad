@@ -610,6 +610,40 @@ def test_wydanie_odmawia_gdy_tag_jest_juz_na_innym_commicie(releasing: Releasing
     assert releasing.posted() == []
 
 
+def test_wydanie_odmawia_gdy_po_planie_w_origin_stanelo_wydanie_z_wyzszym_numerem(releasing: Releasing) -> None:
+    releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n"})
+    releasing.planned()
+    releasing.released("v0.3.0", releasing.start)
+
+    result = releasing.publish("--potwierdzone-przez-maksa")
+
+    assert (result.returncode, result.stdout.splitlines()[-1]) == (1, "WYDANIE ODMOWA | Numer v0.1.0 nie jest wyższy od Wydania v0.3.0 w origin.")
+    assert set(releasing.remote_tags()) == {"v0.3.0"}
+    assert releasing.posted() == []
+
+
+def test_plan_bez_dostepu_do_origin_odmawia_z_nazwa_remote(releasing: Releasing) -> None:
+    releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n"})
+    releasing.origin.rename(releasing.tmp_path / "gdzie-indziej.git")
+
+    result = releasing.plan()
+
+    assert result.returncode == 1
+    assert result.stdout.splitlines()[-1].startswith("WYDANIE ODMOWA | Nie udało się pobrać main i tagów z origin: ")
+
+
+def test_lokalny_tag_na_wydawanym_commicie_po_nieudanym_pushu_trafia_do_origin(releasing: Releasing) -> None:
+    merged = releasing.merge(1, "feat: ilości usług", {"src/a.py": "a = 1\n"})
+    releasing.planned()
+    git(releasing.checkout, "tag", "v0.1.0", merged)
+
+    result = releasing.publish("--potwierdzone-przez-maksa")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert releasing.remote_tags() == {"v0.1.0": merged}
+    assert [posted["tag_name"] for posted in releasing.posted()] == ["v0.1.0"]
+
+
 def test_wydanie_odmawia_commitu_starszego_niz_najnowsze_wydanie(releasing: Releasing) -> None:
     releasing.merge(1, "feat: pierwsze", {"src/a.py": "a = 1\n"})
     releasing.planned()
