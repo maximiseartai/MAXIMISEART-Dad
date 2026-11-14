@@ -81,7 +81,7 @@ def _logs_on_the_way_line(run_id: str) -> str:
     return f"{_LOGS}: w drodze (Uruchomienie {run_id})"
 
 
-def note_post(note_id: str, title: str, body: Outgoing, *, logs_on_the_way: bool) -> Post:
+def note_post(note_id: str, title: Outgoing, body: Outgoing, *, logs_on_the_way: bool) -> Post:
     """``logs_on_the_way``: stopka ma linię Logów w drodze (``logs_line`` bez adresu), którą słuchacz wymieni tuż przed
     wysłaniem."""
 
