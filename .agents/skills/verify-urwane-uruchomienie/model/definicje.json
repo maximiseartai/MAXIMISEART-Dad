@@ -6,7 +6,7 @@
   "src/rozliczenia/centrum/run_logs_guard.py": {
     "_guarded": "c4da644923d4d5b9",
     "guard_logs": "220c4b2868ecc3fc",
-    "GuardedLogs": "a55fdce3637a6d6d"
+    "GuardedLogs": "266560ff8768ce38"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
@@ -47,7 +47,7 @@
     "LogsOnDisk.started": "3ccf23d17059de9b",
     "LogsOnDisk.left_behind": "6575679b81ab383e",
     "LogsOnDisk.remove_journal": "68bae958d9af8c30",
-    "LogsOnDisk.write": "06579a5e26974e34",
+    "LogsOnDisk.write": "6f95d520781d9905",
     "name_of": "d7dce93561713660"
   },
   "src/rozliczenia/file_state.py": {

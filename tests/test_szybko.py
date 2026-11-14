@@ -42,9 +42,9 @@ BY_CHANGE_ONLY = {
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
-    "tests/test_regula_danych.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff": (
-        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę outbox.py, której "
-        "próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (
+        "graf wybiera jego plik przy zmianie outbox.py, client_data.py i tests/fixtures/plik_kolejki.py, które plik "
+        "importuje, i plików konfiguracji ruff i mypy"
     ),
     "tests/test_regula_danych.py::test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
@@ -67,7 +67,7 @@ BY_CHANGE_ONLY = {
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
     ),
-    "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza": (
+    "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki": (
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
     ),

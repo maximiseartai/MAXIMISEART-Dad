@@ -64,7 +64,7 @@ import sys
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
@@ -489,8 +489,23 @@ def _file_name(version: str, label: str, run_id: str) -> str:
     return f"{version}-{label}-{run_id[:8]}.json"
 
 
+def _written(post: Post) -> Post:
+    """Wysyłka tuż przed zapisem pliku kolejki, którego parser daje tekstom ``Outgoing`` od nowa: tekst wysyłki i pole celu
+    typu ``Outgoing``, których typ nie jest dokładnie ``Outgoing``, i tekst pliku Archiwum inny niż ``LogsText`` dają
+    ``TypeError`` (napis przez ``cast``, ``Any`` albo ``object.__setattr__``, podklasa z ``type.__new__``)."""
+
+    target = post.target
+    texts = [post.header, *post.parts, *(getattr(target, field.name) for field in fields(target) if field.type == "Outgoing")]
+    wrong = [type(text) for text in texts if text is not None and type(text) is not Outgoing]
+    if post.archive is not None and type(post.archive.text) is not LogsText:
+        wrong.append(type(post.archive.text))
+    if wrong:
+        raise TypeError(f"Plik kolejki bierze tylko Outgoing i LogsText z rozliczenia.client_data, nie {wrong[0].__name__}.")
+    return post
+
+
 def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
-    archive = post.archive
+    archive = _written(post).archive
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,

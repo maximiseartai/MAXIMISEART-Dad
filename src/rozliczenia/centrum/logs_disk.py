@@ -440,7 +440,7 @@ class LogsOnDisk:
         sprzed strażnika przez ``Any``) rzucają ``TypeError`` (``run_logs_guard._MINTED``); ``OSError``: pliku nie udało się
         zapisać."""
 
-        if not isinstance(logs, GuardedLogs):
+        if type(logs) is not GuardedLogs:
             raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
         replace_atomically(self._logs / name_of(logs.record.start), logs.text, newline="")
 
