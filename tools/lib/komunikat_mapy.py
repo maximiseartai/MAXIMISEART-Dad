@@ -1,11 +1,11 @@
 """Komunikat sprawdzenia z kodu skilla, jak drukuje go sekcja ``## Sub-features`` mapy funkcji (``features/``).
 
-Jeden właściciel tej reguły dla poleceń ``scripts/sub_features.py`` skilli ``verify-*``. Komunikat to literał napisu,
-stała modułu (nazwa, którą moduł wiąże tylko raz, na swoim najwyższym poziomie, z napisem) albo f-string. Pole
-f-stringu, które jest taką stałą, bez konwersji i bez formatu, drukuje jej wartość; każde inne pole drukuje się jako
-``…``, bez względu na wyrażenie, konwersję i format, bo wartość zna dopiero przebieg skilla. Tekst f-stringu drukuje
-się, jak stoi, ``{{`` jako ``{``. Komunikat innej postaci nie ma wydruku (``None``), a polecenie odmawia go z plikiem i
-linią.
+Jeden właściciel tej reguły dla poleceń mapy skilli ``verify-*``; ``binds`` mówi im też, które nazwy wiąże węzeł.
+Komunikat to literał napisu, stała modułu (nazwa, którą moduł wiąże tylko raz, na swoim najwyższym poziomie, z
+napisem) albo f-string. Pole f-stringu, które jest taką stałą, bez konwersji i bez formatu, drukuje jej wartość; każde
+inne pole drukuje się jako ``…``, bez względu na wyrażenie, konwersję i format, bo wartość zna dopiero przebieg skilla.
+Tekst f-stringu drukuje się, jak stoi, ``{{`` jako ``{``. Komunikat innej postaci nie ma wydruku (``None``), a
+polecenie odmawia go z plikiem i linią.
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ def constants(tree: ast.Module) -> dict[str, str]:
             continue
         if isinstance(target, ast.Name) and isinstance(value, ast.Constant) and isinstance(value.value, str):
             top[target.id] = value.value
-    bound = Counter(name for node in ast.walk(tree) for name in _binds(node))
+    bound = Counter(name for node in ast.walk(tree) for name in binds(node))
     return {name: value for name, value in top.items() if bound[name] == 1}
 
 
-def _binds(node: ast.AST) -> list[str]:
+def binds(node: ast.AST) -> list[str]:
     """Nazwy, które ``node`` wiąże, według konstrukcji wiązania z dokumentacji języka Python („Naming and binding”):
     cele przypisania, ``for``, ``with``, ``:=`` i ``del``, parametry, importy, ``def`` i ``class``,
     ``except ... as``, wzorce przechwytujące i parametry typu. ``global`` i ``nonlocal`` tylko deklarują nazwę, którą
