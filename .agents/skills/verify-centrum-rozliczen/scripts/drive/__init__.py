@@ -596,11 +596,6 @@ FEATURES = (
     ),
 )
 ALL = tuple(feature.name for feature in FEATURES if not feature.measurement)
-# Features whose file in features/ has no section Sub-features from the run yet: the run writes their section to its
-# evidence but does not compare it. The list only shrinks: a feature leaves it with the section from the run in its file.
-NOT_COMPARED = frozenset({
-    "uzupelnienie", "wpisanie-raportow", "wycena-w-efenix",
-})
 # wydajnosc: repetitions of every scenario per CPU profile unless `--powtorzenia` says otherwise; a baseline
 # comes only from a run with this many (features/wydajnosc.md).
 DEFAULT_REPEATS = 5

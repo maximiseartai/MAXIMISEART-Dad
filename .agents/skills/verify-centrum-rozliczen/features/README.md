@@ -160,7 +160,7 @@ behaviour, then exactly these H2s in order:
      (one reason today: a helper of `drive/common.py`).
 
    The run writes the section to `sekcje-z-biegu/<feature>.md` of its evidence and fails, printing the difference, when
-   the file has another. A file without it stands in `NOT_COMPARED` of `scripts/drive/__init__.py`, which only shrinks.
+   the file has another; every feature file has it (`tests/test_mapy_funkcji.py`).
    After a change of a drive, take the new section from a local run (`run_centrum_verification.py --feature <feature>`,
    then `scripts/sub_features.py --feature <feature> --evidence <its EVIDENCE>`) or from the `evidence-*` artifact of
    the red CI run. CI drives only the features of `all`, so a local run of `wydajnosc` alone compares its section. A line with the ID
@@ -168,10 +168,9 @@ behaviour, then exactly these H2s in order:
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
-   feature and where its proof stands in the evidence. A file whose
-   `Sub-features` is not yet from the run keeps `Preconditions:` and
-   labelled bullets pairing each action with the exact handle and the
-   observable result, until #1629 and #1630 move it.
+   feature and where its proof stands in the evidence. It names the screenshots as the `screenshots` of the
+   feature's `Feature` in `scripts/drive/__init__.py`, which the run takes exactly (`Run.capture` refuses another,
+   and the run fails on a missing one), never by their numbers.
 4. `Gotchas`: traps that waste or invalidate a run.
 
 When a slice adds a feature, add its file in this directory, its module in

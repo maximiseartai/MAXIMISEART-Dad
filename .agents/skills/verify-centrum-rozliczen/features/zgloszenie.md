@@ -52,8 +52,8 @@ Printed by `scripts/sub_features.py --feature zgloszenie` from the drive's steps
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature zgloszenie`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP zgloszenie` in `drive.txt`, screenshots `60`–`66` (with `61b`, `63b`) and `68`–`75` (with `74b`), and
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP zgloszenie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/zgloszenie-*.json`.
 
 ## Gotchas

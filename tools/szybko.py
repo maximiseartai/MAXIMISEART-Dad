@@ -28,7 +28,7 @@ repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż 
 sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
 dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Zapadki (``ZAPADKI``) biegną przy każdej zmianie
 tylko w szybko, bo zadania pytest w CI nie mają bazy zmiany (reguły ast-grep na dodanych liniach całego repozytorium
-ma też zadanie CI „Ruff, mypy”), i liczą dodane linie od ``merge-base`` HEAD z ``--baza`` (zmienna ``ZAPADKA_BAZA``).
+i reguły ast-grep całego ``src/`` ma też zadanie CI „Ruff, mypy”), i liczą dodane linie od ``merge-base`` HEAD z ``--baza`` (zmienna ``ZAPADKA_BAZA``).
 Merge z konfliktem szybko pomija z linią ``UWAGA``, a merge, którego git nie policzy (``git merge-tree`` z kodem
 innym niż konflikt), wywraca ten krok z powodem.
 Szybko nie pobiera ``origin``, więc merge jest z bazą z ostatniego ``git fetch``. Nie uruchamia zadań CI
@@ -79,9 +79,10 @@ import wyniki_testow
 from zakres_runu import podstawa_na_pull_request
 
 GREEN = "szybko-zielone.json"
-# Zapadki padają tylko na liniach, które zmiana dodaje, więc biegną przy każdej zmianie jak ``STRUCTURE``. Plan CI ich
-# nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka się tam pomija; reguły ast-grep na dodanych
-# liniach całego repozytorium dostają ją w zadaniu CI „Ruff, mypy”.
+# Zapadki padają na liniach, które zmiana dodaje, a reguły ast-grep całego ``src/`` na każdej jego linii, więc biegną
+# przy każdej zmianie jak ``STRUCTURE``. Plan CI ich nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka
+# się tam pomija; reguły ast-grep na dodanych liniach całego repozytorium dostają ją w zadaniu CI „Ruff, mypy”, gdzie
+# biegną też reguły całego ``src/``.
 ZAPADKI = ("tests/test_zapadki.py",)
 # Zmienna, z której zapadki biorą bazę zmiany.
 ZAPADKA_BAZA = "MAXIMISEART_ZAPADKA_BAZA"

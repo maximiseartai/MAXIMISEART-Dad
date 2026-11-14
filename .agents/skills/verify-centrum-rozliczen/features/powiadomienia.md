@@ -59,8 +59,8 @@ Printed by `scripts/sub_features.py --feature powiadomienia` from the drive's st
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature powiadomienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP powiadomienia` in `drive.txt`, screenshots `180`–`189` (with `181b`, `181c`), `201` and `202`, and
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP powiadomienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/powiadomienia-*.json`.
 
 ## Gotchas

@@ -179,13 +179,15 @@ def added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> It
     return Changes(root, base, f"{folder}/{pattern}").added()
 
 
-def on_added_lines(root: Path, base: str, rules: Sequence[str], ast_grep: str | None) -> list[Finding]:
+def on_added_lines(root: Path, base: str, rules: Sequence[str], ast_grep: str | None, folder: str = ".") -> list[Finding]:
     """Odpalenia reguł ``rules`` (``--config sgconfig.yml`` albo ``--rule PLIK.yml``) w checkoucie ``root``, których
-    węzeł obejmuje linię dodaną od ``base``, posortowane. Bez linii dodanej ast-grep nie biegnie, więc ``ast_grep``
-    może być ``None``; z linią dodaną brak ast-grep i jego porażka to ``ScanFailed``."""
+    węzeł obejmuje linię dodaną od ``base`` w ``folder``, posortowane. Bez linii dodanej ast-grep nie biegnie, więc
+    ``ast_grep`` może być ``None``; z linią dodaną brak ast-grep i jego porażka to ``ScanFailed``. Z ``base`` równym
+    ``EMPTY_TREE`` każda linia pliku śledzonego i nieśledzonego (bez ignorowanych) jest dodana, więc to odpalenia na
+    całym ``folder``."""
 
     added: dict[str, set[int]] = {}
-    for path, number, _ in added_lines(root, base, ".", "*"):
+    for path, number, _ in added_lines(root, base, folder, "*"):
         added.setdefault(path, set()).add(number)
     if not added:
         return []

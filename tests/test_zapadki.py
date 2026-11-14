@@ -1,9 +1,11 @@
-"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę.
+"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę, i reguły całego ``src/``.
 
 W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę
 poza regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``.
 Formę, która ma jeszcze stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test;
-reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany.
+reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany. Reguły ast-grep
+``REGULY_CALEGO_SRC`` zgłaszają każdą linię ``src/`` (``test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src``), bez bazy,
+w ``tools/szybko.py`` i w zadaniu CI „Ruff, mypy”.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
@@ -734,6 +736,62 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     assert syntax_rule_findings(ROOT, base) == []
 
 
+# Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię ``src/``, a nie tylko linie dodane przez zmianę.
+REGULY_CALEGO_SRC: Final = ("historia-w-docstringu", "komentarz-w-src")
+# Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły całego ``src/`` się
+# pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza Windows brak ast-grep to porażka
+# z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
+BEZ_DODATKU_DEV = sys.platform == "win32"
+windows_without_ast_grep = pytest.mark.skipif(
+    AST_GREP is None and BEZ_DODATKU_DEV,
+    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły całego src biegną"
+    " w zadaniach pytest na Linuksie, w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
+)
+
+
+def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
+    """Odpalenia reguł ``REGULY_CALEGO_SRC`` z ``config`` na każdej linii plików ``src/`` checkoutu ``root``: śledzonych,
+    także ignorowanych przez ``.gitignore``, i nieśledzonych bez ignorowanych (``odpalenia_ast_grep.on_added_lines`` od
+    pustego drzewa); linia odpalenia to pierwsza linia węzła."""
+
+    rules = ("--config", str(config), "--filter", f"^(?:{'|'.join(REGULY_CALEGO_SRC)})$")
+    return odpalenia_ast_grep.on_added_lines(root, odpalenia_ast_grep.EMPTY_TREE, rules, ast_grep, "src")
+
+
+@windows_without_ast_grep
+def test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src() -> None:
+    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_src_rules(ROOT)] == []
+
+
+def test_kazda_regula_calego_src_jest_w_katalogu_regul() -> None:
+    """``--filter`` z id, którego katalog reguł nie ma, obok id, które ma, gubi tę regułę bez błędu ast-grep."""
+
+    ids = {str(rule["id"]) for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
+    assert set(REGULY_CALEGO_SRC) - ids == set(), f"popraw REGULY_CALEGO_SRC na id reguł z {AST_GREP_RULES}/"
+
+
+@windows_without_ast_grep
+def test_reguly_calego_src_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik_nowy(tmp_path: Path) -> None:
+    """Komentarz i docstring z numerem issue w pliku ``src/`` z commitu bazy zgłaszają reguły całego ``src/``, choć
+    zapadka linii dodanych ich nie widzi; nowy plik nieśledzony zgłaszają obie, a komentarz w ``tests/`` żadna."""
+
+    base = _committed(
+        tmp_path,
+        {
+            "src/rozliczenia/stary.py": '"""Moduł z #1618."""\n\nX = 1  # stary komentarz\n',
+            "tests/test_stary.py": "X = 1  # komentarz testu\n",
+        },
+    )
+    (tmp_path / "src" / "rozliczenia" / "nowy.py").write_text("Y = 2  # nowy komentarz\n", encoding="utf-8")
+
+    assert [(finding.path, finding.line, finding.rule) for finding in whole_src_rules(tmp_path)] == [
+        ("src/rozliczenia/nowy.py", 1, "komentarz-w-src"),
+        ("src/rozliczenia/stary.py", 1, "historia-w-docstringu"),
+        ("src/rozliczenia/stary.py", 3, "komentarz-w-src"),
+    ]
+    assert [(finding.path, finding.line) for finding in syntax_rules(tmp_path, base)] == [("src/rozliczenia/nowy.py", 1)]
+
+
 @needs_ast_grep
 @pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
 def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_konfiguracji_i_srodowiska_gita(
@@ -1019,6 +1077,7 @@ _PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
     "# z cyfrą: po nawiasie": (f'{_IN_FUNCTION}"""Wzór z (#1614)."""\n', [2]),
     "# z cyfrą: po słowie ze spacją i bez": (f'{_IN_FUNCTION}"""Wzór z issue #1614 i PR#12."""\n', [2]),
     "# z cyfrą: po nazwie repozytorium": ('class K:\n    """Od o/r#1614."""\n', [2]),
+    "# z cyfrą: zgłoszenie w repozytorium spoza projektu": ('"""Zob. microsoft/playwright#43545."""\n', [1]),
     "adres github.com: z https i /issues/": ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [1]),
     "adres github.com: bez schematu": (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
     "adres github.com: wielkie litery": (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
@@ -1116,6 +1175,11 @@ ZNANE_LUKI_HISTORII: Final = {
         'def f() -> None:\n    f"""Wzór z {"#"}1614."""\n'
     ),
     "historia bez numeru, adresu i skrótu: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
+    "historia bez numeru, adresu i skrótu: numer Wydania": '"""Pliki Wydań starszych niż v0.5.0 nie mają stopnia."""\n',
+    "odnośnik do zgłoszenia spoza github.com bez # przed cyfrą: crbug.com/572515601": '"""Zob. crbug.com/572515601."""\n',
+    "napis, który nie jest docstringiem: komunikat wyjątku": (
+        'def f() -> None:\n    message = "Logi bez maski (#936)."\n    raise ValueError(message)\n'
+    ),
     "napis, który nie jest całym pierwszym wyrażeniem bloku: w nawiasach": (
         '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n'
     ),

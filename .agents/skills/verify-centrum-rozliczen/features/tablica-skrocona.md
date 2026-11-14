@@ -23,8 +23,9 @@ Dad sees the board on `Okresy`, the start page of Centrum (`#/okresy`), once his
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-skrocona`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP tablica-skrocona` in `drive.txt`, screenshots `297`–`299` and `api/tablica-skrocona.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP tablica-skrocona` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/tablica-skrocona.json`.
 
 ## Gotchas
 

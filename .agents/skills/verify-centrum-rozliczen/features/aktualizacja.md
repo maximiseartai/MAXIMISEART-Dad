@@ -69,9 +69,9 @@ Printed by `scripts/sub_features.py --feature aktualizacja` from the drive's ste
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualizacja`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP aktualizacja` in `drive.txt`, screenshots `93`, `94`, `96`, `100`, `101`, `115`–`117`, `130`–`132` and
-`135`–`138`, and `api/aktualizacja-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP aktualizacja` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/aktualizacja-*.json`.
 
 ## Gotchas
 
