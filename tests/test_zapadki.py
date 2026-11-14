@@ -796,7 +796,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 # do końca, który kopiuje prawdziwy ``sgconfig.yml`` do drzewa tymczasowego.
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
-AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {}
+AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {"komentarz-w-src": "wyraź lepszą nazwą albo testem"}
 # Wbudowane reguły ast-grep o dyrektywie ``ast-grep-ignore`` → komunikat zamiast angielskiego komunikatu ast-grep.
 _AST_GREP_BUILTIN_MESSAGES: Final = {
     "no-suppress-all": "dyrektywa ast-grep-ignore bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
@@ -1122,11 +1122,80 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
     ]
 
 
-_PAGE = "from playwright.sync_api import Page\n\n\n"
+_DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "lines"),
+    [
+        ("import os  # noqa: F401 - import dla efektu ubocznego\n", []),
+        ("import os  # noqa: F401, E501 - powód\n", []),
+        ('x: int = "a"  # type: ignore[assignment]\n', []),
+        ('x: int = "a"  # type: ignore[assignment, no-untyped-call]  # powód\n', []),
+        ('x: int = "a"  # type: ignore[assignment]\r\ny = 1\r\n', []),
+        ("x = 1  # wyjaśnienie\n", [1]),
+        ('"""Moduł."""\n# uwaga\nx = max(\n    1,  # pierwszy\n)\n# koniec', [2, 4, 6]),
+        ("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n# fmt: off\nx = 1  # pragma: no cover\n", [1, 2, 3, 4]),
+        ("x = []  # type: list[int]\n", [1]),
+        ("x = 1  # mypy: patrz, tu jest cała historia z #1234 i powód\n", [1]),
+        ("# mypy: always-true=uwaga od PR 1234\n# mypy: ignore-errors\nx = 1\n", [1, 2]),
+        ("# ruff: noqa: F401\nimport os\n", [1]),
+        (f"{_DARWIN}[historia z PR 1614]\n", [4]),
+        ("import os  # noqa: F401 , proza\n", [1]),
+        ("import os  # noqa: F401, , proza\n", [1]),
+        ("import os  # noqa\n", [1]),
+        ("import os  # noqa: F401\n", [1]),
+        ("import os  # noqa: F401 - \n", [1]),
+        ("import os  # noqa: F401 E501 - powód\n", [1]),
+        ("import os  # noqa: F401: powód\n", [1]),
+        ("import os  # noqa:F401 - powód\n", [1]),
+        ("import os  # NOQA: F401 - powód\n", [1]),
+        ("import os  # noqa: f401 - powód\n", [1]),
+        ("import os  # noqa: 1614 - powód\n", [1]),
+        ("import os  # noqa: F401x - powód\n", [1]),
+        ("import os  # noqa: UWAGA - powód\n", [1]),
+        ("import os  # uwaga: noqa: F401 - powód\n", [1]),
+        ("import os  #noqa: F401 - powód\n", [1]),
+        ("import os  #\tnoqa: F401 - powód\n", [1]),
+        ('x: int = "a"  # type: ignore\n', [1]),
+        ('x: int = "a"  # type: ignore[]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment] powód\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment] # powód\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment,misc]\n', [1]),
+        ('x: int = "a"  # type:ignore[assignment]\n', [1]),
+        ('x: int = "a"  #  type: ignore[assignment]\n', [1]),
+        ('x: int = "a"  # Type: Ignore[assignment]\n', [1]),
+        ('x: int = "a"  # type: ignore[ASSIGNMENT]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment2]\n', [1]),
+        ('x: int = "a"  # type: ignore[assign--ment]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment-]\n', [1]),
+        ('x: int = "a"  # bo PR 12, type: ignore[assignment]\n', [1]),
+    ],
+)
+def test_komentarz_w_src_przechodzi_tylko_jako_tlumienie_w_gramatyce_reguly(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [
+        (line, "komentarz-w-src") for line in lines
+    ]
+
+
+_PAGE ="from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
 ZNANE_LUKI: Final = {
+    "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": {
+        "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
+        "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
+        "powód tłumienia: drugie type: ignore w powodzie": 'x: int = "a"  # type: ignore[assignment]  # type: ignore[misc]\n',
+        "kod ruff: słowo w kształcie kodu na linii bez naruszenia": "x = 1  # noqa: PR1614 - historia\n",
+        "kod mypy: słowo w kształcie kodu w gałęzi, której mypy nie sprawdza": f"{_DARWIN}[historia]\n",
+        "dyrektywa ast-grep-ignore: nazwa tej reguły na linii komentarza": (
+            "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
+        ),
+    },
     "test_stan_pliku_w_src_tylko_przez_file_state": {
         # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
         "lista folderu z iterdir": """\
