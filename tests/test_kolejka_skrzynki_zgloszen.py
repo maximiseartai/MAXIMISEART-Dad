@@ -1735,6 +1735,41 @@ def wyslij(kolejka: Outbox, post: Post) -> bool:
 def wyslij(kolejka: Outbox, wysylka: object) -> bool:
     return kolejka.post(cast(Post, wysylka))
 """,
+    # Outbox.post woła to_json tego, co dostał, bez kontroli dokładnego typu: odmowę podklasy wysyłki Logów przy jej
+    # powstaniu (client_data.WithoutSubclasses) omija type.__new__ z bazą bez super(), a dowód post_of przypisanie
+    # __class__ (#1551).
+    "type.__new__ z metaklasą LogsPost i bazą przed nią bez super(): własne to_json": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wyslij(kolejka: Outbox, wysylka: LogsPost, komorka: str) -> bool:
+    klasa: Any = type.__new__(type(LogsPost), "Moja", (Mixin, LogsPost), {"to_json": lambda self: komorka})
+    nowa: LogsPost = object.__new__(klasa)
+    object.__setattr__(nowa, "_LogsPost__post", object.__getattribute__(wysylka, "_LogsPost__post"))
+    return kolejka.post(nowa)
+""",
+    "refleksja: przypisanie __class__ LogsPost obiektowi z własną wysyłką w slocie": """from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+class Obca:
+    __slots__ = ("_LogsPost__post",)
+
+
+def wyslij(kolejka: Outbox, wysylka: object) -> bool:
+    obca = Obca()
+    object.__setattr__(obca, "_LogsPost__post", wysylka)
+    object.__setattr__(obca, "__class__", LogsPost)
+    assert isinstance(obca, LogsPost)
+    return kolejka.post(obca)
+""",
     "wartość typu Any": """from typing import Any
 
 from rozliczenia.centrum.outbox import Outbox
