@@ -599,7 +599,9 @@ def test_porazka_napedu_drukuje_utracone_zadania_strony_z_ostatnia_linia_serwera
 ) -> None:
     """CI zachowuje z porażki tylko log, nie dowody, więc noce 13.11 i 14.11 nie nazwały, dlaczego strona nie dostała
     ``index.css`` (#1567, #1756). Porażka napędu drukuje każdą linię ``zadania-strony.txt`` i ostatnią linię ``REQUEST``
-    serwera dla jej ścieżki sprzed niej (żądanie z późniejszego przejścia się nie liczy) albo to, że takiej nie było."""
+    serwera dla jej ścieżki sprzed niej albo z tej samej chwili (żądanie z późniejszego przejścia się nie liczy) albo to,
+    że takiej nie było. Ścieżkę z ``(`` i ``)`` strona wysyła bez kodowania, a serwer pisze je jako ``%28`` i ``%29``;
+    linia bez adresu http (żądanie ``data:``) nie przerywa wydruku następnych."""
 
     def step(name: str, arguments: list[str], evidence: Path, timeout: int = 0) -> None:
         if name != "drive":
@@ -609,12 +611,15 @@ def test_porazka_napedu_drukuje_utracone_zadania_strony_z_ostatnia_linia_serwera
             "REQUEST 2026-11-14T08:50:10.000+00:00 GET /assets/index.css 200\n"
             "REQUEST 2026-11-14T08:50:20.000+00:00 GET /assets/index.css 304\n"
             "REQUEST 2026-11-14T08:50:21.000+00:00 GET /assets/index.js 304\n"
+            "REQUEST 2026-11-14T08:50:22.200+00:00 GET /api/pracownicy/Kowalski%20%28A%29/plik%3A1 500\n"
             "REQUEST 2026-11-14T08:50:23.500+00:00 GET /assets/index.css 200\n",
             encoding="utf-8",
         )
         (evidence / "zadania-strony.txt").write_text(
+            "2026-11-14T08:50:21.900+00:00 GET text/css,a failed: net::ERR_FAILED\n"
             "2026-11-14T08:50:22.000+00:00 GET http://127.0.0.1:9/assets/index.css failed: net::ERR_FAILED\n"
-            "2026-11-14T08:50:22.100+00:00 GET http://127.0.0.1:9/api/brak answered 404\n",
+            "2026-11-14T08:50:22.100+00:00 GET http://127.0.0.1:9/api/brak answered 404\n"
+            "2026-11-14T08:50:22.200+00:00 GET http://127.0.0.1:9/api/pracownicy/Kowalski%20(A)/plik:1 answered 500\n",
             encoding="utf-8",
         )
         raise runner.VerificationFailure("drive returned 1")
@@ -627,8 +632,53 @@ def test_porazka_napedu_drukuje_utracone_zadania_strony_z_ostatnia_linia_serwera
         runner._verify(("ustawienia",), [], tmp_path)
 
     assert capsys.readouterr().err.splitlines() == [
+        "PAGE LOST | 2026-11-14T08:50:21.900+00:00 GET text/css,a failed: net::ERR_FAILED",
         "PAGE LOST | 2026-11-14T08:50:22.000+00:00 GET http://127.0.0.1:9/assets/index.css failed: net::ERR_FAILED",
         "  server before it: REQUEST 2026-11-14T08:50:20.000+00:00 GET /assets/index.css 304",
         "PAGE LOST | 2026-11-14T08:50:22.100+00:00 GET http://127.0.0.1:9/api/brak answered 404",
         "  server before it: no answered REQUEST of /api/brak",
+        "PAGE LOST | 2026-11-14T08:50:22.200+00:00 GET http://127.0.0.1:9/api/pracownicy/Kowalski%20(A)/plik:1 answered 500",
+        "  server before it: REQUEST 2026-11-14T08:50:22.200+00:00 GET /api/pracownicy/Kowalski%20%28A%29/plik%3A1 500",
     ]
+
+
+@pytest.mark.parametrize(
+    ("left", "printed"),
+    [
+        ({}, []),
+        (
+            {"zadania-strony.txt": "2026-11-14T08:50:22.000+00:00 GET http://127.0.0.1:9/assets/index.css answered 500\n"},
+            [
+                "PAGE LOST | 2026-11-14T08:50:22.000+00:00 GET http://127.0.0.1:9/assets/index.css answered 500",
+                "  server before it: no answered REQUEST of /assets/index.css",
+            ],
+        ),
+    ],
+    ids=["bez-plikow", "bez-server-txt"],
+)
+def test_porazka_napedu_przed_zapisem_dowodow_konczy_sie_bledem_napedu(
+    runner: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    left: dict[str, str],
+    printed: list[str],
+) -> None:
+    """Napęd, który padł, zanim zapisał ``zadania-strony.txt`` albo zanim serwer zapisał ``server.txt``, kończy się
+    swoim ``VerificationFailure``, nie błędem odczytu brakującego pliku, który by go zasłonił."""
+
+    def step(name: str, arguments: list[str], evidence: Path, timeout: int = 0) -> None:
+        if name != "drive":
+            return
+        for file, text in left.items():
+            (evidence / file).write_text(text, encoding="utf-8")
+        raise runner.VerificationFailure("drive returned 1")
+
+    monkeypatch.setattr(runner, "_preflight", lambda: None)
+    monkeypatch.setattr(runner, "_launch", lambda root, evidence: (SimpleNamespace(poll=lambda: 0), "http://127.0.0.1:9/"))
+    monkeypatch.setattr(runner, "_run_step", step)
+
+    with pytest.raises(runner.VerificationFailure, match="drive returned 1"):
+        runner._verify(("ustawienia",), [], tmp_path)
+
+    assert capsys.readouterr().err.splitlines() == printed

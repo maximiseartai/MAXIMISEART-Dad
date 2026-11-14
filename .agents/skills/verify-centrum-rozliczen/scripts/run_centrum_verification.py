@@ -111,8 +111,9 @@ def lost_requests(evidence: Path) -> Iterator[str]:
     if not lost.exists():
         return
     server = evidence / "server.txt"
+    # The server writes quote() of the decoded path, the page the address it sent, which keeps ( ) ! ' * unquoted.
     answered = [
-        (datetime.fromisoformat(found["came"]), found["path"], line)
+        (datetime.fromisoformat(found["came"]), urllib.parse.unquote(found["path"]), line)
         for line in (server.read_text(encoding="utf-8", errors="replace").splitlines() if server.exists() else ())
         if (found := SERVER_REQUEST.fullmatch(line))
     ]
@@ -121,8 +122,12 @@ def lost_requests(evidence: Path) -> Iterator[str]:
         moment, _, rest = line.partition(" ")
         if (address := ADDRESS.search(rest)) is None:
             continue
-        path = urllib.parse.urlsplit(address.group()).path  # the browser sends it quoted, as the server writes it
-        before = [entry for came, served, entry in answered if served == path and came <= datetime.fromisoformat(moment)]
+        path = urllib.parse.urlsplit(address.group()).path
+        before = [
+            entry
+            for came, served, entry in answered
+            if served == urllib.parse.unquote(path) and came <= datetime.fromisoformat(moment)
+        ]
         yield f"  server before it: {before[-1]}" if before else f"  server before it: no answered REQUEST of {path}"
 
 
