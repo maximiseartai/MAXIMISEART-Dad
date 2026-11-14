@@ -1124,6 +1124,7 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
 
 
 _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
+_NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n    "
 
 
 @needs_ast_grep
@@ -1183,34 +1184,56 @@ def test_komentarz_w_src_przechodzi_tylko_jako_tlumienie_w_gramatyce_reguly(tmp_
     ]
 
 
+@needs_ast_grep
+def test_komentarz_w_src_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozszerzenia(tmp_path: Path) -> None:
+    """Granica zbioru plików reguły: ``files:`` ma globy ``.py``, ``.pyi`` i ``.py3``, więc ``.pyw`` i skrypt Pythona
+    bez rozszerzenia przechodzą z komentarzem prozy; gdy reguła zacznie je czytać, ten test każe przesunąć granicę."""
+
+    base = _empty_base(tmp_path)
+    names = ("a.py", "pakiet/b.py", "c.pyi", "d.py3", "e.pyw", "skrypt")
+    for name in names:
+        (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / name).write_text("#!/usr/bin/env python3\nx = 1\n", encoding="utf-8")
+
+    assert [finding.path for finding in syntax_rules(tmp_path, base)] == sorted(f"src/{name}" for name in names[:4])
+
+
 # Znane luki reguły ``komentarz-w-src`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z komentarzem
-# poza tłumieniem, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+# poza tłumieniem, który mimo to przechodzi przez regułę, ruff z konfiguracją ``src/`` i mypy z ``pyproject.toml``.
 ZNANE_LUKI_KOMENTARZY: Final = {
     "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
     "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
     "powód tłumienia: drugie type: ignore w powodzie": 'x: int = "a"  # type: ignore[assignment]  # type: ignore[misc]\n',
-    "kod ruff: słowo w kształcie kodu na linii bez naruszenia": "x = 1  # noqa: PR1614 - historia\n",
-    "kod mypy: słowo w kształcie kodu w gałęzi, której mypy nie sprawdza": f"{_DARWIN}[historia]\n",
-    "dyrektywa ast-grep-ignore: nazwa tej reguły na linii komentarza": (
+    "kod mypy: słowo w kształcie kodu pod if not TYPE_CHECKING": f"{_NOT_TYPE_CHECKING}x: int = 'a'  # type: ignore[historia]\n",
+    "kod mypy: słowo w kształcie kodu obok prawdziwego pod if not TYPE_CHECKING": (
+        f"{_NOT_TYPE_CHECKING}x: int = 'a'  # type: ignore[assignment, historia]\n"
+    ),
+    "kod mypy: słowo w kształcie kodu w gałęzi sys.version_info nowszej niż python_version mypy": (
+        "import sys\n\nif sys.version_info >= (3, 14):\n    x: int = 'a'  # type: ignore[historia]\n"
+    ),
+    "dyrektywa ast-grep-ignore: nazwa tej reguły i proza w komentarzu obok kodu": (
         "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
     ),
 }
 
 
 @needs_ast_grep
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
-    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+@pytest.mark.skipif(
+    importlib.util.find_spec("ruff") is None or importlib.util.find_spec("mypy") is None,
+    reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff i mypy",
+)
+def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, zapisz
 
     base = _empty_base(tmp_path)
     (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
     pliki = zapisz(ZNANE_LUKI_KOMENTARZY, tmp_path / "src" / "rozliczenia")
-    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
     opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
     for finding in syntax_rules(tmp_path, base):
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
-    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_i_ruff")
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy")
 
 
 _PAGE = "from playwright.sync_api import Page\n\n\n"
