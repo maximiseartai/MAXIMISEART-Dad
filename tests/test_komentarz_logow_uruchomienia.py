@@ -952,6 +952,20 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_logow_sprzed_straznika_ktorych
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.parametrize("kind", ["postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza"])
+def test_wysylka_wersji_komentarza_odmawia_wartosci_podmienionej_po_przyjeciu_wersji(kind: str, tmp_path: Path) -> None:
+    """``object.__setattr__`` zmienia tekst albo Logi wersji po jej przyjęciu, więc ``post_of`` sprawdza je drugi raz,
+    zanim zrobi z nich komentarz do wysyłki (#1551, runda 2)."""
+
+    own = "tekst" if OTHER_GUARDED[kind] == "logi" else "logi"
+    version: Any = TAKES_GUARDED[kind](_guarded(own), tmp_path)
+    raw = record(technical_notes=["Klient Syntetyczna Lipowa 5."])
+    object.__setattr__(version, "text" if own == "tekst" else "logs", SimpleNamespace(record=raw, text=raw.text))
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        post_of(version)
+
+
 # Wartość po strażniku drugiego typu: tekst komentarza zamiast Logów i Logi zamiast tekstu (przegląd #1038, runda 3).
 OTHER_GUARDED: Final = {
     "postep": "logi",

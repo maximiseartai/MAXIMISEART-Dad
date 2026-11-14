@@ -203,6 +203,25 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
 }
 
 
+class _WycinekZKomorka(str):
+    """Tekst, którego znaki nie mają komórki, a każdy wycinek i ``str()`` ją dają (#1551, runda 2)."""
+
+    def __getitem__(self, key: object) -> str:
+        return "Syntetyczna Lipowa 5"
+
+    def __str__(self) -> str:
+        return "Syntetyczna Lipowa 5"
+
+
+def test_straznik_czyta_znaki_tekstu_a_nie_wycinki_podklasy_str() -> None:
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Lipowa 5")
+
+    znaleziony = guarded(pamiec, _WycinekZKomorka("Postęp bez danych."), "tekst")
+
+    assert (type(znaleziony.text).__name__, str(znaleziony.text)) == ("Outgoing", "Postęp bez danych.")
+
+
 @pytest.mark.parametrize("proof", [None, object()])
 def test_pamiec_regula_danych_bez_dowodu_modulu_to_type_error(proof: object) -> None:
     with pytest.raises(TypeError, match="empty_memory"):

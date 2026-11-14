@@ -145,7 +145,7 @@ class Outgoing(str, metaclass=WithoutSubclasses):
     def __add__(self, other: str, /) -> str: ...
     def __add__(self, other: str, /) -> str:
         joined = str(self) + other
-        return Outgoing(joined, _PASSED) if isinstance(other, Outgoing) else joined
+        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
 
 
 def tool(text: str) -> Outgoing:
@@ -236,10 +236,11 @@ class ForbiddenValues(metaclass=WithoutSubclasses):
 def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
     """Tekst bez zakazanych wartości i z zamaskowanym wolnym tekstem; ``place`` nazywa miejsce w uwadze technicznej.
 
-    Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
+    Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag. Strażnik czyta znaki ``text`` jako
+    ``str`` (``str.__str__``), więc podklasa ``str`` z własnym wycinkiem albo ``__str__`` nie podmienia tekstu po masce.
     """
 
-    masked, columns = _masked(_memory(forbidden), text)
+    masked, columns = _masked(_memory(forbidden), str.__str__(text))
     return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
 

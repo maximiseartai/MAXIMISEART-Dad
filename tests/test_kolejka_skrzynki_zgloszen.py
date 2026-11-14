@@ -8,7 +8,7 @@ Centrum nieosiągalna rozsądnym kosztem.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import gzip
 import itertools
@@ -18,7 +18,7 @@ import shutil
 import sys
 import threading
 import time
-from typing import Final
+from typing import Final, Optional
 
 import pytest
 
@@ -41,7 +41,8 @@ from rozliczenia.centrum.outbox import (
     QueueState,
     Rank,
 )
-from rozliczenia.centrum.report_box import COMMENT_LIMIT, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum import outbox
+from rozliczenia.centrum.report_box import COMMENT_LIMIT, Label, Refused, Rejected, Sent, Unreachable
 from rozliczenia.centrum.reports import report_target
 
 from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
@@ -1962,6 +1963,19 @@ def wysylka(komorka: str, post: Post) -> Post:
 """
 _Z_KOMORKI: Final = "cast(Outgoing, komorka)"
 
+_PODKLASA_TEKSTU: Final = _POST + """from typing import Any
+
+from rozliczenia.client_data import Outgoing
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    tekst: Any = type.__new__(type(Outgoing), "Tekst", (Mixin, Outgoing), {"__new__": lambda cls, t: str.__new__(cls, t)})
+"""
 # Tekst do wysyłki, którego typ nie jest dokładnie Outgoing, w każdym polu tekstowym wysyłki i celu (przegląd #1704, runda
 # 1, i #1551): mypy i ruff go przepuszczają, a plik kolejki odmawia tuż przed zapisem (outbox._written).
 ODMOWY_PLIKU_KOLEJKI: Final = {
@@ -2048,10 +2062,42 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
     tekst: Any = type.__new__(type(Outgoing), "Tekst", (Mixin, Outgoing), {"__new__": lambda cls, t: str.__new__(cls, t)})
     return Post(cel, None, "r", None, (tekst(komorka),))
 """,
+    # Podklasa sklejona + z prawdziwym tekstem do wysyłki (przegląd #1723, runda 1, W1): Outgoing.__add__ wybija Outgoing
+    # tylko z dwóch tekstów dokładnie tego typu, więc sklejenie to goły str.
+    **{
+        f"dowód ze sklejenia: {opis}": _PODKLASA_TEKSTU + kod
+        for opis, kod in {
+            "prawdziwy Outgoing + podklasa w części": "    return Post(post.target, None, \"r\", None, (post.parts[0] + tekst(komorka),))\n",
+            "podklasa + prawdziwy Outgoing w części": "    return Post(post.target, None, \"r\", None, (tekst(komorka) + post.parts[0],))\n",
+            "prawdziwy Outgoing + podklasa w tytule celu": (
+                "    return Post(NewIssue(\"uwaga-taty\", post.parts[0] + tekst(komorka)), None, \"r\", None, post.parts)\n"
+            ),
+        }.items()
+    },
+    # Post.of dzieli bloki na części i daje im Outgoing od nowa, więc odmawia bloku innego typu (#1551, runda 2).
+    "Post.of: blok cast(Outgoing, komórka)": _POST
+    + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post.of(cel, period=None, run_id="r", blocks=[cast(Outgoing, komorka)], frame=lambda n, c, t: t)
+""",
+    "Post.of: blok podklasa z type.__new__ i bazą przed Outgoing bez super()": _PODKLASA_TEKSTU.replace(
+        "post: Post", "cel: NewIssue"
+    )
+    + "    return Post.of(cel, period=None, run_id=\"r\", blocks=[tekst(komorka)], frame=lambda n, c, t: t)\n",
 }
 
-_TYP_ODMOWY: Final = {"podklasa z type.__new__ i bazą przed Outgoing bez super()": "Tekst"}
-"""Typ tekstu w odmowie pliku kolejki, gdy nie jest nim ``str``."""
+_ODMOWA_PLIKU: Final = "bieg TypeError: Plik kolejki bierze tylko Outgoing i LogsText z rozliczenia.client_data, nie {typ}."
+_ODMOWA_BLOKU: Final = "bieg TypeError: Wysyłka bierze tylko bloki Outgoing z rozliczenia.client_data, nie {typ}."
+_ODMOWY_INNE: Final = {
+    "podklasa z type.__new__ i bazą przed Outgoing bez super()": _ODMOWA_PLIKU.format(typ="Tekst"),
+    "Post.of: blok cast(Outgoing, komórka)": _ODMOWA_BLOKU.format(typ="str"),
+    "Post.of: blok podklasa z type.__new__ i bazą przed Outgoing bez super()": _ODMOWA_BLOKU.format(typ="Tekst"),
+}
+"""Odmowa próbki, gdy nie jest nią odmowa pliku kolejki dla gołego ``str``."""
 
 
 def _argumenty_wysylki() -> dict[str, object]:
@@ -2074,7 +2120,35 @@ def test_plik_kolejki_odmawia_tekstu_do_wysylki_innego_typu_niz_outgoing_tuz_prz
     plik = tmp_path / "wysylka.py"
     plik.write_text(ODMOWY_PLIKU_KOLEJKI[opis], encoding="utf-8")
 
-    assert _w_pliku_kolejki(plik) == [f"bieg TypeError: Plik kolejki bierze tylko Outgoing i LogsText z rozliczenia.client_data, nie {_TYP_ODMOWY.get(opis, 'str')}."]
+    assert _w_pliku_kolejki(plik) == [_ODMOWY_INNE.get(opis, _ODMOWA_PLIKU.format(typ="str"))]
+
+
+Tekst = Outgoing
+"""Alias tekstu do wysyłki w polu atrapy celu."""
+
+
+@dataclass(frozen=True)
+class _CelZTekstemWKazdejPostaci:
+    label: Label
+    title: Outgoing | None
+    note: Optional[Outgoing]
+    line: Tekst
+    number: int
+
+
+@dataclass(frozen=True)
+class _CelZGolymNapisem:
+    label: Label
+    title: str
+
+
+def test_plik_kolejki_sprawdza_kazde_pole_celu_z_tekstem_do_wysylki_w_typie_a_pole_bez_klasy_wywraca_zapis() -> None:
+    """Pola celu do sprawdzenia przed zapisem wynikają z typów (przegląd #1723, runda 1, D1): ``Outgoing`` w unii z
+    ``None`` i pod aliasem też, a pole tekstowe, którego plik kolejki nie umie sprawdzić, to ``TypeError`` z nazwą pola."""
+
+    assert outbox._outgoing_fields(_CelZTekstemWKazdejPostaci) == ("title", "note", "line")
+    with pytest.raises(TypeError, match=r"Pole celu _CelZGolymNapisem\.title ma typ"):
+        outbox._outgoing_fields(_CelZGolymNapisem)
 
 
 @wymaga_ruff_i_mypy

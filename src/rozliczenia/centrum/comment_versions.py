@@ -291,16 +291,20 @@ class LogsPost(metaclass=WithoutSubclasses):
 
 def post_of(version: CommentVersion) -> LogsPost:
     """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
-    Archiwum Logów okresu, w stopniu ``rank_of``."""
+    Archiwum Logów okresu, w stopniu ``rank_of``. Tekst i Logi wersji sprawdza tu drugi raz, bo ``object.__setattr__``
+    zmienia je po przyjęciu wersji."""
 
     start: StartFacts
     match version:
         case ProgressVersion(progress=progress, text=text):
+            _require_text(text)
             start, comment, archive = progress.started, text.text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
+            _require_logs(logs)
             record = logs.record
             start, comment, archive = record.start, summary_markdown(logs), _archive_file(logs)
         case WithoutLogsVersion(final=final, text=text):
+            _require_text(text)
             start, comment, archive = final.journal.started, text.text, None
         case _:
             assert_never(version)
