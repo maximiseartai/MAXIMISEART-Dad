@@ -48,9 +48,10 @@ Dad does nothing for it: he starts Uruchomienia procesu as always, on Uruchomien
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature logi-uruchomienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP logi-uruchomienia` in `drive.txt`, screenshots `160`–`162`, `api/logi-*.json`, `api/logi-komentarz.md` and
-`state/uruchomienia/` (every file of Logi of the run, also checked by the self-test's evidence hygiene).
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP logi-uruchomienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/logi-*.json`, `api/logi-komentarz.md` and `state/uruchomienia/` (every file of Logi of the run, also checked by the
+self-test's evidence hygiene).
 
 ## Gotchas
 

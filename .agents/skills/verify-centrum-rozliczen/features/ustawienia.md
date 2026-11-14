@@ -49,9 +49,9 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature ustawienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP ustawienia` in `drive.txt`, screenshots `01`–`05`, `18`, `19`, `275`, `276`, `306`–`319`, `330`–`333`,
-`340`, `341`, `350` and `360`–`363`, and `api/ustawienia-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP ustawienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/ustawienia-*.json`.
 
 ## Gotchas
 

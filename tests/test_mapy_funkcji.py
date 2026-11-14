@@ -211,11 +211,6 @@ def test_kazdy_plik_funkcji_i_modul_pakietu_ma_funkcje_w_kodzie_skilla(skill: Pa
 
 CENTRUM = SKILLS / "verify-centrum-rozliczen"
 DRIVE_CENTRUM = CENTRUM / "scripts" / "drive_centrum.py"
-# NOT_COMPARED z 14.11.2026 (drive/__init__.py): lista funkcji bez sekcji z biegu tylko maleje.
-BEZ_POROWNANIA_14_11: Final = frozenset(
-    "aktualizacja blad-odczytu kopie-intermax metryki pomiar-u-taty powiadomienia ustawienia uwaga-taty uzupelnienie "
-    "wpisanie-raportow wycena-w-efenix zgloszenie".split()
-)
 
 
 def _sub_features(feature: str, polecenie: Path) -> str:
@@ -237,25 +232,18 @@ def naped(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-def test_plik_funkcji_bez_sekcji_z_biegu_stoi_na_liscie_bez_porownania_a_lista_tylko_maleje(naped: ModuleType) -> None:
-    """Bieg porównuje sekcję ``## Sub-features`` każdej funkcji spoza ``NOT_COMPARED``, więc plik funkcji z tej listy
-    nie ma sekcji z biegu (jej pierwszego zdania), a każdy inny ją ma; funkcja schodzi z listy razem z sekcją z biegu."""
+def test_kazdy_plik_funkcji_centrum_ma_sekcje_z_biegu() -> None:
+    """Bieg porównuje sekcję ``## Sub-features`` każdej funkcji, którą jedzie, z jej plikiem, więc każdy plik funkcji ma
+    sekcję z biegu (jej pierwsze zdanie), także nowej funkcji: listy funkcji bez porównania nie ma."""
 
-    pliki = {path.stem: path.read_text(encoding="utf-8") for path in _feature_files(CENTRUM)}
-    z_biegu = {nazwa for nazwa, tekst in pliki.items() if f"Printed by `scripts/sub_features.py --feature {nazwa}`" in tekst}
-
-    problems = [
-        f"verify-centrum-rozliczen/features/{nazwa}.md ma sekcję z biegu, więc bieg ją porównuje: usuń `{nazwa}` z "
-        "NOT_COMPARED w scripts/drive/__init__.py"
-        for nazwa in sorted(naped.NOT_COMPARED & z_biegu)
-    ] + [
-        f"verify-centrum-rozliczen/features/{nazwa}.md nie ma sekcji ## Sub-features z biegu: wstaw ją z dowodu biegu "
-        f"`run_centrum_verification.py --feature {nazwa}` (sekcje-z-biegu/{nazwa}.md)"
-        for nazwa in sorted(pliki.keys() - z_biegu - naped.NOT_COMPARED)
+    bez_sekcji = [
+        f"verify-centrum-rozliczen/features/{path.name} nie ma sekcji ## Sub-features z biegu: wstaw ją z dowodu biegu "
+        f"`run_centrum_verification.py --feature {path.stem}` (sekcje-z-biegu/{path.stem}.md)"
+        for path in _feature_files(CENTRUM)
+        if f"Printed by `scripts/sub_features.py --feature {path.stem}`" not in path.read_text(encoding="utf-8")
     ]
 
-    assert problems == [], "\n".join(problems)
-    assert naped.NOT_COMPARED <= BEZ_POROWNANIA_14_11, "NOT_COMPARED tylko maleje: funkcja wchodzi do mapy z sekcją z biegu"
+    assert bez_sekcji == [], "\n".join(bez_sekcji)
 
 
 def _naped_funkcji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, funkcja: str, zrodlo: str) -> ModuleType:

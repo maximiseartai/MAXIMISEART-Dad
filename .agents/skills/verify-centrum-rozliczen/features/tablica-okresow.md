@@ -38,9 +38,9 @@ Returning to the Centrum tab, or reloading it, reads the board again.
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-okresow`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP tablica-okresow` in `drive.txt`, screenshots `06`–`09`, `1a`, `17`, `156` and `157`, `api/tablica-*.json`,
-`api/odmowa-obcy-*.json` and `state/opened.jsonl`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP tablica-okresow` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/tablica-*.json`, `api/odmowa-obcy-*.json` and `state/opened.jsonl`.
 
 ## Gotchas
 
