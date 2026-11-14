@@ -87,7 +87,9 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
+import json
 from pathlib import Path, PureWindowsPath
+import subprocess
 import sys
 import tomllib
 import typing
@@ -1925,6 +1927,57 @@ def test_znane_luki_importu_src_przechodza_przez_sprawdzenie_importow_i_ruff(tmp
         zgloszenia[opis] += [f"import: {code}" for _, code, _ in _private_imports(ast.parse(plik.read_text(encoding="utf-8")))]
 
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_IMPORTU_SRC)")
+
+
+# Jedyny plik src, który konfiguracja ruff zwalnia z SLF001 (wiersz SLF001 w CODING_STANDARDS.md).
+SLF001_OWNER: typing.Final = "src/rozliczenia/row_look.py"
+# Prywatna składowa obiektu spoza klasy: każdy plik src bez zwolnienia z SLF001 ją zgłasza.
+SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    return owner._field\n"
+
+
+@wymaga_ruff
+def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> None:
+    """Wpis w konfiguracji ruff (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, także ``ALL`` albo
+    prefiks ``SLF``, w każdym pliku konfiguracji) zwalnia plik z całego ``SLF001``. Kopia drzewa ``src/`` z próbką
+    ``SLF001_PROBE`` w miejscu każdego pliku i z każdym plikiem konfiguracji ruff repozytorium idzie przez ruff tak jak
+    ``src/``: plik bez zgłoszenia jest zwolniony, a zwolniony jest tylko ``SLF001_OWNER``, którego sięgnięcia do
+    ``_style`` trzyma ``tests/test_wyglad_wiersza_danych.py``. Jak w
+    ``tests/test_zakazy_ruff.py::test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela``."""
+
+    names = ("ruff.toml", ".ruff.toml", "pyproject.toml")
+    configs = {ROOT / name for name in names} | {
+        path for top in ("src", "tests", "tools", ".agents/skills") for name in names for path in (ROOT / top).rglob(name)
+    }
+    for config in configs:
+        if config.is_file():
+            copy = tmp_path / config.relative_to(ROOT)
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
+    probes = {path.relative_to(ROOT).as_posix() for path in SRC.rglob("*.py")}
+    for name in probes:
+        probe = tmp_path / name
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(SLF001_PROBE, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", "src"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=tmp_path,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    reported = {
+        Path(finding["filename"]).resolve().relative_to(tmp_path.resolve()).as_posix()
+        for finding in json.loads(result.stdout)
+        if finding["code"] == "SLF001"
+    }
+
+    assert sorted(probes - reported) == [SLF001_OWNER], (
+        "z SLF001 konfiguracja ruff zwalnia w src/ tylko row_look.py: do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać plik w konfiguracji ruff"
+    )
 
 
 # Każda droga do prywatnej nazwy src, którą zna sprawdzenie (spis N13 z 7.11.2026: explore_outbox, explore_intermax,

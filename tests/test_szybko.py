@@ -102,6 +102,7 @@ RULE_GUARDS = frozenset(
     tests/test_dokumenty_regul.py
     tests/test_granice_importow.py
     tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow
+    tests/test_granice_importow.py::test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look
     tests/test_granice_importow.py::test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy
     tests/test_granice_importow.py::test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy
     tests/test_jeden_odczyt_skoroszytu.py
@@ -971,6 +972,9 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
 
     Węzeł ``plik::test`` z tabeli biegnie sam albo z całym plikiem, bo inny węzeł tego pliku w ``STRUCTURE`` go nie
     uruchamia; sam plik z tabeli wystarcza z dowolnym swoim węzłem.
+
+    Pytest zbiera każdy test z tabel razem ze ``STRUCTURE``, więc strażnik usunięty albo przemianowany bez zmiany
+    wiersza wywraca test.
     """
 
     rows = {path: _rule_rows(path.read_text(encoding="utf-8")) for path in RULE_TABLES}
@@ -987,7 +991,7 @@ def test_kazdy_test_z_tabel_regul_jest_testem_struktury_albo_ma_powod() -> None:
     files_with_node = {node.partition("::")[0] for node in STRUCTURE}
 
     collected = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE, *szybko.ZAPADKI],
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *STRUCTURE, *szybko.ZAPADKI, *sorted(named)],
         cwd=ROOT,
         capture_output=True,
         text=True,
