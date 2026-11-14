@@ -23,6 +23,7 @@ from drive.common import (
     run_logs,
     stop_banner,
 )
+from drive.waiting import Budget
 from atrapy.workbooks import excel_lock
 from harness import Log
 
@@ -258,7 +259,7 @@ def drive(run: Run, page: Page) -> None:
 def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixture: Json) -> None:
     """Dad taps the button with his finger on a laptop as slow as his (CPU 4×) and reads the result card."""
 
-    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=20_000) as touch:
+    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=Budget.SLOWED.ms) as touch:
         _to_card(run, touch)
         result: Json = result_of_start(run, "intermax-wynik", _button(touch).tap)
         live = touch.get_by_role("region", name="Podgląd na żywo")

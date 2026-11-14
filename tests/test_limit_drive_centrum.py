@@ -28,6 +28,7 @@ import time
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
+import playwright.sync_api
 from playwright.sync_api import Error as PlaywrightError
 import pytest
 import yaml
@@ -282,7 +283,8 @@ def test_czekanie_drive_konczy_sie_po_budzecie_podanym_przez_wywolanie_a_nie_po_
     common: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Każdy nazwany budżet i liczba sekund z ``Run.wait_for`` to limit tego czekania: stan, który nie nadchodzi, kończy
-    czekanie zaraz po nim, a nie po domyślnym ``Budget.SCREEN`` (przegląd #1663)."""
+    czekanie zaraz po nim, a nie po domyślnym ``Budget.SCREEN`` (przegląd #1663). Limit Playwrighta z tego budżetu
+    (``Budget.ms``) to ten sam czas, więc asercja i czekanie z jednym budżetem trwają tyle samo (przegląd #1666)."""
 
     waiting = importlib.import_module("drive.waiting")
     zegar = _Zegar()
@@ -294,7 +296,7 @@ def test_czekanie_drive_konczy_sie_po_budzecie_podanym_przez_wywolanie_a_nie_po_
         start = zegar.teraz
         with pytest.raises(waiting.TimedOut, match="timed out: the state comes"):
             waiting.until(lambda: None, "the state comes", budget)
-        limits[budget.name] = (budget.value, zegar.teraz - start)
+        limits[budget.name] = (budget.ms / 1000, zegar.teraz - start)
     start = zegar.teraz
     with pytest.raises(common.DriveFailure, match="timed out: the state comes"):
         run.wait_for(lambda: False, "the state comes", timeout_s=0.3)
@@ -302,3 +304,24 @@ def test_czekanie_drive_konczy_sie_po_budzecie_podanym_przez_wywolanie_a_nie_po_
 
     outside = [name for name, (limit, waited) in limits.items() if not limit < waited <= limit + 2 * waiting.POLL_S]
     assert outside == [], limits
+
+
+def test_expect_drive_bez_timeout_czeka_budzet_asercji(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asercja ``expect`` napędu bez ``timeout=`` czeka ``Budget.ASSERTION`` (przegląd #1666). Plik ``drive/waiting.py``
+    biegnie tu jako osobny moduł, żeby nie podmienić ``Budget``, który trzymają inne moduły napędu."""
+
+    defaults: list[dict[str, object]] = []
+
+    class Expect(playwright.sync_api.Expect):
+        def set_options(self, timeout: float | None = None) -> None:
+            defaults.append({"timeout": timeout})
+            super().set_options(timeout=timeout)
+
+    monkeypatch.setattr(playwright.sync_api, "Expect", Expect)
+    spec = importlib.util.spec_from_file_location("waiting_w_tescie", DRIVE / "waiting.py")
+    assert spec is not None and spec.loader is not None
+    waiting = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(waiting)
+
+    assert isinstance(waiting.expect, Expect)
+    assert defaults == [{"timeout": waiting.Budget.ASSERTION.ms}]

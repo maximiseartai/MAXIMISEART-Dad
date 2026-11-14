@@ -33,18 +33,28 @@ POLL_S = 0.1
 
 
 class Budget(Enum):
-    """The longest a wait may take, in seconds, named by what the drive waits for."""
+    """The longest a wait may take, in seconds, named by what the drive waits for.
 
+    One name per value: two names of one value would be one member of the ``Enum``, so a wait with the value of a budget
+    is named by what it shares with that budget's waits, and a wait whose value changes gets a name of its own.
+    """
+
+    # One question whether Centrum answers at all, inside a wait that asks again.
+    PROBE = 2.0
     # An assertion of ``expect`` sees the state it names on the screen: Playwright's own default, which every assertion
     # of the drive without ``timeout=`` has waited; a longer one would lengthen each failure of a mutant of the drive.
     ASSERTION = 5.0
     # Centrum answers on its screen, through its API or in the run's files to what Dad or the harness has just done.
     SCREEN = 10.0
-    # A step of Aktualizacja narzędzia: Git, pip or the guardian of the restart answers after the pacing of the harness.
-    UPDATE = 20.0
-    # Centrum started again by Aktualizacja narzędzia answers: its guardian waits up to 60 s for it, and the tab reloads
-    # when it answers.
-    RESTART = 60.0
+    # Work the harness slows on purpose answers: a step after the pacing of the harness (Git, pip or the guardian of
+    # Aktualizacja narzędzia) or a tab on a processor as slow as Dad's.
+    SLOWED = 20.0
+    # Centrum answers after work heavier than a screen: its start, or a step of the efenix window.
+    WORK = 30.0
+    # Centrum finishes work of many steps on its own: started again by Aktualizacja narzędzia (its guardian waits up to
+    # 60 s, and the tab reloads when it answers), or a whole Wycena through the efenix window (5.6–5.9 s on Maks's Mac,
+    # past 10 s on the Windows runner of CI, #1296).
+    BACKGROUND = 60.0
 
     @property
     def ms(self) -> float:

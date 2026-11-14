@@ -10,6 +10,7 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
 from drive.common import DAD_TIME_ZONE, Run, dad_tab, read_bytes, remove, settings_title, settings_window
+from drive.waiting import Budget
 from atrapy.workbooks import excel_lock
 
 FEATURE = "kopie-intermax"
@@ -163,7 +164,7 @@ def _drive(
 def _restore_by_touch(run: Run, page: Page, register: Path, folder: Path, original: bytes, oldest: str) -> None:
     """Dad taps „Przywróć” and „Przywróć tę kopię” with his finger on a laptop as slow as his (CPU 4×)."""
 
-    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=20_000) as touch:
+    with dad_tab(page, touch=True, cpu=DAD_CPU, timeout_ms=Budget.SLOWED.ms) as touch:
         _to_card(run, touch)
         chosen = read_bytes(folder / oldest)
         before = set(_kopie(folder))
