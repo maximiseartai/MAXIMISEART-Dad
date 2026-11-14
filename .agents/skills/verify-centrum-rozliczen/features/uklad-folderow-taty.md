@@ -12,7 +12,7 @@ Printed by `scripts/sub_features.py --feature uklad-folderow-taty` from the driv
 - `taty-wskazany-tydzien`: the server describes the folder okresów as Załączniki of all years; section Foldery shows Załączniki with „wszystkie lata”, not the week Dad pointed to.
 - `taty-tygodnie-ze-wszystkich-miesiecy`: the server finds every Folder okresu in Rozliczenia {rok}\{miesiąc}\INEA, newest first; the screen lists the same weeks except the one that has not started; folders that are not periods (Podpisane, Nowe rozliczenia) are absent.
 - `taty-nastepny-krok`: Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder.
-- `taty-otwieranie`.
+- `taty-otwieranie`: one click opens the Plik zbiorczy once.
 - `taty-przywrocenie`: pointing back to the flat INEA folder restores the board the next features expect.
 
 ## How to get to it (user POV)
