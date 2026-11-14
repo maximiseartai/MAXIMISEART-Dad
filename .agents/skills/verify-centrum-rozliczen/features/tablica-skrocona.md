@@ -9,29 +9,23 @@ is not a period token is no Folder okresu and never reaches the board.
 
 ## Sub-features
 
-- `tablica-skrocona-biezacy-i-4-poprzednie`: with seven started and two future periods, `/api/periods` places them as `recent`, `older` and `not_started`, and the table shows the five `recent` ones with `Pokaż wszystkie` below.
-- `tablica-skrocona-pokaz-wszystkie`: the button adds the two older periods and disappears; the future ones stay hidden.
-- `tablica-skrocona-po-przeladowaniu`: a reload shows the short board with the button again.
-- `tablica-skrocona-piec-zaczetych`: with five started and two future periods the board has no button.
+Printed by `scripts/sub_features.py --feature tablica-skrocona` from the drive's steps and checks; refresh the section with it.
+
+- `tablica-skrocona-biezacy-i-4-poprzednie`: the server places the current period and the 4 before it at once, older ones after Pokaż wszystkie, and periods that have not started nowhere; the board shows 13_19_10_2026 on top and the 4 periods before it, with Pokaż wszystkie below.
+- `tablica-skrocona-pokaz-wszystkie`: Pokaż wszystkie adds the older periods below; periods that have not started stay hidden.
+- `tablica-skrocona-po-przeladowaniu`: after a reload the board is short again.
+- `tablica-skrocona-piec-zaczetych`: with five started periods and two not started the board has no Pokaż wszystkie; the board is the fixture's again for the next features.
 
 ## How to get to it (user POV)
 
-- Sidebar `Okresy` (the start page, `#/okresy`), once the folder okresów is set.
+Dad sees the board on `Okresy`, the start page of Centrum (`#/okresy`), once his folder okresów is set in Ustawienia.
 
 ## Driving it with Playwright for Python
 
-Preconditions:
-
-- Centrum is served for this run with `DOCTOR OK`; the fixture's "today" is Monday `2026-10-19`. If the folder okresów is not set yet, the drive sets it through `Wskaż folder okresów`. It passes right after the fixture or after `tablica-okresow`, which leaves the same period folders.
-
-- **Short board.** Create the empty Folders okresu `27_02_11_2026` and `20_26_10_2026` (not started), `13_19_10_2026` (current), `08_14_09_2026` and `01_07_09_2026` (older) in `INEA`, then reload. `GET /api/periods` (`api/tablica-skrocona.json`) gives, newest first, the two future periods `not_started`, `13_19_10_2026`, `06_12_10_2026`, `29_05_10_2026`, `22_28_09_2026`, `15_21_09_2026` `recent`, and the two older `older`. Table `Tablica okresów` shows exactly the five `recent` rows in that order and button `Pokaż wszystkie`; capture `297`.
-- **Show all.** Click `Pokaż wszystkie`: the table shows the seven started periods, the future ones are absent, and the button is gone; capture `298`.
-- **Reload.** Reload: the five rows and the button are back.
-- **Five started.** Remove the two older folders and reload: five rows, no button; capture `299`. Remove the rest; after a reload the table shows the fixture's board.
-- **Proof.** Screenshots `297`–`299`, `api/tablica-skrocona.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-skrocona`
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
+under `STEP tablica-skrocona` in `drive.txt`, screenshots `297`–`299` and `api/tablica-skrocona.json`.
 
 ## Gotchas
 
-- The folders are removed in `finally`, so a failed run leaves the fixture's board for whatever runs next.
-- Counting is by rows the server lists: the last complete period `06_12_10_2026` has no Folder okresu and still counts.
-- The fixture's "today" is a Monday, so `20_26_10_2026` starts the next day and is `not_started`; the Tuesday boundary itself is tested in `tests/test_centrum_rozliczen.py`.
+None known that the drive does not handle.

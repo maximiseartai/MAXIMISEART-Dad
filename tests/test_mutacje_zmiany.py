@@ -1,4 +1,4 @@
-"""``tools/mutacje_zmiany.py`` psuje zmienione linie ``src/`` i ``tools/`` i pada, gdy żaden test tego nie widzi.
+"""``tools/mutacje_zmiany.py`` psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` listy dwóch szop i pada, gdy żaden test tego nie widzi.
 
 Przebiegi idą w małym repozytorium z narzędziami checkoutu: baza ma ``return a``, zmiana ``return a and b``.
 """
@@ -17,7 +17,7 @@ import sys
 import pytest
 
 from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_tools
-from tests.fixtures.git_repo import commit, copy_files, git, repository, with_imports
+from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
 from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
@@ -51,7 +51,7 @@ def _repo(
         files["tests/conftest.py"] = conftest
     if other:
         files["src/rozliczenia/inny.py"] = other
-    repo = repository(tmp_path, files)
+    repo = mutation_repository(tmp_path, files)
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     commit(repo, "baza")
     git(repo, "branch", "--quiet", "baza")
@@ -508,7 +508,7 @@ def test_zmiana_z_testami_ktore_widza_kazda_mutacje_konczy_sie_ok(tmp_path: Path
 
 def test_liczbe_mutacji_widac_w_logu_ci_zanim_pobiegna_testy(tmp_path: Path) -> None:
     # Log CI to plik, więc linia bez ``flush`` czekałaby w buforze przez cały pierwszy przebieg testów.
-    line = "Mutacje: 2 w 1 plikach src/ i tools/ od baza. Testy dotknięte zmianą: 1."
+    line = "Mutacje: 2 w 1 plikach src/ i jednostek przepuszcza od baza. Testy dotknięte zmianą: 1."
     reads_log = f"\n\ndef test_log() -> None:\n    assert {line!r} in Path(os.environ['LOG_NARZEDZIA']).read_text(encoding='utf-8')\n"
     log = tmp_path / "log.txt"
 
@@ -559,7 +559,7 @@ def test_czesc_bierze_kolejne_mutacje_wiec_pokrycie_biegnie_na_testach_mniejszej
     parts = [_run(repo, "--czesc", f"{number}/2") for number in (1, 2)]
 
     counted = [next(line for line in done.stdout.splitlines() if line.startswith("Mutacje: ")) for done in parts]
-    assert [line.partition(" od ")[0] for line in counted] == [f"Mutacje: 2 (część {number}/2 z 4) w 1 plikach src/ i tools/" for number in (1, 2)]
+    assert [line.partition(" od ")[0] for line in counted] == [f"Mutacje: 2 (część {number}/2 z 4) w 1 plikach src/ i jednostek przepuszcza" for number in (1, 2)]
 
 
 FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
@@ -579,7 +579,7 @@ def _historia_zakresu(tmp_path: Path) -> tuple[Path, str, list[str]]:
     w ``m1`` tuż za pierwszą. Cofnięcie fragmentu ``m1`` psuje wtedy linie obu commitów, więc wchodzi do zakresu z
     pierwszym, a ostatni commit ma już tylko granicę porównania: razem 7 mutacji."""
 
-    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n", **{f"src/pakiet/m{number}.py": FUNKCJA for number in (1, 2, 3)}})
+    repo = mutation_repository(tmp_path / "repo", {"README.md": "repozytorium\n", **{f"src/pakiet/m{number}.py": FUNKCJA for number in (1, 2, 3)}})
     base = commit(repo, "baza")
     (repo / "README.md").write_text("repozytorium z historią\n", encoding="utf-8")
     commits = [commit(repo, "readme")]
@@ -623,7 +623,7 @@ def test_mutacje_linii_ktora_blame_przypisuje_commitowi_sprzed_bazy_licza_sie_do
     """Diff od bazy widzi przeniesioną linię ``a`` jako dodaną, a ``git blame`` przypisuje ją bazie: każdy zakres ``do``
     zawiera jej mutacje, więc koniec nocy liczy je od pierwszego commitu, a nie pomija."""
 
-    repo = repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
+    repo = mutation_repository(tmp_path / "repo", {"README.md": "repozytorium\n"})
     # Baza nie jest pierwszym commitem: ``git blame -l`` drukuje go jako granicę ``^`` bez ostatniego znaku skrótu.
     commit(repo, "pierwszy")
     (repo / "src" / "pakiet").mkdir(parents=True)
@@ -647,7 +647,7 @@ def test_mutacje_linii_ktora_blame_przypisuje_commitowi_sprzed_bazy_licza_sie_do
 
 @pytest.mark.parametrize(("comment", "parts"), [("# mutacje-zmiany: bez terminu", 1),("# mutacje-zmiany: na próbę | do 2999-01-01 | zgoda Maks", 0)])
 def test_zly_wyjatek_daje_czesc_ktora_go_zglosi_takze_bez_mutacji(tmp_path: Path, comment: str, parts: int) -> None:
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA})
+    repo = mutation_repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA})
     base = commit(repo, "baza")
     (repo / "src" / "pakiet" / "a.py").write_text(f"{FUNKCJA}{comment}\n", encoding="utf-8")
     head = commit(repo, "komentarz")
@@ -665,7 +665,7 @@ def test_narzedzie_podmienione_przez_probe_na_scalonych_pr_jest_niesprawdzone_a_
 ) -> None:
     """Commit zmienia ``tools/narzedzie.py``, a próba podstawiła w jego miejscu narzędzie z checkoutu (zmiana w drzewie)."""
 
-    repo = repository(tmp_path / "repo", {"tools/narzedzie.py": FUNKCJA})
+    repo = mutation_repository(tmp_path / "repo", {"tools/narzedzie.py": FUNKCJA})
     base = commit(repo, "baza")
     (repo / "tools" / "narzedzie.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
     commit(repo, "zmiana narzędzia")
@@ -864,7 +864,7 @@ def test_przeniesiony_plik_bez_zmian_nie_daje_mutacji(tmp_path: Path) -> None:
     done = _run(repo)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od baza"
+    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza"
 
 
 def test_plik_przeniesiony_do_narzedzi_spoza_src_i_tools_psuje_tylko_linie_zmienione_przy_przeniesieniu(tmp_path: Path) -> None:
@@ -872,7 +872,7 @@ def test_plik_przeniesiony_do_narzedzi_spoza_src_i_tools_psuje_tylko_linie_zmien
     testu w tym samym commicie, choć to plik ``.py``, nie wchodzi do zakresu."""
 
     functions = "".join(f"def f{number}(x: int) -> bool:\n    return x > {number}\n\n\n" for number in range(1, 6))
-    repo = repository(tmp_path / "repo", {"tests/fixtures/atrapa.py": functions, "tests/test_atrapa.py": "def test_a() -> None:\n    pass\n"})
+    repo = mutation_repository(tmp_path / "repo", {"tests/fixtures/atrapa.py": functions, "tests/test_atrapa.py": "def test_a() -> None:\n    pass\n"})
     base = commit(repo, "baza")
     git(repo, "mv", "tests/fixtures/atrapa.py", "tools/lib/atrapa.py")
     (repo / "tools" / "lib" / "atrapa.py").write_text(functions.replace("x > 3", "x >= 3"), encoding="utf-8")
@@ -887,7 +887,7 @@ def test_plik_przeniesiony_do_narzedzi_spoza_src_i_tools_psuje_tylko_linie_zmien
 
 
 def test_zmiana_pliku_spoza_src_i_tools_w_kodowaniu_innym_niz_utf8_nie_przerywa_zakresu(tmp_path: Path) -> None:
-    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "tests/fixtures/plik_taty.csv": "ilość\n"})
+    repo = mutation_repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "tests/fixtures/plik_taty.csv": "ilość\n"})
     base = commit(repo, "baza")
     (repo / "tests" / "fixtures" / "plik_taty.csv").write_bytes("ilość;zlecenie\n".encode("cp1250"))
     (repo / "src" / "pakiet" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
@@ -901,7 +901,7 @@ def test_zmiana_pliku_spoza_src_i_tools_w_kodowaniu_innym_niz_utf8_nie_przerywa_
 def test_samotne_cr_w_pliku_spoza_kodu_przed_tekstem_w_ksztalcie_naglowka_nie_chowa_zmiany_pliku_kodu(tmp_path: Path) -> None:
     """Git kończy linię tylko na ``\\n``: samotne ``\\r`` to znak w linii pliku tekstowego, a nie początek nowej linii diffu."""
 
-    repo = repository(tmp_path / "repo", {"tools/a.txt": "x\n", "tools/b.py": FUNKCJA})
+    repo = mutation_repository(tmp_path / "repo", {"tools/a.txt": "x\n", "tools/b.py": FUNKCJA})
     base = commit(repo, "baza")
     (repo / "tools" / "a.txt").write_bytes(b"x\r@@ -1 +1,40 @@\n")
     (repo / "tools" / "b.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
@@ -913,7 +913,7 @@ def test_samotne_cr_w_pliku_spoza_kodu_przed_tekstem_w_ksztalcie_naglowka_nie_ch
 
 
 def test_plik_kodu_z_polska_litera_w_nazwie_dostaje_fragmenty_zacommitowany_i_niesledzony(tmp_path: Path) -> None:
-    repo = repository(tmp_path / "repo", {"tools/żółw.py": FUNKCJA})
+    repo = mutation_repository(tmp_path / "repo", {"tools/żółw.py": FUNKCJA})
     base = commit(repo, "baza")
     (repo / "tools" / "żółw.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
     commit(repo, "zmiana żółwia")
@@ -1079,7 +1079,7 @@ def test_narzedzia_podstawione_przez_probe_na_scalonych_pr_nie_sa_zmiana(tmp_pat
     assert [line for line in trial.stdout.splitlines() if line.startswith("NIESPRAWDZONA")] == [
         "NIESPRAWDZONA: tools/inne.py → commit go zmienia, a tools/na_scalonych_pr.py podstawił w jego miejscu narzędzie z checkoutu"
     ]
-    assert trial.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od baza"
+    assert trial.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza"
     assert checkout.returncode == 1, checkout.stdout + checkout.stderr
     assert "NIEWYKRYTA: tools/inne.py:2 bez `b` w `and`" in checkout.stdout
     assert "NIEWYKRYTA: tools/nowe.py:2 bez `b` w `or`" in checkout.stdout
@@ -1098,7 +1098,7 @@ def test_zmiana_skryptu_skilla_i_pliku_narzedzi_spoza_pythona_nie_daje_mutacji(t
     done = _run(repo)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i tools/ od baza"
+    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza"
 
 
 def _described(text: str, changed: list[int], old: tuple[str, ...] = ()) -> dict[str, str]:
