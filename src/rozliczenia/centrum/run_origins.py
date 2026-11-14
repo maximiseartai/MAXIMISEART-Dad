@@ -6,7 +6,7 @@ gitem, proces i dokładny ``started_at`` rekordu metryk, który dopisało jego
 Uruchomienie. Metryki porównują po tej parze; reszta historii ma pochodzenie
 ``.cmd``: stare Uruchomienia taty z dawnych launcherów i CLI oraz rekordy ze
 skryptu dla maszyn. Obok pary leży identyfikator Uruchomienia w Centrum, ten
-sam co w jego Logach Uruchomienia; linie sprzed #322 go nie mają.
+sam co w jego Logach Uruchomienia; starsze linie go nie mają.
 
 Plik ma tylko bezpieczne fakty (proces, czas startu i identyfikator). Jego brak,
 uszkodzenie albo nieudany zapis oznacza tylko, że Uruchomienie pokaże się jako
@@ -63,7 +63,7 @@ class CentrumRuns:
     def started(self) -> Mapping[tuple[str, str], str | None]:
         """Identyfikator Uruchomienia z Centrum po parze (proces, ``started_at`` rekordu metryk).
 
-        ``None``: linia sprzed #322, bez identyfikatora. Niepoprawne linie są pomijane.
+        ``None``: starsza linia, bez identyfikatora. Niepoprawne linie są pomijane.
         """
 
         try:

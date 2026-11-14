@@ -1,5 +1,5 @@
-"""Wersje komentarza Uruchomienia w issue Logów okresu (#844, #846, #910): która wersja idzie do Kolejki wysyłki, w jakim
-stopniu i co dalej z dziennikiem Wyceny w efenix. Moduł niczego nie czyta ani nie zapisuje.
+"""Wersje komentarza Uruchomienia w issue Logów okresu: która wersja idzie do Kolejki wysyłki, w jakim stopniu i co
+dalej z dziennikiem Wyceny w efenix. Moduł niczego nie czyta ani nie zapisuje.
 
 Każde Uruchomienie ma jeden komentarz w issue Logów okresu z etykietą ``logi-uruchomienia`` (``LABEL``), a każda jego
 wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten sam komentarz zamiast dokładać nowy. Wersje

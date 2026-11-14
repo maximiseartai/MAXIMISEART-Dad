@@ -9,8 +9,8 @@ Urwane Uruchomienie (Centrum zamknęło się w jego trakcie), bo Logi powstają 
 przy Zatrzymaniu. Na końcu Uruchomienia ten moduł niczego nie zapisuje, więc nie ma kolejności względem działań po
 wyniku.
 
-Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``run_comments``,
-#845), zanim karta ostatniego Uruchomienia przeczyta Logi (``LeftBehindClosed``): jej karta po starcie to dalej karta
+Urwana Wycena w efenix ma Logi Urwanego Uruchomienia, które start Centrum zamknął z jej dziennika (``run_comments``),
+zanim karta ostatniego Uruchomienia przeczyta Logi (``LeftBehindClosed``): jej karta po starcie to dalej karta
 Urwanego Uruchomienia, z liczbą zleceń skończonych przed zamknięciem Centrum z każdym wynikiem. Takie Logi nie dają karty wiersza Historii (Urwane Uruchomienie nie ma wiersza Historii) ani karty
 zakończonego Uruchomienia, z której powstaje Powiadomienie, ani karty ostatniego Uporządkowania INTERMAX.
 

@@ -1,5 +1,5 @@
-"""Komentarz Uruchomienia w issue Logów okresu (#844, #845, #846, #910): jedyne miejsce, które układa kroki jego wersji,
-plików Logów i dziennika Wyceny w efenix w Uruchomieniu i przy starcie Centrum.
+"""Komentarz Uruchomienia w issue Logów okresu: jedyne miejsce, które układa kroki jego wersji, plików Logów i dziennika
+Wyceny w efenix w Uruchomieniu i przy starcie Centrum.
 
 Co jest którą wersją komentarza, w jakim stopniu i co dalej z dziennikiem, decyduje ``comment_versions``, a pliki zapisuje
 i czyta ``logs_disk``. ``RunComments`` tylko układa ich kroki w kolejności modelu ``verify-urwane-uruchomienie``, każdy we
@@ -9,7 +9,7 @@ własnej osłonie, i trzyma to, co komentarz pamięta w tej pracy Centrum: obser
 ostatniego startu (``LogsOnDisk.started``), potem postęp. Plik startu, którego nie dało się zapisać, wychodzi do
 ``RunHost.start`` i postępu nie ma; postęp jest ostatni, bo jest dla Maksa, a nie warunkiem pracy taty.
 
-**Postęp Wyceny w efenix** (#846): Wycena trwa u taty do półtorej godziny, a Logi powstają dopiero na jej końcu. Przy jej
+**Postęp Wyceny w efenix**: Wycena trwa u taty długo, a Logi powstają dopiero na jej końcu. Przy jej
 starcie Centrum zakłada komentarz Uruchomienia, a potem co ``PROGRESS_S`` na zegarze Centrum, nigdy częściej, odświeża go
 stanem dziennika (``logs_disk.Journal.progress``): zlecenia skończone z wszystkich, wyniki do tej pory, ostatnie skończone
 zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko wpisy, które już ma na dysku, a bez swojej pierwszej
@@ -23,7 +23,7 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
 
 1. wpis końca z wynikiem w dzienniku Wyceny (``Journal.end``): jest na dysku, zanim powstaną Logi z wynikiem i zanim
    pójdą do Skrzynki, więc dziennik sam mówi następnemu startowi, czy jego Uruchomienie doszło do wyniku i do jakiego, a
-   start nie zgaduje tego z Historii (#870, #871); Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
+   start nie zgaduje tego z Historii; Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
    zamiast niego usuwa dziennik, który mógł po nim zostać;
 2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025);
 3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
@@ -39,7 +39,7 @@ więc ich nie zastępuje.
 
 **Diagnoza** Zatrzymania (``RunComments.diagnosed``) dopisuje się do Logów swojego Uruchomienia: ten sam plik dostaje pole
 ``diagnosis``, a Logi idą do kolejki drugi raz jako nowsza wersja tej samej wysyłki, więc kolejka podmienia plik w Archiwum
-i zmienia komentarz tego Uruchomienia (#840, #844). Diagnoza z tym samym wynikiem co ostatnio dopisana
+i zmienia komentarz tego Uruchomienia. Diagnoza z tym samym wynikiem co ostatnio dopisana
 (``LoggedDiagnosis.same_result``) nie zmienia niczego: po nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym
 pokazaniu, a Maks potrzebuje tylko zmiany wyniku. Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w
 pamięci zostają tylko jego Logi; Diagnoza, w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
@@ -112,7 +112,7 @@ from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.wall_clock import utc_now
 
 PROGRESS_S: Final = 300.0
-"""Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum (#846: „najwyżej co 5 minut”)."""
+"""Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum: postęp idzie najwyżej co tyle."""
 
 _AFTER_RUN: Final = "po wyniku Uruchomienia procesu"
 """Miejsce błędu kroku końca Uruchomienia w dzienniku Centrum: to samo co błąd działania po wyniku w ``RunHost.after``."""
