@@ -128,6 +128,8 @@ class Notifications:
         release: ReleaseSource,
         pricings: Callable[[], Iterable[LoggedRun]],
     ) -> None:
+        """``_asked_at``: chwila ostatniego pytania skrzynki i GitHuba; ``None``: od startu Centrum nie było pytania."""
+
         self._cases = cases
         self._pricings = pricings
         self._read = ReadNotifications(work)
@@ -137,7 +139,7 @@ class Notifications:
         self._log = work.log
         self._clock = work.clock
         self._lock = threading.Lock()
-        self._asked_at: float | None = None  # od startu Centrum nie było jeszcze pytania
+        self._asked_at: float | None = None
         self._check: threading.Thread | None = None
         self._releases = _Releases()
         self._files = (cases.file, self._read.file)
@@ -162,12 +164,15 @@ class Notifications:
         self._start_check_if_due()
 
     def _start_check_if_due(self) -> threading.Thread | None:
-        """Pytanie skrzynki i GitHuba w tle, gdy pora (trwające też się liczy); ``None``, gdy nie ma na co czekać."""
+        """Pytanie skrzynki i GitHuba w tle, gdy pora (trwające też się liczy); ``None``, gdy nie ma na co czekać.
+
+        Chwila pytania stoi w ``_asked_at`` od razu przy jego starcie, więc równoległy odczyt nie pyta drugi raz.
+        """
 
         with self._lock:
             now = self._clock()
             if self._asked_at is None or now - self._asked_at >= CHECK_INTERVAL_S:
-                self._asked_at = now  # rezerwuje pytanie: równoległy odczyt nie pyta drugi raz
+                self._asked_at = now
                 self._check = threading.Thread(target=self._ask, name=CHECK_THREAD, daemon=True)
                 self._check.start()
             return self._check
@@ -180,14 +185,16 @@ class Notifications:
             self._log.unexpected_failure(failure, where="Wydania w Powiadomieniach")
 
     def _ask_github(self) -> None:
-        """Najnowsze Wydanie na `main` i opublikowane Wydania; to, na co GitHub nie odpowiedział, zostaje bez zmian."""
+        """Najnowsze Wydanie na `main` i opublikowane Wydania; to, na co GitHub nie odpowiedział, zostaje bez zmian.
+
+        Commit narzędzia nie zmienia się do końca pracy Centrum, więc ocena Aktualizacji zależy tylko od tej odpowiedzi.
+        """
 
         answer = self._release()
         published = self._freshness.published()
         known = self._releases
         if answer is not None:
             newest = None if answer.tag is None else Release.of_tag(answer.tag)
-            # Commit narzędzia nie zmienia się do końca pracy Centrum, więc ocena zależy tylko od tej odpowiedzi.
             offered = offers_update(self._freshness.judge(lambda: answer))
             known = replace(known, newest=newest, offered=offered)
         if published is not None:
@@ -260,7 +267,11 @@ class Notifications:
         return versions
 
     def _case(self, case: Case) -> notifications_contract.DadNoteNotification | notifications_contract.ReportNotification | None:
-        """Powiadomienie o sprawie; wpis Zgłoszenia sprzed Powiadomień (bez „Co się stało”) go nie daje."""
+        """Powiadomienie o sprawie; wpis Zgłoszenia sprzed Powiadomień (bez „Co się stało”) go nie daje.
+
+        Zgłoszenie w kolejce nie ma jeszcze numeru; jego identyfikator Powiadomienia bierze odcisk, bo problem czeka w
+        kolejce najwyżej raz.
+        """
 
         if case.title is None or case.sent_at is None:
             return None
@@ -271,7 +282,6 @@ class Notifications:
             return notifications_contract.DadNoteNotification(
                 kind="uwaga", id=notification_id, at=at, unread=unread, title=case.title, state=state
             )
-        # Zgłoszenie w kolejce nie ma jeszcze numeru; jego odcisk wystarcza, bo problem czeka w kolejce najwyżej raz.
         notification_id = f"zgloszenie-{case.id if case.number is None else case.number}-{_id_word(state)}"
         unread = self._unread(notification_id, state)
         return notifications_contract.ReportNotification(

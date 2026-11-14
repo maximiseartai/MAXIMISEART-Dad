@@ -273,10 +273,12 @@ def _representable(walked: dict[str, object]) -> RunLog:
 
     Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
     po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
+
+    ``cuts``: miejsce w Logach przed cięciami → czy odpadło z listy (``False``: dostało ``None``). Błędy idą od
+    ostatniego, więc element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te
+    sprzed cięć; uwagi o miejscach Kopii wejścia idą do ``input_copy_notes``, a pozostałe do ``technical_notes``.
     """
 
-    # Miejsce w Logach przed cięciami → odpadło z listy (``False``: dostało ``None``). Błędy idą od ostatniego, więc
-    # element, który odpada, przesuwa w liście tylko elementy już bez błędów, a miejsca w uwagach są te sprzed cięć.
     cuts: dict[_Path, bool] = {}
     place: _Path = ()
     for _ in range(_values(walked) + 1):
@@ -288,7 +290,7 @@ def _representable(walked: dict[str, object]) -> RunLog:
                 cuts = {cut: kind for cut, kind in cuts.items() if cut[: len(place)] != place}
             cuts[place] = removed
             continue
-        notes: dict[bool, list[str]] = {True: [], False: []}  # Kopia wejścia → uwagi
+        notes: dict[bool, list[str]] = {True: [], False: []}
         for cut in (GuardCut(_place(path), removed) for path, removed in sorted(cuts.items())):
             notes[cut.field == _INPUT_COPY].append(cut.note)
         return record.model_copy(
