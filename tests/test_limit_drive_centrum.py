@@ -38,6 +38,7 @@ import yaml
 
 from atrapy.pliki_taty import UPDATE_RESULT_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.efenix_browser import launch_options
 from rozliczenia.tool_files import config_dir
 from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 
@@ -130,6 +131,8 @@ def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
     def failing(run: object, page: object) -> None:
         raise getattr(drive_centrum, failure)("funkcja nie zobaczyła przycisku")
 
+    # Atrapa przeglądarki nie ma linii poleceń, z której launch_options bierze listę funkcji wyłączonych przez Playwright.
+    monkeypatch.setattr(drive_centrum, "launch_options", lambda playwright: {})
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=failing))
     (tmp_path / "fixture.json").write_text("{}", encoding="utf-8")
@@ -533,7 +536,7 @@ def test_strona_napedu_zapisuje_utracone_zadania_a_bez_arkusza_stylow_konczy_prz
             route.abort()
 
     with playwright.sync_api.sync_playwright() as przegladarki:
-        browser = przegladarki.chromium.launch()
+        browser = przegladarki.chromium.launch(**launch_options(przegladarki))
         try:
             with common.page_requests.recording(tmp_path):
                 context = common.dad_context(browser)
@@ -605,6 +608,8 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
         if funkcja == "pada":
             raise PlaywrightError("Locator.click: Timeout 10000ms exceeded.")
 
+    # Atrapa przeglądarki nie ma linii poleceń, z której launch_options bierze listę funkcji wyłączonych przez Playwright.
+    monkeypatch.setattr(drive_centrum, "launch_options", lambda playwright: {})
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright_fake)
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=click_behind_the_backdrop))
     (tmp_path / "fixture.json").write_text("{}", encoding="utf-8")

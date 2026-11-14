@@ -30,6 +30,7 @@ import windows_cleanup
 import windows_desktop
 import windows_doctor
 import windows_tool
+from rozliczenia.efenix_browser import launch_options
 from skrypt_skilla import Parser, new_run
 
 REPO_ROOT = windows_tool.REPO_ROOT
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
             os.environ.update(windows_tool.boundaries(facts))
             run = Run(root, evidence)
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch()
+                browser = playwright.chromium.launch(**launch_options(playwright))
                 context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="pl-PL")
                 page = context.new_page()
                 try:
