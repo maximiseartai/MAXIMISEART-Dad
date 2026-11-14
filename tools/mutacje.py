@@ -173,10 +173,11 @@ ALREADY_S = 300.0
 COLLECT_S = 120.0
 # Podstawa wyboru szybko w zwykłym użyciu trwała 73 s (10 plików) i 208 s (21 plików) na 2 workerach (#1726 r2).
 BASE_S = 120.0
-# Wybór podstawy bierze czasów CI na workera najwyżej limit podstawy przez ten zapas: pod load ~35 podstawa trwała
-# 1,4× czasu CI na workera (zmiana outbox.py, 14.11.2026), a z budżetem kroku szybko wybierała 3–5 razy więcej, niż
-# mieścił jej limit.
-BASE_LOAD = 2.0
+# Wybór podstawy bierze czasów CI na workera najwyżej limit podstawy przez ten zapas. Z budżetem kroku szybko wybierał
+# 3–5 razy więcej, niż mieścił limit; przy zmianie outbox.py (14.11.2026, 4 workery, load ~30) podstawa trwała 2,5× czasu
+# CI na workera (100 s z 40 s), a przy 2 ponad 120 s (136 s z 60 s). Mniejszy budżet niewiele skraca: 30 s dało 88 s,
+# bo testy struktury biegną lokalnie po ~45 s, a w CI cały ich plik waży 17 s.
+BASE_LOAD = 3.0
 
 
 class _Probe(NamedTuple):

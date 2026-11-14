@@ -929,15 +929,15 @@ def test_juz_lapie_mowi_o_plikach_testow_sprzed_zmiany_odlozonych_przez_szybko(t
             "120",
             [f"JUŻ ŁAPIE NIESPRAWDZONE: {name}: pliki testów sprzed zmiany odłożone przez szybko ponad budżet nie biegły (odłożone: 1)" for name in ("m1-ujemna", "m2-duza")],
         ),
-        ("300", [CAUGHT_BY_OLD.format(name="m2-duza")]),
+        ("360", [CAUGHT_BY_OLD.format(name="m2-duza")]),
     ],
     ids=["limit-nie-miesci-pliku", "limit-miesci-plik"],
 )
 def test_wybor_podstawy_miesci_sie_w_jej_limicie_a_reszte_odklada_z_linia(tmp_path: Path, base_s: str, lines: list[str]) -> None:
     """Test sprzed zmiany obok mutacji waży w czasach CI 100 s, a pracuje jeden worker: z ``--podstawa-s 120`` wybór
-    podstawy (połowa limitu na workera) go odkłada, więc podstawa go nie uruchamia, a linia mówi o odłożonym pliku; z
-    ``--podstawa-s 300`` biegnie i łapie „m2-duza”. Budżet kroku szybko (500 s) wziąłby go przy każdym limicie
-    (pomiar 14.11: 30 plików i 389 s podstawy przy limicie 120 s)."""
+    podstawy (trzecia część limitu na workera, ``BASE_LOAD``) go odkłada, więc podstawa go nie uruchamia, a linia mówi
+    o odłożonym pliku; z ``--podstawa-s 360`` biegnie i łapie „m2-duza”. Budżet kroku szybko (500 s) wziąłby go przy
+    każdym limicie (pomiar 14.11: 30 plików i 389 s podstawy przy limicie 120 s)."""
 
     seconds = {"tests/test_stary.py": 100.0, "tests/test_n.py": 0.1}
     lane = {f"pytest:{path}": [{"run": 1, "proba": 1, "zadanie": "z", "s": s, "status": "ok", "testy": 1}] for path, s in seconds.items()}
@@ -950,9 +950,9 @@ def test_wybor_podstawy_miesci_sie_w_jej_limicie_a_reszte_odklada_z_linia(tmp_pa
 
 
 def test_wybory_mutacji_w_roznych_plikach_dziela_limit_podstawy(tmp_path: Path) -> None:
-    """Podstawa biegnie raz dla wszystkich mutacji, więc dwie mutacje w dwóch plikach dzielą połowę ``--podstawa-s 300``
-    po równo (75 s na workera): test sprzed zmiany za 100 s obok pierwszej zostaje odłożony, choć sam mieściłby się w
-    150 s."""
+    """Podstawa biegnie raz dla wszystkich mutacji, więc dwie mutacje w dwóch plikach dzielą trzecią część
+    ``--podstawa-s 400`` po równo (67 s na workera): test sprzed zmiany za 100 s obok pierwszej zostaje odłożony, choć
+    sam mieściłby się w 133 s."""
 
     seconds = {"tests/test_stary.py": 100.0, "tests/test_n.py": 0.1}
     lane = {f"pytest:{path}": [{"run": 1, "proba": 1, "zadanie": "z", "s": s, "status": "ok", "testy": 1}] for path, s in seconds.items()}
@@ -964,7 +964,7 @@ def test_wybory_mutacji_w_roznych_plikach_dziela_limit_podstawy(tmp_path: Path) 
     plan.write_text(json.dumps(mutations), encoding="utf-8")
 
     answered = _in_repository(
-        repo, "--baza", "glowna", "--podstawa-s", "300", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER
+        repo, "--baza", "glowna", "--podstawa-s", "400", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER
     )
 
     assert _already_lines(answered, ["w-pakiecie", "w-innym"]) == [
