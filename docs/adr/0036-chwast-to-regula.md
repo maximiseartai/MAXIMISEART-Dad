@@ -3,8 +3,8 @@
 ## Status
 
 Przyjęta na mandat Maksa z nocy 14/15.11.2026 (pełna samodzielność, uzgodnione z koordynatorem #1597); do przejrzenia przez Maksa; odwracalna przez revert.
-Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11 (szczebel wyżej przy powrocie i `ZGODA KORZEŃ`), Q12, Q15 i Q22 (issues „Chwast”).
-Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026.
+Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11 (szczebel wyżej przy powrocie i `ZGODA KORZEŃ`), Q12, Q15, Q16 i Q22 (issues „Chwast”) oraz Q26 (powrót po (e) idzie do Maksa).
+Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026; „Cztery źródła” zostają źródłami wystąpień, ale żadne z nich nie zakłada już issue.
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
 
 Ten ADR wchodzi bez zmiany kodu, skilli i bramki.
@@ -24,7 +24,7 @@ Licznik powtórzeń mierzy więc szerokość etykiet, a nie to, czy wyrwanie trz
 
 Bramka zgody kosztowała 21 h czekania od `PASS` i zielonego CI do merge'a (5 PR-ów, mediana 4,9 h).
 Wszystkie 5 linii `ZGODA KORZEŃ` z okna pomiaru napisało konto, z którego piszą też agenci.
-Z 13 PR-ów scalonych bez zgody, której bramka wymagała, 12 scaliło `tools/scal_pr.py` ze starego checkoutu sprzed bramki, z wynikiem `SCAL OK` i bez śladu na GitHubie; 13. przepuściła reguła wdrożenia (Q20).
+13 scalonych PR-ów dzisiejsza bramka by zatrzymała. Bramka z kodu `main` tuż przed ich merge'em odmówiłaby 12 z nich (10 bez zgody, 2 bez szczebla wyżej), a #1492 przepuściła regułą wdrożenia (Q20). Te 12 scaliło `tools/scal_pr.py` ze starego checkoutu sprzed bramki, z wynikiem `SCAL OK` i bez śladu na GitHubie.
 Z 26 issues „Chwast” żadne nie jest zamknięte.
 Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR.
 
@@ -42,17 +42,23 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 - **Kod korzenia to kategoria.** Kod z `korzenie.toml` zostaje typem w sensie ODC (IBM, Chillarege 1992) z wyliczonym polem „trigger” (gdzie błąd wyszedł: przegląd, CI, czerwony `main`, nocne mutacje), czyli daną w poniedziałkowym raporcie, i nie blokuje merge'a.
   Q11 (szczebel wyżej przy powrocie kodu) i linia `ZGODA KORZEŃ` znikają.
-  Powód: bramka zgody dała 21 h czekania i 5 zgód z konta agentów, a 12 z 13 merge'y bez zgody ominęło ją przez stary checkout.
+  Powód: bramka zgody dała 21 h czekania i 5 zgód z konta agentów, a 12 merge'y, których odmówiłaby, ominęło ją przez stary checkout.
 
 ### Drugie wystąpienie idiomu
 
-- **Pole werdyktu.** Recenzent oznacza drugie wystąpienie idiomu polem Ważnego `Idiom: jak #N Wn rk` (pierwsze wystąpienie bez reguły) albo `Idiom: <id reguły>` (ucieczka istniejącej reguły).
-  Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył.
-- **Warunek merge'a.** PR z takim Ważnym scala się dopiero wtedy, gdy jego diff dodaje albo rozszerza regułę tego idiomu, albo dodaje próbkę `ZNANE_LUKI` dla reguły, której mechanizm tej postaci nie wyrazi, i sprawdza to deterministycznie `tools/scal_pr.py`, bez linii zgody.
-  Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a próbka znanej luki zapisuje granicę w kodzie, który pada, gdy przestaje być prawdą (ADR 0034).
-- **Dowód reguły.** Regułę przyjmuje się z wynikiem `tools/na_scalonych_pr.py` w Evidence PR: łapie `Gdzie` każdego przypadku na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
+- **Pole werdyktu.** Pole pisze recenzent, nie autor. Ma jedną z trzech postaci:
+  - `Idiom: <id> jak #N Wn rk`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
+  - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
+  - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
+  Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył. Autor nie wybiera postaci, więc nie może wybrać tańszej.
+- **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
+  Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły. Wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
+  Sprawdza to `tools/scal_pr.py` bez osądu i bez linii zgody.
+  Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
+- **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
-- **Idiom bez formy.** Idiom, którego żaden z tych mechanizmów nie wyrazi (brak testu, stan po kroku), idzie do mutacji zmienionych linii (#1634) albo do raportu jako klaster i nie zatrzymuje merge'a.
+- **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` idzie do mutacji zmienionych linii (#1634), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
+  To jedyne miejsce osądu w pętli. Pisze je niezależny recenzent, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
   Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu.
 
 ### Issues „Chwast”
@@ -70,7 +76,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 | Miara | Baza 14.11.2026 | Cel |
 |---|---|---|
-| Prawdziwe powroty odmawiane przez Required CI | 0 z 11 | co najmniej 6 z 11 (4 wyrażalne i 2 częściowo) |
+| Prawdziwe powroty odmawiane przez Required CI | 0 z 11 | co najmniej 5 z 11: 4 wyrażalne i 2 częściowo, bez #1585 W1 r2 (`write_text`), którego linia była na `main` przed PR, więc nie jest dodaną linią |
 | Powroty idiomu wśród wystąpień | 11 z 94 | poniżej 8% (próg z wyboru, nie z pomiaru) |
 | Czekanie od `PASS` i zielonego CI do merge'a | mediana 4,9 h | poniżej 1 h |
 | Fałszywe alarmy reguły na 20 ostatnich PR-ach | `write_text` 18 w 6 z 20 | najwyżej 10%, powyżej zawężamy albo usuwamy regułę |
@@ -94,7 +100,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
-- `tools/scal_pr.py` sprawdza, że diff dodaje albo rozszerza regułę, ale nie odtwarza jej dowodu; wynik `tools/na_scalonych_pr.py` ocenia recenzent jak każde Evidence.
+- Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
 - Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie.
 - Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).
