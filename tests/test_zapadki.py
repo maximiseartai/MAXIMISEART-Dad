@@ -10,9 +10,11 @@ HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowany
 Płytki checkout bez bazy (zadania pytest w CI) nie ma czego porównać, więc zapadka się pomija; pilnuje jej
 ``tools/szybko.py`` przed pushem, a reguł ast-grep na dodanych liniach całego repozytorium także zadanie CI „Ruff, mypy”
 z bazą ``HEAD^1``. Linie dodane i odpalenia reguł ast-grep na nich liczy ``tools/lib/odpalenia_ast_grep.py``, ten sam
-co dowód reguły ``tools/na_scalonych_pr.py --regula``. Moduł importuje tylko bibliotekę standardową, pytest i ten moduł
-(z ``repo`` i ``potomne``, które importują tylko bibliotekę standardową), bo pomiar zapadek uruchamia go też w kopii
-starego commitu; ta kopia potrzebuje więc obok także tych trzech plików ``tools/lib/``.
+co dowód reguły ``tools/na_scalonych_pr.py --regula``. Krok „niczego nie ukrywa” (``tools/lib/ukrycia_regul.py``,
+ADR 0036) biegnie z zapadkami. Moduł importuje tylko bibliotekę standardową, pytest i te dwa moduły (z ``repo``
+i ``potomne``, które importują tylko bibliotekę standardową, a ``ukrycia_regul`` jeszcze PyYAML z
+``requirements.txt``), bo pomiar zapadek uruchamia go też w kopii starego commitu; ta kopia potrzebuje więc obok także
+tych czterech plików ``tools/lib/``.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from typing import Final
 import pytest
 
 import odpalenia_ast_grep
+import ukrycia_regul
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
@@ -637,15 +640,12 @@ def _committed(root: Path, files: Mapping[str, str]) -> str:
 
 # Fikstura różnicy: dwa bliskie hunki i usunięta linia (a.py), ostatnia linia bez końca zamieniona na dwie (b.py,
 # znacznik „\ No newline at end of file” w środku hunka), plik nieśledzony (c.py), przeniesiona linia, którą inny
-# algorytm różnicy liczy jako starą (d.py), dodana linia, którą bez heurystyki wcięć git przesuwa o jedną (e.py),
-# i plik przeniesiony w indeksie z dopisaną linią (f.py → g.py), którego bez wykrywania przeniesień każda linia jest
-# dodana.
+# algorytm różnicy liczy jako starą (d.py), i dodana linia, którą bez heurystyki wcięć git przesuwa o jedną (e.py).
 _DIFF_BASE: Final = {
     "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nX8 = 8\nX9 = 9\nX10 = 10\nX11 = 11\nX12 = 12\n",
     "src/rozliczenia/b.py": "Y1 = 1\nY2 = 2",
     "src/rozliczenia/d.py": "Z = 0\nE = 5  # komentarz\nZ = 0\n",
     "src/rozliczenia/e.py": "\nX = 1  # komentarz\nA = 1\nB = 2\n",
-    "src/rozliczenia/f.py": "F1 = 1\nF2 = 2\nF3 = 3\nF4 = 4\n",
 }
 _DIFF_HEAD: Final = {
     "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nA = 1\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nB = 2  # komentarz\nX8 = 8\nX10 = 10\nX11 = 11\nX12 = 12\n",
@@ -653,12 +653,8 @@ _DIFF_HEAD: Final = {
     "src/rozliczenia/c.py": "D = 4  # komentarz\n",
     "src/rozliczenia/d.py": "Z = 0\nZ = 0\nE = 5  # komentarz\n",
     "src/rozliczenia/e.py": "\nX = 1  # komentarz\nX = 1  # komentarz\nA = 1\n",
-    "src/rozliczenia/g.py": "F1 = 1\nF2 = 2\nF3 = 3\nF4 = 4\nG = 5  # komentarz\n",
 }
-_DIFF_UNTRACKED: Final = "src/rozliczenia/c.py"
-# Plik przeniesiony w indeksie (``git mv``) przed zmianą drzewa: stara ścieżka → nowa.
-_DIFF_MOVED: Final = {"src/rozliczenia/f.py": "src/rozliczenia/g.py"}
-# Linie dodane w różnicy gita bez konfiguracji, jak w CI.
+# Linie dodane i numer w bazie każdej linii zmiany (``None``: dodana) w różnicy gita bez konfiguracji, jak w CI.
 _DIFF_ADDED: Final = [
     ("src/rozliczenia/a.py", 3, "A = 1"),
     ("src/rozliczenia/a.py", 9, "B = 2  # komentarz"),
@@ -667,9 +663,15 @@ _DIFF_ADDED: Final = [
     ("src/rozliczenia/c.py", 1, "D = 4  # komentarz"),
     ("src/rozliczenia/d.py", 3, "E = 5  # komentarz"),
     ("src/rozliczenia/e.py", 2, "X = 1  # komentarz"),
-    ("src/rozliczenia/g.py", 5, "G = 5  # komentarz"),
 ]
-# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej numer:
+_DIFF_OLD: Final[dict[str, list[int | None]]] = {
+    "src/rozliczenia/a.py": [1, 2, None, 3, 4, 5, 6, 7, None, 8, 10, 11, 12],
+    "src/rozliczenia/b.py": [1, None, None],
+    "src/rozliczenia/c.py": [None],
+    "src/rozliczenia/d.py": [1, 3, None],
+    "src/rozliczenia/e.py": [1, None, 2, 3],
+}
+# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej numer lub pozycję w bazie:
 # pliki (``.gitattributes`` z PR, ``.git/info/attributes``, pliki konfiguracji komputera), wpisy ``git config``
 # checkoutu, zmienne środowiska wołającego i polecenia gita, które zapisują lokalny stan ``.git`` (obiekty podmienione
 # przez ``refs/replace``, bity indeksu hooka ``core.fsmonitor``); ``{root}`` to katalog repozytorium, a ``{base}``
@@ -701,7 +703,6 @@ _DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str], dict[str,
     "kontekst z diff.context": ({}, {"diff.context": "5"}, {}, ()),
     "algorytm z diff.algorithm": ({}, {"diff.algorithm": "patience"}, {}, ()),
     "heurystyka wcięć z diff.indentHeuristic": ({}, {"diff.indentHeuristic": "false"}, {}, ()),
-    "przeniesienia wyłączone przez diff.renames": ({}, {"diff.renames": "false"}, {}, ()),
     "kontekst z GIT_DIFF_OPTS": ({}, {}, {"GIT_DIFF_OPTS": "--unified=3"}, ()),
     "dosłowne ścieżki z GIT_LITERAL_PATHSPECS": ({}, {}, {"GIT_LITERAL_PATHSPECS": "1"}, ()),
     "ścieżki glob z GIT_GLOB_PATHSPECS": ({}, {}, {"GIT_GLOB_PATHSPECS": "1"}, ()),
@@ -721,7 +722,7 @@ _DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str], dict[str,
         {},
         {"core.fsmonitor": _FSMONITOR_UNCHANGED},
         {},
-        (("update-index", "--fsmonitor"), ("update-index", "--fsmonitor-valid", "--", *(path for path in _DIFF_HEAD if path != _DIFF_UNTRACKED))),
+        (("update-index", "--fsmonitor"), ("update-index", "--fsmonitor-valid", "--", *_DIFF_BASE)),
     ),
 }
 
@@ -734,13 +735,11 @@ def _disguised(
     environment: dict[str, str],
     commands: tuple[tuple[str, ...], ...],
 ) -> str:
-    """Fikstura ``_DIFF_BASE`` w commicie bazy repozytorium ``root``, w indeksie przeniesienia ``_DIFF_MOVED``, w drzewie
-    roboczym ``_DIFF_HEAD`` i postać ``_DIFF_DISGUISES``: jej pliki, wpisy ``git config`` checkoutu, polecenia gita
-    w checkoucie i zmienne środowiska testu; zwraca bazę."""
+    """Fikstura ``_DIFF_BASE`` w commicie bazy repozytorium ``root``, w drzewie roboczym ``_DIFF_HEAD`` i postać
+    ``_DIFF_DISGUISES``: jej pliki, wpisy ``git config`` checkoutu, polecenia gita w checkoucie i zmienne środowiska
+    testu; zwraca bazę."""
 
     base = _committed(root, _DIFF_BASE)
-    for old, new in _DIFF_MOVED.items():
-        _git(root, "mv", old, new)
     for name, text in {**_DIFF_HEAD, **files}.items():
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_bytes(text.encode("utf-8"))
@@ -754,7 +753,7 @@ def _disguised(
 
 
 @pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
-def test_linie_dodane_nie_zaleza_od_atrybutow_konfiguracji_ani_srodowiska_gita(
+def test_linie_dodane_i_ich_pozycje_w_bazie_nie_zaleza_od_atrybutow_konfiguracji_ani_srodowiska_gita(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     files: dict[str, str],
@@ -764,13 +763,18 @@ def test_linie_dodane_nie_zaleza_od_atrybutow_konfiguracji_ani_srodowiska_gita(
 ) -> None:
     """Atrybut z drzewa zmiany (``.gitattributes``, także w podkatalogu), atrybut ``diff`` spoza drzewa, konfiguracja
     różnicy w checkoucie, zmienna środowiska, obiekt podmieniony przez ``refs/replace`` ani hook ``core.fsmonitor``
-    nie chowa linii dodanej przed zapadką i dowodem reguły ani nie zmienia jej numeru, bo oba biorą ją z ``Changes``:
-    linie dodane są takie, jak w różnicy gita bez konfiguracji, czyli w CI."""
+    nie chowa linii dodanej przed zapadką, krokiem „niczego nie ukrywa”
+    i dowodem reguły, nie zmienia jej numeru ani pozycji w bazie innej linii, bo każde z nich bierze je z ``Changes``:
+    linie dodane i pozycje są takie, jak w różnicy gita bez konfiguracji, czyli w CI."""
 
     base = _disguised(tmp_path, monkeypatch, files, config, environment, commands)
+    changes = odpalenia_ast_grep.Changes(tmp_path, base)
 
     assert sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "src")) == _DIFF_ADDED
     assert sorted(line for line in odpalenia_ast_grep.added_lines(tmp_path, base, ".", "*") if line[0] in _DIFF_HEAD) == _DIFF_ADDED
+    positions = {path: [changes.old(path, number) for number in range(1, len(text.splitlines()) + 1)] for path, text in _DIFF_HEAD.items()}
+    assert positions == {path: [None if old is None else (path, old) for old in olds] for path, olds in _DIFF_OLD.items()}
+    assert [changes.base_path(path) for path in _DIFF_HEAD] == [path if path in _DIFF_BASE else None for path in _DIFF_HEAD]
 
 
 @pytest.mark.parametrize("separator", ["\x1c", "\x0c", "\r", " "], ids=["x1c", "x0c", "samotne-r", "u2028"])
@@ -1025,54 +1029,6 @@ def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_ko
 
     found = [(finding.path, finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)]
     assert found == [(path, number, "komentarz-w-src") for path, number, text in _DIFF_ADDED if "#" in text]
-
-
-# Znane luki ``odpalenia_ast_grep.Changes``: lokalny stan checkoutu, którego zmiana nie zapisuje w commicie, a żadna
-# zmienna ani opcja gita nie wyłącza (plik ``.git/info``, bit indeksu), chowa linię dodaną przed zapadką; Required CI
-# biegnie na świeżym checkoucie bez niego. Klasa: postać → pliki zmiany na bazie z ``src/rozliczenia/a.py`` i polecenia
-# gita w checkoucie po niej.
-_BAZA_ZNANYCH_LUK_ZMIAN: Final = {"src/rozliczenia/a.py": "X = 1\n"}
-# Parzysta liczba bajtów, więc git czyta plik jako UTF-16LE bez błędu: jedna linia znaków spoza ASCII.
-_DODANY_KOMENTARZ: Final = "X = 1\nY = 2  # komentarze\n"
-ZNANE_LUKI_ZMIAN: Final[dict[str, tuple[dict[str, str], tuple[tuple[str, ...], ...]]]] = {
-    "atrybut spoza drzewa: working-tree-encoding z .git/info/attributes": (
-        {".git/info/attributes": "*.py working-tree-encoding=UTF-16LE\n", "src/rozliczenia/a.py": _DODANY_KOMENTARZ},
-        (),
-    ),
-    "wykluczenie spoza drzewa: plik nieśledzony z .git/info/exclude": (
-        {".git/info/exclude": "nowy.py\n", "src/rozliczenia/nowy.py": "X = 1  # komentarz\n"},
-        (),
-    ),
-    "lokalny stan indeksu checkoutu: bit assume-unchanged na zmienionym pliku": (
-        {"src/rozliczenia/a.py": _DODANY_KOMENTARZ},
-        (("update-index", "--assume-unchanged", "--", "src/rozliczenia/a.py"),),
-    ),
-    "lokalny stan indeksu checkoutu: bit skip-worktree na zmienionym pliku": (
-        {"src/rozliczenia/a.py": _DODANY_KOMENTARZ},
-        (("update-index", "--skip-worktree", "--", "src/rozliczenia/a.py"),),
-    ),
-}
-
-
-@needs_ast_grep
-def test_znane_luki_zmian_przechodza_przez_zapadke_regul_ast_grep(tmp_path: Path) -> None:
-    """Każda próbka ``ZNANE_LUKI_ZMIAN`` przechodzi przez zapadkę reguł ast-grep z prawdziwą regułą
-    ``komentarz-w-src``, choć dodaje komentarz w ``src/``."""
-
-    from tests.fixtures.znane_luki import assert_znane_luki
-
-    zgloszenia: dict[str, list[str]] = {}
-    for numer, (opis, (pliki, polecenia)) in enumerate(ZNANE_LUKI_ZMIAN.items()):
-        root = tmp_path / str(numer)
-        base = _committed(root, _BAZA_ZNANYCH_LUK_ZMIAN)
-        for nazwa, tekst in pliki.items():
-            (root / nazwa).parent.mkdir(parents=True, exist_ok=True)
-            (root / nazwa).write_bytes(tekst.encode("utf-8"))
-        for polecenie in polecenia:
-            _git(root, *polecenie)
-        zgloszenia[opis] = [f"zapadka: {finding}" for finding in syntax_rules(root, base)]
-
-    assert_znane_luki(zgloszenia, "tests/test_zapadki.py (ZNANE_LUKI_ZMIAN)")
 
 
 def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
@@ -1827,6 +1783,374 @@ def test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff(tmp_path: Path, zapa
         zgloszenia[opisy[linia.split(":", 1)[0]]].append(f"{zapadka}: {linia}")
 
     assert_znane_luki(zgloszenia, f"tests/test_zapadki.py::{zapadka}")
+
+
+def test_regula_chwastu_niczego_nie_ukrywa_poza_wlascicielem() -> None:
+    """Krok Required CI „niczego nie ukrywa” (ADR 0036, ``tools/lib/ukrycia_regul.py``): od bazy zmiany żadne
+    tłumienie ani zmiana konfiguracji nie chowa zgłoszenia reguły ast-grep ani zakazu ``banned-api`` poza prawem
+    właściciela z bazy."""
+
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    if importlib.util.find_spec("ruff") is None:
+        pytest.skip("krok ocenia prawdziwy ruff z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
+    assert [found.shown() for found in ukrycia_regul.hidden(ROOT, base, AST_GREP)] == []
+
+
+# Repozytorium-fikstura kroku „niczego nie ukrywa” (kryteria z komentarza #1676): zakazy banned-api ``os.name``
+# i ``time.time`` z właścicielem ``src/zegar.py`` (zwolnionym z całego TID251, jak 16 plików właścicieli repozytorium),
+# reguła ast-grep ``zakazane-wywolanie`` z właścicielem ``src/wlasciciel.py`` w ``ignores:``, stare tłumienie
+# w ``src/stare.py`` i stare, widoczne zgłoszenie ast-grep w ``src/stary_kod.py``.
+_HIDING_PYPROJECT = """\
+[tool.ruff]
+include = ["src/**/*.py"]
+
+[tool.ruff.lint]
+select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"os.name".msg = "sprawdzaj system przez sys.platform"
+"time.time".msg = "bierz czas z src/zegar.py"
+
+[tool.ruff.lint.per-file-ignores]
+"src/zegar.py" = ["TID251"]
+"""
+_HIDING_RULE = """\
+id: zakazane-wywolanie
+language: python
+severity: error
+message: "Zamień zakazane() na dozwolone() z src/wlasciciel.py."
+files:
+  - src/**
+ignores:
+  - src/wlasciciel.py
+rule:
+  pattern: zakazane()
+"""
+_HIDING_BASE: Final = {
+    ".gitignore": "__pycache__/\n",
+    "pyproject.toml": _HIDING_PYPROJECT,
+    "sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n",
+    "reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE,
+    "src/zegar.py": "import time\n\n\ndef teraz() -> float:\n    return time.time()\n",
+    "src/wlasciciel.py": "def zakazane() -> None:\n    pass\n\n\nzakazane()\n",
+    "src/stare.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - stare tłumienie z bazy\n",
+    "src/stary_kod.py": "zakazane()\n",
+    "src/a.py": "X = 1\n",
+}
+_OS_NAME = "banned-api os.name"
+_CALL = "ast-grep zakazane-wywolanie"
+_OWNERS_ROW = 'OWNERS = {"src/a.py": frozenset({"os.name"})}\n'
+
+
+def _hiding_repo(root: Path, changes: Mapping[str, str | None]) -> str:
+    """Fikstura ``_HIDING_BASE`` w commicie bazy repozytorium ``root``, a w drzewie roboczym zmiana ``changes``
+    (plik → treść, ``None``: usunięty); zwraca bazę."""
+
+    for name, text in _HIDING_BASE.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    for name, change in changes.items():
+        if change is None:
+            (root / name).unlink()
+        else:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(change, encoding="utf-8")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+def _hidden(root: Path, base: str) -> list[tuple[str, int, str]]:
+    return [(found.path, found.line, found.rule) for found in ukrycia_regul.hidden(root, base, AST_GREP)]
+
+
+_PER_FILE = _HIDING_PYPROJECT + '"src/a.py" = ["TID251"]\n'
+_UNTOUCHED_OLD_LINES = "import os\n\n\n\nSYSTEM = os.name  # noqa: TID251 - stare tłumienie z bazy\n"
+# Kryterium (forma) → zmiana fikstury i odpalenia kroku (plik, linia, reguła).
+_HIDINGS: Final[dict[str, tuple[dict[str, str | None], list[tuple[str, int, str]]]]] = {
+    "2: noqa z kodem na dodanej linii": ({"src/a.py": "import os\n\nX = os.name  # noqa: TID251 - powód\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "2: noqa bez kodu": ({"src/a.py": "import os\n\nX = os.name  # noqa\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "2: stare tłumienie na zmienionej linii to linia dodana": (
+        {"src/stare.py": _HIDING_BASE["src/stare.py"].replace("stare tłumienie z bazy", "nowy powód")},
+        [("src/stare.py", 3, _OS_NAME)],
+    ),
+    "3: ruff: noqa z kodem na całym pliku": ({"src/a.py": "# ruff: noqa: TID251\nimport os\n\nX = os.name\n"}, [("src/a.py", 4, _OS_NAME)]),
+    "3: ruff: noqa bez kodu": ({"src/a.py": "# ruff: noqa\nimport os\n\nX = os.name\n"}, [("src/a.py", 4, _OS_NAME)]),
+    "3a: ast-grep-ignore z regułą nad linią": ({"src/a.py": "# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n"}, [("src/a.py", 2, _CALL)]),
+    "3a: ast-grep-ignore z regułą na tej samej linii": ({"src/a.py": "zakazane()  # ast-grep-ignore: zakazane-wywolanie\n"}, [("src/a.py", 1, _CALL)]),
+    "3a: ast-grep-ignore bez reguły nad linią": ({"src/a.py": "# ast-grep-ignore\nzakazane()\n"}, [("src/a.py", 2, _CALL)]),
+    "3a: ast-grep-ignore nad starą linią": ({"src/stary_kod.py": "# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n"}, [("src/stary_kod.py", 2, _CALL)]),
+    "4: nowy wpis per-file-ignores z wierszem OWNERS": (
+        {"pyproject.toml": _PER_FILE, "tests/test_zakazy_ruff.py": _OWNERS_ROW, "src/a.py": "import os\n\nX = os.name\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "4: nowy wpis ignores reguły ast-grep": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/a.py\n"), "src/a.py": "zakazane()\n"},
+        [("src/a.py", 1, _CALL)],
+    ),
+    "4: nowy plik z linią właściciela, który zostaje, pod nowym wpisem ignores": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/nowy.py\n"), "src/nowy.py": "zakazane()\n"},
+        [("src/nowy.py", 1, _CALL)],
+    ),
+    "5: właściciel całego TID251 dopisuje inną zakazaną nazwę": (
+        {"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\nimport os\n\nSYSTEM = os.name\n"},
+        [("src/zegar.py", 10, _OS_NAME)],
+    ),
+    "6: zmieniony msg z nowym zwolnieniem": (
+        {"pyproject.toml": _PER_FILE.replace("przez sys.platform", "przez src/a.py"), "src/a.py": "import os\n\nX = os.name\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "7: zmiana konfiguracji ukrywa starą linię": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/stary_kod.py\n")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: zawężone files ukrywa starą linię": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/**\n", "  - src/a.py\n")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: usunięta reguła ukrywa nowe i stare wywołanie": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": None, "src/a.py": "zakazane()\n"},
+        [("src/a.py", 1, _CALL), ("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: nowy ruff.toml podkatalogu bez zakazów": ({"src/ruff.toml": "[lint]\nselect = []\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "7: .gitignore ukrywa śledzony plik": ({".gitignore": "__pycache__/\nsrc/a.py\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "7: .ignore ukrywa śledzony plik": ({".ignore": "src/a.py\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "8: wyjątek tymczasowy z terminem i zgodą Maksa": (
+        {"src/a.py": "import os\n\nX = os.name  # noqa: TID251 - wyjątek tymczasowy do 2027-01-31, zgoda Maksa\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "7: przemianowana reguła to usunięta stara i nowa, więc ukrywa każde zgłoszenie starego id": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("id: zakazane-wywolanie", "id: zakazane-wolanie")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: .gitattributes z -diff nie chowa zmienionej linii starego tłumienia": (
+        {".gitattributes": "src/stare.py -diff\n", "src/stare.py": _HIDING_BASE["src/stare.py"].replace("stare tłumienie z bazy", "nowy powód")},
+        [("src/stare.py", 3, _OS_NAME)],
+    ),
+    "zmieniony sam message: reguły ast-grep": ({"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("Zamień zakazane()", "Zastąp zakazane()")}, []),
+    "zmieniony sam msg klucza banned-api": (
+        {"pyproject.toml": _HIDING_PYPROJECT.replace("przez sys.platform", "tylko przez sys.platform"), "src/a.py": "import os\n\nX = os.name\n"},
+        [],
+    ),
+    "właściciel używa swojej nazwy": ({"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\ndef znowu() -> float:\n    return time.time()\n"}, []),
+    "stare tłumienie przesunięte": ({"src/stare.py": _UNTOUCHED_OLD_LINES}, []),
+    "samotne CR w zmienionej linii przed starym tłumieniem": ({"src/stare.py": _HIDING_BASE["src/stare.py"].replace("import os\n", "import os\rY = 1\n")}, []),
+    "widoczne zgłoszenie bez tłumienia to nie ukrycie": ({"src/a.py": "import os\n\nX = os.name\nzakazane()\n"}, []),
+    "zmiana bez reguł chwastu": ({"src/a.py": "X = 2\n"}, []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("changes", "expected"), _HIDINGS.values(), ids=_HIDINGS)
+def test_tlumienie_albo_zmiana_konfiguracji_reguly_chwastu_to_odpalenie_poza_wlascicielem_z_bazy(
+    tmp_path: Path, changes: dict[str, str | None], expected: list[tuple[str, int, str]]
+) -> None:
+    base = _hiding_repo(tmp_path, changes)
+
+    assert _hidden(tmp_path, base) == expected
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_stare_tlumienie_w_przeniesionym_pliku_nie_jest_odpaleniem(tmp_path: Path) -> None:
+    """Pozycję linii w bazie daje ``git diff -M`` (także z ``diff.renames=false`` w konfiguracji), więc plik
+    przeniesiony ze starym tłumieniem niczego nie ukrywa, a nowe tłumienie w nim tak."""
+
+    base = _hiding_repo(tmp_path, {})
+    _git(tmp_path, "config", "diff.renames", "false")
+    _git(tmp_path, "mv", "src/stare.py", "src/przeniesione.py")
+    assert _hidden(tmp_path, base) == []
+
+    (tmp_path / "src" / "przeniesione.py").write_text(_HIDING_BASE["src/stare.py"] + "INNY = os.name  # noqa: TID251\n", encoding="utf-8")
+    assert _hidden(tmp_path, base) == [("src/przeniesione.py", 4, _OS_NAME)]
+
+
+_TIME = "banned-api time.time"
+# Przeniesiony plik właściciela (stara ścieżka, nowa) → zmiana konfiguracji w tym samym PR i odpalenia kroku.
+_MOVED_OWNERS: Final[dict[str, tuple[tuple[str, str], dict[str, str], list[tuple[str, int, str]]]]] = {
+    "ast-grep: ignores: idzie za plikiem": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [],
+    ),
+    "ast-grep: ignores: zostaje na starej ścieżce": (("src/wlasciciel.py", "src/wlasciciel2.py"), {}, [("src/wlasciciel2.py", 5, _CALL)]),
+    "banned-api: per-file-ignores idzie za plikiem": (
+        ("src/zegar.py", "src/zegar2.py"),
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [],
+    ),
+    "banned-api: per-file-ignores zostaje na starej ścieżce": (("src/zegar.py", "src/zegar2.py"), {}, [("src/zegar2.py", 5, _TIME)]),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("move", "changes", "expected"), _MOVED_OWNERS.values(), ids=_MOVED_OWNERS)
+def test_przeniesiony_wlasciciel_reguly_chwastu_jest_wlascicielem_a_jego_zwolnienie_idzie_za_nim_w_tym_samym_pr(
+    tmp_path: Path, move: tuple[str, str], changes: dict[str, str], expected: list[tuple[str, int, str]]
+) -> None:
+    """Prawo właściciela liczy się od ścieżki pliku w bazie (``Changes.base_path``) tak samo dla ``ignores:`` reguły
+    ast-grep i ``per-file-ignores`` zakazu ``banned-api``: przeniesienie ze zwolnieniem na nowej ścieżce niczego nie
+    ukrywa, a bez niego krok mówi, co przenieść."""
+
+    base = _hiding_repo(tmp_path, changes)
+    _git(tmp_path, "mv", *move)
+
+    found = ukrycia_regul.hidden(tmp_path, base, AST_GREP)
+
+    assert [(hidden.path, hidden.line, hidden.rule) for hidden in found] == expected
+    exemption = "ignores:" if move[0] == "src/wlasciciel.py" else "per-file-ignores"
+    assert all(f"przeniesiony z {move[0]}" in hidden.shown() and f"przenieś je ({exemption}" in hidden.shown() for hidden in found)
+
+
+# Funkcja bez reguł chwastu, z którą plik właściciela przeniesiony w tym samym PR ma podobieństwo poniżej progu
+# ``git diff -M`` (50%), więc git widzi plik usunięty i nowy.
+_GROWTH = "\n\ndef opisz(dni: int) -> str:\n" + "".join(f"    if dni == {numer}:\n        return '{numer} dni'\n" for numer in range(12)) + "    return 'inaczej'\n"
+# Przeniesiony i rozbudowany plik właściciela (stara ścieżka, nowa) → dopisek, zwolnienie na nowej ścieżce i odpalenia.
+_GROWN_OWNERS: Final[dict[str, tuple[tuple[str, str], str, dict[str, str], list[tuple[str, int, str]]]]] = {
+    "ast-grep: stare wywołanie idzie za ignores:": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        _GROWTH,
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [],
+    ),
+    "ast-grep: nowe wywołanie odpala": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        _GROWTH + "\n\nzakazane()\n",
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [("src/wlasciciel2.py", 36, _CALL)],
+    ),
+    "banned-api: stara nazwa idzie za per-file-ignores": (
+        ("src/zegar.py", "src/zegar2.py"),
+        _GROWTH,
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [],
+    ),
+    "banned-api: nowa zakazana nazwa odpala": (
+        ("src/zegar.py", "src/zegar2.py"),
+        _GROWTH + "\n\nimport os\n\nSYSTEM = os.name\n",
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [("src/zegar2.py", 38, _OS_NAME)],
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("move", "growth", "changes", "expected"), _GROWN_OWNERS.values(), ids=_GROWN_OWNERS)
+def test_wlasciciel_przeniesiony_i_rozbudowany_ponizej_progu_git_zostaje_wlascicielem_starych_zgloszen(
+    tmp_path: Path, move: tuple[str, str], growth: str, changes: dict[str, str], expected: list[tuple[str, int, str]]
+) -> None:
+    """Prawo właściciela idzie za zwolnieniem, nie za parą ``git diff -M``: zgłoszenia nowego pliku pod zwolnieniem HEAD
+    mają parę po regule i treści linii wśród zgłoszeń właściciela, którego pliku HEAD nie ma, a nowe zgłoszenie jej nie
+    ma, więc odpala (kryterium 4)."""
+
+    base = _hiding_repo(tmp_path, {move[0]: _HIDING_BASE[move[0]] + growth, **changes})
+    _git(tmp_path, "mv", *move)
+    _git(tmp_path, "add", "-A")
+    assert _git(tmp_path, "diff", "--cached", "-M", "--name-status", base, "--", "src").split() == ["D", move[0], "A", move[1]]
+
+    assert _hidden(tmp_path, base) == expected
+
+
+def _changed_base(root: Path, base_changes: Mapping[str, str], changes: Mapping[str, str]) -> str:
+    """Fikstura ``_HIDING_BASE`` ze zmianą ``base_changes`` w commicie bazy, a w drzewie roboczym zmiana ``changes``."""
+
+    _hiding_repo(root, base_changes)
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza ze zmianą")
+    for name, text in changes.items():
+        (root / name).write_text(text, encoding="utf-8")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_regula_bazy_z_severity_off_i_ignores_niczego_nie_wywraca(tmp_path: Path) -> None:
+    """Zdjęcie ``ignores:`` reguły bazy nie przepisuje reszty jej tekstu, więc ``severity: off``, który PyYAML (YAML 1.1)
+    czyta jako ``False``, zostaje napisem dla ast-grep (YAML 1.2)."""
+
+    base = _changed_base(tmp_path, {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("severity: error", "severity: off")}, {"src/a.py": "X = 2\n"})
+
+    assert _hidden(tmp_path, base) == []
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_nieuzywany_wpis_ignores_bazy_nie_jest_prawem_wlasciciela_i_krok_to_mowi(tmp_path: Path) -> None:
+    """Wpis ``ignores:`` bazy dla pliku, który w bazie reguły nie łamie, nie daje prawa właściciela, a odpalenie mówi
+    o nieużywanym wpisie, nie o tłumieniu w PR, którego nie ma."""
+
+    rule = _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/a.py\n")
+    base = _changed_base(tmp_path, {"reguly-ast-grep/zakazane-wywolanie.yml": rule}, {"src/a.py": "zakazane()\n"})
+
+    found = ukrycia_regul.hidden(tmp_path, base, AST_GREP)
+
+    assert [(hidden.path, hidden.line, hidden.rule) for hidden in found] == [("src/a.py", 1, _CALL)]
+    assert "w bazie jej nie łamał, więc zwolnienie nie jest prawem właściciela" in found[0].shown()
+
+
+def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -> None:
+    """Dowód braku fałszywych alarmów zapadek liczy od pustego drzewa (``tests/test_struktura_testow.py``)."""
+
+    _hiding_repo(tmp_path, {"src/a.py": "import os\n\nX = os.name  # noqa: TID251\n"})
+    empty_tree = subprocess.run(["git", "hash-object", "-t", "tree", "--stdin"], cwd=tmp_path, input="", capture_output=True, text=True, check=True).stdout.strip()
+
+    assert ukrycia_regul.hidden(tmp_path, empty_tree, AST_GREP) == []
+
+
+# Znane luki kroku „niczego nie ukrywa”: obejście, które nie ukrywa zgłoszenia, tylko omija wzorzec albo zakres
+# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów, oraz lokalny stan checkoutu (plik ``.git/info``, bit
+# indeksu), którego PR nie zmienia, a żadna zmienna ani opcja gita nie wyłącza, więc zmienia linie dodane
+# (``odpalenia_ast_grep.Changes``); Required CI biegnie na świeżym checkoucie bez niego.
+# Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
+ZNANE_LUKI_UKRYC: Final = {
+    "obejście wzorca: zakazana nazwa przez getattr z napisem": {"src/a.py": 'import os\n\nX = getattr(os, "na" + "me")\n'},
+    "obejście zakresu: kod w pliku bez rozszerzenia .py": {"src/a": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n"},
+    # Plik ma parzystą liczbę bajtów, więc git czyta go jako UTF-16LE bez błędu: jedna linia znaków spoza ASCII.
+    "atrybut spoza drzewa: working-tree-encoding z .git/info/attributes": {
+        ".git/info/attributes": "src/a.py working-tree-encoding=UTF-16LE\n",
+        "src/a.py": "X = 1\n\nzakazane()\n",
+    },
+    "wykluczenie spoza drzewa: plik nieśledzony z .git/info/exclude": {
+        ".git/info/exclude": "src/nowy.py\n",
+        "src/nowy.py": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n",
+    },
+    "lokalny stan indeksu checkoutu: bit assume-unchanged na zmienionym pliku": {"src/a.py": "X = 1\n\nzakazane()\n"},
+    "lokalny stan indeksu checkoutu: bit skip-worktree na zmienionym pliku": {"src/a.py": "X = 1\n\nzakazane()\n"},
+}
+# Bity indeksu próbki ``ZNANE_LUKI_UKRYC``: plik → flaga ``git update-index`` ustawiona po zmianie drzewa.
+_BITY_INDEKSU_PROBEK: Final = {
+    "lokalny stan indeksu checkoutu: bit assume-unchanged na zmienionym pliku": {"src/a.py": "--assume-unchanged"},
+    "lokalny stan indeksu checkoutu: bit skip-worktree na zmienionym pliku": {"src/a.py": "--skip-worktree"},
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="znane luki ocenia prawdziwy ruff z dodatku dev")
+def test_znane_luki_ukryc_przechodza_przez_ruff_zapadke_i_krok(tmp_path: Path) -> None:
+    """Każda próbka ``ZNANE_LUKI_UKRYC`` na fiksturze przechodzi przez wszystko, co biegnie w Required CI na zmianie:
+    ``ruff check`` z konfiguracją fikstury, zapadkę reguł ast-grep na dodanych liniach i krok „niczego nie ukrywa”."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, zmiana) in enumerate(ZNANE_LUKI_UKRYC.items()):
+        root = tmp_path / str(numer)
+        root.mkdir()
+        base = _hiding_repo(root, zmiana)
+        for plik, flaga in _BITY_INDEKSU_PROBEK.get(opis, {}).items():
+            _git(root, "update-index", flaga, "--", plik)
+        sprawdzenie = subprocess.run([sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "concise"], cwd=root, capture_output=True, text=True, check=False)
+        zgloszenia[opis] = [f"ruff: {linia}" for linia in sprawdzenie.stdout.splitlines() if ": TID251 " in linia]
+        zgloszenia[opis] += [f"zapadka: {finding}" for finding in syntax_rules(root, base, root / "sgconfig.yml")]
+        zgloszenia[opis] += [f"krok: {found.shown()}" for found in ukrycia_regul.hidden(root, base, AST_GREP)]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py (ZNANE_LUKI_UKRYC)")
 
 
 # Katalog skryptu skilla w zakresie ``files:`` reguły ``lokator-tytulu-okna`` jako części ścieżki, nie napis z ``/``,
