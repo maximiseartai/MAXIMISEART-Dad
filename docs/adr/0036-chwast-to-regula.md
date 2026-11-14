@@ -8,7 +8,8 @@ Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
 
 Ten ADR wchodzi bez zmiany kodu, skilli i bramki.
-Zmienia je następny PR ticketu #1676, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`.
+Wszystkie decyzje o merge'u (warunek z polem `Idiom:`, krok CI z zasadą „niczego nie ukrywa”, usunięcie Q11 i `ZGODA KORZEŃ`) wdraża razem jeden PR bramki ticketu #1676, czyli ten, który zmienia `tools/lib/bramka_korzenia.py` i dokłada krok Required CI. Do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`.
+PR narzędzia dowodu (#1697) nie zmienia żadnej reguły merge'a, więc jego merge niczego z tej listy nie włącza.
 
 ## Kontekst
 
@@ -101,6 +102,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 
 ## Konsekwencje
 
+- Do merge'a PR bramki ticketu #1676 obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5). Zasada „niczego nie ukrywa” i warunek z polem `Idiom:` wchodzą tym samym merge'em, więc żadna z nich nie obowiązuje bez drugiej.
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.
