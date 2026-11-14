@@ -77,8 +77,15 @@ def drive(run: Run, page: Page) -> None:
         if "/api/" in response.url:
             server_timings.append({"url": response.url, "server-timing": response.headers.get("server-timing", "")})
 
+    since = len(run.log_entries())
     page.goto(run.url)
     ensure_files_set(run, page)
+    # The start page measures its cold start with a keepalive request, which can reach the log after the drive left the
+    # page and took the `since` of the next view (CI run 43638897751): wait for it first.
+    until(
+        lambda: ("zimny-start", "okresy") in [(timing["widok"], timing["strona"]) for timing in _timings(run, since)],
+        "the cold start of the start page is in the Centrum log",
+    )
 
     run.step(FEATURE, "pomiar-zimny-start")
     page.on("response", remember)
@@ -87,11 +94,16 @@ def drive(run: Run, page: Page) -> None:
     page.goto("about:blank")
     page.goto(f"{run.url}#/ustawienia/wzorce")
     expect(settings_window(page).get_by_role("list", name="Wzorce")).to_be_visible()
-    [window] = _wait_for_timings(run, since, 1, "the cold start of Ustawienia is in the Centrum log")
+    # Only cold starts: a menu click of the start page before (ensure_files_set) can land here too, by keepalive.
+    cold = until(
+        lambda: [timing for timing in _timings(run, since) if timing["widok"] == "zimny-start"],
+        "the cold start of Ustawienia is in the Centrum log",
+    )
     run.check(
-        (window["widok"], window["strona"]) == ("zimny-start", "ustawienia"),
+        [timing["strona"] for timing in cold] == ["ustawienia"],
         "a cold start on #/ustawienia/wzorce logs the window, not the start page it hides",
     )
+    [window] = cold
     _check_requests(run, window, "ustawienia")
     run.check("getConfiguration:" in window["zapytania"], "the window's entry holds its read of the configuration")
     for page_id, title in (NOTIFICATIONS | PAGES).items():
