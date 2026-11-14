@@ -35,9 +35,10 @@ from .highlights import Highlights
 GENERAL: Final = "General"
 """Format liczby komórki bez komórki źródłowej."""
 
-_THIN: Final = Side(style="thin", color=Color(indexed=64))  # indeks 64: kolor automatyczny
-# Pusta przekątna jak w obramowaniu zapisanym przez Excel, żeby kopia znalazła je wśród obramowań Wzorca.
+_THIN: Final = Side(style="thin", color=Color(indexed=64))
+"""Cienka linia w kolorze automatycznym (indeks 64)."""
 BORDER: Final = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN, diagonal=Side())
+"""Pusta przekątna jak w obramowaniu zapisanym przez Excel, żeby kopia znalazła je wśród obramowań Wzorca."""
 _ALIGNED: Final = Alignment(horizontal="left", vertical="center")
 _WRAPPED: Final = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
@@ -56,10 +57,12 @@ class CellLook:
     """Indeksy wyglądu w stylach skoroszytu po ``id`` skoroszytu; wpis trzyma skoroszyt, więc ``id`` się nie powtórzy."""
 
     def apply(self, cell: Cell | MergedCell) -> None:
-        """Nadaje wygląd komórce openpyxl; ochrona i styl nazwany komórki Wzorca zostają."""
+        """Nadaje wygląd komórce openpyxl; ochrona i styl nazwany komórki Wzorca zostają.
 
-        # openpyxl szuka każdego przypisanego stylu w stylach skoroszytu po hashu całego obiektu, co przy tysiącach
-        # komórek trwa setki milisekund; indeksy wyglądu w danym skoroszycie są stałe, więc liczone są raz.
+        openpyxl szuka każdego przypisanego stylu w stylach skoroszytu po skrócie całego obiektu, przy każdej
+        komórce od nowa; indeksy wyglądu w danym skoroszycie są stałe, więc liczone są raz na skoroszyt.
+        """
+
         workbook = cast(Workbook, cell.parent.parent)
         styled = cast(_Styled, cell)
         known = self._indexes.get(id(workbook))

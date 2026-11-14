@@ -99,9 +99,6 @@ class UnsupportedShape(Exception):
     """Skoroszyt ma kształt, którego ręczny zapis XML nie przenosi; ``str`` mówi który, bez treści pliku."""
 
 
-# --- części i relacje --------------------------------------------------------------------------
-
-
 @contextmanager
 def package_parts(content: bytes) -> Iterator[Mapping[str, bytes]]:
     """Części skoroszytu ``content`` (.xlsx) po nazwie w zip; zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``)."""
@@ -110,12 +107,12 @@ def package_parts(content: bytes) -> Iterator[Mapping[str, bytes]]:
         yield _ZipParts(archive)
 
 
-# Przygotowanie czyta ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``register_file.read``) i w Odczycie
-# danych (zawężenie): jego arkusz to dziesiątki MB XML, więc drugie rozpakowanie zip kosztuje tyle co reszta zawężenia.
 @lru_cache(maxsize=1)
 def unpacked(content: bytes) -> tuple[tuple[zipfile.ZipInfo, ...], Mapping[str, bytes]]:
     """Wpisy zip skoroszytu ``content`` (.xlsx) w kolejności z pliku i ich rozpakowane części po nazwie, tylko do odczytu;
-    zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``) albo ``zlib``."""
+    zepsuty zip zgłasza ``zipfile`` (np. ``BadZipFile``) albo ``zlib``. Pamięta ostatni wynik, bo Przygotowanie czyta
+    ten sam Rejestr zleceń w Sprawdzaniu (Surowe zlecenia, ``register_file.read``) i w Odczycie danych (zawężenie), a
+    rozpakowanie jego arkusza kosztuje drugi raz tyle samo."""
 
     with zipfile.ZipFile(BytesIO(content)) as archive:
         infos = tuple(archive.infolist())
@@ -234,8 +231,6 @@ def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
         raise UnsupportedShape("aktywna karta") from None
 
 
-# --- wiersz 1 bez openpyxl --------------------------------------------------------------------
-
 _HEAD_CHUNK: Final = 16 * 1024
 """Porcja części czytana strumieniowo, taka jak w ``iterparse``, którym openpyxl parsuje arkusz."""
 
@@ -283,13 +278,14 @@ def first_rows(content: bytes) -> FirstRows:
 
 
 def _streamed(archive: zipfile.ZipFile, part: str, tag: str) -> Iterator[ElementTree.Element]:
-    """Elementy ``tag`` części ``part`` po kolei, z części rozpakowywanej porcjami dopiero, gdy czytający po nie sięga."""
+    """Elementy ``tag`` części ``part`` po kolei, z części rozpakowywanej porcjami dopiero, gdy czytający po nie sięga;
+    parser oddaje tylko zdarzenia ``end``."""
 
     parser = ElementTree.XMLPullParser(("end",))
     with archive.open(part) as stream:
         while chunk := stream.read(_HEAD_CHUNK):
             parser.feed(chunk)
-            ends = cast(Iterator[tuple[str, ElementTree.Element]], parser.read_events())  # tylko zdarzenia "end"
+            ends = cast(Iterator[tuple[str, ElementTree.Element]], parser.read_events())
             for _, element in ends:
                 if element.tag == tag:
                     yield element
@@ -329,9 +325,6 @@ def _row_texts(cells: Sequence[ElementTree.Element], shared: Sequence[str]) -> l
     return [texts.get(number) for number in range(1, max(texts, default=0) + 1)]
 
 
-# --- style -------------------------------------------------------------------------------------
-
-
 def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
     """Pierwsza lista ``tag`` w ``xl/styles.xml``: atrybuty (grupa 1) i wpisy (grupa 2); brak to ``UnsupportedShape``."""
 
@@ -361,9 +354,6 @@ def with_style_attribute(xf: bytes, name: bytes, value: int, apply: bytes) -> by
     tag = re.sub(rb"\s" + apply + rb'="\w+"', b"", tag).rstrip(b"/ ")
     closing = b"/>" if xf[tag_end - 1 : tag_end] == b"/" else xf[tag_end:]
     return tag[:3] + b" " + name + b'="%d"' % value + tag[3:] + b" " + apply + b'="1"' + closing
-
-
-# --- wiersze arkusza ---------------------------------------------------------------------------
 
 
 class IrregularSheetData(Exception):
@@ -478,7 +468,9 @@ class RowsFromBottom:
 
 
 def _sheet_rows(xml: bytes, start: int, end: int) -> list[SheetRow]:
-    # Jedno przejście po arkuszu (dziesiątki MB w Rejestrze zleceń) zamiast osobnego dla każdego warunku kształtu.
+    """Wiersze arkusza ``xml`` między ``start`` a ``end`` w jednym przejściu po arkuszu, zamiast osobnego dla każdego
+    warunku kształtu."""
+
     rows: list[SheetRow] = []
     for match in _ROW_START_OR_IRREGULAR.finditer(xml, start, end):
         if match.group(1) is None:
@@ -499,8 +491,6 @@ def _raise_irregular(xml: bytes, start: int, end: int, otherwise: str = "") -> N
         raise IrregularSheetData("r")
     raise IrregularSheetData(otherwise)
 
-
-# --- komórki wiersza --------------------------------------------------------------------------
 
 _XML_CELL: Final = re.compile(rb'<c r="([A-Z]{1,3})(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 _XML_CELL_STYLE: Final = re.compile(rb'\ss="(\d+)"')
@@ -558,8 +548,6 @@ def sheet_cells(row_xml: bytes) -> list[SheetCell]:
 def row_tag(xml: bytes, row: SheetRow) -> bytes:
     return xml[row.start : xml.index(b">", row.start) + 1]
 
-
-# --- jedna kolumna arkusza ----------------------------------------------------------------------
 
 _SHARED_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 _PHONETIC: Final = re.compile(rb"<rPh\b.*?</rPh>", re.S)
@@ -629,8 +617,6 @@ def row_attributes(tag: bytes) -> dict[bytes, bytes]:
     return dict(_ROW_ATTRIBUTE.findall(tag))
 
 
-# --- zawężanie ---------------------------------------------------------------------------------
-
 _Narrow = Callable[[bytes], bytes]
 """Zawężenie XML arkusza; arkusz spoza kształtu, który zawężenie sprawdza, to ``IrregularSheetData``."""
 _Choose = Callable[[str, bytes], _Narrow | None]
@@ -672,14 +658,14 @@ def rows_dated_between(
     zostaje w całości, tabela tekstów wspólnych ma tylko teksty komórek arkuszy (``_used_strings_only``), a
     pozostałe części są przepisane bez zmian. Uszkodzenie
     skoroszytu zgłaszają ``zipfile`` (np. ``BadZipFile``), ``zlib``, brak części
-    ``KeyError`` albo ``expat`` (``ExpatError``).
+    ``KeyError`` albo ``expat`` (``ExpatError``). Komórka bez typu innego niż ``n`` z liczbą zapisaną samymi cyframi,
+    której część całkowita jest spoza dni od ``floor(low) - 1`` do ``floor(high)``, ma liczbę spoza [``low``,
+    ``high``]: ``float`` zaokrągla ją najwyżej do części całkowitej plus 1, więc zakres dni ma dzień zapasu przed
+    ``floor(low)``. Takiej komórki parser wyrażeń nie oddaje, a ``_is_number_between`` sprawdza resztę.
     """
 
     ranges: dict[str, range] = {}
     days = b"|".join(b"%d" % day for day in range(math.floor(low) - 1, math.floor(high) + 1))
-    # Komórka bez typu innego niż ``n`` z liczbą zapisaną samymi cyframi, której część całkowita jest spoza ``days``, ma
-    # liczbę spoza [low, high] (``float`` zaokrągla ją najwyżej do części całkowitej plus 1), więc parser wyrażeń jej nie
-    # oddaje: kolumna daty Rejestru zleceń ma dziesiątki tysięcy komórek, a ``_is_number_between`` sprawdza resztę.
     outside = rb"""(?:(?!\st=["'](?!n["']))[^>])*><v>(?!0*(?:""" + days + rb""")(?:\.\d+)?</v>)\d+(?:\.\d+)?</v>"""
 
     def dated(title: str, column: int) -> _Narrow:
@@ -806,8 +792,6 @@ def _is_number_between(attributes: bytes, content: bytes, low: float, high: floa
     return low <= number <= high
 
 
-# --- teksty wspólne ----------------------------------------------------------------------------
-
 _SHARED_STRINGS_TYPE: Final = "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
 _CONTENT_TYPE_OVERRIDE: Final = "{http://schemas.openxmlformats.org/package/2006/content-types}Override"
 _STRINGS_ROOT: Final = re.compile(
@@ -871,12 +855,12 @@ def _used_strings_only(parts: Mapping[str, bytes]) -> dict[str, bytes]:
     return replaced
 
 
-# Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``register_file.read``) i w Odczycie danych (zawężenie), z tych
-# samych bajtów z ``unpacked``: tabela Rejestru zleceń ma dziesiątki tysięcy tekstów.
 @lru_cache(maxsize=1)
 def shared_string_spans(table: bytes) -> tuple[tuple[int, int], ...]:
     """Granice każdego ``<si>`` tabeli tekstów wspólnych ``table`` w kolejności z tabeli: od jego początku do początku
     następnego, a ostatniego do ostatniego znacznika końca, czyli korzenia, więc tekst ma też białe znaki za sobą.
+    Pamięta ostatni wynik, bo Przygotowanie czyta tę samą tabelę w Sprawdzaniu (``register_file.read``) i w Odczycie
+    danych (zawężenie), z tych samych bajtów z ``unpacked``.
 
     Tabelę sprawdza parser expat (zepsuty XML to ``ExpatError``), a granice dają wyrażenia regularne, które znają jeden
     kształt: prolog bez komentarzy, DOCTYPE i instrukcji przetwarzania, korzeń bez treści (żadnych tekstów) albo z
@@ -913,6 +897,7 @@ def _shared_cells(xml: bytes) -> list[tuple[int, int, int]]:
     openpyxl czyta numer z ``<v>`` dziecka komórki; ``<v>`` głębiej dostaje nowy numer tak samo, więc nie zmienia tego,
     co openpyxl czyta. Granice daje parser expat, a tekst ``<v>`` ma być samymi cyframi w bajtach XML, bez spacji,
     encji, CDATA ani znaczników; inaczej ``UnsupportedShape``, także pusty ``<v>``. Zepsuty XML to ``ExpatError``.
+    Tekst ``<v>`` zaczyna się za pierwszym ``>`` za ``<v``, a gdyby ``>`` stał w atrybucie, tekst ma znaki spoza cyfr.
     """
 
     parser = expat.ParserCreate(namespace_separator=" ")
@@ -926,7 +911,6 @@ def _shared_cells(xml: bytes) -> list[tuple[int, int, int]]:
         if name == _CELL:
             shared = attributes.get("t") == "s"
         elif name == _CELL_VALUE and shared:
-            # Pierwszy ``>`` za ``<v`` zamyka znacznik, a gdyby stał w atrybucie, tekst ma znaki spoza cyfr.
             value_depth, value_start = depth, xml.index(b">", parser.CurrentByteIndex) + 1
 
     def end(_: str) -> None:

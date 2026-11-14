@@ -35,9 +35,9 @@ class Highlights:
     """``None``: kolor automatyczny."""
     bold: bool = False
     italic: bool = False
-    # Zapis szuka stylu po Wyróżnieniach każdej wpisanej komórki, a openpyxl liczy hash
-    # stylu od nowa przy każdym wywołaniu.
     _hash: int = field(init=False, repr=False, compare=False)
+    """Skrót policzony raz: Zapis szuka stylu po Wyróżnieniach każdej wpisanej komórki, a openpyxl liczy skrót stylu
+    od nowa przy każdym wywołaniu."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_hash", hash((self.fill, self.color, self.bold, self.italic)))

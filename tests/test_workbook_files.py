@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 import shutil
+import struct
 import sys
 import warnings
+import zipfile
 from copy import copy
 from dataclasses import replace
 import xml.etree.ElementTree as ET
@@ -213,6 +215,40 @@ def test_uszkodzony_skoroszyt_jest_nieczytelny_przy_kazdym_otwarciu(tmp_path: Pa
 
     assert raised.value.problem is Problem.UNREADABLE
     assert raised.value.path == path
+
+
+def _wrong_checksum(path: Path, part: str) -> None:
+    """Część ``part`` z nienaruszoną treścią i inną sumą kontrolną CRC-32 w nagłówku lokalnym i w katalogu centralnym."""
+
+    data = bytearray(path.read_bytes())
+    with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo(part)
+    wrong = struct.pack("<I", info.CRC ^ 1)
+    data[info.header_offset + 14 : info.header_offset + 18] = wrong
+    end = data.rindex(b"PK\x05\x06")
+    central = struct.unpack("<I", data[end + 16 : end + 20])[0]
+    while data[central : central + 4] == b"PK\x01\x02":
+        name_length, extra_length, comment_length = struct.unpack("<HHH", data[central + 28 : central + 34])
+        if data[central + 46 : central + 46 + name_length] == part.encode("ascii"):
+            data[central + 16 : central + 20] = wrong
+        central += 46 + name_length + extra_length + comment_length
+    path.write_bytes(bytes(data))
+
+
+@pytest.mark.parametrize("opening", [_check_template, _plan_template])
+def test_wzorzec_przyjmowany_przez_kopie_z_zla_suma_kontrolna_czesci_arkusza_jest_nieczytelny(
+    tmp_path: Path, opening: Callable[[Path], None]
+) -> None:
+    """Kopia Wzorca czyta każdą część zip ze sprawdzeniem sumy kontrolnej CRC-32, więc Wzorzec pliku zbiorczego, który
+    kopia przyjmuje, z inną sumą kontrolną części arkusza przy tej samej treści jest nieczytelny, jak w dawnej drodze."""
+
+    path = write_collective_template(tmp_path / tool_files.COLLECTIVE_TEMPLATE.name)
+    _wrong_checksum(path, "xl/worksheets/sheet1.xml")
+
+    with pytest.raises(WorkbookError) as raised:
+        opening(path)
+
+    assert raised.value.problem is Problem.UNREADABLE
 
 
 def test_skoroszyt_bez_stylow_daje_sie_przeczytac_bez_formatu(tmp_path: Path) -> None:

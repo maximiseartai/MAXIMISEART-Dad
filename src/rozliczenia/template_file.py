@@ -51,7 +51,8 @@ from .text import normalize_text
 from .write_routes import Route, TemplateKind
 
 
-_INTERNAL_LOOK_COLUMNS = range(1, 14)  # A:M Rozliczenia wewnętrznego, z ``zwrot`` i ``UWAGI``
+_INTERNAL_LOOK_COLUMNS = range(1, 14)
+"""Kolumny wyglądu A:M Rozliczenia wewnętrznego, z ``zwrot`` i ``UWAGI``."""
 
 
 @dataclass(frozen=True)
@@ -258,6 +259,7 @@ class TemplateFile:
         ``calcChain`` kopii, reszta formatowania i ``xl/externalLinks/*`` zostają z Wzorca. ``WorkbookError``,
         gdy Wzorca nie da się już użyć, brak nagłówka albo komórki zapisu są scalone;
         ``WorkbookSaveError``, gdy zapis się nie uda, także przez znak niedozwolony w XML. W obu przypadkach ``target`` nie powstaje.
+        Nagłówki docelowe kopii są szukane w jej kolumnach danych wejściowych od A, więc zajmują je wszystkie.
         """
 
         if not self._read_for_files:
@@ -265,7 +267,6 @@ class TemplateFile:
             self._read_for_files = True
         copy = self._template_copy()
         if copy is not None:
-            # Nagłówki docelowe kopii są szukane w jej kolumnach danych wejściowych od A, więc zajmują je wszystkie.
             target_columns = self._target_columns(copy.title, copy.header)
             if not self._rules.sheet.period_file:
                 self._check_settlement_template(copy.title, copy.header, copy.has_input_data)
@@ -293,14 +294,14 @@ class TemplateFile:
         """Wzorzec pliku okresu do Sprawdzania i Planowania z bajtów czytanych od nowa; niczego nie zapisuje.
 
         Zarys pochodzi z tego samego odczytu co kopia (``TemplateCopy``), więc Wzorzec jest parsowany raz na
-        Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa.
+        Uruchomienie, a zmieniony po Sprawdzaniu jest czytany od nowa. Scalenia z kopii są w tym samym zbiorze, którym
+        openpyxl trzyma scalenia arkusza, więc i w tej samej kolejności.
         """
 
         self._read()
         if self._outline is None:
             copy = self._template_copy()
             if copy is not None:
-                # Ten sam zbiór, którym openpyxl trzyma scalenia arkusza, więc i ta sama kolejność.
                 merged_ranges = tuple(MultiCellRange([CellRange(reference) for reference in copy.merged_cells]).ranges)
                 self._outline = _Outline(copy.title, copy.header, copy.whole_header, merged_ranges, copy.zero_row_count)
             else:
@@ -437,7 +438,9 @@ def _write_rows(sheet: Worksheet, layout: SheetLayout, rows: Sequence[Row], colu
 
     Komórka kolumny wyglądu dostaje Wygląd Wiersza danych, a bez komórki w wierszu sam wygląd i treść Wzorca; w
     pliku okresu wygląd ma każda zapisana kolumna. Dalsze komórki dostają Wyróżnienia na stylu Wzorca. Zapisany
-    wiersz traci wysokość z Wzorca.
+    wiersz traci wysokość z Wzorca, a wiersz bez wymiaru we Wzorcu nie dostaje nowego. Hiperłącze komórka dostaje
+    przed wartością, bo openpyxl wpisuje adres jako wartość pustej komórki. ``Highlights.font_over`` zawsze zwraca
+    kopię, a ``Highlights.fill_over`` może zwrócić wypełnienie, które dostał, więc dostaje kopię wypełnienia komórki.
     """
 
     last_column = _last_written_column(layout, columns)
@@ -445,7 +448,7 @@ def _write_rows(sheet: Worksheet, layout: SheetLayout, rows: Sequence[Row], colu
     look = RowLook([cast(Font, sheet.cell(layout.header_row, column).font) for column in range(1, look_columns + 1)])
     for index, row in enumerate(rows):
         number = layout.first_data_row + index
-        dimension = sheet.row_dimensions.get(number)  # bez tworzenia wymiaru, którego nie ma we Wzorcu
+        dimension = sheet.row_dimensions.get(number)
         if dimension is not None:
             dimension.ht = None
         for column in range(1, last_column + 1):
@@ -455,13 +458,11 @@ def _write_rows(sheet: Worksheet, layout: SheetLayout, rows: Sequence[Row], colu
                 look.cell(column, PLAIN, GENERAL, wrapped=False).apply(cell)
                 continue
             value, highlights, number_format, link = data
-            # Przed wartością: openpyxl wpisuje adres jako wartość pustej komórki.
             cell.hyperlink = None if link is None else link.address
             cell.value = value
             if column <= look.columns:
                 look.cell(column, highlights, number_format, wrapped=wraps(value)).apply(cell)
             else:
-                # font_over zawsze zwraca kopię, a fill_over może zwrócić wypełnienie, które dostał.
                 cell.font = highlights.font_over(cast(Font, cell.font))
                 cell.fill = highlights.fill_over(cast(Fill, copy(cell.fill)))
         for letter, quantity in row.quantities.items():
