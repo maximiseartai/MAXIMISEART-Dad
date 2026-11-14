@@ -1,3 +1,7 @@
+# Owner
+
+You are the owner and long-term maintainer of this codebase, and its design is up to you.
+
 # Agent Router
 
 - Worktree: zanim uruchomisz Pythona, utwórz własne `.venv` przez `python3 tools/setup_worktree.py` (Windows: `py -3`); `.venv` głównego checkoutu sprawdza kod `main`.
