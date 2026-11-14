@@ -43,20 +43,21 @@ from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD, SettlementP
 
 from .file_state import entry_kind, folder_entries, path_state
 
-# ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy.
 _INTERNAL_SETTLEMENT = "Rozliczenie wew. {token}.xlsx"
+"""Wzór nazwy, jak trzy niżej: ``{token}`` to token okresu, ``{worker}`` nazwa Wykonawcy."""
 _COLLECTIVE_FILE = "Rozliczenie {token} - zbiorcze.xlsx"
 _WORKER_SETTLEMENTS = "Rozliczenie pracowników {token}"
 _WORKER_SETTLEMENT = "Rozliczenie {token} - {worker}.xlsx"
 
-_INTERNAL_SETTLEMENT_MARK = _INTERNAL_SETTLEMENT.partition(" {token}")[0]  # Rozliczenie wew. dowolnego okresu
+_INTERNAL_SETTLEMENT_MARK = _INTERNAL_SETTLEMENT.partition(" {token}")[0]
+"""Początek nazwy Rozliczenia wewnętrznego dowolnego okresu."""
 _COLLECTIVE_FILE_PREFIX, _, _COLLECTIVE_FILE_SUFFIX = _COLLECTIVE_FILE.partition("{token}")
 _COLLECTIVE_FILE_NAME = re.compile(
     rf"{re.escape(_COLLECTIVE_FILE_PREFIX)}(?P<token>{PERIOD_TOKEN_PATTERN}){re.escape(_COLLECTIVE_FILE_SUFFIX)}"
 )
 
-# Układ folderów taty: Rozliczenia {rok}\{miesiąc}\INEA\{token}.
 _YEAR_FOLDER = re.compile(r"Rozliczenia \d{4}")
+"""Układ folderów taty: ``Rozliczenia {rok}\\{miesiąc}\\INEA\\{token}``."""
 _MONTH_PERIODS_FOLDER = "INEA"
 
 PeriodStatus = Literal["no_period_files", "collective_file_prepared", "worker_settlements_ready"]
@@ -64,8 +65,10 @@ PeriodPlace = Literal["internal_settlement", "collective_file", "period_folder",
 """Folder okresu albo jeden z jego plików, które tata otwiera i które Diagnoza wylicza."""
 WorkerNameCheck = Literal["fine", "invalid", "too_long"]
 _FORBIDDEN_IN_FILE_NAME = frozenset('<>:"/\\|?*')
-_MAX_FILE_NAME_CODE_UNITS = 255  # Windows liczy nazwę pliku w jednostkach UTF-16
-_ANY_TOKEN = "00_00_00_0000"  # każdy token okresu ma tę długość
+_MAX_FILE_NAME_CODE_UNITS = 255
+"""Najdłuższa nazwa pliku na Windows, liczona w jednostkach UTF-16."""
+_ANY_TOKEN = "00_00_00_0000"
+"""Token o długości każdego tokenu okresu."""
 
 
 @dataclass(frozen=True)
@@ -318,9 +321,9 @@ class PeriodFolderObservation:
 
 
 def period_status_label(status: PeriodStatus) -> str:
-    """Nazwa Statusu okresu z GLOSSARY."""
+    """Nazwa Statusu okresu z GLOSSARY; ``match`` nie ma gałęzi domyślnej, więc Status okresu bez nazwy mypy zgłasza
+    jako brakujący ``return``."""
 
-    # Status okresu bez nazwy mypy zgłasza jako brakujący return.
     match status:
         case "no_period_files":
             return "Brak plików okresu"
