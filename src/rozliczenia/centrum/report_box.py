@@ -21,7 +21,7 @@ z których Powiadomienia biorą stan sprawy). ``newest_with_line`` wybiera z nic
 najnowsze issue z wierszem rozpoznawczym: odciskiem problemu Zgłoszenia albo
 tokenem okresu Kontroli ilości. Klucz taty podaje adapterowi tylko ``KeyedBox``.
 
-Archiwum okresu (#844) to GitHub Release z tagiem w repozytorium Zgłoszeń, nie Wydanie narzędzia (inne repozytorium i
+Archiwum okresu to GitHub Release z tagiem w repozytorium Zgłoszeń, nie Wydanie narzędzia (inne repozytorium i
 tag): ``archive`` znajduje je po tagu z jego plikami (``Asset``: nazwa, etykieta i czy plik doszedł w całości) albo
 daje ``None``, ``open_archive`` zakłada je bez plików, ``upload`` wysyła plik, a ``remove`` usuwa plik, który ma ustąpić
 nowszemu. Zapis treści repozytorium to inne uprawnienie klucza niż issue: jego brak to ``Refused`` z kroków Archiwum,
@@ -372,7 +372,7 @@ class GitHubReportBox:
     def _exchange(self, request: HttpRequest) -> HttpResponse | Refused | Unreachable:
         """Limit zapytań GitHuba to ``Unreachable``: klucz działa, a skrzynka każe poczekać jak bez sieci.
 
-        ``urllib_transport`` odczytuje przy każdym żądaniu, bo testy blokują go w ``tests/conftest.py``.
+        Metoda odczytuje ``urllib_transport`` przy każdym żądaniu, bo testy blokują go w ``tests/conftest.py``.
         """
 
         transport = self._transport or urllib_transport
