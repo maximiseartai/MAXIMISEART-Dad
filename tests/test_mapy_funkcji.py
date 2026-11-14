@@ -21,7 +21,7 @@ from typing import Final
 
 import pytest
 
-from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff, wymaga_ruff, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / ".agents" / "skills"
@@ -313,9 +313,27 @@ ODMOWY_MODULU: Final = {
 # Pomocnik modułu z run.check, którego wywołanie wstawka stawia w ciele drive() napędu NAPED.
 POMOCNIK: Final = '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")\n'
 # Postać wywołania pomocnika z krokami albo sprawdzeniami → wstawka w drive(); polecenie odmawia, bo nie wie, czy, ile
-# razy i kiedy krok pomocnika biegnie, a nie widzi tego na liście postaci (mechanizm: tylko jedno wywołanie poza pętlą
-# i warunkiem). Linia odmowy ma komentarz `# tu`.
+# razy i w jakiej kolejności krok pomocnika biegnie (mechanizm: czyta tylko jedno wywołanie, które jest całą
+# instrukcją ciała drive() albo całą prawą stroną przypisania do nazwy). Linia odmowy ma komentarz `# tu`.
 ODMOWY_POMOCNIKA: Final = {
+    "cel pętli for (W1 r1)": "d = {}\n    for d[_pomocnik(run)] in range(2):  # tu\n        pass",
+    "dalszy człon łańcucha porównań (W1 r1)": "0 > 1 > _pomocnik(run)  # tu",
+    "adnotacja zmiennej lokalnej (W1 r1)": "x: _pomocnik(run) = 1  # tu",
+    "wartość przypisania z adnotacją": "x: object = _pomocnik(run)  # tu",
+    "cel przypisania biegnie po wartości (W2 r1)": 'd = {}\n    d[run.check(True, "w celu")] = _pomocnik(run)  # tu',
+    "przypisanie rozszerzone": "x = 0\n    x += _pomocnik(run)  # tu",
+    "argument innego wywołania": "print(_pomocnik(run))  # tu",
+    "argument sprawdzenia": 'run.check(_pomocnik(run), "po")  # tu',
+    "run.check w argumencie pomocnika": '_pomocnik(run, run.check(True, "w argumencie"))  # tu',
+    "ciało with": "with open(__file__, encoding='utf-8'):\n        _pomocnik(run)  # tu",
+    "ciało try": "try:\n        _pomocnik(run)  # tu\n    except ValueError:\n        pass",
+    "finally": "try:\n        pass\n    finally:\n        _pomocnik(run)  # tu",
+    "iterowane pętli for": "for _ in [_pomocnik(run)]:  # tu\n        pass",
+    "warunek if": "if _pomocnik(run):  # tu\n        pass",
+    "pierwszy argument or": "_pomocnik(run) or None  # tu",
+    "przedmiot match": "match _pomocnik(run):  # tu\n        case _:\n            pass",
+    "warunek assert": "assert _pomocnik(run) is None  # tu",
+    "po return drive()": 'if feature == "sonda":\n        return\n    _pomocnik(run)  # tu',
     "pętla for": "for _ in range(2):\n        _pomocnik(run)  # tu",
     "pętla while": "while feature:\n        _pomocnik(run)  # tu\n        break",
     "wyrażenie listowe": "[_pomocnik(run) for _ in range(2)]  # tu",
@@ -350,6 +368,9 @@ ODMOWY_POMOCNIKA_MODULU: Final = {
     + '\n\ndef _pomocnik(page: object, run: Run) -> None:\n    run.check(True, "z pomocnika")  # tu\n',
     "nazwa pomocnika związana drugi raz": NAPED.replace("{wstawka}", "_pomocnik(run)")
     + '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")  # tu\n\n\n_pomocnik = print\n',
+    "dwóch pomocników w przypisaniu (W2 r1)": NAPED.replace("{wstawka}", "d = {}\n    d[_a(run)] = _b(run)  # tu")
+    + '\n\ndef _a(run: Run) -> int:\n    run.step("sonda", "krok-a")\n    return 0\n'
+    + '\n\ndef _b(run: Run) -> int:\n    run.step("sonda", "krok-b")\n    return 0\n',
     "check pomocnika przed pierwszym step": NAPED.replace(
         '    run.step(feature, "sonda-krok")\n', '    _pomocnik(run)\n    run.step(feature, "sonda-krok")\n'
     ).replace("{wstawka}", "pass")
@@ -459,65 +480,65 @@ def test_polecenie_podfunkcji_drukuje_pole_f_stringu_spoza_stalych_wielokropkiem
     assert czytane == [("sonda-krok", ["pierwszy", sekcja])]
 
 
-# Miejsce w ciele drive(), w którym pomocnik biegnie raz, gdy biegnie drive(): polecenie drukuje jego sprawdzenie raz,
-# tam, gdzie wywołanie się kończy. Wstawka woła _pomocnik z POMOCNIK.
-CZYTANE_MIEJSCA: Final = {
-    "instrukcja": "_pomocnik(run)",
-    "przypisanie": "wynik = _pomocnik(run)",
-    "ciało with": "with open(__file__, encoding='utf-8'):\n        _pomocnik(run)",
-    "ciało try": "try:\n        _pomocnik(run)\n    except ValueError:\n        pass",
-    "finally": "try:\n        pass\n    finally:\n        _pomocnik(run)",
-    "iterowane pętli for": "for _ in [_pomocnik(run)]:\n        pass",
-    "warunek if": "if _pomocnik(run):\n        pass",
-    "warunek wyrażenia warunkowego": "None if _pomocnik(run) else None",
-    "pierwszy argument or": "_pomocnik(run) or None",
-    "przedmiot match": "match _pomocnik(run):\n        case _:\n            pass",
-    "warunek assert": "assert _pomocnik(run) is None",
-}
-
-
-@pytest.mark.parametrize("opis", list(CZYTANE_MIEJSCA))
-def test_polecenie_podfunkcji_czyta_pomocnika_wolanego_raz_w_miejscu_ktore_biegnie_raz(polecenie: ModuleType, opis: str) -> None:
-    czytane = polecenie.sub_features(NAPED.format(wstawka=CZYTANE_MIEJSCA[opis]) + POMOCNIK, "sonda.py")
-
-    assert czytane == [("sonda-krok", ["pierwszy", "z pomocnika"])]
-
-
-def test_polecenie_podfunkcji_drukuje_kroki_pomocnika_w_kolejnosci_w_ktorej_biegna(polecenie: ModuleType) -> None:
-    """Kroki i sprawdzenia pomocnika stoją tam, gdzie drive() go woła, a pomocnik w argumencie sprawdzenia biegnie przed
-    nim; pomocnik bez run.step i run.check może stać gdziekolwiek i ile razy."""
-
-    zrodlo = NAPED.format(
+# Napęd, którego pomocnika polecenie czyta: wywołanie jest całą instrukcją ciała drive() albo całą prawą stroną
+# przypisania do nazw. Pomocnik bez run.step i run.check może stać gdziekolwiek i ile razy.
+CZYTANE_POMOCNIKI: Final = {
+    "instrukcja": NAPED.format(wstawka="_pomocnik(run)") + POMOCNIK,
+    "przypisanie do nazwy": NAPED.format(wstawka="wynik = _pomocnik(run)") + POMOCNIK,
+    "przypisanie do dwóch nazw": NAPED.format(wstawka="a = b = _pomocnik(run)") + POMOCNIK,
+    "kroki pomocników między krokami drive()": NAPED.format(
         wstawka="\n    ".join(
             [
                 "_pomocnik(run, page)",
-                'run.check(_sprawdz(run), "po sprawdzeniu")',
+                'run.check(True, "po pomocniku")',
                 "for _ in range(2):\n        _bez_krokow(run)",
                 "_bez_krokow(run)",
+                "wynik = _drugi(run)",
                 'run.step(feature, "sonda-ostatni")',
             ]
         )
-    ) + "".join(
-        [
-            "\n\ndef _pomocnik(run: Run, page: object) -> None:\n"
-            '    run.check(True, SHOW_ALL)\n    run.step("sonda", "sonda-pomocnik")\n    run.check(True, f"w {SHOW_ALL}")\n',
-            '\n\ndef _sprawdz(run: Run) -> bool:\n    run.check(True, "w sprawdzeniu")\n    return True\n',
-            "\n\ndef _bez_krokow(run: Run) -> None:\n    pass\n",
-        ]
     )
+    + "\n\ndef _pomocnik(run: Run, page: object) -> None:\n"
+    '    run.check(True, SHOW_ALL)\n    run.step("sonda", "sonda-pomocnik")\n    run.check(True, f"w {SHOW_ALL}")\n'
+    + '\n\ndef _drugi(run: Run) -> bool:\n    run.check(True, "w drugim")\n    run.step("sonda", "sonda-drugi")\n    return True\n'
+    + "\n\ndef _bez_krokow(run: Run) -> None:\n    pass\n",
+}
 
-    assert polecenie.sub_features(zrodlo, "sonda.py") == [
-        ("sonda-krok", ["pierwszy", "Pokaż wszystkie"]),
-        ("sonda-pomocnik", ["w Pokaż wszystkie", "w sprawdzeniu", "po sprawdzeniu"]),
-        ("sonda-ostatni", []),
-    ]
+
+class _Zapis:
+    """Run próbki napędu, który zapisuje kroki i sprawdzenia w kolejności biegu."""
+
+    def __init__(self) -> None:
+        self.bieg: list[tuple[str, str]] = []
+
+    def step(self, feature: str, name: str) -> None:
+        self.bieg.append(("step", name))
+
+    def check(self, condition: bool, message: str) -> None:
+        self.bieg.append(("check", message))
+
+
+@pytest.mark.parametrize("opis", list(CZYTANE_POMOCNIKI))
+def test_polecenie_podfunkcji_drukuje_pomocnika_tak_jak_bieg_napedu(polecenie: ModuleType, opis: str, tmp_path: Path) -> None:
+    """Wydruk polecenia to kroki i sprawdzenia w kolejności i liczbie, w jakiej drukuje je prawdziwy bieg napędu próbki,
+    a nie w kolejności tekstu (W1 i W2 r1 #1769)."""
+
+    zrodlo = CZYTANE_POMOCNIKI[opis]
+    plik = tmp_path / "sonda_biegu.py"
+    plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
+    run = _Zapis()
+    modul(plik).drive(run, None)
+
+    czytane = polecenie.sub_features(zrodlo, "sonda.py")
+
+    assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
 
 
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → (napęd, ile razy jego bieg drukuje
 # komunikat LUKA; None, gdy drukuje kroki innego modułu). Każdy przechodzi przez ruff z konfiguracją drive/ i przez
 # polecenie, a sekcja drukuje LUKA inną liczbę razy niż bieg. Polecenie odmawia każdego atrybutu .step/.check poza
-# tymi, które czyta, i każdego użycia nazwy pomocnika poza jednym wywołaniem w drive(), więc te postacie sięgają po
-# check bez atrybutu, po pomocnika bez jego nazwy, po funkcję innego modułu albo omijają wywołanie przepływem drive().
+# tymi, które czyta, i każdego użycia nazwy pomocnika poza jednym wywołaniem w instrukcji drive(), więc te postacie
+# sięgają po check bez atrybutu, po pomocnika bez jego nazwy albo po funkcję innego modułu.
 POMOCNIK_LUKI: Final = '\n\ndef sprawdz(run: Run) -> None:\n    run.check(True, "LUKA")\n'
 ZNANE_LUKI: Final = {
     "zna tylko atrybut .check: check przez getattr": (NAPED.format(wstawka='getattr(run, "check")(True, "LUKA")'), 1),
@@ -540,10 +561,6 @@ ZNANE_LUKI: Final = {
     "zna pomocnika tylko po nazwie: drugi raz przez atrybut modułu": (
         NAPED.format(wstawka="import sys\n\n    sprawdz(run)\n    sys.modules[__name__].sprawdz(run)") + POMOCNIK_LUKI,
         2,
-    ),
-    "zna pętlę i warunek wokół wywołania, nie przepływ drive(): po return": (
-        NAPED.format(wstawka='if feature == "sonda":\n        return\n    sprawdz(run)') + POMOCNIK_LUKI,
-        0,
     ),
 }
 
