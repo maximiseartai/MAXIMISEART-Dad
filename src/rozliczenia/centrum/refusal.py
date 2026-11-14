@@ -361,7 +361,7 @@ def _report_entering_file(missing: ReportEnteringFile) -> str:
 
 
 def report_entering_not_set_up(missing: Sequence[ReportEnteringFile]) -> Refusal:
-    """Wpisanie raportów nie startuje bez plików ``missing`` w ``config``; dopisać je może tylko Maks (spec #1224, US 51)."""
+    """Wpisanie raportów nie startuje bez plików ``missing`` w ``config``; dopisać je może tylko Maks."""
 
     files = " i ".join(_report_entering_file(file) for file in missing)
     return _refused(
