@@ -42,7 +42,7 @@ from dataclasses import astuple, dataclass
 import hashlib
 from typing import Final, Literal
 
-from rozliczenia.client_data import ForbiddenValues, Outgoing, tool
+from rozliczenia.client_data import ForbiddenValues, Outgoing, guarded, tool
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import report_messages
 from rozliczenia.centrum.contract import common as common_contract
@@ -287,11 +287,11 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
 
 
 def _guarded(report: Report, period: str | None, forbidden: ForbiddenValues) -> _Preview:
-    """Podgląd Zgłoszenia po strażniku reguły danych (``ForbiddenValues.guard``): tytuł i treść bez zakazanych wartości,
+    """Podgląd Zgłoszenia po strażniku reguły danych (``guarded``): tytuł i treść bez zakazanych wartości,
     z zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
 
-    title = forbidden.guard(report.title, "tytuł Zgłoszenia")
-    body = forbidden.guard(report.body, "treść Zgłoszenia")
+    title = guarded(forbidden, report.title, "tytuł Zgłoszenia")
+    body = guarded(forbidden, report.body, "treść Zgłoszenia")
     notes = [*title.notes, *body.notes]
     tail = "" if not notes else "\n## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes)
     return _Preview(title.text, body.text + tool(tail), report.fingerprint, report.what, period)

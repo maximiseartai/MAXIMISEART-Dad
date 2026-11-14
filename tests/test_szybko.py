@@ -57,6 +57,20 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
         "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
     ),
+    "tests/test_regula_danych.py::test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
+    ),
+    "tests/test_regula_danych.py::test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
+    ),
+    "tests/test_regula_danych.py::test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje; zmianę run_logs_guard.py i dad_notes.py, "
+        "których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
+    "tests/test_regula_danych.py::test_uwagi_techniczne_daje_tylko_straznik_pamieci_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę run_logs_guard.py, "
+        "której próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
     ),

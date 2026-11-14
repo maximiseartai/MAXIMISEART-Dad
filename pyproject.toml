@@ -201,7 +201,7 @@ extend-select = [
 "rozliczenia.centrum.comment_versions._VERSIONS".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
-"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: ForbiddenValues.guard(…).text, tool(tekst narzędzia) i + takich tekstów"
+"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 # Kod spoza tests/ nie importuje kodu testów (tests/test_granice_importow.py), a import w trakcie działania omija graf

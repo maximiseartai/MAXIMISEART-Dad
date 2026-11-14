@@ -160,7 +160,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.client_data.logs_text",
     ),
-    "from rozliczenia import client_data\nguarded = client_data.empty_memory().guard(cell, 'komórka')": (
+    "from rozliczenia import client_data\nwynik = client_data.guarded(client_data.empty_memory(), cell, 'komórka')": (
         SRC_CONFIG,
         ("rozliczenia", "centrum"),
         "rozliczenia.client_data.empty_memory",
