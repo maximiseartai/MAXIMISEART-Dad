@@ -42,9 +42,10 @@ checks over every order of steps:
 
 - **CzekaMaPlik**: every case that waits (no issue number, „czeka” on the card and in the Powiadomienia) has its file in
   the Kolejka wysyłki, except during the one request between `DadCases.add` and the write of its file or its
-  withdrawal. Source: the `finally` of `Reports._queue` („sprawa bez pliku kolejki czekałaby wiecznie, a tata nie
-  mógłby kliknąć jeszcze raz”) and the docstring of `dad_cases.py` (an Uwaga „bez numeru czeka w kolejce Skrzynki,
-  dopóki `numbered` nie dopisze numeru”). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
+  withdrawal. Source: the `finally` of `Reports._queue` and the docstring of the class `Reports` („Sprawa, której
+  wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”)
+  and the docstring of `dad_cases.py` (an Uwaga „bez numeru czeka w kolejce Skrzynki, dopóki `numbered` nie dopisze
+  numeru”). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
   forever, and `_pending` turns every later click and every return of the problem into that same answer, without a
   new file.
 - **OdrzuconaNieCzeka**: once the Sprawy taty know that the Skrzynka rejected the text of the waiting Zgłoszenie in this

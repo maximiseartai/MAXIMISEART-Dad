@@ -135,6 +135,27 @@ def test_opiekun_z_kopii_nie_wczytuje_modulu_z_katalogu_roboczego_ani_nie_zapisu
     assert sorted(path.relative_to(copy).as_posix() for path in copy.rglob("__pycache__")) == []
 
 
+def test_nowe_centrum_zastaje_wynik_ok_w_pliku_juz_w_chwili_swojego_startu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nowe Centrum czyta wynik aktualizacji raz przy starcie, więc opiekun zapisuje „ok”, zanim je uruchomi."""
+
+    monkeypatch.setattr(restart_guardian, "START_TIMEOUT_S", 0.0)
+    root, work = tmp_path / "narzedzie", tmp_path / "praca"
+    root.mkdir()
+    work.mkdir()
+    restart = Restart(free_port(), "1" * 40, "2" * 40, root, tmp_path / RESULT_FILE, False, work)
+    at_start: list[UpdateResult | None] = []
+
+    def start(started: Restart) -> subprocess.Popen[bytes]:
+        at_start.append(read_result(started.result))
+        return subprocess.Popen([sys.executable, "-c", ""])
+
+    main(restart.arguments(), show_problem=lambda title, text: None, start=start)
+
+    assert at_start[:1] == [UpdateResult(UPDATED, restart.before, restart.after, False)]
+
+
 def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> None:
     # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), więc nazwy przypina literał.
     files = {

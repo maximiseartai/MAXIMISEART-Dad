@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+import threading
 import time
 import uuid
 
@@ -65,6 +66,7 @@ from rozliczenia.centrum.quantity_differences import quantity_differences_router
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
+from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.stops import Stops
 from rozliczenia.centrum.timing import timing_router
 from rozliczenia.centrum.tool_freshness import RememberedRelease, ToolFreshness
@@ -117,6 +119,7 @@ def create_app(
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
+    update_threads: Threading = threading,
 ) -> FastAPI:
     """Aplikacja jednej pracy Centrum (``CentrumWork``): części składa raz, a ich kolejność przy starcie daje ``lifespan``.
 
@@ -301,6 +304,7 @@ def create_app(
         shutdown=shutdown,
         guardian=guardian or (lambda copy, restart: restart_guardian.launch(copy, restart)),
         release=release,
+        threads=update_threads,
     )
     app.include_router(runs_router(runs, starts))
     app.include_router(intermax_router(runs, intermax, lambda: cards.latest(intermax.key)))
