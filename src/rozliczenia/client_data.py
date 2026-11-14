@@ -42,6 +42,7 @@ from enum import Enum
 import re
 import threading
 from typing import Final, TypeVar, final, overload
+import weakref
 
 from . import register_columns
 from .text import normalize_text
@@ -197,14 +198,15 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
 
     Maskowanie i uwagi techniczne daje tylko strażnik modułu, ``guarded`` i ``guarded_number``: pamięć nie ma własnej
     metody strażnika, więc mypy odrzuca jej wywołanie (``attr-defined``), a oba tuż przed maskowaniem odmawiają obiektu
-    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Pamięć nie ma też podklas ani przypisanej metody: mypy
-    odrzuca ``class`` (``final``), metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także
-    ``type()`` i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą
-    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
+    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Wartości nie są polami pamięci, tylko jej wpisem
+    w tabeli modułu (``_WORDS``). Pamięć nie ma też podklas ani przypisanej metody: mypy odrzuca ``class`` (``final``),
+    metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także ``type()``
+    i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą metaklasą,
+    a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
     przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
 
-    __slots__ = ("_columns", "_lengths", "_lock")
+    __slots__ = ("__weakref__",)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(_NO_SUBCLASSES)
@@ -212,9 +214,7 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
     def __init__(self, proof: object) -> None:
         if proof is not _PASSED:
             raise TypeError("Pamięć reguły danych daje tylko rozliczenia.client_data.empty_memory.")
-        self._lock = threading.Lock()
-        self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
-        self._lengths: dict[str, tuple[int, ...]] = {}
+        _WORDS[self] = _Words()
 
     def remember_value(self, column: ForbiddenColumn, value: object) -> None:
         """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
@@ -223,13 +223,30 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
         words = _value_words(value)
         if words is None:
             return
-        with self._lock:
-            if words in self._columns:
+        memory = _WORDS[self]
+        with memory.lock:
+            if words in memory.columns:
                 return
-            self._columns[words] = column
-            lengths = self._lengths.get(words[0], ())
+            memory.columns[words] = column
+            lengths = memory.lengths.get(words[0], ())
             if len(words) not in lengths:
-                self._lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+                memory.lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+
+
+class _Words:
+    """Wartości jednej pamięci reguły danych pod jej zamkiem: krotka słów wartości → kolumna i pierwsze słowo → długości
+    wartości, które od niego się zaczynają, od najdłuższej."""
+
+    __slots__ = ("columns", "lengths", "lock")
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.columns: dict[tuple[str, ...], ForbiddenColumn] = {}
+        self.lengths: dict[str, tuple[int, ...]] = {}
+
+
+_WORDS: Final[weakref.WeakKeyDictionary[ForbiddenValues, _Words]] = weakref.WeakKeyDictionary()
+"""Wartości każdej żywej pamięci (``ForbiddenValues``); znika razem z nią."""
 
 
 def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
@@ -260,13 +277,13 @@ def guarded_number(forbidden: ForbiddenValues, value: int | float, place: str) -
     return None
 
 
-def _masked(memory: ForbiddenValues, text: str) -> tuple[str, set[ForbiddenColumn]]:
+def _masked(memory: _Words, text: str) -> tuple[str, set[ForbiddenColumn]]:
     words = list(_WORD.finditer(text))
     folded = [word.group(0).casefold() for word in words]
     pieces: list[str] = []
     masked: set[ForbiddenColumn] = set()
     position = index = 0
-    with memory._lock:
+    with memory.lock:
         while index < len(words):
             hit = _longest(memory, folded, index)
             if hit is None:
@@ -281,12 +298,12 @@ def _masked(memory: ForbiddenValues, text: str) -> tuple[str, set[ForbiddenColum
     return "".join(pieces), masked
 
 
-def _longest(memory: ForbiddenValues, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
+def _longest(memory: _Words, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
     """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
 
-    for length in memory._lengths.get(folded[index], ()):
+    for length in memory.lengths.get(folded[index], ()):
         if index + length <= len(folded):
-            column = memory._columns.get(tuple(folded[index : index + length]))
+            column = memory.columns.get(tuple(folded[index : index + length]))
             if column is not None:
                 return length, column
     return None
@@ -297,14 +314,14 @@ def empty_memory() -> ForbiddenValues:
     return ForbiddenValues(_PASSED)
 
 
-def _memory(forbidden: ForbiddenValues) -> ForbiddenValues:
-    """Pamięć tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa albo owijka
-    podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo jego ``_masked``
+def _memory(forbidden: ForbiddenValues) -> _Words:
+    """Wartości pamięci tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa
+    albo owijka podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo
     dałby własne maskowanie i uwagi techniczne."""
 
     if type(forbidden) is not ForbiddenValues:
         raise TypeError(f"Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie {type(forbidden).__name__}.")
-    return forbidden
+    return _WORDS[forbidden]
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:

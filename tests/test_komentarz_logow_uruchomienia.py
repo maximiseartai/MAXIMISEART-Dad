@@ -708,6 +708,12 @@ ZNANE_LUKI_LOGOW: Final = {
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
     "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+    "parser pliku kolejki z tekstem z komórki z importu prywatnej nazwy": """from rozliczenia.centrum.outbox import ArchiveFile, _archive_file
+
+
+def plik(komorka: str) -> ArchiveFile | None:
+    return _archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
     "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
@@ -913,7 +919,7 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
         return INTERRUPTED
 
     forbidden = _forbidden()
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), read if first_line else None, logs)
+    left = LeftJournal(JournalKey(), read if first_line else None, logs)
 
     closing = close(left, forbidden, interrupted)
 
@@ -932,7 +938,7 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_
     dziennik następnemu startowi, i niczego nie składa."""
 
     failure = PermissionError("plik trzyma antywirus")
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), _journal(None), Refused(failure))
+    left = LeftJournal(JournalKey(), _journal(None), Refused(failure))
     asked: list[JournalRead] = []
 
     def interrupted(journal: JournalRead) -> RunLog:
@@ -1286,6 +1292,19 @@ def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nas
     [post] = queue.posts
     assert (len(left), post.rank) == (1, Rank.STAND_IN)
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
+def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
+    """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
+    (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
+
+    directory = tmp_path / "dzienniki-wyceny"
+    journal = Journal(directory, CentrumLog(tmp_path / "centrum-rozliczen.log"), process="efenix")
+
+    with pytest.raises(TypeError, match="LogsOnDisk.started"):
+        journal.run_started(PRICING_START, object())
+
+    assert (directory.exists(), journal.progress(RUN_ID)) == (False, None)
 
 
 def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich_wysylki(tmp_path: Path) -> None:

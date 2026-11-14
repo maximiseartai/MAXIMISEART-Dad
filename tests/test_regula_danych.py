@@ -311,6 +311,14 @@ def wysylka(komorka: str, post: Post) -> Post:
 def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
 """,
+    "parser pliku kolejki z tytułem z komórki z importu prywatnej nazwy": """from rozliczenia.centrum.outbox import NewIssue, Post, _target
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = _target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
 }
 
 
@@ -360,15 +368,16 @@ def wysylka(komorka: str) -> str:
 """,
         'Missing positional argument "proof"',
     ),
-    "prywatne pole pamięci: wyczyszczenie zapamiętanych wartości": (
-        """from rozliczenia.client_data import ForbiddenValues, guarded
+    "prywatna tabela wartości pamięci: wyczyszczenie zapamiętanych wartości": (
+        """from rozliczenia import client_data
+from rozliczenia.client_data import ForbiddenValues, guarded
 
 
 def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    pamiec._columns.clear()
+    client_data._WORDS[pamiec].columns.clear()
     return guarded(pamiec, komorka, "treść").text
 """,
-        "Private member accessed: `_columns`",
+        "Private member accessed: `_WORDS`",
     ),
 }
 
@@ -384,11 +393,11 @@ from rozliczenia.dad_files import DadFiles
 def wysylka(komorka: str) -> str:
     return guarded(cast(ForbiddenValues, DadFiles().forbidden), komorka, "treść").text
 """,
-    "prywatne pole pamięci: podmiana slotu przez object.__setattr__": """from rozliczenia.client_data import ForbiddenValues, guarded
+    "prywatna tabela wartości pamięci z importu prywatnej nazwy": """from rozliczenia.client_data import _WORDS, ForbiddenValues, guarded
 
 
 def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    object.__setattr__(pamiec, "_columns", {})
+    _WORDS[pamiec].columns.clear()
     return guarded(pamiec, komorka, "treść").text
 """,
 }
@@ -631,7 +640,7 @@ def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
     tekst = guarded(pamiec, "Postęp.", "postęp Wyceny w efenix").text
 
     class Obca:
-        __slots__ = ("_columns", "_lengths", "_lock")
+        __slots__ = ("__weakref__",)
 
         def guard(self, text: str, place: str) -> Guarded:
             return Guarded(tekst, (komorka,))
