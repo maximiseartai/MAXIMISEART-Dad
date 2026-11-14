@@ -76,6 +76,8 @@ RULE_GUARDS = frozenset(
     tests/test_jeden_zapis_skoroszytu.py
     tests/test_ksztalt_bramki.py
     tests/test_kwarantanna.py
+    tests/test_granice_wyjatkow.py::test_kazde_noqa_ma_powod_na_linii
+    tests/test_granice_wyjatkow.py::test_liczba_tlumien_w_kazdym_katalogu_jest_rowna_zapisanej
     tests/test_mapy_funkcji.py
     tests/test_miejsce_skilli.py
     tests/test_mutacje_skilli.py::test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen
