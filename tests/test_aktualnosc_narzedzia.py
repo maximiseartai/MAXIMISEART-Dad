@@ -354,6 +354,35 @@ def _client_hello(server: socket.socket) -> bytes:
     return data
 
 
+_ALPN_EXTENSION = 16
+
+
+def _alpn_protocols(hello: bytes) -> list[bytes] | None:
+    """Protokoły rozszerzenia ALPN z rekordu ClientHello ``hello`` w kolejności klienta; ``None`` bez tego rozszerzenia.
+
+    Układ ClientHello (RFC 8446, 4.1.2): nagłówek rekordu (5 bajtów), nagłówek wiadomości (4), wersja (2), losowe (32),
+    identyfikator sesji, szyfry i kompresje z długością, a po nich rozszerzenia z długością."""
+
+    position = 5 + 4 + 2 + 32
+    position += 1 + hello[position]
+    position += 2 + int.from_bytes(hello[position : position + 2], "big")
+    position += 1 + hello[position]
+    end = position + 2 + int.from_bytes(hello[position : position + 2], "big")
+    position += 2
+    while position < end:
+        kind = int.from_bytes(hello[position : position + 2], "big")
+        length = int.from_bytes(hello[position + 2 : position + 4], "big")
+        data = hello[position + 4 : position + 4 + length]
+        if kind == _ALPN_EXTENSION:
+            protocols, index = [], 2
+            while index < len(data):
+                protocols.append(data[index + 1 : index + 1 + data[index]])
+                index += 1 + data[index]
+            return protocols
+        position += 4 + length
+    return None
+
+
 def test_kontekst_tls_centrum_proponuje_serwerowi_tylko_http_1_1_jak_kontekst_ktory_urllib_tworzy_sam(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -370,7 +399,7 @@ def test_kontekst_tls_centrum_proponuje_serwerowi_tylko_http_1_1_jak_kontekst_kt
             opener().open(f"https://127.0.0.1:{server.getsockname()[1]}/", timeout=30)
         thread.join(30)
 
-    assert b"\x08http/1.1" in hello[0]
+    assert _alpn_protocols(hello[0]) == [b"http/1.1"]
 
 
 def test_sprawdzenia_wydan_i_health_wczytuja_certyfikaty_systemu_najwyzej_raz_na_proces(monkeypatch: pytest.MonkeyPatch) -> None:

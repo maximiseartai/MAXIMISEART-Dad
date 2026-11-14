@@ -31,6 +31,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
   Hand-written parsers that grew by listing bad forms failed review 15 times on 7 PRs in October 2026 (#496, #624, #636, #648).
 - A gate or a checker passes only on the result it expects: it lists the units it must see, and a missing unit, a crash or any other outcome is a failure (#445, #479, #554, #667).
 - A best-effort step (a cleanup, a kill with a deadline, a notification) returns and records its failure, and never raises into its caller (#447, fixed in #458).
+- A Centrum rozliczeń feature that is switched off (its start date or setting missing) leaves no trace: no Centrum log entry and no file in `config/`, because tests and the `verify-centrum-rozliczen` drive check that both stay untouched (#1372, #1375).
 - When a change adds a new way to do something, it moves every caller to it and deletes the old way.
 
 | Rule | Guard |
