@@ -1534,9 +1534,13 @@ def jak_logi(logi: Post, inna: Post) -> Post:
     "etykieta z modułu przypisanego innej nazwie poza importem": """\
 from rozliczenia.centrum import comment_versions
 from rozliczenia.centrum.outbox import PeriodThread
+from rozliczenia.client_data import Outgoing
 
 WERSJE = comment_versions
-WATEK = PeriodThread(label=WERSJE.LABEL, line="-", closed="reuse", title="t")
+
+
+def watek(wiersz: Outgoing, tytul: Outgoing) -> PeriodThread:
+    return PeriodThread(label=WERSJE.LABEL, line=wiersz, closed="reuse", title=tytul)
 """,
     "post_of pod nazwą złożoną w trakcie działania": """\
 from rozliczenia.centrum import comment_versions
