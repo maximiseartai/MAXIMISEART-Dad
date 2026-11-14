@@ -11,6 +11,31 @@
   Jednostka musi przejść zaraz po starcie części albo po każdej wcześniejszej jednostce, bo noc na `main` uruchamia każdą część każdej liczby do n (`LICZY NOC`), a pull request części jednej liczby, którą wybiera plan.
 - Znane ustalenie skilla `verify-*` (`KNOWN_FINDINGS` eksploratora albo znane naruszenie modelu TLA+) wybacza jedną wąską przyczynę, a skrypt mutacji ma na nie dwie mutacje: usunięcie tylko tej przyczyny daje `ZNALEZISKO ZNIKNĘŁO` tylko dla niego, a ta sama szkoda z innej przyczyny `NOWE NARUSZENIE` (#1341, #1343, #1345).
 
+## Cotygodniowe utrzymanie skilli weryfikacji
+
+Zadanie T3 uruchamia raz w tygodniu `/pstack:maintain-verification-skill` dla dwóch skilli, które samo nazywa: skillu procesów (skrypt maszynowy `tools/uruchom_proces.py`) i skillu Centrum (napęd przeglądarki).
+Ta sekcja mówi, czego skill pstack nie wie o tym repo.
+
+- Pracuj we własnym worktree z `origin/main` (`git worktree add ~/.t3/worktrees/MAXIMISEART-Dad/utrzymanie-<data> origin/main`), a notatki przebiegu trzymaj w `~/.t3/notes/utrzymanie-skilli/<data>/`.
+  Główny checkout i inne worktree należą do innych wątków.
+- Skill procesów idzie pierwszy.
+  Centrum uruchamia te same procesy (ADR 0010), więc dryf procesu znaleziony w nim tłumaczy porażkę Centrum, zanim weźmiesz ją za dryf ekranu.
+- Przebieg na żywo skillu procesów: `run_verification.py --variant all` na boxie (skill `boat-offload`).
+  Warianty z prawdziwymi Wzorcami biegną tylko na Macu, bo Wzorce z `config/` nie opuszczają Maca.
+  Ich `VERIFY SKIP` to `verified-unreachable` z warunkiem „Wzorce w `config/`”.
+- Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo inne wątki też go prowadzą.
+  `--feature all` to jeden bieg po kolei.
+  Napęd ma tylko atrapy (Atrapa efenix, atrapa skrzynki) i dane syntetyczne.
+  Sekcja `Real mailbox` w `wpisanie-raportow` należy do Maksa i nie wchodzi do przebiegu.
+  `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor” (`tools/quiet_machine.py`).
+- Dryf mapy w tym repo to także zdanie o tym, czego bieg nie sprawdza, bez nazwy testu, który to trzyma.
+  Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza.
+- Wynik `changed` to jeden PR dla obu skilli (commit na skill, w opisie `Część #1597`), zwykłą drogą z `AGENTS.md`.
+  Przebieg kończy się na otwartym PR.
+  Błąd produktu idzie do raportu z plikiem, linią i dowodem, poza PR.
+- Ostatnia linia przebiegu, którą czyta Maks: `clean`, `changed <URL PR>` albo `blocked <skill>: <powód>`.
+  Gdy jeden skill zablokował, a drugi dał PR, dopisz jego URL.
+
 ## Co wyrocznia bierze z `src`
 
 - Wyrocznia skilla (skrypt `verify-*`, eksplorator, narzędzie w `tools/`) bierze z `src` mechanikę wewnętrzną tylko przez publiczny punkt obserwacji: publiczną nazwę modułu, metodę stanu (`Outbox.state`, `KeyedBox.state`) albo szew konstruktora (`QueueDisk`, `start`, `CentrumLog(append=…)`, `intermax_replace.Disk`).
