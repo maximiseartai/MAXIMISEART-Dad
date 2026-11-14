@@ -226,7 +226,7 @@ MUTATIONS = (
         "Kopia nadpisuje Kopię o tej samej nazwie, a zajęta nazwa nie zatrzymuje",
         (
             Edit(REPLACE, "os.O_WRONLY | os.O_CREAT | os.O_EXCL", "os.O_WRONLY | os.O_CREAT | os.O_TRUNC"),
-            Edit(REPLACE, "                taken = disk.exists(copy.path)  #", "                taken = disk.exists(copy.path) and False  #"),
+            Edit(REPLACE, "                taken = disk.exists(copy.path)\n", "                taken = disk.exists(copy.path) and False\n"),
         ),
         EXPLORER,
         "udane drugie przywrócenie w tej samej sekundzie nadpisuje Kopię stanu sprzed pierwszego",

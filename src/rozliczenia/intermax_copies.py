@@ -21,11 +21,12 @@ from .tool_files import TOOL_ROOT
 
 KEPT: Final = 10
 Before = Literal["ordering", "restore"]
-# Słowa z nazwy Kopii, które karta Kopii pokazuje tacie; nazwy Kopii u taty z nich powstały, więc się nie zmieniają.
 _BEFORE: Final[Mapping[Before, str]] = {
     "ordering": "przed uporządkowaniem",
     "restore": "przed przywróceniem",
 }
+"""Słowa z nazwy Kopii, które karta Kopii pokazuje tacie; nazwy Kopii u taty z nich powstały, więc się nie
+zmieniają."""
 _BEFORE_OF_WORDS: Final = {words: before for before, words in _BEFORE.items()}
 _NAME: Final = re.compile(
     rf"INTERMAX ({'|'.join(map(re.escape, _BEFORE.values()))}) (\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}-\d{{2}}-\d{{2}})\.xlsx"
@@ -53,12 +54,15 @@ def default_directory() -> Path:
 
 
 def _copy(path: Path) -> Copy | None:
+    """Kopia z nazwy pliku ``path``; ``None`` dla nazwy spoza wzoru i dla nazwy z nieistniejącą datą albo godziną,
+    bo takiej nazwy narzędzie nie nadaje."""
+
     found = _NAME.fullmatch(path.name)
     if found is None:
         return None
     try:
         moment = datetime.strptime(found[2], _MOMENT).astimezone()
-    except ValueError:  # nazwa z nieistniejącą datą albo godziną nie pochodzi od narzędzia
+    except ValueError:
         return None
     return Copy(path, moment, _BEFORE_OF_WORDS[found[1]])
 

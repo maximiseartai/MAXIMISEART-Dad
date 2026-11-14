@@ -112,9 +112,6 @@ _HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 
 
-# --- rozpoznanie arkuszy zleceń ----------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class NoOrderSheet:
     """Żaden arkusz nie ma w wierszu 1 większości wymaganych nagłówków ``COLUMNS``."""
@@ -190,9 +187,6 @@ def _duplicated(values: Sequence[object]) -> tuple[str, ...]:
         for column in COLUMNS
         if sum(normalized.count(name) for name in set(map(normalize_text, column.register_headers))) > 1
     )
-
-
-# --- odczyt -------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -542,9 +536,6 @@ def _values(facts: RowFacts) -> dict[int, object]:
     return {column: cell.value for column, cell in facts.cells.items()}
 
 
-# --- obiektyw okresu ----------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class RegisterSheet:
     """Arkusz zleceń w Odczycie danych Przygotowania: wiersze z danymi i numery całkowicie pustych wierszy z odczytanego
@@ -554,7 +545,8 @@ class RegisterSheet:
     register_rows: tuple[RegisterRow, ...]
     """Wiersze z danymi; komórki pod nagłówkiem docelowym."""
     empty_rows: tuple[int, ...]
-    _positions: tuple[int, ...]  # numery kolumn ``COLUMNS`` w arkuszu (od 1)
+    _positions: tuple[int, ...]
+    """Numery kolumn ``COLUMNS`` w arkuszu (od 1)."""
 
     def column_letter(self, column: Column) -> str:
         """Litera kolumny arkusza z nagłówkiem ``column``, np. ``L`` dla ``SKUTECZNE``."""
@@ -596,17 +588,22 @@ class _Window:
     rows: tuple[_WindowRow, ...]
 
 
-# Centrum robi Podgląd, a potem RUN tego samego okresu w jednym procesie. Okno zależy tylko od bajtów Rejestru, arkuszy
-# zleceń i okresu, więc niezmieniony Rejestr nie jest drugi raz zawężany ani parsowany, a zmieniony jest czytany od nowa.
-# Uruchomienia w różnych wątkach dostają ten sam wynik, więc jest z krotek, zamrożonych dataclass i map w
-# ``MappingProxyType``. Wyjątek to wypełnienie i kolor Wyróżnień: obiekty openpyxl, których nie da się zamrozić, więc
-# Zapis nakłada tylko ich kopie (``Highlights.font_over``, ``Highlights.fill_over``, ``RowLook``).
 @lru_cache(maxsize=2)
 def _period_read(
     path: Path, content: bytes, sheets: _SheetsKey, epoch: datetime, period: SettlementPeriod
 ) -> tuple[_Window, ...]:
-    # Liczba dni od początku systemu dat skoroszytu (1900 albo 1904), z dniem zapasu z obu stron: openpyxl
-    # zaokrągla część dnia do milisekund. Wiersz zakresu z datą spoza przedziału czytający i tak pomija.
+    """Okna arkuszy zleceń okresu ``period`` z bajtów Rejestru ``content``, zawężonych do dni okresu.
+
+    Centrum robi Podgląd, a potem RUN tego samego okresu w jednym procesie. Okno zależy tylko od bajtów Rejestru,
+    arkuszy zleceń i okresu, więc niezmieniony Rejestr nie jest drugi raz zawężany ani parsowany, a zmieniony jest
+    czytany od nowa. Uruchomienia w różnych wątkach dostają ten sam wynik, więc jest z krotek, zamrożonych dataclass i
+    map w ``MappingProxyType``. Wyjątek to wypełnienie i kolor Wyróżnień: obiekty openpyxl, których nie da się
+    zamrozić, więc Zapis nakłada tylko ich kopie (``Highlights.font_over``, ``Highlights.fill_over``, ``RowLook``).
+
+    Zawężenie liczy dni od początku systemu dat skoroszytu (1900 albo 1904) z dniem zapasu z obu stron, bo openpyxl
+    zaokrągla część dnia do milisekund; wiersz zakresu z datą spoza przedziału czytający i tak pomija.
+    """
+
     day = timedelta(days=1)
     low, high = ((moment - epoch) / day for moment in (period.start - day, period.end + day))
     dates = {name: columns[COLUMNS.index(DATE)] for name, columns, _ in sheets}
@@ -716,9 +713,6 @@ def _forbidden_positions(positions: Mapping[Column, int]) -> tuple[tuple[client_
 
 def _value_at(values: Sequence[object], column: int) -> object:
     return values[column - 1] if 1 <= column <= len(values) else None
-
-
-# --- wartości komórek ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)

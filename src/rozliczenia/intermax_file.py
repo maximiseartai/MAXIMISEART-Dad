@@ -86,7 +86,8 @@ from .workbook_parts import (
 
 __all__ = ["Cells", "check", "check_cells", "ordered", "with_cells"]
 
-_DATE_FORMAT: Final = 22  # m/d/yy h:mm, format daty uporządkowanych dni
+_DATE_FORMAT: Final = 22
+"""Wbudowany format liczby 22 (m/d/yy h:mm): format daty uporządkowanych dni."""
 _BLACK: Final = "FF000000"
 
 _FORMULA = re.compile(rb"<f[\s>/]")
