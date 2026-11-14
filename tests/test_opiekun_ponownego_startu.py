@@ -100,6 +100,41 @@ def test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_kart
     assert (arguments.port, arguments.no_browser, arguments.bez_okienek) == (47811, True, True)
 
 
+def test_opiekun_z_kopii_nie_wczytuje_modulu_z_katalogu_roboczego_ani_nie_zapisuje_w_kopii_pycache(
+    tmp_path: Path,
+) -> None:
+    # Katalog roboczy opiekuna to katalog narzędzia; moduł o nazwie biblioteki standardowej w nim zostawia ślad.
+    root = tmp_path / "narzedzie"
+    root.mkdir()
+    loaded = tmp_path / "modul-z-katalogu-roboczego"
+    (root / "argparse.py").write_text(
+        f"import pathlib\npathlib.Path({str(loaded)!r}).touch()\nraise SystemExit(3)\n", encoding="utf-8"
+    )
+    work = tmp_path / "praca"
+    work.mkdir()
+    copy = prepare(work)
+    restart = Restart(
+        port=free_port(),
+        before="1" * 40,
+        after="2" * 40,
+        root=root,
+        result=tmp_path / RESULT_FILE,
+        installed=False,
+        work=work,
+    )
+
+    guardian = launch(copy, restart)
+    try:
+        wait_for(lambda: restart.result.exists() or guardian.poll() is not None, 30)
+    finally:
+        guardian.kill()
+        guardian.wait()
+
+    assert not loaded.exists()
+    assert read_result(restart.result) == UpdateResult(UPDATED, restart.before, restart.after, installed=False)
+    assert sorted(path.relative_to(copy).as_posix() for path in copy.rglob("__pycache__")) == []
+
+
 def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> None:
     # Cofnięcie Aktualizacji startuje starą wersję na plikach, które zostawiła nowa (ADR 0009), więc nazwy przypina literał.
     files = {
@@ -617,6 +652,51 @@ def test_gdy_po_cofnieciu_bez_portu_centrum_ze_skrotu_juz_dziala_opiekun_konczy_
     assert repository.head() == before
     assert health["commit"] == before[:7]
     assert read_result(result) == UpdateResult(NEW_VERSION_FAILED, before, newest, False)
+
+
+def test_gdy_stare_centrum_odda_port_dopiero_w_trakcie_cofania_opiekun_sam_startuje_stara_wersje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(restart_guardian, "PORT_TIMEOUT_S", 0.2)
+    repository = centrum_tool_repository(tmp_path / "repozytoria")
+    clone = repository.clone
+    before = repository.head()
+    newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
+    assert ToolClone(clone, origin=str(repository.origin)).update().code == UPDATED
+    work = tmp_path / "praca"
+    work.mkdir()
+    result = clone / "config" / RESULT_FILE
+    dialogs: list[tuple[str, str]] = []
+    held = socket.socket()  # stare Centrum zamyka się dłużej niż PORT_TIMEOUT_S
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    port = held.getsockname()[1]
+    roll_back = ToolClone.roll_back
+
+    def port_released_during_roll_back(self: ToolClone) -> None:
+        roll_back(self)
+        held.close()
+
+    monkeypatch.setattr(ToolClone, "roll_back", port_released_during_roll_back)
+    try:
+        code = main(
+            Restart(port, before, newest, clone, result, False, work).arguments(),
+            show_problem=lambda title, text: dialogs.append((title, text)),
+        )
+        health = centrum_health(port, timeout_s=5)
+        view = _get(port, "/api/tool-update")
+    finally:
+        held.close()
+        _close_if_running(port)
+
+    assert code == 0
+    assert dialogs == []
+    assert repository.head() == before
+    assert health["commit"] == before[:7]
+    assert (view["state"], view["after_restart"]) == ("failed", True)
+    assert not result.exists()
+    starts = [line.split(" ", 1)[1] for line in _log_lines(clone) if line.split(" ", 2)[1] == "start"]
+    assert starts == [f"start port={port} wersja={before[:7]} konsola=nie"]
 
 
 def test_gdy_cofniecie_sie_nie_uda_wynik_nie_mowi_o_poprzedniej_wersji_a_tata_widzi_jedno_okienko(
