@@ -340,8 +340,8 @@ class Rank(IntEnum):
     Stopień wybiera nadawca, a nie zegar komputera. Logi Uruchomienia (``run_logs``) mają trzy: postęp Wyceny w efenix
     (``DRAFT``), wersję zastępczą, którą start Centrum odtwarza z dziennika Wyceny (``STAND_IN``: Logi z pliku, Logi
     Urwanego Uruchomienia albo wynik bez Logów), i Logi z pracy Centrum Uruchomienia (``OWN``: z wynikiem, z Diagnozą).
-    Każda inna wysyłka ma ``OWN``, tak jak wersja bez stopnia, którą zapisało starsze Centrum: żadne Wydanie nie
-    wysyłało postępu ani Logów z dziennika.
+    Każda inna wysyłka ma ``OWN``, tak jak plik kolejki bez stopnia (``rank``), który zapisało Wydanie starsze niż
+    v0.5.0: żadne z tych Wydań nie wysyłało postępu ani Logów z dziennika.
     """
 
     DRAFT = 0
@@ -363,7 +363,8 @@ class Version:
     @property
     def text(self) -> str:
         """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer,
-        jak wersja bez stopnia, a niższy stopień z numerem stopnia przed nimi (``1:20261105T063021123456Z-0001``)."""
+        jak tekst wersji, zanim powstały stopnie, a niższy stopień z numerem stopnia przed nimi
+        (``1:20261105T063021123456Z-0001``)."""
 
         return self.name if self.rank is Rank.OWN else f"{self.rank.value}:{self.name}"
 
@@ -599,11 +600,13 @@ def _target(entry: dict[str, Any], kind: object) -> Target | None:
 
 
 def _parse(text: str) -> _Queued | None:
-    """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: najstarsze pliki go nie mają i nic nie dostarczyły.
+    """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: pliki pierwszej wersji kolejki,
+    sprzed jej pierwszego Wydania (v0.1.1), go nie mają i nic nie dostarczyły.
 
-    Starsze pliki mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
-    znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki schematu 1 i 2
-    nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: starsze pliki go nie mają i mają ``OWN``.
+    Pliki Wydań od v0.4.0 do v0.4.3 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki
+    znajduje po znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki
+    schematu 1 i 2 nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: pliki Wydań starszych niż
+    v0.5.0 go nie mają i mają ``OWN``.
     Stan słuchacza (``state``) i nagłówek ``OpenIssue.again`` są opcjonalne: pliki sprzed ``OpenIssue`` ich nie mają.
 
     Te odczyty są dla plików, które Centrum starszej wersji zostawiło w kolejce taty, bo ich nie wysłało (brak tokenu,
