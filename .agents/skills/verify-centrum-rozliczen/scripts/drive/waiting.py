@@ -1,8 +1,13 @@
-"""The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
-drive's ``expect`` of Playwright, whose assertions wait a budget too, the drive's one quiet: a time in which the page
-runs with nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file
-the server holds open (``while_open``, for the file helpers of ``drive/common.py``). Ruff refuses ``time.sleep`` in the
-rest of ``drive/``.
+"""The drive's one way to wait until a condition holds (``until``), the budgets that limit a wait, and the drive's
+``expect`` of Playwright, whose assertions wait a budget too, the drive's one quiet: a time in which the page runs with
+nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file the
+server holds open (``while_open``, for the file helpers of ``drive/common.py``).
+
+What refuses another way: ruff ``TID251`` (``drive/ruff.toml``) refuses ``time.sleep`` in every file of ``drive/`` but
+this one and ``drive/common.py``, which ``per-file-ignores`` frees from all of ``TID251``; in ``drive/common.py`` the
+test of ``OWNERS`` in ``tests/test_zakazy_ruff.py`` refuses it. ``tests/test_limit_drive_centrum.py`` refuses a
+function outside this file that hands ``until`` a condition it took as a parameter: a second way to wait, wrapped
+around this one. What neither sees stands in ``ZNANE_LUKI_SNU`` and ``ZNANE_LUKI_CZEKANIA`` of those tests.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -126,7 +131,7 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
     """Read ``ready`` until it gives something other than ``None`` or ``False``, and return that; ``what`` names it.
 
     An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
-    ``budget`` (a number of seconds is a limit that a call of ``Run.wait_for`` still names itself) the wait fails with
+    ``budget`` (or a number of seconds, which only the tests of the wait pass) the wait fails with
     ``TimedOut``, naming the error of ``NOT_YET`` the last read raised, if it raised one, so a file that stays half
     written is a failure that names its state.
 

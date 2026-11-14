@@ -25,7 +25,7 @@ from playwright.sync_api import Browser, BrowserContext, ConsoleMessage, FloatRe
 import yaml
 
 from drive import feature
-from drive.waiting import LATE_WRITE_MS, Budget, TimedOut, expect, quiet_for, until, while_open
+from drive.waiting import LATE_WRITE_MS, Budget, expect, quiet_for, until, while_open
 from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -229,16 +229,6 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: Budget | float = Budget.SCREEN) -> None:
-        """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
-        yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
-
-        try:
-            until(lambda: bool(condition()), message, timeout_s)
-        except TimedOut as timed_out:
-            check_clock_alarm(self)
-            raise DriveFailure(str(timed_out)) from timed_out
-
 
 # The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).
 NARROW_WINDOW_PX = 768
@@ -247,7 +237,7 @@ NARROW_WINDOW_PX = 768
 # Whether the element's centre takes a click: the topmost element there is the element or part of it, so nothing (the
 # blurred page, another window, a notification) stands over it. One read is the page at that moment, which is the check
 # when even a short cover is the defect (a notification over „Wyślij”); an element that slides in, like a notification,
-# is visible before its centre is clear, so wait for it with `Run.wait_for` (#1518).
+# is visible before its centre is clear, so wait for it with `until` (#1518).
 CENTRE_TAKES_CLICK = """element => {
     const box = element.getBoundingClientRect()
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
@@ -918,7 +908,7 @@ def finished_view(
 
     ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
     for the tab's request, so the server can still show the one before it as finished, and only another id is the new
-    Uruchomienie. ``timeout_s`` is the wait for the end (``Run.wait_for``)."""
+    Uruchomienie. ``timeout_s`` is the budget of the wait for the end (``until``)."""
 
     # One answer for both the state and the result: a second read could already see the next Uruchomienie.
     seen: dict[str, Any] = {}

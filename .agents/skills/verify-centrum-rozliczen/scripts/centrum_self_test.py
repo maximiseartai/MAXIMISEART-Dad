@@ -970,7 +970,8 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
 
 def _check_clock_alarm_failure(errors: list[str]) -> None:
     """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
-    next ``advance_clock`` and at a wait that times out, instead of waiting for a wake-up that never fires (#1124)."""
+    next ``advance_clock`` instead of waiting for a wake-up that never fires (#1124). A wait that times out names the
+    dead clock in ``drive()`` of ``drive_centrum.py``, which ``tests/test_podstawa_w_czesciach.py`` checks."""
 
     import contextlib
     import io
@@ -1001,7 +1002,6 @@ def _check_clock_alarm_failure(errors: list[str]) -> None:
                 return
             steps: dict[str, Callable[[], None]] = {
                 "advance_clock": lambda: advance_clock(run, 1, "the self-test moves a dead clock"),
-                "Run.wait_for": lambda: run.wait_for(lambda: False, "a wake-up of a dead clock", timeout_s=0.1),
             }
             failures: list[str] = []
             with contextlib.redirect_stdout(io.StringIO()):

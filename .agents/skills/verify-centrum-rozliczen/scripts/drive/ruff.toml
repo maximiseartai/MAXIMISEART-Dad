@@ -70,4 +70,4 @@ extend = "../../../../../pyproject.toml"
 "pathlib.WindowsPath.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
 # A fixed sleep waits as long on a slow runner as on Maks's Mac, so it ends before the state it waits for (#1539).
 # Forms ruff cannot resolve (a method on an instance, page.wait_for_timeout) are ZNANE_LUKI_SNU of tests/test_zakazy_ruff.py.
-"time.sleep".msg = "czekaj przez drive/waiting.py: na stan przez until (albo Run.wait_for), ciszę strony przez quiet_for, a spóźnioną odpowiedź trasy z jej uchwytu przez answer_late"
+"time.sleep".msg = "czekaj przez drive/waiting.py: na stan przez until, ciszę strony przez quiet_for, a spóźnioną odpowiedź trasy z jej uchwytu przez answer_late"
