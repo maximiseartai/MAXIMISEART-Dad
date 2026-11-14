@@ -198,8 +198,10 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
     Maskowanie i uwagi techniczne daje tylko ``guard``, więc nie ma podklas ani podmiany metody na pamięci: mypy odrzuca
     ``class`` (``final``), metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także
     ``type()`` i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą
-    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
-    przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
+    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Odbiorcy w
+    ``src`` wołają strażnika przez ``guarded`` i ``guarded_number``, które tuż przed wywołaniem odmawiają obiektu innego
+    typu niż dokładnie ``ForbiddenValues`` (``_memory``). Postaci, które przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG``
+    i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
 
     __slots__ = ("_columns", "_lengths", "_lock")
@@ -290,6 +292,28 @@ def empty_memory() -> ForbiddenValues:
     """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
 
     return ForbiddenValues(_PASSED)
+
+
+def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
+    """``forbidden.guard(text, place)`` dla każdego odbiorcy pamięci w ``src``, z odmową obiektu innego typu (``_memory``)."""
+
+    return _memory(forbidden).guard(text, place)
+
+
+def guarded_number(forbidden: ForbiddenValues, value: int | float, place: str) -> Guarded | None:
+    """``forbidden.guard_number(value, place)`` dla każdego odbiorcy pamięci w ``src``, z odmową jak ``guarded``."""
+
+    return _memory(forbidden).guard_number(value, place)
+
+
+def _memory(forbidden: ForbiddenValues) -> ForbiddenValues:
+    """Pamięć tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa albo owijka
+    podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo jego ``guard``
+    dałby własne maskowanie i uwagi techniczne."""
+
+    if type(forbidden) is not ForbiddenValues:
+        raise TypeError(f"Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie {type(forbidden).__name__}.")
+    return forbidden
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:

@@ -500,37 +500,106 @@ class Pamiec(ForbiddenValues):
     ),
 }
 
-# Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
-# komorka)`` daje przez guard_text uwagę techniczną z wartością komórki, a ruff, mypy i bieg go nie zatrzymują.
-ZNANE_LUKI_UWAG: Final = {
-    "typ Any: atrapa pamięci z własną metodą guard": """from typing import Any
+# Pamięć, której typ nie jest dokładnie ForbiddenValues, u odbiorcy pamięci (przegląd #1704, runda 1, W1): moduł próbki
+# ma ``wyciek(pamiec, komorka)``, które daje odbiorcy taki obiekt, a właściciel (client_data.guarded) odmawia go tuż
+# przed wywołaniem strażnika.
+_ATRAPA_PAMIECI: Final = """
+
+class Atrapa:
+    def __init__(self, pamiec: ForbiddenValues, komorka: str) -> None:
+        self.pamiec = pamiec
+        self.komorka = komorka
+
+    def guard(self, text: str, place: str) -> Guarded:
+        return Guarded(self.pamiec.guard(text, place).text, (self.komorka,))
+
+    def guard_number(self, value: int | float, place: str) -> Guarded:
+        return self.guard(str(value), place)
+"""
+ODMOWY_UWAG: Final = {
+    "cast: atrapa pamięci w guard_text": """from typing import cast
 
 from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenValues, Guarded
-
+"""
+    + _ATRAPA_PAMIECI
+    + """
 
 def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
-    def guard(self: object, text: str, place: str) -> Guarded:
-        return Guarded(pamiec.guard(text, place).text, (komorka,))
+    return guard_text("Postęp.", "postęp Wyceny w efenix", cast(ForbiddenValues, Atrapa(pamiec, komorka))).text
+""",
+    "cast: owijka prawdziwej pamięci w note_issue": """from typing import cast
 
-    atrapa: Any = type("Atrapa", (), {"guard": guard})()
+from rozliczenia.centrum.dad_notes import note_issue
+from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    return note_issue("Tytuł", "Treść.", None, None, cast(ForbiddenValues, Atrapa(pamiec, komorka))).body
+""",
+    "cast: atrapa pamięci w guard_logs": """from typing import cast
+
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    logi = RunLog.model_validate(
+        {
+            "schema_version": 1, "run_id": "20261023-204720-settlement", "process": "settlement", "mode": "zapis",
+            "period": "08_14_09_2026", "started_at": "2026-10-23T20:47:20Z", "ended_at": "2026-10-23T20:47:21Z",
+            "duration_ms": 10, "tool": {"wydanie": None, "commit": "3c1d0a9"}, "result": "OK", "ending": "finished",
+            "stop_kind": None, "issue_count": 0, "messages": [], "technical_notes": ["Uwaga narzędzia."], "summary": None,
+            "phases": [], "templates": [], "environment": {"system": "Windows-11", "python": "3.12.10", "files": None},
+            "trace": None, "diagnosis": None,
+        }
+    )
+    return guard_logs(logi, cast(ForbiddenValues, Atrapa(pamiec, komorka))).text
+""",
+    "cast: atrapa pamięci w guarded_number": """from typing import cast
+
+from rozliczenia.client_data import ForbiddenValues, Guarded, guarded_number
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    znaleziony = guarded_number(cast(ForbiddenValues, Atrapa(pamiec, komorka)), 4801234567, "komórka L6")
+    return "" if znaleziony is None else znaleziony.text + "".join(znaleziony.notes)
+""",
+    "typ Any: atrapa pamięci w guard_text": """from typing import Any
+
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    atrapa: Any = Atrapa(pamiec, komorka)
     return guard_text("Postęp.", "postęp Wyceny w efenix", atrapa).text
 """,
-    'podmiana metody na klasie: setattr(ForbiddenValues, "guard", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
+    "cast: atrapa z __class__ ForbiddenValues, którą bierze isinstance": """from typing import cast
+
+from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+class Przebrana(Atrapa):
+    @property
+    def __class__(self) -> type:
+        return ForbiddenValues
 
 
 def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
-    straznik = ForbiddenValues.guard
-
-    def guard(self: ForbiddenValues, text: str, place: str) -> Guarded:
-        return Guarded(straznik(self, text, place).text, (komorka,))
-
-    setattr(ForbiddenValues, "guard", guard)
-    try:
-        return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec).text
-    finally:
-        setattr(ForbiddenValues, "guard", straznik)
+    return guard_text("Postęp.", "postęp Wyceny w efenix", cast(ForbiddenValues, Przebrana(pamiec, komorka))).text
 """,
     "refleksja: przypisanie __class__ obcej klasy z tymi samymi slotami": """from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenValues, Guarded
@@ -566,11 +635,85 @@ def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
     def init(self: object) -> None:
         pass
 
-    pamiec_z_uwaga: Any = type.__new__(type(ForbiddenValues), "Pamiec", (Mixin, ForbiddenValues), {"__init__": init, "guard": guard})
-    return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec_z_uwaga()).text
+    podklasa: Any = type.__new__(type(ForbiddenValues), "Pamiec", (Mixin, ForbiddenValues), {"__init__": init, "guard": guard})
+    return guard_text("Postęp.", "postęp Wyceny w efenix", podklasa()).text
 """,
 }
 
+
+@pytest.mark.parametrize("opis", ODMOWY_UWAG.keys())
+def test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem(opis: str, tmp_path: Path) -> None:
+    plik = tmp_path / "odbiorca.py"
+    plik.write_text(ODMOWY_UWAG[opis], encoding="utf-8")
+
+    with pytest.raises(TypeError, match="Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie "):
+        modul(plik).wyciek(empty_memory(), _KOMORKA)
+
+
+# Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
+# komorka)`` daje tekst z uwagą techniczną z wartością komórki, a ruff, mypy i bieg go nie zatrzymują.
+ZNANE_LUKI_UWAG: Final = {
+    'podmiana metody na klasie: setattr(ForbiddenValues, "guard", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    straznik = ForbiddenValues.guard
+
+    def guard(self: ForbiddenValues, text: str, place: str) -> Guarded:
+        return Guarded(straznik(self, text, place).text, (komorka,))
+
+    setattr(ForbiddenValues, "guard", guard)
+    try:
+        return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec).text
+    finally:
+        setattr(ForbiddenValues, "guard", straznik)
+""",
+    "odbiorca bez właściciela: woła guard na każdym obiekcie, który typ nazywa ForbiddenValues": """from typing import cast
+
+from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    znaleziony = cast(ForbiddenValues, Atrapa(pamiec, komorka)).guard("Postęp.", "postęp Wyceny w efenix")
+    return znaleziony.text + "".join(f"\\n- Uwaga techniczna: {uwaga}" for uwaga in znaleziony.notes)
+""",
+    'podmiana właściciela w module odbiorcy: setattr(run_logs_guard, "guarded", …)': """from rozliczenia.centrum import run_logs_guard
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    wlasciciel = getattr(run_logs_guard, "guarded")
+
+    def podmieniony(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
+        return Guarded(wlasciciel(forbidden, text, place).text, (komorka,))
+
+    setattr(run_logs_guard, "guarded", podmieniony)
+    try:
+        return run_logs_guard.guard_text("Postęp.", "postęp Wyceny w efenix", pamiec).text
+    finally:
+        setattr(run_logs_guard, "guarded", wlasciciel)
+""",
+    'podmiana nazwy w module właściciela: setattr(client_data, "_memory", …)': """from typing import cast
+
+from rozliczenia import client_data
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+"""
+    + _ATRAPA_PAMIECI
+    + """
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    kontrola = getattr(client_data, "_memory")
+    setattr(client_data, "_memory", lambda forbidden: forbidden)
+    try:
+        return guard_text("Postęp.", "postęp Wyceny w efenix", cast(ForbiddenValues, Atrapa(pamiec, komorka))).text
+    finally:
+        setattr(client_data, "_memory", kontrola)
+""",
+}
 
 def _wyciek_w_biegu(plik: Path) -> list[str]:
     """Zgłoszenie biegu próbki: wyjątek albo tekst bez wartości komórki, czyli próbka nie daje uwagi spoza strażnika."""
