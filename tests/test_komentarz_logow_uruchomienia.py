@@ -2740,6 +2740,59 @@ _TEKSTY_POL_NARZEDZIA: Final = list(_teksty_pol_narzedzia(full_logs()))
 """Teksty pól narzędzia pełnych Logów; nowe pole gramatyki albo listy pól narzędzia dostaje tu przypadek samo."""
 
 
+def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
+    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst ma dopisaną komórkę."""
+
+    dump = full_logs().model_dump(mode="json")
+    *droga, ostatni = sciezka
+    miejsce: Any = dump
+    for krok in droga:
+        miejsce = miejsce[krok]
+    narzedzia = miejsce[ostatni]
+    miejsce[ostatni] = f"{narzedzia} {_KOMORKA}"
+    return narzedzia, dump
+
+
+@pytest.mark.parametrize(
+    "pole, sciezka",
+    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR],
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
+)
+def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
+    """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
+    poddrzewie śladu, pasuje do niej, a z dopisaną zapamiętaną komórką już nie: strażnik (``_kept``) i ``tool_text``
+    biorą całą gramatykę, więc początek w gramatyce nie przepuszcza reszty (przegląd #1849, D1)."""
+
+    narzedzia, dump = _z_dopisana_komorka(sciezka)
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+
+    assert TOOL_TEXT_GRAMMAR[pole].fullmatch(narzedzia), narzedzia
+    assert _KOMORKA not in guard_logs(RunLog.model_validate(dump), pamiec).text
+    assert _KOMORKA not in tool_text(pole, f"{narzedzia} {_KOMORKA}")
+
+
+@pytest.mark.parametrize(
+    "pole, sciezka",
+    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole not in TOOL_TEXT_GRAMMAR],
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
+)
+def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje_komorki(pole: str, sciezka: _Sciezka) -> None:
+    """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
+    dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
+
+    _, dump = _z_dopisana_komorka(sciezka)
+
+    with pytest.raises(ValidationError):
+        RunLog.model_validate(dump)
+
+
+def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
+    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst."""
+
+    assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
+
+
 def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
     """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
 
@@ -2851,16 +2904,34 @@ def _separatory_straznika() -> list[str]:
     return [znak for znak in _PROBY if znak.join(_KOMORKA.split()) not in guarded(pamiec, znak.join(_KOMORKA.split()), "").text]
 
 
+_KOMORKI: Final = (_KOMORKA, "7 Lipowa Syntetyczna")
+"""Komórki testów komórki w polu narzędzia: pierwsza zaczyna się literą i kończy cyfrą, druga zaczyna się cyfrą i
+kończy literą, więc dopisek gramatyki z każdą z tych klas na krańcu komórki ma próbkę."""
+
+
+def _pamiec_komorek() -> ForbiddenValues:
+    """Pamięć strażnika, która zna każdą komórkę ``_KOMORKI`` jako ADRES."""
+
+    pamiec = empty_memory()
+    for komorka in _KOMORKI:
+        pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    return pamiec
+
+
 def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
-    """Tekst narzędzia z zapamiętaną komórką zapisaną każdym separatorem strażnika spoza alfabetu pola, wstawioną z
-    przodu, w środku i z tyłu, i zapis komórki w nim."""
+    """Tekst narzędzia z zapamiętaną komórką i zapis komórki w nim: pierwsza komórka ``_KOMORKI`` zapisana każdym
+    separatorem strażnika spoza alfabetu pola, druga spacją; komórka otoczona separatorem z przodu, w środku i z tyłu
+    tekstu oraz komórka na samym początku albo na samym końcu tekstu z separatorem tylko od strony tekstu."""
 
     separatory = [znak for znak in _separatory_straznika() if znak not in ALFABETY[pole]]
     assert " " in separatory
-    for znak in separatory:
-        zapis = znak.join(_KOMORKA.split())
-        for miejsce in (0, len(narzedzia) // 2, len(narzedzia)):
-            yield f"{narzedzia[:miejsce]}{znak}{zapis}{znak}{narzedzia[miejsce:]}", zapis
+    for komorka, znaki in ((_KOMORKI[0], separatory), (_KOMORKI[1], [" "])):
+        for znak in znaki:
+            zapis = znak.join(komorka.split())
+            for miejsce in (0, len(narzedzia) // 2, len(narzedzia)):
+                yield f"{narzedzia[:miejsce]}{znak}{zapis}{znak}{narzedzia[miejsce:]}", zapis
+            yield f"{zapis}{znak}{narzedzia}", zapis
+            yield f"{narzedzia}{znak}{zapis}", zapis
 
 
 def _napisy(wartosc: object) -> Iterator[str]:
@@ -2879,15 +2950,15 @@ def _napisy(wartosc: object) -> Iterator[str]:
 
 @pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
 def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
-    """Zapamiętana komórka zapisana każdym separatorem strażnika spoza alfabetu pola (``_komorki_w_tekscie``: znak
-    zwykły, sterujący, cudzysłów, ukośnik i pozostałe) i wstawiona z przodu, w środku i z tyłu poprawnego tekstu
-    narzędzia nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``. Pada więc ``_kept``, który
-    bierze gramatykę tylko do któregokolwiek separatora albo tylko jej początek (``match``), właściciel pola w poddrzewie
-    bez klasy, lista w poddrzewie bez gramatyki i gramatyka, która przyjmuje komórkę w jednym z tych trzech miejsc.
-    Gramatykę w pozostałych miejscach tekstu sprawdza test alfabetu."""
+    """Zapamiętana komórka z ``_komorki_w_tekscie`` (pierwsza zapisana każdym separatorem strażnika spoza alfabetu
+    pola: znakiem zwykłym, sterującym, cudzysłowem, ukośnikiem i pozostałymi; druga spacją), otoczona separatorem z
+    przodu, w środku i z tyłu poprawnego tekstu narzędzia albo stojąca na samym początku lub końcu tekstu z separatorem
+    od strony tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``. Pada więc ``_kept``,
+    który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek (``match``), właściciel pola
+    w poddrzewie bez klasy i lista w poddrzewie bez gramatyki. Komórki sklejonej z tekstem narzędzia bez separatora test
+    nie wstawia; przy znaku słowa strażnik nie rozpoznaje sklejonego słowa komórki (ADR 0025)."""
 
-    pamiec = empty_memory()
-    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+    pamiec = _pamiec_komorek()
 
     for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
         logi = json.loads(guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text)
@@ -2896,9 +2967,9 @@ def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str,
 
 @pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
 def test_komorka_w_tekscie_narzedzia_nie_wychodzi_bez_maski_z_tool_text(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
-    """Ta sama komórka w tych samych miejscach (``_komorki_w_tekscie``) nie stoi w wyniku ``tool_text``. Pada więc
-    ``tool_text``, który bierze gramatykę tylko do któregokolwiek separatora albo tylko jej początek (``match``), i
-    gramatyka, która przyjmuje komórkę w jednym z tych trzech miejsc."""
+    """Te same teksty z komórką (``_komorki_w_tekscie``) nie dają zapisu komórki w wyniku ``tool_text``. Pada więc
+    ``tool_text``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
+    (``match``)."""
 
     for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
         assert zapis not in tool_text(pole, tekst), repr(tekst)
@@ -2919,23 +2990,7 @@ def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> N
     assert brak == []
 
 
-@pytest.mark.parametrize(
-    "pole, sciezka",
-    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole not in TOOL_TEXT_GRAMMAR],
-    ids=_id,
-)
-def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje_komorki(pole: str, sciezka: _Sciezka) -> None:
-    """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
-    dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
+def test_kazde_pole_gramatyki_ma_alfabet() -> None:
+    """Test alfabetu bierze alfabet pola z ``ALFABETY``, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam alfabet."""
 
-    _, dump = _z_tekstem(sciezka, lambda narzedzia: f"{narzedzia} {_KOMORKA}")
-
-    with pytest.raises(ValidationError):
-        RunLog.model_validate(dump)
-
-
-def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
-    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst i alfabet."""
-
-    assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
-    assert sorted(set(TOOL_TEXT_GRAMMAR) ^ set(ALFABETY)) == [], "każde pole gramatyki ma alfabet w ALFABETY"
+    assert sorted(set(TOOL_TEXT_GRAMMAR) ^ set(ALFABETY)) == []
