@@ -180,7 +180,8 @@ run dir is `.verification` of the checkout, or any path given with `--run-dir`:
   query, status), `doctor.txt`, `drive.txt` (every step and check), `cleanup.txt`, `self-test.txt`;
 - `zadania-strony.txt`: each failed request (not one the page gave up itself), answer of 400 or more and page
   without its stylesheet, of every page of the drive. A page without its stylesheet fails the drive with `the page got no stylesheet`, before the error it
-  caused;
+  caused. CI keeps only the log, so a failed drive also prints each line as `PAGE LOST |` with the server's last `REQUEST`
+  line for its path before it (or `no answered REQUEST`);
 - `screenshots/NN-<step>.png` and `aria/NN-<step>.txt` for each step, captured
   after transitions finish; on failure, also `screenshots/zz-failure.png`.
   `NN` belongs to one feature only (feature files and PRs cite it alone; views of one

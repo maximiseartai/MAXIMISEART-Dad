@@ -39,7 +39,7 @@ def _at(text: str) -> datetime:
 
 
 def _occurrence(pull: int, code: str, when: str, major: str = "W1 r1") -> Occurrence:
-    return Occurrence(code, pull, major, 1, "-", "-", _at(when))
+    return Occurrence(code, pull, major, _at(when))
 
 
 def _rows(text: str, section: str) -> list[str]:
