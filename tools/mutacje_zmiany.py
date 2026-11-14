@@ -1,6 +1,7 @@
 """Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
 
-Psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` z ``tools/lib/szopa.toml`` i sprawdza, że test to zauważa (ADR 0021).
+Psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` z ``tools/lib/szopa.toml`` w ``tools/`` i sprawdza, że test to zauważa
+(ADR 0021); skryptów skilli w ``.agents/skills/*/scripts`` nie psuje, także tych z oznaczeniem ``przepuszcza``.
 
 Zmiana to linie plików ``.py`` z ``src/`` i z tych jednostek, którymi checkout (z niezacommitowanymi i nieśledzonymi
 plikami) różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie ``origin/main``). Na każdej zmienionej linii narzędzie
@@ -101,8 +102,9 @@ nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, 
 ``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
-wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i jednostkami ``przepuszcza``
-(skrypty skilli w ``.agents/skills/*/scripts``, bo zwykle nie biegnie ich żaden test pytest, ``ci.yml``) i kod innego
+wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i jednostkami ``przepuszcza`` w ``tools/``
+(skrypty skilli w ``.agents/skills/*/scripts``, także z oznaczeniem ``przepuszcza``, bo ich zachowanie sprawdza zwykle
+ich własny bieg, a nie test pytest) i kod innego
 systemu łapie tylko przegląd z mutacjami z ``tools/mutacje.py``.
 
 Pod ``tools/na_scalonych_pr.py`` pliki ``tools/``, które ten podmienił narzędziami z checkoutu, nie są zmianą, a zmianę
@@ -232,7 +234,8 @@ def _code(path: str) -> bool:
 
 
 def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
-    """Fragmenty zmiany każdego pliku ``.py`` z ``src/`` i z jednostek ``przepuszcza`` checkoutu ``root``; nowy plik to jeden fragment."""
+    """Fragmenty zmiany każdego pliku ``.py`` z ``src/`` i z jednostek ``przepuszcza`` w ``tools/`` checkoutu ``root``; nowy plik to
+    jeden fragment. Jednostka ``przepuszcza`` spoza ``CODE`` (skrypty skilli w ``.agents/skills/``) nie daje fragmentów."""
 
     found: dict[str, list[Hunk]] = defaultdict(list)
     current: str | None = None

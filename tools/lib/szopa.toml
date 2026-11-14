@@ -3,7 +3,9 @@
 # Klucz to jednostka (plik albo katalog z `/` na końcu), a wartość to jej pliki testów. Plik bez wpisu ma grupę
 # z reguły, więc wpis dostaje jednostka innej grupy niż jej katalog i jednostka szopy, która ma pliki testów.
 # Podtabela `przepuszcza` grupy: jednostki, których fałszywe „OK” przepuszcza zły kod produktu (#1623, #1624); noc mutuje
-# ich pliki `.py` w `tools/` jak `src/`, a reszty `tools/` nie (ADR 0021).
+# ich pliki `.py` w `tools/` jak `src/`, a reszty `tools/` nie (ADR 0021). Skrypty skilli `.agents/skills/verify-*/` mają
+# to oznaczenie z audytu #1623, ale noc ich nie mutuje (`CODE` w `tools/mutacje_zmiany.py`): dla nich oznaczenie mówi
+# tylko, że ich fałszywe „OK” przepuszcza zły kod, a `tools/ci/rozmiar_pr.py` liczy wpis do grupy jego tabeli.
 
 [weryfikacja.przepuszcza]
 ".agents/skills/verify-aktualizacja-narzedzia/" = ["tests/test_model_aktualizacji_narzedzia.py"]

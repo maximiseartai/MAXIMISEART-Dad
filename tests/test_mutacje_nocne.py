@@ -665,19 +665,31 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
     assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
 
 
-# Lista dwóch szop w kształcie ``tools/lib/szopa.toml``: w podtabeli ``przepuszcza`` bramka merge'a (plik) i silnik
-# (katalog), a poza nią pomiar.
-LISTA_ZAKRESU = '[maszyneria]\n"tools/pomiar.py" = []\nprzepuszcza."tools/bramka.py" = []\nprzepuszcza."tools/lib/silnik/" = []\n'
+# Lista dwóch szop w kształcie ``tools/lib/szopa.toml``: w podtabeli ``przepuszcza`` bramka merge'a (plik), silnik
+# (katalog) i skill weryfikacji, a poza nią pomiar.
+LISTA_ZAKRESU = (
+    '[maszyneria]\n"tools/pomiar.py" = []\nprzepuszcza."tools/bramka.py" = []\nprzepuszcza."tools/lib/silnik/" = []\n'
+    '[weryfikacja]\nprzepuszcza.".agents/skills/verify-proba/" = []\n'
+)
 
 
 @pytest.mark.parametrize(
     ("plik", "mutacje"),
-    [("src/pakiet/a.py", 2), ("tools/bramka.py", 2), ("tools/lib/silnik/a.py", 2), ("tools/pomiar.py", 0), ("tools/lib/inny.py", 0)],
-    ids=["src", "jednostka-z-zakresu", "katalog-z-zakresu", "jednostka-spoza-zakresu", "plik-bez-wpisu"],
+    [
+        ("src/pakiet/a.py", 2),
+        ("tools/bramka.py", 2),
+        ("tools/lib/silnik/a.py", 2),
+        ("tools/pomiar.py", 0),
+        ("tools/lib/inny.py", 0),
+        (".agents/skills/verify-proba/scripts/a.py", 0),
+    ],
+    ids=["src", "jednostka-z-zakresu", "katalog-z-zakresu", "jednostka-spoza-zakresu", "plik-bez-wpisu", "skrypt-skilla-z-zakresu"],
 )
 def test_plan_nocy_mutuje_src_i_jednostki_szopy_z_oznaczeniem_przepuszcza_a_reszty_narzedzi_nie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], plik: str, mutacje: int
 ) -> None:
+    """Skrypt skilla z oznaczeniem ``przepuszcza`` też nie dostaje mutacji: noc mutuje tylko ``src/`` i ``tools/`` (ADR 0021)."""
+
     repo = mutation_repository(tmp_path / "repo", {szopa.LISTA: LISTA_ZAKRESU, plik: "def a(x: int) -> bool:\n    return x > 1\n"})
     baza = commit(repo, "baza")
     (repo / plik).write_text("def a(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
