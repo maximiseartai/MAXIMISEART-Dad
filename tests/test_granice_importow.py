@@ -1935,27 +1935,58 @@ SLF001_OWNER: typing.Final = "src/rozliczenia/row_look.py"
 SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    return owner._field\n"
 
 
+def _ruff_settings(path: str, cwd: Path) -> str:
+    """Efektywna konfiguracja ruff dla pliku ``path`` (``ruff check --show-settings``) z katalogu ``cwd``."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-settings", path],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=cwd,
+        check=False,
+    )
+    assert (result.returncode, result.stderr) == (0, ""), result.stderr
+    return result.stdout
+
+
+def _ruff_list(settings: str, key: str) -> list[str]:
+    """Pozycje listy ``key = [`` z wyniku ``--show-settings``, po jednej w linii aż do ``]``, a pusta lista to
+    ``key = []``."""
+
+    lines = settings.splitlines()
+    if f"{key} = []" in lines:
+        return []
+    start = lines.index(f"{key} = [") + 1
+    return [line.strip().removesuffix(",") for line in lines[start : lines.index("]", start)]]
+
+
 @wymaga_ruff
 def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> None:
-    """Wpis w konfiguracji ruff (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, także ``ALL`` albo
-    prefiks ``SLF``, w każdym pliku konfiguracji) zwalnia plik z całego ``SLF001``. Kopia drzewa ``src/`` z próbką
-    ``SLF001_PROBE`` w miejscu każdego pliku i z każdym plikiem konfiguracji ruff repozytorium idzie przez ruff tak jak
-    ``src/``: plik bez zgłoszenia jest zwolniony, a zwolniony jest tylko ``SLF001_OWNER``, którego sięgnięcia do
-    ``_style`` trzyma ``tests/test_wyglad_wiersza_danych.py``. Jak w
+    """Konfiguracja ruff wyłącza ``SLF001`` dwiema drogami, w każdym pliku konfiguracji repozytorium. Wpis pliku
+    (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, także ``ALL`` albo prefiks ``SLF``) zwalnia plik:
+    kopia drzewa ``src/`` z próbką ``SLF001_PROBE`` w miejscu każdego pliku i z każdym plikiem konfiguracji ruff idzie
+    przez ruff tak jak ``src/``, plik bez zgłoszenia jest zwolniony, a zwolniony jest tylko ``SLF001_OWNER``, którego
+    sięgnięcia do ``_style`` trzyma ``tests/test_wyglad_wiersza_danych.py``. Wpis nazwy (``flake8-self``
+    ``ignore-names`` albo ``extend-ignore-names``) zwalnia ją w każdym pliku: ``--show-settings`` pliku z każdego
+    katalogu kopii, bo ruff bierze konfigurację najbliższą katalogowi pliku, ma ``SLF001`` w ``linter.rules.enabled``
+    i ``linter.flake8_self.ignore_names`` równe domyślnym nazwom zainstalowanego ruff, czyli ``--show-settings`` w
+    katalogu z samym ``select = ["SLF001"]``. Jak w
     ``tests/test_zakazy_ruff.py::test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela``."""
 
+    repo = tmp_path / "repo"
     names = ("ruff.toml", ".ruff.toml", "pyproject.toml")
     configs = {ROOT / name for name in names} | {
         path for top in ("src", "tests", "tools", ".agents/skills") for name in names for path in (ROOT / top).rglob(name)
     }
     for config in configs:
         if config.is_file():
-            copy = tmp_path / config.relative_to(ROOT)
+            copy = repo / config.relative_to(ROOT)
             copy.parent.mkdir(parents=True, exist_ok=True)
             copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
     probes = {path.relative_to(ROOT).as_posix() for path in SRC.rglob("*.py")}
     for name in probes:
-        probe = tmp_path / name
+        probe = repo / name
         probe.parent.mkdir(parents=True, exist_ok=True)
         probe.write_text(SLF001_PROBE, encoding="utf-8")
 
@@ -1964,12 +1995,12 @@ def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> No
         capture_output=True,
         text=True,
         encoding="utf-8",
-        cwd=tmp_path,
+        cwd=repo,
         check=False,
     )
     assert result.stderr == "", result.stderr
     reported = {
-        Path(finding["filename"]).resolve().relative_to(tmp_path.resolve()).as_posix()
+        Path(finding["filename"]).resolve().relative_to(repo.resolve()).as_posix()
         for finding in json.loads(result.stdout)
         if finding["code"] == "SLF001"
     }
@@ -1977,6 +2008,26 @@ def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> No
     assert sorted(probes - reported) == [SLF001_OWNER], (
         "z SLF001 konfiguracja ruff zwalnia w src/ tylko row_look.py: do prywatnej składowej innego obiektu sięgaj "
         "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać plik w konfiguracji ruff"
+    )
+
+    defaults = tmp_path / "domyslne"
+    defaults.mkdir()
+    (defaults / "ruff.toml").write_text('[lint]\nselect = ["SLF001"]\n', encoding="utf-8")
+    (defaults / "probe.py").write_text(SLF001_PROBE, encoding="utf-8")
+    default_names = _ruff_list(_ruff_settings("probe.py", defaults), "linter.flake8_self.ignore_names")
+    per_directory = {name.rpartition("/")[0]: name for name in sorted(probes)}
+    widened: dict[str, tuple[list[str], list[str]]] = {}
+    for name in per_directory.values():
+        settings = _ruff_settings(name, repo)
+        enabled = [rule for rule in _ruff_list(settings, "linter.rules.enabled") if rule.endswith("(SLF001)")]
+        ignore_names = _ruff_list(settings, "linter.flake8_self.ignore_names")
+        if not enabled or ignore_names != default_names:
+            widened[name] = (enabled, sorted(set(ignore_names) - set(default_names)))
+
+    assert widened == {}, (
+        "konfiguracja ruff w src/ ma SLF001 włączony i nie zwalnia z niego żadnej nazwy ponad domyślne nazwy ruff "
+        f"(flake8-self ignore-names, extend-ignore-names): {widened}; do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać nazwę w konfiguracji ruff"
     )
 
 
