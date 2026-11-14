@@ -107,7 +107,7 @@ MASKS: Final = (*_MASKS.values(), _PHONE_MASK, _STREET_MASK)
 
 
 _PASSED: Final = object()
-"""Dowód, że ``Outgoing`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
+"""Dowód, że ``Outgoing`` albo ``LogsText`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 
 @final
@@ -141,6 +141,29 @@ def tool(text: str) -> Outgoing:
     """Tekst narzędzia do wysyłki: stałe, liczby, identyfikatory, tokeny okresu i uwagi techniczne, bez treści plików taty."""
 
     return Outgoing(text, _PASSED)
+
+
+@final
+class LogsText(str):
+    """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
+    okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
+    (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
+
+    __slots__ = ()
+
+    def __new__(cls, text: str, proof: object) -> LogsText:
+        if proof is not _PASSED:
+            raise TypeError("Tekst pliku Logów daje tylko rozliczenia.client_data.logs_text.")
+        return super().__new__(cls, text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Tekst pliku Logów nie ma podklas.")
+
+
+def logs_text(text: str) -> LogsText:
+    """Tekst pliku do Archiwum Logów okresu: Logi po strażniku albo ten plik z własnego pliku kolejki."""
+
+    return LogsText(text, _PASSED)
 
 
 @dataclass(frozen=True)
