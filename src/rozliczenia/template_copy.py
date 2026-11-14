@@ -116,9 +116,6 @@ class InvalidValue(Exception):
 
 
 _CONTENT_DEFAULT: Final = "{http://schemas.openxmlformats.org/package/2006/content-types}Default"
-# Błędy odczytu bajtów Wzorca, które znaczą kształt spoza kopii albo uszkodzenie: Wzorzec idzie wtedy dawną
-# drogą przez openpyxl, z jej klasyfikacją. Kopia czyta tylko bajty w pamięci, więc błąd wejścia-wyjścia
-# (``OSError``) ani inny nieoczekiwany wyjątek nie jest tu kształtem i nie jest maskowany.
 _READ_ERRORS: Final = (
     zipfile.BadZipFile,
     zipfile.LargeZipFile,
@@ -131,12 +128,16 @@ _READ_ERRORS: Final = (
     struct.error,
     EOFError,
 )
+"""Błędy odczytu bajtów Wzorca, które znaczą kształt spoza kopii albo uszkodzenie: Wzorzec idzie wtedy dawną drogą przez
+openpyxl, z jej klasyfikacją. Kopia czyta tylko bajty w pamięci, więc błąd wejścia-wyjścia (``OSError``) ani inny
+nieoczekiwany wyjątek nie jest tu kształtem i nie jest maskowany."""
 
-# Wiersze arkusza w jednym kawałku kompresji. Mniejszy kawałek: mniej kompresji przy każdej kopii,
-# nieco gorszy stopień kompresji całości.
 _ROWS_PER_CHUNK: Final = 64
+"""Wiersze arkusza w jednym kawałku kompresji. Mniejszy kawałek: mniej kompresji przy każdej kopii, nieco gorszy
+stopień kompresji całości."""
 _COMPRESSION_LEVEL: Final = 6
-_MAX_TEXT: Final = 32767  # openpyxl przycina tekst komórki do tej długości
+_MAX_TEXT: Final = 32767
+"""openpyxl przycina tekst komórki do tej długości."""
 
 _CELL = re.compile(rb'<c r="([A-Z]{1,3})(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 _STYLE = re.compile(rb'\ss="(\d+)"')
@@ -156,8 +157,6 @@ _NUM_FMT = re.compile(rb"<numFmt\b([^>]*?)/?>")
 _NUM_FMT_ID = re.compile(rb'numFmtId="(\d+)"')
 _RELATIONSHIPS_PREFIX = re.compile(rb"""xmlns:([\w.-]+)\s*=\s*["']""" + OFFICE_REL.encode() + rb"""["']""")
 _RELATIONSHIP_NUMBER = re.compile(r"rId(\d+)")
-# Elementy arkusza, które schemat (CT_Worksheet) stawia między ``sheetData`` a ``hyperlinks``; każdy inny element
-# za ``sheetData`` (``printOptions``, ``pageMargins``, …, ``extLst``, także z innej przestrzeni nazw) idzie za nimi.
 _BEFORE_HYPERLINKS: Final = frozenset(
     {
         "sheetCalcPr",
@@ -174,6 +173,8 @@ _BEFORE_HYPERLINKS: Final = frozenset(
         "dataValidations",
     }
 )
+"""Elementy arkusza, które schemat (CT_Worksheet) stawia między ``sheetData`` a ``hyperlinks``; każdy inny element za
+``sheetData`` (``printOptions``, ``pageMargins``, …, ``extLst``, także z innej przestrzeni nazw) idzie za nimi."""
 
 
 @dataclass(frozen=True)
@@ -272,7 +273,10 @@ class TemplateCopy:
         look: RowLook,
         zero_row_count: int,
     ) -> None:
-        self._parts = parts  # ``None``: miejsce arkusza, stylów albo skoroszytu, składanych dla każdej kopii
+        """``parts``: części Wzorca po kolei, a ``None`` to miejsce arkusza, stylów albo skoroszytu, składanych dla
+        każdej kopii."""
+
+        self._parts = parts
         self._sheet = sheet
         self._look = look
         self._filter_name = filter_name
@@ -316,10 +320,10 @@ class TemplateCopy:
         return Package(parts)
 
 
-# --- wczytanie ---------------------------------------------------------------------------------
-
-
 def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
+    """Wzorzec ``content`` wczytany do kopii; ``ZipFile.read`` sprawdza sumę kontrolną CRC-32 każdej części, więc
+    zepsuta część to ``zipfile.BadZipFile``."""
+
     archive = zipfile.ZipFile(BytesIO(content))
     infos = archive.infolist()
     for info in infos:
@@ -327,7 +331,7 @@ def _read_template(content: bytes, layout: SheetLayout) -> TemplateCopy:
             raise UnsupportedShape("encrypted")
         if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
             raise UnsupportedShape("compression")
-    plain = {info.filename: archive.read(info) for info in infos}  # sprawdza CRC każdej części
+    plain = {info.filename: archive.read(info) for info in infos}
     _require_well_formed_xml(plain)
     workbook_name = office_document(plain)
     if workbook_name is None:
@@ -419,12 +423,14 @@ def _require_well_formed_xml(plain: dict[str, bytes]) -> None:
 
 def _require_known_styles(sheet_xml: bytes, cell_style_count: int) -> None:
     """Styl komórki, wiersza albo kolumny arkusza jest wśród ``cell_style_count`` stylów skoroszytu, bo inaczej openpyxl
-    nie wczyta Wzorca (``IndexError``); taki Wzorzec pliku okresu idzie dawną drogą, która go klasyfikuje."""
+    nie wczyta Wzorca (``IndexError``); taki Wzorzec pliku okresu idzie dawną drogą, która go klasyfikuje.
 
-    # Styl każdej komórki i wiersza jest też wśród wszystkich ``s="N"``, a kolumny wśród wszystkich ``style="N"``.
-    # Te szersze wyrażenia zaczynają się stałym tekstem, więc szukanie w nich numeru spoza stylów skoroszytu jest
-    # kilka razy szybsze; dokładne wyrażenia rozstrzygają tylko wtedy, gdy któreś coś znalazło, albo przy zerze stylów
-    # skoroszytu, przy którym ``default=0`` niżej odrzuca też arkusz bez żadnego stylu.
+    Styl każdej komórki i wiersza jest też wśród wszystkich ``s="N"``, a kolumny wśród wszystkich ``style="N"``.
+    Te szersze wyrażenia zaczynają się stałym tekstem, więc szukanie w nich numeru spoza stylów skoroszytu jest
+    szybsze; dokładne wyrażenia rozstrzygają tylko wtedy, gdy któreś coś znalazło, albo przy zerze stylów
+    skoroszytu, przy którym ``default=0`` odrzuca też arkusz bez żadnego stylu.
+    """
+
     unknown = rb'="' + _number_at_least(cell_style_count) + rb'"'
     if cell_style_count and re.search(rb"s" + unknown, sheet_xml) is None and re.search(rb"style" + unknown, sheet_xml) is None:
         return
@@ -496,6 +502,9 @@ class _FilterName:
     """``xl/workbook.xml`` pliku okresu: nazwa ``_xlnm._FilterDatabase`` aktywnego arkusza idzie za autofiltrem."""
 
     def __init__(self, info: zipfile.ZipInfo, index: int, xml: bytes, sheet_position: int) -> None:
+        """Nazwa z zakresem, który nie jest bezwzględny (np. ``#REF!``), to ``UnsupportedShape``: naprawi ją dawna
+        droga przez openpyxl."""
+
         self._info = info
         self.index = index
         self._xml = xml
@@ -503,7 +512,7 @@ class _FilterName:
             local = _LOCAL_SHEET.search(found.group(0))
             if local is not None and int(local.group(1)) == sheet_position and b"!" in found.group(1):
                 if not _ABSOLUTE_RANGE.fullmatch(found.group(1), found.group(1).rindex(b"!") + 1):
-                    break  # np. ``#REF!``: nazwę naprawi dawna droga przez openpyxl
+                    break
                 self._range = (found.start(1) + found.group(1).rindex(b"!") + 1, found.end(1))
                 return
         raise UnsupportedShape("filter name")
@@ -545,9 +554,6 @@ def _compressed_part(info: zipfile.ZipInfo, data: bytes) -> _Part:
     return _Part(name, flags, zipfile.ZIP_DEFLATED, dos_time, dos_date, zlib.crc32(data), len(data), [compressed])
 
 
-# --- arkusz ------------------------------------------------------------------------------------
-
-
 _COLUMN_INDEX: dict[bytes, int] = {}
 
 
@@ -562,6 +568,10 @@ class _Sheet:
     """XML aktywnego arkusza z indeksem wierszy i kawałkami skompresowanymi od granic wierszy."""
 
     def __init__(self, info: zipfile.ZipInfo, index: int, xml: bytes, layout: SheetLayout, *, epoch: datetime) -> None:
+        """Granice kawałków kompresji: ostatni kawałek zaczyna się w miejscu bloku Hiperłączy, więc kopia z nimi
+        kompresuje tylko ogon arkusza, a przedostatni w pliku okresu od autofiltra, który zmienia się w każdej kopii.
+        Kawałki powstają dopiero przy pierwszej kopii, bo Sprawdzanie ich nie potrzebuje."""
+
         self.index = index
         self._info = info
         self._xml = xml
@@ -589,15 +599,13 @@ class _Sheet:
         self._filter_columns = (1, 1)
         if layout.period_file:
             self._filter = _autofilter(xml, data_end, self._links_at)
-        # Ostatni kawałek zaczyna się w miejscu bloku Hiperłączy, więc kopia z nimi kompresuje tylko ogon arkusza;
-        # przedostatni w pliku okresu od autofiltra, który zmienia się w każdej kopii.
         self._boundaries = [
             self._data_start,
             *(row.start for row in self._rows[first + _ROWS_PER_CHUNK :: _ROWS_PER_CHUNK]),
             *([self._filter[0]] if self._filter is not None else []),
             self._links_at,
         ]
-        self._chunks: list[bytes] | None = None  # dopiero przy pierwszej kopii: Sprawdzanie ich nie potrzebuje
+        self._chunks: list[bytes] | None = None
         dimension = _DIMENSION.search(xml, 0, sheet_data.start)
         self._dimension = None if dimension is None else (dimension.start(1), dimension.end(1), range_boundaries(dimension.group(1).decode("ascii")))
 
@@ -697,6 +705,9 @@ class _Sheet:
     def with_rows(
         self, rows: Sequence[Row], styles: _StyleAdditions, look: RowLook, hyperlinks: bytes, filter_ref: str | None
     ) -> _Part:
+        """Część arkusza kopii z ``rows``; przedostatni kawałek zaczyna się od autofiltra (granica z ``__init__``) i
+        sięga do bloku Hiperłączy."""
+
         xml = self._xml
         first_row = self._layout.first_data_row
         last_row = first_row + len(rows) - 1
@@ -724,7 +735,6 @@ class _Sheet:
         compressed = [compressor.compress(head) + compressor.flush(zlib.Z_SYNC_FLUSH), *self._chunks[chunk:-1], tail]
         middle: tuple[bytes | memoryview, ...] = (memoryview(xml)[tail_start:links_at],)
         if self._filter is not None and filter_ref is not None:
-            # Przedostatni kawałek zaczyna się od autofiltra (granica z ``__init__``) i sięga do bloku Hiperłączy.
             start, end, element = self._filter
             filtered = element.replace(b"{ref}", filter_ref.encode("ascii")) + xml[end:links_at]
             filter_compressor = zlib.compressobj(_COMPRESSION_LEVEL, zlib.DEFLATED, -15)
@@ -795,6 +805,9 @@ class _Sheet:
         look: CellLook | None,
         styles: _StyleAdditions,
     ) -> bytes:
+        """Komórka ``reference`` z wartością ``value``; pustej komórki bez stylu nie zapisuje, jak openpyxl, a Excel
+        daje jej styl kolumny."""
+
         template_style = _cell_style(existing)
 
         def style(date_format: str | None) -> int | None:
@@ -809,7 +822,7 @@ class _Sheet:
             if empty_style == template_style and existing is not None and existing.endswith(b"/>"):
                 return existing
             if empty_style is None and existing is None:
-                return b""  # openpyxl nie zapisuje pustej komórki bez stylu; Excel daje jej styl kolumny
+                return b""
             return _cell_xml(reference, empty_style, None, b"")
         if isinstance(value, (datetime, date, time, timedelta)):
             if getattr(value, "tzinfo", None) is not None:
@@ -866,11 +879,11 @@ def _writable_data_rows_have_input(
     Kolumny Wiersza danych od pierwszego Wiersza danych nie mogą mieć formuł ani
     scaleń, a kolumny Ilości usług formuł: wpisanie wartości w taką komórkę zmienia
     ``calcChain`` albo wspólną formułę (formuła) lub nie jest możliwe (scalenie); to
-    robi dawna droga przez openpyxl (``UnsupportedShape``). Formuły nie są danymi.
+    robi dawna droga przez openpyxl (``UnsupportedShape``). Formuły nie są danymi. Wyrażenie znajduje tylko komórki z
+    treścią w kolumnach Wiersza danych i Ilości usług, więc formuły pozostałych kolumn pomija przeszukiwanie bez kodu
+    Pythona.
     """
 
-    # Wyrażenie znajduje tylko komórki z treścią w kolumnach Wiersza danych i Ilości usług, więc formuły
-    # pozostałych kolumn (we Wzorcu taty dziesiątki tysięcy) pomija przeszukiwanie bez kodu Pythona.
     columns = _columns_pattern([*range(1, layout.data_columns + 1), *layout.quantity_columns])
     cell_with_content = re.compile(rb'<c r="(' + columns + rb')\d+"[^>]*+(?<!/)>(.*?)</c>', re.S)
     has_input = False
@@ -1085,9 +1098,6 @@ class _SheetRels:
         return _compressed_part(self._info, xml), ids
 
 
-# --- wartości ----------------------------------------------------------------------------------
-
-
 def _cell_xml(reference: bytes, style: int | None, kind: bytes | None, content: bytes) -> bytes:
     attributes = b'<c r="' + reference + b'"'
     if style is not None:
@@ -1155,11 +1165,8 @@ def _value_xml(value: object) -> tuple[bytes | None, bytes]:
     raise UnsupportedShape(type(value).__name__)
 
 
-# --- style -------------------------------------------------------------------------------------
-
-
-# Styl komórki bez atrybutu ``s``: taki, jaki openpyxl nadaje nowej komórce.
 _DEFAULT_XF: Final = b'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+"""Styl komórki bez atrybutu ``s``: taki, jaki openpyxl nadaje nowej komórce."""
 _FONT_ID: Final = re.compile(rb'\sfontId="(\d+)"')
 _FILL_ID: Final = re.compile(rb'\sfillId="(\d+)"')
 _BORDER_ID: Final = re.compile(rb'\sborderId="(\d+)"')
