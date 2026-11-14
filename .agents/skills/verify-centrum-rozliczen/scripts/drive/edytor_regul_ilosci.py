@@ -19,6 +19,7 @@ from drive.common import (
     settings_title,
     settings_window,
 )
+from drive.waiting import Budget
 
 FEATURE = "edytor-regul-ilosci"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -45,7 +46,7 @@ def _preview(run: Run, edit: dict[str, object]) -> dict[str, Any]:
         method="POST",
         headers={"Origin": run.url.rstrip("/"), "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=Budget.WORK.value) as response:
         answer: dict[str, Any] = json.load(response)
     shown = {**answer, "rows": [{**row, "devices": "<tekst wiersza>", "activities": "<tekst wiersza>"} for row in answer.get("rows", [])]}
     (run.evidence / "api" / "edytor-podglad.json").write_text(json.dumps(shown, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

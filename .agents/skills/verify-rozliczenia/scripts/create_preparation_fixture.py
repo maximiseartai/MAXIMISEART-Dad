@@ -3,6 +3,10 @@
 ``--with-worker-template`` also creates the Wzorzec rozliczenia pracownika for the Przebieg rozliczeń
 that follows. With ``--templates-from`` every Wzorce is a byte copy of the real one instead of a
 synthetic workbook.
+
+The Wzorce builders are this script's own on purpose: the skill's oracle stands on features the shared
+``atrapy`` Wzorce lack, an ``xl/workbook.xml`` without a namespace prefix in the Wzorzec pliku zbiorczego,
+a sheet beside the active one and zeros across N:AP of the Wzorzec rozliczenia pracownika.
 """
 
 from __future__ import annotations

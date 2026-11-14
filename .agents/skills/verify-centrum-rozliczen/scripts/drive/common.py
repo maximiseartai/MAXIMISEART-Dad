@@ -178,7 +178,7 @@ class Run:
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
     def api(self, path: str, name: str) -> dict[str, object]:
-        with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=10) as response:
+        with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=Budget.SCREEN.value) as response:
             body = json.load(response)
         (self.evidence / "api" / f"{name}.json").write_text(
             json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -199,7 +199,7 @@ class Run:
 
     def _send(self, request: urllib.request.Request, name: str) -> Answer:
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=Budget.SCREEN.value) as response:
                 status, body = int(response.status), response.read()
         except urllib.error.HTTPError as error:
             status, body = error.code, error.read()
@@ -330,7 +330,7 @@ def capture_quantity_rules(
     marker."""
 
     run.capture(page, name, full_page=full_page)
-    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=10) as response:
+    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=Budget.SCREEN.value) as response:
         listed: dict[str, Any] = json.load(response)
     shown = (*texts, *(difference[key] for difference in listed.get("differences", []) for key in ("devices", "activities")))
     snapshot = run.evidence / "aria" / f"{name}.txt"
@@ -595,7 +595,7 @@ def advance_clock(run: Run, minutes: float, why: str) -> None:
 
 def answers(url: str) -> bool:
     try:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=2):
+        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=Budget.PROBE.value):
             return True
     except OSError:
         return False
@@ -629,7 +629,7 @@ def start_centrum(run: Run, name: str) -> None:
             stdout=console,
             stderr=subprocess.STDOUT,
         )
-    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=30)
+    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=Budget.WORK)
 
 
 def kill_centrum(run: Run) -> None:
@@ -843,7 +843,9 @@ def ended_run_shown(view: dict[str, object]) -> bool:
     return view["state"] == "finished" or (view["state"] == "idle" and view["previous"] is not None)
 
 
-def finished_view(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
+def finished_view(
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+) -> dict[str, Any]:
     """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
 
     ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
@@ -862,7 +864,9 @@ def finished_view(run: Run, name: str, *, replacing: str | None = None, timeout_
     return seen
 
 
-def finished_result(run: Run, name: str, *, replacing: str | None = None, timeout_s: float = 10) -> dict[str, Any]:
+def finished_result(
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+) -> dict[str, Any]:
     result = finished_view(run, name, replacing=replacing, timeout_s=timeout_s)["result"]
     assert isinstance(result, dict)
     return result

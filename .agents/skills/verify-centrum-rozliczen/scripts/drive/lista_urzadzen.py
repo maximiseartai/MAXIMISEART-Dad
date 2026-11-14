@@ -22,6 +22,7 @@ from drive.common import (
     settings_title,
     settings_window,
 )
+from drive.waiting import Budget
 
 FEATURE = "lista-urzadzen"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -43,7 +44,7 @@ def _answer(run: Run, name: str) -> dict[str, Any]:
     """The server's suggestions and unread periods; the evidence keeps them with the row markers masked (workbook
     content)."""
 
-    with urllib.request.urlopen(run.url.rstrip("/") + SUGGESTIONS_URL, timeout=30) as response:
+    with urllib.request.urlopen(run.url.rstrip("/") + SUGGESTIONS_URL, timeout=Budget.WORK.value) as response:
         answer: dict[str, Any] = json.load(response)
     shown = json.dumps(answer, ensure_ascii=False, indent=2)
     (run.evidence / "api" / f"{name}.json").write_text(_masked(shown) + "\n", encoding="utf-8")

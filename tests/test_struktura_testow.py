@@ -12,8 +12,10 @@ from itertools import pairwise
 import os
 from pathlib import Path, PureWindowsPath
 import re
+import shutil
 import subprocess
 import sys
+import sysconfig
 
 import pytest
 
@@ -898,27 +900,123 @@ def test_znane_luki_strazy_nazw_watkow_przechodza_przez_niego(tmp_path: Path, mo
     assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_NAZW_WATKOW)")
 
 
-def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
-    """Dowód braku fałszywych alarmów każdej formy każdej zapadki: z bazą w pustym drzewie gita każda linia ``tests/``
-    i ``src/`` jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test ani kod.
+# Zapadka, której bieg pustego drzewa nie uruchamia: dzisiejsze ``src/`` ma wystąpienia form, których reguły ast-grep
+# zakazują tylko w nowych liniach (ADR 0034), a zadania pytest na Windows instalują tylko ``requirements.txt``, bez ast-grep.
+_ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src"
 
-    Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
-    ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
-    """
+
+def _empty_tree_problems(root: Path) -> list[str]:
+    """Problemy biegu ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda linia
+    ``tests/`` i ``src/`` jest dodana: porażka biegu albo ``--deselect`` zapadki reguł ast-grep, który nie pominął
+    dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek o nazwie z tym prefiksem
+    zniknąłby z dowodu po cichu."""
 
     empty_tree = subprocess.run(
-        ["git", "hash-object", "-t", "tree", "--stdin"], cwd=TESTS.parent, input="", capture_output=True, text=True, check=True
+        ["git", "hash-object", "-t", "tree", "--stdin"], cwd=root, input="", capture_output=True, text=True, check=True
     ).stdout.strip()
     environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
-
     answered = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"],
-        cwd=TESTS.parent,
+        [
+            *(sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"),
+            *("--deselect", _ZAPADKA_AST_GREP),
+        ],
+        cwd=root,
         env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=False,
     )
+    summary = answered.stdout.splitlines()[-1] if answered.stdout else ""
+    problems = [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
+    if not re.search(r"(^|, )1 deselected\b", summary):
+        problems.append(
+            f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknął z dowodu:"
+            f" nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki | {summary}"
+        )
+    return problems
 
-    assert answered.returncode == 0, answered.stdout[-3000:]
+
+def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
+    """Dowód braku fałszywych alarmów każdej formy każdej zapadki: z bazą w pustym drzewie gita każda linia ``tests/``
+    i ``src/`` jest dodana, a zapadki przechodzą, więc żadna forma nie trafia w dzisiejszy, poprawny test ani kod.
+
+    Biegnie tu, a nie w ``tests/test_zapadki.py``, bo pomiar zapadek kładzie tamten plik na starych commitach, których
+    ``tests/`` miało jeszcze własne wyrocznie, a moduł testu niczego nie eksportuje, więc zapadki biegną osobnym pytest.
+    Reguły ast-grep biegną bez tego dowodu (``_ZAPADKA_AST_GREP``).
+    """
+
+    assert _empty_tree_problems(TESTS.parent) == []
+
+
+# Reguła-fikstura z wystąpieniem w ``src/`` kopii repozytorium i fragment jej komunikatu dla ``AST_GREP_INSTRUCTIONS``.
+_REGULA_FIKSTURA = """\
+id: zakazane-wywolanie
+language: python
+severity: error
+message: "Zamień zakazane() na dozwolone()."
+rule:
+  pattern: zakazane()
+"""
+_AST_GREP_ANCHOR = 'AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))'
+_AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
+
+
+def _repo_copy(root: Path) -> Path:
+    """Kopia plików śledzonych i nieśledzonych, a nieignorowanych, checkoutu w ``root`` (to, co widzi bieg pustego
+    drzewa), w nowym repozytorium gita bez commitu."""
+
+    listed = subprocess.run(
+        ["git", "-c", "core.quotepath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=TESTS.parent,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    for name in filter(None, listed.split("\0")):
+        if (TESTS.parent / name).is_file():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(TESTS.parent / name, root / name)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    return root
+
+
+@pytest.mark.parametrize(
+    "ast_grep",
+    [pytest.param(True, marks=pytest.mark.skipif(_AST_GREP is None, reason="brak ast-grep z dodatku dev")), False],
+    ids=["z ast-grep", "bez ast-grep"],
+)
+def test_bieg_pustego_drzewa_przechodzi_z_regula_ast_grep_i_jej_starym_wystapieniem_w_src(tmp_path: Path, ast_grep: bool) -> None:
+    """Pierwsza reguła w ``reguly-ast-grep/`` nie czerwieni dowodu braku fałszywych alarmów, choć dzisiejsze ``src/`` ma
+    wystąpienia jej formy, z ast-grep (Mac, Linux z dodatkiem dev) i bez niego (zadania pytest na Windows z
+    ``requirements.txt``): kopia repozytorium z regułą-fiksturą, jej wpisem w ``AST_GREP_INSTRUCTIONS`` i plikiem
+    ``src/`` z jej formą przechodzi przez ``_empty_tree_problems``."""
+
+    root = _repo_copy(tmp_path)
+    (root / "reguly-ast-grep").mkdir(exist_ok=True)
+    (root / "reguly-ast-grep" / "zakazane-wywolanie.yml").write_text(_REGULA_FIKSTURA, encoding="utf-8")
+    (root / "src" / "rozliczenia" / "stare_wywolanie.py").write_text("zakazane()\n", encoding="utf-8")
+    zapadki = root / "tests" / "test_zapadki.py"
+    text = zapadki.read_text(encoding="utf-8")
+    assert text.count(_AST_GREP_ANCHOR) == 1, f"tests/test_zapadki.py nie ma już linii {_AST_GREP_ANCHOR}"
+    if not ast_grep:
+        text = text.replace(_AST_GREP_ANCHOR, "AST_GREP = None")
+    zapadki.write_text(text + '\nAST_GREP_INSTRUCTIONS["zakazane-wywolanie"] = "na dozwolone()"\n', encoding="utf-8")
+
+    assert _empty_tree_problems(root) == []
+
+
+def test_bieg_pustego_drzewa_zglasza_test_zapadek_pominiety_razem_z_zapadka_ast_grep(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    name = _ZAPADKA_AST_GREP.split("::")[1]
+    (tmp_path / "tests" / "test_zapadki.py").write_text(
+        "".join(f"def {test}() -> None:\n    pass\n\n\n" for test in (name, f"{name}_w_tests", "test_innej_zapadki")),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    [problem] = _empty_tree_problems(tmp_path)
+
+    assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden")
+    assert "| 1 passed, 2 deselected in " in problem, problem

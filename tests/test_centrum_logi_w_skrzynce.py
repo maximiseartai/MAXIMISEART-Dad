@@ -2496,6 +2496,34 @@ def test_dwa_przeniesienia_jednej_liczby_z_jednego_dnia_wracaja_z_logow_jako_dwa
     assert replayed.saved.memory == OwnEntries(frozenset(), frozenset(facts.moves_before))
 
 
+def test_pamiec_wpisow_pod_wykonawca_bez_raportu_wraca_z_logow_z_postacia_numeru_z_wpisu_innego_wykonawcy_z_tego_dnia() -> None:
+    """Wpis pamięci idzie za wierszem, więc może stać pod Wykonawcą, który nie przysłał Raportu. Jego numer ma wtedy
+    postać z Wpisu innego Wykonawcy z tego samego dnia, a nie z Wpisów innych numerów tego dnia ani z Wpisu tej liczby z
+    innego dnia, bo numer z zerami na początku i bez nich to różne zlecenia: odczyt wejścia kliknięcia z pliku Logów daje
+    tę samą pamięć wpisów co kliknięcie."""
+
+    entry = OwnEntry(OrderKey(FORMS[1], CLICK_DAY, ANNA), ReportColumn.SUCCESSFUL, "tak")
+    reported = {(CLICK_DAY, JAN): frozenset({FORMS[1], OrderNumber("40000002")}), (FORM_DAYS[0], OLA): frozenset({FORMS[2]})}
+    facts = _click_with_forms(reported, (), (entry,))
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved.memory == OwnEntries(frozenset({entry}), frozenset())
+
+
+def test_numer_bez_zlecenia_bez_zera_we_wpisach_wraca_z_logow_jako_liczba() -> None:
+    """Odtworzenie stawia numer bez zlecenia w ``NUMER ZL.`` jak wklejenie z aplikacji: w postaci z zerem na początku z
+    Wpisu, gdy Wpis ją ma, a inaczej liczbą, więc numer, którego Wpisy nie mają zera, wraca z Logów jako liczba."""
+
+    facts = _click_with_forms({(CLICK_DAY, JAN): frozenset({FORMS[2]})}, (), orderless=(Orderless("Zlecenia", FORMS[2], None),))
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.orderless == (ReplayedOrderless("Zlecenia", 40000001, None),)
+
+
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:

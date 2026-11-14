@@ -27,6 +27,7 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import BELL_FRESH
+from drive.waiting import Budget
 from atrapy.efenix import FIRST_ROW, SOURCE_NAME
 from atrapy.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
 from harness import File, efenix_files
@@ -54,10 +55,6 @@ FORWARD = "Uzupełnij i zapisz"
 FILL_HINT = "Zielony „Zapisz” w efenix klikasz sam"
 FORWARD_HINT = "Zielony „Zapisz” przy gotowych klika Centrum"
 DONE_OK_FORWARDED = "Przekazane do akceptacji"
-# The wait for the end of a Wycena that goes through the efenix window: the four orders of the Atrapa take 5.6–5.9 s on
-# Maks's Mac (seven runs on 11.11.2026, four of them at once), and the default 10 s of Run.wait_for ran out on the
-# Windows runner of CI on main ca200191a (#1296).
-PRICING_S = 60
 # The tab sends the next start request this late, once: the server still shows the Wycena before it, finished, when the
 # drive reads it first, as on the Windows runner of CI on main 5f6940a61 (#1570), and not only there.
 LATE_START_MS = 1500
@@ -107,7 +104,7 @@ def _log_in(run: Run) -> None:
     login = address.rsplit("/", 1)[0] + "/action_login.php"
     print("  harness: Dad logs in to the Atrapa efenix (the login form, posted to action_login.php)", flush=True)
     request = urllib.request.Request(login, data=b"field_signum=tata&field_password=haslo&fingerprint=", method="POST")
-    with urllib.request.urlopen(request, timeout=10) as answer:
+    with urllib.request.urlopen(request, timeout=Budget.SCREEN.value) as answer:
         answer.read()
 
 
@@ -168,7 +165,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
     expect(confirm.get_by_text("Nie było podglądu bez zapisu")).to_have_count(0)
     confirm.get_by_role("button", name=FILL, exact=True).click()
     live = _live(page)
-    expect(live.get_by_role("status", name="Krok")).to_have_text(LOGIN, timeout=30_000)
+    expect(live.get_by_role("status", name="Krok")).to_have_text(LOGIN, timeout=Budget.WORK.ms)
     waiting = current_run(run, "efenix-logowanie")
     progress = waiting["progress"]
     assert isinstance(progress, dict)
@@ -188,7 +185,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
 
     run.step(FEATURE, "postep")
     bar = live.get_by_role("progressbar", name="Zlecenia")
-    expect(bar).to_be_visible(timeout=30_000)
+    expect(bar).to_be_visible(timeout=Budget.WORK.ms)
     expect(live).to_contain_text("Zlecenia · ")
     step = current_run(run, "efenix-postep")["progress"]
     assert isinstance(step, dict)
@@ -199,8 +196,8 @@ def _price(run: Run, page: Page, source: Path) -> None:
     run.capture(page, "262-efenix-postep", live=True)
 
     run.step(FEATURE, "karta")
-    result: Json = finished_result(run, "efenix-wynik", timeout_s=PRICING_S)
-    expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=30_000)
+    result: Json = finished_result(run, "efenix-wynik", timeout_s=Budget.BACKGROUND)
+    expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=Budget.WORK.ms)
     toast = page.get_by_role("region", name="Notifications").get_by_role("dialog", name=DONE)
     expect(toast).to_contain_text(f"Okres {PERIOD}")
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
@@ -353,11 +350,11 @@ def _forward(run: Run, page: Page, source: Path) -> None:
         asks[0] = isinstance(step, dict) and step.get("label") == LOGIN
         return asks[0] or view["state"] == "finished" or (isinstance(step, dict) and step.get("total", 0) > 0)
 
-    run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=30)
+    run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=Budget.WORK)
     run.check(page.evaluate("() => window.startSentLate === true"), "harness: the start request left the tab late")
     if asks[0]:
         _log_in(run)
-    result: Json = finished_result(run, "efenix-z-zapisem-wynik", timeout_s=PRICING_S)
+    result: Json = finished_result(run, "efenix-z-zapisem-wynik", timeout_s=Budget.BACKGROUND)
     shown = current_run(run, "efenix-z-zapisem-karta")["run"]
     assert isinstance(shown, dict)
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
@@ -366,7 +363,7 @@ def _forward(run: Run, page: Page, source: Path) -> None:
         == ("z Przekazaniem", 0, 1, 1),
         "the Wycena with Przekazanie forwards the ready order: none ready, one forwarded, the settled one stays",
     )
-    expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=30_000)
+    expect(page.get_by_label("Wynik")).to_contain_text(DONE, timeout=Budget.WORK.ms)
     table = page.get_by_role("table", name=DONE_OK_FORWARDED)
     number, worker = ORDERS[18]
     expect(table.get_by_role("row")).to_have_count(1)
