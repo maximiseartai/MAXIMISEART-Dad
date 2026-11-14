@@ -4,11 +4,12 @@ czy moduł jest (``jest_modul``).
 Kod spoza ``tests/`` nie importuje kodu testów (``tests/test_granice_importow.py``), więc ``modul`` i ``modul_z_pliku``
 odmawiają w biegu (``OdmowaImportuTestow``), zanim wykonają kod, modułu, którego plik albo katalog pakietu leży w
 katalogu ``tests/`` repozytorium, pod każdą nazwą i każdą ścieżką do niego. Reszta kodu poza ``tests/`` bierze import
-w trakcie działania tylko stąd: ruff ``TID251`` odrzuca tam każdą nazwę pakietu ``importlib`` poza ``importlib.resources``
-oraz ``builtins.__import__``, ``_frozen_importlib``, ``_frozen_importlib_external``, ``_imp``, ``runpy``, ``pkgutil``,
-``zipimport``, ``pydoc`` i ``doctest``, z komunikatem, który kieruje do tego modułu, a ten moduł ma prawo właściciela
-(``per-file-ignores`` w ``pyproject.toml``). Znane luki zakazu stoją próbkami ``ZNANE_LUKI_IMPORTU`` w
-``tests/test_zakazy_ruff.py``.
+w trakcie działania tylko stąd: ruff ``TID251`` odrzuca tam każdą nazwę pakietu ``importlib`` poza
+``IMPORTLIB_DOZWOLONE``, każdy moduł biblioteki standardowej, który według skanu jej źródeł woła wejście systemu importu,
+poza ``STDLIB_DOZWOLONE`` (oba testy w ``tests/test_zakazy_ruff.py`` czytają bibliotekę działającego Pythona), oraz
+``builtins.__import__``, ``_frozen_importlib``, ``_frozen_importlib_external`` i ``_imp``, z komunikatem, który kieruje do
+tego modułu, a ten moduł ma prawo właściciela (``per-file-ignores`` w ``pyproject.toml``). Poza zakazem zostają kod w
+napisie, moduły w C spoza skanu i osobny proces; znane luki stoją próbkami ``ZNANE_LUKI_IMPORTU`` w tym samym teście.
 """
 
 from __future__ import annotations

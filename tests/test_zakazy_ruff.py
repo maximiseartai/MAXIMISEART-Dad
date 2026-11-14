@@ -15,12 +15,14 @@ zwolnieniem dokładnie nazwy, których jest właścicielem.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 from pathlib import Path
 import pkgutil
 import subprocess
 import sys
+import sysconfig
 import tomllib
 from typing import Any
 
@@ -113,6 +115,18 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         "importlib.metadata",
     ),
     'import pydoc\nm = pydoc.locate("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "pydoc"),
+    # Moduł z pliku przez multiprocessing.spawn (przegląd #1705 r2, W1), w trzech katalogach.
+    'from multiprocessing import spawn\nspawn.import_main_path("tests/fixtures/znane_luki.py")': (
+        ROOT / "pyproject.toml",
+        TOOLS_PROBE,
+        "multiprocessing",
+    ),
+    'import multiprocessing.spawn as s\ns.prepare({"init_main_from_path": "tests/fixtures/znane_luki.py"})': (
+        SRC_CONFIG,
+        ("rozliczenia",),
+        "multiprocessing",
+    ),
+    "from multiprocessing.spawn import import_main_path": (DRIVE_CONFIG, (), "multiprocessing"),
     'import doctest\ndoctest.testfile("tests/x.txt", module_relative=False)': (ROOT / "pyproject.toml", TOOLS_PROBE, "doctest"),
     # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
     # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
@@ -384,8 +398,9 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
 DYNAMIC_IMPORT_OWNER = ROOT / "tools" / "lib" / "import_dynamiczny.py"
 # Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml), które testy niżej
 # uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
-# Nazwy pakietu importlib wynikają z biblioteki standardowej (test niżej); reszta to moduły spoza niego, które importują
-# po nazwie albo budują moduł z pliku.
+# Nazwy pakietu importlib i moduły biblioteki standardowej, które wołają wejście systemu importu, wynikają z biblioteki
+# działającego Pythona (dwa testy niżej); builtins.__import__, _frozen_importlib(_external) i _imp to moduły w C, których
+# źródeł skan nie czyta.
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",
@@ -414,7 +429,53 @@ DYNAMIC_IMPORT = (
     "zipimport",
     "pydoc",
     "doctest",
+    "multiprocessing",
+    "dbm",
+    "encodings",
+    "inspect",
+    "logging.config",
+    "modulefinder",
+    "optparse",
+    "pickle",
+    "turtle",
+    "turtledemo",
+    "unittest.loader",
+    "unittest.main",
+    "xml.dom",
+    "idlelib",
+    "test",
+    "_pyrepl",
+    "cProfile",
+    "_py_warnings",
 )
+# Wywołania wejść systemu importu w źródłach biblioteki standardowej (definicja w teście skanu niżej).
+IMPORT_ENTRIES = frozenset(
+    {
+        "__import__",
+        "import_module",
+        "reload",
+        "find_spec",
+        "find_loader",
+        "get_loader",
+        "spec_from_file_location",
+        "spec_from_loader",
+        "module_from_spec",
+        "exec_module",
+        "load_module",
+        "run_module",
+        "run_path",
+        "resolve_name",
+    }
+)
+# Moduły biblioteki standardowej ze skanu, których kod poza tests/ używa, z powodem; reszta skanu jest w DYNAMIC_IMPORT.
+STDLIB_DOZWOLONE = {
+    "ctypes": "biblioteki Windows w src/rozliczenia/centrum; __import__ tylko stałej nazwy comtypes w DllGetClassObject",
+    "sysconfig": "ścieżki Pythona w tools/lib/kroki_lokalne.py; nazwa modułu danych ze zmiennej środowiska: próbka",
+    "traceback": "ślad wyjątku w skryptach skilli i src/rozliczenia/call_trace.py; podpowiedź do ImportError: próbka",
+    "unittest.mock": "atrapy w skrypcie skilla verify-kopia-wzorca; mock.patch po nazwie: próbka",
+    "warnings": "ostrzeżenia w skrypcie skilla verify-kopia-wzorca; kategoria z opcji -W po nazwie: próbka",
+    "xml.sax": "xml.sax.saxutils.escape w skryptach skilli; make_parser z nazwą parsera: próbka",
+}
 # Nazwy pakietu importlib, które kod poza tests/ bierze wprost, z powodem; reszta pakietu jest w DYNAMIC_IMPORT.
 IMPORTLIB_DOZWOLONE = {
     "importlib.resources": (
@@ -461,6 +522,59 @@ def test_kazda_nazwa_pakietu_importlib_jest_zakazana_albo_dozwolona_z_powodem() 
     assert sorted(IMPORTLIB_DOZWOLONE.keys() - names) == [], "IMPORTLIB_DOZWOLONE wymienia nazwę, której importlib nie ma"
 
 
+def _stdlib_import_callers() -> set[str]:
+    """Moduły biblioteki standardowej działającego Pythona, które wołają wejście systemu importu: każdy plik ``*.py``
+    katalogu ``sysconfig.get_paths()["stdlib"]`` poza ``site-packages``, ``__pycache__`` i pakietem ``importlib`` (jego
+    nazwy sprawdza test obok), w którym ``ast.Call`` woła nazwę albo atrybut z ``IMPORT_ENTRIES``; AST czyta tylko pliki z
+    napisem jednej z tych nazw. Moduł to ścieżka pliku względem katalogu biblioteki, a pakiet nazwa jego ``__init__``.
+    Pliku modułu, który ``DYNAMIC_IMPORT`` już zakazuje (wprost albo przez moduł nadrzędny, np. pakiet ``test``), skan nie
+    czyta, bo wynik testu niżej od niego nie zależy."""
+    root = Path(sysconfig.get_paths()["stdlib"])
+    found = set()
+    for path in root.rglob("*.py"):
+        parts = path.relative_to(root).with_suffix("").parts
+        if parts[0] == "importlib" or "site-packages" in parts or "__pycache__" in parts:
+            continue
+        module = ".".join(parts).removesuffix(".__init__")
+        if any(module == ban or module.startswith(f"{ban}.") for ban in DYNAMIC_IMPORT):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not any(entry in text for entry in IMPORT_ENTRIES):
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", None)
+                if called in IMPORT_ENTRIES:
+                    found.add(module)
+                    break
+    return found
+
+
+def test_kazdy_modul_biblioteki_standardowej_z_wejsciem_importu_jest_zakazany_albo_dozwolony_z_powodem() -> None:
+    """Granica zakazu poza ``importlib`` wynika ze źródeł biblioteki standardowej działającego Pythona
+    (``_stdlib_import_callers``): każdy znaleziony moduł jest w ``DYNAMIC_IMPORT`` wprost albo przez zakazany moduł
+    nadrzędny, albo w ``STDLIB_DOZWOLONE`` z powodem. Poza skanem zostają moduły w C, których źródeł nie ma, kod w napisie
+    (``exec``, ``code``) i osobny proces (próbki ``ZNANE_LUKI_IMPORTU``)."""
+    found = _stdlib_import_callers()
+
+    open_modules = sorted(
+        module
+        for module in found
+        if module not in STDLIB_DOZWOLONE and not any(module == ban or module.startswith(f"{ban}.") for ban in DYNAMIC_IMPORT)
+    )
+
+    assert found, "skan nie znalazł źródeł biblioteki standardowej"
+    assert open_modules == [], (
+        f"biblioteka standardowa tego Pythona ma moduły z wejściem systemu importu bez zakazu: {open_modules}; dopisz każdy "
+        "z komunikatem właściciela do banned-api w pyproject.toml, src/ruff.toml i drive/ruff.toml oraz do DYNAMIC_IMPORT, "
+        "albo do STDLIB_DOZWOLONE z powodem i próbką w ZNANE_LUKI_IMPORTU, gdy kod poza tests/ go używa"
+    )
+
+
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa() -> None:
     """``# noqa: TID251`` przy ``importlib.import_module`` byłoby drugą drogą obok właściciela, który odmawia modułu z
@@ -500,6 +614,23 @@ ZNANE_LUKI_IMPORTU = {
     "tłumienie ruff: exec z noqa": 'exec("import tests.fixtures.znane_luki")  # noqa: S102 - próbka\n',
     "kod w napisie: code.InteractiveInterpreter": (
         'import code\n\ncode.InteractiveInterpreter().runsource("import tests.fixtures.znane_luki")\n'
+    ),
+    "import po drodze: traceback, podpowiedź do ImportError": (
+        'import traceback\n\nBLAD = ImportError("x", name="tests.fixtures.znane_luki")\nsetattr(BLAD, "name_from", "nie_ma")\n'
+        "traceback.format_exception(BLAD)\n"
+    ),
+    "import po drodze: sysconfig, moduł danych ze zmiennej środowiska": (
+        'import os\nimport sysconfig\n\nos.environ["_PYTHON_SYSCONFIGDATA_NAME"] = "tests.fixtures.znane_luki"\n'
+        "ZMIENNE = sysconfig.get_config_vars()\n"
+    ),
+    "import po drodze: unittest.mock.patch po nazwie": (
+        'from unittest import mock\n\nmock.patch("tests.fixtures.znane_luki.ROOT", None).start()\n'
+    ),
+    "import po drodze: warnings, kategoria z opcji -W": (
+        'import warnings\n\ngetattr(warnings, "_setoption")("ignore::tests.fixtures.znane_luki.Nie")\n'
+    ),
+    "import po drodze: xml.sax.make_parser z nazwą parsera": (
+        'import xml.sax\n\nPARSER = xml.sax.make_parser(["tests.fixtures.znane_luki"])\n'
     ),
     "import po drodze: importlib.resources pakietu": (
         'from importlib import resources\n\nFIXTURES = resources.files("tests.fixtures")\n'
