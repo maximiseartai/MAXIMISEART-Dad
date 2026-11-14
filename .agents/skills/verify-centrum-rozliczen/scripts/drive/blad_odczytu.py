@@ -19,6 +19,7 @@ from drive.common import (
     settings_window,
 )
 from drive.teksty import WRITE
+from drive.waiting import until
 
 FEATURE = "blad-odczytu"
 RETRY = "Spróbuj ponownie"
@@ -93,11 +94,7 @@ def _whole_page_retries(run: Run, page: Page, board: Locator) -> None:
         page.goto(run.url + "#/okresy")
         page.reload()
         # Sync Playwright runs the route handler only inside its own calls, so the wait is one of them.
-        for _ in range(100):
-            if aborted == set(OKRESY_READS):
-                break
-            page.wait_for_timeout(100)
-        run.check(aborted == set(OKRESY_READS), "settings, periods and metrics failed (unreachable, harness)")
+        until(lambda: aborted == set(OKRESY_READS), "settings, periods and metrics failed (unreachable, harness)", page=page)
         failures = page.get_by_role("alert").filter(has_text="Nie udało się odczytać")
         expect(failures).to_have_count(1)
         expect(failures).to_contain_text(UNREACHABLE)
