@@ -413,6 +413,7 @@ ZNANE_LUKI_ZEGARA = {
     "importlib": 'import importlib\n\nTERAZ = importlib.import_module("time").time()\n',
     "zegar modułu, którego src/ruff.toml nie wymienia": "import time\n\nTERAZ = time.clock_gettime(time.CLOCK_REALTIME)\n",
     "reeksport z type: ignore": "from rozliczenia.wall_clock import datetime  # type: ignore[attr-defined]  # próbka\n\nTERAZ = datetime.now()\n",
+    "reeksport time z type: ignore": "from rozliczenia.wall_clock import time  # type: ignore[attr-defined]  # próbka\n\nTERAZ = time.time()\n",
     "reeksport przez atrybut modułu z type: ignore": (
         "from rozliczenia import wall_clock\n\nTERAZ = wall_clock.datetime.now()  # type: ignore[attr-defined]  # próbka\n"
     ),
