@@ -133,6 +133,22 @@ def _filter_name_ref_error(tmp_path: Path) -> PreparationFixture:
     return fixture
 
 
+def _without_cell_styles(tmp_path: Path) -> PreparationFixture:
+    """Wzorzec pliku zbiorczego bez żadnego stylu komórki: puste ``cellXfs`` i arkusz bez atrybutów stylu."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    path = fixture.collective_template_path
+    with zipfile.ZipFile(path) as source:
+        parts = {info.filename: source.read(info) for info in source.infolist()}
+    parts["xl/styles.xml"] = re.sub(rb"<cellXfs\b.*?</cellXfs>", b'<cellXfs count="0"></cellXfs>', parts["xl/styles.xml"], flags=re.S)
+    for name in [name for name in parts if name.startswith("xl/worksheets/")]:
+        parts[name] = re.sub(rb'\s(?:s|style)="\d+"', b"", parts[name])
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
+        for name, data in parts.items():
+            target.writestr(name, data)
+    return fixture
+
+
 def _cells(path: Path) -> dict[str, object]:
     workbook = load_workbook(path)
     try:
@@ -175,6 +191,13 @@ def _cells(path: Path) -> dict[str, object]:
         pytest.param(_row_style, True, True, id="styl-wiersza"),
         pytest.param(_leftovers, True, True, id="resztki-formatowania-wzorca"),
         pytest.param(_filter_name_ref_error, False, True, id="nazwa-filtra-ref-przez-openpyxl"),
+        pytest.param(
+            _without_cell_styles,
+            False,
+            True,
+            id="bez-stylow-komorek-przez-openpyxl",
+            marks=pytest.mark.filterwarnings("ignore:Workbook contains no stylesheet:UserWarning"),
+        ),
         pytest.param(_formula_in("K18"), False, True, id="formula-w-ostatniej-kolumnie-danych-przez-openpyxl"),
         pytest.param(_formula_in("AP18"), False, True, id="formula-w-ostatniej-kolumnie-ilosci-przez-openpyxl"),
         pytest.param(_internal_header_after_k, True, False, id="naglowek-wewnetrznego-za-K-przez-openpyxl"),
