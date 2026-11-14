@@ -4,13 +4,16 @@ Each sub-feature is a ``run.step(feature, "<id>")`` in ``drive(run, page)`` of `
 order, and its line joins the messages of the ``run.check`` calls after it, which the drive prints as ``ok:`` under
 ``STEP <feature> | <id>`` in ``drive.txt``. A message is a string literal, a module constant (a name the module binds
 only once, at its top level, to a string) or an f-string of those; any other placeholder of an f-string is printed as
-its source in braces. The command fails, naming the file, the line and what to do, on any other form of a call on
-``run`` that it would otherwise have to guess: a step or a check without exactly two positional arguments or with a
-starred one, a step name that is no string literal, a message of another kind, a placeholder with a conversion or a
-format spec, a check before the first step, a step or a check outside ``drive`` or inside a function or lambda in it,
-``run.step`` or ``run.check`` used other than as the called function, and a ``Run`` parameter not named ``run``.
-Checks in the shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the
-section: the section maps this module's own steps and checks.
+its source in braces.
+
+The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
+whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
+one, a step name that is no string literal, a message of another kind, a placeholder with a conversion or a format
+spec, a check before the first step, and any attribute ``.step`` or ``.check`` in the module, on whatever object, that
+is not the called function of such a call on ``run`` in the body of ``drive`` itself (outside any function, lambda or
+class in it). It does not see a check reached without such an attribute, as ``getattr(run, "check")``. Checks in the
+shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the section: the
+section maps this module's own steps and checks.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ CALLS = frozenset({"step", "check"})
 
 
 class Unreadable(Exception):
-    """A call on ``run`` in a form the command does not read; ``str`` is the file, the line and what to do."""
+    """A form of the drive module the command does not read; ``str`` is the file, the line and what to do."""
 
 
 def _refuse(module: str, node: ast.AST, what: str) -> Unreadable:
@@ -38,7 +41,7 @@ def _refuse(module: str, node: ast.AST, what: str) -> Unreadable:
 def _constants(tree: ast.Module) -> dict[str, str]:
     """Names the module binds exactly once, at its top level, to a string literal."""
 
-    top: dict[str, list[str]] = {}
+    top: dict[str, str] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             target, value = node.targets[0], node.value
@@ -47,15 +50,16 @@ def _constants(tree: ast.Module) -> dict[str, str]:
         else:
             continue
         if isinstance(target, ast.Name) and isinstance(value, ast.Constant) and isinstance(value.value, str):
-            top.setdefault(target.id, []).append(value.value)
+            top[target.id] = value.value
     bound = Counter(name for node in ast.walk(tree) for name in _binds(node))
-    return {name: values[0] for name, values in top.items() if len(values) == 1 and bound[name] == 1}
+    return {name: value for name, value in top.items() if bound[name] == 1}
 
 
 def _binds(node: ast.AST) -> list[str]:
-    """Names ``node`` binds or declares, by the binding constructs of the Python language reference ("Naming and
-    binding"): targets of assignment, ``for``, ``with``, ``:=`` and ``del``, parameters, imports, ``def`` and
-    ``class``, ``except ... as``, capture patterns, type parameters, ``global`` and ``nonlocal``."""
+    """Names ``node`` binds, by the binding constructs of the Python language reference ("Naming and binding"):
+    targets of assignment, ``for``, ``with``, ``:=`` and ``del``, parameters, imports, ``def`` and ``class``,
+    ``except ... as``, capture patterns and type parameters. ``global`` and ``nonlocal`` only declare a name, which
+    one of these then binds."""
 
     if isinstance(node, ast.Name):
         return [node.id] if isinstance(node.ctx, (ast.Store, ast.Del)) else []
@@ -65,8 +69,6 @@ def _binds(node: ast.AST) -> list[str]:
         return [(node.asname or node.name).split(".")[0]]
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return [node.name]
-    if isinstance(node, (ast.Global, ast.Nonlocal)):
-        return list(node.names)
     if isinstance(node, ast.MatchMapping):
         return [node.rest] if node.rest else []
     if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
@@ -122,6 +124,8 @@ def _drive(tree: ast.Module, module: str) -> ast.FunctionDef:
     drives = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "drive"]
     if len(drives) != 1:
         raise _refuse(module, tree, "the module has no single top-level `def drive(run, page)`; write one")
+    if [arg.arg for arg in drives[0].args.args[:1]] != ["run"]:
+        raise _refuse(module, drives[0], "drive() does not take `run` as its first parameter; name it run")
     return drives[0]
 
 
@@ -150,22 +154,18 @@ def _is_run_call(node: ast.AST) -> bool:
 
 
 def _refuse_other_forms(tree: ast.Module, own: list[ast.Call], module: str) -> None:
-    """Fails on ``run.step``/``run.check`` anywhere but as the called function of ``own``, and on a ``Run`` parameter
-    with another name, whose calls the map would not see."""
+    """Fails on every attribute ``.step``/``.check`` in the module, on whatever object, but the called function of
+    ``own``: the command does not tell which object is a ``Run``, so it reads none but ``run`` in ``drive``."""
 
     read = {id(call.func) for call in own}
     for node in ast.walk(tree):
-        if _is_run_call(node) and id(node) not in read:
-            assert isinstance(node, ast.Attribute)
+        if isinstance(node, ast.Attribute) and node.attr in CALLS and id(node) not in read:
             raise _refuse(
                 module,
                 node,
-                f"run.{node.attr} is used outside the body of drive() or not as a call there; call it in drive() "
-                "itself, so the map sees the step it prints under",
+                f"`{ast.unparse(node)}` is not run.{node.attr} called in the body of drive() itself; call "
+                f"run.{node.attr}(…) there, so the map sees what the drive prints",
             )
-        if isinstance(node, ast.arg) and node.arg != "run" and node.annotation is not None:
-            if ast.unparse(node.annotation).rsplit(".", 1)[-1] == "Run":
-                raise _refuse(module, node, f"the Run parameter `{node.arg}` is not named run; the map reads calls on run")
 
 
 def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:

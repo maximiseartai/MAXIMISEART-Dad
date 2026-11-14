@@ -283,12 +283,22 @@ ODMOWY: Final = {
     "step: nazwa nazwana": 'run.step(feature, name="x")  # tu',
     "step: nazwa zmienną": "run.step(feature, feature)  # tu",
     "step: *args": 'run.step(*(feature, "x"))  # tu',
+    "check: na aliasie run": 'plansza = run\n    plansza.check(True, "x")  # tu',
+    "check: na celu pętli": 'for r in (run,):\n        r.check(True, "x")  # tu',
+    "check: na wyniku walrusa": '(r := run).check(True, "x")  # tu',
+    "check: na parametrze lambdy": '(lambda r: r.check(True, "x"))(run)  # tu',
+    "check: przez klasę Run": 'Run.check(run, True, "x")  # tu',
+    "check: przez klasę obiektu": 'run.__class__.check(run, True, "x")  # tu',
 }
 # Postać → cały napęd, gdy odmowa dotyczy miejsca poza wstawką.
 ODMOWY_MODULU: Final = {
     "check przed pierwszym step": NAPED.replace('    run.step(feature, "sonda-krok")\n', '    run.check(True, "x")  # tu\n    run.step(feature, "sonda-krok")\n'),
     "check w pomocniku modułu": NAPED + '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "x")  # tu\n',
-    "parametr Run pomocnika inaczej niż run": NAPED + "\n\ndef _pomocnik(r: Run) -> None:  # tu\n    del r\n",
+    "check na parametrze pomocnika r: Run": NAPED + '\n\ndef _pomocnik(r: Run) -> None:\n    r.check(True, "x")  # tu\n',
+    'check na parametrze pomocnika r: "Run"': NAPED + '\n\ndef _pomocnik(r: "Run") -> None:\n    r.check(True, "x")  # tu\n',
+    "check na parametrze pomocnika r: Run | None": NAPED
+    + '\n\ndef _pomocnik(r: Run | None) -> None:\n    assert r\n    r.check(True, "x")  # tu\n',
+    "check w metodzie podklasy Run": NAPED + '\n\nclass _Run(Run):\n    def sprawdz(self) -> None:\n        self.check(True, "x")  # tu\n',
     "drive bez parametru run": NAPED.replace(
         "def drive(run: Run, page: object) -> None:", "def drive(r: Run, page: object) -> None:  # tu"
     ),
@@ -309,8 +319,9 @@ def _odmowy() -> dict[str, str]:
 
 @pytest.mark.parametrize("opis", list(_odmowy()))
 def test_polecenie_podfunkcji_odmawia_postaci_run_ktorej_nie_czyta_z_plikiem_i_linia(polecenie: ModuleType, opis: str) -> None:
-    """Każda postać wywołania na ``run``, której polecenie nie czyta, czerwieni je zdaniem z plikiem i linią, zamiast
-    zgubić komunikat, który napęd drukuje w ``drive.txt`` (W1 r1 #1690: ``run.check(True, message=...)`` pominięte)."""
+    """Postać spoza tej jednej, którą polecenie czyta (``run.step``/``run.check`` z dwoma argumentami pozycyjnymi w ciele
+    ``drive(run, page)``), czerwieni je zdaniem z plikiem i linią, także atrybut ``.check`` na obiekcie innym niż ``run``,
+    zamiast zgubić komunikat, który napęd drukuje w ``drive.txt`` (W1 r1 i r2 #1690)."""
 
     zrodlo = _odmowy()[opis]
     linia = next(numer for numer, tekst in enumerate(zrodlo.splitlines(), start=1) if "# tu" in tekst)
@@ -323,8 +334,8 @@ def test_polecenie_podfunkcji_odmawia_postaci_run_ktorej_nie_czyta_z_plikiem_i_l
 
 def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polecenie: ModuleType) -> None:
     """Komunikat to literał, stała modułu (także z adnotacją) albo f-string z nich; pole f-stringu spoza stałych, w tym
-    nazwa, którą moduł wiąże drugi raz (przypisaniem, importem, parametrem, ``def``, ``except ... as``), jest jego
-    źródłem w nawiasach."""
+    nazwa, którą moduł wiąże drugi raz (przypisaniem, importem, parametrem, ``def``, ``except ... as``, wzorcem
+    ``match``, parametrem typu), jest jego źródłem w nawiasach."""
 
     zrodlo = NAPED.format(
         wstawka="\n    ".join(
@@ -335,6 +346,7 @@ def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polec
                 'run.check(True, f"{DWA_RAZY}")',
                 'LOKALNA = "lokalna"',
                 'run.check(True, f"{LOKALNA} {IMPORT} {PARAMETR} {FUNKCJA} {WYJATEK}")',
+                'run.check(True, f"{WZORZEC} {GWIAZDKA} {RESZTA} {TYP} {SPEC} {KROTKA}")',
                 'run.step(feature, "sonda-drugi")',
             ]
         )
@@ -348,6 +360,12 @@ def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polec
             'PARAMETR = "moduł"\n\n\ndef _pomocnik(PARAMETR: str) -> None:\n    pass',
             'FUNKCJA = "moduł"\n\n\ndef FUNKCJA() -> None:\n    pass',
             'WYJATEK = "moduł"\ntry:\n    pass\nexcept ValueError as WYJATEK:\n    pass',
+            'WZORZEC = "moduł"\nmatch 1:\n    case WZORZEC:\n        pass',
+            'GWIAZDKA = "moduł"\nmatch []:\n    case [*GWIAZDKA]:\n        pass',
+            'RESZTA = "moduł"\nmatch {}:\n    case {**RESZTA}:\n        pass',
+            'TYP = "moduł"\n\n\ndef _typ[TYP]() -> None:\n    pass',
+            'SPEC = "moduł"\n\n\ndef _spec[**SPEC]() -> None:\n    pass',
+            'KROTKA = "moduł"\n\n\ndef _krotka[*KROTKA]() -> None:\n    pass',
         ]
     )
 
@@ -361,6 +379,7 @@ def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polec
                 "Pokaż wszystkie i {feature}",
                 "{DWA_RAZY}",
                 "{LOKALNA} {IMPORT} {PARAMETR} {FUNKCJA} {WYJATEK}",
+                "{WZORZEC} {GWIAZDKA} {RESZTA} {TYP} {SPEC} {KROTKA}",
             ],
         ),
         ("sonda-drugi", []),
@@ -369,11 +388,13 @@ def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polec
 
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → napęd, którego run.check nie trafia do
 # sekcji, choć napęd drukuje jego komunikat, a mimo to przechodzi przez ruff z konfiguracją drive/ i przez polecenie.
-# Polecenie czyta wywołania na nazwie run; mypy przepuszcza każdą z nich, bo wywołanie ma dwa argumenty pozycyjne.
+# Polecenie odmawia każdego atrybutu .step/.check poza tymi, które czyta, a te postacie sięgają po check bez atrybutu.
 ZNANE_LUKI: Final = {
     "check przez getattr": NAPED.format(wstawka='getattr(run, "check")(True, "LUKA")'),
-    "check przez parametr lambdy": NAPED.format(wstawka='(lambda r: r.check(True, "LUKA"))(run)'),
-    "check przez klasę Run": NAPED.format(wstawka='Run.check(run, True, "LUKA")'),
+    "check przez operator.methodcaller": NAPED.format(
+        wstawka='import operator\n\n    operator.methodcaller("check", True, "LUKA")(run)'
+    ),
+    "check ze słownika klasy": NAPED.format(wstawka='type(run).__dict__["check"](run, True, "LUKA")'),
 }
 
 

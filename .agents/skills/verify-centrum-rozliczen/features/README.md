@@ -150,6 +150,11 @@ behaviour, then exactly these H2s in order:
 1. `Sub-features`: short IDs with one line each; the IDs match the
    `STEP <feature> | <id>` lines in `drive.txt`, and a section that names
    `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
+   The command reads only `run.step(feature, "<id>")` and `run.check(condition, message)`
+   called in the body of `drive(run, page)`. It refuses, with the file and the line,
+   every other form of them and every other `.step` or `.check` attribute in the
+   module, on whatever object. It does not see a check reached without such an
+   attribute, as `getattr(run, "check")`.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
    feature and where its proof stands in the evidence. A file whose
