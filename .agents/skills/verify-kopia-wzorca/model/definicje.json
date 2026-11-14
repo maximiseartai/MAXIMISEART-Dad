@@ -28,13 +28,13 @@
     "with_style_attribute": "3aed050e2f3ed399"
   },
   "src/rozliczenia/template_file.py": {
-    "TemplateFile": "caafedd71e2affde",
+    "TemplateFile": "c1429e56a5dbbc7c",
     "_Rules": "362cb8b7df713be5",
     "_WORKER_SETTLEMENT": "454a0b42cc644edc",
     "_ensure_unmerged": "b28aebeb4af8c1ef",
     "_last_written_column": "1ac5d8677c49655f",
     "_in_columns": "384aa41005a44c1f",
-    "_write_rows": "9d3e24f1bd1a217c",
+    "_write_rows": "dec71281de83d294",
     "_package_writer": "78c5739d1fa69f88",
     "_active_worksheet": "23e27585d804a8b6",
     "_request_recalculation": "018de366512c2ddc"
