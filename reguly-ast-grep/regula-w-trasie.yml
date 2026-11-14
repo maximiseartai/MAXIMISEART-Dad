@@ -22,14 +22,15 @@ utils:
           kind: dotted_name
           regex: '^(\w+\.)*(Saved|Refused|NotSaved|KeptInPeriods|NotUndoable)$'
 rule:
-  # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty #1585 W1 r1 (_ensure_not_in_periods
-  # w trasie DELETE) i #1577 W1 r3 (odmowa needed_by w trasie formularza). Trasą Ustawień jest moduł, który tworzy
-  # APIRouter i zmienia Ustawienia przez metodę zapisu właściciela, jakkolwiek się nazywa (#1727 r1 W1:
-  # quantity_differences.py). Zakres to cały taki moduł, bo trasy wołają zagnieżdżone funkcje pomocnicze bez dekoratora.
-  # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde
-  # wywołanie sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga
-  # tylko do rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej
-  # gałęzi, pod drugim if, w pętli, w return albo w wyrażeniu warunkowym jest zgłoszona bez wyliczania składni.
+  # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty #1585 W1 r1 (_ensure_not_in_periods w
+  # trasie DELETE) i #1577 W1 r3 (odmowa needed_by w trasie formularza). Trasą Ustawień jest moduł, który nazywa APIRouter
+  # (tworzy go, importuje pod aliasem albo bierze z parametru, bo mypy strict i ANN401 wymuszają adnotację) i zmienia
+  # Ustawienia przez metodę zapisu właściciela, jakkolwiek się nazywa (#1727 r1 W1: quantity_differences.py, r2 W1: router
+  # z parametru i alias). Zakres to cały taki moduł, bo trasy wołają zagnieżdżone funkcje pomocnicze bez dekoratora.
+  # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
+  # sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga tylko do
+  # rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej gałęzi, pod
+  # drugim if, w pętli, w return albo w wyrażeniu warunkowym jest zgłoszona bez wyliczania składni.
   # Postacie, których reguła nie łapie, są próbkami ZNANE_LUKI_REGULY_W_TRASIE w tests/test_zapadki.py.
   all:
     - inside:
@@ -38,10 +39,8 @@ rule:
         all:
           - has:
               stopBy: end
-              kind: call
-              has:
-                field: function
-                regex: '(^|\.)APIRouter$'
+              kind: identifier
+              regex: '^APIRouter$'
           - has:
               stopBy: end
               kind: call

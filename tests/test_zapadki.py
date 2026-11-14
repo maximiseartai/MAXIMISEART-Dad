@@ -1096,24 +1096,36 @@ def _moduly_tras(root: Path, probki: dict[str, str]) -> dict[str, Path]:
 
 @needs_ast_grep
 @pytest.mark.parametrize(
-    ("trasa", "lines"),
+    ("naglowek", "trasa", "lines"),
     [
-        (_ZAPIS_USTAWIEN, [6, 8]),
-        ("\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
-        ("\n\ndef apply(settings: object) -> None:\n    settings.change()\n", []),
+        (_APIROUTER, _ZAPIS_USTAWIEN, [6, 8]),
+        (
+            "from fastapi import APIRouter as Router\n",
+            "\n\ndef settings_router(settings: object) -> Router:\n    settings.change()\n    return Router()\n",
+            [6, 8],
+        ),
+        (
+            "import fastapi\n",
+            "\n\ndef settings_router(settings: object) -> fastapi.APIRouter:\n    settings.change()\n    return fastapi.APIRouter()\n",
+            [6, 8],
+        ),
+        (_APIROUTER, "\n\ndef add_worker_routes(router: APIRouter, settings: object) -> None:\n    settings.change()\n", [6, 8]),
+        (_APIROUTER, "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
+        ("", "\n\ndef apply(settings: object) -> None:\n    settings.change()\n", []),
     ],
 )
 def test_regula_w_trasie_obejmuje_modul_z_apirouter_i_zapisem_ustawien_pod_kazda_nazwa(
-    tmp_path: Path, trasa: str, lines: list[int]
+    tmp_path: Path, naglowek: str, trasa: str, lines: list[int]
 ) -> None:
-    """Sonda #1727 r1 W1 (``_ensure_*`` i odmowa pod ``if`` w ``quantity_differences.py``, trasie Ustawień bez
-    ``router`` w nazwie) jest zgłoszona; ten sam kod w trasie bez zapisu Ustawień i w module zapisu bez trasy nie."""
+    """Sondy #1727 r1 W1 (``_ensure_*`` i odmowa pod ``if`` w ``quantity_differences.py``, trasie Ustawień bez
+    ``router`` w nazwie) i r2 W1 (``APIRouter`` pod aliasem i router z parametru ``router: APIRouter``) są zgłoszone;
+    ten sam kod w trasie bez zapisu Ustawień i w module zapisu bez ``APIRouter`` nie."""
 
     base = _empty_base(tmp_path)
     plik = tmp_path.joinpath(*_TRASY, "quantity_differences.py")
     plik.parent.mkdir(parents=True)
     plik.write_text(
-        f'{_APIROUTER}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{trasa}',
+        f'{naglowek}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{trasa}',
         encoding="utf-8",
     )
 
@@ -1225,6 +1237,11 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         f"{_APIROUTER}from rozliczenia.centrum import refusal, settings_writes\n\n\n"
         'def settings_router(settings: object, problem: object) -> APIRouter:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
         "    settings_writes.save(settings)\n    return APIRouter()\n"
+    ),
+    "zakres: moduł bez identyfikatora APIRouter, bo trasa stoi na routerze importowanym jako obiekt innego modułu": (
+        "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings_router import router\n\n\n"
+        '@router.delete("/workers/{name}")\ndef delete_worker(settings: object, problem: object) -> None:\n'
+        '    settings.change()\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
     ),
 }
 
