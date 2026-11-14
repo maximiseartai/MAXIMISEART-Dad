@@ -124,10 +124,12 @@ injected instead of load, so a check that depends on time fails on every run (#1
 | Delay | Value | Owner | Class it shows |
 |---|---|---|---|
 | animations of every page of `dad_context` (CDP `Animation.setPlaybackRate`) | `SLOW_ANIMATIONS` 0.2 | `drive/common.py` | a check of a state visible for a moment (#1534) |
-| each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/common.py` | a read right after a click, before its request arrives (#1570) |
+| each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/waiting.py`, put into the tab by `dad_context` of `drive/common.py` | a read right after a click, before its request arrives (#1570) |
 | each request of `/api/` waits before Centrum takes it | `API_DELAY_S` 0.3 | `serve_centrum.py` | a fixed sleep or limit shorter than the server's answer |
 
 Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
+The drive waits for a condition only through `until` of `drive/waiting.py`, for the screen through its `expect`, and lets the page run through `quiet_for`.
+No other way to wait for a condition is left to copy (`Run.wait_for` is gone, #1539). Ruff refuses `time.sleep` outside `drive/waiting.py` and `drive/common.py`, in `drive/common.py` the test of `OWNERS` in `tests/test_zakazy_ruff.py` does, and `page.wait_for_timeout` passes both (`ZNANE_LUKI_SNU`); a new function that wraps `until` around a condition it takes, nothing refuses today.
 The drive stops at its first failure, so drive one feature per run to find each failing place.
 The mode is a manual proof and runs neither in CI nor at night.
 
@@ -156,7 +158,7 @@ behaviour, then exactly these H2s in order:
    module, on whatever object. It does not see a check reached without such an
    attribute, as `getattr(run, "check")`. A field of an f-string message prints
    as `…`, except a module constant, which prints its value. A line with the ID
-   alone is a step without its own `run.check`: what it waits for (`run.wait_for`,
+   alone is a step without its own `run.check`: what it waits for (`until`,
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
