@@ -88,6 +88,8 @@ from tests.fixtures.centrum import (
     without_times,
     write_report_key,
 )
+from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
+from rozliczenia.centrum.runs import EndedRun
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
     SettlingCentrum,
@@ -104,7 +106,7 @@ from atrapy.efenix import DAY, Order, write_collective_file
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.konce_linii_windows import windows_text_writes
-from tests.fixtures.potomne import wait_for
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.praca_centrum import centrum_work
 from atrapy.pliki_taty import COLLECTIVE_HEADERS, REGISTER_NAME
 from atrapy.preparation import (
@@ -1276,6 +1278,30 @@ def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_
     assert (record["run_id"], record["mode"], record["period"]) == (view["run"]["id"], "DRY-RUN", PERIOD)
     titles = [issue.title for issue in box.background_issues if issue.label == "logi-uruchomienia"]
     assert titles == [f"Logi Uruchomienia {PERIOD}"]
+
+
+def test_dzialanie_po_wyniku_ktore_rzuca_nie_zmienia_wyniku_uruchomienia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wyjątek działania po wyniku (tu Kontroli ilości) trafia do dziennika Centrum, a karta dostaje ten sam wynik."""
+
+    expected = run_to_end(settling_centrum(tmp_path / "bez-wyjatku"), dry_run=False)
+
+    def failing(self: QuantityCheckAfterRun, run: EndedRun) -> None:
+        raise RuntimeError("działanie po wyniku")
+
+    monkeypatch.setattr(QuantityCheckAfterRun, "run_ended", failing)
+    centrum = settling_centrum(tmp_path / "z-wyjatkiem")
+
+    assert centrum.start(dry_run=False).status_code == 200
+    finished, view = wait_for_value(
+        lambda: dict(centrum.client.get("/api/runs/current").json()), lambda view: view["state"] == "finished", 60
+    )
+
+    assert finished, f"Uruchomienie nie skończyło się: {view['state']}"
+    assert without_times(view["result"]) == without_times(expected["result"])
+    log = centrum.log_path.read_text(encoding="utf-8")
+    assert 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="po wyniku Uruchomienia procesu"' in log
 
 
 def test_katalog_logow_bez_prawa_zapisu_daje_ten_sam_wynik_bez_komunikatu(tmp_path: Path) -> None:

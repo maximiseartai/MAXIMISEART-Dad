@@ -368,14 +368,13 @@ class RunHost:
             run = Run(self, prepared, self._stops, self._threads)
             self._created(run, self._events[-1])
             self._run = run
-            # Wynik poprzedniego Uruchomienia zostaje dla karty, która go jeszcze nie odczytała (#723).
             self._events = self._events[-1:]
             self._publish_locked(run.running_view())
             view = self._events[-1].view
         self._log.run_started(process=prepared.kind.key, mode=run.info.mode, period=prepared.period)
         try:
             self._run_started(run.info, run.started_at)
-        except Exception as failure:  # zapis startu na dysku nie może zmienić Uruchomienia
+        except Exception as failure:
             self._log.unexpected_failure(failure, where="start Uruchomienia procesu")
         self._threads.Thread(target=run.work, name=f"{RUN_THREAD_PREFIX}{run.info.id}", daemon=True).start()
         return view
@@ -426,7 +425,7 @@ class RunHost:
         for action in self._after_run:
             try:
                 action.run_ended(run)
-            except Exception as failure:  # działanie po wyniku nie może zmienić wyniku Uruchomienia
+            except Exception as failure:
                 self._log.unexpected_failure(failure, where="po wyniku Uruchomienia procesu")
 
     def finished(self, run: EndedRun) -> None:
