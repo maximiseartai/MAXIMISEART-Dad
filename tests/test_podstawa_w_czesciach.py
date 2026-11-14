@@ -329,6 +329,21 @@ def drive_centrum(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
         del sys.modules[name]
 
 
+def test_spozniona_odpowiedz_trasy_bez_podanej_odpowiedzi_puszcza_zadanie_dalej_takze_na_atrapie_playwright(
+    drive_centrum: ModuleType,
+) -> None:
+    """Napęd wczytuje się na atrapie Playwrighta, której ``Route`` nie ma metod prawdziwej trasy: wartość domyślna
+    ``answer_late`` z klasy ``Route`` wywracała import ``drive/waiting.py`` (PR #1719, CI). Bez podanej odpowiedzi trasa
+    idzie dalej do Centrum."""
+
+    puszczone: list[str] = []
+    trasa = SimpleNamespace(continue_=lambda: puszczone.append("dalej"))
+
+    sys.modules["drive.waiting"].answer_late(trasa, 0)
+
+    assert puszczone == ["dalej"]
+
+
 def test_drive_przejezdza_podane_funkcje_w_podanej_kolejnosci_po_potrzebach_ktorych_jeszcze_nie_przejechal(
     drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
