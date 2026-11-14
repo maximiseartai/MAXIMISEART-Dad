@@ -152,8 +152,7 @@ class UnrepresentableLogs(ValueError):
     Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
     przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
     każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
-    taty, także liczba w polu ``READ_VALUES``. Pole, którego wartość w pełnych Logach jest krótsza, przemiatanie
-    przepuszcza."""
+    taty, także liczba w polu ``READ_VALUES``."""
 
     def __init__(self, place: str, *, stuck: bool = False) -> None:
         reason = (
@@ -337,8 +336,8 @@ _MINTED: Final = object()
 """Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
 ``guard_text``.
 
-Sprawdzenia łapią błąd kodu, który zapomniał strażnika albo przerobił wartość, która go przeszła (Logi Urwanego
-Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to zostaje przeglądowi.
+Sprawdzenia niżej łapią kod, który zapomniał strażnika albo przerobił wartość, która go przeszła, a ich granice
+pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``, każda za klasą nazwaną w swojej nazwie.
 
 - Konstruktor bez ``_MINTED`` rzuca ``TypeError``, a ``_MINTED`` zna tylko ten moduł.
 - ``dataclasses.replace``: to nie są dataclassy, więc mypy odrzuca wywołanie (``type-var``), a Python rzuca ``TypeError``.
@@ -354,9 +353,6 @@ Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejś
 - ``_MINTED`` i nazwa ``GuardedLogs`` albo ``GuardedText`` poza adnotacją, importem i ``isinstance`` (np.
   ``object.__new__(GuardedLogs)``, ``cast(GuardedLogs, …)``, napis ze slotem ``_GuardedLogs__…``): łapie test
   ``tests/test_granice_importow.py``.
-- Granica, którą łapie tylko przegląd: celowe obejście bez tych nazw, np. ``object.__new__(type(logs))`` (wartość bez
-  slotów, której odczyt rzuca ``AttributeError``), zmiana ``__class__`` innej wartości albo nazwa złożona w trakcie
-  działania.
 - Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
 
 
