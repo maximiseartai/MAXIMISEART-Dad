@@ -1183,21 +1183,41 @@ def test_komentarz_w_src_przechodzi_tylko_jako_tlumienie_w_gramatyce_reguly(tmp_
     ]
 
 
-_PAGE ="from playwright.sync_api import Page\n\n\n"
+# Znane luki reguły ``komentarz-w-src`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z komentarzem
+# poza tłumieniem, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+ZNANE_LUKI_KOMENTARZY: Final = {
+    "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
+    "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
+    "powód tłumienia: drugie type: ignore w powodzie": 'x: int = "a"  # type: ignore[assignment]  # type: ignore[misc]\n',
+    "kod ruff: słowo w kształcie kodu na linii bez naruszenia": "x = 1  # noqa: PR1614 - historia\n",
+    "kod mypy: słowo w kształcie kodu w gałęzi, której mypy nie sprawdza": f"{_DARWIN}[historia]\n",
+    "dyrektywa ast-grep-ignore: nazwa tej reguły na linii komentarza": (
+        "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_KOMENTARZY, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_i_ruff")
+
+
+_PAGE = "from playwright.sync_api import Page\n\n\n"
 
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
 ZNANE_LUKI: Final = {
-    "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": {
-        "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
-        "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
-        "powód tłumienia: drugie type: ignore w powodzie": 'x: int = "a"  # type: ignore[assignment]  # type: ignore[misc]\n',
-        "kod ruff: słowo w kształcie kodu na linii bez naruszenia": "x = 1  # noqa: PR1614 - historia\n",
-        "kod mypy: słowo w kształcie kodu w gałęzi, której mypy nie sprawdza": f"{_DARWIN}[historia]\n",
-        "dyrektywa ast-grep-ignore: nazwa tej reguły na linii komentarza": (
-            "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
-        ),
-    },
     "test_stan_pliku_w_src_tylko_przez_file_state": {
         # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
         "lista folderu z iterdir": """\
