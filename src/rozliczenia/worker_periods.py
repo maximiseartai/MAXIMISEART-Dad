@@ -80,9 +80,9 @@ class WorkerPeriods:
     """Szukanie loginów w okresach jednym uchwytem plików taty pracy Centrum.
 
     Pamięta Wykonawców każdego przeczytanego Pliku zbiorczego z jego rozmiarem i chwilą zmiany z listowania Folderu
-    okresu, więc następne szukanie czyta tylko Pliki zbiorcze zmienione od tamtej pory: pełne przejście lustra folderów
-    taty z 52 okresami to 5 s na Macu, z 260 okresami 25 s (pomiar #1474), a plik „tylko online” OneDrive pobiera się
-    przy każdym odczycie. Rejestr zleceń czyta za każdym razem (1 s na Rejestrze taty), bo zmienia się codziennie.
+    okresu, więc następne szukanie czyta tylko Pliki zbiorcze zmienione od tamtej pory: pełne przejście czyta Plik
+    zbiorczy każdego okresu, a plik „tylko online” OneDrive pobiera się przy każdym odczycie. Rejestr zleceń czyta za
+    każdym razem, bo zmienia się codziennie.
     Pamięć żyje tyle co praca Centrum.
     """
 
@@ -120,7 +120,8 @@ class WorkerPeriods:
 
     def _in_collective_file(self, folder: PeriodFolder, wanted: frozenset[str]) -> InPeriod | Unchecked | None:
         """Login z ``wanted`` w Pliku zbiorczym okresu ``folder``; ``None``: nie ma go tam albo okres nie ma Pliku
-        zbiorczego."""
+        zbiorczego. Windows i macOS nie rozróżniają wielkości liter, więc Plik zbiorczy może mieć w listowaniu Folderu
+        okresu nazwę w innej wielkości liter: wtedy o tym, czy jest, rozstrzyga ``file_state``."""
 
         token = folder.period.token
         path = folder.collective_file
@@ -130,7 +131,6 @@ class WorkerPeriods:
             return Unchecked("collective_file", token)
         entry = listed.get(path.name)
         if entry is None:
-            # Windows i macOS nie rozróżniają wielkości liter, więc plik może mieć w listowaniu inną nazwę.
             match file_state(path):
                 case "missing":
                     return None

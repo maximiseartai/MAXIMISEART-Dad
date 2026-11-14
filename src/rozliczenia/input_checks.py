@@ -34,10 +34,10 @@ from .workbook_files import Problem, WorkbookError
 from .worker_list import WorkerList
 
 
-# Dawna nazwa Wzorca rozliczenia pracownika, zmieniona 18.10.2026 przed pierwszym Wydaniem (v0.1.0). Usuń ją razem z
-# ``_worker_template_unusable``, gdy Log Uruchomienia taty pokaże Przebieg rozliczeń, którego Sprawdzanie przeszło
-# Wzorzec pod obecną nazwą: podpowiedź pomaga tylko temu, komu Wzorca pod obecną nazwą brakuje (D3 rozplątania 7.11).
 _OLD_WORKER_TEMPLATE_NAME: Final = "placeholder.xlsx"
+"""Nazwa Wzorca rozliczenia pracownika sprzed pierwszego Wydania. Podpowiedź zmiany nazwy pomaga tylko temu, komu Wzorca
+pod obecną nazwą brakuje, więc ta stała i ``_worker_template_unusable`` są do usunięcia, gdy Log Uruchomienia taty pokaże
+Przebieg rozliczeń, którego Sprawdzanie przeszło Wzorzec pod obecną nazwą."""
 
 
 def _worker_template_unusable(error: WorkbookError) -> Message:

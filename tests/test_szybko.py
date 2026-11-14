@@ -105,6 +105,8 @@ RULE_GUARDS = frozenset(
     tests/test_decyzje_na_faktach.py
     tests/test_dokumenty_regul.py
     tests/test_granice_importow.py
+    tests/test_granice_importow.py::test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow
+    tests/test_granice_importow.py::test_graf_kontraktow_importow_ma_kazdy_plik_py_pakietu_rozliczenia
     tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow
     tests/test_granice_importow.py::test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look
     tests/test_granice_importow.py::test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy
