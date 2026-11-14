@@ -590,6 +590,16 @@ def test_wykonawca_z_dwoma_loginami_ma_jedno_rozliczenie_pracownika_z_wierszami_
     ]
 
 
+def _stopped_in(phase: ProgressPhase) -> dict[ProgressPhase, PhaseState]:
+    """Stany etapów Uruchomienia zatrzymanego w etapie ``phase``: wcześniejsze ukończone, późniejsze nierozpoczęte."""
+
+    order = list(ProgressPhase)
+    return {
+        each: PhaseState.COMPLETED if order.index(each) < order.index(phase) else PhaseState.FAILED if each is phase else PhaseState.PENDING
+        for each in order
+    }
+
+
 @pytest.mark.parametrize(
     "damage",
     [overwrite_with_non_workbook, cut_sheet_after_data_rows, without_sheet],
@@ -601,17 +611,19 @@ def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_kom
 ) -> None:
     source_path, target_directory, config_path = make_fixture(tmp_path)
     damage(source_path)
+    projection = ProgressProjection()
 
     with pytest.raises(StopError) as stop:
         run_settlements(
             SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
-            RunContext(),
+            RunContext(observer=projected(projection)),
         )
 
     assert (stop.value.message.code, stop.value.message.what) == (
         "ZLY_PLIK_ZBIORCZY",
         f"{UNFIT_COLLECTIVE_FILE_PREFIX} {UNREADABLE_SOURCE_MESSAGE}",
     )
+    assert projection.snapshot.phase_states == _stopped_in(ProgressPhase.READING)
     assert not target_directory.exists()
     assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
 
@@ -674,17 +686,24 @@ def test_format_liczby_bez_definicji_w_kolumnach_wygladu_to_uszkodzony_plik_zbio
 
 
 @pytest.mark.parametrize(
-    ("failing", "error"),
+    ("failing", "error", "failing_phase"),
     [
-        ("read_bytes", PermissionError(errno.EACCES, "The process cannot access the file because it is being used by another process")),
-        ("read_bytes", OSError(errno.EIO, "The cloud file provider is not running")),
-        ("stat", PermissionError(errno.EACCES, "Permission denied")),
+        (
+            "read_bytes",
+            PermissionError(errno.EACCES, "The process cannot access the file because it is being used by another process"),
+            ProgressPhase.READING,
+        ),
+        ("read_bytes", OSError(errno.EIO, "The cloud file provider is not running"), ProgressPhase.READING),
+        ("stat", PermissionError(errno.EACCES, "Permission denied"), ProgressPhase.CHECKING),
     ],
     ids=["zablokowany-przez-inny-program", "onedrive-bez-sieci", "folder-bez-dostepu"],
 )
 def test_plik_zbiorczy_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str, error: OSError
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str, error: OSError, failing_phase: ProgressPhase
 ) -> None:
+    """Plik zbiorczy, którego system nie oddaje, zatrzymuje Przebieg w Odczycie danych po ukończonym Sprawdzaniu; folder
+    bez dostępu (``stat``) już w Sprawdzaniu."""
+
     source_path, target_directory, config_path = make_fixture(tmp_path)
     original = getattr(Path, failing)
 
@@ -694,13 +713,15 @@ def test_plik_zbiorczy_niedostepny_do_odczytu_nie_jest_nazwany_uszkodzonym(
         return original(path, **options)
 
     monkeypatch.setattr(Path, failing, blocked)
+    projection = ProgressProjection()
 
     with pytest.raises(StopError) as stop:
         run_settlements(
             SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
-            RunContext(),
+            RunContext(observer=projected(projection)),
         )
 
+    assert projection.snapshot.phase_states == _stopped_in(failing_phase)
     assert stop.value.message.code == "NIEDOSTEPNY_PLIK_ZBIORCZY"
     assert "uszkodzony" not in stop.value.message.text
     assert not target_directory.exists()
