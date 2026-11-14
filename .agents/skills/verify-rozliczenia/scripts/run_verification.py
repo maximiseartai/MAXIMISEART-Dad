@@ -106,8 +106,8 @@ class PlanFailure(RuntimeError):
 
 @dataclass(frozen=True)
 class PlannedStep:
-    """A step of a variant: its name, the command it runs with the run's folders as their ``PLACEHOLDERS``, and the
-    exit code it expects; ``None`` for a change the workflow makes to the run root between steps, whose command says
+    """A step of a variant: its name, the command it runs with the run's folders as ``<run-root>``, ``<evidence>``,
+    ``<templates>`` and ``<run-dir>``, and the exit code it expects; ``None`` for a change the workflow makes to the run root between steps, whose command says
     what it makes."""
 
     name: str
@@ -117,15 +117,16 @@ class PlannedStep:
 
 @dataclass
 class _Record:
-    """The steps one ``_verify`` passes through, and whether they only get recorded (a plan) or also run."""
+    """The steps one ``_verify`` passes through, whether they only get recorded (a plan) or also run, and the run's
+    folders with the placeholder each shows as."""
 
     planning: bool
-    folders: dict[str, str]
+    folders: dict[str, str] = field(default_factory=dict)
     steps: list[PlannedStep] = field(default_factory=list)
 
 
 _record: _Record | None = None
-PLACEHOLDERS = {"run root": "<run-root>", "evidence": "<evidence>", "templates": "<templates>", "run dir": "<run-dir>"}
+RUN_ROOT, EVIDENCE, TEMPLATES, RUN_DIR = "<run-root>", "<evidence>", "<templates>", "<run-dir>"
 
 
 def _noted(name: str, words: list[str], expected_exit: int | None) -> bool:
@@ -151,14 +152,15 @@ def _shown(word: str, folders: dict[str, str]) -> str:
 
 def plan(variant: str) -> list[PlannedStep]:
     """The steps ``variant`` runs: ``_verify`` runs its workflow, but every step and every change to the run root is
-    recorded instead of run, with ``PLACEHOLDERS`` for the run's folders. A workflow that does not reach its end so is a ``PlanFailure``."""
+    recorded instead of run, in folders named by their placeholders. A workflow that does not reach its end so is a
+    ``PlanFailure``."""
 
     global _record
-    outer, _record = _record, _Record(planning=True, folders={placeholder: placeholder for placeholder in PLACEHOLDERS.values()})
+    outer, _record = _record, _Record(planning=True)
     try:
         output = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            ended = _verify(variant, Path(PLACEHOLDERS["templates"]), Path(PLACEHOLDERS["run dir"]))
+            ended = _verify(variant, Path(TEMPLATES), Path(RUN_DIR))
         if ended != 0:
             raise PlanFailure(f"the plan of {variant} stopped: {output.getvalue().strip()}")
         return _record.steps
@@ -711,13 +713,10 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
     global _record
     variant_config = WORKFLOW_VARIANTS[variant]
     planning = _record is not None and _record.planning
-    if planning:
-        run = Run(Path(PLACEHOLDERS["run root"]), Path(PLACEHOLDERS["evidence"]))
-    else:
-        run = new_run(run_dir, f"rozliczenia-{uuid.uuid4().hex}")
-        folders = {run.root: "run root", run.evidence: "evidence", templates_directory: "templates", run_dir: "run dir"}
-        _record = _Record(planning=False, folders={str(path): PLACEHOLDERS[key] for path, key in folders.items()})
-    ran = _record
+    run = Run(Path(RUN_ROOT), Path(EVIDENCE)) if planning else new_run(run_dir, f"rozliczenia-{uuid.uuid4().hex}")
+    ran = _record = _record if planning and _record else _Record(planning=False)
+    folders = {run.root: RUN_ROOT, run.evidence: EVIDENCE, templates_directory: TEMPLATES, run_dir: RUN_DIR}
+    ran.folders = {str(folder): placeholder for folder, placeholder in folders.items()}
     run_root, evidence_root = run.root, run.evidence
     failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
@@ -778,7 +777,7 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
     if missing:
         print(f"VERIFY FAIL | missing evidence: {', '.join(missing)}", file=sys.stderr)
         return 1
-    if not planning and ran is not None and ran.steps != (planned := plan(variant)):
+    if not planning and ran.steps != (planned := plan(variant)):
         differing = next(f"{a} != {b}" for a, b in zip([*ran.steps, None], [*planned, None], strict=False) if a != b)
         print(f"VERIFY FAIL | variant={variant} | the steps that ran differ from its plan: {differing}", file=sys.stderr)
         return 1

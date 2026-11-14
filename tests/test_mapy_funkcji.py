@@ -689,17 +689,43 @@ def test_plan_kazdego_wariantu_biegnie_do_konca_bez_sladu_na_dysku(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_plan_jest_taki_sam_ze_sciezkami_windows(przebieg: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Plan pokazuje foldery runu ukośnikiem na każdym systemie, więc sekcja mapy i porównanie biegu z planem nie
-    zależą od separatora ścieżki: tu ścieżki budowane jak na Windows (CI #1804, run 43616329420)."""
+class _SciezkaWindows(PureWindowsPath):
+    """Ścieżka z regułami Windows, której pliki nie istnieją, a zapis do nich niczego nie robi."""
 
-    posix = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
-    monkeypatch.setattr(przebieg, "Path", PureWindowsPath)
+    def exists(self) -> bool:
+        return False
+
+    def is_file(self) -> bool:
+        return False
+
+    def write_text(self, data: str, encoding: str | None = None) -> int:
+        return len(data)
+
+
+def test_plan_i_bieg_pokazuja_te_same_polecenia_ze_sciezkami_windows(
+    przebieg: ModuleType, polecenie_rozliczen: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Na regułach ścieżek Windows plan każdego wariantu jest taki sam jak na tym systemie, sekcja z polecenia równa się
+    plikowi mapy, a bieg workflow w folderach Windows zapisuje te same polecenia co plan: plan i bieg pokazują folder
+    runu jedną drogą (W1 r2 #1804, run 43616329420)."""
+
+    tutaj = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+    monkeypatch.setattr(przebieg, "Path", _SciezkaWindows)
     monkeypatch.setattr(przebieg.os, "sep", "\\")
+    monkeypatch.setattr(przebieg, "_launch", lambda arguments, environment: przebieg._Completed("", "", 0))
+    foldery = {r"D:\run\runs\x": "<run-root>", r"D:\run\evidence\x": "<evidence>", r"D:\wzorce": "<templates>"}
+    bieg = przebieg._Record(planning=False, folders=foldery)
+    monkeypatch.setattr(przebieg, "_record", bieg)
 
     windows = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+    sekcja = polecenie_rozliczen.section("order-intermax", przebieg)
+    przebieg._run_workflow("intermax", *(_SciezkaWindows(folder) for folder in foldery))
 
-    assert windows == posix
+    assert windows == tutaj
+    assert f"\n{sekcja}\n## How to get to it (user POV)\n" in (ROZLICZENIA / "features" / "order-intermax.md").read_text(
+        encoding="utf-8"
+    )
+    assert bieg.steps == [krok for krok in tutaj["intermax"] if krok.name not in ("cleanup", "self-test")]
 
 
 def _workflow_proby(przebieg: ModuleType, rozwidlenie: bool) -> Callable[..., None]:
