@@ -6,14 +6,19 @@ order, and its line joins the messages of the ``run.check`` calls after it, whic
 only once, at its top level, to a string) or an f-string. A placeholder of the f-string that is such a constant, with
 no conversion and no format spec, prints its value; every other placeholder prints as ``…``, whatever its expression,
 conversion or format spec, because the value is known only when the drive runs. The literal text prints as it is,
-``{{`` as ``{``.
+``{{`` as ``{``. A helper (a plain top-level function the module binds once, whose first parameter is ``run`` and
+whose body calls ``run.step`` or ``run.check``) prints its steps and checks where ``drive`` calls it.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
 one, a step name that is no string literal, a message of another kind,
 a check before the first step, and any attribute ``.step`` or ``.check`` in the module, on whatever object, that
-is not the called function of such a call on ``run`` in the body of ``drive`` itself (outside any function, lambda or
-class in it). It does not see a check reached without such an attribute, as ``getattr(run, "check")``. Checks in the
+is not the called function of such a call on ``run`` in the body of ``drive`` or of a helper (outside any function,
+lambda or class in it), any use of a helper's name but one call ``helper(run, …)`` in the body of ``drive`` outside
+any loop or condition, and a helper that is decorated or yields: elsewhere it cannot tell whether, how many times or
+when the helper runs. It does not see a check reached without such an attribute, as ``getattr(run, "check")``, a
+function of another drive module, a helper reached without its name, as ``globals()["helper"]``, or a call the flow of
+``drive`` skips, as after a ``return``. Checks in the
 shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the section: the
 section maps this module's own steps and checks.
 """
@@ -30,6 +35,10 @@ from drive import FEATURES, feature
 
 DRIVE = Path(__file__).resolve().parent / "drive"
 CALLS = frozenset({"step", "check"})
+# The fields of a loop or a condition that run once when it runs; a call in another field may run never or many times.
+ONCE = {ast.For: {"target", "iter"}, ast.AsyncFor: {"target", "iter"}, ast.While: set(), ast.ListComp: set(), ast.SetComp: set(),
+        ast.DictComp: set(), ast.GeneratorExp: set(), ast.If: {"test"}, ast.IfExp: {"test"}, ast.Match: {"subject"},
+        ast.Try: {"body", "finalbody"}, ast.TryStar: {"body", "finalbody"}, ast.Assert: {"test"}, ast.BoolOp: set()}
 
 
 class Unreadable(Exception):
@@ -152,7 +161,7 @@ def _is_run_call(node: ast.AST) -> bool:
 
 def _refuse_other_forms(tree: ast.Module, own: list[ast.Call], module: str) -> None:
     """Fails on every attribute ``.step``/``.check`` in the module, on whatever object, but the called function of
-    ``own``: the command does not tell which object is a ``Run``, so it reads none but ``run`` in ``drive``."""
+    ``own``: the command does not tell which object is a ``Run``, so it reads none but ``run`` in ``drive`` and helpers."""
 
     read = {id(call.func) for call in own}
     for node in ast.walk(tree):
@@ -160,9 +169,60 @@ def _refuse_other_forms(tree: ast.Module, own: list[ast.Call], module: str) -> N
             raise _refuse(
                 module,
                 node,
-                f"`{ast.unparse(node)}` is not run.{node.attr} called in the body of drive() itself; call "
-                f"run.{node.attr}(…) there, so the map sees what the drive prints",
+                f"`{ast.unparse(node)}` is not run.{node.attr} called in the body of drive() or of a helper drive() calls "
+                f"once as `helper(run, …)`; call run.{node.attr}(…) there, so the map sees what the drive prints",
             )
+
+
+def _helpers(tree: ast.Module) -> dict[str, ast.FunctionDef]:
+    bound = Counter(name for node in ast.walk(tree) for name in _binds(node))
+    return {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name != "drive"
+            and bound[node.name] == 1 and [a.arg for a in [*node.args.posonlyargs, *node.args.args][:1]] == ["run"]
+            and _own_calls(node)}
+
+
+def _helper_calls(tree: ast.Module, drive: ast.FunctionDef, helpers: dict[str, ast.FunctionDef], module: str) -> list[ast.Call]:
+    """The one call ``helper(run, …)`` of each helper in the body of ``drive``; fails on any other use of its name."""
+
+    def cannot_tell(node: ast.AST, what: str) -> Unreadable:
+        return _refuse(module, node, f"`{name}` {what}, but it calls run.step or run.check: the command prints a helper's "
+                       "steps and checks only at its one call `helper(run, …)` in the body of drive() outside any loop or "
+                       "condition, as elsewhere it cannot tell whether, how many times or when they run; call the plain "
+                       "helper once there, or move its run.step and run.check into drive()")
+
+    parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    calls = []
+    for name, helper in helpers.items():
+        named = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == name), key=lambda n: (n.lineno, n.col_offset))
+        if helper.decorator_list or any(isinstance(node, (ast.Yield, ast.YieldFrom)) for node in ast.walk(helper)):
+            raise cannot_tell(helper, "is decorated or yields")
+        if len(named) > 1:
+            raise cannot_tell(named[1], f"is named {len(named)} times in the module")
+        if not named:
+            continue
+        call = parents[id(named[0])]
+        if not (isinstance(call, ast.Call) and call.func is named[0] and call.args[:1]
+                and isinstance(call.args[0], ast.Name) and call.args[0].id == "run"):
+            raise cannot_tell(named[0], "is named here without the call `helper(run, …)`")
+        child: ast.AST = call
+        while (parent := parents[id(child)]) is not drive:
+            if isinstance(parent, ast.Module):
+                raise cannot_tell(call, "is called outside drive()")
+            if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                raise cannot_tell(call, f"is called in `{getattr(parent, 'name', 'lambda')}`")
+            once = parent.values[:1] if isinstance(parent, ast.BoolOp) else [node for field, value in ast.iter_fields(parent)
+                   if field in ONCE.get(type(parent), ()) for node in (value if isinstance(value, list) else [value])]
+            if type(parent) in ONCE and not any(node is child for node in once):
+                raise cannot_tell(call, "is called in a loop or a condition")
+            child = parent
+        calls.append(call)
+    return calls
+
+
+def _end(call: ast.Call) -> tuple[int, int]:
+    """Where ``call`` ends: Python runs a call in an argument of another call before it."""
+
+    return (call.end_lineno or call.lineno, call.end_col_offset or call.col_offset)
 
 
 def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
@@ -172,7 +232,10 @@ def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
     tree = ast.parse(source)
     constants = _constants(tree)
     drive = _drive(tree, module)
-    own = _own_calls(drive)
+    helpers = _helpers(tree)
+    own: list[ast.Call] = []
+    for call in sorted([*_own_calls(drive), *_helper_calls(tree, drive, helpers, module)], key=_end):
+        own += _own_calls(helpers[call.func.id]) if isinstance(call.func, ast.Name) else [call]
     _refuse_other_forms(tree, own, module)
     steps: list[tuple[str, list[str]]] = []
     for call in own:

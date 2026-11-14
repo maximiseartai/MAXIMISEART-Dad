@@ -154,10 +154,14 @@ behaviour, then exactly these H2s in order:
    `STEP <feature> | <id>` lines in `drive.txt`, and a section that names
    `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
    The command reads only `run.step(feature, "<id>")` and `run.check(condition, message)`
-   called in the body of `drive(run, page)`. It refuses, with the file and the line,
-   every other form of them and every other `.step` or `.check` attribute in the
-   module, on whatever object. It does not see a check reached without such an
-   attribute, as `getattr(run, "check")`. A field of an f-string message prints
+   called in the body of `drive(run, page)` and of a helper of the module that `drive`
+   calls once as `helper(run, …)` outside any loop or condition, where the helper's steps
+   and checks print. It refuses, with the file and the line, every other form of them, every
+   other `.step` or `.check` attribute in the module, on whatever object, any other use of such
+   a helper and one that is decorated or yields, as it cannot tell whether, how many times or
+   when that runs. It does not see a check reached without such an attribute, as
+   `getattr(run, "check")`, a function of another drive module, a helper reached without its
+   name, or a call the flow of `drive` skips. A field of an f-string message prints
    as `…`, except a module constant, which prints its value. A line with the ID
    alone is a step without its own `run.check`: what it waits for (`until`,
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
