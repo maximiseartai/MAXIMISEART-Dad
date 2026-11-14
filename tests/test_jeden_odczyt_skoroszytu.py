@@ -425,6 +425,7 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
         "    monkeypatch.setattr(wf_bytes, '__doc__', '')\n"
         "    mock.patch.object(sys, 'stdin')\n"
         "    mock.patch('rozliczenia.input_checks.check_preparation')\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook_files_kopia')\n"
     )
 
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
@@ -574,6 +575,25 @@ from rozliczenia import intermax_restore
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     argumenty = ("workbook_files", None)
     monkeypatch.setattr(intermax_restore, *argumenty)
+""",
+    "zna nazwę atrybutu tylko z tekstu wywołania: nazwa po gwiazdce zmiennej, która kończy listę pozycji": """\
+import pytest
+
+from rozliczenia import intermax_restore
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    cel = (intermax_restore,)
+    monkeypatch.setattr(*cel, "workbook_files", None)
+""",
+    "zna moduł skoroszytu tylko jako workbook_files: jego nazwa zaimportowana w innym module": """\
+import pytest
+
+from rozliczenia import template_file
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(template_file, "template_content", lambda *args: None)
 """,
 }
 
