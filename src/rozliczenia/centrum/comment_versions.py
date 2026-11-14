@@ -39,7 +39,7 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text, tool_text
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.client_data import WithoutSubclasses, tool
 
@@ -308,7 +308,9 @@ def post_of(version: CommentVersion) -> LogsPost:
     to dokładnie jedna z klas ``CommentVersion`` (porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa
     z własnym ``__eq__``), a tekst i Logi czytane raz i sprawdzone przez ``exact_text`` i ``exact_logs``, więc wartość
     podmieniona po przyjęciu przez ``object.__setattr__`` też odpada. Nie zamyka zmiany w chwili działania samej klasy
-    dokładnego typu, modułu ani pól typu-dowodu (przypisanie ``__class__``, slot ``object.__setattr__``)."""
+    dokładnego typu, modułu ani pól typu-dowodu (przypisanie ``__class__``, slot ``object.__setattr__``). Okres i
+    identyfikator z faktów startu (postęp i wynik bez Logów biorą je z dziennika Wyceny, poza strażnikiem) bierze przez
+    ``run_logs_guard.tool_text``: poza gramatyką pola stają się maską."""
 
     if not any(type(version) is kind for kind in get_args(CommentVersion)):
         raise TypeError(f"Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie {type(version).__name__}.")
@@ -323,7 +325,7 @@ def post_of(version: CommentVersion) -> LogsPost:
             start, comment, archive = final.journal.started, exact_text(text).text, None
         case _:
             assert_never(version)
-    period = start.period
+    period = tool_text("RunLog.period", start.period)
     post = Post(
         PeriodThread(
             label=LABEL,
@@ -332,7 +334,7 @@ def post_of(version: CommentVersion) -> LogsPost:
             title=tool(f"Logi Uruchomienia {period}"),
         ),
         period=period,
-        run_id=tool(start.run_id),
+        run_id=tool(tool_text("RunLog.run_id", start.run_id)),
         header=tool(
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
             f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."

@@ -12,9 +12,15 @@ from collections.abc import Mapping
 import inspect
 from pathlib import Path
 from types import ModuleType
+from typing import Final
 
 from rozliczenia.centrum.outbox import ArchiveFile, NewIssue, OpenIssue, PeriodThread, Post
 from rozliczenia.client_data import tool
+
+SLOWO: Final = "SyntetycznaLipowa5"
+"""Wartość komórki jednym słowem (numer, login): ``Post`` bierze ją jako identyfikator wysyłki, a gramatyka
+identyfikatora (``run_logs_guard.TOOL_TEXT_GRAMMAR``) do niej pasuje. Próbka z parametrem ``slowo`` dostaje ją i bieg
+szuka jej w pliku kolejki zamiast ``komorka``."""
 
 
 def tekst_pliku_kolejki(wynik: object) -> str:
@@ -44,7 +50,7 @@ def bieg_do_pliku_kolejki(
 ) -> list[str]:
     """Zgłoszenie biegu próbki: jedyna funkcja modułu próbki dostaje z ``argumenty`` swoje parametry po nazwie, a jej wynik
     idzie do pliku kolejki (``tekst_pliku_kolejki``), do którego bieg dokłada pliki z katalogu ``kolejka``. Odmowa
-    (``TypeError``) albo plik kolejki bez ``komorka`` to zgłoszenie; pusta lista: wartość komórki stoi w pliku kolejki."""
+    (``TypeError``) albo plik kolejki bez ``komorka`` (``SLOWO`` dla próbki z parametrem ``slowo``) to zgłoszenie; pusta lista: wartość komórki stoi w pliku kolejki."""
 
     funkcje = [
         wartosc
@@ -53,10 +59,12 @@ def bieg_do_pliku_kolejki(
     ]
     assert len(funkcje) == 1, f"próbka ma mieć jedną funkcję, a ma {[funkcja.__name__ for funkcja in funkcje]}"
     funkcja = funkcje[0]
+    parametry = inspect.signature(funkcja).parameters
+    szukana = SLOWO if "slowo" in parametry else komorka
     try:
-        tekst = tekst_pliku_kolejki(funkcja(**{nazwa: argumenty[nazwa] for nazwa in inspect.signature(funkcja).parameters}))
+        tekst = tekst_pliku_kolejki(funkcja(**{nazwa: ({"slowo": SLOWO} | dict(argumenty))[nazwa] for nazwa in parametry}))
     except TypeError as odmowa:
         return [f"bieg TypeError: {odmowa}"]
     if kolejka is not None:
         tekst += "".join(plik.read_text(encoding="utf-8") for plik in sorted(kolejka.glob("*.json")))
-    return [] if komorka in tekst else ["bieg: plik kolejki bez wartości komórki"]
+    return [] if szukana in tekst else ["bieg: plik kolejki bez wartości komórki"]
