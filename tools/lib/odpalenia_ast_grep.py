@@ -8,12 +8,12 @@ Różnica nie zależy od środowiska, atrybutów z drzewa ani konfiguracji gita 
 w CI, gdzie gita nikt nie konfiguruje:
 
 - git biegnie przez ``repo.git(isolated=True)``: bez zmiennych wołającego (``GIT_DIFF_OPTS``, ``GIT_*_PATHSPECS``,
-  ``GIT_CONFIG_*``, ``XDG_CONFIG_HOME``), bez konfiguracji i atrybutów systemu, bez konfiguracji użytkownika i z
-  ``root`` jako drzewem roboczym;
+  ``GIT_CONFIG_*``, ``XDG_CONFIG_HOME``), bez konfiguracji i atrybutów systemu, bez konfiguracji użytkownika, bez
+  obiektów podmienionych przez ``refs/replace`` i z ``root`` jako drzewem roboczym;
 - konfigurację checkoutu (``.git/config``), której żadna zmienna nie wyłącza, nadpisuje wywołanie tam, gdzie zmienia
-  pliki albo linie: ``core.excludesFile=``, atrybuty z pustego drzewa (``attr.tree``, git ≥ 2.43) bez pliku
-  ``core.attributesFile``, więc ``-diff``, ``binary``, ``diff=`` ani ``filter=`` z ``.gitattributes`` (także
-  w podkatalogu) linii nie chowają, oraz opcje ``_DIFF_OPTIONS``, które wyłączają różnicę binarną, ``textconv``
+  pliki albo linie: ``core.excludesFile=``, ``core.fsmonitor=false`` (hook nie mówi gitowi, które pliki są bez
+  zmian), atrybuty z pustego drzewa (``attr.tree``, git ≥ 2.43) bez pliku ``core.attributesFile``, więc ``-diff``,
+  ``binary``, ``diff=`` ani ``filter=`` z ``.gitattributes`` (także w podkatalogu) linii nie chowają, oraz opcje ``_DIFF_OPTIONS``, które wyłączają różnicę binarną, ``textconv``
   i zewnętrzny program (także dla atrybutów spoza drzewa), kolory, przedrostki z konfiguracji, ``diff.renames``,
   ``diff.algorithm`` i ``diff.indentHeuristic``;
 - ``diff.context``, ``diff.interHunkContext`` i ``diff.suppressBlankEmpty`` dokładają tylko linie kontekstu, które
@@ -21,9 +21,10 @@ w CI, gdzie gita nikt nie konfiguruje:
   kolejność plików, ścieżki względem ``root``, ``diff.renameLimit`` (mniej przeniesień to więcej linii dodanych, nie
   mniej), podmoduły, których repozytorium nie ma, i wyjścia inne niż łatka.
 
-Granica: ``.git/info/attributes`` git czyta dalej, więc jego ``filter=`` albo ``working-tree-encoding`` zmienia linie,
-a ``.git/info/exclude`` chowa plik nieśledzony; PR żadnego z nich nie zmienia (próbki ``ZNANE_LUKI_UKRYC``
-w ``tests/test_zapadki.py``). Plik binarny ma dodane linie jak każdy, bajt spoza UTF-8 staje się znakiem zastępczym,
+Granica: różnicę jak w CI gwarantuje świeży checkout Required CI, a lokalny stan checkoutu, którego PR nie zmienia,
+a żadna zmienna ani opcja gita nie wyłącza, to znana luka: bity indeksu ``assume-unchanged`` i ``skip-worktree``
+chowają zmianę pliku śledzonego, ``.git/info/exclude`` plik nieśledzony, a ``filter=`` albo ``working-tree-encoding``
+z ``.git/info/attributes`` zmienia linie (próbki ``ZNANE_LUKI_UKRYC`` w ``tests/test_zapadki.py``). Plik binarny ma dodane linie jak każdy, bajt spoza UTF-8 staje się znakiem zastępczym,
 a dowiązanie do katalogu i dowiązanie zerwane nie mają żadnej.
 
 Linię różnicy rozpoznaje struktura: nagłówek pliku od ``diff --git`` do pierwszego ``@@``, a w hunku tyle linii bazy
@@ -130,7 +131,7 @@ class Changes:
     def __init__(self, root: Path, base: str, pathspec: str = ".") -> None:
         self._root = root
         # Konfiguracja checkoutu, której ``isolated`` nie wyłącza, a która zmienia pliki albo linie różnicy.
-        checkout = ("-c", "core.excludesFile=", "-c", "core.attributesFile=", "-c", f"attr.tree={EMPTY_TREE}")
+        checkout = ("-c", "core.excludesFile=", "-c", "core.attributesFile=", "-c", f"attr.tree={EMPTY_TREE}", "-c", "core.fsmonitor=false")
         listed = repo.git(root, *checkout, "ls-files", "-z", "--others", "--exclude-standard", "--", pathspec, isolated=True).split("\0")
         self._untracked = sorted(name for name in set(listed) if name)
         self._new = set(self._untracked)

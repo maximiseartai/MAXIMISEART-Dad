@@ -13,11 +13,12 @@ Narzędzie pyta gita tylko przez ten moduł, a ``tests/test_potomne.py`` odrzuca
 
 ``git(..., isolated=True)`` daje gitowi środowisko z listy dozwolonych zamiast środowiska wołającego: ``PATH``
 i ``SYSTEMROOT`` (Windows) wołającego, pusty katalog jako ``HOME``, ``LANG=C``, ``GIT_CONFIG_NOSYSTEM=1``,
-``GIT_ATTR_NOSYSTEM=1``, ``GIT_CONFIG_GLOBAL`` równe ``os.devnull`` i ``GIT_WORK_TREE`` równe ``root``. Taki git nie
-czyta więc żadnej zmiennej ``GIT_*`` ani ``XDG_CONFIG_HOME`` wołającego, konfiguracji ani atrybutów systemu,
-konfiguracji użytkownika ani plików ``ignore`` i ``attributes`` z ``~/.config/git``, a drzewem roboczym jest ``root``
-także wbrew ``core.worktree``; czyta tylko konfigurację repozytorium (``.git/config``) i ``.git/info``, których żadna
-zmienna nie wyłącza.
+``GIT_ATTR_NOSYSTEM=1``, ``GIT_CONFIG_GLOBAL`` równe ``os.devnull``, ``GIT_NO_REPLACE_OBJECTS=1`` i ``GIT_WORK_TREE``
+równe ``root``. Taki git nie czyta więc żadnej zmiennej ``GIT_*`` ani ``XDG_CONFIG_HOME`` wołającego, konfiguracji ani
+atrybutów systemu, konfiguracji użytkownika, plików ``ignore`` i ``attributes`` z ``~/.config/git`` ani obiektów
+podmienionych przez ``refs/replace``, a drzewem roboczym jest ``root`` także wbrew ``core.worktree``. Granica: taki git
+czyta dalej ``.git/config``, ``.git/info`` i indeks checkoutu, więc wynik jak w CI gwarantuje świeży checkout Required
+CI, a lokalne bity indeksu (``assume-unchanged``, ``skip-worktree``) i wykluczenia spoza drzewa to znana luka.
 
 ``git`` i ``succeeds`` to szybkie, lokalne podpolecenia (``FAST_GIT`` w ``tests/test_potomne.py``). Polecenie, które
 trwa albo sięga sieci (fetch, push, zapis drzewa), idzie przez ``run_git``, czyli ``potomne.run``. Brama pre-push
@@ -270,7 +271,7 @@ def _isolated(root: Path) -> Iterator[dict[str, str]]:
 
     with tempfile.TemporaryDirectory(prefix="git-bez-konfiguracji-") as home:
         kept = {name: os.environ[name] for name in _ISOLATED_KEPT if name in os.environ}
-        machine = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+        machine = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_NO_REPLACE_OBJECTS": "1"}
         yield _environment({**kept, **machine, "HOME": home, "LANG": "C", "GIT_WORK_TREE": str(root.resolve())})
 
 

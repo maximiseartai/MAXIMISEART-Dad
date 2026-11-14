@@ -33,7 +33,10 @@ w bazie. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątki
 Baza, która nie jest commitem (puste drzewo w dowodzie braku fałszywych alarmów zapadek), nie ma konfiguracji reguł,
 więc niczego nie ukrywa. Moduł importuje z repozytorium tylko ``repo``, ``potomne`` i ``odpalenia_ast_grep``, jak
 zapadki, a poza biblioteką standardową PyYAML z ``requirements.txt``. Granice pokazują próbki ``ZNANE_LUKI_UKRYC``
-w ``tests/test_zapadki.py``.
+w ``tests/test_zapadki.py``. Gwarancja kroku dotyczy świeżego checkoutu Required CI, a lokalny stan checkoutu to znana
+luka tej samej klasy co bity indeksu w ``odpalenia_ast_grep.Changes``: pliki kroku (``_listed``) daje git ze
+środowiskiem i konfiguracją wołającego, więc lokalny ``core.excludesFile`` chowa przed krokiem plik nieśledzony, który
+zapadki widzą, a w Required CI zmiana jest w commicie, którego każdy plik bierze ``ls-files --cached``.
 """
 
 from __future__ import annotations
