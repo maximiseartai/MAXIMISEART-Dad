@@ -107,7 +107,7 @@ def port_free(port: int) -> bool:
 def _bound(port: int) -> socket.socket:
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        if sys.platform != "win32":
+        if True:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((HOST, port))
     except OSError:
