@@ -20,12 +20,14 @@ import ssl
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
 
 import pytest
 
 from rozliczenia.centrum import tool_freshness, tool_update
 from rozliczenia.centrum.github import TOOL_API
+from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.tool_freshness import (
     GitHubReleases,
     PublishedRelease,
@@ -336,6 +338,68 @@ def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach
         thread.join()
 
     assert (running, proxied) == (RunningCentrum("a" * 40), [])
+
+
+def _client_hello(server: socket.socket) -> bytes:
+    """Pierwszy rekord TLS (ClientHello), który klient przysyła serwerowi ``server``, w całości według długości rekordu."""
+
+    connection, _ = server.accept()
+    with connection:
+        data = b""
+        while len(data) < 5 or len(data) < 5 + int.from_bytes(data[3:5], "big"):
+            chunk = connection.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+    return data
+
+
+_ALPN_EXTENSION = 16
+
+
+def _alpn_protocols(hello: bytes) -> list[bytes] | None:
+    """Protokoły rozszerzenia ALPN z rekordu ClientHello ``hello`` w kolejności klienta; ``None`` bez tego rozszerzenia.
+
+    Układ ClientHello (RFC 8446, 4.1.2): nagłówek rekordu (5 bajtów), nagłówek wiadomości (4), wersja (2), losowe (32),
+    identyfikator sesji, szyfry i kompresje z długością, a po nich rozszerzenia z długością."""
+
+    position = 5 + 4 + 2 + 32
+    position += 1 + hello[position]
+    position += 2 + int.from_bytes(hello[position : position + 2], "big")
+    position += 1 + hello[position]
+    end = position + 2 + int.from_bytes(hello[position : position + 2], "big")
+    position += 2
+    while position < end:
+        kind = int.from_bytes(hello[position : position + 2], "big")
+        length = int.from_bytes(hello[position + 2 : position + 4], "big")
+        data = hello[position + 4 : position + 4 + length]
+        if kind == _ALPN_EXTENSION:
+            protocols, index = [], 2
+            while index < len(data):
+                protocols.append(data[index + 1 : index + 1 + data[index]])
+                index += 1 + data[index]
+            return protocols
+        position += 4 + length
+    return None
+
+
+def test_kontekst_tls_centrum_proponuje_serwerowi_tylko_http_1_1_jak_kontekst_ktory_urllib_tworzy_sam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Własny kontekst TLS procesu (``opener``) nie dostaje ALPN od ``urllib``, więc sam mówi ``http/1.1``: serwer na tym
+    komputerze widzi tę nazwę w ClientHello pytania o adres HTTPS."""
+
+    for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        hello: list[bytes] = []
+        thread = threading.Thread(target=lambda: hello.append(_client_hello(server)), daemon=True)
+        thread.start()
+        with pytest.raises(urllib.error.URLError):
+            opener().open(f"https://127.0.0.1:{server.getsockname()[1]}/", timeout=30)
+        thread.join(30)
+
+    assert _alpn_protocols(hello[0]) == [b"http/1.1"]
 
 
 def test_sprawdzenia_wydan_i_health_wczytuja_certyfikaty_systemu_najwyzej_raz_na_proces(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 import shutil
 import threading
@@ -20,12 +21,21 @@ from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.contract.common import Message, ProcessKey
 from rozliczenia.centrum.contract.metrics import ProcessRun
 from rozliczenia.domain import RunMode
+from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
-from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, Environment, LoggedInterruption, RunLog, StartFacts, Tool
+from rozliczenia.centrum.run_logs import (
+    RUN_LOGS_DIRECTORY,
+    Environment,
+    LoggedInterruption,
+    LoggedOrder,
+    RunLog,
+    StartFacts,
+    Tool,
+)
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -245,6 +255,28 @@ def test_karta_z_historii_po_zatrzymaniu_ma_tytul_i_akcje_jak_na_zywo(
     assert live["stop_kind"] == "for_maks"
     assert (previous["state"], previous["run"], previous["result"]) == ("recorded", running["run"], live["result"])
     assert (previous["headline"], previous["next_action"]) == (live["headline"], live["next_action"])
+
+
+def test_karta_z_historii_po_zatrzymaniu_po_zapisie_proponuje_ponowne_uruchomienie_bo_wiersz_nie_wie_o_silniku(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wiersz Historii nie mówi, czy Zatrzymanie przyszło po silniku, więc karta z niego po zapisie proponuje ponowne
+    Uruchomienie, a nie otwarcie pliku, które pokazała karta na żywo; ponowne Uruchomienie mówi, co z plikami zrobić."""
+
+    centrum = preparing_centrum(tmp_path)
+    centrum.engines.fail_summary = True
+    reached, released = held_before(monkeypatch, RunComments, "run_ended")
+    centrum.start(dry_run=False)
+    assert wait_for(reached.is_set)
+    closed = centrum.client
+
+    centrum.restart()
+
+    previous = centrum.client.get("/api/runs/current").json()["previous"]
+    released.set()
+    live = finished_view(closed)["result"]
+    assert (live["stop_kind"], live["next_action"]) == ("for_maks", "open_collective_file")
+    assert (previous["state"], previous["headline"], previous["next_action"]) == ("recorded", live["headline"], "rerun")
 
 
 def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomienie(
@@ -680,6 +712,21 @@ def test_wiersz_historii_ze_startem_w_chwili_startu_uruchomienia_to_jego_wynik(t
 
     assert previous is not None
     assert (previous.state, previous.started_at, previous.run.id) == ("recorded", SECOND, RUN_ID)
+
+
+def test_wycena_zatrzymana_po_zleceniach_konczy_sie_w_powiadomieniu_bez_liczby_zlecen(tmp_path: Path) -> None:
+    """Po Zatrzymaniu Logi Wyceny w efenix mają zlecenia sprzed niego, ale Powiadomienie liczy zlecenia tylko Wyceny
+    z podsumowaniem, więc zakończona Zatrzymaniem nie ma ich liczby."""
+
+    order = LoggedOrder(row=18, outcome=OrderKind.READY, code=None, file={}, file_amount=Decimal(0), steps=[])
+    stopped = interrupted_logs(start()).model_copy(
+        update={"ending": "stop", "result": "BLAD_KRYTYCZNY", "stop_kind": "for_maks", "efenix_orders": [order]}
+    )
+    written(tmp_path, stopped)
+
+    [ended] = RunCards(on_disk(tmp_path), list).ended("efenix")
+
+    assert (stopped.summary, ended.orders) == (None, None)
 
 
 def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> None:

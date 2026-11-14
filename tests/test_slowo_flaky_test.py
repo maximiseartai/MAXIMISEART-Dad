@@ -3,7 +3,7 @@
 Maks uznał 29.10, że spolszczona forma źle wygląda w repozytorium i na GitHubie (tytuły issues, etykieta, nazwy
 zadań i artefaktów CI), więc test czyta każdy plik śledzony i nieśledzony nieignorowany, także jego ścieżkę, bez
 rozróżniania wielkości liter i także wewnątrz identyfikatorów (``TestX``, ``zapisz_x``). ``flake8`` to nazwa
-programu, nie to słowo. Pliku binarnego (z bajtem zero) test nie czyta.
+programu, także w kluczu ustawień ruff (``flake8_self``), nie to słowo. Pliku binarnego (z bajtem zero) test nie czyta.
 
 Granica: commity, issues i komentarze na GitHubie widzi tylko przegląd.
 """
@@ -17,7 +17,7 @@ from tests.fixtures.git_repo import git
 
 ROOT = Path(__file__).resolve().parents[1]
 # Wzorzec składa słowo z klasy znaków, żeby ten plik sam go nie zawierał.
-SPOLSZCZONE = re.compile(r"fl[a]k(?!y|e8\b)\w*", re.IGNORECASE)
+SPOLSZCZONE = re.compile(r"fl[a]k(?!y|e8(?:_|\b))\w*", re.IGNORECASE)
 # Dane historyczne: tekst, którego nie piszemy, tylko przechowujemy taki, jaki był.
 HISTORIA = {
     "tests/fixtures/opisy_pr.json": "prawdziwe opisy dawnych PR-ów z GitHuba i ich HTML z renderera (tests/fixtures/opisy_pr.py)",

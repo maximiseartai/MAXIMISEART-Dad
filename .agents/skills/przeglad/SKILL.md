@@ -134,7 +134,7 @@ Runda po `FAIL` sprawdza diff od przejrzanego SHA do nowego HEAD i to, czy każd
 Zamkniętych znalezisk nie powtarza.
 Ważne poprzedniej rundy jest zamknięte, gdy korzeń wyrwano według sekcji „Korzeń i chwast”, z dowodem wyrwania i sondą formy siostrzanej.
 Nowe znalezisko w kodzie, którego ta runda nie zmieniła, jest Ważne tylko wtedy, gdy to defekt zachowania z dowodem.
-Po trzeciej rundzie z `FAIL` koordynator nie zleca czwartej, tylko zmienia podejście albo dzieli PR.
+Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR; po trzeciej rundzie z `FAIL` koordynator nie zleca czwartej, tylko zmienia podejście albo dzieli PR.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
 
 ## Tryb autora: przed zleceniem przeglądu

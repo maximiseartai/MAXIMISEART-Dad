@@ -15,8 +15,8 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
 (``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
-potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``), ``TypeError`` w
-konstruktorze wersji. Wysyłkę daje tylko ``post_of`` jako ``LogsPost``, której nikt nie zmieni przed kolejką
+potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``, podklasa), ``TypeError``
+w konstruktorze wersji i w ``post_of``. Wysyłkę daje tylko ``post_of`` jako ``LogsPost``, której nikt nie zmieni przed kolejką
 (docstring ``_VERSIONS``). Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
 
 Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Literal, assert_never, final
+from typing import TYPE_CHECKING, Final, Literal, assert_never, final, get_args
 
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
@@ -39,9 +39,9 @@ from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import WithoutSubclasses, tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -71,60 +71,66 @@ class ResultWithoutLogs:
     logs: LogsMissing
 
 
+_NO_VERSION_SUBCLASSES: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
+"""Odmowa podklasy wersji przy jej tworzeniu: metaklasa ``WithoutSubclasses`` przy ``class`` i ``type()``, a
+``__init_subclass__`` przy ``type.__new__`` z jej pominięciem. To wcześniejszy błąd; podklasę z każdej drogi (także
+``__bases__``) odrzuca ``post_of`` dokładnym typem przy użyciu."""
+
+
+@final
 @dataclass(frozen=True)
-class ProgressVersion:
+class ProgressVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     progress: PricingProgress
     text: GuardedText
 
     def __post_init__(self) -> None:
-        _require_text(self.text)
+        exact_text(self.text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class OwnLogs:
+class OwnLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem i plik w Archiwum."""
 
     logs: GuardedLogs
 
     def __post_init__(self) -> None:
-        _require_logs(self.logs)
+        exact_logs(self.logs)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class StandInLogs:
+class StandInLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Logi, które start Centrum wysyła z dziennika Wyceny: z pliku albo Logi Urwanego Uruchomienia."""
 
     logs: GuardedLogs
 
     def __post_init__(self) -> None:
-        _require_logs(self.logs)
+        exact_logs(self.logs)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
+@final
 @dataclass(frozen=True)
-class WithoutLogsVersion:
+class WithoutLogsVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Wynik bez Logów ``final`` z tekstem komentarza po strażniku (``text``), bez pliku w Archiwum."""
 
     final: ResultWithoutLogs
     text: GuardedText
 
     def __post_init__(self) -> None:
-        _require_text(self.text)
+        exact_text(self.text)
 
-
-def _require_logs(logs: object) -> None:
-    """Wersja z Logami bierze tylko Logi po strażniku (``run_logs_guard._MINTED``): Logi sprzed strażnika podane przez
-    ``Any`` typ przepuszcza, a tu rzucają ``TypeError``."""
-
-    if not isinstance(logs, GuardedLogs):
-        raise TypeError("Wersja komentarza Uruchomienia bierze tylko Logi po strażniku z guard_logs.")
-
-
-def _require_text(text: object) -> None:
-    """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs_guard._MINTED``), także gdy typ go nie
-    widzi."""
-
-    if not isinstance(text, GuardedText):
-        raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
 StandInVersion = StandInLogs | WithoutLogsVersion
@@ -228,15 +234,19 @@ alias albo pełną ścieżkę), tak samo ``_Versions``.
 
 ``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
 wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
-``TypeError``. Podklasę odrzuca mypy (``final``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
+``TypeError``. Podklasę odrzuca mypy (``final``), przy tworzeniu metaklasa ``WithoutSubclasses``, a przy użyciu ``Outbox.post``
+(dokładny typ w ``outbox._queue_text``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
 ``Outbox.post`` bierze też gołą ``Post``, a łapie ją ``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w
 ``<kolejka>.post(post_of(…))``, więc nikt nie czyta jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko
 podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmów pokazują tam próbki
 ``ZNANE_LUKI_WYSYLKI``, każda za klasą nazwaną w swojej nazwie."""
 
 
+_NO_POST_SUBCLASSES: Final = "Wysyłka Logów nie ma podklas: daje ją tylko post_of."
+
+
 @final
-class LogsPost:
+class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
     """Wysyłka Logów Uruchomienia, którą ``Outbox.post`` bierze tak, jak zbudował ją ``post_of`` (``_VERSIONS``): pola
     tylko do odczytu, bez ``Post`` do skopiowania."""
 
@@ -244,6 +254,9 @@ class LogsPost:
 
     def __init__(self, post: Post, proof: _Versions) -> None:
         self.__post: Final = post
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_POST_SUBCLASSES)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, LogsPost) and self.__post == other.__post
@@ -288,17 +301,25 @@ class LogsPost:
 
 def post_of(version: CommentVersion) -> LogsPost:
     """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
-    Archiwum Logów okresu, w stopniu ``rank_of``."""
+    Archiwum Logów okresu, w stopniu ``rank_of``.
 
+    Wersję i jej tekst albo Logi sprawdza tu, w chwili użycia, a nie tylko przy przyjęciu (``__post_init__``): typ wersji
+    to dokładnie jedna z klas ``CommentVersion`` (porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa
+    z własnym ``__eq__``), a tekst i Logi czytane raz i sprawdzone przez ``exact_text`` i ``exact_logs``, więc wartość
+    podmieniona po przyjęciu przez ``object.__setattr__`` też odpada. Nie zamyka zmiany w chwili działania samej klasy
+    dokładnego typu, modułu ani pól typu-dowodu (przypisanie ``__class__``, slot ``object.__setattr__``)."""
+
+    if not any(type(version) is kind for kind in get_args(CommentVersion)):
+        raise TypeError(f"Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie {type(version).__name__}.")
     start: StartFacts
     match version:
         case ProgressVersion(progress=progress, text=text):
-            start, comment, archive = progress.started, text.text, None
+            start, comment, archive = progress.started, exact_text(text).text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
-            record = logs.record
-            start, comment, archive = record.start, summary_markdown(logs), _archive_file(logs)
+            checked = exact_logs(logs)
+            start, comment, archive = checked.record.start, summary_markdown(checked), _archive_file(checked)
         case WithoutLogsVersion(final=final, text=text):
-            start, comment, archive = final.journal.started, text.text, None
+            start, comment, archive = final.journal.started, exact_text(text).text, None
         case _:
             assert_never(version)
     period = start.period

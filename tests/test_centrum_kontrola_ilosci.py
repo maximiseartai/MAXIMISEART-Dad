@@ -17,10 +17,12 @@ from typing import Any, Final
 import pytest
 
 from rozliczenia.centrum import refusal
+from rozliczenia.worker_periods import InRegister
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
 
@@ -800,6 +802,24 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
     assert shown(found) == TATA_DIFFERENCES
     assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
     assert (found["files"], found["unread"], found["more"], found["exceptions"]) == ([{"period": PERIOD, "rows": 14}], [], 0, 0)
+
+
+def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plik wyjątków nie usuwa loginów z Listy Wykonawców, więc właściciel Ustawień nie odmawia go z powodu loginu
+    w okresie; gdyby odmówił, „To był wyjątek” odpowiada jak każdy zapis Ustawień: 409 z tym samym Komunikatem."""
+
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    difference = at(differences(centrum), 21, "N")
+    kept = KeptInPeriods(InRegister(), "worker")
+    monkeypatch.setattr(CentrumSettings, "change", lambda _settings, _file, _edit: kept)
+
+    response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
+
+    expected = refusal.worker_kept(kept.presence, kept.what)
+    assert (response.status_code, response.json()) == (expected.status_code, {"message": expected.message})
 
 
 def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy_nowszym_okresie(tmp_path: Path) -> None:

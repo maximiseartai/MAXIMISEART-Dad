@@ -107,6 +107,9 @@ def differences(recent: Recent, rules: QuantityRules) -> list[Difference]:
 
 
 def quantity_differences_router(settings: CentrumSettings, price_list: PriceList, recent: RecentCollectiveFiles) -> APIRouter:
+    """Trasy różnic Kontroli ilości i „To był wyjątek”. Zapis pliku wyjątków nie usuwa loginów z Listy Wykonawców,
+    a jego odmowa ``KeptInPeriods`` jest odpowiedzią jak przy każdym zapisie Ustawień."""
+
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     def listed() -> tuple[contract.QuantityDifferences, list[Difference]]:
@@ -163,7 +166,6 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
             case NotSaved():
                 raise refusal.settings_not_saved()
             case KeptInPeriods(presence=presence, what=what):
-                # Plik wyjątków nie usuwa loginów z Listy Wykonawców; odpowiedź jak przy każdym zapisie Ustawień.
                 raise refusal.worker_kept(presence, what)
 
     return router

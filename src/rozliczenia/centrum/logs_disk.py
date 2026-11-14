@@ -64,7 +64,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, LoggedOrder, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import GuardedLogs
+from rozliczenia.centrum.run_logs_guard import GuardedLogs, exact_logs
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.file_state import folder_entries, remove_file
 from rozliczenia.wall_clock import utc_now
@@ -72,6 +72,8 @@ from rozliczenia.wall_clock import utc_now
 LAST_STARTED_FILE: Final = "ostatnie-uruchomienie.json"
 _JOURNALS: Final = "dzienniki-wyceny"
 _JOURNAL_SUFFIX: Final = ".jsonl"
+_STARTER: Final = object()
+"""Dowód ``LogsOnDisk.started``: tylko z nim ``Journal.run_started`` startuje dziennik."""
 # Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku.
 _RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
 # Nazwa pliku Logów (``name_of``).
@@ -210,10 +212,14 @@ class Journal:
         self._total: int | None = None
         self._current: int | None = None
 
-    def _run_started(self, start: StartFacts) -> None:
+    def run_started(self, start: StartFacts, proof: object) -> None:
         """Start Uruchomienia z Centrum, zanim ruszy jego wątek: Uruchomienie procesu ``process`` dostaje dziennik z
-        pierwszą linią na dysku, a następne wpisy idą do niego; inne Uruchomienie dziennika nie ma."""
+        pierwszą linią na dysku, a następne wpisy idą do niego; inne Uruchomienie dziennika nie ma. Bez dowodu
+        ``LogsOnDisk.started`` (``_STARTER``) ``TypeError``, bo start bez pliku ostatniego startu gubi Urwane
+        Uruchomienie."""
 
+        if proof is not _STARTER:
+            raise TypeError("Dziennik Wyceny w efenix startuje tylko LogsOnDisk.started.")
         with self._lock:
             self._done, self._total, self._current = [], None, None
             if start.process != self.process:
@@ -337,11 +343,11 @@ class JournalRead:
         return PricingProgress(self.started, done, self.total, self.interruption.row)
 
 
-@dataclass(frozen=True)
 class JournalKey:
-    """Jeden dziennik na dysku, który zostawiła poprzednia praca Centrum; ścieżkę zna tylko ``LogsOnDisk``."""
+    """Jeden dziennik na dysku, który zostawiła poprzednia praca Centrum; ścieżkę zna tylko ``LogsOnDisk``, który dał
+    klucz (``left_behind``)."""
 
-    _path: Path
+    __slots__ = ()
 
 
 @dataclass(frozen=True)
@@ -419,6 +425,7 @@ class LogsOnDisk:
         self._journals = log.directory / _JOURNALS
         self._log = log
         self._journal = Journal(self._journals, log, process=journaled)
+        self._left: dict[JournalKey, Path] = {}
 
     @property
     def journal(self) -> Journal:
@@ -429,20 +436,19 @@ class LogsOnDisk:
         Centrum), potem plik ostatniego startu z jego faktami, nadpisany atomowo; ``OSError``: pliku ostatniego startu nie
         udało się zapisać."""
 
-        self.journal._run_started(start)
+        self.journal.run_started(start, _STARTER)
         started = _StartedFile(**dict(start.start), schema_version=2)
         replace_atomically(self._last_started, started.model_dump_json(indent=2) + "\n")
 
     def write(self, logs: GuardedLogs) -> None:
         """Plik Logów ``logs`` (nowy albo nadpisany atomowo) z bajtami pliku w Archiwum Logów okresu
         (``ArchiveFile.packed``): ``text`` w UTF-8 bez zamiany ``\n`` na ``\r\n``, którą robi zapis tekstowy na Windows,
-        więc ``gunzip`` pliku z Archiwum daje plik z komputera taty bajt w bajt. Logi innego typu niż ``GuardedLogs`` (np.
-        sprzed strażnika przez ``Any``) rzucają ``TypeError`` (``run_logs_guard._MINTED``); ``OSError``: pliku nie udało się
-        zapisać."""
+        więc ``gunzip`` pliku z Archiwum daje plik z komputera taty bajt w bajt. Logi typu innego niż dokładnie
+        ``GuardedLogs`` (np. sprzed strażnika przez ``Any`` albo podklasa) rzucają ``TypeError`` (``exact_logs``);
+        ``OSError``: pliku nie udało się zapisać."""
 
-        if not isinstance(logs, GuardedLogs):
-            raise TypeError("Plik Logów bierze tylko Logi po strażniku z guard_logs.")
-        replace_atomically(self._logs / name_of(logs.record.start), logs.text, newline="")
+        checked = exact_logs(logs)
+        replace_atomically(self._logs / name_of(checked.record.start), checked.text, newline="")
 
     def last_start(self) -> StartFacts | None:
         """Ostatni start Uruchomienia przed tą pracą Centrum; ``None``: żadnego albo pliku nie da się odczytać."""
@@ -504,13 +510,15 @@ class LogsOnDisk:
                 self._log.pricing_journal_unavailable(failure, where="start")
                 continue
             logs = Missing() if read is None else self.logs(read.started.run_id)
-            yield LeftJournal(JournalKey(path), read, logs)
+            key = JournalKey()
+            self._left[key] = path
+            yield LeftJournal(key, read, logs)
 
     def remove_journal(self, key: JournalKey) -> None:
-        """Usuwa dziennik ``key``, który zostawiła poprzednia praca Centrum; ``OSError`` zostawia go z linią dziennika
-        Centrum."""
+        """Usuwa dziennik ``key`` z ``left_behind``, który zostawiła poprzednia praca Centrum; ``OSError`` zostawia go
+        z linią dziennika Centrum."""
 
-        _remove(key._path, self._log, where="start")
+        _remove(self._left.pop(key), self._log, where="start")
 
 
 class ViewedLogs(Generic[T]):

@@ -64,6 +64,28 @@ def without_reading(path: Path) -> Iterator[None]:
         allow_reading(path)
 
 
+@contextmanager
+def without_creating(folder: Path) -> Iterator[None]:
+    """Folder ``folder``, w którym do końca bloku nie da się założyć pliku, a pliki, które już w nim są, dalej przyjmują
+    dopisanie, na każdym systemie: ``chmod`` bez prawa zapisu poza Windows, a w Windows odmowa zakładania plików
+    (``icacls /deny :(WD)``) na samym folderze, bez dziedziczenia na pliki w nim. Funkcja sprawdza, że założenie pliku
+    pada."""
+
+    if sys.platform == "win32":
+        subprocess.run(["icacls", str(folder), "/deny", f"{os.environ['USERNAME']}:(WD)"], check=True, capture_output=True)
+    else:
+        folder.chmod(0o555)
+    try:
+        with pytest.raises(PermissionError):
+            (folder / "proba-zalozenia.tmp").open("xb").close()
+        yield
+    finally:
+        if sys.platform == "win32":
+            subprocess.run(["icacls", str(folder), "/remove:d", os.environ["USERNAME"]], check=True, capture_output=True)
+        else:
+            folder.chmod(0o755)
+
+
 def path_checks_up_to_python_313(monkeypatch: pytest.MonkeyPatch) -> None:
     """``Path`` bez zmian: do Pythona 3.13 brak dostępu do folderu rzuca ``OSError``."""
 
