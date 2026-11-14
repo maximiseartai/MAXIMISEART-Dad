@@ -1186,6 +1186,43 @@ def test_porazka_z_pliku_wyniku_przy_wersji_innej_niz_sprzed_aktualizacji_jest_s
     assert log_entries(centrum, "aktualizacja-wynik-stary") == [f"wynik={code} przed={other} po={running}"]
 
 
+def test_stary_wynik_ktorego_dysk_nie_pozwala_usunac_kazdy_start_znow_pomija(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    centrum, repository = updating_centrum(tmp_path)
+    running = repository.head()
+    other = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    result = tmp_path / "config" / RESULT_FILE
+    write_result(result, UpdateResult(NEW_VERSION_FAILED, other, running))
+    disk_refuses_removing(monkeypatch, result)
+
+    cards = []
+    for _ in range(2):
+        centrum.restart()
+        cards.append(centrum.client.get("/api/tool-update").json())
+
+    assert cards == [{"state": "idle"}, {"state": "idle"}]
+    assert result.exists()
+    assert log_entries(centrum, "aktualizacja-koniec") == []
+    assert log_entries(centrum, "aktualizacja-wynik-stary") == [
+        f"wynik={NEW_VERSION_FAILED} przed={other} po={running}"
+    ] * 2
+
+
+def test_bez_gita_dziennik_konca_aktualizacji_ma_commit_z_ktorego_dziala_centrum(tmp_path: Path) -> None:
+    repository = tool_repository(tmp_path / "repozytoria")
+    surroundings = Surroundings(tool=repository)
+    centrum = preparing_centrum(tmp_path, None, surroundings=surroundings)
+    running = repository.head()
+    # Commit Centrum zna z klonu, a Git zniknął z komputera dopiero przed kliknięciem.
+    surroundings.find_git = lambda: None
+
+    view = update_until_done(centrum)
+
+    assert view["state"] == "failed"
+    assert log_entries(centrum, "aktualizacja-koniec") == [f"wynik={NO_GIT} przed={running} po=- biblioteki=nie"]
+
+
 def test_urwany_wpis_na_koncu_dziennika_nie_zatrzymuje_startu_z_wynikiem_aktualizacji(tmp_path: Path) -> None:
     centrum, repository = updating_centrum(tmp_path)
     before = repository.head()
