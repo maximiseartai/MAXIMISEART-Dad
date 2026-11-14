@@ -110,8 +110,19 @@ _PASSED: Final = object()
 """Dowód, że ``Outgoing`` albo ``LogsText`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 
+class WithoutSubclasses(type):
+    """Metaklasa typów-dowodów reguły danych: klasę z bazą tej metaklasy odmawia ``__init_subclass__`` tej bazy, bo Python
+    wybiera metaklasę po bazach, więc odmowy nie przesłania baza z własnym ``__init_subclass__`` stojąca przed typem."""
+
+    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> WithoutSubclasses:
+        for base in bases:
+            if isinstance(base, WithoutSubclasses):
+                base.__init_subclass__()
+        return super().__new__(mcs, name, bases, namespace, **kwargs)
+
+
 @final
-class Outgoing(str):
+class Outgoing(str, metaclass=WithoutSubclasses):
     """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
 
     Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``, a podklasy nie ma. Inna metoda ``str`` (wycinek, f-napis,
@@ -134,7 +145,7 @@ class Outgoing(str):
     def __add__(self, other: str, /) -> str: ...
     def __add__(self, other: str, /) -> str:
         joined = str(self) + other
-        return Outgoing(joined, _PASSED) if isinstance(other, Outgoing) else joined
+        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
 
 
 def tool(text: str) -> Outgoing:
@@ -144,7 +155,7 @@ def tool(text: str) -> Outgoing:
 
 
 @final
-class LogsText(str):
+class LogsText(str, metaclass=WithoutSubclasses):
     """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
     okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
     (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
@@ -177,18 +188,8 @@ class Guarded:
 _NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
 
 
-class _WithoutSubclasses(type):
-    """Metaklasa ``ForbiddenValues``: odmawia klasy z jej bazą, bo Python wybiera metaklasę po bazach, więc odmowy nie
-    przesłania baza z własnym ``__init_subclass__`` stojąca przed ``ForbiddenValues``."""
-
-    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> _WithoutSubclasses:
-        if any(isinstance(base, _WithoutSubclasses) for base in bases):
-            raise TypeError(_NO_SUBCLASSES)
-        return super().__new__(mcs, name, bases, namespace, **kwargs)
-
-
 @final
-class ForbiddenValues(metaclass=_WithoutSubclasses):
+class ForbiddenValues(metaclass=WithoutSubclasses):
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego

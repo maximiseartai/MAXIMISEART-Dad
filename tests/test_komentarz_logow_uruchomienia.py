@@ -75,7 +75,7 @@ from rozliczenia.centrum.logs_disk import (
     Unreadable,
     name_of,
 )
-from rozliczenia.centrum.outbox import PeriodThread, Rank
+from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
@@ -87,7 +87,8 @@ from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 from tests.fixtures.praca_centrum import centrum_work
-from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.plik_kolejki import bieg_do_pliku_kolejki
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
@@ -468,15 +469,43 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs.text)("ul. Syntetyczna 1", object())
 
 
-@pytest.mark.parametrize("kind", ["logi", "tekst", "plik"])
-def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
-    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku mogłaby podać tekst sprzed strażnika jako po
-    strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+class _BezSuper:
+    """Baza, której ``__init_subclass__`` nie woła ``super()``: przed typem-dowodem w bazach przesłania jego
+    ``__init_subclass__`` (przegląd #1698, runda 1, W1)."""
 
-    value = guard_logs(record(), empty_memory()).text if kind == "plik" else _guarded(kind)
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def _proof_value(kind: str) -> object:
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów
+    i pamięć."""
+
+    memory = empty_memory()
+    match kind:
+        case "plik":
+            return guard_logs(record(), memory).text
+        case "wysylka":
+            return guarded(memory, "Postęp.", "postęp").text
+        case "wysylka-logow":
+            return post_of(OwnLogs(guard_logs(record(), memory)))
+        case "pamiec":
+            return memory
+        case _:
+            return _guarded(kind)
+
+
+@pytest.mark.parametrize("before", [False, True], ids=["bez-bazy-przed", "z-baza-przed-bez-super"])
+@pytest.mark.parametrize("kind", ["logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec"])
+def test_typy_dowody_reguly_danych_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str, before: bool) -> None:
+    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku, tekstu do wysyłki, wysyłki Logów albo pamięci mogłaby
+    podać tekst sprzed strażnika jako po strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie
+    działania (przegląd #1038, runda 2) i z bazą przed typem, której ``__init_subclass__`` nie woła ``super()`` (#1551)."""
+
+    proof = type(_proof_value(kind))
 
     with pytest.raises(TypeError, match="podklas"):
-        type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+        type("Inne", (_BezSuper, proof) if before else (proof,), {"text": property(lambda self: "ul. Syntetyczna 1")})
 
 
 _PLIK: Final = """\
@@ -671,6 +700,12 @@ def wysylka(komorka: str, post: Post) -> Post:
         ),
         _LOGS_TEXT,
     ),
+    "import w biegu: importlib.import_module(…).logs_text w pliku Archiwum": (
+        _GOTOWY_PLIK
+        + "import importlib\n\n\ndef plik(komorka: str) -> ArchiveFile:\n"
+        '    return ArchiveFile("t", "t", "d", "n", importlib.import_module("rozliczenia.client_data").logs_text(komorka))\n',
+        "`importlib.import_module` is banned",
+    ),
     "parser pliku kolejki: tekst pliku w Archiwum do Zgłoszenia": (
         _zgloszenie(
             '    plik = outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})\n'
@@ -682,7 +717,8 @@ def wysylka(komorka: str, post: Post) -> Post:
 }
 
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
-# Uruchomienia wartość z komórki taty bez strażnika, a mypy i ruff ich nie łapią. Pola z tekstem narzędzia
+# Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
+# łapią. Pola z tekstem narzędzia
 # (``_TEKST_NARZEDZIA``) dostaną typ w osobnym PR (#1551). Pola ``TOOL_TEXT`` Logów od wywołującego strażnik przepuszcza
 # bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w
 # tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na ``origin/main``.
@@ -699,6 +735,63 @@ ZNANE_LUKI_LOGOW: Final = {
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
     "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+    "type.__new__ z metaklasą: podklasa LogsText z bazą przed nią bez super() w pliku Archiwum": _GOTOWY_PLIK
+    + """from typing import Any
+
+from rozliczenia.client_data import LogsText
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def plik(komorka: str) -> ArchiveFile:
+    tekst: Any = type.__new__(type(LogsText), "Tekst", (Mixin, LogsText), {"__new__": lambda cls, t: str.__new__(cls, t)})
+    return ArchiveFile("t", "t", "d", "n", tekst(komorka))
+""",
+    # Wersja sprawdza tekst przy przyjęciu, a post_of czyta go później (#1551).
+    "refleksja: object.__setattr__ tekstu wersji po jej przyjęciu, przed post_of": """from types import SimpleNamespace
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    object.__setattr__(postep, "text", SimpleNamespace(text=komorka))
+    return post_of(postep)
+""",
+    "refleksja: przypisanie __class__ LogsText napisowi obcej podklasy str": _GOTOWY_PLIK
+    + """from typing import cast
+
+from rozliczenia.client_data import LogsText
+
+
+class Obcy(str):
+    __slots__ = ()
+
+
+def plik(komorka: str) -> ArchiveFile:
+    tekst = Obcy(komorka)
+    object.__setattr__(tekst, "__class__", LogsText)
+    return ArchiveFile("t", "t", "d", "n", cast(LogsText, tekst))
+""",
+    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
+    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff (DROGI_DO_LOGOW).
+    'refleksja po nazwie: getattr(client_data, "logs_text")': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
+""",
+    'refleksja po nazwie: LogsText z dowodem getattr(client_data, "_PASSED")': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+from rozliczenia.client_data import LogsText
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
+""",
     "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
 
 
@@ -731,12 +824,87 @@ def cel(komorka: str, etykieta: Label, postep: ProgressVersion) -> NewIssue:
 }
 
 
+_KOMORKA: Final = "Syntetyczna Lipowa 5"
+"""Komórka zakazanej kolumny w próbkach drogi Logów, która w pliku kolejki to wyciek."""
+
+_PODKLASA_PAMIECI: Final = """from rozliczenia.centrum.outbox import ArchiveFile
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+{podklasa}
+
+def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> ArchiveFile:
+    zle = logi.model_copy(update={{"technical_notes": [f"Klient {{komorka}}."]}})
+    return ArchiveFile("t", "t", "d", "n", guard_logs(zle, {pamiec}).text)
+"""
+
+# Pamięć z podklasy ForbiddenValues na drodze guard_logs → ArchiveFile.text (przegląd #1688, runda 3, D2) → odmowa w biegu:
+# (próbka, fragment komunikatu odmowy).
+ODMOWY_PAMIECI_Z_PODKLASY: Final = {
+    "podklasa ForbiddenValues z bazą przed nią: Logi po strażniku w pliku Archiwum": (
+        _PODKLASA_PAMIECI.format(podklasa="class Pamiec(Mixin, ForbiddenValues):  # type: ignore[misc]\n    pass\n", pamiec="pamiec"),
+        "Pamięć reguły danych nie ma podklas",
+    ),
+    "podklasa ForbiddenValues z type.__new__ i bazą przed nią: Logi po strażniku w pliku Archiwum": (
+        _PODKLASA_PAMIECI.format(
+            podklasa="def _init(self: object) -> None:\n    pass\n",
+            pamiec='type.__new__(type(ForbiddenValues), "Pamiec", (Mixin, ForbiddenValues), {"__init__": _init})()',
+        ),
+        "bieg TypeError: Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie Pamiec.",
+    ),
+}
+
+
+def _argumenty_logow() -> dict[str, object]:
+    """Argumenty funkcji próbki drogi Logów, świeże dla każdej próbki, bo próbka zmienia gotowy plik w Archiwum."""
+
+    pamiec = empty_memory()
+    logi = record()
+    return {
+        "komorka": _KOMORKA,
+        "wiersz": {"ADRES": _KOMORKA},
+        "tekst": guard_logs(logi, pamiec).text,
+        "plik": ArchiveFile("t", "t", "d", "n", guard_logs(logi, pamiec).text),
+        "logi": logi,
+        "pamiec": pamiec,
+        "etykieta": "zgloszenie",
+        "postep": _text_version("postep", pamiec),
+    }
+
+
+def _w_pliku_kolejki(plik: Path) -> list[str]:
+    try:
+        wykonany = modul(plik)
+    except TypeError as odmowa:
+        return [f"wczytanie TypeError: {odmowa}"]
+    return bieg_do_pliku_kolejki(wykonany, _argumenty_logow(), _KOMORKA)
+
+
+@pytest.mark.parametrize("opis", ODMOWY_PAMIECI_Z_PODKLASY.keys())
+def test_logi_po_strazniku_z_pamiecia_z_podklasy_nie_trafiaja_do_pliku_archiwum(opis: str, tmp_path: Path) -> None:
+    kod, odmowa = ODMOWY_PAMIECI_Z_PODKLASY[opis]
+    plik = tmp_path / "plik.py"
+    plik.write_text(kod, encoding="utf-8")
+
+    zgloszenia = _w_pliku_kolejki(plik)
+
+    assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
+
+
 @wymaga_ruff_i_mypy
-def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza(
+def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki(
     tmp_path: Path,
 ) -> None:
     probki = {opis: kod for opis, (kod, _) in DROGI_DO_LOGOW.items()} | ZNANE_LUKI_LOGOW
-    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
 
     assert {
         opis: zgloszenia[opis]
@@ -744,7 +912,8 @@ def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a
         if not any(odrzucenie in zgloszenie for zgloszenie in zgloszenia[opis])
     } == {}
     assert_znane_luki(
-        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_LOGOW}, "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)"
+        {opis: zgloszenia[opis] + _w_pliku_kolejki(pliki[opis]) for opis in ZNANE_LUKI_LOGOW},
+        "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)",
     )
 
 
@@ -800,6 +969,24 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego
 
     with pytest.raises(TypeError, match="po strażniku"):
         TAKES_GUARDED[name](_guarded(other), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("name", TAKES_GUARDED.keys())
+def test_wersje_komentarza_i_plik_logow_odmawiaja_podklasy_z_type_new_ktorej_nie_odmowilo_jej_utworzenie(
+    name: str, tmp_path: Path
+) -> None:
+    """``type.__new__`` z metaklasą typu i bazą, której ``__init_subclass__`` nie woła ``super()``, robi podklasę Logów
+    albo tekstu po strażniku bez odmowy, a ``isinstance`` ją bierze, więc wersja komentarza Uruchomienia i plik Logów
+    sprawdzają dokładny typ (#1551)."""
+
+    own = {"logi": "tekst", "tekst": "logi"}[OTHER_GUARDED[name]]
+    proof = type(_guarded(own))
+    subclass = type.__new__(type(proof), "Inne", (_BezSuper, proof), {})
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        TAKES_GUARDED[name](object.__new__(subclass), tmp_path)
 
     assert list(tmp_path.iterdir()) == []
 

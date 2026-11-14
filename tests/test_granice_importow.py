@@ -128,8 +128,9 @@ PURE_VERSIONS = {
     "rozliczenia.centrum.logs_disk": frozenset(
         {"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable", "name_of"}
     ),
-    # pamięć strażnika do adnotacji i tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku), bez plików
-    "rozliczenia.client_data": frozenset({"ForbiddenValues", "tool"}),
+    # pamięć strażnika do adnotacji, tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku) i metaklasa
+    # typów-dowodów bez podklas, bez plików
+    "rozliczenia.client_data": frozenset({"ForbiddenValues", "WithoutSubclasses", "tool"}),
     "rozliczenia.process_run": frozenset({"RunResult"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"
@@ -957,8 +958,8 @@ def _python_files() -> Iterator[Path]:
 
 
 def _type_nodes(tree: ast.AST) -> set[ast.AST]:
-    """Węzły adnotacji (argumentu, wyniku, zmiennej), importów i typu w ``isinstance``: nazwa typu niczego tam nie
-    buduje."""
+    """Węzły adnotacji (argumentu, wyniku, zmiennej), importów, typu w ``isinstance`` i nazwy typu porównanej z
+    ``type(…)``: nazwa typu niczego tam nie buduje."""
 
     roots: list[ast.AST] = []
     for node in wezly(tree):
@@ -972,6 +973,8 @@ def _type_nodes(tree: ast.AST) -> set[ast.AST]:
             roots.append(node)
         elif isinstance(node, ast.Call) and ast.unparse(node.func) == "isinstance" and len(node.args) == 2:
             roots.append(node.args[1])
+        elif isinstance(node, ast.Compare) and isinstance(node.left, ast.Call) and ast.unparse(node.left.func) == "type":
+            roots += [comparator for comparator in node.comparators if isinstance(comparator, (ast.Name, ast.Attribute))]
     return {node for root in roots for node in ast.walk(root)}
 
 
@@ -979,7 +982,7 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, z których Logi albo tekst po strażniku mogą powstać albo się zmienić z pominięciem ``guard_logs`` i
     ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
     ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
-    importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
+    importu i jako atrybut modułu) poza adnotacją, importem, ``isinstance`` i ``type(…) is``; napis z tą nazwą (także slot
     ``_GuardedLogs__…``) poza docstringiem. Granice tego sprawdzenia, mypy i ruff pokazują próbki
     ``ZNANE_LUKI_STRAZNIKA``, każda za klasą nazwaną w swojej nazwie."""
 
@@ -1033,7 +1036,7 @@ def test_logi_i_tekst_po_strazniku_powstaja_tylko_ze_straznika() -> None:
         [
             *found,
             f"Logi i tekst po strażniku reguły danych (GuardedLogs, GuardedText) daje tylko guard_logs i guard_text z "
-            f"src/{RUN_LOGS_GUARD}. Poza nim te nazwy padają tylko w adnotacjach, importach i isinstance, a napis z nimi i "
+            f"src/{RUN_LOGS_GUARD}. Poza nim te nazwy padają tylko w adnotacjach, importach, isinstance i type(…) is, a napis z nimi i "
             "dowód strażnika (_MINTED) nigdzie, bo object.__new__, object.__setattr__ i cast typ przepuszcza. Kopia, "
             "replace, zmiana pola, podklasa i wartość innego typu rzucają (docstring _MINTED).",
         ]
@@ -1060,6 +1063,9 @@ GUARD_BYPASSES: typing.Final = {
     "konstruktor-czesciowy": "make = functools.partial(GuardedLogs)",
     # przegląd #1038, runda 3: isinstance zwalnia tylko typ w drugim argumencie, nie wartość w pierwszym
     "w-isinstance": "ok = isinstance(object.__new__(GuardedLogs), GuardedLogs)",
+    # dokładny typ zwalnia tylko typ po ``is``, nie wartość w ``type(…)`` ani typ w wywołaniu po ``is``
+    "w-type-is": "ok = type(object.__new__(GuardedLogs)) is GuardedLogs",
+    "w-type-is-wywolanie": "ok = type(logs) is make(GuardedLogs)",
 }
 
 
@@ -1068,13 +1074,15 @@ def test_sprawdzenie_straznika_lapie_kazda_droge_obok_niego_ktorej_typ_nie_zamyk
     assert _guard_bypasses(ast.parse(code))
 
 
-def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_isinstance_i_docstringu() -> None:
+def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_isinstance_dokladnym_typie_i_docstringu() -> None:
     code = (
         "from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText\n"
         "def keep(logs: GuardedLogs, text: 'GuardedText | None' = None) -> GuardedLogs:\n"
         '    """Logi po strażniku (``GuardedLogs``) idą dalej bez zmian."""\n'
         "    last: GuardedLogs | None = logs\n"
         "    if not isinstance(logs, GuardedLogs) or not isinstance(text, (GuardedText, type(None))):\n"
+        "        raise TypeError\n"
+        "    if type(logs) is not GuardedLogs or type(text) is GuardedText:\n"
         "        raise TypeError\n"
         "    return logs\n"
     )

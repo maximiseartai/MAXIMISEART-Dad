@@ -41,7 +41,7 @@ from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Ta
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import WithoutSubclasses, tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -115,7 +115,7 @@ def _require_logs(logs: object) -> None:
     """Wersja z Logami bierze tylko Logi po strażniku (``run_logs_guard._MINTED``): Logi sprzed strażnika podane przez
     ``Any`` typ przepuszcza, a tu rzucają ``TypeError``."""
 
-    if not isinstance(logs, GuardedLogs):
+    if type(logs) is not GuardedLogs:
         raise TypeError("Wersja komentarza Uruchomienia bierze tylko Logi po strażniku z guard_logs.")
 
 
@@ -123,7 +123,7 @@ def _require_text(text: object) -> None:
     """Postęp i wynik bez Logów biorą tylko tekst po strażniku (``run_logs_guard._MINTED``), także gdy typ go nie
     widzi."""
 
-    if not isinstance(text, GuardedText):
+    if type(text) is not GuardedText:
         raise TypeError("Wersja komentarza Uruchomienia bierze tylko tekst po strażniku z guard_text.")
 
 
@@ -236,7 +236,7 @@ podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmó
 
 
 @final
-class LogsPost:
+class LogsPost(metaclass=WithoutSubclasses):
     """Wysyłka Logów Uruchomienia, którą ``Outbox.post`` bierze tak, jak zbudował ją ``post_of`` (``_VERSIONS``): pola
     tylko do odczytu, bez ``Post`` do skopiowania."""
 
@@ -244,6 +244,9 @@ class LogsPost:
 
     def __init__(self, post: Post, proof: _Versions) -> None:
         self.__post: Final = post
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Wysyłka Logów nie ma podklas: daje ją tylko post_of.")
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, LogsPost) and self.__post == other.__post
