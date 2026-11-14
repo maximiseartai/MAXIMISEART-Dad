@@ -1,6 +1,6 @@
-"""Znane luki strażnika (ADR 0034): postać kodu, której strażnik nie łapie, jest próbką w jego teście.
+"""Znane luki strażnika (ADR 0034): klasa postaci, którą przepuszcza mechanizm strażnika, ma próbkę w jego teście.
 
-Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu (opis postaci → kod modułu), a test puszcza każdą przez
+Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu („klasa: postać” → kod modułu), a test puszcza każdą przez
 prawdziwe mechanizmy strażnika: ``ruff check`` z konfiguracją repozytorium na ścieżce sondy, ``mypy`` z konfiguracją
 ``pyproject.toml``, gdy strażnik stoi na typie, i własne sprawdzenie strażnika na module próbki. Próbka przechodzi przez
 każdy z nich, a gdy któryś zaczyna ją łapać, ``assert_znane_luki`` każe usunąć ją ze ``ZNANE_LUKI``.

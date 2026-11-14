@@ -24,8 +24,8 @@ w workflow rozmiaru PR liczy linie maszynerii procesu, obejmuje co najmniej jede
 wpisów. Plik bez wpisu ma grupę z reguły katalogu, więc test nie wymaga wpisu dla nowego pliku.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd. Postacie, których nie łapią strażnicy kierunku zależności i kontraktu napisów, są próbkami
-``ZNANE_LUKI_*`` przy ich testach.
+tylko przegląd. Próbki ``ZNANE_LUKI_*`` przy testach strażników kierunku zależności, skryptów systemowego ``python3``
+i kontraktu napisów pokazują postacie, które ci strażnicy przepuszczają.
 """
 
 from __future__ import annotations
@@ -589,6 +589,31 @@ def test_domkniecie_importow_skryptu_widzi_import_spoza_biblioteki_w_module_ktor
     (tmp_path / "modul.py").write_text("def f() -> None:\n    import yaml\n", encoding="utf-8")
 
     assert [line.rpartition(": ")[2] for line in _outside_stdlib({tmp_path / "skrypt.py"}, tmp_path)] == ["yaml"]
+
+
+# Znane luki strażnika skryptów systemowego python3 (tests/fixtures/znane_luki.py): „klasa: postać” → krok workflow
+# i ``tools/skrypt.py`` drzewa próbki, który bierze moduł spoza biblioteki standardowej, a mimo to przechodzi przez
+# ``_system_python_scripts`` i ``_outside_stdlib``.
+ZNANE_LUKI_SYSTEMOWEGO_PYTHONA = {
+    "czyta tylko instrukcje importu: importlib.import_module": ("run: python3 tools/skrypt.py", 'import importlib\n\nYAML = importlib.import_module("yaml")\n'),
+    "zna tylko dosłowne python3 tools/….py w kroku: polecenie złożone w biegu": ('run: S=tools/skrypt.py; python3 "$S"', "import yaml\n"),
+    "zna tylko dosłowne python3 tools/….py w kroku: flaga interpretera przed skryptem": ("run: python3 -u tools/skrypt.py", "import yaml\n"),
+}
+
+
+def test_znane_luki_skryptow_systemowego_pythona_przechodza_przez_straznika(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    zgloszenia = {}
+    for numer, (opis, (krok, skrypt)) in enumerate(ZNANE_LUKI_SYSTEMOWEGO_PYTHONA.items()):
+        korzen = tmp_path / str(numer)
+        (korzen / ".github" / "workflows").mkdir(parents=True)
+        (korzen / "tools").mkdir()
+        (korzen / ".github" / "workflows" / "ci.yml").write_text(f"jobs:\n  a:\n    steps:\n      - {krok}\n", encoding="utf-8")
+        (korzen / "tools" / "skrypt.py").write_text(skrypt, encoding="utf-8")
+        monkeypatch.setattr(sys.modules[__name__], "ROOT", korzen)
+        monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", korzen / ".github" / "workflows")
+        zgloszenia[opis] = _outside_stdlib(_system_python_scripts(), korzen)
+
+    assert_znane_luki(zgloszenia, "tests/test_spis_narzedzi.py (ZNANE_LUKI_SYSTEMOWEGO_PYTHONA)")
 
 
 def test_narzedzie_uruchamia_gh_tylko_przez_github() -> None:

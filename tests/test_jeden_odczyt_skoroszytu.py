@@ -20,7 +20,8 @@ Ruff ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` linię importu i atrybut 
 atrapach łapie łatanie modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz
 ``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w wywołaniu po nazwie, aliasie importu, jako atrybut
 (``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
-Postacie, których nie łapie ani ruff, ani ten strażnik, są próbkami w ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW``.
+Próbki ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW`` pokazują klasy postaci, które przepuszcza i ruff, i ten strażnik,
+a nazwa próbki mówi klasę.
 """
 
 from __future__ import annotations
@@ -360,11 +361,11 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
 
 
-# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): opis postaci → moduł src/rozliczenia,
+# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src/rozliczenia,
 # który czyta bajty albo wartości pliku taty poza ``ONLY``, a mimo to przechodzi przez ruff z konfiguracją src/ i
 # ``_src_findings``.
 ZNANE_LUKI_SRC = {
-    "funkcja wzięta do zmiennej po imporcie z noqa": """\
+    "ufa tłumieniu ruff i zna tylko nazwę wywołania: funkcja w zmiennej po imporcie z noqa": """\
 from pathlib import Path
 
 from .workbook_files import file_bytes  # noqa: TID251 - sonda
@@ -375,7 +376,7 @@ czytaj = file_bytes
 def wartosci(path: Path) -> bytes:
     return czytaj(path)
 """,
-    "getattr modułu z napisem": """\
+    "refleksja po nazwie atrybutu: getattr modułu": """\
 from pathlib import Path
 
 from . import workbook_files
@@ -384,7 +385,7 @@ from . import workbook_files
 def wartosci(path: Path) -> bytes:
     return getattr(workbook_files, "file_bytes")(path)
 """,
-    "surowe open w trybie rb": """\
+    "zna tylko wywołania z ONLY: open w trybie rb": """\
 from pathlib import Path
 
 
@@ -392,12 +393,29 @@ def wartosci(path: Path) -> bytes:
     with open(path, "rb") as plik:
         return plik.read()
 """,
+    "zna tylko wywołania z ONLY: Path.open w trybie rb": """\
+from pathlib import Path
+
+
+def wartosci(path: Path) -> bytes:
+    with path.open("rb") as plik:
+        return plik.read()
+""",
+    "refleksja po nazwie atrybutu: __dict__ modułu": """\
+from pathlib import Path
+
+from . import workbook_files
+
+
+def wartosci(path: Path) -> bytes:
+    return workbook_files.__dict__["file_bytes"](path)
+""",
 }
 
-# Znane luki strażnika łatania modułu skoroszytu: opis postaci → moduł testu, który podstawia bajty pliku taty łataniem
+# Znane luki strażnika łatania modułu skoroszytu: „klasa: postać” → moduł testu, który podstawia bajty pliku taty łataniem
 # ``rozliczenia.workbook_files``, a mimo to przechodzi przez ruff z konfiguracją tests/ i ``_patches``.
 ZNANE_LUKI_TESTOW = {
-    "moduł wzięty do zmiennej": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: moduł w zmiennej": """\
 import pytest
 
 from rozliczenia import workbook_files
@@ -407,7 +425,7 @@ def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     skoroszyty = workbook_files
     monkeypatch.setattr(skoroszyty, "file_bytes", lambda path: b"")
 """,
-    "moduł z importlib": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: moduł z importlib": """\
 import importlib
 
 import pytest
@@ -416,21 +434,21 @@ import pytest
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(importlib.import_module("rozliczenia.workbook_files"), "file_bytes", lambda path: b"")
 """,
-    "napis celu złożony w trakcie działania": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: napis złożony w biegu": """\
 import pytest
 
 
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("rozliczenia." + "workbook_files.file_bytes", lambda path: b"")
 """,
-    "przypisanie wprost": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: przypisanie wprost": """\
 from rozliczenia import workbook_files
 
 
 def test_lata() -> None:
     workbook_files.file_bytes = lambda path: b""
 """,
-    "łatający pod aliasem": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: łatający pod aliasem": """\
 from unittest.mock import patch as lataj
 
 
@@ -438,7 +456,7 @@ def test_lata() -> None:
     with lataj("rozliczenia.workbook_files.file_bytes"):
         pass
 """,
-    "patch.dict na słowniku modułu": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: patch.dict na słowniku modułu": """\
 from unittest import mock
 
 from rozliczenia import workbook_files
@@ -448,7 +466,7 @@ def test_lata() -> None:
     with mock.patch.dict(workbook_files.__dict__, {"file_bytes": lambda path: b""}):
         pass
 """,
-    "moduł z getattr pakietu": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: getattr pakietu": """\
 import pytest
 
 import rozliczenia
