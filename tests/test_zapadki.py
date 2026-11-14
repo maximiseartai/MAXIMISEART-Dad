@@ -793,7 +793,7 @@ AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
-    "regula-w-trasie": "użyj sprawdzenia u właściciela Ustawień",
+    "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1073,17 +1073,51 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
 # testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``).
 _TRASY: Final = ("src", "rozliczenia", "centrum")
 _ODMOWA = "from rozliczenia.centrum import refusal\n\n\ndef changed(problem: object) -> None:\n"
+# Trasa Ustawień w rozumieniu reguły: moduł tworzy APIRouter i zmienia Ustawienia metodą zapisu właściciela. Nagłówek
+# przesuwa linie próbki o jedną.
+_APIROUTER = "from fastapi import APIRouter\n"
+_ZAPIS_USTAWIEN = "\n\ndef settings_router(settings: object) -> APIRouter:\n    settings.change()\n    return APIRouter()\n"
+
+
+def _trasa_ustawien(text: str) -> str:
+    return f"{_APIROUTER}{text}{_ZAPIS_USTAWIEN}"
 
 
 def _moduly_tras(root: Path, probki: dict[str, str]) -> dict[str, Path]:
-    """Nowy moduł trasy (``*_router.py``) każdej próbki w katalogu tras ``root``."""
+    """Nowy moduł każdej próbki w katalogu tras ``root``, bez ``router`` w nazwie."""
 
     folder = root.joinpath(*_TRASY)
     folder.mkdir(parents=True, exist_ok=True)
-    pliki = {opis: folder / f"probka_{numer}_router.py" for numer, opis in enumerate(probki)}
+    pliki = {opis: folder / f"probka_{numer}.py" for numer, opis in enumerate(probki)}
     for opis, plik in pliki.items():
         plik.write_text(probki[opis], encoding="utf-8")
     return pliki
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("trasa", "lines"),
+    [
+        (_ZAPIS_USTAWIEN, [6, 8]),
+        ("\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
+        ("\n\ndef apply(settings: object) -> None:\n    settings.change()\n", []),
+    ],
+)
+def test_regula_w_trasie_obejmuje_modul_z_apirouter_i_zapisem_ustawien_pod_kazda_nazwa(
+    tmp_path: Path, trasa: str, lines: list[int]
+) -> None:
+    """Sonda #1727 r1 W1 (``_ensure_*`` i odmowa pod ``if`` w ``quantity_differences.py``, trasie Ustawień bez
+    ``router`` w nazwie) jest zgłoszona; ten sam kod w trasie bez zapisu Ustawień i w module zapisu bez trasy nie."""
+
+    base = _empty_base(tmp_path)
+    plik = tmp_path.joinpath(*_TRASY, "quantity_differences.py")
+    plik.parent.mkdir(parents=True)
+    plik.write_text(
+        f'{_APIROUTER}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{trasa}',
+        encoding="utf-8",
+    )
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
 
 
 @needs_ast_grep
@@ -1128,51 +1162,69 @@ def _moduly_tras(root: Path, probki: dict[str, str]) -> dict[str, Path]:
         ),
         (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
         (f"{_ODMOWA}    if isinstance(problem, NotSaved):\n        raise refusal.settings_not_saved()\n", []),
+        (f'{_ODMOWA}    if problem:\n        if problem.found is None:\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (f"{_ODMOWA}    with problem:\n        if problem is None:\n            raise refusal.register_not_chosen()\n", [7]),
+        (
+            f'{_ODMOWA}    match problem:\n        case "delete":\n            if isinstance(problem, FieldProblem):\n'
+            "                raise refusal.setting_refused(problem)\n",
+            [8],
+        ),
         (f"{_ODMOWA}    if problem is None:\n        raise refusal.register_not_chosen()\n", []),
+        (
+            f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            if isinstance(refused, FieldProblem):\n"
+            "                raise refusal.setting_refused(refused)\n",
+            [],
+        ),
         (f"{_ODMOWA}    if problem:\n        raise refusal.device_component_unknown()\n", []),
     ],
 )
 def test_regula_w_trasie_zglasza_odmowe_trasy_poza_kazdym_dozwolonym_ksztaltem(tmp_path: Path, text: str, lines: list[int]) -> None:
     """Powroty #1585 W1 r1 (``_ensure_*``) i #1577 W1 r3 (odmowa ``needed_by``), sondy werdyktów #1724 r1 i r2 (``case``
-    napisu z ``if`` w ciele i ze strażnikiem, ``else``) i każda odmowa poza dozwolonym kształtem są zgłoszone; kształty
-    dozwolone (``raise`` wprost w ``case`` klasy wyniku właściciela i pod ``if isinstance``/``is None``, 404) nie."""
+    napisu z ``if`` w ciele i ze strażnikiem, ``else``), sonda #1727 r1 D2 (dozwolony ``if`` pod ``if``) i każda odmowa
+    poza dozwolonym kształtem są zgłoszone; kształty dozwolone (``raise`` wprost w ``case`` klasy wyniku właściciela i
+    pod ``if isinstance``/``is None`` wprost w ciele funkcji albo w takim ``case``, 404) nie."""
 
     base = _empty_base(tmp_path)
-    _moduly_tras(tmp_path, {"probka": text})
+    _moduly_tras(tmp_path, {"probka": _trasa_ustawien(text)})
 
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
+    assert [(finding.line - _APIROUTER.count("\n"), finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
 
 
 _FIELD_PROBLEM = "from rozliczenia.centrum.settings.files import FieldProblem\n"
-# Znane luki reguły ``regula-w-trasie`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy moduł trasy z odmową
-# reguły domeny Ustawień obok właściciela, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+# Znane luki reguły ``regula-w-trasie`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy moduł z odmową
+# reguły domeny Ustawień w trasie obok właściciela, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
 ZNANE_LUKI_REGULY_W_TRASIE: Final = {
-    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta klasę w isinstance, nie źródło wartości": (
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta klasę w isinstance, nie źródło wartości": _trasa_ustawien(
         f"from rozliczenia.centrum.device_forms import needed_by\n{_FIELD_PROBLEM}"
         f"{_ODMOWA}    needed = needed_by(problem)\n    if isinstance(needed, FieldProblem):\n"
         "        raise refusal.setting_refused(needed)\n"
     ),
-    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta is None, nie źródło wartości": (
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta is None, nie źródło wartości": _trasa_ustawien(
         "from rozliczenia import worker_periods\n"
         f'{_ODMOWA}    found = worker_periods.unused(problem)\n    if found is None:\n        raise refusal.worker_kept(problem, "worker")\n'
     ),
-    "nazwa: funkcja katalogu odmów importowana z nazwy": (
+    "nazwa: funkcja katalogu odmów importowana z nazwy": _trasa_ustawien(
         "from rozliczenia.centrum.refusal import setting_refused\n\n\ndef changed(problem: object) -> None:\n"
         "    raise setting_refused(problem)\n"
     ),
-    "nazwa: katalog odmów pod inną nazwą modułu": (
+    "nazwa: katalog odmów pod inną nazwą modułu": _trasa_ustawien(
         "from rozliczenia.centrum import refusal as odmowy\n\n\ndef changed(problem: object) -> None:\n"
         '    raise odmowy.worker_kept(problem, "worker")\n'
     ),
-    "nazwa: odmowa z funkcji spoza katalogu odmów": (
+    "nazwa: odmowa z funkcji spoza katalogu odmów": _trasa_ustawien(
         "from rozliczenia.centrum import periods\n\n\ndef changed(problem: object) -> None:\n    raise periods.kept(problem)\n"
     ),
-    "nazwa: sprawdzenie z innego modułu bez przedrostka _ensure_": (
+    "nazwa: sprawdzenie z innego modułu bez przedrostka _ensure_": _trasa_ustawien(
         "from rozliczenia import worker_periods\n\n\ndef changed(problem: object) -> None:\n    worker_periods.ensure_unused(problem)\n"
     ),
-    "nazwa: klasa wyniku o nazwie klasy właściciela spoza settings/owner.py": (
+    "nazwa: klasa wyniku o nazwie klasy właściciela spoza settings/owner.py": _trasa_ustawien(
         "from rozliczenia.centrum.report_box import Refused\n"
         f"{_ODMOWA}    match problem:\n        case Refused():\n            raise refusal.setting_refused(problem)\n"
+    ),
+    "zakres: trasa zmienia Ustawienia funkcją innego modułu, nie metodą zapisu właściciela w module trasy": (
+        f"{_APIROUTER}from rozliczenia.centrum import refusal, settings_writes\n\n\n"
+        'def settings_router(settings: object, problem: object) -> APIRouter:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+        "    settings_writes.save(settings)\n    return APIRouter()\n"
     ),
 }
 
@@ -1192,7 +1244,7 @@ def test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff(tmp_path: Pat
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff")
 
 
-_DARWIN ='import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
+_DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
 _NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n    "
 
 
