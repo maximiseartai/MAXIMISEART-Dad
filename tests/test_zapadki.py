@@ -1,8 +1,9 @@
 """Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę.
 
-W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę z
-bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``. Formę, która ma jeszcze
-stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test.
+W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę
+poza regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``.
+Formę, która ma jeszcze stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test;
+reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
@@ -784,10 +785,12 @@ def syntax_rules(root: Path, base: str, config: Path = AST_GREP_CONFIG, ast_grep
 
     Bez pliku reguły zapadka nie woła ``ast-grep``, więc checkout bez dodatku dev przechodzi; z regułą i dodaną linią
     ``src/`` brak ``ast-grep`` jest porażką z poleceniem instalacji. ast-grep dostaje jawnie każdy plik ``src/**/*.py``
-    i ``src/**/*.pyi`` z dodaną linią, więc widzi też plik ukryty i plik śledzony mimo ``.gitignore``, a ``--error``
-    czyni błędem każde zgłoszenie, także wbudowanych reguł o dyrektywie ``ast-grep-ignore``
-    (``_AST_GREP_BUILTIN_MESSAGES``). Postacie, których nie łapie ani reguła, ani ruff, są próbkami ``ZNANE_LUKI`` tego
-    pliku.
+    i ``src/**/*.pyi`` z dodaną linią, więc widzi też plik ukryty i plik śledzony mimo ``.gitignore``. ``--error`` bez
+    nazw reguł ustawia ważność error każdej regule (dokumentacja ast-grep 0.51.0: „all rules will be set to error”),
+    więc zgłasza każda reguła katalogu, także z ``severity: off`` w pliku, i wbudowane reguły o dyrektywie
+    ``ast-grep-ignore`` (``_AST_GREP_BUILTIN_MESSAGES``): regułę wyłącza tylko usunięcie jej pliku. Kod wyjścia inny niż
+    0 i 1 (np. plik reguły, którego ast-grep nie wczyta) albo niezgodny z wyjściem jest porażką, nie brakiem zgłoszeń.
+    Postacie, których nie łapie ani reguła, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
     """
 
     if not ast_grep_rules(config):
@@ -949,6 +952,29 @@ def test_regula_ast_grep_zglasza_dodana_linie_src_a_nie_ta_sama_linie_sprzed_zmi
             SyntaxFinding("src/rozliczenia/nowy.py", 2, "zakazane-wywolanie", message),
         ]
     )
+
+
+@needs_ast_grep
+def test_regula_ast_grep_z_waznoscia_off_w_pliku_tez_zglasza_dodana_linie_src(tmp_path: Path) -> None:
+    config = _fixture_rules(tmp_path)
+    rule = tmp_path / AST_GREP_RULES / "zakazane-wywolanie.yml"
+    rule.write_text(_FIXTURE_RULE.replace("severity: error", "severity: off"), encoding="utf-8")
+    base = _src_sample(tmp_path, "zakazane()\n")
+
+    assert syntax_rules(tmp_path, base, config) == [
+        SyntaxFinding("src/rozliczenia/probka.py", 1, "zakazane-wywolanie", "Zamień zakazane() na dozwolone().")
+    ]
+
+
+@needs_ast_grep
+def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(tmp_path: Path) -> None:
+    config = _fixture_rules(tmp_path)
+    rule = tmp_path / AST_GREP_RULES / "zakazane-wywolanie.yml"
+    rule.write_text(_FIXTURE_RULE + "  nieznane_pole: 1\n", encoding="utf-8")
+    base = _src_sample(tmp_path, "zakazane()\n")
+
+    with pytest.raises(AssertionError, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
+        syntax_rules(tmp_path, base, config)
 
 
 @needs_ast_grep
