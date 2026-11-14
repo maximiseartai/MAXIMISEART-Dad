@@ -1,8 +1,8 @@
 """Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
 
-Psuje zmienione linie ``src/`` i ``tools/`` i sprawdza, że test to zauważa, jak nocne mutacje ``main`` (ADR 0021).
+Psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` z ``tools/lib/szopa.toml`` i sprawdza, że test to zauważa (ADR 0021).
 
-Zmiana to linie plików ``src/**/*.py`` i ``tools/**/*.py``, którymi checkout (z niezacommitowanymi i nieśledzonymi
+Zmiana to linie plików ``.py`` z ``src/`` i z tych jednostek, którymi checkout (z niezacommitowanymi i nieśledzonymi
 plikami) różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie ``origin/main``). Na każdej zmienionej linii narzędzie
 robi mutacje, które przeglądy PR-ów robiły ręcznie i które przeżywały testy:
 
@@ -101,7 +101,7 @@ nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, 
 ``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
-wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i ``tools/``
+wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i jednostkami ``przepuszcza``
 (skrypty skilli w ``.agents/skills/*/scripts``, bo zwykle nie biegnie ich żaden test pytest, ``ci.yml``) i kod innego
 systemu łapie tylko przegląd z mutacjami z ``tools/mutacje.py``.
 
@@ -157,6 +157,7 @@ import potomne
 from repo import BASE, ROOT
 import repo
 import silnik_mutacji
+import szopa
 import wplyw_zmiany
 from zakres_runu import RDZENIE_RUNNERA
 
@@ -231,7 +232,7 @@ def _code(path: str) -> bool:
 
 
 def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
-    """Fragmenty zmiany każdego pliku ``src/**/*.py`` i ``tools/**/*.py`` z checkoutu ``root``; nowy plik to jeden fragment."""
+    """Fragmenty zmiany każdego pliku ``.py`` z ``src/`` i z jednostek ``przepuszcza`` checkoutu ``root``; nowy plik to jeden fragment."""
 
     found: dict[str, list[Hunk]] = defaultdict(list)
     current: str | None = None
@@ -258,7 +259,8 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
                 found[current].append(Hunk(int(match["new"]), new_left, ()))
     for name in filter(_code, repo.git(root, "ls-files", "--others", "--exclude-standard").splitlines()):
         found[name] = [Hunk(1, len(_rows((root / name).read_text(encoding="utf-8"))), ())]
-    return {path: hunks for path, hunks in found.items() if (root / path).is_file()}
+    code = ("src/", *szopa.przepuszczajace(root))
+    return {path: hunks for path, hunks in found.items() if path.startswith(code) and (root / path).is_file()}
 
 
 def _overlay(fork: str, root: Path) -> tuple[frozenset[str], tuple[str, ...]]:
@@ -873,7 +875,7 @@ def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[
 
 @dataclass(frozen=True)
 class ZakresMutacji:
-    """Mutacje zmienionych linii ``src/`` i ``tools/`` od bazy do checkoutu ``root``, w kolejności części: po plikach,
+    """Mutacje zmienionych linii ``src/`` i jednostek ``przepuszcza`` od bazy do checkoutu ``root``, w kolejności części: po plikach,
     w pliku po liniach.
 
     Jedyne źródło listy mutacji planu nocy i części (ADR 0021): plan pyta o koniec zakresu nocy, liczbę części i
@@ -970,13 +972,13 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     found = zakres.czesc(czesc)
     if not found:
         where = f" w części {czesc}" if zakres.mutanty else ""
-        return 0, f"{OK} | brak mutacji zmienionych linii src/ i tools/ od {args.baza}{where}"
+        return 0, f"{OK} | brak mutacji zmienionych linii src/ i jednostek przepuszcza od {args.baza}{where}"
     paths = {mutant.path for mutant in found}
     repository = wplyw_zmiany.Repository.scan(ROOT)
     by_file = tests_of(repository, paths)
     tests = sorted({test for chosen in by_file.values() for test in chosen})
     part = f" (część {czesc} z {len(zakres.mutanty)})" if czesc.n > 1 else ""
-    print(f"Mutacje: {len(found)}{part} w {len(paths)} plikach src/ i tools/ od {args.baza}. Testy dotknięte zmianą: {len(tests)}.", flush=True)
+    print(f"Mutacje: {len(found)}{part} w {len(paths)} plikach src/ i jednostek przepuszcza od {args.baza}. Testy dotknięte zmianą: {len(tests)}.", flush=True)
     near = {path: repository.reaching(path) for path in paths}
     clock = [time.monotonic()]
     coverage = Coverage()
