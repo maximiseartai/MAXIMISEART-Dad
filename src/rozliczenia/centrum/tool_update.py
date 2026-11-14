@@ -13,7 +13,7 @@ commitu sprzed aktualizacji (``ToolClone.roll_back``). Bibliotek się nie cofa:
 biblioteki, które Centrum importuje, mają w wymaganiach dolne granice wersji,
 więc stara wersja dalej z nimi startuje; dokładnie przypięta jest tylko
 biblioteka testów (``hypothesis``), której Centrum nie importuje. Górną granicę
-ma tylko Playwright (``<1.65``, #1242): Centrum nie sprawdza wersji bibliotek
+ma tylko Playwright (``<1.65``): Centrum nie sprawdza wersji bibliotek
 przy starcie, więc stara wersja startuje też z nowszym Playwrightem, który
 zostawiłoby cofnięcie aktualizacji, która tę granicę zdjęła.
 Gdy nie uda się samo cofnięcie, wynik mówi to wprost (``ROLLBACK_FAILED``).
@@ -687,7 +687,7 @@ class _DadFiles:
     """Pliki taty w ``config/``, które przesunięcie klonu usunęłoby: nowa wersja je usuwa albo przestaje śledzić.
 
     Tata może je mieć zmienione (stary plik Wykonawców ``worker_mapping.yaml``
-    z prawdziwymi nazwiskami po #161); te zmiany nie zatrzymują Aktualizacji narzędzia.
+    z prawdziwymi nazwiskami); te zmiany nie zatrzymują Aktualizacji narzędzia.
     Przed przesunięciem trafiają do kopii w dzienniku „Aktualizacja w toku”
     i wracają do stanu z ``HEAD``, żeby Git nie odmówił; po przesunięciu
     (udanym albo nie) wraca ich kopia. Inne
