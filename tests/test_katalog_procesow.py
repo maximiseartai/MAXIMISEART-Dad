@@ -33,7 +33,6 @@ from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import empty_memory
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.client_data import empty_memory
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
 from rozliczenia import tool_files
