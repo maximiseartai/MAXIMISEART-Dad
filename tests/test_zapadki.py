@@ -99,6 +99,7 @@ PARSERS = frozenset(
     tests/test_struktura_testow.py
     tests/test_tabela_zatrzyman_efenix.py
     tests/test_wywolanie_skryptow_skilli.py
+    tools/lib/komunikat_mapy.py
     tools/lib/kroki_skilli.py
     tools/lib/niestabilne_testy.py
     tools/lib/rozjazd_modelu.py

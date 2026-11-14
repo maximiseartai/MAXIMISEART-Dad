@@ -261,6 +261,7 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
         "mergeCommit": None,
         "url": f"https://github.com/{opisy_pr.REPO}/pull/{number}",
         "closingIssuesReferences": [],
+        "mergeable": "MERGEABLE",
         **fields,
     }
 
@@ -2869,20 +2870,48 @@ def test_status_gotowego_pr_jest_zielony_na_jego_head_a_pr_nie_jest_scalany(tmp_
     assert github.merges() == []
 
 
+WRONG_BODY = BODY.replace("## Merge Danger", "## Ryzyko")
+FAIL_FOR_HEAD = "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)"
+
+
 @pytest.mark.parametrize(
-    "fields",
+    ("fields", "verdict", "state"),
     [
-        {"isDraft": True},
-        {"statusCheckRollup": [_check_run("COMPLETED", "FAILURE")]},
-        {"body": BODY.replace("## Merge Danger", "## Ryzyko")},
-        {"comments": []},
+        ({"isDraft": True}, PASS, "failure"),
+        ({"statusCheckRollup": [_check_run("COMPLETED", "FAILURE")]}, PASS, "failure"),
+        ({"body": WRONG_BODY}, PASS, "failure"),
+        ({}, FAIL_FOR_HEAD, "failure"),
+        ({"body": WRONG_BODY}, None, "failure"),
+        ({}, None, "pending"),
+        ({"statusCheckRollup": [_check_run("COMPLETED", "SUCCESS", name="Ruff"), _check_run("IN_PROGRESS", None)]}, PASS, "pending"),
+        ({"statusCheckRollup": [_check_run("COMPLETED", "SUCCESS", name="Ruff")]}, PASS, "pending"),
+        ({"statusCheckRollup": []}, PASS, "pending"),
+        ({"statusCheckRollup": [], "mergeable": "CONFLICTING"}, PASS, "failure"),
+        ({"statusCheckRollup": [], "mergeable": "UNKNOWN"}, PASS, "pending"),
+        ({"statusCheckRollup": [_check_run("IN_PROGRESS", None, name="Ruff"), _check_run("COMPLETED", "SUCCESS")]}, None, "pending"),
     ],
-    ids=["szkic", "ci-czerwone", "opis-bez-naglowka-wzoru", "bez-werdyktu"],
+    ids=[
+        "szkic",
+        "ci-czerwone",
+        "opis-bez-naglowka-wzoru",
+        "fail-na-head",
+        "bez-werdyktu-i-opis-bez-naglowka",
+        "bez-werdyktu",
+        "required-ci-w-toku",
+        "run-ci-bez-required",
+        "ci-bez-runu",
+        "ci-bez-runu-z-konfliktem",
+        "ci-bez-runu-i-scalenie-liczone",
+        "bez-werdyktu-i-zadanie-ci-w-toku",
+    ],
 )
-def test_status_pr_niegotowego_jest_czerwony_z_ta_sama_przyczyna_co_odmowa_bez_merge(tmp_path: Path, fields: dict[str, object]) -> None:
+def test_status_pr_niegotowego_ma_przyczyny_odmowy_bez_merge_a_oczekuje_tylko_gdy_kazda_minie_bez_zmiany_w_pr(
+    tmp_path: Path, fields: dict[str, object], verdict: str | None, state: str
+) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.comment(1, PASS.format(head=head))
+    if verdict is not None:
+        github.comment(1, verdict.format(head=head))
     github.update(1, **fields)
 
     refused = github.run("1", "--bez-merge")
@@ -2890,13 +2919,15 @@ def test_status_pr_niegotowego_jest_czerwony_z_ta_sama_przyczyna_co_odmowa_bez_m
 
     reasons = _last_line(refused).removeprefix(f"SCAL ODMOWA | #1 {head[:7]} | ")
     assert reasons != _last_line(refused), refused.stdout + refused.stderr
+    assert ("konflikt z main: zrób merge origin/main" in reasons) is (fields.get("mergeable") == "CONFLICTING"), reasons
+    description = f"oczekuje: {reasons}" if state == "pending" else reasons
     assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | {reasons}"
+    assert _last_line(answered) == f"STATUS {state} | #1 {head[:7]} | {description}"
     # GitHub przyjmuje opis statusu do 140 znaków, a pełne przyczyny podaje linia STATUS w runie z target_url.
     limit = klient_github.OPIS_STATUSU_LIMIT
-    described = reasons if len(reasons) <= limit else reasons[: limit - 1] + "…"
+    described = description if len(description) <= limit else description[: limit - 1] + "…"
     assert _statuses(github) == [
-        ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": "failure", "context": "Werdykt i bramka", "description": described, "target_url": RUN_URL}]
+        ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": state, "context": "Werdykt i bramka", "description": described, "target_url": RUN_URL}]
     ]
 
 

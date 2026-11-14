@@ -57,10 +57,13 @@ Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–4 jako st
 (ruff, mypy i pytest na scalonym drzewie), a status ustawia workflow ``.github/workflows/werdykt-i-bramka.yml`` tokenem
 z prawem zapisu statusów; scalenie z ruff i mypy pokazuje status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
-merge'a, i po fakcie pokazuje merge bez zielonego statusu. Status tylko raportuje, bo żaden ruleset go nie wymaga
-(ADR 0036, „Status w Actions”). Kod 0 znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.
+merge'a, i po fakcie pokazuje merge bez zielonego statusu. Gdy każda przyczyna to oczekiwanie na coś, co przyjdzie
+bez zmiany w PR (CI na HEAD w toku albo jeszcze nie ruszyło, HEAD bez werdyktu), status to ``pending`` z opisem od
+„oczekuje:”. PR bez runu CI, którego ``mergeable`` to ``CONFLICTING``, dostaje ``failure`` z przyczyną konfliktu:
+GitHub nie uruchamia CI na PR z konfliktem, a status ``scalenie z main`` powstaje tylko po pushu do `main`; ruleset `main` wymaga go w stanie ``success``, więc merge blokuje i ``pending``, i ``failure``. Kod 0
+znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.
 
-Komentarze, recenzje i checki pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
+Komentarze, recenzje, checki i ``mergeable`` pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
 
@@ -238,11 +241,18 @@ def _skipped_status(pull: Pull) -> str | None:
 
 
 def _publish_status(pull: Pull) -> int:
-    """Warunki 1–4 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`."""
+    """Warunki 1–4 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`: ``pending``, gdy
+    każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga działania autora."""
 
     where = f"#{pull.number} {pull.head[:7]}"
     problems = _problems(pull)
-    state, description = ("failure", "; ".join(problems)) if problems else ("success", "warunki 1–4 tools/scal_pr.py spełnione")
+    reasons = "; ".join(problems)
+    if not problems:
+        state, description = "success", "warunki 1–4 tools/scal_pr.py spełnione"
+    elif all(isinstance(problem, stan_pr.Waiting) for problem in problems):
+        state, description = "pending", f"oczekuje: {reasons}"
+    else:
+        state, description = "failure", reasons
     if error := github.ustaw_status(pull.head, github.WERDYKT_I_BRAMKA, state, description):
         print(f"STATUS FAIL | {where} | {state} niewysłany: {error}")
         return 1

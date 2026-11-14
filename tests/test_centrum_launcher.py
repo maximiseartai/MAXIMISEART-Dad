@@ -166,11 +166,14 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
         _wait_for_line(opened)
         _check_out(runtime, UPDATED_COMMIT)
         again = _launch_again(runtime, port, environment)
+        addresses = _opened_addresses(opened, 2)
         still_serving = centrum_health(port, timeout_s=2)
 
     assert {key: health[key] for key in ("service", "commit")} == {"service": "centrum-rozliczen", "commit": COMMIT[:7]}
     assert again.returncode == 1, again.stdout + again.stderr
     assert again.stdout.splitlines()[0] == "Co się stało: Działa już Centrum rozliczeń w innej wersji (3c1d0a9)."
+    # Karta działającej wersji ma przycisk „Zamknij Centrum rozliczeń”, którym tata zwalnia port dla tej wersji.
+    assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert still_serving == health
     assert "kod=INNA_WERSJA_CENTRUM" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
