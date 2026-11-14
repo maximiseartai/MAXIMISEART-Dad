@@ -15,15 +15,15 @@ strażnika reguły danych (ADR 0025), więc tata widzi i wysyła tekst bez warto
 ``ADRES`` i numeru Orange, z zamaskowanymi telefonami i ulicami.
 
 Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje Zgłoszenie,
-które założyła przerwana próba tej samej wysyłki, bez komentarzy (#724), a do otwartego Zgłoszenia tego odcisku
-dopisuje całą treść jednym komentarzem (#820). Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest
+które założyła przerwana próba tej samej wysyłki, bez komentarzy, a do otwartego Zgłoszenia tego odcisku
+dopisuje całą treść jednym komentarzem. Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest
 w Logach Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
 
 Źródło Zgłoszenia (Zatrzymanie w ``stops``, nieudana Aktualizacja narzędzia w
 ``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
 a „Wyślij do Maksa” kładzie dokładnie ten podgląd w kolejce Skrzynki Zgłoszeń,
 najwyżej raz na uchwyt. Powrót problemu, którego Zgłoszenie jest otwarte, idzie
-do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia (#820). Zgłoszenie pracy Przypomnień o raporcie
+do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia. Zgłoszenie pracy Przypomnień o raporcie
 (``ReminderReport``, odrzucone hasło aplikacji przy wysyłce) praca przypomnień w ``report_reminders`` wysyła sama, bo
 tata przy niej nie siedzi (ADR 0030). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
 kolejce i wychodzi samo; Komunikat jest tylko wtedy, gdy nie da się zapisać
@@ -366,7 +366,7 @@ def _cell(text: str) -> str:
 
 def report_target(fingerprint: str, title: Outgoing) -> OpenIssue:
     """Cel wysyłki Zgłoszenia w kolejce: jedno otwarte Zgłoszenie na odcisk problemu, a Zgłoszenie, które wróciło, idzie
-    do niego komentarzem „Zgłoszenie wróciło” (ADR 0007, #820)."""
+    do niego komentarzem „Zgłoszenie wróciło” (ADR 0007)."""
 
     return OpenIssue(REPORT.label, tool(fingerprint_line(fingerprint)), title, tool(RETURNED_HEADING))
 
