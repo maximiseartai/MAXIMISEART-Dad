@@ -83,7 +83,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 | Czekanie od `PASS` i zielonego CI do merge'a | mediana 4,9 h | poniżej 1 h |
 | Fałszywe alarmy reguły na 20 ostatnich PR-ach | `write_text` 18 w 6 z 20 | najwyżej 10%, powyżej zawężamy albo usuwamy regułę |
 
-Odczyt 11.12.2026 z ADR 0034 (#1636) zostaje i czyta te liczby.
+Odczyt 11.12.2026 z ADR 0034 (#1636) zostaje i czyta te liczby (wiersz „Tickety o issues „Chwast”” w tabeli „Wdrożenie”).
 Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpienia z blokadą w Required CI zamiast sprawdzenia w `tools/scal_pr.py`.
 
 ## Wdrożenie
@@ -98,6 +98,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 | Narzędzie dowodu reguły | #1697 (`tools/na_scalonych_pr.py --regula`), które samo żadnej reguły merge'a nie zmienia | dowód liczy się ręcznie |
 | Status „Werdykt i bramka” w Actions, tylko raport | PR statusu ticketu #1676 | merge ze starego checkoutu nie zostawia śladu na GitHubie |
 | Miara Q1: ucieczki, powroty idiomu, czekanie, fałszywe alarmy reguł, lista `Idiom: bez reguły` i pole „trigger” w poniedziałkowym raporcie | #1626, którego zakres ten ADR zmienia: zgody znikają, a zostają merge'e poza `tools/scal_pr.py` | raport liczy powtórzenia kodów jak w ADR 0031 |
+| Tickety, których przedmiotem jest issue „Chwast” albo stara miara: #1619, #1621, #1626, #1627, #1636, #1640 (decyzje ADR 0034 „Autor wyrywa swój chwast”, „Kolejka”, „Ogrodnik”, „Rejestr liczy zgody i obejścia”, spis zapachów i odczyt 11.12) | właściciel #1676: komentarz zmiany zakresu w każdym z nich przed merge'em tego ADR, a #1619 i #1640 zamyka po merge'u PR bramki | tickety stoją; #1619 i #1621 nie mają `ready-for-agent` |
 
 Wszystkie wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie obowiązuje bez zasady „niczego nie ukrywa” ani bez końca zakładania issues.
 
@@ -115,10 +116,10 @@ Wszystkie wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie
 
 ## Konsekwencje
 
-- Do merge'a PR bramki ticketu #1676 obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5).
+- Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5).
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
-- Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie od merge'a PR statusu ticketu #1676.
+- Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie od merge'a jego wykonawcy z tabeli „Wdrożenie”.
 - Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).
