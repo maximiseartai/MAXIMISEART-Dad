@@ -28,7 +28,6 @@ from typing import Any
 
 import pytest
 
-from tests.fixtures.skladnia import drzewo, wezly
 from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -531,6 +530,8 @@ def _stdlib_import_callers() -> set[str]:
     względem katalogu biblioteki, a pakiet nazwa jego ``__init__``.
     Pliku modułu, który ``DYNAMIC_IMPORT`` już zakazuje (wprost albo przez moduł nadrzędny, np. pakiet ``test``), skan nie
     czyta, bo wynik testu niżej od niego nie zależy."""
+    from tests.fixtures.skladnia import drzewo, wezly
+
     root = Path(sysconfig.get_paths()["stdlib"])
     found = set()
     for path in root.rglob("*.py"):
