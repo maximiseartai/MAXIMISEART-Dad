@@ -71,6 +71,8 @@ NAJWIECEJ_TESTOW = 5
 # Linia logu zaczyna się znacznikiem czasu GitHuba; wzorzec sygnatury i testu czyta ją od początku za nim, więc tekst
 # zacytowany w porażce testu (``E   urllib.error.HTTPError: HTTP Error 503``) sygnaturą nie jest.
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
+# Sekunda znacznika czasu linii logu, w tej samej dokładności co ``started_at`` i ``completed_at`` kroku w API zadań.
+_SEKUNDA_LINII = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ")
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
 PLIK_TESTU_PR = re.compile(_LINE + r"PONOWIENIE \| test .* " + re.escape(niestabilne_testy.ZMIENIONY_PLIK_TESTU) + r"$")
@@ -162,9 +164,11 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
     zmieniają; krok z ``continue-on-error`` przed nim ma ``conclusion: success``. Linie kroku wyznaczają nagłówki
     ``##[group]Run``: n-ty nagłówek poza akcją złożoną zaczyna n-ty krok bez ``skipped`` (bez ``Set up job``,
     ``Complete job`` i ``Post …``), a krok kończy się przed następnym nagłówkiem albo przed pierwszym krokiem ``Post``.
-    Tak było w każdym z 659 padniętych zadań prób runów z 30.10–13.11 (logi zadań z API). Gdy liczba nagłówków się nie
-    zgadza, krok jest niepewny i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout,
-    ``startup_failure``).
+    Tak było w każdym z 659 padniętych zadań prób runów z 30.10–13.11 (logi zadań z API), a sekunda nagłówka kroku,
+    który padł, leżała w jego ``started_at`` i ``completed_at`` z API. Gdy liczba nagłówków się nie zgadza albo sekunda
+    nagłówka kroku, który padł, leży poza tymi czasami albo jej nie ma (dwa znaczniki z wyjścia kroków, np. zacytowany
+    ``##[group]Run`` i niezamknięty ``##[start-action``, wyrównują liczbę i przesuwają kroki), krok jest niepewny
+    i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout, ``startup_failure``).
     """
 
     wykonane = [
@@ -184,6 +188,9 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
             break
     if padly is None or len(poczatki) != len(wykonane):
         return ""
+    sekunda = _SEKUNDA_LINII.match(linie[poczatki[padly]])
+    if sekunda is None or not _czas(wykonane[padly]["started_at"]) <= _czas(sekunda[1] + "Z") <= _czas(wykonane[padly]["completed_at"]):
+        return ""
     return "".join(linie[poczatki[padly] : [*poczatki, koniec][padly + 1]])
 
 
@@ -191,10 +198,12 @@ def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie
     """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania.
 
     Log zadania Windows z API kończy linie ``\\r\\n`` (``pytest (Python 3.13, 5/5)`` runu 43523010762: 593 z 600 linii), a wzorce
-    czytają linie zakończone ``\\n``, więc funkcja zamienia ``\\r\\n`` na ``\\n`` raz, zanim czyta log którymkolwiek wzorcem.
+    czytają linie zakończone ``\\n``, więc funkcja dzieli log na linie raz przez ``str.splitlines`` (jak
+    ``tools/ci/zgloszenia_ci.py``) i łączy je ``\\n``, zanim czyta go którymkolwiek wzorcem: każdy koniec linii, także
+    sam ``\\r`` i ``\\r\\r\\n``, staje się ``\\n``.
     """
 
-    log = log.replace("\r\n", "\n")
+    log = "\n".join(log.splitlines())
     porazka = log_porazki(log, kroki)
     return Zadanie(
         nazwa,

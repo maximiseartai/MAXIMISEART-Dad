@@ -217,8 +217,9 @@ def test_zadanie_krokow_skilli_ani_jego_akcje_zlozone_nie_wymieniaja_pliku_zalez
     środowisku workflowu i akcjach złożonych, które woła (``-r``, ``uv pip sync``, ``pip3 install``,
     ``uv run --with-requirements``, glob, ``hashFiles``), listą dozwolonych słów z ``Context.SKILL_STEPS``; to nie jest
     pełna lista dróg do środowiska kroku. Droga, której test nie widzi (np. zależność ścieżkowa projektu, plik czytany
-    przez skrypt z ``tools/ci/``, nazwa składana w czasie runu), omija tylko wybór na PR: pełne CI pushu do ``main``
-    uruchamia każdą podstawę ``ci:`` przy każdej zmianie (ADR 0020)."""
+    przez skrypt z ``tools/ci/``, nazwa składana w czasie runu) omija w podstawie ``ci:`` tylko wybór na PR, bo pełne
+    CI pushu do ``main`` uruchamia każdą podstawę ``ci:`` przy każdej zmianie (ADR 0020). Skrypt mutacji skilla przy
+    samym ``requirements.txt`` nie biegnie ani na pushu (Z1), ani nocą, więc taka droga omija go całkiem."""
 
     allowed = set(Context.SKILL_STEPS.paths())
     dependency_files = {path.relative_to(ROOT).as_posix() for path in (*ROOT.glob("*"), *ROOT.glob("*/*")) if DEPENDENCY_NAME.search(path.name)}
@@ -243,7 +244,8 @@ def test_setuptools_nie_czyta_zaleznosci_spoza_pyproject() -> None:
     """Zadanie kroków skilli instaluje ``-e ".[dev]"``, a setuptools czyta zależności także z ``setup.py``, ``setup.cfg``
     i plików z ``[tool.setuptools.dynamic]``: lista z ``requirements.txt`` przez ``dynamic`` zmieniałaby biblioteki
     kroków skilli, których zmiana tego pliku nie wybiera na PR (Z9, przegląd #1583 r2). Test łapie te formy setuptools;
-    inne wejścia instalatora omijają tylko wybór na PR, jak w teście granicy wyżej."""
+    inne wejścia instalatora omijają podstawę ``ci:`` tylko na PR, a skrypt mutacji skilla także na pushu i nocą, jak w
+    teście granicy wyżej."""
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

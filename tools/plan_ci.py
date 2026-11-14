@@ -71,8 +71,10 @@ WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 CEL_S = 90.0
 KROK_CELU_S = 5.0
 # Organizacja ma 60 zadań naraz ze wszystkich workflowów (plan Team od 26.10): run pull request bierze najwyżej 40, a
-# noc 20 (ADR 0021). Push do main bierze 25 (ADR 0020, Z6): krótszy run main skraca czas od merge'a do werdyktu, a
-# największy run PR i pełne CI main razem przekraczają 60 tylko o 5 zadań, rzadko i krótko.
+# push do main 25 (ADR 0020, Z6): krótszy run main skraca czas od merge'a do werdyktu, a największy run PR i pełne CI
+# main razem przekraczają 60 tylko o 5 zadań, rzadko i krótko. Noc bierze najwyżej 20 zadań naraz przez max-parallel
+# 17 + 3 w mutacje-nocne.yml (ADR 0021); ZADANIA_RUNU_NOCY minus STALE_ZADANIA to tylko liczba zadań skryptów skilli
+# nocą (Mutation checks (k/16) w runie 43392201527).
 ZADANIA_RUNU = 40
 ZADANIA_RUNU_MAIN = 25
 ZADANIA_RUNU_NOCY = 20
