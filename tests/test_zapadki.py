@@ -1014,6 +1014,14 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię ``src/``, a nie tylko linie dodane przez zmianę.
 REGULY_CALEGO_SRC: Final = ("historia-w-docstringu", "komentarz-w-src")
+# Zadania pytest na Windows instalują tylko requirements.txt, więc tam reguły całego ``src/`` się pomijają, a biegną
+# w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza Windows brak ast-grep to porażka z poleceniem instalacji
+# (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
+windows_without_ast_grep = pytest.mark.skipif(
+    AST_GREP is None and sys.platform == "win32",
+    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły całego src biegną"
+    " w zadaniach pytest na Linuksie, w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
+)
 
 
 def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
@@ -1025,7 +1033,7 @@ def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | 
     return odpalenia_ast_grep.on_added_lines(root, odpalenia_ast_grep.EMPTY_TREE, rules, ast_grep, "src")
 
 
-@needs_ast_grep
+@windows_without_ast_grep
 def test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src() -> None:
     assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_src_rules(ROOT)] == []
 
@@ -1037,7 +1045,7 @@ def test_kazda_regula_calego_src_jest_w_katalogu_regul() -> None:
     assert set(REGULY_CALEGO_SRC) - ids == set(), f"popraw REGULY_CALEGO_SRC na id reguł z {AST_GREP_RULES}/"
 
 
-@needs_ast_grep
+@windows_without_ast_grep
 def test_reguly_calego_src_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik_nowy(tmp_path: Path) -> None:
     """Komentarz i docstring z numerem issue w pliku ``src/`` z commitu bazy zgłaszają reguły całego ``src/``, choć
     zapadka linii dodanych ich nie widzi; nowy plik nieśledzony zgłaszają obie, a komentarz w ``tests/`` żadna."""
