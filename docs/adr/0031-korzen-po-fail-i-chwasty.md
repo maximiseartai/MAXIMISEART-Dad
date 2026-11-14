@@ -6,6 +6,7 @@ Zaakceptowana (decyzje Maksa Q1–Q26 z grilla 13.11.2026 w wątku T3).
 Wdrożenie idzie w pięciu PR-ach (Q24); ten ADR wchodzi w pierwszym z nich.
 Zmienia regułę korzenia z sekcji „Reguły i co ich pilnuje” w `AGENTS.md`: drabina szczebli ma teraz (e) i żyje w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), sekcja „Korzeń i chwast”.
 Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek; każda zmiana obowiązuje od merge'a ticketu, który ADR 0034 przy niej podaje.
+Zmieniona przez [ADR 0036](0036-chwast-to-regula.md) (#1676) w decyzjach Q1, Q11, Q12, Q15, Q16, Q22 i Q26: chwast to reguła detektora, kod korzenia to kategoria, która nie blokuje merge'a, a `ZGODA KORZEŃ` i issues „Chwast” znikają; każda zmiana obowiązuje od merge'a jej wykonawcy z tabeli „Wdrożenie” w ADR 0036.
 
 ## Kontekst
 
