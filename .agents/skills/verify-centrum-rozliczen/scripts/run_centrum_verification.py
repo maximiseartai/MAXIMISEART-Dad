@@ -8,15 +8,18 @@ removed; evidence lives in ``<run dir>/evidence/centrum-<id>`` and is kept.
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from datetime import datetime
 import io
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -46,6 +49,11 @@ REQUIRED_EVIDENCE = (
     "cleanup.txt",
     "self-test.txt",
 )
+# A line of server.txt for one request Centrum answered (serve_centrum._RequestLog): the moment it came, method, path.
+SERVER_REQUEST = re.compile(r"REQUEST (?P<came>\S+) \S+ (?P<path>\S+) .*")
+ADDRESS = re.compile(r"https?://\S+")
+
+
 class VerificationFailure(Exception):
     pass
 
@@ -89,6 +97,38 @@ def _run_step(name: str, arguments: list[str], evidence: Path, timeout: int = ST
     sys.stderr.write(completed.stderr)
     if completed.returncode != 0:
         raise VerificationFailure(f"{name} returned {completed.returncode}")
+
+
+def lost_requests(evidence: Path) -> Iterator[str]:
+    """Each line of what the drive's pages lost (``zadania-strony.txt``) with the server's last ``REQUEST`` line for its
+    path before it, or that none was answered (the server writes a request once answered): CI keeps only the log of a
+    failed drive, not its evidence, so the lost ``index.css`` of runs 43392201527 and 43572533066 named no source
+    (#1567, #1756)."""
+
+    from drive.common import PAGE_REQUESTS  # Playwright, which drive.common needs, is checked in _preflight
+
+    lost = evidence / PAGE_REQUESTS
+    if not lost.exists():
+        return
+    server = evidence / "server.txt"
+    # The server writes quote() of the decoded path, the page the address it sent, which keeps ( ) ! ' * unquoted.
+    answered = [
+        (datetime.fromisoformat(found["came"]), urllib.parse.unquote(found["path"]), line)
+        for line in (server.read_text(encoding="utf-8", errors="replace").splitlines() if server.exists() else ())
+        if (found := SERVER_REQUEST.fullmatch(line))
+    ]
+    for line in lost.read_text(encoding="utf-8").splitlines():
+        yield f"PAGE LOST | {line}"
+        moment, _, rest = line.partition(" ")
+        if (address := ADDRESS.search(rest)) is None:
+            continue
+        path = urllib.parse.urlsplit(address.group()).path
+        before = [
+            entry
+            for came, served, entry in answered
+            if served == urllib.parse.unquote(path) and came <= datetime.fromisoformat(moment)
+        ]
+        yield f"  server before it: {before[-1]}" if before else f"  server before it: no answered REQUEST of {path}"
 
 
 def _free_port() -> int:
@@ -158,13 +198,17 @@ def _verify(features: tuple[str, ...], performance: list[str], run_dir: Path) ->
         _run_step("fixture", [str(SCRIPTS / "create_centrum_fixture.py"), "--root", str(run_root), *variant], evidence)
         process, url = _launch(run_root, evidence)
         _run_step("doctor", [str(SCRIPTS / "centrum_doctor.py"), "--root", str(run_root)], evidence)
-        _run_step(
-            "drive",
-            [str(SCRIPTS / "drive_centrum.py"), "--root", str(run_root), "--url", url,
-             "--evidence", str(evidence), "--feature", *features, *performance],
-            evidence,
-            drive_timeout_s(features),
-        )
+        try:
+            _run_step(
+                "drive",
+                [str(SCRIPTS / "drive_centrum.py"), "--root", str(run_root), "--url", url,
+                 "--evidence", str(evidence), "--feature", *features, *performance],
+                evidence,
+                drive_timeout_s(features),
+            )
+        except VerificationFailure:
+            sys.stderr.writelines(f"{line}\n" for line in lost_requests(evidence))
+            raise
     finally:
         if process is not None:
             _stop(process)

@@ -114,6 +114,28 @@ def git_bez_konfiguracji_komputera(tmp_path_factory: pytest.TempPathFactory) -> 
         yield
 
 
+# Zmienne, z których ``gh`` bierze token przed logowaniem z ``GH_CONFIG_DIR`` (``gh help environment``).
+_TOKENY_GH = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def gh_bez_logowania(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """``gh`` w procesie testów i w jego potomkach nie ma logowania ani tokenu, więc ``gh api`` odmawia kodem 4 (tekst
+    odmowy w GitHub Actions jest inny niż poza nim), zamiast pisać do prawdziwego repozytorium jako zalogowany agent.
+
+    Prawdziwy klient ``GhApi`` w miejscu atrapy (mutacja ``noc = GITHUB`` z ``tools/mutacje.py`` założyła tak issue
+    #1500–#1502) pada w teście. Granica: potomek z ``env`` zbudowanym od zera z prawdziwym ``HOME`` albo z tokenem
+    podanym wprost, polecenie ``tools/mutacje.py`` spoza pytest (skrypt skilla, mypy) i klient GitHuba bez ``gh``
+    (HTTP z tokenem z pliku: tego pilnują osobne fixture tego pliku).
+    """
+
+    with pytest.MonkeyPatch.context() as patch:
+        for nazwa in _TOKENY_GH:
+            patch.delenv(nazwa, raising=False)
+        patch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("gh")))
+        yield
+
+
 @pytest.fixture(autouse=True, scope="session")
 def jedna_petla_testclient() -> Iterator[None]:
     """Każdy ``TestClient`` poza ``with`` obsługuje żądania w jednej pętli zdarzeń procesu testów, nie w nowej na żądanie.
