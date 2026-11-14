@@ -900,9 +900,9 @@ def test_znane_luki_strazy_nazw_watkow_przechodza_przez_niego(tmp_path: Path, mo
     assert_znane_luki(zgloszenia, "tests/test_struktura_testow.py (ZNANE_LUKI_NAZW_WATKOW)")
 
 
-# Zapadka, której bieg pustego drzewa nie uruchamia: dzisiejsze ``src/`` ma wystąpienia form, których reguły ast-grep
+# Zapadka, której bieg pustego drzewa nie uruchamia: dzisiejsze repozytorium ma wystąpienia form, których reguły ast-grep
 # zakazują tylko w nowych liniach (ADR 0034), a zadania pytest na Windows instalują tylko ``requirements.txt``, bez ast-grep.
-_ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_src"
+_ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo"
 
 
 def _empty_tree_problems(root: Path) -> list[str]:
@@ -955,6 +955,8 @@ id: zakazane-wywolanie
 language: python
 severity: error
 message: "Zamień zakazane() na dozwolone()."
+files:
+  - src/**
 rule:
   pattern: zakazane()
 """
