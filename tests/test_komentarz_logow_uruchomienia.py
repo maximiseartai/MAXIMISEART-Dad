@@ -461,6 +461,18 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
     assert value.text == text
 
 
+
+@pytest.mark.parametrize("zmiana", [dataclasses.replace, copy.replace], ids=["dataclasses.replace", "copy.replace"])
+def test_gotowej_wysylki_logow_nie_przerabia_replace_wartosci_bez_typu(zmiana: Callable[..., object]) -> None:
+    """Wysyłkę Logów daje tylko ``post_of``: mypy odrzuca ``replace`` gotowej ``LogsPost``, a wartość bez typu (``Any``,
+    ``type: ignore``) rzuca ``TypeError``, bo ``LogsPost`` nie jest dataclassą i nie ma ``__replace__`` (docstring
+    ``comment_versions._VERSIONS``)."""
+
+    post: Any = _proof_value("wysylka-logow")
+
+    with pytest.raises(TypeError):
+        zmiana(post, rank=Rank.OWN)
+
 def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_straznika() -> None:
     logs = guard_logs(record(), empty_memory())
     text = guard_text("Postęp.", "postęp", empty_memory())
