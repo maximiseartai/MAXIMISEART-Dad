@@ -2497,6 +2497,32 @@ def test_wazne_z_polem_idiom_scala_sie_po_dowodzie_na_kazdym_przypadku_z_histori
     assert [cast(dict[str, str], query)["q"].partition(" sort:")[2] for query in github._log("graphql.jsonl")] == ['created-asc "Idiom: zakazane-wywolanie"']
 
 
+def test_kazda_regula_pr_dowodzi_na_przypadkach_z_wlasnego_wyszukiwania_rejestru(tmp_path: Path) -> None:
+    """PR z Ważnymi dwóch reguł czyta rejestr frazą każdej z nich, a dowód każdej reguły dostaje przypadki ze swojego
+    wyszukiwania: przypadek z innego PR rejestru, który ma tylko pole drugiej reguły, nie znika z jej dowodu, a dowód
+    pierwszej go nie widzi. Bramka korzenia wdrożona po werdyktach nie wymaga bloku drugiej rundy."""
+
+    other = 1437
+    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), _idiom_verdict("innej-reguly"), gate=GATE_AFTER_VERDICTS)
+    github.graphql = [
+        _node([(_idiom_verdict("ucieczka"), AFTER_DEPLOYMENT)], number=chwasty.OTHER),
+        _node([(_idiom_verdict("innej-reguly"), AFTER_DEPLOYMENT)], number=other),
+    ]
+    github._save()
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == [
+        ["--regula-id", "inna-regula", "--z-commita", head, *(part for case in ("1/W1/r2", f"{other}/W1/r1", "1553/W2/r1") for part in ("--wazne", case))],
+        _proof_arguments(head, "1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2"),
+    ]
+    assert sorted(cast(dict[str, str], query)["q"].partition(" sort:")[2] for query in github._log("graphql.jsonl")) == [
+        'created-asc "Idiom: inna-regula"',
+        'created-asc "Idiom: zakazane-wywolanie"',
+    ]
+
+
 @pytest.mark.parametrize(("verdict", "cases"), [("drugie-wystapienie", [("1/W1/r1", "1553/W1/r2")]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
 def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_ze_wczesniejszym_waznym(tmp_path: Path, verdict: str, cases: list[tuple[str, ...]]) -> None:
     github, head, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict))
