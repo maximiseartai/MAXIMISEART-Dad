@@ -297,9 +297,6 @@ def _listed(entry: Document) -> list[str]:
     return [login for login in logins if isinstance(login, str)] if isinstance(logins, list) else []
 
 
-# --- zmiany taty w sekcji Wykonawcy ---------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class WorkerForm:
     """Wykonawca z formularza sekcji Wykonawcy przed sprawdzeniem: loginy, nazwa i adresy tak, jak je wpisał tata."""

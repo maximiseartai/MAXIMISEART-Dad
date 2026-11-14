@@ -46,8 +46,8 @@ class IntermaxDays(Model):
     problem: Message | None
 
 
-# Przed czym powstała Kopia INTERMAX: przed Uporządkowaniem INTERMAX albo przed przywróceniem innej Kopii.
 IntermaxCopyBefore = Literal["ordering", "restore"]
+"""Przed czym powstała Kopia INTERMAX: przed Uporządkowaniem INTERMAX albo przed przywróceniem innej Kopii."""
 
 
 class IntermaxCopy(Model):

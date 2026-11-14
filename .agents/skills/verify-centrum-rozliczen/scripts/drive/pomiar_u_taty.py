@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-import time
 import urllib.parse
 import urllib.request
 
 from playwright.sync_api import Page, Request, Response, Route, expect
 
 from drive.common import PAGES, REPO_ROOT, Run, close_settings, ensure_files_set, read_json, settings_window
-from drive.waiting import Budget
+from drive.waiting import Budget, answer_late
 
 FEATURE = "pomiar-u-taty"
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
@@ -159,8 +158,7 @@ def drive(run: Run, page: Page) -> None:
     _okresy_measured(run, page)
 
     def slow(route: Route) -> None:
-        time.sleep(SLOW_READ_S)
-        route.continue_()
+        answer_late(route, SLOW_READ_S)
 
     page.route("**/api/configuration", slow)
     since = len(run.log_entries())
@@ -184,10 +182,11 @@ def drive(run: Run, page: Page) -> None:
     held: list[str] = []
 
     def hold_first(route: Route) -> None:
-        if not held:
-            held.append(route.request.url)
-            time.sleep(SLOW_READ_S)
-        route.continue_()
+        if held:
+            route.continue_()
+            return
+        held.append(route.request.url)
+        answer_late(route, SLOW_READ_S)
 
     # The read that made the view ready is the last one the page got before it sent the measurement, not always the
     # configuration: every return to the tab reads the settings again too.

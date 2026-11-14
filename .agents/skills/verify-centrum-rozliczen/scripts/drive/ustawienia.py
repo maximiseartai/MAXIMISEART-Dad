@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 import shutil
 import sys
-import time
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, expect
@@ -33,7 +32,7 @@ from drive.common import (
     settle,
     unreadable,
 )
-from drive.waiting import Budget, quiet_for, until
+from drive.waiting import Budget, answer_late, quiet_for, until
 from harness import INBOX_ADDRESS, INBOX_PASSWORD, File, Log, Switch
 
 
@@ -303,8 +302,7 @@ def _failure_in_window(run: Run, page: Page) -> None:
     themes = open_settings(page, "Wygląd").get_by_role("group", name="Motyw")
 
     def late_failure(route: Route) -> None:
-        time.sleep(LATE_ANSWER_S)
-        route.fulfill(status=500, body="")
+        answer_late(route, LATE_ANSWER_S, lambda failed: failed.fulfill(status=500, body=""))
 
     page.route(theme, late_failure)
     try:
