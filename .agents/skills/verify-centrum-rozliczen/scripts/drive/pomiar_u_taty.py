@@ -95,10 +95,15 @@ def drive(run: Run, page: Page) -> None:
     page.goto(f"{run.url}#/ustawienia/wzorce")
     expect(settings_window(page).get_by_role("list", name="Wzorce")).to_be_visible()
     # Only cold starts: a menu click of the start page before (ensure_files_set) can land here too, by keepalive.
-    cold = until(
-        lambda: [timing for timing in _timings(run, since) if timing["widok"] == "zimny-start"],
+
+    def cold_starts() -> list[dict[str, str]]:
+        return [timing for timing in _timings(run, since) if timing["widok"] == "zimny-start"]
+
+    until(
+        lambda: "ustawienia" in [timing["strona"] for timing in cold_starts()],
         "the cold start of Ustawienia is in the Centrum log",
     )
+    cold = cold_starts()
     run.check(
         [timing["strona"] for timing in cold] == ["ustawienia"],
         "a cold start on #/ustawienia/wzorce logs the window, not the start page it hides",

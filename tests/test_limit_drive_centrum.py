@@ -210,6 +210,23 @@ def _refused(path: Path) -> object:
     raise PermissionError(13, "Permission denied", str(path))
 
 
+@pytest.mark.parametrize(("pusta", "pelna"), [([], ["wpis"]), ((), ("wpis",)), (set(), {"wpis"}), ({}, {"wpis": 1})])
+def test_czekanie_drive_na_kolekcje_czeka_na_jej_pierwszy_element(
+    common: ModuleType, pusta: object, pelna: object
+) -> None:
+    """Pusta kolekcja to stan „jeszcze nie”, jak ``None`` i ``False``: czekanie na wpisy dziennika czeka na pierwszy,
+    a nie kończy się samym odczytem (#1857 r1)."""
+
+    waiting = importlib.import_module("drive.waiting")
+    reads: list[str] = []
+
+    def ready() -> object:
+        reads.append("odczyt")
+        return pelna if len(reads) == 3 else pusta
+
+    assert (waiting.until(ready, "the entry comes", 1.0), len(reads)) == (pelna, 3)
+
+
 @pytest.mark.parametrize(
     "not_yet",
     [
