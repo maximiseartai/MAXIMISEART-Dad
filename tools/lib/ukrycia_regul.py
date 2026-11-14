@@ -10,10 +10,10 @@ w ``per-file-ignores``, ``ignore``, ``exclude``, ``ignores:`` albo ``files:`` re
 
 - HEAD: drzewo checkoutu (pliki śledzone i nieśledzone, a nieignorowane, jak zapadki) z konfiguracją bazy bez
   tłumień, czyli z plikami konfiguracji ruff, ``.gitignore``, ``.ignore``, ``sgconfig.yml`` i katalogami reguł
-  z bazy, ``ruff --ignore-noqa`` bez ``per-file-ignores`` i ast-grep na drzewie, w którym dyrektywa
-  ``ast-grep-ignore`` przestaje nią być; z tego zbioru odpada prawo właściciela (niżej);
+  z bazy, ``ruff --ignore-noqa`` bez ``per-file-ignores`` i ast-grep bez ``ignores:`` reguł na drzewie, w którym
+  dyrektywa ``ast-grep-ignore`` przestaje nią być; z tego zbioru odpada prawo właściciela (niżej);
 - wobec HEAD z jego konfiguracją i tłumieniami, jak w CI;
-- baza w tych samych dwóch postaciach daje ukrycia, które baza już miała.
+- baza z jej konfiguracją bez tłumień i z nimi daje ukrycia, które baza już miała.
 
 Zgłoszenie z pierwszego zbioru, którego nie ma w drugim, to ukrycie. Tożsamość zgłoszenia to plik, pierwsza linia
 węzła i reguła (``banned-api <nazwa>`` albo ``ast-grep <id>``), bez komunikatu, więc zmiana samego ``message:`` reguły
@@ -24,11 +24,17 @@ pliku jej nie zmienia) tylko wtedy, gdy baza tej linii nie ukrywała, więc zmia
 którą ukrywa, a stare tłumienie zostaje. Zmieniony ``.gitattributes`` niczego nie ukrywa: ruff i ast-grep go nie
 czytają, a linie dodane i ich pozycje w bazie ``Changes`` liczy z różnicy bez atrybutów.
 
-Prawo właściciela wyznacza baza, nie HEAD: klucz ``banned-api`` w pliku, który ``per-file-ignores`` bazy zwalnia,
-a kod bazy go tam używa, więc zwolnienie z całego ``TID251`` nie obejmuje innego klucza, a nowy wpis zwolnienia,
-wiersz ``OWNERS`` czy zmieniony ``msg`` w HEAD niczego nie dają; dla reguły ast-grep to jej ``ignores:`` i ``files:``
-w bazie. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątkiem wbudowanych reguł o dyrektywie
-(``odpalenia_ast_grep.BUILTIN_MESSAGES``), które zgłasza już zapadka.
+Prawo właściciela wyznacza baza, nie HEAD, jednym liczeniem dla obu rodzajów reguł: para (plik bazy, reguła), którą
+baza zgłasza bez zwolnień (``per-file-ignores`` ruff, ``ignores:`` reguły ast-grep), a ze zwolnieniami nie, czyli
+reguła, którą kod bazy w pliku zwolnionym przez bazę narusza. Zwolnienie z całego ``TID251`` nie obejmuje więc
+innego klucza, a nowy wpis zwolnienia, wiersz ``OWNERS``, zmieniony ``msg`` w HEAD i nowy plik pod globem zwolnienia
+niczego nie dają. Plik zgłoszenia w HEAD ma ścieżkę w bazie z ``odpalenia_ast_grep.Changes.base_path``, więc
+przeniesiony właściciel zostaje właścicielem, a gdy HEAD go nie zwalnia (zwolnienie zostało na starej ścieżce), krok
+zgłasza jego linię z poleceniem przeniesienia zwolnienia w tym samym PR: inaczej późniejsza poprawka zwolnienia
+ukryłaby zgłoszenie, które baza tego PR-u już pokazuje. Zakres ``files:`` reguły ast-grep bierze się z bazy, jak
+cała jej konfiguracja. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątkiem wbudowanych reguł
+o dyrektywie (``odpalenia_ast_grep.BUILTIN_MESSAGES``), które zgłasza już zapadka. Wiersz ruff (koniec linii to
+także samotne ``\\r``) krok przelicza na linię gita, którą kończy tylko ``\\n``, jak w ``Changes``.
 
 Baza, która nie jest commitem (puste drzewo w dowodzie braku fałszywych alarmów zapadek), nie ma konfiguracji reguł,
 więc niczego nie ukrywa. Moduł importuje z repozytorium tylko ``repo``, ``potomne`` i ``odpalenia_ast_grep``, jak
@@ -64,6 +70,7 @@ DIRECTIVE = "ast-grep-ignore"
 # Ta sama długość, więc kolumny i linie zostają, a ast-grep nie widzi już dyrektywy.
 DISARMED = "ast-grep-ignor_"
 BANNED = "TID251"
+_RUFF_LINE_END = re.compile(rb"\r\n|\r|\n")
 _BANNED_NAME = re.compile(r"`([^`]+)` is banned(?:: (.*))?", re.DOTALL)
 _WITHOUT_EXEMPTIONS = ("--config", "lint.per-file-ignores = {}", "--config", "lint.extend-per-file-ignores = {}")
 
@@ -73,8 +80,15 @@ class Hidden(NamedTuple):
     line: int
     rule: str  # ``banned-api <nazwa>`` albo ``ast-grep <id>``
     message: str  # komunikat reguły z bazy
+    moved_from: str | None = None  # ścieżka w bazie przeniesionego właściciela, którego HEAD nie zwalnia
 
     def shown(self) -> str:
+        if self.moved_from is not None:
+            exemption = "per-file-ignores w pyproject.toml i OWNERS w tests/test_zakazy_ruff.py" if self.rule.startswith("banned-api ") else "ignores: reguły"
+            return (
+                f"{self.path}:{self.line}: {self.rule}: plik właściciela reguły chwastu przeniesiony z {self.moved_from}, a jego"
+                f" zwolnienie zostało na starej ścieżce; przenieś je ({exemption}) na {self.path} w tym samym PR (ADR 0036)"
+            )
         return (
             f"{self.path}:{self.line}: {self.rule}: odpalenie reguły chwastu ukryte tłumieniem albo zmianą konfiguracji;"
             f" usuń tłumienie albo zmień regułę z jej dowodem (ADR 0036): {self.message}"
@@ -105,23 +119,50 @@ def hidden(root: Path, base: str, ast_grep: str | None) -> list[Hidden]:
         _base_configs(root, base, head)
         old_listed = [name for name in repo.git(root, "ls-tree", "-r", "-z", "--name-only", base).split("\0") if name and (old / name).is_file()]
         base_visible = [*_ruff(old), *_ast_grep(old, old_listed, ast_grep)]
-        unexempted = _ruff(old, "--ignore-noqa", "--select", BANNED, *_WITHOUT_EXEMPTIONS)
-        exempted = set(_ruff(old, "--ignore-noqa", "--select", BANNED))
-        owners = {(finding.path, finding.rule) for finding in unexempted if finding not in exempted}
-        _disarm(old, old_listed)
-        base_bare = [*exempted, *_ast_grep(old, old_listed, ast_grep)]
+        exempted, unexempted = _without_suppressions(old, old_listed, ast_grep)
         present = [name for name in listed if (head / name).is_file()]
-        _disarm(head, present)
-        bare = [*_ruff(head, "--ignore-noqa", "--select", BANNED, *_WITHOUT_EXEMPTIONS), *_ast_grep(head, present, ast_grep)]
+        bare = _without_suppressions(head, present, ast_grep)[1]
+    owners = {(finding.path, finding.rule) for finding in set(unexempted) - set(exempted)}
     visible = set(_ruff(root)) | set(_ast_grep(root, listed, ast_grep))
-    before = {(finding.path, finding.line, finding.rule) for finding in set(base_bare) - set(base_visible)}
+    before = {(finding.path, finding.line, finding.rule) for finding in set(exempted) - set(base_visible)}
     found = []
-    for finding in sorted(set(bare) - visible):
+    for finding in sorted(set(bare)):
+        base_path = moved.base_path(finding.path)
+        if (base_path, finding.rule) in owners:
+            if finding in visible and base_path != finding.path:
+                found.append(Hidden(finding.path, finding.line, finding.rule, finding.message, base_path))
+            continue
         place = moved.old(finding.path, finding.line)
-        owned = finding.rule.startswith("banned-api ") and (moved.base_path(finding.path), finding.rule) in owners
-        if not owned and (place is None or (*place, finding.rule) not in before):
+        if finding not in visible and (place is None or (*place, finding.rule) not in before):
             found.append(Hidden(finding.path, finding.line, finding.rule, finding.message))
     return found
+
+
+def _without_suppressions(tree: Path, names: Sequence[str], ast_grep: str | None) -> tuple[list[_Finding], list[_Finding]]:
+    """Zgłoszenia reguł chwastu w drzewie ``tree`` (kopii, którą zmienia) bez tłumień: ze zwolnieniami jego
+    konfiguracji i bez nich (``per-file-ignores`` ruff, ``ignores:`` reguł ast-grep)."""
+
+    _disarm(tree, names)
+    exempted = [*_ruff(tree, "--ignore-noqa", "--select", BANNED), *_ast_grep(tree, names, ast_grep)]
+    unexempted_ruff = _ruff(tree, "--ignore-noqa", "--select", BANNED, *_WITHOUT_EXEMPTIONS)
+    exempted_ast_grep = [finding for finding in exempted if finding.rule.startswith("ast-grep ")]
+    unexempted_ast_grep = _ast_grep(tree, names, ast_grep) if _drop_ignores(tree) else exempted_ast_grep
+    return exempted, [*unexempted_ruff, *unexempted_ast_grep]
+
+
+def _drop_ignores(tree: Path) -> bool:
+    """Reguły ast-grep z ``sgconfig.yml`` drzewa ``tree`` tracą pole ``ignores:``; ``False``, gdy żadna go nie miała."""
+
+    dropped = False
+    for directory in _rule_dirs(tree):
+        for path in sorted((tree / directory).rglob("*")):
+            if path.suffix not in (".yml", ".yaml") or not path.is_file():
+                continue
+            rules = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+            if any(isinstance(rule, dict) and "ignores" in rule for rule in rules):
+                path.write_text(yaml.safe_dump_all([{key: value for key, value in rule.items() if key != "ignores"} if isinstance(rule, dict) else rule for rule in rules], allow_unicode=True, sort_keys=False), encoding="utf-8")
+                dropped = True
+    return dropped
 
 
 def _listed(root: Path) -> list[str]:
@@ -186,8 +227,17 @@ def _ruff(tree: Path, *options: str) -> list[_Finding]:
         banned = _BANNED_NAME.match(str(entry.get("message", ""))) if entry.get("code") == BANNED else None
         if banned:
             path = Path(entry["filename"]).resolve().relative_to(tree.resolve()).as_posix()
-            found.append(_Finding(path, int(entry["location"]["row"]), f"banned-api {banned[1]}", banned[2] or ""))
+            found.append(_Finding(path, _git_line(tree / path, int(entry["location"]["row"])), f"banned-api {banned[1]}", banned[2] or ""))
     return found
+
+
+def _git_line(path: Path, row: int) -> int:
+    """Linia gita (kończy ją tylko ``\\n``, jak w ``odpalenia_ast_grep.Changes``) wiersza ``row`` ruff, który kończą
+    ``\\n``, ``\\r\\n`` i samotne ``\\r``."""
+
+    data = path.read_bytes()
+    starts = [0, *(end.end() for end in _RUFF_LINE_END.finditer(data))]
+    return data.count(b"\n", 0, starts[min(row, len(starts)) - 1]) + 1
 
 
 def _ast_grep(tree: Path, names: Sequence[str], ast_grep: str | None) -> list[_Finding]:

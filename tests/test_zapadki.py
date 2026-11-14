@@ -1932,6 +1932,7 @@ _HIDINGS: Final[dict[str, tuple[dict[str, str | None], list[tuple[str, int, str]
     ),
     "właściciel używa swojej nazwy": ({"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\ndef znowu() -> float:\n    return time.time()\n"}, []),
     "stare tłumienie przesunięte": ({"src/stare.py": _UNTOUCHED_OLD_LINES}, []),
+    "samotne CR w zmienionej linii przed starym tłumieniem": ({"src/stare.py": _HIDING_BASE["src/stare.py"].replace("import os\n", "import os\rY = 1\n")}, []),
     "widoczne zgłoszenie bez tłumienia to nie ukrycie": ({"src/a.py": "import os\n\nX = os.name\nzakazane()\n"}, []),
     "zmiana bez reguł chwastu": ({"src/a.py": "X = 2\n"}, []),
 }
@@ -1961,6 +1962,44 @@ def test_stare_tlumienie_w_przeniesionym_pliku_nie_jest_odpaleniem(tmp_path: Pat
 
     (tmp_path / "src" / "przeniesione.py").write_text(_HIDING_BASE["src/stare.py"] + "INNY = os.name  # noqa: TID251\n", encoding="utf-8")
     assert _hidden(tmp_path, base) == [("src/przeniesione.py", 4, _OS_NAME)]
+
+
+_TIME = "banned-api time.time"
+# Przeniesiony plik właściciela (stara ścieżka, nowa) → zmiana konfiguracji w tym samym PR i odpalenia kroku.
+_MOVED_OWNERS: Final[dict[str, tuple[tuple[str, str], dict[str, str], list[tuple[str, int, str]]]]] = {
+    "ast-grep: ignores: idzie za plikiem": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [],
+    ),
+    "ast-grep: ignores: zostaje na starej ścieżce": (("src/wlasciciel.py", "src/wlasciciel2.py"), {}, [("src/wlasciciel2.py", 5, _CALL)]),
+    "banned-api: per-file-ignores idzie za plikiem": (
+        ("src/zegar.py", "src/zegar2.py"),
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [],
+    ),
+    "banned-api: per-file-ignores zostaje na starej ścieżce": (("src/zegar.py", "src/zegar2.py"), {}, [("src/zegar2.py", 5, _TIME)]),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("move", "changes", "expected"), _MOVED_OWNERS.values(), ids=_MOVED_OWNERS)
+def test_przeniesiony_wlasciciel_reguly_chwastu_jest_wlascicielem_a_jego_zwolnienie_idzie_za_nim_w_tym_samym_pr(
+    tmp_path: Path, move: tuple[str, str], changes: dict[str, str], expected: list[tuple[str, int, str]]
+) -> None:
+    """Prawo właściciela liczy się od ścieżki pliku w bazie (``Changes.base_path``) tak samo dla ``ignores:`` reguły
+    ast-grep i ``per-file-ignores`` zakazu ``banned-api``: przeniesienie ze zwolnieniem na nowej ścieżce niczego nie
+    ukrywa, a bez niego krok mówi, co przenieść."""
+
+    base = _hiding_repo(tmp_path, changes)
+    _git(tmp_path, "mv", *move)
+
+    found = ukrycia_regul.hidden(tmp_path, base, AST_GREP)
+
+    assert [(hidden.path, hidden.line, hidden.rule) for hidden in found] == expected
+    exemption = "ignores:" if move[0] == "src/wlasciciel.py" else "per-file-ignores"
+    assert all(f"przeniesiony z {move[0]}" in hidden.shown() and f"przenieś je ({exemption}" in hidden.shown() for hidden in found)
 
 
 def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -> None:
