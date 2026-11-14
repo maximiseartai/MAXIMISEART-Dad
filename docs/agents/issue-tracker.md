@@ -7,6 +7,7 @@ Use `gh` for all operations.
 ## Conventions
 
 - Create an issue with `gh issue create --title "..." --body "..."`.
+- This repository is public: a public issue may name a worker of Dad's by first name alone, never by surname, login or address, and repository files say „pracownik taty” ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)).
 - Read an issue with its comments with `gh issue view <number> --json title,body,comments --jq '.title, .body, (.comments[] | "--- \(.author.login) \(.createdAt)\n\(.body)")'`; `--comments` alone prints only the comments when its output is piped, as in an agent's shell.
 - List issues with `gh issue list`, using JSON output when comments and labels are needed.
 - Comment with `gh issue comment <number> --body "..."`.
