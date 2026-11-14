@@ -3,15 +3,14 @@
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 4, rollout, own: [{number, day, worker, column, value}], moves:
   [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}]}``: dzień wdrożenia,
   komórki, które Wpisanie raportów samo wpisało, i pamięć zleceń, na które samo zadziałało Przeniesieniem, Wpisem albo
-  dopisaniem (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 (#1367) to obietnica
+  dopisaniem (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 to obietnica
   pisarza: ``own`` ma tylko numer, który w chwili zapisu miał w odczytanych dniach jedno zlecenie, pod jego kluczem
-  (``OwnEntries``), więc wpisy idą za wierszem. Plik bez ``added`` (sprzed Zleceń dopisanych z raportu, #1354) czyta się
+  (``OwnEntries``), więc wpisy idą za wierszem. Plik bez ``added`` (sprzed Zleceń dopisanych z raportu) czyta się
   z ``added`` fałszywym.
   Starsze wersje czyta ``load`` jako ``OlderOwnEntries``, bez Zatrzymania, a ich wpis należy do miejsca z chwili zapisu
   (numer, dzień, Wykonawca), dopóki następne kliknięcie nie zapisze wersji 4: wersja 1 (Wydania v0.7.0 i v0.8.0, sprzed
-  Przeniesień) bez pamięci zleceń, wersja 2 (tylko gałąź #1358, bez ``overridden``, w pierwszej rundzie też bez
-  ``origin_name`` i ``since``, nigdy w Wydaniu) jak wersja 1, a wersja 3 (``main`` przed #1367, nigdy w Wydaniu) z
-  pamięcią zleceń, a na gałęzi #1354 przed scaleniem #1367 także z ``added``.
+  Przeniesień) bez pamięci zleceń, wersja 2 (nigdy w Wydaniu, bez ``overridden``, czasem też bez ``origin_name`` i
+  ``since``) jak wersja 1, a wersja 3 (nigdy w Wydaniu) z pamięcią zleceń, czasem także z ``added``.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
@@ -70,10 +69,10 @@ from rozliczenia.worker_reports.reasons import note, reason
 
 _DECISIONS_VERSION: Final = 1
 _STATE_VERSION: Final = 4
-"""Wersja pliku pamięci: 4 obiecuje wpisy tylko przy jedynym zleceniu numeru (#1367), 3 dodała pamięć zleceń z
-Przeniesień (#1347); 2 była tylko na gałęzi #1347."""
+"""Wersja pliku pamięci: 4 obiecuje wpisy tylko przy jedynym zleceniu numeru, 3 dodała pamięć zleceń z
+Przeniesień; 2 nie była w żadnym Wydaniu."""
 _RESULT_VERSION: Final = 3
-"""Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy (#1322), 3 informacje o Przeniesieniach (#1347)."""
+"""Wersja pliku wyniku: 2 dodała zlecenia dnia Wykonawcy, 3 informacje o Przeniesieniach."""
 
 Column = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
 
@@ -103,7 +102,7 @@ class _Move(_Record):
 
 
 class _StateV1(_Record):
-    """Plik pamięci sprzed Przeniesień (#1347): czyta go tylko ``load``."""
+    """Plik pamięci sprzed Przeniesień: czyta go tylko ``load``."""
 
     schema_version: Literal[1]
     rollout: date
@@ -111,7 +110,7 @@ class _StateV1(_Record):
 
 
 class _StateV2(_Record):
-    """Plik pamięci z gałęzi #1347 sprzed jej trzeciej rundy, w obu postaciach ``moves``: czyta go tylko ``load``, bez
+    """Plik pamięci w wersji 2 (nigdy w Wydaniu), w obu postaciach ``moves``: czyta go tylko ``load``, bez
     pamięci zleceń."""
 
     schema_version: Literal[2]
@@ -121,8 +120,8 @@ class _StateV2(_Record):
 
 
 class _StateV3(_Record):
-    """Plik pamięci z ``main`` przed #1367, z pamięcią zleceń, ale z wpisami także przy numerze w kilku zleceniach:
-    czyta go tylko ``load``."""
+    """Plik pamięci w wersji 3 (nigdy w Wydaniu), z pamięcią zleceń, ale z wpisami także przy numerze w kilku
+    zleceniach: czyta go tylko ``load``."""
 
     schema_version: Literal[3]
     rollout: date
@@ -200,7 +199,7 @@ class _Note(_Record):
 
 
 class _ResultV1(_Record):
-    """Plik wyniku sprzed zleceń dnia (#1322): czyta go tylko ``shown``."""
+    """Plik wyniku sprzed zleceń dnia: czyta go tylko ``shown``."""
 
     schema_version: Literal[1]
     clicked_at: datetime
@@ -210,7 +209,7 @@ class _ResultV1(_Record):
 
 
 class _ResultV2(_Record):
-    """Plik wyniku sprzed informacji o Przeniesieniach (#1347): czyta go tylko ``shown``."""
+    """Plik wyniku sprzed informacji o Przeniesieniach: czyta go tylko ``shown``."""
 
     schema_version: Literal[2]
     clicked_at: datetime
