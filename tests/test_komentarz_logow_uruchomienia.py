@@ -787,6 +787,50 @@ def zapis(komorka: str, logi: RunLog) -> str:
     finally:
         setattr(logs_disk, "exact_logs", zapamietaj)
 """,
+    "zmiana obiektu w chwili działania: przypisanie __class__ typu Logów po strażniku obcemu obiektowi, potem plik Logów": """from pathlib import Path
+import tempfile
+from typing import Any
+
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def zapis(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> str:
+    typ: Any = type(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    sloty = tuple("_" + typ.__name__ + pole for pole in ("__record", "__source"))
+
+    class Obca:
+        __slots__ = sloty
+
+    obca: Any = object.__new__(Obca)
+    for slot in sloty:
+        object.__setattr__(obca, slot, zle)
+    object.__setattr__(obca, "__class__", typ)
+    with tempfile.TemporaryDirectory() as katalog:
+        LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(obca)
+        return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+""",
+    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
+    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff od #1717.
+    'dowód z getattr modułu: getattr(client_data, "logs_text") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
+""",
+    'dowód z getattr modułu: LogsText z dowodem getattr(client_data, "_PASSED") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+from rozliczenia.client_data import LogsText
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
+""",
     "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
 
 
@@ -931,6 +975,18 @@ def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
 def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
     object.__setattr__(postep, "text", SimpleNamespace(text=komorka))
     return post_of(postep)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ tekstu wyniku bez Logów po jego przyjęciu, przed post_of": (
+        _WERSJA_Z_ATRAPA
+        + """from rozliczenia.centrum.comment_versions import ResultWithoutLogs, WithoutLogsVersion
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    wersja = WithoutLogsVersion(ResultWithoutLogs(postep.progress, "OK", "niezapisane"), postep.text)
+    object.__setattr__(wersja, "text", SimpleNamespace(text=komorka))
+    return post_of(wersja)
 """,
         "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
     ),

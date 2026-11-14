@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import time
 from pathlib import Path
-from typing import Final
+from typing import Final, SupportsIndex
 
 import pytest
 
@@ -468,6 +468,30 @@ def test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straz
 # Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
 # komorka)`` daje tekst z wartością komórki (bez maski albo w uwadze technicznej), a ruff, mypy i bieg go nie zatrzymują.
 ZNANE_LUKI_UWAG: Final = {
+    # Odbiorca pamięci sprawdza dokładny typ obiektu tak, jak go zastaje (_memory), więc zmiana obiektu w chwili działania
+    # go omija (#1551).
+    "zmiana obiektu w chwili działania: przypisanie __class__ ForbiddenValues obcemu obiektowi z tymi samymi slotami": """import threading
+from typing import cast
+
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+
+
+class Obca:
+    __slots__ = ("_columns", "_lengths", "_lock")
+
+    def __init__(self) -> None:
+        self._columns: dict[object, object] = {}
+        self._lengths: dict[object, object] = {}
+        self._lock = threading.Lock()
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    pusta = Obca()
+    object.__setattr__(pusta, "__class__", ForbiddenValues)
+    return guard_text(f"Klient {komorka}.", "postęp Wyceny w efenix", cast(ForbiddenValues, pusta)).text
+""",
     'podmiana metody na klasie: setattr(ForbiddenValues, "remember_value", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
@@ -545,6 +569,24 @@ def _wyciek_w_biegu(plik: Path) -> list[str]:
     except (TypeError, AttributeError) as odmowa:
         return [f"bieg {type(odmowa).__name__}: {odmowa}"]
     return [] if _KOMORKA in tekst else [f"bieg: tekst bez wartości komórki: {tekst!r}"]
+
+
+class _Udawany(str):
+    """Tekst, którego wycinek daje wartość komórki, choć jego znaki jej nie mają."""
+
+    def __getitem__(self, key: SupportsIndex | slice, /) -> str:
+        return _KOMORKA
+
+
+def test_straznik_czyta_znaki_tekstu_raz_wiec_podklasa_str_z_wlasnym_wycinkiem_nie_daje_komorki() -> None:
+    """Strażnik szuka wartości w znakach tekstu, a sklejał wynik z wycinków, więc podklasa ``str`` z własnym wycinkiem
+    dawała do wysyłki to, czego strażnik nie widział; teraz kopiuje znaki do ``str`` (``str.__str__``) przed sprawdzeniem
+    (#1551, przegląd #1723)."""
+
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+
+    assert guarded(pamiec, _Udawany("Postęp bez danych."), "tekst").text == "Postęp bez danych."
 
 
 @wymaga_ruff_i_mypy

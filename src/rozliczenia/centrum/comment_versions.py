@@ -230,7 +230,7 @@ class LogsPost:
         self.__post: Final = post
 
     def __eq__(self, other: object) -> bool:
-        return type(other) is LogsPost and self.__post == other.__post
+        return isinstance(other, LogsPost) and self.__post == other.__post
 
     def __hash__(self) -> int:
         return hash(self.__post)

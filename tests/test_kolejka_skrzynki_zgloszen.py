@@ -1984,6 +1984,25 @@ def wysylka(wiersz: dict[str, Any], cel: NewIssue) -> Post:
 """,
         "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
     ),
+    "goły napis w nagłówku z type: ignore": (
+        _POST
+        + """def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", komorka, (cel.title,))  # type: ignore[arg-type]
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "object.__setattr__ stopnia gotowej wysyłki: atrapa z wartością komórki": (
+        """from types import SimpleNamespace
+
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    object.__setattr__(post, "rank", SimpleNamespace(value=komorka))
+    return post
+""",
+        "stopień Rank",
+    ),
     "object.__setattr__ na częściach gotowej wysyłki": (
         """from rozliczenia.centrum.outbox import Post
 
@@ -2249,6 +2268,10 @@ def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
     return Post(NewIssue(wiersz["ADRES"], post.parts[0]), None, "r", None, post.parts)
 """,
         "bieg TypeError: Pole celu NewIssue.label w pliku kolejki ma typ str.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa Outgoing w tytule celu": (
+        _PODKLASA_TEKSTU + '    return Post(NewIssue("uwaga-taty", tekst(komorka)), None, "r", None, post.parts)\n',
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ Tekst.",
     ),
     "podklasa celu w biegu: type() z NewIssue i adnotacją title: int": (
         """from typing import Any
