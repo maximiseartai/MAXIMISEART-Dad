@@ -227,6 +227,9 @@ class _Server(socketserver.TCPServer):
 
 class _Session(socketserver.StreamRequestHandler):
     server: _Server
+    # Odpowiedź polecenia idzie kilkoma zapisami (linie FETCH, potem zakończenie), a z algorytmem Nagle'a drugi mały zapis
+    # czeka na ACK klienta, który Linux opóźnia o ~40 ms: każde polecenie kosztowało tyle, a przykład testu ~200 ms.
+    disable_nagle_algorithm = True
 
     def handle(self) -> None:
         atrapa = self.server.atrapa
@@ -544,6 +547,8 @@ class _SmtpServer(socketserver.TCPServer):
 
 class _SmtpSession(socketserver.StreamRequestHandler):
     server: _SmtpServer
+    # Jak w ``_Session``: zapisy jednej odpowiedzi nie czekają na opóźniony ACK klienta.
+    disable_nagle_algorithm = True
 
     def handle(self) -> None:
         atrapa = self.server.atrapa
