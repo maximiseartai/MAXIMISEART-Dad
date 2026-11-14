@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import time
 from pathlib import Path
-from typing import Final
+from typing import Final, SupportsIndex
 
 import pytest
 
@@ -126,191 +126,6 @@ def test_kazda_forma_telefonu_z_tabeli_adr_0025_wychodzi_tak_jak_mowi_tabela(for
     assert wynik == expected, form.why
 
 
-_POST = """\
-from rozliczenia.centrum.outbox import NewIssue, Post
-
-"""
-
-# Znane luki jednej drogi wyjścia (tests/fixtures/znane_luki.py): opis postaci → nowy producent w src/rozliczenia/centrum,
-# który daje kolejce wartość z komórki taty bez strażnika pracy Centrum, a przechodzi przez mypy i ruff z konfiguracją src/.
-ZNANE_LUKI: Final = {
-    "cast na Outgoing": _POST
-    + """from typing import cast
-
-from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (cast(Outgoing, komorka),))
-""",
-    "wartość typu Any": _POST
-    + """from typing import Any
-
-
-def wysylka(wiersz: dict[str, Any], cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (wiersz["ADRES"],))
-""",
-    "str.__new__ z klasą Outgoing": _POST
-    + """from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (str.__new__(Outgoing, komorka),))
-""",
-    "dowód z getattr modułu": _POST
-    + """from rozliczenia import client_data
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    tekst = client_data.Outgoing(komorka, getattr(client_data, "_PASSED"))
-    return Post(cel, None, "r", None, (tekst,))
-""",
-    "tool zaimportowane z noqa": _POST
-    + """from rozliczenia.client_data import tool  # noqa: TID251
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (tool(komorka),))
-""",
-    "goły napis z type: ignore": _POST
-    + """def wysylka(komorka: str, cel: NewIssue) -> Post:
-    return Post(cel, None, "r", None, (komorka,))  # type: ignore[arg-type]
-""",
-    "object.__setattr__ na częściach gotowej wysyłki": """from rozliczenia.centrum.outbox import Post
-
-
-def wysylka(komorka: str, post: Post) -> Post:
-    object.__setattr__(post, "parts", (komorka,))
-    return post
-""",
-    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
-from rozliczenia.centrum.outbox import NewIssue, Post
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
-    assert isinstance(znaleziony, NewIssue)
-    return Post(cel, None, "r", None, (znaleziony.title,))
-""",
-}
-
-_CEL: Final = """\
-from rozliczenia.centrum.outbox import NewIssue, OpenIssue, PeriodThread, Post
-from rozliczenia.client_data import ForbiddenValues, guarded
-
-
-def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
-    tekst = guarded(pamiec, "Uwaga", "treść").text
-    return Post({cel}, None, "r", None, (tekst,))
-"""
-_GOTOWY_CEL: Final = "from rozliczenia.centrum.outbox import NewIssue, Post\n\n\n"
-
-# Drogi do pola tekstowego celu wysyłki z wartością z komórki taty bez strażnika (każde pole każdego celu i ich formy
-# siostrzane) → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
-DROGI_DO_CELU: Final = {
-    **{
-        f"{cel.split('(')[0]} {pole} z komórki": (_CEL.format(cel=cel), 'has incompatible type "str"; expected "Outgoing"')
-        for pole, cel in (
-            ("title", 'NewIssue("uwaga-taty", komorka)'),
-            ("line", 'PeriodThread("kontrola-ilosci", komorka, "new_issue", tekst)'),
-            ("title", 'PeriodThread("kontrola-ilosci", tekst, "new_issue", komorka)'),
-            ("line", 'OpenIssue("zgloszenie", komorka, tekst, tekst)'),
-            ("title", 'OpenIssue("zgloszenie", tekst, komorka, tekst)'),
-            ("again", 'OpenIssue("zgloszenie", tekst, tekst, komorka)'),
-        )
-    },
-    "podklasa celu": (_GOTOWY_CEL + "class Cel(NewIssue):\n    pass\n", 'Cannot inherit from final class "NewIssue"'),
-    "własny cel": (
-        _GOTOWY_CEL
-        + """from dataclasses import dataclass
-
-from rozliczenia.client_data import Outgoing
-
-
-@dataclass(frozen=True)
-class Cel:
-    label: str
-    title: str
-
-
-def wysylka(komorka: str, tekst: Outgoing) -> Post:
-    return Post(Cel("uwaga-taty", komorka), None, "r", None, (tekst,))
-""",
-        'Argument 1 to "Post" has incompatible type "Cel"',
-    ),
-    "dataclasses.replace celu": (
-        _GOTOWY_CEL
-        + """import dataclasses
-
-
-def wysylka(komorka: str, cel: NewIssue) -> NewIssue:
-    return dataclasses.replace(cel, title=komorka)
-""",
-        'Argument "title" to "replace" of "NewIssue" has incompatible type "str"',
-    ),
-    "__replace__ celu": (
-        _GOTOWY_CEL + 'def wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return cel.__replace__(title=komorka)\n',
-        'Argument "title" to "__replace__" of "NewIssue" has incompatible type "str"',
-    ),
-    "copy.replace celu": (
-        _GOTOWY_CEL + 'import copy\n\n\ndef wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return copy.replace(cel, title=komorka)\n',
-        "`copy.replace` is banned",
-    ),
-    "tytuł Uwagi taty z komórki": (
-        """from rozliczenia.centrum.case_delivery import note_post
-from rozliczenia.centrum.outbox import Post
-from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, tekst: Outgoing) -> Post:
-    return note_post("n", komorka, tekst, logs_on_the_way=False)
-""",
-        'Argument 2 to "note_post" has incompatible type "str"; expected "Outgoing"',
-    ),
-    "tytuł Zgłoszenia z komórki": (
-        """from rozliczenia.centrum.outbox import OpenIssue
-from rozliczenia.centrum.reports import report_target
-
-
-def wysylka(komorka: str) -> OpenIssue:
-    return report_target("0123456789abcdef", komorka)
-""",
-        'Argument 2 to "report_target" has incompatible type "str"; expected "Outgoing"',
-    ),
-}
-
-# Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
-# bez strażnika, a mypy i ruff ich nie łapią.
-ZNANE_LUKI_CELU: Final = {
-    "object.__setattr__ na gotowym celu": _GOTOWY_CEL
-    + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
-    object.__setattr__(cel, "title", komorka)
-    return Post(cel, None, "r", None, post.parts)
-""",
-    "zapis do __dict__ gotowego celu": _GOTOWY_CEL
-    + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
-    cel.__dict__["title"] = komorka
-    return Post(cel, None, "r", None, post.parts)
-""",
-    "cast na Outgoing w tytule celu": _GOTOWY_CEL
-    + """from typing import cast
-
-from rozliczenia.client_data import Outgoing
-
-
-def wysylka(komorka: str, post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, "r", None, post.parts)
-""",
-    "tytuł celu typu Any": _GOTOWY_CEL
-    + """from typing import Any
-
-
-def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
-    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
-""",
-}
-
-
 # Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy, które
 # każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_DO_PUSTEJ_PAMIECI: Final = {
@@ -386,22 +201,6 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
     return guarded(pamiec, komorka, "treść").text
 """,
 }
-
-
-@wymaga_ruff_i_mypy
-def test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
-    zgloszenia = ruff_i_mypy(zapisz(ZNANE_LUKI, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
-
-    assert_znane_luki(zgloszenia, "tests/test_regula_danych.py")
-
-
-@wymaga_ruff_i_mypy
-def test_pole_tekstowe_celu_wysylki_z_komorki_bez_straznika_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
-    probki = {opis: kod for opis, (kod, _) in DROGI_DO_CELU.items()} | ZNANE_LUKI_CELU
-    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_celu.py")
-
-    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_CELU.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
-    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_CELU}, "tests/test_regula_danych.py (ZNANE_LUKI_CELU)")
 
 
 @pytest.mark.parametrize("proof", [None, object()])
@@ -669,6 +468,30 @@ def test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straz
 # Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
 # komorka)`` daje tekst z wartością komórki (bez maski albo w uwadze technicznej), a ruff, mypy i bieg go nie zatrzymują.
 ZNANE_LUKI_UWAG: Final = {
+    # Odbiorca pamięci sprawdza dokładny typ obiektu tak, jak go zastaje (_memory), więc zmiana obiektu w chwili działania
+    # go omija (#1551).
+    "zmiana obiektu w chwili działania: przypisanie __class__ ForbiddenValues obcemu obiektowi z tymi samymi slotami": """import threading
+from typing import cast
+
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+
+
+class Obca:
+    __slots__ = ("_columns", "_lengths", "_lock")
+
+    def __init__(self) -> None:
+        self._columns: dict[object, object] = {}
+        self._lengths: dict[object, object] = {}
+        self._lock = threading.Lock()
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    pusta = Obca()
+    object.__setattr__(pusta, "__class__", ForbiddenValues)
+    return guard_text(f"Klient {komorka}.", "postęp Wyceny w efenix", cast(ForbiddenValues, pusta)).text
+""",
     'podmiana metody na klasie: setattr(ForbiddenValues, "remember_value", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
@@ -746,6 +569,24 @@ def _wyciek_w_biegu(plik: Path) -> list[str]:
     except (TypeError, AttributeError) as odmowa:
         return [f"bieg {type(odmowa).__name__}: {odmowa}"]
     return [] if _KOMORKA in tekst else [f"bieg: tekst bez wartości komórki: {tekst!r}"]
+
+
+class _Udawany(str):
+    """Tekst, którego wycinek daje wartość komórki, choć jego znaki jej nie mają."""
+
+    def __getitem__(self, key: SupportsIndex | slice, /) -> str:
+        return _KOMORKA
+
+
+def test_straznik_czyta_znaki_tekstu_raz_wiec_podklasa_str_z_wlasnym_wycinkiem_nie_daje_komorki() -> None:
+    """Strażnik szuka wartości w znakach tekstu, a sklejał wynik z wycinków, więc podklasa ``str`` z własnym wycinkiem
+    dawała do wysyłki to, czego strażnik nie widział; teraz kopiuje znaki do ``str`` (``str.__str__``) przed sprawdzeniem
+    (#1551, przegląd #1723)."""
+
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+
+    assert guarded(pamiec, _Udawany("Postęp bez danych."), "tekst").text == "Postęp bez danych."
 
 
 @wymaga_ruff_i_mypy

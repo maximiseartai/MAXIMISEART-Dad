@@ -51,7 +51,8 @@ from tests.fixtures.potomne import wait_for
 from atrapy.sluchacz_kolejki import QueueListener
 from atrapy.widok_skrzynki import shown
 from tests.fixtures.stare_centrum import SharedBox, killed_after_comment, old_centrum, queue_on
-from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.plik_kolejki import bieg_do_pliku_kolejki
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 THREAD = PeriodThread(
@@ -1703,38 +1704,61 @@ def wyslij(kolejka: Outbox, post: Post) -> bool:
 }
 
 # Znane luki kolejki (tests/fixtures/znane_luki.py): postaci, które zmieniają pole gotowej wysyłki albo dają kolejce
-# inny obiekt, a mypy i ruff ich nie łapią.
+# inny obiekt, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie łapią.
 ZNANE_LUKI: Final = {
-    "object.__setattr__ na gotowej wysyłce": _GOTOWA
-    + """def wyslij(kolejka: Outbox, post: Post) -> bool:
-    object.__setattr__(post, "run_id", 1)
+    # Pole wysyłki z typem str (run_id, period, state) nie jest typem-dowodem, więc plik kolejki bierze każdy napis.
+    "object.__setattr__ na gotowej wysyłce: pole str bez typu-dowodu (run_id)": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    object.__setattr__(post, "run_id", komorka)
     return kolejka.post(post)
 """,
-    "zapis do __dict__ gotowej wysyłki": _GOTOWA
-    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+}
+
+# Postaci, które bez kontroli dokładnego typu w chwili zapisu (outbox._queue_text) dawałyby plikowi kolejki wartość
+# komórki, a z nią dostają odmowę → fragment zgłoszenia biegu przez plik kolejki.
+ODMOWY_KOLEJKI: Final = {
+    "zapis do __dict__ gotowej wysyłki": (
+        _GOTOWA
+        + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
     post.__dict__["parts"] = (komorka,)
     return kolejka.post(post)
 """,
-    "setattr to_json na klasie Post": _GOTOWA
-    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "setattr to_json na klasie Post": (
+        _GOTOWA
+        + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    zapamietaj = Post.__dict__["to_json"]
     setattr(Post, "to_json", lambda self: komorka)
-    return kolejka.post(post)
+    try:
+        return kolejka.post(post)
+    finally:
+        setattr(Post, "to_json", zapamietaj)
 """,
-    "replace z getattr modułu copy": _GOTOWA
-    + """import copy
+        "bieg: plik kolejki bez wartości komórki",
+    ),
+    "replace z getattr modułu copy": (
+        _GOTOWA
+        + """import copy
 
 
-def wyslij(kolejka: Outbox, post: Post) -> bool:
-    return kolejka.post(getattr(copy, "replace")(post, run_id=1))
+def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    return kolejka.post(getattr(copy, "replace")(post, parts=(komorka,)))
 """,
-    "cast innej klasy na Post": _GOTOWA
-    + """from typing import cast
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "cast innej klasy na Post": (
+        _GOTOWA
+        + """from typing import cast
 
 
 def wyslij(kolejka: Outbox, wysylka: object) -> bool:
     return kolejka.post(cast(Post, wysylka))
 """,
-    "wartość typu Any": """from typing import Any
+        "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
+    ),
+    "wartość typu Any": (
+        """from typing import Any
 
 from rozliczenia.centrum.outbox import Outbox
 
@@ -1742,13 +1766,599 @@ from rozliczenia.centrum.outbox import Outbox
 def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
     return kolejka.post(wysylki["inna"])
 """,
+        "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Atrapa.",
+    ),
+    "podklasa LogsPost w biegu z własnym to_json": (
+        """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+def wyslij(kolejka: Outbox, komorka: str) -> bool:
+    klasa: Any = type("Moja", (LogsPost,), {"to_json": lambda self: komorka})
+    nowa: LogsPost = object.__new__(klasa)
+    return kolejka.post(nowa)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko Post i LogsPost, nie Moja.",
+    ),
+    "refleksja: przypisanie __class__ LogsPost obiektowi z atrapą wysyłki w slocie": (
+        """from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Outbox
+
+
+class Obca:
+    __slots__ = ("_LogsPost__post",)
+
+
+def wyslij(kolejka: Outbox, wysylka: object) -> bool:
+    obca = Obca()
+    object.__setattr__(obca, "_LogsPost__post", wysylka)
+    object.__setattr__(obca, "__class__", LogsPost)
+    assert isinstance(obca, LogsPost)
+    return kolejka.post(obca)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
 }
+
+
+class Atrapa:
+    """Wysyłka innej klasy niż ``Post`` i ``LogsPost``: pola wysyłki z wartością komórki i własne ``to_json``."""
+
+    target = NewIssue("uwaga-taty", tool("Tytuł"))
+    period = None
+    run_id = "r"
+    header = None
+    archive = None
+    rank = Rank.OWN
+
+    def __init__(self, komorka: str) -> None:
+        self.parts = (komorka,)
+        self.komorka = komorka
+
+    def to_json(self) -> str:
+        return json.dumps({"komorka": self.komorka}, ensure_ascii=False)
+
+
+def _w_pliku_kolejki_przez_outbox(plik: Path, katalog: Path) -> list[str]:
+    """Bieg próbki, która podaje wysyłkę ``Outbox.post``: kolejka bez wątku wysyłki, więc plik zostaje w ``katalog``."""
+
+    log = CentrumLog(katalog / "centrum-rozliczen.log")
+    keyed = KeyedBox(FakeReportBox(), lambda: None, clock=ManualClock(), opening=NotesFile(katalog / OPENING_FILE, replace_atomically, log.box_notes_unavailable))
+    kolejka = Outbox(katalog / "kolejka", keyed, log, clock=ManualClock(), listener=QueueListener(), start=lambda drain: None)
+    (katalog / "kolejka").mkdir(parents=True)
+    argumenty = _argumenty_wysylki() | {"kolejka": kolejka, "wysylka": Atrapa(_KOMORKA), "wysylki": {"inna": Atrapa(_KOMORKA)}}
+    return bieg_do_pliku_kolejki(modul(plik), argumenty, _KOMORKA, katalog / "kolejka")
 
 
 @wymaga_ruff_i_mypy
 def test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza(tmp_path: Path) -> None:
     probki = {opis: kod for opis, (kod, _) in DROGI_OBOK_POST.items()} | ZNANE_LUKI
-    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_kolejki.py")
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_kolejki.py")
 
     assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_OBOK_POST.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
-    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI}, "tests/test_kolejka_skrzynki_zgloszen.py")
+    assert_znane_luki(
+        {opis: zgloszenia[opis] + _w_pliku_kolejki_przez_outbox(pliki[opis], tmp_path / f"bieg_{numer}") for numer, opis in enumerate(ZNANE_LUKI)},
+        "tests/test_kolejka_skrzynki_zgloszen.py",
+    )
+
+
+@pytest.mark.parametrize("opis", ODMOWY_KOLEJKI.keys())
+def test_plik_kolejki_odmawia_wysylki_innego_typu_niz_post_i_logs_post_w_chwili_zapisu(opis: str, tmp_path: Path) -> None:
+    """``Outbox.post`` pisze plik kolejki funkcją modułu (``_queue_text``), która bierze tylko wysyłkę dokładnie ``Post``
+    albo ``LogsPost`` z tekstem dokładnie ``Outgoing``, więc atrapa, podklasa, ``to_json`` podmienione na klasie i pole
+    zmienione po konstruktorze nie dają plikowi wartości komórki (#1551)."""
+
+    kod, odmowa = ODMOWY_KOLEJKI[opis]
+    plik = tmp_path / "probka.py"
+    plik.write_text(kod, encoding="utf-8")
+
+    zgloszenia = _w_pliku_kolejki_przez_outbox(plik, tmp_path)
+
+    assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
+
+
+# Tekst do wysyłki z komórki taty bez strażnika pracy Centrum (ADR 0025, reguła danych): drogi, znane luki i odmowy
+# pliku kolejki. Wartość komórki jest syntetyczna.
+_KOMORKA: Final = "Syntetyczna Lipowa 5"
+
+_POST = """\
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+"""
+
+_PODKLASA_TEKSTU: Final = _POST + """from typing import Any
+
+from rozliczenia.client_data import Outgoing
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    tekst: Any = type.__new__(type(Outgoing), "Tekst", (Mixin, Outgoing), {"__new__": lambda cls, t: str.__new__(cls, t)})
+"""
+"""Początek próbki z podklasą ``Outgoing`` z ``type.__new__`` i bazą przed nim, której ``__init_subclass__`` nie woła
+``super()``: taka podklasa omija odmowę ``__init_subclass__`` typu przy jej powstaniu."""
+
+# Znane luki jednej drogi wyjścia (tests/fixtures/znane_luki.py): opis postaci → nowy producent w src/rozliczenia/centrum,
+# który daje kolejce wartość z komórki taty bez strażnika pracy Centrum, a przechodzi przez mypy i ruff z konfiguracją src/
+# i przez plik kolejki (tests/fixtures/plik_kolejki.py).
+ZNANE_LUKI_TEKSTU: Final = {
+    "str.__new__ z klasą Outgoing": _POST
+    + """from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (str.__new__(Outgoing, komorka),))
+""",
+    "dowód z getattr modułu": _POST
+    + """from rozliczenia import client_data
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    tekst = client_data.Outgoing(komorka, getattr(client_data, "_PASSED"))
+    return Post(cel, None, "r", None, (tekst,))
+""",
+    "tool zaimportowane z noqa": _POST
+    + """from rozliczenia.client_data import tool  # noqa: TID251
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (tool(komorka),))
+""",
+    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
+    # Kontrola w chwili zapisu pliku kolejki sprawdza typ obiektu tak, jak go zastaje, więc zmiana obiektu, klasy albo
+    # modułu sprawdzenia w chwili działania ją omija: jedna próbka na klasę (#1551).
+    "zmiana obiektu w chwili działania: przypisanie __class__ Outgoing napisowi obcej podklasy str": _POST
+    + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+class Obcy(str):
+    __slots__ = ()
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    tekst = Obcy(komorka)
+    object.__setattr__(tekst, "__class__", Outgoing)
+    return Post(cel, None, "r", None, (cast(Outgoing, tekst),))
+""",
+    "zmiana modułu sprawdzenia w chwili działania: nazwa Outgoing w outbox": """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import KnownIssue, Post
+
+
+def wysylka(komorka: str) -> str:
+    gotowa = Post(KnownIssue("uwaga-taty", 5), None, "r", None, (komorka,))  # type: ignore[arg-type]
+    zapamietaj = getattr(outbox, "Outgoing")
+    setattr(outbox, "Outgoing", str)
+    try:
+        return gotowa.to_json()
+    finally:
+        setattr(outbox, "Outgoing", zapamietaj)
+""",
+}
+
+# Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, outbox._pack, client_data.Outgoing.__add__)
+# dawałyby plikowi kolejki wartość komórki, a z nią dostają odmowę → fragment zgłoszenia biegu.
+ODMOWY_TEKSTU: Final = {
+    "cast na Outgoing": (
+        _POST
+        + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (cast(Outgoing, komorka),))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "wartość typu Any": (
+        _POST
+        + """from typing import Any
+
+
+def wysylka(wiersz: dict[str, Any], cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (wiersz["ADRES"],))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "goły napis z type: ignore": (
+        _POST
+        + """def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (komorka,))  # type: ignore[arg-type]
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "goły napis w nagłówku z type: ignore": (
+        _POST
+        + """def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", komorka, (cel.title,))  # type: ignore[arg-type]
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "object.__setattr__ stopnia gotowej wysyłki: atrapa z wartością komórki": (
+        """from types import SimpleNamespace
+
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    object.__setattr__(post, "rank", SimpleNamespace(value=komorka))
+    return post
+""",
+        "stopień Rank",
+    ),
+    "object.__setattr__ na częściach gotowej wysyłki": (
+        """from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    object.__setattr__(post, "parts", (komorka,))
+    return post
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "type.__new__ z bazą bez super(): podklasa Outgoing w części": (
+        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (tekst(komorka),))\n',
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "przypisanie __bases__ obcej podklasie str: podklasa Outgoing w części": (
+        _POST
+        + """from typing import Any
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    klasa: Any = type("Tekst", (type("Baza", (str,), {"__slots__": ()}),), {"__slots__": ()})
+    klasa.__bases__ = (Outgoing,)
+    assert issubclass(klasa, Outgoing)
+    return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "metaklasa z __eq__ zawsze prawdziwym: podklasa Outgoing w części": (
+        _POST
+        + """from typing import Any
+
+from rozliczenia.client_data import Outgoing
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+class Rowna(type):
+    def __eq__(cls, other: object) -> bool:
+        return True
+
+    __hash__ = type.__hash__
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    klasa: Any = type.__new__(Rowna, "Tekst", (Mixin, Outgoing), {})
+    return Post(cel, None, "r", None, (str.__new__(klasa, komorka),))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "sklejenie prawdziwego Outgoing z podklasą w części": (
+        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (post.parts[0] + tekst(komorka),))\n',
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "sklejenie podklasy z prawdziwym Outgoing w części": (
+        _PODKLASA_TEKSTU + '    return Post(cel, None, "r", None, (tekst(komorka) + post.parts[0],))\n',
+        "bieg TypeError: Plik kolejki bierze tylko tekst Outgoing",
+    ),
+    "cast: blok Post.of z komórki": (
+        _POST
+        + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post.of(cel, period=None, run_id="r", blocks=[cast(Outgoing, komorka)], frame=lambda n, c, t: t)
+""",
+        "bieg TypeError: Wysyłka bierze tylko bloki Outgoing",
+    ),
+    "blok Post.of z podklasy Outgoing": (
+        _PODKLASA_TEKSTU
+        + '    return Post.of(cel, period=None, run_id="r", blocks=[post.parts[0], tekst(komorka)], frame=lambda n, c, t: t)\n',
+        "bieg TypeError: Wysyłka bierze tylko bloki Outgoing",
+    ),
+    "bloki Post.of z innym drugim przebiegiem": (
+        _POST
+        + """from collections.abc import Iterator
+from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+class Bloki(list[Outgoing]):
+    def __init__(self, prawdziwe: list[Outgoing], komorka: str) -> None:
+        super().__init__(prawdziwe)
+        self.przebiegi = 0
+        self.komorka = komorka
+
+    def __iter__(self) -> Iterator[Outgoing]:
+        self.przebiegi += 1
+        return iter(super().copy() if self.przebiegi == 1 else [cast(Outgoing, self.komorka)])
+
+
+def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    return Post.of(cel, period=None, run_id="r", blocks=Bloki(list(post.parts), komorka), frame=lambda n, c, t: t)
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
+}
+
+_CEL: Final = """\
+from rozliczenia.centrum.outbox import NewIssue, OpenIssue, PeriodThread, Post
+from rozliczenia.client_data import ForbiddenValues, guarded
+
+
+def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
+    tekst = guarded(pamiec, "Uwaga", "treść").text
+    return Post({cel}, None, "r", None, (tekst,))
+"""
+_GOTOWY_CEL: Final = "from rozliczenia.centrum.outbox import NewIssue, Post\n\n\n"
+
+# Drogi do pola tekstowego celu wysyłki z wartością z komórki taty bez strażnika (każde pole każdego celu i ich formy
+# siostrzane) → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+DROGI_DO_CELU: Final = {
+    **{
+        f"{cel.split('(')[0]} {pole} z komórki": (_CEL.format(cel=cel), 'has incompatible type "str"; expected "Outgoing"')
+        for pole, cel in (
+            ("title", 'NewIssue("uwaga-taty", komorka)'),
+            ("line", 'PeriodThread("kontrola-ilosci", komorka, "new_issue", tekst)'),
+            ("title", 'PeriodThread("kontrola-ilosci", tekst, "new_issue", komorka)'),
+            ("line", 'OpenIssue("zgloszenie", komorka, tekst, tekst)'),
+            ("title", 'OpenIssue("zgloszenie", tekst, komorka, tekst)'),
+            ("again", 'OpenIssue("zgloszenie", tekst, tekst, komorka)'),
+        )
+    },
+    "podklasa celu": (_GOTOWY_CEL + "class Cel(NewIssue):\n    pass\n", 'Cannot inherit from final class "NewIssue"'),
+    "własny cel": (
+        _GOTOWY_CEL
+        + """from dataclasses import dataclass
+
+from rozliczenia.client_data import Outgoing
+
+
+@dataclass(frozen=True)
+class Cel:
+    label: str
+    title: str
+
+
+def wysylka(komorka: str, tekst: Outgoing) -> Post:
+    return Post(Cel("uwaga-taty", komorka), None, "r", None, (tekst,))
+""",
+        'Argument 1 to "Post" has incompatible type "Cel"',
+    ),
+    "dataclasses.replace celu": (
+        _GOTOWY_CEL
+        + """import dataclasses
+
+
+def wysylka(komorka: str, cel: NewIssue) -> NewIssue:
+    return dataclasses.replace(cel, title=komorka)
+""",
+        'Argument "title" to "replace" of "NewIssue" has incompatible type "str"',
+    ),
+    "__replace__ celu": (
+        _GOTOWY_CEL + 'def wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return cel.__replace__(title=komorka)\n',
+        'Argument "title" to "__replace__" of "NewIssue" has incompatible type "str"',
+    ),
+    "copy.replace celu": (
+        _GOTOWY_CEL + 'import copy\n\n\ndef wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return copy.replace(cel, title=komorka)\n',
+        "`copy.replace` is banned",
+    ),
+    "tytuł Uwagi taty z komórki": (
+        """from rozliczenia.centrum.case_delivery import note_post
+from rozliczenia.centrum.outbox import Post
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, tekst: Outgoing) -> Post:
+    return note_post("n", komorka, tekst, logs_on_the_way=False)
+""",
+        'Argument 2 to "note_post" has incompatible type "str"; expected "Outgoing"',
+    ),
+    "tytuł Zgłoszenia z komórki": (
+        """from rozliczenia.centrum.outbox import OpenIssue
+from rozliczenia.centrum.reports import report_target
+
+
+def wysylka(komorka: str) -> OpenIssue:
+    return report_target("0123456789abcdef", komorka)
+""",
+        'Argument 2 to "report_target" has incompatible type "str"; expected "Outgoing"',
+    ),
+}
+
+# Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
+# bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie łapią.
+ZNANE_LUKI_CELU: Final = {
+    "str.__new__ z klasą Outgoing w tytule celu": _GOTOWY_CEL
+    + """from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    return Post(NewIssue("uwaga-taty", str.__new__(Outgoing, komorka)), None, "r", None, post.parts)
+""",
+    "zmiana modułu sprawdzenia w chwili działania: sprawdzenie pola Outgoing w outbox": _GOTOWY_CEL
+    + """from rozliczenia.centrum import outbox
+
+
+def wysylka(komorka: str, post: Post) -> str:
+    gotowa = Post(NewIssue("uwaga-taty", komorka), None, "r", None, post.parts)  # type: ignore[arg-type]
+    zapamietaj = outbox._FIELDS["Outgoing"]
+    outbox._FIELDS["Outgoing"] = lambda wartosc: True
+    try:
+        return gotowa.to_json()
+    finally:
+        outbox._FIELDS["Outgoing"] = zapamietaj
+""",
+}
+
+# Postaci, które bez kontroli dokładnego typu celu w chwili zapisu (outbox._target_json) dawałyby polu celu w pliku
+# kolejki wartość komórki, a z nią dostają odmowę → fragment zgłoszenia biegu.
+ODMOWY_CELU: Final = {
+    "object.__setattr__ na gotowym celu": (
+        _GOTOWY_CEL
+        + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    object.__setattr__(cel, "title", komorka)
+    return Post(cel, None, "r", None, post.parts)
+""",
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+    ),
+    "zapis do __dict__ gotowego celu": (
+        _GOTOWY_CEL
+        + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    cel.__dict__["title"] = komorka
+    return Post(cel, None, "r", None, post.parts)
+""",
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+    ),
+    "cast na Outgoing w tytule celu": (
+        _GOTOWY_CEL
+        + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, "r", None, post.parts)
+""",
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+    ),
+    "tytuł celu typu Any": (
+        _GOTOWY_CEL
+        + """from typing import Any
+
+
+def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
+    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
+""",
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ str.",
+    ),
+    "etykieta celu typu Any": (
+        _GOTOWY_CEL
+        + """from typing import Any
+
+
+def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
+    return Post(NewIssue(wiersz["ADRES"], post.parts[0]), None, "r", None, post.parts)
+""",
+        "bieg TypeError: Pole celu NewIssue.label w pliku kolejki ma typ str.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa Outgoing w tytule celu": (
+        _PODKLASA_TEKSTU + '    return Post(NewIssue("uwaga-taty", tekst(komorka)), None, "r", None, post.parts)\n',
+        "bieg TypeError: Pole celu NewIssue.title w pliku kolejki ma typ Tekst.",
+    ),
+    "podklasa celu w biegu: type() z NewIssue i adnotacją title: int": (
+        """from typing import Any
+
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    cel: Any = type("Cel", (NewIssue,), {"__annotations__": {"title": int}})
+    return Post(cel("uwaga-taty", komorka), None, "r", None, post.parts)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie Cel.",
+    ),
+    "przypisanie __bases__ obcej klasie: podklasa NewIssue": (
+        """from typing import Any
+
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    cel: Any = type("Cel", (type("Baza", (), {}),), {})
+    cel.__bases__ = (NewIssue,)
+    return Post(cel("uwaga-taty", komorka), None, "r", None, post.parts)
+""",
+        "bieg TypeError: Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie Cel.",
+    ),
+}
+
+
+def _argumenty_wysylki() -> dict[str, object]:
+    """Argumenty funkcji próbki drogi wyjścia, świeże dla każdej próbki, bo próbka zmienia gotową wysyłkę i cel."""
+
+    return {
+        "komorka": _KOMORKA,
+        "wiersz": {"ADRES": _KOMORKA},
+        "cel": NewIssue("uwaga-taty", tool("Tytuł")),
+        "post": Post(NewIssue("uwaga-taty", tool("Tytuł")), None, "r", None, (tool("Treść"),)),
+    }
+
+
+def _w_pliku_kolejki(plik: Path) -> list[str]:
+    return bieg_do_pliku_kolejki(modul(plik), _argumenty_wysylki(), _KOMORKA)
+
+
+def test_bieg_znanej_luki_przez_plik_kolejki_zglasza_probke_ktorej_komorka_nie_dochodzi_do_pliku(tmp_path: Path) -> None:
+    """Próbka znanej luki przechodzi bieg tylko wtedy, gdy wartość komórki stoi w pliku kolejki; próbka, która wysyła sam
+    tekst narzędzia, jest zgłoszeniem, więc nie zostałaby znaną luką (przegląd #1731, runda 1, D1)."""
+
+    plik = tmp_path / "bez_komorki.py"
+    plik.write_text(_POST + 'def wysylka(komorka: str, cel: NewIssue) -> Post:\n    return Post(cel, None, "r", None, (cel.title,))\n', encoding="utf-8")
+
+    assert _w_pliku_kolejki(plik) == ["bieg: plik kolejki bez wartości komórki"]
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_TEKSTU, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert_znane_luki(
+        {opis: zgloszenia[opis] + _w_pliku_kolejki(pliki[opis]) for opis in ZNANE_LUKI_TEKSTU},
+        "tests/test_kolejka_skrzynki_zgloszen.py (ZNANE_LUKI_TEKSTU)",
+    )
+
+
+@wymaga_ruff_i_mypy
+def test_pole_tekstowe_celu_wysylki_z_komorki_bez_straznika_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_CELU.items()} | ZNANE_LUKI_CELU
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_celu.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_CELU.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] + _w_pliku_kolejki(pliki[opis]) for opis in ZNANE_LUKI_CELU}, "tests/test_kolejka_skrzynki_zgloszen.py (ZNANE_LUKI_CELU)"
+    )
+
+
+@pytest.mark.parametrize("opis", [*ODMOWY_TEKSTU, *ODMOWY_CELU])
+def test_plik_kolejki_odmawia_tekstu_i_celu_innego_typu_niz_dokladnie_outgoing_w_chwili_uzycia(opis: str, tmp_path: Path) -> None:
+    """Plik kolejki (``_queue_text``), bloki ``Post.of`` (``_pack``) i sklejenie (``Outgoing.__add__``) biorą tekst i cel
+    dokładnego typu w chwili użycia, a wejście czytają raz, więc podklasa, jakkolwiek powstała, napis spoza strażnika i
+    sekwencja z innym drugim przebiegiem nie dają plikowi kolejki wartości komórki (#1551)."""
+
+    kod, odmowa = (ODMOWY_TEKSTU | ODMOWY_CELU)[opis]
+    plik = tmp_path / "probka.py"
+    plik.write_text(kod, encoding="utf-8")
+
+    zgloszenia = _w_pliku_kolejki(plik)
+
+    assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
