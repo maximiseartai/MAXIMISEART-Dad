@@ -9,29 +9,30 @@ Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
 Płytki checkout bez bazy (zadania pytest w CI) nie ma czego porównać, więc zapadka się pomija; pilnuje jej
 ``tools/szybko.py`` przed pushem, a reguł ast-grep na dodanych liniach całego repozytorium także zadanie CI „Ruff, mypy”
-z bazą ``HEAD^1``. Moduł importuje tylko bibliotekę standardową i pytest, bo pomiar zapadek uruchamia go też w kopii
-starego commitu.
+z bazą ``HEAD^1``. Linie dodane i odpalenia reguł ast-grep na nich liczy ``tools/lib/odpalenia_ast_grep.py``, ten sam
+co dowód reguły ``tools/na_scalonych_pr.py --regula``. Moduł importuje tylko bibliotekę standardową, pytest i ten moduł
+(z ``repo`` i ``potomne``, które importują tylko bibliotekę standardową), bo pomiar zapadek uruchamia go też w kopii
+starego commitu; ta kopia potrzebuje więc obok także tych trzech plików ``tools/lib/``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 import importlib.util
-import json
 import os
-from pathlib import Path, PurePath
+from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import sysconfig
-from typing import Final, NamedTuple
+from typing import Final
 
 import pytest
 
+import odpalenia_ast_grep
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
-_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
 
 # Lookbehind wokół cyfr numeru, jak ``(?<![0-9a-f])`` w 5b2edaf2f9 i ``(?<![0-9])`` w cc7e5ced21.
 _ORDER_NUMBER_ORACLE = re.compile(r"\(\?<!\[?(?:\\d|0-9)")
@@ -141,32 +142,6 @@ def _base() -> str | None:
         return None
 
 
-def _added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
-    """Linie plików ``pattern`` w ``folder`` repozytorium ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
-    i treść. Linia różna tylko końcem CRLF nie jest dodana: checkout na Windows ma CRLF w drzewie, a testy ustawiają
-    ``core.autocrlf=false`` (``tests/fixtures/git_config.py``), więc bez tego każda jego linia byłaby zmieniona.
-    Plik, który git różnicuje jako binarny (także ``-text`` w ``.gitattributes``), nie ma dodanych linii; nieśledzony
-    plik binarny ma linie ze znakami zastępczymi, a dowiązanie do katalogu i dowiązanie zerwane nie mają żadnej."""
-
-    path = None
-    number = 0
-    changed = _git(root, "diff", "-U0", "--no-color", "--no-ext-diff", "--ignore-cr-at-eol", base, "--", f"{folder}/{pattern}")
-    for line in changed.splitlines():
-        if line.startswith("+++ "):
-            # Nazwę ze spacją git kończy tabulatorem (zgodność z GNU patch).
-            path = line.removeprefix("+++ b/").removesuffix("\t") if line != "+++ /dev/null" else None
-        elif hunk := _HUNK.match(line):
-            number = int(hunk["start"])
-        elif line.startswith("+") and path is not None:
-            yield path, number, line[1:]
-            number += 1
-    for path in _git(root, "ls-files", "--others", "--exclude-standard", "--", f"{folder}/{pattern}").splitlines():
-        if (root / path).is_file():
-            text = (root / path).read_text(encoding="utf-8", errors="replace")
-            for number, line in enumerate(text.splitlines(), start=1):
-                yield path, number, line
-
-
 def order_number_oracle(line: str) -> bool:
     """Czy linia testu sprawdza wyciek numeru zlecenia własną definicją zamiast ``zawiera_wartosc``.
 
@@ -184,7 +159,7 @@ def order_number_oracles(root: Path, base: str) -> list[str]:
 
     return [
         f"{path}:{number}: {_ORDER_NUMBER_HELPER}"
-        for path, number, line in _added_lines(root, base, "tests")
+        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
         if path != "tests/test_zapadki.py" and order_number_oracle(line)
     ]
 
@@ -215,7 +190,7 @@ def file_state_bypasses(root: Path, base: str) -> list[str]:
 
     return [
         f"{path}:{number}: {_FILE_STATE_HELPER}"
-        for path, number, line in _added_lines(root, base, "src")
+        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "src")
         if path != _FILE_STATE and bare_file_state(line)
     ]
 
@@ -321,7 +296,7 @@ def worker_thread_counts(root: Path, base: str) -> list[str]:
 
     return [
         f"{path}:{number}: {_THREAD_LINES_HELPER}"
-        for path, number, line in _added_lines(root, base, "tests")
+        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
         if path not in {_THREAD_LINES, "tests/test_zapadki.py", "tests/test_zakazy_ruff.py"} and worker_threads(line)
     ]
 
@@ -416,7 +391,7 @@ def navigation_drops(root: Path, base: str) -> list[str]:
 
     files: dict[str, tuple[bool, list[str]]] = {}
     found = []
-    for path, number, line in _added_lines(root, base, "src"):
+    for path, number, line in odpalenia_ast_grep.added_lines(root, base, "src"):
         if path not in files:
             text = (root / path).read_text(encoding="utf-8")
             files[path] = (_PLAYWRIGHT_IMPORT.search(text) is not None, text.split("\n"))
@@ -580,7 +555,7 @@ def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoz
     (tmp_path / "tests" / "fixtures" / "nowy.py").write_text("nowa\n", encoding="utf-8")
     (tmp_path / "poza.py").write_text("poza testami\n", encoding="utf-8")
 
-    added = sorted(_added_lines(tmp_path, base, "tests"))
+    added = sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "tests"))
 
     assert added == [("tests/fixtures/nowy.py", 1, "nowa"), ("tests/test_a.py", 2, "dodana"), ("tests/test_a.py", 4, "na końcu")]
 
@@ -594,7 +569,7 @@ def test_zapadka_nie_liczy_linii_rozniacej_sie_tylko_koncem_crlf_jak_w_checkouci
     base = _git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "src" / "a.py").write_bytes(b"pierwsza\r\ndruga\r\nnowa\r\n")
 
-    assert [(path, number) for path, number, _ in _added_lines(tmp_path, base, "src")] == [("src/a.py", 3)]
+    assert [(path, number) for path, number, _ in odpalenia_ast_grep.added_lines(tmp_path, base, "src")] == [("src/a.py", 3)]
 
 
 def test_zapadka_repozytorium_widzi_dodane_linie_kazdego_pliku_takze_bez_rozszerzenia_i_spoza_utf8(tmp_path: Path) -> None:
@@ -621,9 +596,28 @@ def test_zapadka_repozytorium_widzi_dodane_linie_kazdego_pliku_takze_bez_rozszer
     if sys.platform != "win32":  # Dowiązanie na Windows wymaga uprawnień, których zadanie CI nie ma.
         (tmp_path / "dowiazanie").symlink_to("docs", target_is_directory=True)
 
-    added = sorted((path, number) for path, number, _ in _added_lines(tmp_path, base, ".", "*"))
+    added = sorted((path, number) for path, number, _ in odpalenia_ast_grep.added_lines(tmp_path, base, ".", "*"))
 
     assert added == sorted([*((path, 2) for path in tracked), ("obraz.bin", 1)])
+
+
+def test_zapadka_liczy_dodana_linie_zaczynajaca_sie_od_plusow_i_kazda_nastepna_linie_pliku(tmp_path: Path) -> None:
+    """Dodana linia ``++ …`` jest w różnicy linią ``+++ …``, jak nagłówek pliku, a mimo to zostaje linią swojego pliku,
+    tak jak dodane linie po niej i dodana linia następnego pliku."""
+
+    (tmp_path / "docs").mkdir()
+    for name in ("a.md", "b.md"):
+        (tmp_path / "docs" / name).write_text("stara\n", encoding="utf-8")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    (tmp_path / "docs" / "a.md").write_text("stara\n++ dodana\n++ b/udawany.md\nnowa\n", encoding="utf-8")
+    (tmp_path / "docs" / "b.md").write_text("stara\nnowa\n", encoding="utf-8")
+
+    added = sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "docs", "*"))
+
+    assert added == [("docs/a.md", 2, "++ dodana"), ("docs/a.md", 3, "++ b/udawany.md"), ("docs/a.md", 4, "nowa"), ("docs/b.md", 2, "nowa")]
 
 
 def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -797,26 +791,11 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {}
-# Wbudowane reguły ast-grep o dyrektywie ``ast-grep-ignore`` → komunikat zamiast angielskiego komunikatu ast-grep.
-_AST_GREP_BUILTIN_MESSAGES: Final = {
-    "no-suppress-all": "dyrektywa ast-grep-ignore bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
-    " komunikatu reguły, którą wyłączała",
-    "unused-suppression": "dyrektywa ast-grep-ignore niczego nie wyłącza: usuń ją",
-}
-# Najwięcej ścieżek w jednym ``ast-grep scan``: wiersz polecenia na Windows mieści 32 767 znaków.
-_AST_GREP_PATHS_PER_SCAN = 200
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
     reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
     " w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
 )
-
-
-class SyntaxFinding(NamedTuple):
-    path: str
-    line: int
-    rule: str
-    message: str
 
 
 def ast_grep_rules(config: Path) -> list[Path]:
@@ -825,56 +804,20 @@ def ast_grep_rules(config: Path) -> list[Path]:
     return sorted(path for pattern in ("*.yml", "*.yaml") for path in (config.parent / AST_GREP_RULES).rglob(pattern))
 
 
-def syntax_rules(root: Path, base: str, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[SyntaxFinding]:
-    """Zgłoszenia reguł ast-grep z ``config``, których węzeł obejmuje linię dodaną w repozytorium ``root`` od ``base``;
-    linia zgłoszenia to pierwsza dodana linia węzła.
+def syntax_rules(root: Path, base: str, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
+    """Odpalenia reguł ast-grep z ``config`` na liniach dodanych w repozytorium ``root`` od ``base``
+    (``odpalenia_ast_grep.on_added_lines``: węzeł obejmuje którąkolwiek linię dodaną, linia to pierwsza dodana).
 
     Bez pliku reguły zapadka nie woła ``ast-grep``, więc checkout bez dodatku dev przechodzi; z regułą i dodaną linią
-    brak ``ast-grep`` jest porażką z poleceniem instalacji. ast-grep dostaje jawnie każdy plik repozytorium z dodaną
-    linią (``_added_lines``), także w katalogu ukrytym jak ``.agents/`` i śledzony mimo ``.gitignore``, a nie dostaje
-    pliku nieśledzonego z ``.gitignore``; o tym, w których z tych plików reguła szuka, decydują jej pola ``files:`` i
-    ``ignores:`` (``ast_grep_rules_without_scope``), a plik bez języka reguły ast-grep pomija. ``--error`` bez
-    nazw reguł ustawia ważność error każdej regule (dokumentacja ast-grep 0.51.0: „all rules will be set to error”),
-    więc zgłasza każda reguła katalogu, także z ``severity: off`` w pliku, i wbudowane reguły o dyrektywie
-    ``ast-grep-ignore`` (``_AST_GREP_BUILTIN_MESSAGES``): regułę wyłącza tylko usunięcie jej pliku. Kod wyjścia inny niż
-    0 i 1 (np. plik reguły, którego ast-grep nie wczyta) albo niezgodny z wyjściem jest porażką, nie brakiem zgłoszeń.
-    Postacie, których nie łapie ani reguła, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
+    brak ``ast-grep`` jest porażką z poleceniem instalacji. O tym, w których plikach z dodaną linią reguła szuka,
+    decydują jej pola ``files:`` i ``ignores:`` (``ast_grep_rules_without_scope``). Zgłasza każda reguła katalogu,
+    także z ``severity: off`` w pliku, i wbudowane reguły o dyrektywie ``ast-grep-ignore``: regułę wyłącza tylko
+    usunięcie jej pliku. Postacie, których nie łapie ani reguła, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
     """
 
     if not ast_grep_rules(config):
         return []
-    added: dict[str, set[int]] = {}
-    for path, number, _ in _added_lines(root, base, ".", "*"):
-        added.setdefault(path, set()).add(number)
-    if not added:
-        return []
-    assert ast_grep is not None, (
-        f"brak ast-grep z dodatku dev, a {AST_GREP_RULES}/ ma reguły: uruchom python3 tools/setup_worktree.py"
-        " (Windows: py -3 tools/setup_worktree.py)"
-    )
-    paths = sorted(added)
-    found = []
-    for start in range(0, len(paths), _AST_GREP_PATHS_PER_SCAN):
-        scan = subprocess.run(
-            [
-                *(ast_grep, "scan", "--config", str(config), "--json=stream", "--color=never", "--error", "--"),
-                *paths[start : start + _AST_GREP_PATHS_PER_SCAN],
-            ],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-        )
-        if scan.returncode not in (0, 1) or bool(scan.stdout) != (scan.returncode == 1):
-            raise AssertionError(f"ast-grep scan zakończył się kodem {scan.returncode}:\n{scan.stderr}")
-        for match in map(json.loads, scan.stdout.splitlines()):
-            path = PurePath(match["file"]).as_posix()
-            lines = range(match["range"]["start"]["line"] + 1, match["range"]["end"]["line"] + 2)
-            if new := sorted(added.get(path, set()).intersection(lines)):
-                message = _AST_GREP_BUILTIN_MESSAGES.get(match["ruleId"], match["message"])
-                found.append(SyntaxFinding(path, new[0], match["ruleId"], message))
-    return sorted(found)
+    return odpalenia_ast_grep.on_added_lines(root, base, ("--config", str(config)), ast_grep)
 
 
 def syntax_rule_findings(root: Path, base: str) -> list[str]:
@@ -991,7 +934,7 @@ def test_z_regula_ast_grep_brak_ast_grep_przy_dodanej_linii_poza_src_jest_porazk
     (tmp_path / "tools").mkdir()
     (tmp_path / "tools" / "narzedzie.py").write_text("x = 1\n", encoding="utf-8")
 
-    with pytest.raises(AssertionError, match="uruchom python3 tools/setup_worktree.py"):
+    with pytest.raises(odpalenia_ast_grep.ScanFailed, match="uruchom python3 tools/setup_worktree.py"):
         syntax_rules(tmp_path, base, config, ast_grep=None)
 
 
@@ -1022,8 +965,8 @@ def test_regula_ast_grep_zglasza_dodana_linie_src_a_nie_ta_sama_linie_sprzed_zmi
 
     assert syntax_rules(tmp_path, base, config) == sorted(
         [
-            *(SyntaxFinding(path, 3, "zakazane-wywolanie", message) for path in files[:4]),
-            SyntaxFinding("src/rozliczenia/nowy.py", 2, "zakazane-wywolanie", message),
+            *(odpalenia_ast_grep.Finding(path, 3, "zakazane-wywolanie", message) for path in files[:4]),
+            odpalenia_ast_grep.Finding("src/rozliczenia/nowy.py", 2, "zakazane-wywolanie", message),
         ]
     )
 
@@ -1052,7 +995,7 @@ def test_regula_ast_grep_zglasza_dodana_linie_tylko_w_plikach_ze_swojego_pola_fi
     ``src/**`` nie widzi tej samej linii w ``tools/``; linia sprzed zmiany i plik nieśledzony z ``.gitignore`` nie są
     zgłoszone. Po jednej ścieżce na ``ast-grep scan``, więc zgłoszenia przychodzą z kilku skanów."""
 
-    monkeypatch.setitem(globals(), "_AST_GREP_PATHS_PER_SCAN", 1)
+    monkeypatch.setattr(odpalenia_ast_grep, "PATHS_PER_SCAN", 1)
     config = _fixture_rules(tmp_path)
     (tmp_path / AST_GREP_RULES / "skrypty-skilli.yml").write_text(
         _FIXTURE_RULE.replace("zakazane-wywolanie", "skrypty-skilli").replace("src/**", ".agents/skills/**"),
@@ -1074,8 +1017,8 @@ def test_regula_ast_grep_zglasza_dodana_linie_tylko_w_plikach_ze_swojego_pola_fi
     message = "Zamień zakazane() na dozwolone()."
 
     assert syntax_rules(tmp_path, base, config) == [
-        SyntaxFinding(".agents/skills/s/scripts/stary.py", 2, "skrypty-skilli", message),
-        SyntaxFinding("src/rozliczenia/stary.py", 2, "zakazane-wywolanie", message),
+        odpalenia_ast_grep.Finding(".agents/skills/s/scripts/stary.py", 2, "skrypty-skilli", message),
+        odpalenia_ast_grep.Finding("src/rozliczenia/stary.py", 2, "zakazane-wywolanie", message),
     ]
 
 
@@ -1087,7 +1030,7 @@ def test_regula_ast_grep_z_waznoscia_off_w_pliku_tez_zglasza_dodana_linie_src(tm
     base = _src_sample(tmp_path, "zakazane()\n")
 
     assert syntax_rules(tmp_path, base, config) == [
-        SyntaxFinding("src/rozliczenia/probka.py", 1, "zakazane-wywolanie", "Zamień zakazane() na dozwolone().")
+        odpalenia_ast_grep.Finding("src/rozliczenia/probka.py", 1, "zakazane-wywolanie", "Zamień zakazane() na dozwolone().")
     ]
 
 
@@ -1098,7 +1041,7 @@ def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(t
     rule.write_text(_FIXTURE_RULE + "  nieznane_pole: 1\n", encoding="utf-8")
     base = _src_sample(tmp_path, "zakazane()\n")
 
-    with pytest.raises(AssertionError, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
+    with pytest.raises(odpalenia_ast_grep.ScanFailed, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
         syntax_rules(tmp_path, base, config)
 
 
@@ -1118,7 +1061,7 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
     base = _src_sample(tmp_path, text)
 
     assert syntax_rules(tmp_path, base, config) == [
-        SyntaxFinding("src/rozliczenia/probka.py", 1, rule, _AST_GREP_BUILTIN_MESSAGES[rule]) for rule in rules
+        odpalenia_ast_grep.Finding("src/rozliczenia/probka.py", 1, rule, odpalenia_ast_grep.BUILTIN_MESSAGES[rule]) for rule in rules
     ]
 
 

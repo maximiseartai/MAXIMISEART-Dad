@@ -22,23 +22,27 @@ bazę zmiany polecenie podaje samo.
 
 Kończy się ``NA SCALONYCH PR OK | <n> PR-ów`` albo ``NA SCALONYCH PR FAIL | <PR-y z kodem innym niż 0>``.
 
-Dowód reguły ast-grep (``--regula PLIK.yml`` zamiast polecenia) to trzy biegi reguły, każdy z ``ast-grep scan
---no-ignore hidden`` (bez tej flagi ast-grep nie widzi ``.agents/``) na kopii commitu:
+Dowód reguły ast-grep (``--regula PLIK.yml`` zamiast polecenia) to trzy biegi reguły na kopii commitu, bez
+nadpisywania ``tools/``, więc reguła z zakresem w ``tools/`` widzi linie samego commitu. Odpalenia na liniach dodanych
+liczy ``odpalenia_ast_grep.on_added_lines``, ta sama funkcja co zapadka ``syntax_rules``: węzeł reguły obejmuje
+którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzła (odpala też ``severity: off``):
 
     .venv/bin/python tools/na_scalonych_pr.py --regula reguly-ast-grep/x.yml --wazne 1533/W1/r2 --ostatnie 20
 
 1. Każde ``--wazne PR/W<n>/r<k>``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k`` PR-u (``werdykt_pr.rounds``), na
    liniach dodanych od ``merge-base`` bazy PR-u z SHA linii ``WERDYKT`` tego werdyktu do tego SHA. Ważne jest
-   złapane, gdy reguła odpala w miejscu z pola ``Gdzie``: w najmniejszej funkcji Pythona, która obejmuje linię
-   ``plik:linia`` (albo zakres ``plik:linia-linia``, ``:linia`` po pliku), a poza funkcją albo w pliku spoza
-   Pythona na samej linii. Odpalenie w innym miejscu to ``obok``, a brak odpalenia ``nie``.
+   złapane, gdy reguła odpala w miejscu z pola ``Gdzie`` (``szablon_werdyktu.places``: ``plik:linia`` albo
+   ``plik:linia-linia``): w najmniejszej funkcji Pythona, która obejmuje to miejsce, a poza funkcją albo w pliku
+   spoza Pythona na samych jego liniach. Odpalenie w innym miejscu to ``obok``, a brak odpalenia ``nie``.
 2. Fałszywe alarmy: odpalenia na liniach dodanych przez każdy PR z ``--pr`` i ``--ostatnie`` (bez obu 20 ostatnich),
    od ``<merge>^1`` do ``<merge>``.
-3. Wystąpienia na całym ``origin/main``, tylko jako dana.
+3. Wystąpienia na całym ``origin/main`` (``--no-ignore hidden``, bo bez tej flagi ast-grep nie wchodzi do
+   ``.agents/``), tylko jako dana.
 
 Kończy się ``DOWÓD OK|ODMOWA | <id reguły> | złapane k/n | FP x w y z N PR (p%) | main z``, gdzie ``x`` to odpalenia
 w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; błąd
-GitHuba, brak werdyktu albo ``Gdzie`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``.
+GitHuba, brak werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to
+``DOWÓD ODMOWA | <reguła> | <błąd>``.
 """
 
 from __future__ import annotations
@@ -62,18 +66,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 import github
+import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
 from repo import REMOTE, ROOT
 import repo
+import szablon_werdyktu
 import werdykt_pr
 
 AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 MAJOR = re.compile(r"#?(\d+)/(W\d+)/r(\d+)")
 WHERE = "Gdzie:"
-# ``plik:linia`` albo ``plik:linia-linia`` pola ``Gdzie``; ``:linia`` bez pliku należy do pliku przed nią.
-PLACE = re.compile(r"([\w./-]+\.\w+)?:(\d+)(?:[-–](\d+))?")
-HUNK = re.compile(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@")
+# Cała kopia: bez tych flag ast-grep nie wchodzi do katalogu ukrytego (``.agents/``) ani ignorowanego.
+WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
 FUNCTIONS = "id: funkcja\nlanguage: python\nrule:\n  kind: function_definition\n"  # także async def
 FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód przechodzi
 
@@ -169,53 +174,43 @@ def run_on(pr: Merged, command: list[str], tools: dict[str, bytes], output: Path
     return done.returncode, elapsed, lines[-1] if lines else ""
 
 
-def added(base: str, head: str) -> dict[str, set[int]]:
-    """Linie dodane od ``base`` do ``head`` w każdym pliku ``head``, liczone od 1."""
+def hits(commit: str, rule: tuple[str, str], paths: Iterable[str] | None = None) -> list[tuple[str, int, int]]:
+    """Odpalenia reguły (``--rule PLIK`` albo ``--inline-rules TEKST``) na kopii ``commit``: plik i linie od 1 do 1.
 
-    found: dict[str, set[int]] = {}
-    current = None
-    for line in repo.git(ROOT, "diff", "-U0", "--no-color", "--no-renames", "--diff-filter=AM", base, head).splitlines():
-        if line.startswith("+++ "):
-            current = line.removeprefix("+++ b/")
-        elif (hunk := HUNK.match(line)) and current is not None:
-            start = int(hunk[1])
-            found.setdefault(current, set()).update(range(start, start + int(hunk[2] or 1)))
-    return found
-
-
-def hits(commit: str, rule: tuple[str, str], paths: Iterable[str] = (".",)) -> list[tuple[str, int, int]]:
-    """Odpalenia reguły (``--rule PLIK`` albo ``--inline-rules TEKST``) na ``paths`` kopii ``commit``, które w niej
-    są: plik i linie od 1 do 1; porażka ast-grep to ``ValueError``."""
+    Bez ``paths`` ast-grep skanuje całą kopię z katalogami ukrytymi i ignorowanymi, a z ``paths`` tylko te pliki, które
+    w niej są (jawnie podaną ścieżkę skanuje zawsze); porażka ast-grep to ``ValueError``.
+    """
 
     if AST_GREP is None:
-        raise ValueError("brak ast-grep z dodatku dev (python3 tools/setup_worktree.py)")
+        raise odpalenia_ast_grep.ScanFailed(odpalenia_ast_grep.INSTALL)
     if problem := fetched(commit):
         raise ValueError(problem)
     with potomne.commit_copy(ROOT, commit) as copy:
-        present = [path for path in paths if (copy / path).exists()]
-        flags = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot", "--json=stream")
-        done = potomne.run([AST_GREP, "scan", *rule, *flags, *present], cwd=copy) if present else None
-    if done is not None and done.returncode not in (0, 1):  # 1: odpalenie reguły z severity error
+        targets = [*WHOLE, "."] if paths is None else [path for path in paths if (copy / path).is_file()]
+        done = potomne.run([AST_GREP, "scan", *rule, "--error", "--json=stream", *targets], cwd=copy) if targets else None
+    if done is not None and done.returncode not in (0, 1):  # 1: odpalenie z ``--error``
         raise ValueError(f"ast-grep {commit[:8]}: {done.stderr.strip()}")
     found = map(json.loads, done.stdout.splitlines() if done else [])
     return [(hit["file"], hit["range"]["start"]["line"] + 1, hit["range"]["end"]["line"] + 1) for hit in found]
 
 
 def fired(rule: Path, base: str, head: str) -> list[tuple[str, int]]:
-    """Odpalenia reguły na liniach dodanych od ``base`` do ``head``: plik i linia początku."""
+    """Odpalenia reguły na liniach dodanych od ``base`` do ``head`` (``odpalenia_ast_grep.on_added_lines``): plik
+    i pierwsza dodana linia węzła; brak ast-grep albo jego porażka to ``odpalenia_ast_grep.ScanFailed``."""
 
-    lines = added(base, head)
-    return [(path, start) for path, start, _ in hits(head, ("--rule", str(rule.resolve()))) if start in lines.get(path, set())]
+    if problem := fetched(head):
+        raise ValueError(problem)
+    with potomne.commit_copy(ROOT, head) as copy:
+        found = odpalenia_ast_grep.on_added_lines(copy, base, ("--rule", str(rule.resolve())), AST_GREP)
+    return [(one.path, one.line) for one in found]
 
 
 def places(where: str, commit: str) -> list[tuple[str, int, int]]:
-    """Miejsca pola ``Gdzie`` w ``commit``: plik i zakres linii, rozszerzony do najmniejszej funkcji Pythona wokół."""
+    """Miejsca pola ``Gdzie`` w ``commit``: plik i zakres linii, rozszerzony do najmniejszej funkcji Pythona wokół;
+    pole bez miejsca ``plik:linia`` to ``ValueError``."""
 
-    found: list[tuple[str, int, int]] = []
-    path = ""
-    for match in PLACE.finditer(where):
-        path = match[1] or path
-        found.append((path, int(match[2]), int(match[3] or match[2])))
+    if not (found := szablon_werdyktu.places(where)):
+        raise ValueError(f"{where} nie ma miejsca plik:linia")
     functions = hits(commit, ("--inline-rules", FUNCTIONS), sorted({path for path, _, _ in found if path.endswith(".py")}))
     return [
         (path, *max(((start, end) for file, start, end in functions if file == path and start <= first and last <= end), default=(first, last)))
