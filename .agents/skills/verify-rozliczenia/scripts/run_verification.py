@@ -140,7 +140,8 @@ def _noted(name: str, words: list[str], expected_exit: int | None) -> bool:
 
 
 def _shown(word: str, folders: dict[str, str]) -> str:
-    """``word`` with a run's folder, the longest that holds it, replaced by its placeholder, in forward slashes."""
+    """``word`` with a run's folder, the longest that holds it, replaced by its placeholder, in forward slashes: a plan
+    and a run, on every system, show the same command."""
 
     for folder in sorted(folders, key=len, reverse=True):
         if word == folder or word.startswith(folder + os.sep):
@@ -153,7 +154,7 @@ def plan(variant: str) -> list[PlannedStep]:
     recorded instead of run, with ``PLACEHOLDERS`` for the run's folders. A workflow that does not reach its end so is a ``PlanFailure``."""
 
     global _record
-    outer, _record = _record, _Record(planning=True, folders={})
+    outer, _record = _record, _Record(planning=True, folders={placeholder: placeholder for placeholder in PLACEHOLDERS.values()})
     try:
         output = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
@@ -745,7 +746,7 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
         details.append(f"cleanup={cleanup_failure}" if cleanup_failure else "cleanup=ok")
         print(f"VERIFY FAIL | variant={variant} | evidence={evidence_root} | " + "; ".join(details), file=sys.stderr)
         return 1
-    if run_root.exists():
+    if not planning and run_root.exists():
         print(f"VERIFY FAIL | scratch root remains: {run_root}", file=sys.stderr)
         return 1
     required = set() if planning else set(variant_config.evidence_names)

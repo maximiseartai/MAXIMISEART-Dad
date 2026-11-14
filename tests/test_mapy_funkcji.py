@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import importlib.util
 import re
 import subprocess
@@ -687,6 +687,19 @@ def test_plan_kazdego_wariantu_biegnie_do_konca_bez_sladu_na_dysku(
         wariant: ["cleanup", "self-test"] for wariant in plany
     }
     assert list(tmp_path.iterdir()) == []
+
+
+def test_plan_jest_taki_sam_ze_sciezkami_windows(przebieg: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plan pokazuje foldery runu ukośnikiem na każdym systemie, więc sekcja mapy i porównanie biegu z planem nie
+    zależą od separatora ścieżki: tu ścieżki budowane jak na Windows (CI #1804, run 43616329420)."""
+
+    posix = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+    monkeypatch.setattr(przebieg, "Path", PureWindowsPath)
+    monkeypatch.setattr(przebieg.os, "sep", "\\")
+
+    windows = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+
+    assert windows == posix
 
 
 def _workflow_proby(przebieg: ModuleType, rozwidlenie: bool) -> Callable[..., None]:
