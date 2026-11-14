@@ -26,6 +26,7 @@ Bramka zgody kosztowała 21 h czekania od `PASS` i zielonego CI do merge'a (5 PR
 Wszystkie 5 linii `ZGODA KORZEŃ` z okna pomiaru napisało konto, z którego piszą też agenci.
 Z 13 PR-ów scalonych bez zgody, której bramka wymagała, 12 scaliło `tools/scal_pr.py` ze starego checkoutu sprzed bramki, z wynikiem `SCAL OK` i bez śladu na GitHubie; 13. przepuściła reguła wdrożenia (Q20).
 Z 26 issues „Chwast” żadne nie jest zamknięte.
+Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR.
 
 ## Decyzja
 
