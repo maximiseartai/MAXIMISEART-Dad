@@ -43,8 +43,7 @@ class RunContext:
 
     Niesie tylko to, co gospodarz daje każdemu Uruchomieniu każdego procesu; zależność jednego procesu (okno efenix,
     folder Kopii INTERMAX) jest polem jego wejścia. ``files``: jedyna droga do bajtów i wartości plików taty (pamięć
-    reguły danych tylko w pracy Centrum, Kopia wejścia tylko w Uruchomieniu z Logami). ``template_check``: Sprawdzanie
-    Wzorców.
+    reguły danych w Centrum, Kopia wejścia tylko w Uruchomieniu z Logami). ``template_check``: Sprawdzanie Wzorców.
     ``observer`` i ``conversation`` dokłada rdzeń tuż przed silnikiem (``process_run.run_process``); test silnika podaje
     je sam albo zostawia domyślne.
     """
