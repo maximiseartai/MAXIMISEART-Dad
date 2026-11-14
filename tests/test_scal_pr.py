@@ -2474,7 +2474,7 @@ def test_otwarte_issue_chwastu_dostaje_wiersz_wystapienia_w_tresci_bez_nowego_ko
 
 # Kolejka chwastów (ADR 0034, #1620): ``ready-for-agent`` ma tylko czoło kolejki, czyli pierwszy otwarty chwast z listy
 # „Kolejka” issue kolejki, a po liście otwarte chwasty spoza obu list według numerów; „Poza kolejką” wyrywa program.
-def _weed(number: int) -> dict[str, object]:
+def _other_weed(number: int) -> dict[str, object]:
     """Otwarte issue innego chwastu niż ``chwasty.CODE`` o numerze ``number``."""
 
     return {"number": number, "title": f"Chwast: R-INNY-{number}", "body": chwasty.ISSUE}
@@ -2502,7 +2502,7 @@ def _weed(number: int) -> dict[str, object]:
 def test_nowe_issue_chwastu_ma_ready_for_agent_tylko_jako_czolo_kolejki_chwastow(
     tmp_path: Path, queue: str, weeds: list[int], labels: list[list[str]], suffix: str
 ) -> None:
-    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], [_weed(number) for number in weeds], queue=queue)
+    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], [_other_weed(number) for number in weeds], queue=queue)
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert suffix in _last_line(answered), answered.stdout
@@ -2513,7 +2513,7 @@ def test_nowe_issue_chwastu_ma_ready_for_agent_tylko_jako_czolo_kolejki_chwastow
 def test_uzupelnienie_issue_chwastu_spoza_czola_kolejki_zmienia_tylko_tresc_bez_etykiety(tmp_path: Path) -> None:
     weed = {"number": chwasty.WEED_ISSUE, "title": WEED_TITLE, "body": chwasty.ISSUES["w-szablonie"]}
 
-    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], [_weed(1519), weed], queue="czolo-1519")
+    github, answered = _publish(tmp_path, [], FAIL_W1, [MERGED_B], [_other_weed(1519), weed], queue="czolo-1519")
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert _last_line(answered).endswith(f" | CHWAST zmieniona treść #{chwasty.WEED_ISSUE}"), answered.stdout
@@ -2530,7 +2530,7 @@ def test_kolejka_chwastow_to_otwarte_z_listy_w_jej_kolejnosci_a_po_nich_otwarte_
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     github.queue = [_queue("czolo-1551")]
-    github.weeds = [_weed(number) for number in (1589, 1541, 1530, 1578, 1551)]
+    github.weeds = [_other_weed(number) for number in (1589, 1541, 1530, 1578, 1551)]
     github._save()
     monkeypatch.setenv("PATH", github.environment()["PATH"])
 
