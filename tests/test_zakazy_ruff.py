@@ -124,6 +124,13 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import time\nname = time.strftime('%Y%m%d')": (SRC_CONFIG, ("rozliczenia",), "time.strftime"),
     "import email.utils\nmoment = email.utils.localtime()": (SRC_CONFIG, ("rozliczenia",), "email.utils.localtime"),
     "from email.utils import formatdate\nheader = formatdate(localtime=True)": (SRC_CONFIG, ("rozliczenia",), "email.utils.formatdate"),
+    # Otwieracz z nowym kontekstem TLS: sprawdzenie health launchera przed #1675 (przegląd D1).
+    "import urllib.request\ndirect = urllib.request.build_opener(urllib.request.ProxyHandler({}))": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "urllib.request.build_opener",
+    ),
+    "from urllib.request import urlopen\nhealth = urlopen(url, timeout=1)": (SRC_CONFIG, ("rozliczenia",), "urllib.request.urlopen"),
 }
 
 
@@ -234,6 +241,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/template_file.py": frozenset(
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}
     ),
+    "src/rozliczenia/centrum/opener.py": frozenset({"urllib.request.build_opener"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),

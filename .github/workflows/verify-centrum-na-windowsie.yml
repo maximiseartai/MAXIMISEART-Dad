@@ -38,6 +38,7 @@ on:
       - src/rozliczenia/centrum/period_board.py
       - src/rozliczenia/centrum/update_messages.py
       - src/rozliczenia/centrum/version.py
+      - src/rozliczenia/centrum/opener.py
       - tools/lib/atrapy/scenariusz_centrum.py
       - tools/lib/atrapy/preparation.py
       - tools/lib/atrapy/settlement.py
