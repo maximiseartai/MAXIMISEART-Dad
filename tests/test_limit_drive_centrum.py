@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+from collections import deque
 from collections.abc import Callable, Iterator
 import contextlib
 from contextlib import contextmanager
@@ -208,6 +209,43 @@ def _refused(path: Path) -> object:
     """Windows na chwilę odmawia odczytu pliku, który serwer właśnie podmienia (#1087)."""
 
     raise PermissionError(13, "Permission denied", str(path))
+
+
+class _Dlugosc:
+    """Obiekt z własnym ``__len__``, bez ``__bool__``: prawdziwy, gdy jego długość nie jest zerem."""
+
+    def __init__(self, length: int) -> None:
+        self.length = length
+
+    def __len__(self) -> int:
+        return self.length
+
+
+@pytest.mark.parametrize(
+    ("pusta", "pelna"),
+    [
+        ("", "wpis"),
+        (b"", b"wpis"),
+        (deque(), deque(["wpis"])),
+        ({}.keys(), {"wpis": 1}.keys()),
+        (_Dlugosc(0), _Dlugosc(1)),
+        (0, 1),
+        ([], ["wpis"]),
+    ],
+    ids=["str", "bytes", "deque", "widok-slownika", "wlasne-len", "zero", "lista"],
+)
+def test_czekanie_drive_na_wartosc_falszywa_czyta_jeszcze_raz(common: ModuleType, pusta: object, pelna: object) -> None:
+    """Wartość fałszywa w Pythonie to stan „jeszcze nie”, z jakiegokolwiek typu: pusty tekst ``Run.log()`` przed
+    pierwszym wpisem dziennika, pusta kolekcja, zero (#1857 r2)."""
+
+    waiting = importlib.import_module("drive.waiting")
+    reads: list[str] = []
+
+    def ready() -> object:
+        reads.append("odczyt")
+        return pelna if len(reads) == 3 else pusta
+
+    assert (waiting.until(ready, "the entry comes", 1.0) is pelna, len(reads)) == (True, 3)
 
 
 @pytest.mark.parametrize(

@@ -999,6 +999,81 @@ def test_bez_sieci_wersja_zastepcza_z_nastepnego_startu_znika_przy_logach_z_wyni
     assert issue.comments == list(run_logs("z wynikiem", 1).parts)
 
 
+class _Stopnie(QueueListener):
+    """Słuchacz kolejki, który zapisuje stopień każdej wysyłki tuż przed jej wysłaniem (``ranks``)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ranks: list[Rank] = []
+
+    def prepare(self, post: Post, sent: Deliveries) -> Post | None:
+        self.ranks.append(post.rank)
+        return post
+
+
+def test_starsza_wersja_ktorej_pliku_nie_da_sie_usunac_nie_wychodzi_po_nowszej(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Przejście oznacza wersję zastępczą, którą zastąpiły Logi z wynikiem, jak wysłaną, zanim usunie jej plik: plik,
+    którego nie da się usunąć, zostaje ze znacznikiem, a przejście następnego startu Centrum tylko go usuwa i nie daje
+    go słuchaczowi do wysłania."""
+
+    listener = _Stopnie()
+    queue = Queue(tmp_path, FakeReportBox(search_failure=Unreachable()), listener=listener)
+    queue.outbox.post(run_logs("z wynikiem", 1))
+    queue.passed()
+    queue.outbox = queue.restarted()
+    queue.outbox.post(replace(run_logs("zastępcze", 1), rank=Rank.STAND_IN))
+    queue.passed()
+    [_, stand_in] = queue.files()
+    unlink = Path.unlink
+
+    def locked(path: Path, missing_ok: bool = False) -> None:
+        if path.name == stand_in:
+            raise PermissionError("plik otwarty w innym programie")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    queue.box.search_failure = None
+    queue.outbox.send_in_background()
+    queue.passed()
+    left = queue.files()
+    monkeypatch.setattr(Path, "unlink", unlink)
+    queue.outbox = queue.restarted()
+    queue.outbox.send_in_background()
+    queue.passed()
+
+    assert (left, queue.files()) == ([stand_in], [])
+    assert Rank.STAND_IN not in listener.ranks
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert issue.comments == list(run_logs("z wynikiem", 1).parts)
+
+
+def test_najdluzszy_tekst_z_najdluzszym_identyfikatorem_i_nizszym_stopniem_miesci_sie_ze_znacznikiem(
+    tmp_path: Path,
+) -> None:
+    """Znacznik wysyłki z ``run_id`` o najwięcej dozwolonych znakach i wersją niższego stopnia mieści się w zapasie nad
+    ``TEXT_LIMIT``, więc tekst o ``TEXT_LIMIT`` znakach idzie do Skrzynki w jednym komentarzu GitHuba."""
+
+    run_id = "f" * 64
+    probe = Post(LOGS, "08_14_09_2026", tool(run_id), None, (tool("x"),), rank=Rank.DRAFT)
+    longest = Post(
+        LOGS,
+        "08_14_09_2026",
+        tool(run_id),
+        None,
+        (tool("x" * (TEXT_LIMIT - len(probe.opening()[0]) + 1)),),
+        rank=Rank.DRAFT,
+    )
+    queue = Queue(tmp_path, FakeReportBox())
+
+    queue.outbox.post(longest)
+    queue.passed()
+
+    [issue] = queue.box.issues_with(LOGS.label)
+    assert (len(issue.body), len(issue.text) <= COMMENT_LIMIT) == (TEXT_LIMIT, True)
+
+
 def test_wyslanej_wysylki_ktorej_nie_da_sie_usunac_skrzynka_nie_dostaje_drugi_raz(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
