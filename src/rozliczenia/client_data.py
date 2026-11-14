@@ -177,18 +177,32 @@ class Guarded:
 _NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
 
 
-class _WithoutSubclasses(type):
-    """Metaklasa ``ForbiddenValues``: odmawia klasy z jej bazą, bo Python wybiera metaklasę po bazach, więc odmowy nie
-    przesłania baza z własnym ``__init_subclass__`` stojąca przed ``ForbiddenValues``."""
+_REFUSALS: Final[dict[type, str]] = {}
 
-    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> _WithoutSubclasses:
-        if any(isinstance(base, _WithoutSubclasses) for base in bases):
-            raise TypeError(_NO_SUBCLASSES)
-        return super().__new__(mcs, name, bases, namespace, **kwargs)
+
+class WithoutSubclasses(type):
+    """Metaklasa klasy bez podklas (``ForbiddenValues``, ``process_kind.PreparedRun``): klasa podaje odmowę w nagłówku
+    (``class K(metaclass=WithoutSubclasses, refusal=…)``), a ``__new__`` metaklasy sam rzuca ``TypeError`` z tą odmową,
+    gdy któraś baza nowej klasy ma tę metaklasę. Python wybiera metaklasę po bazach, więc odmawia ``class``, ``type()``
+    i ``types.new_class`` przy każdej kolejności baz, a baza z własnym ``__init_subclass__`` stojąca przed klasą bez
+    podklas tego nie przesłania. Odmawia tylko wywołanie tego ``__new__``: klasa zrobiona z jego pominięciem i relacja
+    podklasy przypisana w trakcie działania powstają, więc regułę klasy trzyma jeszcze kontrola w chwili jej użycia."""
+
+    def __new__(
+        mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, *, refusal: str | None = None, **kwargs: object
+    ) -> WithoutSubclasses:
+        for base in bases:
+            if isinstance(base, WithoutSubclasses):
+                raise TypeError(next((_REFUSALS[k] for k in base.__mro__ if k in _REFUSALS), f"{base.__qualname__} nie ma podklas."))
+        if refusal is None:
+            raise TypeError("Klasa bez podklas podaje odmowę: class K(metaclass=WithoutSubclasses, refusal=…).")
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        _REFUSALS[cls] = refusal
+        return cls
 
 
 @final
-class ForbiddenValues(metaclass=_WithoutSubclasses):
+class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego
