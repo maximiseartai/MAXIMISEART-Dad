@@ -1340,6 +1340,55 @@ def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_
     assert "ont-x" in read_snapshot(app.tool.config).quantity_rules.devices.ids()
 
 
+def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_centrum(tmp_path: Path) -> None:
+    """Tata ma reguły bez reguł składnika „instalacja ręczna” i listę bez niego, a plik reguł znika poza Centrum, zanim
+    Centrum go przeczyta: narzędzia liczą Regułami ilości z Wydania ze składnikiem z Listy Urządzeń z Wydania, jak
+    procesy, a nie ostatnimi dobrymi regułami taty."""
+
+    app = centrum(tmp_path)
+    devices = tuple(component for component in DEVICES.default if component.id != "instalacja-reczna")
+    rules = tuple(rule for rule in RULES.default if rule.id not in {"v-znane", "instalacja-reczna"})
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / DEVICES_FILE).write_text(DEVICES.dump(devices), encoding="utf-8")
+    (app.tool.config / RULES_FILE).write_text(RULES.dump(rules), encoding="utf-8")
+    accepted = app.client.get(QUANTITY_RULES_URL).json()
+    assert (accepted["rules_problem"], accepted["devices_problem"], len(accepted["rules"])) == (None, None, len(rules))
+    (app.tool.config / RULES_FILE).unlink()
+
+    counted = read_snapshot(app.tool.config).quantity_rules
+
+    assert counted.rules == DEFAULT_QUANTITY_RULES.rules
+    assert "instalacja-reczna" in counted.devices.ids()
+
+
+@pytest.mark.parametrize(
+    ("changed", "old", "new"),
+    [
+        (DEVICES_FILE, NEW_COMPONENT, ""),
+        (RULES_FILE, "skladnik: nowy", "skladnik: ont-x"),
+    ],
+    ids=["lista-bez-skladnika-reguly", "regula-ze-skladnikiem-spoza-listy"],
+)
+def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centrum_nie_pasuje_do_drugiego(
+    tmp_path: Path, changed: str, old: str, new: str
+) -> None:
+    """Tata ma składnik „nowy” spoza Listy Urządzeń z Wydania i regułę z nim, oba przyjęte; potem jeden z plików zmienia
+    się poza Centrum tak, że nie pasuje do drugiego, zanim Centrum go przeczyta: narzędzia liczą ostatnią dobrą parą."""
+
+    app = centrum(tmp_path)
+    devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
+    rules = write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
+    rule_sentences(app)
+    accepted = read_snapshot(app.tool.config).quantity_rules
+    assert "nowy" in accepted.devices.ids()
+    path = {DEVICES_FILE: devices, RULES_FILE: rules}[changed]
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+    assert read_snapshot(app.tool.config).quantity_rules == accepted
+
+
 @pytest.mark.parametrize("others", [["wizja"], []], ids=["oba-zapisy-u-taty", "jeden-zapis-u-taty"])
 def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skladnikowi_wydania_jego_zapisy(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
