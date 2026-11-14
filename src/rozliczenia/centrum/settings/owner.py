@@ -479,7 +479,10 @@ class CentrumSettings:
         return found
 
     def _apply(self, change: ReleaseChange[T], version: ReleaseOrigin) -> AppliedResult | None:
-        """Jedna zmiana z Wydania; ``None`` (zmiana dała ``Later`` albo zapis się nie udał) wraca przy następnym starcie."""
+        """Jedna zmiana z Wydania; ``None`` (zmiana dała ``Later`` albo zapis się nie udał) wraca przy następnym starcie.
+
+        Zmiana Maksa z Wydania nie sprawdza okresów, jak ręczna zmiana w ``config`` (ADR 0032).
+        """
 
         source = FromRelease(release=version.release, commit=version.commit, change=change.id)
         match change.propose(ReleaseInputs(self._observe(change.file), self._config)):
@@ -491,7 +494,6 @@ class CentrumSettings:
             case Refuse(sentence=sentence):
                 result = self._refuse(change.file, source, sentence)
             case Edit(edit=edit, undoable=undoable):
-                # Zmiana Maksa z Wydania: okresów nie sprawdza, jak ręczna zmiana w ``config`` (ADR 0032).
                 match self._change(change.file, edit, undoes=None, source=source, undoable=undoable, checked=None):
                     case Saved(change=row):
                         result = "bez-zmian" if row is None else "zastosowano"
@@ -826,7 +828,6 @@ class CentrumSettings:
         )
 
 
-# Każdy plik ma własny typ wartości, a właściciel oddaje wartość tylko temu plikowi, z którego ją wziął.
 _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     FOLDERS.name: FOLDERS,
     WORKERS.name: WORKERS,
@@ -836,7 +837,8 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     RULES.name: RULES,
     EXCEPTIONS.name: EXCEPTIONS,
 }
-"""Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
+"""Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu. Każdy plik ma własny typ wartości (stąd
+``Any``), a właściciel oddaje wartość tylko temu plikowi, z którego ją wziął."""
 _FILES: Final[Mapping[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}
 """Każdy plik właściciela; ``history`` porównuje z pamięcią każdy z nich."""
 _SECTION: Final = re.compile(r"[.\[]")
