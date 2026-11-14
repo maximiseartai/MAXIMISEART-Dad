@@ -252,7 +252,7 @@ class _Classified:
 
 _CLASSIFIED: Final = _Classified()
 """Dowód klasyfikatora: konstruktor wyjątku okna bez niego to błąd mypy (brak argumentu albo zły typ), więc miejsce
-awarii nie rozstrzyga samo, który to wyjątek okna (#758, #802, #808, #1090), tylko podaje dowód ``WindowStop.of``.
+awarii nie rozstrzyga samo, który to wyjątek okna, tylko podaje dowód ``WindowStop.of``.
 Import ``_CLASSIFIED`` albo ``_Classified`` i ich atrybut modułu poza tym modułem odrzuca ruff ``TID251``. Nie łapie
 ``getattr`` ani ``importlib`` z napisem, wartości ``Any`` ani ``copy.copy`` gotowego wyjątku."""
 
@@ -407,7 +407,7 @@ class OrderPricing:
 
 
 class Proposal(enum.Enum):
-    """Co okno Emmetta pokazało przed „Załaduj do zlecenia” (#908)."""
+    """Co okno Emmetta pokazało przed „Załaduj do zlecenia”."""
 
     SHOWN = "okno Emmetta coś pokazało"
     NOTHING = "okno Emmetta nic nie pokazało, a propozycja przyszła cała ze statusem 2xx"
