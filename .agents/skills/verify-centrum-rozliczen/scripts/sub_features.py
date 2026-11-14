@@ -6,7 +6,7 @@ order, and its line joins the messages of the ``run.check`` calls after it, whic
 only once, at its top level, to a string) or an f-string. A placeholder of the f-string that is such a constant, with
 no conversion and no format spec, prints its value; every other placeholder prints as ``…``, whatever its expression,
 conversion or format spec, because the value is known only when the drive runs. The literal text prints as it is,
-``{{`` as ``{``.
+``{{`` as ``{``. The rule has one owner, ``tools/lib/komunikat_mapy.py``, for the map commands of every skill.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
@@ -22,9 +22,12 @@ from __future__ import annotations
 
 import argparse
 import ast
-from collections import Counter
 from pathlib import Path
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+
+from komunikat_mapy import constants, message
 
 from drive import FEATURES, feature
 
@@ -40,68 +43,16 @@ def _refuse(module: str, node: ast.AST, what: str) -> Unreadable:
     return Unreadable(f"{module}:{getattr(node, 'lineno', 1)}: {what}")
 
 
-def _constants(tree: ast.Module) -> dict[str, str]:
-    """Names the module binds exactly once, at its top level, to a string literal."""
-
-    top: dict[str, str] = {}
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and len(node.targets) == 1:
-            target, value = node.targets[0], node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            target, value = node.target, node.value
-        else:
-            continue
-        if isinstance(target, ast.Name) and isinstance(value, ast.Constant) and isinstance(value.value, str):
-            top[target.id] = value.value
-    bound = Counter(name for node in ast.walk(tree) for name in _binds(node))
-    return {name: value for name, value in top.items() if bound[name] == 1}
-
-
-def _binds(node: ast.AST) -> list[str]:
-    """Names ``node`` binds, by the binding constructs of the Python language reference ("Naming and binding"):
-    targets of assignment, ``for``, ``with``, ``:=`` and ``del``, parameters, imports, ``def`` and ``class``,
-    ``except ... as``, capture patterns and type parameters. ``global`` and ``nonlocal`` only declare a name, which
-    one of these then binds."""
-
-    if isinstance(node, ast.Name):
-        return [node.id] if isinstance(node.ctx, (ast.Store, ast.Del)) else []
-    if isinstance(node, ast.arg):
-        return [node.arg]
-    if isinstance(node, ast.alias):
-        return [(node.asname or node.name).split(".")[0]]
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return [node.name]
-    if isinstance(node, ast.MatchMapping):
-        return [node.rest] if node.rest else []
-    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
-        return [node.name] if node.name else []
-    if isinstance(node, (ast.TypeVar, ast.ParamSpec, ast.TypeVarTuple)):
-        return [node.name]
-    return []
-
-
-def _message(node: ast.expr, constants: dict[str, str], module: str) -> str:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.Name) and node.id in constants:
-        return constants[node.id]
-    if not isinstance(node, ast.JoinedStr):
+def _message(node: ast.expr, known: dict[str, str], module: str) -> str:
+    printed = message(node, known)
+    if printed is None:
         raise _refuse(
             module,
             node,
             f"run.check has the message `{ast.unparse(node)}`; give it as a string literal, a module constant or an "
             "f-string, so the map can print it",
         )
-    parts = []
-    for part in node.values:
-        if isinstance(part, ast.Constant) and isinstance(part.value, str):
-            parts.append(part.value)
-        elif isinstance(part, ast.FormattedValue) and part.conversion == -1 and part.format_spec is None:
-            value = part.value
-            parts.append(constants[value.id] if isinstance(value, ast.Name) and value.id in constants else "…")
-        else:
-            parts.append("…")
-    return "".join(parts)
+    return printed
 
 
 def _two_positional(call: ast.Call, module: str) -> tuple[ast.expr, ast.expr]:
@@ -170,7 +121,7 @@ def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
     refusal (``Unreadable``)."""
 
     tree = ast.parse(source)
-    constants = _constants(tree)
+    known = constants(tree)
     drive = _drive(tree, module)
     own = _own_calls(drive)
     _refuse_other_forms(tree, own, module)
@@ -185,7 +136,7 @@ def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
         elif not steps:
             raise _refuse(module, call, "run.check comes before the first run.step; move it after the step it checks")
         else:
-            steps[-1][1].append(_message(second, constants, module))
+            steps[-1][1].append(_message(second, known, module))
     if not steps:
         raise _refuse(module, drive, "drive() has no run.step; name each sub-feature with one")
     return steps
