@@ -1121,6 +1121,8 @@ def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
         ("probka.py", _WLASCICIEL, '\n\ndef undo(settings: CentrumSettings) -> None:\n    settings.undo("row")\n', [6, 8]),
         ("probka.py", _WLASCICIEL, "\n\ndef release(settings: CentrumSettings) -> None:\n    settings.apply_release_changes()\n", [6, 8]),
         ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "change")()\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, r"change")()\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, '''change''')()\n", [6, 8]),
         ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings._dad_change()\n", [6, 8]),
         ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    write = settings._checked\n", [6, 8]),
         (
@@ -1141,7 +1143,7 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poz
     """Zakres reguły wynika z własności, nie ze składni trasy: sondy #1727 r1 W1 (``quantity_differences.py`` bez
     ``router`` w nazwie), r2 W1 (router z parametru) i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``, adnotacja
     napisem ``"fastapi.APIRouter"``), sondy r4 W1 (``getattr`` z nazwą metody zapisu w literale, prywatna metoda
-    właściciela) i moduł bez trasy, który nazywa którąkolwiek metodę zapisu właściciela, także przekazaną bez
+    właściciela), sondy r5 W2 (literał z przedrostkiem ``r`` i w potrójnym cudzysłowie) i moduł bez trasy, który nazywa którąkolwiek metodę zapisu właściciela, także przekazaną bez
     wywołania, są zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``),
     w module bez zapisu Ustawień i w module, którego napis tylko wspomina metodę zapisu, nie."""
 
@@ -1262,6 +1264,11 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         'def apply(settings: object, problem: object) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
         "    settings_writes.save(settings)\n"
     ),
+    "zakres: nazwa metody zapisu właściciela sklejona z dwóch literałów": (
+        "from rozliczenia.centrum import refusal\n\n\n"
+        "def apply(settings: object, problem: object) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "chan" "ge")(problem)\n'
+    ),
     "zakres: nazwa metody zapisu właściciela nie jest literałem, np. getattr ze zmienną": (
         "from rozliczenia.centrum import refusal\n\n\n"
         "def apply(settings: object, problem: object, operation: str) -> None:\n    if problem:\n"
@@ -1283,6 +1290,36 @@ def test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff(tmp_path: Pat
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff")
+
+
+# Zapis Ustawień obok odmowy przez prywatne pola właściciela (sondy #1727 r5 W1): ruff SLF001 łapie każdą prywatną
+# składową obiektu spoza modułu właściciela (#1737), więc reguła ich nazw nie wylicza.
+_ZAPIS_PRZEZ_POLA: Final = {
+    "miejsce pliku": "settings._places[WORKERS.name].write(problem)",
+    "Historia Ustawień": "settings._history.append(problem)",
+    "pamięć właściciela": "settings._memory.write(problem, problem)",
+}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_zapis_ustawien_obok_odmowy_przez_prywatne_pola_wlasciciela_pada_w_ruff(tmp_path: Path) -> None:
+    """Moduł Centrum z odmową i zapisem przez prywatne pole ``CentrumSettings`` pada w ruff na ``SLF001`` tego pola."""
+
+    from tests.fixtures.znane_luki import ruff
+
+    probki = {
+        opis: _WLASCICIEL
+        + ("from rozliczenia.centrum.settings.workers import WORKERS\n" if "WORKERS" in zapis else "")
+        + "from rozliczenia.centrum import refusal\n\n\n"
+        + 'def delete_worker(settings: CentrumSettings, problem: str) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+        + f"    {zapis}\n"
+        for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
+    }
+    zgloszenia = ruff(_moduly_centrum(tmp_path, probki), sonda=ROOT.joinpath(*_CENTRUM, "test_sonda_luki_zapisu.py"))
+
+    assert zgloszenia == {
+        opis: [f"ruff SLF001: Private member accessed: `{zapis.split('.')[1].split('[')[0]}`"] for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
+    }
 
 
 _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'

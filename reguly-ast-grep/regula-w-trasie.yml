@@ -50,8 +50,11 @@ rule:
               has:
                 field: attribute
                 regex: '^(change|change_with_used_keys|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+            # Treść literału daje parser (string_content), więc przedrostek r/b/f i potrójny cudzysłów jej nie zmieniają.
             - kind: string
-              regex: '^[''"](change|change_with_used_keys|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)[''"]$'
+              has:
+                kind: string_content
+                regex: '^(change|change_with_used_keys|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
     - any:
         - kind: call
           has:
