@@ -902,7 +902,7 @@ def ended_run_shown(view: dict[str, object]) -> bool:
 
 
 def finished_view(
-    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget = Budget.SCREEN
 ) -> dict[str, Any]:
     """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
 
@@ -923,7 +923,7 @@ def finished_view(
 
 
 def finished_result(
-    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget = Budget.SCREEN
 ) -> dict[str, Any]:
     result = finished_view(run, name, replacing=replacing, timeout_s=timeout_s)["result"]
     assert isinstance(result, dict)

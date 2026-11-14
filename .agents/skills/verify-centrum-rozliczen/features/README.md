@@ -129,7 +129,7 @@ injected instead of load, so a check that depends on time fails on every run (#1
 
 Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
 The drive waits for a condition only through `until` of `drive/waiting.py`, for the screen through its `expect`, and lets the page run through `quiet_for`.
-`tests/test_limit_drive_centrum.py` refuses a function that hands `until` a condition it took as a parameter, ruff refuses `time.sleep` outside `drive/waiting.py` (in `drive/common.py` the test of `OWNERS` does), and the forms neither sees are `ZNANE_LUKI_CZEKANIA` and `ZNANE_LUKI_SNU` of those tests.
+No other way to wait for a condition is left to copy (`Run.wait_for` is gone, #1539). Ruff refuses `time.sleep` outside `drive/waiting.py` and `drive/common.py`, in `drive/common.py` the test of `OWNERS` in `tests/test_zakazy_ruff.py` does, and `page.wait_for_timeout` passes both (`ZNANE_LUKI_SNU`); a new function that wraps `until` around a condition it takes, nothing refuses today.
 The drive stops at its first failure, so drive one feature per run to find each failing place.
 The mode is a manual proof and runs neither in CI nor at night.
 

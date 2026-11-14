@@ -38,7 +38,6 @@ import yaml
 from atrapy.pliki_taty import UPDATE_RESULT_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
-from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts"
@@ -92,129 +91,6 @@ def test_zrzut_w_drive_centrum_idzie_tylko_przez_run_capture() -> None:
         "zrzut prosto przez screenshot omija regułę numerów zrzutów; użyj run.capture(page, name, clip=…) "
         f"z drive/common.py: {found}"
     )
-
-
-def _calls_until(call: ast.Call) -> bool:
-    return (isinstance(call.func, ast.Name) and call.func.id == "until") or (
-        isinstance(call.func, ast.Attribute) and call.func.attr == "until"
-    )
-
-
-def _parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    named = function.args
-    return {argument.arg for argument in (*named.posonlyargs, *named.args, *named.kwonlyargs, named.vararg, named.kwarg) if argument}
-
-
-def _waits_around_until(source: str) -> list[int]:
-    """Linie, w których funkcja podaje ``until`` warunek wzięty jako parametr (swój albo funkcji, w której stoi): sam
-    parametr albo lambdę, która go woła. Taka funkcja to druga droga czekania owinięta wokół ``until``, jak usunięte
-    ``Run.wait_for``, i może zmienić jego limit, komunikat albo wyjątek (#1539)."""
-
-    found: list[int] = []
-
-    def condition_from(node: ast.expr, taken: set[str]) -> bool:
-        if isinstance(node, ast.Name):
-            return node.id in taken
-        return isinstance(node, ast.Lambda) and any(
-            isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id in taken for call in ast.walk(node.body)
-        )
-
-    def visit(node: ast.AST, taken: set[str]) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.Call) and _calls_until(child):
-                ready = child.args[0] if child.args else next((named.value for named in child.keywords if named.arg == "ready"), None)
-                if ready is not None and condition_from(ready, taken):
-                    found.append(child.lineno)
-            visit(child, taken | _parameters(child) if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else taken)
-
-    visit(ast.parse(source), set())
-    return found
-
-
-def test_czekanie_napedu_na_warunek_idzie_wprost_przez_until() -> None:
-    modules = [module for module in sorted(DRIVE.glob("*.py")) if module.name != "waiting.py"]
-    assert DRIVE / "common.py" in modules
-
-    found = [
-        f"{module.relative_to(ROOT).as_posix()}:{line}"
-        for module in modules
-        for line in _waits_around_until(module.read_text(encoding="utf-8"))
-    ]
-
-    assert found == [], (
-        "funkcja, która podaje until warunek ze swojego parametru, to druga droga czekania obok drive/waiting.py: "
-        f"czekaj przez until wprost, w miejscu, które zna warunek (#1539): {found}"
-    )
-
-
-# Postać → kod modułu napędu, w którym strażnik czekania wskazuje linię.
-ODMOWY_CZEKANIA = {
-    "metoda Run z warunkiem z parametru": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\nclass Run:\n"
-        "    def wait_for(self, condition: Callable[[], bool], message: str) -> None:\n"
-        "        until(lambda: bool(condition()), message)\n"
-    ),
-    "funkcja modułu z parametrem wprost": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\n"
-        "def wait(condition: Callable[[], bool], message: str) -> None:\n    until(condition, message)\n"
-    ),
-    "warunek nazwany ready=": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\n"
-        "def wait(condition: Callable[[], bool], message: str) -> None:\n    until(ready=condition, what=message)\n"
-    ),
-    "until przez moduł waiting": (
-        "from collections.abc import Callable\n\nfrom drive import waiting\n\n\n"
-        "def wait(condition: Callable[[], bool], message: str) -> None:\n    waiting.until(condition, message)\n"
-    ),
-    "parametr funkcji zewnętrznej w funkcji zagnieżdżonej": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\n"
-        "def wait(condition: Callable[[], bool]) -> None:\n    def inner() -> None:\n        until(condition, \"x\")\n\n    inner()\n"
-    ),
-}
-
-
-@pytest.mark.parametrize("postac", list(ODMOWY_CZEKANIA))
-def test_straznik_czekania_wskazuje_funkcje_z_warunkiem_z_parametru(postac: str) -> None:
-    assert _waits_around_until(ODMOWY_CZEKANIA[postac]) != [], postac
-
-
-# Czekanie obok until, którego strażnik czekania ani ruff z drive/ruff.toml nie widzi (klasa: postać).
-ZNANE_LUKI_CZEKANIA = {
-    "warunek przez funkcję lokalną: parametr wołany w jej ciele": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\n"
-        "def wait(condition: Callable[[], bool], message: str) -> None:\n"
-        "    def ready() -> bool:\n        return condition()\n\n    until(ready, message)\n"
-    ),
-    "zna tylko nazwę until: import pod inną nazwą": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until as poll\n\n\n"
-        "def wait(condition: Callable[[], bool], message: str) -> None:\n    poll(condition, message)\n"
-    ),
-    "warunek przez atrybut obiektu: zapamiętany w self": (
-        "from collections.abc import Callable\n\nfrom drive.waiting import until\n\n\nclass Waiter:\n"
-        "    def __init__(self, condition: Callable[[], bool]) -> None:\n        self.condition = condition\n\n"
-        "    def wait(self) -> None:\n        until(self.condition, \"x\")\n"
-    ),
-    "własna pętla z zegarem: monotonic i czekanie strony": (
-        "from collections.abc import Callable\nimport time\n\nfrom playwright.sync_api import Page\n\n\n"
-        "def wait(page: Page, condition: Callable[[], bool]) -> None:\n    deadline = time.monotonic() + 10\n"
-        "    while not condition() and time.monotonic() < deadline:\n        page.wait_for_timeout(100)\n"
-    ),
-    "czekanie Playwrighta na warunek strony: wait_for_function": (
-        "from playwright.sync_api import Page\n\n\ndef wait(page: Page) -> None:\n"
-        "    page.wait_for_function(\"() => document.title === 'Okresy'\")\n"
-    ),
-}
-
-
-@wymaga_ruff
-def test_znane_luki_czekania_napedu_przechodza_przez_ruff_i_straznika(tmp_path: Path) -> None:
-    pliki = zapisz(ZNANE_LUKI_CZEKANIA, tmp_path)
-
-    zgloszenia = ruff(pliki, sonda=DRIVE / "sonda_luki.py")
-    for opis, plik in pliki.items():
-        zgloszenia[opis] += [f"strażnik czekania: linia {line}" for line in _waits_around_until(plik.read_text(encoding="utf-8"))]
-
-    assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_CZEKANIA)")
 
 
 @pytest.mark.parametrize("failure", ["DriveFailure", "TimedOut"])

@@ -3,11 +3,12 @@
 nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file the
 server holds open (``while_open``, for the file helpers of ``drive/common.py``).
 
-What refuses another way: ruff ``TID251`` (``drive/ruff.toml``) refuses ``time.sleep`` in every file of ``drive/`` but
-this one and ``drive/common.py``, which ``per-file-ignores`` frees from all of ``TID251``; in ``drive/common.py`` the
-test of ``OWNERS`` in ``tests/test_zakazy_ruff.py`` refuses it. ``tests/test_limit_drive_centrum.py`` refuses a
-function outside this file that hands ``until`` a condition it took as a parameter: a second way to wait, wrapped
-around this one. What neither sees stands in ``ZNANE_LUKI_SNU`` and ``ZNANE_LUKI_CZEKANIA`` of those tests.
+The drive has no other way to wait for a condition to copy: ``Run.wait_for`` of ``drive/common.py`` is gone (#1539).
+Ruff ``TID251`` (``drive/ruff.toml``) refuses ``time.sleep`` in every file of ``drive/`` but this one and
+``drive/common.py``, which ``per-file-ignores`` frees from all of ``TID251``; in ``drive/common.py`` the test of
+``OWNERS`` in ``tests/test_zakazy_ruff.py`` refuses it, and a wait on an object (``page.wait_for_timeout``) passes both
+(``ZNANE_LUKI_SNU`` of that test). A new function that wraps ``until`` around a condition it takes, anywhere, nothing
+refuses today.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
