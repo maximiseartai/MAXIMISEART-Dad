@@ -24,8 +24,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import cache
 import re
 from http.client import HTTPMessage
+import ssl
 from typing import IO, Final, Literal
 import urllib.error
 import urllib.parse
@@ -112,7 +114,9 @@ def send(
     if "Authorization" in request.headers:
         # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
         sent.add_unredirected_header("Authorization", request.headers["Authorization"])
-    handlers: list[urllib.request.BaseHandler] = [] if proxy == "system" else [urllib.request.ProxyHandler({})]
+    handlers: list[urllib.request.BaseHandler] = [urllib.request.HTTPSHandler(context=_tls())]
+    if proxy == "direct":
+        handlers.append(urllib.request.ProxyHandler({}))
     if key_after_redirect == "same-origin":
         handlers.append(_KeyToSameOrigin())
     try:
@@ -123,6 +127,21 @@ def send(
         with error:
             body = error.read() if read_limit is None else error.read(read_limit)
             return HttpResponse(error.code, body, _lowered(error.headers.items()))
+
+
+@cache
+def _tls() -> ssl.SSLContext:
+    """Jeden kontekst TLS dla wszystkich żądań procesu, z certyfikatami systemu wczytanymi raz.
+
+    ``build_opener`` bez podanego ``HTTPSHandler`` tworzy nowy kontekst przy każdym żądaniu, także do ``http://``. Na
+    Windows wczytuje on wtedy cały magazyn certyfikatów systemu: w sondzie #1673 na runnerze Windows 3.13 trwało to
+    42–75 ms na żądanie (pierwsze w procesie 242 ms), czyli ok. 90% czasu sprawdzenia Wydań, które ma na odpowiedź 3 s (#1580).
+    Certyfikat dodany do systemu w czasie pracy Centrum liczy się więc dopiero po jego ponownym starcie.
+    """
+
+    context = ssl.create_default_context()
+    context.set_alpn_protocols(["http/1.1"])  # jak kontekst, który ``urllib`` tworzy sam
+    return context
 
 
 class _KeyToSameOrigin(urllib.request.HTTPRedirectHandler):

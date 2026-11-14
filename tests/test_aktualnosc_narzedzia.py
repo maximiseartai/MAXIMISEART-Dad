@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 import re
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -307,6 +308,23 @@ def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_system
         assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
 
     assert proxied == []
+
+
+def test_sprawdzenia_wydan_wczytuja_certyfikaty_systemu_najwyzej_raz_na_proces(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Na Windows jedno wczytanie to 42–75 ms (sonda #1673): przy każdym pytaniu zjadało limit Diagnozy (#1580).
+    loads: list[ssl.SSLContext] = []
+    load_default_certs = ssl.SSLContext.load_default_certs
+
+    def counted(context: ssl.SSLContext, purpose: ssl.Purpose = ssl.Purpose.SERVER_AUTH) -> None:
+        loads.append(context)
+        load_default_certs(context, purpose)
+
+    monkeypatch.setattr(ssl.SSLContext, "load_default_certs", counted)
+    with github_api(newest_on_main("/repos/tata/narzedzie", "v9.0.0", NEWEST)) as api:
+        for _ in range(2):
+            assert releases_from(f"{api.url}/repos/tata/narzedzie", timeout_s=30) == GitHubReleases(NEWEST, "v9.0.0")
+
+    assert (len(api.asked), len(loads) <= 1) == (6, True)
 
 
 @pytest.mark.parametrize("repository", ["bez-wydan", "tylko-spoza-main"])
