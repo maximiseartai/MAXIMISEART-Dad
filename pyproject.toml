@@ -101,6 +101,9 @@ extend-select = [
     "TID251",
     # Martwe tłumienie to wzór do skopiowania. N802 ożywia cztery noqa z powodem (nazwy jak w threading i tempfile).
     "RUF100",
+    # Kod noqa spoza ruff (np. PR1614, sam albo obok prawdziwego) to proza w kształcie kodu, a komentarz-w-src z
+    # reguly-ast-grep/ przepuszcza każdy kod [A-Z]+[0-9]+.
+    "RUF102",
     "N802",
     # Zapadki: przy włączeniu 0 naruszeń, więc wzorzec nie wróci ani się nie rozleje. Tłumienie tylko z kodem,
     # bez TODO i zakomentowanego kodu, bez exec/eval, breakpoint() i yaml.load, bez pułapek wartości domyślnych i pętli.

@@ -88,7 +88,7 @@ fails on each deletion, move or replacement of a file or folder in these forms (
 the same tables, and the self-test fails when they differ).
 Ruff `TID251` (`drive/ruff.toml`) already rejects each name it resolves to a deletion or move of `os`, `shutil` or a
 pathlib class (`os.remove`, `import os as system; system.replace(p, q)`, `from shutil import rmtree`,
-`Path.replace(p, q)`), and a helper of `common.py` that needs one has it on a line with `# noqa: TID251`.
+`Path.replace(p, q)`); `common.py`, whose helpers own these names, has `TID251` in `per-file-ignores` of `pyproject.toml`.
 The guard catches only the forms ruff cannot resolve, and knows a module only by a name an `import` binds, never by
 an assignment.
 

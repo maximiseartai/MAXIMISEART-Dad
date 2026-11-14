@@ -471,3 +471,35 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
         "z zakazu zegara konfiguracja ruff zwalnia tylko pliki z OWNERS, a z import * nikogo: "
         "teraz i dzień taty bierz z wall_clock"
     )
+
+
+# Kod ``noqa`` spoza ruff, który reguła ast-grep ``komentarz-w-src`` przepuszcza, bo ma kształt kodu ``[A-Z]+[0-9]+``:
+# sam i obok prawdziwego kodu, na linii z naruszeniem i bez. Każdy katalog z konfiguracją ruff, bo ``RUF102`` stoi
+# w ``extend-select`` ``pyproject.toml``, które pozostałe pliki konfiguracji rozszerzają.
+INVALID_NOQA_CODES = (
+    "import os  # noqa: PR1614 - historia\n",
+    "x = 1  # noqa: PR1614 - historia\n",
+    "import os  # noqa: F401, PR1614 - historia\n",
+    "x = 1  # noqa: E501, PR1614 - historia\n",
+)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize("folder", [ROOT / "tools", *(config.parent for config in DIRECTORY_CONFIGS)])
+@pytest.mark.parametrize("code", INVALID_NOQA_CODES)
+def test_ruff_odrzuca_kod_noqa_spoza_ruff_w_kazdym_katalogu(folder: Path, code: str) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]
+        + ["--stdin-filename", str(folder / "sonda_noqa.py"), "-"],
+        input=code,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=ROOT,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+
+    assert "RUF102" in {finding["code"] for finding in json.loads(result.stdout)}, (
+        f"konfiguracja ruff w {folder.relative_to(ROOT).as_posix()} ma odrzucić kod noqa spoza ruff (RUF102):\n{code}"
+    )

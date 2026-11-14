@@ -71,31 +71,35 @@ def ruff(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
     return zgloszenia
 
 
-def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
-    """Zgłoszenia ruff (``ruff``) i mypy (jedno uruchomienie na wszystkie pliki, z własnym cache) dla każdej próbki."""
+def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path, platformy: Sequence[str] = ()) -> dict[str, list[str]]:
+    """Zgłoszenia ruff (``ruff``) i mypy (jedno uruchomienie na wszystkie pliki, z własnym cache) dla każdej próbki.
+    Bez ``platformy`` mypy biegnie dla systemu, na którym biegnie test; z ``platformy`` raz z ``--platform`` każdej
+    z nich, a zgłoszenie ma postać ``mypy[platforma] błąd``."""
 
     zgloszenia = ruff(pliki, sonda)
     katalog = {plik.parent for plik in pliki.values()}
     assert len(katalog) == 1, katalog
-    mypy = subprocess.run(
-        [sys.executable, "-m", "mypy", "--no-error-summary", "--cache-dir", str(katalog.pop() / ".mypy_cache")]
-        + [str(plik) for plik in pliki.values()],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=ROOT,
-        check=False,
-    )
-    assert mypy.returncode in (0, 1) and mypy.stderr == "", mypy.stdout + mypy.stderr
+    cache = katalog.pop() / ".mypy_cache"
     opisy = {plik.name: opis for opis, plik in pliki.items()}
-    obce = []
-    for linia in mypy.stdout.splitlines():
-        miejsce, _, blad = linia.partition(": error: ")
-        if blad and (probka := opisy.get(Path(miejsce.rsplit(":", 1)[0]).name)) is not None:
-            zgloszenia[probka].append(f"mypy {blad}")
-        elif blad:
-            obce.append(linia)
-    assert obce == [], "mypy zgłasza błąd poza próbkami:\n" + "\n".join(obce)
+    for platforma in platformy or (None,):
+        wybor = ["--platform", platforma, "--cache-dir", str(cache / platforma)] if platforma else ["--cache-dir", str(cache)]
+        mypy = subprocess.run(
+            [sys.executable, "-m", "mypy", "--no-error-summary", *wybor] + [str(plik) for plik in pliki.values()],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=ROOT,
+            check=False,
+        )
+        assert mypy.returncode in (0, 1) and mypy.stderr == "", mypy.stdout + mypy.stderr
+        obce = []
+        for linia in mypy.stdout.splitlines():
+            miejsce, _, blad = linia.partition(": error: ")
+            if blad and (probka := opisy.get(Path(miejsce.rsplit(":", 1)[0]).name)) is not None:
+                zgloszenia[probka].append(f"mypy[{platforma}] {blad}" if platforma else f"mypy {blad}")
+            elif blad:
+                obce.append(linia)
+        assert obce == [], "mypy zgłasza błąd poza próbkami:\n" + "\n".join(obce)
     return zgloszenia
 
 
