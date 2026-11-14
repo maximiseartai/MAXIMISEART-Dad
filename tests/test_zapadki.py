@@ -1007,6 +1007,12 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     base = _base()
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    if AST_GREP is None and os.environ.get("CI"):
+        pytest.skip(
+            "zadanie CI bez ast-grep (pytest na Windows z requirements.txt): linie dodane sprawdza krok „ast-grep rules on "
+            "the added lines of the repository” zadania Ruff, mypy na Linuksie, a pliki zostawione w drzewie przez testy "
+            "strażnik drzewa repozytorium (tests/fixtures/drzewo_repo.py)"
+        )
     assert syntax_rule_findings(ROOT, base) == []
 
 
