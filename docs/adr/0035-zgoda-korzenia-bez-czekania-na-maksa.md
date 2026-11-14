@@ -28,8 +28,8 @@ Rejestr korzeni od wdrożenia szablonu (93 wystąpienia, 14.11.2026) ma 47 wyst�
 - **Zgoda po niższym szczeblu.** Gdy kod wraca po wyrwaniu na szczeblu od (b) do (e), a blok nie wyrywa go wyżej, merge przechodzi z linią zgody tak samo jak po (a).
   Blok ma wtedy „Wyżej nie, bo:” z jedną linią na każdy wyższy szczebel, czego bramka już wymaga od każdego szczebla niższego niż (a), a recenzent następnej rundy potwierdza szczebel werdyktem `PASS`, bo działający wyższy szczebel to Ważne (Q2, Q7).
   Powód: ADR 0031 kieruje brak wyższego szczebla do decyzji, a bez drogi zgody taki PR mógł skończyć tylko zmianą reguły.
-- **Zgoda koordynatora.** Zgodę na powrót zapisuje koordynator biegu po werdykcie `PASS` na HEAD PR komentarzem z linią `ZGODA KORZEŃ: R-KOD po PASS <pełny SHA HEAD>`, a zgoda Maksa to dalej linia `ZGODA KORZEŃ: R-KOD` bez dopisku.
-  Zgoda koordynatora działa tylko dla HEAD, który podaje, więc nowy commit wymaga nowego `PASS` i nowej zgody; obie piszą konto z prawem `admin`, więc treść linii jest jedynym, co je odróżnia.
+- **Zgoda koordynatora.** Zgodę na powrót zapisuje koordynator biegu po werdykcie `PASS` na HEAD PR komentarzem z linią `ZGODA KORZEŃ: R-KOD po PASS`, a zgoda Maksa to dalej linia `ZGODA KORZEŃ: R-KOD` bez dopisku.
+  Zgoda koordynatora działa tylko w komentarzu napisanym po werdykcie `PASS`, który jest zgodą na merge obecnego HEAD, więc nowy commit wymaga nowego `PASS` i nowej zgody; obie piszą konto z prawem `admin`, więc treść linii jest jedynym, co je odróżnia.
   Każda zgoda koordynatora trafia do poniedziałkowego rejestru korzeni jako pozycja do przejrzenia przez Maksa, z liczbą i listą linków (#1626).
   Powód: werdykt `PASS` niezależnego recenzenta już potwierdza szczebel, więc czekanie na Maksa zatrzymuje przyjętą pracę, a lista po fakcie zostawia mu przegląd w jego tempie.
 
@@ -39,7 +39,8 @@ Rejestr korzeni od wdrożenia szablonu (93 wystąpienia, 14.11.2026) ma 47 wyst�
 - **Obszar jako jednostka listy dwóch szop.** Lista trzyma tylko wyjątki od reguły katalogu, więc większość plików nie ma jednostki.
 - **Obszar z plików zmienionych przez PR.** PR wyrwania zmienia też testy i prozę w innych obszarach, więc obszar rósłby z każdym wyrwaniem.
 - **Nowa ręczna lista obszarów.** Druga lista obok `tools/lib/szopa.toml`, której nic nie pilnuje.
-- **Zgoda koordynatora bez SHA.** Przeżyłaby commit po `PASS`, którego żaden recenzent nie widział.
+- **Zgoda koordynatora bez związku z `PASS` na HEAD.** Przeżyłaby commit po `PASS`, którego żaden recenzent nie widział.
+- **SHA HEAD w linii zgody.** GitHub pokazuje pełny SHA commitu repozytorium jako link ze skrótem, więc linia po renderze nie niesie SHA, a kolejność komentarza i werdyktu wiąże zgodę z HEAD bez niego.
 - **Bramka bez zgody, gdy jest `PASS`.** Rejestr nie miałby czego pokazać Maksowi, a powrót przeszedłby bez śladu.
 - **Zgoda tylko od Maksa przed merge'em (stan sprzed tego ADR).** Zatrzymuje w nocy PR-y, które recenzent już przyjął.
 
