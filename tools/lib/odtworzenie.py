@@ -86,7 +86,7 @@ from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrd
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, forbidden_columns
+from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
@@ -271,7 +271,7 @@ def replay(
         limits += rebuilt.limits
         if any(limit.blocking for limit in rebuilt.limits):
             return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
-        memory = ForbiddenValues()
+        memory = empty_memory()
         replayed = _run(record, _prepared(record, kind, rebuilt, here, memory), memory)
     difference = first_difference(record, replayed)
     return Report(

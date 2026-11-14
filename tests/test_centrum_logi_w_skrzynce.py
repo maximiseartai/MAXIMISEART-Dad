@@ -54,7 +54,7 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
-from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+from rozliczenia.client_data import ForbiddenColumn, empty_memory
 from rozliczenia.domain import RunMode
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, Orderless, SavedState
@@ -2936,7 +2936,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:
     """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guard_logs`` w Centrum."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
     kept = guard_logs(RunLog.model_validate(produced.record), forbidden).record
     path = folder / produced.archived.stem

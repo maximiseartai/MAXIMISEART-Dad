@@ -370,7 +370,7 @@ def report_target(fingerprint: str, title: str) -> OpenIssue:
     return OpenIssue(REPORT.label, fingerprint_line(fingerprint), title, RETURNED_HEADING)
 
 
-def _unframed(_number: int, _count: int, text: str) -> str:
+def _unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:
     """Części Zgłoszenia bez nagłówków: issue i komentarze to razem dokładnie podgląd."""
 
     return text

@@ -306,7 +306,7 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
     assume(not after[:1].isalnum() or (closing and not closing.isalnum()))
     assume(client_data.free_text(before + after) == before + after)
 
-    guarded = client_data.ForbiddenValues().guard(f"{before}{opening}{written}{closing}{after}", "własność")
+    guarded = client_data.empty_memory().guard(f"{before}{opening}{written}{closing}{after}", "własność")
 
     assert guarded == client_data.Guarded(client_data.tool(f"{before}{opening}{mask}{closing}{after}"), ())
 
@@ -316,7 +316,7 @@ def test_telefon_i_ulica_w_dowolnym_miejscu_wolnego_tekstu_sa_zamaskowane_a_resz
 def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_uwaga_bez_wartosci(
     before: str, data: st.DataObject
 ) -> None:
-    forbidden = client_data.ForbiddenValues()
+    forbidden = client_data.empty_memory()
     forbidden.remember_value(client_data.ForbiddenColumn.ADDRESS, f"  {GUARDED_ADDRESS} ")
     words = re.findall(r"\w+", GUARDED_ADDRESS)
     written = "".join(
