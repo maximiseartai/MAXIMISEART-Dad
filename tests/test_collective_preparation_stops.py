@@ -312,6 +312,17 @@ def test_sheet_with_orders_of_other_periods_does_not_block_period(tmp_path: Path
     assert (summary.period_order_count, summary.successful_order_count) == (4, 3)
 
 
+# Okres 08_14_09_2026 trwa od wtorku 8.09 do poniedziałku 14.09; zlecenia z dnia tuż obok należą do sąsiedniego okresu.
+@pytest.mark.parametrize("started", [datetime(2026, 9, 7, 18, 0), datetime(2026, 9, 15, 9, 0)])
+def test_sheet_with_order_from_day_next_to_period_does_not_block_period(tmp_path: Path, started: datetime) -> None:
+    fixture = make_preparation_fixture(tmp_path)
+    add_register_sheet(fixture.register_path, "ZLECENIA 2", [register_order(7, started)])
+
+    summary = run_preparation(fixture)
+
+    assert (summary.period_order_count, summary.successful_order_count) == (4, 3)
+
+
 def raw_order(number: int, started: datetime | None, worker: str | None = "adrian.testowy") -> dict[str, object]:
     """Zlecenie z aplikacji do wklejenia na dół Rejestru; ``None``: bez daty albo bez Wykonawcy."""
 
