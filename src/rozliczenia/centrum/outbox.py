@@ -387,7 +387,8 @@ class Post:
     target: Target
     period: str | None
     """Token okresu do dziennika Centrum; ``None``: Uruchomienie bez okresu."""
-    run_id: str
+    run_id: Outgoing
+    """Identyfikator wysyłki: Uruchomienie, Uwaga taty albo Zgłoszenie (``uuid4().hex``); idzie do znacznika w Skrzynce."""
     header: Outgoing | None
     parts: tuple[Outgoing, ...]
     archive: ArchiveFile | None = None
@@ -418,7 +419,7 @@ class Post:
         target: Target,
         *,
         period: str | None,
-        run_id: str,
+        run_id: Outgoing,
         blocks: Sequence[Outgoing],
         frame: Frame,
         header: Outgoing | None = None,
@@ -492,8 +493,8 @@ def _file_name(version: str, label: str, run_id: str) -> str:
 
 def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) -> str:
     """Treść pliku kolejki z ``post``, sprawdzona w chwili zapisu, bo plik daje swoim tekstom ``Outgoing`` od nowa
-    (``_parse``): wysyłka dokładnie ``Post`` albo ``comment_versions.LogsPost``, każde pole czytane raz, a tekst inny niż
-    dokładnie ``Outgoing``, cel i plik Archiwum inne niż dokładnie ich klasa albo z polem innym niż jego adnotacja
+    (``_parse``): wysyłka dokładnie ``Post`` albo ``comment_versions.LogsPost``, każde pole czytane raz, a tekst i
+    identyfikator wysyłki inne niż dokładnie ``Outgoing``, cel i plik Archiwum inne niż dokładnie ich klasa albo z polem innym niż jego adnotacja
     (``_checked_fields``: tag, tytuł, opis i nazwa ``Outgoing``, tekst ``LogsText``) i stopień inny niż ``Rank`` dają
     ``TypeError``. Typ sprawdza porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa z własnym
     ``__eq__``. Nie zamyka zmiany obiektu, klasy albo modułu w chwili działania ani ``str.__new__`` z klasą ``Outgoing``.
@@ -503,9 +504,11 @@ def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) 
 
     if type(post) is not Post and type(post) is not LogsPost:
         raise TypeError(f"Plik kolejki bierze tylko Post i LogsPost, nie {type(post).__name__}.")
-    header, parts, archive, rank = post.header, tuple(post.parts), post.archive, post.rank
+    header, parts, archive, rank, run_id = post.header, tuple(post.parts), post.archive, post.rank, post.run_id
     if any(type(part) is not Outgoing for part in (*parts, *(() if header is None else (header,)))) or type(rank) is not Rank:
         raise TypeError("Plik kolejki bierze tylko tekst Outgoing z rozliczenia.client_data i stopień Rank.")
+    if type(run_id) is not Outgoing:
+        raise TypeError(f"Plik kolejki bierze tylko identyfikator wysyłki Outgoing z rozliczenia.client_data, nie {type(run_id).__name__}.")
     file: dict[str, str] | None = None
     if archive is not None:
         if type(archive) is not ArchiveFile:
@@ -516,7 +519,7 @@ def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) 
             "schema_version": SCHEMA_VERSION,
             "target": _target_json(post.target),
             "period": post.period,
-            "run_id": post.run_id,
+            "run_id": str.__str__(run_id),
             "header": None if header is None else str.__str__(header),
             "parts": [str.__str__(part) for part in parts],
             "archive": file,
@@ -612,7 +615,7 @@ def _parse(text: str) -> _Queued | None:
         post = Post(
             target,
             _optional_string(document["period"]),
-            _string(document["run_id"]),
+            tool(_string(document["run_id"])),
             None if document["header"] is None else tool(_string(document["header"])),
             tuple(tool(_string(part)) for part in document["parts"]),
             archive,

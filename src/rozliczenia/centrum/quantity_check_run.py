@@ -57,7 +57,7 @@ class QuantityCheckAfterRun:
                     title=title.text,
                 ),
                 period=period,
-                run_id=run_id,
+                run_id=tool(run_id),
                 blocks=[*(block.text for block in blocks), *tail],
                 frame=frame,
             )

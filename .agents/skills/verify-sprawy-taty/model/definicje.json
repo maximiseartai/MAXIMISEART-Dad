@@ -28,7 +28,7 @@
     "Reports.__init__": "e23f9b3c062f49c0",
     "Reports.handle": "d3c324ae8e65829c",
     "Reports._heard": "fd2b20d0d13b6f59",
-    "Reports._queue": "916f62cbec5c8880",
+    "Reports._queue": "39ef563e08130855",
     "Reports._pending": "933676e05a1deb0a",
     "Reports._ask_box": "dd0928ff48ccdd20",
     "Reports._state_of": "92c365569ed8ffdb"
@@ -38,7 +38,7 @@
   },
   "src/rozliczenia/centrum/case_delivery.py": {
     "case_outbox": "f61164f509cfb309",
-    "_CaseDelivery.delivered": "27f56c8a9d1170ba",
+    "_CaseDelivery.delivered": "105670abde869209",
     "_CaseDelivery.rejected": "6206265634e1591a",
     "_case": "f6993dced108c94a"
   },

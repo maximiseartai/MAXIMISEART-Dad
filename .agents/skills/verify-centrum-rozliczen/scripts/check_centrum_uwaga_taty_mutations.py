@@ -91,7 +91,7 @@ MUTATIONS = (
         (
             Edit(
                 CASE_DELIVERY,
-                "        return (Post(KnownIssue(NOTE.label, number), period=None, run_id=run_id, header=None, parts=(_logs_gone(run_id),)),)\n",
+                "        return (Post(KnownIssue(NOTE.label, number), period=None, run_id=tool(run_id), header=None, parts=(_logs_gone(run_id),)),)\n",
                 "        return ()\n",
             ),
         ),

@@ -29,11 +29,11 @@ def tekst_pliku_kolejki(wynik: object) -> str:
             return wynik
         case ArchiveFile():
             watek = PeriodThread("logi-uruchomienia", tool("- Logi"), "reuse", tool("Logi"))
-            return Post(watek, "08_14_09_2026", "r", tool("Nagłówek"), (tool("Komentarz"),), wynik).to_json()
+            return Post(watek, "08_14_09_2026", tool("r"), tool("Nagłówek"), (tool("Komentarz"),), wynik).to_json()
         case OpenIssue():
-            return Post(wynik, None, "r", None, (wynik.line,)).to_json()
+            return Post(wynik, None, tool("r"), None, (wynik.line,)).to_json()
         case NewIssue() | PeriodThread():
-            return Post(wynik, None, "r", None, (tool("Treść"),)).to_json()
+            return Post(wynik, None, tool("r"), None, (tool("Treść"),)).to_json()
         case _:
             to_json = getattr(wynik, "to_json")
             return str(to_json())

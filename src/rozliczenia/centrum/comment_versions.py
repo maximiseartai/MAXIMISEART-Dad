@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
     from rozliczenia.centrum.pricing_progress import PricingProgress
     from rozliczenia.centrum.run_logs import LoggedDiagnosis, LoggedMessage, RunLog, StartFacts
-    from rozliczenia.client_data import ForbiddenValues
+    from rozliczenia.client_data import ForbiddenValues, Outgoing
 
 LABEL: Final[Label] = "logi-uruchomienia"
 
@@ -277,7 +277,7 @@ class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
         return self.__post.period
 
     @property
-    def run_id(self) -> str:
+    def run_id(self) -> Outgoing:
         return self.__post.run_id
 
     @property
@@ -332,7 +332,7 @@ def post_of(version: CommentVersion) -> LogsPost:
             title=tool(f"Logi Uruchomienia {period}"),
         ),
         period=period,
-        run_id=start.run_id,
+        run_id=tool(start.run_id),
         header=tool(
             f"Logi Uruchomień okresu {period} z Centrum rozliczeń taty. Każde Uruchomienie to jeden komentarz: "
             f"podsumowanie i odnośnik do pełnych Logów w Archiwum Logów okresu (Release `logi-{period}`)."
