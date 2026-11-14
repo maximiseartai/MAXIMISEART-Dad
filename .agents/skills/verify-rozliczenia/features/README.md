@@ -52,7 +52,9 @@ and the machine script` and `## Gotchas`, in this order. In a file whose section
 root between steps is recorded instead of run, with the run's folders as `<run-root>`, `<evidence>`, `<templates>`
 and `<run-dir>`. So it lists what a variant runs, in order, `cleanup` and `self-test` included, each step with its
 command and the exit code it expects. A real run fails when the steps it ran differ from its plan, so CI proves the
-plan of every variant it runs; nothing compares the plan of a variant on the real Wzorce with a run. Everything
+plan of every variant it runs; nothing compares the plan of a variant on the real Wzorce with a run. A step
+`assert-*` fails on the messages its script appends to `errors`; the section names the script and its mode, and the
+messages are read in that script, not in the map. Everything
 outside the section is prose the command does not confirm: `How to get to it` is a few sentences from Dad's point of
 view, `Driving it` the one command and where its evidence is, and `Gotchas` only traps the code does not handle, such
 as what the variant does not reach and which test proves it. Every feature file's section comes from the command.

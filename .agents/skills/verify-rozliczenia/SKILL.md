@@ -139,7 +139,7 @@ py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant pr
 `preparation` builds a synthetic Rejestr zleceń and both Wzorce, drives
 `tools/uruchom_proces.py preparation` through dry-run and write, and checks
 both period files, including the Rejestr Hiperłącze of every written `NUMER ZL.` cell.
-Its route and counts are in `features/prepare-collective-file.md`.
+Its steps are in `features/prepare-collective-file.md`, its counts in `assert_preparation.py`.
 
 When `config/` holds the real Wzorce, also run the local variant on the Mac, in the
 background with a wait for its end in the same turn, after changes to formatting or template handling in
@@ -184,8 +184,8 @@ Wiersza danych; every `NUMER ZL.` cell keeps the
 Hiperłącze of its Rejestr cell. `chain-real-templates` runs
 the same path on byte copies of all three real Wzorce, including the Wzorzec
 rozliczenia pracownika; like `preparation-real-templates` it is local only,
-takes `--templates-dir`, and prints `VERIFY SKIP` without them. Route and
-counts are in `features/prepare-and-settle.md`.
+takes `--templates-dir`, and prints `VERIFY SKIP` without them. Its steps are
+in `features/prepare-and-settle.md`, its checks in `assert_chain.py`.
 
 Use this variant after changes to Uporządkowanie INTERMAX, to its summary on
 the Uruchomienie card, or to the `intermax` command of the machine script:
