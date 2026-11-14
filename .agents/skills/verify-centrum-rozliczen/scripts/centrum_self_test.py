@@ -382,7 +382,7 @@ def _check_retry_while_open(errors: list[str]) -> None:
 
     import tempfile
 
-    from drive import common
+    from drive import common, waiting
 
     refusals = 2
 
@@ -393,9 +393,9 @@ def _check_retry_while_open(errors: list[str]) -> None:
             raise PermissionError(32, "The process cannot access the file because it is being used by another process")
 
     try:
-        common.while_open(held_for_a_moment)
+        waiting.while_open(held_for_a_moment)
     except PermissionError:
-        errors.append("drive/common.py gives up on a file the server holds open for a moment (#921)")
+        errors.append("while_open of drive/waiting.py gives up on a file the server holds open for a moment (#921)")
     attempts = 0
 
     def missing_at_first() -> None:
@@ -405,17 +405,17 @@ def _check_retry_while_open(errors: list[str]) -> None:
             raise FileNotFoundError(2, "No such file or directory")
 
     try:
-        common.while_open(missing_at_first)
+        waiting.while_open(missing_at_first)
     except FileNotFoundError:
         pass
     else:
-        errors.append("drive/common.py retries an error other than a file the server holds open, so it hides it")
+        errors.append("while_open of drive/waiting.py retries an error other than a file the server holds open, so it hides it")
 
     def held_for_good() -> None:
         raise PermissionError(32, "The process cannot access the file because it is being used by another process")
 
     try:
-        common.while_open(held_for_good, limit_s=0.2)  # a refusal for good, without waiting the whole limit
+        waiting.while_open(held_for_good, limit_s=0.2)  # a refusal for good, without waiting the whole limit
     except PermissionError:
         pass
     else:
