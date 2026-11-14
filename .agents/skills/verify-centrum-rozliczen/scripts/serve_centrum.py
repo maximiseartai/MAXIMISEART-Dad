@@ -126,6 +126,7 @@ script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel 
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
@@ -183,11 +184,13 @@ from rozliczenia.tool_files import listen_locally, log_path
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
 from skrypt_skilla import Parser
+from starlette.types import ASGIApp, Receive, Scope, Send
 from harness import (
     INBOX_ADDRESS,
     INBOX_PASSWORD,
     File,
     Log,
+    SLOW_RUNNER,
     Pace,
     Switch,
     archive_file,
@@ -207,6 +210,8 @@ from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKN
 from atrapy.skrzynka_raportow import AtrapaImap, FolderInbox
 
 EFENIX_SEARCH_DELAY_S = 1.0
+# The mode „wolny runner” (SLOW_RUNNER): Centrum takes each request of its API this late.
+API_DELAY_S = 0.3
 # How long a file the drive is putting in place is tried again (``_read_put_in_place``).
 READ_RETRY_S = 10.0
 
@@ -589,6 +594,18 @@ class ScriptedClock:
             raise
 
 
+class _LateApi:
+    """Each request of ``/api/`` waits ``API_DELAY_S`` before Centrum takes it; the page itself does not."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+            await asyncio.sleep(API_DELAY_S)
+        await self.app(scope, receive, send)
+
+
 def _scripted_onedrive(root: Path) -> CloudFiles:
     normal, online_only = 0x80, 0x400000  # FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 
@@ -718,6 +735,9 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         # Wpisanie raportów reads the run's .eml folder, never Dad's Gmail.
         worker_report_inbox=FolderInbox(Path(fixture["report_entering"]["mails"])),
     )
+
+    if SLOW_RUNNER in os.environ:
+        app.add_middleware(_LateApi)
 
     def record_bound_server(url: str) -> None:
         """The run waits for the record as soon as it exists, so it is put in place whole (``replace_atomically``)."""

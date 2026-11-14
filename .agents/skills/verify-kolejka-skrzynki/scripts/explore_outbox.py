@@ -583,18 +583,18 @@ class Scope:
 
 LOGS = PeriodThread(
     "logi-uruchomienia",
-    "- Logi Uruchomienia okresu: 08_14_09_2026",
+    tool("- Logi Uruchomienia okresu: 08_14_09_2026"),
     "reuse",
-    "Logi Uruchomienia 08_14_09_2026",
+    tool("Logi Uruchomienia 08_14_09_2026"),
 )
-REPORT = report_target("4f1c2d", "Zgłoszenie: Przebieg rozliczeń zatrzymany")
+REPORT = report_target("4f1c2d", tool("Zgłoszenie: Przebieg rozliczeń zatrzymany"))
 THREAD = PeriodThread(
     "kontrola-ilosci",
-    "- Kontrola ilości okresu: 08_14_09_2026",
+    tool("- Kontrola ilości okresu: 08_14_09_2026"),
     "new_issue",
-    "Kontrola ilości 08_14_09_2026",
+    tool("Kontrola ilości 08_14_09_2026"),
 )
-NOTE = NewIssue("uwaga-taty", "Uwaga taty: brakuje zlecenia")
+NOTE = NewIssue("uwaga-taty", tool("Uwaga taty: brakuje zlecenia"))
 KNOWN = KnownIssue("uwaga-taty", 1)
 
 

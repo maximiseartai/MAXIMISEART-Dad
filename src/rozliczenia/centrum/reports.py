@@ -363,11 +363,11 @@ def _cell(text: str) -> str:
 
 
 
-def report_target(fingerprint: str, title: str) -> OpenIssue:
+def report_target(fingerprint: str, title: Outgoing) -> OpenIssue:
     """Cel wysyłki Zgłoszenia w kolejce: jedno otwarte Zgłoszenie na odcisk problemu, a Zgłoszenie, które wróciło, idzie
     do niego komentarzem „Zgłoszenie wróciło” (ADR 0007, #820)."""
 
-    return OpenIssue(REPORT.label, fingerprint_line(fingerprint), title, RETURNED_HEADING)
+    return OpenIssue(REPORT.label, tool(fingerprint_line(fingerprint)), title, tool(RETURNED_HEADING))
 
 
 def _unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:

@@ -13,7 +13,7 @@ from typing import Final
 
 import pytest
 
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, Guarded, empty_memory, free_text, tool
+from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, empty_memory, free_text, tool
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
 from tests.fixtures.wyciek import zawiera_wartosc
 from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
@@ -140,49 +140,49 @@ ZNANE_LUKI: Final = {
 from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str) -> Post:
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (cast(Outgoing, komorka),))
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (cast(Outgoing, komorka),))
 """,
     "wartość typu Any": _POST
     + """from typing import Any
 
 
-def wysylka(wiersz: dict[str, Any]) -> Post:
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (wiersz["ADRES"],))
+def wysylka(wiersz: dict[str, Any], cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (wiersz["ADRES"],))
 """,
     "str.__new__ z klasą Outgoing": _POST
     + """from rozliczenia.client_data import Outgoing
 
 
-def wysylka(komorka: str) -> Post:
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (str.__new__(Outgoing, komorka),))
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (str.__new__(Outgoing, komorka),))
 """,
     "dowód z getattr modułu": _POST
     + """from rozliczenia import client_data
 
 
-def wysylka(komorka: str) -> Post:
+def wysylka(komorka: str, cel: NewIssue) -> Post:
     tekst = client_data.Outgoing(komorka, getattr(client_data, "_PASSED"))
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (tekst,))
+    return Post(cel, None, "r", None, (tekst,))
 """,
     "tool przez importlib": _POST
     + """import importlib
 
 
-def wysylka(komorka: str) -> Post:
+def wysylka(komorka: str, cel: NewIssue) -> Post:
     tekst = importlib.import_module("rozliczenia.client_data").tool(komorka)
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (tekst,))
+    return Post(cel, None, "r", None, (tekst,))
 """,
     "tool zaimportowane z noqa": _POST
     + """from rozliczenia.client_data import tool  # noqa: TID251
 
 
-def wysylka(komorka: str) -> Post:
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (tool(komorka),))
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (tool(komorka),))
 """,
     "goły napis z type: ignore": _POST
-    + """def wysylka(komorka: str) -> Post:
-    return Post(NewIssue("uwaga-taty", "Uwaga"), None, "r", None, (komorka,))  # type: ignore[arg-type]
+    + """def wysylka(komorka: str, cel: NewIssue) -> Post:
+    return Post(cel, None, "r", None, (komorka,))  # type: ignore[arg-type]
 """,
     "object.__setattr__ na częściach gotowej wysyłki": """from rozliczenia.centrum.outbox import Post
 
@@ -191,13 +191,121 @@ def wysylka(komorka: str, post: Post) -> Post:
     object.__setattr__(post, "parts", (komorka,))
     return post
 """,
-    "tytuł celu z komórki": _POST
-    + """from rozliczenia.client_data import ForbiddenValues
+}
+
+_CEL: Final = """\
+from rozliczenia.centrum.outbox import NewIssue, OpenIssue, PeriodThread, Post
+from rozliczenia.client_data import ForbiddenValues
 
 
 def wysylka(komorka: str, pamiec: ForbiddenValues) -> Post:
     tekst = pamiec.guard("Uwaga", "treść").text
-    return Post(NewIssue("uwaga-taty", komorka), None, "r", None, (tekst,))
+    return Post({cel}, None, "r", None, (tekst,))
+"""
+_GOTOWY_CEL: Final = "from rozliczenia.centrum.outbox import NewIssue, Post\n\n\n"
+
+# Drogi do pola tekstowego celu wysyłki z wartością z komórki taty bez strażnika (każde pole każdego celu i ich formy
+# siostrzane) → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+DROGI_DO_CELU: Final = {
+    **{
+        f"{cel.split('(')[0]} {pole} z komórki": (_CEL.format(cel=cel), 'has incompatible type "str"; expected "Outgoing"')
+        for pole, cel in (
+            ("title", 'NewIssue("uwaga-taty", komorka)'),
+            ("line", 'PeriodThread("kontrola-ilosci", komorka, "new_issue", tekst)'),
+            ("title", 'PeriodThread("kontrola-ilosci", tekst, "new_issue", komorka)'),
+            ("line", 'OpenIssue("zgloszenie", komorka, tekst, tekst)'),
+            ("title", 'OpenIssue("zgloszenie", tekst, komorka, tekst)'),
+            ("again", 'OpenIssue("zgloszenie", tekst, tekst, komorka)'),
+        )
+    },
+    "podklasa celu": (_GOTOWY_CEL + "class Cel(NewIssue):\n    pass\n", 'Cannot inherit from final class "NewIssue"'),
+    "własny cel": (
+        _GOTOWY_CEL
+        + """from dataclasses import dataclass
+
+from rozliczenia.client_data import Outgoing
+
+
+@dataclass(frozen=True)
+class Cel:
+    label: str
+    title: str
+
+
+def wysylka(komorka: str, tekst: Outgoing) -> Post:
+    return Post(Cel("uwaga-taty", komorka), None, "r", None, (tekst,))
+""",
+        'Argument 1 to "Post" has incompatible type "Cel"',
+    ),
+    "dataclasses.replace celu": (
+        _GOTOWY_CEL
+        + """import dataclasses
+
+
+def wysylka(komorka: str, cel: NewIssue) -> NewIssue:
+    return dataclasses.replace(cel, title=komorka)
+""",
+        'Argument "title" to "replace" of "NewIssue" has incompatible type "str"',
+    ),
+    "__replace__ celu": (
+        _GOTOWY_CEL + 'def wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return cel.__replace__(title=komorka)\n',
+        'Argument "title" to "__replace__" of "NewIssue" has incompatible type "str"',
+    ),
+    "copy.replace celu": (
+        _GOTOWY_CEL + 'import copy\n\n\ndef wysylka(komorka: str, cel: NewIssue) -> NewIssue:\n    return copy.replace(cel, title=komorka)\n',
+        "`copy.replace` is banned",
+    ),
+    "tytuł Uwagi taty z komórki": (
+        """from rozliczenia.centrum.case_delivery import note_post
+from rozliczenia.centrum.outbox import Post
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, tekst: Outgoing) -> Post:
+    return note_post("n", komorka, tekst, logs_on_the_way=False)
+""",
+        'Argument 2 to "note_post" has incompatible type "str"; expected "Outgoing"',
+    ),
+    "tytuł Zgłoszenia z komórki": (
+        """from rozliczenia.centrum.outbox import OpenIssue
+from rozliczenia.centrum.reports import report_target
+
+
+def wysylka(komorka: str) -> OpenIssue:
+    return report_target("0123456789abcdef", komorka)
+""",
+        'Argument 2 to "report_target" has incompatible type "str"; expected "Outgoing"',
+    ),
+}
+
+# Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
+# bez strażnika, a mypy i ruff ich nie łapią.
+ZNANE_LUKI_CELU: Final = {
+    "object.__setattr__ na gotowym celu": _GOTOWY_CEL
+    + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    object.__setattr__(cel, "title", komorka)
+    return Post(cel, None, "r", None, post.parts)
+""",
+    "zapis do __dict__ gotowego celu": _GOTOWY_CEL
+    + """def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
+    cel.__dict__["title"] = komorka
+    return Post(cel, None, "r", None, post.parts)
+""",
+    "cast na Outgoing w tytule celu": _GOTOWY_CEL
+    + """from typing import cast
+
+from rozliczenia.client_data import Outgoing
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    return Post(NewIssue("uwaga-taty", cast(Outgoing, komorka)), None, "r", None, post.parts)
+""",
+    "tytuł celu typu Any": _GOTOWY_CEL
+    + """from typing import Any
+
+
+def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
+    return Post(NewIssue("uwaga-taty", wiersz["ADRES"]), None, "r", None, post.parts)
 """,
 }
 
@@ -236,6 +344,15 @@ def wysylka(komorka: str, log: CentrumLog, zegar: Clock) -> str:
 """,
         'Missing positional argument "forbidden"',
     ),
+    "konstruktor ForbiddenValues": (
+        """from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str) -> str:
+    return ForbiddenValues().guard(komorka, "treść").text
+""",
+        'Missing positional argument "proof"',
+    ),
 }
 
 # Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
@@ -258,6 +375,21 @@ def test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff(tmp_path: 
     zgloszenia = ruff_i_mypy(zapisz(ZNANE_LUKI, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
 
     assert_znane_luki(zgloszenia, "tests/test_regula_danych.py")
+
+
+@wymaga_ruff_i_mypy
+def test_pole_tekstowe_celu_wysylki_z_komorki_bez_straznika_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_CELU.items()} | ZNANE_LUKI_CELU
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_celu.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_CELU.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_CELU}, "tests/test_regula_danych.py (ZNANE_LUKI_CELU)")
+
+
+@pytest.mark.parametrize("proof", [None, object()])
+def test_pamiec_regula_danych_bez_dowodu_modulu_to_type_error(proof: object) -> None:
+    with pytest.raises(TypeError, match="empty_memory"):
+        ForbiddenValues(proof)
 
 
 @wymaga_ruff_i_mypy

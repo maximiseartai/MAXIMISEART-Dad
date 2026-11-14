@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, broken_rules, feature
-from harness import File
+from harness import SLOW_RUNNER, File
 from quiet_machine import MachineBusy, QuietMachine
 from skrypt_skilla import Parser, child_environment, new_run, part
 
@@ -188,7 +188,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--powtorzenia", type=int, help=f"wydajnosc: repetitions per scenario and profile (default {DEFAULT_REPEATS})."
     )
+    parser.add_argument(
+        "--wolny-runner",
+        action="store_true",
+        help="Slow animations, late writes of the tab and a late API, as a slow runner (features/README.md); not in CI.",
+    )
     args = parser.parse_args(argv)
+    if args.wolny_runner:
+        os.environ[SLOW_RUNNER] = "1"
     # The drive's Polish output in UTF-8 whatever the code page: an English Windows pipe (1252) cannot encode it.
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):

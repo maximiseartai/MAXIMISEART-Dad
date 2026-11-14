@@ -28,9 +28,9 @@ strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczb
 General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
 ``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
 
-Tekst, który kolejka Skrzynki Zgłoszeń przyjmuje, ma typ ``Outgoing``, a ``Outgoing`` daje tylko ten moduł: tekst po
-strażniku (``Guarded.text``), tekst narzędzia (``tool``) i ich sklejenie (``+``). Goły ``str`` z pliku taty podany
-kolejce bez strażnika to błąd mypy.
+Tekst, który kolejka Skrzynki Zgłoszeń przyjmuje (nagłówek, części i każde pole tekstowe celu wysyłki), ma typ
+``Outgoing``, a ``Outgoing`` daje tylko ten moduł: tekst po strażniku (``Guarded.text``), tekst narzędzia (``tool``)
+i ich sklejenie (``+``). Goły ``str`` z pliku taty podany kolejce bez strażnika to błąd mypy.
 """
 
 from __future__ import annotations

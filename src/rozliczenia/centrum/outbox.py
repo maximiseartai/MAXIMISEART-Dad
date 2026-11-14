@@ -224,27 +224,30 @@ _LABELS: Final = frozenset(get_args(Label))
 _CLOSED: Final = frozenset(get_args(Closed))
 
 
+@final
 @dataclass(frozen=True)
 class PeriodThread:
     """Issue okresu w Skrzynce Zgłoszeń."""
 
     label: Label
-    line: str
+    line: Outgoing
     """Dokładny wiersz treści, po którym znaleźć issue; kolejka stawia go na początku każdego issue, które zakłada."""
     closed: Closed
     """Kontrola ilości: zamknięte issue to nowe issue okresu; Logi Uruchomienia: dalej to samo."""
-    title: str
+    title: Outgoing
     """Tytuł, gdy issue trzeba założyć."""
 
 
+@final
 @dataclass(frozen=True)
 class NewIssue:
     """Nowe issue przy każdej wysyłce, bez wiersza rozpoznawczego (Uwaga taty: każda to osobna sprawa)."""
 
     label: Label
-    title: str
+    title: Outgoing
 
 
+@final
 @dataclass(frozen=True)
 class KnownIssue:
     """Komentarze do issue o znanym numerze (odnośnik do Logów dopisany do issue Uwagi taty)."""
@@ -253,6 +256,7 @@ class KnownIssue:
     number: int
 
 
+@final
 @dataclass(frozen=True)
 class OpenIssue:
     """Jedno otwarte issue z etykietą ``label`` na wiersz rozpoznawczy ``line``, który nadawca stawia w treści (Zgłoszenie:
@@ -266,14 +270,14 @@ class OpenIssue:
     """
 
     label: Label
-    line: str
-    title: str
-    again: str
+    line: Outgoing
+    title: Outgoing
+    again: Outgoing
     """Nagłówek komentarza do otwartego issue z tym wierszem, przed częścią."""
 
 
 Target = PeriodThread | NewIssue | KnownIssue | OpenIssue
-"""Dokąd w Skrzynce Zgłoszeń idzie wysyłka."""
+"""Dokąd w Skrzynce Zgłoszeń idzie wysyłka; każde pole tekstowe celu to ``Outgoing``, a cel nie ma podklas (``final``)."""
 
 
 @final
@@ -546,15 +550,15 @@ def _target(entry: dict[str, Any], kind: object) -> Target | None:
     if entry["label"] not in _LABELS:
         return None
     if kind == "new_issue":
-        return NewIssue(entry["label"], _string(entry["title"]))
+        return NewIssue(entry["label"], tool(_string(entry["title"])))
     if kind == "known_issue":
         return KnownIssue(entry["label"], entry["number"]) if type(entry["number"]) is int else None
     if kind == _OPEN_ISSUE:
-        again = _string(entry.get("again", _AGAIN_BEFORE_OPEN_ISSUE))
-        return OpenIssue(entry["label"], _string(entry["line"]), _string(entry["title"]), again)
+        again = tool(_string(entry.get("again", _AGAIN_BEFORE_OPEN_ISSUE)))
+        return OpenIssue(entry["label"], tool(_string(entry["line"])), tool(_string(entry["title"])), again)
     if kind != "period_thread" or entry["closed"] not in _CLOSED:
         return None
-    return PeriodThread(entry["label"], _string(entry["line"]), entry["closed"], _string(entry["title"]))
+    return PeriodThread(entry["label"], tool(_string(entry["line"])), entry["closed"], tool(_string(entry["title"])))
 
 
 def _parse(text: str) -> _Queued | None:

@@ -56,9 +56,9 @@ from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruf
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 THREAD = PeriodThread(
     label="kontrola-ilosci",
-    line="- Kontrola ilości okresu: 08_14_09_2026",
+    line=tool("- Kontrola ilości okresu: 08_14_09_2026"),
     closed="new_issue",
-    title="Kontrola ilości 08_14_09_2026: 3 różnice",
+    title=tool("Kontrola ilości 08_14_09_2026: 3 różnice"),
 )
 RUN_ID = "3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c"
 # Następne Uruchomienia: każda Kontrola ilości to inna wysyłka, z identyfikatorem swojego Uruchomienia.
@@ -242,9 +242,9 @@ def test_bez_sieci_wysylka_czeka_w_pliku_i_idzie_przy_nastepnej_wysylce_po_kolei
 
 LOGS = PeriodThread(
     label="logi-uruchomienia",
-    line="- Logi Uruchomień okresu: 08_14_09_2026",
+    line=tool("- Logi Uruchomień okresu: 08_14_09_2026"),
     closed="reuse",
-    title="Logi Uruchomień 08_14_09_2026",
+    title=tool("Logi Uruchomień 08_14_09_2026"),
 )
 
 
@@ -660,7 +660,7 @@ def test_uwaga_ktorej_komentarz_skrzynka_odrzucila_dostaje_reszte_czesci_w_swoim
     tmp_path: Path,
 ) -> None:
     queue = Queue(tmp_path, FakeReportBox(comment_outcomes=[Rejected()]))
-    note = Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Część 1/2\n\na"), tool("Część 2/2\n\nb")))
+    note = Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Część 1/2\n\na"), tool("Część 2/2\n\nb")))
 
     queue.outbox.post(note)
     queue.passed()
@@ -1035,7 +1035,7 @@ def test_wyslanej_wysylki_ktorej_nie_da_sie_usunac_skrzynka_nie_dostaje_drugi_ra
 def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(outcomes=[Unreachable()]))
     logs = PeriodThread(
-        label="logi-uruchomienia", line="- Logi Uruchomienia okresu: 08_14_09_2026", closed="reuse", title="Logi"
+        label="logi-uruchomienia", line=tool("- Logi Uruchomienia okresu: 08_14_09_2026"), closed="reuse", title=tool("Logi")
     )
     run_logs = Post.of(
         logs, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("podsumowanie\n")], frame=numbered, header=tool("Logi okresu")
@@ -1058,7 +1058,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
 
 
 FINGERPRINT_LINE = "- Odcisk problemu: 0123456789abcdef"
-REPORT = report_target("0123456789abcdef", "BRAK_WZORCA: Nie znaleziono wzorca.")
+REPORT = report_target("0123456789abcdef", tool("BRAK_WZORCA: Nie znaleziono wzorca."))
 REPORT_BODY = f"Zgłoszenie z Centrum rozliczeń.\n\n## Narzędzie\n\n{FINGERPRINT_LINE}\n"
 
 
@@ -1222,7 +1222,7 @@ class FollowingUp(QueueListener):
 def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1278,7 +1278,7 @@ def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_po
     queue = Queue(tmp_path, FakeReportBox(list_lag=True), listener=FollowingUp())
     fault(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1301,7 +1301,7 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
     _unreadable_at_comment_list(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1568,7 +1568,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pok
     issue pokaże to issue; Uwaga czeka wtedy na budzenie ``RETRY_S`` zamiast założyć drugie issue."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox.post(report())
@@ -1591,7 +1591,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_po
     (#879): nowe Centrum zna chwilę tamtego zakładania z pliku obok klucza i czeka na budzenie ``RETRY_S``."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Uwaga taty")), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox = queue.restarted()
@@ -1611,9 +1611,9 @@ def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_li
 
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Pierwsza"), None, RUN_ID, None, (tool("Pierwsza"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Pierwsza")), None, RUN_ID, None, (tool("Pierwsza"),)))
     queue.passed()
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Druga"), None, NEXT_RUN_IDS[0], None, (tool("Druga"),)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", tool("Druga")), None, NEXT_RUN_IDS[0], None, (tool("Druga"),)))
     queue.passed()
 
     assert [note.body for note in queue.box.issues_with("uwaga-taty")] == ["Pierwsza", "Druga"]

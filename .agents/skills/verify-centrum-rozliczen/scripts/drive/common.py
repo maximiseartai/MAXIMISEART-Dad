@@ -27,7 +27,7 @@ import yaml
 
 from drive import feature
 from drive.waiting import Budget, TimedOut, expect, until
-from harness import File, Log, issue_file, report_box
+from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
@@ -653,10 +653,34 @@ def local_time(moment: str) -> str:
     return datetime.fromisoformat(moment).astimezone(DAD_TIME_ZONE).strftime("%d.%m.%Y, %H:%M")
 
 
-def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
-    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``."""
+# The browser of the mode „wolny runner” (SLOW_RUNNER): animations run at this rate, so a notification that closes stays
+# on the screen five times longer (#1534), and each write of the tab leaves it this late, as the start of #1570 did.
+SLOW_ANIMATIONS = 0.2
+LATE_WRITE_MS = 1500
+LATE_WRITES = """(() => {
+    const send = window.fetch
+    window.fetch = (input, init) => {
+        const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
+        if (method === "GET") return send(input, init)
+        return new Promise(resolve => setTimeout(resolve, %d)).then(() => send(input, init))
+    }
+})()"""
 
-    return browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+
+def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
+    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``; in the
+    mode „wolny runner” its pages run animations slowly and send writes late."""
+
+    context = browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+    if SLOW_RUNNER in os.environ:
+        # A late write in the page, not in context.route: a handler of the sync client that sleeps holds the drive too.
+        context.add_init_script(LATE_WRITES % LATE_WRITE_MS)
+
+        def slow_animations(page: Page) -> None:
+            context.new_cdp_session(page).send("Animation.setPlaybackRate", {"playbackRate": SLOW_ANIMATIONS})
+
+        context.on("page", slow_animations)
+    return context
 
 
 @contextmanager

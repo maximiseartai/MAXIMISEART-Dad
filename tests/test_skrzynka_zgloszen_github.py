@@ -882,7 +882,7 @@ def test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_pli
     assert (outcome, box.archive(TAG, key=KEY)) == (Rejected(), Archive(opened.id, (first,)))
 
 
-LOGS = PeriodThread("logi-uruchomienia", "- Logi Uruchomienia okresu: 08_14_09_2026", "reuse", "Logi Uruchomienia 08_14_09_2026")
+LOGS = PeriodThread("logi-uruchomienia", tool("- Logi Uruchomienia okresu: 08_14_09_2026"), "reuse", tool("Logi Uruchomienia 08_14_09_2026"))
 
 
 def logs_post(text: str) -> Post:
@@ -950,7 +950,7 @@ def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_
     assert re.search(rf"Plik `{re.escape(ASSET)}` czeka w Kolejce wysyłki", str(comment["body"]))
 
 
-REPORT = report_target(FINGERPRINT, TITLE)
+REPORT = report_target(FINGERPRINT, tool(TITLE))
 
 
 def queued_before_start(directory: Path, *posts: Post) -> None:

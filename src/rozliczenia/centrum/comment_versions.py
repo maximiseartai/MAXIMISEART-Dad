@@ -307,9 +307,9 @@ def post_of(version: CommentVersion) -> LogsPost:
     post = Post(
         PeriodThread(
             label=LABEL,
-            line=f"- Logi Uruchomienia okresu: {period}",
+            line=tool(f"- Logi Uruchomienia okresu: {period}"),
             closed="reuse",
-            title=f"Logi Uruchomienia {period}",
+            title=tool(f"Logi Uruchomienia {period}"),
         ),
         period=period,
         run_id=start.run_id,
