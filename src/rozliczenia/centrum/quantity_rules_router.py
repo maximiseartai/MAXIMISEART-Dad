@@ -138,7 +138,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         keys = frozenset() if isinstance(used, Unreadable) else used
         after = settings.rules_after(lambda current: _ruled(edit)(current, keys))
         if isinstance(after, FieldProblem):
-            raise _rule_refused(edit, after)
+            raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(view.source_rules, after.rules)
         return view.rules, after, rule_id
 
@@ -150,7 +150,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
             case Saved(change=change):
                 return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
             case Refused(problem=problem):
-                raise _rule_refused(edit, problem)
+                raise refusal.setting_refused(_at_form_field(edit, problem))
             case NotSaved():
                 raise refusal.settings_not_saved()
 
@@ -244,12 +244,13 @@ def _known_rule(edit: contract.RuleEdit, view: QuantityRulesView) -> None:
         raise refusal.quantity_rule_unknown()
 
 
-def _rule_refused(edit: contract.RuleEdit, problem: FieldProblem) -> refusal.Refusal:
-    """Odmowa właściciela zmiany reguły jako odmowa HTTP; składnik spoza listy stoi przy polu formularza z tym składnikiem."""
+def _at_form_field(edit: contract.RuleEdit, problem: FieldProblem) -> FieldProblem:
+    """Odmowa właściciela zmiany reguły przy polu formularza: składnik spoza listy stoi przy polu z tym składnikiem,
+    a każda inna odmowa zostaje przy swoim miejscu."""
 
     if isinstance(problem, UnlistedComponent) and not isinstance(edit, contract.RemoveRule):
-        return refusal.setting_refused(FieldProblem(component_field(edit.rule, problem.component), problem.sentence))
-    return refusal.setting_refused(problem)
+        return FieldProblem(component_field(edit.rule, problem.component), problem.sentence)
+    return problem
 
 
 def _ruled(
