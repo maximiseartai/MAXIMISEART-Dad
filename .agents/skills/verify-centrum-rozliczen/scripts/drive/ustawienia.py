@@ -16,7 +16,6 @@ from playwright.sync_api import Locator, Page, Request, Route, ViewportSize, exp
 from drive.common import (
     CENTRE_TAKES_CLICK,
     DAD_VIEWPORT,
-    REPEAT_SETTLE_MS,
     Run,
     choose_periods_directory,
     close_settings,
@@ -34,7 +33,7 @@ from drive.common import (
     settle,
     unreadable,
 )
-from drive.waiting import Budget, until
+from drive.waiting import Budget, quiet_for, until
 from harness import INBOX_ADDRESS, INBOX_PASSWORD, File, Log, Switch
 
 
@@ -78,7 +77,7 @@ def drive(run: Run, page: Page) -> None:
     try:
         folder_picker.dblclick()
         until(lambda: len(held) >= 1, "the double click on Wskaż Folder okresów asks for a picker", page=page)
-        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        quiet_for(page)
         run.check(len(held) == 1, f"a double click on Wskaż Folder okresów opens one picker ({len(held)} requests)")
         expect(folder_picker).to_contain_text("Czekam na wybór…")
         for name in pickers:
@@ -343,7 +342,7 @@ def _failure_after_window(run: Run, page: Page) -> None:
     try:
         themes.get_by_role("button", name="Jasny", exact=True).click()
         until(lambda: len(held) >= 1, "the click on Jasny saves Motyw", page=page)
-        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        quiet_for(page)
         run.check(len(held) == 1, f"the save of Motyw waits for its answer ({len(held)} requests, held)")
         close_settings(page)
         held.pop().fulfill(status=500, body="")
@@ -373,11 +372,11 @@ def _failure_keeps_next_choice(run: Run, page: Page) -> None:
         for click in ("Jasny", "Ciemny", "Jasny"):
             themes.get_by_role("button", name=click, exact=True).click()
         until(lambda: len(held) >= 3, "each click on Motyw saves it", page=page)
-        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        quiet_for(page)
         run.check(len(held) == 3, f"each click on Motyw is a save that waits for its answer ({len(held)} requests, held)")
         held.pop(1).fulfill(status=500, body="")
         expect(error_toasts(page)).to_have_count(1)
-        page.wait_for_timeout(REPEAT_SETTLE_MS)
+        quiet_for(page)
         dark = page.evaluate("document.documentElement.classList.contains('dark')")
         pressed = themes.get_by_role("button", name="Jasny", exact=True).get_attribute("aria-pressed")
         run.check(
@@ -806,7 +805,7 @@ def _reminders(run: Run, page: Page) -> None:
         )
 
     # The switch shows its state at once, before its save reaches Centrum.
-    until(saved, "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer")
+    run.wait_for(saved, "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer")
     expect(window.get_by_role("listitem", name="Przypomnienia o raporcie")).to_contain_text("Idą od ")
     run.capture(page, "362-ustawienia-przypomnienia", full_page=False)
 
@@ -833,7 +832,7 @@ def _reminders(run: Run, page: Page) -> None:
         after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
         return isinstance(after, dict) and after["enabled"] is False
 
-    until(switched_off, "the step switches the reminders off again, so their work leaves config alone for the rest of the run")
+    run.wait_for(switched_off, "the step switches the reminders off again, so their work leaves config alone for the rest of the run")
     close_settings(page)
 
 

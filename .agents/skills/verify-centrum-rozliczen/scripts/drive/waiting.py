@@ -1,5 +1,6 @@
 """The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
-drive's ``expect`` of Playwright, whose assertions wait a budget too.
+drive's ``expect`` of Playwright, whose assertions wait a budget too, and the drive's one quiet: a time in which the page
+runs with nothing to wait for (``quiet_for``).
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -12,11 +13,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 import json
+import os
 import time
 from typing import TypeVar
 
 from playwright.sync_api import Expect, Page
 import yaml
+
+from harness import SLOW_RUNNER
 
 # A file of the run in a state the server or the harness has not finished: missing, refused for a moment (Windows,
 # #1087), or empty or half written as JSON, JSON Lines, YAML or UTF-8 text (#963, #1195, #1651).
@@ -30,6 +34,12 @@ NOT_YET: tuple[type[Exception], ...] = (
 
 # How often a wait reads again.
 POLL_S = 0.1
+# Dad double-clicks out of habit and double-taps the touch screen: the second click comes within milliseconds,
+# so a repeated request is sent well within this, and an answer reaches the screen (a refusal as a toast) too.
+REPEAT_SETTLE_MS = 300
+# In the mode „wolny runner” (SLOW_RUNNER) each write of the tab leaves it this late (``dad_context`` of
+# ``drive/common.py``), as the start of #1570 did.
+LATE_WRITE_MS = 1500
 
 
 class Budget(Enum):
@@ -117,3 +127,14 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
             time.sleep(POLL_S)
         else:
             page.wait_for_timeout(POLL_S * 1000)
+
+
+def quiet_for(page: Page, ms: float = REPEAT_SETTLE_MS) -> None:
+    """Let ``page`` run ``ms`` with nothing on its screen or in its requests to wait for: a click that should send nothing
+    more, a hidden tab that should ask nothing, a time of the page that passes with nothing on screen.
+
+    In the mode „wolny runner” a write of the tab leaves ``LATE_WRITE_MS`` late, so the quiet is that much longer and a
+    write that should not come still falls inside it, instead of leaving after the drive counted the requests.
+    """
+
+    page.wait_for_timeout(ms + (LATE_WRITE_MS if SLOW_RUNNER in os.environ else 0))
