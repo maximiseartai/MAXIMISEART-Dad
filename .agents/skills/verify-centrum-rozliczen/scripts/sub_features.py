@@ -1,75 +1,202 @@
 """Prints the section ``## Sub-features`` of a feature file from the feature's drive module.
 
-Each sub-feature is a ``run.step(feature, "<id>")`` of ``drive/<feature>.py``, in source order, and its line joins the
-messages of the ``run.check`` calls after it, which the drive prints as ``ok:`` under ``STEP <feature> | <id>`` in
-``drive.txt``. A name in a check's f-string that the module binds to a string at its top level is printed as that
-string, any other placeholder as its source in braces. A step whose name is not a string literal fails, because the map
-would then guess it.
+Each sub-feature is a ``run.step(feature, "<id>")`` in ``drive(run, page)`` of ``drive/<feature>.py``, in source
+order, and its line joins the messages of the ``run.check`` calls after it, which the drive prints as ``ok:`` under
+``STEP <feature> | <id>`` in ``drive.txt``. A message is a string literal, a module constant (a name the module binds
+only once, at its top level, to a string) or an f-string of those; any other placeholder of an f-string is printed as
+its source in braces. The command fails, naming the file, the line and what to do, on any other form of a call on
+``run`` that it would otherwise have to guess: a step or a check without exactly two positional arguments or with a
+starred one, a step name that is no string literal, a message of another kind, a placeholder with a conversion or a
+format spec, a check before the first step, a step or a check outside ``drive`` or inside a function or lambda in it,
+``run.step`` or ``run.check`` used other than as the called function, and a ``Run`` parameter not named ``run``.
+Checks in the shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the
+section: the section maps this module's own steps and checks.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+from collections import Counter
 from pathlib import Path
 import sys
 
 from drive import FEATURES, feature
 
 DRIVE = Path(__file__).resolve().parent / "drive"
+CALLS = frozenset({"step", "check"})
+
+
+class Unreadable(Exception):
+    """A call on ``run`` in a form the command does not read; ``str`` is the file, the line and what to do."""
+
+
+def _refuse(module: str, node: ast.AST, what: str) -> Unreadable:
+    return Unreadable(f"{module}:{getattr(node, 'lineno', 1)}: {what}")
 
 
 def _constants(tree: ast.Module) -> dict[str, str]:
-    return {
-        target.id: node.value.value
-        for node in tree.body
-        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-        for target in node.targets
-        if isinstance(target, ast.Name)
-    }
+    """Names the module binds exactly once, at its top level, to a string literal."""
+
+    top: dict[str, list[str]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        else:
+            continue
+        if isinstance(target, ast.Name) and isinstance(value, ast.Constant) and isinstance(value.value, str):
+            top.setdefault(target.id, []).append(value.value)
+    bound = Counter(name for node in ast.walk(tree) for name in _binds(node))
+    return {name: values[0] for name, values in top.items() if len(values) == 1 and bound[name] == 1}
 
 
-def _text(node: ast.expr, constants: dict[str, str]) -> str:
+def _binds(node: ast.AST) -> list[str]:
+    """Names ``node`` binds or declares, by the binding constructs of the Python language reference ("Naming and
+    binding"): targets of assignment, ``for``, ``with``, ``:=`` and ``del``, parameters, imports, ``def`` and
+    ``class``, ``except ... as``, capture patterns, type parameters, ``global`` and ``nonlocal``."""
+
+    if isinstance(node, ast.Name):
+        return [node.id] if isinstance(node.ctx, (ast.Store, ast.Del)) else []
+    if isinstance(node, ast.arg):
+        return [node.arg]
+    if isinstance(node, ast.alias):
+        return [(node.asname or node.name).split(".")[0]]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return list(node.names)
+    if isinstance(node, ast.MatchMapping):
+        return [node.rest] if node.rest else []
+    if isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+        return [node.name] if node.name else []
+    if isinstance(node, (ast.TypeVar, ast.ParamSpec, ast.TypeVarTuple)):
+        return [node.name]
+    return []
+
+
+def _message(node: ast.expr, constants: dict[str, str], module: str) -> str:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    if isinstance(node, ast.JoinedStr):
-        return "".join(_text(part, constants) for part in node.values)
-    if isinstance(node, ast.FormattedValue) and isinstance(node.value, ast.Name) and node.value.id in constants:
-        return constants[node.value.id]
-    if isinstance(node, ast.FormattedValue):
-        return "{" + ast.unparse(node.value) + "}"
-    return "{" + ast.unparse(node) + "}"
+    if isinstance(node, ast.Name) and node.id in constants:
+        return constants[node.id]
+    if not isinstance(node, ast.JoinedStr):
+        raise _refuse(
+            module,
+            node,
+            f"run.check has the message `{ast.unparse(node)}`; give it as a string literal, a module constant or an "
+            "f-string, so the map can print it",
+        )
+    parts = []
+    for part in node.values:
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
+            parts.append(part.value)
+        elif isinstance(part, ast.FormattedValue) and part.conversion == -1 and part.format_spec is None:
+            value = part.value
+            parts.append(constants[value.id] if isinstance(value, ast.Name) and value.id in constants else f"{{{ast.unparse(value)}}}")
+        else:
+            raise _refuse(
+                module,
+                node,
+                "run.check has an f-string placeholder with a conversion or a format spec; format the value before the "
+                "f-string, so the map prints what the drive prints",
+            )
+    return "".join(parts)
 
 
-def _run_calls(tree: ast.Module) -> list[ast.Call]:
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "run"
-        and node.func.attr in {"step", "check"}
-    ]
+def _two_positional(call: ast.Call, module: str) -> tuple[ast.expr, ast.expr]:
+    assert isinstance(call.func, ast.Attribute)
+    if call.keywords or len(call.args) != 2 or any(isinstance(arg, ast.Starred) for arg in call.args):
+        raise _refuse(
+            module,
+            call,
+            f"run.{call.func.attr} takes exactly two positional arguments here, `{ast.unparse(call)}` does not; "
+            f"write it as run.{call.func.attr}(<{'feature' if call.func.attr == 'step' else 'condition'}>, "
+            f"<{'name' if call.func.attr == 'step' else 'message'}>)",
+        )
+    return call.args[0], call.args[1]
+
+
+def _drive(tree: ast.Module, module: str) -> ast.FunctionDef:
+    drives = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "drive"]
+    if len(drives) != 1:
+        raise _refuse(module, tree, "the module has no single top-level `def drive(run, page)`; write one")
+    return drives[0]
+
+
+def _own_calls(function: ast.FunctionDef) -> list[ast.Call]:
+    """Calls ``run.step``/``run.check`` in ``function`` itself, not in a function, lambda or class inside it."""
+
+    calls: list[ast.Call] = []
+    stack: list[ast.AST] = list(function.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Call) and _is_run_call(node.func):
+            calls.append(node)
+        stack.extend(ast.iter_child_nodes(node))
     return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
+
+
+def _is_run_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr in CALLS
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "run"
+    )
+
+
+def _refuse_other_forms(tree: ast.Module, own: list[ast.Call], module: str) -> None:
+    """Fails on ``run.step``/``run.check`` anywhere but as the called function of ``own``, and on a ``Run`` parameter
+    with another name, whose calls the map would not see."""
+
+    read = {id(call.func) for call in own}
+    for node in ast.walk(tree):
+        if _is_run_call(node) and id(node) not in read:
+            assert isinstance(node, ast.Attribute)
+            raise _refuse(
+                module,
+                node,
+                f"run.{node.attr} is used outside the body of drive() or not as a call there; call it in drive() "
+                "itself, so the map sees the step it prints under",
+            )
+        if isinstance(node, ast.arg) and node.arg != "run" and node.annotation is not None:
+            if ast.unparse(node.annotation).rsplit(".", 1)[-1] == "Run":
+                raise _refuse(module, node, f"the Run parameter `{node.arg}` is not named run; the map reads calls on run")
+
+
+def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
+    """Each sub-feature of a drive module's ``source`` with the messages of its checks; ``module`` names it in a
+    refusal (``Unreadable``)."""
+
+    tree = ast.parse(source)
+    constants = _constants(tree)
+    drive = _drive(tree, module)
+    own = _own_calls(drive)
+    _refuse_other_forms(tree, own, module)
+    steps: list[tuple[str, list[str]]] = []
+    for call in own:
+        assert isinstance(call.func, ast.Attribute)
+        _, second = _two_positional(call, module)
+        if call.func.attr == "step":
+            if not (isinstance(second, ast.Constant) and isinstance(second.value, str)):
+                raise _refuse(module, call, "run.step names its sub-feature without a string literal; write the name as one")
+            steps.append((second.value, []))
+        elif not steps:
+            raise _refuse(module, call, "run.check comes before the first run.step; move it after the step it checks")
+        else:
+            steps[-1][1].append(_message(second, constants, module))
+    if not steps:
+        raise _refuse(module, drive, "drive() has no run.step; name each sub-feature with one")
+    return steps
 
 
 def section(name: str) -> str:
     module = DRIVE / f"{feature(name).module.removeprefix('drive.')}.py"
-    tree = ast.parse(module.read_text(encoding="utf-8"))
-    constants = _constants(tree)
-    steps: list[tuple[str, list[str]]] = []
-    for call in _run_calls(tree):
-        assert isinstance(call.func, ast.Attribute)
-        if call.func.attr == "step":
-            step = call.args[1] if len(call.args) == 2 else None
-            if not (isinstance(step, ast.Constant) and isinstance(step.value, str)):
-                raise SystemExit(f"{module.name}:{call.lineno}: run.step names its sub-feature without a string literal")
-            steps.append((step.value, []))
-        elif steps and len(call.args) == 2:
-            steps[-1][1].append(_text(call.args[1], constants))
-    if not steps:
-        raise SystemExit(f"{module.name} has no run.step")
+    steps = sub_features(module.read_text(encoding="utf-8"), module.name)
     command = f"`scripts/sub_features.py --feature {name}`"
     lines = [
         "## Sub-features",
@@ -84,8 +211,12 @@ def section(name: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--feature", required=True, choices=[each.name for each in FEATURES])
+    try:
+        printed = section(parser.parse_args().feature)
+    except Unreadable as refusal:
+        raise SystemExit(str(refusal)) from None
     # Bytes, so the Windows console (cp1252) neither refuses Polish letters nor turns line ends into CRLF.
-    sys.stdout.buffer.write(section(parser.parse_args().feature).encode("utf-8"))
+    sys.stdout.buffer.write(printed.encode("utf-8"))
     return 0
 
 

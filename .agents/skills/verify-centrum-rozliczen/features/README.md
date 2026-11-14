@@ -151,9 +151,11 @@ behaviour, then exactly these H2s in order:
    `STEP <feature> | <id>` lines in `drive.txt`, and a section that names
    `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
 2. `How to get to it (user POV)`: every entry point Dad has.
-3. `Driving it with Playwright for Python`: starts with `Preconditions:`, then
+3. `Driving it with Playwright for Python`: the one command that drives the
+   feature and where its proof stands in the evidence. A file whose
+   `Sub-features` is not yet the command's output keeps `Preconditions:` and
    labelled bullets pairing each action with the exact handle and the
-   observable result.
+   observable result, until #1629 and #1630 move it.
 4. `Gotchas`: traps that waste or invalidate a run.
 
 When a slice adds a feature, add its file in this directory, its module in
