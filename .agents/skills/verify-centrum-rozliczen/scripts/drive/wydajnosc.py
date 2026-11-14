@@ -32,6 +32,7 @@ from drive.common import (
     read_text,
     replace_file,
 )
+from drive.waiting import Budget
 from atrapy.scenariusz_centrum import COLLECTIVE_HEADERS, LAST_COMPLETE
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
@@ -173,7 +174,7 @@ class Browsing:
 
     def page(self, context: BrowserContext) -> tuple[Page, CDPSession]:
         page = context.new_page()
-        page.set_default_timeout(20_000)
+        page.set_default_timeout(Budget.SLOWED.ms)
         cdp = context.new_cdp_session(page)
         cdp.send("Performance.enable")
         cdp.send("Emulation.setCPUThrottlingRate", {"rate": self.cpu})
@@ -398,7 +399,7 @@ def _live_filling(browsing: Browsing, measured: Measured, collective_file: Path)
         page.wait_for_timeout(SETTLE_MS)
         mark, seen, before = len(requests), _fetch_count(page), script_ms(cdp)
         for _ in range(LIVE_CHECKS):
-            with page.expect_response(lambda response: urlsplit(response.url).path == VERSION_PATH, timeout=10_000):
+            with page.expect_response(lambda response: urlsplit(response.url).path == VERSION_PATH, timeout=Budget.SCREEN.ms):
                 pass
         page.wait_for_timeout(SETTLE_MS)
         checks = [end - start for path, start, end in _fetches(page, seen) if path == VERSION_PATH]
@@ -413,7 +414,7 @@ def _live_filling(browsing: Browsing, measured: Measured, collective_file: Path)
         _toggle_live_value(collective_file)
         page.wait_for_function(
             "([counter, shown]) => document.querySelector(counter).textContent !== shown",
-            arg=[counter, shown], polling="raf", timeout=10_000,
+            arg=[counter, shown], polling="raf", timeout=Budget.SCREEN.ms,
         )
         on_screen = float(page.evaluate("() => window.__wydajnosc.lastMutation"))
         page.wait_for_timeout(SETTLE_MS)

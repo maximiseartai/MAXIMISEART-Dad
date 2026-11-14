@@ -32,6 +32,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
+from drive.waiting import Budget
 from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -421,7 +422,7 @@ def _completed(answer: dict[str, object], row: dict[str, object]) -> str:
 def _kind_answer(run: Run, kind: str, name: str | None = None) -> dict[str, object]:
     """The kind's table from the server; the evidence keeps it without the row texts, which are workbook content."""
 
-    with urllib.request.urlopen(f"{run.url.rstrip('/')}{API}/{kind}", timeout=10) as response:
+    with urllib.request.urlopen(f"{run.url.rstrip('/')}{API}/{kind}", timeout=Budget.SCREEN.value) as response:
         answer = json.load(response)
     assert isinstance(answer, dict)
     (run.evidence / "api" / f"{name or f'uzupelnienie-tabela-{kind}'}.json").write_text(

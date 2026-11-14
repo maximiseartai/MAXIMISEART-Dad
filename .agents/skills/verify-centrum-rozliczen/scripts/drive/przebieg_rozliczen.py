@@ -29,6 +29,7 @@ from drive.common import (
     start_card_warns_while_open,
     stop_banner,
 )
+from drive.waiting import Budget
 from harness import Log, Pace
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER, UNKNOWN_WORKER
 from atrapy.workbooks import excel_lock
@@ -271,7 +272,7 @@ def drive(run: Run, page: Page) -> None:
         counters = live.locator('dl[aria-label="Liczniki"]')
         expect(counters).to_contain_text("Zapisane szablony0")
         # The second Szablon pracownika is paced, so the counters stay at one written while it runs.
-        expect(live).to_contain_text(f"Szablony pracowników · {workers[1]}", timeout=10_000)
+        expect(live).to_contain_text(f"Szablony pracowników · {workers[1]}", timeout=Budget.SCREEN.ms)
         expect(counters).to_contain_text("Zapisane szablony1")
         view = current_run(run, "przebieg-na-zywo")
         progress = view["progress"]
@@ -312,7 +313,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "przebieg-zapisane")
     outcome = page.get_by_label("Wynik")
-    expect(outcome).to_contain_text("Rozliczenia pracowników gotowe", timeout=20_000)
+    expect(outcome).to_contain_text("Rozliczenia pracowników gotowe", timeout=Budget.SLOWED.ms)
     result = finished_result(run, "przebieg-zapisane")
     summary = result["summary"]
     assert isinstance(summary, dict)
