@@ -106,9 +106,12 @@ def _read(path: Path) -> bytes:
 
 
 def _create(path: Path, content: bytes) -> None:
+    """Zapisuje nową Kopię ``content`` pod ``path``; Kopia o tej nazwie, która już jest, to ``FileExistsError``, a plik
+    w miejscu folderu Kopii to ``NotADirectoryError``, a nie Kopia o tej nazwie."""
+
     try:
         path.parent.mkdir(exist_ok=True)
-    except FileExistsError as error:  # plik w miejscu folderu Kopii, nie Kopia o tej nazwie
+    except FileExistsError as error:
         raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), str(path.parent)) from error
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
     with os.fdopen(descriptor, "wb") as file:
@@ -173,7 +176,8 @@ def _replacement(
 
     ``prepare`` biegnie po zgodnym sprawdzeniu zapisu, przed kontrolą blokady Excela (chwila Kopii z zegara procesu),
     i oddaje krok, który biegnie po tej kontroli, tuż przed podmianą (Kopia INTERMAX albo nic); oba zgłaszają swoją
-    odmowę jako ``_Refused``.
+    odmowę jako ``_Refused``. Plik tymczasowy, którego nie da się utworzyć, to ``Refusal.WRITE_FAILED``
+    (``WorkbookSaveError``); podmiana nie przepuszcza ``OSError``.
     """
 
     def write(temporary: Path) -> None:
@@ -220,7 +224,7 @@ def _replacement(
         write_atomically(register, write, replace=replace)
     except _Refused as refused:
         return refused.refusal
-    except WorkbookSaveError:  # pliku tymczasowego nie da się utworzyć; podmiana nie przepuszcza ``OSError``
+    except WorkbookSaveError:
         return Refusal.WRITE_FAILED
     return None
 
@@ -251,20 +255,25 @@ def replace_register(
         copy = intermax_copies.named(copies, before, now())
 
         def make_copy() -> None:
+            """Kopia INTERMAX ``current`` pod nazwą ``copy``. Kopia o tej nazwie, która już jest, także zapisana przez
+            kogoś po sprawdzeniu nazwy, zostaje nietknięta (``Refusal.COPY_EXISTS``); folder Kopii, którego nie da się
+            przeszukać, to ``Refusal.COPY_FAILED``. Do ``made`` trafia każda Kopia tego kroku, także jej część, której
+            zapis się nie udał, a nigdy Kopia, która już była."""
+
             try:
-                taken = disk.exists(copy.path)  # Kopia o tej nazwie, która już jest, zostaje nietknięta
-            except OSError as error:  # folderu Kopii nie da się przeszukać
+                taken = disk.exists(copy.path)
+            except OSError as error:
                 raise _Refused(Refusal.COPY_FAILED) from error
             try:
                 disk.create(copy.path, current)
-            except FileExistsError as error:  # także Kopia, którą ktoś zapisał po sprawdzeniu nazwy
+            except FileExistsError as error:
                 taken = True
                 raise _Refused(Refusal.COPY_EXISTS) from error
             except OSError as error:
                 raise _Refused(Refusal.COPY_EXISTS if taken else Refusal.COPY_FAILED) from error
             finally:
                 if not taken:
-                    made.append(copy)  # cała albo jej część, której zapis się nie udał
+                    made.append(copy)
 
         return make_copy
 
