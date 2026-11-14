@@ -70,7 +70,9 @@ zmieniony poza Centrum) przy pamięci bez tej zmiany puszcza ją jeszcze raz, ta
 (usunięty folder).
 
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
-``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
+``settings_router``. Próby skrzynki i Przypomnień (``tools/proba_*``) czytają przez ``read_snapshot``, które niczego
+nie pisze; Skrypt dla maszyn czyta Listę Wykonawców regułą ``WORKERS.parse`` bez Historii i pamięci, a Reguły ilości
+bierze z Wydania.
 """
 
 from __future__ import annotations
@@ -154,7 +156,7 @@ _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | Fie
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
     dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje
-    (``workers_usable``)."""
+    (odmowa ``refusal.workers_unusable``)."""
 
     folders: FolderSettings
     workers: Read[WorkerList] | Unreadable
@@ -843,8 +845,8 @@ _SECTION: Final = re.compile(r"[.\[]")
 
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
-    """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela;
-    nie dopisuje Historii ani pamięci."""
+    """Migawka bez zapisu dla prób skrzynki i Przypomnień (``tools/proba_*``): plik, przy złej treści ostatnia dobra z
+    pamięci właściciela; nie dopisuje Historii ani pamięci."""
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
