@@ -1,10 +1,11 @@
 """Edytor Reguł ilości (ADR 0033): formularz reguły z kontraktu ↔ reguła silnika ``QuantityRule`` i zmiana listy reguł.
 
-Formularz niczego nie sprawdza sam. Regułę z niego sprawdza silnik razem z resztą reguł i Listą Urządzeń
-(``QuantityRules``), a ``checked`` zamienia jego problem na odmowę z polem formularza (``FieldPath`` względem reguły:
-``to``, ``jesli[0].tekst``, ``to.wpisy[1].kolumna``). Miejsce problemu silnik daje swoim tekstem
-(``reguly[<id>].jesli[0].tekst``): ``checked`` zdejmuje przedrostek reguły o znanym id i przyjmuje tylko formy z listy
-(``_RULE_FIELD``), a każda inna forma to odmowa bez pola, ze zdaniem nad formularzem. Sam formularz odmawia tylko tego,
+Formularz niczego nie sprawdza sam. Reguły po zmianie sprawdza silnik bez Listy Urządzeń (``rule_list_problem``), a
+``form_problem`` zamienia jego problem na odmowę z polem formularza (``FieldPath`` względem reguły: ``to``,
+``jesli[0].tekst``, ``to.wpisy[1].kolumna``). Miejsce problemu silnik daje swoim tekstem (``reguly[<id>].jesli[0].tekst``):
+``form_problem`` zdejmuje przedrostek reguły o znanym id i przyjmuje tylko formy z listy (``_RULE_FIELD``), a każda inna
+forma to odmowa bez pola, ze zdaniem nad formularzem. Czy reguły pasują do Listy Urządzeń, sprawdza właściciel Ustawień
+jako zmianę pary, tak samo dla edytora i „Cofnij” (``CentrumSettings._dad_change``). Sam formularz odmawia tylko tego,
 czego typ silnika nie wyrazi: reguły bez działania i godziny, która nie jest godziną z minutą.
 
 Nowa reguła dostaje id ``regula-<n>`` z najmniejszym ``n`` od 1, którego nie ma żadna reguła teraz ani żaden klucz
@@ -32,20 +33,18 @@ from rozliczenia.quantity_engine import (
     ContainsComponent,
     ContractFirstWord,
     DeviceGroup,
-    DeviceList,
     DevicesText,
     Fill,
     HasGroup,
     LeaveEmpty,
     Multiplier,
     QuantityRule,
-    QuantityRules,
-    QuantityRulesRefused,
     Scope,
     StartedAt,
     TextMode,
     Write,
     WriteNothing,
+    rule_list_problem,
 )
 
 SCOPES: Final[Mapping[Scope, contract.RuleScope]] = {Scope.KNOWN: "known", Scope.UNKNOWN: "unknown", Scope.EVERY: "every"}
@@ -116,17 +115,29 @@ def edited_id(before: tuple[QuantityRule, ...], after: tuple[QuantityRule, ...])
     return next((rule.id for rule in after if old.get(rule.id) != rule), None)
 
 
-def checked(rules: tuple[QuantityRule, ...], devices: DeviceList, rule_id: str | None) -> QuantityRules | FieldProblem:
-    """Reguły po zmianie sprawdzone przez silnik z Listą Urządzeń ``devices``; problem reguły ``rule_id`` ma pole
-    formularza, każdy inny tylko zdanie."""
+def form_problem(rules: tuple[QuantityRule, ...], rule_id: str | None) -> FieldProblem | None:
+    """Problem reguł po zmianie z edytora, którego nie usunie żadna Lista Urządzeń (``rule_list_problem``): problem reguły
+    ``rule_id`` ma pole formularza, każdy inny tylko zdanie; ``None``: reguły są dobre same w sobie."""
 
-    try:
-        return QuantityRules(rules, devices)
-    except QuantityRulesRefused as refused:
-        problem = refused.problem
-        prefix = f"reguly[{rule_id}]."
-        place = problem.field.removeprefix(prefix) if rule_id is not None and problem.field.startswith(prefix) else None
-        return FieldProblem(None if place is None else _field(place), problem.message)
+    problem = rule_list_problem(rules)
+    if problem is None:
+        return None
+    prefix = f"reguly[{rule_id}]."
+    place = problem.field.removeprefix(prefix) if rule_id is not None and problem.field.startswith(prefix) else None
+    return FieldProblem(None if place is None else _field(place), problem.message)
+
+
+def component_field(form: contract.RuleForm, component: str) -> FieldPath | None:
+    """Pole formularza reguły z wyborem składnika ``component``: pierwszy warunek „zawierają”, potem pierwszy wpis razy
+    ten składnik (``None``: formularz go nie wybiera); przy nim stoi odmowa właściciela o składniku spoza listy."""
+
+    for index, condition in enumerate(form.conditions):
+        if isinstance(condition, contract.ComponentCondition) and condition.component == component:
+            return FieldPath("jesli", index, "skladnik")
+    writes = form.action.writes if isinstance(form.action, contract.FillAction) else []
+    return next(
+        (FieldPath("to", "wpisy", index, "skladnik") for index, write in enumerate(writes) if write.component == component), None
+    )
 
 
 _RULE_FIELD: Final = re.compile(

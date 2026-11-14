@@ -1,4 +1,5 @@
 import * as React from "react"
+import { cn } from "cn"
 
 import { previewQuantityRules } from "@/api/centrum"
 import { failureMessage } from "@/api/client"
@@ -169,11 +170,21 @@ function Summary({ preview }: { preview: PreviewReady }) {
         {files} {plural(files, { one: "ostatni Plik zbiorczy", few: "ostatnie Pliki zbiorcze", many: "ostatnich Plików zbiorczych" })}
         {" · "}różnice z Kontroli ilości: {preview.differences_before} → {preview.differences_after}
       </p>
-      {preview.unread.length === 0 ? null : (
-        <p className="text-sm text-muted-foreground">Nie dało się przeczytać Pliku zbiorczego okresu {preview.unread.join(", ")}.</p>
-      )}
+      <UnreadPeriods periods={preview.unread} />
     </div>
   )
+}
+
+/**
+ * Okresy po Przebiegu rozliczeń, których Pliku zbiorczego nie dało się przeczytać: jedno zdanie, bez okresów nic. Mówi
+ * je podgląd zmiany reguły i podpowiedzi sekcji Urządzenia, bo oba czytają ostatnie Pliki zbiorcze.
+ */
+export function UnreadPeriods({ periods, className }: { periods: ReadonlyArray<string>; className?: string }) {
+  if (periods.length === 0) {
+    return null
+  }
+
+  return <p className={cn("text-sm text-muted-foreground", className)}>Nie dało się przeczytać Pliku zbiorczego okresu {periods.join(", ")}.</p>
 }
 
 function Row({ row }: { row: PreviewRow }) {

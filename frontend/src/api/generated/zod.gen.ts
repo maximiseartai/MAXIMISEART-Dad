@@ -54,6 +54,10 @@ export const zApiTiming = z.object({
         'changeQuantityRule',
         'removeQuantityRule',
         'previewQuantityRules',
+        'addDevice',
+        'changeDevice',
+        'removeDevice',
+        'getDeviceSuggestions',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -217,6 +221,23 @@ export const zComponentCondition = z.object({
 });
 
 /**
+ * ComponentForm
+ *
+ * Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy
+ * Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez
+ * ``xg``.
+ */
+export const zComponentForm = z.object({
+    name: z.string(),
+    other_spellings: z.array(z.string()),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]).nullable()
+});
+
+/**
  * ContractCondition
  *
  * Pierwsze słowo ``UMOWA`` jest tym słowem.
@@ -330,6 +351,28 @@ export const zDeviceComponent = z.object({
         'tv',
         'extender'
     ]).nullable()
+});
+
+/**
+ * DeviceSuggestion
+ *
+ * Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;
+ * ``orders``: w ilu takich zleceniach jest.
+ */
+export const zDeviceSuggestion = z.object({
+    spelling: z.string(),
+    orders: z.int()
+});
+
+/**
+ * DeviceSuggestions
+ *
+ * Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku
+ * zbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta.
+ */
+export const zDeviceSuggestions = z.object({
+    suggestions: z.array(zDeviceSuggestion),
+    unread: z.array(z.string())
 });
 
 /**
@@ -1948,7 +1991,10 @@ export const zExceptionSaved = z.object({
  * QuantityRulesSettings
  *
  * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
- * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;
+ * ``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania
+ * liczą bez niego, a ``rules_problem`` przy Regułach ilości z Wydania, że ich zmiana zapisze się dopiero, gdy tata
+ * zwolni jego zapis.
  */
 export const zQuantityRulesSettings = z.object({
     rules: z.array(zQuantityRuleSentence),
@@ -1961,7 +2007,7 @@ export const zQuantityRulesSettings = z.object({
 /**
  * QuantityRulesSaved
  *
- * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
  * zapis niczego nie zmienił.
  */
 export const zQuantityRulesSaved = z.object({
@@ -3418,6 +3464,38 @@ export const zChangeAutostartBody = zAutostartChange;
  * Successful Response
  */
 export const zChangeAutostartResponse = zChoice;
+
+export const zAddDeviceBody = zComponentForm;
+
+/**
+ * Successful Response
+ */
+export const zAddDeviceResponse = zQuantityRulesSaved;
+
+/**
+ * Successful Response
+ */
+export const zGetDeviceSuggestionsResponse = zDeviceSuggestions;
+
+export const zRemoveDevicePath = z.object({
+    device_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveDeviceResponse = zQuantityRulesSaved;
+
+export const zChangeDeviceBody = zComponentForm;
+
+export const zChangeDevicePath = z.object({
+    device_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeDeviceResponse = zQuantityRulesSaved;
 
 export const zChangeFoldersBody = zFoldersChange;
 

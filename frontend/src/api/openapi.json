@@ -1747,6 +1747,181 @@
         }
       }
     },
+    "/api/settings/devices": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add Device",
+        "operationId": "addDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/devices/suggestions": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Suggestions",
+        "description": "Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``).",
+        "operationId": "getDeviceSuggestions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSuggestions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/devices/{device_id}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Device",
+        "operationId": "changeDevice",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove Device",
+        "operationId": "removeDevice",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantityRulesSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zła reguła ilości z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/folders": {
       "put": {
         "tags": [
@@ -3134,6 +3309,10 @@
               "changeQuantityRule",
               "removeQuantityRule",
               "previewQuantityRules",
+              "addDevice",
+              "changeDevice",
+              "removeDevice",
+              "getDeviceSuggestions",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -3544,6 +3723,46 @@
         ],
         "title": "ComponentCondition",
         "description": "``URZĄDZENIA`` zawierają składnik Listy Urządzeń (``component``: jego id)."
+      },
+      "ComponentForm": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "other_spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Other Spellings"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "router",
+                  "tv",
+                  "extender"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "other_spellings",
+          "group"
+        ],
+        "title": "ComponentForm",
+        "description": "Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy\nCentrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez\n``xg``."
       },
       "Configuration": {
         "properties": {
@@ -3987,6 +4206,52 @@
         ],
         "title": "DeviceComponent",
         "description": "Składnik Listy Urządzeń: nazwa (pierwszy zapis), inne zapisy tej samej rzeczy i grupa (``None``: żadna)."
+      },
+      "DeviceSuggestion": {
+        "properties": {
+          "spelling": {
+            "type": "string",
+            "title": "Spelling"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "spelling",
+          "orders"
+        ],
+        "title": "DeviceSuggestion",
+        "description": "Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;\n``orders``: w ilu takich zleceniach jest."
+      },
+      "DeviceSuggestions": {
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceSuggestion"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "suggestions",
+          "unread"
+        ],
+        "title": "DeviceSuggestions",
+        "description": "Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku\nzbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta."
       },
       "DevicesCondition": {
         "properties": {
@@ -7296,7 +7561,7 @@
           "change"
         ],
         "title": "QuantityRulesSaved",
-        "description": "Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:\nzapis niczego nie zmienił."
+        "description": "Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:\nzapis niczego nie zmienił."
       },
       "QuantityRulesSettings": {
         "properties": {
@@ -7352,7 +7617,7 @@
           "devices_problem"
         ],
         "title": "QuantityRulesSettings",
-        "description": "Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i\n``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to."
+        "description": "Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i\n``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;\n``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania\nliczą bez niego, a ``rules_problem`` przy Regułach ilości z Wydania, że ich zmiana zapisze się dopiero, gdy tata\nzwolni jego zapis."
       },
       "Queued": {
         "properties": {

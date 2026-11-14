@@ -344,6 +344,23 @@ FEATURES = (
         ),
         needs=("przebieg-rozliczen",),
     ),
+    # Edits the Lista Urządzeń with the suggestions from the Plik zbiorczy that Przebieg rozliczeń settled; ends with the
+    # list of the Release again (both changes undone in Historia).
+    Feature(
+        "lista-urzadzen",
+        (
+            "370-urzadzenia-podpowiedzi",
+            "371-urzadzenia-inny-zapis",
+            "372-urzadzenia-zapis-innego-skladnika",
+            "373-urzadzenia-skladnik-potrzebny-regule",
+            "374-urzadzenia-po-podpowiedzi",
+            "375-urzadzenia-historia",
+            "376-urzadzenia-waskie",
+            "377-urzadzenia-nieczytelny-plik",
+            "378-urzadzenia-nieczytelny-plik-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
     # Stops Uruchomienia of an empty Folder okresu after Dad's week.
     Feature(
         "diagnoza",

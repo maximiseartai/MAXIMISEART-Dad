@@ -22,7 +22,7 @@ from hypothesis import strategies as st
 from rozliczenia import tool_files
 from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
-from rozliczenia.quantity_engine import OrderContent, RuleResult, WithoutRule, evaluate
+from rozliczenia.quantity_engine import Component, DeviceList, OrderContent, RuleResult, WithoutRule, evaluate
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
@@ -123,6 +123,33 @@ def test_skladnik_z_doklejonymi_literami_to_skladnik_ktorego_reguly_ilosci_nie_z
     devices = " ".join([*components[:glued], " ".join(words), *components[glued + 1 :]])
 
     assert isinstance(_rules(devices), WithoutRule), devices
+
+
+# Słowo spoza Listy Urządzeń: żaden zapis z Wydania nie zaczyna się od ``q``.
+_UNKNOWN_WORD = st.text(LETTERS, max_size=4).map(lambda letters: "q" + letters)
+
+
+@PROPERTY
+@given(st.data(), st.lists(st.tuples(st.integers(1, 3), st.one_of(st.sampled_from(COMPONENTS), _UNKNOWN_WORD)), min_size=1, max_size=5))
+def test_podpowiedz_listy_urzadzen_to_kolejne_nieznane_slowa_a_po_ich_dodaniu_lista_zna_kazde_slowo(
+    data: st.DataObject, items: list[tuple[int, str]]
+) -> None:
+    written = data.draw(_written(items))
+    expected: list[list[str]] = []
+    # Kolejne nieznane słowa to jeden zapis, a słowo z krotnością zaczyna nowy (docstring ``unknown_spellings``).
+    for index, (count, name) in enumerate(items):
+        if name.startswith("q"):
+            if index and items[index - 1][1].startswith("q") and count == 1:
+                expected[-1].append(name.casefold())
+            else:
+                expected.append([name.casefold()])
+    devices = DEFAULT_QUANTITY_RULES.devices
+
+    suggested = devices.unknown_spellings(written)
+    extended = DeviceList((*devices.components, *(Component(f"podpowiedz-{index}", (spelling,)) for index, spelling in enumerate(dict.fromkeys(suggested)))))
+
+    assert suggested == tuple(" ".join(run) for run in expected), written
+    assert extended.unknown_spellings(written) == (), written
 
 
 # Tekst CZYNNOŚCI bez ``k``, więc bez frazy ``akt int``.
