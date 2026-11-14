@@ -7,9 +7,7 @@ Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11
 Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026; „Cztery źródła” zostają źródłami wystąpień, ale żadne z nich nie zakłada już issue.
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
 
-Ten ADR wchodzi bez zmiany kodu, skilli i bramki.
-Wszystkie decyzje o merge'u (warunek z polem `Idiom:`, krok CI z zasadą „niczego nie ukrywa”, usunięcie Q11 i `ZGODA KORZEŃ`) wdraża razem jeden PR bramki ticketu #1676, czyli ten, który zmienia `tools/lib/bramka_korzenia.py` i dokłada krok Required CI. Do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`.
-PR narzędzia dowodu (#1697) nie zmienia żadnej reguły merge'a, więc jego merge niczego z tej listy nie włącza.
+Ten ADR wchodzi bez zmiany kodu, skilli i bramki. Każdą decyzję wdraża wykonawca z tabeli w sekcji „Wdrożenie”, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`.
 
 ## Kontekst
 
@@ -57,13 +55,13 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Sprawdza to `tools/scal_pr.py` bez osądu i bez linii zgody.
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
 - **Reguła chwastu niczego nie ukrywa poza właścicielem.** Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela z `AGENTS.md`.
-  Mechanizm, który to sprawdza w Required CI, i jego granicę wyznacza PR kroku CI ticketu #1676, a granicę pokazują próbki `ZNANE_LUKI` w jego teście, nie ten ADR. Formy, które musi rozstrzygnąć, zebrały przeglądy #1693 r1–r4 w [komentarzu #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075).
+  Mechanizm, który to sprawdza w Required CI, i jego granicę wyznacza PR bramki ticketu #1676, a granicę pokazują próbki `ZNANE_LUKI` w jego teście, nie ten ADR. Formy, które musi rozstrzygnąć, zebrały przeglądy #1693 r1–r4 w [komentarzu #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075).
   Powód: cztery rundy przeglądu tego ADR znalazły cztery formy ukrycia w prozie, w tym zwolnienie całego `TID251` dla 16 plików właścicieli, które istnieje już na `main`. Granicę mechanizmu da się sprawdzić tylko na kodzie z testem.
 - **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
-- **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` idzie do mutacji zmienionych linii (#1634), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
+- **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
   To jedyne miejsce osądu w pętli. Pisze je niezależny recenzent, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
-  Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu.
+  Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
 
 ### Issues „Chwast”
 
@@ -88,6 +86,20 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 Odczyt 11.12.2026 z ADR 0034 (#1636) zostaje i czyta te liczby.
 Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpienia z blokadą w Required CI zamiast sprawdzenia w `tools/scal_pr.py`.
 
+## Wdrożenie
+
+| Decyzja | Wykonawca | Do jego merge'a obowiązuje |
+|---|---|---|
+| Warunek merge'a z polem `Idiom:`, dowód reguły w `tools/scal_pr.py`, usunięcie Q11 i `ZGODA KORZEŃ` | PR bramki ticketu #1676 (zmienia `tools/lib/bramka_korzenia.py`, `tools/scal_pr.py` i skille `przeglad` i `pr`) | bramka z ADR 0031 |
+| Reguła chwastu niczego nie ukrywa poza właścicielem | ten sam PR bramki, krok Required CI z kryteriami z [komentarza #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075) | tłumienie i zwolnienie w konfiguracji ukrywają odpalenie |
+| Bez nowych issues „Chwast” | ten sam PR bramki: publikacja werdyktu przestaje zakładać i uzupełniać issues (`rejestr_korzeni.after_verdict`) | publikacja werdyktu zakłada issues jak dziś |
+| Zamknięcie otwartych issues „Chwast” z odsyłaczem do raportu | właściciel #1676, jednorazowo zaraz po merge'u PR bramki | issues zostają otwarte |
+| Narzędzie dowodu reguły | #1697 (`tools/na_scalonych_pr.py --regula`), które samo żadnej reguły merge'a nie zmienia | dowód liczy się ręcznie |
+| Status „Werdykt i bramka” w Actions, tylko raport | PR statusu ticketu #1676 | merge ze starego checkoutu nie zostawia śladu na GitHubie |
+| Miara Q1: ucieczki, powroty idiomu, czekanie, fałszywe alarmy reguł, lista `Idiom: bez reguły` i pole „trigger” w poniedziałkowym raporcie | #1626, którego zakres ten ADR zmienia: zgody znikają, a zostają merge'e poza `tools/scal_pr.py` | raport liczy powtórzenia kodów jak w ADR 0031 |
+
+Wszystkie wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` nie obowiązuje bez zasady „niczego nie ukrywa” ani bez końca zakładania issues.
+
 ## Odrzucone warianty
 
 - **Kod korzenia jako jednostka chwastu (ADR 0031).** 36 z 47 powrotów łączy tylko etykieta, więc bramka żąda szczebla wyżej od mechanizmu, którego wcześniejsze wyrwanie nie mogło objąć.
@@ -102,10 +114,10 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 
 ## Konsekwencje
 
-- Do merge'a PR bramki ticketu #1676 obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5). Zasada „niczego nie ukrywa” i warunek z polem `Idiom:` wchodzą tym samym merge'em, więc żadna z nich nie obowiązuje bez drugiej.
+- Do merge'a PR bramki ticketu #1676 obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5).
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
-- Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie.
+- Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie od merge'a PR statusu ticketu #1676.
 - Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).
