@@ -48,6 +48,13 @@ def _replaced(old: str, *new: str) -> str:
 
 
 TEMPLATE = _text(*LINES)
+# Pole ``Idiom:`` po Szczeblu w trzech postaciach z ADR 0036 i Idiom, który ``szablon_werdyktu.findings`` z niego czyta:
+# id reguły, klasa idiomu bez reguły i wcześniejsze Ważne (PR, Ważne, runda).
+IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] | None]]] = {
+    "drugie-wystapienie": ("Idiom: komentarz-w-src jak #1553 W1 r2", ("komentarz-w-src", None, (1553, "W1", 2))),
+    "ucieczka-reguly": ("Idiom: os.name", ("os.name", None, None)),
+    "bez-reguly": ("Idiom: bez reguły stan-kroku jak #1553 W2 r1", (None, "stan-kroku", (1553, "W2", 1))),
+}
 PRZECHODZA = {
     "szablon": TEMPLATE,
     "nowy-kod-spoza-listy": _replaced(ROOT, "Korzeń: NOWY R-NOWY-KOD - opis kodu, którego nie ma na liście."),
@@ -60,6 +67,7 @@ PRZECHODZA = {
     "cytat-pola-w-bloku-tyld": _replaced(EVIDENCE, "Dowód: grep:", "~~~text", "Gdzie: tools/x.py:3", "Szczebel: (a) - cytat", "~~~"),
     "cytat-pola-we-wcietym-bloku-kodu": _replaced(EVIDENCE, "Dowód: grep:", "", "    Gdzie: tools/x.py:3", "    Korzeń: R-NIE-MA - cytat", ""),
     "linia-dowodu-300-znakow-w-bloku-kodu": _replaced(EVIDENCE, "Dowód:", "```", "x" * 300, "```"),
+    **{f"idiom-{name}": _replaced(RUNG, RUNG, line) for name, (line, _) in IDIOMY.items()},
 }
 ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "brak-pola-gdzie": (_replaced(WHERE), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
@@ -107,7 +115,14 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "sprawdzone-lista-w-liscie": (_text(*LINES, "  - podpunkt"), (1, 1), "po „## Sprawdzone” tylko punkty „- …”, a jest blok <ul>"),
     "proza-po-sprawdzone": (_text(*LINES, "", "Wszystko dobrze."), (1, 1), "a jest linia „Wszystko dobrze.”"),
     "cytat-po-sprawdzone": (_text(*LINES, "", "> cytat"), (1, 1), "a jest blok <blockquote> „cytat”"),
-    "proza-po-szczeblu": (_replaced(RUNG, RUNG, "Dalsza proza."), (1, 1), "W1: po Szczeblu nic więcej, a jest linia „Dalsza proza.”"),
+    "proza-po-szczeblu": (_replaced(RUNG, RUNG, "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Idiom:, a jest linia „Dalsza proza.”"),
+    "proza-po-idiomie": (_replaced(RUNG, RUNG, "Idiom: os.name", "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Idiom:, a jest linia „Dalsza proza.”"),
+    "idiom-w-dowodzie": (_replaced(EVIDENCE, EVIDENCE, "Idiom: os.name"), (1, 1), f"a po Dowodzie jest linia „Idiom: os.name” ({QUOTE})"),
+    "idiom-przed-szczeblem": (_replaced(RUNG, "Idiom: os.name", RUNG), (1, 1), "W1: linia „Idiom: os.name” to nie „Szczebel:"),
+    "idiom-bez-reguly-z-klasa-spoza-listy": (_replaced(RUNG, RUNG, "Idiom: bez reguły inna-klasa jak #1553 W1 r2"), (1, 1), "W1: „Idiom: bez reguły inna-klasa jak #1553 W1 r2” to nie „Idiom: <id> jak #N W<n> r<k>”"),
+    "idiom-bez-reguly-bez-wczesniejszego-waznego": (_replaced(RUNG, RUNG, "Idiom: bez reguły brak-testu"), (1, 1), "W1: „Idiom: bez reguły brak-testu” to nie"),
+    "idiom-jak-bez-rundy": (_replaced(RUNG, RUNG, "Idiom: komentarz-w-src jak #1553 W1"), (1, 1), "W1: „Idiom: komentarz-w-src jak #1553 W1” to nie"),
+    "puste-pole-idiom": (_replaced(RUNG, RUNG, "Idiom:"), (1, 1), "W1: „Idiom:” to nie"),
     "proza-zamiast-szczebla": (_replaced(RUNG, "Dalsza proza.", RUNG), (1, 1), "W1: linia „Dalsza proza.” to nie „Szczebel:"),
     "pass-z-waznym": (_text(*LINES[:5], *LINES[7:]), (0, 0), "w treści Ważne 1"),
 }
@@ -130,6 +145,11 @@ WERDYKTY = {
     "sprawdzone": _text("## Sprawdzone", "- diff"),
     "drobne": _text("### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
     "wazne": _text(*_MAJOR, "## Sprawdzone", "- diff"),
+    # Ważne z polem Idiom: dla warunku merge'a (ADR 0036): drugie wystąpienie, ucieczka, bez reguły i inna reguła.
+    "wazne-idiom-drugie-wystapienie": _text(*_MAJOR, "Idiom: zakazane-wywolanie jak #1553 W1 r2", "## Sprawdzone", "- diff"),
+    "wazne-idiom-ucieczka": _text(*_MAJOR, "Idiom: zakazane-wywolanie", "## Sprawdzone", "- diff"),
+    "wazne-idiom-bez-reguly": _text(*_MAJOR, "Idiom: bez reguły brak-testu jak #1553 W1 r2", "## Sprawdzone", "- diff"),
+    "wazne-idiom-innej-reguly": _text(*_MAJOR, "Idiom: inna-regula jak #1553 W2 r1", "## Sprawdzone", "- diff"),
     "proza": "Wszystko dobrze, bez uwag.",
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }
