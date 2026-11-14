@@ -46,9 +46,9 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 ### Drugie wystąpienie idiomu
 
-- **Pole werdyktu.** Recenzent oznacza drugie wystąpienie idiomu polem Ważnego `Wzorzec: jak #N Wn rk` (pierwsze wystąpienie bez reguły) albo `Wzorzec: <id reguły>` (ucieczka istniejącej reguły).
+- **Pole werdyktu.** Recenzent oznacza drugie wystąpienie idiomu polem Ważnego `Idiom: jak #N Wn rk` (pierwsze wystąpienie bez reguły) albo `Idiom: <id reguły>` (ucieczka istniejącej reguły).
   Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył.
-- **Warunek merge'a.** PR z takim Ważnym scala się dopiero wtedy, gdy jego diff dodaje albo rozszerza regułę tego wzorca, albo dodaje próbkę `ZNANE_LUKI` dla reguły, której mechanizm tej postaci nie wyrazi, i sprawdza to deterministycznie `tools/scal_pr.py`, bez linii zgody.
+- **Warunek merge'a.** PR z takim Ważnym scala się dopiero wtedy, gdy jego diff dodaje albo rozszerza regułę tego idiomu, albo dodaje próbkę `ZNANE_LUKI` dla reguły, której mechanizm tej postaci nie wyrazi, i sprawdza to deterministycznie `tools/scal_pr.py`, bez linii zgody.
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a próbka znanej luki zapisuje granicę w kodzie, który pada, gdy przestaje być prawdą (ADR 0034).
 - **Dowód reguły.** Regułę przyjmuje się z wynikiem `tools/na_scalonych_pr.py` w Evidence PR: łapie `Gdzie` każdego przypadku na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
@@ -97,4 +97,4 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 - `tools/scal_pr.py` sprawdza, że diff dodaje albo rozszerza regułę, ale nie odtwarza jej dowodu; wynik `tools/na_scalonych_pr.py` ocenia recenzent jak każde Evidence.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
 - Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie.
-- Pole `Wzorzec:` w werdykcie nazywa idiom kodu, a nie Wzorzec rozliczenia z [`GLOSSARY.md`](../../GLOSSARY.md).
+- Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).
