@@ -79,12 +79,13 @@ nie ściga się z przeładowaniem. Postaci propozycji okno nie czyta, bo tej te�
 kwotą końcową jest ``price_all`` z tej odpowiedzi, a ``#cena_all2``, które się do niej nie odświeży, to
 ``UnexpectedPage``. Odpowiedź ``result: nok`` to wygasła sesja (``LoggedOut``).
 
-Przekazanie do akceptacji okno robi przyciskiem ``#button_forward_to_accept`` i „Tak” w ``#dialog_forward_yes_no``: czeka
-na koniec żądania ``action_change_status.php`` i na przeładowanie strony, które robi skrypt efenix po odpowiedzi, jak po
-„Załaduj do zlecenia”. Gdy skrypt efenix po przycisku Przekazania pokaże zamiast okna zmiany statusu okno informacji
-``#dialog_info``, efenix odmówił Przekazania: okno czyta tekst ``#dialog_info_field_info`` jako ``ForwardRefusal``,
-zamyka okno informacji i oddaje odmowę, a „Tak” nie klika. Każde okno dialogowe okno zamyka dopiero po końcu jego animacji
-pokazania, bo bootstrap efenix (``.modal.fade``) nie zamyka okna w jej trakcie.
+Przekazanie do akceptacji okno robi przyciskiem ``#button_forward_to_accept`` i „Tak” w ``#dialog_forward_yes_no``:
+czeka na koniec żądania ``action_change_status.php`` i na przeładowanie strony, które robi skrypt efenix po odpowiedzi,
+jak po „Załaduj do zlecenia”. Status zmieniło już żądanie Przekazania (``_status_answer``), więc strony po przeładowaniu
+okno nie czyta, a tylko sprawdza jej adres. Gdy skrypt efenix po przycisku Przekazania pokaże zamiast okna zmiany
+statusu okno informacji ``#dialog_info``, efenix odmówił Przekazania: okno czyta tekst ``#dialog_info_field_info`` jako
+``ForwardRefusal``, zamyka okno informacji i oddaje odmowę, a „Tak” nie klika. Każde okno dialogowe okno zamyka dopiero
+po końcu jego animacji pokazania, bo bootstrap efenix (``.modal.fade``) nie zamyka okna w jej trakcie.
 Strażnik zmiany statusu (``window``) stoi na całym kontekście przeglądarki okna, więc widzi także
 żądania ramek i kart, które otworzy strona: każde żądanie, w którego ścieżce jest ``action_change_status``, przepuszcza
 tylko wtedy, gdy okno jest w Przekazaniu do akceptacji, to jego pierwsze takie żądanie, a jest to POST z polem ``xstatus``
@@ -191,8 +192,6 @@ LOGIN_POLL_MS: Final = 2_000
 _STATUS_POLL_MS: Final = 50
 """Co tyle okno sprawdza, czy żądanie Przekazania do akceptacji skończyło się albo strażnik je przerwał."""
 
-# Dzień wybrany kalendarzem pickadate pola, tak jak klik dnia: biegnie ``onSet`` strony, które sprawdza zakres dat.
-# Miesiąc pickadate liczy od 0. ``false``, gdy pole nie ma kalendarza.
 _PICK_DAY: Final = """(field, [year, month, day]) => {
     const jquery = window.jQuery;
     const picker = typeof jquery === 'function' && typeof jquery(field).pickadate === 'function' ? jquery(field).pickadate('picker') : null;
@@ -200,6 +199,8 @@ _PICK_DAY: Final = """(field, [year, month, day]) => {
     picker.set('select', [year, month - 1, day]);
     return true;
 }"""
+"""Dzień wybrany kalendarzem pickadate pola, tak jak klik dnia: biegnie ``onSet`` strony, które sprawdza zakres dat.
+Miesiąc pickadate liczy od 0. ``false``, gdy pole nie ma kalendarza."""
 _SHOWS: Final = "([selector, text]) => document.querySelector(selector)?.textContent.trim() === text"
 _COUNT: Final = "(selector) => ({count: document.querySelectorAll(selector).length})"
 _SETTLED: Final = """(selector) => {
@@ -218,16 +219,17 @@ class BrowserEfenix:
     """Okno efenix na stronie ``page`` z listą zleceń pod adresem ``url``; implementuje ``efenix_window.Efenix``."""
 
     def __init__(self, page: Page, url: str, *, timeout_ms: int = TIMEOUT_MS) -> None:
+        """``_sent``: przyciski zmiany zlecenia, które okno kliknęło (``_answer``), a przy Przekazaniu do akceptacji
+        żądania, które przepuścił strażnik (``guard``). Stan strażnika zmiany statusu: ``_forwarding``, czy okno czeka
+        na swoje żądanie Przekazania do akceptacji, ``_blocked``, pierwsze żądanie, które przerwał, i ``_part``, część
+        strony ostatniego działania okna."""
+
         self._page = page
         self._url = url
         self._timeout_ms = timeout_ms
         self._positions: dict[str, str] = {}
-        # Przyciski zmiany zlecenia, które okno kliknęło (``_answer``), a przy Przekazaniu do akceptacji żądania, które
-        # przepuścił strażnik (``guard``).
         self._sent = SentChanges()
         self._opened = False
-        # Strażnik zmiany statusu (``guard``): czy okno czeka na swoje żądanie Przekazania do akceptacji, pierwsze żądanie,
-        # które przerwał, i część strony ostatniego działania okna.
         self._forwarding = False
         self._blocked: StatusChangeBlocked | None = None
         self._part = PagePart.LIST
@@ -238,7 +240,7 @@ class BrowserEfenix:
         """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki.
 
         Najpierw pyta kartę o jej dokument (``:root``), bo karta zamknięta w trakcie nawigacji przerywa ją błędem, który
-        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` jest jeszcze fałszem, gdy okno czeka na
+        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` bywa jeszcze fałszem, gdy okno czeka na
         stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało nawigację, więc po niej
         ``Page.is_closed`` już je zna. Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o zamknięciu
         mówi wtedy też ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie odpowiada,
@@ -252,11 +254,13 @@ class BrowserEfenix:
     def guard(self, route: Route) -> None:
         """Strażnik zmiany statusu na kontekście przeglądarki okna: przepuszcza tylko pierwsze żądanie Przekazania do
         akceptacji w czasie, gdy okno na nie czeka: POST z ``xstatus`` dokładnie „Do akceptacji” i ``order_id`` dokładnie
-        zlecenia otwartego w oknie; każde inne przerywa i zapamiętuje przyczynę pierwszego przerwanego."""
+        zlecenia otwartego w oknie; każde inne przerywa i zapamiętuje przyczynę pierwszego przerwanego. Żądanie, którego
+        treści nie da się przeczytać (błąd Playwrighta albo treść spoza UTF-8), nie jest Przekazaniem, więc też je
+        przerywa."""
 
         try:
             blocked = self._blocked_cause(route.request)
-        except (PlaywrightError, ValueError):  # treść żądania, której nie da się przeczytać, nie jest Przekazaniem
+        except (PlaywrightError, ValueError):
             blocked = StatusChangeBlocked.OTHER_STATUS if self._forwarding else StatusChangeBlocked.OUTSIDE_FORWARD
         with suppress(PlaywrightError):
             if blocked is None:
@@ -327,7 +331,9 @@ class BrowserEfenix:
 
     @_action(PagePart.LIST)
     def open_list(self) -> None:
-        """Otwiera listę zleceń; ``EfenixUnreachable``, gdy okno nie otworzyło jeszcze efenix, a adres nie odpowiada."""
+        """Otwiera listę zleceń; ``EfenixUnreachable``, gdy okno nie otworzyło jeszcze efenix, a adres nie odpowiada.
+        Strona błędu serwera efenix to ``UnexpectedPage`` ze statusem HTTP, także przy starcie, a nie
+        ``EfenixUnreachable``: adres odpowiada."""
 
         try:
             response = self._go(self._url)
@@ -338,7 +344,6 @@ class BrowserEfenix:
         try:
             self._element(Element.NUMBER, PagePart.LIST)
         except UnexpectedPage as unread:
-            # Strona błędu serwera efenix: adres odpowiada, więc to nie ``EfenixUnreachable``, także przy starcie.
             if (error_page := _error_page(response)) is not None:
                 raise WindowStop.of(PagePart.LIST, error_page) from unread
             raise
@@ -359,7 +364,11 @@ class BrowserEfenix:
 
         Zamkniętą kartę rozpoznaje po ``Page.is_closed`` przed każdym sprawdzeniem, bo czekanie Playwrighta na adres karty
         zamkniętej przed nim nie zgłasza jej zamknięcia, tylko kończy się po swoim limicie. Efenix pyta najwyżej co
-        ``LOGIN_POLL_MS``, także gdy karta nie stoi na stronie logowania i czekanie na zmianę jej adresu wraca od razu.
+        ``LOGIN_POLL_MS``, także gdy karta nie stoi na stronie logowania i czekanie na zmianę jej adresu wraca od razu:
+        wtedy do następnego pytania mija i tak ``LOGIN_POLL_MS``. Czekanie na zmianę adresu kończy się po limicie, a w
+        karcie zamkniętej w jego trakcie błędem Playwrighta, który okno pomija, bo o zamknięciu mówi ``Page.is_closed``.
+        ``EfenixUnreachable`` ma za przyczynę błąd pytania bez odpowiedzi, a brak logowania (``LoggedOut``) nie ma
+        przyczyny.
         """
 
         try:
@@ -393,14 +402,11 @@ class BrowserEfenix:
                 if remaining_ms <= 0:
                     failure = None if unanswered is None else unanswered.failure
                     stop = WindowStop.of(PagePart.LIST, LoginExpired(failure, asked - answered, self._timeout_ms))
-                    # Niedostępny efenix ma za przyczynę błąd pytania bez odpowiedzi, a brak logowania nie ma przyczyny.
                     if unanswered is not None and isinstance(stop, EfenixUnreachable):
                         raise stop from unanswered.__cause__
                     raise stop
-                # Czekanie kończy się po limicie, a w karcie zamkniętej w jego trakcie błędem; o zamknięciu mówi ``is_closed``.
                 with suppress(PlaywrightError):
                     self._page.wait_for_url(lambda url: not _on_login_page(url), timeout=min(LOGIN_POLL_MS, remaining_ms))
-                    # Karta zeszła ze strony logowania albo na niej nie stoi: do następnego pytania mija i tak ``LOGIN_POLL_MS``.
                     rest_ms = LOGIN_POLL_MS - round((clock() - asked) * 1000)
                     if rest_ms > 0:
                         self._page.wait_for_timeout(rest_ms)
@@ -543,8 +549,6 @@ class BrowserEfenix:
             if _redirected_to_login(answer):
                 raise WindowStop.of(PagePart.FORWARD, LoginSign.REDIRECT)
 
-        # Status zmieniło już żądanie Przekazania (``_status_answer``), więc strony po przeładowaniu okno nie czyta,
-        # a tylko sprawdza jej adres.
         self._reloaded(accept)
         self._ensure_logged_in(PagePart.FORWARD)
         return None
@@ -849,12 +853,11 @@ def window(
     Z ``login`` na stronie logowania czeka na logowanie taty (``BrowserEfenix.wait_for_login``, czas czekania mierzy
     ``clock``), bez niego to ``LoggedOut``. Od początku bloku kontekst przeglądarki strony ma strażnika zmiany statusu
     (``BrowserEfenix.guard``) do swojego zamknięcia, a żądanie, które strażnik przerwał po ostatnim działaniu okna, to
-    ``UnexpectedPage`` na końcu bloku.
+    ``UnexpectedPage`` na końcu bloku. Strażnika okno nie zdejmuje (``unroute``), bo zdjęcie czeka na stronę, której
+    skrypt nie odpowiada, a kontekst z przeglądarką okna i tak zamyka się po bloku (``chrome``, ``chromium``).
     """
 
     efenix = BrowserEfenix(page, url, timeout_ms=timeout_ms)
-    # Strażnika okno nie zdejmuje: ``unroute`` na stronie, której skrypt nie odpowiada, czeka na nią, a kontekst z
-    # przeglądarką okna i tak zamyka się po bloku (``chrome``, ``chromium``).
     page.context.route(_changes_status, efenix.guard)
     if login is None:
         efenix.open_list()
@@ -870,15 +873,15 @@ def default_profile() -> Path:
     return TOOL_ROOT / PROFILE_DIRECTORY
 
 
-# Funkcje Chromium, które każda przeglądarka okna wyłącza ponad listę Playwrighta. ``TcpPortRandomizationWin``: Chromium
-# 156 na Windows 11 22H2 i nowszym (także Windows Server 2025 runnerów CI) losuje port lokalny każdego połączenia, a
-# Windows odmawia wtedy czasem połączenia z WSAENOBUFS (``net::ERR_NO_BUFFER_SPACE``), choć porty są wolne
-# (crbug.com/572515601, microsoft/playwright#43545). Playwright wyłącza ją sam od microsoft/playwright#43605, scalonego
-# po wydaniu 1.64.1.
 _DISABLED_FEATURES: Final = ("TcpPortRandomizationWin",)
+"""Funkcje Chromium, które każda przeglądarka okna wyłącza ponad listę Playwrighta. ``TcpPortRandomizationWin``:
+Chromium 156 na Windows 11 22H2 i nowszym (także Windows Server 2025 runnerów CI) losuje port lokalny każdego
+połączenia, a Windows odmawia wtedy czasem połączenia z WSAENOBUFS (``net::ERR_NO_BUFFER_SPACE``), choć porty są
+wolne (crbug.com/572515601, microsoft/playwright#43545). Playwright wyłącza ją sam od microsoft/playwright#43605,
+scalonego po wydaniu 1.64.1."""
 _DISABLE_FEATURES: Final = "--disable-features="
-# Przełączniki ``--disable-features``, które Playwright daje przeglądarce danego kanału, raz na proces.
 _PLAYWRIGHT_DISABLING: dict[str | None, tuple[str, ...]] = {}
+"""Przełączniki ``--disable-features``, które Playwright daje przeglądarce danego kanału, raz na proces."""
 
 
 class LaunchOptions(TypedDict):
@@ -902,8 +905,10 @@ def launch_options(playwright: Playwright, *, channel: str | None = None, argume
 
 
 def _playwright_disabling(playwright: Playwright, channel: str | None) -> tuple[str, ...]:
+    """Przełączniki ``--disable-features`` Playwrighta dla przeglądarki ``channel`` z linii poleceń przeglądarki bez
+    okna, uruchomionej z ``--enable-automation``, bo ta flaga odblokowuje ``Browser.getBrowserCommandLine``."""
+
     if channel not in _PLAYWRIGHT_DISABLING:
-        # ``--enable-automation`` odblokowuje ``Browser.getBrowserCommandLine``.
         probe = playwright.chromium.launch(channel=channel, headless=True, args=["--enable-automation"])
         try:
             line = probe.new_browser_cdp_session().send("Browser.getBrowserCommandLine")["arguments"]
@@ -948,7 +953,8 @@ def chrome(
     Profil pamięta logowanie między uruchomieniami i nie jest profilem taty z jego kartami. Okno czeka na logowanie taty
     w ``login`` i zamyka się z przeglądarką na końcu bloku. ``channel`` ``None`` to Chromium Playwrighta, a ``headless``
     i ``arguments`` (np. port debugowania) są dla testów i weryfikacji; ``BrowserNotStarted``, gdy przeglądarka nie
-    wystartowała.
+    wystartowała. Przeglądarka, którą tata zamknął już sam, nie zmienia wyniku: jej zamknięcie na końcu bloku pomija
+    błąd Playwrighta.
     """
 
     with _playwright() as playwright:
@@ -964,7 +970,6 @@ def chrome(
             with window(page, url, login=login, login_timeout_ms=login_timeout_ms) as efenix:
                 yield efenix
         finally:
-            # Przeglądarka, którą tata zamknął już sam, nie zmienia wyniku.
             with suppress(PlaywrightError):
                 context.close()
 
