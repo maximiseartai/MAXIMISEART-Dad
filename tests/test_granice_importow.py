@@ -686,7 +686,7 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     """Miejsca w ``tree``, które składają ``PreparedRun`` obok ``Catalog.prepared``: jego konstruktor (nazwa albo
     atrybut ``PreparedRun``) i kopia przez ``replace`` z ``dataclasses`` albo
     ``copy`` albo przez ``__replace__``, z innym plikiem metryk (``metrics=``) albo z wyrażenia, którego tekst ma
-    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``), a podklasy odmawia samo ``PreparedRun`` w trakcie działania (``__init_subclass__``).
+    ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``), a podklasę (jakkolwiek powstała) zatrzymuje start Uruchomienia w Centrum (``process_kind.startable`` w ``runs.Run``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
     wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).

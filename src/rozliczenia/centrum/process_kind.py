@@ -454,6 +454,12 @@ atrybucie ``PreparedRun`` ``tests/test_granice_importow.py``, ale nie ``type(got
 przeglądowi."""
 
 
+_NO_SUBCLASSES: Final = (
+    "Uruchomienie gotowe do startu nie ma podklas: składa je tylko Catalog.prepared, a rdzeń, plik metryk i silnik "
+    "procesu podmienia Catalog.steered, Catalog.with_metrics i Catalog.with_engine."
+)
+
+
 @final
 class PreparedRun(Generic[InputsT, SummaryT]):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
@@ -463,10 +469,13 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
     ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
-    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``). Nie ma podklas: podklasa z własnym ``__init__`` albo
-    ``conduct`` składałaby się sama, bez katalogu, więc ``__init_subclass__`` rzuca ``TypeError`` przy każdej, pod
-    każdą nazwą i także zrobionej w trakcie działania (``type(gotowe)``, ``type()``, ``types.new_class``); typ
-    ``PreparedRun[…]`` w adnotacji podklasy nie robi.
+    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
+
+    Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Regułę trzyma
+    start Uruchomienia w Centrum: ``runs.Run`` przyjmuje tylko obiekt, którego typ to dokładnie ``PreparedRun``
+    (``startable``), bez względu na to, jak powstała jego klasa. ``__init_subclass__`` tylko mówi tę regułę wcześniej,
+    przy tworzeniu podklasy; typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Znane luki odmowy startu są
+    próbkami ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
     """
 
     __slots__ = (
@@ -508,10 +517,7 @@ class PreparedRun(Generic[InputsT, SummaryT]):
         self.quantity_rules: Final = quantity_rules
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError(
-            "Uruchomienie gotowe do startu nie ma podklas: składa je tylko Catalog.prepared, a rdzeń, plik metryk "
-            "i silnik procesu podmienia Catalog.steered, Catalog.with_metrics i Catalog.with_engine."
-        )
+        raise TypeError(f"{_NO_SUBCLASSES} Podklasa: {cls.__qualname__}.")
 
     @property
     def dry_run(self) -> bool:
@@ -540,3 +546,12 @@ class PreparedRun(Generic[InputsT, SummaryT]):
 
     def progress_view(self, snapshot: ProgressSnapshot) -> runs_contract.Progress:
         return self.kind.view.progress(snapshot, dry_run=self.dry_run)
+
+
+def startable(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:
+    """``run``, gdy jego typ to dokładnie ``PreparedRun``; podklasa, jakkolwiek powstała, i obiekt z podmienionym
+    ``__class__`` dają ``TypeError`` z drogą naprawy. Woła je start Uruchomienia w Centrum (``runs.Run``)."""
+
+    if type(run) is not PreparedRun:
+        raise TypeError(f"{_NO_SUBCLASSES} Start dostał {type(run).__qualname__}.")
+    return run

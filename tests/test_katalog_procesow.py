@@ -35,7 +35,7 @@ from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, settling_centrum
-from tests.fixtures.znane_luki import modul
+from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
 from atrapy.settlement import write_worker_list
@@ -50,11 +50,14 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
 
 
 _GOTOWE_URUCHOMIENIE: Final = (
-    "import types\nimport typing\nfrom typing import Any\n\nfrom rozliczenia.centrum import process_kind\n"
+    "import threading\nimport types\nimport typing\nfrom typing import Any\n\n"
+    "from rozliczenia.centrum import process_kind, runs\n"
     "from rozliczenia.centrum.process_kind import PreparedRun\n\ngotowe = object.__new__(PreparedRun)\n\n\n"
+    "class Bez:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
 )
-# Każda postać podklasy, o której wiemy (przegląd #1680, runda 2: nazwa przypisana poza importem i type(gotowe)
-# przechodziły ruff, mypy z type: ignore i sprawdzenie katalogu w tests/test_granice_importow.py).
+# Postacie podklasy, którym odmawia już jej utworzenie (``__init_subclass__``; przegląd #1680, runda 2: nazwa
+# przypisana poza importem i type(gotowe) przechodziły ruff, mypy z type: ignore i sprawdzenie katalogu
+# w tests/test_granice_importow.py).
 PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "nazwa z importu": "class Moja(PreparedRun[Any, Any]):\n    pass\n",
     "nazwa z importu pod aliasem": "from rozliczenia.centrum.process_kind import PreparedRun as _G\n\n\nclass Moja(_G):\n    pass\n",
@@ -94,6 +97,73 @@ def test_typ_uruchomienia_gotowego_do_startu_w_adnotacji_nie_jest_podklasa(tmp_p
     wykonany = modul(plik)
 
     assert wykonany.TYPY == [wykonany.PreparedRun, wykonany.PreparedRun]
+
+
+_WLASNE: Final = "    def conduct(self, interlocutor: object) -> str:\n        return 'własne'\n"
+# Obiekty, które utworzenie podklasy przepuszcza, bo przed PreparedRun w MRO stoi baza z własnym __init_subclass__
+# (przegląd #1698, runda 1), albo które nie są podklasą: każdemu odmawia start Uruchomienia w Centrum.
+URUCHOMIENIA_OBOK_KATALOGU: Final = {
+    "klasa z bazą przed PreparedRun": f"class Moja(Bez, PreparedRun[Any, Any]):\n{_WLASNE}\n\nuruchomienie = object.__new__(Moja)\n",
+    "type() z bazą przed PreparedRun": 'uruchomienie = object.__new__(type("Moja", (Bez, PreparedRun), {}))\n',
+    "type.__new__ wprost": 'uruchomienie = object.__new__(type.__new__(type, "Moja", (Bez, PreparedRun), {}))\n',
+    "types.new_class z metaklasą w kwds": (
+        'Moja = types.new_class("Moja", (Bez, PreparedRun[Any, Any]), {"metaclass": type})\n'
+        "uruchomienie = object.__new__(Moja)\n"
+    ),
+    "metaklasa pochodna z własnym __new__": (
+        "class Meta(type):\n    def __new__(mcls, name, bases, namespace, **kwargs):\n"
+        "        return type.__new__(mcls, name, bases, namespace)\n\n\n"
+        "class Moja(Bez, PreparedRun[Any, Any], metaclass=Meta):\n    pass\n\n\nuruchomienie = object.__new__(Moja)\n"
+    ),
+    "__class__ obcej klasy o tych samych slotach": (
+        f"class Moja(typing.Generic[*PreparedRun.__parameters__]):\n    __slots__ = PreparedRun.__slots__\n\n{_WLASNE}\n\n"
+        "uruchomienie = object.__new__(PreparedRun)\nuruchomienie.__class__ = Moja\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("kod", URUCHOMIENIA_OBOK_KATALOGU.values(), ids=URUCHOMIENIA_OBOK_KATALOGU.keys())
+def test_uruchomienie_w_centrum_startuje_tylko_z_typu_uruchomienia_gotowego_do_startu(kod: str, tmp_path: Path) -> None:
+    """Regułę „Uruchomienie gotowe do startu nie ma podklas” trzyma start Uruchomienia w Centrum (``runs.Run``), więc
+    obiekt innego typu niż ``PreparedRun`` nie startuje, jakkolwiek powstała jego klasa, a odmowa mówi drogę naprawy."""
+
+    plik = tmp_path / "obok_katalogu.py"
+    plik.write_text(_GOTOWE_URUCHOMIENIE + kod + "\nruns.Run(None, uruchomienie, None, threading)\n", encoding="utf-8")
+
+    with pytest.raises(TypeError, match="nie ma podklas: składa je tylko Catalog.prepared.* Start dostał Moja"):
+        modul(plik)
+
+
+_UDAJE_START: Final = (
+    "    def info(self, run_id: str) -> None:\n        return None\n\n"
+    "    def progress_view(self, snapshot: object) -> None:\n        return None\n"
+)
+# Znane luki odmowy startu (tests/fixtures/znane_luki.py): obiekt innego typu niż PreparedRun, który biegnie mimo niej.
+ZNANE_LUKI_STARTU: Final = {
+    "start poza Centrum: conduct wołany wprost (Skrypt dla maszyn, odtworzenie z Logów)": (
+        f"class Moja(Bez, PreparedRun[Any, Any]):\n{_WLASNE}\n\n"
+        "assert object.__new__(Moja).conduct(None) == 'własne'\n"
+    ),
+    "podmiana w biegu: nazwa PreparedRun w process_kind": (
+        f"class Moja(Bez, PreparedRun[Any, Any]):\n{_UDAJE_START}\n\n"
+        "process_kind.PreparedRun = Moja\ntry:\n    runs.Run(None, object.__new__(Moja), None, threading)\n"
+        "finally:\n    process_kind.PreparedRun = PreparedRun\n"
+    ),
+}
+
+
+def test_znane_luki_odmowy_startu_uruchomienia_obok_katalogu(tmp_path: Path) -> None:
+    pliki = zapisz({opis: _GOTOWE_URUCHOMIENIE + kod for opis, kod in ZNANE_LUKI_STARTU.items()}, tmp_path)
+    zgloszenia: dict[str, list[str]] = {}
+    for opis, plik in pliki.items():
+        try:
+            modul(plik)
+        except TypeError as odmowa:
+            zgloszenia[opis] = [f"odmowa: {odmowa}"]
+        else:
+            zgloszenia[opis] = []
+
+    assert_znane_luki(zgloszenia, "tests/test_katalog_procesow.py (ZNANE_LUKI_STARTU)")
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
