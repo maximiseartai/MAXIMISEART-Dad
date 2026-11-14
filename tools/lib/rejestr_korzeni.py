@@ -24,7 +24,11 @@ od chwili założenia ostatniego PR strony (``created:>=``, PR-y z tą samą sek
 po ostatniej zmianie tego nie daje: kursor GitHuba przy ``UPDATED_AT`` to para (``updatedAt``, id), więc PR zmieniony
 między stronami przeskakuje przed kursor i znika ze skanu. Nowe wyszukiwanie zamiast kursora wyszukiwarki omija też
 jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnienia, a ``updatedAt`` tylko rośnie, więc
-brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund.
+brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund. Warunek merge'a z polem
+``Idiom:`` (``idioms``) dokłada do wyszukiwania frazę ``"Idiom: <id>"``, bo potrzebuje tylko PR-ów z polem tego id:
+wyszukiwarka GitHuba szuka jej w tytule, opisie, komentarzach i recenzjach PR (``gh api -X GET search/issues -f
+q='repo:<repo> is:pr "Idiom: kotwica-konca-linii"'`` 14.11.2026 znajduje #1806, który ma ją tylko w komentarzu,
+a słowo z samej treści recenzji #1818 znajduje #1818).
 
 Treść skanu to HTML z GitHuba z tej samej strony GraphQL (``bodyHTML`` opisu, komentarza i recenzji, ``FIELDS``),
 więc rejestr nie woła renderera ``POST /markdown`` ani razu: werdykt czyta ``werdykt_pr.from_graphql``, a opis PR
@@ -75,6 +79,7 @@ TITLE = "Chwast: {code}"
 PAGE = 20
 SEARCH = "repo:{repository} is:pr updated:>={deployed} sort:created-asc"
 SINCE = " created:>={created}"
+PHRASE = ' "Idiom: {rule}"'
 # Pola PR z HTML treści (``bodyHTML``) opisu, komentarzy i recenzji, wspólne dla wyszukiwania i zapytania o jeden PR.
 FIELDS = """
 fragment Pull on PullRequest {
@@ -241,14 +246,17 @@ def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCa
     return [IdiomCase(number, current.number, idiom) for current in rounds if current.verdict.decision == "FAIL" for idiom in current.findings.idioms]
 
 
-def idioms(repository: str, deployed: datetime | None) -> list[IdiomCase]:
+def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomCase]:
     """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` w PR-ach ``repository`` zmienionych od wdrożenia szablonu ``deployed``
-    (``None``: szablon niewdrożony, więc żadnych), w kolejności PR; ten sam skan co ``read``. Błąd GitHuba to wyjątek."""
+    (``None``: szablon niewdrożony, więc żadnych), w kolejności PR; ten sam skan co ``read``, ale tylko PR-ów z frazą
+    ``"Idiom: <rule>"`` (``PHRASE``), więc jego koszt rośnie z liczbą PR-ów z polem tej reguły, a nie ze wszystkimi.
+    Fraza wyszukiwarki dzieli tekst na słowa bez znaków przestankowych, więc znajduje też pola innych id (``Idiom: x``
+    przy ``x-y``) i każdą wzmiankę w tekście; pola i ich id czyta potem treść każdego PR. Błąd GitHuba to wyjątek."""
 
     if deployed is None:
         return []
     found = []
-    for node in _pulls(repository, deployed):
+    for node in _pulls(repository, deployed, PHRASE.format(rule=rule)):
         pull = _pull(node if _complete(node) else pull_node(repository, node["number"]))
         found.extend(idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql)))
     return sorted(found, key=lambda case: (case.pull, case.round))
@@ -286,11 +294,12 @@ def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write
     return lines
 
 
-def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
-    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz: strona to wyszukiwanie od chwili
-    założenia ostatniego PR poprzedniej strony, więc zmiana PR w trakcie skanu nie przesuwa stron."""
+def _pulls(repository: str, deployed: datetime, text: str = "") -> Iterator[dict[str, Any]]:
+    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz, z tekstem wyszukiwania ``text``
+    (pusty: wszystkie): strona to wyszukiwanie od chwili założenia ostatniego PR poprzedniej strony, więc zmiana PR
+    w trakcie skanu nie przesuwa stron."""
 
-    search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")) + text
     seen: set[int] = set()
     since = ""
     while True:

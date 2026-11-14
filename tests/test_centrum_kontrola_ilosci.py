@@ -7,7 +7,7 @@ może wysłać, są znacznikami. Żaden test nie łączy się z GitHubem.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 import json
 from pathlib import Path
 import shutil
@@ -45,7 +45,7 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.zegar_scienny import wall_clock_from
+from tests.fixtures.zegar_scienny import MOMENTS, STEP, wall_clock_from
 from atrapy import pliki_taty
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
@@ -250,6 +250,9 @@ FORBIDDEN = (
     "13:45",
 )
 ALLOWED = ("ZNACZNIK-UMOWA", "ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI")
+# Chwila startu zegara ściennego testu różnic i wyjątku w dniu Centrum przebiegu: minuta 7 daje w każdej strefie co
+# kwadrans minutę 07, 22, 37 albo 52, więc ani godzinę 13:45, ani minutę 13 przed sekundą 45.
+CLOCK_START = datetime.combine(TODAY, time(12, 7), timezone.utc)
 
 
 def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_czynnosci_zrealizowanych(tmp_path: Path) -> None:
@@ -1064,15 +1067,33 @@ def test_zly_plik_wyjatkow_ma_zdanie_w_sekcji_a_lista_pokazuje_rowniez_roznice_b
     assert found["exceptions_problem"] == {"field": None, "message": settings_messages.damaged(EXCEPTIONS_FILE)}
 
 
+def test_zadna_chwila_zegara_testu_roznic_nie_ma_napisu_z_forbidden() -> None:
+    """Test różnic i wyjątku zapisuje tylko chwile ``CLOCK_START + k·STEP`` (``k < MOMENTS``), więc napis z ``FORBIDDEN``
+    w jego wyjściu pochodzi z komórki, a nie z zegara: żadna z tych chwil go nie ma w zapisie ISO (UTC, strefa biegu,
+    ``Z``), w sekundach od epoki ani w godzinie i dacie w żadnej strefie co kwadrans (#1789, #1797: ``14:13:45``)."""
+
+    moments = [CLOCK_START + step * STEP for step in range(MOMENTS)]
+    written = [
+        text
+        for moment in moments
+        for text in (moment.isoformat(), moment.isoformat().replace("+00:00", "Z"), repr(moment.timestamp()), moment.astimezone().isoformat())
+    ]
+    zones = [timezone(timedelta(minutes=minutes)) for minutes in range(-12 * 60, 14 * 60 + 1, 15)]
+    for moment in {moments[0].replace(microsecond=0), moments[-1].replace(microsecond=0)}:
+        written += [moment.astimezone(zone).strftime(shape) for zone in zones for shape in ("%Y-%m-%dT%H:%M:%S", "%d.%m.%Y %H:%M")]
+
+    assert [marker for marker in FORBIDDEN if any(marker in text for text in written)] == []
+
+
 def test_roznice_i_wyjatek_w_historii_i_zgloszeniu_nie_maja_adresu_numerow_wykonawcy_daty_ani_tresci_wiersza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Lista różnic pokazuje tacie URZĄDZENIA i CZYNNOŚCI jak podgląd, bez UMOWA; wyjątek w Historii Ustawień, w
     Logach Centrum i w Zgłoszeniu ma tylko okres, wiersz, kolumnę i wpis taty (ADR 0013, ADR 0032)."""
 
-    # Historia, Logi i Zgłoszenie mają chwilę zegara, a ``FORBIDDEN`` godzinę 13:45 komórki DATA: zegar od południa UTC
-    # dnia Centrum nie pokaże jej w żadnej strefie (13:45 dałaby tylko strefa +1:45, której nie ma).
-    wall_clock_from(monkeypatch, datetime.combine(TODAY, time(12), timezone.utc))
+    # Historia, Logi i Zgłoszenie mają chwilę zegara, a żadna chwila tego zegara nie ma napisu z ``FORBIDDEN``
+    # (``test_zadna_chwila_zegara_testu_roznic_nie_ma_napisu_z_forbidden``).
+    wall_clock_from(monkeypatch, CLOCK_START)
     centrum = centrum_with(tmp_path, [MARKED])
     run_to_end(centrum, dry_run=False)
     response = centrum.client.get(DIFFERENCES_URL).text

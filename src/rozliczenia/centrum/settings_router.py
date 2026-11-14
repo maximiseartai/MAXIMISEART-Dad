@@ -1,8 +1,8 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
-okresów oknem wyboru, otwarcie Rejestru zleceń, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania,
-przełącznik startu razem z Windows, Przypomnienia o raporcie z podglądem maila, Historia Ustawień i cofnięcie jej
-wiersza. Hasła skrzynki nie ma w żadnej
-odpowiedzi.
+okresów oknem wyboru, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania, przełącznik startu razem
+z Windows, Przypomnienia o raporcie z podglądem maila, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma
+w żadnej odpowiedzi. Otwarcie Rejestru zleceń niczego w Ustawieniach nie zapisuje, więc ma własny router
+(``order_register_router``).
 
 Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
 zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
@@ -25,7 +25,6 @@ from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract import settings_reminders as reminders_contract
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
-from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings import inbox, messages
 from rozliczenia.centrum.settings.autostart import AUTOSTART, Unsupported
@@ -49,7 +48,6 @@ from rozliczenia.centrum.settings.owner import (
     SettingsView,
 )
 from rozliczenia.centrum.settings.reminders import EVENING, FIRST, MORNING, REMINDERS, parse_range, parse_time, settings_of
-from rozliczenia.file_state import file_state
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
 from rozliczenia.worker_reports import (
@@ -118,21 +116,6 @@ def settings_router(
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
         return saved(lambda current: replace(current, register=chosen))
-
-    @router.post("/register/open", operation_id="openRegister", responses=NOT_FOUND_OR_CONFLICT)
-    def open_register() -> common_contract.Opened:
-        register = settings.snapshot().folders.register
-        if register is None:
-            raise refusal.register_not_chosen()
-        match file_state(register):
-            case "inaccessible":
-                raise refusal.register_unavailable(register.name)
-            case "missing":
-                raise refusal.register_missing(register.name)
-            case "file":
-                pass
-        platform.open_path(register)
-        return common_contract.Opened(name=register.name)
 
     @router.post("/periods-directory/choose", operation_id="choosePeriodsDirectory")
     def choose_periods_directory() -> settings_contract.Choice:
@@ -212,7 +195,9 @@ def settings_router(
     def undo(change_id: str) -> settings_contract.Choice:
         undone = settings.undo(change_id)
         if isinstance(undone, NotUndoable):
-            raise refusal.settings_change_not_undoable() if undone.known else refusal.settings_change_unknown()
+            if not undone.known:
+                raise refusal.settings_change_unknown()
+            raise refusal.settings_change_not_undoable()
         return choice(settings, undone)
 
     return router
