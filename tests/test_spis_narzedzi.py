@@ -701,7 +701,7 @@ def test_skrypt_systemowego_python3_z_kazdego_pola_workflowu_i_akcji_ktora_githu
 
 # Pliki, których strażnik nie umie przeczytać: opis → pliki drzewa (repo pod ``repo/``, obok niego ``poza/``) i początek
 # odmowy, która nazywa plik.
-NIECZYTELNE = {
+NIECZYTELNE: dict[str, tuple[dict[str, str | bytes], str]] = {
     "parser YAML nie czyta pliku": ({"repo/.github/workflows/zly.yml": "jobs:\n  a:\n    steps:\n      - uses: ./ci/a\n     zły: [\n"}, ".github/workflows/zly.yml: parser YAML"),
     "plik nie jest w UTF-8": ({"repo/.github/workflows/zly.yml": "run: python3 tools/skrypt.py # \xff".encode("latin-1")}, ".github/workflows/zly.yml: parser YAML"),
     "uses po actions/checkout z path: liczone od katalogu roboczego runu": (
