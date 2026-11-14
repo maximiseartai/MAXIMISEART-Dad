@@ -631,7 +631,8 @@ WORKFLOW_SUB_FEATURES = ROOT / ".agents/skills/verify-rozliczenia/scripts/workfl
 
 def test_podfunkcje_mapy_rozliczen_sa_wynikiem_polecenia_z_planu_wariantow() -> None:
     """Plik funkcji ``verify-rozliczenia``, który nazywa polecenie ``workflow_sub_features.py`` swojej funkcji, ma jego
-    wynik (plan wariantów procesu) jako całą sekcję ``## Sub-features``, tuż przed ``## How to get to it (user POV)``."""
+    wynik (plan wariantów procesu) jako całą sekcję ``## Sub-features``, tuż przed ``## How to get to it (user POV)``, a
+    każdy plik z listy ``## Features`` w README nazywa polecenie (D2 #1836)."""
 
     printed = [
         path
@@ -650,6 +651,10 @@ def test_podfunkcje_mapy_rozliczen_sa_wynikiem_polecenia_z_planu_wariantow() -> 
 
     assert printed, "żaden plik mapy verify-rozliczenia nie nazywa polecenia workflow_sub_features.py swojej funkcji"
     assert problems == [], "\n".join(problems)
+    assert sorted(name for name in _linked(ROZLICZENIA) if name not in {path.name for path in printed}) == [], (
+        "plik funkcji z listy ## Features w verify-rozliczenia/features/README.md nie nazywa polecenia "
+        "workflow_sub_features.py: kontrakt mapy mówi, że sekcja każdego pliku funkcji pochodzi z polecenia"
+    )
 
 
 def _skrypt_skilla(monkeypatch: pytest.MonkeyPatch, nazwa: str) -> ModuleType:

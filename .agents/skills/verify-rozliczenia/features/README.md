@@ -58,7 +58,8 @@ the exceptions it catches as `ASSERT FAIL: …`, and any other ends the step wit
 script and its mode, and both ways are read in that script, not in the map. Everything outside the section is prose
 the command does not confirm: `How to get to it` is a few sentences from Dad's point of view, `Driving it` the one
 command and where its evidence is, and `Gotchas` only traps the code does not handle, such as what the variant does
-not reach and which test proves it. Every feature file's section comes from the command.
+not reach and which test proves it. Every feature file's section comes from the command; `tests/test_mapy_funkcji.py`
+fails on a feature file that README does not link or that does not name the command.
 
 ## Features
 

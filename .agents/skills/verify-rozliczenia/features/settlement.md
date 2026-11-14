@@ -72,10 +72,13 @@ from the repository root (macOS: `.venv/bin/python`). The proof is in the eviden
 ## Gotchas
 
 - The variants reach none of these; each has its test: a Plik zbiorczy open in Excel (`py -3 -m pytest
-  tests/test_settlement_engine.py -k plik_zbiorczy_otwarty -q`), a failed write with staging cleanup and retry
-  (`tests/test_settlement_engine.py::test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_completion`),
+  tests/test_settlement_engine.py -k plik_zbiorczy_otwarty -q`), a failed write with staging cleanup and retry, and an
+  unexpected exception, which leaves the engine unchanged with staging removed (the stop „do Maksa”)
+  (`tests/test_settlement_engine.py::test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_completion`,
+  cases `nieoczekiwany-blad` and `nieoczekiwany-blad-wyszukiwania`),
   a Wzorzec opened, deleted or broken after Sprawdzanie (`-k "otwarty_w_zapisywaniu or zepsuty_po_sprawdzaniu or
-  blad_odczytu_wzorca"`), a damaged or unavailable Plik zbiorczy (`-k "nieczytelny_plik_zbiorczy or
+  blad_odczytu_wzorca"`), a damaged or unavailable Plik zbiorczy, which stops in Odczyt danych after a completed
+  Sprawdzanie, or already in Sprawdzanie when its folder gives no access (`-k "nieczytelny_plik_zbiorczy or
   niedostepny_do_odczytu"`), a Wiersz danych without `WYKONAWCA` (`-k wiersz_danych_bez_wykonawcy`), the rules of
   the Lista Wykonawców (`tests/test_centrum_rozliczen.py -k lista_wykonawcow`,
   `tests/test_uruchom_proces.py::test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustawien_bez_uruchomienia`),
@@ -90,6 +93,11 @@ from the repository root (macOS: `.venv/bin/python`). The proof is in the eviden
   `--wykonawcy: Plik wykonawcy.yaml w folderze config ma uszkodzoną treść. Poprawia go Maks.` on stderr and no
   `Rozliczenie pracowników` folder. An unreadable list gives `--wykonawcy: nie można teraz odczytać pliku
   wykonawcy.yaml`, never „niepoprawna”.
+- A metrics record holds the mode, the period, `completed`, the result, the counters, the `routes` and the duration of
+  each stage, and no path or client data
+  (`tests/test_uruchomienie_procesow.py::test_rekord_metryk_ma_liczniki_procesu_i_drogi_zapisu_bez_sciezek_i_danych_klientow`).
+  A metrics record that cannot be saved is a warning and leaves the result as it is
+  (`tests/test_uruchom_proces.py::test_nieudany_zapis_metryk_jest_ostrzezeniem_bez_zmiany_wyniku`).
 - The source file must be named `Rozliczenie {okres} - zbiorcze.xlsx` and live in a folder named after the same period
   token; a token that is not a Tuesday–Monday period (e.g. `09_15_09_2026`) stops with `ZLY_PLIK_ZBIORCZY`.
 - A lock is the exact `~$` filename beside the file; do not kill Excel or delete a user's lock as cleanup.
