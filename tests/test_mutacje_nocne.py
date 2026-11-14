@@ -1607,6 +1607,14 @@ def test_zgloszenie_z_polecenia_workflow_zaklada_issue_i_konczy_sie_ok(
     assert wyjscie[-1] == "MUTACJE NOCNE OK | części 1 | przeżyło 1" + (" | zadania skilli 2 | padło skryptów 1" if ze_skryptami else "")
 
 
+def test_prawdziwy_github_nocy_w_tescie_odmawia_bez_logowania_zamiast_czytac_repozytorium() -> None:
+    """Test, który dostał prawdziwego klienta nocy zamiast atrapy, nie sięga do prawdziwego repozytorium: zgłoszenie
+    pod mutacją ``noc = GITHUB`` założyło tak issue #1500–#1502. Sonda tylko czyta, więc bez straży nic nie pisze."""
+
+    with pytest.raises(RuntimeError, match="gh auth login"):
+        mutacje_nocne.GITHUB.json(f"{REPO}/issues?labels=przezyte-mutacje&state=all&per_page=1&page=1")
+
+
 @pytest.mark.parametrize("brak", ["polecenie", "--baza", "--zapisy", "--czesci", "--run"])
 def test_zgloszenie_bez_argumentu_z_planu_nocy_konczy_sie_bledem_uzycia(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], brak: str
