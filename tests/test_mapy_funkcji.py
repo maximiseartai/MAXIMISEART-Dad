@@ -486,6 +486,11 @@ CZYTANE_POMOCNIKI: Final = {
     "instrukcja": NAPED.format(wstawka="_pomocnik(run)") + POMOCNIK,
     "przypisanie do nazwy": NAPED.format(wstawka="wynik = _pomocnik(run)") + POMOCNIK,
     "przypisanie do dwóch nazw": NAPED.format(wstawka="a = b = _pomocnik(run)") + POMOCNIK,
+    "return funkcji w drive() przed pomocnikiem": NAPED.format(
+        wstawka="def _w_drive() -> int:\n        return 1\n\n    _pomocnik(run)"
+    )
+    + POMOCNIK,
+    "return drive() po pomocniku": NAPED.format(wstawka="_pomocnik(run)\n    return") + POMOCNIK,
     "kroki pomocników między krokami drive()": NAPED.format(
         wstawka="\n    ".join(
             [
