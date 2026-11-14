@@ -7,8 +7,8 @@ nie, także odmowa, nie jest werdyktem o kluczu (``tool_freshness``). Bez pliku 
 zapytania. Każda odpowiedź adaptera na pytanie z kluczem jest werdyktem o tym kluczu: odmowa przy zakładaniu issue
 albo liście issue to „klucz odrzucony”, każda inna odpowiedź Skrzynki (także odmowa treści) to „klucz przyjęty”, a
 brak sieci niczego nie zmienia. Odmowa komentarza, pytania o komentarze issue i poprawki komentarza mówi o issue
-(404: Maks je usunął, #402), nie o kluczu, więc werdyktu nie zmienia; każda wysyłka kolejki najpierw pyta o listę
-albo zakłada issue, więc zły klucz i tak wyjdzie przed komentarzem. Odmowa kroków Archiwum okresu (#844) też nie zmienia
+(404: Maks je usunął), nie o kluczu, więc werdyktu nie zmienia; każda wysyłka kolejki najpierw pyta o listę
+albo zakłada issue, więc zły klucz i tak wyjdzie przed komentarzem. Odmowa kroków Archiwum okresu też nie zmienia
 werdyktu: mówi o uprawnieniu klucza do zapisu treści repozytorium, którego issue nie potrzebują, a tata, który zobaczyłby
 niedziałający Token do Zgłoszeń, nie ma czego naprawiać, gdy Zgłoszenia i komentarze dochodzą.
 
@@ -20,8 +20,8 @@ zleca jedno tanie sprawdzenie (lista otwartych Zgłoszeń), najwyżej jedno nara
 częściej niż co ``NO_ANSWER_KEPT_S``. Werdykt ustala najnowsze pytanie, nie najpóźniejsza odpowiedź: spóźnione
 „przyjęty” sprzed odmowy jej nie cofa.
 
-Listy GitHuba nadążają za zapisem po kilku sekundach: lista issue za nowym issue (#879), lista Release'ów za nowym
-Archiwum okresu (#887). Kolejka Skrzynki szuka na liście tego, co mogła już zapisać, zanim zapisze, więc ``KeyedBox``
+Listy GitHuba nadążają za zapisem po kilku sekundach: lista issue za nowym issue, lista Release'ów za nowym
+Archiwum okresu. Kolejka Skrzynki szuka na liście tego, co mogła już zapisać, zanim zapisze, więc ``KeyedBox``
 czyta listy po zapisach. Każdy zapis, którego skutek widać tylko na liście (zakładanie issue z etykietą, zakładanie
 Archiwum z tagiem, wysłanie albo usunięcie pliku Archiwum), ``KeyedBox`` najpierw notuje z chwilą i identyfikatorem w
 pliku ``opening`` (bez pliku: w pamięci). Odpowiedź ze skutkiem zamienia ten zapis na skutek (issue, Archiwum, plik,
@@ -39,10 +39,10 @@ nazwy (422) i dopisek, że plik czeka. Chwila jest z zegara Centrum (``time.mono
 komputera do jego restartu), a chwila z przyszłości (po restarcie komputera) jest dawna.
 
 Plik ``opening``, którego nie da się odczytać (``OSError``, np. trzyma go antywirus), nie wyklucza zapisu, którego
-``KeyedBox`` nie zna, więc zapis i lista mają jedną zasadę (#909): zapis jest wstrzymany, gdy nie da się odczytać pliku
+``KeyedBox`` nie zna, więc zapis i lista mają jedną zasadę: zapis jest wstrzymany, gdy nie da się odczytać pliku
 przy nim albo przy ostatniej liście jego rodzaju w tym wątku, a pierwsza lista tego rodzaju, przy której plik się
 odczyta, wstrzymanie zdejmuje. Lista pokazuje wtedy to, co pokazuje GitHub. Tę samą zasadę ma brak issue o znanym
-numerze na liście (``known_issue``, #915): kolejka uznaje, że issue zniknęło, tylko gdy zapis z jego etykietą nie byłby
+numerze na liście (``known_issue``): kolejka uznaje, że issue zniknęło, tylko gdy zapis z jego etykietą nie byłby
 wstrzymany, bo inaczej lista mogła jeszcze nie pokazać świeżego issue. Plik, którego treść nie jest UTF-8, to
 treść w innej postaci (brak zapisów), którą następny zapis zastąpi. Plik, którego nie da się odczytać ani zapisać na
 stałe, wstrzymuje każdy zapis do Skrzynki: kolejka czeka jak bez sieci i ponawia co budzenie, a dziennik Centrum dostaje
@@ -552,10 +552,10 @@ class KeyedBox:
 
     def known_issue(self, label: Label, number: int) -> Issue | None | Refused | Unreachable | NoKey:
         """Issue ``number`` z etykietą ``label`` (otwarte albo zamknięte) z ``labelled_issues``; ``None``: Skrzynka go
-        nie ma (Maks je usunął, #402).
+        nie ma (Maks je usunął).
 
         Brak numeru na liście to decyzja, której kolejka nie cofnie (porzuca wysyłkę), więc ma zasadę zapisu (opis
-        modułu, #909, #915): lista bez numeru mówi, że issue nie ma, tylko gdy zapis z etykietą ``label`` nie byłby
+        modułu): lista bez numeru mówi, że issue nie ma, tylko gdy zapis z etykietą ``label`` nie byłby
         teraz wstrzymany. Inaczej (przy liście pliku ``opening`` nie dało się odczytać albo czeka w nim zapis bez
         odpowiedzi, którego lista mogła jeszcze nie pokazać) to ``Unreachable`` bez decyzji, jak wstrzymany zapis.
         """

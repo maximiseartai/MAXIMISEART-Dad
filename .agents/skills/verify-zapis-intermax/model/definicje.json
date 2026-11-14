@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/intermax_replace.py": {
-    "cały plik": "fae600d3fb6a1c11"
+    "cały plik": "3f6deb7f9b41f6c6"
   },
   "src/rozliczenia/intermax_ordering.py": {
     "order_register": "1a92f4bba5af6c2d",
@@ -14,7 +14,7 @@
     "write_cells": "a2a848ebcb13bf49"
   },
   "src/rozliczenia/intermax_copies.py": {
-    "cały plik": "aa395719d3e3a41c"
+    "cały plik": "8680a5d98440a968"
   },
   "src/rozliczenia/register_file.py": {
     "read": "c9a7d24ed9f767a3",

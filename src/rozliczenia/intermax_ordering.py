@@ -59,9 +59,9 @@ __all__ = [
     "register_days",
 ]
 
-# Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
-# sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni).
 _SHOWN_DAYS = 7
+"""Karta Uporządkowania INTERMAX pokazuje dziś i 6 dni przed nim oraz późniejsze Dni uporządkowane; tyle dni wstecz
+sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczeniowy dzisiejszego dnia (7 dni)."""
 
 
 @dataclass(frozen=True)

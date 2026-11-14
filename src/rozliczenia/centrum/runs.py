@@ -252,7 +252,7 @@ class RunHost:
     do Zatrzymania bieżącego Uruchomienia, a nowy stan Zgłoszenia trafia na jego kartę.
     Działania po wyniku biegną przed końcem Uruchomienia, więc przyjęte zamknięcie
     Centrum albo Aktualizacja narzędzia ich nie przerwie: najpierw Logi Uruchomienia
-    (``logs``, #871), potem ``after_run``. Pierwszy widok niesie
+    (``logs``), potem ``after_run``. Pierwszy widok niesie
     ``previous``, ostatnie Uruchomienie sprzed startu Centrum. Start następnego Uruchomienia zostawia wynik
     poprzedniego w widokach, więc karta, która czyta strumień co chwilę, dostaje wynik każdego Uruchomienia.
 
@@ -441,7 +441,7 @@ class RunHost:
     def end(self, run: Run, result: runs_contract.RunFinished) -> None:
         """Wynik Uruchomienia ``run`` na kartę i koniec Uruchomienia pod jedną blokadą.
 
-        Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec (#723).
+        Start z drugiej karty, który czeka na koniec Uruchomienia, nie wejdzie między wynik a koniec.
         """
 
         with self._lock:

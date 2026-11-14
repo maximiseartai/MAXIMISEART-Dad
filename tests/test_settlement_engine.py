@@ -513,8 +513,9 @@ def test_wykonawca_bez_mapowania_albo_wiersz_danych_bez_wykonawcy_wstrzymuje_pub
             ["Zenon.Nieznany", "Bartosz.Nieznany"],
             "są WYKONAWCY",
         ),
+        ({18: "Zenon\u00a0Nieznany\u00a0", 19: "zenon nieznany"}, ["Zenon\u00a0Nieznany"], "jest WYKONAWCA"),
     ],
-    ids=["jeden", "dwoch-w-kolejnosci-pliku-w-pisowni-pierwszego-wiersza"],
+    ids=["jeden", "dwoch-w-kolejnosci-pliku-w-pisowni-pierwszego-wiersza", "twarda-spacja-to-spacja"],
 )
 def test_zatrzymanie_i_podglad_nazywaja_kazdego_nieznanego_wykonawce_raz(
     tmp_path: Path, workers: dict[int, str | None], named: list[str], subject: str
