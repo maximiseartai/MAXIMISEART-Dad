@@ -646,7 +646,8 @@ def _saved(entering: LoggedReports) -> SavedState:
     def number(logged: LoggedOwnMove) -> OrderNumber:
         found = _texts(numbers, logged.number, logged.day, logged.worker)
         # 0123 i 123 to dwa zlecenia, a Logi niosą numer pamięci tylko jako liczbę, więc jedyna postać spod Wpisu
-        # Wykonawcy i dnia Przeniesienia odchodzi z nim i każde następne Przeniesienie tej liczby bierze inną postać.
+        # Wykonawcy i dnia Przeniesienia odchodzi z nim i następne Przeniesienie tej liczby nie weźmie jej spod tego
+        # Wpisu. Postać spod Wpisu innego Wykonawcy albo dnia nie odchodzi: następne Przeniesienie może dostać tę samą.
         return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
 
     entries = frozenset(OwnEntry(key(logged), logged.column, logged.value) for logged in entering.memory_before)

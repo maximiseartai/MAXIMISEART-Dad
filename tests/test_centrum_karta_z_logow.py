@@ -82,7 +82,7 @@ def test_karta_po_starcie_idzie_za_plikiem_logow_bez_ustawien_metryk_i_folderu_o
 
 
 def test_karta_po_starcie_i_w_historii_ma_ostrzezenie_startu_przed_ostrzezeniem_wyniku_jak_na_zywo(tmp_path: Path) -> None:
-    """ADR 0017: karta z Logów idzie tą samą regułą co na żywo, także w kolejności ostrzeżeń: najpierw ostrzeżenie
+    """Karta z Logów ma ostrzeżenia w tej samej kolejności co na żywo (``EndedRun.warnings``): najpierw ostrzeżenie
     startu (ostatnia dobra Lista Wykonawców), potem ostrzeżenie wyniku (nieznany WYKONAWCA)."""
 
     centrum = settling_centrum(tmp_path, include_unmapped=True)

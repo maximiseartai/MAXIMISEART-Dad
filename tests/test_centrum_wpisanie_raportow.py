@@ -467,6 +467,22 @@ def test_odmowa_podmiany_intermax_nie_zapisuje_pamieci_wpisow_ani_dnia_wdrozenia
     assert _cells(centrum.register) == before, "Raport z 9.11 jest sprzed okna drugiego kliknięcia"
 
 
+def test_logi_zatrzymania_przy_zapisie_maja_wpisy_i_komorki_do_wpisania_bez_liczby_wpisanych(tmp_path: Path) -> None:
+    """Zatrzymanie przy zapisie przychodzi po rdzeniu raportów, więc Logi mają Wpisy i komórki, które kliknięcie miało
+    wpisać, a liczby wpisanych komórek nie mają, bo INTERMAX nie został zmieniony: po niej odtworzenie poznaje, że
+    Zatrzymanie taty zależało od jego dysku."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum.disk.replace, _ = failing_replace(denied)
+
+    view = _stopped_view(centrum)
+
+    [entering] = [logs["report_entering"] for logs in centrum.run_logs() if logs["run_id"] == view["run"]["id"]]
+    assert [entry["number"] for mail in entering["mails"] for entry in mail["entries"]] == ["40000001"]
+    assert [change["value"] for change in entering["changes"]] == ["tak", "wymiana"]
+    assert entering["written"] is None
+
+
 def _tata_writes(register: Path, number: int, value: str, *, column: int = SUCCESSFUL) -> None:
     """Tata wpisuje ``value`` w kolumnie ``column`` (``SKUTECZNE``) zlecenia ``number`` i zapisuje INTERMAX (bez Excela
     na dysku)."""
