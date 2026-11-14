@@ -129,7 +129,7 @@ PURE_VERSIONS = {
         {"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable", "name_of"}
     ),
     # pamięć strażnika do adnotacji i tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku), bez plików
-    "rozliczenia.client_data": frozenset({"ForbiddenValues", "Outgoing", "tool"}),
+    "rozliczenia.client_data": frozenset({"ForbiddenValues", "tool"}),
     "rozliczenia.process_run": frozenset({"RunResult"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"

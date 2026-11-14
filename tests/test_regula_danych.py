@@ -191,6 +191,15 @@ def wysylka(komorka: str, post: Post) -> Post:
     object.__setattr__(post, "parts", (komorka,))
     return post
 """,
+    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
 }
 
 _CEL: Final = """\

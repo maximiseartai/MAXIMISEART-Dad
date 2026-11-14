@@ -96,6 +96,12 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     ),
     # Tekst do wysyłki z komórki taty bez strażnika pracy Centrum (przegląd #1648, D1).
     "from rozliczenia.client_data import tool\ntext = tool(cell)": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.client_data.tool"),
+    # Plik w Archiwum Logów okresu z komórki taty bez strażnika Logów (przegląd #1688, runda 3).
+    "from rozliczenia import client_data\ntext = client_data.logs_text(cell)": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.client_data.logs_text",
+    ),
     "from rozliczenia import client_data\nguarded = client_data.empty_memory().guard(cell, 'komórka')": (
         SRC_CONFIG,
         ("rozliczenia", "centrum"),
@@ -234,10 +240,10 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
-    "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.logs_text", "rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/quantity_check_run.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/centrum/reports.py": frozenset({"rozliczenia.client_data.tool"}),
-    "src/rozliczenia/centrum/run_logs_guard.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/run_logs_guard.py": frozenset({"rozliczenia.client_data.logs_text"}),
     "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
     "src/rozliczenia/template_file.py": frozenset(
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}
