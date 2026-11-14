@@ -1,9 +1,9 @@
 {
   "src/rozliczenia/template_copy.py": {
-    "cały plik": "4b24f9f0e9f22666"
+    "cały plik": "9338481668c65ff7"
   },
   "src/rozliczenia/row_look.py": {
-    "cały plik": "2bf7c985f1affdd3"
+    "cały plik": "76d1e80a6cb03edc"
   },
   "src/rozliczenia/workbook_parts.py": {
     "UnsupportedShape": "8249ef4c46b9c830",
@@ -11,7 +11,7 @@
     "SheetRow": "db28f987ab4cd584",
     "SheetData": "d685c934603d933e",
     "_sheet_data_bounds": "fd4e26e19ea30505",
-    "_sheet_rows": "dad60040419852a3",
+    "_sheet_rows": "7ccc7474e01602c5",
     "_raise_irregular": "8d96c34a8da9728c",
     "_ROW_START_OR_IRREGULAR": "897f774782c6d2e4",
     "_WITHOUT_LEADING_R": "4b080ee44e9f5156",
@@ -28,19 +28,19 @@
     "with_style_attribute": "3aed050e2f3ed399"
   },
   "src/rozliczenia/template_file.py": {
-    "TemplateFile": "caafedd71e2affde",
+    "TemplateFile": "c1429e56a5dbbc7c",
     "_Rules": "362cb8b7df713be5",
     "_WORKER_SETTLEMENT": "454a0b42cc644edc",
     "_ensure_unmerged": "b28aebeb4af8c1ef",
     "_last_written_column": "1ac5d8677c49655f",
     "_in_columns": "384aa41005a44c1f",
-    "_write_rows": "9d3e24f1bd1a217c",
+    "_write_rows": "dec71281de83d294",
     "_package_writer": "78c5739d1fa69f88",
     "_active_worksheet": "23e27585d804a8b6",
     "_request_recalculation": "018de366512c2ddc"
   },
   "src/rozliczenia/highlights.py": {
-    "Highlights": "a94ca7f1c98aee04",
+    "Highlights": "1058ab4470edab05",
     "PLAIN": "26159ae5d9dadacc",
     "_is_empty": "c2cc749f1eb4b3ee",
     "LookReader": "d4640624fc5c0e9b"

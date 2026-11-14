@@ -3248,6 +3248,7 @@ WORKER ="  - {nazwa: Jan Testowy, loginy: [jan.testowy], adresy: [" + JAN + "]}\
         pytest.param("  - {nazwa: 'Jan/Testowy', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="nazwa-nie-do-pliku"),
         pytest.param("  - {nazwa: 'Jan Testowy.', loginy: [jan]}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_invalid(), id="kropka-na-koncu"),
         pytest.param(f"  - {{nazwa: {'J' * 300}, loginy: [jan]}}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_too_long(), id="nazwa-za-dluga"),
+        pytest.param(f"  - {{nazwa: {chr(0x1D409) * 112}, loginy: [jan]}}\n", "wykonawcy[0].nazwa", settings_messages.worker_name_too_long(), id="nazwa-za-dluga-w-jednostkach-utf-16"),
         pytest.param(WORKER + "  - {nazwa: Jan Drugi, loginy: [Jan.Testowy]}\n", "wykonawcy[1].loginy[0]", settings_messages.worker_login_repeated(), id="powtorzony-login"),
         pytest.param(WORKER + "  - {nazwa: 'jan  testowy', loginy: [jan.drugi]}\n", "wykonawcy[1].nazwa", settings_messages.worker_same_file(), id="dwie-nazwy-jeden-plik"),
         pytest.param(WORKER + "  - {nazwa: Anna, loginy: [anna], adresy: [" + JAN.upper() + "]}\n", "wykonawcy[1].adresy[0]", settings_messages.worker_address_repeated(), id="adres-u-dwoch-wykonawcow"),

@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 from typing import cast
 
 import pytest
@@ -37,9 +39,11 @@ from tests.fixtures.operacje import run_preparation
 from tests.fixtures.wyglad_komorek import wyglad, wyglady
 from tests.fixtures.znane_luki import wymaga_ruff
 from atrapy.settlement import worker_list, write_template
+from tests.fixtures.benchmark import WORKER_TEMPLATE, write_synthetic_templates
 from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
 RED = "FFFF0000"
+_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 # Zlecenie 2 (wiersz 4 Rejestru) jest skuteczne, ma czerwony ADRES i koniec linii w CZYNNOŚCI ZREALIZOWANE; trafia do
 # wiersza 2 Rozliczenia wewnętrznego, 18 Pliku zbiorczego i 18 Rozliczenia pracownika Adriana.
 MULTILINE = "montaż\ndemontaż"
@@ -146,6 +150,30 @@ def test_kazda_komorka_kolumn_wygladu_ma_kroj_naglowka_obramowanie_i_wyrownanie_
     # Nagłówki Wzorców: Rozliczenia wewnętrznego i pliku zbiorczego Calibri 10, rozliczenia pracownika Calibri 11.
     assert set(_header_faces(chain.collective).values()) == {("Calibri", 10), ("Calibri", 11)}
     assert set(_header_faces(chain.worker).values()) == {("Calibri", 11)}
+
+
+def _borders(path: Path) -> list[bytes]:
+    """Obramowania z ``xl/styles.xml`` skoroszytu ``path``, w kolejności z pliku."""
+
+    with zipfile.ZipFile(path) as archive:
+        borders = ET.fromstring(archive.read("xl/styles.xml")).find(f"{{{_SPREADSHEET}}}borders")
+    assert borders is not None
+    return [ET.tostring(border) for border in borders]
+
+
+def test_obramowanie_wiersza_danych_to_obramowanie_wzorca_z_pusta_przekatna_bez_nowego_obramowania(tmp_path: Path) -> None:
+    """Obramowanie Wiersza danych ma pustą przekątną jak obramowanie zapisane przez Excel, więc Rozliczenie pracownika z
+    syntetycznego Wzorca kształtu Wzorca taty bierze obramowanie Wzorca i nie dopisuje do stylów nowego."""
+
+    templates = write_synthetic_templates(tmp_path / "wzorce")
+    (tmp_path / "okres").mkdir()
+    fixture = make_preparation_fixture(tmp_path / "okres")
+    run_preparation(fixture)
+    worker_template = templates / WORKER_TEMPLATE
+    run_settlements(SettlementInputs(fixture.collective_file_path, worker_list(), worker_template), RunContext())
+    worker = PeriodFolder.from_collective_file(fixture.collective_file_path).worker_settlement("Adrian Testowy")
+
+    assert _borders(worker) == _borders(worker_template)
 
 
 def test_zawijany_jest_tylko_tekst_z_koncem_linii(tmp_path: Path) -> None:

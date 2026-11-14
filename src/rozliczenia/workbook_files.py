@@ -70,10 +70,6 @@ if TYPE_CHECKING:
     from .dad_files import DadFiles, ReadFile, WitnessedSheet
 
 
-# Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie
-# tylko do odczytu także przy czytaniu wierszy, bo arkusz jest wtedy parsowany leniwie. ``IndexError``:
-# komórka ze stylem w skoroszycie bez ``xl/styles.xml``. ``ExpatError``: zepsuty XML arkusza przy odczycie
-# Wierszy danych (``workbook_parts.rows_with_input``).
 _UNREADABLE_WORKBOOK_ERRORS = (
     OSError,
     InvalidFileException,
@@ -85,6 +81,10 @@ _UNREADABLE_WORKBOOK_ERRORS = (
     ParseError,
     ExpatError,
 )
+"""Błędy openpyxl przy pliku, który nie jest poprawnym skoroszytem .xlsx: przy otwieraniu, a w trybie tylko do odczytu
+także przy czytaniu wierszy, bo arkusz jest wtedy parsowany leniwie. ``IndexError``: komórka ze stylem w skoroszycie
+bez ``xl/styles.xml``. ``ExpatError``: zepsuty XML arkusza przy odczycie Wierszy danych
+(``workbook_parts.rows_with_input``)."""
 
 _WORKBOOK_SUFFIXES = (".xlsx", ".xlsm", ".xltx", ".xltm")
 
@@ -386,7 +386,7 @@ def _collective_sheet(
 
     openpyxl czyta tylko wiersze, które mogą mieć wartości w A:K (``workbook_parts.rows_with_input``), a nie każdy z
     ~10 tys. sformatowanych wierszy Pliku zbiorczego; wartości i klasyfikacja uszkodzeń są takie jak przy odczycie
-    całego arkusza.
+    całego arkusza. Skoroszyt jest otwarty tylko do odczytu, więc aktywny arkusz to ``ReadOnlyWorksheet``.
     """
 
     file = files.read(path, despite_excel_lock=despite_excel_lock)
@@ -394,7 +394,7 @@ def _collective_sheet(
         content = rows_with_input(file.content, INPUT_COLUMNS[-1])
     workbook = _open(path, BytesIO(content), read_only=True, computed=computed)
     try:
-        sheet = cast(Worksheet, workbook.active)  # tylko do odczytu: ReadOnlyWorksheet
+        sheet = cast(Worksheet, workbook.active)
         header = next(
             classified(
                 path,

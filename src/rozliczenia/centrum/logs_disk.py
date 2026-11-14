@@ -64,7 +64,7 @@ from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, LoggedOrder, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, exact_logs
+from rozliczenia.centrum.run_logs_guard import TOOL_TEXT_GRAMMAR, GuardedLogs, exact_logs
 from rozliczenia.efenix_pricing import OrderResult
 from rozliczenia.file_state import folder_entries, remove_file
 from rozliczenia.wall_clock import utc_now
@@ -74,8 +74,8 @@ _JOURNALS: Final = "dzienniki-wyceny"
 _JOURNAL_SUFFIX: Final = ".jsonl"
 _STARTER: Final = object()
 """Dowód ``LogsOnDisk.started``: tylko z nim ``Journal.run_started`` startuje dziennik."""
-_RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
-"""Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku."""
+_RUN_ID: Final = TOOL_TEXT_GRAMMAR["RunLog.run_id"]
+"""Identyfikator Uruchomienia z Centrum (``uuid4().hex``), gramatyka pola Logów; inny nie ma Logów, więc nie dotyka dysku."""
 _NAME: Final = re.compile(
     rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(common_contract.ProcessKey))})-(?P<run_id>{_RUN_ID.pattern})\.json"
 )

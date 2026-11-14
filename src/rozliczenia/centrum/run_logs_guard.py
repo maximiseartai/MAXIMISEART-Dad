@@ -4,9 +4,10 @@ Przed zapisem pliku Logów i przed wysyłką Logi przechodzą przez strażnika (
 i wysyłka (``comment_versions.post_of``) biorą tylko Logi z niego (``GuardedLogs``) i tekst komentarza z niego
 (``GuardedText``, ``guard_text``): wartość ``ADRES`` albo numeru Orange z przeczytanych plików, także wpisana w inną
 komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą techniczną, a telefony i ulice w
-tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (``TOOL_FIELDS``), i nazwy pól schematu
-zostają bez maski. Pole typowane, które maski nie przyjmuje, traci wartość (``GuardCut``), a uwaga o tym jest
-jedynym zapisem cięcia w pliku Logów, z którego odtworzenie czyta cięcia (``guard_cuts``).
+tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (``TOOL_FIELDS``), zostają bez maski, gdy ich
+tekst pasuje do gramatyki pola (``TOOL_TEXT_GRAMMAR``), a nazwy pól schematu zawsze. Pole typowane, które maski nie
+przyjmuje, traci wartość (``GuardCut``), a uwaga o tym jest jedynym zapisem cięcia w pliku Logów, z którego odtworzenie
+czyta cięcia (``guard_cuts``).
 
 Diagnoza Zatrzymania dopisuje się do Logów, które przeszły przez strażnika (``GuardedLogs.with_diagnosis``), i
 przechodzi przez niego razem z nimi.
@@ -14,7 +15,7 @@ przechodzi przez niego razem z nimi.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import re
 from typing import Final, final
@@ -23,6 +24,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
+from rozliczenia.settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD
 from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, WithoutSubclasses, guarded, guarded_number, logs_text
 
 
@@ -37,9 +39,9 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
     trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
-    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiłaby całe Logi
-    albo ich okres, Uruchomienie i commit. Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
-    maskuje.
+    w nich wartość z rekordu, gdy tekst pasuje do gramatyki pola (``_kept``), a klucza pola modelu Logów (nazwy pola
+    schematu) też nie: maska w nich gubiłaby całe Logi albo ich okres, Uruchomienie i commit. Klucz słownika (operator,
+    kod pozycji, litera kolumny) to dane, więc go maskuje.
 
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
     niosła treści. Uwaga o polu Kopii wejścia idzie do ``input_copy_notes``, a każda inna do ``technical_notes``, które
@@ -66,8 +68,6 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
         ``READ_VALUES``."""
 
-        if place in TOOL_FIELDS:
-            return value
         if isinstance(value, str):
             return text(value, place)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -82,6 +82,9 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
             items: dict[str, object] = {}
             for key, entry in value.items():
                 child, field = _child(source, key)
+                if _field(place, key) in TOOL_FIELDS:
+                    items[key] = _kept(child, entry, f"{type(source).__name__}.{key}", _field(place, key), text)
+                    continue
                 marked = field is not None and READ_VALUES in field.metadata
                 items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
             return items
@@ -120,7 +123,8 @@ TOOL_FIELDS: Final = frozenset(
     }
 )
 """Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
-(``guard_logs``) zostawia w nich wartość z rekordu. Każde ma wartość z kodu narzędzia, a nie z pliku taty:
+(``guard_logs``) zostawia w nich wartość z rekordu, tekst tylko w gramatyce pola (``TOOL_TEXT_GRAMMAR``). Każde ma
+wartość z kodu narzędzia, a nie z pliku taty:
 ``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
 ``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
 chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
@@ -140,6 +144,51 @@ Pole z listy strażnik zostawia z całym poddrzewem, więc test struktury w ``te
 przechodzi typ każdego z nich (modele, dataclassy, unie) i czerwienieje, gdy w poddrzewie jest typ, który przyjmuje
 dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, ``Any``), liczba ``READ_VALUES`` albo typ,
 którego test nie zna."""
+
+TOOL_TEXT_GRAMMAR: Final = {
+    "RunLog.run_id": re.compile(r"[0-9a-f]{32}"),
+    "RunLog.period": re.compile(rf"{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD}"),
+    "Tool.wydanie": re.compile(r"\d+\.\d+\.\d+"),
+    "Tool.commit": re.compile(r"[0-9a-f]{7,40}"),
+    "CallTrace.exception_type": re.compile(r"[A-Za-z_][\w.]*"),
+    "CallCause.exception_type": re.compile(r"[A-Za-z_][\w.]*"),
+    "CallFrame.file": re.compile(r"[\w.\-]+(?:/[\w.\-]+)*\.py"),
+    "CallFrame.function": re.compile(r"[A-Za-z_]\w*|<\w+>"),
+    "Environment.system": re.compile(r"[\w.\-]+"),
+    "Environment.python": re.compile(r"\d+\.\d+\.\d+\w*"),
+}
+"""Gramatyka tekstu narzędzia każdego pola z dowolnym tekstem w poddrzewach ``TOOL_FIELDS`` (pole jako ``Model.pole``).
+Strażnik zostawia taki tekst bez maski tylko wtedy, gdy pasuje do gramatyki swojego pola (``_kept``), a inny tekst maskuje
+jak każdy tekst Logów; nic nie odmawia, więc Logi ze starszych Wydań czytają się dalej. Identyfikator, okres, commit,
+Wydanie i wersja Pythona mają gramatykę, której tekst z komórki nie spełnia. Typ wyjątku, plik i funkcja ramki oraz
+system to identyfikatory, a do gramatyki identyfikatora pasuje też jedno słowo z komórki."""
+
+_OUTSIDE_TOOL: Final = "[poza-narzędziem]"
+"""Maska tekstu spoza gramatyki pola narzędzia tam, gdzie nie ma pamięci strażnika (``tool_text``); bez spacji, bo
+bywa identyfikatorem wysyłki (``outbox.Post.run_id``)."""
+
+
+def _kept(source: object, value: object, owner: str, place: str, text: Callable[[str, str], str]) -> object:
+    """Wartość pola z ``TOOL_FIELDS`` z poddrzewem: tekst pola z gramatyką (``TOOL_TEXT_GRAMMAR``) bez maski tylko w tej
+    gramatyce, inny tekst przez strażnika (``text``); tekst pola bez gramatyki to zamknięta lista albo chwila schematu."""
+
+    if isinstance(value, str):
+        grammar = TOOL_TEXT_GRAMMAR.get(owner)
+        return value if grammar is None or grammar.fullmatch(value) else text(value, place)
+    if isinstance(value, list):
+        sources = list(source) if isinstance(source, (list, tuple)) else [None] * len(value)
+        return [_kept(item, entry, owner, f"{place}[{index}]", text) for index, (item, entry) in enumerate(zip(sources, value, strict=True))]
+    if isinstance(value, dict):
+        return {key: _kept(getattr(source, key, None), entry, f"{type(source).__name__}.{key}", _field(place, key), text) for key, entry in value.items()}
+    return value
+
+
+def tool_text(owner: str, value: str) -> str:
+    """Tekst narzędzia pola ``owner`` (klucz ``TOOL_TEXT_GRAMMAR``) spoza Logów po strażniku, np. fakty startu z dziennika
+    Wyceny w ``comment_versions.post_of``: wartość w gramatyce pola zostaje, a inna staje się maską ``_OUTSIDE_TOOL``."""
+
+    return value if TOOL_TEXT_GRAMMAR[owner].fullmatch(value) else _OUTSIDE_TOOL
+
 
 _Path = tuple[str | int, ...]
 

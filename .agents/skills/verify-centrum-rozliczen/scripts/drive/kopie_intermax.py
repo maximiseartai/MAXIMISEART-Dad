@@ -75,6 +75,7 @@ def drive(run: Run, page: Page) -> None:
     saved = run.settings_text()
     kopie_before = _kopie(folder)
     original = read_bytes(register)
+    run.step(FEATURE, "lista")
     print("  harness: INTERMAX of this feature in the settings and three Kopie of both names in the folder", flush=True)
     _point_register(run, page, register)
     folder.mkdir(exist_ok=True)
@@ -98,7 +99,6 @@ def drive(run: Run, page: Page) -> None:
 def _drive(
     run: Run, page: Page, register: Path, folder: Path, original: bytes, oldest: str, middle: str, newest: str
 ) -> None:
-    run.step(FEATURE, "lista")
     _to_card(run, page)
     listed = run.api("/api/intermax/copies", "kopie-lista")
     copies = listed["copies"]
