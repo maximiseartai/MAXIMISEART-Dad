@@ -92,10 +92,8 @@ from dataclasses import dataclass
 import importlib
 import os
 from pathlib import Path, PureWindowsPath
-import shutil
 import subprocess
 import sys
-import sysconfig
 import typing
 
 import pytest
@@ -336,7 +334,6 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     )
 
 
-IMPORT_LINTER = shutil.which("lint-imports", path=sysconfig.get_path("scripts"))
 IMPORT_LINTER_CONFIG = ROOT / ".importlinter"
 # Nazwa (``name``) każdego kontraktu z ``IMPORT_LINTER_CONFIG``: przebieg, który któregoś nie zgłosi, nie przechodzi.
 IMPORT_CONTRACTS: typing.Final = (
@@ -345,7 +342,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "imaplib i smtplib importuje tylko port Skrzynki raportów",
 )
 wymaga_import_linter = pytest.mark.skipif(
-    IMPORT_LINTER is None,
+    importlib.util.find_spec("importlinter") is None,
     reason="import-linter z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt, czyli zależności "
     "taty; kontrakty biegną w zadaniach pytest na Linuksie w każdym runie PR i w tools/szybko.py",
 )
@@ -355,9 +352,13 @@ def _lint_imports(src: Path) -> str:
     """Wynik ``lint-imports`` z kontraktami ``IMPORT_LINTER_CONFIG`` na pakiecie ``rozliczenia`` z katalogu ``src``,
     z kodem wyjścia w pierwszej linii; bez pamięci podręcznej, więc graf jest z plików, które są teraz."""
 
-    assert IMPORT_LINTER is not None
     done = subprocess.run(
-        [IMPORT_LINTER, "--config", str(IMPORT_LINTER_CONFIG), "--no-cache", "--no-logo"],
+        [
+            sys.executable,
+            "-c",
+            "from importlinter.cli import lint_imports_command; lint_imports_command()",
+            *("--config", str(IMPORT_LINTER_CONFIG), "--no-cache", "--no-logo"),
+        ],
         cwd=src,
         env={**os.environ, "PYTHONPATH": str(src)},
         capture_output=True,
