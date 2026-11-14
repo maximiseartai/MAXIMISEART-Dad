@@ -653,7 +653,8 @@ def _sonda_workflow(nazwa: str, polecenie: str) -> None:
 
 
 SONDA = WorkflowProcess("sonda", _sonda_workflow)
-WORKFLOW_VARIANTS = {"sonda": WorkflowVariant(SONDA), "druga": WorkflowVariant(SONDA)}
+INNY = WorkflowProcess("inny", _sonda_workflow)
+WORKFLOW_VARIANTS = {"sonda": WorkflowVariant(SONDA), "obca": WorkflowVariant(INNY, run_exit=1), "druga": WorkflowVariant(SONDA)}
 """
 ASSERT_SONDY: Final = """\
 from wynik_uruchomienia import check_metrics, finish
@@ -735,7 +736,7 @@ ODMOWY_ROZLICZEN: Final = {
     "krok: nazwa nazwana": ("run_verification.py", {"workflow": f'_run_step(name="x", arguments=[{ZAPIS}], expected_exit=0)  # tu'}),
     "krok: argumenty zmienną": ("run_verification.py", {"workflow": '_run_step("x", polecenie, expected_exit=0)  # tu'}),
     "krok: skrypt nie pierwszy": ("run_verification.py", {"workflow": f'_run_step("x", ["--root", {ZAPIS}], expected_exit=0)  # tu'}),
-    "krok: skrypt bez HELPER_DIRECTORY": ("run_verification.py", {"workflow": '_run_step("x", [str(Path("a.py"))], expected_exit=0)  # tu'}),
+    "krok: skrypt bez HELPER_DIRECTORY": ("run_verification.py", {"workflow": '_run_step("x", [str(Path("inne") / "a.py")], expected_exit=0)  # tu'}),
     "krok: skrypt zmienną": ("run_verification.py", {"workflow": '_run_step("x", [str(HELPER_DIRECTORY / nazwa)], expected_exit=0)  # tu'}),
     "krok procesu: polecenie zmienną": ("run_verification.py", {"workflow": '_run_process_step("x", [polecenie], expected_exit=0)  # tu'}),
     "krok: bez expected_exit": ("run_verification.py", {"workflow": f'_run_step("x", [{ZAPIS}])  # tu'}),
