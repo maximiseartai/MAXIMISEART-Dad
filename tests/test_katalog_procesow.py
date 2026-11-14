@@ -8,18 +8,24 @@ Metryk oraz kolejność sprawdzeń Diagnozy. Dokładne teksty i listy sprawdzeń
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, get_args
 
 from fastapi.testclient import TestClient
 import pytest
 
+from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
 from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, ProcessKind, Start
 from rozliczenia.centrum.comment_versions import summary_markdown
+from rozliczenia.centrum.contract.common import Message
+from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.efenix_pricing import PricingMode
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
@@ -28,10 +34,11 @@ from rozliczenia.worker_list import WorkerList
 from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
-from tests.fixtures.centrum_processes import preparing_centrum, run_to_end, settling_centrum
+from tests.fixtures.centrum_processes import preparing_centrum, settling_centrum
 from tests.fixtures.znane_luki import modul
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
+from atrapy.settlement import write_worker_list
 
 
 def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
@@ -242,52 +249,71 @@ def test_bez_ustawien_taty_karta_i_odmowa_startu_mowia_to_samo_co_brakuje(
     assert refused.json()["message"] == blocker
 
 
-def _stopped_preparation(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+@dataclass(frozen=True)
+class _Stopping:
+    """Centrum gotowe do startu procesu, którego silnik kończy pracę Zatrzymaniem „do Maksa” bez zmiany plików taty: jego
+    podsumowania nie da się pokazać. ``start``: start procesu tak, jak go woła przeglądarka."""
+
+    client: TestClient
+    tool: ToolDirectory
+    start: Callable[[], Any]
+
+
+def _stopping_preparation(tmp_path: Path) -> _Stopping:
     preparing = preparing_centrum(tmp_path)
     preparing.engines.fail_summary = True
-    return preparing.client, run_to_end(preparing, dry_run=True)
+    return _Stopping(preparing.client, preparing.tool, lambda: preparing.start(dry_run=True))
 
 
-def _stopped_settlement(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+def _stopping_settlement(tmp_path: Path) -> _Stopping:
     settling = settling_centrum(tmp_path)
     settling.engines.fail_summary = True
-    return settling.client, run_to_end(settling, dry_run=True)
+    return _Stopping(settling.client, settling.tool, lambda: settling.start(dry_run=True))
 
 
-def _stopped_efenix(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+def _stopping_efenix(tmp_path: Path) -> _Stopping:
     settling = settling_centrum(tmp_path)
     settling.engines.fail_engine = True
-    assert settling.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "mode": "RUN"}).status_code == 200
-    return settling.client, finished_view(settling.client)
+    return _Stopping(
+        settling.client,
+        settling.tool,
+        lambda: settling.client.post("/api/runs", json={"process": "efenix", "period": PERIOD, "mode": "RUN"}),
+    )
 
 
-def _stopped_intermax(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+def _stopping_intermax(tmp_path: Path) -> _Stopping:
     ordering = ordering_centrum(tmp_path)
     ordering.engines.fail_summary = True
-    return ordering.client, ordering.run_to_end()
+    return _Stopping(ordering.client, ordering.tool, ordering.start)
 
 
-def _stopped_report_entering(tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+def _stopping_report_entering(tmp_path: Path) -> _Stopping:
     entering = entering_centrum(tmp_path, Intermax())
     entering.engines.fail_summary = True
-    return entering.client, entering.run_to_end()
+    return _Stopping(entering.client, entering.tool, entering.start)
 
 
-# Zatrzymanie „do Maksa” bez zmiany plików taty: silnik kończy pracę, a jego podsumowania nie da się pokazać.
-_STOPPED: dict[common_contract.ProcessKey, Callable[[Path], tuple[TestClient, dict[str, Any]]]] = {
-    "preparation": _stopped_preparation,
-    "settlement": _stopped_settlement,
-    "efenix": _stopped_efenix,
-    "intermax": _stopped_intermax,
-    "report_entering": _stopped_report_entering,
+_STOPPING: dict[common_contract.ProcessKey, Callable[[Path], _Stopping]] = {
+    "preparation": _stopping_preparation,
+    "settlement": _stopping_settlement,
+    "efenix": _stopping_efenix,
+    "intermax": _stopping_intermax,
+    "report_entering": _stopping_report_entering,
 }
+
+
+def _stopped(key: common_contract.ProcessKey, tmp_path: Path) -> tuple[TestClient, dict[str, Any]]:
+    stopping = _STOPPING[key](tmp_path)
+    started = stopping.start()
+    assert started.status_code == 200, started.json()
+    return stopping.client, finished_view(stopping.client)
 
 
 @pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
 def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii_i_metrykach(
     tmp_path: Path, declaration: ProcessKind[Any, Any]
 ) -> None:
-    client, view = _STOPPED[declaration.key](tmp_path)
+    client, view = _stopped(declaration.key, tmp_path)
     run = view["run"]
 
     card = client.get(f"/api/runs/{run['id']}/card").json()
@@ -316,7 +342,7 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     """Ustawienia taty pierwsze, OneDrive przed każdym sprawdzeniem, które otwiera pliki, a na końcu Aktualność
     narzędzia, Token do Zgłoszeń i dziennik; Folder okresu tylko w procesie z okresem."""
 
-    client, view = _STOPPED[declaration.key](tmp_path)
+    client, view = _stopped(declaration.key, tmp_path)
 
     diagnosis = client.post(f"/api/runs/{view['run']['id']}/diagnosis").json()
     labels = [check["label"] for check in diagnosis["checks"]]
@@ -326,3 +352,44 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     assert ("Folder okresu" in labels) is declaration.reads_period_folder
     assert ("Pliki okresu w Excelu" in labels) is declaration.reads_period_folder
     assert any(label.startswith("Wzorzec ") for label in labels) is bool(declaration.templates)
+
+
+_DAMAGED_WORKERS: Final = settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES)
+
+
+@pytest.mark.parametrize("last_good", [True, False], ids=["z-ostatnia-dobra", "bez-ostatniej-dobrej"])
+@pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
+def test_zla_lista_wykonawcow_wstrzymuje_albo_ostrzega_tylko_proces_ktory_jej_potrzebuje(
+    tmp_path: Path, declaration: ProcessKind[Any, Any], last_good: bool
+) -> None:
+    """Zła treść Listy Wykonawców dotyczy tylko procesu, który jej potrzebuje (``needs`` wpisu katalogu): biegnie on na
+    ostatniej dobrej liście z ostrzeżeniem startu, a bez niej nie startuje i odmowa mówi, co poprawić. Uporządkowanie
+    INTERMAX i Wycena w efenix listy nie potrzebują, więc startują bez odmowy i bez ostrzeżenia o liście."""
+
+    stopping = _STOPPING[declaration.key](tmp_path)
+    listed = stopping.tool.worker_list
+    # Ostatnia dobra lista to ta, którą Centrum przeczytało, zanim plik się zepsuł. Centrum Uporządkowania INTERMAX
+    # (``ordering_centrum``) nie ma pliku listy, a po usuniętym pliku Centrum nie ma ostatniej dobrej.
+    if last_good and not listed.exists():
+        write_worker_list(listed)
+    if not last_good:
+        listed.unlink(missing_ok=True)
+    stopping.client.get("/api/settings")
+    listed.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    started = stopping.start()
+    refused = started.json()["message"] if started.status_code == 409 else None
+    warnings = (
+        None
+        if refused is not None
+        else [warning for warning in finished_view(stopping.client)["result"]["warnings"] if warning["setting"] == "wykonawcy"]
+    )
+
+    needed = "workers" in declaration.needs
+    last_good_warning = Message.of(diagnosis_messages.worker_list_last_good(_DAMAGED_WORKERS)).model_dump()
+    expected: tuple[int, str | None, list[dict[str, Any]] | None] = (
+        (409, refusal.workers_unusable(FieldProblem(None, _DAMAGED_WORKERS)).message, None)
+        if needed and not last_good
+        else (200, None, [last_good_warning] if needed else [])
+    )
+    assert (started.status_code, refused, warnings) == expected

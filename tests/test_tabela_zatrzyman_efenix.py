@@ -21,7 +21,7 @@ gdzie okno zbiera który dowód. Tabela to dane, a test porównuje ją z kodem: 
 ``efenix_browser``, ``efenix_page``, ``efenix_pricing`` i ``efenix_positions`` (funkcja i tekst wywołania) ma dokładnie
 jeden wiersz, a każdy wiersz ma swoje miejsce. Nowe miejsce bez wiersza albo przyczyny nie przejdzie, więc recenzent
 czyta najpierw tę tabelę. Że przyczyna dochodzi do Logów Uruchomienia, pokazują przegląd odcięć w
-``tests/test_wycena_efenix.py`` i testy hipotez B–E w ``tests/test_centrum_logi_uruchomienia.py``. Granica: wywołanie
+``tests/test_wycena_efenix.py`` i testy hipotez B, D i E w ``tests/test_centrum_logi_uruchomienia.py``. Granica: wywołanie
 klasyfikatora gdzie indziej niż w tych czterech modułach albo pod inną nazwą niż ``WindowStop.of`` tabela pomija.
 """
 

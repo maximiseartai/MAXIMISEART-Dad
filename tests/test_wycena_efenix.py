@@ -1396,6 +1396,7 @@ def test_wylogowanie_w_odpowiedzi_na_date_wykonania_zatrzymuje_wycene_bez_ponown
 
 
 TIMEOUT = "playwright._impl._errors.TimeoutError"
+PLAYWRIGHT_ERROR = "playwright._impl._errors.Error"
 # Część strony, której zabrakło przy każdej zmianie budowy Atrapy (lista, tabela wyników, strona zlecenia, okno daty
 # wykonania, Emmett albo kwota), przyczyna techniczna z tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``) i działanie
 # okna, które się nie udało.
@@ -2891,7 +2892,7 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
         assert facts.part is PagePart.EMMETT and isinstance(facts.cause, BrowserFailure), (facts.part, facts.cause)
         assert facts.cause.operation is Operation.ANSWER, facts.cause
     if WHOLE_RUN[first] == ("GET", LIST_PAGE) and outage is Outage.CUT:
-        assert (facts.part, facts.cause) == (PagePart.LIST, BrowserFailure("playwright._impl._errors.Error", Operation.OPEN))
+        assert (facts.part, facts.cause) == (PagePart.LIST, BrowserFailure(PLAYWRIGHT_ERROR, Operation.OPEN))
     # Lista zleceń drugiego zlecenia to żądanie 14: odcięcie przed nim zatrzymuje okno przy zleceniu 1 (wiersz 18).
     early: dict[int, list[int | None]] = {0: [None], 1: [None, 18]}
     rows = early.get(first, [18] if first < WHOLE_RUN.index(("GET", LIST_PAGE), 1) else [19])
@@ -3434,7 +3435,7 @@ def test_chromium_skryptu_dla_maszyn_ktory_nie_wystartowal_zatrzymuje_wycene_jak
 
     assert (_stop(outcome), _kept(outcome)) == ("EFENIX_BRAK_PRZEGLADARKI", False)
     assert isinstance(outcome.ending, Stop) and isinstance(outcome.ending.facts, PricingStopped), _ending(outcome)
-    assert outcome.ending.facts.cause == BrowserFailure("playwright._impl._errors.Error", Operation.START)
+    assert outcome.ending.facts.cause == BrowserFailure(PLAYWRIGHT_ERROR, Operation.START)
 
 
 def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: Path) -> None:
