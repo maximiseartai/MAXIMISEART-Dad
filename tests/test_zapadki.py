@@ -1070,24 +1070,23 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
     ]
 
 
-# Katalog modułów tras w zakresie ``files:`` reguły ``regula-w-trasie`` jako części ścieżki, bo napis ścieżki w pliku
+# Katalog Centrum w zakresie ``files:`` reguły ``regula-w-trasie`` jako części ścieżki, bo napis ścieżki w pliku
 # testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``).
-_TRASY: Final = ("src", "rozliczenia", "centrum")
+_CENTRUM: Final = ("src", "rozliczenia", "centrum")
 _ODMOWA = "from rozliczenia.centrum import refusal\n\n\ndef changed(problem: object) -> None:\n"
-# Trasa Ustawień w rozumieniu reguły: moduł tworzy APIRouter i zmienia Ustawienia metodą zapisu właściciela. Nagłówek
-# przesuwa linie próbki o jedną.
-_APIROUTER = "from fastapi import APIRouter\n"
-_ZAPIS_USTAWIEN = "\n\ndef settings_router(settings: object) -> APIRouter:\n    settings.change()\n    return APIRouter()\n"
+# Moduł w zakresie reguły: woła metodę zapisu właściciela Ustawień, bez żadnej trasy.
+_ZAPIS_USTAWIEN = "\n\ndef apply(settings: object) -> None:\n    settings.change()\n"
+_WLASCICIEL = "from rozliczenia.centrum.settings.owner import CentrumSettings\n"
 
 
-def _trasa_ustawien(text: str) -> str:
-    return f"{_APIROUTER}{text}{_ZAPIS_USTAWIEN}"
+def _modul_zapisu(text: str) -> str:
+    return f"{text}{_ZAPIS_USTAWIEN}"
 
 
-def _moduly_tras(root: Path, probki: dict[str, str]) -> dict[str, Path]:
-    """Nowy moduł każdej próbki w katalogu tras ``root``, bez ``router`` w nazwie."""
+def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
+    """Nowy moduł każdej próbki w katalogu Centrum ``root``, bez ``router`` w nazwie."""
 
-    folder = root.joinpath(*_TRASY)
+    folder = root.joinpath(*_CENTRUM)
     folder.mkdir(parents=True, exist_ok=True)
     pliki = {opis: folder / f"probka_{numer}.py" for numer, opis in enumerate(probki)}
     for opis, plik in pliki.items():
@@ -1097,36 +1096,48 @@ def _moduly_tras(root: Path, probki: dict[str, str]) -> dict[str, Path]:
 
 @needs_ast_grep
 @pytest.mark.parametrize(
-    ("naglowek", "trasa", "lines"),
+    ("modul", "naglowek", "zapis", "lines"),
     [
-        (_APIROUTER, _ZAPIS_USTAWIEN, [6, 8]),
         (
-            "from fastapi import APIRouter as Router\n",
-            "\n\ndef settings_router(settings: object) -> Router:\n    settings.change()\n    return Router()\n",
+            "quantity_differences.py",
+            "from fastapi import APIRouter\n",
+            "\n\ndef add_worker_routes(router: APIRouter, settings: object) -> None:\n    settings.change()\n",
             [6, 8],
         ),
         (
+            "app.py",
+            "from fastapi import FastAPI\n",
+            '\n\ndef add_delete(app: FastAPI, settings: object) -> None:\n    @app.delete("/api/settings/workers/{name}")\n'
+            "    def delete_worker(name: str) -> None:\n        settings.change(name)\n",
+            [6, 8],
+        ),
+        (
+            "probka.py",
             "import fastapi\n",
-            "\n\ndef settings_router(settings: object) -> fastapi.APIRouter:\n    settings.change()\n    return fastapi.APIRouter()\n",
+            '\n\ndef add_worker_routes(router: "fastapi.APIRouter", settings: object) -> None:\n    settings.change_with_used_keys()\n',
             [6, 8],
         ),
-        (_APIROUTER, "\n\ndef add_worker_routes(router: APIRouter, settings: object) -> None:\n    settings.change()\n", [6, 8]),
-        (_APIROUTER, "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
-        ("", "\n\ndef apply(settings: object) -> None:\n    settings.change()\n", []),
+        ("probka.py", _WLASCICIEL, '\n\ndef undo(settings: CentrumSettings) -> None:\n    settings.undo("row")\n', [6, 8]),
+        ("probka.py", _WLASCICIEL, "\n\ndef release(settings: CentrumSettings) -> None:\n    settings.apply_release_changes()\n", [6, 8]),
+        ("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", [6, 8]),
+        ("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", []),
+        ("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
     ],
 )
-def test_regula_w_trasie_obejmuje_modul_z_apirouter_i_zapisem_ustawien_pod_kazda_nazwa(
-    tmp_path: Path, naglowek: str, trasa: str, lines: list[int]
+def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poza_wlascicielem(
+    tmp_path: Path, modul: str, naglowek: str, zapis: str, lines: list[int]
 ) -> None:
-    """Sondy #1727 r1 W1 (``_ensure_*`` i odmowa pod ``if`` w ``quantity_differences.py``, trasie Ustawień bez
-    ``router`` w nazwie) i r2 W1 (``APIRouter`` pod aliasem i router z parametru ``router: APIRouter``) są zgłoszone;
-    ten sam kod w trasie bez zapisu Ustawień i w module zapisu bez ``APIRouter`` nie."""
+    """Zakres reguły wynika z własności, nie ze składni trasy: sondy #1727 r1 W1 (``quantity_differences.py`` bez
+    ``router`` w nazwie), r2 W1 (router z parametru) i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``, adnotacja
+    napisem ``"fastapi.APIRouter"``) i moduł bez trasy, który woła którąkolwiek metodę zapisu właściciela, są
+    zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``) i w module
+    bez zapisu Ustawień nie."""
 
     base = _empty_base(tmp_path)
-    plik = tmp_path.joinpath(*_TRASY, "quantity_differences.py")
+    plik = tmp_path.joinpath(*_CENTRUM, *modul.split("/"))
     plik.parent.mkdir(parents=True)
     plik.write_text(
-        f'{naglowek}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{trasa}',
+        f'{naglowek}{_ODMOWA}    _ensure_not_in_periods(problem)\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n{zapis}',
         encoding="utf-8",
     )
 
@@ -1198,51 +1209,51 @@ def test_regula_w_trasie_zglasza_odmowe_trasy_poza_kazdym_dozwolonym_ksztaltem(t
     pod ``if isinstance``/``is None`` wprost w ciele funkcji albo w takim ``case``, 404) nie."""
 
     base = _empty_base(tmp_path)
-    _moduly_tras(tmp_path, {"probka": _trasa_ustawien(text)})
+    _moduly_centrum(tmp_path, {"probka": _modul_zapisu(text)})
 
-    assert [(finding.line - _APIROUTER.count("\n"), finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "regula-w-trasie") for line in lines]
 
 
 _FIELD_PROBLEM = "from rozliczenia.centrum.settings.files import FieldProblem\n"
 # Znane luki reguły ``regula-w-trasie`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy moduł z odmową
-# reguły domeny Ustawień w trasie obok właściciela, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
+# reguły domeny Ustawień obok zapisu poza właścicielem, który mimo to przechodzi przez regułę i ruff z konfiguracją ``src/``.
 ZNANE_LUKI_REGULY_W_TRASIE: Final = {
-    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta klasę w isinstance, nie źródło wartości": _trasa_ustawien(
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta klasę w isinstance, nie źródło wartości": _modul_zapisu(
         f"from rozliczenia.centrum.device_forms import needed_by\n{_FIELD_PROBLEM}"
         f"{_ODMOWA}    needed = needed_by(problem)\n    if isinstance(needed, FieldProblem):\n"
         "        raise refusal.setting_refused(needed)\n"
     ),
-    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta is None, nie źródło wartości": _trasa_ustawien(
+    "dozwolony warunek na wyniku sprawdzenia spoza właściciela: reguła czyta is None, nie źródło wartości": _modul_zapisu(
         "from rozliczenia import worker_periods\n"
         f'{_ODMOWA}    found = worker_periods.unused(problem)\n    if found is None:\n        raise refusal.worker_kept(problem, "worker")\n'
     ),
-    "nazwa: funkcja katalogu odmów importowana z nazwy": _trasa_ustawien(
+    "nazwa: funkcja katalogu odmów importowana z nazwy": _modul_zapisu(
         "from rozliczenia.centrum.refusal import setting_refused\n\n\ndef changed(problem: object) -> None:\n"
         "    raise setting_refused(problem)\n"
     ),
-    "nazwa: katalog odmów pod inną nazwą modułu": _trasa_ustawien(
+    "nazwa: katalog odmów pod inną nazwą modułu": _modul_zapisu(
         "from rozliczenia.centrum import refusal as odmowy\n\n\ndef changed(problem: object) -> None:\n"
         '    raise odmowy.worker_kept(problem, "worker")\n'
     ),
-    "nazwa: odmowa z funkcji spoza katalogu odmów": _trasa_ustawien(
+    "nazwa: odmowa z funkcji spoza katalogu odmów": _modul_zapisu(
         "from rozliczenia.centrum import periods\n\n\ndef changed(problem: object) -> None:\n    raise periods.kept(problem)\n"
     ),
-    "nazwa: sprawdzenie z innego modułu bez przedrostka _ensure_": _trasa_ustawien(
+    "nazwa: sprawdzenie z innego modułu bez przedrostka _ensure_": _modul_zapisu(
         "from rozliczenia import worker_periods\n\n\ndef changed(problem: object) -> None:\n    worker_periods.ensure_unused(problem)\n"
     ),
-    "nazwa: klasa wyniku o nazwie klasy właściciela spoza settings/owner.py": _trasa_ustawien(
+    "nazwa: klasa wyniku o nazwie klasy właściciela spoza settings/owner.py": _modul_zapisu(
         "from rozliczenia.centrum.report_box import Refused\n"
         f"{_ODMOWA}    match problem:\n        case Refused():\n            raise refusal.setting_refused(problem)\n"
     ),
-    "zakres: trasa zmienia Ustawienia funkcją innego modułu, nie metodą zapisu właściciela w module trasy": (
-        f"{_APIROUTER}from rozliczenia.centrum import refusal, settings_writes\n\n\n"
-        'def settings_router(settings: object, problem: object) -> APIRouter:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
-        "    settings_writes.save(settings)\n    return APIRouter()\n"
+    "zakres: moduł zmienia Ustawienia funkcją innego modułu, nie metodą zapisu właściciela": (
+        "from rozliczenia.centrum import refusal, settings_writes\n\n\n"
+        'def apply(settings: object, problem: object) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+        "    settings_writes.save(settings)\n"
     ),
-    "zakres: moduł bez identyfikatora APIRouter, bo trasa stoi na routerze importowanym jako obiekt innego modułu": (
-        "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings_router import router\n\n\n"
-        '@router.delete("/workers/{name}")\ndef delete_worker(settings: object, problem: object) -> None:\n'
-        '    settings.change()\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
+    "zakres: metoda zapisu właściciela przekazana bez wywołania, reguła czyta wywołanie": (
+        "from collections.abc import Callable\n\nfrom rozliczenia.centrum import refusal\n\n\n"
+        "def apply(settings: object, problem: object, run: Callable[[object], None]) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    run(settings.change)\n'
     ),
 }
 
@@ -1253,8 +1264,8 @@ def test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff(tmp_path: Pat
     from tests.fixtures.znane_luki import assert_znane_luki, ruff
 
     base = _empty_base(tmp_path)
-    pliki = _moduly_tras(tmp_path, ZNANE_LUKI_REGULY_W_TRASIE)
-    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*_TRASY, "test_sonda_luki_router.py"))
+    pliki = _moduly_centrum(tmp_path, ZNANE_LUKI_REGULY_W_TRASIE)
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath(*_CENTRUM, "test_sonda_luki_zapisu.py"))
     opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
     for finding in syntax_rules(tmp_path, base):
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")

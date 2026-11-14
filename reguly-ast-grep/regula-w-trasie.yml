@@ -2,11 +2,14 @@ id: regula-w-trasie
 language: python
 severity: error
 message: >-
-  odmowa w trasie HTTP, która zmienia Ustawienia, to druga droga reguły, którą „Cofnij” w Historii omija: przenieś
-  regułę do właściciela Ustawień (CentrumSettings._checked albo _dad_change w settings/owner.py) i zwróć z trasy jego
-  wynik
+  odmowa obok zapisu Ustawień poza ich właścicielem to druga droga reguły, którą „Cofnij” w Historii omija: przenieś
+  regułę do właściciela Ustawień (CentrumSettings._checked albo _dad_change w settings/owner.py) i odmawiaj tylko na
+  podstawie jego wyniku
 files:
   - src/rozliczenia/centrum/**/*.py
+# Prawo właściciela Ustawień: settings/owner.py sprawdza reguły przyjęcia zmiany, do niego komunikat kieruje resztę kodu.
+ignores:
+  - src/rozliczenia/centrum/settings/owner.py
 utils:
   # Wynik właściciela: case klasy z wyniku metod CentrumSettings (settings/owner.py), bez strażnika if.
   case-wyniku-wlasciciela:
@@ -23,10 +26,10 @@ utils:
           regex: '^(\w+\.)*(Saved|Refused|NotSaved|KeptInPeriods|NotUndoable)$'
 rule:
   # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty #1585 W1 r1 (_ensure_not_in_periods w
-  # trasie DELETE) i #1577 W1 r3 (odmowa needed_by w trasie formularza). Trasą Ustawień jest moduł, który nazywa APIRouter
-  # (tworzy go, importuje pod aliasem albo bierze z parametru, bo mypy strict i ANN401 wymuszają adnotację) i zmienia
-  # Ustawienia przez metodę zapisu właściciela, jakkolwiek się nazywa (#1727 r1 W1: quantity_differences.py, r2 W1: router
-  # z parametru i alias). Zakres to cały taki moduł, bo trasy wołają zagnieżdżone funkcje pomocnicze bez dekoratora.
+  # trasie DELETE) i #1577 W1 r3 (odmowa needed_by w trasie formularza). Zakres wynika z własności, nie ze składni trasy
+  # (#1727 r1–r3: nazwa pliku, APIRouter(…), identyfikator APIRouter nie widziały FastAPI ani adnotacji napisem): każdy
+  # moduł Centrum poza właścicielem, który woła metodę zapisu właściciela (CentrumSettings.change, change_with_used_keys,
+  # undo, apply_release_changes), cały, bo trasy, middleware i funkcje pomocnicze sprawdzają regułę obok zapisu.
   # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
   # sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga tylko do
   # rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej gałęzi, pod
@@ -36,20 +39,15 @@ rule:
     - inside:
         kind: module
         stopBy: end
-        all:
-          - has:
-              stopBy: end
-              kind: identifier
-              regex: '^APIRouter$'
-          - has:
-              stopBy: end
-              kind: call
-              has:
-                field: function
-                kind: attribute
-                has:
-                  field: attribute
-                  regex: '^(change|change_with_used_keys|undo|apply_release_changes)$'
+        has:
+          stopBy: end
+          kind: call
+          has:
+            field: function
+            kind: attribute
+            has:
+              field: attribute
+              regex: '^(change|change_with_used_keys|undo|apply_release_changes)$'
     - any:
         - kind: call
           has:
