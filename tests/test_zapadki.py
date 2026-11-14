@@ -617,6 +617,8 @@ def test_zapadka_repozytorium_widzi_dodane_linie_kazdego_pliku_takze_bez_rozszer
     (tmp_path / "obraz.bin").write_bytes(b"\x89\x00\n")
     (tmp_path / "build").mkdir()
     (tmp_path / "build" / "ignorowany.py").write_text("nowa\n", encoding="utf-8")
+    if os.name != "nt":  # Dowiązanie na Windows wymaga uprawnień, których zadanie CI nie ma.
+        (tmp_path / "dowiazanie").symlink_to("docs", target_is_directory=True)
 
     added = sorted((path, number) for path, number, _ in _added_lines(tmp_path, base, ".", "*"))
 
