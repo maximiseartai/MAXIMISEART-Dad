@@ -1,6 +1,6 @@
-"""Tempo ludzkie Wyceny w efenix: przerwy przed zapisami w oknie efenix, ok. 20 s na zlecenie z zapisem (spec #741, ADR 0024).
+"""Tempo ludzkie Wyceny w efenix: przerwy przed zapisami w oknie efenix, ok. 20 s na zlecenie z zapisem (ADR 0024).
 
-Przerwy należą do zapisów w efenix, nie do odczytów (decyzja Maksa 4.11.2026, #834). Okno zlecenia z tempem
+Przerwy należą do zapisów w efenix, nie do odczytów (decyzja Maksa z 4.11.2026). Okno zlecenia z tempem
 (``Pacing.window``) robi przerwę ``ACTION_PAUSE_S`` przed każdym zapisem (data wykonania, Wycena Emmetta, ilość, Przekazanie
 do akceptacji), a przed szukaniem następnego zlecenia tyle, ile zostało do ``ORDER_S`` od szukania zlecenia, w którym coś
 zapisało. Ponowne szukanie w tym samym zleceniu (potwierdzenie Przekazania do akceptacji) to odczyt: idzie bez przerwy i
@@ -28,7 +28,7 @@ from .efenix_window import Efenix, EmmettLoad, ForwardRefusal, ListedOrder, Orde
 __all__ = ["ACTION_PAUSE_S", "KEEPALIVE_S", "ORDER_S", "Pace", "Pacing"]
 
 ORDER_S: Final = 20.0
-"""Czas jednego zlecenia, ile zajmuje ono tacie (spec #741: „ok. 20 s na zlecenie”)."""
+"""Czas jednego zlecenia, ile zajmuje ono tacie (specyfikacja Wyceny w efenix: „ok. 20 s na zlecenie”)."""
 ACTION_PAUSE_S: Final = 2.0
 """Przerwa przed każdym zapisem w efenix: zlecenie z datą wykonania, Wyceną Emmetta i dwiema ilościami ma cztery zapisy,
 czyli 8 s przerw, a resztę do ``ORDER_S`` dopełnia przerwa przed szukaniem następnego zlecenia."""
@@ -36,7 +36,8 @@ KEEPALIVE_S: Final = 15.0
 """Próg podtrzymania sesji: najdłuższa przerwa między działaniami w efenix.
 
 Po ilu minutach bezczynności efenix wylogowuje, nie wiadomo. Zakładamy ostrożnie, że już po 3 minutach (zwykła sesja PHP
-wygasa po 24). 15 s to „ruch co kilkanaście sekund” ze specyfikacji #741 i dwunastokrotny zapas do tych 3 minut.
+wygasa po 24). 15 s to „ruch co kilkanaście sekund” ze specyfikacji Wyceny w efenix i dwunastokrotny zapas do tych 3
+minut.
 """
 
 _T = TypeVar("_T")

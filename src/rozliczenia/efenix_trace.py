@@ -2,7 +2,7 @@
 
 Okno ``traced()`` przy jednym zleceniu Pliku zbiorczego przekazuje każde działanie oknu pod spodem i zapisuje je w
 ``OrderTrace`` z chwilą rozpoczęcia (UTC), więc przerwy tempa ludzkiego między działaniami widać bez symulacji. Każde
-działanie niesie odczyt strony efenix po nim (#843, ``TraceStep``), bez numeru zlecenia i bez danych adresowych (reguła
+działanie niesie odczyt strony efenix po nim (``TraceStep``), bez numeru zlecenia i bez danych adresowych (reguła
 danych, ADR 0025). Status i login realizatora przy otwarciu zlecenia pochodzą z wiersza listy, bo okno nie czyta ich ze
 strony zlecenia, a Przekazanie do akceptacji niesie odmowę efenix z zamkniętej listy (``ForwardRefusal``, bez tekstu
 okna informacji) albo sam rodzaj i czas (status po nim pokazuje następne szukanie). Działanie, które się nie udało
