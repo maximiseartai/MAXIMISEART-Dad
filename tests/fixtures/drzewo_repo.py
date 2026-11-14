@@ -30,3 +30,14 @@ def left_behind(before: frozenset[str]) -> list[str]:
     """Pliki z linią dodaną od ``HEAD``, których nie było w ``before``."""
 
     return sorted((files_with_added_lines() or frozenset()) - before)
+
+
+def opening(path: str) -> str:
+    """Początek pliku ``path`` checkoutu ``REPO``: najwyżej dwie linie po 300 znaków, żeby komunikat strażnika mówił,
+    który proces go zapisał."""
+
+    try:
+        lines = (REPO / path).read_text(encoding="utf-8", errors="replace").splitlines()[:2]
+    except OSError as error:
+        return f"<{type(error).__name__}>"
+    return " / ".join(line[:300] for line in lines)

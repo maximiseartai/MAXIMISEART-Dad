@@ -48,7 +48,7 @@ def test_sesja_ktora_zostawila_w_drzewie_plik_albo_zmiane_konczy_sie_porazka_z_j
     conftest.pytest_sessionfinish(cast(pytest.Session, session), pytest.ExitCode.OK)
 
     assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
-    assert "pliki z liniami dodanymi od HEAD: debug.log, src/modul.py |" in capsys.readouterr().out
+    assert "pliki z liniami dodanymi od HEAD: debug.log ([0101/000000.000:ERROR] x), src/modul.py (A = 1 / B = 2) |" in capsys.readouterr().out
 
 
 def test_sesja_bez_nowego_pliku_w_drzewie_zostaje_zielona(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

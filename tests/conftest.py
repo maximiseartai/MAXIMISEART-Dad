@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
-from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind
+from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
@@ -96,7 +96,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     print(
         "\nDRZEWO REPO | testy zostawiły w drzewie repozytorium pliki z liniami dodanymi od HEAD: "
-        + ", ".join(left)
+        + ", ".join(f"{path} ({opening(path)})" for path in left)
         + " | test pisze do tmp_path albo przywraca plik bez zmiany jego czasu i bajtów (tests/fixtures/drzewo_repo.py)"
     )
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
