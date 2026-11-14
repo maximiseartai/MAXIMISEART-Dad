@@ -149,6 +149,8 @@ elif arguments[:2] == ["api", "graphql"]:
     calls = len(log.read_text().splitlines()) if log.exists() else 0
     with log.open("a") as out:
         out.write(json.dumps({key: value for key, value in variables.items() if key != "query"}) + "\\n")
+    if (here / "rejestr_odrzucany").exists():
+        sys.exit("gh: Bad Gateway (HTTP 502)")
     nodes = json.loads((here / "graphql.json").read_text())
     for change in json.loads((here / "graphql_changes.json").read_text()):
         if calls >= change["po"]:
@@ -2412,8 +2414,17 @@ def _idiom_verdict(name: str) -> str:
 def _idiom_gate(
     tmp_path: Path, verdict: str, *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK
 ) -> tuple[MergeGitHub, str, subprocess.CompletedProcess[str]]:
-    """``--bez-merge`` PR 1 z werdyktem ``FAIL`` z polem Idiom (``_idiom_verdict``) na starszym commicie, sekcją
-    ``## Korzeń`` i ``PASS`` na HEAD; rejestr podaje PR-y ``registry``, a dowód kończy się ``proof``."""
+    """``--bez-merge`` PR 1 z ``_idiom_pull``."""
+
+    github, head = _idiom_pull(tmp_path, verdict, registry=registry, proof=proof)
+    return github, head, github.run("1", "--bez-merge")
+
+
+def _idiom_pull(
+    tmp_path: Path, verdict: str, *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK, passed: bool = True
+) -> tuple[MergeGitHub, str]:
+    """PR 1 z werdyktem ``FAIL`` z polem Idiom (``_idiom_verdict``) na starszym commicie, sekcją ``## Korzeń`` i
+    z ``passed`` ``PASS`` na HEAD; rejestr podaje PR-y ``registry``, a dowód kończy się ``proof``."""
 
     files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF}
     github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
@@ -2424,8 +2435,9 @@ def _idiom_gate(
     github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
     github.comment(1, verdict.format(commit=OLD))
-    github.comment(1, SPRAWDZONE_PASS.format(head=head))
-    return github, head, github.run("1", "--bez-merge")
+    if passed:
+        github.comment(1, SPRAWDZONE_PASS.format(head=head))
+    return github, head
 
 
 def _proofs(github: MergeGitHub) -> list[list[str]]:
@@ -2503,7 +2515,7 @@ def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:
     assert sorted(chwasty.rendered()) == sorted(set(chwasty.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.chwasty"
 
 
-# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–4 tools/scal_pr.py jako status commita
+# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–5 tools/scal_pr.py jako status commita
 # na HEAD PR, bez merge'a; w runie Actions z linkiem do runu, w którym linia STATUS podaje przyczyny w całości.
 RUN = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": opisy_pr.REPO, "GITHUB_RUN_ID": "77"}
 RUN_URL = f"https://github.com/{opisy_pr.REPO}/actions/runs/77"
@@ -2525,12 +2537,12 @@ def test_status_gotowego_pr_jest_zielony_na_jego_head_a_pr_nie_jest_scalany(tmp_
     answered = _status(github, "1", "--status")
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–4 tools/scal_pr.py spełnione"
+    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–5 tools/scal_pr.py spełnione"
     assert _statuses(github) == [
         [
             "POST",
             f"repos/{{owner}}/{{repo}}/statuses/{head}",
-            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–4 tools/scal_pr.py spełnione", "target_url": RUN_URL},
+            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–5 tools/scal_pr.py spełnione", "target_url": RUN_URL},
         ]
     ]
     assert github.merges() == []
@@ -2647,3 +2659,56 @@ def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(t
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
     assert _last_line(answered) == f"STATUS FAIL | #1 {head[:7]} | success niewysłany: gh: Validation Failed (HTTP 422)"
+
+
+def _idiom_refusal(head: str, proof: tuple[int, str]) -> str:
+    arguments = " ".join(_proof_arguments(head, "1/W1/r1", "1553/W1/r2"))
+    return (
+        f"idiom: zakazane-wywolanie: Ważne 1/W1/r1, 1553/W1/r2 ma pole Idiom: zakazane-wywolanie, a dowód reguły nie przeszedł (kod {proof[0]}): {proof[1]}; "
+        f"dodaj albo popraw regułę ast-grep o id zakazane-wywolanie i sprawdź ją poleceniem tools/na_scalonych_pr.py {arguments}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("proof", "passed", "fields", "state", "reasons", "proved"),
+    [
+        (PROOF_WITHOUT_RULE, True, {}, "failure", ["idiom"], True),
+        (PROOF_WITHOUT_RULE, False, {}, "failure", ["werdykt", "idiom"], True),
+        (PROOF_OK, True, {}, "success", [], True),
+        (PROOF_OK, False, {}, "pending", ["werdykt"], True),
+        (None, True, {}, "pending", ["rejestr"], False),
+        (PROOF_WITHOUT_RULE, True, {"isDraft": True}, "failure", ["szkic"], False),
+    ],
+    ids=["bez-reguly-na-head", "bez-reguly-na-head-i-bez-werdyktu", "dowod-ok", "dowod-ok-bez-werdyktu", "github-bez-rejestru", "szkic-bez-dowodu"],
+)
+def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
+    tmp_path: Path, proof: tuple[int, str] | None, passed: bool, fields: dict[str, object], state: str, reasons: list[str], proved: bool
+) -> None:
+    """Status „Werdykt i bramka” wymaga reguły z pola ``Idiom:`` jak merge, więc merge z pominięciem ``tools/scal_pr.py``
+    jej nie omija. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez rejestru korzeni to
+    ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają."""
+
+    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof or PROOF_OK, passed=passed)
+    github.update(1, **fields)
+    if proof is None:
+        (github.bin / "rejestr_odrzucany").write_text("", encoding="utf-8")
+
+    answered = _status(github, "1", "--status")
+
+    expected = {
+        "idiom": _idiom_refusal(head, PROOF_WITHOUT_RULE),
+        "werdykt": NO_PASS.format(head=head),
+        "szkic": "PR jest szkicem",
+        "rejestr": "idiom: GitHub nie podał rejestru korzeni (",
+    }
+    last = _last_line(answered)
+    prefix = f"STATUS {state} | #1 {head[:7]} | {'oczekuje: ' if state == 'pending' else ''}"
+    assert answered.returncode == 0 and last.startswith(prefix), answered.stdout + answered.stderr
+    description = last.removeprefix(prefix)
+    if state == "success":
+        assert description == "warunki 1–5 tools/scal_pr.py spełnione"
+    found = [name for name, reason in expected.items() if reason in description]
+    assert sorted(found) == sorted(reasons), description
+    assert ("idiom:" in description) is any(name in {"idiom", "rejestr"} for name in reasons), description
+    assert _proofs(github) == ([_proof_arguments(head, "1/W1/r1", "1553/W1/r2")] if proved else [])
+    assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == [state]
