@@ -9,6 +9,7 @@
   Plan CI uruchamia wtedy część k z `MUTACJE_CZESC=k/n`, a skrypt bierze swoje jednostki przez `part` z [`tools/lib/skrypt_skilla.py`](../../tools/lib/skrypt_skilla.py): kolejne kawałki w ich kolejności, każda jednostka raz.
   Każda część płaci swój start (serwer, przeglądarka), więc n dobierz symulatorem, a test skilla sprawdza, że części każdej liczby do n składają się na całość.
   Jednostka musi przejść zaraz po starcie części albo po każdej wcześniejszej jednostce, bo noc na `main` uruchamia każdą część każdej liczby do n (`LICZY NOC`), a pull request części jednej liczby, którą wybiera plan.
+- Znane ustalenie skilla `verify-*` (`KNOWN_FINDINGS` eksploratora albo znane naruszenie modelu TLA+) wybacza jedną wąską przyczynę, a skrypt mutacji ma na nie dwie mutacje: usunięcie tylko tej przyczyny daje `ZNALEZISKO ZNIKNĘŁO` tylko dla niego, a ta sama szkoda z innej przyczyny `NOWE NARUSZENIE` (#1341, #1343, #1345).
 
 ## Co wyrocznia bierze z `src`
 

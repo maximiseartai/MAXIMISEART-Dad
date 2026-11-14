@@ -8,7 +8,11 @@ formatowania jak u taty: inny krój, zawijanie, wyrównanie do góry, brak obram
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
+import json
 from pathlib import Path
+import subprocess
+import sys
 from typing import cast
 
 import pytest
@@ -31,6 +35,7 @@ from atrapy.preparation import (
 )
 from tests.fixtures.operacje import run_preparation
 from tests.fixtures.wyglad_komorek import wyglad, wyglady
+from tests.fixtures.znane_luki import wymaga_ruff
 from atrapy.settlement import worker_list, write_template
 from atrapy.workbooks import LEFTOVER_DATE_FORMAT, LEFTOVER_ROW_HEIGHT, active_worksheet, leave_data_row_leftovers
 
@@ -255,3 +260,22 @@ def test_wyglad_komorek_z_tym_samym_stylearray_w_dwoch_skoroszytach_bierze_tabel
 
     assert looks == ["Czcionka-A", "Czcionka-B"]
 
+
+@wymaga_ruff
+def test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl() -> None:
+    """``row_look.py`` ustawia indeksy stylu komórki wprost w prywatnym ``StyleArray`` openpyxl (``_style``), bo openpyxl
+    nie ma do niego publicznego API, więc ``pyproject.toml`` daje mu prawo właściciela do ``SLF001``. Kod modułu jako
+    sonda obok niego, poza tym prawem, zgłasza w ruff tylko ``_style``: inna prywatna składowa to droga obok jej
+    właściciela."""
+
+    module = Path(cast(str, inspect.getsourcefile(RowLook)))
+    found = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json", "--stdin-filename", str(module.with_name("sonda_wygladu.py")), "-"],
+        input=module.read_text(encoding="utf-8"),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert {(finding["code"], finding["message"]) for finding in json.loads(found.stdout)} == {("SLF001", "Private member accessed: `_style`")}
