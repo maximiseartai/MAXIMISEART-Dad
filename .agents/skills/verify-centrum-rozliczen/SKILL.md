@@ -176,8 +176,11 @@ py -3 .agents\skills\verify-centrum-rozliczen\scripts\drive_centrum.py --root "$
 Evidence lives in `<run dir>/evidence/centrum-<id>/` and survives cleanup. The
 run dir is `.verification` of the checkout, or any path given with `--run-dir`:
 
-- `fixture.txt`, `server.txt` (server console), `doctor.txt`, `drive.txt`
-  (every step and check), `cleanup.txt`, `self-test.txt`;
+- `fixture.txt`, `server.txt` (server console, with a `REQUEST` line per answered request: method, path without
+  query, status), `doctor.txt`, `drive.txt` (every step and check), `cleanup.txt`, `self-test.txt`;
+- `zadania-strony.txt`: each failed request (not one the page gave up itself), answer of 400 or more and page
+  without its stylesheet, of every page of the drive. A page without its stylesheet fails the drive with `the page got no stylesheet`, before the error it
+  caused;
 - `screenshots/NN-<step>.png` and `aria/NN-<step>.txt` for each step, captured
   after transitions finish; on failure, also `screenshots/zz-failure.png`.
   `NN` belongs to one feature only (feature files and PRs cite it alone; views of one
