@@ -608,7 +608,10 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
     assert f"Treść\n{WAITING_LOGS}" in skrzynka.texts()
 
 
-def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> None:
+@pytest.mark.parametrize("tail", ["", "\nwersja narzędzia abc1234"], ids=["linia-logow-na-koncu", "linia-logow-przed-wersja"])
+def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path, tail: str) -> None:
+    """Komentarz idzie po stanie wysyłki Uwagi, nie po końcówce jej tekstu, więc kolejność stopki nie ma znaczenia."""
+
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     box = FakeReportBox(background=LOGS)
     box.background_comment_outcomes.append(Rejected())
@@ -616,16 +619,16 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> N
     logs = PeriodThread(label="logi-uruchomienia", line=tool("- Logi"), closed="reuse", title=tool("Logi"))
 
     assert skrzynka.outbox.post(Post(logs, period=None, run_id=PINNED_RUN, header=tool("Logi okresu"), parts=(tool("Logi"),)))
-    skrzynka.sent(note_post(PINNED_ID, tool("Uwaga"), tool(f"Treść\n{WAITING_LOGS}"), logs_on_the_way=True), left=2)
+    skrzynka.sent(note_post(PINNED_ID, tool("Uwaga"), tool(f"Treść\n{WAITING_LOGS}{tail}"), logs_on_the_way=True), left=2)
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
-    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [])
+    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}{tail}", [])
     assert stored.find(NOTE, PINNED_ID) == replace(OLD_CASES[3], number=issue.number)
     # Komentarz z odnośnikiem czeka na Logi; gdy znikną z kolejki, następny start mówi, że nie dotrą.
     for path in skrzynka.directory.glob("*-logi-uruchomienia-*.json"):
         path.unlink()
     skrzynka.restarted()
-    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [LOGS_GONE])
+    assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}{tail}", [LOGS_GONE])
 
 
 def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
@@ -640,6 +643,20 @@ def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     linked = f"[Logi Uruchomienia]({skrzynka.outbox.delivered(PINNED_RUN, 'logi-uruchomienia')})"
     assert issue.body == f"Treść\n{linked}\nwersja narzędzia abc1234"
+
+
+def test_uwaga_ze_stanem_logow_w_drodze_bez_ich_linii_w_tekscie_idzie_bez_zmian(tmp_path: Path) -> None:
+    """Słuchacz wymienia tylko linię Logów Uruchomienia Uwagi; plik kolejki, którego stan mówi o Logach w drodze, a
+    tekst tej linii nie ma, wychodzi z tekstem z kolejki, zamiast w niej stanąć."""
+
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
+    skrzynka.logs_delivered(PINNED_RUN)
+
+    skrzynka.sent(note_post(PINNED_ID, tool("Uwaga"), tool("Treść\nLogi Uruchomienia: w drodze"), logs_on_the_way=True))
+
+    [issue] = skrzynka.box.issues_with("uwaga-taty")
+    assert issue.body == "Treść\nLogi Uruchomienia: w drodze"
 
 
 def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zgloszenia(tmp_path: Path) -> None:

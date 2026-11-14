@@ -53,13 +53,22 @@ import pytest
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
-from rozliczenia import efenix_browser, efenix_process, efenix_trace
+from rozliczenia import efenix_browser, efenix_messages, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
-from rozliczenia.efenix_checks import ListedRead
-from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingStopped, PricingSummary
+from rozliczenia.efenix_checks import ListedRead, Settled
+from rozliczenia.efenix_positions import Excess
+from rozliczenia.efenix_pricing import (
+    EfenixInputs,
+    EmmettWarning,
+    OrderKind,
+    OrderResult,
+    PricingMode,
+    PricingStopped,
+    PricingSummary,
+)
 from rozliczenia.efenix_window import (
     BrowserFailure,
     StatusChangeBlocked,
@@ -1305,6 +1314,31 @@ def test_zmiana_statusu_przerwana_miedzy_dzialaniami_okna_zatrzymuje_nastepne_dz
         searched = atrapa.searched()
 
     assert (stopped.value.part, stopped.value.cause, searched) == (PagePart.RESULTS, StatusChangeBlocked.OUTSIDE_FORWARD, [])
+
+
+def test_przekazanie_otwartego_zlecenia_wyslane_przez_strone_po_udanym_przekazaniu_nie_dochodzi_do_efenix_a_okno_konczy_sie_zatrzymaniem(
+    page: Page,
+) -> None:
+    """Strażnik przepuszcza żądanie Przekazania do akceptacji tylko wtedy, gdy okno na nie czeka: po udanym Przekazaniu
+    to samo żądanie, wysłane przez stronę, nie dochodzi do efenix, a okno kończy się Zatrzymaniem."""
+
+    def forward_then_page_forwards_again(url: str) -> None:
+        with efenix_browser.window(page, url) as efenix:
+            [listed] = efenix.search("8399")
+            efenix.open_order(listed)
+            assert efenix.forward_to_accept() is None
+            page.evaluate(
+                "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Do%20akceptacji&comment='})"
+                ".catch(() => 'przerwane')"
+            )
+
+    order = Order("#8399", cells={"O": 1}, quantities={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            forward_then_page_forwards_again(atrapa.url)
+        requests = atrapa.status_requests()
+
+    assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [("POST", "Do akceptacji")])
 
 
 @pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
@@ -3972,6 +4006,24 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
         23: ("solid", YELLOW),
     }
     assert (font.color.rgb, font.b, font.i) == ("FFFF0000", True, True)
+
+
+
+def test_wynik_zlecenia_ma_komunikat_wtedy_i_tylko_wtedy_gdy_zlecenie_zostalo_tacie(tmp_path: Path) -> None:
+    """Komunikat w wyniku zlecenia ma tylko zlecenie, które zostało tacie (błąd zlecenia, Ostrzeżenie Emmetta), bo z
+    niego Logi Uruchomienia i karta mówią tacie, co zrobić: wynik bez tej zgodności nie powstaje."""
+
+    order = CollectiveOrder(18, "9901", "adrian.testowy", "UL. TESTOWA 1", DAY, {}, Decimal(0))
+    warning = EmmettWarning((Excess("012", efenix=2, file=1),))
+    settled = Settled(ListedOrder("9901", "Rozliczone", "adrian.testowy", "UL. TESTOWA 1", "1"))
+    message = efenix_messages.emmett_warning(tmp_path / "plik zbiorczy.xlsx", 18, warning.excess)
+
+    assert OrderResult(order, warning, (), message, None).kind is OrderKind.WARNING
+    assert OrderResult(order, settled, (), None, None).kind is OrderKind.SETTLED
+    with pytest.raises(ValueError, match="z Komunikatem: False"):
+        OrderResult(order, warning, (), None, None)
+    with pytest.raises(ValueError, match="z Komunikatem: True"):
+        OrderResult(order, settled, (), message, None)
 
 
 _TRACE_START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)
