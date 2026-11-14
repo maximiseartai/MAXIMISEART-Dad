@@ -6,7 +6,7 @@ Zaakceptowana (decyzje Maksa Q1–Q26 z grilla 13.11.2026 w wątku T3).
 Wdrożenie idzie w pięciu PR-ach (Q24); ten ADR wchodzi w pierwszym z nich.
 Zmienia regułę korzenia z sekcji „Reguły i co ich pilnuje” w `AGENTS.md`: drabina szczebli ma teraz (e) i żyje w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), sekcja „Korzeń i chwast”.
 Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek; każda zmiana obowiązuje od merge'a ticketu, który ADR 0034 przy niej podaje.
-Zmieniona przez [ADR 0035](0035-zgoda-korzenia-bez-czekania-na-maksa.md) (#1676) w decyzji Q11: powrót kodu liczy się w obszarze kodu, zgoda działa też po szczeblu niższym niż (a), a zapisuje ją koordynator po `PASS`; obowiązuje od merge'a PR-u bramki z #1676.
+Zmieniona przez [ADR 0035](0035-zgoda-korzenia-bez-czekania-na-maksa.md) (#1676) w decyzjach Q11 i Q12: powrót kodu liczy się w obszarze kodu, zgoda działa też po szczeblu niższym niż (a), a issue „Chwast” zamyka tylko wyrwanie każdego obszaru z jego tabeli; obowiązuje od merge'a PR-ów, które ADR 0035 podaje w Status.
 
 ## Kontekst
 
