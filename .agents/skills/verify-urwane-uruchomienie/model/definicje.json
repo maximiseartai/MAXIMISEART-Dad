@@ -6,7 +6,7 @@
   "src/rozliczenia/centrum/run_logs_guard.py": {
     "_guarded": "bc88e1516be7306e",
     "guard_logs": "220c4b2868ecc3fc",
-    "GuardedLogs": "5fdd32a040cfba44"
+    "GuardedLogs": "a55fdce3637a6d6d"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
@@ -16,7 +16,7 @@
     "WithoutLogsVersion": "92868149b99a61ae",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "a63d5a044d63bc3b",
+    "post_of": "2bbb50689868bd71",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },

@@ -145,7 +145,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "156-tablica-brakujacy-plik", full_page=False)
     with sent_requests(page, "POST", "/api/periods/*/open") as sent:
         missing.click(force=True)
-        settle(page, sent)
+        settle(page, sent, at_least=0)
     expect(hint).to_be_visible()
     run.check(
         len(sent) == 0 and len(run.lines(Log.OPENED)) == opened_before,
