@@ -9,18 +9,16 @@ from pydantic import Field
 from rozliczenia.centrum.contract.common import Model
 
 
-# Strony Centrum (`frontend/src/pages.tsx`): z bocznego menu i widok Powiadomienia; identyfikator to adres `#/<id>` strony.
-# Okno Ustawień (`#/ustawienia/<sekcja>`) otwiera się nad stroną i mierzy się jak ona, pod identyfikatorem `ustawienia`.
 PageId = Literal["okresy", "uruchomienia", "metryki", "ustawienia", "powiadomienia", "uzupelnienie", "raporty"]
+"""Strony Centrum (``frontend/src/pages.tsx``): z bocznego menu i widok Powiadomienia; identyfikator to adres ``#/<id>``
+strony. Okno Ustawień (``#/ustawienia/<sekcja>``) otwiera się nad stroną i mierzy się jak ona, pod identyfikatorem
+``ustawienia``."""
 
 
-# Zimny start strony (otwarcie albo odświeżenie karty) albo przejście w menu.
 ViewKind = Literal["cold_start", "navigation"]
+"""Zimny start strony (otwarcie albo odświeżenie karty) albo przejście w menu."""
 
 
-# Operacje API, które przeglądarka mierzy: nazwy (`operation_id`) zamiast adresu z tokenem okresu. Trasy spoza
-# tej listy, każda z powodem, wymienia `OUTSIDE_TIMING` w tests/test_centrum_rozliczen.py, który wiąże listę z trasami;
-# że przeglądarka woła każdą przez `call`, pilnuje reguła 4 w frontend/scripts/rules.mjs.
 ApiOperation = Literal[
     "getHealth",
     "getSettings",
@@ -87,10 +85,13 @@ ApiOperation = Literal[
     "sendDadNote",
     "closeCentrum",
 ]
+"""Operacje API, które przeglądarka mierzy: nazwy (``operation_id``) zamiast adresu z tokenem okresu. Trasy spoza tej
+listy, każda z powodem, wymienia ``OUTSIDE_TIMING`` w ``tests/test_centrum_rozliczen.py``, który wiąże listę z trasami;
+że przeglądarka woła każdą przez ``call``, pilnuje reguła 4 w ``frontend/scripts/rules.mjs``."""
 
 
-# Do 10 minut: dłuższy czas to uśpiona karta, nie pomiar.
 Milliseconds = Annotated[int, Field(ge=0, le=600_000)]
+"""Do 10 minut: dłuższy czas to uśpiona karta, nie pomiar."""
 
 
 MAX_TIMED_REQUESTS = 20

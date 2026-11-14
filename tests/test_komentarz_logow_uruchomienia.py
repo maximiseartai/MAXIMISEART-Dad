@@ -700,6 +700,12 @@ def wysylka(komorka: str, post: Post) -> Post:
         ),
         _LOGS_TEXT,
     ),
+    "import w biegu: importlib.import_module(…).logs_text w pliku Archiwum": (
+        _GOTOWY_PLIK
+        + "import importlib\n\n\ndef plik(komorka: str) -> ArchiveFile:\n"
+        '    return ArchiveFile("t", "t", "d", "n", importlib.import_module("rozliczenia.client_data").logs_text(komorka))\n',
+        "`importlib.import_module` is banned",
+    ),
     "parser pliku kolejki: tekst pliku w Archiwum do Zgłoszenia": (
         _zgloszenie(
             '    plik = outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})\n'
@@ -734,20 +740,14 @@ def plik(komorka: str) -> ArchiveFile:
     object.__setattr__(tekst, "__class__", LogsText)
     return ArchiveFile("t", "t", "d", "n", cast(LogsText, tekst))
 """,
-    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1).
+    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
+    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff (DROGI_DO_LOGOW).
     'refleksja po nazwie: getattr(client_data, "logs_text")': _GOTOWY_PLIK
     + """from rozliczenia import client_data
 
 
 def plik(komorka: str) -> ArchiveFile:
     return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
-""",
-    "import zbudowany w biegu: importlib.import_module(…).logs_text": _GOTOWY_PLIK
-    + """import importlib
-
-
-def plik(komorka: str) -> ArchiveFile:
-    return ArchiveFile("t", "t", "d", "n", importlib.import_module("rozliczenia.client_data").logs_text(komorka))
 """,
     'refleksja po nazwie: LogsText z dowodem getattr(client_data, "_PASSED")': _GOTOWY_PLIK
     + """from rozliczenia import client_data

@@ -35,20 +35,22 @@ from rozliczenia.centrum.opener import opener
 from rozliczenia.tool_files import REPOSITORY
 
 API: Final = "https://api.github.com"
-# Pliki GitHub Release idą na osobny adres (dokumentacja „Upload a release asset”).
 UPLOADS: Final = "https://uploads.github.com"
+"""Osobny adres, na który idą pliki GitHub Release (dokumentacja „Upload a release asset”)."""
 WEB: Final = "https://github.com"
 TOOL_API: Final = f"{API}/repos/{REPOSITORY}"
 
 PAGE_SIZE: Final = 100
-# Dziesięć stron po 100: 1000 tagów przy Wydaniu na tydzień to lata, a jedna etykieta Skrzynki nigdy tylu issue nie ma.
 MAX_PAGES: Final = 10
+"""Dziesięć stron po ``PAGE_SIZE``: 1000 tagów przy Wydaniu na tydzień to lata, a jedna etykieta Skrzynki nigdy tylu issue
+nie ma."""
 
-# API GitHuba bez tokenu odpowiada na 60 pytań na godzinę z jednego adresu, a bez sieci każde pytanie czeka do
-# limitu czasu: odpowiedź GitHuba Centrum pamięta przez 10 minut, także „brak Wydań”, a brak odpowiedzi (także odmowę
-# z powodu limitu) przez minutę (internet może zaraz wrócić).
 ANSWER_KEPT_S: Final = 10 * 60
+"""Tyle Centrum pamięta odpowiedź GitHuba, także „brak Wydań”: API GitHuba bez tokenu odpowiada na 60 pytań na godzinę z
+jednego adresu, a bez sieci każde pytanie czeka do limitu czasu."""
 NO_ANSWER_KEPT_S: Final = 60
+"""Tyle Centrum pamięta brak odpowiedzi GitHuba, także odmowę z powodu limitu: krócej niż odpowiedź, bo internet może
+zaraz wrócić."""
 
 Proxy = Literal["system", "direct"]
 KeyAfterRedirect = Literal["same-origin", "nowhere"]
@@ -56,9 +58,11 @@ KeyAfterRedirect = Literal["same-origin", "nowhere"]
 
 @dataclass(frozen=True)
 class HttpRequest:
+    """Żądanie do GitHuba; ``headers`` nie wchodzą do ``repr``, bo niosą klucz taty."""
+
     method: str
     url: str
-    headers: Mapping[str, str] = field(repr=False)  # nagłówki niosą klucz taty
+    headers: Mapping[str, str] = field(repr=False)
     body: bytes | None
 
 
@@ -71,9 +75,9 @@ class HttpResponse:
     headers: Mapping[str, str] = field(default_factory=dict)
 
 
-# Transport HTTP do GitHuba; brak sieci to ``OSError``, urwana albo nieczytelna odpowiedź ``HTTPException``. Testy
-# podstawiają własny, bez prawdziwego GitHuba.
 Transport = Callable[[HttpRequest], HttpResponse]
+"""Transport HTTP do GitHuba; brak sieci to ``OSError``, urwana albo nieczytelna odpowiedź ``HTTPException``. Testy
+podstawiają własny, bez prawdziwego GitHuba."""
 
 
 def headers(key: str | None = None) -> dict[str, str]:
@@ -105,13 +109,13 @@ def send(
 ) -> HttpResponse:
     """Żądanie HTTPS przez bibliotekę standardową; odpowiedź z kodem błędu HTTP to też odpowiedź.
 
-    ``read_limit`` ucina treść do tylu bajtów (ucięty JSON jest nieczytelny jak każdy inny).
+    ``read_limit`` ucina treść do tylu bajtów (ucięty JSON jest nieczytelny jak każdy inny). ``Authorization`` idzie
+    jako nagłówek bez przekierowania, bo zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
     """
 
     plain = {name: value for name, value in request.headers.items() if name != "Authorization"}
     sent = urllib.request.Request(request.url, data=request.body, headers=plain, method=request.method)
     if "Authorization" in request.headers:
-        # Zwykły nagłówek urllib przenosi na adres przekierowania, także na inny host.
         sent.add_unredirected_header("Authorization", request.headers["Authorization"])
     handlers: list[urllib.request.BaseHandler] = [] if proxy == "system" else [urllib.request.ProxyHandler({})]
     if key_after_redirect == "same-origin":

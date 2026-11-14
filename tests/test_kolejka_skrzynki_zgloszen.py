@@ -1783,14 +1783,6 @@ def wysylka(komorka: str, cel: NewIssue) -> Post:
     tekst = client_data.Outgoing(komorka, getattr(client_data, "_PASSED"))
     return Post(cel, None, "r", None, (tekst,))
 """,
-    "tool przez importlib": _POST
-    + """import importlib
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    tekst = importlib.import_module("rozliczenia.client_data").tool(komorka)
-    return Post(cel, None, "r", None, (tekst,))
-""",
     "tool zaimportowane z noqa": _POST
     + """from rozliczenia.client_data import tool  # noqa: TID251
 

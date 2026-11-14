@@ -177,6 +177,7 @@ extend-select = [
 "src/rozliczenia/template_file.py" = ["TID251"]
 "src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
+"tools/lib/import_dynamiczny.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
@@ -203,6 +204,38 @@ extend-select = [
 "rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+# Kod spoza tests/ nie importuje kodu testów (tests/test_granice_importow.py), a import w trakcie działania omija graf
+# importów, więc daje go tylko tools/lib/import_dynamiczny.py, który odmawia modułu z tests/ (#1680, #1705). Zakaz zamyka
+# pakiet importlib (nowe nazwy łapie test nazw w tests/test_zakazy_ruff.py, wyjątki w IMPORTLIB_DOZWOLONE) i moduły,
+# których zadaniem jest import albo wykonanie modułu: builtins.__import__, _frozen_importlib(_external), _imp, runpy,
+# pkgutil, zipimport. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po nazwie, kod
+# w napisie, funkcje wbudowane bez importu i osobny proces to znana luka z próbkami ZNANE_LUKI_IMPORTU, nie pełna lista.
+# tests/ruff.toml tych zakazów nie powtarza: testy importują w trakcie działania własne moduły.
+"importlib.import_module".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"builtins.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.util".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.machinery".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.metadata".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.readers".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.simple".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.reload".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.invalidate_caches".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.sys".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._RELOADING".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._pack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._unpack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"runpy".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"pkgutil".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"zipimport".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"

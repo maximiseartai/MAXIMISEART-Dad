@@ -5,7 +5,8 @@ of the Centrum already running, and a port held by another program gives a
 three-part start message instead of a second server. Tabs gathered from many
 clicks keep working: a tab in the background gives back its connection to
 Centrum (the browser allows 6 for all tabs together) and reconnects when it
-comes to the front. Closing a browser tab leaves Centrum running; Dad stops the
+comes to the front, so only 6 or more tabs visible at once, in windows side by
+side, still use up the connections. Closing a browser tab leaves Centrum running; Dad stops the
 server only with `Zamknij Centrum rozliczeń` in the sidebar, which asks first
 and leaves a page saying `Centrum rozliczeń jest zamknięte` (an Aktualizacja
 narzędzia also closes it, `aktualizacja.md`). During an Uruchomienie procesu or an

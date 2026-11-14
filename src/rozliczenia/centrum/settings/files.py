@@ -37,14 +37,11 @@ def settings_yaml(document: Mapping[str, object]) -> str:
 
 
 FieldName = Literal[
-    # centrum-ustawienia.yaml
     "rejestr_zlecen",
     "folder_okresow",
     "motyw",
-    # skrzynka-raportow.txt
     "adres",
     "haslo",
-    # wykonawcy.yaml
     "wykonawcy",
     "do_rozstrzygniecia",
     "nazwa",
@@ -52,7 +49,6 @@ FieldName = Literal[
     "adresy",
     "aktywny",
     "przypomnienia",
-    # przypomnienia.yaml
     "wlaczone",
     "wlaczone_od",
     "pora_poranna",
@@ -62,15 +58,12 @@ FieldName = Literal[
     "pierwsze_przypomnienie",
     "tresc",
     "stopka",
-    # przełącznik startu razem z Windows (skrót w folderze Autostart)
     "autostart",
-    # wyjatki-ilosci.yaml (różnice Kontroli ilości oznaczone „To był wyjątek”)
     "wyjatki",
     "okres",
     "wiersz",
     "tata",
     "odcisk",
-    # reguła pliku reguly-ilosci.yaml w edytorze Reguł ilości
     "jesli",
     "skladnik",
     "tekst",
@@ -82,10 +75,16 @@ FieldName = Literal[
     "kolumna",
     "wartosc",
     "kolumny",
-    # składnik pliku lista-urzadzen.yaml w sekcji Urządzenia (nazwa składnika to "nazwa")
     "zapisy",
 ]
-"""Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
+"""Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``.
+
+Nazwy stoją w grupach według pliku: ``centrum-ustawienia.yaml`` od ``rejestr_zlecen``, ``skrzynka-raportow.txt`` od
+``adres``, ``wykonawcy.yaml`` od ``wykonawcy``, ``przypomnienia.yaml`` od ``wlaczone``, przełącznik startu razem z Windows
+(skrót w folderze Autostart) ``autostart``, ``wyjatki-ilosci.yaml`` (różnice Kontroli ilości oznaczone „To był wyjątek”)
+od ``wyjatki``, reguła pliku ``reguly-ilosci.yaml`` w edytorze Reguł ilości od ``jesli`` i składnik pliku
+``lista-urzadzen.yaml`` w sekcji Urządzenia ``zapisy`` (nazwa składnika to ``nazwa``).
+"""
 
 
 @dataclass(frozen=True, init=False)

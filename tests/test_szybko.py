@@ -40,6 +40,13 @@ BY_CHANGE_ONLY = {
     "tests/test_mutacje_zmiany.py": "sprawdza narzędzie na repozytoriach testu; graf wybiera go przy zmianie narzędzia i modułów, które importuje",
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
+    "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
+        "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
+        "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
+    ),
+    "tests/test_import_dynamiczny.py": (
+        "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
+    ),
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatchcase
 import json
 import os
@@ -22,7 +22,7 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize
+from playwright.sync_api import Browser, BrowserContext, ConsoleMessage, FloatRect, Locator, Page, Request, Response, ViewportSize
 import yaml
 
 from drive import feature
@@ -663,11 +663,110 @@ LATE_WRITES = """(() => {
 })()"""
 
 
+PAGE_REQUESTS = "zadania-strony.txt"
+"""The file beside ``drive.txt`` with one line per failed request, answer of 400 or more and page without its
+stylesheet, of every page of the drive (``PageRequests``)."""
+# A page whose stylesheet of its own origin has no rule it can read after its load says so on its console with this
+# prefix and the sheet's address. Chromium gives a failed request an empty sheet whose rules it refuses to read
+# (SecurityError) and an error answer or an empty one a sheet without rules; a sheet of another origin is never readable,
+# so it is left out. The condition does not depend on the theme.
+NO_STYLESHEET = "drive: no stylesheet: "
+# A request the page itself gave up, as the event stream of Uruchomienia on each navigation: no answer was lost.
+ABANDONED = "net::ERR_ABORTED"
+STYLESHEET_CHECK = """addEventListener("load", () => {
+    for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
+        if (new URL(link.href).origin !== location.origin) continue
+        let rules = 0
+        try { rules = link.sheet?.cssRules.length ?? 0 } catch {}
+        if (rules === 0) console.warn(%s + link.href)
+    }
+})""" % json.dumps(NO_STYLESHEET)
+
+
+class PageRequests:
+    """What the drive's pages lost on the way from Centrum, in ``PAGE_REQUESTS`` of the evidence (#1539).
+
+    Without ``index.css`` the window of Base UI has no place above its own backdrop, so a click in Ustawienia waited
+    10 s behind ``data-base-ui-inert`` and named nothing (run 43561009106). ``dad_context`` hands every context it opens
+    to ``watch``, so each page and tab of the drive writes here; the query of an address is left out, as it may carry a
+    value of a file.
+    """
+
+    def __init__(self) -> None:
+        self._file: Path | None = None
+        self._without_stylesheet: list[str] = []
+
+    @contextmanager
+    def recording(self, evidence: Path) -> Iterator[None]:
+        """Contexts opened in this block write to ``evidence``; after it the drive's contexts write nothing."""
+
+        self._file = evidence / PAGE_REQUESTS
+        self._file.write_text("", encoding="utf-8")
+        self._without_stylesheet = []
+        try:
+            yield
+        finally:
+            self._file = None
+
+    def watch(self, context: BrowserContext) -> None:
+        if self._file is None:
+            return
+        context.add_init_script(STYLESHEET_CHECK)
+        context.on("requestfailed", self._failed)
+        context.on("response", self._answered)
+        context.on("console", self._console)
+
+    def check(self, cause: Exception | None = None) -> None:
+        """Fails naming each stylesheet a page of the drive did not get, before ``cause``, the failure it led to: a click
+        that waits behind a backdrop names only the backdrop."""
+
+        if not self._without_stylesheet:
+            return
+        sheets = ", ".join(dict.fromkeys(self._without_stylesheet))
+        failure = DriveFailure(
+            f"the page got no stylesheet ({sheets}), so Base UI windows lie under their backdrop; "
+            f"its failed requests and error answers are in {PAGE_REQUESTS}"
+        )
+        if cause is not None:
+            for note in (str(cause), *getattr(cause, "__notes__", ())):
+                failure.add_note(note)
+        raise failure from cause
+
+    def _failed(self, request: Request) -> None:
+        if request.failure != ABANDONED:
+            self._write(f"{request.method} {_address(request.url)} failed: {request.failure}")
+
+    def _answered(self, response: Response) -> None:
+        if response.status >= 400:
+            self._write(f"{response.request.method} {_address(response.url)} answered {response.status}")
+
+    def _console(self, message: ConsoleMessage) -> None:
+        if message.text.startswith(NO_STYLESHEET):
+            sheet = _address(message.text.removeprefix(NO_STYLESHEET))
+            self._without_stylesheet.append(sheet)
+            self._write(f"page without stylesheet {sheet}")
+
+    def _write(self, line: str) -> None:
+        if self._file is not None:
+            with self._file.open("a", encoding="utf-8") as record:
+                record.write(f"{datetime.now(UTC).isoformat(timespec='milliseconds')} {line}\n")
+
+
+def _address(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.netloc else parts.path
+
+
+page_requests = PageRequests()
+
+
 def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
     """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``; in the
-    mode „wolny runner” its pages run animations slowly and send writes late."""
+    mode „wolny runner” its pages run animations slowly and send writes late. Its pages write what they lost to
+    ``page_requests``."""
 
     context = browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+    page_requests.watch(context)
     if SLOW_RUNNER in os.environ:
         # A late write in the page, not in context.route: a handler of the sync client that sleeps holds the drive too.
         context.add_init_script(LATE_WRITES % LATE_WRITE_MS)
