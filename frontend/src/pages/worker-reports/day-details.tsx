@@ -1,11 +1,11 @@
-import { ArrowLeftRightIcon, BellIcon } from "lucide-react"
+import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem } from "@/api/generated"
+import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem, ReportsWorkerDay } from "@/api/generated"
 import { Button } from "@/components/ui/button"
 import { dayMonth, hourMinute, plural } from "@/lib/format"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
-import { shortDay } from "@/pages/worker-reports/days"
+import { shortDay, weekdayOfDate } from "@/pages/worker-reports/days"
 import { look, StatusBadge } from "@/pages/worker-reports/status"
 
 /** Komórka różnicy z ręczną wartością, przy której tata klika „Zostaw moją”. */
@@ -34,8 +34,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
  * (`orders_detail`) z problemami, „Zostaw moją” i spokojnymi informacjami o Przeniesieniach zleceń (`notes`). Wynik
- * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Pod listą
- * pory Przypomnień o raporcie za ten dzień (`reminders`).
+ * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
+ * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
 export function DayDetails({
   worker,
@@ -64,30 +64,65 @@ export function DayDetails({
       <div className="mx-3.5 mb-2 h-1 overflow-hidden rounded-full bg-muted" aria-hidden>
         <div className="h-full rounded-full" style={{ width: `${Math.round(ratio * 100)}%`, background: look(state.kind).color }} />
       </div>
+      <Reminders day={day} />
       {day.orders_detail === null ? (
         <Fallback state={state} keeping={keeping} onKeep={onKeep} />
       ) : (
         <Orders orders={day.orders_detail} state={state} keeping={keeping} onKeep={onKeep} />
       )}
-      <Reminders moments={day.reminders} />
     </div>
   )
 }
 
-/** Pory Przypomnień o raporcie za ten dzień do tego Wykonawcy, w czasie komputera taty: „10.11 08:00, 10.11 18:00”. */
-function Reminders({ moments }: { moments: ReadonlyArray<string> }) {
-  if (moments.length === 0) {
+/**
+ * Przebieg Przypomnień o raporcie za ten dzień do tego Wykonawcy: zlecenia dnia w INTERMAX, każde wysłane
+ * przypomnienie z chwilą w czasie komputera taty („cz. 06.11, 08:00”) i, gdy Wykonawca przysłał Raport wykonawcy,
+ * „Raport przyszedł”. Bez przypomnień nic.
+ */
+function Reminders({ day }: { day: ReportsWorkerDay }) {
+  if (day.reminders.length === 0) {
     return null
   }
 
   return (
-    <p className="flex items-start gap-1.5 border-t px-3.5 py-2.5 text-xs text-muted-foreground tabular-nums">
-      <BellIcon className="mt-px size-3 shrink-0" aria-hidden />
-      <span>
-        {plural(moments.length, { one: "Przypomnienie", few: "Przypomnienia", many: "Przypomnień" })}{" "}
-        {moments.map((moment) => `${dayMonth(moment)} ${hourMinute(moment)}`).join(", ")}
+    <ol aria-label="Przypomnienia o raporcie" className="flex flex-col border-t px-3.5 pt-3 tabular-nums">
+      <Step
+        icon={CalendarIcon}
+        tone="bg-muted text-muted-foreground"
+        label={`${day.orders} ${plural(day.orders, { one: "zlecenie", few: "zlecenia", many: "zleceń" })} w INTERMAX`}
+        moment={shortDay(day.day)}
+      />
+      {day.reminders.map((sent, index) => (
+        <Step
+          key={sent}
+          icon={BellIcon}
+          tone="bg-reminder text-white"
+          label={index === 0 ? "Przypomnienie wysłane" : "Kolejne przypomnienie"}
+          moment={`${weekdayOfDate(new Date(sent))}. ${dayMonth(sent)}, ${hourMinute(sent)}`}
+        />
+      ))}
+      {day.mails === 0 ? null : (
+        <Step
+          icon={CheckIcon}
+          tone="bg-success-tile text-success-tile-foreground"
+          label="Raport przyszedł"
+          moment={`${day.mails} ${plural(day.mails, { one: "mail", few: "maile", many: "maili" })}`}
+        />
+      )}
+    </ol>
+  )
+}
+
+/** Krok przebiegu: kółko z ikoną na pionowej linii, napis i chwila po prawej. */
+function Step({ icon: Icon, tone, label, moment }: { icon: LucideIcon; tone: string; label: string; moment: string }) {
+  return (
+    <li className="relative grid grid-cols-[1.375rem_minmax(0,1fr)_auto] items-center gap-2.5 pb-3 not-last:before:absolute not-last:before:top-5.5 not-last:before:bottom-0 not-last:before:left-[0.65rem] not-last:before:w-px not-last:before:bg-border">
+      <span className={cn("grid size-5.5 place-items-center rounded-full", tone)} aria-hidden>
+        <Icon className="size-3" />
       </span>
-    </p>
+      <span className="font-medium">{label}</span>
+      <span className="text-xs text-muted-foreground">{moment}</span>
+    </li>
   )
 }
 
