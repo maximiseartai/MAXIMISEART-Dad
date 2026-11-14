@@ -6,12 +6,13 @@ dziennik, i klient testowy, który nie otwiera pętli zdarzeń na każde żądan
 from __future__ import annotations
 
 import asyncio.base_events
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 import http.client
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import threading
@@ -30,7 +31,7 @@ from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_logs import StartFacts
 from rozliczenia.centrum.server import serve
 from rozliczenia.domain import RunMode
-from rozliczenia.tool_files import listen_locally
+from rozliczenia.tool_files import HOST, listen_locally, port_free
 from rozliczenia.centrum.shutdown import Shutdown
 
 from tests.fixtures.centrum import (
@@ -305,6 +306,45 @@ class _EndingThread(threading.Thread):
         super()._delete()  # type: ignore[misc]
         self.code_ended.set()
         self.end.wait()
+
+
+def _other_program_listening() -> socket.socket:
+    """Gniazdo innego programu, które słucha na ``HOST``, bez ``SO_REUSEADDR`` i bez ``SO_EXCLUSIVEADDRUSE``."""
+
+    program = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        program.bind((HOST, 0))
+        program.listen()
+    except OSError:
+        program.close()
+        raise
+    return program
+
+
+@pytest.mark.parametrize(
+    "holder",
+    [
+        pytest.param(lambda: listen_locally(0), id="dzialajace-centrum"),
+        pytest.param(_other_program_listening, id="inny-program"),
+    ],
+)
+def test_port_na_ktorym_slucha_dzialajace_centrum_albo_inny_program_nie_jest_wolny_dla_drugiego_centrum(
+    holder: Callable[[], socket.socket],
+) -> None:
+    """Port, na którym słucha już działające Centrum albo inny program, nie jest wolny dla drugiego Centrum:
+    ``port_free`` mówi, że zajęty, a ``listen_locally`` odmawia. Na Windows dwa gniazda z ``SO_REUSEADDR`` dostają ten
+    sam port, więc z tą opcją także na Windows drugie Centrum zajęłoby port działającego Centrum; przypadek
+    ``dzialajace-centrum`` łapie to tylko na Windows, bo na macOS i Linuksie ta opcja nie pozwala zająć portu, na którym
+    ktoś słucha."""
+
+    held = holder()
+    try:
+        port = held.getsockname()[1]
+        free = (port_free(port), _port_free(port))
+    finally:
+        held.close()
+
+    assert free == (False, False)
 
 
 def test_zatrzymanie_centrum_w_tescie_czeka_na_koniec_watku_systemu_a_nie_tylko_jego_kodu() -> None:
