@@ -43,15 +43,6 @@ _ORDER_NUMBER_HELPER = (
     " a jeden zaczerwienił main, gdy losowy hex HMAC zawierał numer"
 )
 
-# Stan ścieżki bez file_state, jak ``copy.path.exists()`` w ea69c32bea i ``old.is_file()`` w 5f4e134ba5.
-_BARE_FILE_STATE = re.compile(r"\.(?:exists|is_file|is_dir)\(\s*\)|\bos\.path\.(?:exists|lexists|isfile|isdir)\(")
-_FILE_STATE = "src/rozliczenia/file_state.py"
-_FILE_STATE_HELPER = (
-    "stan pliku poza file_state: zapytaj src/rozliczenia/file_state.py (file_state, path_state, path_taken, a o wpis"
-    " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu), bo gołe"
-    " .exists() albo .is_file() rzuca PermissionError na Pythonie 3.11–3.13 i odpowiada „brak” na 3.14 (#729, #1190)"
-)
-
 # Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
 # w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
 _WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
@@ -60,20 +51,6 @@ _THREAD_LINES_HELPER = (
     "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
     " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
     " i timer pytest-timeout"
-)
-
-# Odpowiedź nawigacji karty odrzucona w ``src/``, jak ``page.goto(…)`` w 637b1ef25c i ``with page.expect_navigation(…):``
-# w 7ba1aaf8d1 (#808 r1 i r2: strona błędu serwera efenix wyglądała jak zmieniony efenix).
-_DROPPED_NAVIGATION = re.compile(
-    r"^\s*[A-Za-z_][\w.]*\.(?:goto|reload|go_back|go_forward)\("
-    r"|^\s*with\b.*\bexpect_navigation\((?:[^()]|\([^()]*\))*\)(?!\s+as\b)"
-)
-_TRAILING_COMMENT = re.compile(r"\s#.*$")
-_PLAYWRIGHT_IMPORT = re.compile(r"^\s*(?:from|import) playwright\b", re.MULTILINE)
-_NAVIGATION_HELPER = (
-    "odpowiedź nawigacji karty odrzucona: przejdź przez BrowserEfenix._go albo _reloaded"
-    " (src/rozliczenia/efenix_browser.py) i stronę, której nie przeczytasz, zapytaj o nią _error_page, bo nawigacja nie"
-    " zgłasza błędu przy statusie 4xx i 5xx"
 )
 
 # Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
@@ -172,82 +149,6 @@ def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> N
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
     assert order_number_oracles(ROOT, base) == []
-
-
-def bare_file_state(line: str) -> bool:
-    """Czy linia ``src/`` pyta o stan ścieżki z pominięciem ``file_state``.
-
-    Łapie tylko ``.exists()``, ``.is_file()`` i ``.is_dir()`` bez argumentów, także ze spacją w nawiasie (na ``Path`` i
-    na wpisie ``os.DirEntry``), oraz ``os.path.exists(``, ``os.path.lexists(``, ``os.path.isfile(`` i
-    ``os.path.isdir(``, także w komentarzu i napisie. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami
-    ``ZNANE_LUKI`` tego pliku.
-    Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _BARE_FILE_STATE.search(line) is not None
-
-
-def file_state_bypasses(root: Path, base: str) -> list[str]:
-    """Linie ``src/`` poza ``file_state.py``, które zmiana od ``base`` dodaje z ``bare_file_state``, z komunikatem."""
-
-    return [
-        f"{path}:{number}: {_FILE_STATE_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "src")
-        if path != _FILE_STATE and bare_file_state(line)
-    ]
-
-
-def test_stan_pliku_w_src_tylko_przez_file_state() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert file_state_bypasses(ROOT, base) == []
-
-
-def test_zapadka_stanu_pliku_widzi_tylko_src_poza_file_state(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (_FILE_STATE, "src/rozliczenia/kopia.py", "tests/test_kopii.py", "tools/narzedzie.py"):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text("def taken(path):\n    return path.exists()\n", encoding="utf-8")
-
-    found = file_state_bypasses(tmp_path, base)
-
-    assert found == [f"src/rozliczenia/kopia.py:2: {_FILE_STATE_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    taken = copy.path.exists()",
-        "    return old.name if old.is_file() else None",
-        "    if STATIC_DIRECTORY.is_dir():",
-        "    for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)",
-        "    return os.path.exists(excel_lock_file(path))",
-        "            collective_file_exists=os.path.isfile(path),",
-        "    if not path.exists( ):",
-        "    taken = os.path.lexists(link)",
-        "    if os.path.isdir(folder):",
-    ],
-)
-def test_zapadka_lapie_stan_pliku_poza_file_state(line: str) -> None:
-    assert bare_file_state(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        '    return old.name if file_state(old) == "file" else None',
-        "    if path_taken(self._state):",
-        '    present = [period_place_label(place) for place in places if observed.exists(place)]',
-        "                taken = disk.exists(copy.path)",
-    ],
-)
-def test_zapadka_przepuszcza_file_state_i_metody_domeny(line: str) -> None:
-    assert not bare_file_state(line)
 
 
 @pytest.mark.parametrize(
@@ -364,185 +265,6 @@ def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
 )
 def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
     assert not worker_threads(line)
-
-
-def dropped_navigation(line: str, previous: str) -> bool:
-    """Czy linia pliku ``src/`` z importem ``playwright`` (``navigation_drops``) odrzuca odpowiedź nawigacji karty;
-    ``previous`` to poprzednia niepusta linia pliku, która nie jest samym komentarzem.
-
-    Łapie tylko linię, która zaczyna się od kropkowanej nazwy i wywołania ``.goto(``, ``.reload(``, ``.go_back(`` albo
-    ``.go_forward(`` (``page.goto(…)``, ``self._page.reload(…)``), oraz linię, która zaczyna się od ``with``, z
-    ``expect_navigation(…)``, którego nawias zamyka się w tej samej linii (z najwyżej jednym poziomem nawiasów w
-    środku) bez ``as`` po nim; obie także w linii napisu wielowierszowego. Przepuszcza każdą z nich, gdy ``previous``
-    bez końcowych odstępów kończy się ``(``, ``[`` albo ``,`` tak, jak stoi, albo po zdjęciu wszystkiego od pierwszego
-    odstępu z ``#`` (komentarz na końcu), bo tak ruff format łamie nawigację podaną dalej jako argument albo element
-    listy (``return _checked(`` i pod nim ``page.goto(…``). Odstęp z ``#`` w napisie ``previous`` (``"strona #1",``)
-    nie daje więc alarmu. Odpowiedź przypisana, zwrócona albo podana dalej w tej samej linii przechodzi. Plik bez linii,
-    która po wcięciu zaczyna się od ``from playwright`` albo ``import playwright``, zapadka pomija; import pod
-    ``if TYPE_CHECKING:`` się liczy. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego
-    pliku. Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    ends = (previous.rstrip(), _TRAILING_COMMENT.sub("", previous).rstrip())
-    return _DROPPED_NAVIGATION.search(line) is not None and not any(end.endswith(("(", "[", ",")) for end in ends)
-
-
-def navigation_drops(root: Path, base: str) -> list[str]:
-    """Linie plików ``src/`` z importem ``playwright``, które zmiana od ``base`` dodaje z ``dropped_navigation``, z
-    komunikatem. Inne pliki ``src/`` kart przeglądarki nie mają, a ich ``.reload(`` (np. ustawień) to nie nawigacja."""
-
-    files: dict[str, tuple[bool, list[str]]] = {}
-    found = []
-    for path, number, line in odpalenia_ast_grep.added_lines(root, base, "src"):
-        if path not in files:
-            text = (root / path).read_text(encoding="utf-8")
-            files[path] = (_PLAYWRIGHT_IMPORT.search(text) is not None, text.split("\n"))
-        imports_playwright, lines = files[path]
-        if not imports_playwright:
-            continue
-        earlier = (lines[index].strip() for index in range(number - 2, -1, -1))
-        previous = next((text for text in earlier if text and not text.startswith("#")), "")
-        if dropped_navigation(line, previous):
-            found.append(f"{path}:{number}: {_NAVIGATION_HELPER}")
-    return found
-
-
-def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert navigation_drops(ROOT, base) == []
-
-
-def test_zapadka_nawigacji_widzi_tylko_pliki_src_z_importem_playwright(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path, imports in {
-        "src/rozliczenia/okno.py": "from playwright.sync_api import Page\n",
-        "src/rozliczenia/okno_typow.py": "if TYPE_CHECKING:\n    from playwright.sync_api import Page",
-        "src/rozliczenia/ustawienia.py": "import importlib\n",
-        "tests/test_okna.py": "from playwright.sync_api import Page\n",
-        "tools/narzedzie.py": "from playwright.sync_api import Page\n",
-    }.items():
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text(f"{imports}\n\ndef open_order(page, url):\n    page.goto(url)\n", encoding="utf-8")
-
-    found = navigation_drops(tmp_path, base)
-
-    assert found == [f"src/rozliczenia/okno.py:5: {_NAVIGATION_HELPER}", f"src/rozliczenia/okno_typow.py:5: {_NAVIGATION_HELPER}"]
-
-
-def test_zapadka_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "okno.py").write_text(
-        "from playwright.sync_api import Page\n"
-        "\n\n"
-        "def open_order(page, url):\n"
-        "    return _checked(\n"
-        "        page.goto(\n"
-        "            url,\n"
-        "            wait_until=\"load\",\n"
-        "        )\n"
-        "    )\n"
-        "\n\n"
-        "def open_list(page, url):\n"
-        "    return _checked(\n"
-        "        page,\n"
-        "\n"
-        "        page.goto(url, wait_until=\"load\"),\n"
-        "    )\n"
-        "\n\n"
-        "def open_start(page, url):\n"
-        "    return _checked(\n"
-        "        page.goto(url, wait_until=\"load\", timeout=timeout_ms)\n"
-        "    )\n"
-        "\n\n"
-        "def reload(page):\n"
-        "    page.reload()\n"
-        "\n\n"
-        "def open_noted(page, url):\n"
-        "    return _checked(\n"
-        "        # lista zleceń\n"
-        "        page.goto(url, wait_until=\"load\"),\n"
-        "    )\n"
-        "\n\n"
-        "def statuses(page, urls):\n"
-        "    return [\n"
-        "        page.goto(url).status\n"
-        "        for url in urls\n"
-        "    ]\n"
-        "\n\n"
-        "def open_after_comment(page, url):\n"
-        "    # najpierw lista zleceń,\n"
-        "    page.goto(url)\n",
-        encoding="utf-8",
-    )
-
-    found = navigation_drops(tmp_path, base)
-
-    assert found == [f"src/okno.py:28: {_NAVIGATION_HELPER}", f"src/okno.py:47: {_NAVIGATION_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    ("previous", "line"),
-    [
-        ("def open_order(page, url):", '    page.goto(urljoin(url, f"edit.php?id={order_id}"), wait_until="load", timeout=timeout_ms)'),
-        ("    try:", "    with page.expect_navigation(wait_until=\"load\", timeout=timeout_ms):"),
-        ("    def load_emmett(self) -> None:", "        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until=\"load\", timeout=self._timeout_ms):"),
-        ("        with _doing(Operation.RELOAD):", "            self._page.reload(timeout=self._timeout_ms)"),
-        ("    tab.go_forward()", "    tab.go_back()"),
-        ("    )", "    with page.expect_navigation(timeout=min(a, b)), other():"),
-        ("", "    page.goto(url)"),
-        ('    log("lista #1,")', "    page.goto(url)"),
-        # ``#`` bez odstępu przed nim nie zaczyna komentarza.
-        ('    log("lista(#1)")', "    page.goto(url)"),
-    ],
-)
-def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(previous: str, line: str) -> None:
-    assert dropped_navigation(line, previous)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    response = page.goto(url, wait_until=\"load\", timeout=timeout_ms)",
-        "            return self._page.goto(url, wait_until=\"load\", timeout=self._timeout_ms)",
-        "        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until=\"load\", timeout=self._timeout_ms) as reload:",
-        "        return self._read_order(self._go(urljoin(self._url, f\"{ORDER_PAGE}?id={order.order_id}\")))",
-        "        self._reloaded(accept)",
-        "    # page.goto(url) odrzuca odpowiedź",
-    ],
-)
-def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> None:
-    assert not dropped_navigation(line, "def open_order(page, url):")
-
-
-@pytest.mark.parametrize(
-    "previous",
-    [
-        "    return _checked(",
-        "        self._read_order(",
-        "        page,",
-        "    return _checked(  ",
-        "        response = _checked(page, (",
-        "    return _checked(  # lista zleceń",
-        "    return [",
-        "    statuses = [  # odpowiedzi kolejnych stron",
-        # Odstęp z ``#`` w napisie, a linia kończy się przecinkiem albo nawiasem (#1378 r1).
-        '            "strona #1",',
-        '    return _checked(f"lista #{number}", (',
-        "    wait()  # najpierw lista,",
-    ],
-)
-def test_zapadka_przepuszcza_nawigacje_ktora_jest_argumentem_po_zlamaniu_linii(previous: str) -> None:
-    assert not dropped_navigation("        page.goto(", previous)
 
 
 def test_zapadka_widzi_linie_dodane_od_bazy_i_nowe_pliki_a_nie_usuniete_ani_spoza_folderu(tmp_path: Path) -> None:
@@ -968,7 +690,9 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "odrzucona-nawigacja": "przejdź przez BrowserEfenix._go albo _reloaded",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
+    "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1889,175 +1613,9 @@ def test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_p
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_regul_powrotow_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
-_PAGE = "from playwright.sync_api import Page\n\n\n"
-
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
 ZNANE_LUKI: Final = {
-    "test_stan_pliku_w_src_tylko_przez_file_state": {
-        # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
-        "lista folderu z iterdir": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.name in {entry.name for entry in path.parent.iterdir()}
-""",
-        "os.scandir": """\
-import os
-
-
-def taken(folder: str, name: str) -> bool:
-    with os.scandir(folder) as entries:
-        return any(entry.name == name for entry in entries)
-""",
-        "glob": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return any(path.parent.glob(path.name))
-""",
-        "stat": """\
-from pathlib import Path
-import stat
-
-
-def is_folder(path: Path) -> bool:
-    return stat.S_ISDIR(path.stat().st_mode)
-""",
-        "try i except OSError napisane od nowa": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    try:
-        path.open("rb").close()
-    except OSError:
-        return False
-    return True
-""",
-        "wywołanie z argumentem": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.is_file(follow_symlinks=False)
-""",
-        "wywołanie rozbite na dwie linie": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.exists(
-    )
-""",
-        "metoda pod inną nazwą": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    check = path.exists
-    return check()
-""",
-        "metoda wołana na klasie": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return Path.exists(path)
-""",
-        "os.path pod aliasem": """\
-import os.path as osp
-
-
-def taken(path: str) -> bool:
-    return osp.exists(path)
-""",
-        "exists z from os.path import": """\
-from os.path import exists
-
-
-def taken(path: str) -> bool:
-    return exists(path)
-""",
-    },
-    "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": {
-        "po linii, której komentarz kończy się przecinkiem": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    page.wait_for_timeout(0)  # najpierw lista,
-    page.goto(url)
-""",
-        "po linii, której tekst przed odstępem z # kończy się przecinkiem": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    page.evaluate("1, #1")
-    page.goto(url)
-""",
-        "as _": _PAGE
-        + """\
-def open_order(page: Page) -> None:
-    with page.expect_navigation() as _:
-        page.click("a")
-""",
-        "expect_navigation z nawiasem w kilku liniach": _PAGE
-        + """\
-def open_order(page: Page) -> None:
-    with page.expect_navigation(
-        timeout=1000,
-    ):
-        page.click("a")
-""",
-        "nawigacja na wyniku wywołania": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    page.context.new_page().goto(url)
-""",
-        "wait_for_url": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    page.click("a")
-    page.wait_for_url(url)
-""",
-        "wait_for_load_state": _PAGE
-        + """\
-def open_order(page: Page) -> None:
-    page.click("a")
-    page.wait_for_load_state()
-""",
-        "metoda pod inną nazwą": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    go = page.goto
-    go(url)
-""",
-        "karta bez importu playwright": """\
-from typing import Protocol
-
-
-class Tab(Protocol):
-    def goto(self, url: str) -> object: ...
-
-
-def open_order(page: Tab, url: str) -> None:
-    page.goto(url)
-""",
-        "nowa instrukcja po krotce bez nawiasu": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> tuple[str]:
-    names = url,
-    page.goto(url)
-    return names
-""",
-        "element listy, której nikt nie czyta": _PAGE
-        + """\
-def open_order(page: Page, url: str) -> None:
-    [
-        page.goto(url),
-    ]
-""",
-    },
     "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": {
         "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
 
@@ -2190,8 +1748,6 @@ def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
 # Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
 _ZAPADKI: Final = {
     "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
-    "test_stan_pliku_w_src_tylko_przez_file_state": ("src/rozliczenia", file_state_bypasses),
-    "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
     "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
     "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
 }
@@ -2319,3 +1875,366 @@ def test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+def _findings_of(rule: str, root: Path, base: str) -> list[tuple[str, int]]:
+    """Odpalenia reguły ``rule`` (z całego katalogu reguł) na liniach dodanych od ``base``: ścieżka i linia; reguły
+    ``src/`` o komentarzach i docstringach zgłaszają w tych samych próbkach swoje, więc liczy się tylko ta jedna."""
+
+    return [(finding.path, finding.line) for finding in syntax_rules(root, base) if finding.rule == rule]
+
+
+_STATE_RULE = "stan-pliku-poza-file-state"
+_IN_TAKEN = "def taken(path, copy, old, entries, link, folder):\n"
+# Tekst dodanego pliku ``src/`` → linie, które reguła ``stan-pliku-poza-file-state`` zgłasza: stan ścieżki z pominięciem
+# ``file_state`` z ea69c32bea (``copy.path.exists()``) i 5f4e134ba5 (``old.is_file()``) w każdej postaci, którą reguła
+# czyta, i pytania o stan przez ``file_state`` albo metodę domeny z argumentem, które przepuszcza.
+_PROBKI_STANU_PLIKU: Final[list[tuple[str, list[int]]]] = [
+    (f"{_IN_TAKEN}    taken = copy.path.exists()\n", [2]),
+    (f"{_IN_TAKEN}    return old.name if old.is_file() else None\n", [2]),
+    (f"{_IN_TAKEN}    if STATIC_DIRECTORY.is_dir():\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return [entry for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)]\n", [2]),
+    (f"{_IN_TAKEN}    return os.path.exists(excel_lock_file(path))\n", [2]),
+    (f"{_IN_TAKEN}    return dict(collective_file_exists=os.path.isfile(path))\n", [2]),
+    (f"{_IN_TAKEN}    if not path.exists( ):\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return path.exists(\n    )\n", [2]),
+    (f"{_IN_TAKEN}    taken = os.path.lexists(link)\n", [2]),
+    (f"{_IN_TAKEN}    if os.path.isdir(folder):\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return path  # path.exists() pomijam\n", [2]),
+    (f'{_IN_TAKEN}    return "os.path.isfile(x)"\n', [2]),
+    (f'{_IN_TAKEN}    return old.name if file_state(old) == "file" else None\n', []),
+    (f"{_IN_TAKEN}    if path_taken(self._state):\n        pass\n", []),
+    (f"{_IN_TAKEN}    return [period_place_label(place) for place in places if observed.exists(place)]\n", []),
+    (f"{_IN_TAKEN}    return disk.exists(copy.path)\n", []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_STANU_PLIKU)
+def test_regula_stanu_pliku_zglasza_stan_sciezki_poza_file_state_a_nie_file_state_ani_metode_z_argumentem(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    (tmp_path / "src" / "rozliczenia" / "kopia.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_STATE_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_stanu_pliku_zglasza_tylko_src_poza_file_state(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in ("src/rozliczenia/file_state.py", "src/rozliczenia/kopia.py", "tests/test_kopii.py", "tools/narzedzie.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("def taken(path):\n    return path.exists()\n", encoding="utf-8")
+
+    assert _findings_of(_STATE_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", 2)]
+
+
+# Znane luki reguły ``stan-pliku-poza-file-state`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``src/``,
+# który pyta o stan ścieżki z pominięciem ``file_state``, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_STANU_PLIKU: Final[dict[str, str]] = {
+    # Po składni nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
+    "lista folderu z iterdir": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.name in {entry.name for entry in path.parent.iterdir()}
+""",
+    "os.scandir": """\
+import os
+
+
+def taken(folder: str, name: str) -> bool:
+    with os.scandir(folder) as entries:
+        return any(entry.name == name for entry in entries)
+""",
+    "glob": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return any(path.parent.glob(path.name))
+""",
+    "stat": """\
+from pathlib import Path
+import stat
+
+
+def is_folder(path: Path) -> bool:
+    return stat.S_ISDIR(path.stat().st_mode)
+""",
+    "try i except OSError napisane od nowa": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    try:
+        path.open("rb").close()
+    except OSError:
+        return False
+    return True
+""",
+    "wywołanie z argumentem": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.is_file(follow_symlinks=False)
+""",
+    "metoda pod inną nazwą": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    check = path.exists
+    return check()
+""",
+    "metoda wołana na klasie": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return Path.exists(path)
+""",
+    "os.path pod aliasem": """\
+import os.path as osp
+
+
+def taken(path: str) -> bool:
+    return osp.exists(path)
+""",
+    "exists z from os.path import": """\
+from os.path import exists
+
+
+def taken(path: str) -> bool:
+    return exists(path)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``stan-pliku-poza-file-state`` czyta wywołanie ``exists``, ``is_file`` albo ``is_dir`` bez argumentów na
+    dowolnym obiekcie, ``os.path.exists``, ``lexists``, ``isfile`` i ``isdir`` pod pełną nazwą oraz ten sam tekst
+    w komentarzu i napisie; metoda pod inną nazwą albo na klasie, ``os.path`` pod aliasem albo z from-importu
+    i każda inna droga do stanu ścieżki to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_STANU_PLIKU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_NAVIGATION_RULE = "odrzucona-nawigacja"
+_PAGE = "from playwright.sync_api import Page\n\n\n"
+# Tekst dodanego pliku ``src/`` z importem playwright → linie, które reguła ``odrzucona-nawigacja`` zgłasza: odpowiedź
+# nawigacji odrzucona jak ``page.goto(…)`` w 637b1ef25c i ``with page.expect_navigation(…):`` z #808 r2, w każdej
+# postaci, którą reguła czyta, i odpowiedź przypisana, zwrócona, podana dalej albo czytana, którą przepuszcza.
+_PROBKI_NAWIGACJI: Final[list[tuple[str, list[int]]]] = [
+    (f'{_PAGE}def f(page, url):\n    page.goto(urljoin(url, f"edit.php?id={{order_id}}"), wait_until="load", timeout=timeout_ms)\n', [5]),
+    (f'{_PAGE}def f(page):\n    try:\n        with page.expect_navigation(wait_until="load", timeout=timeout_ms):\n            pass\n    except OSError:\n        pass\n', [6]),
+    (
+        f"{_PAGE}class K:\n    def load_emmett(self) -> None:\n"
+        '        with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms):\n'
+        "            pass\n",
+        [6],
+    ),
+    (f"{_PAGE}def f(self):\n    with _doing(Operation.RELOAD):\n        self._page.reload(timeout=self._timeout_ms)\n", [6]),
+    (f"{_PAGE}def f(tab):\n    tab.go_forward()\n    tab.go_back()\n", [5, 6]),
+    (f"{_PAGE}def f(page, a, b):\n    x = (\n        1\n    )\n    with page.expect_navigation(timeout=min(a, b)), other():\n        pass\n", [8]),
+    (f"{_PAGE}def f(page, url):\n    page.goto(url)\n", [5]),
+    (f'{_PAGE}def f(page, url):\n    log("lista #1,")\n    page.goto(url)\n', [6]),
+    (f'{_PAGE}def f(page, url):\n    log("lista(#1)")\n    page.goto(url)\n', [6]),
+    # Nowa instrukcja po linii, której komentarz albo napis kończy się przecinkiem, tak jak po krotce bez nawiasu.
+    (f"{_PAGE}def f(page, url):\n    wait()  # najpierw lista,\n    page.goto(\n        url,\n    )\n", [6]),
+    (f"{_PAGE}def f(page, url):\n    page.wait_for_timeout(0)  # najpierw lista,\n    page.goto(url)\n", [6]),
+    (f'{_PAGE}def f(page, url):\n    page.evaluate("1, #1")\n    page.goto(url)\n', [6]),
+    (f"{_PAGE}def f(page, url):\n    names = url,\n    page.goto(url)\n    return names\n", [6]),
+    (f'{_PAGE}def f(page):\n    with page.expect_navigation(\n        timeout=1000,\n    ):\n        page.click("a")\n', [5]),
+    (f"{_PAGE}def f(page, url):\n    page.context.new_page().goto(url)\n", [5]),
+    # Linia napisu wielowierszowego, która wygląda jak nawigacja: węzeł napisu zaczyna się w linii 4.
+    (f'{_PAGE}SKRYPT = """\npage.goto(url)\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation():\n"""\n', [4]),
+    (f'{_PAGE}SKRYPT = """\n    with page.expect_navigation() as reload:\n"""\n', []),
+    (f'{_PAGE}def f(page, url):\n    response = page.goto(url, wait_until="load", timeout=timeout_ms)\n', []),
+    (f'{_PAGE}def f(self, url):\n    return self._page.goto(url, wait_until="load", timeout=self._timeout_ms)\n', []),
+    (
+        f"{_PAGE}def f(self):\n"
+        '    with _doing(Operation.RELOAD), self._page.expect_navigation(wait_until="load", timeout=self._timeout_ms) as reload:\n'
+        "        pass\n",
+        [],
+    ),
+    (f'{_PAGE}def f(self, order):\n    return self._read_order(self._go(urljoin(self._url, f"{{ORDER_PAGE}}?id={{order.order_id}}")))\n', []),
+    (f"{_PAGE}def f(self, accept):\n    self._reloaded(accept)\n", []),
+    (f"{_PAGE}def f(page, url):\n    return page  # page.goto(url) odrzuca odpowiedź\n", []),
+    (f"{_PAGE}def f(page, url):\n    return _checked(\n        page.goto(\n            url,\n        )\n    )\n", []),
+    (f"{_PAGE}def f(page, url):\n    return _checked(  \n        page.goto(\n            url,\n        )\n    )\n", []),
+    (f"{_PAGE}def f(self, page, url):\n    return self._read_order(\n        page.goto(\n            url,\n        )\n    )\n", []),
+    (f"{_PAGE}def f(page, url):\n    return _checked(\n        page,\n        page.goto(\n            url,\n        )\n    )\n", []),
+    (f"{_PAGE}def f(page, url):\n    response = _checked(page, (\n        page.goto(\n            url,\n        )\n    ))\n", []),
+    (f"{_PAGE}def f(page, url):\n    return _checked(  # lista zleceń\n        page.goto(\n            url,\n        )\n    )\n", []),
+    (f"{_PAGE}def f(page, url):\n    return [\n        page.goto(\n            url,\n        )\n    ]\n", []),
+    (f"{_PAGE}def f(page, url):\n    statuses = [  # odpowiedzi kolejnych stron\n        page.goto(\n            url,\n        )\n    ]\n", []),
+    (f'{_PAGE}def f(page, url):\n    return _checked(\n        "strona #1",\n        page.goto(\n            url,\n        )\n    )\n', []),
+    (f'{_PAGE}def f(page, url, number):\n    return _checked(f"lista #{{number}}", (\n        page.goto(\n            url,\n        )\n    ))\n', []),
+    (f"{_PAGE}def f(page, urls):\n    return [\n        page.goto(url).status\n        for url in urls\n    ]\n", []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_NAWIGACJI)
+def test_regula_nawigacji_zglasza_odrzucona_odpowiedz_a_nie_odpowiedz_przypisana_zwrocona_ani_podana_dalej(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    (tmp_path / "src" / "rozliczenia" / "okno.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [("src/rozliczenia/okno.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_nawigacji_zglasza_tylko_pliki_src_z_importem_playwright(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path, imports in {
+        "src/rozliczenia/okno.py": "from playwright.sync_api import Page\n",
+        "src/rozliczenia/okno_typow.py": "if TYPE_CHECKING:\n    from playwright.sync_api import Page",
+        "src/rozliczenia/ustawienia.py": "import importlib\n",
+        "tests/test_okna.py": "from playwright.sync_api import Page\n",
+        "tools/narzedzie.py": "from playwright.sync_api import Page\n",
+    }.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(f"{imports}\n\ndef open_order(page, url):\n    page.goto(url)\n", encoding="utf-8")
+
+    assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [("src/rozliczenia/okno.py", 5), ("src/rozliczenia/okno_typow.py", 5)]
+
+
+# Znane luki reguły ``odrzucona-nawigacja`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``src/``, który
+# odrzuca odpowiedź nawigacji karty, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_NAWIGACJI: Final[dict[str, str]] = {
+    "as _": _PAGE
+    + """\
+def open_order(page: Page) -> None:
+    with page.expect_navigation() as _:
+        page.click("a")
+""",
+    "wait_for_url": _PAGE
+    + """\
+def open_order(page: Page, url: str) -> None:
+    page.click("a")
+    page.wait_for_url(url)
+""",
+    "wait_for_load_state": _PAGE
+    + """\
+def open_order(page: Page) -> None:
+    page.click("a")
+    page.wait_for_load_state()
+""",
+    "metoda pod inną nazwą": _PAGE
+    + """\
+def open_order(page: Page, url: str) -> None:
+    go = page.goto
+    go(url)
+""",
+    "karta bez importu playwright": """\
+from typing import Protocol
+
+
+class Tab(Protocol):
+    def goto(self, url: str) -> object: ...
+
+
+def open_order(page: Tab, url: str) -> None:
+    page.goto(url)
+""",
+    "element listy, której nikt nie czyta": _PAGE
+    + """\
+def open_order(page: Page, url: str) -> None:
+    [
+        page.goto(url),
+    ]
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_nawigacji_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``odrzucona-nawigacja`` czyta w pliku ``src/`` z importem playwright instrukcję, która jest samym
+    wywołaniem ``goto``, ``reload``, ``go_back`` albo ``go_forward``, element ``with`` z ``expect_navigation(…)`` bez
+    ``as`` i linię napisu wielowierszowego, która tak wygląda; metoda pod inną nazwą, czekanie na adres albo stan
+    strony, ``as _``, element listy, którego nikt nie czyta, i karta w pliku bez importu playwright to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_NAWIGACJI, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_nawigacji_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+@needs_ast_grep
+def test_regula_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "okno.py").write_text(
+        "from playwright.sync_api import Page\n"
+        "\n\n"
+        "def open_order(page, url):\n"
+        "    return _checked(\n"
+        "        page.goto(\n"
+        "            url,\n"
+        "            wait_until=\"load\",\n"
+        "        )\n"
+        "    )\n"
+        "\n\n"
+        "def open_list(page, url):\n"
+        "    return _checked(\n"
+        "        page,\n"
+        "\n"
+        "        page.goto(url, wait_until=\"load\"),\n"
+        "    )\n"
+        "\n\n"
+        "def open_start(page, url):\n"
+        "    return _checked(\n"
+        "        page.goto(url, wait_until=\"load\", timeout=timeout_ms)\n"
+        "    )\n"
+        "\n\n"
+        "def reload(page):\n"
+        "    page.reload()\n"
+        "\n\n"
+        "def open_noted(page, url):\n"
+        "    return _checked(\n"
+        "        # lista zleceń\n"
+        "        page.goto(url, wait_until=\"load\"),\n"
+        "    )\n"
+        "\n\n"
+        "def statuses(page, urls):\n"
+        "    return [\n"
+        "        page.goto(url).status\n"
+        "        for url in urls\n"
+        "    ]\n"
+        "\n\n"
+        "def open_after_comment(page, url):\n"
+        "    # najpierw lista zleceń,\n"
+        "    page.goto(url)\n",
+        encoding="utf-8",
+    )
+
+    assert _findings_of(_NAVIGATION_RULE, tmp_path, base) == [("src/okno.py", 28), ("src/okno.py", 47)]

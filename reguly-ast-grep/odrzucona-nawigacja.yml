@@ -1,0 +1,53 @@
+id: odrzucona-nawigacja
+language: python
+severity: error
+message: >-
+  odpowiedź nawigacji karty odrzucona: przejdź przez BrowserEfenix._go albo _reloaded
+  (src/rozliczenia/efenix_browser.py) i stronę, której nie przeczytasz, zapytaj o nią _error_page, bo nawigacja nie
+  zgłasza błędu przy statusie 4xx i 5xx
+files:
+  - src/**/*.py
+rule:
+  # Tylko plik src/ z importem playwright (from playwright albo import playwright, także pod if TYPE_CHECKING:), bo inne
+  # pliki src/ kart przeglądarki nie mają, a ich .reload( (np. ustawień) to nie nawigacja.
+  inside:
+    kind: module
+    stopBy: end
+    has:
+      stopBy: end
+      any:
+        - kind: import_from_statement
+          regex: '^from\s+playwright\b'
+        - kind: import_statement
+          regex: '^import\s+playwright\b'
+  # Odpowiedź odrzuca instrukcja, która jest samym wywołaniem goto, reload, go_back albo go_forward na dowolnym obiekcie,
+  # i element with z expect_navigation(…) bez as. Odpowiedź przypisana, zwrócona, podana jako argument albo element
+  # przechodzi. Metoda pod inną nazwą, wait_for_url, wait_for_load_state, as _, element listy, którego nikt nie czyta, i
+  # karta w pliku bez importu playwright to znane luki w ZNANE_LUKI_NAWIGACJI w tests/test_zapadki.py.
+  any:
+    - kind: expression_statement
+      has:
+        kind: call
+        has:
+          field: function
+          kind: attribute
+          has:
+            field: attribute
+            regex: '^(goto|reload|go_back|go_forward)$'
+    # Wywołanie jest bezpośrednim dzieckiem elementu with tylko bez as; z as jego dzieckiem jest as_pattern.
+    - kind: with_item
+      has:
+        kind: call
+        has:
+          field: function
+          kind: attribute
+          has:
+            field: attribute
+            regex: '^expect_navigation$'
+    # Linia napisu wielowierszowego, która zaczyna się od kropkowanej nazwy z jednym z tych wywołań albo od with
+    # z expect_navigation(…) bez as. Regex ast-grep nie ma lookahead, więc „bez as” to: za nawiasem koniec linii,
+    # znak niebiały albo odstępy i coś innego niż słowo as.
+    - kind: string
+      regex: '(?m)^[ \t]*[A-Za-z_][\w.]*\.(goto|reload|go_back|go_forward)\('
+    - kind: string
+      regex: '(?m)^[ \t]*with\b.*\bexpect_navigation\((?:[^()\n]|\([^()\n]*\))*\)(?:\r?$|[^ \t\r\n]|[ \t]+(?:\r?$|[^ \t\r\na]|a\r?$|a[^s]|as\w))'
