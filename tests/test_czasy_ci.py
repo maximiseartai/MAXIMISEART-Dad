@@ -28,6 +28,7 @@ import pytest
 from tests.fixtures.ci_workflow import jobs
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git
+from tests.fixtures.sen import sleep_in_test_thread
 
 import czasy_ci
 from github import BladApi, GhApi
@@ -214,7 +215,7 @@ def test_krok_bez_wyniku_w_api_zadanie_czyta_ponownie_az_api_pokaze_wynik(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api: _Api
 ) -> None:
     waits: list[float] = []
-    monkeypatch.setattr(time, "sleep", waits.append)
+    sleep_in_test_thread(monkeypatch, waits.append)
     lagging = [PYTEST_STEPS[0], _running(PYTEST_STEPS[1]), *PYTEST_STEPS[2:]]
     api.steps(lagging, lagging, PYTEST_STEPS)
 
@@ -228,7 +229,7 @@ def test_krok_bez_wyniku_po_piatym_odczycie_jest_zgloszony(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: _Api
 ) -> None:
     waits: list[float] = []
-    monkeypatch.setattr(time, "sleep", waits.append)
+    sleep_in_test_thread(monkeypatch, waits.append)
     api.steps([PYTEST_STEPS[0], _running(PYTEST_STEPS[1])])
 
     code, record = _record(tmp_path, {})
