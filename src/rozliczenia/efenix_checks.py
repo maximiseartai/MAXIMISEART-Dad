@@ -4,11 +4,11 @@ Kolejność sprawdzeń to kolejność ``OrderProblem``, a pierwsza niezgodność
 zbiorczym (``searched_number``), potem wiersze listy efenix po szukaniu (``listing``): dokładnie jedno zlecenie o
 ``Numer dokumentu`` równym numerowi, status „Do wyceny”, „Rozliczone” albo „Do akceptacji”, realizator równy ``WYKONAWCA``
 po ``normalize_text``, jak Przebieg rozliczeń grupuje ``WYKONAWCA``, i ``Dane adresowe`` równe ``ADRES`` (``efenix_address``), a na końcu data wykonania pusta albo różna od dnia z ``DATA``
-najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; decyzja taty po przebiegu z 4.11.2026). Datę w
-tej tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest niezgodnością, tylko
-Zleceniem rozliczonym (``Settled``), a zlecenie „Do akceptacji” zgodne z plikiem Zleceniem przekazanym (``Forwarded``);
-żadnego z nich proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień, którego efenix nie przyjął,
-to ``DateRefused``. Odczyt wiersza listy dla Logów Uruchomienia to ``ListedRead``.
+najwyżej o ``DATE_TOLERANCE`` w którąkolwiek stronę (``date_problem``; decyzja taty po Uruchomieniu Wyceny w efenix z
+4.11.2026). Datę w tej tolerancji proces zostawia w efenix bez zmian. Zlecenie „Rozliczone” zgodne z plikiem nie jest
+niezgodnością, tylko Zleceniem rozliczonym (``Settled``), a zlecenie „Do akceptacji” zgodne z plikiem Zleceniem
+przekazanym (``Forwarded``); żadnego z nich proces nie otwiera. Pustą datę wykonania proces ustawia z ``DATA``, a dzień,
+którego efenix nie przyjął, to ``DateRefused``. Odczyt wiersza listy dla Logów Uruchomienia to ``ListedRead``.
 """
 
 from __future__ import annotations
