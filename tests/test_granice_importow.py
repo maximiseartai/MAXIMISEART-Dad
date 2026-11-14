@@ -87,8 +87,11 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
+import json
 from pathlib import Path, PureWindowsPath
+import subprocess
 import sys
+import tomllib
 import typing
 
 import pytest
@@ -1725,6 +1728,27 @@ GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
 BY_NAME: typing.Final = frozenset({"getattr", "setattr", "delattr"})
 
 
+def _private_imports(tree: ast.Module) -> list[tuple[int, str, str]]:
+    """Postacie 1 i 2 ``_private_reaches``: import prywatnej nazwy albo z prywatnego modułu ``rozliczenia``, z linią,
+    kodem i pełną nazwą (``rozliczenia.….x``). Import względny (``from .m import _x``) nie ma tu nazwy pakietu."""
+
+    found: list[tuple[int, str, str]] = []
+    for node in wezly(tree):
+        if isinstance(node, ast.Import):
+            found.extend(
+                (node.lineno, ast.unparse(node), alias.name)
+                for alias in node.names
+                if alias.name.split(".")[0] == SRC_PACKAGE and any(map(_private, alias.name.split(".")))
+            )
+        elif isinstance(node, ast.ImportFrom) and (module := node.module or "").split(".")[0] == SRC_PACKAGE:
+            found.extend(
+                (node.lineno, ast.unparse(node), f"{module}.{alias.name}")
+                for alias in node.names
+                if _private(alias.name) or any(map(_private, module.split(".")))
+            )
+    return found
+
+
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, w których kod sięga do prywatnej nazwy ``src`` w jednej z postaci wyliczonych niżej.
 
@@ -1779,19 +1803,12 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """
 
     bound: set[str] = set()
-    found: list[tuple[int, str]] = []
+    found = [(line, code) for line, code, _ in _private_imports(tree)]
     for node in wezly(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] == SRC_PACKAGE:
-                    bound.add(alias.asname or SRC_PACKAGE)
-                    if any(map(_private, alias.name.split("."))):
-                        found.append((node.lineno, ast.unparse(node)))
+            bound.update(alias.asname or SRC_PACKAGE for alias in node.names if alias.name.split(".")[0] == SRC_PACKAGE)
         elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == SRC_PACKAGE:
-            for alias in node.names:
-                if _private(alias.name) or any(map(_private, (node.module or "").split("."))):
-                    found.append((node.lineno, ast.unparse(node)))
-                bound.add(alias.asname or alias.name)
+            bound.update(alias.asname or alias.name for alias in node.names)
 
     def from_src(node: ast.expr) -> bool:
         while isinstance(node, ast.Attribute):
@@ -1852,6 +1869,166 @@ def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> Non
         "wyrocznia sięga do prywatnej nazwy src; mechanikę bierze przez publiczny punkt obserwacji (nazwę, metodę stanu, "
         "szew), a dane o świecie zewnętrznym kopiuje celowo (docs/agents/skille.md, „Co wyrocznia bierze z src”):\n"
         + "\n".join(reaches)
+    )
+
+
+# Nazwy z banned-api src/ruff.toml (dowód katalogu, _PASSED i inne): ich import u właściciela pilnuje ruff TID251 z prawem
+# właściciela w per-file-ignores pyproject.toml.
+SRC_BANNED: typing.Final = frozenset(
+    tomllib.loads((SRC / "ruff.toml").read_text(encoding="utf-8"))["lint"]["flake8-tidy-imports"]["banned-api"]
+)
+
+
+def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
+    """Postacie 1 i 2 ``_private_reaches`` w ``src/``, bo ruff ``SLF001`` widzi ``m._x``, ale nie ``from m import _x``.
+    Nazwę z ``SRC_BANNED`` pilnuje ``TID251``. Import względny przechodzi: próbki ``ZNANE_LUKI_IMPORTU_SRC``."""
+
+    reaches = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
+        for path in sorted(SRC.rglob("*.py"))
+        for line, code, name in _private_imports(drzewo(path))
+        if name not in SRC_BANNED
+    ]
+
+    assert reaches == [], (
+        "moduł src importuje prywatną nazwę innego modułu: weź jego publiczną nazwę albo funkcję, a stan, który dzielą "
+        "klasy jednego modułu, daj prywatnej klasie tego modułu (CODING_STANDARDS.md, wiersz SLF001):\n" + "\n".join(reaches)
+    )
+
+
+# Postać → moduł src, którego import prywatnej nazwy innego modułu sprawdzenie wyżej odrzuca: siostry dróg, które ruff
+# SLF001 odrzuca w tests/test_regula_danych.py i tests/test_komentarz_logow_uruchomienia.py.
+IMPORTY_PRYWATNE_SRC: typing.Final = {
+    "prywatny parser celu kolejki": "from rozliczenia.centrum.outbox import _target\n",
+    "prywatny parser pliku kolejki": "from rozliczenia.centrum.outbox import _archive_file\n",
+    "prywatna tabela wartości pamięci reguły danych": "from rozliczenia.client_data import _WORDS\n",
+    "prywatny moduł pakietu": "from rozliczenia.worker_reports._model import Login\n",
+    "import prywatnego modułu": "import rozliczenia.worker_reports._model\n",
+}
+
+# Znane luki importu prywatnej nazwy w src (tests/fixtures/znane_luki.py): import względny z modułu Centrum, który
+# sprawdzenie importów i ruff przepuszczają. Mypy rozwiązuje go tylko w pakiecie, a prywatnej nazwy nie odrzuca.
+ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
+    "import względny prywatnego parsera celu kolejki": "from .outbox import _target\n\n\ndef cel() -> object:\n    return _target\n",
+    "import względny prywatnego parsera pliku kolejki": "from .outbox import _archive_file\n\n\ndef plik() -> object:\n    return _archive_file\n",
+    "import względny prywatnej tabeli pamięci": "from ..client_data import _WORDS\n\n\ndef tabela() -> object:\n    return _WORDS\n",
+}
+
+
+@pytest.mark.parametrize("code", IMPORTY_PRYWATNE_SRC.values(), ids=IMPORTY_PRYWATNE_SRC.keys())
+def test_sprawdzenie_importow_src_lapie_import_prywatnej_nazwy(code: str) -> None:
+    assert [name for _, _, name in _private_imports(ast.parse(code)) if name not in SRC_BANNED]
+
+
+@wymaga_ruff
+def test_znane_luki_importu_src_przechodza_przez_sprawdzenie_importow_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_IMPORTU_SRC, tmp_path)
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_importu.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"import: {code}" for _, code, _ in _private_imports(ast.parse(plik.read_text(encoding="utf-8")))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_IMPORTU_SRC)")
+
+
+# Jedyny plik src, który konfiguracja ruff zwalnia z SLF001 (wiersz SLF001 w CODING_STANDARDS.md).
+SLF001_OWNER: typing.Final = "src/rozliczenia/row_look.py"
+# Prywatna składowa obiektu spoza klasy: każdy plik src bez zwolnienia z SLF001 ją zgłasza.
+SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    return owner._field\n"
+
+
+def _ruff_settings(path: str, cwd: Path) -> str:
+    """Efektywna konfiguracja ruff dla pliku ``path`` (``ruff check --show-settings``) z katalogu ``cwd``."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-settings", path],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=cwd,
+        check=False,
+    )
+    assert (result.returncode, result.stderr) == (0, ""), result.stderr
+    return result.stdout
+
+
+def _ruff_list(settings: str, key: str) -> list[str]:
+    """Pozycje listy ``key = [`` z wyniku ``--show-settings``, po jednej w linii aż do ``]``, a pusta lista to
+    ``key = []``."""
+
+    lines = settings.splitlines()
+    if f"{key} = []" in lines:
+        return []
+    start = lines.index(f"{key} = [") + 1
+    return [line.strip().removesuffix(",") for line in lines[start : lines.index("]", start)]]
+
+
+@wymaga_ruff
+def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> None:
+    """Konfiguracja ruff wyłącza ``SLF001`` dwiema drogami, w każdym pliku konfiguracji repozytorium. Wpis pliku
+    (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, także ``ALL`` albo prefiks ``SLF``) zwalnia plik:
+    kopia drzewa ``src/`` z próbką ``SLF001_PROBE`` w miejscu każdego pliku i z każdym plikiem konfiguracji ruff idzie
+    przez ruff tak jak ``src/``, plik bez zgłoszenia jest zwolniony, a zwolniony jest tylko ``SLF001_OWNER``, którego
+    sięgnięcia do ``_style`` trzyma ``tests/test_wyglad_wiersza_danych.py``. Wpis nazwy (``flake8-self``
+    ``ignore-names`` albo ``extend-ignore-names``) zwalnia ją w każdym pliku: ``--show-settings`` pliku z każdego
+    katalogu kopii, bo ruff bierze konfigurację najbliższą katalogowi pliku, ma ``SLF001`` w ``linter.rules.enabled``
+    i ``linter.flake8_self.ignore_names`` równe domyślnym nazwom zainstalowanego ruff, czyli ``--show-settings`` w
+    katalogu z samym ``select = ["SLF001"]``. Jak w
+    ``tests/test_zakazy_ruff.py::test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela``."""
+
+    repo = tmp_path / "repo"
+    names = ("ruff.toml", ".ruff.toml", "pyproject.toml")
+    configs = {ROOT / name for name in names} | {
+        path for top in ("src", "tests", "tools", ".agents/skills") for name in names for path in (ROOT / top).rglob(name)
+    }
+    for config in configs:
+        if config.is_file():
+            copy = repo / config.relative_to(ROOT)
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
+    probes = {path.relative_to(ROOT).as_posix() for path in SRC.rglob("*.py")}
+    for name in probes:
+        probe = repo / name
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(SLF001_PROBE, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", "src"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=repo,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    reported = {
+        Path(finding["filename"]).resolve().relative_to(repo.resolve()).as_posix()
+        for finding in json.loads(result.stdout)
+        if finding["code"] == "SLF001"
+    }
+
+    assert sorted(probes - reported) == [SLF001_OWNER], (
+        "z SLF001 konfiguracja ruff zwalnia w src/ tylko row_look.py: do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać plik w konfiguracji ruff"
+    )
+
+    defaults = tmp_path / "domyslne"
+    defaults.mkdir()
+    (defaults / "ruff.toml").write_text('[lint]\nselect = ["SLF001"]\n', encoding="utf-8")
+    (defaults / "probe.py").write_text(SLF001_PROBE, encoding="utf-8")
+    default_names = _ruff_list(_ruff_settings("probe.py", defaults), "linter.flake8_self.ignore_names")
+    per_directory = {name.rpartition("/")[0]: name for name in sorted(probes)}
+    widened: dict[str, tuple[list[str], list[str]]] = {}
+    for name in per_directory.values():
+        settings = _ruff_settings(name, repo)
+        enabled = [rule for rule in _ruff_list(settings, "linter.rules.enabled") if rule.endswith("(SLF001)")]
+        ignore_names = _ruff_list(settings, "linter.flake8_self.ignore_names")
+        if not enabled or ignore_names != default_names:
+            widened[name] = (enabled, sorted(set(ignore_names) - set(default_names)))
+
+    assert widened == {}, (
+        "konfiguracja ruff w src/ ma SLF001 włączony i nie zwalnia z niego żadnej nazwy ponad domyślne nazwy ruff "
+        f"(flake8-self ignore-names, extend-ignore-names): {widened}; do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać nazwę w konfiguracji ruff"
     )
 
 
