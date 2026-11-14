@@ -11,8 +11,8 @@ biegnie z kopii bazy, linia ``SĘDZIA``), tym samym Pythonem: regułę wybiera s
 ładuje, odmawia, więc próbka ``ZNANE_LUKI`` nigdy reguły nie zastępuje. Biegnie na każdym przypadku tego id z historii
 pól ``Idiom:``: na każdym Ważnym, którego pole nazywa ``<id>``, i na Ważnym z jego ``jak #N W<n> r<k>``, w tym PR i w każdym PR rejestru korzeni
 od wdrożenia szablonu werdyktu (``rejestr_korzeni.idioms``). Przechodzi tylko z ostatnią linią ``DOWÓD OK``: dowód łapie ``Gdzie`` każdego
-przypadku i ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych, a regułę bez pola ``files:`` zatrzymuje
-zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
+przypadku i ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych, a regułę bez pola ``files:`` w ``reguly-ast-grep/``
+zatrzymuje zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
 
 Granica: dowód umie dziś tylko ast-grep, więc ``<id>``, które jest kluczem ``banned-api`` ruff albo kontraktem
 import-linter, to odmowa, dopóki na HEAD nie stanie reguła ast-grep o tym id. Przypadek ``jak #N W<n> r<k>`` sprzed

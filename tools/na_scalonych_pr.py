@@ -35,8 +35,9 @@ którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzł
 (``--config sgconfig.yml``), więc dowód widzi dokładnie te reguły, które zapadka ładuje, a plik reguły czyta tylko
 ast-grep. Reguły, której ta konfiguracja nie ładuje (``NOT_LOADED``: poza ``ruleDirs``, w ukrytym podkatalogu, bez
 katalogu ``ruleDirs`` albo commit bez ``sgconfig.yml``), dowód odmawia, bo próbka ``ZNANE_LUKI`` reguły nie
-zastępuje. Pola ``files:`` takiej reguły dowód nie sprawdza: każdą regułę z ``ruleDirs`` sprawdza zapadka
-``ast_grep_rules_without_scope`` w Required CI tego commitu. Tak uruchamia dowód ``tools/scal_pr.py``.
+zastępuje. Pola ``files:`` takiej reguły dowód nie sprawdza: regułę bez niego w ``reguly-ast-grep/`` (jedyny katalog
+``ruleDirs``, ``AST_GREP_RULES`` w ``tests/test_zapadki.py``) zatrzymuje zapadka ``ast_grep_rules_without_scope``
+w Required CI tego commitu. Tak uruchamia dowód ``tools/scal_pr.py``.
 
 1. Każde ``--wazne PR/W<n>/r<k>``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k`` PR-u (``werdykt_pr.rounds``), na
    liniach dodanych od ``merge-base`` bazy PR-u z SHA linii ``WERDYKT`` tego werdyktu do tego SHA. Ważne jest
