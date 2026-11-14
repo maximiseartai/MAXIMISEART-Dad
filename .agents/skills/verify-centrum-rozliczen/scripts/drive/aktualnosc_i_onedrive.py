@@ -21,6 +21,7 @@ from drive.common import (
     settle,
     stop_banner,
 )
+from drive.waiting import Budget
 from harness import File, Pace, Switch
 from drive.teksty import FETCHING, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON, UP_TO_DATE
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES
@@ -236,7 +237,7 @@ def _drive_update_in_progress(run: Run, page: Page, update: Locator) -> None:
     finally:
         remove(pacing, missing_ok=True)
     try:
-        expect(diagnosis.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=20_000)
+        expect(diagnosis.get_by_role("status").filter(has_text=UP_TO_DATE)).to_be_visible(timeout=Budget.SLOWED.ms)
         expect(update).to_be_enabled()
         run.check(
             len(_update_entries(run)) == started + 1,

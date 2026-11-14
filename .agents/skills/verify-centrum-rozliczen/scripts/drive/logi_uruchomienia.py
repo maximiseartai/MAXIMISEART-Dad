@@ -23,6 +23,7 @@ from drive.common import (
     run_logs,
     served_version,
 )
+from drive.waiting import Budget
 from drive.teksty import ABOUT_LOGS
 from drive.przebieg_rozliczen import TEMPLATE_PACING_MS
 from atrapy.scenariusz_centrum import ROW_MARKER
@@ -230,7 +231,7 @@ def drive(run: Run, page: Page) -> None:
         page.get_by_role("button", name="Podgląd bez zapisu", exact=True).click()
         expect(page.get_by_label("Wynik")).to_contain_text("Podgląd wymaga sprawdzenia · nic nie zapisano")
         woke = _card(run, "logi-skrzynka-podglad")
-        run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=60)
+        run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "every Logi waiting in the queue reaches the skrzynka", timeout_s=Budget.BACKGROUND)
     finally:
         drop_report_key(key_file)
     # Bytes, not text: reading text turns the \r\n of a file written in text mode on Windows back into \n.

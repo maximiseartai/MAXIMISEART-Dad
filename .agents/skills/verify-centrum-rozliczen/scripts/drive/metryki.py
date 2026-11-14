@@ -23,6 +23,7 @@ from drive.common import (
     read_text,
     switch_theme,
 )
+from drive.waiting import Budget
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 # The chart shows the newest Uruchomienia procesu of the chosen process and mode; older ones are in the history.
@@ -211,7 +212,7 @@ def drive(run: Run, page: Page) -> None:
          "--periods-directory", run.fixture["periods_directory"],
          "--period", LAST_COMPLETE, "--dry-run",
          "--metrics", fixture_metrics["preparation"]],
-        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False,
+        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=Budget.PROCESS.value, check=False,
     )
     result = json.loads(completed.stdout)
     run.check(

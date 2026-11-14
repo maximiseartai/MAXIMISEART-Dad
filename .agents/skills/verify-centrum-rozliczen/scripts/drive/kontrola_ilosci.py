@@ -18,6 +18,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
+from drive.waiting import Budget
 from harness import Pace, Switch
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
@@ -110,7 +111,7 @@ def drive(run: Run, page: Page) -> None:
         run.wait_for(
             lambda: f"skrzynka-wyslano etykieta={LABEL} okres={LAST_COMPLETE}" in run.log(),
             "the Kontrola sent again at start reaches the skrzynka in the background",
-            timeout_s=30,
+            timeout_s=Budget.WORK,
         )
     finally:
         remove(pacing, missing_ok=True)

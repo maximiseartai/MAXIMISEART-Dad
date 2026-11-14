@@ -13,6 +13,7 @@ import urllib.parse
 from playwright.sync_api import Page, Request, Response, expect
 
 from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
+from drive.waiting import Budget
 from atrapy.pliki_taty import LOG_FILE, SERVICE
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
@@ -69,7 +70,7 @@ def _launch(run: Run, port: int, name: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ | {"PYTHONUTF8": "1", "BROWSER": str(recorder)}
     result = subprocess.run(
         [sys.executable, str(tool / "run_centrum.py"), "--port", str(port)],
-        cwd=tool, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        cwd=tool, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=Budget.BACKGROUND.value,
         check=False,
     )
     (run.evidence / "api" / f"{name}.txt").write_text(

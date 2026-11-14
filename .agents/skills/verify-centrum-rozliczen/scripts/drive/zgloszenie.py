@@ -31,6 +31,7 @@ from drive.common import (
     start_centrum,
     stop_banner,
 )
+from drive.waiting import Budget
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import DAD_CASES_FILE, REPORT_KEY_FILE
@@ -281,7 +282,7 @@ def _logs_sent(run: Run, run_id: str) -> None:
     run.wait_for(
         lambda: not queued(run, "logi-uruchomienia", run_id, leaving=True),
         "with the key the Logi of this Uruchomienie reach the skrzynka",
-        timeout_s=60,
+        timeout_s=Budget.BACKGROUND,
     )
 
 
@@ -434,7 +435,7 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone-po-starcie")
     close_centrum(run, page)
     start_centrum(run, "zgloszenie-start-po-odrzuceniu")
-    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=30)
+    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=Budget.WORK)
     issues = reports(run)
     run.check(
         len(issues) == 4 and (issues[-1]["title"], issues[-1]["body"]) == (title, body),
