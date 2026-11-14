@@ -110,78 +110,13 @@ _PASSED: Final = object()
 """Dowód, że ``Outgoing`` albo ``LogsText`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 
-@final
-class Outgoing(str):
-    """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
-
-    Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``, a podklasy nie ma. Inna metoda ``str`` (wycinek, f-napis,
-    ``join``, ``+`` z gołym ``str`` albo z podklasą) daje ``str``, którego kolejka nie przyjmuje.
-    """
-
-    __slots__ = ()
-
-    def __new__(cls, text: str, proof: object) -> Outgoing:
-        if proof is not _PASSED:
-            raise TypeError("Tekst do wysyłki daje tylko rozliczenia.client_data: guarded albo tool.")
-        return super().__new__(cls, text)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst do wysyłki nie ma podklas.")
-
-    @overload
-    def __add__(self, other: Outgoing, /) -> Outgoing: ...
-    @overload
-    def __add__(self, other: str, /) -> str: ...
-    def __add__(self, other: str, /) -> str:
-        joined = str(self) + other
-        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
-
-
-def tool(text: str) -> Outgoing:
-    """Tekst narzędzia do wysyłki: stałe, liczby, identyfikatory, tokeny okresu i uwagi techniczne, bez treści plików taty."""
-
-    return Outgoing(text, _PASSED)
-
-
-@final
-class LogsText(str):
-    """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
-    okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
-    (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
-
-    __slots__ = ()
-
-    def __new__(cls, text: str, proof: object) -> LogsText:
-        if proof is not _PASSED:
-            raise TypeError("Tekst pliku Logów daje tylko rozliczenia.client_data.logs_text.")
-        return super().__new__(cls, text)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst pliku Logów nie ma podklas.")
-
-
-def logs_text(text: str) -> LogsText:
-    """Tekst pliku do Archiwum Logów okresu: Logi po strażniku albo ten plik z własnego pliku kolejki."""
-
-    return LogsText(text, _PASSED)
-
-
-@dataclass(frozen=True)
-class Guarded:
-    """Tekst po strażniku i uwagi techniczne o każdej zamaskowanej wartości (kolumna i miejsce, bez wartości)."""
-
-    text: Outgoing
-    notes: tuple[str, ...]
-
-
-_NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
-
-
 _REFUSALS: Final[dict[type, str]] = {}
 
 
 class WithoutSubclasses(type):
-    """Metaklasa klasy bez podklas (``ForbiddenValues``, ``process_kind.PreparedRun``): klasa podaje odmowę w nagłówku
+    """Metaklasa klasy bez podklas (typy-dowody reguły danych: ``Outgoing``, ``LogsText``, ``ForbiddenValues``,
+    ``run_logs_guard.GuardedLogs`` i ``GuardedText``, ``comment_versions.LogsPost`` i cztery wersje komentarza, a poza
+    nimi ``process_kind.PreparedRun``): klasa podaje odmowę w nagłówku
     (``class K(metaclass=WithoutSubclasses, refusal=…)``), a ``__new__`` metaklasy sam rzuca ``TypeError`` z tą odmową,
     gdy któraś baza nowej klasy ma tę metaklasę. Python wybiera metaklasę po bazach, więc odmawia ``class``, ``type()``
     i ``types.new_class`` przy każdej kolejności baz, a baza z własnym ``__init_subclass__`` stojąca przed klasą bez
@@ -199,6 +134,79 @@ class WithoutSubclasses(type):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         _REFUSALS[cls] = refusal
         return cls
+
+
+_NO_OUTGOING_SUBCLASSES: Final = "Tekst do wysyłki nie ma podklas."
+_NO_LOGS_TEXT_SUBCLASSES: Final = "Tekst pliku Logów nie ma podklas."
+
+
+@final
+class Outgoing(str, metaclass=WithoutSubclasses, refusal=_NO_OUTGOING_SUBCLASSES):
+    """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
+
+    Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``. Podklasie przy tworzeniu odmawia metaklasa
+    (``WithoutSubclasses``, a ``type.__new__`` z jej pominięciem ``__init_subclass__``), co daje wcześniejszy błąd, a
+    regułę trzyma plik kolejki, który bierze tylko dokładny typ (``outbox._queue_text``). Inna metoda ``str`` (wycinek,
+    f-napis, ``join``, ``+`` z gołym ``str`` albo z podklasą) daje ``str``, którego kolejka nie przyjmuje.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, text: str, proof: object) -> Outgoing:
+        if proof is not _PASSED:
+            raise TypeError("Tekst do wysyłki daje tylko rozliczenia.client_data: guarded albo tool.")
+        return super().__new__(cls, text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_OUTGOING_SUBCLASSES)
+
+    @overload
+    def __add__(self, other: Outgoing, /) -> Outgoing: ...
+    @overload
+    def __add__(self, other: str, /) -> str: ...
+    def __add__(self, other: str, /) -> str:
+        joined = str(self) + other
+        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
+
+
+def tool(text: str) -> Outgoing:
+    """Tekst narzędzia do wysyłki: stałe, liczby, identyfikatory, tokeny okresu i uwagi techniczne, bez treści plików taty."""
+
+    return Outgoing(text, _PASSED)
+
+
+@final
+class LogsText(str, metaclass=WithoutSubclasses, refusal=_NO_LOGS_TEXT_SUBCLASSES):
+    """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
+    okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
+    (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
+
+    __slots__ = ()
+
+    def __new__(cls, text: str, proof: object) -> LogsText:
+        if proof is not _PASSED:
+            raise TypeError("Tekst pliku Logów daje tylko rozliczenia.client_data.logs_text.")
+        return super().__new__(cls, text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_LOGS_TEXT_SUBCLASSES)
+
+
+def logs_text(text: str) -> LogsText:
+    """Tekst pliku do Archiwum Logów okresu: Logi po strażniku albo ten plik z własnego pliku kolejki."""
+
+    return LogsText(text, _PASSED)
+
+
+@dataclass(frozen=True)
+class Guarded:
+    """Tekst po strażniku i uwagi techniczne o każdej zamaskowanej wartości (kolumna i miejsce, bez wartości)."""
+
+    text: Outgoing
+    notes: tuple[str, ...]
+
+
+_NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
 
 
 @final

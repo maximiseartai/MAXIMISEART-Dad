@@ -23,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
-from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, guarded, guarded_number, logs_text
+from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, WithoutSubclasses, guarded, guarded_number, logs_text
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
@@ -345,8 +345,9 @@ pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``,
   ``__delattr__`` rzucają ``AttributeError``. Dlatego ``copy.copy``, ``copy.deepcopy`` i ``pickle.loads`` też rzucają:
   odtworzenie wartości ustawia sloty przez ``__setattr__``. ``copy.replace`` rzuca ``TypeError``, bo nie ma
   ``__replace__``. Wartość jest niezmienna, więc kopia nie jest potrzebna.
-- Podklasa, także zrobiona przez ``type()``: mypy odrzuca ``class`` (``final``), a ``__init_subclass__`` rzuca
-  ``TypeError``.
+- Podklasa: mypy odrzuca ``class`` (``final``), metaklasa ``client_data.WithoutSubclasses`` rzuca ``TypeError`` przy
+  ``class`` i ``type()``, a ``__init_subclass__`` przy ``type.__new__`` z jej pominięciem. To wcześniejszy błąd;
+  podklasę z każdej drogi (także ``__bases__``) odrzuca dopiero kontrola dokładnego typu przy użyciu, punkt niżej.
 - Wartość innego typu, np. Logi sprzed strażnika podane przez ``Any``, ``cast(Any, …)`` albo ``# type: ignore``, i
   podklasa, jakkolwiek powstała: typ jej nie widzi, więc wersje komentarza Uruchomienia (``comment_versions``: przy
   przyjęciu i w ``post_of`` tuż przed użyciem) i plik Logów (``LogsOnDisk.write``), jedyne miejsca, które biorą Logi albo
@@ -357,8 +358,12 @@ pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``,
 - Pydantic tu nie ma: ``record.model_copy`` daje ``RunLog``, a nie Logi po strażniku."""
 
 
+_NO_LOGS_SUBCLASSES: Final = "Logi po strażniku nie mają podklas: daje je tylko guard_logs."
+_NO_TEXT_SUBCLASSES: Final = "Tekst po strażniku nie ma podklas: daje go tylko guard_text."
+
+
 @final
-class GuardedLogs:
+class GuardedLogs(metaclass=WithoutSubclasses, refusal=_NO_LOGS_SUBCLASSES):
     """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (ADR 0025), z ``guard_logs``.
 
     Plik Logów (``LogsOnDisk.write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
@@ -378,7 +383,7 @@ class GuardedLogs:
         object.__setattr__(self, "_GuardedLogs__source", source)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Logi po strażniku nie mają podklas: daje je tylko guard_logs.")
+        raise TypeError(_NO_LOGS_SUBCLASSES)
 
     @property
     def record(self) -> RunLog:
@@ -421,7 +426,7 @@ def exact_logs(logs: object) -> GuardedLogs:
 
 
 @final
-class GuardedText:
+class GuardedText(metaclass=WithoutSubclasses, refusal=_NO_TEXT_SUBCLASSES):
     """Tekst komentarza bez pliku Logów (postęp, wynik bez Logów) po strażniku reguły danych, z ``guard_text``
     (``_MINTED``)."""
 
@@ -434,7 +439,7 @@ class GuardedText:
         object.__setattr__(self, "_GuardedText__text", text)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst po strażniku nie ma podklas: daje go tylko guard_text.")
+        raise TypeError(_NO_TEXT_SUBCLASSES)
 
     @property
     def text(self) -> str:

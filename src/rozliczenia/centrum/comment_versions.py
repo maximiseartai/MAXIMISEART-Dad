@@ -41,7 +41,7 @@ from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Ta
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text
 from rozliczenia.centrum.version import short_commit
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import WithoutSubclasses, tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -71,17 +71,28 @@ class ResultWithoutLogs:
     logs: LogsMissing
 
 
+_NO_VERSION_SUBCLASSES: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
+"""Odmowa podklasy wersji przy jej tworzeniu: metaklasa ``WithoutSubclasses`` przy ``class`` i ``type()``, a
+``__init_subclass__`` przy ``type.__new__`` z jej pominięciem. To wcześniejszy błąd; podklasę z każdej drogi (także
+``__bases__``) odrzuca ``post_of`` dokładnym typem przy użyciu."""
+
+
+@final
 @dataclass(frozen=True)
-class ProgressVersion:
+class ProgressVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     progress: PricingProgress
     text: GuardedText
 
     def __post_init__(self) -> None:
         exact_text(self.text)
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
+
+@final
 @dataclass(frozen=True)
-class OwnLogs:
+class OwnLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem i plik w Archiwum."""
 
     logs: GuardedLogs
@@ -89,9 +100,13 @@ class OwnLogs:
     def __post_init__(self) -> None:
         exact_logs(self.logs)
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
+
+@final
 @dataclass(frozen=True)
-class StandInLogs:
+class StandInLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Logi, które start Centrum wysyła z dziennika Wyceny: z pliku albo Logi Urwanego Uruchomienia."""
 
     logs: GuardedLogs
@@ -99,9 +114,13 @@ class StandInLogs:
     def __post_init__(self) -> None:
         exact_logs(self.logs)
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
+
+@final
 @dataclass(frozen=True)
-class WithoutLogsVersion:
+class WithoutLogsVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
     """Wynik bez Logów ``final`` z tekstem komentarza po strażniku (``text``), bez pliku w Archiwum."""
 
     final: ResultWithoutLogs
@@ -109,6 +128,9 @@ class WithoutLogsVersion:
 
     def __post_init__(self) -> None:
         exact_text(self.text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_VERSION_SUBCLASSES)
 
 
 StandInVersion = StandInLogs | WithoutLogsVersion
@@ -212,15 +234,19 @@ alias albo pełną ścieżkę), tak samo ``_Versions``.
 
 ``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
 wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
-``TypeError``. Podklasę odrzuca mypy (``final``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
+``TypeError``. Podklasę odrzuca mypy (``final``), przy tworzeniu metaklasa ``WithoutSubclasses``, a przy użyciu ``Outbox.post``
+(dokładny typ w ``outbox._queue_text``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
 ``Outbox.post`` bierze też gołą ``Post``, a łapie ją ``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w
 ``<kolejka>.post(post_of(…))``, więc nikt nie czyta jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko
 podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmów pokazują tam próbki
 ``ZNANE_LUKI_WYSYLKI``, każda za klasą nazwaną w swojej nazwie."""
 
 
+_NO_POST_SUBCLASSES: Final = "Wysyłka Logów nie ma podklas: daje ją tylko post_of."
+
+
 @final
-class LogsPost:
+class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
     """Wysyłka Logów Uruchomienia, którą ``Outbox.post`` bierze tak, jak zbudował ją ``post_of`` (``_VERSIONS``): pola
     tylko do odczytu, bez ``Post`` do skopiowania."""
 
@@ -228,6 +254,9 @@ class LogsPost:
 
     def __init__(self, post: Post, proof: _Versions) -> None:
         self.__post: Final = post
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_POST_SUBCLASSES)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, LogsPost) and self.__post == other.__post
