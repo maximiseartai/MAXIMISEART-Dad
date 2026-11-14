@@ -74,12 +74,12 @@ _JOURNALS: Final = "dzienniki-wyceny"
 _JOURNAL_SUFFIX: Final = ".jsonl"
 _STARTER: Final = object()
 """Dowód ``LogsOnDisk.started``: tylko z nim ``Journal.run_started`` startuje dziennik."""
-# Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku.
 _RUN_ID: Final = re.compile(r"[0-9a-f]{32}")
-# Nazwa pliku Logów (``name_of``).
+"""Identyfikator Uruchomienia z Centrum (``uuid4().hex``); inny nie ma Logów, więc nie dotyka dysku."""
 _NAME: Final = re.compile(
     rf"(?P<second>\d{{8}}T\d{{6}}Z)-(?P<process>{'|'.join(get_args(common_contract.ProcessKey))})-(?P<run_id>{_RUN_ID.pattern})\.json"
 )
+"""Nazwa pliku Logów (``name_of``)."""
 
 T = TypeVar("T")
 
@@ -205,9 +205,8 @@ class Journal:
         self._log = log
         self._lock = threading.Lock()
         self._start: StartFacts | None = None
-        self._header = False  # pierwszej linii nie ma jeszcze na dysku
-        self._failed = False  # nieudany zapis tego Uruchomienia jest już w dzienniku Centrum
-        # Wpisy tego Uruchomienia, które są już na dysku (po ``fsync``), dla postępu (``progress``).
+        self._header = False
+        self._failed = False
         self._done: list[OrderDone] = []
         self._total: int | None = None
         self._current: int | None = None
@@ -281,7 +280,7 @@ class Journal:
 
         with self._lock:
             start = self._start
-            if start is None:  # wpis bez startu Wyceny z Centrum nie ma dziennika, do którego by należał
+            if start is None:
                 return
             if not self._append_locked(start, entry):
                 return
@@ -523,14 +522,16 @@ class LogsOnDisk:
 
 class ViewedLogs(Generic[T]):
     """Widok (``view``) Logów każdego Uruchomienia jednego procesu z katalogu Logów ``logs``; ``None`` z widoku pomija
-    Logi."""
+    Logi.
+
+    Widok pliku Logów zostaje w pamięci po nazwie pliku razem z jego czasem zmiany i rozmiarem, także ``None``: plik,
+    którego nie da się odczytać albo który widok pomija.
+    """
 
     def __init__(self, logs: Path, view: Callable[[RunLog], T | None]) -> None:
         self._logs = logs
         self._view = view
         self._lock = threading.Lock()
-        # Widok pliku Logów po nazwie, z jego czasem zmiany i rozmiarem; ``None``: pliku nie da się odczytać albo widok
-        # go pomija.
         self._known: dict[str, tuple[tuple[int, int], T | None]] = {}
 
     def of(self, process: common_contract.ProcessKey) -> list[T]:
@@ -577,7 +578,7 @@ def _read_logs(path: Path) -> LogsRead:
         text = path.read_text(encoding="utf-8")
     except OSError as failure:
         return Refused(failure)
-    except ValueError:  # bajty spoza UTF-8
+    except ValueError:
         return Unreadable()
     try:
         return Found(RunLog.model_validate_json(text))
