@@ -100,7 +100,6 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
-import importlib.machinery
 from itertools import pairwise
 import json
 import os
@@ -114,6 +113,7 @@ import threading
 import time
 from typing import Any, Protocol, TypeVar
 
+from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
 from kroki_lokalne import environment, static_steps
 from ostatnie_linie import MUTACJE_OK
@@ -531,7 +531,7 @@ def _installed_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadli
 
     for step in static_steps(copy):
         # ``python -m`` w korzeniu kopii szuka modułu najpierw w nim, potem tam, gdzie Python tego procesu.
-        if importlib.machinery.PathFinder.find_spec(step.job, [str(copy), *sys.path]) is None:
+        if not jest_modul(step.job, [str(copy), *sys.path]):
             raise MissingGateTool(f"{sys.executable} nie ma modułu {step.job} kroku {step.name}")
     return static_gate(copy, limit_s=limit_s, stop=stop, deadline=deadline)
 

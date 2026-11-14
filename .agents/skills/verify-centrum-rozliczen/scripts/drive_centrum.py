@@ -10,7 +10,6 @@ to ``<evidence>/state``.
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
-import importlib
 from pathlib import Path
 import shutil
 import sys
@@ -28,10 +27,11 @@ from drive.common import DriveFailure, Run, dad_context, page_requests
 from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
+from import_dynamiczny import modul
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
 
-MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
+MODULES = {each.name: modul(each.module) for each in FEATURES}
 
 
 def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any]) -> None:
