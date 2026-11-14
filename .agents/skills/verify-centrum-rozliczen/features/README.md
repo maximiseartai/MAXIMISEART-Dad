@@ -158,19 +158,16 @@ behaviour, then exactly these H2s in order:
    calls as a whole statement `helper(run, …)` or `name = helper(run, …)`, before any
    `return`, of its body or of the body of a `try` in it with only a `finally` that does not
    return: each such statement runs once when `drive` runs to its end, so the helper's steps
-   and checks print at each call, in the order of the statements. A step or a check is read
-   only where it runs exactly once when its function runs to its end (a statement of its own
-   in the function's body, in a `with`, a `try` without `except` or a `finally`, and the places
-   `ONCE` of `sub_features.py` lists inside a statement), or once per loop over a fixed list: a
-   `for` over a non-empty tuple or list literal in its header, or over a non-empty tuple bound
-   to a name the module binds once, earlier in the same block, without `break`, `continue` or
-   `else`. It refuses, with the file and the line, every other form of them, every other
-   `.step` or `.check` attribute in the module, on whatever object, any other use of such a
-   helper and one that is decorated or yields, and a step or a check on any other place, in one
-   statement with another one, or after a `return` of its function, as it cannot tell whether,
-   how many times or in which order that runs. It does not see a check reached without such an
-   attribute, as `getattr(run, "check")`, a function of another drive module, a helper reached
-   without its name, or an exception a `with` suppresses. A field of an f-string message prints
+   and checks print at each call, in the order of the statements. A step or a check is read only
+   on the places `ONCE` of `sub_features.py` lists, which run exactly once, or once per `for`
+   over a fixed list (a non-empty tuple or list literal in its header, or a non-empty tuple
+   bound once to a name earlier in its block). It refuses, with the file
+   and the line, every other form of them, every other `.step` or `.check` attribute in the
+   module, on whatever object, any other use of such a helper and one that is decorated or
+   yields, as it cannot tell whether, how many times or in which order that runs. It does not
+   see a check reached without such an attribute, as `getattr(run, "check")`, a function of
+   another drive module, a helper reached without its name, or an exception a `with`
+   suppresses. A field of an f-string message prints
    as `…`, except a module constant, which prints its value. A line with the ID
    alone is a step without its own `run.check`: what it waits for (`until`,
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.

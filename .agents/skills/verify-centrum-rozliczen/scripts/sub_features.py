@@ -11,14 +11,10 @@ helper (a plain top-level function the module binds once, whose first parameter 
 ``run.step`` or ``run.check``) prints its steps and checks at each call of ``drive``, in the order of the statements:
 each whole statement of ``drive``'s body runs once when ``drive`` runs to its end, and so does each statement of the
 body of a ``try`` that stands so in ``drive`` with only a ``finally`` that does not return, as an exception in that
-body leaves ``drive`` after the ``finally``. A step or a check of ``drive`` or a helper is read only where it runs
-exactly once whenever its function runs to its end: on a statement of its own in the function's body, in the body of
-a ``with`` or of a ``try`` without ``except``, in a ``finally``, and inside a statement only on the places ``ONCE``
-lists (the value of an assignment or a ``return``, the test of an ``if``, the first operand of ``and``/``or`` and of a
-comparison chain, the arguments of a call, …). A step or a check in a loop prints once per loop over a fixed list: a
-``for`` over a non-empty tuple or list literal in its header, or over a non-empty tuple bound to a name the module
-binds only once, earlier in the same block, without ``break``, ``continue`` or ``else``, runs its body at least once and
-as many times as the code says; a list under a name can change its length without a new binding.
+body leaves ``drive`` after the ``finally``. A step or a check is read only where it runs exactly once when its function
+runs to its end, the places ``ONCE`` lists, or once per loop over a fixed list: a ``for`` without ``break``,
+``continue`` or ``else`` over a non-empty tuple or list literal in its header, or over a non-empty tuple bound to a name
+the module binds once, earlier in the same block (a list under a name can change its length without a new binding).
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
@@ -27,11 +23,11 @@ a check before the first step, and any attribute ``.step`` or ``.check`` in the 
 is not the called function of such a call on ``run`` in the body of ``drive`` or of a helper (outside any function,
 lambda or class in it), any use of a helper's name but a call ``helper(run, …)`` that is a whole statement, or the
 whole value of an assignment to names, of such a body, before any ``return`` of ``drive`` and without a step or a
-check in its arguments, a helper that is decorated or yields, and a step or a check on any other place, in one
-statement with another one, or after a ``return`` of its function: elsewhere it cannot tell whether, how many times or
-in which order it runs. It does not see a check reached without such an attribute, as ``getattr(run, "check")``, a
-function of another drive module, a helper reached without its name, as ``globals()["helper"]``, or an exception that
-the context manager of a ``with`` suppresses, which skips the rest of its body. Checks in the
+check in its arguments, and a helper that is decorated or yields: elsewhere it cannot tell whether, how many times or
+in which order the helper runs. It does not see a check reached without such an attribute, as
+``getattr(run, "check")``, a function of another drive module, or a helper reached without its name, as
+``globals()["helper"]``, or an exception a ``with`` suppresses; it refuses a step or a check anywhere else, after a
+``return`` of its function or in one statement with another. Checks in the
 shared helpers of ``drive/common.py`` print under the step that calls them and are not part of the section: the
 section maps this module's own steps and checks.
 """
@@ -52,25 +48,15 @@ from drive import FEATURES, feature
 
 DRIVE = Path(__file__).resolve().parent / "drive"
 CALLS = frozenset({"step", "check"})
-NOT_FIXED_LOOP = (
-    "in a loop that is not a `for` over a fixed list (a non-empty tuple or list literal in its header, or a non-empty tuple "
-    "bound to a name, without break, continue or else)"
-)
-# The places that run exactly once whenever their parent runs to its end, by the evaluation order of the Python language
-# reference: (parent type, field). The first operand of `and`/`or` and of a comparison chain, the body of a `try` without
-# `except` and the body of a `for` over a fixed list are the other such places (``_once``); a step or a check anywhere
-# else is a refusal, so a construction nobody listed is refused by itself.
-ONCE: dict[type[ast.AST], frozenset[str]] = {
-    ast.Expr: frozenset({"value"}), ast.Assign: frozenset({"value"}), ast.AnnAssign: frozenset({"value"}),
-    ast.AugAssign: frozenset({"value"}), ast.Return: frozenset({"value"}), ast.Assert: frozenset({"test"}),
-    ast.If: frozenset({"test"}), ast.Match: frozenset({"subject"}), ast.For: frozenset({"iter"}),
-    ast.With: frozenset({"items", "body"}),
-    ast.withitem: frozenset({"context_expr"}), ast.Try: frozenset({"finalbody"}), ast.IfExp: frozenset({"test"}),
-    ast.Call: frozenset({"func", "args", "keywords"}), ast.keyword: frozenset({"value"}), ast.Starred: frozenset({"value"}),
-    ast.Attribute: frozenset({"value"}), ast.Subscript: frozenset({"value", "slice"}), ast.BinOp: frozenset({"left", "right"}),
-    ast.UnaryOp: frozenset({"operand"}), ast.Compare: frozenset({"left"}), ast.NamedExpr: frozenset({"value"}),
-    ast.Tuple: frozenset({"elts"}), ast.List: frozenset({"elts"}), ast.Set: frozenset({"elts"}),
-    ast.Dict: frozenset({"keys", "values"}), ast.JoinedStr: frozenset({"values"}), ast.FormattedValue: frozenset({"value"}),
+# Fields that run exactly once whenever their node runs; with `_once`, the only places a step or a check is read.
+ONCE: dict[type[ast.AST], set[str]] = {
+    ast.Expr: {"value"}, ast.Assign: {"value"}, ast.AnnAssign: {"value"}, ast.AugAssign: {"value"}, ast.Return: {"value"},
+    ast.Assert: {"test"}, ast.If: {"test"}, ast.Match: {"subject"}, ast.For: {"iter"}, ast.With: {"items", "body"},
+    ast.withitem: {"context_expr"}, ast.Try: {"finalbody"}, ast.IfExp: {"test"}, ast.Call: {"func", "args", "keywords"},
+    ast.keyword: {"value"}, ast.Starred: {"value"}, ast.Attribute: {"value"}, ast.Subscript: {"value", "slice"},
+    ast.BinOp: {"left", "right"}, ast.UnaryOp: {"operand"}, ast.Compare: {"left"}, ast.NamedExpr: {"value"},
+    ast.Tuple: {"elts"}, ast.List: {"elts"}, ast.Set: {"elts"}, ast.Dict: {"keys", "values"}, ast.JoinedStr: {"values"},
+    ast.FormattedValue: {"value"},
 }
 
 
@@ -119,21 +105,16 @@ def _drive(tree: ast.Module, module: str) -> ast.FunctionDef:
 def _own_calls(function: ast.FunctionDef) -> list[ast.Call]:
     """Calls ``run.step``/``run.check`` in ``function`` itself, not in a function, lambda or class inside it."""
 
-    calls = [node for node in _own_nodes(function) if isinstance(node, ast.Call) and _is_run_call(node.func)]
-    return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
-
-
-def _own_nodes(function: ast.FunctionDef) -> list[ast.AST]:
-    """The nodes of ``function``'s body, not those of a function, lambda or class inside it."""
-
-    nodes: list[ast.AST] = []
+    calls: list[ast.Call] = []
     stack: list[ast.AST] = list(function.body)
     while stack:
         node = stack.pop()
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
-            nodes.append(node)
-            stack.extend(ast.iter_child_nodes(node))
-    return nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Call) and _is_run_call(node.func):
+            calls.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
 
 
 def _is_run_call(node: ast.AST) -> bool:
@@ -165,18 +146,20 @@ def _refuse_flow(tree: ast.Module, function: ast.FunctionDef, module: str) -> No
 
     parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     bound = Counter(name for node in ast.walk(tree) for name in binds(node))
-    returns = [node.lineno for node in _own_nodes(function) if isinstance(node, ast.Return)]
+    returns = [node.lineno for node in ast.walk(function) if isinstance(node, ast.Return) and _owner(node, parents) is function]
     statements: set[int] = set()
     for call in _own_calls(function):
         where = "after a `return`" if any(line < call.lineno for line in returns) else None
         child: ast.AST = call
+        statement: ast.AST = call
+        while not isinstance(statement, ast.stmt):
+            statement = parents[id(statement)]
         while where is None and (parent := parents[id(child)]) is not function:
             if isinstance(parent, ast.For) and child in parent.body and not _fixed_loop(parent, parents, bound):
-                where = NOT_FIXED_LOOP
+                where = "in a loop that is not a `for` over a fixed list"
             elif not _once(parent, child):
                 where = f"where its `{type(parent).__name__}` may run it another number of times than once"
             child = parent
-        statement = _statement(call, parents)
         if where is None and id(statement) in statements:
             where = "in one statement with another step or check"
         statements.add(id(statement))
@@ -187,47 +170,37 @@ def _refuse_flow(tree: ast.Module, function: ast.FunctionDef, module: str) -> No
                           "loop over a fixed list; move it to a statement of its own there")
 
 
+def _owner(node: ast.AST, parents: dict[int, ast.AST]) -> ast.AST:
+    while not isinstance(node := parents[id(node)], ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef):
+        pass
+    return node
+
+
 def _once(parent: ast.AST, child: ast.AST) -> bool:
     """Whether ``child`` runs exactly once whenever ``parent`` runs to its end, or once per loop over a fixed list."""
 
     if isinstance(parent, ast.BoolOp):
         return child is parent.values[0]
-    if isinstance(parent, ast.Compare) and parent.comparators and child is parent.comparators[0]:
+    if isinstance(parent, ast.Compare) and child in parent.comparators[:1]:
         return True
-    if isinstance(parent, ast.Try) and not parent.handlers and child in parent.body:
-        return True
-    if isinstance(parent, ast.For) and child in parent.body:
-        return True
-    fields = ONCE.get(type(parent), frozenset())
-    return any(value is child or (isinstance(value, list) and child in value) for name, value in ast.iter_fields(parent) if name in fields)
-
-
-def _statement(call: ast.Call, parents: dict[int, ast.AST]) -> ast.AST:
-    """The innermost statement that holds ``call``."""
-
-    node: ast.AST = call
-    while not isinstance(node, ast.stmt):
-        node = parents[id(node)]
-    return node
+    if isinstance(parent, ast.Try | ast.For) and child in parent.body:
+        return not getattr(parent, "handlers", [])
+    return any(value is child or (isinstance(value, list) and child in value)
+               for name, value in ast.iter_fields(parent) if name in ONCE.get(type(parent), set()))
 
 
 def _fixed_loop(loop: ast.For, parents: dict[int, ast.AST], bound: Counter[str]) -> bool:
     """Whether ``loop`` runs its body at least once and as many times as the code says (see the module docstring)."""
 
-    def fixed(node: ast.expr, lists: bool = True) -> bool:
-        if not (isinstance(node, ast.Tuple) or (lists and isinstance(node, ast.List))):
-            return False
-        assert isinstance(node, ast.Tuple | ast.List)
-        return bool(node.elts) and not any(isinstance(e, ast.Starred) for e in node.elts)
+    def fixed(node: ast.expr | None, lists: bool = True) -> bool:
+        return (isinstance(node, ast.Tuple | ast.List) and (lists or isinstance(node, ast.Tuple)) and bool(node.elts)
+                and not any(isinstance(element, ast.Starred) for element in node.elts))
 
     block = next(body for _, body in ast.iter_fields(parents[id(loop)]) if isinstance(body, list) and loop in body)
-    earlier = block[: block.index(loop)]
     named = isinstance(loop.iter, ast.Name) and bound[loop.iter.id] == 1 and any(
-        isinstance(node, ast.Assign | ast.AnnAssign)
+        isinstance(node, ast.Assign | ast.AnnAssign) and fixed(node.value, lists=False)
         and [ast.unparse(target) for target in getattr(node, "targets", [getattr(node, "target", None)])] == [loop.iter.id]
-        and node.value is not None
-        and fixed(node.value, lists=False)
-        for node in earlier
+        for node in block[: block.index(loop)]
     )
     jumps = any(isinstance(node, ast.Break | ast.Continue) for part in loop.body for node in ast.walk(part))
     return (fixed(loop.iter) or named) and not jumps and not loop.orelse
