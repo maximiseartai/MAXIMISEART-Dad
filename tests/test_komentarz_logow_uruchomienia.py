@@ -2737,8 +2737,8 @@ _TEKSTY_POL_NARZEDZIA: Final = list(_teksty_pol_narzedzia(full_logs()))
 """Teksty pól narzędzia pełnych Logów; nowe pole gramatyki albo listy pól narzędzia dostaje tu przypadek samo."""
 
 
-def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
-    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst ma dopisaną komórkę."""
+def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
+    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
 
     dump = full_logs().model_dump(mode="json")
     *droga, ostatni = sciezka
@@ -2746,8 +2746,16 @@ def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
     for krok in droga:
         miejsce = miejsce[krok]
     narzedzia = miejsce[ostatni]
-    miejsce[ostatni] = f"{narzedzia} {_KOMORKA}"
+    miejsce[ostatni] = tekst(narzedzia)
     return narzedzia, dump
+
+
+def _wstawienia_komorki(narzedzia: str) -> list[str]:
+    """Tekst narzędzia ze wstawioną komórką: z przodu, z tyłu i za każdym separatorem (znakiem, który nie jest literą
+    ani cyfrą), bo za separatorem zepsuta gramatyka mogłaby przyjąć dowolny tekst."""
+
+    miejsca = sorted({0, len(narzedzia), *(numer + 1 for numer, znak in enumerate(narzedzia) if not znak.isalnum())})
+    return [f"{narzedzia[:miejsce]} {_KOMORKA} {narzedzia[miejsce:]}".strip() for miejsce in miejsca]
 
 
 @pytest.mark.parametrize(
@@ -2755,18 +2763,20 @@ def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
     [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR],
     ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
 )
-def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
+def test_tekst_pola_narzedzia_z_komorka_wstawiona_gdziekolwiek_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
     """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
-    poddrzewie śladu, pasuje do niej, a z dopisaną zapamiętaną komórką już nie: strażnik (``_kept``) i ``tool_text``
-    biorą całą gramatykę, więc początek w gramatyce nie przepuszcza reszty (przegląd #1849, D1)."""
+    poddrzewie śladu, pasuje do niej, a z zapamiętaną komórką wstawioną z przodu, z tyłu albo za którymkolwiek
+    separatorem (``_wstawienia_komorki``) już nie: strażnik (``_kept``) i ``tool_text`` biorą całą gramatykę, więc
+    część w gramatyce nie przepuszcza reszty (przeglądy #1849 i #1853, D1)."""
 
-    narzedzia, dump = _z_dopisana_komorka(sciezka)
+    narzedzia, _ = _z_tekstem(sciezka, str)
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
 
     assert TOOL_TEXT_GRAMMAR[pole].fullmatch(narzedzia), narzedzia
-    assert _KOMORKA not in guard_logs(RunLog.model_validate(dump), pamiec).text
-    assert _KOMORKA not in tool_text(pole, f"{narzedzia} {_KOMORKA}")
+    for tekst in _wstawienia_komorki(narzedzia):
+        assert _KOMORKA not in guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text, tekst
+        assert _KOMORKA not in tool_text(pole, tekst), tekst
 
 
 @pytest.mark.parametrize(
@@ -2778,7 +2788,7 @@ def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje
     """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
     dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
 
-    _, dump = _z_dopisana_komorka(sciezka)
+    _, dump = _z_tekstem(sciezka, lambda narzedzia: f"{narzedzia} {_KOMORKA}")
 
     with pytest.raises(ValidationError):
         RunLog.model_validate(dump)
