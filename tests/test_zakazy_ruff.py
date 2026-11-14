@@ -25,6 +25,8 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+
 ROOT = Path(__file__).resolve().parents[1]
 # Każdy plik konfiguracji ruff poza pyproject.toml w korzeniu, literałem, żeby tools/szybko.py wybierał ten test przy
 # zmianie któregoś z nich.
@@ -389,6 +391,32 @@ def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
         "src/rozliczenia/sonda_zakazu.py:3",
     ]
     assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == ["src/rozliczenia/wall_clock.py:3"]
+
+
+# Znane luki zakazu zegara ściennego (tests/fixtures/znane_luki.py): opis postaci → moduł src, który bierze chwilę
+# „teraz” albo dzień obok ``rozliczenia.wall_clock``, a mimo to przechodzi przez ruff, mypy i ``_clock_findings``.
+ZNANE_LUKI_ZEGARA = {
+    "dzień UTC z chwili wall_clock": "from rozliczenia.wall_clock import utc_now\n\nDZIEN = utc_now().date()\n",
+    "instancja datetime": "from datetime import datetime\n\nTERAZ = datetime.min.now()\n",
+    "podklasa datetime": "from datetime import datetime\n\n\nclass Chwila(datetime):\n    pass\n\n\nTERAZ = Chwila.now()\n",
+    "__import__": 'TERAZ = __import__("time").time()\n',
+    "getattr modułu": 'import time\n\nTERAZ = getattr(time, "time")()\n',
+    "getattr z nazwą złożoną": 'import time\n\nTERAZ = getattr(time, "ti" + "me")()\n',
+    "importlib": 'import importlib\n\nTERAZ = importlib.import_module("time").time()\n',
+    "zegar modułu, którego src/ruff.toml nie wymienia": "import time\n\nTERAZ = time.clock_gettime(time.CLOCK_REALTIME)\n",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_zakazu_zegara_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
+    pliki = zapisz(ZNANE_LUKI_ZEGARA, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=probe)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += _clock_findings("--stdin-filename", str(probe), "-", code=plik.read_text(encoding="utf-8"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_ZEGARA)")
 
 
 def _src_files() -> set[str]:

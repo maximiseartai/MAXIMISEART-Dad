@@ -17,8 +17,7 @@ z modelu: okno, które wołałoby kod Wyceny, przestałoby być niezależną dru
 Rdzeń Uruchomienia procesu i moduły, które procesy i Centrum biorą bez skoroszytu (``WITHOUT_WORKBOOK``), nie
 wczytują warstwy skoroszytu (``template_file`` ani openpyxl), także przez inne moduły ``src/``, importem w funkcji i
 w ``TYPE_CHECKING``: zmiana układu Wzorca albo biblioteki skoroszytu nie dotyka kodu, od którego zależy każdy proces.
-Domknięcie idzie tylko po modułach ``src/``, więc biblioteki spoza ``src/``, która sama wczytuje openpyxl, i
-skoroszytu czytanego bez openpyxl (zip, XML) nie łapie: to zostaje przeglądowi.
+Domknięcie idzie tylko po modułach ``src/``.
 
 Katalog procesów (``centrum/catalog.py``), wpis procesu (``centrum/process_kind.py``) i wpisy w ``centrum/processes/``
 nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy okresów ani okna efenix, także przez inne
@@ -34,7 +33,7 @@ omijała). Konstruktor bez dowodu katalogu odrzuca też mypy, a dowód ``process
 
 Skrypt dla maszyn (``tools/uruchom_proces.py``) nie wczytuje FastAPI, starlette ani uvicorn, także przez moduły
 ``src/`` i importem w funkcji: Uruchomienie procesu nie potrzebuje serwera, a każdy start skryptu (w testach ok. stu)
-płacił za jego import ok. 0,2 s. Moduły ``tools/lib`` (Atrapy) sprawdzenie pomija: to zostaje przeglądowi.
+płacił za jego import ok. 0,2 s.
 
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
@@ -45,8 +44,7 @@ otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypo
 z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail z hasłem aplikacji poza portem.
 
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
-(Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038). Celowego obejścia nie łapią: to
-zostaje przeglądowi.
+(Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
 
 - Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``. Jej ``replace`` i podklasę
   odrzuca typ (docstring ``comment_versions._VERSIONS``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
@@ -71,18 +69,13 @@ kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a ekspl
 Kod spoza ``tests/`` (``src/``, ``tools/`` z bibliotekami, skryptami CI i hookami, skrypty skilli i pliki Pythona w
 korzeniu) nie importuje pakietu ``tests``: narzędzia i skille zmieniają się rzadko, a pliki testów najczęściej, więc
 atrapy świata zewnętrznego i syntetyczne pliki taty wspólne z testami leżą w ``tools/lib/atrapy/``, a ``tests/fixtures``
-trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie dokładnie postacie wyliczone w docstringu
+trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie postacie wyliczone w docstringu
 ``_tests_imports``; uruchomienie testu po ścieżce (``pytest.main([".../tests/test_x.py::test"])``) nie jest importem i
 przechodzi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
-trafia do ``STDLIB_ONLY`` z powodem. Granica, którą łapie tylko przegląd: nazwa albo napis złożony w trakcie działania
-(``importlib``, ``__import__``, ``getattr`` z napisu sklejonego z części), ``PreparedRun`` wołany pod nazwą
-przypisaną poza importem albo jako ``type(prepared)``, kopia ``PreparedRun`` przez ``replace`` przypisane innej nazwie
-poza importem albo z wyrażenia bez ``prepared`` w tekście z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…), moduł ``comment_versions`` przypisany innej
-nazwie poza importem, wysyłka Logów zmieniona w słuchaczu kolejki bez nazwania etykiety (np. po ``run_id``) albo
-zbudowana z etykietą wziętą z innej wysyłki (``post.target.label``) oraz celowe obejście strażnika bez nazwy jego typów
-(``object.__new__(type(logs))``, zmiana ``__class__``).
+trafia do ``STDLIB_ONLY`` z powodem. Postacie, których strażnicy tego pliku nie łapią, są próbkami ``ZNANE_LUKI_*``
+przy ich testach.
 """
 
 from __future__ import annotations
@@ -99,6 +92,7 @@ import typing
 import pytest
 
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, raz_na_drzewo, wezly
+from tests.fixtures.znane_luki import assert_znane_luki, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 GUARDIAN = SRC / "rozliczenia" / "centrum" / "restart_guardian.py"
@@ -604,6 +598,43 @@ def test_skrypt_dla_maszyn_nie_wczytuje_serwera() -> None:
     )
 
 
+# Znane luki strażnika Skryptu dla maszyn (tests/fixtures/znane_luki.py): opis postaci → Skrypt dla maszyn, który
+# wczytuje serwer (moduł ``serwer_atrapy`` w ``tools/lib`` drzewa próbek wczytuje FastAPI), a mimo to przechodzi przez
+# ruff w ``tools/`` i przez ``test_skrypt_dla_maszyn_nie_wczytuje_serwera``.
+ZNANE_LUKI_SKRYPTU: typing.Final = {
+    "moduł tools/lib, który wczytuje serwer": "import serwer_atrapy\n\nSERWER = serwer_atrapy\n",
+    "importlib.import_module": 'import importlib\n\nSERWER = importlib.import_module("fastapi")\n',
+    "__import__": 'SERWER = __import__("uvicorn")\n',
+}
+
+
+def _zgloszenia_skryptu(skrypt: Path) -> list[str]:
+    """Zgłoszenie ``test_skrypt_dla_maszyn_nie_wczytuje_serwera`` dla Skryptu dla maszyn ``skrypt`` w miejscu
+    ``tools/uruchom_proces.py``, z ``src`` repozytorium."""
+
+    with pytest.MonkeyPatch.context() as podmiana:
+        podmiana.setattr(sys.modules[__name__], "MACHINE_SCRIPT", skrypt)
+        podmiana.setattr(sys.modules[__name__], "ROOT", skrypt.parents[1])
+        try:
+            test_skrypt_dla_maszyn_nie_wczytuje_serwera()
+        except AssertionError as blad:
+            return [str(blad)]
+    return []
+
+
+@wymaga_ruff
+def test_znane_luki_skryptu_dla_maszyn_przechodza_przez_ruff_i_straznika(tmp_path: Path) -> None:
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "lib" / "serwer_atrapy.py").write_text("import fastapi\n\nAPI = fastapi.FastAPI()\n", encoding="utf-8")
+    pliki = zapisz(ZNANE_LUKI_SKRYPTU, tmp_path / "tools")
+
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += _zgloszenia_skryptu(plik)
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_SKRYPTU)")
+
+
 def _imported_modules(path: Path) -> Iterator[tuple[int, str]]:
     """Moduły, które importuje plik ``path``, z linią; ``from a import b`` daje ``a`` i ``a.b``, a import względny
     w ``src`` moduł, który wskazuje."""
@@ -652,7 +683,8 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Postacie, których nie łapie ani to
+    sprawdzenie, ani mypy, ani ruff, są próbkami w ``ZNANE_LUKI_KATALOGU``.
     """
 
     builds = {"PreparedRun"}
@@ -744,6 +776,77 @@ def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> No
     assert _prepared_run_builds(ast.parse(code)) == []
 
 
+_GOTOWE: typing.Final = "def kopia(gotowe: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:\n"
+_POLA: typing.Final = (
+    "gotowe.kind, gotowe.period, gotowe.inputs, gotowe.context, gotowe.metrics, gotowe.pricing, gotowe.engine, {dowod}, "
+    "gotowe.settings, gotowe.warnings, gotowe.quantity_rules"
+)
+_KATALOG: typing.Final = (
+    "from typing import Any\n\nfrom rozliczenia.centrum import process_kind\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n"
+)
+# Znane luki strażnika katalogu procesów (tests/fixtures/znane_luki.py): opis postaci → moduł src, który składa albo
+# zmienia ``PreparedRun`` obok ``Catalog.prepared``, a mimo to przechodzi przez ruff, mypy i ``_prepared_run_builds``.
+ZNANE_LUKI_KATALOGU: typing.Final = {
+    "type(gotowe) z dowodem z getattr": _KATALOG
+    + "\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
+    + ")\n",
+    "type(gotowe) z dowodem z noqa": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import _CATALOG, PreparedRun  # noqa: TID251 - próbka\n\n\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod="_CATALOG")
+    + ")\n",
+    "PreparedRun pod nazwą przypisaną poza importem": _KATALOG
+    + "ZLOZ = PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return ZLOZ("
+    + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
+    + ")\n",
+    "nazwa złożona w trakcie działania": _KATALOG
+    + "\n"
+    + _GOTOWE
+    + '    zloz = getattr(process_kind, "Prepared" + "Run")\n'
+    + "    wynik: PreparedRun[Any, Any] = zloz("
+    + _POLA.format(dowod='getattr(process_kind, "_CATA" + "LOG")')
+    + ")\n    return wynik\n",
+    "copy.copy gotowego Uruchomienia": "import copy\nfrom typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return copy.copy(gotowe)\n",
+    "wartość Any": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def z_tablicy(gotowe: dict[str, Any]) -> PreparedRun[Any, Any]:
+    wynik: PreparedRun[Any, Any] = gotowe["uruchomienie"]
+    return wynik
+""",
+    "object.__setattr__ pola gotowego Uruchomienia": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
+    object.__setattr__(gotowe, "period", okres)
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_katalogu_procesow_przechodza_przez_ruff_mypy_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_KATALOGU, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_prepared_run_builds: {call}" for _, call in _prepared_run_builds(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KATALOGU)")
+
+
 # Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
 WORKBOOK_ROUTES: typing.Final = {
     "import-wprost": {"a.py": "import openpyxl\n"},
@@ -785,6 +888,38 @@ def test_sprawdzenie_rdzenia_przepuszcza_biblioteke_standardowa_i_moduly_bez_sko
     )
 
     assert _workbook_chains("rozliczenia/a.py", tmp_path) == set()
+
+
+# Znane luki czytania importów (tests/fixtures/znane_luki.py), na którym stoją strażnicy grafu importów: opis postaci →
+# moduł rdzenia drzewa ``_source_tree``, który wczytuje skoroszyt, a mimo to przechodzi przez ruff w ``src/``,
+# domknięcie ``_workbook_chains`` i ``_imported_modules``.
+ZNANE_LUKI_GRAFU: typing.Final = {
+    "importlib.import_module": 'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n',
+    "__import__": 'SKOROSZYT = __import__("openpyxl")\n',
+    "nazwa modułu src złożona w trakcie działania": 'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n',
+    "biblioteka spoza src, która sama wczytuje openpyxl": "import pandas\n\nARKUSZ = pandas.read_excel\n",
+    "skoroszyt czytany bez openpyxl": """\
+import zipfile
+
+
+def arkusz(plik: str) -> bytes:
+    with zipfile.ZipFile(plik) as skoroszyt:
+        return skoroszyt.read("xl/worksheets/sheet1.xml")
+""",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_grafu_importow_przechodza_przez_ruff_i_czytanie_importow(tmp_path: Path) -> None:
+    _source_tree(tmp_path, {})
+    pliki = zapisz(ZNANE_LUKI_GRAFU, tmp_path / "rozliczenia")
+
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [*_workbook_chains(f"rozliczenia/{plik.name}", tmp_path)]
+        zgloszenia[opis] += [f"{line}: {module}" for line, module in _imported_modules(plik) if _is_workbook(module)]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_GRAFU)")
 
 
 def test_kopia_opiekuna_ponownego_startu_importuje_tylko_biblioteke_standardowa_i_siebie() -> None:
@@ -913,7 +1048,8 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
     ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
     importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
-    ``_GuardedLogs__…``) poza docstringiem. Celowego obejścia bez tych nazw nie łapie (docstring modułu)."""
+    ``_GuardedLogs__…``) poza docstringiem. Postacie, których nie łapie ani to sprawdzenie, ani mypy, ani ruff, są
+    próbkami w ``ZNANE_LUKI_STRAZNIKA``."""
 
     names = GUARDED | {
         alias.asname
@@ -1014,6 +1150,63 @@ def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_impor
     assert _guard_bypasses(ast.parse(code)) == []
 
 
+# Znane luki strażnika Logów i tekstu po strażniku (tests/fixtures/znane_luki.py): opis postaci → moduł src, który daje
+# albo zmienia ``GuardedLogs`` z pominięciem ``guard_logs``, a mimo to przechodzi przez ruff, mypy i ``_guard_bypasses``.
+ZNANE_LUKI_STRAZNIKA: typing.Final = {
+    "object.__new__(type(logs))": """\
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def pusta(logs: GuardedLogs) -> GuardedLogs:
+    return object.__new__(type(logs))
+""",
+    "zmiana __class__ przez object.__setattr__": """\
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def przebierz(record: RunLog, logs: GuardedLogs) -> None:
+    object.__setattr__(record, "__class__", type(logs))
+""",
+    "type(logs) z dowodem z napisu sklejonego": """\
+from rozliczenia.centrum import run_logs_guard
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def podmien(logs: GuardedLogs, record: RunLog) -> GuardedLogs:
+    return type(logs)(record, record, getattr(run_logs_guard, "_MIN" + "TED"))
+""",
+    "nazwa typu złożona w trakcie działania": """\
+from rozliczenia.centrum import run_logs_guard
+
+
+def zloz() -> object:
+    logi = getattr(run_logs_guard, "Guarded" + "Logs")
+    return object.__new__(logi)
+""",
+    "slot z nazwy złożonej": """\
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def podmien(logs: GuardedLogs, record: RunLog) -> None:
+    object.__setattr__(logs, "_Guarded" + "Logs__record", record)
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_straznika_logow_przechodza_przez_ruff_mypy_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_STRAZNIKA, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_guard_bypasses: {code}" for _, code in _guard_bypasses(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_STRAZNIKA)")
+
+
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
@@ -1034,10 +1227,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     ``comment_versions`` używa jej tylko ``post_of``. Napis ``logi-uruchomienia`` stoi poza ``comment_versions`` tylko w
     ``Literal``.
 
-    Nie łapie etykiety wziętej z wysyłki, która nie przyszła z ``post_of`` (``post.target.label`` w słuchaczu kolejki),
-    ``post_of`` pod nazwą złożoną w trakcie działania (``getattr`` z napisu sklejonego z części), wyniku ``post_of``
-    podanego metodzie ``post`` obiektu, który nie jest kolejką, ani etykiety z modułu przypisanego innej nazwie poza
-    importem (docstring modułu).
+    Postacie, których nie łapie ani to sprawdzenie, ani mypy, ani ruff, są próbkami w ``ZNANE_LUKI_WYSYLKI``.
     """
 
     own = file == COMMENT_VERSIONS
@@ -1287,6 +1477,118 @@ LOGS_POST_ALLOWED: typing.Final = {
 @pytest.mark.parametrize("code", LOGS_POST_ALLOWED.values(), ids=LOGS_POST_ALLOWED.keys())
 def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) -> None:
     assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py") == []
+
+
+# Znane luki strażnika wysyłki Logów (tests/fixtures/znane_luki.py): opis postaci → moduł src, który buduje albo zmienia
+# wysyłkę Logów Uruchomienia obok ``post_of``, a mimo to przechodzi przez ruff, mypy i ``_logs_post_breaks``.
+ZNANE_LUKI_WYSYLKI: typing.Final = {
+    "słuchacz kolejki zmienia wysyłkę Logów po run_id": """\
+from dataclasses import replace
+
+from rozliczenia.centrum.outbox import Post, Rank
+
+
+def przygotuj(post: Post, run_id: str) -> Post:
+    return replace(post, rank=Rank.OWN) if post.run_id == run_id else post
+""",
+    "etykieta wzięta z innej wysyłki": """\
+from dataclasses import replace
+
+from rozliczenia.centrum.outbox import Post
+
+
+def jak_logi(logi: Post, inna: Post) -> Post:
+    return replace(inna, target=logi.target)
+""",
+    "etykieta z modułu przypisanego innej nazwie poza importem": """\
+from rozliczenia.centrum import comment_versions
+from rozliczenia.centrum.outbox import PeriodThread
+
+WERSJE = comment_versions
+WATEK = PeriodThread(label=WERSJE.LABEL, line="-", closed="reuse", title="t")
+""",
+    "post_of pod nazwą złożoną w trakcie działania": """\
+from rozliczenia.centrum import comment_versions
+from rozliczenia.centrum.comment_versions import CommentVersion, LogsPost
+
+
+def zrob(wersja: CommentVersion) -> LogsPost:
+    buduj = getattr(comment_versions, "post" + "_of")
+    wysylka: LogsPost = buduj(wersja)
+    return wysylka
+""",
+    "wynik post_of w metodzie post obiektu, który nie jest kolejką": """\
+from rozliczenia.centrum.comment_versions import CommentVersion, LogsPost, post_of
+
+
+class Schowek:
+    def __init__(self) -> None:
+        self.wysylki: list[LogsPost] = []
+
+    def post(self, wysylka: LogsPost) -> bool:
+        self.wysylki.append(wysylka)
+        return True
+
+
+def odloz(schowek: Schowek, wersja: CommentVersion) -> bool:
+    return schowek.post(post_of(wersja))
+""",
+    "dowód wersji z getattr": """\
+from rozliczenia.centrum import comment_versions
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(post: Post) -> LogsPost:
+    return LogsPost(post, getattr(comment_versions, "_VERSIONS"))
+""",
+    "dowód wersji z noqa": """\
+from rozliczenia.centrum.comment_versions import _VERSIONS, LogsPost  # noqa: TID251 - próbka
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(post: Post) -> LogsPost:
+    return LogsPost(post, _VERSIONS)
+""",
+    "dowód wersji wartością Any": """\
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(post: Post, dowody: dict[str, Any]) -> LogsPost:
+    return LogsPost(post, dowody["wersje"])
+""",
+    "type(gotowa) z dowodem z getattr": """\
+from rozliczenia.centrum import comment_versions
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(gotowa: LogsPost, post: Post) -> LogsPost:
+    return type(gotowa)(post, getattr(comment_versions, "_VERSIONS"))
+""",
+    "object.__setattr__ slotu gotowej wysyłki": """\
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Post
+
+
+def podmien(gotowa: LogsPost, inna: Post) -> None:
+    object.__setattr__(gotowa, "_LogsPost__post", inna)
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_wysylki_logow_przechodza_przez_ruff_mypy_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_WYSYLKI, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_logs_post_breaks: {code}" for _, code in _logs_post_breaks(drzewo(plik), f"rozliczenia/centrum/{plik.name}")]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_WYSYLKI)")
 
 
 # Wyrocznie skilli i narzędzia, które biorą z ``src`` tylko publiczne nazwy (docs/agents/skille.md, „Co wyrocznia bierze
@@ -1729,9 +2031,7 @@ def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
     i w ``TYPE_CHECKING``; ``importlib.import_module``, ``import_module`` i ``__import__`` ze stałym napisem ``tests…`` w
     pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
     ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import okno_w_procesie`` sięgnąłby ``tests/fixtures``.
-
-    Granica (tylko przegląd): nazwa albo ścieżka złożona w trakcie działania, ``spec_from_file_location``, ``runpy``,
-    ``exec``, ``sys.path`` zmienione inaczej niż ``insert`` i ``append`` oraz ``sys.modules``."""
+    Postacie, których nie łapie, są próbkami w ``ZNANE_LUKI_TESTOW``."""
 
     found = []
     for node in wezly(tree):
@@ -1841,3 +2141,41 @@ def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_ob
     )
 
     assert _tests_imports(ast.parse(code)) == []
+
+
+# Znane luki granicy testów (tests/fixtures/znane_luki.py): opis postaci → moduł spoza tests/, który sięga do pakietu
+# tests, a mimo to przechodzi przez ruff na ścieżce biblioteki narzędzi i przez ``_tests_imports``.
+ZNANE_LUKI_TESTOW: typing.Final = {
+    "nazwa modułu złożona w trakcie działania": 'import importlib\n\nFIXTURES = importlib.import_module("tests" + ".fixtures.settlement")\n',
+    "nazwa modułu w zmiennej": 'import importlib\n\nNAZWA = "tests.fixtures.settlement"\nFIXTURES = importlib.import_module(NAZWA)\n',
+    "import_module pod inną nazwą": 'from importlib import import_module as zaladuj\n\nFIXTURES = zaladuj("tests.fixtures.settlement")\n',
+    "importlib pod inną nazwą": 'import importlib as il\n\nFIXTURES = il.import_module("tests.fixtures.settlement")\n',
+    "builtins.__import__": 'import builtins\n\nFIXTURES = builtins.__import__("tests.fixtures.settlement")\n',
+    "spec_from_file_location": """\
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+SPEC = spec_from_file_location("settlement", Path(__file__).parents[2] / "tests" / "fixtures" / "settlement.py")
+assert SPEC is not None
+FIXTURES = module_from_spec(SPEC)
+""",
+    "runpy.run_path": 'from pathlib import Path\nimport runpy\n\nFIXTURES = runpy.run_path(str(Path(__file__).parents[2] / "tests" / "fixtures" / "settlement.py"))\n',
+    "runpy.run_module": 'import runpy\n\nFIXTURES = runpy.run_module("tests.fixtures.settlement")\n',
+    "ścieżka złożona w trakcie działania": 'from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).parents[2] / ("te" + "sts")))\n',
+    "sys.path.extend": 'import sys\n\nsys.path.extend(["tests/fixtures"])\n',
+    "przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["tests/fixtures"]\n',
+    "sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "tests/fixtures")\n',
+    "sys pod inną nazwą": 'import sys as system\n\nsystem.path.insert(0, "tests/fixtures")\n',
+    "sys.modules": 'import sys\n\nFIXTURES = sys.modules["tests.fixtures.settlement"]\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_granicy_testow_przechodza_przez_ruff_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_TESTOW, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "lib" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_tests_imports: {modul}" for _, modul in _tests_imports(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_TESTOW)")

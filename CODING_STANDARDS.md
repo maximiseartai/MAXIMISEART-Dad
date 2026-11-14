@@ -35,8 +35,8 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 | Rule | Guard |
 |---|---|
-| The import graph of `src/`, tools, tests and skill scripts keeps the boundaries listed in the docstring of its guard: the engine never imports Centrum rozliczeń, the process core never reaches the workbook layer, and only `Catalog.prepared` builds a `PreparedRun`. | `tests/test_granice_importow.py` |
-| Code outside `tests/` (`src/`, `tools/` with its libraries, CI scripts and hooks, skill scripts and the Python files in the root) never imports the package `tests`. | `tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow` (boundary: docstring of `_tests_imports`) |
+| The import graph of `src/`, tools, tests and skill scripts keeps the boundaries listed in the module docstring of its guard: the engine never imports Centrum rozliczeń, the process core never reaches the workbook layer, and only `Catalog.prepared` builds a `PreparedRun`. | `tests/test_granice_importow.py` (known gaps: `ZNANE_LUKI_GRAFU`, `ZNANE_LUKI_SKRYPTU`, `ZNANE_LUKI_KATALOGU`, `ZNANE_LUKI_STRAZNIKA` and `ZNANE_LUKI_WYSYLKI` in the same file, each run by the `test_znane_luki_…` test right after it) |
+| Code outside `tests/` (`src/`, `tools/` with its libraries, CI scripts and hooks, skill scripts and the Python files in the root) never imports the package `tests`. | `tests/test_granice_importow.py::test_kod_spoza_testow_nie_importuje_testow` (known gaps: `ZNANE_LUKI_TESTOW` in the same file, run by `test_znane_luki_granicy_testow_przechodza_przez_ruff_i_straznika`) |
 
 ## Error Ownership
 
@@ -58,7 +58,7 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Code in `src/` asks whether a file or folder is there only through `src/rozliczenia/file_state.py`. | `tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state` (known gaps: `ZNANE_LUKI` in the same file, run by `test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff`) |
 | Code in `src/` keeps the response of every navigation of a browser tab. | `tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona` (known gaps: `ZNANE_LUKI` in the same file, run by `test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff`) |
 | `zip` takes `strict=True` when both sides must have the same length, `strict=False` only with a comment naming the check that already reports a different length, and successive pairs come from `itertools.pairwise`. | ruff `B905`, `RUF007` |
-| Code in `src/` takes the current moment and tata's day only from `rozliczenia.wall_clock`, and tata's day is `dad_today()`, never `utc_now().date()`. | ruff `TID251`, `tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa` (boundary: docstring of `wall_clock`) |
+| Code in `src/` takes the current moment and tata's day only from `rozliczenia.wall_clock`, and tata's day is `dad_today()`, never `utc_now().date()`. | ruff `TID251`, `tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa` (known gaps: `ZNANE_LUKI_ZEGARA` in the same file, run by `test_znane_luki_zakazu_zegara_przechodza_przez_ruff_i_mypy`) |
 
 ## Test Surface
 
