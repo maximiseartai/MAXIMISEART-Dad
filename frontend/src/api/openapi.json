@@ -7082,7 +7082,7 @@
           "result_word"
         ],
         "title": "ProcessRun",
-        "description": "Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.\n\n``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło\nrekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.\n``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego\nrekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego\nLogach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy\nUruchomieniu z Centrum sprzed #322, które identyfikatora nie zapamiętało."
+        "description": "Jedno Uruchomienie procesu z pliku metryk; ``BLAD_KRYTYCZNY`` to przerwane, z czasami etapów do przerwania.\n\n``origin`` mówi, skąd wystartowało: ``centrum`` to Centrum rozliczeń, ``cmd`` każde inne źródło\nrekordu: Uruchomienia z dawnych launcherów ``.cmd`` i CLI oraz ze skryptu dla maszyn.\n``stop_kind`` to Rodzaj Zatrzymania przerwanego; ``None`` przy ukończonym i przy przerwanym ze starego\nrekordu, który rodzaju nie zapisał. ``run_id`` to identyfikator Uruchomienia z Centrum, ten sam co w jego\nLogach Uruchomienia, po którym okno Uwagi taty przypina do niego Uwagę; ``None`` przy ``cmd`` i przy\nUruchomieniu z Centrum z wersji narzędzia, która identyfikatora jeszcze nie zapamiętywała."
       },
       "ProcessSetup": {
         "properties": {
