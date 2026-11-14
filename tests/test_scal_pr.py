@@ -2846,7 +2846,7 @@ def _status(github: MergeGitHub, *arguments: str) -> subprocess.CompletedProcess
     return _run_from(github, github.checkout, *arguments, environment=RUN)
 
 
-def _statuses(github: MergeGitHub) -> list[list[object]]:
+def _statuses(github: MergeGitHub) -> list[list[str]]:
     return [write for write in github.writes() if str(write[1]).startswith("repos/{owner}/{repo}/statuses/")]
 
 
@@ -2937,7 +2937,7 @@ def test_status_pr_ktory_zmienia_wzor_opisu_sadzi_wzor_z_bazy_takze_z_checkoutu_
 
     assert answered.stdout.splitlines()[0] == f"SĘDZIA | #1 | reguły z origin/main {main[:7]}, nie z checkoutu {head[:7]}: biegnę z kopii tego commitu"
     assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | opis: brak „## Merge Danger” w kolejności wzoru .agents/skills/pr/SKILL.md"
-    assert [write[2]["state"] for write in _statuses(github) if isinstance(write[2], dict)] == ["failure"]
+    assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == ["failure"]
 
 
 def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(tmp_path: Path) -> None:
