@@ -679,6 +679,15 @@ def wysylka(komorka: str, post: Post) -> Post:
         ),
         _LOGS_TEXT,
     ),
+    "parser pliku kolejki z tekstem z komórki": (
+        """from rozliczenia.centrum import outbox
+
+
+def plik(komorka: str) -> outbox.ArchiveFile | None:
+    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
+        "Private member accessed: `_archive_file`",
+    ),
 }
 
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
@@ -699,12 +708,6 @@ ZNANE_LUKI_LOGOW: Final = {
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
     "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
     + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
-    "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
-
-
-def plik(komorka: str) -> outbox.ArchiveFile | None:
-    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
-""",
     "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs

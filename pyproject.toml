@@ -158,10 +158,13 @@ extend-select = [
     "PTH101",
     "PTH116",
     "PTH208",
+    # Prywatna składowa (_nazwa) innego obiektu w src/ tylko w module, który ją definiuje, z prawem właściciela niżej:
+    # zapis obok właściciela przez jego pola (settings._places[…].write w #1727 r5) omija jego reguły.
+    "SLF001",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"!src/**" = ["ANN401", "T201"]
+"!src/**" = ["ANN401", "T201", "SLF001"]
 # Konsola startu Centrum i instalatora skrótu.
 "src/rozliczenia/centrum/launcher.py" = ["T201"]
 "src/rozliczenia/centrum/shortcut.py" = ["T201"]
@@ -181,6 +184,16 @@ extend-select = [
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
+".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py" = ["TID251"]
+# Prawo właściciela do SLF001: moduł sięga do prywatnych składowych klas, które sam definiuje (uchwyt Zgłoszenia
+# i Zgłoszenia, dziennik i Logi na dysku, pamięć reguły danych, strażnik działań okna efenix). Ruff zwalnia plik z całego
+# SLF001, więc tests/test_prywatne_skladowe.py (OWNERS) trzyma, które nazwy wolno mu użyć.
+"src/rozliczenia/centrum/{logs_disk,reports}.py" = ["SLF001"]
+"src/rozliczenia/client_data.py" = ["SLF001"]
+"src/rozliczenia/efenix_browser.py" = ["SLF001"]
+# Wygląd Wiersza danych ustawia indeksy stylu openpyxl wprost (StyleArray komórki, fefef3619f), bo openpyxl szuka
+# przypisanego stylu po hashu całego obiektu i przy tysiącach komórek trwa to setki milisekund.
+"src/rozliczenia/row_look.py" = ["SLF001"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc

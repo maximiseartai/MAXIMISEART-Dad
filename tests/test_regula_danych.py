@@ -183,15 +183,6 @@ def wysylka(komorka: str, post: Post) -> Post:
     object.__setattr__(post, "parts", (komorka,))
     return post
 """,
-    "parser pliku kolejki z tytułem z komórki": """from rozliczenia.centrum import outbox
-from rozliczenia.centrum.outbox import NewIssue, Post
-
-
-def wysylka(komorka: str, cel: NewIssue) -> Post:
-    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
-    assert isinstance(znaleziony, NewIssue)
-    return Post(cel, None, "r", None, (znaleziony.title,))
-""",
 }
 
 _CEL: Final = """\
@@ -277,6 +268,18 @@ def wysylka(komorka: str) -> OpenIssue:
 """,
         'Argument 2 to "report_target" has incompatible type "str"; expected "Outgoing"',
     ),
+    "parser pliku kolejki z tytułem z komórki": (
+        """from rozliczenia.centrum import outbox
+from rozliczenia.centrum.outbox import NewIssue, Post
+
+
+def wysylka(komorka: str, cel: NewIssue) -> Post:
+    znaleziony = outbox._target({"label": "zgloszenie", "title": komorka}, "new_issue")
+    assert isinstance(znaleziony, NewIssue)
+    return Post(cel, None, "r", None, (znaleziony.title,))
+""",
+        "Private member accessed: `_target`",
+    ),
 }
 
 # Znane luki celu wysyłki (tests/fixtures/znane_luki.py): postaci, które dają polu tekstowemu celu wartość z komórki taty
@@ -311,8 +314,8 @@ def wysylka(wiersz: dict[str, Any], post: Post) -> Post:
 }
 
 
-# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy, które
-# każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+# Drogi do strażnika z pamięcią, która nie jest pamięcią pracy Centrum (przegląd #1660, W2) → zgłoszenie mypy albo ruff,
+# które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
 DROGI_DO_PUSTEJ_PAMIECI: Final = {
     "pamięć świeżego uchwytu plików taty": (
         """from rozliczenia.client_data import guarded
@@ -357,6 +360,16 @@ def wysylka(komorka: str) -> str:
 """,
         'Missing positional argument "proof"',
     ),
+    "prywatne pole pamięci: wyczyszczenie zapamiętanych wartości": (
+        """from rozliczenia.client_data import ForbiddenValues, guarded
+
+
+def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
+    pamiec._columns.clear()
+    return guarded(pamiec, komorka, "treść").text
+""",
+        "Private member accessed: `_columns`",
+    ),
 }
 
 # Znane luki pustej pamięci (tests/fixtures/znane_luki.py): postaci, które dają strażnika bez pamięci pracy Centrum, a
@@ -370,13 +383,6 @@ from rozliczenia.dad_files import DadFiles
 
 def wysylka(komorka: str) -> str:
     return guarded(cast(ForbiddenValues, DadFiles().forbidden), komorka, "treść").text
-""",
-    "prywatne pole pamięci: wyczyszczenie zapamiętanych wartości": """from rozliczenia.client_data import ForbiddenValues, guarded
-
-
-def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
-    pamiec._columns.clear()
-    return guarded(pamiec, komorka, "treść").text
 """,
     "prywatne pole pamięci: podmiana slotu przez object.__setattr__": """from rozliczenia.client_data import ForbiddenValues, guarded
 

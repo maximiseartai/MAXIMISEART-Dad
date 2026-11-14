@@ -44,6 +44,11 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
         "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
     ),
+    "tests/test_prywatne_skladowe.py": (
+        "graf wybiera go przy zmianie pyproject.toml i src/ruff.toml (literały); nowe SLF001 poza właścicielem łapie ruff "
+        "w każdym runie, a zmianę modułu właściciela liczy pełny pytest w CI; w STRUCTURE przekroczyłby limit testów "
+        "wzorcowych PR L i C (tests/test_ksztalt_bramki.py: 33 przy limicie 32, 97 przy limicie 96)"
+    ),
     "tests/test_import_dynamiczny.py": (
         "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
     ),

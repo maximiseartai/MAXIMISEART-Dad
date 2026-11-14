@@ -15,8 +15,7 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -26,7 +25,7 @@ from playwright.sync_api import Browser, BrowserContext, ConsoleMessage, FloatRe
 import yaml
 
 from drive import feature
-from drive.waiting import LATE_WRITE_MS, Budget, TimedOut, expect, quiet_for, until
+from drive.waiting import LATE_WRITE_MS, Budget, TimedOut, expect, quiet_for, until, while_open
 from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -404,32 +403,6 @@ def period_choice(token: str, status: str) -> str:
 
 def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
-
-
-# How long the file helpers below retry a file the server holds open on Windows; the server reads the harness's
-# files in milliseconds, so this only bounds a change that will never succeed.
-RETRY_OPEN_S = 10.0
-
-
-T = TypeVar("T")
-
-
-def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
-    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``limit_s``.
-
-    The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
-    skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
-    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
-    puts it in place (#1087)."""
-
-    deadline = time.monotonic() + limit_s
-    while True:
-        try:
-            return action()
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.05)
 
 
 def remove(path: Path, *, missing_ok: bool = False) -> None:
