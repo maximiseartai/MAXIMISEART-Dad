@@ -57,9 +57,11 @@ uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomi
 
 Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–4 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
-``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunków 5 i 6 nie liczy, bo uruchamiają kod PR
-(ruff, mypy i pytest na scalonym drzewie), a status ustawia workflow ``.github/workflows/werdykt-i-bramka.yml`` tokenem
-z prawem zapisu statusów; scalenie z ruff i mypy pokazuje status ``scalenie z main``. PR zamknięty albo do innej gałęzi
+``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunków 5–7 nie liczy: dowód reguły
+z warunku 5 potrzebuje ast-grep z dodatku dev i biegnie na 20 scalonych PR-ach do ``bramka_idiomu.PROOF_TIMEOUT_S``,
+a warunki 6 i 7 uruchamiają kod PR (ruff, mypy i pytest na scalonym drzewie), a status ustawia workflow
+``.github/workflows/werdykt-i-bramka.yml`` samym ``python3`` bez instalacji zależności, tokenem z prawem zapisu statusów;
+scalenie z ruff i mypy pokazuje status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
 merge'a, i po fakcie pokazuje merge bez zielonego statusu. Status tylko raportuje, bo żaden ruleset go nie wymaga
 (ADR 0036, „Status w Actions”). Kod 0 znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.

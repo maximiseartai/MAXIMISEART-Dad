@@ -2435,7 +2435,11 @@ def _proof_arguments(head: str, *cases: str) -> list[str]:
     return ["--regula-id", "zakazane-wywolanie", "--z-commita", head, *(part for case in cases for part in ("--wazne", case))]
 
 
-@pytest.mark.parametrize("proof", [PROOF_WITHOUT_RULE, PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY")], ids=["bez-reguly-na-head", "dowod-odmawia", "dowod-bez-linii-dowod-ok"])
+@pytest.mark.parametrize(
+    "proof",
+    [PROOF_WITHOUT_RULE, PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY"), (1, PROOF_OK[1])],
+    ids=["bez-reguly-na-head", "dowod-odmawia", "dowod-bez-linii-dowod-ok", "dowod-ok-z-kodem-bledu"],
+)
 def test_wazne_z_polem_idiom_nie_scala_sie_bez_dowodu_ok_reguly_z_head(tmp_path: Path, proof: tuple[int, str]) -> None:
     """Próbka ``ZNANE_LUKI`` nigdy nie zastępuje reguły (ADR 0036), a dowód przechodzi tylko kodem 0 i linią ``DOWÓD OK``."""
 

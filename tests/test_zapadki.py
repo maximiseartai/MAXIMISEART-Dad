@@ -625,6 +625,77 @@ def test_zapadka_liczy_dodana_linie_zaczynajaca_sie_od_plusow_i_kazda_nastepna_l
     assert added == [("docs/a.md", 2, "++ dodana"), ("docs/a.md", 3, "++ b/udawany.md"), ("docs/a.md", 4, "nowa"), ("docs/b.md", 2, "nowa")]
 
 
+def _committed(root: Path, files: Mapping[str, str]) -> str:
+    """Repozytorium gita w ``root`` z plikami ``files`` w commicie bazy; zwraca bazę."""
+
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej pozycję w bazie: pliki zmiany
+# (``.gitattributes`` z PR, ``.git/info/attributes`` i plik atrybutów z konfiguracji) → wpisy ``git config`` checkoutu.
+_TEXTCONV = {"diff.ukryj.textconv": "true"}
+_DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str]]]] = {
+    "-diff w .gitattributes": ({".gitattributes": "src/a.py -diff\n"}, {}),
+    "binary w .gitattributes podkatalogu": ({"src/.gitattributes": "a.py binary\n"}, {}),
+    "diff= z textconv w .gitattributes": ({".gitattributes": "src/a.py diff=ukryj\n"}, _TEXTCONV),
+    "filter= z czyszczeniem w .gitattributes": ({".gitattributes": "src/a.py filter=ukryj\n"}, {"filter.ukryj.clean": "true"}),
+    "-diff w .git/info/attributes": ({".git/info/attributes": "src/a.py -diff\n"}, {}),
+    "diff= ze sterownikiem binarnym w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, {"diff.ukryj.binary": "true"}),
+    "diff= z textconv w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, _TEXTCONV),
+    "diff= z zewnętrznym programem w .git/info/attributes": ({".git/info/attributes": "src/a.py diff=ukryj\n"}, {"diff.ukryj.command": "true"}),
+    "filter= z pliku core.attributesFile": ({"atrybuty": "src/a.py filter=ukryj\n"}, {"core.attributesFile": "atrybuty", "filter.ukryj.clean": "true"}),
+    "przedrostki z diff.mnemonicPrefix": ({}, {"diff.mnemonicPrefix": "true"}),
+    "kolory z color.diff": ({}, {"color.diff": "always"}),
+}
+
+
+@pytest.mark.parametrize(("files", "config"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+def test_linie_dodane_i_ich_pozycje_w_bazie_nie_zaleza_od_atrybutow_ani_konfiguracji_roznicy(
+    tmp_path: Path, files: dict[str, str], config: dict[str, str]
+) -> None:
+    """Atrybut z drzewa zmiany (``.gitattributes``, także w podkatalogu), atrybut ``diff`` spoza drzewa ani
+    konfiguracja różnicy nie chowa linii dodanej przed zapadką, krokiem „niczego nie ukrywa” i dowodem reguły, bo każde
+    z nich bierze je z ``Changes``."""
+
+    base = _committed(tmp_path, {"src/a.py": "a = 1\n"})
+    (tmp_path / "src" / "a.py").write_text("a = 1\nnowa = 2\n", encoding="utf-8")
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    for key, value in config.items():
+        _git(tmp_path, "config", key, str(tmp_path / value) if key == "core.attributesFile" else value)
+    changes = odpalenia_ast_grep.Changes(tmp_path, base)
+
+    assert list(odpalenia_ast_grep.added_lines(tmp_path, base, "src")) == [("src/a.py", 2, "nowa = 2")]
+    assert (changes.old("src/a.py", 1), changes.old("src/a.py", 2), changes.base_path("src/a.py")) == (("src/a.py", 1), None, "src/a.py")
+
+
+@pytest.mark.parametrize("separator", ["\x1c", "\x0c", "\r", " "], ids=["x1c", "x0c", "samotne-r", "u2028"])
+def test_linie_konczy_tylko_znak_nowej_linii_wiec_znak_podzialu_splitlines_nie_zjada_nastepnej_linii_dodanej(tmp_path: Path, separator: str) -> None:
+    """``str.splitlines`` dzieli linię także na ``\\x1c``, ``\\x0c``, samotnym ``\\r`` i U+2028, więc kawałek ``+…``
+    po takim znaku liczyłby się jako dodana linia z ``@@``, a prawdziwa następna linia wypadałaby z hunka."""
+
+    base = _committed(tmp_path, {"src/a.py": "a = 1\n"})
+    text = f"A = '{separator}+'\nB = 2\n"
+    (tmp_path / "src" / "a.py").write_text("a = 1\n" + text, encoding="utf-8", newline="")
+    (tmp_path / "src" / "nowy.py").write_text(text, encoding="utf-8", newline="")
+
+    added = sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "src"))
+
+    assert added == [
+        ("src/a.py", 2, f"A = '{separator}+'"),
+        ("src/a.py", 3, "B = 2"),
+        ("src/nowy.py", 1, f"A = '{separator}+'"),
+        ("src/nowy.py", 2, "B = 2"),
+    ]
+
+
 def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
@@ -1647,6 +1718,19 @@ _HIDINGS: Final[dict[str, tuple[dict[str, str | None], list[tuple[str, int, str]
         {"src/a.py": "import os\n\nX = os.name  # noqa: TID251 - wyjątek tymczasowy do 2027-01-31, zgoda Maksa\n"},
         [("src/a.py", 3, _OS_NAME)],
     ),
+    "7: przemianowana reguła to usunięta stara i nowa, więc ukrywa każde zgłoszenie starego id": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("id: zakazane-wywolanie", "id: zakazane-wolanie")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: .gitattributes z -diff nie chowa zmienionej linii starego tłumienia": (
+        {".gitattributes": "src/stare.py -diff\n", "src/stare.py": _HIDING_BASE["src/stare.py"].replace("stare tłumienie z bazy", "nowy powód")},
+        [("src/stare.py", 3, _OS_NAME)],
+    ),
+    "zmieniony sam message: reguły ast-grep": ({"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("Zamień zakazane()", "Zastąp zakazane()")}, []),
+    "zmieniony sam msg klucza banned-api": (
+        {"pyproject.toml": _HIDING_PYPROJECT.replace("przez sys.platform", "tylko przez sys.platform"), "src/a.py": "import os\n\nX = os.name\n"},
+        [],
+    ),
     "właściciel używa swojej nazwy": ({"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\ndef znowu() -> float:\n    return time.time()\n"}, []),
     "stare tłumienie przesunięte": ({"src/stare.py": _UNTOUCHED_OLD_LINES}, []),
     "widoczne zgłoszenie bez tłumienia to nie ukrycie": ({"src/a.py": "import os\n\nX = os.name\nzakazane()\n"}, []),
@@ -1668,10 +1752,11 @@ def test_tlumienie_albo_zmiana_konfiguracji_reguly_chwastu_to_odpalenie_poza_wla
 @needs_ast_grep
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
 def test_stare_tlumienie_w_przeniesionym_pliku_nie_jest_odpaleniem(tmp_path: Path) -> None:
-    """Pozycję linii w bazie daje ``git diff -M``, więc plik przeniesiony ze starym tłumieniem niczego nie ukrywa,
-    a nowe tłumienie w nim tak."""
+    """Pozycję linii w bazie daje ``git diff -M`` (także z ``diff.renames=false`` w konfiguracji), więc plik
+    przeniesiony ze starym tłumieniem niczego nie ukrywa, a nowe tłumienie w nim tak."""
 
     base = _hiding_repo(tmp_path, {})
+    _git(tmp_path, "config", "diff.renames", "false")
     _git(tmp_path, "mv", "src/stare.py", "src/przeniesione.py")
     assert _hidden(tmp_path, base) == []
 
@@ -1689,10 +1774,16 @@ def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -
 
 
 # Znane luki kroku „niczego nie ukrywa”: obejście, które nie ukrywa zgłoszenia, tylko omija wzorzec albo zakres
-# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów. Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
+# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów, i atrybut spoza drzewa, którego PR nie zmienia,
+# a który zmienia linie dodane (``odpalenia_ast_grep.Changes``). Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
 ZNANE_LUKI_UKRYC: Final = {
     "obejście wzorca: zakazana nazwa przez getattr z napisem": {"src/a.py": 'import os\n\nX = getattr(os, "na" + "me")\n'},
     "obejście zakresu: kod w pliku bez rozszerzenia .py": {"src/a": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n"},
+    # Plik ma parzystą liczbę bajtów, więc git czyta go jako UTF-16LE bez błędu: jedna linia znaków spoza ASCII.
+    "atrybut spoza drzewa: working-tree-encoding z .git/info/attributes": {
+        ".git/info/attributes": "src/a.py working-tree-encoding=UTF-16LE\n",
+        "src/a.py": "X = 1\n\nzakazane()\n",
+    },
 }
 
 

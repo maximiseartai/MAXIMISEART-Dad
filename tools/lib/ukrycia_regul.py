@@ -15,14 +15,20 @@ w ``per-file-ignores``, ``ignore``, ``exclude``, ``ignores:`` albo ``files:`` re
 - wobec HEAD z jego konfiguracją i tłumieniami, jak w CI;
 - baza w tych samych dwóch postaciach daje ukrycia, które baza już miała.
 
-Zgłoszenie z pierwszego zbioru, którego nie ma w drugim, to ukrycie. Ukrycie na linii dodanej od ``base`` jest
-odpaleniem, a na linii starej (pozycję w bazie daje ``git diff -U0 -M``, więc przesunięcie i przeniesienie pliku jej
-nie zmienia) tylko wtedy, gdy baza tej linii nie ukrywała, więc zmiana konfiguracji odpala na każdej linii, którą
-ukrywa, a stare tłumienie zostaje. Prawo właściciela wyznacza baza, nie HEAD: klucz ``banned-api`` w pliku, który
-``per-file-ignores`` bazy zwalnia, a kod bazy go tam używa, więc zwolnienie z całego ``TID251`` nie obejmuje innego
-klucza, a nowy wpis zwolnienia, wiersz ``OWNERS`` czy zmieniony ``msg`` w HEAD niczego nie dają; dla reguły ast-grep
-to jej ``ignores:`` i ``files:`` w bazie. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątkiem
-wbudowanych reguł o dyrektywie (``odpalenia_ast_grep.BUILTIN_MESSAGES``), które zgłasza już zapadka.
+Zgłoszenie z pierwszego zbioru, którego nie ma w drugim, to ukrycie. Tożsamość zgłoszenia to plik, pierwsza linia
+węzła i reguła (``banned-api <nazwa>`` albo ``ast-grep <id>``), bez komunikatu, więc zmiana samego ``message:`` reguły
+ast-grep albo ``msg`` klucza ``banned-api`` niczego nie ukrywa. Reguła przemianowana to usunięta reguła starego id
+i nowa reguła, więc ukrywa każde zgłoszenie starego id, jak reguła usunięta. Ukrycie na linii dodanej od ``base`` jest
+odpaleniem, a na linii starej (pozycję w bazie daje ``odpalenia_ast_grep.Changes``, więc przesunięcie i przeniesienie
+pliku jej nie zmienia) tylko wtedy, gdy baza tej linii nie ukrywała, więc zmiana konfiguracji odpala na każdej linii,
+którą ukrywa, a stare tłumienie zostaje. Zmieniony ``.gitattributes`` niczego nie ukrywa: ruff i ast-grep go nie
+czytają, a linie dodane i ich pozycje w bazie ``Changes`` liczy z różnicy bez atrybutów.
+
+Prawo właściciela wyznacza baza, nie HEAD: klucz ``banned-api`` w pliku, który ``per-file-ignores`` bazy zwalnia,
+a kod bazy go tam używa, więc zwolnienie z całego ``TID251`` nie obejmuje innego klucza, a nowy wpis zwolnienia,
+wiersz ``OWNERS`` czy zmieniony ``msg`` w HEAD niczego nie dają; dla reguły ast-grep to jej ``ignores:`` i ``files:``
+w bazie. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątkiem wbudowanych reguł o dyrektywie
+(``odpalenia_ast_grep.BUILTIN_MESSAGES``), które zgłasza już zapadka.
 
 Baza, która nie jest commitem (puste drzewo w dowodzie braku fałszywych alarmów zapadek), nie ma konfiguracji reguł,
 więc niczego nie ukrywa. Moduł importuje z repozytorium tylko ``repo``, ``potomne`` i ``odpalenia_ast_grep``, jak
@@ -32,7 +38,8 @@ w ``tests/test_zapadki.py``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 import json
 from pathlib import Path, PurePath
 import re
@@ -55,7 +62,6 @@ DIRECTIVE = "ast-grep-ignore"
 DISARMED = "ast-grep-ignor_"
 BANNED = "TID251"
 _BANNED_NAME = re.compile(r"`([^`]+)` is banned(?:: (.*))?", re.DOTALL)
-_HUNK = re.compile(r"@@ -(?P<old>\d+)(?:,(?P<oc>\d+))? \+(?P<new>\d+)(?:,(?P<nc>\d+))? @@")
 _WITHOUT_EXEMPTIONS = ("--config", "lint.per-file-ignores = {}", "--config", "lint.extend-per-file-ignores = {}")
 
 
@@ -72,11 +78,14 @@ class Hidden(NamedTuple):
         )
 
 
-class _Finding(NamedTuple):
+@dataclass(frozen=True, order=True)
+class _Finding:
+    """Zgłoszenie reguły chwastu: równość, skrót i porządek biorą tylko jego tożsamość, bez komunikatu."""
+
     path: str
     line: int
     rule: str
-    message: str
+    message: str = field(compare=False)
 
 
 def hidden(root: Path, base: str, ast_grep: str | None) -> list[Hidden]:
@@ -86,7 +95,7 @@ def hidden(root: Path, base: str, ast_grep: str | None) -> list[Hidden]:
     if repo.git(root, "cat-file", "-t", base).strip() != "commit":
         return []
     listed = _listed(root)
-    moved = _Lines(root, base)
+    moved = odpalenia_ast_grep.Changes(root, base)
     with potomne.commit_copy(root, base) as old, tempfile.TemporaryDirectory(prefix="ukrycia-") as folder:
         head = Path(folder)
         _copy(root, listed, head)
@@ -108,7 +117,7 @@ def hidden(root: Path, base: str, ast_grep: str | None) -> list[Hidden]:
         place = moved.old(finding.path, finding.line)
         owned = finding.rule.startswith("banned-api ") and (moved.base_path(finding.path), finding.rule) in owners
         if not owned and (place is None or (*place, finding.rule) not in before):
-            found.append(Hidden(*finding))
+            found.append(Hidden(finding.path, finding.line, finding.rule, finding.message))
     return found
 
 
@@ -200,69 +209,3 @@ def _ast_grep(tree: Path, names: Sequence[str], ast_grep: str | None) -> list[_F
 
 def _has_rules(tree: Path) -> bool:
     return any(path.suffix in (".yml", ".yaml") for directory in _rule_dirs(tree) for path in (tree / directory).rglob("*"))
-
-
-class _Lines:
-    """Pozycja w ``base`` linii checkoutu ``root`` z ``git diff -U0 -M``: plik nieśledzony i linia dodana nie mają
-    pozycji, plik przeniesiony ma ścieżkę z bazy, a plik bez zmiany te same ścieżkę i linię."""
-
-    def __init__(self, root: Path, base: str) -> None:
-        self._hunks: dict[str, list[tuple[int, int, int, int]]] = {}
-        self._renamed: dict[str, str] = {}
-        self._new: set[str] = set(repo.git(root, "ls-files", "-z", "--others", "--exclude-standard").split("\0")) - {""}
-        changed = repo.git(root, "diff", "-U0", "-M", "--no-color", "--no-ext-diff", "--ignore-cr-at-eol", base)
-        old_path: str | None = None
-        path: str | None = None
-        for line in _diff_lines(changed):
-            if line.startswith("diff --git "):
-                old_path = path = None
-            elif line.startswith("--- "):
-                old_path = None if line == "--- /dev/null" else line.removeprefix("--- a/").removesuffix("\t")
-            elif line.startswith("+++ "):
-                path = None if line == "+++ /dev/null" else line.removeprefix("+++ b/").removesuffix("\t")
-                if path is not None and old_path is None:
-                    self._new.add(path)
-                elif path is not None and old_path is not None and old_path != path:
-                    self._renamed[path] = old_path
-            elif line.startswith("rename from "):
-                old_path = line.removeprefix("rename from ")
-            elif line.startswith("rename to "):
-                path = line.removeprefix("rename to ")
-                if old_path is not None:
-                    self._renamed[path] = old_path
-            elif (hunk := _HUNK.match(line)) and path is not None:
-                old, new = int(hunk["old"]), int(hunk["new"])
-                self._hunks.setdefault(path, []).append((old, int(hunk["oc"] or 1), new, int(hunk["nc"] or 1)))
-
-    def base_path(self, path: str) -> str | None:
-        """Ścieżka pliku ``path`` w bazie; ``None`` dla pliku, którego baza nie ma."""
-
-        return None if path in self._new else self._renamed.get(path, path)
-
-    def old(self, path: str, line: int) -> tuple[str, int] | None:
-        if path in self._new:
-            return None
-        shift = 0
-        for _, old_count, new, new_count in self._hunks.get(path, []):
-            if new_count and new <= line < new + new_count:
-                return None
-            if (new + new_count - 1 if new_count else new) < line:
-                shift += new_count - old_count
-        return self._renamed.get(path, path), line - shift
-
-
-def _diff_lines(text: str) -> Iterator[str]:
-    """Linie nagłówków i ``@@`` różnicy ``-U0``: treść hunka (linie ``+`` i ``-``) pomija według liczb z ``@@``."""
-
-    old_left = new_left = 0
-    for line in text.splitlines():
-        if old_left or new_left:
-            if line.startswith("+"):
-                new_left -= 1
-            elif line.startswith("-"):
-                old_left -= 1
-            continue
-        if hunk := _HUNK.match(line):
-            old_left, new_left = int(hunk["oc"] or 1), int(hunk["nc"] or 1)
-        yield line
-
