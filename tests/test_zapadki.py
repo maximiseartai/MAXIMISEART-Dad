@@ -663,7 +663,7 @@ _DIFF_ADDED: Final = [
     ("src/rozliczenia/d.py", 3, "E = 5  # komentarz"),
     ("src/rozliczenia/e.py", 2, "X = 1  # komentarz"),
 ]
-_DIFF_OLD: Final = {
+_DIFF_OLD: Final[dict[str, list[int | None]]] = {
     "src/rozliczenia/a.py": [1, 2, None, 3, 4, 5, 6, 7, None, 8, 10, 11, 12],
     "src/rozliczenia/b.py": [1, None, None],
     "src/rozliczenia/c.py": [None],
