@@ -155,10 +155,23 @@ def _tile(page: Page, worker: str, day: str) -> Locator:
     return _row(page, worker).get_by_role("button", name=f"{worker}, {_short(day)}: ")
 
 
-def _tile_is(page: Page, worker: str, day: str, state: str, entered: int, orders: int) -> None:
+def _tile_is(page: Page, worker: str, day: str, state: str, entered: int, orders: int, *, sent: str = "") -> None:
+    """The tile's name; ``sent`` is its count of Przypomnienia o raporcie as the name ends it (`, 2 przypomnienia
+    wysłane`), empty for a day without one."""
+
     expect(_tile(page, worker, day)).to_have_accessible_name(
-        f"{worker}, {_short(day)}: {state}, wpisane {entered} z {orders}"
+        f"{worker}, {_short(day)}: {state}, wpisane {entered} z {orders}{sent}"
     )
+
+
+def _reminder_steps(popover: Locator, steps: tuple[tuple[str, str], ...]) -> None:
+    """The list `Przypomnienia o raporcie` of a popover has ``steps`` in order, each its label and its moment."""
+
+    items = popover.get_by_role("list", name="Przypomnienia o raporcie", exact=True).get_by_role("listitem")
+    expect(items).to_have_count(len(steps))
+    for index, (label, moment) in enumerate(steps):
+        expect(items.nth(index)).to_contain_text(label)
+        expect(items.nth(index)).to_contain_text(moment)
 
 
 def _popover(page: Page, worker: str, day: str) -> Locator:
@@ -466,7 +479,10 @@ def _range_map(run: Run, page: Page) -> None:
         run.capture(page, "293-raporty-mapa-bez-popovera", full_page=False)
         _tile_is(page, "wykonawca.a", "2026-11-10", "Czeka", 0, 3)
         _tile_is(page, "wykonawca.b", "2026-11-03", "Problem", 2, 3)
-        _tile_is(page, "wykonawca.b", "2026-11-05", "Bez raportu", 1, 2)
+        _tile_is(page, "wykonawca.b", "2026-11-05", "Bez raportu", 1, 2, sent=", 2 przypomnienia wysłane")
+        _tile_is(page, "wykonawca.a", "2026-11-03", "Komplet", 2, 2, sent=", 1 przypomnienie wysłane")
+        expect(_tile(page, "wykonawca.b", "2026-11-05").locator("[data-reminder-pin]")).to_be_visible()
+        expect(_tile(page, "wykonawca.b", "2026-11-03").locator("[data-reminder-pin]")).to_have_count(0)
         _tile_is(page, "wykonawca.c", "2026-11-09", "Komplet", 4, 4)
         expect(_row(page, "wykonawca.a").get_by_label("Wpisane 14 z 17", exact=True)).to_be_visible()
         expect(_row(page, "wykonawca.b")).to_contain_text("1 problem · 1 bez raportu")
@@ -505,7 +521,15 @@ def _range_map(run: Run, page: Page) -> None:
         run.step(FEATURE, "przypomnienia")
         expect(page.get_by_text("Przypomnienia o raporcie idą bez Twojej stopki", exact=False)).to_be_visible()
         popover = _popover(page, "wykonawca.b", "2026-11-05")
-        expect(popover).to_contain_text("Przypomnienia 06.11 08:00, 06.11 18:00")
+        _reminder_steps(
+            popover,
+            (
+                ("2 zlecenia w INTERMAX", "cz. 05.11"),
+                ("Przypomnienie wysłane", "pt. 06.11, 08:00"),
+                ("Kolejne przypomnienie", "pt. 06.11, 18:00"),
+                ("Raport przyszedł", "1 mail"),
+            ),
+        )
         run.capture(page, "294-raporty-przypomnienia", full_page=False)
         _close(page, popover)
         popover = _popover(page, "wykonawca.b", "2026-11-03")
@@ -513,7 +537,14 @@ def _range_map(run: Run, page: Page) -> None:
         _close(page, popover)
         popover = _popover(page, "wykonawca.a", "2026-11-03")
         expect(popover.get_by_role("listitem").filter(has_text=HANDED_NOTE)).to_have_count(1)
-        expect(popover).to_contain_text("Przypomnienie 04.11 08:00")
+        _reminder_steps(
+            popover,
+            (
+                ("2 zlecenia w INTERMAX", "wt. 03.11"),
+                ("Przypomnienie wysłane", "śr. 04.11, 08:00"),
+                ("Raport przyszedł", "1 mail"),
+            ),
+        )
         run.capture(page, "295-raporty-przypomnienie-i-przeniesienie", full_page=False)
         _close(page, popover)
         popover = _popover(page, "wykonawca.c", "2026-11-09")
@@ -525,9 +556,9 @@ def _range_map(run: Run, page: Page) -> None:
         _close(page, popover)
         run.check(
             True,
-            "the popover of 05.11 has the times of its Przypomnienia in Dad's time, 03.11 none; the page says the "
-            "footer file is missing; the popover of wykonawca.a 03.11 has both „przekazane wykonawca.b” and its "
-            "Przypomnienie; the popover of wykonawca.c 09.11 has „dopisane z raportu, uzupełnij resztę” under its last "
+            "the tiles with a Przypomnienie name its count; the popover of 05.11 lists its orders, both Przypomnienia "
+            "in Dad's time and the Raport that came, 03.11 has no such list; the page says the footer file is missing; "
+            "the popover of wykonawca.a 03.11 has both „przekazane wykonawca.b” and its Przypomnienie; the popover of wykonawca.c 09.11 has „dopisane z raportu, uzupełnij resztę” under its last "
             "order, entered and without a Problem badge (#1354)",
         )
 
@@ -581,8 +612,25 @@ def _range_map(run: Run, page: Page) -> None:
         run.capture(page, "291-raporty-status", full_page=False)
         menu.get_by_role("button", name="Pokaż wszystko", exact=True).click()
         expect(_map(page).get_by_role("row")).to_have_count(1 + len(WINDOW_WORKERS))
-        _close(page, menu)
         run.check(True, "„Pokaż wszystko” takes the filter off")
+        reminded = menu.get_by_role("button", name="Przypomniane 2", exact=True)
+        reminded.click()
+        expect(reminded).to_have_attribute("aria-pressed", "true")
+        expect(_map(page).get_by_role("row")).to_have_count(3)
+        expect(page.get_by_text("2 z 3 Wykonawców", exact=True)).to_be_visible()
+        expect(_row(page, "wykonawca.a")).to_contain_text("1 przypomnienie · ost. 04.11")
+        expect(_row(page, "wykonawca.b")).to_contain_text("2 przypomnienia · ost. 06.11")
+        dimmed = _tile(page, "wykonawca.b", "2026-11-03").evaluate("tile => Number(getComputedStyle(tile).opacity)")
+        kept = _tile(page, "wykonawca.b", "2026-11-05").evaluate("tile => Number(getComputedStyle(tile).opacity)")
+        run.check(
+            dimmed < 0.5 and kept == 1,
+            f"Przypomniane leaves wykonawca.a and wykonawca.b, counts their Przypomnienia under the name and dims "
+            f"the days without one (opacity {dimmed} vs {kept})",
+        )
+        run.capture(page, "418-raporty-przypomniane", full_page=False)
+        menu.get_by_role("button", name="Pokaż wszystko", exact=True).click()
+        expect(_map(page).get_by_role("row")).to_have_count(1 + len(WINDOW_WORKERS))
+        _close(page, menu)
 
         page.get_by_role("button", name="Wybierz dni w kalendarzu", exact=True).click()
         page.get_by_role("button", name="Bieżące dwa tygodnie", exact=True).click()

@@ -543,6 +543,7 @@ FEATURES = (
             "294-raporty-przypomnienia",
             "295-raporty-przypomnienie-i-przeniesienie",
             "296-raporty-dopisane",
+            "418-raporty-przypomniane",
             "286-raporty-zatrzymanie",
         ),
     ),
