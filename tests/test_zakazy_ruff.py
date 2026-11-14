@@ -25,6 +25,8 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
+
 ROOT = Path(__file__).resolve().parents[1]
 # Każdy plik konfiguracji ruff poza pyproject.toml w korzeniu, literałem, żeby tools/szybko.py wybierał ten test przy
 # zmianie któregoś z nich.
@@ -72,6 +74,9 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from pathlib import WindowsPath\nWindowsPath.move(p, q)": (DRIVE_CONFIG, (), "pathlib.WindowsPath.move"),
     "import pathlib as pl\npl.WindowsPath.replace(p, q)": (DRIVE_CONFIG, (), "pathlib.WindowsPath.replace"),
     "from pathlib import Path\nswap = Path.replace": (DRIVE_CONFIG, (), "pathlib.Path.replace"),
+    # Stały sen w napędzie zamiast czekania z drive/waiting.py (#1539).
+    "import time\ntime.sleep(0.3)": (DRIVE_CONFIG, (), "time.sleep"),
+    "from time import sleep as pause": (DRIVE_CONFIG, (), "time.sleep"),
     'import sys\nsys.path.insert(0, str(ROOT / "tools"))': (TESTS_CONFIG, (), "sys.path"),
     'import sys\nsys.path.append(str(Path(__file__).resolve().parents[1] / "tools/ci"))': (TESTS_CONFIG, (), "sys.path"),
     'import sys\nsys.path.append("C:\\\\repo\\\\tools")': (TESTS_CONFIG, (), "sys.path"),
@@ -232,6 +237,25 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     assert found == [banned], f"{config.relative_to(ROOT).as_posix()} ma odrzucić zakazem {banned}:\n{code}"
 
 
+# Sen w napędzie obok drive/waiting.py, którego zakaz time.sleep w drive/ruff.toml nie widzi (#1539, PR 6).
+ZNANE_LUKI_SNU = {
+    "metoda na obiekcie: page.wait_for_timeout (13 wywołań w drive/wydajnosc.py)": (
+        "from playwright.sync_api import Page\n\n\ndef measured(page: Page) -> None:\n    page.wait_for_timeout(300)\n"
+    ),
+    "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
+    "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_snu_w_napedzie_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_SNU, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=DRIVE_CONFIG.parent / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SNU)")
+
+
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
@@ -254,7 +278,8 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/opener.py": frozenset({"urllib.request.build_opener"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
-    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree", "time.sleep"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py": frozenset({"time.sleep"}),
 }
 # Zakaz z pyproject.toml, który obowiązuje w każdym katalogu (test zgodności wyżej), więc jego brak w zgłoszeniu znaczy
 # zwolnienie pliku z TID251.

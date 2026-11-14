@@ -1,6 +1,7 @@
 """The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
-drive's ``expect`` of Playwright, whose assertions wait a budget too, and the drive's one quiet: a time in which the page
-runs with nothing to wait for (``quiet_for``).
+drive's ``expect`` of Playwright, whose assertions wait a budget too, the drive's one quiet: a time in which the page
+runs with nothing to wait for (``quiet_for``), and the one late answer of a route (``answer_late``). Ruff refuses
+``time.sleep`` in the rest of ``drive/``, but for the retry of ``while_open`` in ``drive/common.py``.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -17,7 +18,7 @@ import os
 import time
 from typing import TypeVar
 
-from playwright.sync_api import Expect, Page
+from playwright.sync_api import Expect, Page, Route
 import yaml
 
 from harness import SLOW_RUNNER
@@ -138,3 +139,13 @@ def quiet_for(page: Page, ms: float = REPEAT_SETTLE_MS) -> None:
     """
 
     page.wait_for_timeout(ms + (LATE_WRITE_MS if SLOW_RUNNER in os.environ else 0))
+
+
+def answer_late(route: Route, seconds: float, answer: Callable[[Route], None] = Route.continue_) -> None:
+    """From inside the handler of ``route``, answer it with ``answer`` ``seconds`` later, as a server that answers late.
+
+    The wait holds the drive's thread, so Playwright delivers no other event of the page before the answer.
+    """
+
+    time.sleep(seconds)
+    answer(route)
