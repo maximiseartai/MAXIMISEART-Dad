@@ -4609,3 +4609,40 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
         "interrupted",
         [18],
     )
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.skipif(sys.platform != "win32", reason="sonda #1864 mierzy Windows")
+def test_sonda_1864_dziennik_przegladarki_w_katalogu_roboczym(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tymczasowa sonda #1864 (do usunięcia przed przeglądem): który program i wariant zostawia dziennik w katalogu roboczym."""
+
+    from playwright.sync_api import Error as PlaywrightError, sync_playwright
+
+    elsewhere = tmp_path / "gdzie-indziej"
+    elsewhere.mkdir()
+    variants = {"brak": [], "log-file": [f"--log-file={elsewhere / 'przegladarka.log'}"], "disable-logging": ["--disable-logging"]}
+    results = []
+    for channel in (None, "chrome"):
+        for headless in (True, False):
+            for name, arguments in variants.items():
+                for kind in ("profil-plik", "sonda"):
+                    case = f"{channel}-{'bez-okna' if headless else 'okno'}-{name}-{kind}"
+                    working = tmp_path / f"cwd-{case}"
+                    working.mkdir()
+                    monkeypatch.chdir(working)
+                    outcome = "start"
+                    try:
+                        with sync_playwright() as playwright:
+                            if kind == "profil-plik":
+                                profile = tmp_path / f"profil-{case}"
+                                profile.write_text("", encoding="utf-8")
+                                context = playwright.chromium.launch_persistent_context(profile, channel=channel, headless=headless, args=arguments)
+                                context.close()
+                            else:
+                                browser = playwright.chromium.launch(channel=channel, headless=headless, args=["--enable-automation", *arguments])
+                                browser.close()
+                    except PlaywrightError as error:
+                        outcome = f"błąd {str(error).splitlines()[0][:80]}"
+                    results.append(f"{case}: {outcome}; cwd={sorted(path.name for path in working.iterdir())}")
+    results.append(f"gdzie-indziej={sorted(path.name for path in elsewhere.iterdir())}")
+    pytest.fail("SONDA 1864\n" + "\n".join(results))
