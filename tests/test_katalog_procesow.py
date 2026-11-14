@@ -8,6 +8,8 @@ Metryk oraz kolejność sprawdzeń Diagnozy. Dokładne teksty i listy sprawdzeń
 from __future__ import annotations
 
 from collections.abc import Callable
+import copy
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 import threading
@@ -77,6 +79,7 @@ PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "types.new_class": 'Moja = types.new_class("Moja", (PreparedRun[Any, Any],))\n',
     "baza przed PreparedRun bez super()": "ZLOZ = PreparedRun\n\n\nclass Moja(Bez, ZLOZ[Any, Any]):\n    pass\n",
     "baza przed PreparedRun połyka TypeError": "ZLOZ = PreparedRun\n\n\nclass Moja(Polyka, ZLOZ[Any, Any]):\n    pass\n",
+    "type(gotowe) z bazą przed nim bez super()": "class Moja(Bez, type(gotowe)):\n    pass\n",
     "type() z bazą przed PreparedRun": 'Moja = type("Moja", (Bez, PreparedRun), {})\n',
     "types.new_class z metaklasą type w kwds": 'Moja = types.new_class("Moja", (Bez, PreparedRun[Any, Any]), {"metaclass": type})\n',
     "type.__new__ z metaklasą type": 'Moja = type.__new__(type, "Moja", (Bez, PreparedRun), {})\n',
@@ -308,6 +311,25 @@ def test_znane_luki_odmowy_startu_uruchomienia_obok_katalogu(tmp_path: Path) -> 
             zgloszenia[opis] = []
 
     assert_znane_luki(zgloszenia, "tests/test_katalog_procesow.py (ZNANE_LUKI_STARTU)")
+
+
+KOPIE_PRZEZ_REPLACE: Final = {
+    "dataclasses.replace": lambda gotowe: dataclasses.replace(gotowe, period="2026-11"),
+    "copy.replace": lambda gotowe: copy.replace(gotowe, period="2026-11"),
+}
+
+
+@pytest.mark.parametrize("kopia", KOPIE_PRZEZ_REPLACE.values(), ids=KOPIE_PRZEZ_REPLACE.keys())
+def test_kopia_gotowego_uruchomienia_przez_replace_rzuca_takze_obok_mypy(kopia: Callable[[Any], object]) -> None:
+    """Kopię ``PreparedRun`` przez ``replace`` odrzuca mypy, a z ``# type: ignore[…]`` rzuca Python, bo to nie
+    dataclassa i nie ma ``__replace__``, więc ta postać nie jest próbką ``ZNANE_LUKI_KATALOGU``
+    (``tests/test_granice_importow.py``). Wartość bez pól wystarcza, bo ``replace`` odmawia po typie, zanim przeczyta
+    pole."""
+
+    gotowe: Any = object.__new__(PreparedRun)
+
+    with pytest.raises(TypeError, match=r"replace\(\)"):
+        kopia(gotowe)
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
