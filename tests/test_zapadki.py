@@ -80,6 +80,7 @@ _NAVIGATION_HELPER = (
 PARSERS = frozenset(
     """
     .agents/skills/verify-centrum-rozliczen/scripts/centrum_self_test.py
+    .agents/skills/verify-centrum-rozliczen/scripts/sub_features.py
     tests/fixtures/skladnia.py
     tests/test_decyzje_na_faktach.py
     tests/test_eksplorator_w_procesie.py

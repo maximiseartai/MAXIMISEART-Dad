@@ -1,6 +1,6 @@
 name: Mutacje nocne
 
-# Once a day, one mutation per line of src/ and tools/ that changed on main since the last successful night, as
+# Once a day, one mutation per line of src/ and of the przepuszcza units of tools/lib/szopa.toml that changed on main since the last successful night, as
 # tools/mutacje_zmiany.py mutates it, and the mutation scripts of the skills whose folder changed since then. A night
 # mutates at most CZESCI_NA_NOC parts of NA_CZESC mutations (tools/mutacje_nocne.py): with more, it stops at a commit
 # of main, and the next night starts there. Each surviving mutation, and each mutation its part's time limit left

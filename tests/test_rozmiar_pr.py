@@ -19,6 +19,7 @@ from tests.fixtures.znane_luki import assert_znane_luki
 
 import rozmiar_pr
 from github import REPO
+from szopa import LISTA
 
 
 @pytest.mark.parametrize(
@@ -186,12 +187,15 @@ def test_etykieta_z_innym_opisem_albo_kolorem_dostaje_opis_i_kolor_progu() -> No
     )
 
 
+# Wpis w podtabeli ``przepuszcza`` (nagłówkiem albo kluczem z kropką, jak w ``tools/lib/szopa.toml``) ma grupę swojej tabeli.
 _LISTA = """[weryfikacja]
 "tools/lib/atrapa.py" = []
+
+[weryfikacja.przepuszcza]
 "tools/lib/atrapy/" = []
 
 [maszyneria]
-"tools/bramka.py" = ["tests/test_bramka.py"]
+przepuszcza."tools/bramka.py" = ["tests/test_bramka.py"]
 """
 
 
@@ -210,7 +214,7 @@ def _repo_szopy(katalog: Path) -> Path:
             "tools/lib/atrapa.py": _linie(10),
             "tools/lib/atrapy/stara.py": _linie(10),
             "tools/inna.py": _linie(60),
-            rozmiar_pr.LISTA: _LISTA,
+            LISTA: _LISTA,
         },
     )
     commit(katalog, "baza")
@@ -293,7 +297,7 @@ def test_pr_liczy_grupy_wedlug_listy_bazy_a_nastepny_pr_wedlug_listy_po_scaleniu
     _zapisz(
         szopa,
         {
-            rozmiar_pr.LISTA: '[weryfikacja]\n"tools/lib/atrapa.py" = []\n"tools/lib/atrapy/" = []\n"tools/bramka.py" = ["tests/test_bramka.py"]\n',
+            LISTA: '[weryfikacja]\n"tools/lib/atrapa.py" = []\n"tools/lib/atrapy/" = []\n"tools/bramka.py" = ["tests/test_bramka.py"]\n',
             "tools/bramka.py": _linie(30) + _linie(40, "y"),
         },
     )
@@ -430,7 +434,7 @@ def _plik_maszynerii_napisany_od_nowa_pod_sciezka_weryfikacji(repo: Path) -> Non
 
 
 def _lista_przenosi_plik_do_weryfikacji_a_nastepny_pr_dodaje_jego_linie(repo: Path) -> None:
-    _zapisz(repo, {rozmiar_pr.LISTA: _LISTA.replace("[maszyneria]", '"tools/inna.py" = []\n\n[maszyneria]')})
+    _zapisz(repo, {LISTA: _LISTA.replace("[maszyneria]", '"tools/inna.py" = []\n\n[maszyneria]')})
     commit(repo, "lista przenosi tools/inna.py do weryfikacji")
     git(repo, "branch", "--force", "main", "pr")
     _zapisz(repo, {"tools/inna.py": _linie(60) + _linie(40, "y")})
@@ -479,8 +483,10 @@ def test_znane_luki_etykiety_maszynerii_przechodza_przez_licznik_bez_etykiety(tm
         ('[inna]\n"tools/a.py" = []\n', "tabela [inna] nie jest grupą listy"),
         ('[maszyneria]\n"tools/a.py" = "tests/test_a.py"\n', "jednostka tools/a.py ma mieć listę plików testów"),
         ('[produkt]\n"src/" = ["tests/test_a.py"]\n[maszyneria]\n"tools/a.py" = ["tests/test_a.py"]\n', "tests/test_a.py stoi na liście dwa razy"),
+        ('[maszyneria]\n"tools/a.py" = []\n[maszyneria.przepuszcza]\n"tools/a.py" = []\n', "tools/a.py stoi na liście dwa razy"),
+        ('[maszyneria]\nprzepuszcza = ["tools/a.py"]\n', "tabela [maszyneria] nie jest grupą listy"),
     ],
-    ids=["obca-tabela", "testy-nie-lista", "powtorzony-wpis"],
+    ids=["obca-tabela", "testy-nie-lista", "powtorzony-wpis", "wpis-i-oznaczenie", "oznaczenie-nie-tabela"],
 )
 def test_lista_dwoch_szop_innego_ksztaltu_albo_z_powtorzonym_wpisem_to_blad(tekst: str, blad: str) -> None:
     with pytest.raises(ValueError, match=re.escape(blad)):
