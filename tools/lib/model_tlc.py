@@ -95,7 +95,7 @@ _POZA_ZNANYMI = "PozaZnanymi"
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
 _BACK = re.compile(r"^Back to state (\d+): ")
-_VARIABLE = re.compile(r"^/\\ (\w+) = (.*)$")
+_VARIABLE = re.compile(r"^/\\ (\w+) = (.*)\r?$")
 _CAUSE = re.compile(r'"([\w-]+)"')
 
 
