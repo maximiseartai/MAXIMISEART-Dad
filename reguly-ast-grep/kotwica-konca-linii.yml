@@ -1,0 +1,23 @@
+id: kotwica-konca-linii
+language: python
+severity: error
+message: >-
+  kotwica $ na końcu wzorca re nie pasuje do linii zakończonej \r\n (log zadania Windows z API GitHuba, tekst z bajtów
+  bez uniwersalnych końców linii), więc wzorzec po cichu nie widzi linii; użyj \r?$ zamiast $ (albo \s*$, gdy biały
+  znak na końcu linii jest dozwolony)
+files:
+  - tools/**/*.py
+rule:
+  # Powrót #1584 W1 r1: PLIK_TESTU_PR kończył się r"$" i nie widział linii PONOWIENIE w logu zadania Windows (CRLF),
+  # choć #1568 i #1585 naprawiły już CRLF w innych miejscach (R-SYSTEM). Literał z $ na końcu w wywołaniu re.*;
+  # postacie, których reguła nie łapie, są próbkami ZNANE_LUKI_REGUL_POWROTOW w tests/test_zapadki.py.
+  kind: string
+  regex: '[^\\]\$["'']$'
+  not:
+    regex: '(\\r\?|\\s[*+?]|\\n)\$["'']$'
+  inside:
+    kind: call
+    stopBy: end
+    has:
+      field: function
+      regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'
