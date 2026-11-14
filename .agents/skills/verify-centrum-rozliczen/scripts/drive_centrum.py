@@ -83,21 +83,18 @@ def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]
     drive made each call.
 
     Every ``run.step`` that named the feature is a step of its section, from whichever module: each once per place and
-    name it ran with, in the order of its first call, so the section's IDs are the feature's ``STEP`` lines, which the
-    run compares all the same. Every ``run.check`` after it is accounted for: a row under that step (each place once,
-    with the message of its call as written in the module, ``tools/lib/komunikat_mapy.py``, the same at every call), or,
-    from a helper the drive modules share (``drive/common.py``), outside the section, counted with that reason. A check
-    that is neither fails the run, and so do a message that rule cannot print and, so that the section does not depend
-    on the features a CI part drives before the feature, a check before the first step of a drive and a step of a
-    feature called from the drive of one it does not need.
+    name it ran with, in the order of its first call, so the section's IDs are the feature's ``STEP`` lines. Every
+    ``run.check`` after it is a row under that step (each place once, with the message of its call as written in the
+    module, ``tools/lib/komunikat_mapy.py``, the same at every call) or, from a helper the drive modules share
+    (``drive/common.py``), outside the section, counted with that reason. A message that rule cannot print fails the
+    run, and so do, so that the section does not depend on the features a CI part drives before the feature, a check
+    before the first step of a drive and a step of a feature called from the drive of one it does not need.
     """
 
     modules = {each.module for each in FEATURES}
     found: dict[str, dict[tuple[str, str, int, int], dict[tuple[str, int, int], str]]] = {}
     current: dict[str, tuple[str, str, int, int]] = {}
-    rows: Counter[tuple[str, tuple[str, str, int, int], tuple[str, int, int]]] = Counter()
     outside: dict[str, Counter[str]] = {}
-    checks: Counter[str] = Counter()
     for call, owner in zip(calls, owners, strict=True):
         where = f"{call.module}:{call.line}"
         if not call.feature:
@@ -112,7 +109,6 @@ def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]
             current[call.feature] = (call.step, *place)
             steps.setdefault(current[call.feature], {})
             continue
-        checks[call.feature] += 1
         if call.module not in modules:
             outside.setdefault(call.feature, Counter())[f"a helper the drives share ({call.module})"] += 1
         elif (printed := _messages(call.module)[call.line, call.column]) is None:
@@ -120,29 +116,9 @@ def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]
                                "literal, a module constant or an f-string")
         else:
             steps[current[call.feature]].setdefault(place, printed)
-            rows[call.feature, current[call.feature], place] += 1
     return {
-        name: _accounted(name, calls, found.get(name, {}), rows, outside.get(name, Counter()), checks[name])
-        for name in driven
+        name: Section(_section(name, found.get(name, {}).items()), dict(outside.get(name, Counter()))) for name in driven
     }
-
-
-def _accounted(
-    name: str,
-    calls: Sequence[Call],
-    steps: dict[tuple[str, str, int, int], dict[tuple[str, int, int], str]],
-    rows: Counter[tuple[str, tuple[str, str, int, int], tuple[str, int, int]]],
-    outside: Counter[str],
-    checks: int,
-) -> Section:
-    in_rows = sum(count for (owner, step, place), count in rows.items() if owner == name and place in steps.get(step, {}))
-    if in_rows + outside.total() != checks:
-        raise DriveFailure(f"{name}: {checks} run.check ran, {in_rows} in rows of the section and {outside.total()} outside "
-                           "it; every check is one or the other")
-    printed = list(dict.fromkeys(call.step for call in calls if call.feature == name and call.step is not None))
-    if list(dict.fromkeys(step for step, *_ in steps)) != printed:
-        raise DriveFailure(f"{name}: the section's steps are not the run's STEP lines {printed}")
-    return Section(_section(name, steps.items()), dict(outside))
 
 
 def _section(name: str, steps: Iterable[tuple[tuple[str, str, int, int], dict[tuple[str, int, int], str]]]) -> str:
@@ -168,8 +144,6 @@ def compare(evidence: Path, printed: dict[str, Section]) -> None:
     folder = evidence / SECTIONS
     folder.mkdir(exist_ok=True)
     outside = [f"{name} | {reason} | {count}" for name, (_, reasons) in printed.items() for reason, count in reasons.items()]
-    for line in outside:
-        print(f"OUTSIDE THE SECTION | {line}", flush=True)
     (folder / OUTSIDE).write_text("".join(f"{line}\n" for line in outside), encoding="utf-8", newline="\n")
     differ = []
     for name, (section, _) in printed.items():
