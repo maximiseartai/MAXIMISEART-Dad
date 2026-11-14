@@ -11,11 +11,11 @@ Printed by `scripts/workflow_sub_features.py --feature order-intermax` from the 
 
 Variants: `intermax`.
 
-- `fixture` runs `create_intermax_fixture.py` and expects exit 0.
+- `fixture` runs `create_intermax_fixture.py` and expects exit 0. It fails when:
+  - FIXTURE FAILED: …
 - `run` runs `tools/uruchom_proces.py intermax` and expects exit 0.
 - `assert-run` runs `assert_intermax.py` and expects exit 0. It fails when:
   - process step evidence is missing
-  - … carries row content besides the identifier it names
   - process result contains row content
   - process step printed no JSON result
   - process result does not match the contract ProcessResult: …
@@ -29,6 +29,7 @@ Variants: `intermax`.
   - progress reports Szablony pracowników
   - … does not hold exactly the Kopia INTERMAX the summary names
   - Kopia INTERMAX is not INTERMAX as it was before the run
+  - _check_result accepted only a matching name
   - Kopia INTERMAX is not named after a moment of this run in the computer's clock
   - INTERMAX was not written
   - the pasted day is not ordered by Wykonawca alphabetically and by hour

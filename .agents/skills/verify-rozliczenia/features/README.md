@@ -49,10 +49,12 @@ and the machine script` and `## Gotchas`, in this order. In a file whose section
 `scripts/workflow_sub_features.py --feature <feature>`, the section is that command's output, and
 `tests/test_mapy_funkcji.py` fails when it differs: the variants of the feature's process (`WorkflowProcess` in
 `run_verification.py`), each step of its workflow with the script it runs and the exit code it expects, and under a
-helper's step each check that makes it fail and the line it prints when none does. A part of a message that only the
-run knows prints as `…`. The steps `cleanup` and `self-test` that every variant ends with, and a `raise` in a helper,
-are not in it. The command refuses, with the file and the line, every form it does not read; its docstring lists
-them. Everything outside the section is prose the command does not confirm: `How to get to it` is a few sentences
+helper's step each way it fails (a message appended to `errors`, a message printed right before `main` returns a
+code, an `assert` message) and the line it prints when none does. A check a literal argument or a left-out default
+rules out for this step is not in it. A part of a message that only the run knows prints as `…`. The steps `cleanup`
+and `self-test` that every variant ends with are not in it. The command refuses, with the file and the line, every
+other way out of a helper and every form it does not read; its docstring lists them, and
+`tests/test_mapy_funkcji.py` compares the printed ways with real runs of a sample helper. Everything outside the section is prose the command does not confirm: `How to get to it` is a few sentences
 from Dad's point of view, `Driving it` the one command and where its evidence is, and `Gotchas` only traps the code
 does not handle, such as what the variant does not reach and which test proves it. Files without the command still
 describe their features in prose (#1630).

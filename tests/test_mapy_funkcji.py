@@ -618,8 +618,24 @@ ODMOWY_ROZLICZEN: Final = {
     "errors: parametrem o innej nazwie": ("assert_sonda.py", {"asercja": "_dwa([], inne=errors)  # tu"}),
     "errors: dwa razy": ("assert_sonda.py", {"asercja": "_dwa(errors, errors)  # tu"}),
     "errors: w lambdzie": ("assert_sonda.py", {"asercja": '(lambda: errors.append("x"))()  # tu'}),
-    "errors: w funkcji zagnieżdżonej": ("assert_sonda.py", {"asercja": 'def _w() -> None:  # tu\n        errors.append("x")'}),
+    "errors: w funkcji zagnieżdżonej": ("assert_sonda.py", {"asercja": 'def _w() -> None:\n        errors.append("x")  # tu'}),
     "finish: komunikat zmienną": ("assert_sonda.py", {"asercja": "tekst = STALA\n    finish(errors, tekst)  # tu"}),
+    "main: return kodu bez print": ("assert_sonda.py", {"asercja": "return 1  # tu"}),
+    "main: return wyrażenia": ("assert_sonda.py", {"asercja": "return len(errors)  # tu"}),
+    "main: print i return stałej spoza liczb": ("assert_sonda.py", {"asercja": 'print("x")\n    return STALA  # tu'}),
+    "main: print komunikatu zmienną i return": ("assert_sonda.py", {"asercja": "tekst = STALA\n    print(tekst)\n    return 1  # tu"}),
+    "wyjście: sys.exit": ("assert_sonda.py", {"asercja": 'sys.exit("x")  # tu'}),
+    "wyjście: exit": ("assert_sonda.py", {"asercja": "exit(1)  # tu"}),
+    "wyjście: os._exit": ("assert_sonda.py", {"asercja": "os._exit(1)  # tu"}),
+    "wyjście: raise SystemExit": ("assert_sonda.py", {"asercja": "raise SystemExit(1)  # tu"}),
+    "raise: bez try": ("assert_sonda.py", {"asercja": 'raise ValueError("x")  # tu'}),
+    "raise: wyjątek spoza złapanych": ("assert_sonda.py", {"asercja": 'try:\n        raise KeyError("x")  # tu\n    except ValueError:\n        pass'}),
+    "raise: ponowny w obsłudze": ("assert_sonda.py", {"asercja": "try:\n        pass\n    except ValueError:\n        raise  # tu"}),
+    "raise: SystemExit złapany przez BaseException": ("assert_sonda.py", {"asercja": "try:\n        raise SystemExit(1)  # tu\n    except BaseException:\n        pass"}),
+    "assert: bez komunikatu": ("assert_sonda.py", {"asercja": "assert STALA  # tu"}),
+    "assert: komunikat wywołaniem": ("assert_sonda.py", {"asercja": "assert STALA, STALA.upper()  # tu"}),
+    "instrukcja złożona: match": ("assert_sonda.py", {"asercja": "match STALA:  # tu\n        case _:\n            pass"}),
+    "errors: atrybut obiektu": ("assert_sonda.py", {"asercja": 'STALA.errors.append("x")  # tu'}),
     "wspólny moduł: extend": (
         "wynik_uruchomienia.py",
         {"wspolny": WSPOLNY_SONDY.replace('errors.append(f"{path} nie ma rekordu")', 'errors.extend([path])  # tu')},
@@ -648,6 +664,19 @@ ODMOWY_MODULU_ROZLICZEN: Final = {
             ('    check_metrics("metrics.jsonl", errors=errors)\n', '    check_metrics("metrics.jsonl", errors=errors)  # tu\n'),
         ),
     ),
+    "wyjście: sys.exit w funkcji skryptu": ("assert_sonda.py", (('    errors.append("pierwszy")', '    errors.append("pierwszy")\n    sys.exit(1)  # tu'),)),
+    "raise: w funkcji skryptu bez try w main": ("assert_sonda.py", (('    errors.append("pierwszy")', '    raise ValueError("x")  # tu'),)),
+    "warunek z samego literału, którego polecenie nie rozstrzyga": (
+        "assert_sonda.py",
+        (
+            ("def main() -> int:", 'def _tryb(errors: list[str], tryb: str = "a") -> None:\n    if tryb.startswith("a"):  # tu\n        errors.append("tryb")\n\n\ndef main() -> int:'),
+            ("    _check(errors)\n", "    _check(errors)\n    _tryb(errors)\n"),
+        ),
+    ),
+    "errors na poziomie modułu": ("assert_sonda.py", (('STALA = "stała"', 'STALA = "stała"\nerrors: list[str] = []  # tu'),)),
+    "errors w bloku __main__": ("assert_sonda.py", (("    return finish(errors, \"ASSERT OK | sonda=true\")\n", "    return finish(errors, \"ASSERT OK | sonda=true\")\n\n\nif __name__ == \"__main__\":  # tu\n    errors = []\n    raise SystemExit(main())\n"),)),
+    "errors w metodzie klasy": ("assert_sonda.py", (('STALA = "stała"', 'STALA = "stała"\n\n\nclass _Zbior:\n    def dodaj(self, errors: list[str]) -> None:  # tu\n        errors.append("x")'),)),
+    "kod modułu poza funkcją": ("assert_sonda.py", (('STALA = "stała"', 'STALA = "stała"\nprint(STALA)  # tu'),)),
     "funkcja z errors, do której main nie dochodzi": ("assert_sonda.py", (("def _check(errors", "def _osobna(errors: list[str]) -> None:  # tu\n    errors.append(\"x\")\n\n\ndef _check(errors"),)),
     "errors przypisane w funkcji skryptu": ("assert_sonda.py", (('    errors.append("pierwszy")', '    errors = []  # tu\n    errors.append("pierwszy")'),)),
     "errors przypisane w main poza pierwszym poziomem": ("assert_sonda.py", (("    errors: list[str] = []\n", "    if STALA:\n        errors: list[str] = []  # tu\n"),)),
@@ -698,6 +727,16 @@ ZNANE_LUKI_ROZLICZEN: Final = {
             "from pathlib import Path\n", "from pathlib import Path\nimport subprocess\n"
         ),
     ),
+    "wyjątek z funkcji innego modułu: polecenie zna tylko jawne raise w skrypcie i we wspólnym module": (
+        "assert_sonda.py",
+        ASSERT_SONDY.replace("{wstawka}", 'int("LUKA")'),
+    ),
+    "wyjście w kodzie modułu: polecenie czyta tylko funkcje, do których dochodzi main": (
+        "assert_sonda.py",
+        ASSERT_SONDY.replace("{wstawka}", "pass").replace('STALA = "stała"', 'STALA = "stała"\nKOD = sys.exit("LUKA")').replace(
+            "from wynik_uruchomienia", "import sys\n\nfrom wynik_uruchomienia"
+        ),
+    ),
     "krok przez odbicie po nazwie": (
         "run_verification.py",
         WORKFLOW.replace("{wstawka}", f'getattr(sys.modules[__name__], "_run_step")("LUKA", [{ZAPIS}], expected_exit=0)').replace(
@@ -724,3 +763,111 @@ def test_znane_luki_polecenia_mapy_rozliczen_przechodza_przez_kazdy_jego_mechani
                 zgloszenia[opis].append("workflow_sub_features.py: czyta lukę")
 
     assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
+
+
+# Skrypt asercji i wspólny moduł, które naprawdę biegną: każde słowo z BIEG_WYZWALACZE w argv wywraca krok jedną drogą.
+BIEG_ASERCJA: Final = """\
+import sys
+
+from wynik_uruchomienia import check_metrics, finish, load_result
+
+STALA = "stała"
+
+
+def _arkusz(tryb: str = "zwykły") -> None:
+    if tryb == "ścisły":
+        raise KeyError("nigdy")
+    if "arkusz" in sys.argv:
+        raise IndexError("arkusz")
+
+
+def _sprawdz(errors: list[str], tryb: str) -> None:
+    if "pierwszy" in sys.argv:
+        errors.append("pierwszy")
+    if tryb != "zwykły":
+        errors.append(f"tryb {tryb}")
+    _arkusz()
+
+
+def main() -> int:
+    errors: list[str] = []
+    try:
+        _sprawdz(errors, "zwykły")
+        load_result(f"{STALA}.json", errors)
+        check_metrics("metrics.jsonl", errors=errors)
+    except LookupError as exc:
+        print(f"ARKUSZ FAIL: {exc}", file=sys.stderr)
+        return 2
+    assert "asercja" not in sys.argv, "asercja przerwana"
+    return finish(errors, f"ASSERT OK | {STALA}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+BIEG_WSPOLNY: Final = """\
+import sys
+
+
+def load_result(path: str, errors: list[str], *, naming: tuple[str, ...] = ()) -> None:
+    for name in naming:
+        errors.append(f"{name} nazwany")
+    if "wynik" in sys.argv:
+        errors.append(f"{path} bez wyniku")
+
+
+def check_metrics(path: str, *, errors: list[str]) -> None:
+    if "metryki" in sys.argv:
+        errors.append(f"{path} bez rekordu")
+
+
+def finish(errors: list[str], success_message: str) -> int:
+    if errors:
+        for error in errors:
+            print(f"ASSERT FAIL: {error}", file=sys.stderr)
+        return 1
+    print(success_message)
+    return 0
+"""
+BIEG_WYZWALACZE: Final = ("pierwszy", "wynik", "metryki", "arkusz", "asercja")
+
+
+def test_polecenie_mapy_rozliczen_drukuje_kazda_droge_porazki_biegu_skryptu_i_tylko_je(
+    polecenie_rozliczen: ModuleType, tmp_path: Path
+) -> None:
+    """Sekcja kroku równa się prawdziwemu biegowi skryptu: każda droga, którą bieg kończy się porażką, ma swoją linię, a
+    każda linia jakąś drogę; ``raise`` czyta, gdy łapie go ``try`` także klasą bazową. Sprawdzenie, do którego krok nie dochodzi z literału argumentu albo z wartości domyślnej
+    (``tryb``, ``naming``), nie stoi w sekcji (D1 r1 #1630)."""
+
+    pliki = {**_sonda(), "assert_sonda.py": BIEG_ASERCJA, "wynik_uruchomienia.py": BIEG_WSPOLNY}
+    for nazwa, tekst in pliki.items():
+        (tmp_path / nazwa).write_text(tekst, encoding="utf-8")
+
+    _, kroki = polecenie_rozliczen.sub_features("sonda", pliki.__getitem__)
+    krok = next(krok for krok in kroki if krok.runs == "assert_sonda.py")
+    biegi = {
+        slowo: subprocess.run(
+            [sys.executable, "assert_sonda.py", *([slowo] if slowo else [])],
+            cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
+        )
+        for slowo in ("", *BIEG_WYZWALACZE)
+    }
+    wzory = {
+        linia: re.compile(f"(?:^|: ){re.escape(linia).replace(re.escape('…'), '.+')}$") for linia in krok.checks
+    }
+    nieopisane = [
+        f"{slowo}: kod {bieg.returncode}, {bieg.stderr.strip().splitlines()[-1:]}"
+        for slowo, bieg in biegi.items()
+        if slowo
+        and not (bieg.returncode != 0 and any(wzor.search(linia) for wzor in wzory.values() for linia in bieg.stderr.splitlines()))
+    ]
+    bez_biegu = [
+        linia
+        for linia, wzor in wzory.items()
+        if not any(wzor.search(wiersz) for bieg in biegi.values() for wiersz in bieg.stderr.splitlines())
+    ]
+
+    assert krok.checks == ["pierwszy", "… bez wyniku", "… bez rekordu", "ARKUSZ FAIL: …", "asercja przerwana"]
+    assert (biegi[""].returncode, biegi[""].stdout.strip(), krok.prints) == (0, "ASSERT OK | stała", ["ASSERT OK | stała"])
+    assert nieopisane == [], "bieg kończy się porażką drogą, której sekcja nie ma"
+    assert bez_biegu == [], "sekcja ma drogę porażki, której żaden bieg nie przechodzi"
