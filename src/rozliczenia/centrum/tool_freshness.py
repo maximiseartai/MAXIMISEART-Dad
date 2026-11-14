@@ -103,8 +103,7 @@ def offers_update(judgement: Judgement) -> bool:
     """Czy Centrum proponuje tacie Aktualizację narzędzia przy Aktualności ``judgement``.
 
     Tylko przy Wydaniu nowszym od wersji taty (ADR 0014), nigdy bez odpowiedzi
-    GitHuba. Pytają o to Konfiguracja, Diagnoza i Powiadomienie o nowej wersji
-    (#324).
+    GitHuba. Pytają o to Konfiguracja, Diagnoza i Powiadomienie o nowej wersji.
     """
 
     return judgement == "newer"
