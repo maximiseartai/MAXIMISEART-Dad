@@ -90,9 +90,10 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 
 | Decyzja | Wykonawca | Do jego merge'a obowiązuje |
 |---|---|---|
+| Chwast to reguła detektora | reguły ast-grep w Required CI: #1699 (scalony); kontrakty import-linter: #1612; `banned-api` ruff jest już w CI | reguła spoza tych narzędzi nie jest chwastem |
 | Warunek merge'a z polem `Idiom:`, dowód reguły w `tools/scal_pr.py`, usunięcie Q11 i `ZGODA KORZEŃ` | PR bramki ticketu #1676 (zmienia `tools/lib/bramka_korzenia.py`, `tools/scal_pr.py` i skille `przeglad` i `pr`) | bramka z ADR 0031 |
 | Reguła chwastu niczego nie ukrywa poza właścicielem | ten sam PR bramki, krok Required CI z kryteriami z [komentarza #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075) | tłumienie i zwolnienie w konfiguracji ukrywają odpalenie |
-| Bez nowych issues „Chwast” | ten sam PR bramki: publikacja werdyktu przestaje zakładać i uzupełniać issues (`rejestr_korzeni.after_verdict`) | publikacja werdyktu zakłada issues jak dziś |
+| Bez nowych issues „Chwast” | ten sam PR bramki usuwa każdą drogę zakładania: `rejestr_korzeni.after_verdict` przy publikacji werdyktu i `tools/chwasty.py` (`settle`); spis zapachów #1627, którego zakres ten ADR zmienia, rosnący zapach podaje w raporcie, a nie w issue | publikacja werdyktu i `tools/chwasty.py` zakładają issues jak dziś |
 | Zamknięcie otwartych issues „Chwast” z odsyłaczem do raportu | właściciel #1676, jednorazowo zaraz po merge'u PR bramki | issues zostają otwarte |
 | Narzędzie dowodu reguły | #1697 (`tools/na_scalonych_pr.py --regula`), które samo żadnej reguły merge'a nie zmienia | dowód liczy się ręcznie |
 | Status „Werdykt i bramka” w Actions, tylko raport | PR statusu ticketu #1676 | merge ze starego checkoutu nie zostawia śladu na GitHubie |
