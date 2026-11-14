@@ -40,6 +40,7 @@ from typing import get_args
 import pytest
 
 import rozmiar_pr
+from szopa import LISTA
 from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
@@ -716,7 +717,7 @@ def test_kazdy_wpis_listy_dwoch_szop_obejmuje_plik_a_zaden_plik_nie_ma_dwoch_wpi
     assert bledy == [], "\n".join(
         [
             *bledy,
-            f"{rozmiar_pr.LISTA} trzyma tylko wyjątki od reguły katalogu rozmiar_pr.REGULY (ADR 0034): wpis bez pliku "
+            f"{LISTA} trzyma tylko wyjątki od reguły katalogu rozmiar_pr.REGULY (ADR 0034): wpis bez pliku "
             "usuń albo popraw jego ścieżkę, a plik z kilkoma wpisami zostaw w jednym.",
         ]
     )

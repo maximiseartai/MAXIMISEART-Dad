@@ -14,6 +14,7 @@ Zmieniona 12.11 (#1339, bieg issues w trybie auto Maksa): mutacja, której ostat
 Zmieniona 12.11 (hillclimb CI, budżet Maksa z 12.11: najwyżej 20 zadań nocy naraz): noc zajmuje najwyżej 17 zadań części i 3 zadania skryptów skilli naraz, a części startują od najdroższej według pracy testów na `main` (sekcje Decyzja i Odrzucone warianty).
 Zmieniona 13.11 (Z4, zgoda Maksa): test, który w części pada bez mutacji, biegnie raz jeszcze jak w bramce PR, a gdy przejdzie, część mutuje dalej, a test dostaje issue `Flaky test:` (sekcje Decyzja i Konsekwencje).
 Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym CI `main`, tylko nocą, a noc uruchamia skrypt także przy zmianie modułu, który importuje sprawdzenie jego mutacji, i pliku, który psuje jego mutacja (sekcje Kontekst, Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 14.11 (#1625, historia 60 specyfikacji #1597, oznaczenia z audytów #1623 i #1624 zatwierdzonych przez Maksa 14.11): z `tools/` noc mutuje tylko jednostki, których fałszywe „OK” przepuszcza zły kod produktu, a błąd reszty narzędzi wychodzi w przeglądzie albo w użyciu (sekcja Decyzja).
 
 ## Kontekst
 
@@ -35,7 +36,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Change mutations nie biegną na PR.
   `ci.yml` nie ma ich zadania, plan CI ich nie liczy, a `tools/scal_pr.py` nie sprawdza ich ani linii `MUTACJA` w `PASS`.
 - Workflow `mutacje-nocne.yml` biegnie raz na dobę na `main` i ręcznie z opcjonalnym `od`.
-  Mutuje linie `src/` i `tools/` zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
+  Mutuje linie `src/` i jednostek z podtabeli `przepuszcza` listy dwóch szop (`tools/lib/szopa.toml`) zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
   Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
   Ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od` (`git merge-base`), od którego liczy też każda część, więc plan i części mutują te same zmiany, a cofnięcie zmian gałęzi `od` nie wchodzi do nocy; `od` bez wspólnego przodka z HEAD kończy plan błędem.
 - Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby każda część liczyła pokrycie tylko dla kilku plików.
