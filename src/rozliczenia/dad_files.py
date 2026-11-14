@@ -47,7 +47,7 @@ class DadFiles:
 
         return replace(self, copy=InputCopy())
 
-    def read(self, path: Path, *, despite_excel_lock: bool = False) -> ReadFile:
+    def read(self, path: Path, *, despite_excel_lock: bool) -> ReadFile:
         """Plik ``path`` przeczytany raz; ``WorkbookError``, gdy go nie ma, jest otwarty w Excelu (chyba że
         ``despite_excel_lock``: jego ostatnia zapisana wersja, ADR 0016) albo system nie oddał jego bajtów."""
 
