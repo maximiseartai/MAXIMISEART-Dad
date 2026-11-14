@@ -16,16 +16,17 @@ Zależności idą w jedną stronę: narzędzia z ``tools/``, biblioteki z ``tool
 z ``tools/ci/`` ani nie dodają tego katalogu do ``sys.path``, bo zmiana skryptu workflow nie może łamać narzędzi agenta.
 Biblioteka z ``tools/lib/`` nie importuje też narzędzia z ``tools/``, bo narzędzie zmienia się razem ze swoim wywołaniem,
 a z biblioteki biorą narzędzia, skille i testy (``_library_reaches_tools`` wylicza, co strażnik widzi).
-Skrypt, który workflow uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem ze wszystkim, co
-importuje z ``tools/``, używa tylko biblioteki standardowej.
+Skrypt, który plik GitHub Actions tego repo uruchamia systemowym ``python3`` runnera (bez zależności projektu), razem
+ze wszystkim, co importuje z ``tools/``, używa tylko biblioteki standardowej (które pliki strażnik czyta, mówi
+``_system_python_scripts``).
 
 Każdy wpis listy wyjątków dwóch szop (``tools/lib/szopa.toml``, ADR 0034), z której i z reguły katalogu licznik
 w workflow rozmiaru PR liczy linie maszynerii procesu, obejmuje co najmniej jeden plik, a żaden plik nie ma dwóch
 wpisów. Plik bez wpisu ma grupę z reguły katalogu, więc test nie wymaga wpisu dla nowego pliku.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd. Postacie, których nie łapią strażnicy kierunku zależności i kontraktu napisów, są próbkami
-``ZNANE_LUKI_*`` przy ich testach.
+tylko przegląd. Postacie, których nie łapią strażnicy kierunku zależności, kontraktu napisów i skryptów
+systemowego ``python3``, są próbkami ``ZNANE_LUKI_*`` przy ich testach.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ import sys
 from typing import get_args
 
 import pytest
+import yaml
 
 import rozmiar_pr
 from szopa import LISTA
@@ -61,8 +63,8 @@ SAME_WORDS = 3
 CI_TOOLS = "tools/ci/"
 # Polecenie, które uruchamia skrypt z tools/ci/: interpreter (python3, .venv/bin/python, py -3) albo `--` przed nim.
 RUNS_CI_TOOL = re.compile(r"(?:python[\d.]*|py -3|--)\s+tools/ci/")
-WORKFLOWS = ROOT / ".github" / "workflows"
-# Skrypt w kroku workflow uruchamiany systemowym python3 runnera, bez zależności projektu.
+# Skrypt uruchamiany systemowym python3 runnera, bez zależności projektu, w całym tekście pliku *.yml albo *.yaml pod
+# .github albo action.yml/action.yaml, do którego prowadzi lokalne uses: ./… (granica w _system_python_scripts).
 SYSTEM_PYTHON = re.compile(r"\bpython3\s+(tools/\S+\.py)\b")
 # Katalogi, z których skrypt z tools/ importuje moduły projektu (sys.path jego i testów).
 MODULE_DIRS = (TOOLS / "lib", TOOLS, TOOLS / "ci")
@@ -552,8 +554,45 @@ def test_znane_luki_kierunku_zaleznosci_tools_przechodza_przez_straznikow(
     assert_znane_luki(zgloszenia, f"tests/test_spis_narzedzi.py ({nazwa})")
 
 
-def _system_python_scripts() -> set[Path]:
-    return {ROOT / script for workflow in sorted(WORKFLOWS.glob("*.yml")) for script in SYSTEM_PYTHON.findall(workflow.read_text(encoding="utf-8"))}
+def _system_python_scripts(root: Path = ROOT) -> set[Path]:
+    """Skrypty ``python3 tools/….py`` z całego tekstu plików GitHub Actions, które GitHub uruchamia z tego repo: każdego
+    ``*.yml`` i ``*.yaml`` pod ``.github`` (workflowy i akcje złożone) oraz każdego ``action.yml`` albo ``action.yaml``
+    w katalogu, do którego prowadzi lokalne ``uses: ./<katalog>`` z pliku już czytanego, w dowolnym miejscu repo.
+
+    Regex biegnie po całym tekście pliku, więc łapie polecenie w każdym polu (``run``, ``env``, ``matrix``, ``with``),
+    a parser YAML służy tylko do znalezienia ``uses``; plik, którego parser nie czyta, wywraca test z jego nazwą.
+    Granica: strażnik nie czyta plików, które uruchamia krok (skrypt powłoki, który sam woła ``python3``), ani akcji
+    spod ``uses: właściciel/repo/…@ref``; próbki ``ZNANE_LUKI_SYSTEMOWEGO_PYTHONA`` to luki znane, nie pełna lista."""
+
+    queue = sorted({*(root / ".github").rglob("*.yml"), *(root / ".github").rglob("*.yaml")})
+    seen, scripts = set(), set()
+    while queue:
+        plik = queue.pop()
+        if plik in seen:
+            continue
+        seen.add(plik)
+        tekst = plik.read_text(encoding="utf-8")
+        scripts |= {root / script for script in SYSTEM_PYTHON.findall(tekst)}
+        try:
+            dane = yaml.safe_load(tekst)
+        except yaml.YAMLError as error:
+            pytest.fail(f"{plik.relative_to(root).as_posix()}: parser YAML nie czyta pliku, więc strażnik nie wie, za którym uses iść: {error}")
+        queue += [akcja for uses in _local_uses(dane) for name in ("action.yml", "action.yaml") if (akcja := root / uses / name).is_file()]
+    return scripts
+
+
+def _local_uses(dane: object) -> Iterator[str]:
+    """Każda wartość ``uses: ./…`` w drzewie YAML, na dowolnej głębokości."""
+
+    if isinstance(dane, dict):
+        for klucz, wartosc in dane.items():
+            if klucz == "uses" and isinstance(wartosc, str) and wartosc.startswith("./"):
+                yield wartosc
+            else:
+                yield from _local_uses(wartosc)
+    elif isinstance(dane, list):
+        for element in dane:
+            yield from _local_uses(element)
 
 
 def _outside_stdlib(scripts: set[Path], root: Path = ROOT) -> list[str]:
@@ -579,11 +618,92 @@ def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standa
 
     assert {path.relative_to(ROOT).as_posix() for path in scripts} >= {"tools/plan_ci.py", "tools/ci/werdykt_required.py", "tools/ci/zgloszenia_ci.py"}
     assert _outside_stdlib(scripts) == [], (
-        "Skrypt, który workflow uruchamia systemowym python3 runnera, i wszystko, co importuje z tools/, biorą tylko z "
-        "biblioteki standardowej, bo ten interpreter nie ma zależności projektu: zastąp import biblioteką standardową "
-        "albo przenieś kod, który jej potrzebuje, do kroku uruchamianego z .venv."
+        "Skrypt, który plik *.yml albo *.yaml pod .github albo action.yml/action.yaml z lokalnego uses: ./… "
+        "uruchamia systemowym python3 runnera, i wszystko, co importuje z tools/, biorą tylko z biblioteki standardowej, "
+        "bo ten interpreter nie ma zależności projektu: zastąp import biblioteką standardową albo przenieś kod, który "
+        "jej potrzebuje, do kroku uruchamianego z .venv."
     )
 
+
+
+def _zapisz_drzewo(korzen: Path, pliki: Mapping[str, str]) -> None:
+    for sciezka, tresc in pliki.items():
+        (korzen / sciezka).parent.mkdir(parents=True, exist_ok=True)
+        (korzen / sciezka).write_text(tresc, encoding="utf-8")
+
+
+def _akcja(kroki: str) -> str:
+    return f"runs:\n  using: composite\n  steps:\n{kroki}"
+
+
+def test_skrypt_systemowego_python3_z_kazdego_pola_workflowu_i_akcji_ktora_github_uruchamia_wywraca_straznika(tmp_path: Path) -> None:
+    """Strażnik czyta cały tekst workflowu (polecenie w ``env`` i ``matrix``, nie tylko w ``run``), każdy plik ``.yaml``
+    pod ``.github`` i akcję spoza ``.github``, do której prowadzi ``uses`` z akcji, kończy na cyklu akcji, a skryptu
+    akcji, której nic nie woła spoza ``.github``, nie zgłasza (przegląd #1689: W3 r1, W2 r2, W1 r3)."""
+
+    _zapisz_drzewo(
+        tmp_path,
+        {
+            ".github/workflows/ci.yml": (
+                "on: push\njobs:\n  a:\n    strategy:\n      matrix:\n        polecenie: [python3 tools/z_matrix.py]\n"
+                "    steps:\n      - uses: actions/checkout@v4\n      - env:\n          POLECENIE: python3 tools/z_env.py\n"
+                "        run: $POLECENIE\n      - run: ${{ matrix.polecenie }}\n      - uses: ./ci/a\n"
+            ),
+            ".github/actions/b/action.yaml": _akcja("    - run: python3 tools/z_github_yaml.py\n      shell: bash\n"),
+            "ci/a/action.yml": _akcja("    - uses: ./ci/b/\n"),
+            "ci/b/action.yaml": _akcja("    - run: |\n        echo start\n        python3 tools/z_akcji.py\n      shell: bash\n    - uses: ./ci/a\n"),
+            "ci/c/action.yml": _akcja("    - run: python3 tools/nikt.py\n      shell: bash\n"),
+            **{f"tools/{nazwa}.py": "import yaml\n" for nazwa in ("z_matrix", "z_env", "z_github_yaml", "z_akcji", "nikt")},
+        },
+    )
+
+    assert _outside_stdlib(_system_python_scripts(tmp_path), tmp_path) == [
+        "tools/z_akcji.py: yaml",
+        "tools/z_env.py: yaml",
+        "tools/z_github_yaml.py: yaml",
+        "tools/z_matrix.py: yaml",
+    ]
+
+
+def test_plik_github_actions_ktorego_parser_yaml_nie_czyta_wywraca_straznika_z_jego_nazwa(tmp_path: Path) -> None:
+    _zapisz_drzewo(tmp_path, {".github/workflows/zly.yml": "jobs:\n  a:\n    steps:\n      - uses: ./ci/a\n     zły: [\n"})
+
+    with pytest.raises(pytest.fail.Exception, match=r"\.github/workflows/zly\.yml: parser YAML nie czyta pliku"):
+        _system_python_scripts(tmp_path)
+
+
+# Znane luki strażnika skryptów systemowego python3 (tests/fixtures/znane_luki.py): „klasa: postać” → krok workflowu
+# ``.github/workflows/ci.yml`` i pliki drzewa próbki, w którym ``tools/skrypt.py`` uruchomiony systemowym python3 bierze
+# moduł spoza biblioteki standardowej, a mimo to drzewo przechodzi przez ``_system_python_scripts`` i ``_outside_stdlib``.
+ZNANE_LUKI_SYSTEMOWEGO_PYTHONA = {
+    "czyta tylko instrukcje importu: importlib.import_module": ("run: python3 tools/skrypt.py", {"tools/skrypt.py": 'import importlib\n\nYAML = importlib.import_module("yaml")\n'}),
+    "zna tylko dosłowne python3 tools/….py w tekście: polecenie złożone w biegu": ('run: S=tools/skrypt.py; python3 "$S"', {"tools/skrypt.py": "import yaml\n"}),
+    "zna tylko dosłowne python3 tools/….py w tekście: flaga interpretera przed skryptem": ("run: python3 -u tools/skrypt.py", {"tools/skrypt.py": "import yaml\n"}),
+    "zna tylko dosłowne python3 tools/….py w tekście: kod Pythona kroku z shell: python3 {0}, który importuje z tools/": (
+        "shell: python3 {0}\n        run: import sys; sys.path.insert(0, 'tools'); import skrypt",
+        {"tools/skrypt.py": "import yaml\n"},
+    ),
+    # dbm.sqlite3 jest od Pythona 3.13, a python3 runnera ubuntu-latest (Ubuntu 24.04) to 3.12.
+    "zna najwyższą nazwę modułu i bibliotekę standardową Pythona testu, nie python3 runnera: dbm.sqlite3": ("run: python3 tools/skrypt.py", {"tools/skrypt.py": "import dbm.sqlite3\n"}),
+    "czyta tylko pliki GitHub Actions, nie pliki, które krok uruchamia: skrypt powłoki, który woła python3": (
+        "run: bash tools/skrypt.sh",
+        {"tools/skrypt.sh": "python3 tools/skrypt.py\n", "tools/skrypt.py": "import yaml\n"},
+    ),
+    "idzie tylko za lokalnym uses: ./…: akcja tego repo spoza .github spod uses: właściciel/repo/ścieżka@ref": (
+        "uses: maximiseartai/MAXIMISEART-Dad/ci/a@main",
+        {"ci/a/action.yml": _akcja("    - run: python3 tools/skrypt.py\n      shell: bash\n"), "tools/skrypt.py": "import yaml\n"},
+    ),
+}
+
+
+def test_znane_luki_skryptow_systemowego_pythona_przechodza_przez_straznika(tmp_path: Path) -> None:
+    zgloszenia = {}
+    for numer, (opis, (krok, pliki)) in enumerate(ZNANE_LUKI_SYSTEMOWEGO_PYTHONA.items()):
+        korzen = tmp_path / str(numer)
+        _zapisz_drzewo(korzen, {".github/workflows/ci.yml": f"jobs:\n  a:\n    steps:\n      - {krok}\n", **pliki})
+        zgloszenia[opis] = _outside_stdlib(_system_python_scripts(korzen), korzen)
+
+    assert_znane_luki(zgloszenia, "tests/test_spis_narzedzi.py (ZNANE_LUKI_SYSTEMOWEGO_PYTHONA)")
 
 def test_domkniecie_importow_skryptu_widzi_import_spoza_biblioteki_w_module_ktory_importuje(tmp_path: Path) -> None:
     (tmp_path / "skrypt.py").write_text("import json\nimport modul\n", encoding="utf-8")
