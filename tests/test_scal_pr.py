@@ -19,11 +19,13 @@ import sys
 from typing import cast
 
 import pytest
+import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
+import bramka_idiomu
 import czasy_ci
 import github as klient_github
 import naprawia
@@ -35,6 +37,7 @@ import werdykt_pr
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
+STATUS_WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "werdykt-i-bramka.yml"
 TEMPLATE = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "pr" / "SKILL.md"
 REVIEW = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "przeglad"
 BODY = opisy_pr.wzor("Cel.")
@@ -142,8 +145,9 @@ elif arguments[:2] == ["api", "graphql"] and any(argument.startswith("number=") 
         node.update({kind: node[kind]["nodes"] for kind in ("comments", "reviews")})
     print(json.dumps({"data": {"repository": {"pullRequest": html_node(node, {kind: 0 if variables[kind] == "null" else int(variables[kind]) for kind in ("comments", "reviews")})}}}))
 elif arguments[:2] == ["api", "graphql"]:
-    # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek> i first; zmiana
-    # z graphql_changes.json ("po": tyle wcześniejszych zapytań) zmienia PR między stronami.
+    # GraphQL search PR-ów jak GitHub: kwalifikatory updated/created z >= i <=, sort:<pole>-<kierunek>, fraza w cudzysłowie
+    # (PR z nią w tytule, opisie albo komentarzu) i first; zmiana z graphql_changes.json ("po": tyle wcześniejszych
+    # zapytań) zmienia PR między stronami.
     variables = dict(arguments[index + 1].split("=", 1) for index, value in enumerate(arguments) if value in {"-f", "-F"})
     log = here / "graphql.jsonl"
     calls = len(log.read_text().splitlines()) if log.exists() else 0
@@ -155,7 +159,9 @@ elif arguments[:2] == ["api", "graphql"]:
     for change in json.loads((here / "graphql_changes.json").read_text()):
         if calls >= change["po"]:
             next(node for node in nodes if node["number"] == change["number"]).update(change["pola"])
-    terms = variables["q"].split()
+    phrases = re.findall(r'"([^"]+)"', variables["q"])
+    terms = re.sub(r'"[^"]+"', " ", variables["q"]).split()
+    nodes = [node for node in nodes if all(any(phrase in text for text in [node["title"], node["body"], *(comment["body"] for comment in node["comments"]["nodes"])]) for phrase in phrases)]
     if f"repo:{REPO}" not in terms or "is:pr" not in terms:
         sys.exit(f"atrapa gh nie zna wyszukiwania: {terms}")
     for field, sign, value in (re.fullmatch(r"(updated|created):([<>]=)(.+)", term).groups() for term in terms if re.fullmatch(r"(updated|created):[<>]=.+", term)):
@@ -2014,6 +2020,7 @@ RED = {korzenie_pr.RED_MAIN: "czerwony-main"}
 FLAKY = {korzenie_pr.FLAKY: "flaky-test"}
 UPROOTED_IN = f"korzeń: W1 r1: Wyrwany w #{korzenie_pr.ROOT_PR}"
 GATE_BEFORE_VERDICTS = "2026-09-01T00:00:00Z"
+GATE_AFTER_VERDICTS = "2026-12-01T00:00:00Z"
 
 
 def _root_gate(
@@ -2390,15 +2397,16 @@ def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path, mon
 
 # Warunek merge'a z polem Idiom: (ADR 0036, „Warunek merge'a”): dowód tools/na_scalonych_pr.py --regula-id z regułą
 # z HEAD PR na każdym przypadku tego id z historii pól Idiom:. Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje swoje
-# argumenty do ``dowody.jsonl`` w katalogu atrapy gh i kończy się kodem i linią z ``dowod.json``; prawdziwy dowód,
-# także odmowę bez reguły na HEAD, sprawdza tests/test_na_scalonych_pr.py.
+# argumenty do ``dowody.jsonl`` w katalogu atrapy gh i po ``czeka`` sekundach dla swojej reguły kończy się kodem i linią
+# z ``dowod.json``; prawdziwy dowód, także odmowę bez reguły na HEAD, sprawdza tests/test_na_scalonych_pr.py.
 FAKE_PROOF = """\
-import json, pathlib, sys
+import json, pathlib, sys, time
 
 state = pathlib.Path(sys.argv[0]).resolve().parents[2] / "bin"
 with (state / "dowody.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
 answer = json.loads((state / "dowod.json").read_text(encoding="utf-8"))
+time.sleep(answer.get("czeka", {}).get(sys.argv[2], 0))
 print(answer["linia"])
 sys.exit(answer["kod"])
 """
@@ -2421,20 +2429,28 @@ def _idiom_gate(
 
 
 def _idiom_pull(
-    tmp_path: Path, verdict: str, *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK, passed: bool = True
+    tmp_path: Path,
+    verdict: str,
+    *more: str,
+    registry: list[dict[str, object]] | None = None,
+    proof: tuple[int, str] = PROOF_OK,
+    passed: bool = True,
+    gate: str = GATE_BEFORE_VERDICTS,
 ) -> tuple[MergeGitHub, str]:
-    """PR 1 z werdyktem ``FAIL`` z polem Idiom (``_idiom_verdict``) na starszym commicie, sekcją ``## Korzeń`` i
-    z ``passed`` ``PASS`` na HEAD; rejestr podaje PR-y ``registry``, a dowód kończy się ``proof``."""
+    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdict`` i ``more`` na starszym commicie,
+    sekcją ``## Korzeń`` i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, rejestr podaje
+    PR-y ``registry``, a dowód kończy się ``proof``."""
 
     files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF}
-    github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
+    github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=gate)
     _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
     github.graphql = registry or []
     github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
-    github.comment(1, verdict.format(commit=OLD))
+    for body in (verdict, *more):
+        github.comment(1, body.format(commit=OLD))
     if passed:
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     return github, head
@@ -2477,6 +2493,8 @@ def test_wazne_z_polem_idiom_scala_sie_po_dowodzie_na_kazdym_przypadku_z_histori
 
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
     assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2")]
+    # Rejestr czyta tylko PR-y z frazą pola tej reguły, więc jego koszt nie rośnie ze wszystkimi PR-ami od wdrożenia.
+    assert [cast(dict[str, str], query)["q"].partition(" sort:")[2] for query in github._log("graphql.jsonl")] == ['created-asc "Idiom: zakazane-wywolanie"']
 
 
 @pytest.mark.parametrize(("verdict", "cases"), [("drugie-wystapienie", [("1/W1/r1", "1553/W1/r2")]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
@@ -2712,3 +2730,44 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
     assert ("idiom:" in description) is any(name in {"idiom", "rejestr"} for name in reasons), description
     assert _proofs(github) == ([_proof_arguments(head, "1/W1/r1", "1553/W1/r2")] if proved else [])
     assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == [state]
+
+
+def test_dowody_regul_pr_ktore_nie_koncza_sie_we_wspolnym_limicie_daja_failure_z_przyczyna_zamiast_zabitego_joba(tmp_path: Path) -> None:
+    """Dowody wszystkich reguł PR mają razem ``PROOF_TIMEOUT_S``, więc status ma przyczynę każdej reguły, zanim limit
+    joba statusu zabije run bez statusu: dowód pierwszej reguły zużywa cały limit, więc dowód drugiej, który skończyłby
+    się od razu, już nie startuje. Bramka korzenia wdrożona po werdyktach nie wymaga bloku drugiej rundy."""
+
+    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), _idiom_verdict("innej-reguly"), gate=GATE_AFTER_VERDICTS)
+    (github.bin / "dowod.json").write_text(json.dumps({"kod": 0, "linia": PROOF_OK[1], "czeka": {"inna-regula": 60}}), encoding="utf-8")
+    _tool_on_main(github, "tools/lib/bramka_idiomu.py", (f"PROOF_TIMEOUT_S = {bramka_idiomu.PROOF_TIMEOUT_S}", "PROOF_TIMEOUT_S = 2"))
+
+    answered = _status(github, "1", "--status")
+
+    late = "dowody reguł tego PR nie skończyły się w 2 s, uruchom ponownie"
+    assert answered.returncode == 0 and _last_line(answered) == f"STATUS failure | #1 {head[:7]} | idiom: inna-regula: {late}; idiom: zakazane-wywolanie: {late}", answered.stdout
+    assert [arguments[1] for arguments in _proofs(github)] == ["inna-regula"]
+
+
+def test_limit_dowodow_regul_konczy_sie_przed_limitem_joba_statusu() -> None:
+    """Przed dowodem job statusu pobiera historię ``main`` i instaluje dodatek dev (run 43609687368: ok. 15 s), więc
+    przekroczony czas dowodów zostaje przyczyną w statusie, a nie anulowanym jobem bez statusu."""
+
+    job = yaml.safe_load(STATUS_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["status"]
+
+    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S >= 120
+
+
+def test_blad_renderera_werdyktow_w_warunku_idiom_to_oczekiwanie_bez_dowodu(tmp_path: Path) -> None:
+    """GitHub, który nie wyrenderował werdyktów, nie mówi, czy pole ``Idiom:`` wymaga reguły; to mija bez zmiany w PR,
+    więc status czeka (``pending``), a nie odmawia. Bramka korzenia wdrożona po werdyktach ich nie renderuje, więc
+    błąd dochodzi do warunku 5."""
+
+    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), gate=GATE_AFTER_VERDICTS)
+    github.markdown = {text: "gh: HTTP 502" if "Idiom: zakazane-wywolanie" in text else html for text, html in github.markdown.items()}
+    github._save()
+
+    answered = _status(github, "1", "--status")
+
+    prefix = f"STATUS pending | #1 {head[:7]} | oczekuje: idiom: GitHub nie wyrenderował treści werdyktów ("
+    assert answered.returncode == 0 and _last_line(answered).startswith(prefix), answered.stdout + answered.stderr
+    assert _proofs(github) == []
