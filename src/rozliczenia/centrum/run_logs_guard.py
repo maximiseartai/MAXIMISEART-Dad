@@ -336,8 +336,8 @@ _MINTED: Final = object()
 """Dowód, że wartość wyszła ze strażnika reguły danych: ``GuardedLogs`` i ``GuardedText`` daje tylko ``guard_logs`` i
 ``guard_text``.
 
-Sprawdzenia niżej łapią kod, który zapomniał strażnika albo przerobił wartość, która go przeszła, a postacie, których
-nie łapie żadne z nich, są próbkami ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``.
+Sprawdzenia niżej łapią kod, który zapomniał strażnika albo przerobił wartość, która go przeszła, a ich granice
+pokazują próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_granice_importow.py``, każda za klasą nazwaną w swojej nazwie.
 
 - Konstruktor bez ``_MINTED`` rzuca ``TypeError``, a ``_MINTED`` zna tylko ten moduł.
 - ``dataclasses.replace``: to nie są dataclassy, więc mypy odrzuca wywołanie (``type-var``), a Python rzuca ``TypeError``.

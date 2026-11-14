@@ -74,8 +74,8 @@ trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie postacie 
 przechodzi.
 
 Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
-trafia do ``STDLIB_ONLY`` z powodem. Postacie, których strażnicy tego pliku nie łapią, są próbkami ``ZNANE_LUKI_*``
-przy ich testach.
+trafia do ``STDLIB_ONLY`` z powodem. Granice strażników tego pliku pokazują próbki ``ZNANE_LUKI_*`` przy ich testach,
+każda za klasą nazwaną w swojej nazwie (``tests/fixtures/znane_luki.py``).
 """
 
 from __future__ import annotations
@@ -599,13 +599,13 @@ def test_skrypt_dla_maszyn_nie_wczytuje_serwera() -> None:
     )
 
 
-# Znane luki strażnika Skryptu dla maszyn (tests/fixtures/znane_luki.py): opis postaci → Skrypt dla maszyn, który
+# Znane luki strażnika Skryptu dla maszyn (tests/fixtures/znane_luki.py): „klasa: postać” → Skrypt dla maszyn, który
 # wczytuje serwer (moduł ``serwer_atrapy`` w ``tools/lib`` drzewa próbek wczytuje FastAPI), a mimo to przechodzi przez
 # ruff w ``tools/`` i przez ``test_skrypt_dla_maszyn_nie_wczytuje_serwera``.
 ZNANE_LUKI_SKRYPTU: typing.Final = {
-    "moduł tools/lib, który wczytuje serwer": "import serwer_atrapy\n\nSERWER = serwer_atrapy\n",
-    "importlib.import_module": 'import importlib\n\nSERWER = importlib.import_module("fastapi")\n',
-    "__import__": 'SERWER = __import__("uvicorn")\n',
+    "tylko moduły src: moduł tools/lib, który wczytuje serwer": "import serwer_atrapy\n\nSERWER = serwer_atrapy\n",
+    "tylko instrukcja import: importlib.import_module": 'import importlib\n\nSERWER = importlib.import_module("fastapi")\n',
+    "tylko instrukcja import: __import__": 'SERWER = __import__("uvicorn")\n',
 }
 
 
@@ -684,8 +684,8 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Postacie, których nie łapie ani to
-    sprawdzenie, ani mypy, ani ruff, są próbkami w ``ZNANE_LUKI_KATALOGU``.
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Granice tego sprawdzenia, mypy i ruff
+    pokazują próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie.
     """
 
     builds = {"PreparedRun"}
@@ -785,37 +785,48 @@ _POLA: typing.Final = (
 _KATALOG: typing.Final = (
     "from typing import Any\n\nfrom rozliczenia.centrum import process_kind\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n"
 )
-# Znane luki strażnika katalogu procesów (tests/fixtures/znane_luki.py): opis postaci → moduł src, który składa albo
+# Znane luki strażnika katalogu procesów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który składa albo
 # zmienia ``PreparedRun`` obok ``Catalog.prepared``, a mimo to przechodzi przez ruff, mypy i ``_prepared_run_builds``.
 ZNANE_LUKI_KATALOGU: typing.Final = {
-    "type(gotowe) z dowodem z getattr": _KATALOG
+    "refleksja po nazwie: type(gotowe) z dowodem z getattr": _KATALOG
     + "\n"
     + _GOTOWE
     + "    return type(gotowe)("
     + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
     + ")\n",
-    "type(gotowe) z dowodem z noqa": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import _CATALOG, PreparedRun  # noqa: TID251 - próbka\n\n\n"
+    "tłumienie ruff: type(gotowe) z dowodem z noqa": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import _CATALOG, PreparedRun  # noqa: TID251 - próbka\n\n\n"
     + _GOTOWE
     + "    return type(gotowe)("
     + _POLA.format(dowod="_CATALOG")
     + ")\n",
-    "PreparedRun pod nazwą przypisaną poza importem": _KATALOG
+    "tylko nazwa z importu: PreparedRun pod nazwą przypisaną poza importem": _KATALOG
     + "ZLOZ = PreparedRun\n\n\n"
     + _GOTOWE
     + "    return ZLOZ("
     + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
     + ")\n",
-    "nazwa złożona w trakcie działania": _KATALOG
+    "tylko nazwa z importu: podklasa pod nazwą przypisaną poza importem z type: ignore": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+ZLOZ = PreparedRun
+
+
+class Moja(ZLOZ[Any, Any]):  # type: ignore[misc]  # próbka
+    pass
+""",
+    "refleksja po nazwie: nazwa złożona w trakcie działania": _KATALOG
     + "\n"
     + _GOTOWE
     + '    zloz = getattr(process_kind, "Prepared" + "Run")\n'
     + "    wynik: PreparedRun[Any, Any] = zloz("
     + _POLA.format(dowod='getattr(process_kind, "_CATA" + "LOG")')
     + ")\n    return wynik\n",
-    "copy.copy gotowego Uruchomienia": "import copy\nfrom typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    "tylko kopia przez replace: copy.copy gotowego Uruchomienia": "import copy\nfrom typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
     + _GOTOWE
     + "    return copy.copy(gotowe)\n",
-    "wartość Any": """\
+    "wartość Any: wartość Any": """\
 from typing import Any
 
 from rozliczenia.centrum.process_kind import PreparedRun
@@ -825,7 +836,7 @@ def z_tablicy(gotowe: dict[str, Any]) -> PreparedRun[Any, Any]:
     wynik: PreparedRun[Any, Any] = gotowe["uruchomienie"]
     return wynik
 """,
-    "object.__setattr__ pola gotowego Uruchomienia": """\
+    "refleksja po nazwie: object.__setattr__ pola gotowego Uruchomienia": """\
 from typing import Any
 
 from rozliczenia.centrum.process_kind import PreparedRun
@@ -834,7 +845,7 @@ from rozliczenia.centrum.process_kind import PreparedRun
 def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
     object.__setattr__(gotowe, "period", okres)
 """,
-    "przypisanie pola z type: ignore": """\
+    "tłumienie mypy: przypisanie pola z type: ignore": """\
 from typing import Any
 
 from rozliczenia.centrum.process_kind import PreparedRun
@@ -843,7 +854,7 @@ from rozliczenia.centrum.process_kind import PreparedRun
 def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
     gotowe.period = okres  # type: ignore[misc]  # próbka
 """,
-    "type(gotowe) z dowodem z type: ignore": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    "tłumienie mypy: type(gotowe) z dowodem z type: ignore": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
     + _GOTOWE
     + "    return type(gotowe)("
     + _POLA.format(dowod="None")
@@ -905,15 +916,15 @@ def test_sprawdzenie_rdzenia_przepuszcza_biblioteke_standardowa_i_moduly_bez_sko
     assert _workbook_chains("rozliczenia/a.py", tmp_path) == set()
 
 
-# Znane luki czytania importów (tests/fixtures/znane_luki.py), na którym stoją strażnicy grafu importów: opis postaci →
+# Znane luki czytania importów (tests/fixtures/znane_luki.py), na którym stoją strażnicy grafu importów: „klasa: postać” →
 # moduł rdzenia drzewa ``_source_tree``, który wczytuje skoroszyt, a mimo to przechodzi przez ruff w ``src/``,
 # domknięcie ``_workbook_chains`` i ``_imported_modules``.
 ZNANE_LUKI_GRAFU: typing.Final = {
-    "importlib.import_module": 'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n',
-    "__import__": 'SKOROSZYT = __import__("openpyxl")\n',
-    "nazwa modułu src złożona w trakcie działania": 'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n',
-    "biblioteka spoza src, która sama wczytuje openpyxl": "import pandas\n\nARKUSZ = pandas.read_excel\n",
-    "skoroszyt czytany bez openpyxl": """\
+    "tylko instrukcja import: importlib.import_module": 'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n',
+    "tylko instrukcja import: __import__": 'SKOROSZYT = __import__("openpyxl")\n',
+    "tylko instrukcja import: nazwa modułu src złożona w trakcie działania": 'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n',
+    "tylko moduły src: biblioteka spoza src, która sama wczytuje openpyxl": "import pandas\n\nARKUSZ = pandas.read_excel\n",
+    "tylko openpyxl i template_file: skoroszyt czytany bez openpyxl": """\
 import zipfile
 
 
@@ -1063,8 +1074,8 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
     ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
     importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
-    ``_GuardedLogs__…``) poza docstringiem. Postacie, których nie łapie ani to sprawdzenie, ani mypy, ani ruff, są
-    próbkami w ``ZNANE_LUKI_STRAZNIKA``."""
+    ``_GuardedLogs__…``) poza docstringiem. Granice tego sprawdzenia, mypy i ruff pokazują próbki
+    ``ZNANE_LUKI_STRAZNIKA``, każda za klasą nazwaną w swojej nazwie."""
 
     names = GUARDED | {
         alias.asname
@@ -1165,17 +1176,17 @@ def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_impor
     assert _guard_bypasses(ast.parse(code)) == []
 
 
-# Znane luki strażnika Logów i tekstu po strażniku (tests/fixtures/znane_luki.py): opis postaci → moduł src, który daje
+# Znane luki strażnika Logów i tekstu po strażniku (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który daje
 # albo zmienia ``GuardedLogs`` z pominięciem ``guard_logs``, a mimo to przechodzi przez ruff, mypy i ``_guard_bypasses``.
 ZNANE_LUKI_STRAZNIKA: typing.Final = {
-    "object.__new__(type(logs))": """\
+    "tylko nazwa z importu: object.__new__(type(logs))": """\
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
 
 def pusta(logs: GuardedLogs) -> GuardedLogs:
     return object.__new__(type(logs))
 """,
-    "zmiana __class__ przez object.__setattr__": """\
+    "refleksja po nazwie: zmiana __class__ przez object.__setattr__": """\
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
@@ -1183,7 +1194,7 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs
 def przebierz(record: RunLog, logs: GuardedLogs) -> None:
     object.__setattr__(record, "__class__", type(logs))
 """,
-    "zmiana __class__ przez setattr": """\
+    "refleksja po nazwie: zmiana __class__ przez setattr": """\
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
@@ -1191,7 +1202,7 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs
 def przebierz(record: RunLog, logs: GuardedLogs) -> None:
     setattr(record, "__class__", type(logs))
 """,
-    "zmiana __class__ przypisaniem z type: ignore": """\
+    "tłumienie mypy: zmiana __class__ przypisaniem z type: ignore": """\
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
@@ -1199,7 +1210,7 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs
 def przebierz(record: RunLog, logs: GuardedLogs) -> None:
     record.__class__ = type(logs)  # type: ignore[assignment]  # próbka
 """,
-    "type(logs) z dowodem z napisu sklejonego": """\
+    "tylko stały napis: type(logs) z dowodem z napisu sklejonego": """\
 from rozliczenia.centrum import run_logs_guard
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
@@ -1208,7 +1219,7 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs
 def podmien(logs: GuardedLogs, record: RunLog) -> GuardedLogs:
     return type(logs)(record, record, getattr(run_logs_guard, "_MIN" + "TED"))
 """,
-    "nazwa typu złożona w trakcie działania": """\
+    "tylko stały napis: nazwa typu złożona w trakcie działania": """\
 from rozliczenia.centrum import run_logs_guard
 
 
@@ -1216,7 +1227,7 @@ def zloz() -> object:
     logi = getattr(run_logs_guard, "Guarded" + "Logs")
     return object.__new__(logi)
 """,
-    "slot z nazwy złożonej": """\
+    "tylko stały napis: slot z nazwy złożonej": """\
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
@@ -1258,7 +1269,7 @@ def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     ``comment_versions`` używa jej tylko ``post_of``. Napis ``logi-uruchomienia`` stoi poza ``comment_versions`` tylko w
     ``Literal``.
 
-    Postacie, których nie łapie ani to sprawdzenie, ani mypy, ani ruff, są próbkami w ``ZNANE_LUKI_WYSYLKI``.
+    Granice tego sprawdzenia, mypy i ruff pokazują próbki ``ZNANE_LUKI_WYSYLKI``, każda za klasą nazwaną w swojej nazwie.
     """
 
     own = file == COMMENT_VERSIONS
@@ -1510,10 +1521,10 @@ def test_sprawdzenie_wysylki_logow_przepuszcza_kod_bez_wysylki_logow(code: str) 
     assert _logs_post_breaks(ast.parse(code), "rozliczenia/centrum/proba.py") == []
 
 
-# Znane luki strażnika wysyłki Logów (tests/fixtures/znane_luki.py): opis postaci → moduł src, który buduje albo zmienia
+# Znane luki strażnika wysyłki Logów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który buduje albo zmienia
 # wysyłkę Logów Uruchomienia obok ``post_of``, a mimo to przechodzi przez ruff, mypy i ``_logs_post_breaks``.
 ZNANE_LUKI_WYSYLKI: typing.Final = {
-    "słuchacz kolejki zmienia wysyłkę Logów po run_id": """\
+    "tylko post_of i LABEL: słuchacz kolejki zmienia wysyłkę Logów po run_id": """\
 from dataclasses import replace
 
 from rozliczenia.centrum.outbox import Post, Rank
@@ -1522,7 +1533,7 @@ from rozliczenia.centrum.outbox import Post, Rank
 def przygotuj(post: Post, run_id: str) -> Post:
     return replace(post, rank=Rank.OWN) if post.run_id == run_id else post
 """,
-    "etykieta wzięta z innej wysyłki": """\
+    "tylko post_of i LABEL: etykieta wzięta z innej wysyłki": """\
 from dataclasses import replace
 
 from rozliczenia.centrum.outbox import Post
@@ -1531,7 +1542,7 @@ from rozliczenia.centrum.outbox import Post
 def jak_logi(logi: Post, inna: Post) -> Post:
     return replace(inna, target=logi.target)
 """,
-    "etykieta z modułu przypisanego innej nazwie poza importem": """\
+    "tylko nazwa z importu: etykieta z modułu przypisanego innej nazwie poza importem": """\
 from rozliczenia.centrum import comment_versions
 from rozliczenia.centrum.outbox import PeriodThread
 from rozliczenia.client_data import Outgoing
@@ -1542,7 +1553,7 @@ WERSJE = comment_versions
 def watek(wiersz: Outgoing, tytul: Outgoing) -> PeriodThread:
     return PeriodThread(label=WERSJE.LABEL, line=wiersz, closed="reuse", title=tytul)
 """,
-    "post_of pod nazwą złożoną w trakcie działania": """\
+    "tylko stały napis: post_of pod nazwą złożoną w trakcie działania": """\
 from rozliczenia.centrum import comment_versions
 from rozliczenia.centrum.comment_versions import CommentVersion, LogsPost
 
@@ -1552,7 +1563,7 @@ def zrob(wersja: CommentVersion) -> LogsPost:
     wysylka: LogsPost = buduj(wersja)
     return wysylka
 """,
-    "wynik post_of w metodzie post obiektu, który nie jest kolejką": """\
+    "każda metoda post: wynik post_of w metodzie post obiektu, który nie jest kolejką": """\
 from rozliczenia.centrum.comment_versions import CommentVersion, LogsPost, post_of
 
 
@@ -1568,7 +1579,7 @@ class Schowek:
 def odloz(schowek: Schowek, wersja: CommentVersion) -> bool:
     return schowek.post(post_of(wersja))
 """,
-    "dowód wersji z getattr": """\
+    "refleksja po nazwie: dowód wersji z getattr": """\
 from rozliczenia.centrum import comment_versions
 from rozliczenia.centrum.comment_versions import LogsPost
 from rozliczenia.centrum.outbox import Post
@@ -1577,7 +1588,7 @@ from rozliczenia.centrum.outbox import Post
 def wysylka(post: Post) -> LogsPost:
     return LogsPost(post, getattr(comment_versions, "_VERSIONS"))
 """,
-    "dowód wersji z noqa": """\
+    "tłumienie ruff: dowód wersji z noqa": """\
 from rozliczenia.centrum.comment_versions import _VERSIONS, LogsPost  # noqa: TID251 - próbka
 from rozliczenia.centrum.outbox import Post
 
@@ -1585,7 +1596,7 @@ from rozliczenia.centrum.outbox import Post
 def wysylka(post: Post) -> LogsPost:
     return LogsPost(post, _VERSIONS)
 """,
-    "dowód wersji wartością Any": """\
+    "wartość Any: dowód wersji wartością Any": """\
 from typing import Any
 
 from rozliczenia.centrum.comment_versions import LogsPost
@@ -1595,7 +1606,7 @@ from rozliczenia.centrum.outbox import Post
 def wysylka(post: Post, dowody: dict[str, Any]) -> LogsPost:
     return LogsPost(post, dowody["wersje"])
 """,
-    "dowód wersji z type: ignore": """\
+    "tłumienie mypy: dowód wersji z type: ignore": """\
 from rozliczenia.centrum.comment_versions import LogsPost
 from rozliczenia.centrum.outbox import Post
 
@@ -1603,14 +1614,14 @@ from rozliczenia.centrum.outbox import Post
 def wysylka(post: Post) -> LogsPost:
     return LogsPost(post, None)  # type: ignore[arg-type]  # próbka
 """,
-    "podklasa gotowej wysyłki z type: ignore": """\
+    "tłumienie mypy: podklasa gotowej wysyłki z type: ignore": """\
 from rozliczenia.centrum.comment_versions import LogsPost
 
 
 class Moja(LogsPost):  # type: ignore[misc]  # próbka
     pass
 """,
-    "type(gotowa) z dowodem z getattr": """\
+    "refleksja po nazwie: type(gotowa) z dowodem z getattr": """\
 from rozliczenia.centrum import comment_versions
 from rozliczenia.centrum.comment_versions import LogsPost
 from rozliczenia.centrum.outbox import Post
@@ -1619,7 +1630,7 @@ from rozliczenia.centrum.outbox import Post
 def wysylka(gotowa: LogsPost, post: Post) -> LogsPost:
     return type(gotowa)(post, getattr(comment_versions, "_VERSIONS"))
 """,
-    "object.__setattr__ slotu gotowej wysyłki": """\
+    "refleksja po nazwie: object.__setattr__ slotu gotowej wysyłki": """\
 from rozliczenia.centrum.comment_versions import LogsPost
 from rozliczenia.centrum.outbox import Post
 
@@ -2081,7 +2092,7 @@ def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
     i w ``TYPE_CHECKING``; ``importlib.import_module``, ``import_module`` i ``__import__`` ze stałym napisem ``tests…`` w
     pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
     ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import okno_w_procesie`` sięgnąłby ``tests/fixtures``.
-    Postacie, których nie łapie, są próbkami w ``ZNANE_LUKI_TESTOW``."""
+    Jego granice pokazują próbki ``ZNANE_LUKI_TESTOW``, każda za klasą nazwaną w swojej nazwie."""
 
     found = []
     for node in wezly(tree):
@@ -2193,15 +2204,15 @@ def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_ob
     assert _tests_imports(ast.parse(code)) == []
 
 
-# Znane luki granicy testów (tests/fixtures/znane_luki.py): opis postaci → moduł spoza tests/, który sięga do pakietu
+# Znane luki granicy testów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł spoza tests/, który sięga do pakietu
 # tests, a mimo to przechodzi przez ruff na ścieżce biblioteki narzędzi i przez ``_tests_imports``.
 ZNANE_LUKI_TESTOW: typing.Final = {
-    "nazwa modułu złożona w trakcie działania": 'import importlib\n\nFIXTURES = importlib.import_module("tests" + ".fixtures.settlement")\n',
-    "nazwa modułu w zmiennej": 'import importlib\n\nNAZWA = "tests.fixtures.settlement"\nFIXTURES = importlib.import_module(NAZWA)\n',
-    "import_module pod inną nazwą": 'from importlib import import_module as zaladuj\n\nFIXTURES = zaladuj("tests.fixtures.settlement")\n',
-    "importlib pod inną nazwą": 'import importlib as il\n\nFIXTURES = il.import_module("tests.fixtures.settlement")\n',
-    "builtins.__import__": 'import builtins\n\nFIXTURES = builtins.__import__("tests.fixtures.settlement")\n',
-    "spec_from_file_location": """\
+    "tylko stały napis: nazwa modułu złożona w trakcie działania": 'import importlib\n\nFIXTURES = importlib.import_module("tests" + ".fixtures.settlement")\n',
+    "tylko stały napis: nazwa modułu w zmiennej": 'import importlib\n\nNAZWA = "tests.fixtures.settlement"\nFIXTURES = importlib.import_module(NAZWA)\n',
+    "tylko nazwa z listy: import_module pod inną nazwą": 'from importlib import import_module as zaladuj\n\nFIXTURES = zaladuj("tests.fixtures.settlement")\n',
+    "tylko nazwa z listy: importlib pod inną nazwą": 'import importlib as il\n\nFIXTURES = il.import_module("tests.fixtures.settlement")\n',
+    "tylko nazwa z listy: builtins.__import__": 'import builtins\n\nFIXTURES = builtins.__import__("tests.fixtures.settlement")\n',
+    "tylko drogi z listy: spec_from_file_location": """\
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -2209,16 +2220,16 @@ SPEC = spec_from_file_location("settlement", Path(__file__).parents[2] / "tests"
 assert SPEC is not None
 FIXTURES = module_from_spec(SPEC)
 """,
-    "runpy.run_path": 'from pathlib import Path\nimport runpy\n\nFIXTURES = runpy.run_path(str(Path(__file__).parents[2] / "tests" / "fixtures" / "settlement.py"))\n',
-    "runpy.run_module": 'import runpy\n\nFIXTURES = runpy.run_module("tests.fixtures.settlement")\n',
-    "ścieżka złożona w trakcie działania": 'from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).parents[2] / ("te" + "sts")))\n',
-    "sys.path.extend": 'import sys\n\nsys.path.extend(["tests/fixtures"])\n',
-    "przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["tests/fixtures"]\n',
-    "sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "tests/fixtures")\n',
-    "sys pod inną nazwą": 'import sys as system\n\nsystem.path.insert(0, "tests/fixtures")\n',
-    "sys.modules": 'import sys\n\nFIXTURES = sys.modules["tests.fixtures.settlement"]\n',
-    "exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.settlement")\n',
-    "exec z noqa": 'exec("import tests.fixtures.settlement")  # noqa: S102 - próbka\n',
+    "tylko drogi z listy: runpy.run_path": 'from pathlib import Path\nimport runpy\n\nFIXTURES = runpy.run_path(str(Path(__file__).parents[2] / "tests" / "fixtures" / "settlement.py"))\n',
+    "tylko drogi z listy: runpy.run_module": 'import runpy\n\nFIXTURES = runpy.run_module("tests.fixtures.settlement")\n',
+    "tylko stały napis: ścieżka złożona w trakcie działania": 'from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).parents[2] / ("te" + "sts")))\n',
+    "tylko drogi z listy: sys.path.extend": 'import sys\n\nsys.path.extend(["tests/fixtures"])\n',
+    "tylko drogi z listy: przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["tests/fixtures"]\n',
+    "tylko nazwa z listy: sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "tests/fixtures")\n',
+    "tylko nazwa z listy: sys pod inną nazwą": 'import sys as system\n\nsystem.path.insert(0, "tests/fixtures")\n',
+    "tylko drogi z listy: sys.modules": 'import sys\n\nFIXTURES = sys.modules["tests.fixtures.settlement"]\n',
+    "tylko nazwa z importu: exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.settlement")\n',
+    "tłumienie ruff: exec z noqa": 'exec("import tests.fixtures.settlement")  # noqa: S102 - próbka\n',
 }
 
 

@@ -10,7 +10,7 @@ Granica zakazu zegara. Ruff ``TID251`` (``src/ruff.toml``) odrzuca w ``src/`` po
 ruff rozwiązuje do pełnej nazwy wymienionej w ``src/ruff.toml`` (``datetime.datetime.now``, ``time.time``,
 ``email.utils.formatdate`` i reszta listy ``CLOCK`` w ``tests/test_zakazy_ruff.py``), także przez import z aliasem.
 ``tests/test_zakazy_ruff.py`` dokłada, że tej nazwy nie zwalnia ``noqa``, wyjątek w konfiguracji ruff ani wyłączenie
-pliku z lintu, a postacie, których zakaz nie łapie, są tam próbkami ``ZNANE_LUKI_ZEGARA``.
+pliku z lintu, a granice zakazu pokazują tam próbki ``ZNANE_LUKI_ZEGARA``, każda za klasą nazwaną w swojej nazwie.
 """
 
 from __future__ import annotations

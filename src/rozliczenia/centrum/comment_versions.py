@@ -231,8 +231,8 @@ wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``repl
 ``TypeError``. Podklasę odrzuca mypy (``final``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
 ``Outbox.post`` bierze też gołą ``Post``, a łapie ją ``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w
 ``<kolejka>.post(post_of(…))``, więc nikt nie czyta jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko
-podaje kolejce w pytaniu (``delivered``, ``rejected``). Postacie, których nie łapie żaden z tych mechanizmów, są tam
-próbkami ``ZNANE_LUKI_WYSYLKI``."""
+podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmów pokazują tam próbki
+``ZNANE_LUKI_WYSYLKI``, każda za klasą nazwaną w swojej nazwie."""
 
 
 @final

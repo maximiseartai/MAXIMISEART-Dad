@@ -401,20 +401,20 @@ def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
     assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == ["src/rozliczenia/wall_clock.py:3"]
 
 
-# Znane luki zakazu zegara ściennego (tests/fixtures/znane_luki.py): opis postaci → moduł src, który bierze chwilę
+# Znane luki zakazu zegara ściennego (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który bierze chwilę
 # „teraz” albo dzień obok ``rozliczenia.wall_clock``, a mimo to przechodzi przez ruff, mypy i ``_clock_findings``.
 ZNANE_LUKI_ZEGARA = {
-    "dzień UTC z chwili wall_clock": "from rozliczenia.wall_clock import utc_now\n\nDZIEN = utc_now().date()\n",
-    "instancja datetime": "from datetime import datetime\n\nTERAZ = datetime.min.now()\n",
-    "podklasa datetime": "from datetime import datetime\n\n\nclass Chwila(datetime):\n    pass\n\n\nTERAZ = Chwila.now()\n",
-    "__import__": 'TERAZ = __import__("time").time()\n',
-    "getattr modułu": 'import time\n\nTERAZ = getattr(time, "time")()\n',
-    "getattr z nazwą złożoną": 'import time\n\nTERAZ = getattr(time, "ti" + "me")()\n',
-    "importlib": 'import importlib\n\nTERAZ = importlib.import_module("time").time()\n',
-    "zegar modułu, którego src/ruff.toml nie wymienia": "import time\n\nTERAZ = time.clock_gettime(time.CLOCK_REALTIME)\n",
-    "reeksport z type: ignore": "from rozliczenia.wall_clock import datetime  # type: ignore[attr-defined]  # próbka\n\nTERAZ = datetime.now()\n",
-    "reeksport time z type: ignore": "from rozliczenia.wall_clock import time  # type: ignore[attr-defined]  # próbka\n\nTERAZ = time.time()\n",
-    "reeksport przez atrybut modułu z type: ignore": (
+    "nazwa, nie typ wyrażenia: dzień UTC z chwili wall_clock": "from rozliczenia.wall_clock import utc_now\n\nDZIEN = utc_now().date()\n",
+    "nazwa, nie typ wyrażenia: instancja datetime": "from datetime import datetime\n\nTERAZ = datetime.min.now()\n",
+    "nazwa, nie typ wyrażenia: podklasa datetime": "from datetime import datetime\n\n\nclass Chwila(datetime):\n    pass\n\n\nTERAZ = Chwila.now()\n",
+    "refleksja po nazwie: __import__": 'TERAZ = __import__("time").time()\n',
+    "refleksja po nazwie: getattr modułu": 'import time\n\nTERAZ = getattr(time, "time")()\n',
+    "refleksja po nazwie: getattr z nazwą złożoną": 'import time\n\nTERAZ = getattr(time, "ti" + "me")()\n',
+    "refleksja po nazwie: importlib": 'import importlib\n\nTERAZ = importlib.import_module("time").time()\n',
+    "tylko zegary z listy: zegar modułu, którego src/ruff.toml nie wymienia": "import time\n\nTERAZ = time.clock_gettime(time.CLOCK_REALTIME)\n",
+    "tłumienie mypy: reeksport z type: ignore": "from rozliczenia.wall_clock import datetime  # type: ignore[attr-defined]  # próbka\n\nTERAZ = datetime.now()\n",
+    "tłumienie mypy: reeksport time z type: ignore": "from rozliczenia.wall_clock import time  # type: ignore[attr-defined]  # próbka\n\nTERAZ = time.time()\n",
+    "tłumienie mypy: reeksport przez atrybut modułu z type: ignore": (
         "from rozliczenia import wall_clock\n\nTERAZ = wall_clock.datetime.now()  # type: ignore[attr-defined]  # próbka\n"
     ),
 }
