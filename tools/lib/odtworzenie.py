@@ -81,6 +81,7 @@ from rozliczenia.centrum.process_kind import (
     PreparedRun,
     ProcessKind,
     Start,
+    startable,
 )
 from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
@@ -1033,7 +1034,7 @@ def _run(record: RunLog, prepared: PreparedRun[Any, Any], memory: ForbiddenValue
     tata = _Tata(prepared, consent=record.ending != "declined")
     info = prepared.info(record.run_id)
     started_at = datetime.now(timezone.utc)
-    core = prepared.conduct(tata)
+    core = startable(prepared).conduct(tata)
     stop = None if isinstance(core.ending, Finished) else core.ending
     ended = EndedRun.of(
         prepared,
