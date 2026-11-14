@@ -1,0 +1,89 @@
+name: Werdykt i bramka
+
+# The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
+# conditions 1-4 of its --help (CI, verdict PASS for HEAD, PR body, root gate), judged by main's code
+# (tools/scal_pr.py --status, ADR 0036 "Status w Actions"). It only reports: no ruleset requires it. A closed PR gets
+# no new status, so the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one
+# shows afterwards.
+#
+# Every trigger runs this file and the code from main, never from the PR: pull_request_target, issue_comment and
+# workflow_run take the workflow from the default branch. pull_request_review is not a trigger, because it takes the
+# workflow from the PR's merge ref: a verdict is a comment (tools/scal_pr.py --werdykt), and a verdict posted as a
+# review shows at the next event.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] checks out main and only reads the PR through the API and git
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+      - converted_to_draft
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
+  workflow_run: # zizmor: ignore[dangerous-triggers] checks out main and only reads the PR through the API and git
+    workflows:
+      - CI
+    types:
+      - completed
+
+# The job never runs the PR's code, so a fork may trigger it too: tools/scal_pr.py refuses a PR from a fork and sets
+# that as its status. statuses: write can set any commit status, but the ruleset requires a CheckRun of CI.
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  checks: read
+  statuses: write
+
+concurrency:
+  # One group per PR, so a newer event cancels the run of the older one; a CI run without a PR gets its own group.
+  group: werdykt-i-bramka-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  status:
+    name: Status werdyktu i bramki
+    if: >-
+      github.event_name == 'pull_request_target'
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open')
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0])
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Since Git 2.54 a fetch starts `git maintenance run --auto` detached, and its `git worktree prune` can delete the
+    # worktree that potomne.commit_copy is adding (#312); the job env reaches every git, actions/checkout included.
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: maintenance.auto
+      GIT_CONFIG_VALUE_0: 'false'
+    steps:
+      # The root gate reads when its rules reached main from main's first-parent history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      # tools/scal_pr.py uses only the standard library (tests/test_spis_narzedzi.py checks each python3 script), so no
+      # install.
+      - name: Set the status of each PR of the event
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMERY: ${{ github.event.pull_request.number || github.event.issue.number || join(github.event.workflow_run.pull_requests.*.number, ' ') }}
+        run: |
+          read -ra numery <<< "$NUMERY"
+          wynik=0
+          for numer in "${numery[@]}"; do
+            python3 tools/scal_pr.py "$numer" --status || wynik=1
+          done
+          exit "$wynik"

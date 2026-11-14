@@ -6,41 +6,29 @@ Lista Urządzeń is #1479. Each rule is one sentence
 „Jeśli … to …” built by the server from the engine's types, the rules stand in three groups by their scope, and a
 column shows its price-list name from row 17 of the Wzorzec pliku zbiorczego next to its letter, or the letter alone
 when the Wzorzec cannot be read. One sentence says the rules work from the next Przygotowanie and leave finished Pliki
-zbiorcze unchanged. Urządzenia lists each component with its other spellings and its group.
+zbiorcze unchanged. Urządzenia lists each component with its other spellings and its group. A narrow window shows
+every rule and every Urządzenie.
 
 ## Sub-features
 
-- `reguly-zdania`: the section Reguły ilości has the sentence about the next Przygotowanie, the groups `Gdy Lista Urządzeń zna każdy składnik`, `Gdy jest składnik spoza listy`, `Każde zlecenie`, and one list item per rule of `GET /api/settings/quantity-rules`, each ending with a full stop; the rule of `nokia` names column Z `Montaż ONT`.
-- `reguly-bez-wzorca`: with the Wzorzec pliku zbiorczego moved away, the rule of `nokia` ends with the letter `Z` alone.
-- `urzadzenia`: the section Urządzenia lists as many components as the server, and `gateway` shows `Też: zyxel` and `Router`.
-- `waskie-okno`: at 420×860 both sections show every rule and component without a horizontal scroll.
+Printed by `scripts/sub_features.py --feature reguly-ilosci` from the drive's steps and checks; refresh the section with it.
+
+- `reguly-zdania`: the rules stand in the three groups of their scope, in order (…); each of the … rules of the server is one sentence on screen (…); column Z shows its price-list name „Montaż ONT” next to the letter.
+- `reguly-bez-wzorca`: without a readable Wzorzec pliku zbiorczego the column is its letter alone.
+- `urzadzenia`: the Lista Urządzeń shows its … components with other spellings and group.
+- `waskie-okno`: the narrow window shows every rule (…); on a narrow window the sentences wrap without a horizontal scroll.
 
 ## How to get to it (user POV)
 
-- The gear in the menu's footer, then `Reguły ilości` or `Urządzenia` in the group Ilości.
-- The address `#/ustawienia/reguly-ilosci` or `#/ustawienia/urzadzenia`.
+Dad opens Ustawienia (the gear in the menu's footer) and chooses `Reguły ilości` or `Urządzenia` in the group Ilości;
+a bookmark of `#/ustawienia/reguly-ilosci` or `#/ustawienia/urzadzenia` opens the section too.
 
 ## Driving it with Playwright for Python
 
-Preconditions: Centrum is served for this run with `DOCTOR OK`; the run's `config/` has no Reguły ilości of Dad's, so
-the server shows the Reguły ilości z Wydania, and the fixture's Wzorzec pliku zbiorczego has the synthetic price list
-(`PRICE_LIST` of `atrapy.scenariusz_centrum`, column Z is `Montaż ONT`).
-
-- **Sentences.** `run.api` reads `/api/settings/quantity-rules` (evidence `api/reguly-ilosci.json`). `open_settings`
-  on `Reguły ilości`: the sentence about the next Przygotowanie; the regions are named by the three groups in order; the
-  count of their list items equals the server's rules, each ending with `.`; the item with the `nokia` sentence
-  contains `Montaż ONT`. Screenshot `350`.
-- **Without the Wzorzec.** `move` the Wzorzec pliku zbiorczego beside itself, reopen the section: the `nokia` item reads
-  exactly `… w Z.`. Screenshot `351`. The Wzorzec goes back in `finally`.
-- **Urządzenia.** `open_settings` on `Urządzenia`: list `Lista Urządzeń` has the server's number of items; item
-  `gateway` contains `Też: zyxel` and `Router`. Screenshot `352`.
-- **Narrow window.** Viewport 420×860, `goto` `#/ustawienia/reguly-ilosci`, then the combobox to `Urządzenia`: both sections show all items and the page has no horizontal scroll.
-  Screenshots `353`, `354`. The viewport goes back to 1440×1000 (also in `finally`).
-- **Proof.** Screenshots `350`–`354` and the checks in `drive.txt`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature reguly-ilosci`
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
+under `STEP reguly-ilosci` in `drive.txt`, screenshots `350`–`354` and `api/reguly-ilosci.json`.
 
 ## Gotchas
 
-- The rules list has no name per item: find a rule by its sentence text.
-- The groups are regions, not headings: `open_settings` expects the window's title as its only heading.
-- The price list comes from the Wzorzec as Centrum reads it now, so moving the Wzorzec changes the next read without
-  a restart.
+None known that the drive does not handle.

@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 from types import ModuleType, SimpleNamespace
@@ -209,12 +210,17 @@ def test_wolny_runner_dostaja_serwer_i_drive_a_bez_flagi_zaden_krok(
     assert environments == dict.fromkeys(("fixture", "server", "doctor", "drive", "cleanup", "self-test"), slow)
 
 
-def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(monkeypatch: pytest.MonkeyPatch) -> None:
+def _serve_centrum(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.syspath_prepend(str(CENTRUM / "scripts"))
     spec = importlib.util.spec_from_file_location("serve_centrum", CENTRUM / "scripts" / "serve_centrum.py")
     assert spec is not None and spec.loader is not None
     serve = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(serve)
+    return serve
+
+
+def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(monkeypatch: pytest.MonkeyPatch) -> None:
+    serve = _serve_centrum(monkeypatch)
     # Opóźnienie dłuższe niż każda odpowiedź samej strony, więc obie strony nierówności nie zależą od obciążenia.
     monkeypatch.setattr(serve, "API_DELAY_S", 1.0)
     taken: dict[str, float] = {}
@@ -231,6 +237,38 @@ def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(mo
 
     assert taken["/api/settings"] >= 1.0
     assert taken["/index.html"] - taken["/api/settings"] < 1.0
+
+
+@pytest.mark.parametrize("slow", [True, False], ids=["wolny-runner", "bez-trybu"])
+def test_serwer_centrum_w_trybie_wolnego_runnera_bierze_api_pozniej_a_bez_trybu_od_razu(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, slow: bool
+) -> None:
+    """Przegląd #1682, D3: serwer przebiegu z ``SLOW_RUNNER`` (flaga ``--wolny-runner``) bierze każde zapytanie API przez
+    ``_LateApi``, a bez flagi bez niego. Serwer powstaje z prawdziwego fixture'a przebiegu, tylko bez nasłuchu."""
+
+    serve = _serve_centrum(monkeypatch)
+    root = tmp_path / "root"
+    subprocess.run(
+        [sys.executable, str(CENTRUM / "scripts" / "create_centrum_fixture.py"), "--root", str(root)],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    if slow:
+        monkeypatch.setenv(serve.SLOW_RUNNER, "1")
+    else:
+        monkeypatch.delenv(serve.SLOW_RUNNER, raising=False)
+    served: list[Any] = []
+
+    def serve_without_listening(app: Any, **_: object) -> int:
+        served.append(app)
+        return 0
+
+    monkeypatch.setattr(serve, "serve", serve_without_listening)
+
+    assert serve.main(["--root", str(root), "--port", "0"]) == 0
+    [app] = served
+    assert [layer.cls for layer in app.user_middleware if layer.cls is serve._LateApi] == ([serve._LateApi] if slow else [])
 
 
 def test_rejestr_funkcji_centrum_ma_kazdy_numer_zrzutu_w_jednej_funkcji_i_potrzeby_przed_funkcja(
@@ -267,7 +305,8 @@ class _Playwright(ModuleType):
     @contextmanager
     def sync_playwright() -> Iterator[Any]:
         page = SimpleNamespace(set_default_timeout=lambda timeout: None)
-        browser = SimpleNamespace(new_context=lambda **options: SimpleNamespace(new_page=lambda: page), close=lambda: None)
+        context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+        browser = SimpleNamespace(new_context=lambda **options: context, close=lambda: None)
         yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
 
 
@@ -288,6 +327,21 @@ def drive_centrum(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
     yield module
     for name in set(sys.modules) - before:
         del sys.modules[name]
+
+
+def test_spozniona_odpowiedz_trasy_bez_podanej_odpowiedzi_puszcza_zadanie_dalej_takze_na_atrapie_playwright(
+    drive_centrum: ModuleType,
+) -> None:
+    """Napęd wczytuje się na atrapie Playwrighta, której ``Route`` nie ma metod prawdziwej trasy: wartość domyślna
+    ``answer_late`` z klasy ``Route`` wywracała import ``drive/waiting.py`` (PR #1719, CI). Bez podanej odpowiedzi trasa
+    idzie dalej do Centrum."""
+
+    puszczone: list[str] = []
+    trasa = SimpleNamespace(continue_=lambda: puszczone.append("dalej"))
+
+    sys.modules["drive.waiting"].answer_late(trasa, 0)
+
+    assert puszczone == ["dalej"]
 
 
 def test_drive_przejezdza_podane_funkcje_w_podanej_kolejnosci_po_potrzebach_ktorych_jeszcze_nie_przejechal(
@@ -336,6 +390,55 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
         "metryki": {},
         "wydajnosc": {"baseline_path": (tmp_path / "baseline.json").resolve(), "repeats": 3},
     }
+
+
+@pytest.mark.parametrize(("zegar", "porazka"), [("padl", "czekanie"), ("zyje", "czekanie"), ("padl", "sprawdzenie")])
+def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazka_zegara(
+    drive_centrum: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    zegar: str,
+    porazka: str,
+) -> None:
+    """Czekanie, które minęło budżet, gdy wątek budzika zegara Centrum już padł, czekało na budzik, który nie zadzwoni:
+    ``DRIVE FAIL`` nazywa martwy zegar dla każdego ``until`` funkcji napędu, a przy żywym zegarze samo czekanie (#1539).
+    Porażka inna niż czekanie zostaje sobą także przy martwym zegarze."""
+
+    waiting = sys.modules["drive.waiting"]
+    harness = sys.modules["harness"]
+
+    def waits_past_its_budget(run: object, page: object) -> None:
+        if porazka == "sprawdzenie":
+            raise sys.modules["drive.common"].DriveFailure("the screen shows the queue")
+        raise waiting.TimedOut("timed out: a wake-up of the clock")
+
+    monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=waits_past_its_budget))
+    page = SimpleNamespace(set_default_timeout=lambda timeout: None, screenshot=lambda **options: b"")
+    context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+
+    @contextmanager
+    def playwright_fake() -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: SimpleNamespace(new_context=lambda **_: context, close=lambda: None)))
+
+    monkeypatch.setattr(drive_centrum, "sync_playwright", playwright_fake)
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+    if zegar == "padl":
+        died = harness.File.CLOCK_DIED.file(tmp_path)
+        died.parent.mkdir(parents=True)
+        died.write_text("ValueError: could not convert", encoding="utf-8")
+
+    code = drive_centrum.main(["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"), "--feature", "ustawienia"])
+
+    failure = capsys.readouterr().err
+    assert code == 1
+    assert failure == (
+        "DRIVE FAIL | the wake-up thread of Centrum's clock died, so no wake-up fires any more:\nValueError: could not convert\n"
+        if (zegar, porazka) == ("padl", "czekanie")
+        else "DRIVE FAIL | the screen shows the queue\n"
+        if porazka == "sprawdzenie"
+        else "DRIVE FAIL | timed out: a wake-up of the clock\n"
+    ), failure
 
 
 class _Page:

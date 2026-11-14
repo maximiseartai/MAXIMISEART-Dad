@@ -101,6 +101,9 @@ extend-select = [
     "TID251",
     # Martwe tłumienie to wzór do skopiowania. N802 ożywia cztery noqa z powodem (nazwy jak w threading i tempfile).
     "RUF100",
+    # Kod noqa spoza ruff (np. PR1614, sam albo obok prawdziwego) to proza w kształcie kodu, a komentarz-w-src z
+    # reguly-ast-grep/ przepuszcza każdy kod [A-Z]+[0-9]+.
+    "RUF102",
     "N802",
     # Zapadki: przy włączeniu 0 naruszeń, więc wzorzec nie wróci ani się nie rozleje. Tłumienie tylko z kodem,
     # bez TODO i zakomentowanego kodu, bez exec/eval, breakpoint() i yaml.load, bez pułapek wartości domyślnych i pętli.
@@ -172,16 +175,22 @@ extend-select = [
 "src/rozliczenia/dad_files.py" = ["TID251"]
 "src/rozliczenia/register_file.py" = ["TID251"]
 "src/rozliczenia/template_file.py" = ["TID251"]
-"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports}.py" = ["TID251"]
+"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
+"tools/lib/import_dynamiczny.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
 ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py" = ["TID251"]
+".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py" = ["TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # Mypy w CI sprawdza kod dla Windows i dla macOS/Linuksa, ale gałąź pod os.name widzi na obu, więc
 # odrzuca w niej API drugiego systemu (os.killpg, signal.SIGKILL w f7a2261 i d0008d3).
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+# Dekorator no_type_check wyłącza mypy na funkcji bez komentarza tłumienia, więc licznik tłumień
+# (tests/test_granice_wyjatkow.py) go nie widzi (przegląd #1689, W1).
+"typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+"typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 # Prywatny dowód modułu w konstruktorze typu (wzór run_logs_guard._MINTED) i fabryka, która go wkłada (refusal._refused):
 # bez dowodu mypy odrzuca wywołanie, a ruff odrzuca ich import i atrybut modułu poza modułem, który je zna (getattr
 # z napisem nie).
@@ -193,9 +202,41 @@ extend-select = [
 "rozliczenia.centrum.comment_versions._VERSIONS".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
-"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: ForbiddenValues.guard(…).text, tool(tekst narzędzia) i + takich tekstów"
+"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+# Kod spoza tests/ nie importuje kodu testów (tests/test_granice_importow.py), a import w trakcie działania omija graf
+# importów, więc daje go tylko tools/lib/import_dynamiczny.py, który odmawia modułu z tests/ (#1680, #1705). Zakaz zamyka
+# pakiet importlib (nowe nazwy łapie test nazw w tests/test_zakazy_ruff.py, wyjątki w IMPORTLIB_DOZWOLONE) i moduły,
+# których zadaniem jest import albo wykonanie modułu: builtins.__import__, _frozen_importlib(_external), _imp, runpy,
+# pkgutil, zipimport. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po nazwie, kod
+# w napisie, funkcje wbudowane bez importu i osobny proces to znana luka z próbkami ZNANE_LUKI_IMPORTU, nie pełna lista.
+# tests/ruff.toml tych zakazów nie powtarza: testy importują w trakcie działania własne moduły.
+"importlib.import_module".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"builtins.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.util".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.machinery".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.metadata".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.readers".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.simple".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.reload".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.invalidate_caches".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.sys".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._RELOADING".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._pack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._unpack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"runpy".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"pkgutil".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"zipimport".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"

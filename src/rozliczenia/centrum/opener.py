@@ -25,9 +25,10 @@ def opener(*handlers: urllib.request.BaseHandler) -> urllib.request.OpenerDirect
 def _tls() -> ssl.SSLContext:
     """Kontekst TLS procesu z certyfikatami systemu wczytanymi raz.
 
-    Certyfikat dodany do systemu w czasie pracy Centrum liczy się więc dopiero po jego ponownym starcie.
+    Certyfikat dodany do systemu w czasie pracy Centrum liczy się więc dopiero po jego ponownym starcie. ALPN mówi tylko
+    ``http/1.1``, jak kontekst, który ``urllib`` tworzy sam.
     """
 
     context = ssl.create_default_context()
-    context.set_alpn_protocols(["http/1.1"])  # jak kontekst, który ``urllib`` tworzy sam
+    context.set_alpn_protocols(["http/1.1"])
     return context

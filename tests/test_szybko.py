@@ -40,18 +40,47 @@ BY_CHANGE_ONLY = {
     "tests/test_mutacje_zmiany.py": "sprawdza narzędzie na repozytoriach testu; graf wybiera go przy zmianie narzędzia i modułów, które importuje",
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
+    "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
+        "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
+        "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
+    ),
+    "tests/test_import_dynamiczny.py": (
+        "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
+    ),
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
-    "tests/test_regula_danych.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff": (
-        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę outbox.py, której "
-        "próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (
+        "graf wybiera jego plik przy zmianie outbox.py, client_data.py i tests/fixtures/plik_kolejki.py, które plik "
+        "importuje, i plików konfiguracji ruff i mypy"
+    ),
+    "tests/test_kolejka_skrzynki_zgloszen.py::test_pole_tekstowe_celu_wysylki_z_komorki_bez_straznika_nie_przechodzi_mypy_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie outbox.py, client_data.py i tests/fixtures/plik_kolejki.py, które plik "
+        "importuje, i plików konfiguracji ruff i mypy"
     ),
     "tests/test_regula_danych.py::test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
         "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
     ),
+    "tests/test_regula_danych.py::test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
+    ),
+    "tests/test_regula_danych.py::test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
+    ),
+    "tests/test_regula_danych.py::test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem": (
+        "graf wybiera jego plik przy zmianie client_data, który plik importuje; zmianę run_logs_guard.py i dad_notes.py, "
+        "których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
+    "tests/test_regula_danych.py::test_uwagi_techniczne_daje_tylko_straznik_pamieci_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę run_logs_guard.py, "
+        "której próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
+    ),
+    "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki": (
+        "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
+        "importuje, i plików konfiguracji ruff"
     ),
     "tests/test_zgloszenia_ci.py::test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem": (
         "sprawdza tools/ponow_ci.py na atrapie GitHuba; graf wybiera go przy zmianie narzędzia i niestabilne_testy.py"

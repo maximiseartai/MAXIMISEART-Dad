@@ -75,19 +75,22 @@ from rozliczenia.centrum.logs_disk import (
     Unreadable,
     name_of,
 )
-from rozliczenia.centrum.outbox import PeriodThread, Rank
+from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, shown
+from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 from tests.fixtures.praca_centrum import centrum_work
+from tests.fixtures.plik_kolejki import bieg_do_pliku_kolejki
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
+ROOT = Path(__file__).resolve().parents[1]
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
 STOP = {"kind": "stop", "code": "ZLA_KONFIGURACJA_WYKONAWCOW", "what": "Co.", "where": "Gdzie.", "action": "Zrób."}
 
@@ -202,7 +205,7 @@ SUMMARY_LINES: dict[str, tuple[dict[str, Any], list[str]]] = {
 def test_podsumowanie_nazywa_wynik_sposob_zakonczenia_i_kody_komunikatow(
     changes: dict[str, Any], lines: list[str]
 ) -> None:
-    summary = summary_markdown(record(**changes)).splitlines()
+    summary = summary_markdown(guard_logs(record(**changes), empty_memory())).splitlines()
 
     assert [line for line in lines if line not in summary] == []
 
@@ -297,7 +300,7 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     name = f"20261023T204720Z-settlement-{RUN_ID}.json.gz"
     link = f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/{name}"
     [comment] = post.parts
-    assert comment == f"{summary_markdown(logs)}\n"
+    assert comment == f"{summary_markdown(guard_logs(logs, empty_memory()))}\n"
     assert comment.splitlines()[-1] == f"- Pełne Logi: [{name}]({link})"
     assert post.archive is not None
     assert (post.archive.tag, post.archive.packed_name, post.archive.link) == ("logi-08_14_09_2026", name, link)
@@ -462,17 +465,604 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs)(logs.record, logs.record, object())
     with pytest.raises(TypeError, match="guard_text"):
         type(text)("ul. Syntetyczna 1", object())
+    with pytest.raises(TypeError, match="logs_text"):
+        type(logs.text)("ul. Syntetyczna 1", object())
 
 
-@pytest.mark.parametrize("kind", ["logi", "tekst"])
+@pytest.mark.parametrize("kind", ["logi", "tekst", "plik"])
 def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
-    """Podklasa Logów albo tekstu po strażniku mogłaby podać tekst sprzed strażnika jako po strażniku, więc jej
-    utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku mogłaby podać tekst sprzed strażnika jako po
+    strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
 
-    value = _guarded(kind)
+    value = guard_logs(record(), empty_memory()).text if kind == "plik" else _guarded(kind)
 
     with pytest.raises(TypeError, match="podklas"):
         type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+
+
+_PLIK: Final = """\
+{importy}from rozliczenia.centrum.outbox import ArchiveFile
+from rozliczenia.client_data import LogsText
+
+
+def plik({komorka}, tekst: LogsText) -> ArchiveFile:
+    return ArchiveFile({pola})
+"""
+_GOTOWY_PLIK: Final = "from rozliczenia.centrum.outbox import ArchiveFile\n\n\n"
+_POSTEP: Final = (
+    "from rozliczenia.centrum.comment_versions import ProgressVersion\n"
+    "from rozliczenia.centrum.pricing_progress import PricingProgress\n"
+)
+_ARCHIWUM_POLA: Final = ("tag", "title", "description", "name", "text")
+_TEKST_NARZEDZIA: Final = ("tag", "title", "description", "name")
+"""Pola pliku w Archiwum z tekstem narzędzia (okres i nazwa pliku Logów), które są jeszcze ``str``."""
+
+
+def _pola(z_komorki: str) -> str:
+    return ", ".join("komorka" if pole == z_komorki else ("tekst" if pole == "text" else '"t"') for pole in _ARCHIWUM_POLA)
+
+
+def _plik(pola: str, *, importy: str = "", komorka: str = "komorka: str") -> str:
+    return _PLIK.format(importy=importy, komorka=komorka, pola=pola)
+
+
+_PAMIEC_Z_UWAGA: Final = """from rozliczenia.client_data import guarded
+
+
+class Pamiec(ForbiddenValues):
+    def __init__(self, prawdziwa: ForbiddenValues, komorka: str) -> None:
+        self.prawdziwa = prawdziwa
+        self.komorka = komorka
+
+    def guard(self, text: str, place: str) -> Guarded:
+        return Guarded(guarded(self.prawdziwa, text, place).text, (self.komorka,))
+"""
+_UWAGA_Z_KOMORKI: Final = """from rozliczenia.client_data import guarded
+
+
+def zla(prawdziwa: ForbiddenValues, komorka: str) -> object:
+    return lambda text, place: Guarded(guarded(prawdziwa, text, place).text, (komorka,))
+"""
+
+
+def _zgloszenie(cialo: str, *, importy: str = "", wstep: str = "") -> str:
+    """Próbka, która daje tytuł nowego Zgłoszenia (pole ``Outgoing`` spoza drogi Logów) z ``cialo``."""
+
+    return (
+        "from rozliczenia.centrum.outbox import NewIssue\nfrom rozliczenia.centrum.report_box import Label\n"
+        "from rozliczenia.centrum.run_logs import RunLog\n"
+        "from rozliczenia.centrum.run_logs_guard import guard_logs, guard_text\n"
+        f"from rozliczenia.client_data import ForbiddenValues, Guarded\n{importy}{wstep}\n\n"
+        "def cel(komorka: str, etykieta: Label, pamiec: ForbiddenValues, logi: RunLog) -> NewIssue:\n" + cialo
+    )
+
+
+_GUARDED_TEXT: Final = 'Argument 2 to "NewIssue" has incompatible type'
+"""Tekst komentarza po ``guard_text`` nie jest ``Outgoing`` (nazwę jego typu w napisie odrzuca test granic importów)."""
+_LOGS_TEXT: Final = 'Argument 2 to "NewIssue" has incompatible type "LogsText"; expected "Outgoing"'
+_POSTEP_Z: Final = '    return NewIssue(etykieta, guard_text("Postęp.", "postęp Wyceny w efenix", {pamiec}))\n'
+
+# Drogi wartości z komórki taty bez strażnika do pliku Logów, pliku w Archiwum Logów okresu, komentarza Uruchomienia i
+# z nich do innych celów wysyłki → zgłoszenie mypy albo ruff, które każdą odrzuca w nowym module src/rozliczenia/centrum.
+DROGI_DO_LOGOW: Final = {
+    "ArchiveFile.text z komórki": (
+        _plik(_pola("text")),
+        'Argument 5 to "ArchiveFile" has incompatible type "str"; expected "LogsText"',
+    ),
+    "tekst do wysyłki w pliku Archiwum": (
+        _GOTOWY_PLIK.replace("\n\n\n", "\nfrom rozliczenia.client_data import Outgoing\n\n\n")
+        + 'def plik(tekst: Outgoing) -> ArchiveFile:\n    return ArchiveFile("t", "t", "d", "n", tekst)\n',
+        'Argument 5 to "ArchiveFile" has incompatible type "Outgoing"; expected "LogsText"',
+    ),
+    "tekst komentarza po guard_text w pliku Archiwum": (
+        "from rozliczenia.centrum.outbox import ArchiveFile\nfrom rozliczenia.centrum.run_logs_guard import guard_text\n"
+        "from rozliczenia.client_data import ForbiddenValues\n\n\n"
+        "def plik(komorka: str, pamiec: ForbiddenValues) -> ArchiveFile:\n"
+        '    return ArchiveFile("t", "t", "d", "n", guard_text("Postęp.", komorka, pamiec))\n',
+        '; expected "LogsText"',  # tekst komentarza po guard_text
+    ),
+    "postęp z komórki": (
+        _POSTEP + "\n\ndef wersja(komorka: str, postep: PricingProgress) -> ProgressVersion:\n"
+        "    return ProgressVersion(postep, komorka)\n",
+        'Argument 2 to "ProgressVersion" has incompatible type "str"',
+    ),
+    "wynik bez Logów z komórki": (
+        "from rozliczenia.centrum.comment_versions import ResultWithoutLogs, WithoutLogsVersion\n\n\n"
+        "def wersja(komorka: str, wynik: ResultWithoutLogs) -> WithoutLogsVersion:\n"
+        "    return WithoutLogsVersion(wynik, komorka)\n",
+        'Argument 2 to "WithoutLogsVersion" has incompatible type "str"',
+    ),
+    "dataclasses.replace postępu": (
+        "import dataclasses\n\nfrom rozliczenia.centrum.comment_versions import ProgressVersion\n\n\n"
+        "def wersja(komorka: str, postep: ProgressVersion) -> ProgressVersion:\n"
+        "    return dataclasses.replace(postep, text=komorka)\n",
+        'Argument "text" to "replace" of "ProgressVersion" has incompatible type "str"',
+    ),
+    "dataclasses.replace pliku Archiwum": (
+        "import dataclasses\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    return dataclasses.replace(plik, text=komorka)\n",
+        'Argument "text" to "replace" of "ArchiveFile" has incompatible type "str"',
+    ),
+    "__replace__ pliku Archiwum": (
+        _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    return plik.__replace__(text=komorka)\n",
+        'Argument "text" to "__replace__" of "ArchiveFile" has incompatible type "str"',
+    ),
+    "copy.replace pliku Archiwum": (
+        "import copy\n\n" + _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    return copy.replace(plik, text=komorka)\n",
+        "`copy.replace` is banned",
+    ),
+    "podklasa pliku Archiwum": (_GOTOWY_PLIK + "class Plik(ArchiveFile):\n    pass\n", 'Cannot inherit from final class "ArchiveFile"'),
+    "podklasa tekstu pliku Logów": (
+        "from rozliczenia.client_data import LogsText\n\n\nclass Tekst(LogsText):\n    pass\n",
+        'Cannot inherit from final class "LogsText"',
+    ),
+    "własny plik Archiwum": (
+        """from dataclasses import dataclass
+
+from rozliczenia.centrum.outbox import Post
+
+
+@dataclass(frozen=True)
+class Plik:
+    tag: str
+    title: str
+    description: str
+    name: str
+    text: str
+
+
+def wysylka(komorka: str, post: Post) -> Post:
+    return Post(post.target, post.period, post.run_id, None, post.parts, Plik("t", "t", "d", "n", komorka))
+""",
+        'Argument 6 to "Post" has incompatible type "Plik"; expected "ArchiveFile | None"',
+    ),
+    "plik Logów z Logów sprzed strażnika": (
+        "from rozliczenia.centrum.logs_disk import LogsOnDisk\nfrom rozliczenia.centrum.run_logs import RunLog\n\n\n"
+        "def zapis(dysk: LogsOnDisk, logi: RunLog) -> None:\n    dysk.write(logi)\n",
+        'Argument 1 to "write" of "LogsOnDisk" has incompatible type "RunLog"',
+    ),
+    # Tekst drogi Logów nie jest ``Outgoing``, więc uwagi spoza strażnika i pola ``TOOL_TEXT`` Logów od wywołującego nie
+    # trafiają przez guard_text, guard_logs ani plik w Archiwum do innego celu (przegląd #1688, rundy 1–3).
+    "miejsce uwagi guard_text z komórki do Zgłoszenia": (_zgloszenie(_POSTEP_Z.replace('"postęp Wyceny w efenix"', "komorka").format(pamiec="pamiec")), _GUARDED_TEXT),
+    "podklasa pamięci: uwagi guard_text do Zgłoszenia": (
+        _zgloszenie(_POSTEP_Z.format(pamiec="Pamiec(pamiec, komorka)"), wstep=_PAMIEC_Z_UWAGA),
+        _GUARDED_TEXT,
+    ),
+    "podklasa pamięci: Logi po strażniku do Zgłoszenia": (
+        _zgloszenie("    return NewIssue(etykieta, guard_logs(logi, Pamiec(pamiec, komorka)).text)\n", wstep=_PAMIEC_Z_UWAGA),
+        _LOGS_TEXT,
+    ),
+    "pamięć typu Any: uwagi guard_text do Zgłoszenia": (
+        _zgloszenie(
+            "    atrapa: Any = type('A', (), {'guard': zla(pamiec, komorka)})()\n" + _POSTEP_Z.format(pamiec="atrapa"),
+            importy="from typing import Any\n",
+            wstep=_UWAGA_Z_KOMORKI,
+        ),
+        _GUARDED_TEXT,
+    ),
+    "setattr strażnika na pamięci: uwagi guard_text do Zgłoszenia": (
+        _zgloszenie('    setattr(pamiec, "guard", zla(pamiec, komorka))\n' + _POSTEP_Z.format(pamiec="pamiec"), wstep=_UWAGA_Z_KOMORKI),
+        _GUARDED_TEXT,
+    ),
+    "setattr strażnika na klasie pamięci: uwagi guard_text do Zgłoszenia": (
+        _zgloszenie(
+            '    setattr(ForbiddenValues, "guard", zla(pamiec, komorka))\n' + _POSTEP_Z.format(pamiec="pamiec"),
+            wstep=_UWAGA_Z_KOMORKI,
+        ),
+        _GUARDED_TEXT,
+    ),
+    **{
+        f"pole {pole} Logów z komórki: Logi po strażniku do Zgłoszenia": (
+            _zgloszenie(f"    zmienione = {zmiana}\n    return NewIssue(etykieta, guard_logs(zmienione, pamiec).text)\n"),
+            _LOGS_TEXT,
+        )
+        for pole, zmiana in {
+            "run_id": 'logi.model_copy(update={"run_id": komorka})',
+            "period": 'logi.model_copy(update={"period": komorka})',
+            "Tool.commit": 'logi.model_copy(update={"tool": logi.tool.model_copy(update={"commit": komorka})})',
+            "Environment.python": 'logi.model_copy(update={"environment": logi.environment.model_copy(update={"python": komorka})})',
+        }.items()
+    },
+    "pole run_id Logów z komórki: plik w Archiwum z post_of do Zgłoszenia": (
+        _zgloszenie(
+            '    plik = post_of(OwnLogs(guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec))).archive\n'
+            "    assert plik is not None\n    return NewIssue(etykieta, plik.text)\n",
+            importy="from rozliczenia.centrum.comment_versions import OwnLogs, post_of\n",
+        ),
+        _LOGS_TEXT,
+    ),
+    "parser pliku kolejki: tekst pliku w Archiwum do Zgłoszenia": (
+        _zgloszenie(
+            '    plik = outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})\n'
+            "    assert plik is not None\n    return NewIssue(etykieta, plik.text)\n",
+            importy="from rozliczenia.centrum import outbox\n",
+        ),
+        _LOGS_TEXT,
+    ),
+}
+
+_WERSJA_Z_ATRAPA: Final = """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+"""
+"""Początek próbki, która daje ``post_of`` wersję postępu z tekstem z komórki zamiast tekstu po strażniku."""
+
+# Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
+# Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
+# łapią. Pola z tekstem narzędzia
+# (``_TEKST_NARZEDZIA``) dostaną typ w osobnym PR (#1551). Pola ``TOOL_TEXT`` Logów od wywołującego strażnik przepuszcza
+# bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w
+# tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na ``origin/main``.
+ZNANE_LUKI_LOGOW: Final = {
+    **{f"ArchiveFile.{pole} z komórki": _plik(_pola(pole)) for pole in _TEKST_NARZEDZIA},
+    "str.__new__ z klasą LogsText w pliku Archiwum": _plik(_pola("text").replace("komorka", "str.__new__(LogsText, komorka)")),
+    # Kontrola dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of, LogsOnDisk.write) sprawdza
+    # obiekt tak, jak go zastaje, więc zmiana obiektu, klasy albo modułu sprawdzenia w chwili działania ją omija: jedna
+    # próbka na cel i klasę (#1551).
+    "zmiana obiektu w chwili działania: przypisanie __class__ LogsText napisowi obcej podklasy str w pliku Archiwum": _GOTOWY_PLIK
+    + """from typing import cast
+
+from rozliczenia.client_data import LogsText
+
+
+class Obcy(str):
+    __slots__ = ()
+
+
+def plik(komorka: str) -> ArchiveFile:
+    tekst = Obcy(komorka)
+    object.__setattr__(tekst, "__class__", LogsText)
+    return ArchiveFile("t", "t", "d", "n", cast(LogsText, tekst))
+""",
+    "zmiana obiektu w chwili działania: przypisanie __class__ typu tekstu po strażniku obcemu obiektowi, potem post_of": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    slot = "_" + typ.__name__ + "__text"
+
+    class Obca:
+        __slots__ = (slot,)
+
+    obca: Any = object.__new__(Obca)
+    object.__setattr__(obca, slot, komorka)
+    object.__setattr__(obca, "__class__", typ)
+    return post_of(ProgressVersion(postep.progress, obca))
+""",
+    "zmiana klasy w chwili działania: właściwość text typu tekstu po strażniku, potem post_of": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    zapamietaj = typ.__dict__["text"]
+    type.__setattr__(typ, "text", property(lambda self: komorka))
+    try:
+        return post_of(postep)
+    finally:
+        type.__setattr__(typ, "text", zapamietaj)
+""",
+    "zmiana modułu sprawdzenia w chwili działania: exact_text zaimportowane w comment_versions": _WERSJA_Z_ATRAPA
+    + """from rozliczenia.centrum import comment_versions
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = getattr(comment_versions, "exact_text")
+    setattr(comment_versions, "exact_text", lambda tekst: tekst)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        setattr(comment_versions, "exact_text", zapamietaj)
+""",
+    "zmiana modułu sprawdzenia w chwili działania: exact_logs zaimportowane w logs_disk, potem plik Logów": """from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum import logs_disk
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+
+
+def zapis(komorka: str, logi: RunLog) -> str:
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    atrapa: Any = SimpleNamespace(record=zle, text=zle.text)
+    zapamietaj = getattr(logs_disk, "exact_logs")
+    setattr(logs_disk, "exact_logs", lambda wartosc: wartosc)
+    try:
+        with tempfile.TemporaryDirectory() as katalog:
+            LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(atrapa)
+            return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+    finally:
+        setattr(logs_disk, "exact_logs", zapamietaj)
+""",
+    "zmiana obiektu w chwili działania: przypisanie __class__ typu Logów po strażniku obcemu obiektowi, potem plik Logów": """from pathlib import Path
+import tempfile
+from typing import Any
+
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def zapis(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> str:
+    typ: Any = type(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    sloty = tuple("_" + typ.__name__ + pole for pole in ("__record", "__source"))
+
+    class Obca:
+        __slots__ = sloty
+
+    obca: Any = object.__new__(Obca)
+    for slot in sloty:
+        object.__setattr__(obca, slot, zle)
+    object.__setattr__(obca, "__class__", typ)
+    with tempfile.TemporaryDirectory() as katalog:
+        LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(obca)
+        return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+""",
+    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
+    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff od #1717.
+    'dowód z getattr modułu: getattr(client_data, "logs_text") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
+""",
+    'dowód z getattr modułu: LogsText z dowodem getattr(client_data, "_PASSED") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+from rozliczenia.client_data import LogsText
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
+""",
+    "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
+
+
+def plik(komorka: str) -> outbox.ArchiveFile | None:
+    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
+    "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
+    + """from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
+""",
+    "pole str wywołującego w tekście narzędzia z prawem tool (okres postępu w post_of)": """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
+from rozliczenia.centrum.outbox import NewIssue, PeriodThread
+from rozliczenia.centrum.pricing_progress import PricingProgress
+from rozliczenia.centrum.report_box import Label
+from rozliczenia.centrum.run_logs import StartFacts
+
+
+def cel(komorka: str, etykieta: Label, postep: ProgressVersion) -> NewIssue:
+    s = postep.progress.started
+    start = StartFacts(run_id=s.run_id, process=s.process, mode=s.mode, period=komorka, started_at=s.started_at)
+    watek = post_of(ProgressVersion(PricingProgress(start, (), None, None), postep.text)).target
+    assert isinstance(watek, PeriodThread)
+    return NewIssue(etykieta, watek.title)
+""",
+}
+
+
+_PODKLASA: Final = """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, OwnLogs, ProgressVersion, post_of
+from rozliczenia.centrum.outbox import ArchiveFile
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.client_data import LogsText
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+"""
+"""Początek próbki z podklasą typu-dowodu albo wersji, której ``__init_subclass__`` typu nie odmówił (baza przed typem bez
+``super()``) albo której nie widział (``__bases__``, ``type()`` bez odmowy)."""
+
+_PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
+
+# Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of,
+# run_logs_guard.exact_logs i exact_text) dawałyby plikowi kolejki wartość komórki przez plik w Archiwum albo komentarz
+# Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
+# z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
+ODMOWY_LOGOW: Final = {
+    "cast na LogsText w pliku Archiwum": (
+        _plik(_pola("text").replace("komorka", "cast(LogsText, komorka)"), importy="from typing import cast\n\n"),
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "wartość typu Any w pliku Archiwum": (
+        _plik(_pola("text").replace("komorka", 'wiersz["ADRES"]'), importy="from typing import Any\n\n", komorka="wiersz: dict[str, Any]"),
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "object.__setattr__ na pliku Archiwum": (
+        _GOTOWY_PLIK
+        + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "zapis do __dict__ pliku Archiwum": (
+        _GOTOWY_PLIK + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "type.__new__ z bazą bez super(): podklasa LogsText w pliku Archiwum": (
+        _PODKLASA
+        + """def plik(komorka: str) -> ArchiveFile:
+    tekst: Any = type.__new__(type(LogsText), "Tekst", (Mixin, LogsText), {"__new__": lambda cls, t: str.__new__(cls, t)})
+    return ArchiveFile("t", "t", "d", "n", tekst(komorka))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "type() z pustym __post_init__: podklasa wersji postępu, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    klasa: Any = type("Wersja", (ProgressVersion,), {_PUSTE_PRZYJECIE})
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+    ),
+    "type.__new__ z bazą bez super() i pustym __post_init__: podklasa wersji z Logami, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, logi: RunLog) -> LogsPost:
+    zle = logi.model_copy(update={{"technical_notes": [f"Klient {{komorka}}."]}})
+    klasa: Any = type.__new__(type(OwnLogs), "Wersja", (Mixin, OwnLogs), {_PUSTE_PRZYJECIE})
+    return post_of(klasa(SimpleNamespace(record=zle, text=zle.text)))
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+    ),
+    "przypisanie __bases__ obcej klasie z pustym __post_init__: podklasa wersji postępu, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    klasa: Any = type("Wersja", (type("Baza", (), {{}}),), {_PUSTE_PRZYJECIE})
+    klasa.__bases__ = (ProgressVersion,)
+    assert issubclass(klasa, ProgressVersion)
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa typu tekstu po strażniku w wersji postępu": (
+        _PODKLASA
+        + """from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    klasa: Any = type.__new__(type(typ), "Tekst", (Mixin, typ), {"text": property(lambda self: komorka)})
+    return post_of(ProgressVersion(postep.progress, object.__new__(klasa)))
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie Tekst.",
+    ),
+    "podmiana __post_init__ wersji na klasie, potem post_of": (
+        _WERSJA_Z_ATRAPA
+        + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = ProgressVersion.__dict__["__post_init__"]
+    type.__setattr__(ProgressVersion, "__post_init__", lambda self: None)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        type.__setattr__(ProgressVersion, "__post_init__", zapamietaj)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ tekstu wersji po jej przyjęciu, przed post_of": (
+        _WERSJA_Z_ATRAPA
+        + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    object.__setattr__(postep, "text", SimpleNamespace(text=komorka))
+    return post_of(postep)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ tekstu wyniku bez Logów po jego przyjęciu, przed post_of": (
+        _WERSJA_Z_ATRAPA
+        + """from rozliczenia.centrum.comment_versions import ResultWithoutLogs, WithoutLogsVersion
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    wersja = WithoutLogsVersion(ResultWithoutLogs(postep.progress, "OK", "niezapisane"), postep.text)
+    object.__setattr__(wersja, "text", SimpleNamespace(text=komorka))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ Logów wersji po jej przyjęciu, przed post_of": (
+        _PODKLASA
+        + """from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    wersja = OwnLogs(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    object.__setattr__(wersja, "logs", SimpleNamespace(record=zle, text=zle.text))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+}
+
+_KOMORKA: Final = "Syntetyczna Lipowa 5"
+"""Komórka zakazanej kolumny w próbkach drogi Logów, która w pliku kolejki to wyciek."""
+
+
+def _argumenty_logow() -> dict[str, object]:
+    """Argumenty funkcji próbki drogi Logów, świeże dla każdej próbki, bo próbka zmienia gotowy plik w Archiwum."""
+
+    pamiec = empty_memory()
+    logi = record()
+    return {
+        "komorka": _KOMORKA,
+        "wiersz": {"ADRES": _KOMORKA},
+        "tekst": guard_logs(logi, pamiec).text,
+        "plik": ArchiveFile("t", "t", "d", "n", guard_logs(logi, pamiec).text),
+        "logi": logi,
+        "pamiec": pamiec,
+        "etykieta": "zgloszenie",
+        "postep": _text_version("postep", pamiec),
+    }
+
+
+def _w_pliku_kolejki(plik: Path) -> list[str]:
+    return bieg_do_pliku_kolejki(modul(plik), _argumenty_logow(), _KOMORKA)
+
+
+@pytest.mark.parametrize("opis", ODMOWY_LOGOW.keys())
+def test_plik_archiwum_i_post_of_odmawiaja_podklasy_i_atrapy_w_chwili_uzycia(opis: str, tmp_path: Path) -> None:
+    """Plik kolejki bierze plik w Archiwum tylko z tekstem dokładnie ``LogsText``, a ``post_of`` wersję dokładnie jednej z
+    czterech klas z tekstem albo Logami dokładnego typu, sprawdzone tuż przed użyciem, więc podklasa, jakkolwiek powstała,
+    i wartość podmieniona po przyjęciu wersji nie dają plikowi kolejki wartości komórki (#1551)."""
+
+    kod, odmowa = ODMOWY_LOGOW[opis]
+    plik = tmp_path / "probka.py"
+    plik.write_text(kod, encoding="utf-8")
+
+    zgloszenia = _w_pliku_kolejki(plik)
+
+    assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
+
+
+@wymaga_ruff_i_mypy
+def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki(
+    tmp_path: Path,
+) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_LOGOW.items()} | ZNANE_LUKI_LOGOW
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
+
+    assert {
+        opis: zgloszenia[opis]
+        for opis, (_, odrzucenie) in DROGI_DO_LOGOW.items()
+        if not any(odrzucenie in zgloszenie for zgloszenie in zgloszenia[opis])
+    } == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] + _w_pliku_kolejki(pliki[opis]) for opis in ZNANE_LUKI_LOGOW},
+        "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)",
+    )
 
 
 def _logs_on_disk(directory: Path) -> LogsOnDisk:
@@ -527,6 +1117,31 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego
 
     with pytest.raises(TypeError, match="po strażniku"):
         TAKES_GUARDED[name](_guarded(other), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+class _BezSuper:
+    """Baza, której ``__init_subclass__`` nie woła ``super()``: przed typem-dowodem w bazach przesłania jego
+    ``__init_subclass__`` (przegląd #1698, runda 1, W1)."""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+@pytest.mark.parametrize("name", TAKES_GUARDED.keys())
+def test_wersje_komentarza_i_plik_logow_odmawiaja_podklasy_z_type_new_ktorej_nie_odmowilo_jej_utworzenie(
+    name: str, tmp_path: Path
+) -> None:
+    """``type.__new__`` z bazą, której ``__init_subclass__`` nie woła ``super()``, robi podklasę Logów albo tekstu po
+    strażniku bez odmowy, więc wersja komentarza Uruchomienia i plik Logów sprawdzają dokładny typ (#1551)."""
+
+    own = {"logi": "tekst", "tekst": "logi"}[OTHER_GUARDED[name]]
+    proof = type(_guarded(own))
+    subclass = type.__new__(type(proof), "Inne", (_BezSuper, proof), {})
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        TAKES_GUARDED[name](object.__new__(subclass), tmp_path)
 
     assert list(tmp_path.iterdir()) == []
 
@@ -1556,7 +2171,7 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
     forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
     logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
-    assert forbidden.guard(_json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
+    assert guarded(forbidden, _json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
 
     guarded_logs = guard_logs(logs, forbidden)
     kept = guarded_logs.record
@@ -1647,7 +2262,7 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
     for value in sorted({value for value, _ in scalars}, key=shown):
         forbidden = empty_memory()
         forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
-        if not forbidden.guard(shown(value), "").notes:
+        if not guarded(forbidden, shown(value), "").notes:
             continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka
         swept += 1
 
@@ -1656,9 +2271,9 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
 
         assert post_of(OwnLogs(guarded_logs)).run_id == RUN_ID, value
         assert [place for place in TOOL_FIELD_VALUES if _json_at(kept, place) != _json_at(logs, place)] == [], value
-        if not forbidden.guard(tool_words, "").notes:
-            assert not forbidden.guard(kept.text, "").notes, f"{value!r} zostało w Logach"
-        if value in names and not forbidden.guard(texts, "").notes:
+        if not guarded(forbidden, tool_words, "").notes:
+            assert not guarded(forbidden, kept.text, "").notes, f"{value!r} zostało w Logach"
+        if value in names and not guarded(forbidden, texts, "").notes:
             assert kept == logs, value
     assert swept > len(names)
 

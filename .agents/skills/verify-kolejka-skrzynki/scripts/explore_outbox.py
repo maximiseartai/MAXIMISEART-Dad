@@ -107,7 +107,7 @@ from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone
 from atrapy.sluchacz_kolejki import QueueListener
 from rozliczenia.centrum.case_delivery import queue_directory
 from rozliczenia.tool_files import config_dir
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import logs_text, tool
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 # GitHub's answers to a step of the Archiwum it refuses until Maks changes something: a key without the permission to
@@ -623,7 +623,7 @@ TAG = "logi-08_14_09_2026"
 def _archived(run_id: str, version: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum okresu (``comment_versions.post_of``)."""
 
-    archive = ArchiveFile(TAG, "Logi Uruchomień", "Archiwum", f"{run_id}.json", f"Logi {run_id}{version}\n")
+    archive = ArchiveFile(TAG, "Logi Uruchomień", "Archiwum", f"{run_id}.json", logs_text(f"Logi {run_id}{version}\n"))
     return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),), archive)
 
 

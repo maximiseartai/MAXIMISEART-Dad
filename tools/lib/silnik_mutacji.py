@@ -94,13 +94,12 @@ czyta z wyjścia skryptu ``near_limits``, a nocne skrypty mutacji skilli zgłasz
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
-import importlib.machinery
 from itertools import pairwise
 import json
 import os
@@ -114,6 +113,7 @@ import threading
 import time
 from typing import Any, Protocol, TypeVar
 
+from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
 from kroki_lokalne import environment, static_steps
 from ostatnie_linie import MUTACJE_OK
@@ -328,8 +328,11 @@ def _verdict(
     return *judged, ran.seconds
 
 
-def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None = None) -> dict[tuple[str, ...], _Ran]:
-    """Polecenia, które bez mutacji padają albo kończą się linią oczekiwaną po mutacji, z ich przebiegiem."""
+def _baseline(
+    mutations: Sequence[Mutation], limit_s: float, commit: str | None = None, limits: Mapping[tuple[str, ...], float] | None = None
+) -> dict[tuple[str, ...], _Ran]:
+    """Polecenia, które bez mutacji padają albo kończą się linią oczekiwaną po mutacji, z ich przebiegiem; polecenie z
+    ``limits`` biegnie w swoim limicie zamiast ``limit_s``."""
 
     expected: dict[tuple[str, ...], set[str]] = defaultdict(set)
     for mutation in mutations:
@@ -337,7 +340,7 @@ def _baseline(mutations: Sequence[Mutation], limit_s: float, commit: str | None 
     red = {}
     with checkout_copy(commit) as copy:
         for command in sorted(expected):
-            ran = _run(copy, command, limit_s)
+            ran = _run(copy, command, (limits or {}).get(command, limit_s))
             if ran.code != 0 or any(ran.last.startswith(line) for line in expected[command]):
                 red[command] = ran
     return red
@@ -531,7 +534,7 @@ def _installed_gate(copy: Path, *, limit_s: float, stop: threading.Event, deadli
 
     for step in static_steps(copy):
         # ``python -m`` w korzeniu kopii szuka modułu najpierw w nim, potem tam, gdzie Python tego procesu.
-        if importlib.machinery.PathFinder.find_spec(step.job, [str(copy), *sys.path]) is None:
+        if not jest_modul(step.job, [str(copy), *sys.path]):
             raise MissingGateTool(f"{sys.executable} nie ma modułu {step.job} kroku {step.name}")
     return static_gate(copy, limit_s=limit_s, stop=stop, deadline=deadline)
 
@@ -701,17 +704,19 @@ def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: 
         return 2
 
 
-def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT) -> int:
+def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT, base_commands: Mapping[tuple[str, ...], float] | None = None) -> int:
     """Główna funkcja narzędzia ``tools/mutacje.py``: werdykt przeglądu (``_review_judgement``) z REGRES na merge-base
     HEAD z ``base``, ``workers`` mutacji naraz; kod 0, gdy każda mutacja jest WYKRYTA."""
 
     judge = partial(_review_judgement, base=base)
-    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=limit_s)
+    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=limit_s, base_commands=base_commands)
 
 
-def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: str, workers: int, limit_s: float) -> int:
+def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: str, workers: int, limit_s: float, base_commands: Mapping[tuple[str, ...], float] | None = None) -> int:
     """Podstawa, werdykt ``judge`` i czas polecenia każdej mutacji części ``part`` (pusta: całej listy); kod 0, gdy
-    ``judge`` uznał każdą za wykrytą.
+    ``judge`` uznał każdą za wykrytą. Podstawa to polecenia mutacji i ``base_commands`` (``tools/mutacje.py``: testy
+    sprzed zmiany z wyboru szybko, polecenie → jego limit), każde raz bez mutacji; polecenie ``base_commands`` bez wyniku
+    w swoim limicie daje ``PODSTAWA NIESPRAWDZONA`` i kod 2, bo ``MUTACJE OK`` bez podstawy niczego nie mówi.
 
     Pod linią ``PODSTAWA CZERWONA`` stderr dostaje koniec stdout i stderr polecenia podstawy (``BASE_TAIL`` linii
     każdego), także podstawy, która przekroczyła ``limit_s``, bo ostatnia linia nie zawsze mówi, co padło, a kopii
@@ -738,14 +743,19 @@ def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: s
         if not mutations:
             print(MUTACJE_OK)
             return 0
-    red = _baseline(mutations, limit_s)
+    extra = base_commands or {}
+    red = _baseline([*mutations, *(Mutation("podstawa", (), command) for command in extra)], limit_s, limits=extra)
+    unchecked = {command for command, ran in red.items() if command in extra and ran.code is None}
     for command, ran in red.items():
-        print(f"PODSTAWA CZERWONA: {' '.join(command)} → {ran.last}", flush=True)
+        print(f"PODSTAWA {'NIESPRAWDZONA' if command in unchecked else 'CZERWONA'}: {' '.join(command)} → {ran.last}", flush=True)
         if _without_test(command, ran):
             print(f"PODSTAWA BEZ TESTU: {_no_test_cause(command, ran)}", flush=True)
         # Na stderr, jak linia CZAS: przyczyna porażki podstawy, której kopia commitu z dowodami już nie ma (#932).
         for line in ran.tail:
             print(f"  {line}", file=sys.stderr, flush=True)
+    if red.keys() == unchecked and red:
+        print("MUTACJE: podstawa bez wyniku w swoim limicie, więc MUTACJE OK byłoby niesprawdzone; podnieś jej limit albo uruchom ją sam")
+        return 2
     if red:
         print("MUTACJE: polecenie bez mutacji pada albo daje wynik mutacji, więc wynik po mutacji niczego nie dowodzi")
         return 2

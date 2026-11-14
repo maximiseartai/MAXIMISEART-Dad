@@ -7,31 +7,27 @@ shows its Status okresu, and opens its files from the month folder they live in.
 
 ## Sub-features
 
-- `taty-wskazany-tydzien`: pointing to the week folder `11_Listopad_2026\INEA\27_02_11_2026` saves `Załączniki`, the root of the layout, and section Foldery shows `Załączniki – wszystkie lata` (#1472).
-- `taty-tygodnie-ze-wszystkich-miesiecy`: the board lists weeks from the September, October, and November `INEA` folders, newest first; non-period folders are absent.
-- `taty-nastepny-krok`: `Następny krok` sees the prepared Plik zbiorczy of the last complete period in the October folder.
-- `taty-otwieranie`: `Plik zbiorczy, okres 06_12_10_2026` opens the file inside `10_Październik_2026\INEA`.
-- `taty-przywrocenie`: pointing back to the flat `INEA` restores the board the following features expect.
+Printed by `scripts/sub_features.py --feature uklad-folderow-taty` from the drive's steps and checks; refresh the section with it.
+
+- `taty-wskazany-tydzien`: the server describes the folder okresów as Załączniki of all years; section Foldery shows Załączniki with „wszystkie lata”, not the week Dad pointed to.
+- `taty-tygodnie-ze-wszystkich-miesiecy`: the server finds every Folder okresu in Rozliczenia {rok}\{miesiąc}\INEA, newest first; the screen lists the same weeks except the one that has not started; folders that are not periods (Podpisane, Nowe rozliczenia) are absent.
+- `taty-nastepny-krok`: Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder.
+- `taty-otwieranie`.
+- `taty-przywrocenie`: pointing back to the flat INEA folder restores the board the next features expect.
 
 ## How to get to it (user POV)
 
-- Ustawienia (gear in the menu's footer), section Foldery, `Zmień Folder okresów` (`Wskaż Folder okresów` when no folder is set), choosing `Załączniki` or any week, `INEA` or month folder inside it.
+Dad opens Ustawienia (the gear in the menu's footer), section Foldery, clicks `Zmień Folder okresów` and chooses
+`Załączniki` or any week, `INEA` or month folder inside it.
 
 ## Driving it with Playwright for Python
 
-Preconditions:
-
-- Centrum is served for this run with `DOCTOR OK`. The fixture's `dad_layout` holds `Załączniki` with `Rozliczenia 2026\09_Wrzesień_2026\INEA\22_28_09_2026` (empty) and `Podpisane`, `10_Październik_2026\INEA\{29_05_10_2026, 06_12_10_2026}` (both period files) and `13_19_10_2026` (empty), `11_Listopad_2026\INEA\27_02_11_2026` (empty), and `Nowe rozliczenia wzór od 01_2026` without `INEA`.
-
-- **Point to a week.** Write the fixture's `week` path (`…\11_Listopad_2026\INEA\27_02_11_2026`) to `picker/answer.txt`, open Foldery in Ustawienia over Okresy and click `Zmień Folder okresów` (`Wskaż Folder okresów` when no folder is set). The settings file's `folder_okresow` becomes the `Załączniki` path, not the week; `GET /api/settings` (`api/uklad-taty-ustawienia.json`) has `periods_directory` ready with name `Załączniki` and `periods_all_years: true`; the row shows the text `Załączniki – wszystkie lata`. Screenshot `102`, then Esc.
-- **Weeks from every month.** `GET /api/periods` (`api/uklad-taty-tablica.json`) lists `27_02_11_2026`, `13_19_10_2026`, `06_12_10_2026` (collective_file_prepared, last complete), `29_05_10_2026` (collective_file_prepared), `22_28_09_2026`, in that order. Table `Tablica okresów` shows the same tokens except `27_02_11_2026`, which starts after the fixture's "today" (`tablica-skrocona.md`); row `06_12_10_2026` shows `Plik zbiorczy przygotowany`.
-- **Następny krok.** Region `Następny krok` contains `06_12_10_2026` and heading `Uzupełnij plik zbiorczy` with current step `Uzupełnienie w Excelu` and main button `Uzupełnij`, as the row's last button, and not `Brak Folderu okresu`.
-- **Open.** Click `Plik zbiorczy, okres 06_12_10_2026`; the last line of `opened.jsonl` is the file in `10_Październik_2026\INEA\06_12_10_2026`.
-- **Restore.** Point back to `INEA` the same way; row `15_21_09_2026` is visible again.
-- **Proof.** Screenshots `102`, `15`–`16`, `api/uklad-taty-ustawienia.json`, `api/uklad-taty-tablica.json`, `state/opened.jsonl`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uklad-folderow-taty`
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
+under `STEP uklad-folderow-taty` in `drive.txt`, screenshots `102`, `15`–`16`, `api/uklad-taty-ustawienia.json`,
+`api/uklad-taty-tablica.json` and `state/opened.jsonl`.
 
 ## Gotchas
 
-- The button's accessible name in Foldery is the verb plus the label: `Zmień Folder okresów` with a capital F.
-- `29_05_10_2026` crosses the month; the fixture puts it in the October folder. Centrum does not decide a period's month: it searches every month folder, so a period in any one month is on the board (a period in two months is shown once, from the first, but opening it or starting an Uruchomienie of it is refused with 409 until Dad leaves it in one month; not driven).
-- The step changes the remembered folder okresów; it must restore `INEA` before the next feature, which expects the flat fixture.
+- A period in two month folders is shown once, from the first, and opening it or starting an Uruchomienie of it is
+  refused with 409 until Dad leaves it in one month; the drive does not drive it.

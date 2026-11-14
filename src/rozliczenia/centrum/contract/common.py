@@ -21,13 +21,13 @@ class Problem(Model):
     field: str | None = None
 
 
-# Każdy proces ma klucz, ten sam w Uruchomieniach i w Metrykach.
 ProcessKey = Literal["preparation", "settlement", "efenix", "intermax", "report_entering"]
+"""Klucz procesu, ten sam w Uruchomieniach i w Metrykach."""
 
 
-# Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty
-# poza okresami.
 PeriodProcessKey = Literal["preparation", "settlement", "efenix"]
+"""Proces, którego Uruchomienie tata wybiera z okresem; Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty
+poza okresami."""
 
 
 class Opened(Model):
@@ -49,9 +49,9 @@ class Message(Model):
         return cls(what=message.what, where=message.where, action=message.action, setting=message.setting)
 
 
-# Na co czeka wysyłka taty w Kolejce wysyłki: ``internet`` albo ``key``, czyli Token do Zgłoszeń od Maksa (brak
-# tokenu albo token, którego Skrzynka Zgłoszeń odmówiła).
 WaitsFor = Literal["internet", "key"]
+"""Na co czeka wysyłka taty w Kolejce wysyłki: ``internet`` albo ``key``, czyli Token do Zgłoszeń od Maksa (brak tokenu
+albo token, którego Skrzynka Zgłoszeń odmówiła)."""
 
 
 class Sent(Model):
@@ -78,9 +78,9 @@ class Rejected(Model):
     state: Literal["rejected"]
 
 
-# Stan wysyłki taty (Zgłoszenia albo Uwagi taty) w Kolejce wysyłki, ten sam w odpowiedzi na „Wyślij”, w stanie
-# Zgłoszenia i w Powiadomieniu.
 Sending = Sent | Queued | Rejected
+"""Stan wysyłki taty (Zgłoszenia albo Uwagi taty) w Kolejce wysyłki, ten sam w odpowiedzi na „Wyślij”, w stanie
+Zgłoszenia i w Powiadomieniu."""
 
 
 SendState = Annotated[Sending, Field(discriminator="state")]

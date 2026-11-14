@@ -28,7 +28,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final, Literal, Protocol, TextIO
 
-FileTypes = Sequence[tuple[str, str]]  # (opis, wzorzec nazwy) w oknie wyboru pliku
+FileTypes = Sequence[tuple[str, str]]
+"""Typy plików okna wyboru pliku: pary (opis, wzorzec nazwy)."""
 
 
 class Platform(Protocol):
@@ -123,16 +124,19 @@ def has_console() -> bool:
 
 
 def _null_device(stream: TextIO) -> bool:
+    """Czy ``stream`` pisze na urządzenie puste. Strumień bez deskryptora (np. przechwycony w testach) ktoś czyta, więc
+    nie jest pusty. Na Windows NUL to urządzenie znakowe jak konsola, ale bez trybu konsoli, a ``os.fstat`` ich nie
+    odróżnia."""
+
     try:
         descriptor = stream.fileno()
-    except (OSError, ValueError):  # strumień bez deskryptora, np. przechwycony w testach, ktoś czyta
+    except (OSError, ValueError):
         return False
     if sys.platform == "win32":
         import ctypes
         from ctypes import wintypes
         import msvcrt
 
-        # NUL to urządzenie znakowe jak konsola, ale nie ma trybu konsoli; os.fstat ich nie odróżnia.
         handle = wintypes.HANDLE(msvcrt.get_osfhandle(descriptor))
         file_type_char = 0x0002
         kernel32 = ctypes.windll.kernel32
@@ -183,7 +187,7 @@ class _TkPlatform:
 
     def open_path(self, path: Path) -> None:
         if sys.platform == "win32":
-            os.startfile(path)  # .xlsx otwiera Excel, folder Eksplorator
+            os.startfile(path)
         else:
             subprocess.Popen(["xdg-open", str(path)])
 

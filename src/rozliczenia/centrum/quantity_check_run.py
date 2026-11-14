@@ -20,7 +20,7 @@ from rozliczenia.centrum.outbox import Outbox, PeriodThread, Post
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.work import CentrumWork
-from rozliczenia.client_data import Outgoing, tool
+from rozliczenia.client_data import Outgoing, guarded, tool
 
 LABEL: Final = "kontrola-ilosci"
 
@@ -37,9 +37,9 @@ class QuantityCheckAfterRun:
             return
         period, run_id = run.info.period, run.info.id
         result = checked(run.shown.engine_summary)
-        title = self._forbidden.guard(quantity_check.title(period, result), "tytuł Kontroli ilości")
+        title = guarded(self._forbidden, quantity_check.title(period, result), "tytuł Kontroli ilości")
         blocks = [
-            self._forbidden.guard(block, "treść Kontroli ilości")
+            guarded(self._forbidden, block, "treść Kontroli ilości")
             for block in quantity_check.blocks(result, commit=self._commit(), run_id=run_id)
         ]
         notes = dict.fromkeys(note for guarded in (title, *blocks) for note in guarded.notes)

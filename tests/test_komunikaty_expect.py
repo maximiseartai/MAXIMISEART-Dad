@@ -426,7 +426,8 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
     (``TID251``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
     ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
-    Postacie, których nie łapie żaden z tych mechanizmów, są próbkami w ``ZNANE_LUKI``.
+    Próbki ``ZNANE_LUKI`` pokazują znane luki: postacie, które przepuszczają wszystkie te mechanizmy, a nazwa próbki
+    mówi ich klasę.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
     odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
@@ -444,24 +445,31 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     )
 
 
-# Znane luki strażnika katalogu odmów (tests/fixtures/znane_luki.py): opis postaci → moduł, który tworzy odmowę poza
-# katalogiem, a mimo to przechodzi przez mypy, ruff z konfiguracją src/ i test nazw wyżej.
+# Znane luki strażnika katalogu odmów (tests/fixtures/znane_luki.py): „klasa, którą przepuszczają mechanizmy: postać” →
+# moduł, który tworzy odmowę poza katalogiem, a mimo to przechodzi przez mypy, ruff z konfiguracją src/ i test nazw wyżej.
 ZNANE_LUKI: Final = {
-    "_refused zaimportowana z noqa": """\
+    "ufa tłumieniu ruff: _refused zaimportowana z noqa": """\
 from rozliczenia.centrum.refusal import Refusal, _refused  # noqa: TID251
 
 
 def odmowa() -> Refusal:
     return _refused(500, "Zdanie spoza katalogu odmów.")
 """,
-    "dowód zaimportowany z noqa w type(odmowa)(…)": """\
+    "ufa tłumieniu ruff: dowód zaimportowany z noqa": """\
 from rozliczenia.centrum.refusal import _CATALOG, Refusal  # noqa: TID251
 
 
 def odmowa(wzor: Refusal) -> Refusal:
     return type(wzor)(500, "Zdanie spoza katalogu odmów.", _CATALOG)
 """,
-    "dowód z getattr modułu": """\
+    "ufa tłumieniu mypy: konstruktor bez dowodu z type: ignore": """\
+from rozliczenia.centrum.refusal import Refusal
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor)(500, "Zdanie spoza katalogu odmów.", None)  # type: ignore[arg-type]  # próbka
+""",
+    "refleksja po nazwie atrybutu: dowód z getattr modułu": """\
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import Refusal
 
@@ -469,7 +477,7 @@ from rozliczenia.centrum.refusal import Refusal
 def odmowa(wzor: Refusal) -> Refusal:
     return type(wzor)(500, "Zdanie spoza katalogu odmów.", getattr(refusal, "_CATALOG"))
 """,
-    "dowód typu Any": """\
+    "typ Any wyłącza mypy: dowód typu Any": """\
 from typing import Any, cast
 
 from rozliczenia.centrum.refusal import Refusal
@@ -478,13 +486,13 @@ from rozliczenia.centrum.refusal import Refusal
 def odmowa(wzor: Refusal) -> Refusal:
     return type(wzor)(500, "Zdanie spoza katalogu odmów.", cast(Any, None))
 """,
-    "Refusal.__new__ z importem wewnątrz funkcji": """\
+    "rozpoznaje tylko nazwę globalną modułu: Refusal.__new__ z importem wewnątrz funkcji": """\
 def odmowa() -> Exception:
     from rozliczenia.centrum.refusal import Refusal
 
     return Refusal.__new__(Refusal)
 """,
-    "klasa wyjęta z argumentów aliasu typu modułu": """\
+    "klasa wzięta z wartości, nie z nazwy: argument aliasu typu modułu": """\
 from typing import get_args
 
 from rozliczenia.centrum.refusal import Refusal
@@ -496,7 +504,7 @@ def odmowa() -> Exception:
     wynik: Exception = get_args(Odmowa)[0](500, "Zdanie spoza katalogu odmów.", None)
     return wynik
 """,
-    "klasa z getattr modułu": """\
+    "refleksja po nazwie atrybutu: klasa z getattr modułu": """\
 from rozliczenia.centrum import refusal
 
 
@@ -504,7 +512,7 @@ def odmowa() -> Exception:
     wynik: Exception = getattr(refusal, "Refusal")(500, "Zdanie spoza katalogu odmów.", None)
     return wynik
 """,
-    "kopia gotowej odmowy": """\
+    "odmowa z gotowej odmowy: copy.copy": """\
 import copy
 
 from rozliczenia.centrum.refusal import Refusal, unexpected_failure
@@ -513,7 +521,23 @@ from rozliczenia.centrum.refusal import Refusal, unexpected_failure
 def odmowa() -> Refusal:
     return copy.copy(unexpected_failure())
 """,
-    "nowe zdanie w gotowej odmowie": """\
+    "odmowa z gotowej odmowy: copy.deepcopy": """\
+import copy
+
+from rozliczenia.centrum.refusal import Refusal, unexpected_failure
+
+
+def odmowa() -> Refusal:
+    return copy.deepcopy(unexpected_failure())
+""",
+    "klasa wzięta z wartości, nie z nazwy: type(wzor).__new__(type(wzor))": """\
+from rozliczenia.centrum.refusal import Refusal
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor).__new__(type(wzor))
+""",
+    "odmowa z gotowej odmowy: nowe zdanie wpisane w pole": """\
 from rozliczenia.centrum.refusal import Refusal, unexpected_failure
 
 
@@ -783,8 +807,6 @@ def _ui_text(text: str) -> re.Pattern[str]:
     ``label: "…"`` obiektu napisów; w propie i właściwości napis stoi w podwójnym cudzysłowie i cały.
     Gdy napisu nie ma w pliku w żadnej z tych postaci, test czerwieni: przycisk zmienił brzmienie albo zniknął.
     Napis przycisku w innej postaci (np. w gałęzi warunku) ma powód w ``QUOTES_OUTSIDE_UI``.
-    Granica (tylko przegląd): czy dopasowanie to naprawdę napis przycisku, który tata widzi; pasuje też nagłówek i
-    przykład JSX w komentarzu, więc przycisk przemianowany przy takim starym napisie obok przechodzi.
     """
 
     words = r"\s+".join(re.escape(word) for word in text.split())
@@ -803,9 +825,8 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
     Cytaty są z próbek wszystkich katalogów (``_rendered``), więc zmiana cytatu w Pythonie albo napisu w pliku TSX
     czerwieni ten test; nowy cytat dostaje wpis w ``UI_TEXTS`` albo powód w ``QUOTES_OUTSIDE_UI``.
     Plik UI ma napis w jednej z postaci: dziecko JSX, ``label="…"``, ``label={"…"}`` albo ``label: "…"``.
-
-    Granica: czy trafienie to naprawdę napis przycisku (trafia też nagłówek albo przykład w komentarzu) i cytat tylko w
-    gałęzi Komunikatu, do której nie dochodzi żadna próbka, widzi tylko przegląd.
+    Próbki ``ZNANE_LUKI_NAPISOW_UI`` i ``ZNANE_LUKI_CYTATOW`` pokazują znane luki: postacie, które test przepuszcza bez
+    przycisku z cytowanym napisem, a nazwa próbki mówi ich klasę.
     """
 
     quoted = set(re.findall(r"„([^”]*)”", _rendered()))
@@ -822,3 +843,62 @@ def test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum() -> None:
         "Komunikat cytuje napis, którego plik UI nie pokazuje jako napisu przycisku (dziecko JSX, label=\"…\", label={\"…\"} "
         "albo label: \"…\"): popraw cytat w Komunikacie albo napis w pliku z UI_TEXTS, żeby tata nie szukał przycisku, którego nie ma"
     )
+
+
+# Znane luki strażnika napisów przycisków (tests/fixtures/znane_luki.py): „klasa, którą przepuszcza test: postać” →
+# plik TSX z napisem „Kontynuuj” z UI_TEXTS bez przycisku, który tata widzi, a mimo to przechodzi przez test wyżej jako
+# plik tego napisu.
+ZNANE_LUKI_NAPISOW_UI: Final = {
+    "dopasowuje tekst, nie element przycisku: nagłówek": "export function Okno() {\n  return <h2>Kontynuuj</h2>\n}\n",
+    "nie odróżnia komentarza od kodu: przycisk w komentarzu JSX": (
+        "export function Okno() {\n  return <div>{/* <Button>Kontynuuj</Button> */}</div>\n}\n"
+    ),
+    "nie wykonuje warunków JSX: przycisk w gałęzi, która się nie renderuje": (
+        "export function Okno() {\n  return <div>{false && <Button>Kontynuuj</Button>}</div>\n}\n"
+    ),
+    "czyta plik z UI_TEXTS, nie to, czy ktoś go renderuje: przycisk w komponencie, którego nic nie importuje": (
+        "export function StareOkno() {\n  return <Button>Kontynuuj</Button>\n}\n"
+    ),
+}
+# Znane luki tego strażnika po stronie Komunikatu: „klasa: postać” → moduł z fabryką, której gałąź cytuje napis spoza
+# UI_TEXTS i QUOTES_OUTSIDE_UI, i z krotką PROBKI, której Komunikaty tego cytatu nie mają; test dokłada moduł do
+# SENTENCES, więc strażnik czyta go tą samą drogą co katalogi repozytorium.
+ZNANE_LUKI_CYTATOW: Final = {
+    "widzi tylko Komunikaty z próbek: cytat w gałęzi bez próbki": """\
+def komunikat(zapisany: bool) -> str:
+    if zapisany:
+        return "Plik jest zapisany."
+    return "Kliknij „Przycisk, którego nie ma”."
+
+
+PROBKI = (lambda: komunikat(zapisany=True),)
+""",
+}
+
+
+def _zgloszenia_napisow(
+    ui_texts: Mapping[str, str], sentences: Mapping[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]]
+) -> list[str]:
+    """Linie zgłoszenia testu napisów przycisków, gdy ``UI_TEXTS`` to ``ui_texts``, a ``SENTENCES`` to ``sentences``."""
+
+    with pytest.MonkeyPatch.context() as podmiana:
+        podmiana.setitem(globals(), "UI_TEXTS", ui_texts)
+        podmiana.setitem(globals(), "SENTENCES", sentences)
+        try:
+            test_napis_przycisku_cytowany_w_komunikacie_stoi_w_ui_centrum()
+        except AssertionError as blad:
+            return [linia.strip() for linia in str(blad).splitlines()]
+    return []
+
+
+def test_znane_luki_strazy_napisow_przyciskow_przechodza_przez_niego(tmp_path: Path) -> None:
+    zgloszenia = {}
+    for numer, (opis, kod) in enumerate(ZNANE_LUKI_NAPISOW_UI.items()):
+        plik = tmp_path / f"znana_luka_{numer}.tsx"
+        plik.write_text(kod, encoding="utf-8")
+        zgloszenia[opis] = _zgloszenia_napisow({**UI_TEXTS, "Kontynuuj": plik.as_posix()}, SENTENCES)
+    for opis, plik in zapisz(ZNANE_LUKI_CYTATOW, tmp_path).items():
+        probka = modul(plik)
+        zgloszenia[opis] = _zgloszenia_napisow(UI_TEXTS, {**SENTENCES, opis: (probka, {"komunikat": probka.PROBKI})})
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_NAPISOW_UI, ZNANE_LUKI_CYTATOW)")

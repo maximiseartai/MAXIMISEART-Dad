@@ -17,10 +17,12 @@ Ruff ``TID251`` z ``src/ruff.toml`` odrzuca w ``src/`` linię importu i atrybut 
 ``template_content`` i ``open_workbook`` (``workbook_files.file_bytes``), a ten strażnik łapie wywołanie po nazwie z
 ``ONLY`` poza jej miejscami, także z aliasem importu ``from … import … as …``, po imporcie z ``noqa``, w samym
 ``workbook_files.py``, w pliku z prawem właściciela i po nazwie re-eksportowanej przez inny moduł. W testach i
-atrapach łapie łatanie modułu ``workbook_files`` przez ``setattr``/``delattr`` oraz
-``patch``/``patch.object``/``patch.multiple``, gdy moduł stoi w wywołaniu po nazwie, aliasie importu, jako atrybut
+atrapach łapie łatanie modułu ``workbook_files`` i atrybutu o tej nazwie w module, który go importuje, przez
+``setattr``/``delattr`` oraz ``patch``/``patch.object``/``patch.multiple``, gdy moduł albo nazwa atrybutu stoi w tekście
+wywołania (które argumenty czyta, mówi ``_patches``), np. moduł po nazwie, aliasie importu, jako atrybut
 (``rozliczenia.workbook_files``) albo jako napis ``"rozliczenia.workbook_files…"``.
-Postacie, których nie łapie ani ruff, ani ten strażnik, są próbkami w ``ZNANE_LUKI_SRC`` i ``ZNANE_LUKI_TESTOW``.
+Próbki ``ZNANE_LUKI_SRC``, ``ZNANE_LUKI_MIEJSC`` i ``ZNANE_LUKI_TESTOW`` pokazują znane luki: postacie, które
+przepuszcza i ruff, i ten strażnik, a nazwa próbki mówi ich klasę.
 """
 
 from __future__ import annotations
@@ -177,8 +179,49 @@ def _module_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def _positional(args: list[ast.expr]) -> list[ast.expr]:
+    """Argumenty pozycyjne wywołania z rozpakowanymi literałami ``*(...)``/``*[...]``; gwiazdka czegoś innego kończy
+    listę, bo pozycji argumentów po niej nie widać w tekście."""
+
+    flat: list[ast.expr] = []
+    for arg in args:
+        if not isinstance(arg, ast.Starred):
+            flat.append(arg)
+        elif isinstance(arg.value, ast.Tuple | ast.List):
+            flat += _positional(arg.value.elts)
+        else:
+            break
+    return flat
+
+
+def _named(keywords: list[ast.keyword]) -> dict[str, ast.expr]:
+    """Argumenty nazwane wywołania z kluczami-napisami literałów ``**{...}``, także zagnieżdżonych; ``**`` czegoś innego
+    niż literał słownika nic nie daje."""
+
+    named = {kw.arg: kw.value for kw in keywords if kw.arg is not None}
+    pending = [kw.value for kw in keywords if kw.arg is None]
+    while pending:
+        unpacked = pending.pop()
+        if not isinstance(unpacked, ast.Dict):
+            continue
+        for key, value in zip(unpacked.keys, unpacked.values, strict=True):
+            if key is None:
+                pending.append(value)
+            elif isinstance(key, ast.Constant) and isinstance(key.value, str):
+                named[key.value] = value
+    return named
+
+
 def _patches(source: str) -> list[tuple[int, str]]:
-    """Łatania modułu ``workbook_files`` w tekście testu: linia i tekst wywołania."""
+    """Łatania modułu ``workbook_files`` w tekście testu: linia i tekst wywołania.
+
+    Strażnik czyta argumenty wywołania z ``PATCHERS`` tak, jak stoją w jego tekście: pozycyjne i nazwane, także
+    rozpakowane z literału ``*(...)``/``*[...]`` i z kluczy-napisów literału ``**{...}``. Cel (pierwszy pozycyjny albo
+    ``target``) to moduł po nazwie, aliasie importu, atrybucie ``….workbook_files`` albo stały napis z członem
+    ``workbook_files``; nazwa łatanego atrybutu (drugi pozycyjny, ``name``, ``attribute`` albo nazwa argumentu nazwanego
+    ``patch.multiple``) to stała ``"workbook_files"``. Nazwy spoza tekstu wywołania (zmienna, wynik funkcji, gwiazdka
+    czegoś innego niż literał) strażnik nie widzi: to znane luki z ``ZNANE_LUKI_TESTOW``.
+    """
 
     tree = ast.parse(source)
     names = _module_names(tree)
@@ -188,20 +231,21 @@ def _patches(source: str) -> list[tuple[int, str]]:
             return target.id in names
         if isinstance(target, ast.Attribute):
             return target.attr == MODULE
-        return isinstance(target, ast.Constant) and str(target.value).startswith(
-            f"rozliczenia.{MODULE}"
-        )
+        return isinstance(target, ast.Constant) and MODULE in str(target.value).split(".")
 
     found = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and _called(node) in PATCHERS):
             continue
-        target = (
-            node.args[0]
-            if node.args
-            else next((kw.value for kw in node.keywords if kw.arg == "target"), None)
-        )
-        if is_module(target):
+        args, named = _positional(node.args), _named(node.keywords)
+        target = args[0] if args else named.get("target")
+        # Łatany atrybut o nazwie modułu podmienia moduł w module, który go importuje (przegląd #1689, W2).
+        attribute = args[1] if len(args) > 1 else named.get("name", named.get("attribute"))
+        if (
+            is_module(target)
+            or (isinstance(attribute, ast.Constant) and attribute.value == MODULE)
+            or MODULE in named
+        ):
             found.append((node.lineno, ast.unparse(node)))
     return found
 
@@ -331,6 +375,32 @@ def test_sprawdzenie_latania_zglasza_latanie_w_atrapie(tmp_path: Path, monkeypat
     assert "tools/lib/atrapy/naruszenie.py:2: mock.patch(" in str(raised.value)
 
 
+def test_latanie_atrybutu_o_nazwie_modulu_skoroszytu_w_module_konsumenta_wywraca_straznika() -> None:
+    """``intermax_restore`` czyta bajty przez swój atrybut ``workbook_files``, więc łatanie tego atrybutu podmienia
+    moduł skoroszytu tak samo jak łatanie samego modułu, także gdy nazwa stoi w literale rozpakowanym ``*`` albo ``**``
+    (przegląd #1689, W2 r1 i W1 r2)."""
+
+    test = (
+        "from unittest import mock\n"
+        "from rozliczenia import intermax_restore\n"
+        "def test_lata(monkeypatch):\n"
+        "    monkeypatch.setattr(intermax_restore, 'workbook_files', None)\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook_files')\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook_files.workbook_content')\n"
+        "    mock.patch.object(intermax_restore, attribute='workbook_files')\n"
+        "    mock.patch.multiple('rozliczenia.intermax_restore', workbook_files=None)\n"
+        "    mock.patch.multiple(intermax_restore, **{'workbook_files': None})\n"
+        "    mock.patch.multiple(intermax_restore, **{**{'workbook_files': None}})\n"
+        "    mock.patch.object(intermax_restore, **{'attribute': 'workbook_files'})\n"
+        "    monkeypatch.setattr(*(intermax_restore, 'workbook_files', None))\n"
+        "    monkeypatch.setattr(intermax_restore, 'workbook_files_kopia', None)\n"
+        "    mock.patch.multiple(intermax_restore, **{'workbook_files_kopia': None})\n"
+        "    mock.patch('rozliczenia.intermax_restore.workbook')\n"
+    )
+
+    assert sorted(line for line, _ in _patches(test)) == [4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+
 def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_inny_modul_nie() -> (
     None
 ):
@@ -360,11 +430,11 @@ def test_latanie_modulu_skoroszytu_przez_alias_napis_i_mock_wywraca_straznika_a_
     assert sorted(line for line, _ in _patches(test)) == [8, 9, 10, 11, 12, 13, 13, 15]
 
 
-# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): opis postaci → moduł src/rozliczenia,
+# Znane luki strażnika jednej drogi odczytu (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src/rozliczenia,
 # który czyta bajty albo wartości pliku taty poza ``ONLY``, a mimo to przechodzi przez ruff z konfiguracją src/ i
 # ``_src_findings``.
 ZNANE_LUKI_SRC = {
-    "funkcja wzięta do zmiennej po imporcie z noqa": """\
+    "ufa tłumieniu ruff i zna tylko nazwę wywołania: funkcja w zmiennej po imporcie z noqa": """\
 from pathlib import Path
 
 from .workbook_files import file_bytes  # noqa: TID251 - sonda
@@ -375,7 +445,7 @@ czytaj = file_bytes
 def wartosci(path: Path) -> bytes:
     return czytaj(path)
 """,
-    "getattr modułu z napisem": """\
+    "refleksja po nazwie atrybutu: getattr modułu": """\
 from pathlib import Path
 
 from . import workbook_files
@@ -384,7 +454,7 @@ from . import workbook_files
 def wartosci(path: Path) -> bytes:
     return getattr(workbook_files, "file_bytes")(path)
 """,
-    "surowe open w trybie rb": """\
+    "zna tylko wywołania z ONLY: open w trybie rb": """\
 from pathlib import Path
 
 
@@ -392,12 +462,30 @@ def wartosci(path: Path) -> bytes:
     with open(path, "rb") as plik:
         return plik.read()
 """,
+    "zna tylko wywołania z ONLY: Path.open w trybie rb": """\
+from pathlib import Path
+
+
+def wartosci(path: Path) -> bytes:
+    with path.open("rb") as plik:
+        return plik.read()
+""",
+    "refleksja po nazwie atrybutu: __dict__ modułu": """\
+from pathlib import Path
+
+from . import workbook_files
+
+
+def wartosci(path: Path) -> bytes:
+    return workbook_files.__dict__["file_bytes"](path)
+""",
 }
 
-# Znane luki strażnika łatania modułu skoroszytu: opis postaci → moduł testu, który podstawia bajty pliku taty łataniem
-# ``rozliczenia.workbook_files``, a mimo to przechodzi przez ruff z konfiguracją tests/ i ``_patches``.
+# Znane luki strażnika łatania modułu skoroszytu: „klasa: postać” → moduł testu, który podstawia bajty pliku taty łataniem
+# modułu ``workbook_files`` albo atrybutu o tej nazwie w module, który go importuje, a mimo to przechodzi przez ruff z
+# konfiguracją tests/ i ``_patches``.
 ZNANE_LUKI_TESTOW = {
-    "moduł wzięty do zmiennej": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: moduł w zmiennej": """\
 import pytest
 
 from rozliczenia import workbook_files
@@ -407,7 +495,7 @@ def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     skoroszyty = workbook_files
     monkeypatch.setattr(skoroszyty, "file_bytes", lambda path: b"")
 """,
-    "moduł z importlib": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: moduł z importlib": """\
 import importlib
 
 import pytest
@@ -416,21 +504,21 @@ import pytest
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(importlib.import_module("rozliczenia.workbook_files"), "file_bytes", lambda path: b"")
 """,
-    "napis celu złożony w trakcie działania": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: napis złożony w biegu": """\
 import pytest
 
 
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("rozliczenia." + "workbook_files.file_bytes", lambda path: b"")
 """,
-    "przypisanie wprost": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: przypisanie wprost": """\
 from rozliczenia import workbook_files
 
 
 def test_lata() -> None:
     workbook_files.file_bytes = lambda path: b""
 """,
-    "łatający pod aliasem": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: łatający pod aliasem": """\
 from unittest.mock import patch as lataj
 
 
@@ -438,7 +526,7 @@ def test_lata() -> None:
     with lataj("rozliczenia.workbook_files.file_bytes"):
         pass
 """,
-    "patch.dict na słowniku modułu": """\
+    "zna łatanie tylko przez wywołania z PATCHERS: patch.dict na słowniku modułu": """\
 from unittest import mock
 
 from rozliczenia import workbook_files
@@ -448,7 +536,7 @@ def test_lata() -> None:
     with mock.patch.dict(workbook_files.__dict__, {"file_bytes": lambda path: b""}):
         pass
 """,
-    "moduł z getattr pakietu": """\
+    "zna moduł tylko po nazwie, aliasie importu albo stałym napisie: getattr pakietu": """\
 import pytest
 
 import rozliczenia
@@ -457,11 +545,62 @@ import rozliczenia
 def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(getattr(rozliczenia, "workbook_files"), "file_bytes", lambda path: b"")
 """,
+    "zna nazwę atrybutu tylko z tekstu wywołania: nazwa w zmiennej": """\
+import pytest
+
+from rozliczenia import intermax_restore
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    nazwa = "workbook_files"
+    monkeypatch.setattr(intermax_restore, nazwa, None)
+""",
+    "zna nazwę atrybutu tylko z tekstu wywołania: słownik z dict() rozpakowany **": """\
+from unittest import mock
+
+from rozliczenia import intermax_restore
+
+
+def test_lata() -> None:
+    with mock.patch.multiple(intermax_restore, **dict(workbook_files=None)):
+        pass
+""",
+    "zna nazwę atrybutu tylko z tekstu wywołania: argumenty w zmiennej rozpakowanej *": """\
+import pytest
+
+from rozliczenia import intermax_restore
+
+
+def test_lata(monkeypatch: pytest.MonkeyPatch) -> None:
+    argumenty = ("workbook_files", None)
+    monkeypatch.setattr(intermax_restore, *argumenty)
+""",
+}
+
+
+# Znane luki tego strażnika w samym ``workbook_files.py``: „klasa: postać” → moduł, który czyta skoroszyt z dysku obok
+# ``file_bytes``, a mimo to przechodzi przez ruff i ``_src_findings`` jako ``rozliczenia/workbook_files.py``.
+ZNANE_LUKI_MIEJSC = {
+    "miejsce to plik i nazwa funkcji, nie jej klasa: metoda _open innej klasy": """\
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.workbook import Workbook
+
+
+class Kopia:
+    def _open(self, path: Path) -> Workbook:
+        return load_workbook(path)
+""",
 }
 
 
 def _src_reads(source: str) -> list[str]:
     return _src_findings({"rozliczenia/sonda_luki.py": source})[0]
+
+
+def _reads_in_workbook_files(source: str) -> list[str]:
+    return _src_findings({"rozliczenia/workbook_files.py": source})[0]
 
 
 def _test_patches(source: str) -> list[str]:
@@ -473,9 +612,10 @@ def _test_patches(source: str) -> list[str]:
     ("nazwa", "probki", "sonda", "straznik"),
     [
         ("ZNANE_LUKI_SRC", ZNANE_LUKI_SRC, SRC / "rozliczenia" / "sonda_luki.py", _src_reads),
+        ("ZNANE_LUKI_MIEJSC", ZNANE_LUKI_MIEJSC, SRC / "rozliczenia" / "workbook_files.py", _reads_in_workbook_files),
         ("ZNANE_LUKI_TESTOW", ZNANE_LUKI_TESTOW, TESTS / "test_sonda_luki.py", _test_patches),
     ],
-    ids=["odczyt-w-src", "latanie-w-testach"],
+    ids=["odczyt-w-src", "odczyt-w-workbook-files", "latanie-w-testach"],
 )
 def test_znane_luki_jednej_drogi_odczytu_przechodza_przez_ruff_i_straznika(
     tmp_path: Path, nazwa: str, probki: dict[str, str], sonda: Path, straznik: Callable[[str], list[str]]

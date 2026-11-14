@@ -28,8 +28,8 @@ class _Catalog:
 _CATALOG: Final = _Catalog()
 """Dowód katalogu odmów: ``Refusal`` bez niego to błąd mypy, a poza tym modułem dowód, ``_Catalog`` i ``_refused``, która
 sama wkłada dowód, odrzuca ruff (``TID251``). Odwołanie do ``Refusal`` poza typem łapie
-``tests/test_komunikaty_expect.py``, a postacie, których nie łapie żaden z tych mechanizmów, są tam próbkami
-``ZNANE_LUKI``."""
+``tests/test_komunikaty_expect.py``, a jego próbki ``ZNANE_LUKI`` pokazują klasy postaci, które przepuszczają wszystkie
+te mechanizmy."""
 
 
 @final
@@ -51,8 +51,8 @@ def _refused(status_code: int, message: str, field: str | None = None) -> Refusa
     return Refusal(status_code, message, _CATALOG, field)
 
 
-# Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``.
 NOT_FOUND_OR_CONFLICT: dict[int | str, dict[str, object]] = {404: {"model": Problem}, 409: {"model": Problem}}
+"""Odmowy akcji na zasobie w OpenAPI: brak zasobu (404) albo zły stan (409), obie jako ``Problem``."""
 
 Retry = Literal["start", "update", "restore", "shutdown"]
 """Co tata zrobi, gdy skończy się to, co trwa: uruchomi proces, zaktualizuje narzędzie, przywróci Kopię INTERMAX

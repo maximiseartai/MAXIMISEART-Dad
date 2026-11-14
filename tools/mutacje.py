@@ -27,8 +27,9 @@ tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany
 Na stderr: ``JUŻ ŁAPIE <plik>::<test>`` (ten test sprzed zmiany sam pada po mutacji, a bez niej przechodzi, więc autor
 sprawdza, czy nowy test dodaje coś ponad niego) albo ``JUŻ ŁAPIE NIESPRAWDZONE`` z przyczyną, gdy sprawdzenie tego nie
 wie (limit, pliki odłożone przez szybko, test sprzed zmiany czerwony bez mutacji albo łapiący tylko z sąsiadem). Rady
-usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a całe sprawdzenie, ze skanem i
-czasami CI, trwa najwyżej ``--juz-lapie-s`` s, chyba że już skan i pobranie czasów CI trwają dłużej.
+usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a wybór, ze skanem i czasami CI,
+i sprawdzenie trwają po najwyżej ``--juz-lapie-s`` s. Wybór biegnie też raz bez mutacji w podstawie przed mutacjami
+(#1719): czerwony daje ``PODSTAWA CZERWONA``, a bez wyniku w ``--podstawa-s`` s ``PODSTAWA NIESPRAWDZONA``, obie kod 2.
 
 Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
 """
@@ -170,6 +171,8 @@ UNCHECKED = f"{ALREADY} NIESPRAWDZONE"
 # Przy nowym zachowaniu żaden test sprzed zmiany nie pada, więc bez limitu każda mutacja kosztowałaby cały wybór szybko.
 ALREADY_S = 300.0
 COLLECT_S = 120.0
+# Podstawa wyboru szybko w zwykłym użyciu trwała 73 s (10 plików) i 208 s (21 plików) na 2 workerach (#1726 r2).
+BASE_S = 120.0
 
 
 class _Probe(NamedTuple):
@@ -266,31 +269,58 @@ def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -
     )
 
 
-def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float, already_s: float) -> None:
-    """Linie ``_check`` na stderr dla mutacji z poleceniem pytest bez oczekiwanej linii, razem w ``already_s`` s od
-    startu, ze skanem zmian i czasami CI; wołający woła ją tylko wtedy, gdy każda z ``mutations`` padła w poleceniu."""
+def _planned(mutations: Sequence[Mutation], base: str, already_s: float) -> list[tuple[Mutation, _Probe | str]]:
+    """Testy sprzed zmiany każdej mutacji z poleceniem pytest bez oczekiwanej linii albo przyczyna, z którą ich nie ma, w
+    ``already_s`` s, ze skanem zmian i czasami CI."""
 
     deadline = time.monotonic() + already_s
     checked = [mutation for mutation in mutations if ("-m", "pytest") in pairwise(mutation.command) and mutation.expected is None]
     if not checked:
-        return
+        return []
     if part := os.environ.get(ZMIENNA_CZESCI):
         print(f"{UNCHECKED}: {ZMIENNA_CZESCI}={part}: część mówi, że padły tylko jej mutacje, a sprawdzenie nie wie które", file=sys.stderr, flush=True)
-        return
+        return []
     try:
         commit = repo.merge_base(ROOT, "HEAD", base)
     except subprocess.CalledProcessError as error:
         print(f"{UNCHECKED}: brak merge-base HEAD z {base} ({error.stderr.strip()})", file=sys.stderr, flush=True)
-        return
+        return []
     changed, scanned = repo.changed(ROOT, commit), wplyw_zmiany.Repository.scan(ROOT)
     costs, _ = czasy_ci.lokalne(ROOT)
+    probes: list[tuple[Mutation, _Probe | str]] = []
     for mutation in checked:
         if time.monotonic() >= deadline:
-            line = f"{UNCHECKED}: {mutation.name}: minął limit sprawdzenia {already_s:g} s"
+            probes.append((mutation, f"minął limit sprawdzenia {already_s:g} s"))
         elif isinstance(selected := _command_tests(mutation.command, deadline), str):
-            line = f"{UNCHECKED}: {mutation.name}: {selected}"
-        elif (probe := _probe(mutation, selected, commit, changed, scanned, costs)) is None:
-            line = f"{UNCHECKED}: {mutation.name}: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {commit[:8]}"
+            probes.append((mutation, selected))
+        else:
+            probe = _probe(mutation, selected, commit, changed, scanned, costs)
+            probes.append((mutation, probe or f"polecenie nie wybiera testu dodanego ani zmienionego od merge-base {commit[:8]}"))
+    return probes
+
+
+def _base_commands(planned: list[tuple[Mutation, _Probe | str]], limit_s: float) -> dict[tuple[str, ...], float]:
+    """Polecenie podstawy z testami sprzed zmiany wszystkich mutacji (``-x``), z listą w pliku katalogu gita, który
+    zostaje, więc polecenie z linii ``PODSTAWA CZERWONA`` da się powtórzyć."""
+
+    tests = list(dict.fromkeys(test for _, probe in planned if isinstance(probe, _Probe) for test in probe.tests))
+    if not tests:
+        return {}
+    listed = (ROOT / repo.git(ROOT, "rev-parse", "--git-path", "mutacje-testy-sprzed-zmiany.txt").strip()).resolve()
+    listed.write_text("\n".join(tests), encoding="utf-8")
+    return {("-m", "pytest", "-q", "-x", "-n", str(czasy_ci.workery_lokalne()), "-p", "no:cacheprovider", f"@{listed}"): limit_s}
+
+
+def _already_caught(planned: list[tuple[Mutation, _Probe | str]], limit_s: float, already_s: float) -> None:
+    """Linie ``_check`` na stderr dla mutacji planu w ``already_s`` s; wołający woła ją tylko wtedy, gdy każda mutacja
+    padła w poleceniu."""
+
+    deadline = time.monotonic() + already_s
+    for mutation, probe in planned:
+        if isinstance(probe, str):
+            line = f"{UNCHECKED}: {mutation.name}: {probe}"
+        elif time.monotonic() >= deadline:
+            line = f"{UNCHECKED}: {mutation.name}: minął limit sprawdzenia {already_s:g} s"
         else:
             line = _check(mutation, probe, deadline, limit_s)
         if line:
@@ -315,6 +345,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit-s", type=float, default=TIMEOUT, help="Limit czasu jednego polecenia w sekundach.")
     parser.add_argument(
         "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
+    )
+    parser.add_argument(
+        "--podstawa-s", type=float, default=BASE_S, help=f"Limit podstawy testów sprzed zmiany w sekundach (domyślnie {BASE_S:g}; po nim kod 2)."
     )
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie {BASE}).")
     parser.add_argument(
@@ -352,9 +385,10 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s)
-    if code == 0 and not jak_ci:
-        _already_caught(mutations, args.baza, args.limit_s, args.juz_lapie_s)
+    planned = [] if jak_ci else _planned(mutations, args.baza, args.juz_lapie_s)
+    code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, base_commands=_base_commands(planned, args.podstawa_s))
+    if code == 0:
+        _already_caught(planned, args.limit_s, args.juz_lapie_s)
     return code
 
 

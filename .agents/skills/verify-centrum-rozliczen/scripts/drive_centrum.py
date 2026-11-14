@@ -10,7 +10,6 @@ to ``<evidence>/state``.
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
-import importlib
 from pathlib import Path
 import shutil
 import sys
@@ -24,14 +23,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
-from drive.common import DriveFailure, Run, dad_context
-from drive.waiting import Budget
+from drive.common import DriveFailure, Run, check_clock_alarm, dad_context, page_requests
+from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
+from import_dynamiczny import modul
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
 
-MODULES = {each.name: importlib.import_module(each.module) for each in FEATURES}
+MODULES = {each.name: modul(each.module) for each in FEATURES}
 
 
 def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any]) -> None:
@@ -39,7 +39,13 @@ def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str,
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
             drive(run, page, need, driven, options)
-    MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+    try:
+        MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+    except TimedOut:
+        # A wait that outlasted its budget after the wake-up thread of Centrum's clock died waited for a wake-up that
+        # never fires: the failure names the dead clock.
+        check_clock_alarm(run)
+        raise
     driven.append(name)
 
 
@@ -67,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     selected = ALL if args.feature == ["all"] else tuple(args.feature)
     driven: list[str] = []
     try:
-        with sync_playwright() as playwright:
+        with sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch()
             try:
                 page = dad_context(browser).new_page()
@@ -80,10 +86,12 @@ def main(argv: list[str] | None = None) -> int:
                         page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
                     except PlaywrightError as shot:
                         exc.add_note(f"zz-failure.png not taken: {shot.message}")
+                page_requests.check(exc)
                 raise
             finally:
                 browser.close()
-    except (DriveFailure, AssertionError, PlaywrightError) as exc:
+        page_requests.check()
+    except (DriveFailure, TimedOut, AssertionError, PlaywrightError) as exc:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1
     finally:

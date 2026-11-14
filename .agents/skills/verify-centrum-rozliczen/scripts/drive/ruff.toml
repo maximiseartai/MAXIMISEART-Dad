@@ -1,22 +1,49 @@
 # Ruff takes banned-api from the nearest configuration file whole instead of adding to its parent's table: the first
 # entries copy the table of pyproject.toml (tests/test_zakazy_ruff.py checks that none is lost), and the last ones
-# hold only in drive/, each with a sample in tests/test_zakazy_ruff.py. The helpers of common.py use the banned names
-# by the owner right in per-file-ignores of pyproject.toml.
+# hold only in drive/, each with a sample in tests/test_zakazy_ruff.py. The helpers of common.py and waiting.py use the
+# banned names they own (OWNERS of tests/test_zakazy_ruff.py) by the owner right in per-file-ignores of pyproject.toml.
 extend = "../../../../../pyproject.toml"
 
 [lint.flake8-tidy-imports.banned-api]
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
+"typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
+"typing_extensions.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"
 "rozliczenia.centrum.refusal._CATALOG".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._Catalog".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.refusal._refused".msg = "odmowę API Centrum daje fabryka z rozliczenia.centrum.refusal (np. unexpected_failure); nową dopisz tam z próbką w tests/expected/komunikaty.txt"
 "rozliczenia.centrum.process_kind._CATALOG".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
 "rozliczenia.centrum.process_kind._Catalog".msg = "Uruchomienie gotowe do startu (PreparedRun) daje tylko Catalog.prepared z rozliczenia.centrum.catalog"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
-"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: ForbiddenValues.guard(…).text, tool(tekst narzędzia) i + takich tekstów"
+"rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.centrum.comment_versions._VERSIONS".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+"importlib.import_module".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"builtins.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.util".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.machinery".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._bootstrap_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.abc".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.metadata".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.readers".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.simple".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.reload".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.invalidate_caches".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib.sys".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._RELOADING".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._pack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"importlib._unpack_uint32".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_frozen_importlib_external".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"_imp".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"runpy".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"pkgutil".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
+"zipimport".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "rozliczenia.tool_files.SETTINGS".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
 "rozliczenia.tool_files.settings_file".msg = "pliki Ustawień Centrum czytaj i zmieniaj przez rozliczenia.centrum.settings (CentrumSettings, a bez zapisu read_snapshot); nazwę pliku daje SETTINGS_FILE"
 "rozliczenia.tool_files.WORKER_CONFIG".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); nazwę pliku daje WORKERS_FILE"
@@ -41,3 +68,8 @@ extend = "../../../../../pyproject.toml"
 "pathlib.Path.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
 "pathlib.PosixPath.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
 "pathlib.WindowsPath.replace".msg = "put a file in place with replace_file of drive/common.py, which retries while the server holds the target open (#921)"
+# A fixed sleep waits as long on a slow runner as on Maks's Mac, so it ends before the state it waits for (#1539).
+# It holds in drive/ but for waiting.py and common.py, which per-file-ignores of pyproject.toml free from all of TID251;
+# in common.py the test of OWNERS in tests/test_zakazy_ruff.py refuses it. Forms ruff cannot resolve (a method on an
+# instance, page.wait_for_timeout) are ZNANE_LUKI_SNU of that test.
+"time.sleep".msg = "czekaj przez drive/waiting.py: na stan przez until, ciszę strony przez quiet_for, a spóźnioną odpowiedź trasy z jej uchwytu przez answer_late"

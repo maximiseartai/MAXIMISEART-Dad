@@ -51,6 +51,15 @@ sam zmienia te reguły, sądzi więc wersja z bazy, a jego zmiana obowiązuje od
 w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia następnej kopii, tylko odmawia z poleceniem, by
 uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomiono.
 
+Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–4 jako status commita ``Werdykt i bramka``
+(``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
+``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunków 5 i 6 nie liczy, bo uruchamiają kod PR
+(ruff, mypy i pytest na scalonym drzewie), a status ustawia workflow ``.github/workflows/werdykt-i-bramka.yml`` tokenem
+z prawem zapisu statusów; scalenie z ruff i mypy pokazuje status ``scalenie z main``. PR zamknięty albo do innej gałęzi
+niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
+merge'a, i po fakcie pokazuje merge bez zielonego statusu. Status tylko raportuje, bo żaden ruleset go nie wymaga
+(ADR 0036, „Status w Actions”). Kod 0 znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.
+
 Komentarze, recenzje i checki pochodzą z jednego ``gh pr view --json``, które doczytuje wszystkie strony
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
@@ -91,6 +100,7 @@ EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza
     .venv/bin/python tools/scal_pr.py 336 --przeglad    # kontekst dla recenzenta
+    python3 tools/scal_pr.py 336 --status               # workflow werdykt-i-bramka.yml: status bez merge'a
     .venv/bin/python tools/scal_pr.py 336 --werdykt ~/.t3/notes/bieg/recenzje/336/runda-1.md
 """
 
@@ -217,6 +227,29 @@ def _publish_verdict(pull: Pull, path: Path) -> int:
     return 0
 
 
+def _skipped_status(pull: Pull) -> str | None:
+    """Przyczyna, dla której ``--status`` nie ustawia statusu PR ``pull``: zamknięty albo do innej gałęzi niż `main`."""
+
+    if pull.state != "OPEN":
+        return f"PR {pull.state}, więc status HEAD zostaje z chwili zamknięcia"
+    if pull.base != MAIN:
+        return f"PR do {pull.base}, a status dostają PR-y do {MAIN}"
+    return None
+
+
+def _publish_status(pull: Pull) -> int:
+    """Warunki 1–4 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`."""
+
+    where = f"#{pull.number} {pull.head[:7]}"
+    problems = _problems(pull)
+    state, description = ("failure", "; ".join(problems)) if problems else ("success", "warunki 1–4 tools/scal_pr.py spełnione")
+    if error := github.ustaw_status(pull.head, github.WERDYKT_I_BRAMKA, state, description):
+        print(f"STATUS FAIL | {where} | {state} niewysłany: {error}")
+        return 1
+    print(f"STATUS {state} | {where} | {description}")
+    return 0
+
+
 def _merge(pull: Pull, base: str, *, merge: bool) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     try:
@@ -249,19 +282,25 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
     mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
+    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–4 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)
-    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "SCAL"
+    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "SCAL"
     try:
         if args.przeglad:
             return kontekst_przegladu.print_context(args.numer)
         pull = stan_pr.pull(args.numer)
+        if args.status and (skipped := _skipped_status(pull)):
+            print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")
+            return 0
         base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
         if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
             return judged
         if args.werdykt:
             return _publish_verdict(pull, args.werdykt)
+        if args.status:
+            return _publish_status(pull)
         return _merge(pull, base, merge=not args.bez_merge)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)

@@ -31,6 +31,7 @@ from drive.common import (
 )
 from drive.teksty import FILES_UNCHANGED
 from drive.uzupelnienie import drive_result_card
+from drive.waiting import quiet_for, until
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from harness import Log
 
@@ -349,12 +350,12 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "przygotowanie-otwieranie")
     # The tab drops a repeat of the same file for a while after the server's answer, with nothing on screen; the Plik
     # zbiorczy was opened by the double click above.
-    page.wait_for_timeout(frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
+    quiet_for(page, frontend_ms("pages/periods/open-period-path.ts", "REPEAT_IGNORED_MS") + 100)
     period_file_list = page.get_by_role("list", name="Pliki okresu")
     opened_before = len(run.lines(Log.OPENED))
     for path in (internal_settlement, collective_file):
         period_file_list.get_by_role("button", name=path.name, exact=True).click()
-        run.wait_for(last_opened_is(run, path), f"the period file name opens {path.name}")
+        until(last_opened_is(run, path), f"the period file name opens {path.name}")
     run.check(
         run.lines(Log.OPENED)[opened_before:] == [{"path": str(internal_settlement)}, {"path": str(collective_file)}],
         "each period file name in the result opens its own file, one per click",

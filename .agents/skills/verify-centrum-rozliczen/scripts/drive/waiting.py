@@ -1,5 +1,17 @@
-"""The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
-drive's ``expect`` of Playwright, whose assertions wait a budget too.
+"""The drive's own way to wait until a condition holds (``until``), the budgets that limit a wait, and the drive's
+``expect`` of Playwright, whose assertions wait a budget too, the drive's one quiet: a time in which the page runs with
+nothing to wait for (``quiet_for``), the one late answer of a route (``answer_late``), and the retry of a file the
+server holds open (``while_open``, for the file helpers of ``drive/common.py``).
+
+``Run.wait_for`` of ``drive/common.py`` is gone (#1539), so the drive has no way of its own beside this one to copy; it
+also waits through Playwright's ``page.wait_for_function``, which polls a condition inside the page for the page's
+default limit: ``Budget.SCREEN`` for the drive's page (``drive_centrum.py``), what ``dad_tab`` or ``wydajnosc`` set for
+theirs, and Playwright's own 30 s for a tab opened without ``set_default_timeout``.
+Ruff ``TID251`` (``drive/ruff.toml``) refuses ``time.sleep`` in every file of ``drive/`` but this one and
+``drive/common.py``, which ``per-file-ignores`` frees from all of ``TID251``; in ``drive/common.py`` the test of
+``OWNERS`` in ``tests/test_zakazy_ruff.py`` refuses it, and a wait on an object (``page.wait_for_timeout``) passes both
+(``ZNANE_LUKI_SNU`` of that test). A new function that wraps ``until`` around a condition it takes, anywhere, nothing
+refuses today.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
@@ -12,11 +24,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 import json
+import os
 import time
 from typing import TypeVar
 
-from playwright.sync_api import Expect
+from playwright.sync_api import Expect, Page, Route
 import yaml
+
+from harness import SLOW_RUNNER
 
 # A file of the run in a state the server or the harness has not finished: missing, refused for a moment (Windows,
 # #1087), or empty or half written as JSON, JSON Lines, YAML or UTF-8 text (#963, #1195, #1651).
@@ -30,6 +45,12 @@ NOT_YET: tuple[type[Exception], ...] = (
 
 # How often a wait reads again.
 POLL_S = 0.1
+# Dad double-clicks out of habit and double-taps the touch screen: the second click comes within milliseconds,
+# so a repeated request is sent well within this, and an answer reaches the screen (a refusal as a toast) too.
+REPEAT_SETTLE_MS = 300
+# In the mode „wolny runner” (SLOW_RUNNER) each write of the tab leaves it this late (``dad_context`` of
+# ``drive/common.py``), as the start of #1570 did.
+LATE_WRITE_MS = 1500
 
 
 class Budget(Enum):
@@ -87,13 +108,39 @@ class TimedOut(Exception):
 T = TypeVar("T")
 
 
-def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN) -> T:
+# How long the file helpers of ``drive/common.py`` retry a file the server holds open on Windows; the server reads the harness's
+# files in milliseconds, so this only bounds a change that will never succeed.
+RETRY_OPEN_S = 10.0
+
+
+def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
+    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``limit_s``.
+
+    The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
+    skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
+    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
+    puts it in place (#1087)."""
+
+    deadline = time.monotonic() + limit_s
+    while True:
+        try:
+            return action()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN, *, page: Page | None = None) -> T:
     """Read ``ready`` until it gives something other than ``None`` or ``False``, and return that; ``what`` names it.
 
     An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
-    ``budget`` (a number of seconds is a limit that a call of ``Run.wait_for`` still names itself) the wait fails with
+    ``budget`` (or a number of seconds, which only the tests of the wait pass) the wait fails with
     ``TimedOut``, naming the error of ``NOT_YET`` the last read raised, if it raised one, so a file that stays half
     written is a failure that names its state.
+
+    A wait on what ``page`` sends waits inside Playwright, whose sync client delivers the page's events (a request, a
+    route) only during its own calls: after ``time.sleep`` their record stays as it was (#1682).
     """
 
     limit_s = budget.value if isinstance(budget, Budget) else budget
@@ -110,4 +157,33 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
         if time.monotonic() > deadline:
             state = "" if last is None else f"; the last read was not ready: {type(last).__name__}: {last}"
             raise TimedOut(f"timed out: {what}{state}") from last
-        time.sleep(POLL_S)
+        if page is None:
+            time.sleep(POLL_S)
+        else:
+            page.wait_for_timeout(POLL_S * 1000)
+
+
+def quiet_for(page: Page, ms: float = REPEAT_SETTLE_MS) -> None:
+    """Let ``page`` run ``ms`` with nothing on its screen or in its requests to wait for: a click that should send nothing
+    more, a hidden tab that should ask nothing, a time of the page that passes with nothing on screen.
+
+    In the mode „wolny runner” a write of the tab leaves ``LATE_WRITE_MS`` late, so the quiet is that much longer and a
+    write that should not come still falls inside it, instead of leaving after the drive counted the requests.
+    """
+
+    page.wait_for_timeout(ms + (LATE_WRITE_MS if SLOW_RUNNER in os.environ else 0))
+
+
+def answer_late(route: Route, seconds: float, answer: Callable[[Route], None] | None = None) -> None:
+    """From inside the handler of ``route``, answer it ``seconds`` later, as a server that answers late: with ``answer``,
+    or else by letting the request go on to Centrum.
+
+    The wait holds the drive's thread, so Playwright delivers no other event of the page before the answer. The default
+    is no attribute of Playwright's ``Route``, so the drive imports over a stand-in of Playwright without it.
+    """
+
+    time.sleep(seconds)
+    if answer is None:
+        route.continue_()
+    else:
+        answer(route)

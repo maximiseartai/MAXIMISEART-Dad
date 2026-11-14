@@ -4,9 +4,11 @@
 
 Zaakceptowana (decyzje Maksa ze specyfikacji #1597, 13.11.2026).
 Zmieniona 14.11.2026 decyzją Maksa w #1622: „Maszyneria maleje” pokazuje etykieta zamiast zgody `ZGODA SZOPA`.
+Zmieniona 14.11.2026 w #1611 (po trzech werdyktach FAIL PR #1680: dwóch za brakujące warianty i jednym za klasę spoza ręcznej tabeli klas): próbka znanej luki nosi nazwę klasy mechanizmu strażnika, a próbki to luki znane, nie pełna lista postaci ani klas (sekcja Decyzja, „Granica strażnika”).
 Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek.
 Zmienia sekcję „Reguły i co ich pilnuje” w [`AGENTS.md`](../../AGENTS.md): granicę strażnika, wyjątek na linii i źródła korzenia, a dokłada zakaz pamięci agentów poza repo.
 Zmienia zakres nocnych mutacji z [ADR 0021](0021-mutacje-noca.md).
+Zmieniona przez [ADR 0036](0036-chwast-to-regula.md) (#1676) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik” oraz w mierze odczytu 11.12.2026: chwast to reguła detektora zamiast issue „Chwast”; każda zmiana obowiązuje od merge'a jej wykonawcy z tabeli „Wdrożenie” w ADR 0036.
 
 Każda reguła wchodzi ticketem specyfikacji #1597, który stoi przy niej w sekcji Decyzja.
 Do merge'a tego ticketu obowiązuje dotychczasowe zdanie w `AGENTS.md`, [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md) i skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), a ticket zmienia te pliki tak, żeby zdanie tego ADR stało się prawdziwe.
@@ -30,8 +32,8 @@ Każda decyzja niżej ma jedno zdanie decyzji, jedno zdanie powodu i ticket, kt�
 
 ### Strażnicy i wyjątki
 
-- **Granica strażnika.** Postać, której strażnik nie łapie, jest próbką w teście strażnika oznaczoną jako znana luka, a nie zdaniem w docstringu, i test pada, gdy strażnik zaczyna tę postać łapać.
-  Powód: lista obejść w docstringu jest najbliższym przykładem do skopiowania i nic nie mówi, kiedy przestaje być prawdziwa.
+- **Granica strażnika.** Znana postać, której strażnik nie łapie, jest próbką w teście strażnika oznaczoną jako znana luka i nazwaną klasą mechanizmu, który ją przepuszcza (np. „zna tylko nazwę z importu”), a nie zdaniem w docstringu, próbki są lukami znanymi, a nie pełną listą postaci ani klas, więc nowo znaleziona luka staje się nową próbką albo zamyka ją konstrukcja (typ, zakaz ruff, odmowa w biegu), a test pada, gdy strażnik zaczyna próbkę łapać.
+  Powód: lista obejść w docstringu jest najbliższym przykładem do skopiowania i nic nie mówi, kiedy przestaje być prawdziwa, a ani lista wariantów, ani ręczna tabela klas z kodu strażnika się nie zamyka: PR #1680 dostał trzy werdykty FAIL, dwa za brakujące warianty i jeden za klasę spoza tabeli klas.
   Wchodzi w #1610 i #1611.
 - **Szczebel (d).** Szczebel (d) drabiny z ADR 0031 to reguła deklaratywna w gotowym narzędziu (ast-grep) na dodanych liniach, a nowa zapadka na regexie linii jest zakazana.
   Powód: wzorzec na drzewie składni myli się rzadziej niż wzorzec na tekście linii, a ręczne matchery dały najczęstszy korzeń `R-MATCH-KOD`.

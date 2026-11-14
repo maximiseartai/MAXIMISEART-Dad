@@ -53,9 +53,10 @@ class RunningCentrum:
 
 
 def running_centrum(port: int, *, timeout_s: float) -> RunningCentrum | None:
-    """Centrum na ``HOST:port`` według jego ``health``; ``None``, gdy odpowiada coś innego albo nic."""
+    """Centrum na ``HOST:port`` według jego ``health``; ``None``, gdy odpowiada coś innego albo nic. Pytanie idzie
+    z pominięciem serwera proxy, bo ten nie widzi ``127.0.0.1`` taty."""
 
-    direct = opener(urllib.request.ProxyHandler({}))  # serwer proxy nie widzi 127.0.0.1 taty
+    direct = opener(urllib.request.ProxyHandler({}))
     try:
         with direct.open(f"http://{HOST}:{port}/api/health", timeout=timeout_s) as response:
             health = json.load(response)
@@ -93,7 +94,8 @@ def tool_commit(root: Path = TOOL_ROOT) -> str | None:
 def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
     """Dzień, od którego narzędzie w ``root`` jest na ``commit``: data ostatniego wpisu reflogu ``HEAD``.
 
-    ``None``, gdy reflogu nie ma, jest pusty albo jego ostatni wpis prowadzi do innego commitu.
+    Wpis reflogu przed tabulatorem to ``<stary> <nowy> <kto> <sekundy> <strefa>``. ``None``, gdy reflogu nie ma, jest
+    pusty albo jego ostatni wpis prowadzi do innego commitu.
     """
 
     try:
@@ -105,7 +107,7 @@ def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
         return None
     if not entries:
         return None
-    fields = entries[-1].partition("\t")[0].split(" ")  # <stary> <nowy> <kto> <sekundy> <strefa>
+    fields = entries[-1].partition("\t")[0].split(" ")
     if len(fields) < 5 or fields[1] != commit:
         return None
     try:
@@ -115,11 +117,14 @@ def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
 
 
 def _git_directory(root: Path) -> Path | None:
+    """Katalog Gita klonu ``root``: folder ``.git`` albo, w katalogu roboczym ``git worktree``, ścieżka z pliku
+    ``.git`` w postaci „gitdir: <ścieżka>”."""
+
     dot_git = root / ".git"
     state = path_state(dot_git)
     if state == "folder":
         return dot_git
-    if state == "file":  # katalog roboczy git worktree: „gitdir: <ścieżka>”
+    if state == "file":
         pointer = dot_git.read_text(encoding="utf-8").strip()
         if pointer.startswith("gitdir: "):
             return (root / pointer.removeprefix("gitdir: ")).resolve()
@@ -127,9 +132,12 @@ def _git_directory(root: Path) -> Path | None:
 
 
 def _resolved(ref: str, git_directory: Path) -> str | None:
+    """Commit odniesienia ``ref`` z pliku albo z ``packed-refs``, ``None`` bez niego; gałęzie katalogu roboczego
+    ``git worktree`` leżą we wspólnym katalogu Gita (``commondir``)."""
+
     common = git_directory
     commondir = git_directory / "commondir"
-    if file_state(commondir) == "file":  # gałęzie katalogu roboczego leżą we wspólnym katalogu Gita
+    if file_state(commondir) == "file":
         common = (git_directory / commondir.read_text(encoding="utf-8").strip()).resolve()
     for directory in dict.fromkeys((git_directory, common)):
         loose = directory / ref

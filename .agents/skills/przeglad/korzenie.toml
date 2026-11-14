@@ -134,3 +134,7 @@ przyklad = 1568
 [R-FORMAT-ZAPISU]
 opis = "Pole dopisane do zapisywanego formatu (artefakt, plik stanu) bez wartości domyślnej przy odczycie i bez nowej wersji, więc zapis starszego runu albo Wydania wywraca narzędzie, które go czyta."
 przyklad = 1584
+
+[R-ODMOWA-PRZED-UZYCIEM]
+opis = "Odmowa sprawdza obiekt przy przyjęciu (konstruktor, start), a używa go później, więc zmiana obiektu między przyjęciem a użyciem (podmiana __class__ albo pola) ją omija."
+przyklad = 1698

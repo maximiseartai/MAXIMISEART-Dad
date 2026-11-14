@@ -32,7 +32,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, quiet_for, until
 from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -258,7 +258,7 @@ def _live_result_card(run: Run, page: Page, filling: Locator, collective_file: P
 
         page.evaluate(HIDE_TAB)
         hidden_from = len(asked)
-        page.wait_for_timeout(HIDDEN_MS)
+        quiet_for(page, HIDDEN_MS)
         hidden = asked[hidden_from:]
         run.check(
             VERSION_API not in hidden and API not in hidden,
@@ -511,7 +511,7 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     table.get_by_role("button", name=f"CZYNNOŚCI ZREALIZOWANE: {completed}", exact=True).click()
     expect(page.locator("[data-slot=popover-content]")).to_contain_text(completed)
     run.check(True, f"{title}: a tap on a column header or on CZYNNOŚCI ZREALIZOWANE shows the full text")
-    run.wait_for(
+    until(
         lambda: any(
             _measured(entry, "getKindTable") for entry in run.log_entries()[since:]
         ),
@@ -706,7 +706,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     _check_screen(run, page, before, "after Uzupełnij")
     menu = page.get_by_role("list", name="Sekcje Centrum rozliczeń")
     expect(menu.get_by_role("link", name="Okresy", exact=True)).to_have_attribute("data-active", "")
-    run.wait_for(
+    until(
         lambda: any(
             _measured(entry, "getQuantitiesToFill") for entry in run.log_entries()[since:]
         ),
@@ -798,7 +798,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
 
     run.step(FEATURE, "uzupelnienie-otworz")
     page.get_by_role("button", name="Otwórz Plik zbiorczy", exact=True).click()
-    run.wait_for(last_opened_is(run, collective_file), "Otwórz Plik zbiorczy opened the period's Plik zbiorczy")
+    until(last_opened_is(run, collective_file), "Otwórz Plik zbiorczy opened the period's Plik zbiorczy")
     expect(page.get_by_text(collective_file.name, exact=True).last).to_be_visible()
 
     run.step(FEATURE, "uzupelnienie-powrot")

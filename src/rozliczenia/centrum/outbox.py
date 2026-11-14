@@ -64,7 +64,7 @@ import sys
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
@@ -91,7 +91,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
-from rozliczenia.client_data import Outgoing, tool
+from rozliczenia.client_data import LogsText, Outgoing, logs_text, tool
 from rozliczenia.wall_clock import utc_now
 
 if TYPE_CHECKING:
@@ -280,20 +280,21 @@ Target = PeriodThread | NewIssue | KnownIssue | OpenIssue
 """Dokąd w Skrzynce Zgłoszeń idzie wysyłka; każde pole tekstowe celu to ``Outgoing``, a cel nie ma podklas (``final``)."""
 
 
+@final
 @dataclass(frozen=True)
 class ArchiveFile:
     """Plik wysyłki w Archiwum okresu (GitHub Release z tagiem ``tag`` w repozytorium Skrzynki Zgłoszeń).
 
-    ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów); w Archiwum leży
-    spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i ``description`` to
-    tytuł i opis Archiwum, gdy kolejka musi je założyć.
+    ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów po strażniku); w
+    Archiwum leży spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i
+    ``description`` to tytuł i opis Archiwum, gdy kolejka musi je założyć.
     """
 
     tag: str
     title: str
     description: str
     name: str
-    text: str
+    text: LogsText
 
     @property
     def packed_name(self) -> str:
@@ -488,59 +489,71 @@ def _file_name(version: str, label: str, run_id: str) -> str:
     return f"{version}-{label}-{run_id[:8]}.json"
 
 
-def _queue_text(post: Post, *, delivered_parts: int, archived: bool) -> str:
-    archive = post.archive
+def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) -> str:
+    """Treść pliku kolejki z ``post``, sprawdzona w chwili zapisu, bo plik daje swoim tekstom ``Outgoing`` od nowa
+    (``_parse``): wysyłka dokładnie ``Post`` albo ``comment_versions.LogsPost``, każde pole czytane raz, a tekst inny niż
+    dokładnie ``Outgoing``, tekst pliku Archiwum inny niż dokładnie ``LogsText`` i stopień inny niż ``Rank`` dają
+    ``TypeError``. Typ sprawdza porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa z własnym
+    ``__eq__``. Nie zamyka zmiany obiektu, klasy albo modułu w chwili działania ani ``str.__new__`` z klasą ``Outgoing``.
+    ``LogsPost`` bierze w chwili wywołania, bo ``comment_versions`` importuje ten moduł."""
+
+    from rozliczenia.centrum.comment_versions import LogsPost
+
+    if type(post) is not Post and type(post) is not LogsPost:
+        raise TypeError(f"Plik kolejki bierze tylko Post i LogsPost, nie {type(post).__name__}.")
+    header, parts, archive, rank = post.header, tuple(post.parts), post.archive, post.rank
+    if any(type(part) is not Outgoing for part in (*parts, *(() if header is None else (header,)))) or type(rank) is not Rank:
+        raise TypeError("Plik kolejki bierze tylko tekst Outgoing z rozliczenia.client_data i stopień Rank.")
+    file: dict[str, str] | None = None
+    if archive is not None:
+        text = archive.text
+        if type(archive) is not ArchiveFile or type(text) is not LogsText:
+            raise TypeError("Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText z rozliczenia.client_data.")
+        file = {"tag": archive.tag, "title": archive.title, "description": archive.description, "name": archive.name, "text": str.__str__(text)}
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,
             "target": _target_json(post.target),
             "period": post.period,
             "run_id": post.run_id,
-            "header": post.header,
-            "parts": list(post.parts),
-            "archive": None
-            if archive is None
-            else {
-                "tag": archive.tag,
-                "title": archive.title,
-                "description": archive.description,
-                "name": archive.name,
-                "text": archive.text,
-            },
+            "header": None if header is None else str.__str__(header),
+            "parts": [str.__str__(part) for part in parts],
+            "archive": file,
             "delivered_parts": delivered_parts,
             "archived": archived,
-            "rank": post.rank.value,
-            "state": post.state,
+            "rank": rank.value,
+            "state": post.state if type(post) is Post else None,
         },
         ensure_ascii=False,
         indent=2,
     )
 
 
-def _target_json(target: Target) -> dict[str, str | int]:
-    match target:
-        case PeriodThread():
-            return {
-                "kind": "period_thread",
-                "label": target.label,
-                "line": target.line,
-                "closed": target.closed,
-                "title": target.title,
-            }
-        case NewIssue():
-            return {"kind": "new_issue", "label": target.label, "title": target.title}
-        case KnownIssue():
-            return {"kind": "known_issue", "label": target.label, "number": target.number}
-        case OpenIssue():
-            return {
-                "kind": _OPEN_ISSUE,
-                "label": target.label,
-                "line": target.line,
-                "title": target.title,
-                "again": target.again,
-            }
-        case _:
-            assert_never(target)
+_KINDS: Final[tuple[tuple[type[Target], str], ...]] = ((PeriodThread, "period_thread"), (NewIssue, "new_issue"), (KnownIssue, "known_issue"), (OpenIssue, _OPEN_ISSUE))
+_FIELDS: Final[dict[str, Callable[[object], bool]]] = {
+    "Outgoing": lambda value: type(value) is Outgoing,
+    "Label": lambda value: type(value) is str and value in _LABELS,
+    "Closed": lambda value: type(value) is str and value in _CLOSED,
+    "int": lambda value: type(value) is int,
+}
+"""Sprawdzenie pola celu po jego adnotacji w klasie celu; pole z inną adnotacją wywraca zapis, zamiast przejść."""
+
+
+def _target_json(target: object) -> dict[str, str | int]:
+    """Cel w pliku kolejki: dokładnie jedna z klas ``Target`` (porównanie ``is``), a każde pole z ``fields`` tej klasy,
+    nie z adnotacji wejścia, czytane raz i sprawdzone po adnotacji (``_FIELDS``)."""
+
+    found = next(((kind, name) for kind, name in _KINDS if type(target) is kind), None)
+    if found is None:
+        raise TypeError(f"Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie {type(target).__name__}.")
+    kind, name = found
+    entry: dict[str, str | int] = {"kind": name}
+    for field in fields(kind):
+        value, check = getattr(target, field.name), _FIELDS.get(str(field.type))
+        if check is None or not check(value):
+            raise TypeError(f"Pole celu {kind.__name__}.{field.name} w pliku kolejki ma typ {type(value).__name__}.")
+        entry[field.name] = value if type(value) is int else str.__str__(value)
+    return entry
 
 
 def _target(entry: dict[str, Any], kind: object) -> Target | None:
@@ -626,7 +639,7 @@ def _archive_file(entry: object) -> ArchiveFile | None:
         _string(entry["title"]),
         _string(entry["description"]),
         _string(entry["name"]),
-        _string(entry["text"]),
+        logs_text(_string(entry["text"])),
     )
 
 
@@ -683,8 +696,12 @@ def _optional_string(value: object) -> str | None:
 
 
 def _pack(blocks: Sequence[Outgoing], budget: int) -> tuple[Outgoing, ...]:
-    """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony."""
+    """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony. Części
+    dostają ``tool``, więc ``blocks`` czyta raz i blok inny niż dokładnie ``Outgoing`` daje ``TypeError``."""
 
+    blocks = tuple(blocks)
+    if any(type(block) is not Outgoing for block in blocks):
+        raise TypeError("Wysyłka bierze tylko bloki Outgoing z rozliczenia.client_data.")
     parts: list[str] = []
     current = ""
     for block in blocks:
@@ -1285,20 +1302,21 @@ class Outbox:
     def post(self, post: Post | LogsPost) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
-        Kolejka bierze tylko ``Post`` i ``comment_versions.LogsPost``, obie bez podklas, więc treść pliku kolejki daje
-        zawsze ``Post.to_json``. Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
+        Kolejka bierze tylko ``Post`` i ``comment_versions.LogsPost`` dokładnego typu, a treść pliku kolejki daje funkcja
+        modułu ``_queue_text``, nie metoda wysyłki, więc ``to_json`` podmienione na klasie albo obiekcie jej nie zmienia. Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
         (Windows poprawia czas): chwila w nazwie jest wtedy o ``_TICK`` późniejsza od poprzedniej, więc wysyłka zapisana
         później ma nowszą wersję (``_version``). ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i
-        wysyłka przepadła.
+        wysyłka przepadła; wysyłka albo tekst innego typu to ``TypeError`` przed zapisem.
         """
 
+        text = _queue_text(post, delivered_parts=0, archived=False)
         with self._lock:  # chwila i numer razem: każda następna nazwa tej kolejki sortuje się po poprzedniej
             now = self._now()
             moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
             self._last_moment = moment
             name = _file_name(f"{moment:%Y%m%dT%H%M%S%fZ}-{next(self._sequence):04d}", post.target.label, post.run_id)
         try:
-            self._disk.write(self._directory / name, post.to_json())
+            self._disk.write(self._directory / name, text)
         except OSError as failure:
             self._log.unexpected_failure(failure, where="zapis wysyłki do Skrzynki Zgłoszeń")
             return False

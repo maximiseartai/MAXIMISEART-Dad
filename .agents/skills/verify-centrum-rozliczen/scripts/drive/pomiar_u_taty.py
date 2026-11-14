@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-import time
 import urllib.parse
 import urllib.request
 
 from playwright.sync_api import Page, Request, Response, Route, expect
 
 from drive.common import PAGES, REPO_ROOT, Run, close_settings, ensure_files_set, read_json, settings_window
+from drive.waiting import Budget, answer_late, until
 
 FEATURE = "pomiar-u-taty"
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
@@ -48,8 +48,18 @@ def _timings(run: Run, since: int) -> list[dict[str, str]]:
 
 
 def _wait_for_timings(run: Run, since: int, count: int, message: str) -> list[dict[str, str]]:
-    run.wait_for(lambda: len(_timings(run, since)) >= count, message)
+    until(lambda: len(_timings(run, since)) >= count, message)
     return _timings(run, since)
+
+
+def _okresy_measured(run: Run, page: Page) -> None:
+    """Okresy opened cold and measured itself, so its entry stands before the entries of the next view."""
+
+    page.goto("about:blank")
+    since = len(run.log_entries())
+    page.goto(f"{run.url}#/okresy")
+    expect(page.get_by_role("heading", name="Okresy", level=1)).to_be_visible()
+    _wait_for_timings(run, since, 1, "the cold start of Okresy is in the Centrum log")
 
 
 def _check_requests(run: Run, timing: dict[str, str], where: str) -> None:
@@ -115,11 +125,11 @@ def drive(run: Run, page: Page) -> None:
     since = len(run.log_entries())
     first, *rest = PAGES.items()
     route = [*rest, first]
-    for _, title in route:
+    for clicked, (_, title) in enumerate(route, start=1):
         page.get_by_role("link", name=title, exact=True).click()
         expect(page.get_by_role("heading", name=title, level=1)).to_be_visible()
-        page.wait_for_timeout(300)  # Dad reads the page before the next click
-    timings = _wait_for_timings(run, since, len(route), "every menu click is in the Centrum log")
+        # Dad reads the page until it is ready: a page left before its data came measures nothing.
+        timings = _wait_for_timings(run, since, clicked, f"the menu click to {title} is in the Centrum log")
     run.check(
         [(timing["widok"], timing["strona"]) for timing in timings] == [("przejscie-w-menu", page_id) for page_id, _ in route],
         "one menu-click entry per page, in the order of the clicks",
@@ -145,14 +155,10 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "pomiar-szkielet-widoczny")
-    page.goto("about:blank")
-    page.goto(f"{run.url}#/okresy")
-    expect(page.get_by_role("heading", name="Okresy", level=1)).to_be_visible()
-    page.wait_for_timeout(300)
+    _okresy_measured(run, page)
 
     def slow(route: Route) -> None:
-        time.sleep(SLOW_READ_S)
-        route.continue_()
+        answer_late(route, SLOW_READ_S)
 
     page.route("**/api/configuration", slow)
     since = len(run.log_entries())
@@ -172,17 +178,15 @@ def drive(run: Run, page: Page) -> None:
     )
 
     run.step(FEATURE, "pomiar-wiele-zapytan")
-    page.goto("about:blank")
-    page.goto(f"{run.url}#/okresy")
-    expect(page.get_by_role("heading", name="Okresy", level=1)).to_be_visible()
-    page.wait_for_timeout(300)
+    _okresy_measured(run, page)
     held: list[str] = []
 
     def hold_first(route: Route) -> None:
-        if not held:
-            held.append(route.request.url)
-            time.sleep(SLOW_READ_S)
-        route.continue_()
+        if held:
+            route.continue_()
+            return
+        held.append(route.request.url)
+        answer_late(route, SLOW_READ_S)
 
     # The read that made the view ready is the last one the page got before it sent the measurement, not always the
     # configuration: every return to the tab reads the settings again too.
@@ -223,7 +227,8 @@ def drive(run: Run, page: Page) -> None:
             }""",
             [MAX_TIMED_REQUESTS + 5],
         )
-        expect(settings_window(page).get_by_role("listitem", name="Wersja narzędzia")).to_be_visible()
+        # Ready only after the reads of every return (harness).
+        expect(settings_window(page).get_by_role("listitem", name="Wersja narzędzia")).to_be_visible(timeout=Budget.SLOWED.ms)
         [timing] = _wait_for_timings(run, since, 1, "the opening with more requests than one measurement is logged")
     finally:
         page.unroute("**/api/configuration", hold_first)

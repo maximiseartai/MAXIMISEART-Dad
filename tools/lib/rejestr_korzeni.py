@@ -674,6 +674,12 @@ def _graphql(query: str, **variables: str | int | None) -> dict[str, Any]:
     return data
 
 
+def pull(repository: str, number: int) -> Pull:
+    """PR ``number`` z każdym komentarzem i każdą recenzją, z HTML treści dla ``werdykt_pr.from_graphql``."""
+
+    return _pull(pull_node(repository, number))
+
+
 def _pull(node: dict[str, Any]) -> Pull:
     view = {**node, "comments": node["comments"]["nodes"], "reviews": node["reviews"]["nodes"], "closingIssuesReferences": [], "statusCheckRollup": []}
     return stan_pr.from_view(view)

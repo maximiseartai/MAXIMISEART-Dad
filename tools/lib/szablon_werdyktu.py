@@ -61,6 +61,8 @@ RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
 FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:")
+# ``plik:linia`` albo ``plik:linia-linia`` pola ``Gdzie:`` (``places``).
+PLACE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]*\w|[\w-][\w.-]*\.[A-Za-z]\w*):(\d+)(?:[-–](\d+))?(?!\d)")
 ENTRY_KEYS = frozenset({"opis", "przyklad"})
 QUOTE = "cytat z polem albo nagłówkiem w Dowodzie ujmij w blok kodu ```"
 # Bloki, które GitHub stawia w punkcie listy: luźna lista owija tekst punktu w akapit, a każdy inny blok to odmowa.
@@ -248,6 +250,15 @@ def _value(item: Item, field: str) -> str | None:
     napis, gdy pole jest puste."""
 
     return item.text.removeprefix(field).strip() if item.kind == "line" and item.text.startswith(field) else None
+
+
+def places(where: str) -> list[tuple[str, int, int]]:
+    """Miejsca ``plik:linia`` i ``plik:linia-linia`` z tekstu pola ``Gdzie:``: ścieżka repo, pierwsza i ostatnia linia.
+
+    Plik to ścieżka z ``/`` albo nazwa z rozszerzeniem od litery, więc godzina ``12:30``, proporcja ``3:1`` i ``:linia``
+    bez pliku nie są miejscem; plik bez rozszerzenia w korzeniu repo (``Makefile:3``) też nie."""
+
+    return [(found[1], int(found[2]), int(found[3] or found[2])) for found in PLACE.finditer(where)]
 
 
 def evidence_problems(label: str, evidence: str, items: Sequence[Item]) -> list[str]:

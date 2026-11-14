@@ -1,4 +1,4 @@
-"""Znane luki strażnika (ADR 0034): postać kodu, której strażnik nie łapie, jest próbką w jego teście.
+"""Znane luki strażnika (ADR 0034): znana postać, którą strażnik przepuszcza, jest próbką w jego teście.
 
 Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu („klasa: postać” → kod modułu), a test puszcza każdą przez
 prawdziwe mechanizmy strażnika: ``ruff check`` z konfiguracją repozytorium na ścieżce sondy, ``mypy`` z konfiguracją
@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from types import ModuleType
@@ -71,31 +72,47 @@ def ruff(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
     return zgloszenia
 
 
+def platformy_mypy_ci() -> list[str]:
+    """Platformy kroków ``python -m mypy --platform`` zadania CI „Ruff, mypy” z ``ci.yml``, w kolejności kroków:
+    Required CI liczy mypy na nich, a nie na systemie, na którym biegnie test."""
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    runs = [str(step.get("run", "")) for step in workflow["jobs"]["ruff-mypy"]["steps"]]
+    platformy = [match[1] for run in runs if (match := re.search(r"-m mypy --platform (\S+)", run))]
+    assert platformy, "zadanie CI „Ruff, mypy” nie ma kroku python -m mypy --platform"
+    return platformy
+
+
 def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
-    """Zgłoszenia ruff (``ruff``) i mypy (jedno uruchomienie na wszystkie pliki, z własnym cache) dla każdej próbki."""
+    """Zgłoszenia ruff (``ruff``) i mypy dla każdej próbki. Mypy biegnie raz na wszystkie pliki z ``--platform`` każdej
+    platformy z ``platformy_mypy_ci`` (z własnym cache), a zgłoszenie ma postać ``mypy[platforma] błąd``."""
 
     zgloszenia = ruff(pliki, sonda)
     katalog = {plik.parent for plik in pliki.values()}
     assert len(katalog) == 1, katalog
-    mypy = subprocess.run(
-        [sys.executable, "-m", "mypy", "--no-error-summary", "--cache-dir", str(katalog.pop() / ".mypy_cache")]
-        + [str(plik) for plik in pliki.values()],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=ROOT,
-        check=False,
-    )
-    assert mypy.returncode in (0, 1) and mypy.stderr == "", mypy.stdout + mypy.stderr
+    cache = katalog.pop() / ".mypy_cache"
     opisy = {plik.name: opis for opis, plik in pliki.items()}
-    obce = []
-    for linia in mypy.stdout.splitlines():
-        miejsce, _, blad = linia.partition(": error: ")
-        if blad and (probka := opisy.get(Path(miejsce.rsplit(":", 1)[0]).name)) is not None:
-            zgloszenia[probka].append(f"mypy {blad}")
-        elif blad:
-            obce.append(linia)
-    assert obce == [], "mypy zgłasza błąd poza próbkami:\n" + "\n".join(obce)
+    for platforma in platformy_mypy_ci():
+        mypy = subprocess.run(
+            [sys.executable, "-m", "mypy", "--no-error-summary", "--platform", platforma, "--cache-dir", str(cache / platforma)]
+            + [str(plik) for plik in pliki.values()],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=ROOT,
+            check=False,
+        )
+        assert mypy.returncode in (0, 1) and mypy.stderr == "", mypy.stdout + mypy.stderr
+        obce = []
+        for linia in mypy.stdout.splitlines():
+            miejsce, _, blad = linia.partition(": error: ")
+            if blad and (probka := opisy.get(Path(miejsce.rsplit(":", 1)[0]).name)) is not None:
+                zgloszenia[probka].append(f"mypy[{platforma}] {blad}")
+            elif blad:
+                obce.append(linia)
+        assert obce == [], "mypy zgłasza błąd poza próbkami:\n" + "\n".join(obce)
     return zgloszenia
 
 

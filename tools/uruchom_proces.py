@@ -77,7 +77,7 @@ from rozliczenia.centrum import run_view
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start
+from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start, startable
 from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.memory import settings_bytes
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         kind.key, _start(kind, args, parser), _parts(kind, args), RunContext()
     )
     unattended = _Unattended(prepared.progress_view)
-    outcome = prepared.conduct(unattended)
+    outcome = startable(prepared).conduct(unattended)
     result = ProcessResult.of(outcome, unattended.progress)
     sys.stdout.buffer.write(result.model_dump_json(indent=2).encode("utf-8") + b"\n")
     sys.stdout.buffer.flush()

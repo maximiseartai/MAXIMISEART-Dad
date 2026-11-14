@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatchcase
 import json
 import os
@@ -15,18 +15,17 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize
+from playwright.sync_api import Browser, BrowserContext, ConsoleMessage, FloatRect, Locator, Page, Request, Response, ViewportSize
 import yaml
 
 from drive import feature
-from drive.waiting import Budget, TimedOut, expect, until
+from drive.waiting import LATE_WRITE_MS, Budget, expect, quiet_for, until, while_open
 from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -48,9 +47,6 @@ PAGES = {
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
 # Dad's screen: the drive's tab and every other tab it opens unless a feature needs another window.
 DAD_VIEWPORT: ViewportSize = {"width": 1440, "height": 1000}
-# Dad double-clicks out of habit and double-taps the touch screen: the second click comes within milliseconds,
-# so a repeated request is sent well within this, and an answer reaches the screen (a refusal as a toast) too.
-REPEAT_SETTLE_MS = 300
 # Dad's return to Centrum's window: the pages read the server again (`useResource`).
 FOCUS = "window.dispatchEvent(new Event('focus'))"
 # Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
@@ -233,16 +229,6 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: Budget | float = Budget.SCREEN) -> None:
-        """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
-        yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
-
-        try:
-            until(lambda: bool(condition()), message, timeout_s)
-        except TimedOut as timed_out:
-            check_clock_alarm(self)
-            raise DriveFailure(str(timed_out)) from timed_out
-
 
 # The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).
 NARROW_WINDOW_PX = 768
@@ -251,7 +237,7 @@ NARROW_WINDOW_PX = 768
 # Whether the element's centre takes a click: the topmost element there is the element or part of it, so nothing (the
 # blurred page, another window, a notification) stands over it. One read is the page at that moment, which is the check
 # when even a short cover is the defect (a notification over „Wyślij”); an element that slides in, like a notification,
-# is visible before its centre is clear, so wait for it with `Run.wait_for` (#1518).
+# is visible before its centre is clear, so wait for it with `until` (#1518).
 CENTRE_TAKES_CLICK = """element => {
     const box = element.getBoundingClientRect()
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
@@ -356,7 +342,7 @@ def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
     window = open_settings(page, "Foldery")
     run.answer_picker(path)
     window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$")).click()
-    run.wait_for(lambda: run.remembered(key) == path, f"{label} set in Ustawienia")
+    until(lambda: run.remembered(key) == path, f"{label} set in Ustawienia")
     expect(window.get_by_role("button", name=re.compile(rf"^(Wskaż|Zmień) {label}$"))).to_be_enabled()
     close_settings(page)
 
@@ -407,32 +393,6 @@ def period_choice(token: str, status: str) -> str:
 
 def period_row(page: Page, token: str) -> Locator:
     return page.get_by_role("table", name="Tablica okresów").get_by_role("row").filter(has_text=token)
-
-
-# How long the file helpers below retry a file the server holds open on Windows; the server reads the harness's
-# files in milliseconds, so this only bounds a change that will never succeed.
-RETRY_OPEN_S = 10.0
-
-
-T = TypeVar("T")
-
-
-def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
-    """Run ``action`` on a file of the run, retrying while the server holds it open, for at most ``limit_s``.
-
-    The server reads and writes the run's files from its own threads at any moment (pacing, the scripted GitHub, the
-    skrzynka Zgłoszeń and its queue, the settings, metrics and Wzorce while a page refreshes), and on Windows a file
-    another process has open can be neither deleted nor renamed (``WinError 32``, #921), nor opened while the server
-    puts it in place (#1087)."""
-
-    deadline = time.monotonic() + limit_s
-    while True:
-        try:
-            return action()
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.05)
 
 
 def remove(path: Path, *, missing_ok: bool = False) -> None:
@@ -608,7 +568,7 @@ def close_centrum(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Zamknij Centrum rozliczeń", exact=True).click()
     page.get_by_role("button", name="Zamknij Centrum", exact=True).click()
     expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
-    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+    until(lambda: not answers(run.url), "Centrum stops serving")
 
 
 def start_centrum(run: Run, name: str) -> None:
@@ -629,7 +589,7 @@ def start_centrum(run: Run, name: str) -> None:
             stdout=console,
             stderr=subprocess.STDOUT,
         )
-    run.wait_for(lambda: answers(run.url), "Centrum answers again after the start", timeout_s=Budget.WORK)
+    until(lambda: answers(run.url), "Centrum answers again after the start", Budget.WORK)
 
 
 def kill_centrum(run: Run) -> None:
@@ -644,7 +604,7 @@ def kill_centrum(run: Run) -> None:
         os.kill(pid, signal.SIGTERM)
     else:
         os.kill(pid, signal.SIGKILL)
-    run.wait_for(lambda: not answers(run.url), "Centrum stops serving")
+    until(lambda: not answers(run.url), "Centrum stops serving")
 
 
 def local_time(moment: str) -> str:
@@ -654,9 +614,8 @@ def local_time(moment: str) -> str:
 
 
 # The browser of the mode „wolny runner” (SLOW_RUNNER): animations run at this rate, so a notification that closes stays
-# on the screen five times longer (#1534), and each write of the tab leaves it this late, as the start of #1570 did.
+# on the screen five times longer (#1534), and each write of the tab leaves it LATE_WRITE_MS late.
 SLOW_ANIMATIONS = 0.2
-LATE_WRITE_MS = 1500
 LATE_WRITES = """(() => {
     const send = window.fetch
     window.fetch = (input, init) => {
@@ -667,11 +626,110 @@ LATE_WRITES = """(() => {
 })()"""
 
 
+PAGE_REQUESTS = "zadania-strony.txt"
+"""The file beside ``drive.txt`` with one line per failed request, answer of 400 or more and page without its
+stylesheet, of every page of the drive (``PageRequests``)."""
+# A page whose stylesheet of its own origin has no rule it can read after its load says so on its console with this
+# prefix and the sheet's address. Chromium gives a failed request an empty sheet whose rules it refuses to read
+# (SecurityError) and an error answer or an empty one a sheet without rules; a sheet of another origin is never readable,
+# so it is left out. The condition does not depend on the theme.
+NO_STYLESHEET = "drive: no stylesheet: "
+# A request the page itself gave up, as the event stream of Uruchomienia on each navigation: no answer was lost.
+ABANDONED = "net::ERR_ABORTED"
+STYLESHEET_CHECK = """addEventListener("load", () => {
+    for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
+        if (new URL(link.href).origin !== location.origin) continue
+        let rules = 0
+        try { rules = link.sheet?.cssRules.length ?? 0 } catch {}
+        if (rules === 0) console.warn(%s + link.href)
+    }
+})""" % json.dumps(NO_STYLESHEET)
+
+
+class PageRequests:
+    """What the drive's pages lost on the way from Centrum, in ``PAGE_REQUESTS`` of the evidence (#1539).
+
+    Without ``index.css`` the window of Base UI has no place above its own backdrop, so a click in Ustawienia waited
+    10 s behind ``data-base-ui-inert`` and named nothing (run 43561009106). ``dad_context`` hands every context it opens
+    to ``watch``, so each page and tab of the drive writes here; the query of an address is left out, as it may carry a
+    value of a file.
+    """
+
+    def __init__(self) -> None:
+        self._file: Path | None = None
+        self._without_stylesheet: list[str] = []
+
+    @contextmanager
+    def recording(self, evidence: Path) -> Iterator[None]:
+        """Contexts opened in this block write to ``evidence``; after it the drive's contexts write nothing."""
+
+        self._file = evidence / PAGE_REQUESTS
+        self._file.write_text("", encoding="utf-8")
+        self._without_stylesheet = []
+        try:
+            yield
+        finally:
+            self._file = None
+
+    def watch(self, context: BrowserContext) -> None:
+        if self._file is None:
+            return
+        context.add_init_script(STYLESHEET_CHECK)
+        context.on("requestfailed", self._failed)
+        context.on("response", self._answered)
+        context.on("console", self._console)
+
+    def check(self, cause: Exception | None = None) -> None:
+        """Fails naming each stylesheet a page of the drive did not get, before ``cause``, the failure it led to: a click
+        that waits behind a backdrop names only the backdrop."""
+
+        if not self._without_stylesheet:
+            return
+        sheets = ", ".join(dict.fromkeys(self._without_stylesheet))
+        failure = DriveFailure(
+            f"the page got no stylesheet ({sheets}), so Base UI windows lie under their backdrop; "
+            f"its failed requests and error answers are in {PAGE_REQUESTS}"
+        )
+        if cause is not None:
+            for note in (str(cause), *getattr(cause, "__notes__", ())):
+                failure.add_note(note)
+        raise failure from cause
+
+    def _failed(self, request: Request) -> None:
+        if request.failure != ABANDONED:
+            self._write(f"{request.method} {_address(request.url)} failed: {request.failure}")
+
+    def _answered(self, response: Response) -> None:
+        if response.status >= 400:
+            self._write(f"{response.request.method} {_address(response.url)} answered {response.status}")
+
+    def _console(self, message: ConsoleMessage) -> None:
+        if message.text.startswith(NO_STYLESHEET):
+            sheet = _address(message.text.removeprefix(NO_STYLESHEET))
+            self._without_stylesheet.append(sheet)
+            self._write(f"page without stylesheet {sheet}")
+
+    def _write(self, line: str) -> None:
+        if self._file is not None:
+            with self._file.open("a", encoding="utf-8") as record:
+                record.write(f"{datetime.now(UTC).isoformat(timespec='milliseconds')} {line}\n")
+
+
+def _address(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.netloc else parts.path
+
+
+page_requests = PageRequests()
+
+
 def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
     """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``; in the
-    mode „wolny runner” its pages run animations slowly and send writes late."""
+    mode „wolny runner” its pages run animations slowly and send writes late. Its pages write what they lost to
+    ``page_requests``."""
 
     context = browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+    page_requests.watch(context)
     if SLOW_RUNNER in os.environ:
         # A late write in the page, not in context.route: a handler of the sync client that sleeps holds the drive too.
         context.add_init_script(LATE_WRITES % LATE_WRITE_MS)
@@ -844,13 +902,13 @@ def ended_run_shown(view: dict[str, object]) -> bool:
 
 
 def finished_view(
-    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget = Budget.SCREEN
 ) -> dict[str, Any]:
     """The current Uruchomienie once it finished, the one answer kept in ``api/<name>.json``.
 
     ``replacing`` is the id of the Uruchomienie the drive just started again (`Uruchom ponownie`): a click does not wait
     for the tab's request, so the server can still show the one before it as finished, and only another id is the new
-    Uruchomienie. ``timeout_s`` is the wait for the end (``Run.wait_for``)."""
+    Uruchomienie. ``timeout_s`` is the budget of the wait for the end (``until``)."""
 
     # One answer for both the state and the result: a second read could already see the next Uruchomienie.
     seen: dict[str, Any] = {}
@@ -860,12 +918,12 @@ def finished_view(
         seen.update(current_run(run, name))
         return bool(seen["state"] == "finished" and seen["run"]["id"] != replacing)
 
-    run.wait_for(finished, "the Uruchomienie procesu finished", timeout_s=timeout_s)
+    until(finished, "the Uruchomienie procesu finished", timeout_s)
     return seen
 
 
 def finished_result(
-    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget | float = Budget.SCREEN
+    run: Run, name: str, *, replacing: str | None = None, timeout_s: Budget = Budget.SCREEN
 ) -> dict[str, Any]:
     result = finished_view(run, name, replacing=replacing, timeout_s=timeout_s)["result"]
     assert isinstance(result, dict)
@@ -1045,13 +1103,14 @@ def unreadable(path: Path) -> Iterator[None]:
             path.chmod(mode)
 
 
-def settle(page: Page, sent: list[Request]) -> int:
+def settle(page: Page, sent: list[Request], at_least: int = 1) -> int:
     """Waits until a repeated click would have sent its request and every answer reached the screen; the count."""
 
-    page.wait_for_timeout(REPEAT_SETTLE_MS)
+    until(lambda: len(sent) >= at_least, f"the click sends {at_least} request(s) (a write of the tab can leave late)", page=page)
+    quiet_for(page)
     for request in list(sent):
         request.response()
-    page.wait_for_timeout(REPEAT_SETTLE_MS)
+    quiet_for(page)
     return len(sent)
 
 

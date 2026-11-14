@@ -521,6 +521,7 @@ Postep ==
 (* runs.Run.work -> PreparedRun.conduct -> process_run.run_process: silnik doszedł do wyniku, MetricsStore(...)     *)
 (* .append(record) zapisuje rekord metryk (wiersz Historii) albo nie (OSError, UnicodeError, ValueError:              *)
 (* metrics_saved = False), a run_process wraca z wynikiem. Wiersza Historii start nie czyta, więc model go nie ma.   *)
+(* process_kind.startable przed conduct i w nim nie zmienia stanu, a obiekt z Catalog.prepared zawsze je przechodzi. *)
 Wynik ==
     /\ bieg # 0 /\ faza = "wynik"
     /\ wynik' = [wynik EXCEPT ![bieg] = TRUE]

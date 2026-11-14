@@ -88,7 +88,7 @@ fails on each deletion, move or replacement of a file or folder in these forms (
 the same tables, and the self-test fails when they differ).
 Ruff `TID251` (`drive/ruff.toml`) already rejects each name it resolves to a deletion or move of `os`, `shutil` or a
 pathlib class (`os.remove`, `import os as system; system.replace(p, q)`, `from shutil import rmtree`,
-`Path.replace(p, q)`), and a helper of `common.py` that needs one has it on a line with `# noqa: TID251`.
+`Path.replace(p, q)`); `common.py`, whose helpers own these names, has `TID251` in `per-file-ignores` of `pyproject.toml`.
 The guard catches only the forms ruff cannot resolve, and knows a module only by a name an `import` binds, never by
 an assignment.
 
@@ -124,10 +124,13 @@ injected instead of load, so a check that depends on time fails on every run (#1
 | Delay | Value | Owner | Class it shows |
 |---|---|---|---|
 | animations of every page of `dad_context` (CDP `Animation.setPlaybackRate`) | `SLOW_ANIMATIONS` 0.2 | `drive/common.py` | a check of a state visible for a moment (#1534) |
-| each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/common.py` | a read right after a click, before its request arrives (#1570) |
+| each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/waiting.py`, put into the tab by `dad_context` of `drive/common.py` | a read right after a click, before its request arrives (#1570) |
 | each request of `/api/` waits before Centrum takes it | `API_DELAY_S` 0.3 | `serve_centrum.py` | a fixed sleep or limit shorter than the server's answer |
 
 Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
+The drive waits for a condition through `until` of `drive/waiting.py` and also through Playwright's `page.wait_for_function`, which polls a condition inside the page for the page's default limit (`Budget.SCREEN` for the drive's page, what `dad_tab` or `wydajnosc` set for theirs, Playwright's own 30 s for a tab opened without `set_default_timeout`); it waits for the screen through its `expect` and lets the page run through `quiet_for`.
+`Run.wait_for` is gone (#1539), so the drive has no way of its own beside `until` to copy, and a new function that wraps `until` around a condition it takes, nothing refuses today.
+Ruff refuses `time.sleep` in `drive/` but for `drive/waiting.py` and `drive/common.py` (`drive/ruff.toml`; the scripts outside `drive/` have no such ban), in `drive/common.py` the test of `OWNERS` in `tests/test_zakazy_ruff.py` does, and `page.wait_for_timeout` passes both (`ZNANE_LUKI_SNU`).
 The drive stops at its first failure, so drive one feature per run to find each failing place.
 The mode is a manual proof and runs neither in CI nor at night.
 
@@ -154,7 +157,10 @@ behaviour, then exactly these H2s in order:
    called in the body of `drive(run, page)`. It refuses, with the file and the line,
    every other form of them and every other `.step` or `.check` attribute in the
    module, on whatever object. It does not see a check reached without such an
-   attribute, as `getattr(run, "check")`.
+   attribute, as `getattr(run, "check")`. A field of an f-string message prints
+   as `…`, except a module constant, which prints its value. A line with the ID
+   alone is a step without its own `run.check`: what it waits for (`until`,
+   `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
    feature and where its proof stands in the evidence. A file whose

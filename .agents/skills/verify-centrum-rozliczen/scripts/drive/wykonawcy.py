@@ -19,6 +19,7 @@ from drive.common import (
     read_text,
     settings_window,
 )
+from drive.waiting import until
 
 FEATURE = "wykonawcy"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -146,7 +147,7 @@ def _suggestions(run: Run, page: Page, worker_list: Path) -> None:
     _row(window, FROM_REGISTER_NAME).get_by_role("button", name=f"Edytuj: {FROM_REGISTER_NAME}").click()
     window.get_by_role("form", name=f"Wykonawca {FROM_REGISTER_NAME}").get_by_role("button", name="Usuń Wykonawcę").click()
     expect(_row(window, FROM_REGISTER_NAME)).to_have_count(0)
-    run.wait_for(lambda: read_bytes(worker_list) == list_before, "the Lista Wykonawców is as before the suggestion")
+    until(lambda: read_bytes(worker_list) == list_before, "the Lista Wykonawców is as before the suggestion")
     _close(page)
 
 
@@ -237,11 +238,13 @@ def drive(run: Run, page: Page) -> None:
     form.get_by_role("button", name="Anuluj").click()
     _row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}").click()
     expect(_row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}")).not_to_be_checked()
-    switched = _workers(run, "wykonawcy-przelaczniki")
-    run.check(
-        (switched[D]["active"], switched[C]["reminders"]) == (False, False),
-        "Nieaktywny and Przypomnienia are saved at once, without Zapisz",
-    )
+
+    def switched() -> bool:
+        workers = _workers(run, "wykonawcy-przelaczniki")
+        return (workers[D]["active"], workers[C]["reminders"]) == (False, False)
+
+    # A switch shows its state at once, before its save reaches Centrum.
+    until(switched, "Nieaktywny and Przypomnienia are saved at once, without Zapisz")
     names = window.get_by_role("list", name="Wykonawcy").get_by_role("listitem").evaluate_all(
         "items => items.map((item) => item.getAttribute('aria-label'))"
     )
@@ -278,7 +281,7 @@ def drive(run: Run, page: Page) -> None:
     window.get_by_role("form", name=f"Wykonawca {D}").get_by_role("button", name="Anuluj").click()
     _row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}").click()
     expect(_row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}")).to_be_checked()
-    run.wait_for(lambda: read_bytes(worker_list) == before, "the Lista Wykonawców is the fixture's again, byte for byte")
+    until(lambda: read_bytes(worker_list) == before, "the Lista Wykonawców is the fixture's again, byte for byte")
     # ✕ rather than Esc: the first Esc closes the notification „Zapisano · Cofnij” of the last switch.
     window.get_by_role("button", name="Zamknij Ustawienia").click()
     expect(settings_window(page)).to_have_count(0)

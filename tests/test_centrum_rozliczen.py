@@ -72,7 +72,7 @@ from rozliczenia.centrum.settings.proposal import (
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
-from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
@@ -2416,6 +2416,25 @@ def test_zla_regula_z_edytora_sie_nie_zapisuje_a_odmowa_ma_pole_formularza_i_zda
     assert history_rows(app) == []
 
 
+def test_podglad_nowej_reguly_dziala_takze_gdy_historii_ustawien_nie_da_sie_przeczytac_a_zapis_sie_nie_udaje(
+    tmp_path: Path,
+) -> None:
+    """Historia, której nie da się przeczytać, nie daje id do pominięcia: podgląd i tak pokazuje regułę, a zapis
+    odmawia, więc inne id w podglądzie niż przy zapisie nigdy nie trafia do pliku."""
+
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    history = app.tool.config / HISTORY_FILE
+    assert history.exists()
+    with without_reading(history):
+        previewed = app.client.post(f"{QUANTITY_RULES_URL}/preview", json={"kind": "add", "rule": EDITOR_RULE})
+        saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+
+    assert previewed.status_code == 200, previewed.json()
+    assert saved.status_code == 500
+    assert not (app.tool.config / RULES_FILE).exists()
+
+
 def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) -> None:
     app = centrum(tmp_path)
 
@@ -3711,6 +3730,27 @@ def test_usuniecie_wykonawcy_gdy_folderu_z_okresami_nie_da_sie_wylistowac_jest_o
 
     assert (refused_.status_code, refused_.json()) == (409, {"message": kept(answer)})
     assert centrum_.tool.worker_list.read_bytes() == before
+
+
+def _without_kamil(_inputs: ReleaseInputs[WorkerList]) -> Edit[WorkerList]:
+    return Edit(lambda current: replace(current, workers=tuple(w for w in current.workers if "kamil.syntetyczny" not in w.logins)))
+
+
+def test_zmiana_maksa_z_wydania_usuwa_wykonawce_z_loginem_w_okresie_bez_sprawdzania_okresow(tmp_path: Path) -> None:
+    """ADR 0032: zmiana Maksa z Wydania nie sprawdza okresów, jak ręczna zmiana w ``config``; tacie ta sama zmiana
+    w sekcji Wykonawcy to odmowa, bo login stoi w Rejestrze zleceń."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy", "kamil.syntetyczny"])
+    refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
+    centrum_.client.stop()
+
+    released = started(centrum_.tool, (ReleaseChange("2026-11-bez-kamila", WORKERS, _without_kamil),))
+    workers = listed_workers(released)
+    released.stop()
+
+    assert refused_.status_code == 409
+    assert "kamil.syntetyczny" not in workers
+    assert "adrian.testowy" in workers
 
 
 def test_drugie_usuniecie_widzi_plik_zbiorczy_zmieniony_po_pierwszym(tmp_path: Path) -> None:
