@@ -878,7 +878,7 @@ def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[
 
 @dataclass(frozen=True)
 class ZakresMutacji:
-    """Mutacje zmienionych linii ``src/`` i jednostek ``przepuszcza`` od bazy do checkoutu ``root``, w kolejności części: po plikach,
+    """Mutacje zmienionych linii ``src/`` i jednostek ``przepuszcza`` w ``tools/`` od bazy do checkoutu ``root``, w kolejności części: po plikach,
     w pliku po liniach.
 
     Jedyne źródło listy mutacji planu nocy i części (ADR 0021): plan pyta o koniec zakresu nocy, liczbę części i

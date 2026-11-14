@@ -1,4 +1,4 @@
-"""``tools/mutacje_zmiany.py`` psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` listy dwóch szop i pada, gdy żaden test tego nie widzi.
+"""``tools/mutacje_zmiany.py`` psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` listy dwóch szop w ``tools/`` i pada, gdy żaden test tego nie widzi.
 
 Przebiegi idą w małym repozytorium z narzędziami checkoutu: baza ma ``return a``, zmiana ``return a and b``.
 """

@@ -113,7 +113,7 @@ Weryfikacja produktu to jej część, która wydaje wyrok o zachowaniu produktu,
 - **Audyt szopy.** Każda jednostka szopy dostaje wyrok usunąć, scalić z bliźniakiem, zastąpić zmianą API albo typem, albo zostawić, „zostawić” wymaga bilansu złapań błędów produktu do własnych awarii, a Maks zatwierdza listę raz, zanim cokolwiek zniknie.
   Powód: jednostka, która częściej czerwieni `main` albo pada w przeglądzie, niż zatrzymuje błąd produktu, kosztuje więcej, niż daje.
   Wchodzi w #1623 i #1624.
-- **Nocne mutacje.** Noc mutuje `src` oraz jednostki szopy, których fałszywe „OK” przepuszcza zły kod produktu, a pomiary, raporty, plan CI, sprzątanie, obsługa flaky testów i rejestr korzeni wychodzą z nocnych mutacji.
+- **Nocne mutacje.** Noc mutuje `src` oraz jednostki szopy w `tools/`, których fałszywe „OK” przepuszcza zły kod produktu (skrypty skilli `verify-*` z tym oznaczeniem nie, ADR 0021), a pomiary, raporty, plan CI, sprzątanie, obsługa flaky testów i rejestr korzeni wychodzą z nocnych mutacji.
   Powód: przeżyta mutacja pomiaru albo raportu nie przepuszcza złego kodu do taty, a to tam leży większość zgłoszonych linii przeżytych mutacji.
   Wchodzi w #1625.
 

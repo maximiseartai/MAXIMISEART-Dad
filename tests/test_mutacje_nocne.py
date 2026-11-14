@@ -688,7 +688,8 @@ LISTA_ZAKRESU = (
 def test_plan_nocy_mutuje_src_i_jednostki_szopy_z_oznaczeniem_przepuszcza_a_reszty_narzedzi_nie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], plik: str, mutacje: int
 ) -> None:
-    """Skrypt skilla z oznaczeniem ``przepuszcza`` też nie dostaje mutacji: noc mutuje tylko ``src/`` i ``tools/`` (ADR 0021)."""
+    """Skrypt skilla z oznaczeniem ``przepuszcza`` też nie dostaje mutacji: noc mutuje tylko ``src/`` i jednostki ``przepuszcza``
+    w ``tools/`` (ADR 0021)."""
 
     repo = mutation_repository(tmp_path / "repo", {szopa.LISTA: LISTA_ZAKRESU, plik: "def a(x: int) -> bool:\n    return x > 1\n"})
     baza = commit(repo, "baza")
