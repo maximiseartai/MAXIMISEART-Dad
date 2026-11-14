@@ -174,11 +174,11 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "tablica-podwojne-klikniecie")
     closed = periods / "22_28_09_2026"
     notifications = page.get_by_role("region", name="Notifications")
-    repeated_clicks: list[tuple[str, Path, str, Callable[[Locator], None]]] = [
+    repeated_clicks: tuple[tuple[str, Path, str, Callable[[Locator], None]], ...] = (
         ("Folder okresu, okres 22_28_09_2026", closed, "a double click", lambda button: button.dblclick()),
         ("Plik zbiorczy, okres 22_28_09_2026", closed / "Rozliczenie 22_28_09_2026 - zbiorcze.xlsx",
          "a fast triple click", lambda button: button.click(click_count=3)),
-    ]
+    )
     for name, path, how, click in repeated_clicks:
         opened_before = len(run.lines(Log.OPENED))
         with sent_requests(page, "POST", "/api/periods/22_28_09_2026/open") as sent:

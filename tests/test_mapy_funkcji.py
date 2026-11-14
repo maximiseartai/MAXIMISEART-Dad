@@ -299,6 +299,12 @@ ODMOWY: Final = {
     "check: pętla po nazwie związanej drugi raz": 'lista = (1, 2)\n    lista = (3,)\n    for _ in lista:\n        run.check(True, "x")  # tu',
     "check: pętla po nazwie z innego bloku": 'if feature:\n        lista = (1, 2)\n    for _ in lista:\n        run.check(True, "x")  # tu',
     "check: pętla po nazwie przypisanej po pętli": 'for _ in lista:\n        run.check(True, "x")  # tu\n    lista = (1, 2)',
+    "check: pętla po nazwie listy (W2 r1)": 'lista = ["a", "b"]\n    for _ in lista:\n        run.check(True, "x")  # tu',
+    "check: dalszy człon łańcucha porównań (W1 r1)": '_ = 1 > 2 > run.check(True, "x")  # tu',
+    "check: cel przypisania": 'd = {}\n    d[run.check(True, "x")] = 1  # tu',
+    "check: adnotacja zmiennej lokalnej": 'x: run.check(True, "x") = 1  # tu',
+    "check: gałąź wyrażenia warunkowego": '_ = run.check(True, "x") if feature else None  # tu',
+    "check: dwa w jednej instrukcji": '_ = (run.check(True, "a"), run.check(True, "b"))  # tu',
     "check: pętla po nazwie pustej krotki": 'lista = ()\n    for _ in lista:\n        run.check(True, "x")  # tu',
     "check: pętla while": 'while feature:\n        run.check(True, "x")  # tu\n        feature = ""',
     "check: wyrażenie listowe nad literałem": '[run.check(True, "x") for _ in (1, 2)]  # tu',
@@ -557,8 +563,8 @@ ODMOWY_PRZEPLYWU_POMOCNIKA: Final = {
 # Pętla nad stałą listą: bieg drukuje sprawdzenie w każdym obrocie, a sekcja raz na pętlę.
 CZYTANE_PETLE: Final = {
     "krotka w nagłówku for": NAPED.format(wstawka='for nazwa in ("a", "b"):\n        run.check(True, f"w pętli {nazwa}")'),
-    "lista przypisana nazwie wcześniej w bloku": NAPED.format(
-        wstawka='lista = ["a", "b"]\n    for nazwa in lista:\n        run.check(True, "w pętli")\n    run.check(True, "po pętli")'
+    "krotka przypisana nazwie wcześniej w bloku": NAPED.format(
+        wstawka='lista = ("a", "b")\n    for nazwa in lista:\n        run.check(True, "w pętli")\n    run.check(True, "po pętli")'
     ),
     "krotka z adnotacją w ciele try": NAPED.format(
         wstawka='try:\n        lista: tuple[str, ...] = ("a", "b")\n        for _ in lista:\n            run.check(True, "w pętli")\n'
@@ -609,6 +615,13 @@ CZYTANE_PRZEPLYW: Final = {
     "warunek assert": 'assert run.check(True, "w assert") is None',
     "ciało try z samym finally": 'try:\n        run.check(True, "w try")\n    finally:\n        run.check(True, "w finally")',
     "return po sprawdzeniu": 'run.check(True, "przed return")\n    return',
+    "return ze sprawdzeniem (D1 r1)": 'return run.check(True, "w return")',
+    "drugi operand pojedynczego porównania": '_ = None is run.check(True, "w porównaniu")',
+    "argument wywołania": 'print(run.check(True, "w argumencie"))',
+    "ciało with": "with open(__file__, encoding='utf-8'):\n        run.check(True, \"w with\")",
+    "finally po try z except": 'try:\n        pass\n    except ValueError:\n        pass\n    finally:\n        run.check(True, "w finally")',
+    "wartość przypisania z adnotacją": 'x: object = run.check(True, "w wartości")',
+    "test wyrażenia warunkowego": '_ = None if run.check(True, "w teście") else None',
     "iterowane pętli po wywołaniu": 'for _ in str(run.check(True, "w iterowanym")):\n        pass',
     "return funkcji w drive()": 'def _w_drive() -> int:\n        return 1\n\n    run.check(True, "po funkcji")',
 }
@@ -690,6 +703,31 @@ def test_wyjatek_przed_pomocnikiem_konczy_bieg_w_try_z_finally_jak_w_ciele_drive
     assert sekcje[0] == sekcje[1] == [("sonda-krok", ["pierwszy", "przed", "z pomocnika"])]
 
 
+# Sondy przeglądu #1812 r1 (wstawki w ciele drive()): dla każdej polecenie odmawia albo drukuje to, co bieg.
+SONDY_PRZEGLADU: Final = {
+    "dalszy człon łańcucha porównań": '_ = 1 > 2 > run.check(True, "LUKA")',
+    "dalszy człon łańcucha w if": 'if 1 > 2 > run.check(True, "LUKA"):\n        pass',
+    "lista z nazwy opróżniona clear()": 'lista = ["a"]\n    lista.clear()\n    for _ in lista:\n        run.check(True, "LUKA")',
+    "lista z nazwy opróżniona del [:]": 'lista = ["a"]\n    del lista[:]\n    for _ in lista:\n        run.check(True, "LUKA")',
+    "drugi argument or": 'feature or run.check(True, "LUKA")',
+}
+
+
+@pytest.mark.parametrize("opis", list(SONDY_PRZEGLADU))
+def test_polecenie_podfunkcji_odmawia_albo_drukuje_to_co_bieg_w_sondach_przegladu(polecenie: ModuleType, opis: str, tmp_path: Path) -> None:
+    zrodlo = NAPED.format(wstawka=SONDY_PRZEGLADU[opis])
+    plik = tmp_path / "sonda_przegladu.py"
+    plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
+    run = _Zapis()
+    modul(plik).drive(run, None)
+
+    try:
+        czytane = polecenie.sub_features(zrodlo, "sonda.py")
+    except polecenie.Unreadable:
+        return
+    assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
+
+
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → (napęd, ile razy jego bieg drukuje
 # komunikat LUKA; None, gdy drukuje kroki innego modułu). Każdy przechodzi przez ruff z konfiguracją drive/ i przez
 # polecenie, a sekcja drukuje LUKA inną liczbę razy niż bieg. Polecenie odmawia każdego atrybutu .step/.check poza
@@ -710,6 +748,11 @@ ZNANE_LUKI: Final = {
     "czyta tylko ten moduł: funkcja innego modułu napędu z run": (
         "from drive.uzupelnienie import drive_result_card\n" + NAPED.format(wstawka="drive_result_card(run, page)"),
         None,
+    ),
+    "nie widzi wyjątku stłumionego przez menedżer kontekstu: with suppress": (
+        "from contextlib import suppress\n"
+        + NAPED.format(wstawka='with suppress(ValueError):\n        int(feature)\n        run.check(True, "LUKA")'),
+        0,
     ),
     "zna pomocnika tylko po nazwie: drugi raz przez globals()": (
         NAPED.format(wstawka='sprawdz(run)\n    globals()["sprawdz"](run)') + POMOCNIK_LUKI,
