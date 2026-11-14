@@ -5,6 +5,7 @@ zapis na każdym komputerze. ``local_now`` to chwila na zegarze komputera w jego
 bierze dzień oraz porę taty. ``dad_today`` to dzień taty (okres rozliczeniowy, dzień INTERMAX, Metryki), czyli dzień
 w strefie komputera taty, nigdy dzień UTC: od północy do 1:00 (latem do 2:00) czasu taty dzień UTC to jeszcze wczoraj.
 ``epoch_s`` to sekundy od epoki dla terminu, który czyta też inny proces (dzierżawa opiekuna ponownego startu).
+Wszystkie biorą chwilę z ``utc_now``, jedynego pytania o zegar systemu, więc dają jedną chwilę.
 
 Granica zakazu zegara. Ruff ``TID251`` (``src/ruff.toml``) odrzuca w ``src/`` poza tym plikiem tylko odwołanie, które
 ruff rozwiązuje do pełnej nazwy wymienionej w ``src/ruff.toml`` (``datetime.datetime.now``, ``time.time``,
@@ -16,7 +17,6 @@ pliku z lintu, a granice zakazu pokazują tam próbki ``ZNANE_LUKI_ZEGARA``, ka�
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-import time
 
 
 def utc_now() -> datetime:
@@ -28,7 +28,7 @@ def utc_now() -> datetime:
 def local_now() -> datetime:
     """Teraz na zegarze komputera w jego strefie czasu: chwila taty."""
 
-    return datetime.now().astimezone()
+    return utc_now().astimezone()
 
 
 def dad_today() -> date:
@@ -40,4 +40,4 @@ def dad_today() -> date:
 def epoch_s() -> float:
     """Teraz w sekundach od epoki."""
 
-    return time.time()
+    return utc_now().timestamp()

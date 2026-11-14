@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 import sys
 from types import ModuleType
 import urllib.error
@@ -30,7 +31,9 @@ import yaml
 
 from tests.fixtures.ci_workflow import action
 from tests.fixtures.clock import ManualClock
+from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
+from tests.fixtures.potomne import beating
 from tests.fixtures.sen import sleep_in_test_thread
 import model_tlc
 import narzedzia_tlc
@@ -517,7 +520,7 @@ def test_liveness_poza_mutacja_tylko_na_pelnym_grafie_a_w_mutacji_takze_w_trakci
     monkeypatch.setenv(model_tlc.MUTACJA, mutation)
     commands: list[list[str]] = []
 
-    def run(command: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def run(command: Sequence[str], *, cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
         commands.append(list(command))
         text = Path(cwd, command[-2]).read_text(encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, PASSED if "PozaZnanymi" in text else _violation("Jedno", '{"a"}'), "")
@@ -533,7 +536,7 @@ def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_s
     spec.write_text(SPEC, encoding="utf-8")
     seen: dict[str, str] = {}
 
-    def run(command: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def run(command: Sequence[str], *, cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
         seen.update({path.name: path.read_text(encoding="utf-8") for path in cwd.iterdir() if path.is_file()})
         return subprocess.CompletedProcess(command, 0, "wyjście\n", "błędy\n")
 
@@ -541,6 +544,78 @@ def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_s
 
     assert model_tlc.tlc("java", tmp_path / "tla2tools.jar", spec, "f", "\\* Opis.\n") == "wyjście\nbłędy\n"
     assert seen == {"M.tla": SPEC, "f.cfg": "\\* Opis.\n"}
+
+
+# Atrapa Javy, której TLC nie kończy: zapisuje argumenty (po nich atrapa jcmd poznaje przebieg), uruchamia wnuka, który
+# co 0,1 s dopisuje znak do pliku ``bicie``, i śpi 60 s, czyli dłużej niż limit przebiegu z czasem na zrzut w teście.
+JAVA_STOI = (
+    "import pathlib, subprocess, sys, time\n"
+    "here = pathlib.Path(__file__)\n"
+    "beat = \"import sys, time\\nwhile True:\\n    open(sys.argv[1], 'a').write('.')\\n    time.sleep(0.1)\\n\"\n"
+    "subprocess.Popen([sys.executable, '-c', beat, str(here.with_name('bicie'))])\n"
+    "here.with_name('argumenty').write_text(' '.join(sys.argv[1:]), encoding='utf-8')\n"
+    "time.sleep(60)\n"
+)
+# Atrapa jcmd: ``-l`` podaje JVM jcmd i JVM przebiegu z jego argumentami, a ``4242 Thread.print`` zrzut jednego wątku.
+JCMD = (
+    "import pathlib, sys, time\n"
+    "args = pathlib.Path(__file__).with_name('argumenty')\n"
+    "if sys.argv[1:] == ['-l']:\n"
+    "    while not args.exists():\n"
+    "        time.sleep(0.05)\n"
+    "    print('11 jdk.jcmd/sun.tools.jcmd.JCmd -l')\n"
+    "    print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
+    "elif sys.argv[1:] == ['4242', 'Thread.print']:\n"
+    "    print('\"TLCWorker1\" #21 prio=5 waiting on condition')\n"
+)
+JCMD_STOI = "import time\ntime.sleep(60)\n"
+
+
+@pytest.mark.parametrize(
+    ("jcmd", "said"),
+    [(JCMD, '"TLCWorker1" #21 prio=5 waiting on condition'), (None, "ZRZUT WĄTKÓW: brak jcmd"), (JCMD_STOI, "nie odpowiedział w 3 s")],
+    ids=["zrzut", "bez-jcmd", "jcmd-stoi"],
+)
+def test_przebieg_tlc_bez_wyniku_w_limicie_konczy_sprawdzenie_zawieszeniem_ze_zrzutem_watkow_i_zabija_drzewo_tlc(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], jcmd: str | None, said: str
+) -> None:
+    """Zawieszony mutant czekał dotąd na limit polecenia mutacji (600 s) i kończył się bez śladu, czemu stoi (runy
+    42335147260 i 42393988844). Zrzutu, którego nie da się zrobić, sprawdzenie nie czeka dłużej niż swój czas."""
+
+    model = _model(tmp_path, {"f": _config()})
+    java = fake_cli(tmp_path / "bin", "java", JAVA_STOI)
+    if jcmd is not None:
+        fake_cli(tmp_path / "bin", "jcmd", jcmd)
+    spec = model.skill / "model" / "M.tla"
+    started = time.perf_counter()
+
+    code = model_tlc.sprawdz(
+        model,
+        model_tlc.konfiguracje(model),
+        lambda name, text: model_tlc.tlc(str(java), tmp_path / "tla2tools.jar", spec, name, text, limit_s=0.5, zrzut_s=6),
+    )
+
+    took = time.perf_counter() - started
+    out = capsys.readouterr().out
+    assert (code, out.splitlines()[-1]) == (2, "MODEL M: ZAWIESZENIE TLC (1)")
+    assert "ZAWIESZENIE TLC: przebieg TLC bez wyniku po 0.5 s, drzewo TLC zabite." in out
+    assert said in out.split("Zrzut wątków JVM tego przebiegu:", 1)[1]
+    assert took < 30
+    assert not beating(tmp_path / "bin" / "bicie")
+
+
+def test_przebieg_tlc_w_limicie_daje_werdykt_jak_bez_limitu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    model = _model(tmp_path, {"f": _config()})
+    java = fake_cli(tmp_path / "bin", "java", f"print({PASSED.strip()!r})\n")
+    spec = model.skill / "model" / "M.tla"
+
+    code = model_tlc.sprawdz(
+        model,
+        model_tlc.konfiguracje(model),
+        lambda name, text: model_tlc.tlc(str(java), tmp_path / "tla2tools.jar", spec, name, text, limit_s=60, zrzut_s=6),
+    )
+
+    assert (code, capsys.readouterr().out.splitlines()[-1]) == (0, "MODEL M OK")
 
 
 @pytest.mark.parametrize("ustawiona", [model_tlc.JAVA, model_tlc.JAR, model_tlc.MUTACJA])

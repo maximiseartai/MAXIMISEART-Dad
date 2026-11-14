@@ -1,7 +1,7 @@
 name: Werdykt i bramka
 
 # The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
-# conditions 1-4 of its --help (CI, verdict PASS for HEAD, PR body, root gate), judged by main's code
+# conditions 1-5 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field), judged by main's code
 # (tools/scal_pr.py --status, ADR 0036 "Status w Actions"): pending while it only waits for CI or a verdict on HEAD,
 # failure when the author must act. The ruleset of main requires it as success. A closed PR gets no new status, so
 # the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one shows afterwards.
@@ -69,12 +69,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
 
-      # tools/scal_pr.py uses only the standard library (tests/test_spis_narzedzi.py checks each python3 script), so no
-      # install.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML. Their pins come from
+      # main's pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so nothing from the PR
+      # and no build of the project runs.
+      - name: Install the dependencies of the rule proof
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
+
       - name: Set the status of each PR of the event
         env:
           GH_TOKEN: ${{ github.token }}

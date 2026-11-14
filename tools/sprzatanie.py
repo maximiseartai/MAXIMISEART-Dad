@@ -260,7 +260,10 @@ def _remove(root: Path, verdict: _Verdict, here: Path, threads: _Threads | None)
         again = _judge_tree(root, replace(tree, head=_head(tree)), here, _busy(), threads)
         if again.reasons or again.head != tree.head:
             return ", ".join(again.reasons) or "HEAD zmienił się w trakcie"
-        removed = repo.run_git(root, "worktree", "remove", str(tree.path), timeout=REMOVE_TIMEOUT_S)
+        try:
+            removed = repo.run_git(root, "worktree", "remove", str(tree.path), timeout=REMOVE_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            return f"git worktree remove przekroczył {REMOVE_TIMEOUT_S} s"
         if removed.returncode:
             return f"git odmówił ({_first_line(removed)})"
     if verdict.branch is None:

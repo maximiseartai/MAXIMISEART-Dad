@@ -75,7 +75,7 @@ _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 _SEKUNDA_LINII = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ")
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
-PLIK_TESTU_PR = re.compile(_LINE + r"PONOWIENIE \| test .* " + re.escape(niestabilne_testy.ZMIENIONY_PLIK_TESTU) + r"$")
+PLIK_TESTU_PR = re.compile(_LINE + r"PONOWIENIE \| test .* " + re.escape(niestabilne_testy.ZMIENIONY_PLIK_TESTU) + r"\r?$")
 # Znaczniki runnera w logu zadania: każdy wykonany krok zaczyna się nagłówkiem ``##[group]Run``, podkroki akcji złożonej
 # (``uses: ./.github/actions/chromium``) mają swoje nagłówki między ``##[start-action`` i ``##[end-action``, a kroki
 # ``Post …`` i ``Complete job`` po krokach zadania zaczynają się swoją pierwszą linią.

@@ -305,7 +305,7 @@ def test_znane_luki_zakazu_snu_w_napedzie_przechodza_przez_ruff(tmp_path: Path) 
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
 OWNERS: dict[str, frozenset[str]] = {
-    "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now", "time.time"}),
+    "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now"}),
     "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
     "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
     "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),

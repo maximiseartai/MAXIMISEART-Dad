@@ -8,15 +8,18 @@ no conversion and no format spec, prints its value; every other placeholder prin
 conversion or format spec, because the value is known only when the drive runs. The literal text prints as it is,
 ``{{`` as ``{``. The rule has one owner, ``tools/lib/komunikat_mapy.py``, for the map commands of every skill. A
 helper (a plain top-level function the module binds once, whose first parameter is ``run`` and whose body calls
-``run.step`` or ``run.check``) prints its steps and checks where ``drive`` calls it.
+``run.step`` or ``run.check``) prints its steps and checks at each call of ``drive``, in the order of the statements:
+each whole statement of ``drive``'s body runs once when ``drive`` runs to its end, and so does each statement of the
+body of a ``try`` that stands so in ``drive`` with only a ``finally`` that does not return, as an exception in that
+body leaves ``drive`` after the ``finally``.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
 one, a step name that is no string literal, a message of another kind,
 a check before the first step, and any attribute ``.step`` or ``.check`` in the module, on whatever object, that
 is not the called function of such a call on ``run`` in the body of ``drive`` or of a helper (outside any function,
-lambda or class in it), any use of a helper's name but one call ``helper(run, …)`` that is a whole statement, or the
-whole value of an assignment to names, in the body of ``drive``, before any ``return`` of it and without a step or a
+lambda or class in it), any use of a helper's name but a call ``helper(run, …)`` that is a whole statement, or the
+whole value of an assignment to names, of such a body, before any ``return`` of ``drive`` and without a step or a
 check in its arguments, and a helper that is decorated or yields: elsewhere it cannot tell whether, how many times or
 in which order the helper runs. It does not see a check reached without such an attribute, as
 ``getattr(run, "check")``, a function of another drive module, or a helper reached without its name, as
@@ -132,13 +135,14 @@ def _helpers(tree: ast.Module) -> dict[str, ast.FunctionDef]:
 
 
 def _helper_calls(tree: ast.Module, drive: ast.FunctionDef, helpers: dict[str, ast.FunctionDef], module: str) -> list[ast.Call]:
-    """The one call of each helper, a statement of ``drive``'s body; fails on any other use of its name."""
+    """Each call of each helper, a statement of ``drive``'s body or of a plain ``try``/``finally`` in it; fails on any
+    other use of its name."""
 
     def cannot_tell(node: ast.AST, what: str) -> Unreadable:
         return _refuse(module, node, f"`{name}` {what}, but it calls run.step or run.check: the command prints a helper's "
-                       "steps and checks only at its one call, a whole statement `helper(run, …)` or `name = helper(run, …)` in the "
-                       "body of drive(), as elsewhere it cannot tell whether, how many times or in which order they run; "
-                       "call the plain helper once so, or move its run.step and run.check into drive()")
+                       "steps and checks only at a whole statement `helper(run, …)` or `name = helper(run, …)` in the body of "
+                       "drive() or of a try in it with only a finally, as elsewhere it cannot tell whether, how many times or in which order they run; "
+                       "call the plain helper so, or move its run.step and run.check into drive()")
 
     def owner(node: ast.AST) -> ast.AST:
         while not isinstance(node := parents[id(node)], ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef):
@@ -151,24 +155,24 @@ def _helper_calls(tree: ast.Module, drive: ast.FunctionDef, helpers: dict[str, a
         named = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == name), key=lambda n: (n.lineno, n.col_offset))
         if helper.decorator_list or any(isinstance(node, (ast.Yield, ast.YieldFrom)) for node in ast.walk(helper)):
             raise cannot_tell(helper, "is decorated or yields")
-        if len(named) > 1:
-            raise cannot_tell(named[1], f"is named {len(named)} times in the module")
-        if not named:
-            continue
-        call = parents[id(named[0])]
-        if not (isinstance(call, ast.Call) and call.func is named[0] and call.args[:1]
-                and isinstance(call.args[0], ast.Name) and call.args[0].id == "run"):
-            raise cannot_tell(named[0], "is named here without the call `helper(run, …)`")
-        statement = parents[id(call)]
-        if not (isinstance(statement, ast.Expr | ast.Assign) and parents[id(statement)] is drive
-                and all(isinstance(target, ast.Name) for target in getattr(statement, "targets", []))):
-            raise cannot_tell(call, "is called elsewhere than as a whole statement `helper(run, …)` or `name = helper(run, …)`"
-                              " in the body of drive()")
-        if any(isinstance(node, ast.Call) and _is_run_call(node.func) for node in ast.walk(call)):
-            raise cannot_tell(call, "has run.step or run.check in its arguments")
-        if any(isinstance(node, ast.Return) and node.lineno < call.lineno and owner(node) is drive for node in ast.walk(drive)):
-            raise cannot_tell(call, "is called after a `return` of drive()")
-        calls.append(call)
+        for one in named:
+            call = parents[id(one)]
+            if not (isinstance(call, ast.Call) and call.func is one and call.args[:1]
+                    and isinstance(call.args[0], ast.Name) and call.args[0].id == "run"):
+                raise cannot_tell(one, "is named here without the call `helper(run, …)`")
+            statement, block = parents[id(call)], parents[id(parents[id(call)])]
+            plain_try = (isinstance(block, ast.Try) and not block.handlers and statement in block.body
+                         and parents[id(block)] is drive
+                         and not any(isinstance(node, ast.Return) for part in block.finalbody for node in ast.walk(part)))
+            if not (isinstance(statement, ast.Expr | ast.Assign) and (block is drive or plain_try)
+                    and all(isinstance(target, ast.Name) for target in getattr(statement, "targets", []))):
+                raise cannot_tell(call, "is called elsewhere than as a whole statement `helper(run, …)` or "
+                                  "`name = helper(run, …)` in the body of drive() or of a try in it with only a finally")
+            if any(isinstance(node, ast.Call) and _is_run_call(node.func) for node in ast.walk(call)):
+                raise cannot_tell(call, "has run.step or run.check in its arguments")
+            if any(isinstance(node, ast.Return) and node.lineno < call.lineno and owner(node) is drive for node in ast.walk(drive)):
+                raise cannot_tell(call, "is called after a `return` of drive()")
+            calls.append(call)
     return calls
 
 

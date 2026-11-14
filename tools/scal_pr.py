@@ -55,16 +55,18 @@ sam zmienia te reguły, sądzi więc wersja z bazy, a jego zmiana obowiązuje od
 w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia następnej kopii, tylko odmawia z poleceniem, by
 uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomiono.
 
-Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–4 jako status commita ``Werdykt i bramka``
+Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–5 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
-``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunków 5–7 nie liczy: dowód reguły
-z warunku 5 potrzebuje ast-grep z dodatku dev i biegnie na 20 scalonych PR-ach do ``bramka_idiomu.PROOF_TIMEOUT_S``,
-a warunki 6 i 7 uruchamiają kod PR (ruff, mypy i pytest na scalonym drzewie), a status ustawia workflow
-``.github/workflows/werdykt-i-bramka.yml`` samym ``python3`` bez instalacji zależności, tokenem z prawem zapisu statusów;
-scalenie z ruff i mypy pokazuje status ``scalenie z main``. PR zamknięty albo do innej gałęzi
+``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunek 5 liczy, jak merge, dopiero po
+warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły.
+Jego dowód potrzebuje ast-grep i PyYAML, które workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
+z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR. Warunków 6 i 7 nie liczy, bo uruchamiają kod PR (ruff,
+mypy i pytest na scalonym drzewie), a status ustawia token z prawem zapisu statusów; scalenie z ruff i mypy pokazuje
+status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
 merge'a, i po fakcie pokazuje merge bez zielonego statusu. Gdy każda przyczyna to oczekiwanie na coś, co przyjdzie
-bez zmiany w PR (CI na HEAD w toku albo jeszcze nie ruszyło, HEAD bez werdyktu), status to ``pending`` z opisem od
+bez zmiany w PR (CI na HEAD w toku albo jeszcze nie ruszyło, HEAD bez werdyktu, dowód warunku 5 bez danych
+z GitHuba), status to ``pending`` z opisem od
 „oczekuje:”. PR bez runu CI, którego ``mergeable`` to ``CONFLICTING``, dostaje ``failure`` z przyczyną konfliktu:
 GitHub nie uruchamia CI na PR z konfliktem, a status ``scalenie z main`` powstaje tylko po pushu do `main`; ruleset `main` wymaga go w stanie ``success``, więc merge blokuje i ``pending``, i ``failure``. Kod 0
 znaczy, że status jest ustawiony albo pominięty, a 1, że go nie ustawiono.
@@ -249,14 +251,17 @@ def _skipped_status(pull: Pull) -> str | None:
 
 
 def _publish_status(pull: Pull) -> int:
-    """Warunki 1–4 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`: ``pending``, gdy
-    każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga działania autora."""
+    """Warunki 1–5 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`: ``pending``, gdy
+    każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga działania autora;
+    warunek 5 biegnie tylko wtedy, gdy warunki 1–4 nie dały już ``failure``."""
 
     where = f"#{pull.number} {pull.head[:7]}"
     problems = _problems(pull)
+    if all(isinstance(problem, stan_pr.Waiting) for problem in problems):
+        problems += bramka_idiomu.problems(pull)
     reasons = "; ".join(problems)
     if not problems:
-        state, description = "success", "warunki 1–4 tools/scal_pr.py spełnione"
+        state, description = "success", "warunki 1–5 tools/scal_pr.py spełnione"
     elif all(isinstance(problem, stan_pr.Waiting) for problem in problems):
         state, description = "pending", f"oczekuje: {reasons}"
     else:
@@ -300,7 +305,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
     mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
-    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–4 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
+    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–5 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)

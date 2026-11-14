@@ -14,7 +14,7 @@ rule:
   kind: string
   regex: '[^\\]\$["'']$'
   not:
-    regex: '(\\r\?|\\s[*+?]|\\n)\$["'']$'
+    regex: '(\\r\?|\\s[*+])\$["'']$'
   inside:
     kind: call
     stopBy: end
