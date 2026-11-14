@@ -126,20 +126,36 @@ def create_app(
     reminder_rhythm: ReminderRhythm | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
+    """Aplikacja jednej pracy Centrum (``CentrumWork``): części składa raz, a ich kolejność przy starcie daje ``lifespan``.
+
+    Start: najpierw zmiany Ustawień Centrum z Wydania, bo Przypomnienia o raporcie czytają Ustawienia; potem w tle
+    pierwsze pytania skrzynki o sprawy taty (Powiadomienia) i o klucz do Zgłoszeń, żeby Konfiguracja nie czekała na
+    Skrzynkę; potem kolejka wysyłek poprzedniej pracy, a dopiero po wpisie ``start`` wersje zastępcze z jej dzienników
+    Wyceny w efenix (``AFTER_START``), bo kolejka nie dostaje wysyłki przed swoim startem; na końcu Przypomnienia co
+    minutę do zamknięcia, poza Uruchomieniami (ADR 0030).
+
+    Części: Ustawienia Centrum są jedynym czytelnikiem i pisarzem swoich plików, Historii i pamięci (ADR 0032), a chwila
+    wiersza Historii to zegar ścienny, nie ``now``, które testy podają jako chwile Uruchomień. Skrzynka raportów bierze
+    dostęp od Ustawień przy każdej sesji, więc nowe hasło taty działa od następnej. Najnowsze Wydanie z GitHuba ma jedną
+    pamiętaną odpowiedź dla Konfiguracji, Powiadomień i Aktualizacji narzędzia (limit API); Diagnoza pyta za każdym
+    razem i też zapisuje odpowiedź w pamięci. Każdy start ma własny identyfikator w ``/api/health``, po którym karta
+    rozpozna nowe Centrum po Aktualizacji narzędzia.
+
+    Trasy: bez ``/docs``, ``/redoc`` i ``/openapi.json``, bo kontrakt eksportuje ``tools/ci/export_openapi.py``, a
+    Swagger ładowałby skrypty z sieci. Czas obsługi (``server_timing``) jest dodany ostatni, więc jest zewnętrzny i
+    obejmuje też odmowy ``Host``/``Origin`` i nieoczekiwane wyjątki. Uporządkowanie INTERMAX (ADR 0019) i Wpisanie
+    raportów (ADR 0028) mają własne karty i routery startu poza okresami; widok Raportów pokazuje też wynik ostatniego
+    sprawdzenia Przypomnień. Bez zbudowanego frontendu działa samo API.
+    """
+
     work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
-        # Zmiany Ustawień Centrum z Wydania: przed pierwszym zapytaniem i przed Przypomnieniami, które czytają Ustawienia.
         settings.apply_release_changes(release_changes, release_origin)
-        # Powiadomienia: pierwsze pytanie skrzynki o stan spraw taty przy starcie, nie dopiero przy odczycie.
         notifications.check_in_background()
-        # Klucz do Zgłoszeń: pierwsze sprawdzenie w tle, żeby Konfiguracja nie czekała na Skrzynkę.
         box.check_in_background()
-        # Wysyłki, których poprzednia praca Centrum nie wysłała, a po nich, już po wpisie ``start``, wersje zastępcze z
-        # jej dzienników Wyceny w efenix: kolejka nie dostaje wysyłki przed swoim startem.
         outbox.resume()
-        # Przypomnienia o raporcie: praca co minutę od startu do zamknięcia, poza Uruchomieniami (ADR 0030).
         rhythm.start(reminders.check)
         try:
             yield {AFTER_START: comments.send_left_behind}
@@ -147,7 +163,6 @@ def create_app(
             rhythm.stop()
 
     dad_actions = DadActionJournal(work)
-    # Bez /docs i /openapi.json: kontrakt eksportuje tools/ci/export_openapi.py, a Swagger ładowałby skrypty z sieci.
     app = FastAPI(
         title="Centrum rozliczeń",
         version="kontrakt",
@@ -180,7 +195,6 @@ def create_app(
             log.unexpected_failure(failure, where=f"{request.method} {getattr(route, 'path', 'poza API')}")
             return _problem(refusal.unexpected_failure())
 
-    # Ostatni dodany middleware jest zewnętrzny: czas obejmuje też odmowy Host/Origin i nieoczekiwane wyjątki.
     app.middleware("http")(server_timing)
 
     @app.exception_handler(Refusal)
@@ -191,22 +205,15 @@ def create_app(
     async def inaccessible_folder(request: Request, inaccessible: PeriodFolderInaccessible) -> Response:
         return _problem(refusal.period_folder_unreadable(inaccessible.folder.name))
 
-    # Każdy start Centrum ma własny identyfikator: karta po aktualizacji rozpozna po nim nowe Centrum.
     instance = uuid.uuid4().hex
 
     @app.get("/api/health", operation_id="getHealth")
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX, sprawdzenie okresów przy usunięciu
-    # loginu z Listy Wykonawców i podpowiedzi sekcji Wykonawcy czytają nim pliki taty ze źródła bajtów ``source``, a jego
-    # pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
     configuration = configuration_files or ConfigurationFiles.default()
     price_list = PriceList(configuration.collective_template)
-    # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
-    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień. Nazwy kolumn
-    # z cennika mają zdania reguł w odmowach zmian Reguł ilości i Listy Urządzeń.
     settings = CentrumSettings(
         config,
         log=log,
@@ -216,8 +223,6 @@ def create_app(
         periods=WorkerPeriods(files),
         column_names=price_list.names,
     )
-    # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
-    # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
     app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
@@ -226,9 +231,6 @@ def create_app(
     history = History(catalog, centrum_runs)
     cases = DadCases(work)
     box = KeyedBox.of_work(report_box or GitHubReportBox(), work)
-    # Najnowsze Wydanie na GitHubie, pytane z kluczem do Zgłoszeń, gdy jest: jedna pamiętana odpowiedź dla Konfiguracji,
-    # Powiadomień i wyniku Aktualizacji narzędzia (limit API); Diagnoza pyta za każdym razem, a jej odpowiedź też trafia
-    # do pamięci.
     freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
     release = RememberedRelease(freshness.release, clock=clock)
 
@@ -241,14 +243,12 @@ def create_app(
             release=None if at_commit is None else at_commit.version, commit=None if commit is None else short_commit(commit)
         )
 
-    # Diagnoza: commit `main` z GitHuba, atrybuty OneDrive i werdykt Skrzynki o kluczu to granice komputera taty.
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
     app.include_router(workers_router(settings, files, today))
-    # Ostatnie Pliki zbiorcze po Przebiegu: jeden odczyt dla podglądu zmiany reguł i różnic z Kontroli ilości.
     recent = RecentCollectiveFiles(files)
     app.include_router(quantity_rules_router(settings, price_list, recent))
     app.include_router(quantity_differences_router(settings, price_list, recent))
@@ -299,7 +299,6 @@ def create_app(
         comments,
     )
     contexts = RunContexts(files=files, template_check=template_check)
-    # Okno efenix taty: Google Chrome w profilu narzędzia z prawdziwym efenix; testy podają okno Atrapy efenix.
     report_files = FileReportState.of_work(work)
     parts = HostParts(
         efenix=(efenix_window or EfenixWindow.of_tata()).opening(),
@@ -310,17 +309,12 @@ def create_app(
         reports=ReportEnteringParts(worker_report_inbox or inbox, report_files),
     )
     starts = PeriodStarts(settings, configuration, catalog, today, contexts, parts)
-    # Uporządkowanie INTERMAX ma własną kartę poza okresami (ADR 0019), więc ma własny router startu.
     intermax = IntermaxEntry(
         settings, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
-    # Przypomnienia o raporcie czytają INTERMAX tym samym uchwytem plików taty, bez Kopii wejścia, a skrzynkę i jej
-    # „Wysłane” przez port skrzynki raportów; testy i skille podają atrapę skrzynki i rytm.
     reminders = ReportReminders(
         work, settings, reminder_mailbox or inbox, files, reports, now
     )
-    # Wpisanie raportów ma własną kartę poza okresami (ADR 0028), jak Uporządkowanie INTERMAX; jej widok Raporty
-    # pokazuje też wynik ostatniego sprawdzenia przypomnień.
     report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
@@ -335,7 +329,6 @@ def create_app(
         after_run=[QuantityCheckAfterRun(work, outbox, surroundings.tool_freshness.local), filling],
     )
     shutdown.refuse_while(runs.shutdown_refusal)
-    # Klon narzędzia, które Centrum aktualizuje (ADR 0009); w testach klon z lokalnym „origin”.
     updates = ToolUpdates(
         work,
         lambda: tool_update or ToolClone.of_system(),
@@ -368,7 +361,7 @@ def create_app(
     app.include_router(tool_update_router(updates))
     app.include_router(shutdown_router(shutdown))
     app.include_router(timing_router(log))
-    if path_state(STATIC_DIRECTORY) == "folder":  # bez buildu (np. świeży katalog roboczy frontendu) działa samo API
+    if path_state(STATIC_DIRECTORY) == "folder":
         app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
     return app
 
