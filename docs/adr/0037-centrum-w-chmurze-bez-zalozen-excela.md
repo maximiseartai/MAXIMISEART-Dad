@@ -13,9 +13,10 @@ Dotyczy projektu Centrum w chmurze; Centrum na laptopie taty ten ADR nie zmienia
 - **Praca sama.** To, co w Centrum istnieje tylko z powodu Excela albo jednego laptopa, w chmurze znika: aplikacja
   sama robi, co może, a tatę i pracownika taty pyta tylko wtedy, gdy potrzebny jest ich osąd albo decyzja (#1172).
   Uruchomienie bierze na starcie klucze dnia albo okresu, które zmienia albo czyta, i biegnie naraz z tym, co się z
-  nim nie styka, a składanie pliku Excela ma limit wspólny dla wszystkich Uruchomień: najwyżej 2 naraz (#1156).
+  nim nie styka, a każde składanie pliku Excela liczy się do limitu najwyżej 2 naraz, także przy „Pobierz” i
+  porównaniach trybu cienia, przy których potrzeba ok. 450 MB (#1156).
   Z plików Excela na stałe zostają Rozliczenia pracowników; Rejestr INTERMAX i Pliki zbiorcze w dzisiejszym kształcie
   zostają tylko do usunięcia starego Centrum z laptopa, a zamiast reszty jest tabela z ekranu w `.xlsx` bez Wzorca
   (#1154).
-  Powód: dzisiejsze pliki i kroki taty (Uporządkowanie jako układ, Plik zbiorczy, Rozliczenie wewnętrzne) mają taką
-  postać, bo tata musiał pracować w Excelu, a celem jest zdjąć z niego tę pracę, a nie przenieść ją na serwer.
+  Powód: dzisiejsze pliki i kroki taty mają taką postać z powodu Excela, a gdy dane są w bazie, aplikacja sama
+  prowadzi okres (#1154, #1172).
