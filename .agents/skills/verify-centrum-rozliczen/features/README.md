@@ -155,8 +155,10 @@ behaviour, then exactly these H2s in order:
    `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
    The command reads only `run.step(feature, "<id>")` and `run.check(condition, message)`
    called in the body of `drive(run, page)` and of a helper of the module that `drive`
-   calls once as a whole statement `helper(run, …)` or `name = helper(run, …)` of its body,
-   before any `return`, where the helper's steps and checks print. It refuses, with the file
+   calls as a whole statement `helper(run, …)` or `name = helper(run, …)`, before any
+   `return`, of its body or of the body of a `try` in it with only a `finally` that does not
+   return: each such statement runs once when `drive` runs to its end, so the helper's steps
+   and checks print at each call, in the order of the statements. It refuses, with the file
    and the line, every other form of them, every other `.step` or `.check` attribute in the
    module, on whatever object, any other use of such a helper and one that is decorated or
    yields, as it cannot tell whether, how many times or in which order that runs. It does not
