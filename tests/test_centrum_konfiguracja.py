@@ -20,7 +20,17 @@ from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import Problem, WorkbookError
-from tests.fixtures.centrum import TOOL_COMMIT, CentrumClient, FakeGitHub, ToolDirectory, centrum_app, write_report_key
+from rozliczenia.centrum.report_box import Unreachable
+
+from tests.fixtures.centrum import (
+    TOOL_COMMIT,
+    CentrumClient,
+    FakeGitHub,
+    FakeReportBox,
+    ToolDirectory,
+    centrum_app,
+    write_report_key,
+)
 from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.centrum_processes import write_configuration
 from atrapy.workbooks import cut_sheet_after_data_rows
@@ -447,3 +457,19 @@ def test_konfiguracja_pyta_github_o_wydania_z_tokenem_do_zgloszen_tylko_gdy_jest
     assert {asked.authorization for asked in api.asked} == authorizations
     # Odmowa tokenu przez GitHub nie zabiera propozycji aktualizacji ani nie odrzuca klucza Skrzynki.
     assert (configuration["update_offered"], configuration["reports"]) == (True, "missing_key" if key is None else "ready")
+
+
+@pytest.mark.parametrize("search_failure", [None, Unreachable()], ids=["token-przyjety", "skrzynka-bez-odpowiedzi"])
+def test_konfiguracja_mowi_zgloszenia_gotowe_takze_o_tokenie_ktorego_skrzynka_jeszcze_nie_sprawdzila(
+    tmp_path: Path, search_failure: Unreachable | None
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    write_configuration(tool)
+    write_report_key(tool, "github_pat_SYNTETYCZNY_TOKEN_DO_ZGLOSZEN")
+    box = FakeReportBox(search_failure=search_failure)
+    client = CentrumClient(centrum_app(tool, tool_freshness=FakeGitHub().freshness(), report_box=box))
+
+    reports = client.get("/api/configuration").json()["reports"]
+    client.stop()
+
+    assert reports == "ready"

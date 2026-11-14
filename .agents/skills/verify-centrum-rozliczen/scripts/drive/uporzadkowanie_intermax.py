@@ -23,7 +23,7 @@ from drive.common import (
     run_logs,
     stop_banner,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from atrapy.workbooks import excel_lock
 from harness import Log
 
@@ -282,5 +282,5 @@ def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixtu
         run.capture(touch, "233-intermax-wynik")
         opened = len(run.lines(Log.OPENED))
         live.get_by_role("button", name="Otwórz INTERMAX", exact=True).tap()
-        run.wait_for(lambda: len(run.lines(Log.OPENED)) > opened, "INTERMAX opens in Excel")
+        until(lambda: len(run.lines(Log.OPENED)) > opened, "INTERMAX opens in Excel")
         run.check(run.lines(Log.OPENED)[-1]["path"] == str(register), "the result opens Dad's INTERMAX")

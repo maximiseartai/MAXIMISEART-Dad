@@ -10,8 +10,8 @@ from rozliczenia.centrum.contract.common import Message, Model
 from rozliczenia.centrum.contract.diagnosis import ReportDraft, ReportState
 
 
-# Krok Aktualizacji narzędzia: pobieranie nowej wersji, instalowanie bibliotek, ponowne uruchamianie Centrum.
 ToolUpdateStep = Literal["fetching", "installing", "restarting"]
+"""Krok Aktualizacji narzędzia: pobieranie nowej wersji, instalowanie bibliotek, ponowne uruchamianie Centrum."""
 
 
 class ToolUpdateIdle(Model):

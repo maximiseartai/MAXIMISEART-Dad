@@ -89,11 +89,11 @@ class InputWorkbook(NamedTuple):
     kind: InputKind
 
 
-# Plik danych tata uzupełnia, więc go zapisuje; zmiana zapisana we Wzorcu trafiłaby do każdego pliku z niego.
 _CLOSING: Final[Mapping[InputKind, str]] = {
     "data_file": "Zapisz go i zamknij.",
     "template": "Zamknij go bez zapisywania zmian.",
 }
+"""Plik danych tata uzupełnia, więc go zapisuje; zmiana zapisana we Wzorcu trafiłaby do każdego pliku z niego."""
 
 
 def open_in_excel(workbooks: Iterable[InputWorkbook]) -> list[str]:

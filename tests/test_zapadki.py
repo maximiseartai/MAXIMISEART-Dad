@@ -17,6 +17,7 @@ starego commitu; ta kopia potrzebuje więc obok także tych trzech plików ``too
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib.util
 import os
 from pathlib import Path
@@ -99,11 +100,13 @@ PARSERS = frozenset(
     tests/test_struktura_testow.py
     tests/test_tabela_zatrzyman_efenix.py
     tests/test_wywolanie_skryptow_skilli.py
+    tools/lib/komunikat_mapy.py
     tools/lib/kroki_skilli.py
     tools/lib/niestabilne_testy.py
     tools/lib/rozjazd_modelu.py
     tools/lib/wplyw_zmiany.py
     tools/mutacje_zmiany.py
+    tools/rownowaznosc.py
     """.split()
 )
 PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
@@ -621,6 +624,176 @@ def test_zapadka_liczy_dodana_linie_zaczynajaca_sie_od_plusow_i_kazda_nastepna_l
     assert added == [("docs/a.md", 2, "++ dodana"), ("docs/a.md", 3, "++ b/udawany.md"), ("docs/a.md", 4, "nowa"), ("docs/b.md", 2, "nowa")]
 
 
+def _committed(root: Path, files: Mapping[str, str]) -> str:
+    """Repozytorium gita w ``root`` z plikami ``files`` w commicie bazy; zwraca bazę."""
+
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+# Fikstura różnicy: dwa bliskie hunki i usunięta linia (a.py), ostatnia linia bez końca zamieniona na dwie (b.py,
+# znacznik „\ No newline at end of file” w środku hunka), plik nieśledzony (c.py), przeniesiona linia, którą inny
+# algorytm różnicy liczy jako starą (d.py), dodana linia, którą bez heurystyki wcięć git przesuwa o jedną (e.py),
+# i plik przeniesiony w indeksie z dopisaną linią (f.py → g.py), którego bez wykrywania przeniesień każda linia jest
+# dodana.
+_DIFF_BASE: Final = {
+    "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nX8 = 8\nX9 = 9\nX10 = 10\nX11 = 11\nX12 = 12\n",
+    "src/rozliczenia/b.py": "Y1 = 1\nY2 = 2",
+    "src/rozliczenia/d.py": "Z = 0\nE = 5  # komentarz\nZ = 0\n",
+    "src/rozliczenia/e.py": "\nX = 1  # komentarz\nA = 1\nB = 2\n",
+    "src/rozliczenia/f.py": "F1 = 1\nF2 = 2\nF3 = 3\nF4 = 4\n",
+}
+_DIFF_HEAD: Final = {
+    "src/rozliczenia/a.py": "X1 = 1\nX2 = 2\nA = 1\nX3 = 3\n\nX5 = 5\nX6 = 6\nX7 = 7\nB = 2  # komentarz\nX8 = 8\nX10 = 10\nX11 = 11\nX12 = 12\n",
+    "src/rozliczenia/b.py": "Y1 = 1\nY3 = 3\nC = 3  # komentarz",
+    "src/rozliczenia/c.py": "D = 4  # komentarz\n",
+    "src/rozliczenia/d.py": "Z = 0\nZ = 0\nE = 5  # komentarz\n",
+    "src/rozliczenia/e.py": "\nX = 1  # komentarz\nX = 1  # komentarz\nA = 1\n",
+    "src/rozliczenia/g.py": "F1 = 1\nF2 = 2\nF3 = 3\nF4 = 4\nG = 5  # komentarz\n",
+}
+_DIFF_UNTRACKED: Final = "src/rozliczenia/c.py"
+# Plik przeniesiony w indeksie (``git mv``) przed zmianą drzewa: stara ścieżka → nowa.
+_DIFF_MOVED: Final = {"src/rozliczenia/f.py": "src/rozliczenia/g.py"}
+# Linie dodane w różnicy gita bez konfiguracji, jak w CI.
+_DIFF_ADDED: Final = [
+    ("src/rozliczenia/a.py", 3, "A = 1"),
+    ("src/rozliczenia/a.py", 9, "B = 2  # komentarz"),
+    ("src/rozliczenia/b.py", 2, "Y3 = 3"),
+    ("src/rozliczenia/b.py", 3, "C = 3  # komentarz"),
+    ("src/rozliczenia/c.py", 1, "D = 4  # komentarz"),
+    ("src/rozliczenia/d.py", 3, "E = 5  # komentarz"),
+    ("src/rozliczenia/e.py", 2, "X = 1  # komentarz"),
+    ("src/rozliczenia/g.py", 5, "G = 5  # komentarz"),
+]
+# Postać, która bez ``odpalenia_ast_grep.Changes`` chowa linię dodaną albo zmienia jej numer:
+# pliki (``.gitattributes`` z PR, ``.git/info/attributes``, pliki konfiguracji komputera), wpisy ``git config``
+# checkoutu, zmienne środowiska wołającego i polecenia gita, które zapisują lokalny stan ``.git`` (obiekty podmienione
+# przez ``refs/replace``, bity indeksu hooka ``core.fsmonitor``); ``{root}`` to katalog repozytorium, a ``{base}``
+# commit bazy.
+_TEXTCONV = {"diff.ukryj.textconv": "true"}
+# Hook ``core.fsmonitor`` w powłoce gita (protokół 2): token bez żadnej zmienionej ścieżki, czyli „nic się nie
+# zmieniło”; ``#`` chowa argumenty, które git dopisuje do polecenia.
+_FSMONITOR_UNCHANGED = "printf 'tok\\0' #"
+_COMMIT = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "zmiana")
+_DIFF_DISGUISES: Final[dict[str, tuple[dict[str, str], dict[str, str], dict[str, str], tuple[tuple[str, ...], ...]]]] = {
+    "-diff w .gitattributes": ({".gitattributes": "*.py -diff\n"}, {}, {}, ()),
+    "binary w .gitattributes podkatalogu": ({"src/.gitattributes": "*.py binary\n"}, {}, {}, ()),
+    "diff= z textconv w .gitattributes": ({".gitattributes": "*.py diff=ukryj\n"}, _TEXTCONV, {}, ()),
+    "filter= z czyszczeniem w .gitattributes": ({".gitattributes": "*.py filter=ukryj\n"}, {"filter.ukryj.clean": "true"}, {}, ()),
+    "-diff w .git/info/attributes": ({".git/info/attributes": "*.py -diff\n"}, {}, {}, ()),
+    "diff= ze sterownikiem binarnym w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, {"diff.ukryj.binary": "true"}, {}, ()),
+    "diff= z textconv w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, _TEXTCONV, {}, ()),
+    "diff= z zewnętrznym programem w .git/info/attributes": ({".git/info/attributes": "*.py diff=ukryj\n"}, {"diff.ukryj.command": "true"}, {}, ()),
+    "filter= z pliku core.attributesFile": (
+        {"atrybuty": "*.py filter=ukryj\n"},
+        {"core.attributesFile": "{root}/atrybuty", "filter.ukryj.clean": "true"},
+        {},
+        (),
+    ),
+    "przedrostki z diff.mnemonicPrefix": ({}, {"diff.mnemonicPrefix": "true"}, {}, ()),
+    "kolory z color.diff": ({}, {"color.diff": "always"}, {}, ()),
+    "kontekst między bliskimi hunkami z diff.interHunkContext": ({}, {"diff.interHunkContext": "10"}, {}, ()),
+    "pusta linia kontekstu z diff.suppressBlankEmpty": ({}, {"diff.interHunkContext": "10", "diff.suppressBlankEmpty": "true"}, {}, ()),
+    "kontekst z diff.context": ({}, {"diff.context": "5"}, {}, ()),
+    "algorytm z diff.algorithm": ({}, {"diff.algorithm": "patience"}, {}, ()),
+    "heurystyka wcięć z diff.indentHeuristic": ({}, {"diff.indentHeuristic": "false"}, {}, ()),
+    "przeniesienia wyłączone przez diff.renames": ({}, {"diff.renames": "false"}, {}, ()),
+    "kontekst z GIT_DIFF_OPTS": ({}, {}, {"GIT_DIFF_OPTS": "--unified=3"}, ()),
+    "dosłowne ścieżki z GIT_LITERAL_PATHSPECS": ({}, {}, {"GIT_LITERAL_PATHSPECS": "1"}, ()),
+    "ścieżki glob z GIT_GLOB_PATHSPECS": ({}, {}, {"GIT_GLOB_PATHSPECS": "1"}, ()),
+    "ścieżki bez glob z GIT_NOGLOB_PATHSPECS": ({}, {}, {"GIT_NOGLOB_PATHSPECS": "1"}, ()),
+    "wpis core.excludesFile z GIT_CONFIG_COUNT": (
+        {"wykluczone": "c.py\n"},
+        {},
+        {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.excludesFile", "GIT_CONFIG_VALUE_0": "{root}/wykluczone"},
+        (),
+    ),
+    "plik ignore gita z XDG_CONFIG_HOME": ({"xdg/git/ignore": "c.py\n"}, {}, {"XDG_CONFIG_HOME": "{root}/xdg"}, ()),
+    "plik ignore gita w HOME": ({"dom/.config/git/ignore": "c.py\n"}, {}, {"HOME": "{root}/dom"}, ()),
+    "core.excludesFile w konfiguracji checkoutu": ({"wykluczone": "c.py\n"}, {"core.excludesFile": "{root}/wykluczone"}, {}, ()),
+    "drzewo robocze z core.worktree": ({"inne/.keep": ""}, {"core.worktree": "{root}/inne"}, {}, ()),
+    "commit bazy podmieniony przez refs/replace na commit zmiany": ({}, {}, {}, (("add", "-A"), _COMMIT, ("replace", "{base}", "HEAD"))),
+    "hook core.fsmonitor bez zmian przy bitach fsmonitor-valid": (
+        {},
+        {"core.fsmonitor": _FSMONITOR_UNCHANGED},
+        {},
+        (("update-index", "--fsmonitor"), ("update-index", "--fsmonitor-valid", "--", *(path for path in _DIFF_HEAD if path != _DIFF_UNTRACKED))),
+    ),
+}
+
+
+def _disguised(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    files: dict[str, str],
+    config: dict[str, str],
+    environment: dict[str, str],
+    commands: tuple[tuple[str, ...], ...],
+) -> str:
+    """Fikstura ``_DIFF_BASE`` w commicie bazy repozytorium ``root``, w indeksie przeniesienia ``_DIFF_MOVED``, w drzewie
+    roboczym ``_DIFF_HEAD`` i postać ``_DIFF_DISGUISES``: jej pliki, wpisy ``git config`` checkoutu, polecenia gita
+    w checkoucie i zmienne środowiska testu; zwraca bazę."""
+
+    base = _committed(root, _DIFF_BASE)
+    for old, new in _DIFF_MOVED.items():
+        _git(root, "mv", old, new)
+    for name, text in {**_DIFF_HEAD, **files}.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(text.encode("utf-8"))
+    for key, value in config.items():
+        _git(root, "config", key, value.format(root=root))
+    for command in commands:
+        _git(root, *(argument.format(base=base) for argument in command))
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value.format(root=root))
+    return base
+
+
+@pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+def test_linie_dodane_nie_zaleza_od_atrybutow_konfiguracji_ani_srodowiska_gita(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    files: dict[str, str],
+    config: dict[str, str],
+    environment: dict[str, str],
+    commands: tuple[tuple[str, ...], ...],
+) -> None:
+    """Atrybut z drzewa zmiany (``.gitattributes``, także w podkatalogu), atrybut ``diff`` spoza drzewa, konfiguracja
+    różnicy w checkoucie, zmienna środowiska, obiekt podmieniony przez ``refs/replace`` ani hook ``core.fsmonitor``
+    nie chowa linii dodanej przed zapadką i dowodem reguły ani nie zmienia jej numeru, bo oba biorą ją z ``Changes``:
+    linie dodane są takie, jak w różnicy gita bez konfiguracji, czyli w CI."""
+
+    base = _disguised(tmp_path, monkeypatch, files, config, environment, commands)
+
+    assert sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "src")) == _DIFF_ADDED
+    assert sorted(line for line in odpalenia_ast_grep.added_lines(tmp_path, base, ".", "*") if line[0] in _DIFF_HEAD) == _DIFF_ADDED
+
+
+@pytest.mark.parametrize("separator", ["\x1c", "\x0c", "\r", " "], ids=["x1c", "x0c", "samotne-r", "u2028"])
+def test_linie_konczy_tylko_znak_nowej_linii_wiec_znak_podzialu_splitlines_nie_zjada_nastepnej_linii_dodanej(tmp_path: Path, separator: str) -> None:
+    """``str.splitlines`` dzieli linię także na ``\\x1c``, ``\\x0c``, samotnym ``\\r`` i U+2028, więc kawałek ``+…``
+    po takim znaku liczyłby się jako dodana linia z ``@@``, a prawdziwa następna linia wypadałaby z hunka."""
+
+    base = _committed(tmp_path, {"src/a.py": "a = 1\n"})
+    text = f"A = '{separator}+'\nB = 2\n"
+    (tmp_path / "src" / "a.py").write_text("a = 1\n" + text, encoding="utf-8", newline="")
+    (tmp_path / "src" / "nowy.py").write_text(text, encoding="utf-8", newline="")
+
+    added = sorted(odpalenia_ast_grep.added_lines(tmp_path, base, "src"))
+
+    assert added == [
+        ("src/a.py", 2, f"A = '{separator}+'"),
+        ("src/a.py", 3, "B = 2"),
+        ("src/nowy.py", 1, f"A = '{separator}+'"),
+        ("src/nowy.py", 2, "B = 2"),
+    ]
+
+
 def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
@@ -792,6 +965,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
+    "historia-w-docstringu": "zostaw w opisie PR albo w issue",
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
@@ -837,6 +1011,73 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     assert syntax_rule_findings(ROOT, base) == []
 
 
+@needs_ast_grep
+@pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_konfiguracji_i_srodowiska_gita(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    files: dict[str, str],
+    config: dict[str, str],
+    environment: dict[str, str],
+    commands: tuple[tuple[str, ...], ...],
+) -> None:
+    """Zapadka reguł ast-grep z prawdziwą regułą ``komentarz-w-src`` zgłasza w każdej postaci ``_DIFF_DISGUISES``
+    każdy komentarz, który fikstura różnicy dodaje w ``src/``, na jego linii, jak w CI."""
+
+    base = _disguised(tmp_path, monkeypatch, files, config, environment, commands)
+
+    found = [(finding.path, finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)]
+    assert found == [(path, number, "komentarz-w-src") for path, number, text in _DIFF_ADDED if "#" in text]
+
+
+# Znane luki ``odpalenia_ast_grep.Changes``: lokalny stan checkoutu, którego zmiana nie zapisuje w commicie, a żadna
+# zmienna ani opcja gita nie wyłącza (plik ``.git/info``, bit indeksu), chowa linię dodaną przed zapadką; Required CI
+# biegnie na świeżym checkoucie bez niego. Klasa: postać → pliki zmiany na bazie z ``src/rozliczenia/a.py`` i polecenia
+# gita w checkoucie po niej.
+_BAZA_ZNANYCH_LUK_ZMIAN: Final = {"src/rozliczenia/a.py": "X = 1\n"}
+# Parzysta liczba bajtów, więc git czyta plik jako UTF-16LE bez błędu: jedna linia znaków spoza ASCII.
+_DODANY_KOMENTARZ: Final = "X = 1\nY = 2  # komentarze\n"
+ZNANE_LUKI_ZMIAN: Final[dict[str, tuple[dict[str, str], tuple[tuple[str, ...], ...]]]] = {
+    "atrybut spoza drzewa: working-tree-encoding z .git/info/attributes": (
+        {".git/info/attributes": "*.py working-tree-encoding=UTF-16LE\n", "src/rozliczenia/a.py": _DODANY_KOMENTARZ},
+        (),
+    ),
+    "wykluczenie spoza drzewa: plik nieśledzony z .git/info/exclude": (
+        {".git/info/exclude": "nowy.py\n", "src/rozliczenia/nowy.py": "X = 1  # komentarz\n"},
+        (),
+    ),
+    "lokalny stan indeksu checkoutu: bit assume-unchanged na zmienionym pliku": (
+        {"src/rozliczenia/a.py": _DODANY_KOMENTARZ},
+        (("update-index", "--assume-unchanged", "--", "src/rozliczenia/a.py"),),
+    ),
+    "lokalny stan indeksu checkoutu: bit skip-worktree na zmienionym pliku": (
+        {"src/rozliczenia/a.py": _DODANY_KOMENTARZ},
+        (("update-index", "--skip-worktree", "--", "src/rozliczenia/a.py"),),
+    ),
+}
+
+
+@needs_ast_grep
+def test_znane_luki_zmian_przechodza_przez_zapadke_regul_ast_grep(tmp_path: Path) -> None:
+    """Każda próbka ``ZNANE_LUKI_ZMIAN`` przechodzi przez zapadkę reguł ast-grep z prawdziwą regułą
+    ``komentarz-w-src``, choć dodaje komentarz w ``src/``."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, (pliki, polecenia)) in enumerate(ZNANE_LUKI_ZMIAN.items()):
+        root = tmp_path / str(numer)
+        base = _committed(root, _BAZA_ZNANYCH_LUK_ZMIAN)
+        for nazwa, tekst in pliki.items():
+            (root / nazwa).parent.mkdir(parents=True, exist_ok=True)
+            (root / nazwa).write_bytes(tekst.encode("utf-8"))
+        for polecenie in polecenia:
+            _git(root, *polecenie)
+        zgloszenia[opis] = [f"zapadka: {finding}" for finding in syntax_rules(root, base)]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py (ZNANE_LUKI_ZMIAN)")
+
+
 def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
     """Repozytorium z pustą bazą w ``root`` i nowym plikiem ``src/rozliczenia/<name>`` z ``text``, czyli dodaną
     próbką, złą albo dobrą, dla ``syntax_rules``; zwraca bazę."""
@@ -879,12 +1120,7 @@ def ast_grep_rules_without_scope(config: Path) -> list[str]:
     """Reguły ast-grep z ``config`` bez niepustego pola ``files:``, każda z poleceniem naprawy: zapadka podaje ast-grep
     każdy plik repozytorium z dodaną linią, więc reguła bez ``files:`` obejmowałaby całe repozytorium."""
 
-    return sorted(
-        f"{rule['id']}: reguła bez pola files: obejmuje każdy plik repozytorium; dopisz files: z globami plików, w"
-        " których obowiązuje (np. src/**/*.py albo .agents/skills/**/*.py), a wyjątki w ignores:"
-        for rule in _ast_grep_rule_documents(config)
-        if not rule.get("files")
-    )
+    return sorted(problem for rule in _ast_grep_rule_documents(config) if (problem := odpalenia_ast_grep.unscoped(rule)))
 
 
 def test_kazda_regula_ast_grep_ma_zakres_w_polu_files() -> None:
@@ -1049,6 +1285,139 @@ def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(t
 
     with pytest.raises(odpalenia_ast_grep.ScanFailed, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
         syntax_rules(tmp_path, base, config)
+
+
+_IN_FUNCTION = "def f() -> None:\n    "
+_SHORTS = ("deadbee", "1abcdef", "12abcde", "123abcd", "1234abc", "12345ab", "123456a", "1234567a")
+
+# Próbki reguły ``historia-w-docstringu``: „klasa: postać” → nowy plik ``src/`` i linie, które reguła zgłasza.
+_PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
+    "# z cyfrą: w docstringu modułu": ('"""Moduł z #1614."""\n', [1]),
+    "# z cyfrą: po nawiasie": (f'{_IN_FUNCTION}"""Wzór z (#1614)."""\n', [2]),
+    "# z cyfrą: po słowie ze spacją i bez": (f'{_IN_FUNCTION}"""Wzór z issue #1614 i PR#12."""\n', [2]),
+    "# z cyfrą: po nazwie repozytorium": ('class K:\n    """Od o/r#1614."""\n', [2]),
+    "adres github.com: z https i /issues/": ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [1]),
+    "adres github.com: bez schematu": (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
+    "adres github.com: wielkie litery": (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
+    "adres github.com: subdomena gist.": (f'{_IN_FUNCTION}"""Zob. https://gist.github.com/o/1."""\n', [2]),
+    "adres github.com: subdomena api.": (f'{_IN_FUNCTION}"""Zob. https://api.github.com/repos/o/r/issues/1614."""\n', [2]),
+    "adres github.com: subdomena uploads.": (f'{_IN_FUNCTION}"""Zob. https://uploads.github.com/o."""\n', [2]),
+    "adres github.com: subdomena redirect.": (f'{_IN_FUNCTION}"""Zob. https://redirect.github.com/o/r/compare/a...b."""\n', [2]),
+    "adres github.com: git@ z dwukropkiem": (f'{_IN_FUNCTION}"""Zob. git@github.com:o/r."""\n', [2]),
+    "adres github.com: kropka na końcu zdania": (f'{_IN_FUNCTION}"""Repozytorium jest na github.com."""\n', [2]),
+    "skrót commitu: 10 znaków": (f'{_IN_FUNCTION}"""Naprawione w 5b2edaf2f9."""\n', [2]),
+    "skrót commitu: wielkie litery": (f'{_IN_FUNCTION}"""Naprawione w 2FF78B6B3."""\n', [2]),
+    "skrót commitu: pełny SHA": (f'{_IN_FUNCTION}"""Naprawione w 8d3f7b66dfe85c4f3e0fae27b05a66340c076deb."""\n', [2]),
+    **{
+        f"skrót commitu: pierwsza litera na pozycji {len(short) - len(short.lstrip('0123456789')) + 1} ({short})": (
+            f'{_IN_FUNCTION}"""Naprawione w {short}."""\n',
+            [2],
+        )
+        for short in _SHORTS
+    },
+    "miejsce docstringu: po komentarzu": ('#!/usr/bin/env python3\n"""Moduł z #1614."""\n', [2]),
+    "miejsce docstringu: wieloliniowy, linia węzła to pierwsza": (f'{_IN_FUNCTION}"""Opis.\n\n    Wzór z #808.\n    """\n', [2]),
+    "tekst źródła: # i cyfra w jednym z dwóch sklejonych literałów": (f'{_IN_FUNCTION}"Część z #1 " "i dalej"\n', [2]),
+    "miejsce docstringu: napis r": (f"{_IN_FUNCTION}r'''Z a1b2c3d.'''\n", [2]),
+    "miejsce docstringu: napis b": (f'{_IN_FUNCTION}b"""Z #1614."""\n', [2]),
+    "miejsce docstringu: f-string": ('def f(x: int) -> None:\n    f"""Z #1614 i {x}."""\n', [2]),
+    "miejsce docstringu: metoda asynchroniczna z dekoratorem": (
+        'class K:\n    @staticmethod\n    async def f() -> None:\n        """Z #1614."""\n',
+        [4],
+    ),
+    "miejsce docstringu: funkcja zagnieżdżona": (f'{_IN_FUNCTION}def g() -> None:\n        """Z #1614."""\n', [3]),
+    "bez postaci: liczby, data, telefon, słowa hex do 6 znaków i literał 0x": (
+        '"""Moduł bez historii: 600 s, 2026-11-14, telefon 48600123456, słowa added i deadbe, 0xdeadbeef1."""\n',
+        [],
+    ),
+    "bez postaci: # przed literą": ('"""Kolor #fff, kotwica #L12 i sekcja #opis."""\n', []),
+    "bez postaci: domena inna niż github.com": (
+        f'{_IN_FUNCTION}"""Adresy notgithub.com, my-github.com, github.com.pl, github.company i githubusercontent.com."""\n',
+        [],
+    ),
+    "nie docstring: napis przypisany": ('w = "#123 w napisie, który nie jest docstringiem"\n', []),
+    "nie docstring: drugi napis funkcji": (
+        'def f() -> str:\n    s = "zwykły napis"\n    """Drugi napis z #9 nie jest docstringiem."""\n    return s\n',
+        [],
+    ),
+    "nie docstring: napis w bloku if": ('if True:\n    """Napis z #9 w bloku if nie jest docstringiem."""\n', []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_HISTORII.values(), ids=_PROBKI_HISTORII.keys())
+def test_historia_w_docstringu_zglasza_docstring_z_numerem_adresem_github_albo_skrotem_commitu(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == lines
+
+
+@needs_ast_grep
+def test_historia_w_docstringu_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozszerzenia(tmp_path: Path) -> None:
+    """Granica zbioru plików reguły, ta sama co ``komentarz-w-src``: ``files:`` ma globy ``.py``, ``.pyi`` i ``.py3``,
+    więc ``.pyw`` i skrypt Pythona bez rozszerzenia przechodzą z docstringiem z „#” i cyfrą; gdy reguła zacznie je
+    czytać, ten test każe przesunąć granicę."""
+
+    base = _empty_base(tmp_path)
+    names = ("a.py", "pakiet/b.py", "c.pyi", "d.py3", "e.pyw", "skrypt")
+    for name in names:
+        (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / name).write_text('"""Wzór z #1614."""\n', encoding="utf-8")
+
+    assert [finding.path for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == sorted(
+        f"src/{name}" for name in names[:4]
+    )
+
+
+# Znane luki reguły ``historia-w-docstringu`` (tests/fixtures/znane_luki.py): klasa mechanizmu, który ją przepuszcza:
+# postać → nowy plik ``src/`` z docstringiem z historią, który przechodzi przez regułę i ruff z konfiguracją ``src/``.
+ZNANE_LUKI_HISTORII: Final = {
+    "numer bez # przed cyfrą: PR 12": '"""Wzór z PR 12."""\n',
+    "numer bez # przed cyfrą: issue 1614": '"""Wzór z issue 1614."""\n',
+    "numer bez # przed cyfrą: PRy 12": '"""Wzór z PRy 12."""\n',
+    "numer bez # przed cyfrą: PRów 12": '"""Wzór z PRów 12."""\n',
+    "numer bez # przed cyfrą: GH-1614": '"""Wzór z GH-1614."""\n',
+    "numer bez # przed cyfrą: odstęp po #": '"""Wzór z # 1614."""\n',
+    "ścieżka bez domeny github.com: o/r/issues/1614": '"""Zob. o/r/issues/1614."""\n',
+    "ścieżka bez domeny github.com: /pull/77": '"""Zob. /pull/77."""\n',
+    "skrót bez litery a-f: same cyfry": '"""Naprawione w 4801234."""\n',
+    "skrót krótszy niż 7 znaków: abc123": '"""Naprawione w abc123."""\n',
+    "wartość napisu inna niż tekst źródła: # i cyfra rozcięte między sklejone literały": (
+        'def f() -> None:\n    "Wzór z #" "1614."\n'
+    ),
+    "wartość napisu inna niż tekst źródła: # zapisany ucieczką": '"""Wzór z \\x231614."""\n',
+    "wartość napisu inna niż tekst źródła: # i cyfra rozcięte backslashem i nową linią": '"""Wzór z #\\\n1614."""\n',
+    "wartość napisu inna niż tekst źródła: # wstawiony polem f-stringu": (
+        'def f() -> None:\n    f"""Wzór z {"#"}1614."""\n'
+    ),
+    "historia bez numeru, adresu i skrótu: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
+    "napis, który nie jest całym pierwszym wyrażeniem bloku: w nawiasach": (
+        '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n'
+    ),
+    "napis, który nie jest całym pierwszym wyrażeniem bloku: pod przypisaniem atrybutu": (
+        '"""Moduł."""\n\nLIMIT = 5\n"""Limit z #1614."""\n'
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_HISTORII, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(
+        zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff"
+    )
 
 
 @needs_ast_grep

@@ -14,9 +14,11 @@ pamiętają ją tylko w pamięci tej pracy Centrum.
 Stan leży w ``config/sprawy-taty.json`` poza Gitem. Dopóki tego pliku nie ma, Sprawy taty czytają pliki sprzed
 jednego magazynu (``OLD_REPORTS_FILE``, ``OLD_NOTES_FILE``), które mogą leżeć u taty, a pierwszy zapis przenosi ich
 wpisy do nowego pliku; stare pliki zostają nietknięte. Warunek usunięcia tego odczytu: Maks sprawdzi, że u taty jest
-``config/sprawy-taty.json`` albo nie ma żadnego ze starych plików (każde Wydanie pisze już tylko nowy plik). Brak, uszkodzenie albo nieznany schemat pliku to brak spraw z tego pliku, a wpis,
-którego nie da się odczytać, jest pomijany. Plik jest czytany raz, przy starcie Centrum. Piszą do niego wysyłka
-Zgłoszenia, „Wyślij” Uwagi, wątek kolejki i sprawdzanie Powiadomień, więc każda zmiana idzie pod blokadą. Plik,
+``config/sprawy-taty.json`` albo nie ma żadnego ze starych plików (każde Wydanie pisze już tylko nowy plik).
+Brak, uszkodzenie (także bajty spoza UTF-8: ``UnicodeError`` to też ``ValueError``) albo nieznany schemat pliku to brak
+spraw z tego pliku, a wpis, którego nie da się odczytać, jest pomijany. Plik jest czytany raz, przy starcie Centrum.
+Piszą do niego wysyłka Zgłoszenia, „Wyślij” Uwagi, wątek kolejki i sprawdzanie Powiadomień, więc każda zmiana idzie
+pod blokadą. Plik,
 którego nie da się zapisać, jest niedostępny (``StateFile``): sprawy czekają w pamięci, a Centrum zapisuje je przy
 następnej zmianie, także takiej, która niczego nie zmienia, i przy każdym odczycie Powiadomień.
 """
@@ -75,14 +77,14 @@ NOTE: Final = CaseKind("uwaga", "uwaga-taty", "Uwaga taty", recurs=False)
 KINDS: Final = (REPORT, NOTE)
 _BY_KEY: Final[Mapping[str, CaseKind]] = {kind.key: kind for kind in KINDS}
 
-# Zamknięcie issue przez Maksa (``state_reason``) → stan sprawy. GitHub zamyka issue bez powodu jako ``completed``, a
-# duplikat to sprawa przeczytana bez zmian.
 _ANSWERS: Final[Mapping[CloseReason | None, notifications_contract.Resolved | notifications_contract.ReadByMaks]] = {
     "completed": notifications_contract.Resolved(state="resolved"),
     None: notifications_contract.Resolved(state="resolved"),
     "not_planned": notifications_contract.ReadByMaks(state="read"),
     "duplicate": notifications_contract.ReadByMaks(state="read"),
 }
+"""Zamknięcie issue przez Maksa (``state_reason``) → stan sprawy. GitHub zamyka issue bez powodu jako ``completed``, a
+duplikat to sprawa przeczytana bez zmian."""
 
 
 @dataclass(frozen=True)
@@ -134,10 +136,12 @@ class DadCases:
     """Sprawy taty z tego komputera w pliku stanu obok Ustawień Centrum."""
 
     def __init__(self, work: CentrumWork) -> None:
+        """Sprawy z pliku stanu; ``_rejected`` to ``id`` spraw, których treść Skrzynka odrzuciła w tej pracy Centrum."""
+
         self.file = StateFile(work.config / DAD_CASES_FILE, work.log, where="stan Spraw taty", pause=work.pause)
         self._lock = threading.Lock()
         self._cases = _load(work.config)
-        self._rejected: set[str] = set()  # ``id`` spraw, których treść Skrzynka odrzuciła w tej pracy Centrum
+        self._rejected: set[str] = set()
         self._watchers: dict[CaseKind, list[Watcher]] = {}
 
     def all(self) -> list[Case]:
@@ -274,7 +278,7 @@ def _load(config_directory: Path) -> list[Case]:
         reports = _document(config_directory / OLD_REPORTS_FILE)
         notes = _document(config_directory / OLD_NOTES_FILE)
         return _cases(_old_reports(reports)) + _cases(_old_notes(notes))
-    except (OSError, ValueError):  # UnicodeError to też ValueError
+    except (OSError, ValueError):
         return []
     if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
         return []
@@ -282,9 +286,12 @@ def _load(config_directory: Path) -> list[Case]:
 
 
 def _document(path: Path) -> object:
+    """Treść JSON starego pliku ``path``; ``None`` bez pliku, z plikiem nieczytelnym albo z bajtami spoza UTF-8
+    (``UnicodeError`` to też ``ValueError``)."""
+
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):  # UnicodeError to też ValueError
+    except (OSError, ValueError):
         return None
 
 

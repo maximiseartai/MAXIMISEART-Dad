@@ -15,8 +15,8 @@ from rozliczenia.tool_files import HOST, LOG_PATH, TOOL_ROOT
 
 TITLE = "Centrum rozliczeń"
 _SHORTCUT = "skrót „Centrum rozliczeń”"
-# Ścieżka w folderze narzędzia tak, jak ją widzi tata w Eksploratorze plików Windows.
 _LOG = "\\".join(LOG_PATH.relative_to(TOOL_ROOT).parts)
+"""Ścieżka dziennika w folderze narzędzia tak, jak ją widzi tata w Eksploratorze plików Windows."""
 
 
 def _address(port: int) -> str:

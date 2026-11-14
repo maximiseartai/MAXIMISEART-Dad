@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
-from drive.common import DriveFailure, Run, dad_context, page_requests
+from drive.common import DriveFailure, Run, check_clock_alarm, dad_context, page_requests
 from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
@@ -39,7 +39,13 @@ def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str,
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
             drive(run, page, need, driven, options)
-    MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+    try:
+        MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+    except TimedOut:
+        # A wait that outlasted its budget after the wake-up thread of Centrum's clock died waited for a wake-up that
+        # never fires: the failure names the dead clock.
+        check_clock_alarm(run)
+        raise
     driven.append(name)
 
 

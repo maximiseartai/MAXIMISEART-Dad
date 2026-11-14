@@ -1,10 +1,11 @@
-"""Sprawdza, że refaktor nie zmienia wyniku procesów: te same scenariusze syntetyczne na bazie i na HEAD; użyj przy refaktorze src/.
+"""Sprawdza, że refaktor nie zmienia wyniku procesów (scenariusze syntetyczne na bazie i HEAD), a z --ast drzew składni src/; użyj przy refaktorze src/.
 
 Weryfikacja różnicowa refaktoru: te same scenariusze syntetyczne na commicie bazy i na HEAD dają ten sam wynik.
 
 Użycie (z katalogu repozytorium):
 
     .venv/bin/python tools/rownowaznosc.py [--baza COMMIT] [--glowa COMMIT] [--scenariusz NAZWA ...]
+    .venv/bin/python tools/rownowaznosc.py --ast [--baza COMMIT] [--glowa COMMIT]
 
 Całego zachowania procesów nie opisze żaden test, ale da się sprawdzić, że zmiana nic w nim nie zmienia. Narzędzie
 buduje raz scenariusze syntetyczne trzech procesów (Przebieg rozliczeń, Przygotowanie pliku zbiorczego,
@@ -40,11 +41,41 @@ wynik to ``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 scenariuszy`` (kod 2).
 W kopii ``tools/na_scalonych_pr.py`` drzewo robocze ma ``tools/`` z innego checkoutu, więc tam podaj obie strony:
 
     .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
+
+Z ``--ast`` narzędzie nie uruchamia scenariuszy, tylko porównuje pliki ``src/`` zmienione od bazy (``repo.changed``,
+bez wykrywania przeniesień). Plik jest ``TAK SAMO`` tylko wtedy, gdy ``compile`` Pythona, którym biegnie narzędzie
+(``refused_by_compiler``), przyjmuje obie strony bez wyjątku i bez żadnego ostrzeżenia, i gdy ich drzewa składni (``ast.dump`` bez pozycji w źródle) po usunięciu
+każdej instrukcji, która jest samym napisem (docstringów modułu, klas i funkcji oraz napisów pod przypisaniem), są
+równe. Kompilator i parser dostają bajty pliku, więc dekodują je jak interpreter, według deklaracji kodowania i BOM.
+Wynik kończy linia ``RÓWNOWAŻNOŚĆ OK | <n> plików`` (kod 0), ``RÓWNOWAŻNOŚĆ RÓŻNICA | <pliki>`` (kod 1) albo, bez
+zmienionego pliku, ``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików`` (kod 2).
+
+Kompilator oddaje wynik trzema drogami: wyjątkiem, ostrzeżeniem i obiektem kodu. Tryb czyta wyjątek i ostrzeżenie,
+a obiekt kodu zastępuje drzewo; czwarta droga, bieg modułu przy imporcie, różni się poza drzewem tylko ``__doc__``
+i pozycjami w źródle (niżej). ``<plik> | RÓŻNICA | <co>`` dostaje więc: plik, którego kompilator nie przyjmuje albo
+o którym ostrzega po którejkolwiek stronie, z jego komunikatem (każda reguła kompilacji, także ta, której parser nie
+sprawdza: miejsce ``from __future__``, ``return``, ``break`` i ``await`` poza swoim miejscem, ``nonlocal`` na poziomie
+modułu, zduplikowany argument, nieznana sekwencja ``\\`` w napisie), zmianę drzewa
+(także ``from __future__``, inną samotną stałą niż napis, napis jedynej instrukcji ciała zamieniony na ``pass``, inne
+znaczenie bajtów po zmianie deklaracji kodowania), plik tylko po jednej stronie (dodany, usunięty, a przeniesiony po
+obu) i plik, który nie jest ``.py`` ani ``.pyi``. ``TAK SAMO`` dostaje zmiana komentarzy, także dyrektyw narzędzi
+(``# type:``, ``# noqa``, ``# pragma``, ``# mypy:``), które nie działają w biegu, a sprawdzają je ruff, mypy i licznik
+tłumień w ``tools/szybko.py``, zmiana samych napisów i sam BOM. Inny Python może kompilować inaczej, więc wynik mówi
+o wersji Pythona, którą uruchomiono narzędzie. Pozycje w źródle, które tryb pomija, idą w biegu do treści Zgłoszenia
+i Logów: ślad wyjątku (``CallTrace``) niesie ``plik:linia``, więc przeniesiony komentarz zmienia te numery przy
+``TAK SAMO``; odcisk Zgłoszenia (``ProblemFingerprint``) linii nie zawiera, więc rozpoznawanie Zgłoszeń się nie zmienia.
+Tryb nie widzi trzech rzeczy, które sprawdza osobne polecenie:
+
+- docstringu czytanego w biegu: klasy Pydantic i trasy idą do kontraktu (``tools/ci/export_openapi.py``, potem
+  ``git diff --exit-code frontend/src/api/openapi.json``), a ``__doc__`` w kodzie znajduje ``git grep -n __doc__ -- src``;
+- docstringu definicji z modelem skilla ``verify-*``, którego skrót się zmienia (``tools/przesun_model.py <skill>``);
+- pliku spoza ``src/`` (``git diff --name-only <baza> -- . ':!src'``).
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -56,6 +87,7 @@ import re
 import shutil
 import sys
 import tempfile
+import warnings
 from typing import Literal, get_args
 import zipfile
 
@@ -417,6 +449,82 @@ def equivalence(base_tree: Path, head_tree: Path, scenarios: Sequence[Scenario],
     return 0
 
 
+def _lone_string(node: ast.AST) -> bool:
+    return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+
+
+def syntax(source: bytes) -> str:
+    """Drzewo składni bajtów ``source`` bez instrukcji, które są samym napisem, i bez pozycji w źródle."""
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, list):
+                setattr(node, field, [item for item in value if not _lone_string(item)])
+    return ast.dump(tree)
+
+
+def _source(repository: Path, revision: str | None, path: str) -> bytes | None:
+    """Bajty pliku w commicie ``revision``, a bez niego w drzewie roboczym; ``None``, gdy pliku tam nie ma."""
+
+    if revision is None:
+        file = repository / path
+        return file.read_bytes() if file.is_file() else None
+    return repo.blob(repository, revision, path)
+
+
+def refused_by_compiler(source: bytes, path: str) -> str | None:
+    """Komunikat kompilatora tego Pythona, gdy bajty ``source`` pliku ``path`` się nie kompilują albo kompilator coś
+    o nich ostrzega; ``None``, gdy kompilacja przechodzi bez wyjątku i bez ostrzeżenia.
+
+    Każde ostrzeżenie, dowolnej kategorii, jest tu błędem we własnym ``catch_warnings``: kompilator zamienia wtedy
+    ``SyntaxWarning`` i ``DeprecationWarning`` w ``SyntaxError`` z tym samym komunikatem, a nowy filtr unieważnia rejestr
+    ostrzeżeń już pokazanych, więc drugie porównanie w tym samym procesie widzi je tak samo jak pierwsze."""
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        try:
+            compile(source, path, "exec", dont_inherit=True)
+        except SyntaxError as refused:
+            return refused.msg
+        except (ValueError, Warning) as refused:
+            return f"{type(refused).__name__}: {refused}"
+    return None
+
+
+def _syntax_difference(path: str, base: bytes | None, head: bytes | None) -> str | None:
+    if base is None or head is None:
+        return "plik tylko w " + ("HEAD" if base is None else "bazie")
+    for side, source in (("bazie", base), ("HEAD", head)):
+        refused = refused_by_compiler(source, path)
+        if refused is not None:
+            return f"plik nie kompiluje się w {side}: {refused}"
+    return None if syntax(base) == syntax(head) else "drzewo składni"
+
+
+def syntax_equivalence(repository: Path, base: str, head: str | None) -> int:
+    """Linia każdego pliku ``src/`` zmienionego od ``base`` do ``head`` (bez niego do drzewa roboczego) i kod wyniku."""
+
+    paths = sorted(repo.changed(repository, base, head, paths=("src",)))
+    differing = []
+    for path in paths:
+        if Path(path).suffix in {".py", ".pyi"}:
+            difference = _syntax_difference(path, _source(repository, base, path), _source(repository, head, path))
+        else:
+            difference = "nie plik Pythona"
+        if difference:
+            differing.append(path)
+        print(f"{path} | RÓŻNICA | {difference}" if difference else f"{path} | TAK SAMO", flush=True)
+    if differing:
+        print(f"RÓWNOWAŻNOŚĆ RÓŻNICA | {', '.join(differing)}")
+        return 1
+    if not paths:
+        print("RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików")
+        return 2
+    print(f"RÓWNOWAŻNOŚĆ OK | {len(paths)} plików")
+    return 0
+
+
 def default_base(repository: Path, head: str | None) -> str:
     return repo.merge_base(repository, head or "HEAD", BASE)
 
@@ -428,10 +536,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", metavar="COMMIT", help="Commit bazy; domyślnie merge-base HEAD (albo --glowa) z origin/main.")
     parser.add_argument("--glowa", metavar="COMMIT", help="Commit HEAD zamiast drzewa roboczego z niezacommitowanymi zmianami.")
-    parser.add_argument("--scenariusz", action="append", choices=names, metavar="NAZWA", help=f"Tylko ten scenariusz; powtórz dla kilku: {', '.join(names)}.")
+    chosen = parser.add_mutually_exclusive_group()
+    chosen.add_argument("--scenariusz", action="append", choices=names, metavar="NAZWA", help=f"Tylko ten scenariusz; powtórz dla kilku: {', '.join(names)}.")
+    chosen.add_argument("--ast", action="store_true", help="Zamiast scenariuszy drzewa składni plików src/ zmienionych od bazy, bez docstringów i komentarzy.")
     args = parser.parse_args(argv)
     scenarios = [scenario for scenario in SCENARIOS if not args.scenariusz or scenario.name in args.scenariusz]
     base = args.baza or default_base(ROOT, args.glowa)
+    if args.ast:
+        return syntax_equivalence(ROOT, base, args.glowa)
     head = nullcontext(ROOT) if args.glowa is None else potomne.commit_copy(ROOT, args.glowa)
     with tempfile.TemporaryDirectory(prefix="rownowaznosc-") as work, potomne.commit_copy(ROOT, base) as base_tree, head as head_tree:
         return equivalence(base_tree, head_tree, scenarios, Path(work))

@@ -269,6 +269,9 @@ def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
 def periods_router(
     settings: CentrumSettings, platform: Platform, today: Callable[[], date], catalog: Catalog
 ) -> APIRouter:
+    """Trasy Tablicy okresów. Otwarcie Rozliczenia pracownika sprawdza, że plik leży wprost w Folderze rozliczeń
+    pracowników, bo nazwa Wykonawcy z „/”, „\\” albo „..” wyprowadziłaby ścieżkę poza niego."""
+
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     @router.get("", operation_id="getPeriodBoard")
@@ -297,7 +300,6 @@ def periods_router(
     def open_worker_settlement(token: str, request: periods_contract.WorkerSettlementRequest) -> common_contract.Opened:
         folder = requested_folder(settings, token)
         path = folder.worker_settlement(request.worker)
-        # Nazwa Wykonawcy z „/”, „\” albo „..” wyprowadziłaby ścieżkę poza Folder rozliczeń pracowników.
         inside = path.parent == folder.worker_settlements
         match file_state(path) if inside else "missing":
             case "inaccessible":

@@ -3052,6 +3052,41 @@ def test_praca_przypomnien_bez_stopki_wysyla_bez_niej_a_wynik_mowi_o_braku_stopk
     assert _reminder_result(centrum)["footer"] == "missing"
 
 
+@dataclass
+class _MailboxBrokenOnce(FakeMailbox):
+    """Skrzynka Przypomnień, której pierwsze pytanie o „Wysłane” kończy się wyjątkiem spoza portu skrzynki."""
+
+    broke: bool = False
+
+    def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        if not self.broke:
+            self.broke = True
+            raise RuntimeError("syntetyczna awaria")
+        return super().sent_reminders(day)
+
+
+def test_nieoczekiwany_wyjatek_sprawdzenia_przypomnien_trafia_do_dziennika_a_nastepne_sprawdzenie_wysyla(
+    tmp_path: Path,
+) -> None:
+    """Praca w tle nie może zgasić rytmu Przypomnień o raporcie: wyjątek jednego sprawdzenia ma dziennik Centrum, a
+    następne tyknięcie rytmu sprawdza i wysyła jak zwykle."""
+
+    mailbox = _MailboxBrokenOnce()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    after_failure = list(mailbox.sends)
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert after_failure == []
+    assert 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="Przypomnienia o raporcie"' in centrum.tool.log_path.read_text(encoding="utf-8")
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+
+
 @pytest.mark.parametrize(
     ("login", "switches", "reminded"),
     [

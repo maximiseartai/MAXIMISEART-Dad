@@ -72,47 +72,56 @@ BRANCH: Final = "main"
 
 UPDATED: Final = "ok"
 UP_TO_DATE: Final = "AKTUALNA"
-# Kody Komunikatów porażek, przy których klon zostaje bez zmian.
 NO_GIT: Final = "BRAK_GITA"
-# Brak sieci albo GitHub nie odpowiedział w limicie czasu.
+"""Kod Komunikatu: na komputerze nie ma Gita.
+
+Przy nim i przy ``NO_CONNECTION``, ``LOGIN``, ``OTHER_BRANCH`` i ``LOCAL_CHANGES`` klon zostaje bez zmian.
+"""
 NO_CONNECTION: Final = "BRAK_POLACZENIA"
-# GitHub prosi o logowanie; Git nie pyta i kończy od razu.
+"""Kod Komunikatu: brak sieci albo GitHub nie odpowiedział w limicie czasu."""
 LOGIN: Final = "LOGOWANIE"
+"""Kod Komunikatu: GitHub prosi o logowanie; Git nie pyta i kończy od razu."""
 OTHER_BRANCH: Final = "INNA_GALAZ"
-# Lokalne commity, zmienione śledzone pliki albo nieśledzony plik, który nowa wersja by nadpisała.
 LOCAL_CHANGES: Final = "ZMIANY_NA_KOMPUTERZE"
-# Kod Komunikatu porażki, której nikt nie przewidział (``GitFailed`` albo inny wyjątek); zamienia go Centrum.
+"""Kod Komunikatu: lokalne commity, zmienione śledzone pliki albo nieśledzony plik, który nowa wersja by nadpisała."""
 UNEXPECTED: Final = "NIEOCZEKIWANY_BLAD"
-# Kod Komunikatu: biblioteki nowej wersji się nie zainstalowały, a klon wrócił do commitu sprzed aktualizacji.
+"""Kod Komunikatu porażki, której nikt nie przewidział (``GitFailed`` albo inny wyjątek); zamienia go Centrum."""
 LIBRARIES_FAILED: Final = "INSTALACJA_BIBLIOTEK"
-# Kod Komunikatu: nowa wersja nie odpowiedziała po ponownym starcie, więc opiekun cofnął klon i uruchomił starą.
+"""Kod Komunikatu: biblioteki nowej wersji się nie zainstalowały, a klon wrócił do commitu sprzed aktualizacji."""
 NEW_VERSION_FAILED: Final = "NOWA_WERSJA_NIE_WYSTARTOWALA"
-# Kod Komunikatu: klon miał wrócić do commitu sprzed aktualizacji, ale cofnięcie się nie udało.
+"""Kod Komunikatu: nowa wersja nie odpowiedziała po ponownym starcie, więc opiekun cofnął klon i uruchomił starą."""
 ROLLBACK_FAILED: Final = "COFNIECIE_NIEUDANE"
+"""Kod Komunikatu: klon miał wrócić do commitu sprzed aktualizacji, ale cofnięcie się nie udało."""
 
 Step = Literal["fetching", "installing"]
 
-# Wynik aktualizacji po ponownym starcie Centrum: plik obok Ustawień Centrum, który zapisuje opiekun ponownego startu,
-# a Centrum, które potem wystartuje, odczytuje raz i usuwa.
 RESULT_FILE: Final = "centrum-aktualizacja.json"
+"""Wynik aktualizacji po ponownym starcie Centrum: plik obok Ustawień Centrum.
+
+Zapisuje go opiekun ponownego startu, a Centrum, które potem wystartuje, odczytuje raz i usuwa.
+"""
 JOURNAL: Final = "centrum-aktualizacja-w-toku"
 GUARDIAN_LEASE_S: Final = 10 * 60.0
 _JOURNAL_FORMAT: Final = 1
 
 _FETCHED_MAIN: Final = f"refs/remotes/origin/{BRANCH}"
-# Własna przestrzeń na tagi Wydań z GitHuba: tag usunięty albo przesunięty na GitHubie nie zostaje w klonie.
 _RELEASES: Final = "refs/wydania/"
+"""Własna przestrzeń na tagi Wydań pobrane z GitHuba, obok tagów klonu w ``refs/tags``.
+
+Tag usunięty albo przesunięty na GitHubie nie zostaje w niej, bo ``_Git.fetch`` pobiera z ``--prune`` i refspec tagów
+ma „+”.
+"""
 _FETCH_TIMEOUT_S: Final = 120.0
 _LOCAL_TIMEOUT_S: Final = 60.0
-# Logi Uruchomienia ustalają Wydanie, zanim karta pokaże wynik: Git, który nie odpowiada, opóźnia wynik najwyżej o tyle.
 _TAGS_TIMEOUT_S: Final = 5.0
-# Pobranie, które przez tyle sekund idzie wolniej niż tyle bajtów na sekundę, kończy sam Git: połączenie stoi.
+"""Logi Uruchomienia ustalają Wydanie, zanim karta pokaże wynik: Git, który nie odpowiada, opóźnia wynik najwyżej o tyle."""
 _STALLED_BYTES_PER_S: Final = 1000
+"""Pobranie, które przez ``_STALLED_FOR_S`` sekund idzie wolniej niż tyle bajtów na sekundę, kończy sam Git: połączenie
+stoi."""
 _STALLED_FOR_S: Final = 30
 _REQUIREMENTS: Final = "requirements.txt"
-# Pip na wolnym łączu taty pobiera i rozpakowuje koła bibliotek przez kilka minut.
 _INSTALL_TIMEOUT_S: Final = 15 * 60.0
-# Zmienne, którymi Git dostałby inne repozytorium albo okno z pytaniem o hasło.
+"""Pip na wolnym łączu taty pobiera i rozpakowuje koła bibliotek przez kilka minut."""
 _FOREIGN_VARIABLES: Final = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -124,6 +133,7 @@ _FOREIGN_VARIABLES: Final = (
     "GIT_ASKPASS",
     "SSH_ASKPASS",
 )
+"""Zmienne, którymi Git dostałby inne repozytorium albo okno z pytaniem o hasło."""
 
 
 _RELEASE_TAG: Final = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -359,6 +369,11 @@ class ToolClone:
         Dziennik z wcześniejszej aktualizacji, której nie kończy już opiekun
         ponownego startu, najpierw cofa klon; gdy to się nie uda, wynikiem
         jest ``ROLLBACK_FAILED``.
+
+        Przesunięcie to ``merge --ff-only``, bo Git odmawia go, zanim cokolwiek
+        zmieni, np. gdy nieśledzony plik zostałby nadpisany plikiem nowej wersji.
+        Gdy plik taty nie wróci do przesuniętego klonu, klon wraca sprzed
+        kliknięcia, a cofnięcie jeszcze raz wgrywa pliki taty.
         """
 
         git = self.find_git()
@@ -388,10 +403,8 @@ class ToolClone:
         moved = False
         try:
             with dad_files.set_aside(run, journal.backup):
-                # Git odmawia przed zmianą czegokolwiek, np. gdy nieśledzony plik zostałby nadpisany plikiem nowej wersji.
                 moved = run.run("merge", "--ff-only", "--quiet", after).returncode == 0
         except _NotPutBack:
-            # Wszystko albo nic: klon wraca sprzed kliknięcia, a cofnięcie jeszcze raz wgrywa pliki taty.
             if moved and _moved_back(run, journal):
                 return UpdateResult(UNEXPECTED, before, after)
             return UpdateResult(ROLLBACK_FAILED, before, after if moved else None)
@@ -554,9 +567,11 @@ def _main_tips(run: _Git) -> tuple[str, ...]:
 
 
 def _release_commits(run: _Git) -> dict[str, str]:
-    """Tagi pobrane z GitHuba, które wskazują commit, i te commity (tag z opisem wskazuje go przez obiekt tagu)."""
+    """Tagi pobrane z GitHuba, które wskazują commit, i te commity (tag z opisem wskazuje go przez obiekt tagu).
 
-    # Bez ``tag^{commit}``: Git wołany przez plik .cmd (w testach w Windows) traci ``^``.
+    Bez ``tag^{commit}``: Git wołany przez plik .cmd (w testach w Windows) traci ``^``.
+    """
+
     listed = run.output(
         "for-each-ref", "--format=%(refname:lstrip=2) %(objecttype) %(objectname) %(*objecttype) %(*objectname)", _RELEASES
     )
@@ -783,7 +798,8 @@ class _Git:
     def fetch(self, origin: str) -> str | None:
         """Pobiera `main` i tagi Wydań z ``origin``; ``None``, gdy się udało, inaczej kod porażki (logowanie albo brak sieci).
 
-        Adres jest stały, więc każda inna porażka pobrania to brak połączenia z GitHubem.
+        Adres jest stały, więc każda inna porażka pobrania to brak połączenia z GitHubem. Refspec `main` ma „+”:
+        po force-pushu `main` na GitHubie pobranie dalej się udaje, a klon taty i tak idzie tylko do przodu.
         """
 
         try:
@@ -799,7 +815,6 @@ class _Git:
                 "--no-tags",
                 "--prune",
                 origin,
-                # Z „+”: po force-pushu `main` na GitHubie pobranie dalej się udaje; klon taty i tak idzie tylko do przodu.
                 f"+refs/heads/{BRANCH}:{_FETCHED_MAIN}",
                 f"+refs/tags/v*:{_RELEASES}v*",
                 timeout_s=_FETCH_TIMEOUT_S,
@@ -812,19 +827,17 @@ class _Git:
         return LOGIN if asked_for_login else NO_CONNECTION
 
 
-# Git bez pytań kończy tak, gdy serwer prosi o logowanie (GitHub także przy repozytorium, którego nie widzi).
 _LOGIN_SIGNS: Final = ("terminal prompts disabled", "could not read username", "could not read password", "authentication failed")
+"""Git bez pytań kończy tak, gdy serwer prosi o logowanie (GitHub także przy repozytorium, którego nie widzi)."""
 
 def _text_of(file: IO[bytes]) -> str:
     file.seek(0)
     return file.read().decode("utf-8", errors="replace")
 
 
-# Tyle czeka zabijanie drzewa procesów Gita po limicie czasu.
 _KILL_TIMEOUT_S: Final = 10.0
+"""Tyle czeka zabijanie drzewa procesów Gita po limicie czasu."""
 
-# ``_run_tree`` uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia. Po ``timeout_s`` zabija całe
-# drzewo jego procesów i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z nich już nie żyje.
 if sys.platform == "win32":
     import ctypes
     from ctypes import wintypes
@@ -849,13 +862,20 @@ if sys.platform == "win32":
     def _run_tree(
         command: list[str], *, env: Mapping[str, str], stdout: IO[bytes], stderr: IO[bytes], timeout_s: float
     ) -> int:
-        """Drzewo to zadanie (Job Object); ``OSError``, gdy zadanie nie powstanie albo przeżyje ``_KILL_TIMEOUT_S``."""
+        """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to zadanie (Job Object).
+
+        Po ``timeout_s`` zabija całe drzewo i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jego
+        procesów już nie żyje; ``OSError``, gdy zadanie nie powstanie albo przeżyje ``_KILL_TIMEOUT_S``.
+
+        Git startuje wstrzymany i rusza dopiero w zadaniu: inaczej zdąży uruchomić pomocnika poza nim. Proces znika z
+        zadania, zanim Windows uzna go za zakończony i puści jego uchwyty (I/O w toku), więc po zabiciu czeka na
+        uchwyty członków zadania otwarte przed zabiciem; członek bez uchwytu już się zakończył.
+        """
 
         job = wintypes.HANDLE(_kernel32.CreateJobObjectW(None, None))
         if not job.value:
             raise ctypes.WinError(ctypes.get_last_error())
         try:
-            # Wstrzymany do przypisania: inaczej Git zdąży uruchomić pomocnika poza zadaniem.
             process = subprocess.Popen(
                 command,
                 env=env,
@@ -873,14 +893,12 @@ if sys.platform == "win32":
             try:
                 return process.wait(timeout=timeout_s)
             except subprocess.TimeoutExpired:
-                # Proces znika z zadania, zanim Windows uzna go za zakończony i puści jego uchwyty (I/O w toku),
-                # więc czekamy na uchwyty członków zadania otwarte przed zabiciem.
                 deadline = time.monotonic() + _KILL_TIMEOUT_S
                 while members := _members(job):
                     if time.monotonic() >= deadline:
                         raise OSError("drzewo procesów Gita przeżyło zabicie") from None
                     opened = (wintypes.HANDLE(_kernel32.OpenProcess(_SYNCHRONIZE, False, pid)) for pid in members)
-                    handles = [handle for handle in opened if handle.value]  # bez uchwytu: już się zakończył
+                    handles = [handle for handle in opened if handle.value]
                     try:
                         if not _kernel32.TerminateJobObject(job, 1):
                             raise ctypes.WinError(ctypes.get_last_error()) from None
@@ -897,13 +915,17 @@ if sys.platform == "win32":
             _kernel32.CloseHandle(job)
 
     def _join(job: wintypes.HANDLE, pid: int) -> None:
+        """Przypisuje wstrzymany proces ``pid`` do zadania ``job`` i wznawia go.
+
+        Popen zamyka uchwyt głównego wątku, więc zamiast ResumeThread wznawia cały proces.
+        """
+
         handle = wintypes.HANDLE(_kernel32.OpenProcess(_TERMINATE_SET_QUOTA_AND_RESUME, False, pid))
         if not handle.value:
             raise ctypes.WinError(ctypes.get_last_error())
         try:
             if not _kernel32.AssignProcessToJobObject(job, handle):
                 raise ctypes.WinError(ctypes.get_last_error())
-            # Popen zamyka uchwyt głównego wątku, więc zamiast ResumeThread wznawia cały proces.
             status = ctypes.WinDLL("ntdll").NtResumeProcess(handle)
             if status != 0:
                 raise OSError(f"NtResumeProcess: NTSTATUS 0x{status & 0xFFFFFFFF:08X}")
@@ -925,7 +947,11 @@ else:
     def _run_tree(
         command: list[str], *, env: Mapping[str, str], stdout: IO[bytes], stderr: IO[bytes], timeout_s: float
     ) -> int:
-        """Drzewo to sesja Gita."""
+        """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to sesja Gita.
+
+        Po ``timeout_s`` zabija całą sesję i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jej
+        procesów już nie żyje; sesji, której nie ma, bo Git i jego pomocnicy już się zakończyli, nie zabija.
+        """
 
         process = subprocess.Popen(
             command, env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, start_new_session=True
@@ -933,7 +959,7 @@ else:
         try:
             return process.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            with suppress(OSError):  # Git i jego pomocnicy już się zakończyli
+            with suppress(OSError):
                 os.killpg(process.pid, signal.SIGKILL)
             process.kill()
             process.wait()

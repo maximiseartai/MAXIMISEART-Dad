@@ -39,7 +39,7 @@ from rozliczenia.centrum.reports import (
     UpdateReport,
     report_target,
 )
-from rozliczenia.centrum.stops import plain
+from rozliczenia.centrum.stops import Stops, plain
 from rozliczenia.client_data import tool
 from rozliczenia.centrum.tool_update import NO_CONNECTION, OTHER_BRANCH, UpdateResult
 from rozliczenia.efenix_window import PagePart
@@ -234,6 +234,38 @@ def test_ten_sam_komunikat_zatrzymania_w_dwoch_procesach_to_dwa_problemy() -> No
     fingerprints = {plain(run, report.stop).fingerprint.digest for run in (report.run, other)}
 
     assert len(fingerprints) == 2
+
+
+LOGS_LINK = "https://github.com/tata/skrzynka/issues/7#issuecomment-1"
+
+
+@dataclass
+class _LogsCommentedWithDiagnosis:
+    """Logi Uruchomienia, których komentarz kolejka zdążyła wysłać dopiero razem z Diagnozą: przed nią adresu nie ma."""
+
+    runs: list[str] = field(default_factory=list)
+
+    def link(self, run_id: str) -> str | None:
+        return LOGS_LINK if run_id in self.runs else None
+
+    def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
+        self.runs.append(run_id)
+
+
+def test_podglad_zgloszenia_po_diagnozie_ma_adres_logow_sprzed_komentarza_tej_diagnozy(computer: Computer) -> None:
+    """Podgląd Zgłoszenia nie zależy od tego, czy kolejka zdążyła już wysłać komentarz Logów z tą Diagnozą: adres
+    Logów jest ten sprzed jej komentarza, więc ta sama Diagnoza daje zawsze ten sam podgląd."""
+
+    logs = _LogsCommentedWithDiagnosis()
+    stops = Stops(computer.reports(), lambda process, period, settings: Diagnosis((), ()), computer.log, logs)
+    report = stop_report(SHORT_ENTRIES)
+    stopped = stops.ended(report.run, report.stop, shown=Owner(), settings=None)
+
+    view = stops.diagnose(stopped)
+
+    assert logs.runs == [report.run.id]
+    assert f"- Logi: jeszcze niewysłane, Uruchomienie {report.run.id}" in view.report.body
+    assert LOGS_LINK not in view.report.body
 
 
 def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:

@@ -27,7 +27,7 @@ from drive.common import (
     stop_banner,
 )
 from drive.teksty import BELL_FRESH
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from atrapy.efenix import FIRST_ROW, SOURCE_NAME
 from atrapy.scenariusz_centrum import EFENIX_ADDRESS_MARKERS, EFENIX_ORDERS, EFENIX_PERIOD
 from harness import File, efenix_files
@@ -289,7 +289,7 @@ def _price(run: Run, page: Page, source: Path) -> None:
         "and the opened order's status, realizator and every position's quantity",
     )
     live.get_by_role("button", name="Otwórz Plik zbiorczy").click()
-    run.wait_for(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")
+    until(last_opened_is(run, source), "Otwórz Plik zbiorczy opens it")
     run.check(True, "Otwórz Plik zbiorczy opens the Plik zbiorczy with the Znaczniki efenix")
     _notification(run, page, result)
     _forward(run, page, source)
@@ -350,7 +350,7 @@ def _forward(run: Run, page: Page, source: Path) -> None:
         asks[0] = isinstance(step, dict) and step.get("label") == LOGIN
         return asks[0] or view["state"] == "finished" or (isinstance(step, dict) and step.get("total", 0) > 0)
 
-    run.wait_for(login_or_end, "the Wycena with Przekazanie asks for the login or works", timeout_s=Budget.WORK)
+    until(login_or_end, "the Wycena with Przekazanie asks for the login or works", Budget.WORK)
     run.check(page.evaluate("() => window.startSentLate === true"), "harness: the start request left the tab late")
     if asks[0]:
         _log_in(run)
@@ -462,7 +462,7 @@ def _notification(run: Run, page: Page, result: Json) -> None:
     run.capture(page, "266-efenix-powiadomienie-karta")
     page.keyboard.press("Escape")
     expect(sheet).to_have_count(0)
-    run.wait_for(
+    until(
         lambda: run.api("/api/notifications", "efenix-powiadomienia-przeczytane")["unread"] == 0,
         "entering the view marks the Powiadomienie read",
     )

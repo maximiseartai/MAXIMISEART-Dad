@@ -49,10 +49,10 @@ DAD_NOTE_TITLE_MAX_LENGTH = 120
 DAD_NOTE_BODY_MAX_LENGTH = 10_000
 
 
-# Tytuł Uwagi taty to jedna linia: issue w Skrzynce Zgłoszeń i Powiadomienie nazywają ją tym tytułem.
 DadNoteTitle = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=DAD_NOTE_TITLE_MAX_LENGTH, pattern=r"^[^\r\n]*$")
 ]
+"""Tytuł Uwagi taty to jedna linia: issue w Skrzynce Zgłoszeń i Powiadomienie nazywają ją tym tytułem."""
 
 
 DadNoteBody = Annotated[str, StringConstraints(strip_whitespace=True, max_length=DAD_NOTE_BODY_MAX_LENGTH)]

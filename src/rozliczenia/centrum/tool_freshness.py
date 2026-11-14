@@ -76,13 +76,13 @@ class RateLimited:
     reset: datetime
 
 
-# ``None``: GitHub nie odpowiedział (brak sieci, odmowa, limit czasu, niepełna odpowiedź).
 ReleaseSource = Callable[[], GitHubReleases | None]
-# Odpowiedź źródła Aktualności: jak ``ReleaseSource``, a odmowa z powodu limitu GitHuba to ``RateLimited``.
+"""``None``: GitHub nie odpowiedział (brak sieci, odmowa, limit czasu, niepełna odpowiedź)."""
 ReleaseAnswer = GitHubReleases | RateLimited | None
+"""Odpowiedź źródła Aktualności: jak ``ReleaseSource``, a odmowa z powodu limitu GitHuba to ``RateLimited``."""
 AnswerSource = Callable[[], ReleaseAnswer]
-# Token do Zgłoszeń teraz albo ``None`` bez pliku klucza (``KeyedBox.github_key``).
 KeySource = Callable[[], str | None]
+"""Token do Zgłoszeń teraz albo ``None`` bez pliku klucza (``KeyedBox.github_key``)."""
 
 
 @dataclass(frozen=True)
@@ -94,8 +94,8 @@ class PublishedRelease:
     at: datetime
 
 
-# ``None``: GitHub nie odpowiedział; pusta krotka: nie ma żadnego opublikowanego Wydania.
 PublishedSource = Callable[[], tuple[PublishedRelease, ...] | None]
+"""``None``: GitHub nie odpowiedział; pusta krotka: nie ma żadnego opublikowanego Wydania."""
 Judgement = Literal["current", "newer", "no_release", "no_answer", "no_commit"]
 
 
@@ -110,8 +110,8 @@ def offers_update(judgement: Judgement) -> bool:
     return judgement == "newer"
 
 
-# Tyle najwyższych Wydań sprawdza się po kolei, zanim jedno leży na `main`; dalej wynik jest nieznany.
 _CANDIDATES: Final = 5
+"""Tyle najwyższych Wydań sprawdza się po kolei, zanim jedno leży na ``main``; dalej wynik jest nieznany."""
 _PAGE_BYTES: Final = 1_000_000
 _TIMEOUT_S: Final = 3.0
 
@@ -377,8 +377,8 @@ def compare(asking: Asking, commit: str, head: str) -> tuple[str, int]:
     return status, ahead
 
 
-# Tyle ostatnio opublikowanych Wydań (jedna strona listy) pokazują Powiadomienia; starsze nie wracają do historii.
 PUBLISHED_PAGE: Final = 30
+"""Tyle ostatnio opublikowanych Wydań (jedna strona listy) pokazują Powiadomienia; starsze nie wracają do historii."""
 
 
 def github_published(token: str | None = None) -> tuple[PublishedRelease, ...] | None:
@@ -457,8 +457,8 @@ def tag_commits(asking: Asking, url: str) -> dict[str, str] | None:
     return None
 
 
-# Odmowy pytania z tokenem, po których to samo pytanie idzie jeszcze raz bez tokenu (opis modułu).
 _TOKEN_REFUSALS: Final = frozenset({401, 403})
+"""Odmowy pytania z tokenem, po których to samo pytanie idzie jeszcze raz bez tokenu (opis modułu)."""
 
 
 class Asking:
@@ -476,7 +476,9 @@ class Asking:
         return self.page(url)[0]
 
     def page(self, url: str, *, with_token: bool = True) -> tuple[object, str | None]:
-        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``NoAnswer`` przy porażce.
+        """Treść JSON odpowiedzi ``url`` i adres następnej strony z nagłówka ``Link``; ``NoAnswer`` przy porażce: brak
+        sieci (``OSError``), zerwane połączenie (``HTTPException``), odpowiedź, która nie jest JSON (``ValueError``),
+        albo odmowa GitHuba bez ponowienia, a 404 bez ponowienia to ``NotFound``.
 
         404 na pytanie z tokenem to jedno ponowienie tego pytania bez tokenu, ale token zostaje dla następnych:
         wyszukiwanie binarne dostaje 404 także wtedy, gdy ``tip~k`` sięga przed pierwszy commit repozytorium."""
@@ -489,9 +491,9 @@ class Asking:
             )
             if 200 <= response.status < 300:
                 return json.loads(response.body), next_page(response)
-        except (OSError, HTTPException, ValueError) as failure:  # brak sieci, zerwane połączenie, nie JSON
+        except (OSError, HTTPException, ValueError) as failure:
             raise NoAnswer from failure
-        reset = rate_limit_reset(response)  # odmowa GitHuba
+        reset = rate_limit_reset(response)
         if reset is not None and token is None:
             self.limited = RateLimited(reset)
             raise NoAnswer

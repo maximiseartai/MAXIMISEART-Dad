@@ -98,7 +98,9 @@ class ProgressProjection:
 
     Redukuje zdarzenia bez ponownego sprawdzania kolejności: ``PhaseRunner`` jest jedynym nadawcą i ją sprawdza (ADR 0002).
     ``now`` to zegar ścienny (UTC), z którego projekcja bierze chwilę każdego zdarzenia: sekwencer wysyła je w chwili,
-    w której się dzieją, więc chwila nadejścia to chwila zdarzenia.
+    w której się dzieją, więc chwila nadejścia to chwila zdarzenia. Początek Szablonu pracownika (czas i chwila) przed
+    pierwszym ``WorkerStarted`` to zero, bo ``WorkerEnded`` i ``WorkerFailed`` przychodzą zawsze po ``WorkerStarted``
+    (ADR 0002).
     """
 
     def __init__(self, now: Callable[[], datetime] = utc_now) -> None:
@@ -116,7 +118,6 @@ class ProgressProjection:
         self._issue_count = 0
         self._templates: list[TemplateProcessing] = []
         self._worker_started_ms = 0
-        # Jak ``_worker_started_ms``: ``WorkerEnded`` i ``WorkerFailed`` przychodzą zawsze po ``WorkerStarted`` (ADR 0002).
         self._worker_started_at = datetime.fromtimestamp(0, timezone.utc)
         self._step: SavingStep | None = None
         self._snapshot = self._make_snapshot()

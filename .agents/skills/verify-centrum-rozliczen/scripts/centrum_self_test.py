@@ -447,6 +447,7 @@ def _check_result_of_start(errors: list[str]) -> None:
     import threading
 
     from drive.common import DriveFailure, Run, result_of_start
+    from drive.waiting import TimedOut
 
     for late in (2, 0):
         # Reads of the current Uruchomienie since Dad's click; the server shows the new one after `late` of them.
@@ -479,7 +480,7 @@ def _check_result_of_start(errors: list[str]) -> None:
                 run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
                 with contextlib.redirect_stdout(io.StringIO()):
                     result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
-        except DriveFailure as failure:
+        except (DriveFailure, TimedOut) as failure:
             result = failure
         finally:
             server.shutdown()
@@ -969,7 +970,8 @@ def _check_served_side_reads_harness(errors: list[str]) -> None:
 
 def _check_clock_alarm_failure(errors: list[str]) -> None:
     """Once the wake-up thread of Centrum's clock dies (here on a move it cannot read), the drive fails on it at the
-    next ``advance_clock`` and at a wait that times out, instead of waiting for a wake-up that never fires (#1124)."""
+    next ``advance_clock`` instead of waiting for a wake-up that never fires (#1124). A wait that times out names the
+    dead clock in ``drive()`` of ``drive_centrum.py``, which ``tests/test_podstawa_w_czesciach.py`` checks."""
 
     import contextlib
     import io
@@ -1000,7 +1002,6 @@ def _check_clock_alarm_failure(errors: list[str]) -> None:
                 return
             steps: dict[str, Callable[[], None]] = {
                 "advance_clock": lambda: advance_clock(run, 1, "the self-test moves a dead clock"),
-                "Run.wait_for": lambda: run.wait_for(lambda: False, "a wake-up of a dead clock", timeout_s=0.1),
             }
             failures: list[str] = []
             with contextlib.redirect_stdout(io.StringIO()):

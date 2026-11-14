@@ -31,14 +31,15 @@ from rozliczenia.centrum.report_issue import fingerprint_of
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.client_data import Outgoing, tool
 
-# Napis linii Logów przypiętej Uwagi, a w niej odnośnika do nich.
 _LOGS: Final = "Logi Uruchomienia"
-# Katalog Zgłoszeń i Uwag taty, których Skrzynka jeszcze nie dostała, w ``config``; w nim Kolejka wysyłki.
+"""Napis linii Logów przypiętej Uwagi, a w niej odnośnika do nich."""
 UNSENT_DIRECTORY: Final = "zgloszenia"
-# Stan wysyłki Uwagi (``Post.state``): stopka mówi, że Logi przypiętego Uruchomienia są w drodze.
+"""Katalog Zgłoszeń i Uwag taty, których Skrzynka jeszcze nie dostała, w ``config``; w nim Kolejka wysyłki."""
 _LOGS_ON_THE_WAY: Final = "logi-w-drodze"
-# Stan Uwagi po ``prepare``: wychodzi z linią, że Skrzynka odrzuciła treść Logów, więc po niej idzie komentarz z odnośnikiem.
+"""Stan wysyłki Uwagi (``Post.state``): stopka mówi, że Logi przypiętego Uruchomienia są w drodze."""
 _LOGS_REJECTED: Final = "logi-odrzucone"
+"""Stan Uwagi po ``prepare``: wychodzi z linią, że Skrzynka odrzuciła treść Logów, więc po niej idzie komentarz
+z odnośnikiem."""
 
 
 def queue_directory(config: Path) -> Path:

@@ -267,6 +267,9 @@ def _check(label: str) -> Callable[[_CheckRun], _Check]:
 
 @_check("Aktualność narzędzia")
 def _tool_freshness(computer: _Computer, label: str) -> list[CheckResult]:
+    """Aktualność narzędzia. Przy odmowie z powodu limitu GitHuba połączenie jest, tylko GitHub odmawia do odnowienia
+    limitu, więc wynik mówi o chwili ponownego sprawdzenia, a nie o braku połączenia, który wprowadzałby tatę w błąd."""
+
     freshness = computer.surroundings.tool_freshness
     judgement, answer = freshness.assess()
     if offers_update(judgement):
@@ -274,7 +277,6 @@ def _tool_freshness(computer: _Computer, label: str) -> list[CheckResult]:
     if judgement == "current":
         return [CheckResult.passed(label, f"Najnowsza wersja z GitHuba, commit {short_commit(freshness.local() or '')}.")]
     if isinstance(answer, RateLimited):
-        # Połączenie jest, tylko GitHub odmawia do odnowienia limitu, więc „brak połączenia” wprowadzałby tatę w błąd.
         return [
             CheckResult.not_checked(
                 label,
@@ -374,14 +376,16 @@ def _worker_list(computer: _Computer, label: str) -> list[CheckResult]:
 def _period_folder(
     computer: _Computer, label: str, collective_file_missing: Callable[[Path], Message] | None
 ) -> list[CheckResult]:
-    """Folder okresu; z ``collective_file_missing`` brak Pliku zbiorczego okresu jest przyczyną tym Komunikatem."""
+    """Folder okresu; z ``collective_file_missing`` brak Pliku zbiorczego okresu jest przyczyną tym Komunikatem.
+
+    Przebieg rozliczeń nie ma Komunikatu o odszukaniu Folderu okresu (w Centrum start wymaga Folderu okresu), więc oba
+    procesy wyjaśniają porażkę odszukania Komunikatem Przygotowania: założyć albo zostawić jeden Folder okresu.
+    """
 
     folder = computer.period_folder
     if folder is None:
         return [CheckResult.not_checked(label, "Folderu okresów nie ma na miejscu.")]
     if isinstance(folder, PeriodFolderLookupError):
-        # Przebieg rozliczeń nie ma Komunikatu o odszukaniu (w Centrum start wymaga Folderu okresu),
-        # więc oba procesy wyjaśniają Komunikatem Przygotowania: założyć albo zostawić jeden Folder okresu.
         return [CheckResult.failed(label, preparation_messages.period_folder_lookup_problem(folder))]
     observed = folder.observe()
     if collective_file_missing is not None and not observed.collective_file_exists:
@@ -438,8 +442,10 @@ def _report_key(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("Dziennik Centrum rozliczeń")
 def _centrum_log(computer: _Computer, label: str) -> list[CheckResult]:
+    """Dziennik Centrum tylko informuje: zawsze przechodzi, bo jego wpisy idą do Zgłoszenia, a wyjątek w nim nie jest
+    przyczyną na komputerze taty."""
+
     entries = computer.log_entries
-    # Dziennik tylko informuje: jego wpisy idą do Zgłoszenia, a wyjątek w nim nie jest przyczyną na komputerze taty.
     unexpected = ", w tym nieoczekiwany wyjątek" if any(event_of(entry) == UNEXPECTED_FAILURE_EVENT for entry in entries) else ""
     return [CheckResult.passed(label, f"Ostatnie wpisy od startu Centrum: {len(entries)}{unexpected}.")]
 

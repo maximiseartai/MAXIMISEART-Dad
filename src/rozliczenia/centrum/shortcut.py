@@ -46,17 +46,19 @@ from rozliczenia.tool_files import NO_BROWSER_FLAG, TOOL_ROOT, centrum_script
 SHORTCUT_NAME = "Centrum rozliczeń"
 SHORTCUT_FILE = f"{SHORTCUT_NAME}.lnk"
 ICON = Path(__file__).resolve().parent / "centrum-rozliczen.ico"
-# Nazwa, pod którą WScript.Shell zapisuje skrót: sam ASCII, więc ta sama w każdej stronie kodowej ANSI.
 _WRITTEN_NAME = "Centrum rozliczen (zapis).lnk"
-# PowerShell z WScript.Shell zapisuje skrót w kilka sekund; zawieszony nie trzyma blokady Ustawień dłużej niż tyle.
+"""Nazwa, pod którą WScript.Shell zapisuje skrót: sam ASCII, więc ta sama w każdej stronie kodowej ANSI."""
 _POWERSHELL_TIMEOUT_S = 30.0
+"""PowerShell z WScript.Shell zapisuje skrót w kilka sekund; zawieszony nie trzyma blokady Ustawień dłużej niż tyle."""
 
 
 class Folder(IntEnum):
     """Folder Windows skrótu; wartość to jego numer CSIDL w ``SHGetFolderPathW``."""
 
-    DESKTOP = 0x0010  # CSIDL_DESKTOPDIRECTORY, ten sam folder co Environment.GetFolderPath('Desktop')
-    STARTUP = 0x0007  # CSIDL_STARTUP, czyli shell:startup
+    DESKTOP = 0x0010
+    """``CSIDL_DESKTOPDIRECTORY``, ten sam folder co ``Environment.GetFolderPath('Desktop')``."""
+    STARTUP = 0x0007
+    """``CSIDL_STARTUP``, czyli ``shell:startup``."""
 
 
 def shortcut_file(folder: Path) -> Path:
@@ -212,8 +214,9 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
     """Zapisuje (albo nadpisuje) skrót „Centrum rozliczeń” w ``folder`` (``None``: folder systemu) i daje jego ścieżkę.
 
     WScript.Shell zapisuje pod nazwą ASCII, a Python przenosi plik pod ``shortcut_file``, więc nazwa nie zależy od
-    strony kodowej ANSI systemu. ``OSError``, gdy PowerShell padł, przekroczył limit czasu albo plik się nie przeniósł;
-    wtedy pod nazwą ASCII nic nie zostaje.
+    strony kodowej ANSI systemu. ``OSError``, gdy PowerShell padł, przekroczył limit czasu albo plik się nie przeniósł.
+    Pod nazwą ASCII nic nie zostaje: po porażce plik znika, a po udanym przeniesieniu już go tam nie ma. Każdy argument
+    skrótu stoi w cudzysłowie, bo ścieżka narzędzia może mieć spację, a nazwa pliku Windows nie ma cudzysłowu.
     """
 
     target = shortcut_file(folder.resolve() if folder is not None else _system_folder(shortcut.folder))
@@ -222,7 +225,6 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
         "CENTRUM_SKROT_PLIK": str(written),
         "CENTRUM_SKROT_NAZWA": SHORTCUT_NAME,
         "CENTRUM_SKROT_PROGRAM": str(windowless_python),
-        # Cudzysłów wokół każdego argumentu: ścieżka narzędzia może mieć spację, a nazwa pliku Windows nie ma cudzysłowu.
         "CENTRUM_SKROT_ARGUMENTY": " ".join(f'"{argument}"' for argument in shortcut.arguments),
         "CENTRUM_SKROT_FOLDER_ROBOCZY": str(TOOL_ROOT),
         "CENTRUM_SKROT_IKONA": f"{ICON},0",
@@ -238,6 +240,6 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
             raise OSError(f"PowerShell nie zapisał skrótu (kod {result.returncode}).")
         os.replace(written, target)
     finally:
-        with suppress(OSError):  # po udanym przeniesieniu pliku pod nazwą ASCII już nie ma
+        with suppress(OSError):
             written.unlink(missing_ok=True)
     return target

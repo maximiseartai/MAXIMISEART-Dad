@@ -90,8 +90,6 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
     )
 
 
-# Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego: Centrum nie zgaduje jej z pliku ani nie blokuje
-# startu.
 KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProcessKind(
     key="settlement",
     short_title="Przebieg",
@@ -130,3 +128,5 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     quantity_check=_quantity_check,
     quantity_rules=True,
 )
+"""Przebieg rozliczeń w Centrum. Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego
+(``confirms_readiness``): Centrum nie zgaduje jej z pliku ani nie blokuje startu."""

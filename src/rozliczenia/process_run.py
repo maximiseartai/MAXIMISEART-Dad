@@ -11,6 +11,10 @@ renderuje wynik. Decyzję składa proces, nie rozmówca. Proces
 opisuje tylko to, co jest jego i wspólne dla każdego rozmówcy (``Process``).
 Tekst wyjątku nigdy nie przechodzi przez ten seam: tata widzi wyłącznie
 Komunikaty podane przez proces.
+
+Rekord metryk Uruchomienia bez wyniku (``Stop``) ma zero dróg zapisu, tak jak
+liczników, bo drogi zapisu są wtedy nieznane: także gdy zatrzymanie przyszło
+dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
 """
 
 from __future__ import annotations
@@ -107,7 +111,7 @@ class Stop:
     ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
     nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i każdego
     własnego zatrzymania, które ma przyczynę w wyjątku (``StopError`` z
-    ``__cause__``), także dla taty, z łańcuchem przyczyn (#976). ``facts``: fakty Zatrzymania procesu
+    ``__cause__``), także dla taty, z łańcuchem przyczyn. ``facts``: fakty Zatrzymania procesu
     dla Logów Uruchomienia (``StopError.facts``). Oba nie należą do tożsamości
     Zatrzymania i nie trafiają do dziennika ani metryk.
     """
@@ -291,7 +295,7 @@ def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
 
     Własne zatrzymanie z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego, gdzie proces
     stanął, także przy Zatrzymaniu dla taty: Wycena w efenix, której okno nie wystartowało, mówi w nim, która droga
-    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem (#976).
+    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem.
     """
 
     if isinstance(error, Declined):
@@ -304,9 +308,9 @@ def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
     return Stop("unexpected", process.unexpected_failure, CallTrace.of(error))
 
 
-# Budowa podsumowania i widoku rozmówcy odroczona do chwili po pomiarze Czasu
-# uruchomienia, żeby jej czas się nie liczył.
 _DeferredSummary = Callable[[], tuple[Finished, ViewT]]
+"""Budowa podsumowania i widoku rozmówcy odroczona do chwili po pomiarze Czasu
+uruchomienia, żeby jej czas się nie liczył."""
 
 
 def _run_engine(
@@ -382,8 +386,6 @@ def run_process(
             else RecordedStop(kind=ending.stop_kind, code=ending.message.code)
         ),
         counters=finished.counters if finished else {counter.name: 0 for counter in process.counters},
-        # Bez wyniku drogi zapisu są nieznane i rekord ma ich zero, tak jak liczników: także gdy zatrzymanie przyszło
-        # dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
         routes=finished.routes if finished else {},
     )
     technical_notes: list[str] = []

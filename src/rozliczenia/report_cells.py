@@ -2,7 +2,7 @@
 przenieść do którego Wykonawcy (Przeniesienie zlecenia) i które dopisać (Zlecenie dopisane z raportu, ADR 0029).
 
 Rdzeń Wpisania raportów zwraca listy takich zmian bez Excela, a zapis do INTERMAX (``intermax_cells.write_cells``)
-przyjmuje tylko je (ADR 0028). Moduł nie zna skoroszytu, więc rdzeń może go brać i w chmurze (#1161).
+przyjmuje tylko je (ADR 0028). Moduł nie zna skoroszytu, więc rdzeń może go brać i w chmurze.
 """
 
 from __future__ import annotations

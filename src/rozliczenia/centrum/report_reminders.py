@@ -198,7 +198,7 @@ class ReportReminders:
             return
         try:
             self._check()
-        except Exception as failure:  # praca w tle nie może zgasić rytmu, a wyjątek ma dziennik Centrum
+        except Exception as failure:
             self._log.unexpected_failure(failure, where="Przypomnienia o raporcie")
         finally:
             self._lock.release()
@@ -217,12 +217,14 @@ class ReportReminders:
         return ShownReminders(sent, without_footer=result.footer == "missing")
 
     def _check(self) -> None:
+        """Sprawdzenie pory teraz. Wyłączone przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum bez pliku
+        przypomnień i każdy klon bez ``config`` taty, więc praca nie zostawia wtedy śladu ani w dzienniku, ani
+        w ``config``."""
+
         now = self._now()
         snapshot = self._settings.snapshot()
         schedule = snapshot.reminders.schedule
         pora = reminder_pora(now, schedule)
-        # Wyłączone przypomnienia są wyłączone, a nie zepsute: tak stoi każde Centrum bez pliku przypomnień i każdy klon
-        # bez ``config`` taty, więc praca nie zostawia śladu ani w dzienniku, ani w ``config``.
         if pora is None or snapshot.reminders.sends is None or self._settled == (now.date(), pora, schedule):
             return
         found = _Check()

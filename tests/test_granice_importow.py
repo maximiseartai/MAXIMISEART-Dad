@@ -1,7 +1,14 @@
 """Graf importów ``src/`` trzyma granice, które łamie jeden import.
 
-Silnik nie zależy od Centrum rozliczeń (ADR 0004: Centrum to adapter Uruchomienia procesu). Moduły, z których
-Centrum mówi o brakującej bibliotece, importują przy wczytaniu tylko bibliotekę standardową. Kopia opiekuna ponownego
+Dwie granice trzymają kontrakty import-linter z ``.importlinter``, które uruchamia
+``test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow``: silnik nie zależy od Centrum rozliczeń (ADR 0004:
+Centrum to adapter Uruchomienia procesu), a ``imaplib`` i ``smtplib`` importuje w ``src/`` tylko port Skrzynki raportów
+(``worker_report_inbox.py``), który otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia
+o raporcie (ADR 0030): inny moduł z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail
+z hasłem aplikacji poza portem. Co widzi graf kontraktów, mówi komentarz na początku ``.importlinter``, a luki pokazują
+próbki ``ZNANE_LUKI_KONTRAKTOW``.
+
+Moduły, z których Centrum mówi o brakującej bibliotece, importują przy wczytaniu tylko bibliotekę standardową. Kopia opiekuna ponownego
 startu (``_COPIED`` w ``restart_guardian.py``) importuje tylko bibliotekę standardową i siebie: moduł spoza kopii
 kończy się ``ModuleNotFoundError``, bo pakiet ``rozliczenia`` kopii szuka modułów tylko w niej, a bibliotekę
 spoza standardowej aktualizacja, którą opiekun kończy, mogła właśnie zmienić (``pip_install``). Test uruchomienia
@@ -24,7 +31,7 @@ nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy o
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
 katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
-z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą z bazą nazwaną ``PreparedRun``, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
 plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
 ``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
 prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
@@ -38,10 +45,6 @@ płacił za jego import ok. 0,2 s.
 Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O: biorą tylko typy i reguły z listy
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
-
-``imaplib`` i ``smtplib`` importuje w ``src/`` tylko port Skrzynki raportów (``worker_report_inbox.py``), który
-otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia o raporcie (ADR 0030): inny moduł
-z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail z hasłem aplikacji poza portem.
 
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
@@ -69,18 +72,15 @@ kolejki budował swój stan z prywatnych pól ``Outbox`` i ``KeyedBox``, a ekspl
 Kod spoza ``tests/`` (``src/``, ``tools/`` z bibliotekami, skryptami CI i hookami, skrypty skilli i pliki Pythona w
 korzeniu) nie importuje pakietu ``tests``: narzędzia i skille zmieniają się rzadko, a pliki testów najczęściej, więc
 atrapy świata zewnętrznego i syntetyczne pliki taty wspólne z testami leżą w ``tools/lib/atrapy/``, a ``tests/fixtures``
-trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie dokładnie postacie wyliczone w docstringu
+trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie postacie wyliczone w docstringu
 ``_tests_imports``; uruchomienie testu po ścieżce (``pytest.main([".../tests/test_x.py::test"])``) nie jest importem i
 przechodzi.
 
-Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
-trafia do ``STDLIB_ONLY`` z powodem. Granice czytania importów, Skryptu dla maszyn, strażnika Logów i wysyłki Logów
-pokazują próbki ``ZNANE_LUKI_GRAFU``, ``ZNANE_LUKI_SKRYPTU``, ``ZNANE_LUKI_STRAZNIKA`` i ``ZNANE_LUKI_WYSYLKI`` przy
-ich testach, każda za klasą nazwaną w swojej nazwie (``tests/fixtures/znane_luki.py``). Granica składania
-``PreparedRun``, którą łapie tylko przegląd: ``PreparedRun`` wołany pod nazwą przypisaną poza importem, pod nazwą z
-napisu sklejonego z części (``getattr``) albo jako ``type(prepared)`` oraz kopia ``PreparedRun`` przez ``replace``
-przypisane innej nazwie poza importem albo z wyrażenia bez ``prepared`` w tekście z każdym polem poza ``metrics=``
-(``kind=``, ``engine=``…).
+Sprawdzenia poza kontraktami czytają AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy
+moduł bez zależności trafia do ``STDLIB_ONLY`` z powodem. Granice kontraktów, czytania importów, Skryptu dla maszyn,
+składania ``PreparedRun``, strażnika Logów, wysyłki Logów i granicy testów pokazują próbki ``ZNANE_LUKI_KONTRAKTOW``,
+``ZNANE_LUKI_GRAFU``, ``ZNANE_LUKI_SKRYPTU``, ``ZNANE_LUKI_KATALOGU``, ``ZNANE_LUKI_STRAZNIKA``, ``ZNANE_LUKI_WYSYLKI``
+i ``ZNANE_LUKI_TESTOW`` przy ich testach, każda za klasą nazwaną w swojej nazwie (``tests/fixtures/znane_luki.py``).
 """
 
 from __future__ import annotations
@@ -90,8 +90,13 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
+import json
+import os
 from pathlib import Path, PureWindowsPath
+import py_compile
+import subprocess
 import sys
+import tomllib
 import typing
 
 import pytest
@@ -122,14 +127,15 @@ PURE_VERSIONS = {
     "rozliczenia.centrum.run_logs": frozenset({"LoggedDiagnosis", "LoggedMessage", "RunLog", "StartFacts"}),
     "rozliczenia.centrum.pricing_progress": frozenset({"PricingProgress"}),
     # strażnik reguły danych: liczy na pamięci ForbiddenValues, bez plików
-    "rozliczenia.centrum.run_logs_guard": frozenset({"GuardedLogs", "GuardedText", "guard_logs", "guard_text"}),
+    "rozliczenia.centrum.run_logs_guard": frozenset({"GuardedLogs", "GuardedText", "exact_logs", "exact_text", "guard_logs", "guard_text"}),
     # odczyt dysku, który start Centrum podaje macierzy close, jako wartość: typy bez metod, które czytają pliki, i nazwa
     # pliku Logów w Archiwum Logów okresu (name_of liczy ją z faktów startu, bez plików)
     "rozliczenia.centrum.logs_disk": frozenset(
         {"Found", "JournalRead", "LeftJournal", "Missing", "Refused", "Unreadable", "name_of"}
     ),
-    # pamięć strażnika do adnotacji i tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku), bez plików
-    "rozliczenia.client_data": frozenset({"ForbiddenValues", "tool"}),
+    # pamięć strażnika do adnotacji, tekst narzędzia do wysyłki (nagłówek issue Logów, komentarz po strażniku) i metaklasa
+    # wersji bez podklas, bez plików
+    "rozliczenia.client_data": frozenset({"ForbiddenValues", "WithoutSubclasses", "tool"}),
     "rozliczenia.process_run": frozenset({"RunResult"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"
@@ -202,8 +208,6 @@ STDLIB_ONLY = {
     "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
     "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",
 }
-# Jedyny moduł src, który rozmawia z serwerem IMAP: Skrzynka raportów otwiera skrzynkę tylko do odczytu (ADR 0028).
-IMAP_PORT = "rozliczenia/worker_report_inbox.py"
 WITHOUT_WORKBOOK = {
     "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",
     "rozliczenia/telemetry.py": "rekord metryk Uruchomienia wspólny dla wszystkich procesów",
@@ -315,23 +319,6 @@ def _copied() -> tuple[str, ...]:
     raise AssertionError(f"{GUARDIAN.relative_to(SRC.parent)}: brak listy _COPIED, którą czyta ten test")
 
 
-def test_silnik_nie_importuje_centrum_rozliczen() -> None:
-    found = {
-        str(found)
-        for path in sorted((SRC / "rozliczenia").glob("*.py"))
-        for found in _imports(path.relative_to(SRC).as_posix())
-        if found.module == "rozliczenia.centrum"
-    }
-
-    assert not found, "\n".join(
-        [
-            *sorted(found),
-            "Silnik (src/rozliczenia/*.py) nie zależy od Centrum rozliczeń, adaptera Uruchomienia procesu (ADR 0004): "
-            "przenieś potrzebny kod do silnika, a Centrum niech importuje go stamtąd.",
-        ]
-    )
-
-
 def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     allowed = {_module_name(file) for file in STDLIB_ONLY}
     found = {
@@ -351,23 +338,209 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     )
 
 
-def test_imap_i_smtp_importuje_tylko_port_skrzynki_raportow() -> None:
-    found = {
-        str(found)
-        for path in sorted((SRC / "rozliczenia").rglob("*.py"))
-        if path.relative_to(SRC).as_posix() != IMAP_PORT
-        for found in _imports(path.relative_to(SRC).as_posix())
-        if found.module in ("imaplib", "smtplib")
-    }
+IMPORT_LINTER_CONFIG = ROOT / ".importlinter"
+# Nazwa (``name``) każdego kontraktu z ``IMPORT_LINTER_CONFIG``: przebieg, który któregoś nie zgłosi, nie przechodzi.
+IMPORT_CONTRACTS: typing.Final = (
+    "Silnik nie importuje Centrum rozliczeń",
+    "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
+    "imaplib i smtplib importuje tylko port Skrzynki raportów",
+)
+wymaga_import_linter = pytest.mark.skipif(
+    importlib.util.find_spec("importlinter") is None,
+    reason="import-linter z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt, czyli zależności "
+    "taty; kontrakty biegną w zadaniach pytest na Linuksie w każdym runie PR i w tools/szybko.py",
+)
 
-    assert (SRC / IMAP_PORT).is_file()
-    assert not found, "\n".join(
+
+def _lint_imports(src: Path) -> str:
+    """Wynik ``lint-imports`` z kontraktami ``IMPORT_LINTER_CONFIG`` na pakiecie ``rozliczenia`` z katalogu ``src``,
+    z kodem wyjścia w pierwszej linii; bez pamięci podręcznej, więc graf jest z plików, które są teraz."""
+
+    done = subprocess.run(
         [
-            *sorted(found),
-            f"Skrzynkę raportów czyta tylko {IMAP_PORT}, który otwiera ją tylko do odczytu (ADR 0028): "
-            "weź z niego ImapInbox, WorkerReportInbox albo ReminderMailbox zamiast imaplib i smtplib.",
-        ]
+            sys.executable,
+            "-c",
+            "from importlinter.cli import lint_imports_command; lint_imports_command()",
+            *("--config", str(IMPORT_LINTER_CONFIG), "--no-cache", "--no-logo"),
+        ],
+        cwd=src,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
+    return f"kod wyjścia {done.returncode}\n{done.stdout}{done.stderr}"
+
+
+@wymaga_import_linter
+def test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow() -> None:
+    wynik = _lint_imports(SRC)
+
+    assert wynik.startswith("kod wyjścia 0\n"), wynik
+    assert [name for name in IMPORT_CONTRACTS if f"{name} KEPT" not in wynik] == [], wynik
+    assert f"Contracts: {len(IMPORT_CONTRACTS)} kept, 0 broken." in wynik, wynik
+
+
+# Moduły grafu, na którym import-linter sprawdza kontrakty ``IMPORT_LINTER_CONFIG``: skrypt uruchamia to samo
+# ``use_cases.lint_imports``, które woła ``lint-imports``, zatrzymuje raport z ``create_report`` i po linii
+# ``GRAPH_MARK`` drukuje moduły jego grafu, po jednym w linii.
+GRAPH_MARK: typing.Final = "MODUŁY GRAFU"
+GRAPH_MODULES: typing.Final = f"""\
+import sys
+
+from importlinter import api
+from importlinter.application import use_cases
+
+assert api
+reports = []
+create_report = use_cases.create_report
+use_cases.create_report = lambda *args, **kwargs: reports.append(create_report(*args, **kwargs)) or reports[-1]
+use_cases.lint_imports(config_filename=sys.argv[1], cache_dir=None, no_logo=True)
+print("{GRAPH_MARK}", *sorted(reports[0].graph.modules), sep="\\n")
+"""
+
+
+def _outside_graph(src: Path) -> list[str]:
+    """Pliki ``*.py`` pod ``src/rozliczenia`` poza grafem kontraktów: moduł pliku (ścieżka bez ``.py`` i bez
+    ``__init__``) nie jest w grafie albo ma go też inny plik (``a.b.py`` obok ``a/b.py``). Graf liczy tylko to, co
+    grimp przeczytał, więc test pada na każdym pliku, którego grimp nie wziął, z każdego powodu."""
+
+    done = subprocess.run(
+        [sys.executable, "-c", GRAPH_MODULES, str(IMPORT_LINTER_CONFIG)],
+        cwd=src,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert f"\n{GRAPH_MARK}\n" in done.stdout, done.stdout + done.stderr
+    graph = frozenset(done.stdout.partition(f"\n{GRAPH_MARK}\n")[2].split())
+    files: dict[str, list[str]] = {}
+    for path in sorted((src / "rozliczenia").rglob("*.py")):
+        parts = path.relative_to(src).with_suffix("").parts
+        files.setdefault(".".join(parts[:-1] if parts[-1] == "__init__" else parts), []).append(
+            path.relative_to(src).as_posix()
+        )
+    return [file for module, found in files.items() for file in found if module not in graph or len(found) > 1]
+
+
+@wymaga_import_linter
+def test_graf_kontraktow_importow_ma_kazdy_plik_py_pakietu_rozliczenia() -> None:
+    assert _outside_graph(SRC) == [], (
+        "kontrakty .importlinter nie widzą tych plików, bo grimp ich nie czyta: dodaj __init__.py w każdym katalogu "
+        "nad plikiem, nazwij każdy katalog identyfikatorem Pythona, a plik bez kropki na początku i bez drugiej kropki"
+    )
+
+
+# Pliki pakietu, których grimp nie czyta (``grimp/adaptors/modulefinder.py``), → pliki, które ``_outside_graph``
+# zgłasza; ``a.b.py`` obok ``a/b.py`` daje ten sam moduł, więc zgłasza oba.
+OUTSIDE_GRAPH: typing.Final = {
+    "katalog-bez-init": ({"bez_init/x.py": ""}, ["bez_init/x.py"]),
+    "podpakiet-pod-katalogiem-bez-init": (
+        {"bez_init/pod/__init__.py": "", "bez_init/pod/x.py": ""},
+        ["bez_init/pod/__init__.py", "bez_init/pod/x.py"],
+    ),
+    "katalog-o-nazwie-spoza-identyfikatora": (
+        {"zly-katalog/__init__.py": "", "zly-katalog/x.py": ""},
+        ["zly-katalog/__init__.py", "zly-katalog/x.py"],
+    ),
+    "katalog-ukryty": ({".ukryty/__init__.py": "", ".ukryty/x.py": ""}, [".ukryty/__init__.py", ".ukryty/x.py"]),
+    "plik-ukryty": ({".x.py": ""}, [".x.py"]),
+    "plik-z-dwiema-kropkami": ({"a.b.py": ""}, ["a.b.py"]),
+    "plik-z-dwiema-kropkami-obok-modulu-o-tej-nazwie": (
+        {"a/__init__.py": "", "a/b.py": "", "a.b.py": ""},
+        ["a/b.py", "a.b.py"],
+    ),
+}
+
+
+@wymaga_import_linter
+@pytest.mark.parametrize(("files", "outside"), OUTSIDE_GRAPH.values(), ids=OUTSIDE_GRAPH.keys())
+def test_zupelnosc_grafu_kontraktow_lapie_kazdy_plik_ktorego_grimp_nie_czyta(
+    tmp_path: Path, files: dict[str, str], outside: list[str]
+) -> None:
+    _contract_tree(tmp_path)
+    for name, code in files.items():
+        (tmp_path / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "rozliczenia" / name).write_text(code, encoding="utf-8")
+
+    assert _outside_graph(tmp_path) == [f"rozliczenia/{name}" for name in outside]
+
+
+# Znane luki kontraktów z ``IMPORT_LINTER_CONFIG`` (tests/fixtures/znane_luki.py): „klasa: postać” → moduł
+# ``rozliczenia.znana_luka_<n>`` w drzewie ``_contract_tree``, który łamie granicę kontraktu, a mimo to przechodzi przez
+# ruff w ``src/``, ``lint-imports`` i ``_outside_graph``. Próbka z opisem kończącym się na ``.pyw`` leży w pliku ``.pyw``,
+# a z ``.pyc`` w pliku ``.pyc`` bez źródła, który Python importuje (``SourcelessFileLoader``).
+ZNANE_LUKI_KONTRAKTOW: typing.Final = {
+    "czyta tylko instrukcje importu: Centrum przez wbudowane __import__": 'GOSPODARZ = __import__("rozliczenia.centrum.runs")\n',
+    "czyta tylko instrukcje importu: Centrum z sys.modules": (
+        'import sys\n\nGOSPODARZ = sys.modules["rozliczenia.centrum.runs"]\n'
+    ),
+    "czyta tylko instrukcje importu: imaplib przez wbudowane __import__": 'SKRZYNKA = __import__("imaplib")\n',
+    "zna tylko moduły imaplib i smtplib: biblioteka spoza src z własnym IMAP": (
+        "import imapclient\n\nSKRZYNKA = imapclient.IMAPClient\n"
+    ),
+    "zna tylko moduły imaplib i smtplib: IMAP przez gniazdo TLS": """\
+import socket
+import ssl
+
+
+def skrzynka() -> ssl.SSLSocket:
+    gniazdo = socket.create_connection(("imap.gmail.com", 993))
+    return ssl.create_default_context().wrap_socket(gniazdo, server_hostname="imap.gmail.com")
+""",
+    "czyta tylko pliki .py: Centrum z modułu, który Python na Windows importuje z .pyw": (
+        "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n"
+    ),
+    "czyta tylko pliki .py: imaplib z modułu, który Python na Windows importuje z .pyw": (
+        "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n"
+    ),
+    "czyta tylko pliki .py: Centrum z modułu bez źródła .pyc": "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n",
+    "czyta tylko pliki .py: imaplib z modułu bez źródła .pyc": "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n",
+}
+
+
+def _contract_tree(src: Path) -> None:
+    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``, i
+    moduł ``kontrola``, który łamie oba kontrakty importem wprost: jego zgłoszenie dowodzi, że ``lint-imports`` czytał
+    to drzewo."""
+
+    for name, code in {
+        "__init__.py": "",
+        "centrum/__init__.py": "",
+        "centrum/runs.py": "",
+        "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
+        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\n",
+    }.items():
+        (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
+        (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
+
+
+@wymaga_ruff
+@wymaga_import_linter
+def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tmp_path: Path) -> None:
+    _contract_tree(tmp_path)
+    pliki = zapisz(ZNANE_LUKI_KONTRAKTOW, tmp_path / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        if opis.endswith(".pyw"):
+            pliki[opis] = plik.rename(plik.with_suffix(".pyw"))
+        elif opis.endswith(".pyc"):
+            py_compile.compile(str(plik), cfile=str(plik.with_suffix(".pyc")), doraise=True)
+            plik.unlink()
+            pliki[opis] = plik.with_suffix(".pyc")
+
+    wynik = _lint_imports(tmp_path)
+    poza_grafem = _outside_graph(tmp_path)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [line for line in wynik.splitlines() if f"rozliczenia.{plik.stem}" in line]
+        zgloszenia[opis] += [f"poza grafem: {found}" for found in poza_grafem if found.startswith(f"rozliczenia/{plik.stem}.")]
+
+    assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
+    assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
 # Rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161): spoza biblioteki standardowej bierze tylko
@@ -689,7 +862,12 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``).
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Podklasie pod inną nazwą odmawia przy
+    tworzeniu metaklasa ``PreparedRun`` (``client_data.WithoutSubclasses``), a klasy zrobionej z pominięciem jej
+    ``__new__`` i relacji podklasy przypisanej w trakcie działania tworzenie nie zamyka, więc obiektowi takiej klasy
+    odmawia kontrola w chwili użycia (``startable`` przed ``conduct``); obie odmowy pokazują
+    ``PODKLASY_GOTOWEGO_URUCHOMIENIA`` i ``URUCHOMIENIA_OBOK_KATALOGU`` w ``tests/test_katalog_procesow.py``. Granice
+    tego sprawdzenia, mypy i ruff pokazują próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie.
     """
 
     builds = {"PreparedRun"}
@@ -779,6 +957,91 @@ def test_sprawdzenie_katalogu_lapie_zlozenie_uruchomienia_obok_catalog_prepared(
 @pytest.mark.parametrize("code", PREPARED_RUN_ALLOWED.values(), ids=PREPARED_RUN_ALLOWED.keys())
 def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> None:
     assert _prepared_run_builds(ast.parse(code)) == []
+
+
+_GOTOWE: typing.Final = "def kopia(gotowe: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:\n"
+_POLA: typing.Final = (
+    "gotowe.kind, gotowe.period, gotowe.inputs, gotowe.context, gotowe.metrics, gotowe.pricing, gotowe.engine, {dowod}, "
+    "gotowe.settings, gotowe.warnings, gotowe.quantity_rules"
+)
+_KATALOG: typing.Final = (
+    "from typing import Any\n\nfrom rozliczenia.centrum import process_kind\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n"
+)
+# Znane luki strażnika katalogu procesów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który składa albo
+# zmienia ``PreparedRun`` obok ``Catalog.prepared``, a mimo to przechodzi przez ruff, mypy i ``_prepared_run_builds``.
+ZNANE_LUKI_KATALOGU: typing.Final = {
+    "refleksja po nazwie: type(gotowe) z dowodem z getattr": _KATALOG
+    + "\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
+    + ")\n",
+    "tłumienie ruff: type(gotowe) z dowodem z noqa": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import _CATALOG, PreparedRun  # noqa: TID251 - próbka\n\n\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod="_CATALOG")
+    + ")\n",
+    "tylko nazwa z importu: PreparedRun pod nazwą przypisaną poza importem": _KATALOG
+    + "ZLOZ = PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return ZLOZ("
+    + _POLA.format(dowod='getattr(process_kind, "_CATALOG")')
+    + ")\n",
+    "refleksja po nazwie: nazwa złożona w trakcie działania": _KATALOG
+    + "\n"
+    + _GOTOWE
+    + '    zloz = getattr(process_kind, "Prepared" + "Run")\n'
+    + "    wynik: PreparedRun[Any, Any] = zloz("
+    + _POLA.format(dowod='getattr(process_kind, "_CATA" + "LOG")')
+    + ")\n    return wynik\n",
+    "tylko kopia przez replace: copy.copy gotowego Uruchomienia": "import copy\nfrom typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return copy.copy(gotowe)\n",
+    "wartość Any: wartość Any": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def z_tablicy(gotowe: dict[str, Any]) -> PreparedRun[Any, Any]:
+    wynik: PreparedRun[Any, Any] = gotowe["uruchomienie"]
+    return wynik
+""",
+    "refleksja po nazwie: object.__setattr__ pola gotowego Uruchomienia": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
+    object.__setattr__(gotowe, "period", okres)
+""",
+    "tłumienie mypy: przypisanie pola z type: ignore": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
+    gotowe.period = okres  # type: ignore[misc]  # próbka
+""",
+    "tłumienie mypy: type(gotowe) z dowodem z type: ignore": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod="None")
+    + ")  # type: ignore[arg-type]  # próbka\n",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_katalogu_procesow_przechodza_przez_ruff_mypy_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_KATALOGU, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_prepared_run_builds: {call}" for _, call in _prepared_run_builds(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KATALOGU)")
 
 
 # Drzewa src z modułem rdzenia a.py i drogą do warstwy skoroszytu, którą sprawdzenie łapie.
@@ -1637,6 +1900,27 @@ GETTERS: typing.Final = frozenset({"attrgetter", "methodcaller"})
 BY_NAME: typing.Final = frozenset({"getattr", "setattr", "delattr"})
 
 
+def _private_imports(tree: ast.Module) -> list[tuple[int, str, str]]:
+    """Postacie 1 i 2 ``_private_reaches``: import prywatnej nazwy albo z prywatnego modułu ``rozliczenia``, z linią,
+    kodem i pełną nazwą (``rozliczenia.….x``). Import względny (``from .m import _x``) nie ma tu nazwy pakietu."""
+
+    found: list[tuple[int, str, str]] = []
+    for node in wezly(tree):
+        if isinstance(node, ast.Import):
+            found.extend(
+                (node.lineno, ast.unparse(node), alias.name)
+                for alias in node.names
+                if alias.name.split(".")[0] == SRC_PACKAGE and any(map(_private, alias.name.split(".")))
+            )
+        elif isinstance(node, ast.ImportFrom) and (module := node.module or "").split(".")[0] == SRC_PACKAGE:
+            found.extend(
+                (node.lineno, ast.unparse(node), f"{module}.{alias.name}")
+                for alias in node.names
+                if _private(alias.name) or any(map(_private, module.split(".")))
+            )
+    return found
+
+
 def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """Miejsca, w których kod sięga do prywatnej nazwy ``src`` w jednej z postaci wyliczonych niżej.
 
@@ -1691,19 +1975,12 @@ def _private_reaches(tree: ast.Module) -> list[tuple[int, str]]:
     """
 
     bound: set[str] = set()
-    found: list[tuple[int, str]] = []
+    found = [(line, code) for line, code, _ in _private_imports(tree)]
     for node in wezly(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] == SRC_PACKAGE:
-                    bound.add(alias.asname or SRC_PACKAGE)
-                    if any(map(_private, alias.name.split("."))):
-                        found.append((node.lineno, ast.unparse(node)))
+            bound.update(alias.asname or SRC_PACKAGE for alias in node.names if alias.name.split(".")[0] == SRC_PACKAGE)
         elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == SRC_PACKAGE:
-            for alias in node.names:
-                if _private(alias.name) or any(map(_private, (node.module or "").split("."))):
-                    found.append((node.lineno, ast.unparse(node)))
-                bound.add(alias.asname or alias.name)
+            bound.update(alias.asname or alias.name for alias in node.names)
 
     def from_src(node: ast.expr) -> bool:
         while isinstance(node, ast.Attribute):
@@ -1764,6 +2041,166 @@ def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> Non
         "wyrocznia sięga do prywatnej nazwy src; mechanikę bierze przez publiczny punkt obserwacji (nazwę, metodę stanu, "
         "szew), a dane o świecie zewnętrznym kopiuje celowo (docs/agents/skille.md, „Co wyrocznia bierze z src”):\n"
         + "\n".join(reaches)
+    )
+
+
+# Nazwy z banned-api src/ruff.toml (dowód katalogu, _PASSED i inne): ich import u właściciela pilnuje ruff TID251 z prawem
+# właściciela w per-file-ignores pyproject.toml.
+SRC_BANNED: typing.Final = frozenset(
+    tomllib.loads((SRC / "ruff.toml").read_text(encoding="utf-8"))["lint"]["flake8-tidy-imports"]["banned-api"]
+)
+
+
+def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
+    """Postacie 1 i 2 ``_private_reaches`` w ``src/``, bo ruff ``SLF001`` widzi ``m._x``, ale nie ``from m import _x``.
+    Nazwę z ``SRC_BANNED`` pilnuje ``TID251``. Import względny przechodzi: próbki ``ZNANE_LUKI_IMPORTU_SRC``."""
+
+    reaches = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}: {code}"
+        for path in sorted(SRC.rglob("*.py"))
+        for line, code, name in _private_imports(drzewo(path))
+        if name not in SRC_BANNED
+    ]
+
+    assert reaches == [], (
+        "moduł src importuje prywatną nazwę innego modułu: weź jego publiczną nazwę albo funkcję, a stan, który dzielą "
+        "klasy jednego modułu, daj prywatnej klasie tego modułu (CODING_STANDARDS.md, wiersz SLF001):\n" + "\n".join(reaches)
+    )
+
+
+# Postać → moduł src, którego import prywatnej nazwy innego modułu sprawdzenie wyżej odrzuca: siostry dróg, które ruff
+# SLF001 odrzuca w tests/test_regula_danych.py i tests/test_komentarz_logow_uruchomienia.py.
+IMPORTY_PRYWATNE_SRC: typing.Final = {
+    "prywatny parser celu kolejki": "from rozliczenia.centrum.outbox import _target\n",
+    "prywatny parser pliku kolejki": "from rozliczenia.centrum.outbox import _archive_file\n",
+    "prywatna tabela wartości pamięci reguły danych": "from rozliczenia.client_data import _WORDS\n",
+    "prywatny moduł pakietu": "from rozliczenia.worker_reports._model import Login\n",
+    "import prywatnego modułu": "import rozliczenia.worker_reports._model\n",
+}
+
+# Znane luki importu prywatnej nazwy w src (tests/fixtures/znane_luki.py): import względny z modułu Centrum, który
+# sprawdzenie importów i ruff przepuszczają. Mypy rozwiązuje go tylko w pakiecie, a prywatnej nazwy nie odrzuca.
+ZNANE_LUKI_IMPORTU_SRC: typing.Final = {
+    "import względny prywatnego parsera celu kolejki": "from .outbox import _target\n\n\ndef cel() -> object:\n    return _target\n",
+    "import względny prywatnego parsera pliku kolejki": "from .outbox import _archive_file\n\n\ndef plik() -> object:\n    return _archive_file\n",
+    "import względny prywatnej tabeli pamięci": "from ..client_data import _WORDS\n\n\ndef tabela() -> object:\n    return _WORDS\n",
+}
+
+
+@pytest.mark.parametrize("code", IMPORTY_PRYWATNE_SRC.values(), ids=IMPORTY_PRYWATNE_SRC.keys())
+def test_sprawdzenie_importow_src_lapie_import_prywatnej_nazwy(code: str) -> None:
+    assert [name for _, _, name in _private_imports(ast.parse(code)) if name not in SRC_BANNED]
+
+
+@wymaga_ruff
+def test_znane_luki_importu_src_przechodza_przez_sprawdzenie_importow_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_IMPORTU_SRC, tmp_path)
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "centrum" / "sonda_importu.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"import: {code}" for _, code, _ in _private_imports(ast.parse(plik.read_text(encoding="utf-8")))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_IMPORTU_SRC)")
+
+
+# Jedyny plik src, który konfiguracja ruff zwalnia z SLF001 (wiersz SLF001 w CODING_STANDARDS.md).
+SLF001_OWNER: typing.Final = "src/rozliczenia/row_look.py"
+# Prywatna składowa obiektu spoza klasy: każdy plik src bez zwolnienia z SLF001 ją zgłasza.
+SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    return owner._field\n"
+
+
+def _ruff_settings(path: str, cwd: Path) -> str:
+    """Efektywna konfiguracja ruff dla pliku ``path`` (``ruff check --show-settings``) z katalogu ``cwd``."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-settings", path],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=cwd,
+        check=False,
+    )
+    assert (result.returncode, result.stderr) == (0, ""), result.stderr
+    return result.stdout
+
+
+def _ruff_list(settings: str, key: str) -> list[str]:
+    """Pozycje listy ``key = [`` z wyniku ``--show-settings``, po jednej w linii aż do ``]``, a pusta lista to
+    ``key = []``."""
+
+    lines = settings.splitlines()
+    if f"{key} = []" in lines:
+        return []
+    start = lines.index(f"{key} = [") + 1
+    return [line.strip().removesuffix(",") for line in lines[start : lines.index("]", start)]]
+
+
+@wymaga_ruff
+def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> None:
+    """Konfiguracja ruff wyłącza ``SLF001`` dwiema drogami, w każdym pliku konfiguracji repozytorium. Wpis pliku
+    (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore``, także ``ALL`` albo prefiks ``SLF``) zwalnia plik:
+    kopia drzewa ``src/`` z próbką ``SLF001_PROBE`` w miejscu każdego pliku i z każdym plikiem konfiguracji ruff idzie
+    przez ruff tak jak ``src/``, plik bez zgłoszenia jest zwolniony, a zwolniony jest tylko ``SLF001_OWNER``, którego
+    sięgnięcia do ``_style`` trzyma ``tests/test_wyglad_wiersza_danych.py``. Wpis nazwy (``flake8-self``
+    ``ignore-names`` albo ``extend-ignore-names``) zwalnia ją w każdym pliku: ``--show-settings`` pliku z każdego
+    katalogu kopii, bo ruff bierze konfigurację najbliższą katalogowi pliku, ma ``SLF001`` w ``linter.rules.enabled``
+    i ``linter.flake8_self.ignore_names`` równe domyślnym nazwom zainstalowanego ruff, czyli ``--show-settings`` w
+    katalogu z samym ``select = ["SLF001"]``. Jak w
+    ``tests/test_zakazy_ruff.py::test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela``."""
+
+    repo = tmp_path / "repo"
+    names = ("ruff.toml", ".ruff.toml", "pyproject.toml")
+    configs = {ROOT / name for name in names} | {
+        path for top in ("src", "tests", "tools", ".agents/skills") for name in names for path in (ROOT / top).rglob(name)
+    }
+    for config in configs:
+        if config.is_file():
+            copy = repo / config.relative_to(ROOT)
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
+    probes = {path.relative_to(ROOT).as_posix() for path in SRC.rglob("*.py")}
+    for name in probes:
+        probe = repo / name
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(SLF001_PROBE, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", "src"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=repo,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    reported = {
+        Path(finding["filename"]).resolve().relative_to(repo.resolve()).as_posix()
+        for finding in json.loads(result.stdout)
+        if finding["code"] == "SLF001"
+    }
+
+    assert sorted(probes - reported) == [SLF001_OWNER], (
+        "z SLF001 konfiguracja ruff zwalnia w src/ tylko row_look.py: do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać plik w konfiguracji ruff"
+    )
+
+    defaults = tmp_path / "domyslne"
+    defaults.mkdir()
+    (defaults / "ruff.toml").write_text('[lint]\nselect = ["SLF001"]\n', encoding="utf-8")
+    (defaults / "probe.py").write_text(SLF001_PROBE, encoding="utf-8")
+    default_names = _ruff_list(_ruff_settings("probe.py", defaults), "linter.flake8_self.ignore_names")
+    per_directory = {name.rpartition("/")[0]: name for name in sorted(probes)}
+    widened: dict[str, tuple[list[str], list[str]]] = {}
+    for name in per_directory.values():
+        settings = _ruff_settings(name, repo)
+        enabled = [rule for rule in _ruff_list(settings, "linter.rules.enabled") if rule.endswith("(SLF001)")]
+        ignore_names = _ruff_list(settings, "linter.flake8_self.ignore_names")
+        if not enabled or ignore_names != default_names:
+            widened[name] = (enabled, sorted(set(ignore_names) - set(default_names)))
+
+    assert widened == {}, (
+        "konfiguracja ruff w src/ ma SLF001 włączony i nie zwalnia z niego żadnej nazwy ponad domyślne nazwy ruff "
+        f"(flake8-self ignore-names, extend-ignore-names): {widened}; do prywatnej składowej innego obiektu sięgaj "
+        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać nazwę w konfiguracji ruff"
     )
 
 
@@ -1999,8 +2436,10 @@ def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
     pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
     ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import okno_w_procesie`` sięgnąłby ``tests/fixtures``.
 
-    Granica (tylko przegląd): nazwa albo ścieżka złożona w trakcie działania, ``spec_from_file_location``, ``runpy``,
-    ``exec``, ``sys.path`` zmienione inaczej niż ``insert`` i ``append`` oraz ``sys.modules``."""
+    Pakiet ``importlib`` poza ``IMPORTLIB_DOZWOLONE`` i moduły importu (``runpy``, ``builtins.__import__`` i reszta
+    ``DYNAMIC_IMPORT`` w ``tests/test_zakazy_ruff.py``) kod spoza ``tests/`` bierze tylko przez
+    ``tools/lib/import_dynamiczny.py`` (ruff ``TID251``), który odmawia modułu z ``tests/``. Granice tego sprawdzenia i
+    ruff pokazują próbki ``ZNANE_LUKI_TESTOW``, każda za klasą nazwaną w swojej nazwie."""
 
     found = []
     for node in wezly(tree):
@@ -2110,3 +2549,32 @@ def test_sprawdzenie_granicy_testow_przepuszcza_test_uruchomiony_po_sciezce_i_ob
     )
 
     assert _tests_imports(ast.parse(code)) == []
+
+
+# Znane luki granicy testów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł spoza tests/, który sięga do pakietu
+# tests, a mimo to przechodzi przez ruff na ścieżce biblioteki narzędzi i przez ``_tests_imports``.
+ZNANE_LUKI_TESTOW: typing.Final = {
+    "tylko stały napis: nazwa modułu złożona w trakcie działania": 'FIXTURES = __import__("tests" + ".fixtures.settlement")\n',
+    "tylko stały napis: nazwa modułu w zmiennej": 'NAZWA = "tests.fixtures.settlement"\nFIXTURES = __import__(NAZWA)\n',
+    "tylko pierwszy argument pozycyjny: __import__ z nazwą w argumencie nazwanym": 'FIXTURES = __import__(name="tests.fixtures.settlement")\n',
+    "tylko nazwa z listy: __import__ pod inną nazwą": 'ZALADUJ = __import__\nFIXTURES = ZALADUJ("tests.fixtures.settlement")\n',
+    "tylko stały napis: ścieżka złożona w trakcie działania": 'from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).parents[2] / ("te" + "sts")))\n',
+    "tylko drogi z listy: sys.path.extend": 'import sys\n\nsys.path.extend(["tests/fixtures"])\n',
+    "tylko drogi z listy: przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["tests/fixtures"]\n',
+    "tylko nazwa z listy: sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "tests/fixtures")\n',
+    "tylko nazwa z listy: sys pod inną nazwą": 'import sys as system\n\nsystem.path.insert(0, "tests/fixtures")\n',
+    "tylko drogi z listy: sys.modules": 'import sys\n\nFIXTURES = sys.modules["tests.fixtures.settlement"]\n',
+    "tylko nazwa z importu: exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.settlement")\n',
+    "tłumienie ruff: exec z noqa": 'exec("import tests.fixtures.settlement")  # noqa: S102 - próbka\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_granicy_testow_przechodza_przez_ruff_i_straznika(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_TESTOW, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "lib" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [f"_tests_imports: {modul}" for _, modul in _tests_imports(drzewo(plik))]
+
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_TESTOW)")

@@ -13,8 +13,8 @@ from pathlib import Path
 import sys
 from typing import Final
 
-# FILE_ATTRIBUTE_OFFLINE, FILE_ATTRIBUTE_RECALL_ON_OPEN, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 _ONLINE_ONLY: Final = 0x1000 | 0x40000 | 0x400000
+"""``FILE_ATTRIBUTE_OFFLINE``, ``FILE_ATTRIBUTE_RECALL_ON_OPEN`` i ``FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS``."""
 
 FileAttributes = Callable[[Path], int]
 
@@ -45,6 +45,8 @@ class CloudFiles:
 
 
 def _windows_attributes(path: Path) -> int:
-    # ``st_file_attributes`` istnieje tylko w Windows; stat czyta metadane i nie pobiera pliku z chmury.
+    """Atrybuty pliku z ``stat``, który czyta metadane i nie pobiera pliku z chmury; ``st_file_attributes`` istnieje
+    tylko w Windows, więc poza nim to 0."""
+
     attributes: int = getattr(path.stat(), "st_file_attributes", 0)
     return attributes

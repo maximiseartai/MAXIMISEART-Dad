@@ -57,6 +57,7 @@ from rozliczenia.centrum.comment_versions import (
 )
 from rozliczenia.centrum.contract.runs import Progress
 from rozliczenia.centrum.contract.runs import RunInfo
+from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
@@ -75,8 +76,9 @@ from rozliczenia.centrum.logs_disk import (
     Unreadable,
     name_of,
 )
-from rozliczenia.centrum.outbox import PeriodThread, Rank
-from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
+from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
+from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
+from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
@@ -87,7 +89,8 @@ from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
 from tests.fixtures.formy_telefonu import COMPUTED, PHONE
 from tests.fixtures.praca_centrum import centrum_work
-from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.plik_kolejki import bieg_do_pliku_kolejki
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_ID = "627b45fe219e4274b722953c34d4af54"
@@ -468,15 +471,53 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs.text)("ul. Syntetyczna 1", object())
 
 
-@pytest.mark.parametrize("kind", ["logi", "tekst", "plik"])
-def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
-    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku mogłaby podać tekst sprzed strażnika jako po
-    strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+def _proof_value(kind: str) -> object:
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów,
+    pamięć i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
 
-    value = guard_logs(record(), empty_memory()).text if kind == "plik" else _guarded(kind)
+    memory = empty_memory()
+    match kind:
+        case "postep" | "wynik-bez-logow" | "logi-z-pliku-albo-urwane" | "logi-z-wynikiem-albo-diagnoza":
+            return TAKES_GUARDED[kind](_guarded("logi" if "logi-z" in kind else "tekst"), Path())
+        case "plik":
+            return guard_logs(record(), memory).text
+        case "wysylka":
+            return guarded(memory, "Postęp.", "postęp").text
+        case "wysylka-logow":
+            return post_of(OwnLogs(guard_logs(record(), memory)))
+        case "pamiec":
+            return memory
+        case _:
+            return _guarded(kind)
+
+
+_DROGI_PODKLASY: Final[dict[str, Callable[[type, dict[str, object]], object]]] = {
+    "type": lambda proof, namespace: type("Inne", (proof,), namespace),
+    "type-z-baza-przed-bez-super": lambda proof, namespace: type("Inne", (_BezSuper, proof), namespace),
+    "type-new-z-metaklasa-typu": lambda proof, namespace: type.__new__(type(proof), "Inne", (proof,), namespace),
+}
+"""Drogi do podklasy typu-dowodu przy jej tworzeniu: dwie przez ``__new__`` metaklasy i jedna z jego pominięciem."""
+
+
+@pytest.mark.parametrize("droga", _DROGI_PODKLASY.keys())
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec",
+        "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+    ],
+)
+def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
+    """Typ-dowód i wersja komentarza odmawiają podklasy już przy tworzeniu przez ``type()`` (przegląd #1038, runda 2),
+    także z bazą przed typem, której ``__init_subclass__`` nie woła ``super()``, bo odmawia sama metaklasa
+    ``client_data.WithoutSubclasses``, a ``type.__new__`` z metaklasą typu, który ją pomija, zatrzymuje ``__init_subclass__``
+    typu. To wcześniejszy błąd; regułę trzyma kontrola dokładnego typu przy użyciu (#1551)."""
+
+    proof = type(_proof_value(kind))
+    namespace: dict[str, object] = {"text": property(lambda self: "ul. Syntetyczna 1")}
 
     with pytest.raises(TypeError, match="podklas"):
-        type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+        _DROGI_PODKLASY[droga](proof, namespace)
 
 
 _PLIK: Final = """\
@@ -690,24 +731,162 @@ def plik(komorka: str) -> outbox.ArchiveFile | None:
     ),
 }
 
+_WERSJA_Z_ATRAPA: Final = """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+"""
+"""Początek próbki, która daje ``post_of`` wersję postępu z tekstem z komórki zamiast tekstu po strażniku."""
+
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
-# Uruchomienia wartość z komórki taty bez strażnika, a mypy i ruff ich nie łapią. Pola z tekstem narzędzia
+# Uruchomienia wartość z komórki taty bez strażnika, a mypy, ruff i plik kolejki (tests/fixtures/plik_kolejki.py) ich nie
+# łapią. Pola z tekstem narzędzia
 # (``_TEKST_NARZEDZIA``) dostaną typ w osobnym PR (#1551). Pola ``TOOL_TEXT`` Logów od wywołującego strażnik przepuszcza
 # bez maski do pliku Logów i pliku w Archiwum, a pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w
 # tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na ``origin/main``.
 ZNANE_LUKI_LOGOW: Final = {
     **{f"ArchiveFile.{pole} z komórki": _plik(_pola(pole)) for pole in _TEKST_NARZEDZIA},
-    "cast na LogsText w pliku Archiwum": _plik(
-        _pola("text").replace("komorka", "cast(LogsText, komorka)"), importy="from typing import cast\n\n"
-    ),
-    "wartość typu Any w pliku Archiwum": _plik(
-        _pola("text").replace("komorka", 'wiersz["ADRES"]'), importy="from typing import Any\n\n", komorka="wiersz: dict[str, Any]"
-    ),
     "str.__new__ z klasą LogsText w pliku Archiwum": _plik(_pola("text").replace("komorka", "str.__new__(LogsText, komorka)")),
-    "object.__setattr__ na pliku Archiwum": _GOTOWY_PLIK
-    + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
-    "zapis do __dict__ pliku Archiwum": _GOTOWY_PLIK
-    + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+    # Kontrola dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of, LogsOnDisk.write) sprawdza
+    # obiekt tak, jak go zastaje, więc zmiana obiektu, klasy albo modułu sprawdzenia w chwili działania ją omija: jedna
+    # próbka na cel i klasę (#1551).
+    "zmiana obiektu w chwili działania: przypisanie __class__ LogsText napisowi obcej podklasy str w pliku Archiwum": _GOTOWY_PLIK
+    + """from typing import cast
+
+from rozliczenia.client_data import LogsText
+
+
+class Obcy(str):
+    __slots__ = ()
+
+
+def plik(komorka: str) -> ArchiveFile:
+    tekst = Obcy(komorka)
+    object.__setattr__(tekst, "__class__", LogsText)
+    return ArchiveFile("t", "t", "d", "n", cast(LogsText, tekst))
+""",
+    "zmiana obiektu w chwili działania: przypisanie __class__ typu tekstu po strażniku obcemu obiektowi, potem post_of": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    slot = "_" + typ.__name__ + "__text"
+
+    class Obca:
+        __slots__ = (slot,)
+
+    obca: Any = object.__new__(Obca)
+    object.__setattr__(obca, slot, komorka)
+    object.__setattr__(obca, "__class__", typ)
+    return post_of(ProgressVersion(postep.progress, obca))
+""",
+    "zmiana klasy w chwili działania: właściwość text typu tekstu po strażniku, potem post_of": """from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    zapamietaj = typ.__dict__["text"]
+    type.__setattr__(typ, "text", property(lambda self: komorka))
+    try:
+        return post_of(postep)
+    finally:
+        type.__setattr__(typ, "text", zapamietaj)
+""",
+    "zmiana modułu sprawdzenia w chwili działania: exact_text zaimportowane w comment_versions": _WERSJA_Z_ATRAPA
+    + """from rozliczenia.centrum import comment_versions
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = getattr(comment_versions, "exact_text")
+    setattr(comment_versions, "exact_text", lambda tekst: tekst)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        setattr(comment_versions, "exact_text", zapamietaj)
+""",
+    "zmiana modułu sprawdzenia w chwili działania: exact_logs zaimportowane w logs_disk, potem plik Logów": """from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum import logs_disk
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+
+
+def zapis(komorka: str, logi: RunLog) -> str:
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    atrapa: Any = SimpleNamespace(record=zle, text=zle.text)
+    zapamietaj = getattr(logs_disk, "exact_logs")
+    setattr(logs_disk, "exact_logs", lambda wartosc: wartosc)
+    try:
+        with tempfile.TemporaryDirectory() as katalog:
+            LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(atrapa)
+            return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+    finally:
+        setattr(logs_disk, "exact_logs", zapamietaj)
+""",
+    "zmiana obiektu w chwili działania: przypisanie __class__ typu Logów po strażniku obcemu obiektowi, potem plik Logów": """from pathlib import Path
+import tempfile
+from typing import Any
+
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.logs_disk import LogsOnDisk
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def zapis(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> str:
+    typ: Any = type(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    sloty = tuple("_" + typ.__name__ + pole for pole in ("__record", "__source"))
+
+    class Obca:
+        __slots__ = sloty
+
+    obca: Any = object.__new__(Obca)
+    for slot in sloty:
+        object.__setattr__(obca, slot, zle)
+    object.__setattr__(obca, "__class__", typ)
+    with tempfile.TemporaryDirectory() as katalog:
+        LogsOnDisk(CentrumLog(Path(katalog) / "c.log"), journaled="efenix").write(obca)
+        return "".join(plik.read_text(encoding="utf-8") for plik in Path(katalog).rglob("*.json"))
+""",
+    # Dynamiczny dostęp do modułu daje LogsText z komórki mimo zakazu logs_text i _PASSED (przegląd #1688, runda 3, D1);
+    # trzecią postać, importlib.import_module(…).logs_text, odrzuca ruff od #1717.
+    'dowód z getattr modułu: getattr(client_data, "logs_text") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", getattr(client_data, "logs_text")(komorka))
+""",
+    'dowód z getattr modułu: LogsText z dowodem getattr(client_data, "_PASSED") w pliku Archiwum': _GOTOWY_PLIK
+    + """from rozliczenia import client_data
+from rozliczenia.client_data import LogsText
+
+
+def plik(komorka: str) -> ArchiveFile:
+    return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
+""",
+    "parser pliku kolejki z tekstem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
+from rozliczenia.centrum.outbox import ArchiveFile
+
+
+def plik(komorka: str) -> ArchiveFile | None:
+    return cls._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
     "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
@@ -734,12 +913,196 @@ def cel(komorka: str, etykieta: Label, postep: ProgressVersion) -> NewIssue:
 }
 
 
+_PODKLASA: Final = """from types import SimpleNamespace
+from typing import Any
+
+from rozliczenia.centrum.comment_versions import LogsPost, OwnLogs, ProgressVersion, post_of
+from rozliczenia.centrum.outbox import ArchiveFile
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.client_data import LogsText
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+"""
+"""Początek próbki z podklasą typu-dowodu albo wersji, której ``__init_subclass__`` typu nie odmówił (baza przed typem bez
+``super()``) albo której nie widział (``__bases__``, ``type()`` bez odmowy)."""
+
+_PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
+
+# Postaci, które bez kontroli dokładnego typu w chwili użycia (outbox._queue_text, comment_versions.post_of,
+# run_logs_guard.exact_logs i exact_text) dawałyby plikowi kolejki wartość komórki przez plik w Archiwum albo komentarz
+# Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
+# z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
+ODMOWY_LOGOW: Final = {
+    "cast na LogsText w pliku Archiwum": (
+        _plik(_pola("text").replace("komorka", "cast(LogsText, komorka)"), importy="from typing import cast\n\n"),
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "wartość typu Any w pliku Archiwum": (
+        _plik(_pola("text").replace("komorka", 'wiersz["ADRES"]'), importy="from typing import Any\n\n", komorka="wiersz: dict[str, Any]"),
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "object.__setattr__ na pliku Archiwum": (
+        _GOTOWY_PLIK
+        + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    object.__setattr__(plik, "text", komorka)\n    return plik\n',
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "zapis do __dict__ pliku Archiwum": (
+        _GOTOWY_PLIK + 'def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n    plik.__dict__["text"] = komorka\n    return plik\n',
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "type.__new__ z bazą bez super(): podklasa LogsText w pliku Archiwum": (
+        _PODKLASA
+        + """def plik(komorka: str) -> ArchiveFile:
+    tekst: Any = type.__new__(type(LogsText), "Tekst", (Mixin, LogsText), {"__new__": lambda cls, t: str.__new__(cls, t)})
+    return ArchiveFile("t", "t", "d", "n", tekst(komorka))
+""",
+        "bieg TypeError: Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText",
+    ),
+    "type() z pustym __post_init__: podklasa wersji postępu, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    klasa: Any = type("Wersja", (ProgressVersion,), {_PUSTE_PRZYJECIE})
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+        "bieg TypeError: Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji.",
+    ),
+    "type.__new__ z bazą bez super() i pustym __post_init__: podklasa wersji z Logami, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, logi: RunLog) -> LogsPost:
+    zle = logi.model_copy(update={{"technical_notes": [f"Klient {{komorka}}."]}})
+    klasa: Any = type.__new__(type(OwnLogs), "Wersja", (Mixin, OwnLogs), {_PUSTE_PRZYJECIE})
+    return post_of(klasa(SimpleNamespace(record=zle, text=zle.text)))
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+    ),
+    "przypisanie __bases__ obcej klasie z pustym __post_init__: podklasa wersji postępu, potem post_of": (
+        _PODKLASA
+        + f"""def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    klasa: Any = type("Wersja", (type("Baza", (), {{}}),), {_PUSTE_PRZYJECIE})
+    klasa.__bases__ = (ProgressVersion,)
+    assert issubclass(klasa, ProgressVersion)
+    return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
+""",
+        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+    ),
+    "type.__new__ z bazą bez super(): podklasa typu tekstu po strażniku w wersji postępu": (
+        _PODKLASA
+        + """from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, postep: ProgressVersion, pamiec: ForbiddenValues) -> LogsPost:
+    typ: Any = type(guard_text("Postęp.", "postęp", pamiec))
+    klasa: Any = type.__new__(type(typ), "Tekst", (Mixin, typ), {"text": property(lambda self: komorka)})
+    return post_of(ProgressVersion(postep.progress, object.__new__(klasa)))
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie Tekst.",
+    ),
+    "podmiana __post_init__ wersji na klasie, potem post_of": (
+        _WERSJA_Z_ATRAPA
+        + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    atrapa: Any = SimpleNamespace(text=komorka)
+    zapamietaj = ProgressVersion.__dict__["__post_init__"]
+    type.__setattr__(ProgressVersion, "__post_init__", lambda self: None)
+    try:
+        return post_of(ProgressVersion(postep.progress, atrapa))
+    finally:
+        type.__setattr__(ProgressVersion, "__post_init__", zapamietaj)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ tekstu wersji po jej przyjęciu, przed post_of": (
+        _WERSJA_Z_ATRAPA
+        + """
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    object.__setattr__(postep, "text", SimpleNamespace(text=komorka))
+    return post_of(postep)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ tekstu wyniku bez Logów po jego przyjęciu, przed post_of": (
+        _WERSJA_Z_ATRAPA
+        + """from rozliczenia.centrum.comment_versions import ResultWithoutLogs, WithoutLogsVersion
+
+
+def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
+    wersja = WithoutLogsVersion(ResultWithoutLogs(postep.progress, "OK", "niezapisane"), postep.text)
+    object.__setattr__(wersja, "text", SimpleNamespace(text=komorka))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Tekst po strażniku daje tylko guard_text, nie SimpleNamespace.",
+    ),
+    "object.__setattr__ Logów wersji po jej przyjęciu, przed post_of": (
+        _PODKLASA
+        + """from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    wersja = OwnLogs(guard_logs(logi, pamiec))
+    zle = logi.model_copy(update={"technical_notes": [f"Klient {komorka}."]})
+    object.__setattr__(wersja, "logs", SimpleNamespace(record=zle, text=zle.text))
+    return post_of(wersja)
+""",
+        "bieg TypeError: Logi po strażniku daje tylko guard_logs, nie SimpleNamespace.",
+    ),
+}
+
+_KOMORKA: Final = "Syntetyczna Lipowa 5"
+"""Komórka zakazanej kolumny w próbkach drogi Logów, która w pliku kolejki to wyciek."""
+
+
+def _argumenty_logow() -> dict[str, object]:
+    """Argumenty funkcji próbki drogi Logów, świeże dla każdej próbki, bo próbka zmienia gotowy plik w Archiwum."""
+
+    pamiec = empty_memory()
+    logi = record()
+    return {
+        "komorka": _KOMORKA,
+        "wiersz": {"ADRES": _KOMORKA},
+        "tekst": guard_logs(logi, pamiec).text,
+        "plik": ArchiveFile("t", "t", "d", "n", guard_logs(logi, pamiec).text),
+        "logi": logi,
+        "pamiec": pamiec,
+        "etykieta": "zgloszenie",
+        "postep": _text_version("postep", pamiec),
+    }
+
+
+def _w_pliku_kolejki(plik: Path) -> list[str]:
+    return bieg_do_pliku_kolejki(modul(plik), _argumenty_logow(), _KOMORKA)
+
+
+@pytest.mark.parametrize("opis", ODMOWY_LOGOW.keys())
+def test_plik_archiwum_i_post_of_odmawiaja_podklasy_i_atrapy_w_chwili_uzycia(opis: str, tmp_path: Path) -> None:
+    """Plik kolejki bierze plik w Archiwum tylko z tekstem dokładnie ``LogsText``, a ``post_of`` wersję dokładnie jednej z
+    czterech klas z tekstem albo Logami dokładnego typu, sprawdzone tuż przed użyciem, więc podklasa, jakkolwiek powstała,
+    i wartość podmieniona po przyjęciu wersji nie dają plikowi kolejki wartości komórki (#1551)."""
+
+    kod, odmowa = ODMOWY_LOGOW[opis]
+    plik = tmp_path / "probka.py"
+    plik.write_text(kod, encoding="utf-8")
+
+    zgloszenia = _w_pliku_kolejki(plik)
+
+    assert len(zgloszenia) == 1 and odmowa in zgloszenia[0], zgloszenia
+
+
 @wymaga_ruff_i_mypy
-def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza(
+def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki(
     tmp_path: Path,
 ) -> None:
     probki = {opis: kod for opis, (kod, _) in DROGI_DO_LOGOW.items()} | ZNANE_LUKI_LOGOW
-    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_logow.py")
 
     assert {
         opis: zgloszenia[opis]
@@ -747,7 +1110,8 @@ def test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a
         if not any(odrzucenie in zgloszenie for zgloszenie in zgloszenia[opis])
     } == {}
     assert_znane_luki(
-        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_LOGOW}, "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)"
+        {opis: zgloszenia[opis] + _w_pliku_kolejki(pliki[opis]) for opis in ZNANE_LUKI_LOGOW},
+        "tests/test_komentarz_logow_uruchomienia.py (ZNANE_LUKI_LOGOW)",
     )
 
 
@@ -803,6 +1167,31 @@ def test_wersje_komentarza_i_plik_logow_odmawiaja_wartosci_po_strazniku_drugiego
 
     with pytest.raises(TypeError, match="po strażniku"):
         TAKES_GUARDED[name](_guarded(other), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+class _BezSuper:
+    """Baza, której ``__init_subclass__`` nie woła ``super()``: przed typem-dowodem w bazach przesłania jego
+    ``__init_subclass__`` (przegląd #1698, runda 1, W1)."""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+@pytest.mark.parametrize("name", TAKES_GUARDED.keys())
+def test_wersje_komentarza_i_plik_logow_odmawiaja_podklasy_z_type_new_ktorej_nie_odmowilo_jej_utworzenie(
+    name: str, tmp_path: Path
+) -> None:
+    """``type.__new__`` z bazą, której ``__init_subclass__`` nie woła ``super()``, robi podklasę Logów albo tekstu po
+    strażniku bez odmowy, więc wersja komentarza Uruchomienia i plik Logów sprawdzają dokładny typ (#1551)."""
+
+    own = {"logi": "tekst", "tekst": "logi"}[OTHER_GUARDED[name]]
+    proof = type(_guarded(own))
+    subclass = type.__new__(type(proof), "Inne", (_BezSuper, proof), {})
+
+    with pytest.raises(TypeError, match="po strażniku"):
+        TAKES_GUARDED[name](object.__new__(subclass), tmp_path)
 
     assert list(tmp_path.iterdir()) == []
 
@@ -913,7 +1302,7 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
         return INTERRUPTED
 
     forbidden = _forbidden()
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), read if first_line else None, logs)
+    left = LeftJournal(JournalKey(), read if first_line else None, logs)
 
     closing = close(left, forbidden, interrupted)
 
@@ -932,7 +1321,7 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_
     dziennik następnemu startowi, i niczego nie składa."""
 
     failure = PermissionError("plik trzyma antywirus")
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), _journal(None), Refused(failure))
+    left = LeftJournal(JournalKey(), _journal(None), Refused(failure))
     asked: list[JournalRead] = []
 
     def interrupted(journal: JournalRead) -> RunLog:
@@ -1037,15 +1426,20 @@ def _started(comments: RunComments) -> None:
 
 
 def _comments(
-    directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None, clock: ManualClock | None = None
+    directory: Path,
+    queue: RecordingQueue,
+    disk: LogsOnDisk | None = None,
+    clock: ManualClock | None = None,
+    files: ProcessFiles = lambda process, period, settings: [],
 ) -> RunComments:
-    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
+    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu, a pliki procesu
+    z ``files`` (domyślnie żadnych)."""
 
     work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
-        files=lambda process, period, settings: [],
+        files=files,
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
     )
@@ -1207,6 +1601,104 @@ def _priced(comments: RunComments, disk: LogsOnDisk) -> None:
     disk.journal.begun(19, 1, 1)
 
 
+def _logs_file(directory: Path) -> dict[str, Any]:
+    [path] = (directory / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
+    logs: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return logs
+
+
+@pytest.mark.parametrize(
+    "failure", [OSError("brak dostępu"), PeriodFolderInaccessible(Path("08_14_09_2026"))], ids=["oserror", "folder-okresu"]
+)
+def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczekiwanego_wyjatku(
+    tmp_path: Path, failure: Exception
+) -> None:
+    """Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: Logi Uruchomienia mają wtedy pliki ``None``,
+    a dziennik Centrum nie ma wpisu, który Diagnoza by zgłosiła."""
+
+    def files(process: object, period: object, settings: object) -> list[Path]:
+        raise failure
+
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, RecordingQueue(), disk, files=files)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["environment"]["files"] is None
+    log = tmp_path / "centrum-rozliczen.log"
+    assert UNEXPECTED_FAILURE_EVENT not in (log.read_text(encoding="utf-8") if log.exists() else "")
+
+
+def test_krok_konca_wyceny_z_nieoczekiwanym_wyjatkiem_nie_pomija_logow_z_wynikiem_ani_ich_wysylki(tmp_path: Path) -> None:
+    """Każdy krok końca Wyceny biegnie we własnej osłonie: wpis końca w dzienniku, który rzucił nieoczekiwanym wyjątkiem,
+    trafia do dziennika Centrum, a plik Logów z wynikiem i jego wysyłka i tak powstają."""
+
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+
+    class BrokenEndJournal(Journal):
+        def end(self, run_id: str, result: RunResult) -> None:
+            raise RuntimeError("syntetyczna awaria wpisu końca")
+
+    journal = BrokenEndJournal(tmp_path / "dzienniki-wyceny", log, process="efenix")
+
+    class Disk(LogsOnDisk):
+        @property
+        def journal(self) -> Journal:
+            return journal
+
+    disk = Disk(log, journaled="efenix")
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue, disk)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["run_id"] == RUN_ID
+    assert Rank.OWN in [post.rank for post in queue.posts]
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
+
+
+def test_logi_urwanego_uruchomienia_ktorych_pliku_katalog_logow_nie_przyjal_i_tak_ida_do_maksa(tmp_path: Path) -> None:
+    """Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia, nie zatrzymuje tych Logów
+    w drodze do Maksa: wersja zastępcza idzie do Kolejki wysyłki, a dziennik znika za nią."""
+
+    journal = _urwane(tmp_path)
+    queue = RecordingQueue()
+
+    class Refusing(LogsOnDisk):
+        def write(self, logs: GuardedLogs) -> None:
+            raise PermissionError("katalog Logów nie przyjmuje pliku")
+
+    _started(_comments(tmp_path, queue, Refusing(CentrumLog(tmp_path / "centrum-rozliczen.log"), journaled="efenix")))
+
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+
+
+def test_wyjatek_wysylki_wersji_zastepczej_zostawia_dziennik_na_dysku_a_wersja_idzie_przy_nastepnym_starcie(
+    tmp_path: Path,
+) -> None:
+    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej trafia do dziennika Centrum i zostawia jej dziennik na
+    dysku, więc następny start wysyła tę wersję raz."""
+
+    journal = _urwane(tmp_path)
+
+    class FailingQueue(RecordingQueue):
+        def post(self, post: LogsPost) -> bool:
+            raise RuntimeError("syntetyczna awaria kolejki")
+
+    _started(_comments(tmp_path, FailingQueue()))
+    after_failure = journal.exists()
+    queue = RecordingQueue()
+    _started(_comments(tmp_path, queue))
+
+    assert after_failure
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
+
+
 # Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
 # miejscu katalogu Logów stoi plik → co zostaje: wpis końca w dzienniku, plik Logów z wynikiem i stopnie wysyłek tej pracy
 # Centrum (postęp przy starcie Wyceny, Logi z wynikiem), a potem wersja zastępcza następnego startu: Logi z pliku, wynik bez
@@ -1286,6 +1778,19 @@ def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nas
     [post] = queue.posts
     assert (len(left), post.rank) == (1, Rank.STAND_IN)
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
+def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
+    """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
+    (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
+
+    directory = tmp_path / "dzienniki-wyceny"
+    journal = Journal(directory, CentrumLog(tmp_path / "centrum-rozliczen.log"), process="efenix")
+
+    with pytest.raises(TypeError, match="LogsOnDisk.started"):
+        journal.run_started(PRICING_START, object())
+
+    assert (directory.exists(), journal.progress(RUN_ID)) == (False, None)
 
 
 def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich_wysylki(tmp_path: Path) -> None:

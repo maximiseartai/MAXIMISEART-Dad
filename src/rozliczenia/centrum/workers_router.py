@@ -30,9 +30,10 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_list import Worker, WorkerList
 from rozliczenia.worker_periods import old_name_periods
 
-# Odmowy w OpenAPI: zła wartość formularza (422) i Wykonawca albo login, który zostaje (409), obie jako ``Problem``.
 _REFUSED: dict[int | str, dict[str, object]] = {422: {"model": common_contract.Problem}}
+"""Odmowa w OpenAPI: zła wartość formularza (422) jako ``Problem``."""
 _KEPT: dict[int | str, dict[str, object]] = {409: {"model": common_contract.Problem}, **_REFUSED}
+"""Odmowy w OpenAPI: zła wartość formularza (422) i Wykonawca albo login, który zostaje (409), obie jako ``Problem``."""
 
 
 def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[], date]) -> APIRouter:

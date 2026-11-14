@@ -16,6 +16,7 @@ from drive.common import (
     period_row,
     point_in_settings,
 )
+from drive.waiting import until
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
@@ -34,7 +35,7 @@ def drive(run: Run, page: Page) -> None:
     window = open_settings(page, "Foldery")
     run.answer_picker(dad["week"])
     window.get_by_role("button", name=re.compile(r"^(Wskaż|Zmień) Folder okresów$")).click()
-    run.wait_for(
+    until(
         lambda: run.remembered("folder_okresow") == dad["periods_directory"],
         "a week folder chosen in Foldery is saved as Załączniki, the root of Dad's layout",
     )
@@ -75,7 +76,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "taty-otwieranie")
     page.get_by_role("button", name=f"Plik zbiorczy, okres {LAST_COMPLETE}", exact=True).click()
-    run.wait_for(last_opened_is(run, Path(dad["opened"])), "the Plik zbiorczy opens from the October INEA folder")
+    until(last_opened_is(run, Path(dad["opened"])), "the Plik zbiorczy opens from the October INEA folder")
     run.capture(page, "16-uklad-taty-otwieranie", full_page=False)
 
     run.step(feature, "taty-przywrocenie")

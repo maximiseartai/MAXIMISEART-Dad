@@ -89,7 +89,7 @@ Preconditions:
 
 ## Gotchas
 
-- The figure lags the typed text by one draft request: wait until it equals the server's draft (`run.wait_for`), never read it right after `fill`.
+- The figure lags the typed text by one draft request: wait until it equals the server's draft (`until`), never read it right after `fill`.
 - The figure is the draft's `shown_body`, the body with the link to the Logi shown as its text; compare it with that field, and check the link itself in the draft's `body` and in the skrzynka issue.
 - Two buttons in the answer view are named `Zamknij`: the answer's own button comes first, the dialog's corner `X` (sr-only `Zamknij`) after it.
 - The `status` holds only the answer sentence; the `Zamknij` button is outside it.

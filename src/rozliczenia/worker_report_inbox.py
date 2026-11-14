@@ -25,7 +25,7 @@ dostępu, a porażkę oddaje jako wynik: odrzucone hasło (``SMTPAuthenticationE
 (``OSError``, zerwane albo nienawiązane połączenie SMTP) to ``InboxUnreachable``, a każda inna odmowa serwera SMTP to
 ``MailRefused``; każdy wynik niesie tylko nazwę typu wyjątku.
 
-``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``, #1234): flagi maili i liczby maili
+``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``): flagi maili i liczby maili
 ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
 wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
 """
@@ -382,9 +382,9 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
 def _skeleton_of(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> tuple[bytes, str | None] | None:
     """Szkielet maila i sekcja części, którą wybiera ``mail_of`` (``None``: żadna); ``None``, gdy szkieletu nie da się
     złożyć albo pakiet ``email`` nie umie rozebrać nagłówka którejś części: taki mail port pobiera w całości, a tam
-    ``mail_of`` liczy go jako pominięty, więc jeden zepsuty mail nie zatrzymuje odczytu skrzynki."""
+    ``mail_of`` liczy go jako pominięty, więc jeden zepsuty mail nie zatrzymuje odczytu skrzynki. Nagłówek nie do
+    rozebrania to każdy wyjątek pakietu ``email`` (jak w ``mail_of``)."""
 
-    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
     try:
         raw = skeleton(structure, header, parts)
         return None if raw is None else (raw, chosen(structure, raw, _BODY_PREFERENCE))
@@ -457,9 +457,9 @@ def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchVal
 
 def _header_facts(header: bytes) -> tuple[SenderAddress | None, bool] | None:
     """Nadawca z ``From`` tak, jak go czyta ``mail_of``, i to, czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z
-    którego liczy ``MailId`` bez bajtów treści; ``None``, gdy nagłówka nie da się rozebrać (port pobiera cały mail)."""
+    którego liczy ``MailId`` bez bajtów treści; ``None``, gdy nagłówka nie da się rozebrać (port pobiera cały mail):
+    pakiet ``email`` zgłasza wtedy któryś z wyjątków (jak w ``mail_of``)."""
 
-    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
         return SenderAddress.of(str(message["From"] or "")), bool(str(message["Message-ID"] or ""))
@@ -549,9 +549,8 @@ def _sent(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentRemin
 
 def _sent_reminder(header: bytes, sent_at: datetime) -> SentReminder | None:
     """Przypomnienie z nagłówków ``Subject`` i ``To`` maila z „Wysłanych”; ``None`` dla innego tematu, maila bez adresata
-    i nagłówka, którego pakiet ``email`` nie umie rozebrać."""
+    i nagłówka, którego pakiet ``email`` nie umie rozebrać, jakikolwiek wyjątek zgłasza (jak w ``mail_of``)."""
 
-    # Pakiet email zgłasza na zepsutym nagłówku różne wyjątki, zależnie od wersji Pythona (jak ``mail_of``).
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
         day = reminder_day(str(message["Subject"] or ""))
@@ -615,9 +614,9 @@ def _close(imap: imaplib.IMAP4) -> None:
 
 def mail_of(raw: bytes, arrived: datetime) -> ReportMail | None:
     """Mail MIME jako ``ReportMail``: temat po RFC 2047, treść z ``text/plain``, a bez niego tekst z ``text/html``;
-    ``None``, gdy nagłówek ``From`` nie ma adresu albo pakiet ``email`` nie umie maila rozebrać."""
+    ``None``, gdy nagłówek ``From`` nie ma adresu albo pakiet ``email`` nie umie maila rozebrać: na zepsutym mailu zgłasza
+    ``AttributeError``, ``IndexError``, ``ValueError`` i inne wyjątki, zależnie od wersji Pythona."""
 
-    # Pakiet email zgłasza na zepsutym mailu AttributeError, IndexError, ValueError i inne, zależnie od wersji Pythona.
     try:
         return _report_mail(raw, arrived)
     except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: pominięty mail liczy Mails.skipped

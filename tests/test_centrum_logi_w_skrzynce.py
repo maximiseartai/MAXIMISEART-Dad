@@ -2383,6 +2383,24 @@ def test_logi_wpisania_raportow_bez_numeru_zlecenia_nie_daja_wejscia_klikniecia(
     assert isinstance(replayed, Unreplayable) and replayed.reason.startswith(reason), replayed
 
 
+def test_postac_numeru_spod_wpisu_odchodzi_z_pierwszym_przeniesieniem_u_tego_wykonawcy_i_dnia() -> None:
+    """0040000001 i 40000001 to dwa zlecenia, a Logi niosą numer Przeniesienia tylko jako liczbę: jedyna postać spod
+    Wpisu Wykonawcy i dnia odchodzi z pierwszym Przeniesieniem, więc drugie tej liczby u tego Wykonawcy i dnia to
+    zlecenie bez zer na początku, a nie drugie Przeniesienie tego samego zlecenia."""
+
+    entering = _logged_reports(_entering_facts())
+    [move] = entering["moves_before"]
+    here = {"day": "2026-11-09", "worker": "jan.testowy"}
+    entering["moves_before"] = [move | here, move | here | {"origin_name": "Jan Testowy Drugi"}]
+
+    replayed = LoggedReports.model_validate(entering).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    memory = replayed.saved.memory
+    assert isinstance(memory, OwnEntries)
+    assert sorted(str(moved.number) for moved in memory.moves) == ["040000001", "40000001"]
+
+
 OLA: Final = Login("ola.testowa")
 FORM_DAYS: Final = (date(2026, 11, 5), date(2026, 11, 8), CLICK_DAY)
 FORM_WORKERS: Final = (JAN, ANNA, OLA)

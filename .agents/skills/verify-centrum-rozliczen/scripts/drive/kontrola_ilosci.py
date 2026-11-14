@@ -18,7 +18,7 @@ from drive.common import (
     Run,
     start_centrum,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from harness import Pace, Switch
 from atrapy.scenariusz_centrum import LAST_COMPLETE, ROW_MARKER
 from atrapy.pliki_taty import REPORT_KEY_FILE
@@ -83,7 +83,7 @@ def drive(run: Run, page: Page) -> None:
     waited = _offline_waits(run)
     start_centrum(run, "kontrola-start-bez-sieci")
     # The first failure ends the pass, and the Logi Uruchomienia queued before the Kontrola go first.
-    run.wait_for(
+    until(
         lambda: _offline_waits(run) > waited, "at start Centrum tries the queue again and the Kontrola keeps waiting"
     )
     run.check(queued(run, LABEL) == [waiting], "the Kontrola file stays after another failure")
@@ -108,10 +108,10 @@ def drive(run: Run, page: Page) -> None:
             f"Okresy is shown {shown_after_s:.1f} s after the start, before the skrzynka took the Kontrola",
         )
         run.capture(page, "152-kontrola-start-bez-czekania")
-        run.wait_for(
+        until(
             lambda: f"skrzynka-wyslano etykieta={LABEL} okres={LAST_COMPLETE}" in run.log(),
             "the Kontrola sent again at start reaches the skrzynka in the background",
-            timeout_s=Budget.WORK,
+            Budget.WORK,
         )
     finally:
         remove(pacing, missing_ok=True)
@@ -136,7 +136,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(
         f"- Uruchomienie: {document['run_id']}" in body.splitlines(), "it is the Kontrola of the RUN from the queue"
     )
-    run.wait_for(lambda: queued(run, LABEL, leaving=True) == [], "the sent Kontrola file is removed")
+    until(lambda: queued(run, LABEL, leaving=True) == [], "the sent Kontrola file is removed")
     log = run.log()
     run.check(REPORT_KEY not in log and ROW_MARKER not in log, "the Centrum log has neither the key nor workbook content")
     run.check(REPORT_KEY not in body, "the key is not in the Kontrola")

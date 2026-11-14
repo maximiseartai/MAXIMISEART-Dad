@@ -42,6 +42,7 @@ from enum import Enum
 import re
 import threading
 from typing import Final, TypeVar, final, overload
+import weakref
 
 from . import register_columns
 from .text import normalize_text
@@ -110,12 +111,44 @@ _PASSED: Final = object()
 """Dowód, że ``Outgoing`` albo ``LogsText`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
 
 
+_REFUSALS: Final[dict[type, str]] = {}
+
+
+class WithoutSubclasses(type):
+    """Metaklasa klasy bez podklas (typy-dowody reguły danych: ``Outgoing``, ``LogsText``, ``ForbiddenValues``,
+    ``run_logs_guard.GuardedLogs`` i ``GuardedText``, ``comment_versions.LogsPost`` i cztery wersje komentarza, a poza
+    nimi ``process_kind.PreparedRun``): klasa podaje odmowę w nagłówku
+    (``class K(metaclass=WithoutSubclasses, refusal=…)``), a ``__new__`` metaklasy sam rzuca ``TypeError`` z tą odmową,
+    gdy któraś baza nowej klasy ma tę metaklasę. Python wybiera metaklasę po bazach, więc odmawia ``class``, ``type()``
+    i ``types.new_class`` przy każdej kolejności baz, a baza z własnym ``__init_subclass__`` stojąca przed klasą bez
+    podklas tego nie przesłania. Odmawia tylko wywołanie tego ``__new__``: klasa zrobiona z jego pominięciem i relacja
+    podklasy przypisana w trakcie działania powstają, więc regułę klasy trzyma jeszcze kontrola w chwili jej użycia."""
+
+    def __new__(
+        mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, *, refusal: str | None = None, **kwargs: object
+    ) -> WithoutSubclasses:
+        for base in bases:
+            if isinstance(base, WithoutSubclasses):
+                raise TypeError(next((_REFUSALS[k] for k in base.__mro__ if k in _REFUSALS), f"{base.__qualname__} nie ma podklas."))
+        if refusal is None:
+            raise TypeError("Klasa bez podklas podaje odmowę: class K(metaclass=WithoutSubclasses, refusal=…).")
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        _REFUSALS[cls] = refusal
+        return cls
+
+
+_NO_OUTGOING_SUBCLASSES: Final = "Tekst do wysyłki nie ma podklas."
+_NO_LOGS_TEXT_SUBCLASSES: Final = "Tekst pliku Logów nie ma podklas."
+
+
 @final
-class Outgoing(str):
+class Outgoing(str, metaclass=WithoutSubclasses, refusal=_NO_OUTGOING_SUBCLASSES):
     """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
 
-    Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``, a podklasy nie ma. Inna metoda ``str`` (wycinek, f-napis,
-    ``join``, ``+`` z gołym ``str``) daje ``str``, którego kolejka nie przyjmuje.
+    Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``. Podklasie przy tworzeniu odmawia metaklasa
+    (``WithoutSubclasses``, a ``type.__new__`` z jej pominięciem ``__init_subclass__``), co daje wcześniejszy błąd, a
+    regułę trzyma plik kolejki, który bierze tylko dokładny typ (``outbox._queue_text``). Inna metoda ``str`` (wycinek,
+    f-napis, ``join``, ``+`` z gołym ``str`` albo z podklasą) daje ``str``, którego kolejka nie przyjmuje.
     """
 
     __slots__ = ()
@@ -126,7 +159,7 @@ class Outgoing(str):
         return super().__new__(cls, text)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst do wysyłki nie ma podklas.")
+        raise TypeError(_NO_OUTGOING_SUBCLASSES)
 
     @overload
     def __add__(self, other: Outgoing, /) -> Outgoing: ...
@@ -134,7 +167,7 @@ class Outgoing(str):
     def __add__(self, other: str, /) -> str: ...
     def __add__(self, other: str, /) -> str:
         joined = str(self) + other
-        return Outgoing(joined, _PASSED) if isinstance(other, Outgoing) else joined
+        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
 
 
 def tool(text: str) -> Outgoing:
@@ -144,7 +177,7 @@ def tool(text: str) -> Outgoing:
 
 
 @final
-class LogsText(str):
+class LogsText(str, metaclass=WithoutSubclasses, refusal=_NO_LOGS_TEXT_SUBCLASSES):
     """Znaki pliku Logów po strażniku Logów (``run_logs_guard.GuardedLogs.text``), jedyny tekst pliku w Archiwum Logów
     okresu (``outbox.ArchiveFile.text``), z ``logs_text``. To nie jest ``Outgoing``: pola Logów z wartością narzędzia
     (``run_logs_guard.TOOL_FIELDS``) strażnik przepuszcza bez maski, więc inny cel wysyłki tego tekstu nie bierze."""
@@ -157,7 +190,7 @@ class LogsText(str):
         return super().__new__(cls, text)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Tekst pliku Logów nie ma podklas.")
+        raise TypeError(_NO_LOGS_TEXT_SUBCLASSES)
 
 
 def logs_text(text: str) -> LogsText:
@@ -177,18 +210,8 @@ class Guarded:
 _NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko client_data.guarded."
 
 
-class _WithoutSubclasses(type):
-    """Metaklasa ``ForbiddenValues``: odmawia klasy z jej bazą, bo Python wybiera metaklasę po bazach, więc odmowy nie
-    przesłania baza z własnym ``__init_subclass__`` stojąca przed ``ForbiddenValues``."""
-
-    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> _WithoutSubclasses:
-        if any(isinstance(base, _WithoutSubclasses) for base in bases):
-            raise TypeError(_NO_SUBCLASSES)
-        return super().__new__(mcs, name, bases, namespace, **kwargs)
-
-
 @final
-class ForbiddenValues(metaclass=_WithoutSubclasses):
+class ForbiddenValues(metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego
@@ -197,14 +220,15 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
 
     Maskowanie i uwagi techniczne daje tylko strażnik modułu, ``guarded`` i ``guarded_number``: pamięć nie ma własnej
     metody strażnika, więc mypy odrzuca jej wywołanie (``attr-defined``), a oba tuż przed maskowaniem odmawiają obiektu
-    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Pamięć nie ma też podklas ani przypisanej metody: mypy
-    odrzuca ``class`` (``final``), metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także
-    ``type()`` i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą
-    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
+    innego typu niż dokładnie ``ForbiddenValues`` (``_memory``). Wartości nie są polami pamięci, tylko jej wpisem
+    w tabeli modułu (``_WORDS``). Pamięć nie ma też podklas ani przypisanej metody: mypy odrzuca ``class`` (``final``),
+    metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także ``type()``
+    i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą metaklasą,
+    a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
     przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
 
-    __slots__ = ("_columns", "_lengths", "_lock")
+    __slots__ = ("__weakref__",)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(_NO_SUBCLASSES)
@@ -212,9 +236,7 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
     def __init__(self, proof: object) -> None:
         if proof is not _PASSED:
             raise TypeError("Pamięć reguły danych daje tylko rozliczenia.client_data.empty_memory.")
-        self._lock = threading.Lock()
-        self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
-        self._lengths: dict[str, tuple[int, ...]] = {}
+        _WORDS[self] = _Words()
 
     def remember_value(self, column: ForbiddenColumn, value: object) -> None:
         """Zapamiętuje jedną komórkę zakazanej ``column`` przeczytaną z pliku taty; ta sama wartość zostaje przy
@@ -223,13 +245,30 @@ class ForbiddenValues(metaclass=_WithoutSubclasses):
         words = _value_words(value)
         if words is None:
             return
-        with self._lock:
-            if words in self._columns:
+        memory = _WORDS[self]
+        with memory.lock:
+            if words in memory.columns:
                 return
-            self._columns[words] = column
-            lengths = self._lengths.get(words[0], ())
+            memory.columns[words] = column
+            lengths = memory.lengths.get(words[0], ())
             if len(words) not in lengths:
-                self._lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+                memory.lengths[words[0]] = tuple(sorted((*lengths, len(words)), reverse=True))
+
+
+class _Words:
+    """Wartości jednej pamięci reguły danych pod jej zamkiem: krotka słów wartości → kolumna i pierwsze słowo → długości
+    wartości, które od niego się zaczynają, od najdłuższej."""
+
+    __slots__ = ("columns", "lengths", "lock")
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.columns: dict[tuple[str, ...], ForbiddenColumn] = {}
+        self.lengths: dict[str, tuple[int, ...]] = {}
+
+
+_WORDS: Final[weakref.WeakKeyDictionary[ForbiddenValues, _Words]] = weakref.WeakKeyDictionary()
+"""Wartości każdej żywej pamięci (``ForbiddenValues``); znika razem z nią."""
 
 
 def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
@@ -238,7 +277,7 @@ def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
     Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
     """
 
-    masked, columns = _masked(_memory(forbidden), text)
+    masked, columns = _masked(_memory(forbidden), str.__str__(text))
     return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
 
@@ -260,13 +299,13 @@ def guarded_number(forbidden: ForbiddenValues, value: int | float, place: str) -
     return None
 
 
-def _masked(memory: ForbiddenValues, text: str) -> tuple[str, set[ForbiddenColumn]]:
+def _masked(memory: _Words, text: str) -> tuple[str, set[ForbiddenColumn]]:
     words = list(_WORD.finditer(text))
     folded = [word.group(0).casefold() for word in words]
     pieces: list[str] = []
     masked: set[ForbiddenColumn] = set()
     position = index = 0
-    with memory._lock:
+    with memory.lock:
         while index < len(words):
             hit = _longest(memory, folded, index)
             if hit is None:
@@ -281,12 +320,12 @@ def _masked(memory: ForbiddenValues, text: str) -> tuple[str, set[ForbiddenColum
     return "".join(pieces), masked
 
 
-def _longest(memory: ForbiddenValues, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
+def _longest(memory: _Words, folded: Sequence[str], index: int) -> tuple[int, ForbiddenColumn] | None:
     """Najdłuższa zapamiętana wartość od słowa ``index``: jej długość w słowach i kolumna."""
 
-    for length in memory._lengths.get(folded[index], ()):
+    for length in memory.lengths.get(folded[index], ()):
         if index + length <= len(folded):
-            column = memory._columns.get(tuple(folded[index : index + length]))
+            column = memory.columns.get(tuple(folded[index : index + length]))
             if column is not None:
                 return length, column
     return None
@@ -297,14 +336,14 @@ def empty_memory() -> ForbiddenValues:
     return ForbiddenValues(_PASSED)
 
 
-def _memory(forbidden: ForbiddenValues) -> ForbiddenValues:
-    """Pamięć tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa albo owijka
-    podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo jego ``_masked``
+def _memory(forbidden: ForbiddenValues) -> _Words:
+    """Wartości pamięci tuż przed wywołaniem strażnika: obiekt, którego typ nie jest dokładnie ``ForbiddenValues`` (atrapa
+    albo owijka podana przez ``cast`` lub ``Any``, obiekt z przypisaną obcą klasą, podklasa), daje ``TypeError``, bo
     dałby własne maskowanie i uwagi techniczne."""
 
     if type(forbidden) is not ForbiddenValues:
         raise TypeError(f"Strażnik reguły danych bierze tylko pamięć ForbiddenValues z empty_memory, nie {type(forbidden).__name__}.")
-    return forbidden
+    return _WORDS[forbidden]
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:

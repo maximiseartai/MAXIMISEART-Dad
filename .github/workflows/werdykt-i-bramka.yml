@@ -2,9 +2,9 @@ name: Werdykt i bramka
 
 # The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
 # conditions 1-4 of its --help (CI, verdict PASS for HEAD, PR body, root gate), judged by main's code
-# (tools/scal_pr.py --status, ADR 0036 "Status w Actions"). It only reports: no ruleset requires it. A closed PR gets
-# no new status, so the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one
-# shows afterwards.
+# (tools/scal_pr.py --status, ADR 0036 "Status w Actions"): pending while it only waits for CI or a verdict on HEAD,
+# failure when the author must act. The ruleset of main requires it as success. A closed PR gets no new status, so
+# the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one shows afterwards.
 #
 # Every trigger runs this file and the code from main, never from the PR: pull_request_target, issue_comment and
 # workflow_run take the workflow from the default branch. pull_request_review is not a trigger, because it takes the

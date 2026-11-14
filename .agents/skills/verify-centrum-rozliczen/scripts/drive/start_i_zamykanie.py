@@ -13,7 +13,7 @@ import urllib.parse
 from playwright.sync_api import Page, Request, Response, expect
 
 from drive.common import REPO_ROOT, Run, answers, log_entries, read_text, served_version
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from atrapy.pliki_taty import LOG_FILE, SERVICE
 
 # Every click on the shortcut opens one more tab; the browser keeps at most 6 connections to Centrum for all tabs.
@@ -184,6 +184,6 @@ def drive(run: Run, page: Page) -> None:
     close_button.click()
     page.get_by_role("button", name="Zamknij Centrum", exact=True).click()
     expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
-    run.wait_for(lambda: not answers(run.url), "the Centrum process stops serving")
-    run.wait_for(lambda: _log_events(served_log)[-2:] == ["zamkniecie", "stop"], "the log ends with zamkniecie, stop")
+    until(lambda: not answers(run.url), "the Centrum process stops serving")
+    until(lambda: _log_events(served_log)[-2:] == ["zamkniecie", "stop"], "the log ends with zamkniecie, stop")
     run.capture(page, "92-start-i-zamykanie-zamkniete")

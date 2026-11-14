@@ -196,10 +196,12 @@ class RecordMaker:
     def _environment(
         self, process: common_contract.ProcessKey, period: str, settings: SettingsSnapshot | None
     ) -> Environment:
+        """Środowisko Uruchomienia do Logów. Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek, więc
+        Logi mają wtedy pliki ``None``, bez wpisu w dzienniku, który Diagnoza by zgłosiła."""
+
         try:
             paths = self._files(process, period, settings)
         except (OSError, PeriodFolderInaccessible):
-            # Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: bez wpisu, który Diagnoza by zgłosiła.
             files = None
         else:
             files = [self._file(path) for path in paths]
@@ -232,20 +234,30 @@ class _Watched:
 
 
 class RunComments:
-    """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu)."""
+    """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu).
+
+    ``run_ended`` oznacza Wycenę jako skończoną pod tą samą blokadą co postęp, więc postęp, który już idzie do kolejki,
+    jest w niej przed Logami, a następny nie pójdzie. Wynik wysyłki Logów (``accepted``) zostaje także wtedy, gdy plik
+    Logów rzucił po niej, a każdy krok końca biegnie we własnej osłonie (``_step``), więc nie zmienia wyniku ani nie
+    pomija następnych. Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia
+    (``close_left_behind``), nie zatrzymuje tych Logów w drodze do Maksa, a wyjątek przy wysyłce wersji zastępczej
+    (``send_left_behind``) zostawia jej dziennik na dysku, więc wersja idzie przy następnym starcie.
+    """
 
     def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
+        """``_lock`` porządkuje postęp, Logi z wynikiem i Diagnozę: postęp, który już idzie do kolejki, jest w niej przed
+        Logami, a dwie Diagnozy naraz (dwie karty) piszą plik i komentarz jedna po drugiej. ``_last`` to Logi ostatniego
+        Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki."""
+
         self._disk = disk
         self._queue = queue
         self._forbidden = work.forbidden
         self._clock = work.clock
         self._log = work.log
         self._records = records
-        # Postęp, Logi z wynikiem i Diagnoza: postęp, który już idzie do kolejki, jest w niej przed Logami, a dwie
-        # Diagnozy naraz (dwie karty) piszą plik i komentarz jedna po drugiej.
         self._lock = threading.Lock()
         self._watched: _Watched | None = None
-        self._last: GuardedLogs | None = None  # Logi ostatniego Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki
+        self._last: GuardedLogs | None = None
         self._pending: list[tuple[JournalKey, StandInVersion]] = []
 
     def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
@@ -291,13 +303,13 @@ class RunComments:
 
         run_id = run.info.id
         self._step(lambda: self._disk.journal.end(run_id, run.result))
-        with self._lock:  # postęp, który już idzie do kolejki, jest w niej przed Logami, a następny nie pójdzie
+        with self._lock:
             if self._watched is not None and self._watched.run_id == run_id:
                 self._watched = replace(self._watched, ended=True)
         logs = self._step(lambda: self._own(run))
         if logs is None:
             return
-        accepted: list[bool] = []  # wynik wysyłki, także gdy plik Logów rzucił po niej
+        accepted: list[bool] = []
         self._step(lambda: self._keep(logs, accepted.append))
         if accepted and journal_after(OwnLogs(logs), accepted=accepted[0]) == "usuń":
             self._step(lambda: self._disk.journal.remove(run_id))
@@ -311,7 +323,7 @@ class RunComments:
     def _step(self, step: Callable[[], T]) -> T | None:
         try:
             return step()
-        except Exception as failure:  # krok końca nie może zmienić wyniku ani pominąć następnych
+        except Exception as failure:
             self._log.unexpected_failure(failure, where=_AFTER_RUN)
             return None
 
@@ -338,7 +350,7 @@ class RunComments:
             if logs is None:
                 return
             self._keep(logs, lambda accepted: None)
-            self._last = logs  # po pliku, który nie powstał, następna Diagnoza próbuje znowu: plik i komentarz
+            self._last = logs
 
     def _keep(self, logs: GuardedLogs, accepted: Callable[[bool], None]) -> None:
         """Plik Logów (nowy albo nadpisany), a potem, także gdy pliku nie dało się zapisać, do Skrzynki komentarz w issue
@@ -369,7 +381,6 @@ class RunComments:
                     try:
                         self._disk.write(logs)
                     except OSError as failure:
-                        # Katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa.
                         self._log.pricing_journal_unavailable(failure, where="start")
                 case WithoutLogsVersion():
                     pass
@@ -391,5 +402,5 @@ class RunComments:
             try:
                 if journal_after(version, accepted=self._queue.post(post_of(version))) == "usuń":
                     self._disk.remove_journal(key)
-            except Exception as failure:  # dziennik zostaje na dysku, więc wersja idzie przy następnym starcie
+            except Exception as failure:
                 self._log.unexpected_failure(failure, where=_LEFT_BEHIND)

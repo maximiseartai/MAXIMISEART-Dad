@@ -126,12 +126,14 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
     def proposed(edit: contract.RuleEdit) -> tuple[QuantityRules, QuantityRules, str | None]:
         """Reguły teraz i po zmianie ``edit`` oraz id reguły, którą zmiana dodaje albo zmienia; reguły po zmianie i
-        odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu."""
+        odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu.
+
+        Historia, której nie da się przeczytać, nie daje id do pominięcia: id nowej reguły w podglądzie może wtedy być
+        inne niż przy zapisie, ale zapis i tak się wtedy nie uda (``change_with_used_keys``).
+        """
 
         view = settings.quantity_rules()
         _known_rule(edit, view)
-        # Historia, której nie da się przeczytać, nie daje id do pominięcia: id nowej reguły w podglądzie może wtedy być
-        # inne niż przy zapisie, ale zapis i tak się wtedy nie uda (``change_with_used_keys``).
         used = settings.used_keys(RULES)
         keys = frozenset() if isinstance(used, Unreadable) else used
         after = settings.rules_after(lambda current: _ruled(edit)(current, keys))

@@ -32,7 +32,7 @@ from drive.common import (
     start_centrum,
     switch_theme,
 )
-from drive.waiting import Budget, quiet_for
+from drive.waiting import Budget, quiet_for, until
 from atrapy.scenariusz_centrum import LAST_COMPLETE, PRICE_LIST, ROW_MARKER
 from atrapy.workbooks import excel_lock
 
@@ -163,7 +163,7 @@ def drive_result_card(run: Run, page: Page) -> None:
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}")
     # The address changes before the page handles it: until then the result card, with the same counters, is still
     # shown, and Wstecz would leave it mounted with its copy from before the file changes.
-    expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
+    expect(page.get_by_role("heading", name="Uzupełnienie pliku zbiorczego", level=1, exact=True)).to_be_visible()
     _check_screen(run, page, answer, "on the summary opened from the result card")
 
     run.step(FEATURE, "uzupelnienie-wynik-bez-starej-kopii")
@@ -372,7 +372,7 @@ def _drive_entries(run: Run, page: Page) -> None:
     run.capture(page, "251-uzupelnienie-tablica")
     fill.click()
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}")
-    expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
+    expect(page.get_by_role("heading", name="Uzupełnienie pliku zbiorczego", level=1, exact=True)).to_be_visible()
     _check_screen(run, page, _ready(run, "uzupelnienie-z-tablicy"), "on the summary opened from Tablica okresów")
 
     run.step(FEATURE, "uzupelnienie-droga")
@@ -465,8 +465,8 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}/{kind}")
     table = page.get_by_role("table", name="Wiersze Pliku zbiorczego", exact=True)
     expect(table).to_be_visible()
-    expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
-    expect(page.get_by_role("main").get_by_role("heading", level=2)).to_have_text([title])
+    expect(page.get_by_role("heading", name="Uzupełnienie pliku zbiorczego", level=1, exact=True)).to_be_visible()
+    expect(page.get_by_role("main").get_by_role("heading", name=title, level=2, exact=True)).to_be_visible()
     answer = _kind_answer(run, kind)
     rows = answer["rows"]
     columns = answer["columns"]
@@ -511,7 +511,7 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
     table.get_by_role("button", name=f"CZYNNOŚCI ZREALIZOWANE: {completed}", exact=True).click()
     expect(page.locator("[data-slot=popover-content]")).to_contain_text(completed)
     run.check(True, f"{title}: a tap on a column header or on CZYNNOŚCI ZREALIZOWANE shows the full text")
-    run.wait_for(
+    until(
         lambda: any(
             _measured(entry, "getKindTable") for entry in run.log_entries()[since:]
         ),
@@ -696,7 +696,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     since = len(run.log_entries())
     fill.click()
     expect(page).to_have_url(f"{run.url.rstrip('/')}/{SUMMARY}")
-    expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
+    expect(page.get_by_role("heading", name="Uzupełnienie pliku zbiorczego", level=1, exact=True)).to_be_visible()
     expect(page.get_by_role("main").get_by_text(LAST_COMPLETE, exact=True)).to_be_visible()
     before = _ready(run, "uzupelnienie-podsumowanie")
     run.check(
@@ -706,7 +706,7 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
     _check_screen(run, page, before, "after Uzupełnij")
     menu = page.get_by_role("list", name="Sekcje Centrum rozliczeń")
     expect(menu.get_by_role("link", name="Okresy", exact=True)).to_have_attribute("data-active", "")
-    run.wait_for(
+    until(
         lambda: any(
             _measured(entry, "getQuantitiesToFill") for entry in run.log_entries()[since:]
         ),
@@ -798,14 +798,14 @@ def _drive(run: Run, page: Page, collective_file: Path, lock: Path) -> None:
 
     run.step(FEATURE, "uzupelnienie-otworz")
     page.get_by_role("button", name="Otwórz Plik zbiorczy", exact=True).click()
-    run.wait_for(last_opened_is(run, collective_file), "Otwórz Plik zbiorczy opened the period's Plik zbiorczy")
+    until(last_opened_is(run, collective_file), "Otwórz Plik zbiorczy opened the period's Plik zbiorczy")
     expect(page.get_by_text(collective_file.name, exact=True).last).to_be_visible()
 
     run.step(FEATURE, "uzupelnienie-powrot")
     page.get_by_role("main").get_by_role("link", name="Okresy", exact=True).click()
-    expect(page.get_by_role("heading", level=1)).to_have_text("Okresy")
+    expect(page.get_by_role("heading", name="Okresy", level=1, exact=True)).to_be_visible()
     page.go_back()
-    expect(page.get_by_role("heading", level=1)).to_have_text("Uzupełnienie pliku zbiorczego")
+    expect(page.get_by_role("heading", name="Uzupełnienie pliku zbiorczego", level=1, exact=True)).to_be_visible()
     run.check(True, "the link Okresy leads back, and Wstecz returns to the summary of the same period")
 
     run.step(FEATURE, "uzupelnienie-gotowe")

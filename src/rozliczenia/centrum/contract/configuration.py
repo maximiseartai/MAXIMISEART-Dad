@@ -42,14 +42,14 @@ class TemplateProblem(Model):
 TemplateStatus = Annotated[TemplateReady | TemplateProblem, Field(discriminator="state")]
 
 
-# Token do Zgłoszeń na tym komputerze: ``ready`` („Zgłoszenia: gotowe”: jest, a Skrzynka go nie odrzuciła, także
-# bez sieci), ``missing_key`` albo ``refused_key`` (Skrzynka Zgłoszeń odmówiła tego tokenu); nigdy jego wartość.
 ReportKeyState = Literal["ready", "missing_key", "refused_key"]
+"""Token do Zgłoszeń na tym komputerze: ``ready`` („Zgłoszenia: gotowe”: jest, a Skrzynka go nie odrzuciła, także bez
+sieci), ``missing_key`` albo ``refused_key`` (Skrzynka Zgłoszeń odmówiła tego tokenu); nigdy jego wartość."""
 
 
-# Aktualność narzędzia: ``current`` (commit narzędzia zawiera najnowsze Wydanie), ``newer`` (jest nowsze Wydanie),
-# ``not_checked`` (brak sieci, brak Wydania albo narzędzie bez commitu Gita).
 ToolFreshnessState = Literal["current", "newer", "not_checked"]
+"""Aktualność narzędzia: ``current`` (commit narzędzia zawiera najnowsze Wydanie), ``newer`` (jest nowsze Wydanie),
+``not_checked`` (brak sieci, brak Wydania albo narzędzie bez commitu Gita)."""
 
 
 class ToolVersion(Model):

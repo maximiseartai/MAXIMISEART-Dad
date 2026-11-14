@@ -38,8 +38,8 @@ from rozliczenia.period_folder import PeriodFolders, collective_file_name, perio
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
-# Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje.
 _TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
+"""Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje."""
 
 
 @dataclass(frozen=True)

@@ -27,8 +27,8 @@ from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
 from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, PricingStopped, PricingSummary
 from rozliczenia.tool_files import EFENIX_METRICS
 
-# Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie.
 _NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)
+"""Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie."""
 
 
 def _summary(summary: PricingSummary, _dry_run: bool) -> runs_contract.RunSummary:

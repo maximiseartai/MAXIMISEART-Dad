@@ -35,9 +35,9 @@ class ReportNotQueued(Model):
     message: Message
 
 
-# Stan Zgłoszenia tego problemu: przed wysłaniem, wysłane wcześniej i otwarte, niezapisane w kolejce albo stan jego
-# wysyłki (``SendState``).
 ReportState = Annotated[ReportReady | ReportWaiting | ReportNotQueued | Sending, Field(discriminator="state")]
+"""Stan Zgłoszenia tego problemu: przed wysłaniem, wysłane wcześniej i otwarte, niezapisane w kolejce albo stan jego
+wysyłki (``SendState``)."""
 
 
 CheckState = Literal["passed", "failed", "not_checked"]

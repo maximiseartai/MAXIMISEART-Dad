@@ -17,10 +17,11 @@ from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.version import tool_commit, version_label
 from rozliczenia.tool_files import HOST
 
-_GRACEFUL_SHUTDOWN_S = 5  # otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej
-# Klucz stanu ``lifespan`` aplikacji (ASGI ``state``): krok, który serwer robi zaraz po wpisie ``start``, przed pierwszym
-# zapytaniem, więc jego wpisy w dzienniku należą do tej pracy Centrum (``CentrumLog.recent`` liczy je od ``start``).
+_GRACEFUL_SHUTDOWN_S = 5
+"""Otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej."""
 AFTER_START = "po_starcie"
+"""Klucz stanu ``lifespan`` aplikacji (ASGI ``state``): krok, który serwer robi zaraz po wpisie ``start``, przed pierwszym
+zapytaniem, więc jego wpisy w dzienniku należą do tej pracy Centrum (``CentrumLog.recent`` liczy je od ``start``)."""
 
 
 def serve(

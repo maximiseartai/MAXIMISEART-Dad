@@ -64,16 +64,17 @@ from rozliczenia.worker_reports import (
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
-# Odmowy w OpenAPI: zła wartość (422), wiersz Historii bez „Cofnij” (404) i „Cofnij”, które usunęłoby z Listy Wykonawców
-# login z okresu (409), wszystkie jako ``Problem``.
 _REFUSED: dict[int | str, dict[str, object]] = {
     422: {"model": common_contract.Problem, "description": "Zła wartość Ustawień Centrum z polem i zdaniem"}
 }
+"""Odmowa w OpenAPI: zła wartość (422) jako ``Problem``."""
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {
     404: {"model": common_contract.Problem},
     409: {"model": common_contract.Problem},
     **_REFUSED,
 }
+"""Odmowy „Cofnij” w OpenAPI, wszystkie jako ``Problem``: zła wartość (422), wiersz Historii bez „Cofnij” (404) i „Cofnij”,
+które usunęłoby z Listy Wykonawców login z okresu (409)."""
 
 
 def settings_router(
@@ -102,9 +103,10 @@ def settings_router(
         register, periods_directory = _path(change.order_register), _path(change.periods_directory)
         root = None if periods_directory is None else periods_directory_root(periods_directory)
 
-        # Sekcja odsyła obie ścieżki, więc zapisany folder okresów zostaje, jaki jest (np. tydzień, do którego tata
-        # cofnął zmianę z Wydania), a od korzenia układu zapisuje się tylko folder wskazany na nowo.
         def edit(current: FolderSettings) -> FolderSettings:
+            """Sekcja odsyła obie ścieżki, więc zapisany folder okresów zostaje, jaki jest (np. tydzień, do którego tata
+            cofnął zmianę z Wydania), a od korzenia układu zapisuje się tylko folder wskazany na nowo."""
+
             kept = periods_directory == current.periods_directory
             return replace(current, register=register, periods_directory=periods_directory if kept else root)
 
@@ -411,9 +413,11 @@ def _describe_path(path: Path | None, state: SettingState) -> settings_contract.
 
 
 def _row(row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePart] | None]) -> settings_contract.HistoryRow:
+    """Wiersz Historii dla przeglądarki; chwila taty idzie w UTC, jak każda chwila kontraktu, bo przeglądarka przyjmuje
+    tylko zapis z „Z”."""
+
     return settings_contract.HistoryRow(
         id=row.id,
-        # Chwila taty w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”.
         at=row.at.astimezone(timezone.utc),
         source=_source(row),
         release=_release(row),

@@ -70,7 +70,6 @@ def configuration_router(
     return router
 
 
-# Konfiguracja nie odróżnia powodu, dla którego nie sprawdzono; Diagnoza go nazywa.
 _STATE: Final[Mapping[Judgement, configuration_contract.ToolFreshnessState]] = {
     "current": "current",
     "newer": "newer",
@@ -78,18 +77,19 @@ _STATE: Final[Mapping[Judgement, configuration_contract.ToolFreshnessState]] = {
     "no_answer": "not_checked",
     "no_commit": "not_checked",
 }
+"""Konfiguracja nie odróżnia powodu, dla którego nie sprawdzono; Diagnoza go nazywa."""
 
 
-# Konfiguracja nie odróżnia klucza przyjętego od jeszcze niesprawdzonego (np. bez sieci); Diagnoza je nazywa.
 _KEY_STATE: Final[Mapping[KeyJudgement, configuration_contract.ReportKeyState]] = {
     "accepted": "ready",
     "unchecked": "ready",
     "refused": "refused_key",
     "missing": "missing_key",
 }
-# Tyle Konfiguracja czeka na trwające sprawdzenie klucza (zimny odczyt to ~200 ms); sprawdzenie rusza już przy starcie
-# Centrum, więc zwykle jest gotowe i odczyt nie czeka wcale.
+"""Konfiguracja nie odróżnia klucza przyjętego od jeszcze niesprawdzonego (np. bez sieci); Diagnoza je nazywa."""
 CONFIGURATION_WAIT_S: Final = 1.0
+"""Tyle Konfiguracja czeka na trwające sprawdzenie klucza; sprawdzenie rusza już przy starcie Centrum, więc zwykle
+jest gotowe i odczyt nie czeka wcale."""
 
 
 _CONTENT_PROBLEMS: Final = frozenset({Problem.UNREADABLE, Problem.LAYOUT, Problem.HAS_DATA})

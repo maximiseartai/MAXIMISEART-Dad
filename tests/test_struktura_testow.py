@@ -530,6 +530,11 @@ CONSTANT_TIME_BOUNDS = {
     "test_aktualizacja_narzedzia.py::test_pomocnik_gita_trzymajacy_jego_wyjscie_nie_wstrzymuje_aktualizacji::elapsed < 20": (
         "granica 20 s oddziela koniec od zawieszenia: pomocnik gita trzyma jego wyjście otwarte przez 60 s"
     ),
+    "test_aktualizacja_narzedzia.py::test_pobranie_ktore_stoi_konczy_sam_git_zanim_minie_limit_czasu_pobrania"
+    "::elapsed < 30": (
+        "granica 30 s oddziela koniec od zawieszenia: Git kończy stojące pobranie po 1 s (_STALLED_FOR_S w teście), "
+        "a bez http.lowSpeedLimit czekałby na limit czasu pobrania, w teście 60 s"
+    ),
     "test_aktualnosc_narzedzia.py::test_milczacy_serwer_nie_wydluza_diagnozy_ponad_limit_czasu"
     "::time.monotonic() - started < 1.5": (
         "serwer nie odpowiada nigdy, więc bez limitu 0,3 s diagnoza czekałaby bez końca; granica to 5× ten limit"

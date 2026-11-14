@@ -89,6 +89,10 @@ def _runs(
 def _run(
     process: common_contract.ProcessKey, label: str, record: dict[str, Any], centrum_started: CentrumStarted
 ) -> metrics_contract.ProcessRun:
+    """Uruchomienie z rekordu metryk ``record``. Rekord nie mówi, skąd wystartował (schemat bez zmian), więc Centrum
+    pamięta swoje Uruchomienia samo (``centrum_started``), a rekord wersji 1 nie ma ``stop`` i rodzaju jego Zatrzymania
+    nie zgadujemy."""
+
     started = (process, record["started_at"])
     return metrics_contract.ProcessRun(
         process=process,
@@ -101,10 +105,8 @@ def _run(
         phase_durations=[
             metrics_contract.PhaseDuration(phase=phase, duration_ms=record["phase_durations_ms"][phase]) for phase in PHASES
         ],
-        # Rekord metryk nie mówi, skąd wystartował (schemat bez zmian); Centrum pamięta swoje Uruchomienia samo.
         origin="centrum" if started in centrum_started else "cmd",
         run_id=centrum_started.get(started),
-        # Rekord wersji 1 nie ma ``stop``: rodzaju jego Zatrzymania nie zgadujemy.
         stop_kind=stop["kind"] if (stop := record.get("stop")) else None,
     )
 

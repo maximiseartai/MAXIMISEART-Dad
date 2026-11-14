@@ -64,7 +64,8 @@ extend = "../pyproject.toml"
 # Zegar ścienny ma jednego właściciela (rozliczenia/wall_clock.py, prawo właściciela w pyproject.toml), bo
 # datetime.now(timezone.utc).date() przechodzi DTZ, a daje dzień UTC zamiast dnia taty. Tu noqa nie wystarcza:
 # tests/test_zakazy_ruff.py uruchamia te zakazy (lista CLOCK, tam dopisz nowy) na src/ z --ignore-noqa. Co zakaz
-# po nazwie łapie, a co zostaje przeglądowi, mówi docstring rozliczenia/wall_clock.py.
+# po nazwie łapie, mówi docstring rozliczenia/wall_clock.py, a znane postacie, które go omijają, są próbkami
+# ZNANE_LUKI_ZEGARA w tests/test_zakazy_ruff.py.
 "datetime.datetime.now".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki"
 "datetime.datetime.today".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki"
 "datetime.datetime.utcnow".msg = "teraz i dzień taty daje tylko rozliczenia.wall_clock: utc_now() to chwila do zapisu i porównania, local_now() chwila w strefie taty, dad_today() dzień taty (nie utc_now().date(): od północy do 1:00, latem do 2:00, w UTC jest jeszcze wczoraj), epoch_s() sekundy od epoki"

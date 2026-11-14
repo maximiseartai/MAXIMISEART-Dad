@@ -8,6 +8,8 @@ Metryk oraz kolejność sprawdzeń Diagnozy. Dokładne teksty i listy sprawdzeń
 from __future__ import annotations
 
 from collections.abc import Callable
+import copy
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 import threading
@@ -56,14 +58,17 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
 
 
 _GOTOWE_URUCHOMIENIE: Final = (
-    "import threading\nimport types\nimport typing\nfrom typing import Any\n\n"
+    "import contextlib\nimport threading\nimport types\nimport typing\nfrom typing import Any\n\n"
     "from rozliczenia.centrum import process_kind, runs\n"
     "from rozliczenia.centrum.process_kind import PreparedRun\n\ngotowe = object.__new__(PreparedRun)\n\n\n"
     "class Bez:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
+    "class Polyka:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n"
+    "        with contextlib.suppress(TypeError):\n            super().__init_subclass__(**kwargs)\n\n\n"
 )
-# Postacie podklasy, którym odmawia już jej utworzenie (``__init_subclass__``; przegląd #1680, runda 2: nazwa
-# przypisana poza importem i type(gotowe) przechodziły ruff, mypy z type: ignore i sprawdzenie katalogu
-# w tests/test_granice_importow.py).
+# Postacie podklasy, którym odmawia jej utworzenie: metaklasa PreparedRun (client_data.WithoutSubclasses) przy każdej
+# kolejności baz (przegląd #1680, runda 2: nazwa przypisana poza importem i type(gotowe) przechodziły ruff, mypy
+# z type: ignore i sprawdzenie katalogu w tests/test_granice_importow.py; przegląd #1725, runda 2: wcześniejsza baza
+# w MRO decydowała, czy odmowa PreparedRun.__init_subclass__ dochodzi).
 PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "nazwa z importu": "class Moja(PreparedRun[Any, Any]):\n    pass\n",
     "nazwa z importu pod aliasem": "from rozliczenia.centrum.process_kind import PreparedRun as _G\n\n\nclass Moja(_G):\n    pass\n",
@@ -72,6 +77,18 @@ PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "type(gotowe)": "class Moja(type(gotowe)):\n    pass\n",
     "type z trzema argumentami": 'Moja = type("Moja", (PreparedRun,), {"conduct": lambda self, interlocutor: None})\n',
     "types.new_class": 'Moja = types.new_class("Moja", (PreparedRun[Any, Any],))\n',
+    "baza przed PreparedRun bez super()": "ZLOZ = PreparedRun\n\n\nclass Moja(Bez, ZLOZ[Any, Any]):\n    pass\n",
+    "baza przed PreparedRun połyka TypeError": "ZLOZ = PreparedRun\n\n\nclass Moja(Polyka, ZLOZ[Any, Any]):\n    pass\n",
+    "type(gotowe) z bazą przed nim bez super()": "class Moja(Bez, type(gotowe)):\n    pass\n",
+    "type() z bazą przed PreparedRun": 'Moja = type("Moja", (Bez, PreparedRun), {})\n',
+    "types.new_class z metaklasą type w kwds": 'Moja = types.new_class("Moja", (Bez, PreparedRun[Any, Any]), {"metaclass": type})\n',
+    "type.__new__ z metaklasą type": 'Moja = type.__new__(type, "Moja", (Bez, PreparedRun), {})\n',
+    "type.__new__ z metaklasą PreparedRun bez bazy przed nim": 'Moja = type.__new__(type(PreparedRun), "Moja", (PreparedRun,), {})\n',
+    "__init_subclass__ PreparedRun podmienione w biegu": (
+        "STARE = PreparedRun.__dict__['__init_subclass__']\n"
+        "setattr(PreparedRun, '__init_subclass__', classmethod(lambda cls, **kwargs: None))\n"
+        'try:\n    Moja = type("Moja", (PreparedRun,), {})\nfinally:\n    setattr(PreparedRun, "__init_subclass__", STARE)\n'
+    ),
 }
 
 
@@ -106,20 +123,29 @@ def test_typ_uruchomienia_gotowego_do_startu_w_adnotacji_nie_jest_podklasa(tmp_p
 
 
 _WLASNE: Final = "    def conduct(self, interlocutor: object) -> str:\n        return 'własne'\n"
-# Obiekty, które utworzenie podklasy przepuszcza, bo przed PreparedRun w MRO stoi baza z własnym __init_subclass__
-# (przegląd #1698, runda 1), albo które nie są podklasą: każdemu odmawia start Uruchomienia w Centrum.
+# Podklasa z własnym conduct zrobiona z pominięciem __new__ metaklasy PreparedRun, więc powstaje za bazą, której
+# __init_subclass__ nie dopuszcza do odmowy PreparedRun.__init_subclass__.
+_OMIJA_METAKLASE: Final = (
+    'Moja = type.__new__(type(PreparedRun), "Moja", (Bez, PreparedRun), {"conduct": lambda self, interlocutor: "własne"})\n'
+)
+# Obiekty, które utworzenie podklasy przepuszcza, bo klasa powstaje z pominięciem __new__ metaklasy PreparedRun
+# (przegląd #1698, runda 1; sonda #1725, runda 2), albo które nie są podklasą: każdemu odmawia start Uruchomienia
+# w Centrum.
 URUCHOMIENIA_OBOK_KATALOGU: Final = {
-    "klasa z bazą przed PreparedRun": f"class Moja(Bez, PreparedRun[Any, Any]):\n{_WLASNE}\n\nuruchomienie = object.__new__(Moja)\n",
-    "type() z bazą przed PreparedRun": 'uruchomienie = object.__new__(type("Moja", (Bez, PreparedRun), {}))\n',
-    "type.__new__ wprost": 'uruchomienie = object.__new__(type.__new__(type, "Moja", (Bez, PreparedRun), {}))\n',
-    "types.new_class z metaklasą w kwds": (
-        'Moja = types.new_class("Moja", (Bez, PreparedRun[Any, Any]), {"metaclass": type})\n'
+    "type.__new__ z metaklasą PreparedRun": _OMIJA_METAKLASE + "uruchomienie = object.__new__(Moja)\n",
+    "metaklasa pochodna wołająca type.__new__": (
+        'Meta: Any = type("Meta", (type(PreparedRun),), {"__new__": type.__new__})\n'
+        'uruchomienie = object.__new__(Meta("Moja", (Bez, PreparedRun), {}))\n'
+    ),
+    "__new__ metaklasy podmienione w biegu": (
+        "META = type(PreparedRun)\nSTARE = META.__dict__['__new__']\nsetattr(META, '__new__', type.__new__)\n"
+        'try:\n    Moja = types.new_class("Moja", (Bez, PreparedRun))\nfinally:\n    setattr(META, "__new__", STARE)\n'
         "uruchomienie = object.__new__(Moja)\n"
     ),
-    "metaklasa pochodna z własnym __new__": (
-        "class Meta(type):\n    def __new__(mcls, name, bases, namespace, **kwargs):\n"
-        "        return type.__new__(mcls, name, bases, namespace)\n\n\n"
-        "class Moja(Bez, PreparedRun[Any, Any], metaclass=Meta):\n    pass\n\n\nuruchomienie = object.__new__(Moja)\n"
+    "__bases__ przypisane klasie o układzie PreparedRun": (
+        "class Blizniak(typing.Generic[*PreparedRun.__parameters__]):\n    __slots__ = PreparedRun.__slots__\n\n\n"
+        f"class Moja(Blizniak):\n    __slots__ = ()\n\n{_WLASNE}\n\n"
+        "Moja.__bases__ = (PreparedRun,)\nuruchomienie = object.__new__(Moja)\n"
     ),
     "__class__ obcej klasy o tych samych slotach": (
         f"class Moja(typing.Generic[*PreparedRun.__parameters__]):\n    __slots__ = PreparedRun.__slots__\n\n{_WLASNE}\n\n"
@@ -140,13 +166,14 @@ def test_uruchomienie_w_centrum_startuje_tylko_z_typu_uruchomienia_gotowego_do_s
         modul(plik)
 
 
-# Podklasa z własnym conduct o układzie PreparedRun, więc obiekt z katalogu przyjmuje ją przez __class__ (przegląd #1698,
-# runda 2: podmiana po przyjęciu w runs.Run.__init__, przed conduct w Run.work).
+# Podklasa z własnym conduct o układzie PreparedRun, zrobiona z pominięciem __new__ metaklasy, więc obiekt z katalogu
+# przyjmuje ją przez __class__ (przegląd #1698, runda 2: podmiana po przyjęciu w runs.Run.__init__, przed conduct
+# w Run.work).
 _PODMIANA: Final = (
     "WOLANE: list[str] = []\n\n\nclass BezSlotow:\n    __slots__ = ()\n\n"
     "    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
-    "class Moja(BezSlotow, PreparedRun[Any, Any]):\n    __slots__ = ()\n\n"
-    "    def conduct(self, interlocutor: object) -> str:\n        WOLANE.append('własne')\n        return 'własne'\n"
+    "def wlasne(self: object, interlocutor: object) -> str:\n    WOLANE.append('własne')\n    return 'własne'\n\n\n"
+    'Moja = type.__new__(type(PreparedRun), "Moja", (BezSlotow, PreparedRun), {"__slots__": (), "conduct": wlasne})\n'
 )
 
 
@@ -263,12 +290,10 @@ _UDAJE_START: Final = (
 # własne conduct biegnie mimo niej.
 ZNANE_LUKI_STARTU: Final = {
     "nowe miejsce użycia: conduct podklasy wołany bez startable": (
-        f"class Moja(Bez, PreparedRun[Any, Any]):\n{_WLASNE}\n\n"
-        "assert object.__new__(Moja).conduct(None) == 'własne'\n"
+        _OMIJA_METAKLASE + "assert object.__new__(Moja).conduct(None) == 'własne'\n"
     ),
     "podmiana w biegu: nazwa PreparedRun w process_kind": (
-        f"class Moja(Bez, PreparedRun[Any, Any]):\n{_WLASNE}\n\n"
-        "process_kind.PreparedRun = Moja\ntry:\n    assert process_kind.startable(object.__new__(Moja)).conduct(None) == 'własne'\n"
+        _OMIJA_METAKLASE + "process_kind.PreparedRun = Moja\ntry:\n    assert process_kind.startable(object.__new__(Moja)).conduct(None) == 'własne'\n"
         "finally:\n    process_kind.PreparedRun = PreparedRun\n"
     ),
 }
@@ -286,6 +311,25 @@ def test_znane_luki_odmowy_startu_uruchomienia_obok_katalogu(tmp_path: Path) -> 
             zgloszenia[opis] = []
 
     assert_znane_luki(zgloszenia, "tests/test_katalog_procesow.py (ZNANE_LUKI_STARTU)")
+
+
+KOPIE_PRZEZ_REPLACE: Final = {
+    "dataclasses.replace": lambda gotowe: dataclasses.replace(gotowe, period="2026-11"),
+    "copy.replace": lambda gotowe: copy.replace(gotowe, period="2026-11"),
+}
+
+
+@pytest.mark.parametrize("kopia", KOPIE_PRZEZ_REPLACE.values(), ids=KOPIE_PRZEZ_REPLACE.keys())
+def test_kopia_gotowego_uruchomienia_przez_replace_rzuca_takze_obok_mypy(kopia: Callable[[Any], object]) -> None:
+    """Kopię ``PreparedRun`` przez ``replace`` odrzuca mypy, a z ``# type: ignore[…]`` rzuca Python, bo to nie
+    dataclassa i nie ma ``__replace__``, więc ta postać nie jest próbką ``ZNANE_LUKI_KATALOGU``
+    (``tests/test_granice_importow.py``). Wartość bez pól wystarcza, bo ``replace`` odmawia po typie, zanim przeczyta
+    pole."""
+
+    gotowe: Any = object.__new__(PreparedRun)
+
+    with pytest.raises(TypeError, match=r"replace\(\)"):
+        kopia(gotowe)
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:

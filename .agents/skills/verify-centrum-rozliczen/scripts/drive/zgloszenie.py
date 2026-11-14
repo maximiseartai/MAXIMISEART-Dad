@@ -31,7 +31,7 @@ from drive.common import (
     start_centrum,
     stop_banner,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from drive.teksty import FOR_KEY, NOT_FOUND, TEMPLATE_MISSING
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
 from atrapy.pliki_taty import DAD_CASES_FILE, REPORT_KEY_FILE
@@ -206,7 +206,7 @@ def drive(run: Run, page: Page) -> None:
     advance_clock(run, 1, "the queue of the skrzynka tries again past its retry")
     expect(page.get_by_role("status").filter(has_text=SENT)).to_be_visible()
     expect(page.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_have_count(0)
-    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "the delivered Zgłoszenie leaves the queue")
+    until(lambda: _queued_reports(run, leaving=True) == [], "the delivered Zgłoszenie leaves the queue")
     [issue] = reports(run)
     number = issue["number"]
     (run.evidence / "api" / "zgloszenie-skrzynka.json").write_text(
@@ -246,7 +246,7 @@ def drive(run: Run, page: Page) -> None:
     expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
     expect(diagnosis.get_by_role("status").filter(has_text=WAITING)).to_be_visible()
     expect(page.get_by_role("button", name="Wyślij do Maksa", exact=True)).to_have_count(0)
-    run.wait_for(
+    until(
         lambda: reports(run)[0].get("comments", []) != [], "the return of the problem reaches the open Zgłoszenie with no click"
     )
     issues = reports(run)
@@ -279,10 +279,10 @@ def drive(run: Run, page: Page) -> None:
 def _logs_sent(run: Run, run_id: str) -> None:
     """Waits until the Logi of Uruchomienie ``run_id`` left the queue, so the next Diagnoza links their comment."""
 
-    run.wait_for(
+    until(
         lambda: not queued(run, "logi-uruchomienia", run_id, leaving=True),
         "with the key the Logi of this Uruchomienie reach the skrzynka",
-        timeout_s=Budget.BACKGROUND,
+        Budget.BACKGROUND,
     )
 
 
@@ -435,14 +435,14 @@ def _rejected_report(run: Run, page: Page, box: Path, config: Path) -> None:
     run.step(FEATURE, "zgloszenie-odrzucone-po-starcie")
     close_centrum(run, page)
     start_centrum(run, "zgloszenie-start-po-odrzuceniu")
-    run.wait_for(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", timeout_s=Budget.WORK)
+    until(lambda: _queued_reports(run, leaving=True) == [], "at the next start the queue tries the rejected Zgłoszenie again", Budget.WORK)
     issues = reports(run)
     run.check(
         len(issues) == 4 and (issues[-1]["title"], issues[-1]["body"]) == (title, body),
         "once the skrzynka takes it, the Zgłoszenie is exactly the preview",
     )
     sent_id = f"zgloszenie-{issues[-1]['number']}-wyslana"
-    run.wait_for(
+    until(
         lambda: sent_id in _notification_ids(run, "zgloszenie-odrzucone-po-starcie"),
         "Powiadomienia show the Zgłoszenie the skrzynka took after the start as sent",
     )
