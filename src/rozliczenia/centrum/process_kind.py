@@ -448,9 +448,9 @@ pełną ścieżkę), tak samo ``_Catalog``.
 
 ``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
 plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Konstruktor ``PreparedRun`` poza ``catalog.py``
-łapie po nazwie ``PreparedRun``, nazwie z importu albo atrybucie ``tests/test_granice_importow.py``, a podklasie odmawia
-``PreparedRun.__init_subclass__``. Granice tych mechanizmów pokazują tam próbki ``ZNANE_LUKI_KATALOGU``, każda za
-klasą nazwaną w swojej nazwie."""
+łapie po nazwie ``PreparedRun``, nazwie z importu albo atrybucie ``tests/test_granice_importow.py``, a obiektowi
+podklasy start w Centrum, w Skrypcie dla maszyn i w odtworzeniu z Logów odmawia ``startable``. Granice tych mechanizmów
+pokazują tam próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie."""
 
 
 _NO_SUBCLASSES: Final = (
@@ -470,13 +470,14 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
 
-    Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Regułę trzyma
-    kontrola w chwili użycia (``startable``: typ dokładnie ``PreparedRun``, bez względu na to, jak powstała klasa
-    obiektu): przed ``conduct`` w każdym miejscu, które go woła (``runs.Run.work``, Skrypt dla maszyn
-    ``tools/uruchom_proces.py``, odtworzenie z Logów ``tools/lib/odtworzenie.py``), i na początku samego ``conduct``.
-    ``__init_subclass__`` i ``startable`` w ``runs.Run.__init__`` tylko mówią tę regułę wcześniej: przy tworzeniu
-    podklasy i przy starcie w Centrum. Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Znane luki kontroli są
-    próbkami ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
+    Podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu, więc Uruchomienie biegnie tylko
+    z obiektu typu dokładnie ``PreparedRun``. Trzyma to kontrola w chwili użycia (``startable``, bez względu na to, jak
+    powstała klasa obiektu): przed ``conduct`` w ``runs.Run.work``, w Skrypcie dla maszyn (``tools/uruchom_proces.py``)
+    i w odtworzeniu z Logów (``tools/lib/odtworzenie.py``) oraz na początku samego ``conduct``. ``__init_subclass__`` i
+    ``startable`` w ``runs.Run.__init__`` tylko mówią tę regułę wcześniej: przy tworzeniu podklasy i przy starcie w
+    Centrum. Podklasa, przed którą stoi baza z ``__init_subclass__`` bez ``super()``, powstaje (próbki
+    ``ZNANE_LUKI_KATALOGU`` w ``tests/test_granice_importow.py``). Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi.
+    Znane luki kontroli są próbkami ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
     """
 
     __slots__ = (

@@ -24,7 +24,7 @@ nie wczytują FastAPI, gospodarza Uruchomień, Diagnozy, Konfiguracji, Tablicy o
 moduły ``src/``, importem w funkcji i w ``TYPE_CHECKING``: czytają je Skrypt dla maszyn, odtworzenie i wersje
 komentarza bez serwera, a moduły Centrum, które pytają katalog, nie tworzą z nim cyklu. Wpisy procesów importuje tylko
 katalog, a ``PreparedRun`` składa tylko ``Catalog.prepared``, także kopią (``replace`` z ``metrics=`` albo
-z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
+z wyrażenia, którego tekst ma ``prepared`` bez względu na wielkość liter) i podklasą z bazą nazwaną ``PreparedRun``, w ``src/``, narzędziach, testach i skryptach skilli: rdzeń,
 plik metryk i silnik procesu biorą się z jednego miejsca, które test podmienia (``Catalog.with_metrics``,
 ``Catalog.steered``, ``Catalog.with_engine``). Eksplorator Uruchomień daje swój silnik przez ``Catalog.with_engine``, więc
 prawdziwe ``PreparedRun.conduct`` biegnie w każdym harmonogramie (przegląd #1127: podklasa z własnym ``conduct`` je
@@ -686,9 +686,12 @@ def _prepared_run_builds(tree: ast.AST) -> list[tuple[int, str]]:
     ``prepared`` bez względu na wielkość liter (``self._prepared``, ``PREPARED``). Konstruktor, podklasę i ``replace`` test rozpoznaje także pod nazwą z importu (``import … as``).
 
     Kopię z każdym polem poza ``metrics=`` (``kind=``, ``engine=``…) test rozpoznaje tylko po tekście kopiowanego
-    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Podklasie pod każdą nazwą odmawia w biegu
-    ``PreparedRun.__init_subclass__`` (``tests/test_katalog_procesow.py``), a granice tego sprawdzenia, mypy i ruff
-    pokazują próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie.
+    wyrażenia, bo te pola mają też inne dataclassy (``stops.StoppedRun``). Podklasa pod inną nazwą powstaje, gdy
+    wcześniejsza baza nie woła ``super()`` w swoim ``__init_subclass__`` i przesłania odmowę
+    ``PreparedRun.__init_subclass__``, a obiektowi takiej podklasy start w Centrum, w Skrypcie dla maszyn i w
+    odtworzeniu z Logów odmawia ``startable`` (kontrola dokładnego typu przed ``conduct``,
+    ``tests/test_katalog_procesow.py``). Granice tego sprawdzenia, mypy i ruff pokazują próbki ``ZNANE_LUKI_KATALOGU``,
+    każda za klasą nazwaną w swojej nazwie.
     """
 
     builds = {"PreparedRun"}
@@ -788,6 +791,10 @@ _POLA: typing.Final = (
 _KATALOG: typing.Final = (
     "from typing import Any\n\nfrom rozliczenia.centrum import process_kind\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n"
 )
+_BAZA_BEZ_SUPER: typing.Final = (
+    "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    "class Bez:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
+)
 # Znane luki strażnika katalogu procesów (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który składa albo
 # zmienia ``PreparedRun`` obok ``Catalog.prepared``, a mimo to przechodzi przez ruff, mypy i ``_prepared_run_builds``.
 ZNANE_LUKI_KATALOGU: typing.Final = {
@@ -815,6 +822,10 @@ ZNANE_LUKI_KATALOGU: typing.Final = {
     + "    wynik: PreparedRun[Any, Any] = zloz("
     + _POLA.format(dowod='getattr(process_kind, "_CATA" + "LOG")')
     + ")\n    return wynik\n",
+    "odmowę __init_subclass__ przesłania wcześniejsza baza bez super(): podklasa pod nazwą przypisaną poza importem": _BAZA_BEZ_SUPER
+    + "ZLOZ = PreparedRun\n\n\nclass Moja(Bez, ZLOZ[Any, Any]):  # type: ignore[misc]  # próbka\n    pass\n",
+    "odmowę __init_subclass__ przesłania wcześniejsza baza bez super(): podklasa type(gotowe)": _BAZA_BEZ_SUPER
+    + "gotowe: PreparedRun[Any, Any] = object.__new__(PreparedRun)\n\n\nclass Moja(Bez, type(gotowe)):  # type: ignore[misc]  # próbka\n    pass\n",
     "tylko kopia przez replace: copy.copy gotowego Uruchomienia": "import copy\nfrom typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
     + _GOTOWE
     + "    return copy.copy(gotowe)\n",
@@ -2083,10 +2094,10 @@ def _tests_imports(tree: ast.Module) -> list[tuple[int, str]]:
     pierwszym argumencie; i ``sys.path.insert`` albo ``sys.path.append`` ze stałym napisem, którego częścią ścieżki jest
     ``tests`` (``ROOT / "tests" / "fixtures"``), po którym ``import okno_w_procesie`` sięgnąłby ``tests/fixtures``.
 
-    Pakiet ``importlib`` i moduły importu (``runpy``, ``builtins.__import__`` i reszta ``DYNAMIC_IMPORT`` w
-    ``tests/test_zakazy_ruff.py``) kod spoza ``tests/`` bierze tylko przez ``tools/lib/import_dynamiczny.py`` (ruff
-    ``TID251``), który odmawia modułu z ``tests/``. Granice tego sprawdzenia i ruff pokazują próbki
-    ``ZNANE_LUKI_TESTOW``, każda za klasą nazwaną w swojej nazwie."""
+    Pakiet ``importlib`` poza ``IMPORTLIB_DOZWOLONE`` i moduły importu (``runpy``, ``builtins.__import__`` i reszta
+    ``DYNAMIC_IMPORT`` w ``tests/test_zakazy_ruff.py``) kod spoza ``tests/`` bierze tylko przez
+    ``tools/lib/import_dynamiczny.py`` (ruff ``TID251``), który odmawia modułu z ``tests/``. Granice tego sprawdzenia i
+    ruff pokazują próbki ``ZNANE_LUKI_TESTOW``, każda za klasą nazwaną w swojej nazwie."""
 
     found = []
     for node in wezly(tree):
