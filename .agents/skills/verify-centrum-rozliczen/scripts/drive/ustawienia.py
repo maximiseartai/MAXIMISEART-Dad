@@ -34,7 +34,7 @@ from drive.common import (
     settle,
     unreadable,
 )
-from drive.waiting import Budget
+from drive.waiting import Budget, until
 from harness import INBOX_ADDRESS, INBOX_PASSWORD, File, Log, Switch
 
 
@@ -77,6 +77,7 @@ def drive(run: Run, page: Page) -> None:
     page.route("**/api/settings/*/choose", lambda route: held.append(route))
     try:
         folder_picker.dblclick()
+        until(lambda: len(held) >= 1, "the double click on Wskaż Folder okresów asks for a picker", page=page)
         page.wait_for_timeout(REPEAT_SETTLE_MS)
         run.check(len(held) == 1, f"a double click on Wskaż Folder okresów opens one picker ({len(held)} requests)")
         expect(folder_picker).to_contain_text("Czekam na wybór…")
@@ -341,6 +342,7 @@ def _failure_after_window(run: Run, page: Page) -> None:
     page.route(theme, lambda route: held.append(route))
     try:
         themes.get_by_role("button", name="Jasny", exact=True).click()
+        until(lambda: len(held) >= 1, "the click on Jasny saves Motyw", page=page)
         page.wait_for_timeout(REPEAT_SETTLE_MS)
         run.check(len(held) == 1, f"the save of Motyw waits for its answer ({len(held)} requests, held)")
         close_settings(page)
@@ -370,6 +372,7 @@ def _failure_keeps_next_choice(run: Run, page: Page) -> None:
     try:
         for click in ("Jasny", "Ciemny", "Jasny"):
             themes.get_by_role("button", name=click, exact=True).click()
+        until(lambda: len(held) >= 3, "each click on Motyw saves it", page=page)
         page.wait_for_timeout(REPEAT_SETTLE_MS)
         run.check(len(held) == 3, f"each click on Motyw is a save that waits for its answer ({len(held)} requests, held)")
         held.pop(1).fulfill(status=500, body="")
@@ -791,16 +794,19 @@ def _reminders(run: Run, page: Page) -> None:
     run.wait_for(lambda: reminders.exists() and "'12:00'" in read_text(reminders), "the file has the new morning")
     switch.click()
     expect(switch).to_be_checked()
-    settings = run.api("/api/settings", "ustawienia-przypomnienia")
-    shown = settings["reminders"]
-    run.check(
-        isinstance(shown, dict)
-        and shown["enabled"] is True
-        and shown["since"] is not None
-        and shown["morning"] == {"start": "08:00", "end": "12:00"}
-        and shown["footer"] == "Pozdrawiam\nTata Testowy",
-        "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer",
-    )
+
+    def saved() -> bool:
+        shown = run.api("/api/settings", "ustawienia-przypomnienia")["reminders"]
+        return (
+            isinstance(shown, dict)
+            and shown["enabled"] is True
+            and shown["since"] is not None
+            and shown["morning"] == {"start": "08:00", "end": "12:00"}
+            and shown["footer"] == "Pozdrawiam\nTata Testowy"
+        )
+
+    # The switch shows its state at once, before its save reaches Centrum.
+    until(saved, "the switch and the form are saved: on since today, morning 08:00–12:00, Dad's footer")
     expect(window.get_by_role("listitem", name="Przypomnienia o raporcie")).to_contain_text("Idą od ")
     run.capture(page, "362-ustawienia-przypomnienia", full_page=False)
 
@@ -822,11 +828,12 @@ def _reminders(run: Run, page: Page) -> None:
     # pora, and a later feature of the same run (aktualizacja) expects config untouched by anything but itself.
     switch.click()
     expect(switch).not_to_be_checked()
-    after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
-    run.check(
-        isinstance(after, dict) and after["enabled"] is False,
-        "the step switches the reminders off again, so their work leaves config alone for the rest of the run",
-    )
+
+    def switched_off() -> bool:
+        after = run.api("/api/settings", "ustawienia-przypomnienia-wylaczone")["reminders"]
+        return isinstance(after, dict) and after["enabled"] is False
+
+    until(switched_off, "the step switches the reminders off again, so their work leaves config alone for the rest of the run")
     close_settings(page)
 
 

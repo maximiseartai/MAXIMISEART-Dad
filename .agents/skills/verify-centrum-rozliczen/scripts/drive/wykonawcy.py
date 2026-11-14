@@ -19,6 +19,7 @@ from drive.common import (
     read_text,
     settings_window,
 )
+from drive.waiting import until
 
 FEATURE = "wykonawcy"
 NARROW: ViewportSize = {"width": 420, "height": 860}
@@ -237,11 +238,13 @@ def drive(run: Run, page: Page) -> None:
     form.get_by_role("button", name="Anuluj").click()
     _row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}").click()
     expect(_row(window, C).get_by_role("switch", name=f"Przypomnienia: {C}")).not_to_be_checked()
-    switched = _workers(run, "wykonawcy-przelaczniki")
-    run.check(
-        (switched[D]["active"], switched[C]["reminders"]) == (False, False),
-        "Nieaktywny and Przypomnienia are saved at once, without Zapisz",
-    )
+
+    def switched() -> bool:
+        workers = _workers(run, "wykonawcy-przelaczniki")
+        return (workers[D]["active"], workers[C]["reminders"]) == (False, False)
+
+    # A switch shows its state at once, before its save reaches Centrum.
+    until(switched, "Nieaktywny and Przypomnienia are saved at once, without Zapisz")
     names = window.get_by_role("list", name="Wykonawcy").get_by_role("listitem").evaluate_all(
         "items => items.map((item) => item.getAttribute('aria-label'))"
     )

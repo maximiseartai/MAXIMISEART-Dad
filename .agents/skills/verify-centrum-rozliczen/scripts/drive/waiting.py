@@ -15,7 +15,7 @@ import json
 import time
 from typing import TypeVar
 
-from playwright.sync_api import Expect
+from playwright.sync_api import Expect, Page
 import yaml
 
 # A file of the run in a state the server or the harness has not finished: missing, refused for a moment (Windows,
@@ -87,13 +87,16 @@ class TimedOut(Exception):
 T = TypeVar("T")
 
 
-def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN) -> T:
+def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN, *, page: Page | None = None) -> T:
     """Read ``ready`` until it gives something other than ``None`` or ``False``, and return that; ``what`` names it.
 
     An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
     ``budget`` (a number of seconds is a limit that a call of ``Run.wait_for`` still names itself) the wait fails with
     ``TimedOut``, naming the error of ``NOT_YET`` the last read raised, if it raised one, so a file that stays half
     written is a failure that names its state.
+
+    A wait on what ``page`` sends waits inside Playwright, whose sync client delivers the page's events (a request, a
+    route) only during its own calls: after ``time.sleep`` their record stays as it was (#1682).
     """
 
     limit_s = budget.value if isinstance(budget, Budget) else budget
@@ -110,4 +113,7 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
         if time.monotonic() > deadline:
             state = "" if last is None else f"; the last read was not ready: {type(last).__name__}: {last}"
             raise TimedOut(f"timed out: {what}{state}") from last
-        time.sleep(POLL_S)
+        if page is None:
+            time.sleep(POLL_S)
+        else:
+            page.wait_for_timeout(POLL_S * 1000)
