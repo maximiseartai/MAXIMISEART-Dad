@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from types import ModuleType
-from typing import Final
+from typing import Any, Final
 
 import pytest
 
@@ -273,8 +273,9 @@ def _naped_funkcji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, funkcja: str
     return module
 
 
-def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, napedy: dict[str, ModuleType], funkcje: list[str]) -> dict[str, str]:
-    """Sekcje z biegu ``funkcje`` po kolei, jak ``drive_centrum.main``, z napędami ``napedy`` zamiast prawdziwych."""
+def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, napedy: dict[str, ModuleType], funkcje: list[str]) -> dict[str, Any]:
+    """Sekcje z biegu ``funkcje`` po kolei (``drive_centrum.Section``), jak ``drive_centrum.main``, z napędami
+    ``napedy`` zamiast prawdziwych."""
 
     for funkcja, modul_napedu in napedy.items():
         monkeypatch.setitem(naped.MODULES, funkcja, modul_napedu)
@@ -287,7 +288,7 @@ def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, na
     for funkcja in funkcje:
         if funkcja not in driven:
             naped.drive(run, None, funkcja, driven, {}, owners)
-    sekcje: dict[str, str] = naped.sections(run.calls, owners, driven)
+    sekcje: dict[str, Any] = naped.sections(run.calls, owners, driven)
     return sekcje
 
 
@@ -337,8 +338,8 @@ def test_bieg_konczy_sie_drive_fail_gdy_sekcja_z_biegu_rozni_sie_od_pliku_mapy(
 ) -> None:
     """Sekcja z biegu to kroki napędu, każdy raz na miejsce i nazwę z biegu (pomocnik woła tu ``run.step`` z nazwą z
     parametru), a pod każdym miejsca sprawdzeń, które przebiegły pod nim, każde raz, w kolejności pierwszego wywołania,
-    z komunikatem z wywołania w kodzie, bez sprawdzeń wspólnego pomocnika z ``drive/common.py``; trafia do dowodu, a bieg
-    kończy się porażką z różnicą, gdy plik mapy ma inną."""
+    z komunikatem z wywołania w kodzie; sprawdzenia wspólnego pomocnika z ``drive/common.py`` są policzone poza sekcją.
+    Sekcja i to, co poza nią, trafia do dowodu, a bieg kończy się porażką z różnicą, gdy plik mapy ma inną sekcję."""
 
     mapa = tmp_path / "features"
     mapa.mkdir()
@@ -354,7 +355,10 @@ def test_bieg_konczy_sie_drive_fail_gdy_sekcja_z_biegu_rozni_sie_od_pliku_mapy(
     else:
         wynik = ("bez porażki", False, False)
 
-    assert sekcje == {"okno-ustawien": SEKCJA_PROBY}
+    assert sekcje == {"okno-ustawien": (SEKCJA_PROBY, {"a helper the drives share (drive.common)": 2})}
+    assert (tmp_path / "bieg-0" / "dowod" / "sekcje-z-biegu" / "poza-sekcja.txt").read_text(encoding="utf-8") == (
+        "okno-ustawien | a helper the drives share (drive.common) | 2\n"
+    )
     assert (tmp_path / "bieg-0" / "dowod" / "sekcje-z-biegu" / "okno-ustawien.md").read_bytes() == SEKCJA_PROBY.encode("utf-8")
     assert wynik == (("porażka", True, True) if rozni_sie else ("bez porażki", False, False))
 
@@ -370,7 +374,40 @@ def test_sekcja_z_biegu_jest_ta_sama_gdy_ramka_nazywa_plik_sciezka_windows(
 
     na_windows = _bieg(naped, monkeypatch, tmp_path, {"okno-ustawien": modul_napedu}, ["okno-ustawien"])
 
-    assert na_windows == {"okno-ustawien": SEKCJA_PROBY}
+    assert na_windows["okno-ustawien"].text == SEKCJA_PROBY
+
+
+WSPOLNY_Z_KROKIEM: Final = '''\
+def krok_wspolny(run, funkcja):
+    run.step(funkcja, "ze-wspolnego")
+'''
+NAPED_Z_KROKIEM_ZE_WSPOLNEGO: Final = '''\
+from drive.common import krok_wspolny
+
+
+def drive(run, page):
+    run.step("okno-ustawien", "pierwszy")
+    krok_wspolny(run, "okno-ustawien")
+    run.check(True, "po kroku ze wspólnego")
+'''
+
+
+def test_krok_ze_wspolnego_pomocnika_jest_krokiem_sekcji(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kroki sekcji to linie ``STEP`` funkcji, z którego modułu by nie biegły: krok ze wspólnego pomocnika
+    ``drive/common.py`` jest w sekcji, a sprawdzenie po nim pod nim (sonda #1845 r2)."""
+
+    _naped_funkcji(monkeypatch, tmp_path, "common", WSPOLNY_Z_KROKIEM)
+    okno = _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", NAPED_Z_KROKIEM_ZE_WSPOLNEGO)
+
+    sekcje = _bieg(naped, monkeypatch, tmp_path, {"okno-ustawien": okno}, ["okno-ustawien"])
+
+    assert [linia for linia in capsys.readouterr().out.splitlines() if linia.startswith("STEP")] == [
+        "STEP okno-ustawien | pierwszy",
+        "STEP okno-ustawien | ze-wspolnego",
+    ]
+    assert sekcje["okno-ustawien"].text.endswith("\n- `pierwszy`.\n- `ze-wspolnego`: po kroku ze wspólnego.\n")
 
 
 NAPED_UZUPELNIENIA: Final = '''\
@@ -413,8 +450,8 @@ def test_kroki_funkcji_z_napedu_innej_naleza_do_niej_przy_kazdym_podziale(
 
     sekcje = _bieg(naped, monkeypatch, tmp_path, napedy, funkcje)
 
-    assert sekcje["uzupelnienie"].endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
-    assert sekcje[przygotowanie].endswith("\n- `przed`.\n- `po`.\n")
+    assert sekcje["uzupelnienie"].text.endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
+    assert sekcje[przygotowanie].text.endswith("\n- `przed`.\n- `po`.\n")
 
 
 def test_krok_funkcji_z_napedu_potrzebnej_posrednio_nalezy_do_niej(
@@ -438,7 +475,7 @@ def test_krok_funkcji_z_napedu_potrzebnej_posrednio_nalezy_do_niej(
 
     sekcje = _bieg(naped, monkeypatch, tmp_path, napedy, ["logi-uruchomienia"])
 
-    assert sekcje["logi-uruchomienia"].endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
+    assert sekcje["logi-uruchomienia"].text.endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
 
 
 @pytest.mark.parametrize(
