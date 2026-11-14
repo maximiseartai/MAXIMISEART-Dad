@@ -43,15 +43,23 @@ W kopii ``tools/na_scalonych_pr.py`` drzewo robocze ma ``tools/`` z innego check
     .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
 
 Z ``--ast`` narzędzie nie uruchamia scenariuszy, tylko porównuje drzewo składni (``ast.dump`` bez pozycji w źródle)
-każdego pliku ``src/`` zmienionego od bazy, po usunięciu każdej instrukcji, która jest samym napisem: docstringów
-modułu, klas i funkcji oraz napisów pod przypisaniem. Komentarzy drzewo nie ma, więc zmiana, która tylko przenosi komentarz do docstringu albo go
-usuwa, daje ``<plik> | TAK SAMO``, a każda inna ``<plik> | RÓŻNICA | <co>``: drzewo składni, plik tylko po jednej
-stronie, plik bez składni Pythona albo plik, który nie jest ``.py`` ani ``.pyi``. Wynik kończy linia
+każdego pliku ``src/`` zmienionego od bazy (``repo.changed``, bez wykrywania przeniesień), po usunięciu każdej
+instrukcji, która jest samym napisem: docstringów modułu, klas i funkcji oraz napisów pod przypisaniem. Parser dostaje
+bajty pliku, więc dekoduje je jak interpreter, według deklaracji kodowania i BOM. Wynik kończy linia
 ``RÓWNOWAŻNOŚĆ OK | <n> plików`` (kod 0), ``RÓWNOWAŻNOŚĆ RÓŻNICA | <pliki>`` (kod 1) albo, bez zmienionego pliku,
-``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików`` (kod 2). Obie strony czyta ten sam Python, więc wynik nie zależy od jego
-wersji. Drzewo bez napisów nie widzi ``__doc__``, a docstringi klas Pydantic i tras trafiają do kontraktu, więc taka
-zmiana sprawdza też eksport kontraktu (``tools/ci/export_openapi.py``) i ``tools/przesun_model.py`` dla plików
-z modelem skilla ``verify-*``.
+``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików`` (kod 2). Obie strony parsuje ten sam Python.
+
+``<plik> | RÓŻNICA | <co>`` dostaje: zmiana drzewa (także ``from __future__``, inna samotna stała niż napis, napis
+jedynej instrukcji ciała zamieniony na ``pass``, inne znaczenie bajtów po zmianie deklaracji kodowania), plik tylko po
+jednej stronie (dodany, usunięty, a przeniesiony po obu), plik bez składni Pythona i plik, który nie jest ``.py`` ani
+``.pyi``. ``TAK SAMO`` dostaje zmiana komentarzy, także dyrektyw narzędzi (``# type:``, ``# noqa``, ``# pragma``,
+``# mypy:``), które nie działają w biegu, a sprawdzają je ruff, mypy i licznik tłumień w ``tools/szybko.py``, zmiana
+samych napisów i sam BOM. Tryb nie widzi trzech rzeczy, które sprawdza osobne polecenie:
+
+- docstringu czytanego w biegu: klasy Pydantic i trasy idą do kontraktu (``tools/ci/export_openapi.py``, potem
+  ``git diff --exit-code frontend/src/api/openapi.json``), a ``__doc__`` w kodzie znajduje ``git grep -n __doc__ -- src``;
+- docstringu definicji z modelem skilla ``verify-*``, którego skrót się zmienia (``tools/przesun_model.py <skill>``);
+- pliku spoza ``src/`` (``git diff --name-only <baza> -- . ':!src'``).
 """
 
 from __future__ import annotations
@@ -434,8 +442,8 @@ def _lone_string(node: ast.AST) -> bool:
     return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
 
 
-def syntax(source: str) -> str:
-    """Drzewo składni ``source`` bez instrukcji, które są samym napisem, i bez pozycji w źródle."""
+def syntax(source: bytes) -> str:
+    """Drzewo składni bajtów ``source`` bez instrukcji, które są samym napisem, i bez pozycji w źródle."""
 
     tree = ast.parse(source)
     for node in ast.walk(tree):
@@ -445,23 +453,21 @@ def syntax(source: str) -> str:
     return ast.dump(tree)
 
 
-def _source(repository: Path, revision: str | None, path: str) -> str | None:
-    """Tekst pliku w commicie ``revision``, a bez niego w drzewie roboczym; ``None``, gdy pliku tam nie ma."""
+def _source(repository: Path, revision: str | None, path: str) -> bytes | None:
+    """Bajty pliku w commicie ``revision``, a bez niego w drzewie roboczym; ``None``, gdy pliku tam nie ma."""
 
     if revision is None:
         file = repository / path
-        return file.read_text(encoding="utf-8") if file.is_file() else None
-    if not repo.succeeds(repository, "cat-file", "-e", f"{revision}:{path}"):
-        return None
-    return repo.git(repository, "show", f"{revision}:{path}")
+        return file.read_bytes() if file.is_file() else None
+    return repo.blob(repository, revision, path)
 
 
-def _syntax_difference(base: str | None, head: str | None) -> str | None:
+def _syntax_difference(base: bytes | None, head: bytes | None) -> str | None:
     if base is None or head is None:
         return "plik tylko w " + ("HEAD" if base is None else "bazie")
     try:
         return None if syntax(base) == syntax(head) else "drzewo składni"
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return "plik bez składni Pythona"
 
 

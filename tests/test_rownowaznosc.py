@@ -635,3 +635,70 @@ def test_tryb_ast_z_glowa_nazywa_plik_po_jednej_stronie_bez_skladni_i_spoza_pyth
         ],
     )
     assert unchanged == (2, ["RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików"])
+
+
+_UTF8 = 'NAZWA = "Centrum rozliczeń"\n'.encode()
+_LATIN1 = b"# -*- coding: latin-1 -*-\n"
+_SAME = (0, ["src/modul.py | TAK SAMO", "RÓWNOWAŻNOŚĆ OK | 1 plików"])
+_DIFFERENT = (1, ["src/modul.py | RÓŻNICA | drzewo składni", "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py"])
+
+
+@pytest.mark.parametrize(
+    ("base", "head", "expected"),
+    [
+        (_LATIN1 + b'X = "\xe9"\n', _LATIN1 + b'X = "\xe8"\n', _DIFFERENT),
+        (_UTF8, _LATIN1 + _UTF8, _DIFFERENT),
+        (_UTF8, b"\xef\xbb\xbf" + _UTF8, _SAME),
+        (b"X: int = 1\n", b"from __future__ import annotations\n\nX: int = 1\n", _DIFFERENT),
+        (b"X = 1\n", b"X = 1\n...\n", _DIFFERENT),
+        (b'def f() -> None:\n    """Nic."""\n', b"def f() -> None:\n    pass\n", _DIFFERENT),
+        (b"import os\nX = os.sep\n", b"import os  # noqa: F401 - powod\nX = os.sep  # type: ignore[misc]  # pragma: no cover\n", _SAME),
+    ],
+    ids=[
+        "stala-pod-deklaracja-latin-1",
+        "dopisana-deklaracja-kodowania",
+        "sam-bom",
+        "from-future",
+        "samotna-stala-inna-niz-napis",
+        "napis-jedynej-instrukcji-na-pass",
+        "dyrektywy-komentarzy",
+    ],
+)
+def test_tryb_ast_czyta_bajty_jak_interpreter_i_widzi_kazda_zmiane_drzewa_poza_napisami(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], base: bytes, head: bytes, expected: tuple[int, list[str]]
+) -> None:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_bytes(base)
+    based = commit(repository, "baza")
+    (repository / "src" / "modul.py").write_bytes(head)
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    working_tree = rownowaznosc.main(["--ast", "--baza", based]), capsys.readouterr().out.splitlines()
+    committed = rownowaznosc.main(["--ast", "--baza", based, "--glowa", commit(repository, "głowa")]), capsys.readouterr().out.splitlines()
+
+    assert (working_tree, committed) == (expected, expected)
+
+
+def test_tryb_ast_bez_glowy_widzi_plik_usuniety_i_przeniesiony_w_drzewie_roboczym(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    (repository / "src" / "stary.py").write_text("STARY = 1\n", encoding="utf-8")
+    base = commit(repository, "pliki bazy")
+    (repository / "src" / "modul.py").unlink()
+    git(repository, "mv", "src/stary.py", "src/nowy.py")
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    code = rownowaznosc.main(["--ast", "--baza", base])
+
+    assert (code, capsys.readouterr().out.splitlines()) == (
+        1,
+        [
+            "src/modul.py | RÓŻNICA | plik tylko w bazie",
+            "src/nowy.py | RÓŻNICA | plik tylko w HEAD",
+            "src/stary.py | RÓŻNICA | plik tylko w bazie",
+            "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py, src/nowy.py, src/stary.py",
+        ],
+    )
