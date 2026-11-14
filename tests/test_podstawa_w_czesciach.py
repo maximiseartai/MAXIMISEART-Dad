@@ -2,17 +2,21 @@
 części jednej liczby n składają się w kolejności na całość, a Centrum przejeżdża w nich każdą funkcję ``all`` raz.
 
 Runner i drive Centrum biorą funkcję z rejestru ``FEATURES`` (``drive/__init__.py``): jej potrzeby przed nią, jej
-zrzuty i dowody, wariant fixture'a i pomiar na wyłączność, a ``Run.capture`` odmawia zrzutu spoza jej listy."""
+zrzuty i dowody, wariant fixture'a i pomiar na wyłączność, a ``Run.capture`` odmawia zrzutu spoza jej listy. Tryb
+„wolny runner” runnera dostają serwer i drive przez środowisko kroków, a serwer w nim bierze zapytania API później."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
+import time
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
@@ -175,6 +179,58 @@ def test_pomiar_trzyma_maszyne_na_wylacznosc_na_fixture_swojego_wariantu_a_inna_
     assert codes == [0, 0]
     assert steps.holds == ["measurement", "run"]
     assert [arguments[arguments.index("--root") + 2 :] for arguments in steps.fixtures] == [["--wariant", "rok-pracy"], []]
+
+
+@pytest.mark.parametrize(("flags", "slow"), [(["--wolny-runner"], True), ([], False)])
+def test_wolny_runner_dostaja_serwer_i_drive_a_bez_flagi_zaden_krok(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flags: list[str], slow: bool
+) -> None:
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    monkeypatch.delenv(runner.SLOW_RUNNER, raising=False)
+    environments: dict[str, bool] = {}
+    _without_processes(runner, monkeypatch)
+    fake_step, fake_launch = runner._run_step, runner._launch
+
+    def step(name: str, arguments: list[str], evidence: Path, timeout: int = 0) -> None:
+        environments[name] = runner.SLOW_RUNNER in skrypt_skilla.child_environment()
+        fake_step(name, arguments, evidence, timeout)
+
+    def launch(root: Path, evidence: Path) -> tuple[None, str]:
+        environments["server"] = runner.SLOW_RUNNER in skrypt_skilla.child_environment()
+        launched: tuple[None, str] = fake_launch(root, evidence)
+        return launched
+
+    monkeypatch.setattr(runner, "_launch", launch)
+    monkeypatch.setattr(runner, "_run_step", step)
+
+    code = runner.main(["--feature", "reguly-ilosci", "--run-dir", str(tmp_path), *flags])
+
+    assert code == 0
+    assert environments == dict.fromkeys(("fixture", "server", "doctor", "drive", "cleanup", "self-test"), slow)
+
+
+def test_serwer_wolnego_runnera_bierze_zapytanie_api_pozniej_a_strone_od_razu(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(CENTRUM / "scripts"))
+    spec = importlib.util.spec_from_file_location("serve_centrum", CENTRUM / "scripts" / "serve_centrum.py")
+    assert spec is not None and spec.loader is not None
+    serve = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(serve)
+    # Opóźnienie dłuższe niż każda odpowiedź samej strony, więc obie strony nierówności nie zależą od obciążenia.
+    monkeypatch.setattr(serve, "API_DELAY_S", 1.0)
+    taken: dict[str, float] = {}
+
+    async def centrum(scope: dict[str, Any], receive: object, send: object) -> None:
+        taken[scope["path"]] = time.monotonic() - started
+
+    async def requests() -> None:
+        for path in ("/api/settings", "/index.html"):
+            await serve._LateApi(centrum)({"type": "http", "path": path}, None, None)
+
+    started = time.monotonic()
+    asyncio.run(requests())
+
+    assert taken["/api/settings"] >= 1.0
+    assert taken["/index.html"] - taken["/api/settings"] < 1.0
 
 
 def test_rejestr_funkcji_centrum_ma_kazdy_numer_zrzutu_w_jednej_funkcji_i_potrzeby_przed_funkcja(
