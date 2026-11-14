@@ -74,7 +74,8 @@ class Stops:
         self, info: runs_contract.RunInfo, stop: Stop | None, *, shown: ReportShown, settings: SettingsSnapshot | None
     ) -> StoppedRun | None:
         """Zatrzymanie zakończonego Uruchomienia; ``shown`` dostaje każdy nowy stan jego Zgłoszenia, a ``settings`` to
-        migawka Ustawień Centrum ze startu dla jego Diagnozy."""
+        migawka Ustawień Centrum ze startu dla jego Diagnozy. Odmowa w Decyzji taty to jego odpowiedź, nie problem:
+        kończy Powtórkę jak wynik bez Zatrzymania."""
 
         if stop is None:
             with self._lock:
@@ -82,7 +83,6 @@ class Stops:
             return None
         named = plain(info, stop)
         if stop.kind == "declined":
-            # Odmowa w Decyzji taty to jego odpowiedź, nie problem: jak wynik bez Zatrzymania kończy Powtórkę.
             with self._lock:
                 self._last.pop(info.process, None)
             return named
@@ -98,22 +98,27 @@ class Stops:
         return replace(named, kind=kind, offer=offer, report=report, settings=settings)
 
     def diagnose(self, stopped: StoppedRun) -> diagnosis_contract.Diagnosis:
+        """Diagnoza Zatrzymania ``stopped`` z podglądem jego Zgłoszenia. Adres Logów w podglądzie to adres sprzed
+        komentarza tej Diagnozy, więc nie zależy od tego, czy kolejka zdążyła go już wysłać."""
+
         report = stopped.report
         if report is None:
             raise refusal.no_diagnosis()
         info = stopped.info
         diagnosis = self._diagnosis_of(info.process, info.period, stopped.settings)
         self._log.diagnosed(process=info.process, period=info.period, cause=diagnosis.explanation.code)
-        # Adres sprzed komentarza tej Diagnozy: podgląd nie zależy od tego, czy kolejka zdążyła go już wysłać.
         logs = self._logs.link(info.id)
         self._log_diagnosis(info.id, diagnosis)
         draft = report.prepare(StopReport(info, stopped.stop, stopped.fingerprint, diagnosis, logs))
         return diagnosis.view(stopped.stop.message, draft)
 
     def _log_diagnosis(self, run_id: str, diagnosis: Diagnosis) -> None:
+        """Diagnoza w Logach Uruchomienia ``run_id``. Logi nie mogą zmienić Diagnozy, więc każdy wyjątek zapisu idzie
+        typem do dziennika Centrum."""
+
         try:
             self._logs.diagnosed(run_id, diagnosis)
-        except Exception as failure:  # Logi nie mogą zmienić Diagnozy: typ wyjątku trafia do dziennika Centrum
+        except Exception as failure:
             self._log.unexpected_failure(failure, where="Diagnoza w Logach Uruchomienia")
 
     def send(self, stopped: StoppedRun) -> diagnosis_contract.ReportState:
