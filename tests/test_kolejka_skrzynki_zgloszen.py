@@ -1710,6 +1710,16 @@ ZNANE_LUKI: Final = {
     object.__setattr__(post, "run_id", 1)
     return kolejka.post(post)
 """,
+    "zapis do __dict__ gotowej wysyłki": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    post.__dict__["parts"] = (komorka,)
+    return kolejka.post(post)
+""",
+    "setattr to_json na klasie Post": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    setattr(Post, "to_json", lambda self: komorka)
+    return kolejka.post(post)
+""",
     "replace z getattr modułu copy": _GOTOWA
     + """import copy
 
