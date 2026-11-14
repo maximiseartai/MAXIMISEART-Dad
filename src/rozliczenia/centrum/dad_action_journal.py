@@ -36,8 +36,8 @@ from rozliczenia.wall_clock import utc_now
 DAD_ACTIONS_FILE: Final = "dzialania-taty.jsonl"
 MAX_ENTRIES: Final = 1000
 _API_OPERATIONS: Final[frozenset[str]] = frozenset(get_args(timing_contract.ApiOperation))
-# Zapytanie, które nie jest przyciskiem taty: szkic Uwagi okno wysyła samo przy pisaniu.
 _NOT_PRESSED: Final[frozenset[timing_contract.ApiOperation]] = frozenset({"draftDadNote"})
+"""Zapytanie, które nie jest przyciskiem taty: szkic Uwagi okno wysyła samo przy pisaniu."""
 
 
 class _Line(RootModel[DadAction]):
@@ -45,20 +45,23 @@ class _Line(RootModel[DadAction]):
 
 
 class DadActionJournal:
-    """Plik ``DAD_ACTIONS_FILE`` w katalogu Logów z działaniami taty, które czekają na Logi następnego Uruchomienia."""
+    """Plik ``DAD_ACTIONS_FILE`` w katalogu Logów z działaniami taty, które czekają na Logi następnego Uruchomienia.
+
+    ``_started`` to start tej pracy Centrum, dopóki nie trafił do pliku z jej pierwszym działaniem.
+    """
 
     def __init__(self, work: CentrumWork) -> None:
         self._path = work.log.directory / DAD_ACTIONS_FILE
         self._log = work.log
         self._lock = threading.Lock()
-        # Start tej pracy Centrum, dopóki nie trafił do pliku z jej pierwszym działaniem.
         self._started: CentrumStarted | None = CentrumStarted(at=utc_now(), action="start Centrum")
 
     async def observe(self, request: Request) -> None:
         """Zależność każdej trasy API: wpis widoku albo przycisku, zanim trasa zacznie działać.
 
         Wpis powstaje przed trasą, więc start Uruchomienia jest w dzienniku przed jego Logami, nawet gdy proces
-        skończy się, zanim przeglądarka dostanie odpowiedź.
+        skończy się, zanim przeglądarka dostanie odpowiedź. Pomiar widoku, którego kontrakt nie przyjmie, nie daje
+        wpisu, a odrzuca go trasa.
         """
 
         operation = getattr(request.scope.get("route"), "operation_id", None)
@@ -69,13 +72,16 @@ class DadActionJournal:
             try:
                 timing = timing_contract.ViewTiming.model_validate_json(await request.body())
             except ValidationError:
-                return  # pomiar, którego kontrakt nie przyjmie, trasa i tak odrzuci
+                return
             self._add(ViewOpened(at=at, action="widok", page=timing.page, kind=timing.kind))
         elif _is_api_operation(operation) and operation not in _NOT_PRESSED:
             self._add(_pressed(at, operation, await request.body()))
 
     def take(self) -> DadActions:
-        """Wszystkie wpisy z pliku dla Logów Uruchomienia; plik zostaje pusty, a następne Logi mają tylko nowsze wpisy."""
+        """Wszystkie wpisy z pliku dla Logów Uruchomienia; plik zostaje pusty, a następne Logi mają tylko nowsze wpisy.
+
+        Plik, którego nie da się opróżnić, da te same wpisy także następnym Logom: lepiej dwa razy niż wcale.
+        """
 
         with self._lock:
             try:
@@ -88,7 +94,6 @@ class DadActionJournal:
             try:
                 replace_atomically(self._path, "")
             except OSError as failure:
-                # Plik, którego nie da się opróżnić, da te same wpisy także następnym Logom; lepiej dwa razy niż wcale.
                 self._log.dad_actions_unavailable(failure)
         entries: list[DadAction] = []
         for line in lines:

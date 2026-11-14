@@ -2583,6 +2583,29 @@ def test_logi_maja_najwyzej_1000_najnowszych_dzialan_taty(tmp_path: Path) -> Non
     assert ([entry.at for entry in taken.entries], taken.omitted) == (moments[1:], 1)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Katalog tylko do odczytu blokuje podmianę pliku tylko poza Windows.")
+def test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom(tmp_path: Path) -> None:
+    """Katalog Logów przyjmuje dopisanie, ale nie podmianę pliku: dziennik działań taty po pierwszym Uruchomieniu zostaje
+    pełny, więc Logi drugiego Uruchomienia mają też jego wpisy, bo lepiej dwa razy niż wcale."""
+
+    centrum = settling_centrum(tmp_path)
+    logs = centrum.log_path.parent
+    centrum.tool.run_logs.mkdir(parents=True, exist_ok=True)
+    assert centrum.client.put("/api/settings/theme", json={"theme": "dark"}).status_code == 200
+    logs.chmod(0o555)
+    try:
+        first = run_to_end(centrum, dry_run=True)["run"]["id"]
+    finally:
+        logs.chmod(0o755)
+    second = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    _, earlier = logged_record(centrum, first)
+    _, later = logged_record(centrum, second)
+    assert ("przycisk", "changeTheme") in dad_actions(earlier)
+    assert ("przycisk", "changeTheme") in dad_actions(later)
+    assert "dzialania-taty-niedostepne typ=" in centrum.log_path.read_text(encoding="utf-8")
+
+
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_centrum_a_nie_bledem_przycisku(
     tmp_path: Path,
 ) -> None:
