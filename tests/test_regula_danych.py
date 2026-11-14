@@ -16,7 +16,7 @@ import pytest
 from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, empty_memory, free_text, tool
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
 from tests.fixtures.wyciek import zawiera_wartosc
-from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -376,6 +376,20 @@ from rozliczenia.dad_files import DadFiles
 def wysylka(komorka: str) -> str:
     return cast(ForbiddenValues, DadFiles().forbidden).guard(komorka, "treść").text
 """,
+    "prywatne pole pamięci: wyczyszczenie zapamiętanych wartości": """from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
+    pamiec._columns.clear()
+    return pamiec.guard(komorka, "treść").text
+""",
+    "prywatne pole pamięci: podmiana slotu przez object.__setattr__": """from rozliczenia.client_data import ForbiddenValues
+
+
+def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
+    object.__setattr__(pamiec, "_columns", {})
+    return pamiec.guard(komorka, "treść").text
+""",
 }
 
 
@@ -408,3 +422,174 @@ def test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luk
 
     assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_PUSTEJ_PAMIECI.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
     assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_PAMIECI}, "tests/test_regula_danych.py")
+
+
+_KOMORKA: Final = "Syntetyczna Lipowa 5"
+
+# Podklasa pamięci i podmiana jej metody w biegu (przegląd #1688, runda 2, W1): uwagi techniczne i maskowanie daje tylko
+# ForbiddenValues.guard. Moduł każdej próbki robi przy wczytaniu podklasę albo podmienia metodę pamięci.
+_PAMIEC_W_BIEGU: Final = f"""import types
+from typing import Any
+
+from rozliczenia.client_data import ForbiddenValues, Guarded, empty_memory
+
+pamiec = empty_memory()
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def zla(self: object, text: str, place: str) -> Guarded:
+    return Guarded(pamiec.guard(text, place).text, ({_KOMORKA!r},))
+
+
+"""
+PODKLASY_PAMIECI: Final = {
+    "class z bazą przed ForbiddenValues, której __init_subclass__ nie woła super()": (
+        "class Pamiec(Mixin, ForbiddenValues):\n    guard = zla\n"
+    ),
+    "type() z trzema argumentami": 'Pamiec = type("Pamiec", (ForbiddenValues,), {"guard": zla})\n',
+    "types.new_class z bazą przed ForbiddenValues": (
+        'Pamiec = types.new_class("Pamiec", (Mixin, ForbiddenValues), {}, lambda ns: ns.update(guard=zla))\n'
+    ),
+    "type.__new__ z metaklasą ForbiddenValues": (
+        'Pamiec = type.__new__(type(ForbiddenValues), "Pamiec", (ForbiddenValues,), {"guard": zla})\n'
+    ),
+    "podklasa metaklasy ForbiddenValues z type.__new__": (
+        'Meta: Any = type("Meta", (type(ForbiddenValues),), {"__new__": type.__new__})\n'
+        'Pamiec = Meta("Pamiec", (ForbiddenValues,), {"guard": zla})\n'
+    ),
+}
+PODMIANY_METODY_PAMIECI: Final = {
+    "setattr na pamięci": 'setattr(pamiec, "guard", types.MethodType(zla, pamiec))\n',
+    "object.__setattr__ na pamięci": 'object.__setattr__(pamiec, "guard", types.MethodType(zla, pamiec))\n',
+}
+
+
+@pytest.mark.parametrize("kod", PODKLASY_PAMIECI.values(), ids=PODKLASY_PAMIECI.keys())
+def test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz(kod: str, tmp_path: Path) -> None:
+    plik = tmp_path / "podklasa.py"
+    plik.write_text(_PAMIEC_W_BIEGU + kod, encoding="utf-8")
+
+    with pytest.raises(TypeError, match="Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko ForbiddenValues.guard"):
+        modul(plik)
+
+
+@pytest.mark.parametrize("kod", PODMIANY_METODY_PAMIECI.values(), ids=PODMIANY_METODY_PAMIECI.keys())
+def test_metody_straznika_nie_da_sie_podmienic_na_pamieci(kod: str, tmp_path: Path) -> None:
+    plik = tmp_path / "podmiana.py"
+    plik.write_text(_PAMIEC_W_BIEGU + kod, encoding="utf-8")
+
+    with pytest.raises(AttributeError, match="'guard' is read-only"):
+        modul(plik)
+
+
+# Podklasa pamięci z własnymi uwagami technicznymi → zgłoszenie mypy, które ją odrzuca w nowym module src/rozliczenia/centrum.
+DROGI_DO_UWAG: Final = {
+    "podklasa ForbiddenValues": (
+        f"""from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+class Pamiec(ForbiddenValues):
+    def guard(self, text: str, place: str) -> Guarded:
+        return Guarded(super().guard(text, place).text, ({_KOMORKA!r},))
+""",
+        'Cannot inherit from final class "ForbiddenValues"',
+    ),
+}
+
+# Znane luki uwag technicznych (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, którego ``wyciek(pamiec,
+# komorka)`` daje przez guard_text uwagę techniczną z wartością komórki, a ruff, mypy i bieg go nie zatrzymują.
+ZNANE_LUKI_UWAG: Final = {
+    "typ Any: atrapa pamięci z własną metodą guard": """from typing import Any
+
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    def guard(self: object, text: str, place: str) -> Guarded:
+        return Guarded(pamiec.guard(text, place).text, (komorka,))
+
+    atrapa: Any = type("Atrapa", (), {"guard": guard})()
+    return guard_text("Postęp.", "postęp Wyceny w efenix", atrapa).text
+""",
+    'podmiana metody na klasie: setattr(ForbiddenValues, "guard", …)': """from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    straznik = ForbiddenValues.guard
+
+    def guard(self: ForbiddenValues, text: str, place: str) -> Guarded:
+        return Guarded(straznik(self, text, place).text, (komorka,))
+
+    setattr(ForbiddenValues, "guard", guard)
+    try:
+        return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec).text
+    finally:
+        setattr(ForbiddenValues, "guard", straznik)
+""",
+    "refleksja: przypisanie __class__ obcej klasy z tymi samymi slotami": """from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    tekst = pamiec.guard("Postęp.", "postęp Wyceny w efenix").text
+
+    class Obca:
+        __slots__ = ("_columns", "_lengths", "_lock")
+
+        def guard(self, text: str, place: str) -> Guarded:
+            return Guarded(tekst, (komorka,))
+
+    object.__setattr__(pamiec, "__class__", Obca)
+    return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec).text
+""",
+    "refleksja: type.__new__ z metaklasą ForbiddenValues i bazą przed nią bez super() w __init_subclass__": """from typing import Any
+
+from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.client_data import ForbiddenValues, Guarded
+
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        pass
+
+
+def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
+    def guard(self: object, text: str, place: str) -> Guarded:
+        return Guarded(pamiec.guard(text, place).text, (komorka,))
+
+    def init(self: object) -> None:
+        pass
+
+    pamiec_z_uwaga: Any = type.__new__(type(ForbiddenValues), "Pamiec", (Mixin, ForbiddenValues), {"__init__": init, "guard": guard})
+    return guard_text("Postęp.", "postęp Wyceny w efenix", pamiec_z_uwaga()).text
+""",
+}
+
+
+def _wyciek_w_biegu(plik: Path) -> list[str]:
+    """Zgłoszenie biegu próbki: wyjątek albo tekst bez wartości komórki, czyli próbka nie daje uwagi spoza strażnika."""
+
+    try:
+        tekst = modul(plik).wyciek(empty_memory(), _KOMORKA)
+    except (TypeError, AttributeError) as odmowa:
+        return [f"bieg {type(odmowa).__name__}: {odmowa}"]
+    return [] if _KOMORKA in tekst else [f"bieg: tekst bez wartości komórki: {tekst!r}"]
+
+
+@wymaga_ruff_i_mypy
+def test_uwagi_techniczne_daje_tylko_straznik_pamieci_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_UWAG.items()} | ZNANE_LUKI_UWAG
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_uwag.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_UWAG.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] + _wyciek_w_biegu(pliki[opis]) for opis in ZNANE_LUKI_UWAG},
+        "tests/test_regula_danych.py (ZNANE_LUKI_UWAG)",
+    )

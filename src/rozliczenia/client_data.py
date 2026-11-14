@@ -151,13 +151,38 @@ class Guarded:
     notes: tuple[str, ...]
 
 
-class ForbiddenValues:
+_NO_SUBCLASSES: Final = "Pamięć reguły danych nie ma podklas: maskowanie i uwagi techniczne daje tylko ForbiddenValues.guard."
+
+
+class _WithoutSubclasses(type):
+    """Metaklasa ``ForbiddenValues``: odmawia klasy z jej bazą, bo Python wybiera metaklasę po bazach, więc odmowy nie
+    przesłania baza z własnym ``__init_subclass__`` stojąca przed ``ForbiddenValues``."""
+
+    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, object], /, **kwargs: object) -> _WithoutSubclasses:
+        if any(isinstance(base, _WithoutSubclasses) for base in bases):
+            raise TypeError(_NO_SUBCLASSES)
+        return super().__new__(mcs, name, bases, namespace, **kwargs)
+
+
+@final
+class ForbiddenValues(metaclass=_WithoutSubclasses):
     """Zakazane wartości przeczytane w jednej pracy Centrum i strażnik, który je maskuje w każdej wysyłce.
 
     Wartość to krotka jej słów bez wielkości liter. Pierwsze słowo daje długości (w słowach) wartości, które od niego
     się zaczynają, od najdłuższej, więc strażnik w każdym miejscu tekstu sprawdza tylko kilka krotek, ile by wartości
     nie było. Czytniki z wątków Uruchomień i producenci z wątków Centrum dzielą ją pod jednym zamkiem.
+
+    Maskowanie i uwagi techniczne daje tylko ``guard``, więc nie ma podklas ani podmiany metody na pamięci: mypy odrzuca
+    ``class`` (``final``), metaklasa odmawia podklasy w biegu pod każdą nazwą i przy każdej kolejności baz (także
+    ``type()`` i ``types.new_class``), ``__init_subclass__`` odmawia podklasy zrobionej przez ``type.__new__`` z tą
+    metaklasą, a ``__slots__`` odmawia przypisania metody pamięci (``setattr``, ``object.__setattr__``). Postaci, które
+    przechodzą, pokazują próbki ``ZNANE_LUKI_UWAG`` i ``ZNANE_LUKI_PAMIECI`` w ``tests/test_regula_danych.py``.
     """
+
+    __slots__ = ("_columns", "_lengths", "_lock")
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError(_NO_SUBCLASSES)
 
     def __init__(self, proof: object) -> None:
         if proof is not _PASSED:
