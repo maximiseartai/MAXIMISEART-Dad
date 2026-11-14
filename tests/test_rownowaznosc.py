@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import warnings
 import zipfile
 
 from openpyxl import load_workbook
@@ -646,11 +647,18 @@ _FUTURE = '"""Moduł."""\n\nfrom __future__ import annotations\n\nX: int = 1\n'.
 _STRING_BEFORE_FUTURE = '"""Moduł."""\n\n"""Komentarz przeniesiony w napis."""\n\nfrom __future__ import annotations\n\nX: int = 1\n'.encode()
 
 
-def _compiler_refusal(source: bytes) -> str:
-    """Komunikat, którym kompilator tego Pythona odrzuca ``source``: jego tekst zależy od wersji Pythona."""
+_ESCAPE_COMMENT = 'PATH = "Praca"  # folder Praca Maks\\Reguły ilości\n'.encode()
+_ESCAPE_STRING = 'PATH = "Praca"\n"""folder Praca Maks\\Reguły ilości"""\n'.encode()
 
-    with pytest.raises(SyntaxError) as refused:
-        compile(source, "src/modul.py", "exec", dont_inherit=True)
+
+def _compiler_refusal(source: bytes) -> str:
+    """Komunikat, którym kompilator tego Pythona odrzuca ``source`` albo, z ostrzeżeniami jako błędami, ostrzega o nim:
+    jego tekst zależy od wersji Pythona."""
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(SyntaxError) as refused:
+            compile(source, "src/modul.py", "exec", dont_inherit=True)
     return str(refused.value.msg)
 
 
@@ -670,6 +678,7 @@ def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
         (b"import os\nX = os.sep\n", b"import os  # noqa: F401 - powod\nX = os.sep  # type: ignore[misc]  # pragma: no cover\n", _SAME),
         (_FUTURE, _STRING_BEFORE_FUTURE, _refused("HEAD", _STRING_BEFORE_FUTURE)),
         (b"X = 1\nreturn X\n", b"X = 1\nreturn X  # komentarz\n", _refused("bazie", b"X = 1\nreturn X\n")),
+        (_ESCAPE_COMMENT, _ESCAPE_STRING, _refused("HEAD", _ESCAPE_STRING)),
     ],
     ids=[
         "stala-pod-deklaracja-latin-1",
@@ -681,6 +690,7 @@ def _refused(side: str, source: bytes) -> tuple[int, list[str]]:
         "dyrektywy-komentarzy",
         "napis-przed-from-future",
         "obie-strony-odrzuca-kompilator",
+        "ostrzezenie-kompilatora",
     ],
 )
 def test_tryb_ast_czyta_bajty_jak_interpreter_i_widzi_kazda_zmiane_drzewa_poza_napisami(
@@ -721,3 +731,21 @@ def test_tryb_ast_bez_glowy_widzi_plik_usuniety_i_przeniesiony_w_drzewie_roboczy
             "RÓWNOWAŻNOŚĆ RÓŻNICA | src/modul.py, src/nowy.py, src/stary.py",
         ],
     )
+
+
+def test_tryb_ast_widzi_ostrzezenie_kompilatora_takze_w_drugim_porownaniu_w_tym_samym_procesie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository = tmp_path / "repo"
+    (repository / "src").mkdir(parents=True)
+    git(repository, "init", "--quiet")
+    (repository / "src" / "modul.py").write_bytes(_ESCAPE_COMMENT)
+    based = commit(repository, "baza")
+    (repository / "src" / "modul.py").write_bytes(_ESCAPE_STRING)
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    seen = []
+    for _ in range(2):
+        seen.append((rownowaznosc.main(["--ast", "--baza", based]), capsys.readouterr().out.splitlines()))
+
+    assert seen == [_refused("HEAD", _ESCAPE_STRING)] * 2

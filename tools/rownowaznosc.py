@@ -43,22 +43,28 @@ W kopii ``tools/na_scalonych_pr.py`` drzewo robocze ma ``tools/`` z innego check
     .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
 
 Z ``--ast`` narzędzie nie uruchamia scenariuszy, tylko porównuje pliki ``src/`` zmienione od bazy (``repo.changed``,
-bez wykrywania przeniesień). Plik jest ``TAK SAMO`` tylko wtedy, gdy obie strony kompiluje ``compile`` Pythona, którym
-biegnie narzędzie (``refused_by_compiler``), i gdy ich drzewa składni (``ast.dump`` bez pozycji w źródle) po usunięciu
+bez wykrywania przeniesień). Plik jest ``TAK SAMO`` tylko wtedy, gdy ``compile`` Pythona, którym biegnie narzędzie
+(``refused_by_compiler``), przyjmuje obie strony bez wyjątku i bez żadnego ostrzeżenia, i gdy ich drzewa składni (``ast.dump`` bez pozycji w źródle) po usunięciu
 każdej instrukcji, która jest samym napisem (docstringów modułu, klas i funkcji oraz napisów pod przypisaniem), są
 równe. Kompilator i parser dostają bajty pliku, więc dekodują je jak interpreter, według deklaracji kodowania i BOM.
 Wynik kończy linia ``RÓWNOWAŻNOŚĆ OK | <n> plików`` (kod 0), ``RÓWNOWAŻNOŚĆ RÓŻNICA | <pliki>`` (kod 1) albo, bez
 zmienionego pliku, ``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 plików`` (kod 2).
 
-``<plik> | RÓŻNICA | <co>`` dostaje więc: plik, którego kompilator nie przyjmuje po którejkolwiek stronie, z jego
-komunikatem (każda reguła kompilacji, także ta, której parser nie sprawdza: miejsce ``from __future__``, ``return``,
-``break`` i ``await`` poza swoim miejscem, ``nonlocal`` na poziomie modułu, zduplikowany argument), zmianę drzewa
+Kompilator oddaje wynik trzema drogami: wyjątkiem, ostrzeżeniem i obiektem kodu. Tryb czyta wyjątek i ostrzeżenie,
+a obiekt kodu zastępuje drzewo; czwarta droga, bieg modułu przy imporcie, różni się poza drzewem tylko ``__doc__``
+i pozycjami w źródle (niżej). ``<plik> | RÓŻNICA | <co>`` dostaje więc: plik, którego kompilator nie przyjmuje albo
+o którym ostrzega po którejkolwiek stronie, z jego komunikatem (każda reguła kompilacji, także ta, której parser nie
+sprawdza: miejsce ``from __future__``, ``return``, ``break`` i ``await`` poza swoim miejscem, ``nonlocal`` na poziomie
+modułu, zduplikowany argument, nieznana sekwencja ``\\`` w napisie), zmianę drzewa
 (także ``from __future__``, inną samotną stałą niż napis, napis jedynej instrukcji ciała zamieniony na ``pass``, inne
 znaczenie bajtów po zmianie deklaracji kodowania), plik tylko po jednej stronie (dodany, usunięty, a przeniesiony po
 obu) i plik, który nie jest ``.py`` ani ``.pyi``. ``TAK SAMO`` dostaje zmiana komentarzy, także dyrektyw narzędzi
 (``# type:``, ``# noqa``, ``# pragma``, ``# mypy:``), które nie działają w biegu, a sprawdzają je ruff, mypy i licznik
 tłumień w ``tools/szybko.py``, zmiana samych napisów i sam BOM. Inny Python może kompilować inaczej, więc wynik mówi
-o wersji Pythona, którą uruchomiono narzędzie. Tryb nie widzi trzech rzeczy, które sprawdza osobne polecenie:
+o wersji Pythona, którą uruchomiono narzędzie. Pozycje w źródle, które tryb pomija, idą w biegu do treści Zgłoszenia
+i Logów: ślad wyjątku (``CallTrace``) niesie ``plik:linia``, więc przeniesiony komentarz zmienia te numery przy
+``TAK SAMO``; odcisk Zgłoszenia (``ProblemFingerprint``) linii nie zawiera, więc rozpoznawanie Zgłoszeń się nie zmienia.
+Tryb nie widzi trzech rzeczy, które sprawdza osobne polecenie:
 
 - docstringu czytanego w biegu: klasy Pydantic i trasy idą do kontraktu (``tools/ci/export_openapi.py``, potem
   ``git diff --exit-code frontend/src/api/openapi.json``), a ``__doc__`` w kodzie znajduje ``git grep -n __doc__ -- src``;
@@ -81,6 +87,7 @@ import re
 import shutil
 import sys
 import tempfile
+import warnings
 from typing import Literal, get_args
 import zipfile
 
@@ -467,15 +474,21 @@ def _source(repository: Path, revision: str | None, path: str) -> bytes | None:
 
 
 def refused_by_compiler(source: bytes, path: str) -> str | None:
-    """Komunikat kompilatora tego Pythona, gdy bajty ``source`` pliku ``path`` się nie kompilują; ``None``, gdy się
-    kompilują."""
+    """Komunikat kompilatora tego Pythona, gdy bajty ``source`` pliku ``path`` się nie kompilują albo kompilator coś
+    o nich ostrzega; ``None``, gdy kompilacja przechodzi bez wyjątku i bez ostrzeżenia.
 
-    try:
-        compile(source, path, "exec", dont_inherit=True)
-    except SyntaxError as refused:
-        return refused.msg
-    except ValueError as refused:
-        return str(refused)
+    Każde ostrzeżenie, dowolnej kategorii, jest tu błędem we własnym ``catch_warnings``: kompilator zamienia wtedy
+    ``SyntaxWarning`` i ``DeprecationWarning`` w ``SyntaxError`` z tym samym komunikatem, a nowy filtr unieważnia rejestr
+    ostrzeżeń już pokazanych, więc drugie porównanie w tym samym procesie widzi je tak samo jak pierwsze."""
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        try:
+            compile(source, path, "exec", dont_inherit=True)
+        except SyntaxError as refused:
+            return refused.msg
+        except (ValueError, Warning) as refused:
+            return f"{type(refused).__name__}: {refused}"
     return None
 
 
