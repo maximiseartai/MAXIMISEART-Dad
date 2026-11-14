@@ -34,8 +34,16 @@ when the disk lets the guardian neither remove the file of
 `NOWA_WERSJA_NIE_WYSTARTOWALA` from A to B nor write „ok” after Dad's next
 click, B, which answers, shows no failure (#725).
 A Centrum log that cannot be read lets the result through. The drive checks
-none of this: the rules are checked by `tests/test_centrum_aktualizacja.py`
-and the model of `verify-aktualizacja-narzedzia`.
+only „ok” on the old version (`aktualizacja-ok-przy-starej-wersji`); the model of `verify-aktualizacja-narzedzia`
+checks the rules, and `tests/test_centrum_aktualizacja.py` checks each:
+`test_zgloszony_wynik_nie_wraca_gdy_dysk_nie_pozwala_usunac_jego_pliku` that a reported result does not come back
+when the disk keeps its file,
+`test_porazka_z_pliku_wyniku_przy_wersji_innej_niz_sprzed_aktualizacji_jest_stara_i_karta_jej_nie_pokazuje` that a
+failure of another version is old and the card does not show it,
+`test_nowa_dzialajaca_wersja_po_dwoch_odmowach_dysku_nie_pokazuje_porazki_poprzedniej_proby` that the working new
+version shows no failure of the try before after two refusals of the disk, and
+`test_wynik_aktualizacji_trafia_na_karte_gdy_dziennika_nie_da_sie_przeczytac` that the result reaches the card when
+the log cannot be read.
 The read of the configuration keeps GitHub's answer about the newest Wydanie (one answer shared with
 Powiadomienia) for 10 minutes of Centrum's clock, so each harness change of the Wydanie also moves that clock on. In this run the tool
 is the fixture's synthetic clone with a local "origin", and its Centrum is the
