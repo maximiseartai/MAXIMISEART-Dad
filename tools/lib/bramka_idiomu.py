@@ -6,20 +6,20 @@ Ważne z polem to Ważne werdyktów ``FAIL`` tego PR (``szablon_werdyktu.finding
 reguły <klasa> jak #N W<n> r<k>`` niczego nie wymaga.
 
 Dowód to ``tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>`` z kodu bazy PR (``tools/scal_pr.py``
-biegnie z kopii bazy, linia ``SĘDZIA``), tym samym Pythonem: regułę bierze z katalogów ``ruleDirs`` pliku
-``sgconfig.yml`` na HEAD PR, czyli tam, skąd czyta ją zapadka w Required CI, a bez niej odmawia, więc próbka
-``ZNANE_LUKI`` nigdy reguły nie zastępuje. Biegnie na każdym przypadku tego id z historii pól ``Idiom:``: na każdym
-Ważnym, którego pole nazywa ``<id>``, i na Ważnym z jego ``jak #N W<n> r<k>``, w tym PR i w każdym PR rejestru korzeni
+biegnie z kopii bazy, linia ``SĘDZIA``), tym samym Pythonem: regułę wybiera sam ast-grep z ``sgconfig.yml`` na HEAD PR
+(``--config`` z ``--filter``), tym samym loaderem co zapadka w Required CI, a reguły, której ta konfiguracja nie
+ładuje, odmawia, więc próbka ``ZNANE_LUKI`` nigdy reguły nie zastępuje. Biegnie na każdym przypadku tego id z historii
+pól ``Idiom:``: na każdym Ważnym, którego pole nazywa ``<id>``, i na Ważnym z jego ``jak #N W<n> r<k>``, w tym PR i w każdym PR rejestru korzeni
 od wdrożenia szablonu werdyktu (``rejestr_korzeni.idioms``). Przechodzi tylko z ostatnią linią ``DOWÓD OK``: dowód łapie ``Gdzie`` każdego
-przypadku, ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych i odmawia reguły bez pola ``files:``,
-której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``).
+przypadku i ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych, a regułę bez pola ``files:`` zatrzymuje
+zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
 
 Granica: dowód umie dziś tylko ast-grep, więc ``<id>``, które jest kluczem ``banned-api`` ruff albo kontraktem
 import-linter, to odmowa, dopóki na HEAD nie stanie reguła ast-grep o tym id. Przypadek ``jak #N W<n> r<k>`` sprzed
 szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
 ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Moduł bierze tylko bibliotekę
-standardową, bo status „Werdykt i bramka” uruchamia ``tools/scal_pr.py`` systemowym ``python3``; YAML reguły czyta
-dowód.
+standardową, bo status „Werdykt i bramka” uruchamia ``tools/scal_pr.py`` systemowym ``python3``; regułę ładuje
+ast-grep w dowodzie.
 """
 
 from __future__ import annotations

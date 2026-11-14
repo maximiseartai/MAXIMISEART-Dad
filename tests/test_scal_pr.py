@@ -2401,7 +2401,7 @@ sys.exit(answer["kod"])
 """
 PROOF_OK = (0, "DOWÓD OK | zakazane-wywolanie | złapane 2/2 | FP 0 w 0 z 20 PR (0%) | main 0")
 PROOF_REFUSED = (1, "DOWÓD ODMOWA | zakazane-wywolanie | złapane 1/2 | FP 0 w 0 z 20 PR (0%) | main 0")
-PROOF_WITHOUT_RULE = (1, "DOWÓD ODMOWA | zakazane-wywolanie | na 12345678 nie ma reguły ast-grep o id zakazane-wywolanie w katalogach ruleDirs sgconfig.yml")
+PROOF_WITHOUT_RULE = (1, "DOWÓD ODMOWA | zakazane-wywolanie | reguły o id zakazane-wywolanie nie ładuje konfiguracja ast-grep repo; połóż ją w reguly-ast-grep/")
 
 
 def _idiom_verdict(name: str) -> str:

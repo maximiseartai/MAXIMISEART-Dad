@@ -272,15 +272,24 @@ def test_dowod_reguly_odmawia_reguly_bez_pola_files_ktorej_zapadka_nie_przyjmie(
     ), done.stdout
 
 
-# Reguła z katalogu ruleDirs sgconfig.yml na commicie (``--regula-id`` z ``--z-commita``), tak jak dowód uruchamia
+# Reguła, którą ładuje sgconfig.yml commitu (``--regula-id`` z ``--z-commita``), tak jak dowód uruchamia
 # tools/scal_pr.py dla Ważnego z polem Idiom: (ADR 0036): HEAD tego repozytorium to merge PR #6 do ``main``.
 BY_ID = ("--regula-id", "zakazane-wywolanie", "--z-commita", "HEAD")
 SGCONFIG = "ruleDirs:\n  - reguly-ast-grep\n"
 
 
 @needs_ast_grep
-def test_dowod_reguly_o_id_bierze_regule_z_katalogu_ruledirs_na_commicie(tmp_path: Path) -> None:
-    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazy.yml": RULE.replace("zakazane-wywolanie", "inna-regula") + "---\n" + RULE}
+@pytest.mark.parametrize(
+    "start",
+    [
+        {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/podkatalog/zakazy.yml": RULE.replace("zakazane-wywolanie", "inna-regula") + "---\n" + RULE},
+        {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazane-wywolanie.yml": RULE.replace("severity: error", "severity: off")},
+    ],
+    ids=["podkatalog-ruledirs", "waznosc-off"],
+)
+def test_dowod_reguly_o_id_bierze_regule_ktora_laduje_konfiguracja_ast_grep_commitu(tmp_path: Path, start: dict[str, str]) -> None:
+    """Regułę wybiera ast-grep z ``sgconfig.yml`` commitu, jak zapadka: także ze zwykłego podkatalogu ``ruleDirs``
+    i z ``severity: off``, którą zapadka też zgłasza (``test_regula_ast_grep_z_waznoscia_off_w_pliku_tez_zglasza_dodana_linie_src``)."""
 
     done, sha = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=BY_ID)
 
@@ -289,22 +298,25 @@ def test_dowod_reguly_o_id_bierze_regule_z_katalogu_ruledirs_na_commicie(tmp_pat
     assert done.stdout.splitlines()[-1] == "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1", done.stdout
 
 
+@needs_ast_grep
 @pytest.mark.parametrize(
     "start",
     [
         {"sgconfig.yml": SGCONFIG, "tests/fixtures/znane_luki_zakazanego.py": 'ZNANE_LUKI = {"zakazane: wywołanie": "obiekt.zakazane()\\n"}\n'},
         {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/inna.yml": RULE.replace("zakazane-wywolanie", "inna-regula")},
         {"sgconfig.yml": SGCONFIG, "inne-reguly/zakazane-wywolanie.yml": RULE},
+        {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/.wylaczone/zakazane-wywolanie.yml": RULE},
         {"reguly-ast-grep/zakazane-wywolanie.yml": RULE},
     ],
-    ids=["tylko-probka-znane-luki", "regula-o-innym-id", "regula-poza-ruledirs", "bez-sgconfig"],
+    ids=["tylko-probka-znane-luki", "regula-o-innym-id", "regula-poza-ruledirs", "regula-w-ukrytym-podkatalogu", "bez-sgconfig"],
 )
-def test_dowod_reguly_o_id_odmawia_commita_bez_reguly_ast_grep_tego_id(tmp_path: Path, start: dict[str, str]) -> None:
-    """Próbka ``ZNANE_LUKI`` nie jest regułą, więc dowód Ważnego z polem Idiom: bez reguły na commicie nie przechodzi."""
+def test_dowod_reguly_o_id_odmawia_reguly_ktorej_konfiguracja_ast_grep_nie_laduje(tmp_path: Path, start: dict[str, str]) -> None:
+    """Próbka ``ZNANE_LUKI`` nie jest regułą, a reguły z ukrytego podkatalogu ``ruleDirs`` ast-grep nie ładuje, więc
+    zapadka by jej nie odpaliła: dowód Ważnego z polem Idiom: bez reguły w konfiguracji commitu nie przechodzi."""
 
     done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=BY_ID)
 
     assert done.returncode == 1, done.stdout + done.stderr
-    last = done.stdout.splitlines()[-1]
-    assert last.startswith("DOWÓD ODMOWA | zakazane-wywolanie | na "), done.stdout
-    assert last.endswith(" nie ma reguły ast-grep o id zakazane-wywolanie w katalogach ruleDirs sgconfig.yml; próbka ZNANE_LUKI nie zastępuje reguły"), done.stdout
+    assert done.stdout.splitlines()[-1] == (
+        "DOWÓD ODMOWA | zakazane-wywolanie | reguły o id zakazane-wywolanie nie ładuje konfiguracja ast-grep repo; połóż ją w reguly-ast-grep/"
+    ), done.stdout

@@ -30,9 +30,13 @@ którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzł
     .venv/bin/python tools/na_scalonych_pr.py --regula reguly-ast-grep/x.yml --wazne 1533/W1/r2 --ostatnie 20
     .venv/bin/python tools/na_scalonych_pr.py --regula-id x --z-commita <SHA HEAD PR> --wazne 1533/W1/r2
 
-``--regula-id ID --z-commita REV`` bierze regułę o polu ``id`` równym ``ID`` z pliku ``*.yml`` albo ``*.yaml``
-katalogów ``ruleDirs`` pliku ``sgconfig.yml`` na commicie ``REV`` (tam, skąd czyta ją zapadka); commit bez takiej
-reguły to ``DOWÓD ODMOWA``, bo próbka ``ZNANE_LUKI`` reguły nie zastępuje. Tak uruchamia dowód ``tools/scal_pr.py``.
+``--regula-id ID --z-commita REV`` bierze regułę o id ``ID``, którą wybiera sam ast-grep z konfiguracji kopii commitu
+``REV``: ``--config <kopia>/sgconfig.yml --filter '^ID$'``, ten sam loader co zapadka ``syntax_rules``
+(``--config sgconfig.yml``), więc dowód widzi dokładnie te reguły, które zapadka ładuje, a plik reguły czyta tylko
+ast-grep. Reguły, której ta konfiguracja nie ładuje (``NOT_LOADED``: poza ``ruleDirs``, w ukrytym podkatalogu, bez
+katalogu ``ruleDirs`` albo commit bez ``sgconfig.yml``), dowód odmawia, bo próbka ``ZNANE_LUKI`` reguły nie
+zastępuje. Pola ``files:`` takiej reguły dowód nie sprawdza: każdą regułę z ``ruleDirs`` sprawdza zapadka
+``ast_grep_rules_without_scope`` w Required CI tego commitu. Tak uruchamia dowód ``tools/scal_pr.py``.
 
 1. Każde ``--wazne PR/W<n>/r<k>``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k`` PR-u (``werdykt_pr.rounds``), na
    liniach dodanych od ``merge-base`` bazy PR-u z SHA linii ``WERDYKT`` tego werdyktu do tego SHA. Ważne jest
@@ -48,7 +52,7 @@ Kończy się ``DOWÓD OK|ODMOWA | <id reguły> | złapane k/n | FP x w y z N PR 
 w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; reguła bez
 niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``), błąd GitHuba, brak
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
-``DOWÓD OK`` znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
+``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
 z polem ``Idiom:`` (``bramka_idiomu``).
 """
 
@@ -65,7 +69,6 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-import tempfile
 import time
 
 import yaml
@@ -90,6 +93,10 @@ WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
 FUNCTIONS = "id: funkcja\nlanguage: python\nrule:\n  kind: function_definition\n"  # także async def
 FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód przechodzi
 CONFIG = "sgconfig.yml"
+# Odpowiedzi ast-grep 0.51.0, gdy konfiguracja nie ładuje reguły ``--filter``: brak takiej reguły, brak katalogu
+# ``ruleDirs`` i brak pliku konfiguracji.
+NOT_LOADED = ("Error: Rule not found", "Error: Cannot read rule directory", "Error: Cannot read configuration")
+Rule = tuple[str, ...]  # argumenty ``ast-grep scan`` wybierające regułę: ``--rule PLIK`` albo ``--config`` z ``--filter``
 
 
 @dataclass(frozen=True)
@@ -183,8 +190,8 @@ def run_on(pr: Merged, command: list[str], tools: dict[str, bytes], output: Path
     return done.returncode, elapsed, lines[-1] if lines else ""
 
 
-def hits(commit: str, rule: tuple[str, str], paths: Iterable[str] | None = None) -> list[tuple[str, int, int]]:
-    """Odpalenia reguły (``--rule PLIK`` albo ``--inline-rules TEKST``) na kopii ``commit``: plik i linie od 1 do 1.
+def hits(commit: str, rule: Rule, paths: Iterable[str] | None = None) -> list[tuple[str, int, int]]:
+    """Odpalenia reguły (argumenty ``Rule`` albo ``--inline-rules TEKST``) na kopii ``commit``: plik i linie od 1 do 1.
 
     Bez ``paths`` ast-grep skanuje całą kopię z katalogami ukrytymi i ignorowanymi, a z ``paths`` tylko te pliki, które
     w niej są (jawnie podaną ścieżkę skanuje zawsze); porażka ast-grep to ``ValueError``.
@@ -203,14 +210,14 @@ def hits(commit: str, rule: tuple[str, str], paths: Iterable[str] | None = None)
     return [(hit["file"], hit["range"]["start"]["line"] + 1, hit["range"]["end"]["line"] + 1) for hit in found]
 
 
-def fired(rule: Path, base: str, head: str) -> list[tuple[str, int]]:
+def fired(rule: Rule, base: str, head: str) -> list[tuple[str, int]]:
     """Odpalenia reguły na liniach dodanych od ``base`` do ``head`` (``odpalenia_ast_grep.on_added_lines``): plik
     i pierwsza dodana linia węzła; brak ast-grep albo jego porażka to ``odpalenia_ast_grep.ScanFailed``."""
 
     if problem := fetched(head):
         raise ValueError(problem)
     with potomne.commit_copy(ROOT, head) as copy:
-        found = odpalenia_ast_grep.on_added_lines(copy, base, ("--rule", str(rule.resolve())), AST_GREP)
+        found = odpalenia_ast_grep.on_added_lines(copy, base, rule, AST_GREP)
     return [(one.path, one.line) for one in found]
 
 
@@ -237,7 +244,7 @@ def major(text: str) -> tuple[int, str, int]:
     return int(found[1]), found[2], int(found[3])
 
 
-def caught(rule: Path, repository: str, number: int, label: str, round_: int) -> bool:
+def caught(rule: Rule, repository: str, number: int, label: str, round_: int) -> bool:
     """Drukuje linię Ważnego ``label`` rundy ``round_`` PR-u ``number`` i mówi, czy reguła je złapała."""
 
     pull = rejestr_korzeni.pull(repository, number)
@@ -267,46 +274,43 @@ def _fork(base: str, commit: str) -> str:
     return repo.merge_base(ROOT, f"{merges[-1]}^1" if merges else base, commit)
 
 
-def rule_on(commit: str, rule: str) -> dict[str, object] | None:
-    """Dokument reguły ast-grep o id ``rule`` z katalogów ``ruleDirs`` pliku ``CONFIG`` na ``commit``; ``None`` bez niej.
-    Błąd pobrania to ``ValueError``."""
+def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
+    """Dowód reguły o id ``rule``, którą ładuje konfiguracja ``CONFIG`` kopii ``commit`` (``--config`` z ``--filter``,
+    jak zapadka), jak ``proof``; reguły, której ta konfiguracja nie ładuje, odmawia."""
 
     if problem := fetched(commit):
-        raise ValueError(problem)
-    if not repo.succeeds(ROOT, "cat-file", "-e", f"{commit}:{CONFIG}"):
-        return None
-    directories = [str(folder) for folder in (yaml.safe_load(repo.git(ROOT, "show", f"{commit}:{CONFIG}")) or {}).get("ruleDirs") or []]
-    for path in repo.git(ROOT, "ls-tree", "-r", "--name-only", commit, "--", *directories).splitlines() if directories else []:
-        if path.endswith((".yml", ".yaml")):
-            for document in yaml.safe_load_all(repo.git(ROOT, "show", f"{commit}:{path}")):
-                if isinstance(document, dict) and str(document.get("id")) == rule:
-                    return document
-    return None
-
-
-def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
-    """Dowód reguły o id ``rule`` z ``commit`` (``rule_on``) jak ``proof``."""
-
-    try:
-        document = rule_on(commit, rule)
-    except (ValueError, subprocess.CalledProcessError, yaml.YAMLError) as error:
-        print(f"DOWÓD ODMOWA | {rule} | {error}")
+        print(f"DOWÓD ODMOWA | {rule} | {problem}")
         return 1
-    if document is None:
-        print(f"DOWÓD ODMOWA | {rule} | na {commit[:8]} nie ma reguły ast-grep o id {rule} w katalogach ruleDirs {CONFIG}; próbka ZNANE_LUKI nie zastępuje reguły")
+    if AST_GREP is None:
+        print(f"DOWÓD ODMOWA | {rule} | {odpalenia_ast_grep.INSTALL}")
         return 1
-    with tempfile.TemporaryDirectory(prefix="regula-") as folder:
-        path = Path(folder) / f"{rule}.yml"
-        path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        return proof(path, majors, numbers, last)
+    with potomne.commit_copy(ROOT, commit) as copy:
+        chosen = ("--config", str(copy / CONFIG), "--filter", f"^{re.escape(rule)}$")
+        # Plik spoza języków ast-grep: skan niczego nie czyta, a konfigurację i filtr ładuje jak każdy.
+        loaded = potomne.run([AST_GREP, "scan", *chosen, "--json=stream", "--", CONFIG], cwd=copy)
+        if loaded.stderr.startswith(NOT_LOADED):
+            print(f"DOWÓD ODMOWA | {rule} | reguły o id {rule} nie ładuje konfiguracja ast-grep repo; połóż ją w reguly-ast-grep/")
+            return 1
+        if loaded.returncode:
+            print(f"DOWÓD ODMOWA | {rule} | ast-grep scan zakończył się kodem {loaded.returncode}: {' '.join(loaded.stderr.split())}")
+            return 1
+        return checked(rule, chosen, majors, numbers, last)
 
 
 def proof(rule: Path, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
+    """Dowód reguły z pliku ``rule``; reguły bez niepustego pola ``files:`` odmawia (``odpalenia_ast_grep.unscoped``)."""
+
     document = yaml.safe_load(rule.read_text(encoding="utf-8"))
     name = str(document["id"])
     if problem := odpalenia_ast_grep.unscoped(document):
         print(f"DOWÓD ODMOWA | {name} | {problem}")
         return 1
+    return checked(name, ("--rule", str(rule.resolve())), majors, numbers, last)
+
+
+def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
+    """Trzy biegi dowodu reguły ``name`` (argumenty ast-grep ``rule``) i jego linia końcowa; kod 0 tylko z ``DOWÓD OK``."""
+
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         catches = sum(caught(rule, repository, *one) for one in majors)
@@ -319,7 +323,7 @@ def proof(rule: Path, majors: list[tuple[int, str, int]], numbers: list[int], la
             flagged += [pr.label] if found else []
             print(f"FP {pr.label} | {pr.commit[:8]} | {len(found)} | {_shown(found)}", flush=True)
         tip = main_commit()
-        existing = len(hits(tip, ("--rule", str(rule.resolve()))))
+        existing = len(hits(tip, rule))
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {name} | {error}")
         return 1
@@ -342,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--narzedzia", metavar="REV", help="Narzędzia z tego commitu zamiast z checkoutu, np. origin/main dla porównania.")
     rule = parser.add_mutually_exclusive_group()
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
-    rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id z ruleDirs sgconfig.yml na --z-commita.")
+    rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     args = parser.parse_args(arguments[:split])
