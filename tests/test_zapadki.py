@@ -1156,6 +1156,7 @@ _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type:
         ("import os  # noqa: F401x - powód\n", [1]),
         ("import os  # noqa: UWAGA - powód\n", [1]),
         ("import os  # uwaga: noqa: F401 - powód\n", [1]),
+        ("import os  # import z PR 12 # noqa: F401 - powód\n", [1]),
         ("import os  #noqa: F401 - powód\n", [1]),
         ("import os  #\tnoqa: F401 - powód\n", [1]),
         ('x: int = "a"  # type: ignore\n', [1]),
