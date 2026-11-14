@@ -119,14 +119,14 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     'from multiprocessing import spawn\nspawn.import_main_path("tests/fixtures/znane_luki.py")': (
         ROOT / "pyproject.toml",
         TOOLS_PROBE,
-        "multiprocessing",
+        "multiprocessing.spawn",
     ),
     'import multiprocessing.spawn as s\ns.prepare({"init_main_from_path": "tests/fixtures/znane_luki.py"})': (
         SRC_CONFIG,
         ("rozliczenia",),
-        "multiprocessing",
+        "multiprocessing.spawn",
     ),
-    "from multiprocessing.spawn import import_main_path": (DRIVE_CONFIG, (), "multiprocessing"),
+    "from multiprocessing.spawn import import_main_path": (DRIVE_CONFIG, (), "multiprocessing.spawn"),
     'import doctest\ndoctest.testfile("tests/x.txt", module_relative=False)': (ROOT / "pyproject.toml", TOOLS_PROBE, "doctest"),
     # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
     # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
@@ -401,9 +401,9 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
 DYNAMIC_IMPORT_OWNER = ROOT / "tools" / "lib" / "import_dynamiczny.py"
 # Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml), które testy niżej
 # uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
-# Nazwy pakietu importlib i moduły biblioteki standardowej, które wołają wejście systemu importu, wynikają z biblioteki
-# działającego Pythona (dwa testy niżej); builtins.__import__, _frozen_importlib(_external) i _imp to moduły w C, których
-# źródeł skan nie czyta.
+# Nazwy pakietu importlib i moduły biblioteki standardowej ze skanu, które służą do importu albo wykonania pliku albo nie
+# mają zwykłego użycia w tym produkcie, wynikają z biblioteki działającego Pythona (dwa testy niżej); builtins.__import__,
+# _frozen_importlib(_external) i _imp to moduły w C, których źródeł skan nie czyta.
 DYNAMIC_IMPORT = (
     "importlib.import_module",
     "importlib.__import__",
@@ -432,23 +432,16 @@ DYNAMIC_IMPORT = (
     "zipimport",
     "pydoc",
     "doctest",
-    "multiprocessing",
-    "dbm",
-    "encodings",
-    "inspect",
-    "logging.config",
+    "multiprocessing.spawn",
+    "multiprocessing.forkserver",
     "modulefinder",
-    "optparse",
-    "pickle",
     "turtle",
     "turtledemo",
     "unittest.loader",
     "unittest.main",
-    "xml.dom",
     "idlelib",
     "test",
     "_pyrepl",
-    "cProfile",
     "_py_warnings",
 )
 # Wywołania wejść systemu importu w źródłach biblioteki standardowej (definicja w teście skanu niżej).
@@ -470,8 +463,17 @@ IMPORT_ENTRIES = frozenset(
         "resolve_name",
     }
 )
-# Moduły biblioteki standardowej ze skanu, których kod poza tests/ używa, z powodem; reszta skanu jest w DYNAMIC_IMPORT.
+# Moduły ogólnego użytku ze skanu, z powodem; zakazane (DYNAMIC_IMPORT) są te, które służą do importu albo wykonania
+# pliku albo nie mają zwykłego użycia w tym produkcie. Gdy sonda wykonuje nimi plik z tests/, mają próbkę w ZNANE_LUKI_IMPORTU.
 STDLIB_DOZWOLONE = {
+    "pickle": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; loads importuje moduł po nazwie z danych: próbka",
+    "inspect": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; wiersz poleceń python -m inspect importuje moduł z argumentu: próbka",
+    "logging.config": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; dictConfig z kluczem () importuje fabrykę po nazwie: próbka",
+    "optparse": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; Values.read_module importuje moduł po nazwie: próbka",
+    "cProfile": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; main wykonuje plik z argumentu wiersza poleceń (skan widzi to od 3.14): próbka",
+    "dbm": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; importuje tylko stałe nazwy swoich modułów (_names), więc pliku z tests/ nim nie wykonasz",
+    "encodings": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; importuje tylko encodings.<nazwa bez kropki>, więc pakietu tests nim nie sięgniesz",
+    "xml.dom.domreg": "moduł ogólnego użytku: zakaz dałby fałszywy alarm przy zwykłym użyciu; importuje tylko stałe nazwy z well_known_implementations, także dla PYTHON_DOM",
     "ctypes": "biblioteki Windows w src/rozliczenia/centrum; __import__ tylko stałej nazwy comtypes w DllGetClassObject",
     "sysconfig": "ścieżki Pythona w tools/lib/kroki_lokalne.py; nazwa modułu danych ze zmiennej środowiska: próbka",
     "traceback": "ślad wyjątku w skryptach skilli i src/rozliczenia/call_trace.py; podpowiedź do ImportError: próbka",
@@ -483,7 +485,7 @@ STDLIB_DOZWOLONE = {
 IMPORTLIB_DOZWOLONE = {
     "importlib.resources": (
         "zasób pakietu taty czyta src/rozliczenia/quantity_rules_file.py; files() importuje pakiet po nazwie, więc ta "
-        "droga stoi próbką „import po drodze” w ZNANE_LUKI_IMPORTU"
+        "droga stoi próbką „moduł ogólnego użytku” w ZNANE_LUKI_IMPORTU"
     ),
 }
 DYNAMIC_IMPORT_PROBE = 'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")  # noqa: TID251 - sonda\n'
@@ -609,6 +611,10 @@ ZNANE_LUKI_IMPORTU = {
         'FIXTURES = LOADER("znane_luki", "tests/fixtures/znane_luki.py").load_module()\n'
     ),
     "kod w napisie: exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.znane_luki")\n',
+    "podmoduł obok zakazu: spawn przez multiprocessing.popen_spawn_posix": (
+        "from multiprocessing import popen_spawn_posix\n\n"
+        'getattr(popen_spawn_posix, "spawn").import_main_path("tests/fixtures/znane_luki.py")\n'
+    ),
     "kod w napisie: polecenie python -c": (
         "import subprocess\nimport sys\n\n"
         'subprocess.run([sys.executable, "-c", "import tests.fixtures.znane_luki"], check=True)\n'
@@ -617,24 +623,40 @@ ZNANE_LUKI_IMPORTU = {
     "kod w napisie: code.InteractiveInterpreter": (
         'import code\n\ncode.InteractiveInterpreter().runsource("import tests.fixtures.znane_luki")\n'
     ),
-    "import po drodze: traceback, podpowiedź do ImportError": (
+    "moduł ogólnego użytku: traceback, podpowiedź do ImportError": (
         'import traceback\n\nBLAD = ImportError("x", name="tests.fixtures.znane_luki")\nsetattr(BLAD, "name_from", "nie_ma")\n'
         "traceback.format_exception(BLAD)\n"
     ),
-    "import po drodze: sysconfig, moduł danych ze zmiennej środowiska": (
+    "moduł ogólnego użytku: sysconfig, moduł danych ze zmiennej środowiska": (
         'import os\nimport sysconfig\n\nos.environ["_PYTHON_SYSCONFIGDATA_NAME"] = "tests.fixtures.znane_luki"\n'
         "ZMIENNE = sysconfig.get_config_vars()\n"
     ),
-    "import po drodze: unittest.mock.patch po nazwie": (
+    "moduł ogólnego użytku: unittest.mock.patch po nazwie": (
         'from unittest import mock\n\nmock.patch("tests.fixtures.znane_luki.ROOT", None).start()\n'
     ),
-    "import po drodze: warnings, kategoria z opcji -W": (
+    "moduł ogólnego użytku: warnings, kategoria z opcji -W": (
         'import warnings\n\ngetattr(warnings, "_setoption")("ignore::tests.fixtures.znane_luki.Nie")\n'
     ),
-    "import po drodze: xml.sax.make_parser z nazwą parsera": (
+    "moduł ogólnego użytku: xml.sax.make_parser z nazwą parsera": (
         'import xml.sax\n\nPARSER = xml.sax.make_parser(["tests.fixtures.znane_luki"])\n'
     ),
-    "import po drodze: importlib.resources pakietu": (
+    "moduł ogólnego użytku: pickle.loads po nazwie": (
+        'import pickle\n\nFIXTURES = pickle.loads(b"ctests.fixtures.znane_luki\\nzapisz\\n.")\n'
+    ),
+    "moduł ogólnego użytku: logging.config.dictConfig z fabryką po nazwie": (
+        "import logging.config\n\n"
+        'logging.config.dictConfig({"version": 1, "handlers": {"h": {"()": "tests.fixtures.znane_luki.zapisz"}}})\n'
+    ),
+    "moduł ogólnego użytku: optparse.Values.read_module": (
+        'import optparse\n\noptparse.Values().read_module("tests.fixtures.znane_luki")\n'
+    ),
+    "moduł ogólnego użytku: inspect, wiersz poleceń": (
+        'import inspect\nimport sys\n\nsys.argv = ["inspect", "tests.fixtures.znane_luki"]\ngetattr(inspect, "_main")()\n'
+    ),
+    "moduł ogólnego użytku: cProfile.main z plikiem": (
+        'import cProfile\nimport sys\n\nsys.argv = ["cProfile", "tests/fixtures/znane_luki.py"]\ngetattr(cProfile, "main")()\n'
+    ),
+    "moduł ogólnego użytku: importlib.resources pakietu": (
         'from importlib import resources\n\nFIXTURES = resources.files("tests.fixtures")\n'
     ),
 }
