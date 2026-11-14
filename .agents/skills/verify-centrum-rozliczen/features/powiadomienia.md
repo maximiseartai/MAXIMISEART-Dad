@@ -38,17 +38,19 @@ question for the list of Releases per 10 minutes.
 
 ## Sub-features
 
-- `powiadomienia-dzwonek`: on all five pages of the menu the bell sits right of `Napisz do Maksa`; `GET /api/notifications` has the sent Uwaga as `uwaga`, `{"state": "sent"}`, not new, and the open Zgłoszenie of `zgloszenie` as `zgloszenie` named by its „Co się stało”; `unread` counts the new ones.
-- `powiadomienia-zamkniete`: after Maks closes the Uwaga as `completed` and the Zgłoszenie as `not_planned`, 10 minutes later the bell is `Powiadomienia, są nowe`; Centrum asked at most once per label, and a second page within 10 minutes asks nothing.
-- `powiadomienia-oznaczenie-bez-odpowiedzi`: entering the view while marking read gets no answer (`/api/notifications/read` aborted, harness) shows one error notification with `Centrum rozliczeń nie odpowiada.`; the server's `unread` stays above 0 and, after a reload of Okresy, the bell is `Powiadomienia, są nowe`.
-- `powiadomienia-widok`: the bell opens the view in the same tab with no sidebar item current; the Uwaga row says `Rozwiązana. Będzie w następnej wersji.`, the Zgłoszenie row `Maks przeczytał.`, both with the mark `nowe` and `data-fresh="true"`; the bell is plain `Powiadomienia` at once, the server's `unread` is 0 and `config/powiadomienia.json` keeps the read ids; no alert, no error toast; both themes.
-- `powiadomienia-po-wyjsciu`: after Okresy and back, no row has the mark `nowe`.
-- `powiadomienia-brak-sieci`: without network, Maks closing another Uwaga changes nothing 10 minutes later: Centrum asks, the row still says `Uwaga wysłana do Maksa.`, the bell has no dot, and there is no alert.
-- `powiadomienia-nowa-wersja`: GitHub names v0.2.0 the newest Wydanie on `main`, newer than the tool, with v0.1.0 before it and v0.3.0 published from outside `main`; 10 minutes later the bell is `Powiadomienia, są nowe` after one question for the Releases; the view has the card `Nowa wersja 0.2.0` above the list with `Co nowego`: the intro and its three points as a list, exactly the Uwaga and the Zgłoszenie sent from here (not the case from another computer) and an enabled `Zaktualizuj narzędzie` without `Masz najnowszą wersję.` (in `all` earlier features get that result for an older Wydanie); `Nowa wersja 0.1.0` is a row without a button whose note without points is one paragraph; no v0.3.0; both themes.
-- `powiadomienia-aktualizacja`: the card's button starts the Aktualizacja narzędzia; v0.2.0 never was the tip of `main` in the local origin, so the card says `Masz najnowszą wersję.` and the clone stays on its commit.
-- `powiadomienia-wydanie-aktualne`: with v0.2.0 on the tool's own commit, there is no card above the list; the row `Nowa wersja 0.2.0` has the intro and the three points, no button and no mark `nowe`, and `update_offered` is `false`.
-- `powiadomienia-wydania-brak-sieci`: without network, 10 minutes later Centrum asks GitHub and both rows `Nowa wersja` stay as they were, with no alert and no dot.
-- `powiadomienia-plik-niedostepny`: while another program holds `config/sprawy-taty.json` and `config/powiadomienia.json`, Maks closing an Uwaga shows the row `Rozwiązana. Będzie w następnej wersji.` and above the list the Komunikat that names both files as niedostępne, never uszkodzone; both files stay as they were. Once the program lets them go, the next read of Powiadomienia saves both and the Komunikat is gone.
+Printed by `scripts/sub_features.py --feature powiadomienia` from the drive's steps and checks; refresh the section with it.
+
+- `powiadomienia-dzwonek`: …: the bell sits right of „…”; the sent Uwaga is a Powiadomienie, sent and not new; the open Zgłoszenie is a Powiadomienie named by its „Co się stało”, without the code; the unread count is the new Powiadomienia.
+- `powiadomienia-zamkniete`: the 10 minutes passed, so Centrum asks once per kind of case; Centrum asked the skrzynka about Dad's open cases; a second read within 10 minutes does not ask the skrzynka again.
+- `powiadomienia-oznaczenie-bez-odpowiedzi`: marking the Powiadomienia read without an answer (unreachable, harness) says so in a notification; the Powiadomienia stay new on the server, so the dot on the bell is true.
+- `powiadomienia-widok`: the bell opens the view Powiadomienia in the same tab; a new row keeps its light background while Dad stays; config/… keeps them.
+- `powiadomienia-po-wyjsciu`.
+- `powiadomienia-brak-sieci`: after 10 minutes Centrum asks again.
+- `powiadomienia-nowa-wersja`: after 10 minutes Centrum asks GitHub for the Wydania once; the button of a newer Wydanie has no earlier `Masz najnowszą wersję.`; the card stands above the list; the newest Wydanie on `main` offers the update, the older one does not, the one from outside `main` is no Powiadomienie, and entering the view marked both read.
+- `powiadomienia-aktualizacja`: the update does not take a Wydanie that never was the tip of `main`, so the tool stays where it is; the clone stays on its commit.
+- `powiadomienia-wydanie-aktualne`: a Wydanie Dad is on stays in the history, read, without the button.
+- `powiadomienia-wydania-brak-sieci`: after 10 minutes Centrum asks GitHub again; without network the Powiadomienia about Wydania stay as they were, with no Komunikat.
+- `powiadomienia-plik-niedostepny`: Centrum learned that Maks closed the Uwaga; a held file is niedostępny, never uszkodzony; while the files are held, Centrum does not pretend it saved them; the next read of Powiadomienia saves both files and the Komunikat is gone; config/… now keeps the Uwaga read; config/… now keeps Maks's closing of the Uwaga; the key is neither in the Centrum log nor in the browser.
 
 ## How to get to it (user POV)
 

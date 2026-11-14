@@ -12,31 +12,33 @@ window) is `okno-ustawien.md`.
 
 ## Sub-features
 
-- `ustawienia-pusty-stan`: with no settings file, Okresy asks for the folder okresów with the link `Ustaw w Ustawieniach`, and nothing is set.
-- `ustawienia-jedno-okno-wyboru`: a double click on `Wskaż Folder okresów` in Foldery opens one picker, and while it is open both picker buttons of Foldery wait, also after the window is closed and opened again over Uruchomienia.
-- `ustawienia-folder-okresow`: from the empty Okresy, `Ustaw w Ustawieniach` and the folder picker set the folder okresów, and Tablica okresów appears once the window is closed.
-- `ustawienia-rejestr-zlecen`: before the Rejestr zleceń is set, Uruchomienia says it is missing and its group links to Foldery; that link and the file picker set it.
-- `ustawienia-braki-do-startu`: closing the window shows Uruchomienia without the alert and without the link: pointing it reads again what the start needs.
-- `ustawienia-motyw-bez-odczytu`: switching the theme in Wygląd over Uruchomienia does not read again what the start needs: the theme is not one of Dad's files.
-- `ustawienia-anulowanie`: a cancelled picker changes nothing.
-- `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone shows `Nie ma już: <name>` in Foldery.
-- `ustawienia-nieczytelny-plik`: while the settings file cannot be read, both paths show `Nie da się teraz odczytać Ustawień Centrum`, not `Nie wskazano`.
-- `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder Dad cannot open now show `Nie da się teraz odczytać: <name>`, not `Nie ma już`.
-- `ustawienia-motyw`: `Jasny` under Motyw in Wygląd switches to light, and the choice survives a reload.
-- `ustawienia-zapisano-cofnij`: a switch of Motyw saves at once and shows the toast `Zapisano` with `Cofnij`, wide and narrow; `Cofnij` takes the theme back and says `Cofnięto` in the window Ustawienia.
-- `ustawienia-blad-w-oknie`: a save of Motyw that fails shows `Nie udało się` inside the window Ustawienia, where nothing covers it, and the page is back in the theme of the settings file at once, without a reload.
-- `ustawienia-blad-po-zamknieciu`: a save of Motyw that fails after Dad closed the window Ustawienia shows `Nie udało się` over the page, and the theme stays as it was.
-- `ustawienia-blad-zostawia-nastepny-wybor`: a save of Motyw that fails while Dad's next choice still waits for its answer keeps that next choice on the page, instead of the theme of the settings file.
-- `ustawienia-historia`: Historia lists the changes from the newest, with before → after, when, and `spoza Centrum` for a change of the settings file by hand; `Cofnij` on a row is a new row on top, and an undo the server refuses is one sentence under its row.
-- `ustawienia-historia-wydanie`: a row of Historia whose change came with a Release reads `Wydanie <version>`, not `spoza Centrum`.
-- `ustawienia-odmowa-przy-polu`: a wrong Rejestr zleceń, typed with `Wpisz` or picked, is not saved, and the sentence of the 422 stands under the field; Esc leaves the field, not the window.
-- `ustawienia-wpisz-druga-bez-zmiany`: `Wpisz` saves the one path typed, without the quotes Explorer adds, and leaves the other path as it was, for either path.
-- `ustawienia-zle-ustawienie`: a wrong setting in the settings file is the server's sentence (`folders_problem`): under its field for a wrong folder okresów, above the list Foldery for a damaged file.
-- `ustawienia-historia-bez-cofniecia`: a row of Historia that cannot be undone (`Nie przyjęto`, a wrong content of the file) has no `Cofnij`.
-- `ustawienia-autostart`: the switch `Uruchamiaj Centrum razem z Windows` in Narzędzie writes or removes Centrum's shortcut in the Autostart folder and shows `Zapisano` with `Cofnij`; a shortcut removed by hand is the switch off and a row `Start razem z Windows`, `Włączony → Wyłączony`, `spoza Centrum` in Historia, whose `Cofnij` writes it back.
-- `ustawienia-autostart-bez-windows`: on a computer without Windows Autostart (a Mac) the switch is disabled and its row says the server's one sentence why.
-- `ustawienia-haslo-skrzynki`: in Skrzynka raportów a wrong old password (a Polish letter) shows its sentence and Dad can still change it; a new password goes into an empty password field that never shows the old one; after `Zapisz` Centrum logs in once and says the skrzynka took it, rejected it, or does not answer; the file keeps Maks's format and changes only its password line; Historia reads `Hasło skrzynki raportów` `zmieniono`, without `Cofnij`; no answer carries a password.
-- `ustawienia-przypomnienia`: in Przypomnienia the switch `Przypomnienia o raporcie` is off with no file; pory that overlap are refused with one sentence under `Pora wieczorna` and nothing is saved; the preview shows the fixed subject with why it is fixed, Dad's first sentence with the day, the fixed pattern and his footer before saving; `Zapisz przypomnienia` and the switch save with `Zapisano`, the first switch-on remembers today, and Historia names `Przypomnienia o raporcie` and `Pora poranna` with before → after; the step leaves them switched off again, so their work writes nothing to `config` in a later feature of the run.
+Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps and checks; refresh the section with it.
+
+- `ustawienia-pusty-stan`: no settings file means nothing is set.
+- `ustawienia-jedno-okno-wyboru`: a double click on Wskaż Folder okresów opens one picker (… requests); while the picker is open (held, harness), both picker buttons of Foldery wait for it; closed and opened again over Uruchomienia, Foldery still waits for the open picker; no button opened a second picker (… requests); after the cancelled picker every picker button works again, nothing set.
+- `ustawienia-folder-okresow`: the folder picker opened with its title; the settings file remembers the folder okresów.
+- `ustawienia-rejestr-zlecen`: before the Rejestr zleceń is set, Uruchomienia says it is missing and links to Foldery; the file picker opened; the settings file remembers the Rejestr zleceń.
+- `ustawienia-braki-do-startu`: the Rejestr zleceń pointed in Ustawienia is no longer missing on Uruchomienia under it: its start is read again.
+- `ustawienia-motyw-bez-odczytu`: switching the theme over Uruchomienia does not read the start again (… reads).
+- `ustawienia-anulowanie`: a cancelled picker leaves the settings file unchanged.
+- `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone is reported as missing.
+- `ustawienia-nieczytelny-plik`: a settings file that cannot be read now is reported as unreadable, not as nothing chosen.
+- `ustawienia-niedostepna-sciezka`.
+- `ustawienia-motyw`.
+- `ustawienia-zapisano-cofnij`: the switch shows „Zapisano · Cofnij” (… px).
+- `ustawienia-blad-w-oknie`: after the failed save the page is back in the theme of the settings file, without a reload; the failed save left the theme as it was.
+- `ustawienia-blad-po-zamknieciu`: the save of Motyw waits for its answer (… requests, held); a save that fails after the window Ustawienia closed is a notification over the page; the save that failed after the window closed left the theme as it was.
+- `ustawienia-blad-zostawia-nastepny-wybor`: each click on Motyw is a save that waits for its answer (… requests, held); the failed save of Ciemny keeps Dad's next choice Jasny, which still waits (dark=…, Jasny=…); the failed saves left the theme as it was.
+- `ustawienia-historia`: a change of the settings file outside Centrum is the newest row, marked „spoza Centrum”; the server's Historia has the change outside Centrum, then the undo from the toast; the undo is a new row on top, and the row it undid stays; an undo the server refuses is one sentence under its row.
+- `ustawienia-historia-wydanie`: a change from a Release reads „Wydanie 0.9.0” in its row of Historia, with „Cofnij”.
+- `ustawienia-odmowa-przy-polu`: a wrong typed path is not saved (… px); Esc in the field goes back from the field and leaves the window open; a wrong file from the picker is refused under its field, not saved.
+- `ustawienia-wpisz-druga-bez-zmiany`: a … pasted from Explorer in quotes is saved without them; typing the … leaves the other path (…) as it was.
+- `ustawienia-zle-ustawienie`: the server names the wrong field (…); a wrong folder okresów in the file is the server's one sentence under its field, nowhere else; a damaged file names no field (…); the sentence about the whole file stands above the list Foldery.
+- `ustawienia-historia-bez-cofniecia`: the server's Historia has both wrong contents on top, neither of them undoable; a row of Historia that cannot be undone has no „Cofnij”, while a change of Dad's has; the good file is back.
+- `ustawienia-autostart`: the server says the shortcut is there (…); a shortcut removed by hand is the switch off; the removed shortcut is the newest row of Historia, marked „spoza Centrum”.
+- `ustawienia-autostart-bez-windows`: a computer without Windows Autostart is unsupported (…); the switch is disabled with the server's one sentence why.
+- `ustawienia-haslo-skrzynki`: a wrong old password shows its sentence under the address and leaves „Zmień hasło” on; a password the skrzynka rejects is still saved, only its line changes and the file keeps BOM and CRLF; the password the skrzynka took is in the file; with no network the password is saved and the section says the skrzynka does not answer; neither GET /api/settings nor the Historia carries any password; Historia says only that the password changed, without „Cofnij”; a password with Polish letters is not saved.
+- `ustawienia-przypomnienia`: with no file the section shows the values of ADR 0030, switched off; pory that overlap are refused under Pora wieczorna and nothing is saved; the preview shows Dad's sentence and footer before anything is saved; Historia names the switch and the morning with before → after.
 
 ## How to get to it (user POV)
 
