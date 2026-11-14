@@ -41,8 +41,8 @@ class AddressPart(enum.Enum):
 _KINDS: Final = frozenset({"ul", "os", "al", "pl"})
 _FLAT_WORD: Final = "lokal"
 _SLASH: Final = re.compile(r"\s*/\s*")
-# Interpunkcja i każdy inny znak, który nie jest literą, cyfrą, ``/`` ani odstępem, dzieli słowa.
 _SEPARATORS: Final = re.compile(r"[^\w/\s]|_")
+"""Interpunkcja i każdy inny znak, który nie jest literą, cyfrą, ``/`` ani odstępem, dzieli słowa."""
 
 
 @dataclass(frozen=True)

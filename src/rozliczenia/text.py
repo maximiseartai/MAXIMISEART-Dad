@@ -9,8 +9,8 @@ import unicodedata
 
 __all__ = ["WEEKDAY_LABELS", "day_label", "normalize_text", "plural", "row_range", "short_day_label"]
 
-# Skrót dnia tygodnia (indeks jak ``date.weekday()``, 0 to poniedziałek).
 WEEKDAY_LABELS: Final = ("pon", "wt", "śr", "czw", "pt", "sob", "niedz")
+"""Skrót dnia tygodnia (indeks jak ``date.weekday()``, 0 to poniedziałek)."""
 
 
 def normalize_text(value: object) -> str:

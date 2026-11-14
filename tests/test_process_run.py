@@ -22,6 +22,7 @@ from rozliczenia.process_run import Counter, Finished, Outcome, Process, Stop, r
 from rozliczenia.progress import ProgressSnapshot
 from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
+from rozliczenia.tool_files import TOOL_ROOT
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_process import (
@@ -390,3 +391,47 @@ def test_slad_wywolan_zatrzymania_ucina_lancuch_przyczyn_na_dziesieciu_takze_lan
 
     assert isinstance(outcome.ending, Stop) and outcome.ending.trace is not None, outcome.ending
     assert [cause.exception_type for cause in outcome.ending.trace.causes] == 10 * ["ValueError"]
+
+
+def test_slad_wywolan_pomija_ramke_kodu_bez_pliku_takze_gdy_katalog_biezacy_to_katalog_narzedzia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ramka kodu bez pliku na dysku (moduł zamrożony jak „<frozen runpy>”, kod z „<string>”) nie jest kodem narzędzia,
+    więc ślad wywołań nieoczekiwanego wyjątku jej nie niesie, także gdy katalog bieżący to katalog narzędzia, w którym
+    jej nazwa wyglądałaby jak plik narzędzia."""
+
+    def without_file() -> NoReturn:
+        raise RuntimeError(SECRET)
+
+    without_file.__code__ = without_file.__code__.replace(co_filename="<string>")
+
+    def calling_code_without_file(_inputs: Inputs, _context: RunContext) -> NoReturn:
+        without_file()
+
+    monkeypatch.chdir(TOOL_ROOT)
+    outcome = run_core(fake_process(execute=calling_code_without_file), tmp_path / "metrics.jsonl")
+
+    assert isinstance(outcome.ending, Stop) and outcome.ending.trace is not None, outcome.ending
+    assert [frame.function for frame in outcome.ending.trace.frames][-1] == "calling_code_without_file"
+    assert "<string>" not in {frame.file for frame in outcome.ending.trace.frames}
+
+
+def test_podsumowanie_i_widok_rozmowcy_po_silniku_nie_licza_sie_do_czasu_uruchomienia(tmp_path: Path) -> None:
+    """Podsumowanie i widok rozmówcy powstają dopiero po pomiarze Czasu uruchomienia, więc ich czas nie liczy się do
+    niego ani w wyniku, ani w rekordzie metryk."""
+
+    clock = ManualClock()
+
+    def working_250_ms(inputs: Inputs, context: RunContext) -> Summary:
+        clock.advance(0.25)
+        return execute(inputs, context)
+
+    def view_taking_2_s(inputs: Inputs, summary: Summary) -> Durations:
+        clock.advance(2)
+        return durations_view(inputs, summary)
+
+    outcome = run_core(fake_process(execute=working_250_ms), tmp_path / "metrics.jsonl", view=view_taking_2_s, clock=clock)
+
+    assert (outcome.result, outcome.total_duration_ms) == ("OK", 250)
+    [record] = records(tmp_path / "metrics.jsonl")
+    assert record["total_duration_ms"] == 250
