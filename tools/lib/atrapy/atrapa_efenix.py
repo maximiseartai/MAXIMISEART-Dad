@@ -214,6 +214,9 @@ class StatusChange(enum.Enum):
     FORWARD_TWO_STATUSES = "„Tak” w Przekazaniu do akceptacji wysyła w treści „Do akceptacji” i „Anulowane”"
     FORWARD_STATUS_IN_URL = "„Tak” w Przekazaniu do akceptacji wysyła „Anulowane” w adresie, a „Do akceptacji” w treści"
     FORWARD_TWICE = "„Tak” w Przekazaniu do akceptacji wysyła żądanie zmiany statusu drugi raz po odpowiedzi na pierwsze"
+    FORWARD_EMPTY_STATUS_IN_URL = "„Tak” w Przekazaniu do akceptacji wysyła pusty ``xstatus`` w adresie, a „Do akceptacji” w treści"
+    FORWARD_EMPTY_ORDER = "„Tak” w Przekazaniu do akceptacji wysyła w treści pusty ``order_id`` przed identyfikatorem otwartego zlecenia"
+    FORWARD_UNREADABLE = "„Tak” w Przekazaniu do akceptacji wysyła POST z treścią, która nie jest tekstem UTF-8"
     ON_LOAD = "strona zlecenia po wczytaniu sama wysyła zmianę statusu na „Do akceptacji”"
     POPUP = "strona zlecenia po wczytaniu otwiera nowe okno ze zmianą statusu na „Anulowane”"
 
@@ -1046,6 +1049,12 @@ _FORWARD_REQUESTS: Final = {
         "post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''})"
         ".then(() => post('action_change_status.php', {order_id: mainId, xstatus: status, comment: ''}))"
     ),
+    StatusChange.FORWARD_EMPTY_STATUS_IN_URL: "post('action_change_status.php?xstatus=', {order_id: mainId, xstatus: status, comment: ''})",
+    StatusChange.FORWARD_EMPTY_ORDER: (
+        "fetch('action_change_status.php', {method: 'POST', body: 'order_id=&order_id=' + mainId + '&xstatus=' + encodeURIComponent(status)"
+        " + '&comment='})"
+    ),
+    StatusChange.FORWARD_UNREADABLE: "fetch('action_change_status.php', {method: 'POST', body: new Uint8Array([0xff, 0xfe, 0xfd])})",
 }
 
 
