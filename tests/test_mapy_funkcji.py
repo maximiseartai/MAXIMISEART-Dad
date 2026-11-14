@@ -289,6 +289,29 @@ ODMOWY: Final = {
     "check: na parametrze lambdy": '(lambda r: r.check(True, "x"))(run)  # tu',
     "check: przez klasę Run": 'Run.check(run, True, "x")  # tu',
     "check: przez klasę obiektu": 'run.__class__.check(run, True, "x")  # tu',
+    "check: pętla po nazwie z parametru": 'for _ in feature:\n        run.check(True, "x")  # tu',
+    "check: pętla po range": 'for _ in range(2):\n        run.check(True, "x")  # tu',
+    "check: pętla po pustej krotce": 'for _ in ():\n        run.check(True, "x")  # tu',
+    "check: pętla po literale z gwiazdką": 'for _ in (*feature,):\n        run.check(True, "x")  # tu',
+    "check: pętla nad literałem z break": 'for _ in (1, 2):\n        run.check(True, "x")  # tu\n        break',
+    "check: pętla nad literałem z continue": 'for _ in (1, 2):\n        run.check(True, "x")  # tu\n        continue',
+    "check: pętla nad literałem z else": 'for _ in (1, 2):\n        run.check(True, "x")  # tu\n    else:\n        pass',
+    "check: pętla po nazwie związanej drugi raz": 'lista = (1, 2)\n    lista = (3,)\n    for _ in lista:\n        run.check(True, "x")  # tu',
+    "check: pętla po nazwie z innego bloku": 'if feature:\n        lista = (1, 2)\n    for _ in lista:\n        run.check(True, "x")  # tu',
+    "check: pętla po nazwie przypisanej po pętli": 'for _ in lista:\n        run.check(True, "x")  # tu\n    lista = (1, 2)',
+    "check: pętla po nazwie pustej krotki": 'lista = ()\n    for _ in lista:\n        run.check(True, "x")  # tu',
+    "check: pętla while": 'while feature:\n        run.check(True, "x")  # tu\n        feature = ""',
+    "check: wyrażenie listowe nad literałem": '[run.check(True, "x") for _ in (1, 2)]  # tu',
+    "check: gałąź if": 'if feature:\n        run.check(True, "x")  # tu',
+    "check: gałąź else": 'if feature:\n        pass\n    else:\n        run.check(True, "x")  # tu',
+    "check: wyrażenie warunkowe": 'run.check(True, "x") if feature else None  # tu',
+    "check: drugi argument or": 'feature or run.check(True, "x")  # tu',
+    "check: except": 'try:\n        pass\n    except ValueError:\n        run.check(True, "x")  # tu',
+    "check: ciało try z except": 'try:\n        run.check(True, "x")  # tu\n    except ValueError:\n        pass',
+    "check: else po try": 'try:\n        pass\n    except ValueError:\n        pass\n    else:\n        run.check(True, "x")  # tu',
+    "check: przypadek match": 'match feature:\n        case _:\n            run.check(True, "x")  # tu',
+    "check: komunikat assert": 'assert feature, run.check(True, "x")  # tu',
+    "check: po return drive()": 'if feature == "x":\n        return\n    run.check(True, "x")  # tu',
 }
 # Postać → cały napęd, gdy odmowa dotyczy miejsca poza wstawką.
 ODMOWY_MODULU: Final = {
@@ -313,8 +336,9 @@ ODMOWY_MODULU: Final = {
 # Pomocnik modułu z run.check, którego wywołanie wstawka stawia w ciele drive() napędu NAPED.
 POMOCNIK: Final = '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")\n'
 # Postać wywołania pomocnika z krokami albo sprawdzeniami → wstawka w drive(); polecenie odmawia, bo nie wie, czy, ile
-# razy i w jakiej kolejności krok pomocnika biegnie (mechanizm: czyta tylko jedno wywołanie, które jest całą
-# instrukcją ciała drive() albo całą prawą stroną przypisania do nazwy). Linia odmowy ma komentarz `# tu`.
+# razy i w jakiej kolejności krok pomocnika biegnie (mechanizm: czyta tylko wywołania, z których każde jest całą
+# instrukcją albo całą prawą stroną przypisania do nazw w ciele drive() albo w ciele try z samym finally, które nie
+# zwraca). Linia odmowy ma komentarz `# tu`.
 ODMOWY_POMOCNIKA: Final = {
     "cel pętli for (W1 r1)": "d = {}\n    for d[_pomocnik(run)] in range(2):  # tu\n        pass",
     "dalszy człon łańcucha porównań (W1 r1)": "0 > 1 > _pomocnik(run)  # tu",
@@ -349,6 +373,7 @@ ODMOWY_POMOCNIKA: Final = {
     "try zagnieżdżony w try z finally": "try:\n        try:\n            _pomocnik(run)  # tu\n        finally:\n"
     "            pass\n    finally:\n        pass",
     "try z finally, które zwraca": "try:\n        _pomocnik(run)  # tu\n    finally:\n        return",
+    "try z finally, które zwraca pod if": "try:\n        _pomocnik(run)  # tu\n    finally:\n        if feature:\n            return",
     "drugie wywołanie w pętli": "_pomocnik(run)\n    for _ in range(2):\n        _pomocnik(run)  # tu",
     "lambda w drive()": "(lambda: _pomocnik(run))()  # tu",
     "funkcja w drive()": "def _w_drive() -> None:\n        _pomocnik(run)  # tu\n\n    _w_drive()",
@@ -519,6 +544,34 @@ CZYTANE_POMOCNIKI: Final = {
 }
 
 
+# Pomocnik z run.check w pętli, która nie jest pętlą nad stałą listą → cały napęd; odmowa wskazuje linię `# tu`.
+ODMOWY_PRZEPLYWU_POMOCNIKA: Final = {
+    "pętla po range w pomocniku": NAPED.format(wstawka="_pomocnik(run)")
+    + '\n\ndef _pomocnik(run: Run) -> None:\n    for _ in range(2):\n        run.check(True, "x")  # tu\n',
+    "return w pomocniku przed check": NAPED.format(wstawka="_pomocnik(run, page)")
+    + '\n\ndef _pomocnik(run: Run, page: object) -> None:\n    if page is None:\n        return\n'
+    '    run.check(True, "x")  # tu\n',
+}
+
+
+# Pętla nad stałą listą: bieg drukuje sprawdzenie w każdym obrocie, a sekcja raz na pętlę.
+CZYTANE_PETLE: Final = {
+    "krotka w nagłówku for": NAPED.format(wstawka='for nazwa in ("a", "b"):\n        run.check(True, f"w pętli {nazwa}")'),
+    "lista przypisana nazwie wcześniej w bloku": NAPED.format(
+        wstawka='lista = ["a", "b"]\n    for nazwa in lista:\n        run.check(True, "w pętli")\n    run.check(True, "po pętli")'
+    ),
+    "krotka z adnotacją w ciele try": NAPED.format(
+        wstawka='try:\n        lista: tuple[str, ...] = ("a", "b")\n        for _ in lista:\n            run.check(True, "w pętli")\n'
+        "    finally:\n        pass"
+    ),
+    "pętle zagnieżdżone nad literałami": NAPED.format(
+        wstawka='for _ in (1, 2):\n        for _ in [3]:\n            run.check(True, "wewnątrz")\n        run.check(True, "na zewnątrz")'
+    ),
+    "pętla nad literałem w pomocniku": NAPED.format(wstawka="_pomocnik(run)")
+    + '\n\ndef _pomocnik(run: Run) -> None:\n    for _ in (1, 2, 3):\n        run.check(True, "w pomocniku")\n',
+}
+
+
 class _Zapis:
     """Run próbki napędu, który zapisuje kroki i sprawdzenia w kolejności biegu."""
 
@@ -546,6 +599,67 @@ def test_polecenie_podfunkcji_drukuje_pomocnika_tak_jak_bieg_napedu(polecenie: M
     czytane = polecenie.sub_features(zrodlo, "sonda.py")
 
     assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
+
+
+# Sprawdzenie w miejscu ciała drive(), które biegnie raz, gdy biegnie drive(); bieg drukuje je raz, jak sekcja.
+CZYTANE_PRZEPLYW: Final = {
+    "warunek if": 'if run.check(True, "w warunku") is None:\n        pass',
+    "pierwszy argument or": 'run.check(True, "w or") or None',
+    "przedmiot match": 'match run.check(True, "w match"):\n        case _:\n            pass',
+    "warunek assert": 'assert run.check(True, "w assert") is None',
+    "ciało try z samym finally": 'try:\n        run.check(True, "w try")\n    finally:\n        run.check(True, "w finally")',
+    "return po sprawdzeniu": 'run.check(True, "przed return")\n    return',
+    "iterowane pętli po wywołaniu": 'for _ in str(run.check(True, "w iterowanym")):\n        pass',
+    "return funkcji w drive()": 'def _w_drive() -> int:\n        return 1\n\n    run.check(True, "po funkcji")',
+}
+
+
+@pytest.mark.parametrize("opis", list(CZYTANE_PRZEPLYW))
+def test_polecenie_podfunkcji_czyta_sprawdzenie_w_miejscu_ktore_biegnie_raz_jak_bieg(polecenie: ModuleType, opis: str, tmp_path: Path) -> None:
+    zrodlo = NAPED.format(wstawka=CZYTANE_PRZEPLYW[opis])
+    plik = tmp_path / "sonda_przeplywu.py"
+    plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
+    run = _Zapis()
+    modul(plik).drive(run, None)
+
+    czytane = polecenie.sub_features(zrodlo, "sonda.py")
+
+    assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
+
+
+@pytest.mark.parametrize("opis", list(CZYTANE_PETLE))
+def test_polecenie_podfunkcji_drukuje_sprawdzenie_raz_na_petle_nad_stala_lista(polecenie: ModuleType, opis: str, tmp_path: Path) -> None:
+    """Bieg drukuje sprawdzenie w pętli nad stałą listą raz w każdym obrocie, a sekcja raz na pętlę: test porównuje
+    różne sprawdzenia biegu w kolejności ich pierwszego wystąpienia z wydrukiem, a pole zmiennej pętli w wydruku (`…`)
+    pasuje do każdej jej wartości."""
+
+    zrodlo = CZYTANE_PETLE[opis]
+    plik = tmp_path / "sonda_petli.py"
+    plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
+    run = _Zapis()
+    modul(plik).drive(run, None)
+
+    czytane = polecenie.sub_features(zrodlo, "sonda.py")
+
+    wydruk = [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]]
+    wzory = [(rodzaj, re.compile(".*".join(map(re.escape, tekst.split("…"))))) for rodzaj, tekst in wydruk]
+    pierwsze = dict.fromkeys(
+        next(wpis for wpis, (rodzaj, wzor) in zip(wydruk, wzory, strict=True) if rodzaj == zapis[0] and wzor.fullmatch(zapis[1]))
+        for zapis in run.bieg
+    )
+    assert list(pierwsze) == wydruk
+    assert len(run.bieg) > len(wydruk)
+
+
+@pytest.mark.parametrize("opis", list(ODMOWY_PRZEPLYWU_POMOCNIKA))
+def test_polecenie_podfunkcji_odmawia_sprawdzenia_pomocnika_poza_jednym_biegiem(polecenie: ModuleType, opis: str) -> None:
+    zrodlo = ODMOWY_PRZEPLYWU_POMOCNIKA[opis]
+    linia = next(numer for numer, tekst in enumerate(zrodlo.splitlines(), start=1) if "# tu" in tekst)
+
+    with pytest.raises(polecenie.Unreadable) as odmowa:
+        polecenie.sub_features(zrodlo, "sonda.py")
+
+    assert str(odmowa.value).startswith(f"sonda.py:{linia}: "), str(odmowa.value)
 
 
 # Ciało drive() i ciało try z samym finally, w którym instrukcja przed pomocnikiem rzuca wyjątek.
@@ -579,8 +693,9 @@ def test_wyjatek_przed_pomocnikiem_konczy_bieg_w_try_z_finally_jak_w_ciele_drive
 # Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → (napęd, ile razy jego bieg drukuje
 # komunikat LUKA; None, gdy drukuje kroki innego modułu). Każdy przechodzi przez ruff z konfiguracją drive/ i przez
 # polecenie, a sekcja drukuje LUKA inną liczbę razy niż bieg. Polecenie odmawia każdego atrybutu .step/.check poza
-# tymi, które czyta, i każdego użycia nazwy pomocnika poza jednym wywołaniem w instrukcji drive(), więc te postacie
-# sięgają po check bez atrybutu, po pomocnika bez jego nazwy albo po funkcję innego modułu.
+# tymi, które czyta, i każdego użycia nazwy pomocnika poza wywołaniem, które jest całą instrukcją ciała drive() albo
+# ciała try z samym finally, więc te postacie sięgają po check bez atrybutu, po pomocnika bez jego nazwy albo po
+# funkcję innego modułu.
 POMOCNIK_LUKI: Final = '\n\ndef sprawdz(run: Run) -> None:\n    run.check(True, "LUKA")\n'
 ZNANE_LUKI: Final = {
     "zna tylko atrybut .check: check przez getattr": (NAPED.format(wstawka='getattr(run, "check")(True, "LUKA")'), 1),

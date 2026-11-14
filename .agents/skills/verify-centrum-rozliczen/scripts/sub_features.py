@@ -11,7 +11,10 @@ helper (a plain top-level function the module binds once, whose first parameter 
 ``run.step`` or ``run.check``) prints its steps and checks at each call of ``drive``, in the order of the statements:
 each whole statement of ``drive``'s body runs once when ``drive`` runs to its end, and so does each statement of the
 body of a ``try`` that stands so in ``drive`` with only a ``finally`` that does not return, as an exception in that
-body leaves ``drive`` after the ``finally``.
+body leaves ``drive`` after the ``finally``. A step or a check in a loop prints once per loop over a fixed list: a
+``for`` over a non-empty tuple or list literal, written in its header or bound to a name the module binds only once,
+earlier in the same block, without ``break``, ``continue`` or ``else``, runs its body at least once and as many times
+as the code says.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred
@@ -20,7 +23,9 @@ a check before the first step, and any attribute ``.step`` or ``.check`` in the 
 is not the called function of such a call on ``run`` in the body of ``drive`` or of a helper (outside any function,
 lambda or class in it), any use of a helper's name but a call ``helper(run, …)`` that is a whole statement, or the
 whole value of an assignment to names, of such a body, before any ``return`` of ``drive`` and without a step or a
-check in its arguments, and a helper that is decorated or yields: elsewhere it cannot tell whether, how many times or
+check in its arguments, a helper that is decorated or yields, and a step or a check of ``drive`` or a helper in any
+other loop, in a condition (a branch, an operand after the first of ``and``/``or``, ``except``, the ``else`` or the
+body with ``except`` of ``try``) or after a ``return`` of its function: elsewhere it cannot tell whether, how many times or
 in which order the helper runs. It does not see a check reached without such an attribute, as
 ``getattr(run, "check")``, a function of another drive module, or a helper reached without its name, as
 ``globals()["helper"]``. Checks in the
@@ -44,6 +49,7 @@ from drive import FEATURES, feature
 
 DRIVE = Path(__file__).resolve().parent / "drive"
 CALLS = frozenset({"step", "check"})
+NOT_FIXED_LOOP = "in a loop that is not a `for` over a fixed list (a non-empty tuple or list literal, without break, continue or else)"
 
 
 class Unreadable(Exception):
@@ -91,16 +97,21 @@ def _drive(tree: ast.Module, module: str) -> ast.FunctionDef:
 def _own_calls(function: ast.FunctionDef) -> list[ast.Call]:
     """Calls ``run.step``/``run.check`` in ``function`` itself, not in a function, lambda or class inside it."""
 
-    calls: list[ast.Call] = []
+    calls = [node for node in _own_nodes(function) if isinstance(node, ast.Call) and _is_run_call(node.func)]
+    return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
+
+
+def _own_nodes(function: ast.FunctionDef) -> list[ast.AST]:
+    """The nodes of ``function``'s body, not those of a function, lambda or class inside it."""
+
+    nodes: list[ast.AST] = []
     stack: list[ast.AST] = list(function.body)
     while stack:
         node = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
-            continue
-        if isinstance(node, ast.Call) and _is_run_call(node.func):
-            calls.append(node)
-        stack.extend(ast.iter_child_nodes(node))
-    return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            nodes.append(node)
+            stack.extend(ast.iter_child_nodes(node))
+    return nodes
 
 
 def _is_run_call(node: ast.AST) -> bool:
@@ -123,8 +134,66 @@ def _refuse_other_forms(tree: ast.Module, own: list[ast.Call], module: str) -> N
                 module,
                 node,
                 f"`{ast.unparse(node)}` is not run.{node.attr} called in the body of drive() or of a helper drive() calls "
-                f"once as a whole statement `helper(run, …)`; call run.{node.attr}(…) there, so the map sees what the drive prints",
+                f"as a whole statement `helper(run, …)`; call run.{node.attr}(…) there, so the map sees what the drive prints",
             )
+
+
+def _refuse_flow(tree: ast.Module, function: ast.FunctionDef, module: str) -> None:
+    """Fails on a step or a check of ``function`` that may run another number of times than the section says."""
+
+    parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    bound = Counter(name for node in ast.walk(tree) for name in binds(node))
+    returns = [node.lineno for node in _own_nodes(function) if isinstance(node, ast.Return)]
+    for call in _own_calls(function):
+        where = "after a `return`" if any(line < call.lineno for line in returns) else None
+        child: ast.AST = call
+        while where is None and (parent := parents[id(child)]) is not function:
+            if isinstance(parent, ast.For) and child is not parent.iter and not _fixed_loop(parent, parents, bound):
+                where = NOT_FIXED_LOOP
+            elif isinstance(parent, ast.AsyncFor | ast.While | ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp):
+                where = NOT_FIXED_LOOP
+            elif _branch(parent, child):
+                where = "in a condition"
+            child = parent
+        if where is not None:
+            raise _refuse(module, call, f"run.{call.func.attr} of {function.name}() stands {where}, and the section prints "
+                          "each step and check once: the command reads one only where it runs once, or once per loop over "
+                          "a fixed list; move it out, or loop over a non-empty tuple or list literal")
+
+
+def _branch(parent: ast.AST, child: ast.AST) -> bool:
+    """Whether ``child`` runs only on some runs of ``parent``."""
+
+    if isinstance(parent, ast.If | ast.IfExp):
+        return child is not parent.test
+    if isinstance(parent, ast.BoolOp):
+        return child is not parent.values[0]
+    if isinstance(parent, ast.Match):
+        return child is not parent.subject
+    if isinstance(parent, ast.Try | ast.TryStar):
+        return child in parent.orelse or (child in parent.body and bool(parent.handlers))
+    if isinstance(parent, ast.Assert):
+        return child is parent.msg
+    return isinstance(parent, ast.ExceptHandler)
+
+
+def _fixed_loop(loop: ast.For, parents: dict[int, ast.AST], bound: Counter[str]) -> bool:
+    """Whether ``loop`` runs its body at least once and as many times as the code says (see the module docstring)."""
+
+    def fixed(node: ast.expr) -> bool:
+        return isinstance(node, ast.Tuple | ast.List) and bool(node.elts) and not any(isinstance(e, ast.Starred) for e in node.elts)
+
+    block = next(body for _, body in ast.iter_fields(parents[id(loop)]) if isinstance(body, list) and loop in body)
+    earlier = block[: block.index(loop)]
+    named = isinstance(loop.iter, ast.Name) and bound[loop.iter.id] == 1 and any(
+        isinstance(node, ast.Assign | ast.AnnAssign)
+        and [ast.unparse(target) for target in getattr(node, "targets", [getattr(node, "target", None)])] == [loop.iter.id]
+        and node.value is not None
+        and fixed(node.value)
+        for node in earlier
+    )
+    jumps = any(isinstance(node, ast.Break | ast.Continue) for part in loop.body for node in ast.walk(part))
+    return (fixed(loop.iter) or named) and not jumps and not loop.orelse
 
 
 def _helpers(tree: ast.Module) -> dict[str, ast.FunctionDef]:
@@ -184,6 +253,8 @@ def sub_features(source: str, module: str) -> list[tuple[str, list[str]]]:
     known = constants(tree)
     drive = _drive(tree, module)
     helpers = _helpers(tree)
+    for function in [drive, *helpers.values()]:
+        _refuse_flow(tree, function, module)
     own: list[ast.Call] = []
     for call in sorted([*_own_calls(drive), *_helper_calls(tree, drive, helpers, module)], key=lambda call: (call.lineno, call.col_offset)):
         own += _own_calls(helpers[call.func.id]) if isinstance(call.func, ast.Name) else [call]

@@ -158,10 +158,14 @@ behaviour, then exactly these H2s in order:
    calls as a whole statement `helper(run, …)` or `name = helper(run, …)`, before any
    `return`, of its body or of the body of a `try` in it with only a `finally` that does not
    return: each such statement runs once when `drive` runs to its end, so the helper's steps
-   and checks print at each call, in the order of the statements. It refuses, with the file
+   and checks print at each call, in the order of the statements. A step or a check in a
+   loop prints once per loop over a fixed list: a `for` over a non-empty tuple or list literal,
+   in its header or bound to a name the module binds once, earlier in the same block, without
+   `break`, `continue` or `else`. It refuses, with the file
    and the line, every other form of them, every other `.step` or `.check` attribute in the
    module, on whatever object, any other use of such a helper and one that is decorated or
-   yields, as it cannot tell whether, how many times or in which order that runs. It does not
+   yields, and a step or a check in any other loop, in a condition or after a `return` of its
+   function, as it cannot tell whether, how many times or in which order that runs. It does not
    see a check reached without such an attribute, as `getattr(run, "check")`, a function of
    another drive module, or a helper reached without its name. A field of an f-string message prints
    as `…`, except a module constant, which prints its value. A line with the ID
