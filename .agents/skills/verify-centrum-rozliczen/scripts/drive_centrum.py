@@ -37,6 +37,7 @@ from harness import Log
 from import_dynamiczny import modul
 from komunikat_mapy import call_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.efenix_browser import launch_options
 from rozliczenia.tool_files import config_dir
 
 MODULES = {each.name: modul(each.module) for each in FEATURES}
@@ -189,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     owners: list[str] = []
     try:
         with sync_playwright() as playwright, page_requests.recording(run.evidence):
-            browser = playwright.chromium.launch()
+            browser = playwright.chromium.launch(**launch_options(playwright))
             try:
                 page = dad_context(browser).new_page()
                 page.set_default_timeout(Budget.SCREEN.ms)
