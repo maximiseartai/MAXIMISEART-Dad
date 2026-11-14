@@ -701,15 +701,21 @@ def check_all(mutations: Sequence[Mutation], *, limit_s: float = TIMEOUT, gate: 
         return 2
 
 
-def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT) -> int:
+# Linie odmowy przed ``MUTACJE OK`` (``_check``); pusta lista: odmowy nie ma.
+BeforeOk = Callable[[Sequence[Mutation]], list[str]]
+
+
+def review(mutations: Sequence[Mutation], *, base: str, workers: int, limit_s: float = TIMEOUT, before_ok: BeforeOk | None = None) -> int:
     """Główna funkcja narzędzia ``tools/mutacje.py``: werdykt przeglądu (``_review_judgement``) z REGRES na merge-base
-    HEAD z ``base``, ``workers`` mutacji naraz; kod 0, gdy każda mutacja jest WYKRYTA."""
+    HEAD z ``base``, ``workers`` mutacji naraz; kod 0, gdy każda mutacja jest WYKRYTA, a ``before_ok`` nie odmówił."""
 
     judge = partial(_review_judgement, base=base)
-    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=limit_s)
+    return _check(mutations, judge=judge, part=_environment_part(), script=_script(), workers=workers, limit_s=limit_s, before_ok=before_ok)
 
 
-def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: str, workers: int, limit_s: float) -> int:
+def _check(
+    mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: str, workers: int, limit_s: float, before_ok: BeforeOk | None = None
+) -> int:
     """Podstawa, werdykt ``judge`` i czas polecenia każdej mutacji części ``part`` (pusta: całej listy); kod 0, gdy
     ``judge`` uznał każdą za wykrytą.
 
@@ -726,6 +732,9 @@ def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: s
     biegło, także po limicie, więc linię ``CZAS`` i ostrzeżenie dostaje też PRZEKROCZONY CZAS, który brama typów zmienia w
     WYKRYTA PRZEZ BRAMĘ TYPÓW, i ZAWIESZENIE, które ``in_ci`` liczy jako wykrycie; bez linii ``CZAS`` jest tylko mutacja,
     której polecenie nie biegło (NIEAKTUALNA, BEZ WERDYKTU przed startem).
+
+    Gdy ``judge`` uznał każdą mutację za wykrytą, a ``before_ok`` zwraca linie odmowy, stdout kończą one zamiast
+    ``MUTACJE_OK``, a kod to 2, jak przy czerwonej podstawie.
     """
 
     if not mutations:
@@ -762,6 +771,9 @@ def _check(mutations: Sequence[Mutation], *, judge: _Judge, part: str, script: s
     for mutation, seconds in zip(mutations, times, strict=True):
         if seconds is not None and seconds > NEAR_LIMIT * limit_s:
             print(NearLimit(script, part, mutation.name, round(seconds), limit_s).line, file=sys.stderr, flush=True)
+    if not failures and before_ok and (refused := before_ok(mutations)):
+        print(*refused, sep="\n", flush=True)
+        return 2
     print(MUTACJE_OK if not failures else f"MUTACJE: {failures} bez oczekiwanego wyniku")
     return 1 if failures else 0
 

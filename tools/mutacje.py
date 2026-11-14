@@ -22,13 +22,15 @@ NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origi
 ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
 jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
 
-Po ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany albo zmieniony od
+Przed ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany albo zmieniony od
 tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``.
 Na stderr: ``JUŻ ŁAPIE <plik>::<test>`` (ten test sprzed zmiany sam pada po mutacji, a bez niej przechodzi, więc autor
 sprawdza, czy nowy test dodaje coś ponad niego) albo ``JUŻ ŁAPIE NIESPRAWDZONE`` z przyczyną, gdy sprawdzenie tego nie
 wie (limit, pliki odłożone przez szybko, test sprzed zmiany czerwony bez mutacji albo łapiący tylko z sąsiadem). Rady
-usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a całe sprawdzenie, ze skanem i
-czasami CI, trwa najwyżej ``--juz-lapie-s`` s, chyba że już skan i pobranie czasów CI trwają dłużej.
+usunięcia nowego testu narzędzie nie daje. Test sprzed zmiany, który pada albo wisi też bez mutacji, to czerwony kod
+zmiany (#1719): zamiast ``MUTACJE OK`` stdout dostaje ``PODSTAWA CZERWONA`` z jego poleceniem, linię odmowy i kod 2;
+testu, do którego sprawdzenie nie doszło (limit, ``-x``, szybko), nie widzi. Całe sprawdzenie, ze skanem i czasami CI,
+trwa najwyżej ``--juz-lapie-s`` s, chyba że już skan i pobranie czasów CI trwają dłużej.
 
 Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
 """
@@ -167,6 +169,8 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
 
 ALREADY = "JUŻ ŁAPIE"
 UNCHECKED = f"{ALREADY} NIESPRAWDZONE"
+RED_OLD = "PODSTAWA CZERWONA"
+REFUSED = "MUTACJE: kod bez mutacji jest czerwony, więc MUTACJE OK byłoby fałszywe; napraw to, co padło, i powtórz"
 # Przy nowym zachowaniu żaden test sprzed zmiany nie pada, więc bez limitu każda mutacja kosztowałaby cały wybór szybko.
 ALREADY_S = 300.0
 COLLECT_S = 120.0
@@ -219,7 +223,7 @@ def _probe(
 
 def _first_failed(mutation: Mutation, tests: Sequence[str], deadline: float, limit_s: float) -> tuple[Verdict, str, list[str]]:
     """Werdykt mutacji na testach ``tests`` (pliki albo id) do pierwszej porażki (``-x``), jego ostatnia linia i id
-    testów, które padły (z junit)."""
+    testów, które padły (z junit), a błędu kolekcji, który id nie ma, jego plik."""
 
     workers = str(czasy_ci.workery_lokalne())
     with tempfile.TemporaryDirectory(prefix="juz-lapie-") as folder:
@@ -232,12 +236,13 @@ def _first_failed(mutation: Mutation, tests: Sequence[str], deadline: float, lim
             ran = wyniki_testow.testy(junit) if verdict in {Verdict.CAUGHT, Verdict.HANG} else []
         except (OSError, ValueError):
             ran = []
-    return verdict, last, [test.id for test in ran if test.wynik == "padł" and test.id]
+    return verdict, last, [found for test in ran if test.wynik == "padł" and (found := test.id or test.plik)]
 
 
-def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -> str:
+def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float, red: dict[str, str]) -> str:
     """Linia mutacji: ``JUŻ ŁAPIE``, ``JUŻ ŁAPIE NIESPRAWDZONE`` albo pusta, gdy żaden test sprzed zmiany z wyboru szybko
-    jej nie łapie, a szybko niczego nie odłożył.
+    jej nie łapie, a szybko niczego nie odłożył; test, który pada albo wisi też bez mutacji, dopisuje do ``red`` (jego
+    polecenie → ostatnia linia).
 
     Testy sprzed zmiany biegną z ``-x``, a pierwszy, który padł, biegnie sam z mutacją i bez niej: dowodem jest tylko
     test, który sam pada po mutacji, a bez niej przechodzi. Test sprzed zmiany potrafi padać na zmienionym kodzie także
@@ -259,6 +264,8 @@ def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -
     (mutated, mutated_last), (clean, clean_last) = verdicts(checks, workers=1, limit_s=limit_s, deadline=deadline)
     if (mutated, clean) != (Verdict.CAUGHT, Verdict.SURVIVED):
         why = f"z mutacją {mutated} ({mutated_last}), bez niej {clean} ({clean_last})"
+        if clean in {Verdict.CAUGHT, Verdict.HANG}:  # CI uruchomi go na tym samym kodzie
+            red.setdefault(" ".join(alone), clean_last)
         return f"{UNCHECKED}: {mutation.name}: {failed[0]} sam daje {why}, więc niczego nie dowodzi"
     return (
         f"{ALREADY} {failed[0]}: ten test sprzed zmiany sam łapie mutację „{mutation.name}” (pada z nią, bez niej "
@@ -266,24 +273,26 @@ def _check(mutation: Mutation, probe: _Probe, deadline: float, limit_s: float) -
     )
 
 
-def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float, already_s: float) -> None:
+def _already_caught(mutations: Sequence[Mutation], *, base: str, limit_s: float, already_s: float) -> list[str]:
     """Linie ``_check`` na stderr dla mutacji z poleceniem pytest bez oczekiwanej linii, razem w ``already_s`` s od
-    startu, ze skanem zmian i czasami CI; wołający woła ją tylko wtedy, gdy każda z ``mutations`` padła w poleceniu."""
+    startu, ze skanem zmian i czasami CI, i linie odmowy, gdy test sprzed zmiany pada bez mutacji; silnik woła ją przed
+    ``MUTACJE OK`` (``before_ok``), gdy każda z ``mutations`` padła w poleceniu."""
 
     deadline = time.monotonic() + already_s
     checked = [mutation for mutation in mutations if ("-m", "pytest") in pairwise(mutation.command) and mutation.expected is None]
     if not checked:
-        return
+        return []
     if part := os.environ.get(ZMIENNA_CZESCI):
         print(f"{UNCHECKED}: {ZMIENNA_CZESCI}={part}: część mówi, że padły tylko jej mutacje, a sprawdzenie nie wie które", file=sys.stderr, flush=True)
-        return
+        return []
     try:
         commit = repo.merge_base(ROOT, "HEAD", base)
     except subprocess.CalledProcessError as error:
         print(f"{UNCHECKED}: brak merge-base HEAD z {base} ({error.stderr.strip()})", file=sys.stderr, flush=True)
-        return
+        return []
     changed, scanned = repo.changed(ROOT, commit), wplyw_zmiany.Repository.scan(ROOT)
     costs, _ = czasy_ci.lokalne(ROOT)
+    red: dict[str, str] = {}
     for mutation in checked:
         if time.monotonic() >= deadline:
             line = f"{UNCHECKED}: {mutation.name}: minął limit sprawdzenia {already_s:g} s"
@@ -292,9 +301,11 @@ def _already_caught(mutations: Sequence[Mutation], base: str, limit_s: float, al
         elif (probe := _probe(mutation, selected, commit, changed, scanned, costs)) is None:
             line = f"{UNCHECKED}: {mutation.name}: polecenie nie wybiera testu dodanego ani zmienionego od merge-base {commit[:8]}"
         else:
-            line = _check(mutation, probe, deadline, limit_s)
+            line = _check(mutation, probe, deadline, limit_s, red)
         if line:
             print(line, file=sys.stderr, flush=True)
+    lines = [f"{RED_OLD}: {command} → {last} (test sprzed zmiany z wyboru szybko pada albo wisi też bez mutacji)" for command, last in red.items()]
+    return [*lines, REFUSED] if lines else []
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -314,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rownolegle", action="store_true", help="Mutacje naraz, każda w swojej kopii.")
     parser.add_argument("--limit-s", type=float, default=TIMEOUT, help="Limit czasu jednego polecenia w sekundach.")
     parser.add_argument(
-        "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
+        "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} przed {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
     )
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie {BASE}).")
     parser.add_argument(
@@ -352,10 +363,8 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s)
-    if code == 0 and not jak_ci:
-        _already_caught(mutations, args.baza, args.limit_s, args.juz_lapie_s)
-    return code
+    before_ok = None if jak_ci else partial(_already_caught, base=args.baza, limit_s=args.limit_s, already_s=args.juz_lapie_s)
+    return review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, before_ok=before_ok)
 
 
 if __name__ == "__main__":
