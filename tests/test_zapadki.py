@@ -22,6 +22,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -1567,62 +1568,100 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
 }
 _PATTERN = "import re\n\nLINE = "
-# Wzorzec napisu r w ``re.compile`` → (linia, którą widzi z końcem LF, czy reguła kotwica-konca-linii go zgłasza).
-# Zgłaszany gubi tę linię z końcem CRLF, a przepuszczany ją widzi, co sprawdza
-# ``test_wzorzec_zgloszony_przez_kotwice_konca_linii_gubi_linie_crlf_a_przepuszczony_ja_widzi``. Reguła przepuszcza
-# tylko \r? albo atom z nieograniczoną górną granicą, który na pewno bierze \r, tuż przed $.
-_KOTWICE: Final[list[tuple[str, str, bool]]] = [
-    (r"PONOWIENIE \| test .*$", "PONOWIENIE | test x", False),
-    (r"PONOWIENIE(.*)$", "PONOWIENIE x", False),
-    (r"PONOWIENIE .*?$", "PONOWIENIE x", False),
-    (r"PONOWIENIE\s+$", "PONOWIENIE ", False),
-    (r"PONOWIENIE\s*$", "PONOWIENIE", False),
-    (r"PONOWIENIE\r?$", "PONOWIENIE", False),
-    (r'PONOWIENIE "[^"]+$', 'PONOWIENIE "x', False),
-    (r"PONOWIENIE [^|]+ .*$", "PONOWIENIE a b", False),
-    (r"PONOWIENIE[ \t\r]+$", "PONOWIENIE ", False),
-    (r"PONOWIENIE x.{1,}$", "PONOWIENIE xy", False),
-    (r"cena w \$", "cena w $", False),
-    (r"PONOWIENIE$", "PONOWIENIE", True),
-    (r"PONOWIENIE [a-z]$", "PONOWIENIE x", True),
-    (r"PONOWIENIE\.$", "PONOWIENIE.", True),
-    (r"PONOWIENIE.$", "PONOWIENIEa", True),
-    (r"PONOWIENIE\s$", "PONOWIENIE ", True),
-    (r'PONOWIENIE [^"]$', "PONOWIENIE x", True),
-    (r"PONOWIENIE[\s]$", "PONOWIENIE ", True),
-    (r"PONOWIENIE x.?$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x\s?$", "PONOWIENIE x ", True),
-    (r"PONOWIENIE x.{2}$", "PONOWIENIE xyz", True),
-    (r"PONOWIENIE x.{0,3}$", "PONOWIENIE xyzw", True),
-    (r"PONOWIENIE x(.)$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x(?:.)$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x[^\d]$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x[^\x0d]+$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x[^\015]+$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x[^\W]+$", "PONOWIENIE xy", True),
-    (r"PONOWIENIE x[^\D]+$", "PONOWIENIE x1", True),
-    (r"PONOWIENIE [^\r\n]$", "PONOWIENIE x", True),
-    (r"PONOWIENIE(: .*)?$", "PONOWIENIE", True),
-    (r"PONOWIENIE (?:OK|BŁĄD.*)$", "PONOWIENIE OK", True),
+# Wywołanie re (prawa strona ``LINE = `` w pliku próbki) → (linia, którą wzorzec widzi z końcem LF, wynik reguły
+# kotwica-konca-linii): przepuszcza wzorzec, który widzi tę linię także z końcem CRLF, zgłasza wzorzec, który ją wtedy
+# gubi, a fałszywy alarm to wzorzec zgłaszany, choć ją widzi (koszt listy dozwolonych: czego reguła nie umie
+# przeczytać, tego nie przepuszcza). Plik próbki biegnie z ``FLAGI = re.X`` i ``TEKST`` = linia z końcem, co sprawdza
+# ``test_wzorzec_zgloszony_przez_kotwice_konca_linii_gubi_linie_crlf_a_przepuszczony_ja_widzi``.
+_PRZEPUSZCZA: Final = "przepuszcza"
+_GUBI_CRLF: Final = "zgłasza, gubi CRLF"
+_FALSZYWY_ALARM: Final = "zgłasza, widzi CRLF"
+_KOTWICE: Final[list[tuple[str, str, str]]] = [
+    (r're.compile(r"PONOWIENIE \| test .*$")', "PONOWIENIE | test x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE(.*)$")', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE .*?$")', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE\s+$")', "PONOWIENIE ", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE\s*$")', "PONOWIENIE", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE\r?$")', "PONOWIENIE", _PRZEPUSZCZA),
+    (r"""re.compile(r'PONOWIENIE "[^"]+$')""", 'PONOWIENIE "x', _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE [^|]+ .*$")', "PONOWIENIE a b", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE x[^ a]+$")', "PONOWIENIE xb", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE[ \t\r]+$")', "PONOWIENIE ", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE x.{1,}$")', "PONOWIENIE xy", _PRZEPUSZCZA),
+    (r're.compile(r"cena w \$")', "cena w $", _PRZEPUSZCZA),
+    (r're.compile(R"PONOWIENIE .*$")', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"(?i)PONOWIENIE .*$")', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE .*$", re.M | re.S)', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE .*$", flags=re.I)', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE .*$", 0)', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.search(r"PONOWIENIE .*$", TEKST)', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.search(r"PONOWIENIE .*$", TEKST, re.M)', "PONOWIENIE x", _PRZEPUSZCZA),
+    (r're.compile(r"PONOWIENIE$")', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE [a-z]$")', "PONOWIENIE x", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE\.$")', "PONOWIENIE.", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE.$")', "PONOWIENIEa", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE\s$")', "PONOWIENIE ", _GUBI_CRLF),
+    (r"""re.compile(r'PONOWIENIE [^"]$')""", "PONOWIENIE x", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE[\s]$")', "PONOWIENIE ", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x.?$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x\s?$")', "PONOWIENIE x ", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x.{2}$")', "PONOWIENIE xyz", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x.{0,3}$")', "PONOWIENIE xyzw", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x(.)$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x(?:.)$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x[^\d]$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x[^\x0d]+$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x[^\015]+$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x[^\W]+$")', "PONOWIENIE xy", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE x[^\D]+$")', "PONOWIENIE x1", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE [^\r\n]$")', "PONOWIENIE x", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE(: .*)?$")', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE (?:OK|BŁĄD.*)$")', "PONOWIENIE OK", _GUBI_CRLF),
+    # Klasa zanegowana z dosłownym tabulatorem jako początkiem zakresu: zakres \t-~ wyklucza też \r (#1781 W1 r2).
+    ('re.compile(r"PONOWIENIE x[^\t-~]+$")', "PONOWIENIE xā", _GUBI_CRLF),
+    # Napis f: {1,} i {2,} to wyrażenia f-stringa (krotki), a nie kwantyfikatory (#1781 W1 r2).
+    (r're.compile(rf"PONOWIENIE x.{1,}$")', "PONOWIENIE xa1,", _GUBI_CRLF),
+    (r're.compile(rf"PONOWIENIE x\s{2,}$")', "PONOWIENIE x 2,", _GUBI_CRLF),
+    # Tryb rozwlekły: .*$ stoi w komentarzu, więc wzorzec kończy PONOWIENIE$ (#1781 W1 r2).
+    (r're.compile(r"(?x)PONOWIENIE$ # np. .*$")', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"(?ix)PONOWIENIE$ # np. .*$")', "PONOWIENIE", _GUBI_CRLF),
+    ('re.compile(\n    r"PONOWIENIE$ # np. .*$",\n    re.X,\n)', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE$ # np. .*$", re.VERBOSE)', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE$ # np. .*$", re.RegexFlag.VERBOSE)', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"(?x)" + r"PONOWIENIE$ # np. .*$")', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE$ # np. .*$", FLAGI)', "PONOWIENIE", _GUBI_CRLF),
+    (r're.compile(r"PONOWIENIE$ # np. .*$", flags=FLAGI)', "PONOWIENIE", _GUBI_CRLF),
+    (r're.search(r"PONOWIENIE$ # np. .*$", TEKST, FLAGI)', "PONOWIENIE", _GUBI_CRLF),
+    (r"""re.compile(r'PONOWIENIE x[^\"]*$')""", "PONOWIENIE x", _FALSZYWY_ALARM),
+    (r're.compile(r"PONOWIENIE x[^a-z]+$")', "PONOWIENIE x1", _FALSZYWY_ALARM),
+    (r're.compile("PONOWIENIE .*$")', "PONOWIENIE x", _FALSZYWY_ALARM),
 ]
 
 
-def _re_compile_r(wzorzec: str) -> str:
-    """Tekst pliku próbki z ``re.compile`` na napisie r ``wzorzec`` w cudzysłowie, którego wzorzec nie zawiera."""
+def _linia_kotwicy(wywolanie: str) -> int:
+    """Linia pliku próbki ``_PATTERN + wywolanie``, w której stoi ostatni napis wywołania (ten kończący się $)."""
 
-    cudzyslow = "'" if '"' in wzorzec else '"'
-    return f"{_PATTERN}re.compile(r{cudzyslow}{wzorzec}{cudzyslow})\n"
+    return _PATTERN.count("\n") + 1 + wywolanie[: wywolanie.rindex("$")].count("\n")
 
 
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
-# (#1584 W1 r1), wzorce z ``_KOTWICE``, napis bez r (zgłaszany, bo bez r reguła nie wie, co znaczy ukośnik w tekście
-# źródła) i napis z $ poza wywołaniem re (przepuszczany).
+# (#1584 W1 r1), wywołania z ``_KOTWICE``, napis z $ poza wywołaniem re (przepuszczany) i zgłaszane wywołania, których
+# wzorzec nie biegnie w teście LF wobec CRLF: napis rb, flagi na miejscu flag re.sub i re.split oraz rozpakowanie * i
+# ** przed miejscem flag.
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile("PONOWIENIE .*$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
-    *(("kotwica-konca-linii", _re_compile_r(wzorzec), [3] if zglasza else []) for wzorzec, _, zglasza in _KOTWICE),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(rb"PONOWIENIE .*$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.sub(r"PONOWIENIE .*$", "", TEKST, 0, FLAGI)\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.subn(r"PONOWIENIE .*$", "", TEKST, 0, FLAGI)\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.split(r"PONOWIENIE .*$", TEKST, 0, FLAGI)\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.search(r"PONOWIENIE .*$", *FLAGI)\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.search(r"PONOWIENIE .*$", **FLAGI)\n', [3]),
+    *(
+        ("kotwica-konca-linii", f"{_PATTERN}{wywolanie}\n", [] if wynik == _PRZEPUSZCZA else [_linia_kotwicy(wywolanie)])
+        for wywolanie, _, wynik in _KOTWICE
+    ),
 ]
 
 
@@ -1650,14 +1689,19 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
-@pytest.mark.parametrize(("wzorzec", "linia", "zglasza"), _KOTWICE)
+@pytest.mark.parametrize(("wywolanie", "linia", "wynik"), _KOTWICE)
 def test_wzorzec_zgloszony_przez_kotwice_konca_linii_gubi_linie_crlf_a_przepuszczony_ja_widzi(
-    wzorzec: str, linia: str, zglasza: bool
+    tmp_path: Path, wywolanie: str, linia: str, wynik: str
 ) -> None:
-    lf = re.search("(?m)^" + wzorzec, f"a\n{linia}\nb\n")
-    crlf = re.search("(?m)^" + wzorzec, f"a\r\n{linia}\r\nb\r\n")
+    plik = tmp_path / "probka.py"
+    plik.write_text(f"{_PATTERN}{wywolanie}\n", encoding="utf-8")
+    widzi: list[bool] = []
+    for koniec in ("\n", "\r\n"):
+        tekst = linia + koniec
+        wzorzec = runpy.run_path(str(plik), init_globals={"FLAGI": re.X, "TEKST": tekst})["LINE"]
+        widzi.append((wzorzec.search(tekst) if isinstance(wzorzec, re.Pattern) else wzorzec) is not None)
 
-    assert (lf is not None, crlf is not None) == (True, not zglasza)
+    assert widzi == [True, wynik != _GUBI_CRLF]
 
 
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
@@ -1671,6 +1715,8 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
         "nawias zamykający po atomie: reguła nie paruje nawiasów, więc lookahead albo komentarz (?#…) kończący się .*"
         " przechodzi": f'{_PATTERN}re.compile(r"PONOWIENIE(?=.*)$")\n',
+        "tryb rozwlekły z napisu w zmiennej: reguła widzi tylko napisy i flagi wywołania, a nie wartość zmiennej"
+        " doklejonej do wzorca": 'import re\n\nTRYB = r"(?x)"\nLINE = re.compile(TRYB + r"PONOWIENIE$ # np. .*$")\n',
     },
 }
 

@@ -3,26 +3,106 @@ language: python
 severity: error
 message: >-
   kotwica $ na końcu wzorca re nie pasuje do linii zakończonej \r\n (log zadania Windows z API GitHuba, tekst z bajtów
-  bez uniwersalnych końców linii), więc wzorzec po cichu nie widzi linii; w napisie r użyj \r?$ zamiast $ (albo \s*$,
-  gdy biały znak na końcu linii jest dozwolony)
+  bez uniwersalnych końców linii), więc wzorzec po cichu nie widzi linii; w napisie r bez trybu rozwlekłego użyj \r?$
+  zamiast $ (albo \s*$, gdy biały znak na końcu linii jest dozwolony)
 files:
   - tools/**/*.py
+utils:
+  # Argument flag, który reguła umie przeczytać: flagi re bez trybu rozwlekłego połączone |, albo 0.
+  flagi-znane:
+    regex: '^(0|re\.(A|ASCII|I|IGNORECASE|L|LOCALE|M|MULTILINE|S|DOTALL|U|UNICODE|NOFLAG)(\s*\|\s*re\.(A|ASCII|I|IGNORECASE|L|LOCALE|M|MULTILINE|S|DOTALL|U|UNICODE|NOFLAG))*)$'
+  # Argument pozycyjny na miejscu flag (pozycja liczy też komentarz między argumentami), którego reguła nie umie
+  # przeczytać.
+  flagi-nieznane-na-pozycji:
+    not:
+      any:
+        - kind: keyword_argument
+        - matches: flagi-znane
 rule:
   # Powrót #1584 W1 r1: PLIK_TESTU_PR kończył się r"$" i nie widział linii PONOWIENIE w logu zadania Windows (CRLF),
   # choć #1568 i #1585 naprawiły już CRLF w innych miejscach (R-SYSTEM). Literał z $ na końcu w wywołaniu re.*;
   # postacie, których reguła nie łapie, są próbkami ZNANE_LUKI_REGUL_POWROTOW w tests/test_zapadki.py.
   kind: string
   regex: '[^\\]\$["'']$'
-  not:
-    # Lista dozwolonych: napis r bez | poza ucieczką i klasą, w którym tuż przed $ (i nawiasami zamykającymi bez
-    # kwantyfikatora) stoi \r? albo atom z nieograniczoną górną granicą (*, +, {n,}), którego zbiór znaków na pewno
-    # zawiera \r: ., \r, \s, klasa z jawnym \r albo \s, klasa zanegowana bez żadnej ucieczki. Taki wzorzec widzi linię
-    # CRLF, bo ostatnie powtórzenie bierze \r, a $ pasuje przed końcowym \n. Każda inna postać jest zgłaszana.
-    regex: >-
-      ^([rR][bBfF]?|[bBfF][rR])("""|'''|"|')([^|\\\[]|\\.|\[([^\]\\]|\\.)*\])*(\\r\?|(\.|\\[rs]|\[\^[^\]\\]+\]|\[(\\[rs]|([^\]\\^]|\\.)([^\]\\]|\\.)*?\\[rs])([^\]\\]|\\.)*\])(\*|\+|\{[0-9]+,\})[?+]?)\)*\$("""|'''|"|')$
   inside:
     kind: call
     stopBy: end
     has:
       field: function
       regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'
+  not:
+    # Lista dozwolonych: napis z przedrostkiem dokładnie r albo R bez | poza ucieczką i klasą, w którym tuż przed $ (i
+    # nawiasami zamykającymi bez kwantyfikatora) stoi \r? albo atom z nieograniczoną górną granicą (*, +, {n,}),
+    # którego zbiór znaków na pewno zawiera \r: ., \r, \s, klasa z jawnym \r albo \s, klasa zanegowana z samych
+    # drukowalnych znaków ASCII bez ukośnika i bez -. Taki wzorzec widzi linię CRLF, bo ostatnie powtórzenie bierze \r,
+    # a $ pasuje przed końcowym \n. Tekst źródła znaczy wzorzec tylko bez trybu rozwlekłego, więc wywołanie re nie
+    # może mieć napisu z flagą x (?…x…), na miejscu flag ani w flags= niczego spoza flagi-znane (re.X, osobna zmienna)
+    # ani rozpakowania *, **. Każda inna postać jest zgłaszana.
+    all:
+      - regex: >-
+          ^[rR]("""|'''|"|')([^|\\\[]|\\.|\[([^\]\\]|\\.)*\])*(\\r\?|(\.|\\[rs]|\[\^[ -,.-\[^-~]+\]|\[(\\[rs]|([^\]\\^]|\\.)([^\]\\]|\\.)*?\\[rs])([^\]\\]|\\.)*\])(\*|\+|\{[0-9]+,\})[?+]?)\)*\$("""|'''|"|')$
+      - not:
+          inside:
+            kind: call
+            stopBy: end
+            has:
+              field: function
+              regex: '^re\.(compile|search|match|fullmatch|finditer|findall|sub|subn|split)$'
+            any:
+              - has:
+                  field: arguments
+                  has:
+                    stopBy: end
+                    kind: string
+                    regex: '\(\?[a-zA-Z-]*x'
+              - has:
+                  field: arguments
+                  has:
+                    any:
+                      - kind: list_splat
+                      - kind: dictionary_splat
+                      - kind: keyword_argument
+                        all:
+                          - has:
+                              field: name
+                              regex: '^flags$'
+                          - not:
+                              has:
+                                field: value
+                                matches: flagi-znane
+              - all:
+                  - has:
+                      field: function
+                      regex: '^re\.compile$'
+                  - has:
+                      field: arguments
+                      has:
+                        nthChild: 2
+                        matches: flagi-nieznane-na-pozycji
+              - all:
+                  - has:
+                      field: function
+                      regex: '^re\.(search|match|fullmatch|finditer|findall)$'
+                  - has:
+                      field: arguments
+                      has:
+                        nthChild: 3
+                        matches: flagi-nieznane-na-pozycji
+              - all:
+                  - has:
+                      field: function
+                      regex: '^re\.split$'
+                  - has:
+                      field: arguments
+                      has:
+                        nthChild: 4
+                        matches: flagi-nieznane-na-pozycji
+              - all:
+                  - has:
+                      field: function
+                      regex: '^re\.(sub|subn)$'
+                  - has:
+                      field: arguments
+                      has:
+                        nthChild: 5
+                        matches: flagi-nieznane-na-pozycji
