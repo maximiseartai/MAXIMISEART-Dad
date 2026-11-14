@@ -3,7 +3,7 @@
 Dad's whole weekly path, both processes in turn. Przygotowanie pliku zbiorczego turns the Rejestr zleceń into the
 Rozliczenie wewnętrzne and the Plik zbiorczy; Dad then fills quantities, charges, and remarks into the Plik zbiorczy by
 hand and declares Gotowość by starting Przebieg rozliczeń on that file, which creates the Folder rozliczeń
-pracowników. The `readiness` step plays Dad's hand (`fill_readiness.py`), and only this process hands the output of
+pracowników. The `readiness` step plays Dad's hand (`fill_readiness.py`), and only this feature hands the output of
 one process to the other. The `assert-settlement-*` steps check each Rozliczenie pracownika against the Plik zbiorczy
 it read; their messages stand in `assert_chain.py`.
 
