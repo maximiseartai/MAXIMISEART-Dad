@@ -34,6 +34,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+import posixpath
 import re
 import sys
 from typing import get_args
@@ -64,7 +65,8 @@ CI_TOOLS = "tools/ci/"
 # Polecenie, które uruchamia skrypt z tools/ci/: interpreter (python3, .venv/bin/python, py -3) albo `--` przed nim.
 RUNS_CI_TOOL = re.compile(r"(?:python[\d.]*|py -3|--)\s+tools/ci/")
 # Skrypt uruchamiany systemowym python3 runnera, bez zależności projektu, w całym tekście pliku *.yml albo *.yaml pod
-# .github albo action.yml/action.yaml, do którego prowadzi lokalne uses: ./… (granica w _system_python_scripts).
+# .github albo pliku, do którego prowadzi lokalne uses: ./… (action.yml/action.yaml, workflow wielokrotnego użytku);
+# plik, którego strażnik nie umie przeczytać, wywraca test (granica w _system_python_scripts).
 SYSTEM_PYTHON = re.compile(r"\bpython3\s+(tools/\S+\.py)\b")
 # Katalogi, z których skrypt z tools/ importuje moduły projektu (sys.path jego i testów).
 MODULE_DIRS = (TOOLS / "lib", TOOLS, TOOLS / "ci")
@@ -556,13 +558,17 @@ def test_znane_luki_kierunku_zaleznosci_tools_przechodza_przez_straznikow(
 
 def _system_python_scripts(root: Path = ROOT) -> set[Path]:
     """Skrypty ``python3 tools/….py`` z całego tekstu plików GitHub Actions, które GitHub uruchamia z tego repo: każdego
-    ``*.yml`` i ``*.yaml`` pod ``.github`` (workflowy i akcje złożone) oraz każdego ``action.yml`` albo ``action.yaml``
-    w katalogu, do którego prowadzi lokalne ``uses: ./<katalog>`` z pliku już czytanego, w dowolnym miejscu repo.
+    ``*.yml`` i ``*.yaml`` pod ``.github`` (workflowy i akcje złożone) oraz każdego pliku, do którego prowadzi lokalne
+    ``uses: ./…`` z pliku już czytanego (``action.yml`` albo ``action.yaml`` katalogu akcji, plik workflowu wielokrotnego
+    użytku), w dowolnym miejscu repo.
 
     Regex biegnie po całym tekście pliku, więc łapie polecenie w każdym polu (``run``, ``env``, ``matrix``, ``with``),
-    a parser YAML służy tylko do znalezienia ``uses``; plik, którego parser nie czyta, wywraca test z jego nazwą.
-    Granica: strażnik nie czyta plików, które uruchamia krok (skrypt powłoki, który sam woła ``python3``), ani akcji
-    spod ``uses: właściciel/repo/…@ref``; próbki ``ZNANE_LUKI_SYSTEMOWEGO_PYTHONA`` to luki znane, nie pełna lista."""
+    a parser YAML służy tylko do znalezienia ``uses``. Czego strażnik nie umie przeczytać, nie pomija: plik, którego
+    parser nie czyta, ``uses``, które nie jest stałym napisem, i lokalne ``uses``, którego celu nie ma w repo po
+    rozwiązaniu ``..`` od korzenia repo (także akcja spod katalogu z ``actions/checkout`` z ``path:``), wywracają test
+    z nazwą pliku. Granica: strażnik nie czyta plików, które uruchamia krok (skrypt powłoki, który sam woła
+    ``python3``), ani akcji spod ``uses: właściciel/repo/…@ref``; próbki ``ZNANE_LUKI_SYSTEMOWEGO_PYTHONA`` to luki
+    znane, nie pełna lista."""
 
     queue = sorted({*(root / ".github").rglob("*.yml"), *(root / ".github").rglob("*.yaml")})
     seen, scripts = set(), set()
@@ -571,28 +577,52 @@ def _system_python_scripts(root: Path = ROOT) -> set[Path]:
         if plik in seen:
             continue
         seen.add(plik)
-        tekst = plik.read_text(encoding="utf-8")
-        scripts |= {root / script for script in SYSTEM_PYTHON.findall(tekst)}
+        nazwa = plik.relative_to(root).as_posix()
         try:
+            tekst = plik.read_text(encoding="utf-8")
             dane = yaml.safe_load(tekst)
-        except yaml.YAMLError as error:
-            pytest.fail(f"{plik.relative_to(root).as_posix()}: parser YAML nie czyta pliku, więc strażnik nie wie, za którym uses iść: {error}")
-        queue += [akcja for uses in _local_uses(dane) for name in ("action.yml", "action.yaml") if (akcja := root / uses / name).is_file()]
+        except (UnicodeDecodeError, yaml.YAMLError) as error:
+            pytest.fail(f"{nazwa}: parser YAML nie czyta pliku, więc strażnik nie wie, za którym uses iść: {error}")
+        scripts |= {root / script for script in SYSTEM_PYTHON.findall(tekst)}
+        queue += [cel for uses in _uses(dane) for cel in _local_targets(nazwa, uses, root)]
     return scripts
 
 
-def _local_uses(dane: object) -> Iterator[str]:
-    """Każda wartość ``uses: ./…`` w drzewie YAML, na dowolnej głębokości."""
+def _uses(dane: object) -> Iterator[object]:
+    """Każda wartość klucza ``uses`` w drzewie YAML, na dowolnej głębokości."""
 
     if isinstance(dane, dict):
         for klucz, wartosc in dane.items():
-            if klucz == "uses" and isinstance(wartosc, str) and wartosc.startswith("./"):
+            if klucz == "uses":
                 yield wartosc
             else:
-                yield from _local_uses(wartosc)
+                yield from _uses(wartosc)
     elif isinstance(dane, list):
         for element in dane:
-            yield from _local_uses(element)
+            yield from _uses(element)
+
+
+def _local_targets(nazwa: str, uses: object, root: Path) -> list[Path]:
+    """Pliki repo, które GitHub czyta dla ``uses`` z pliku ``nazwa``: ``action.yml`` albo ``action.yaml`` katalogu
+    lokalnej akcji albo plik lokalnego workflowu wielokrotnego użytku; akcja z innego repo daje pustą listę."""
+
+    if not isinstance(uses, str) or "${{" in uses:
+        pytest.fail(
+            f"{nazwa}: uses: {uses!r} nie jest stałym napisem, więc strażnik nie wie, który plik GitHub uruchamia: "
+            "wpisz uses jako ścieżkę ./… albo właściciel/repo@ref bez wyrażenia ${{ … }}."
+        )
+    if not uses.startswith("./"):
+        return []
+    cel = posixpath.normpath(uses)
+    kandydaci = [root / cel] if cel.endswith((".yml", ".yaml")) else [root / cel / "action.yml", root / cel / "action.yaml"]
+    pliki = [plik for plik in kandydaci if cel != ".." and not cel.startswith("../") and plik.is_file()]
+    if not pliki:
+        pytest.fail(
+            f"{nazwa}: uses: {uses} nie prowadzi do action.yml ani action.yaml (ani pliku workflowu) w repo, licząc od "
+            "korzenia repo, więc strażnik nie widzi, co ten krok uruchamia: wskaż w uses katalog akcji od korzenia repo "
+            "(bez katalogu z actions/checkout z path:) albo przenieś akcję do repo."
+        )
+    return pliki
 
 
 def _outside_stdlib(scripts: set[Path], root: Path = ROOT) -> list[str]:
@@ -618,7 +648,8 @@ def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standa
 
     assert {path.relative_to(ROOT).as_posix() for path in scripts} >= {"tools/plan_ci.py", "tools/ci/werdykt_required.py", "tools/ci/zgloszenia_ci.py"}
     assert _outside_stdlib(scripts) == [], (
-        "Skrypt, który plik *.yml albo *.yaml pod .github albo action.yml/action.yaml z lokalnego uses: ./… "
+        "Skrypt, który plik *.yml albo *.yaml pod .github albo plik z lokalnego uses: ./… (action.yml/action.yaml, "
+        "workflow wielokrotnego użytku) "
         "uruchamia systemowym python3 runnera, i wszystko, co importuje z tools/, biorą tylko z biblioteki standardowej, "
         "bo ten interpreter nie ma zależności projektu: zastąp import biblioteką standardową albo przenieś kod, który "
         "jej potrzebuje, do kroku uruchamianego z .venv."
@@ -626,10 +657,10 @@ def test_skrypt_workflow_na_systemowym_python3_importuje_tylko_biblioteke_standa
 
 
 
-def _zapisz_drzewo(korzen: Path, pliki: Mapping[str, str]) -> None:
+def _zapisz_drzewo(korzen: Path, pliki: Mapping[str, str | bytes]) -> None:
     for sciezka, tresc in pliki.items():
         (korzen / sciezka).parent.mkdir(parents=True, exist_ok=True)
-        (korzen / sciezka).write_text(tresc, encoding="utf-8")
+        (korzen / sciezka).write_bytes(tresc if isinstance(tresc, bytes) else tresc.encode("utf-8"))
 
 
 def _akcja(kroki: str) -> str:
@@ -638,8 +669,9 @@ def _akcja(kroki: str) -> str:
 
 def test_skrypt_systemowego_python3_z_kazdego_pola_workflowu_i_akcji_ktora_github_uruchamia_wywraca_straznika(tmp_path: Path) -> None:
     """Strażnik czyta cały tekst workflowu (polecenie w ``env`` i ``matrix``, nie tylko w ``run``), każdy plik ``.yaml``
-    pod ``.github`` i akcję spoza ``.github``, do której prowadzi ``uses`` z akcji, kończy na cyklu akcji, a skryptu
-    akcji, której nic nie woła spoza ``.github``, nie zgłasza (przegląd #1689: W3 r1, W2 r2, W1 r3)."""
+    pod ``.github``, akcję spoza ``.github`` pod ``uses`` z ``..`` i pod ``uses`` z akcji oraz workflow wielokrotnego
+    użytku, kończy na cyklu akcji, a skryptu akcji, której nic nie woła spoza ``.github``, nie zgłasza (przegląd #1689:
+    W3 r1, W2 r2, W1 r3; przegląd #1709: W1 r1)."""
 
     _zapisz_drzewo(
         tmp_path,
@@ -647,8 +679,10 @@ def test_skrypt_systemowego_python3_z_kazdego_pola_workflowu_i_akcji_ktora_githu
             ".github/workflows/ci.yml": (
                 "on: push\njobs:\n  a:\n    strategy:\n      matrix:\n        polecenie: [python3 tools/z_matrix.py]\n"
                 "    steps:\n      - uses: actions/checkout@v4\n      - env:\n          POLECENIE: python3 tools/z_env.py\n"
-                "        run: $POLECENIE\n      - run: ${{ matrix.polecenie }}\n      - uses: ./ci/a\n"
+                "        run: $POLECENIE\n      - run: ${{ matrix.polecenie }}\n      - uses: ./ci/x/../a\n"
+                "  r:\n    uses: ./.github/workflows/r.yml\n"
             ),
+            ".github/workflows/r.yml": "on: workflow_call\njobs:\n  a:\n    steps:\n      - run: echo\n",
             ".github/actions/b/action.yaml": _akcja("    - run: python3 tools/z_github_yaml.py\n      shell: bash\n"),
             "ci/a/action.yml": _akcja("    - uses: ./ci/b/\n"),
             "ci/b/action.yaml": _akcja("    - run: |\n        echo start\n        python3 tools/z_akcji.py\n      shell: bash\n    - uses: ./ci/a\n"),
@@ -665,11 +699,38 @@ def test_skrypt_systemowego_python3_z_kazdego_pola_workflowu_i_akcji_ktora_githu
     ]
 
 
-def test_plik_github_actions_ktorego_parser_yaml_nie_czyta_wywraca_straznika_z_jego_nazwa(tmp_path: Path) -> None:
-    _zapisz_drzewo(tmp_path, {".github/workflows/zly.yml": "jobs:\n  a:\n    steps:\n      - uses: ./ci/a\n     zły: [\n"})
+# Pliki, których strażnik nie umie przeczytać: opis → pliki drzewa (repo pod ``repo/``, obok niego ``poza/``) i początek
+# odmowy, która nazywa plik.
+NIECZYTELNE = {
+    "parser YAML nie czyta pliku": ({"repo/.github/workflows/zly.yml": "jobs:\n  a:\n    steps:\n      - uses: ./ci/a\n     zły: [\n"}, ".github/workflows/zly.yml: parser YAML"),
+    "plik nie jest w UTF-8": ({"repo/.github/workflows/zly.yml": "run: python3 tools/skrypt.py # \xff".encode("latin-1")}, ".github/workflows/zly.yml: parser YAML"),
+    "uses po actions/checkout z path: liczone od katalogu roboczego runu": (
+        {
+            "repo/.github/workflows/ci.yml": "jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          path: repo\n      - uses: ./repo/ci/a\n",
+            "repo/ci/a/action.yml": _akcja("    - run: python3 tools/skrypt.py\n      shell: bash\n"),
+        },
+        ".github/workflows/ci.yml: uses: ./repo/ci/a nie prowadzi",
+    ),
+    "uses z .. poza repo": (
+        {"repo/.github/workflows/ci.yml": "jobs:\n  a:\n    steps:\n      - uses: ./../poza/a\n", "poza/a/action.yml": _akcja("    - run: python3 tools/skrypt.py\n      shell: bash\n")},
+        ".github/workflows/ci.yml: uses: ./../poza/a nie prowadzi",
+    ),
+    "lokalna akcja bez action.yml w akcji": (
+        {"repo/.github/actions/a/action.yml": _akcja("    - uses: ./ci/brak\n")},
+        ".github/actions/a/action.yml: uses: ./ci/brak nie prowadzi",
+    ),
+    "uses nie jest napisem": ({"repo/.github/workflows/ci.yml": "jobs:\n  a:\n    steps:\n      - uses: [./ci/a]\n"}, ".github/workflows/ci.yml: uses: ['./ci/a'] nie jest stałym"),
+    "uses z wyrażeniem": ({"repo/.github/workflows/ci.yml": "jobs:\n  a:\n    steps:\n      - uses: ${{ matrix.akcja }}\n"}, ".github/workflows/ci.yml: uses: '${{ matrix.akcja }}' nie jest stałym"),
+}
 
-    with pytest.raises(pytest.fail.Exception, match=r"\.github/workflows/zly\.yml: parser YAML nie czyta pliku"):
-        _system_python_scripts(tmp_path)
+
+@pytest.mark.parametrize("opis", NIECZYTELNE)
+def test_plik_ktorego_straznik_systemowego_python3_nie_umie_przeczytac_wywraca_go_z_nazwa_pliku(tmp_path: Path, opis: str) -> None:
+    pliki, odmowa = NIECZYTELNE[opis]
+    _zapisz_drzewo(tmp_path, pliki)
+
+    with pytest.raises(pytest.fail.Exception, match=re.escape(odmowa)):
+        _system_python_scripts(tmp_path / "repo")
 
 
 # Znane luki strażnika skryptów systemowego python3 (tests/fixtures/znane_luki.py): „klasa: postać” → krok workflowu
