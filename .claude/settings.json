@@ -1,4 +1,12 @@
 {
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  },
+  "permissions": {
+    "deny": [
+      "Edit(~/.claude/projects/*/memory/**)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
