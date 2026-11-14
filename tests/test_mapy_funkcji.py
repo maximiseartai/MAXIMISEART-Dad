@@ -10,8 +10,9 @@ pierwszej nowej funkcji. Skill bez funkcji w kodzie listuje je w README, a każd
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import importlib.util
 import re
 import subprocess
@@ -212,9 +213,9 @@ CENTRUM = SKILLS / "verify-centrum-rozliczen"
 SUB_FEATURES = ROOT / ".agents/skills/verify-centrum-rozliczen/scripts/sub_features.py"
 
 
-def _sub_features(feature: str) -> str:
+def _sub_features(feature: str, polecenie: Path = SUB_FEATURES) -> str:
     done = subprocess.run(
-        [sys.executable, str(SUB_FEATURES), "--feature", feature], capture_output=True, timeout=60, check=False
+        [sys.executable, str(polecenie), "--feature", feature], capture_output=True, timeout=60, check=False
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", errors="replace")
     return done.stdout.decode("utf-8")
@@ -622,3 +623,262 @@ def test_znane_luki_polecenia_podfunkcji_przechodza_przez_kazdy_jego_mechanizm(p
                 zgloszenia[opis].append(f"sub_features.py: drukuje LUKA {razy} raz(y), jak bieg napędu")
 
     assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
+
+
+ROZLICZENIA = SKILLS / "verify-rozliczenia"
+WORKFLOW_SUB_FEATURES = ROOT / ".agents/skills/verify-rozliczenia/scripts/workflow_sub_features.py"
+
+
+def test_podfunkcje_mapy_rozliczen_sa_wynikiem_polecenia_z_planu_wariantow() -> None:
+    """Plik funkcji ``verify-rozliczenia``, który nazywa polecenie ``workflow_sub_features.py`` swojej funkcji, ma jego
+    wynik (plan wariantów procesu) jako całą sekcję ``## Sub-features``, tuż przed ``## How to get to it (user POV)``."""
+
+    printed = [
+        path
+        for path in _feature_files(ROZLICZENIA)
+        if f"workflow_sub_features.py --feature {path.stem}`" in path.read_text(encoding="utf-8")
+    ]
+
+    problems = [
+        f"verify-rozliczenia/features/{path.name}: sekcja ## Sub-features nie jest planem wariantów procesu; zastąp ją "
+        f"wynikiem `.venv/bin/python .agents/skills/verify-rozliczenia/scripts/workflow_sub_features.py --feature "
+        f"{path.stem}` (Windows: `py -3`)"
+        for path in printed
+        if f"\n{_sub_features(path.stem, WORKFLOW_SUB_FEATURES)}\n## How to get to it (user POV)\n"
+        not in path.read_text(encoding="utf-8")
+    ]
+
+    assert printed, "żaden plik mapy verify-rozliczenia nie nazywa polecenia workflow_sub_features.py swojej funkcji"
+    assert problems == [], "\n".join(problems)
+
+
+def _skrypt_skilla(monkeypatch: pytest.MonkeyPatch, nazwa: str) -> ModuleType:
+    monkeypatch.syspath_prepend(str(WORKFLOW_SUB_FEATURES.parent))
+    spec = importlib.util.spec_from_file_location(nazwa, WORKFLOW_SUB_FEATURES.parent / f"{nazwa}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, nazwa, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def przebieg(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    return _skrypt_skilla(monkeypatch, "run_verification")
+
+
+@pytest.fixture
+def polecenie_rozliczen(monkeypatch: pytest.MonkeyPatch, przebieg: ModuleType) -> ModuleType:
+    return _skrypt_skilla(monkeypatch, "workflow_sub_features")
+
+
+def test_plan_kazdego_wariantu_biegnie_do_konca_bez_sladu_na_dysku(
+    przebieg: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Plan wykonuje workflow i ``_verify`` z zapisem zamiast uruchomienia: dochodzi do ``cleanup`` i ``self-test``
+    każdego wariantu, a w katalogu, w którym biegnie, nie zostaje żaden plik ani katalog (#1804 r2)."""
+
+    monkeypatch.chdir(tmp_path)
+
+    plany = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+
+    assert len(plany) == 9
+    assert {wariant: [krok.name for krok in kroki][-2:] for wariant, kroki in plany.items()} == {
+        wariant: ["cleanup", "self-test"] for wariant in plany
+    }
+    assert list(tmp_path.iterdir()) == []
+
+
+class _SciezkaWindows(PureWindowsPath):
+    """Ścieżka z regułami Windows, której pliki nie istnieją, a zapis do nich niczego nie robi."""
+
+    def exists(self) -> bool:
+        return False
+
+    def is_file(self) -> bool:
+        return False
+
+    def write_text(self, data: str, encoding: str | None = None) -> int:
+        return len(data)
+
+
+def test_plan_i_bieg_pokazuja_te_same_polecenia_ze_sciezkami_windows(
+    przebieg: ModuleType, polecenie_rozliczen: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Na regułach ścieżek Windows plan każdego wariantu jest taki sam jak na tym systemie, sekcja z polecenia równa się
+    plikowi mapy, a bieg workflow w folderach Windows zapisuje te same polecenia co plan: plan i bieg pokazują folder
+    runu jedną drogą (W1 r2 #1804, run 43616329420)."""
+
+    tutaj = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+    monkeypatch.setattr(przebieg, "Path", _SciezkaWindows)
+    monkeypatch.setattr(przebieg.os, "sep", "\\")
+    monkeypatch.setattr(przebieg, "_launch", lambda arguments, environment: przebieg._Completed("", "", 0))
+    foldery = {r"D:\run\runs\x": "<run-root>", r"D:\run\evidence\x": "<evidence>", r"D:\wzorce": "<templates>"}
+    bieg = przebieg._Record(planning=False, folders=foldery)
+    monkeypatch.setattr(przebieg, "_record", bieg)
+
+    windows = {wariant: przebieg.plan(wariant) for wariant in przebieg.WORKFLOW_VARIANTS}
+    sekcja = polecenie_rozliczen.section("order-intermax", przebieg)
+    przebieg._run_workflow("intermax", *(_SciezkaWindows(folder) for folder in foldery))
+
+    assert windows == tutaj
+    assert f"\n{sekcja}\n## How to get to it (user POV)\n" in (ROZLICZENIA / "features" / "order-intermax.md").read_text(
+        encoding="utf-8"
+    )
+    assert bieg.steps == [krok for krok in tutaj["intermax"] if krok.name not in ("cleanup", "self-test")]
+
+
+def _workflow_proby(przebieg: ModuleType, rozwidlenie: bool) -> Callable[..., None]:
+    def workflow(variant: object, run_root: Path, evidence_root: Path, templates: object) -> None:
+        if rozwidlenie and evidence_root.exists():
+            przebieg._run_step("tylko-w-biegu", ["proba.py"], evidence_root, {}, expected_exit=0)
+
+    return workflow
+
+
+@pytest.mark.parametrize("rozwidlenie", [False, True], ids=["kroki-jak-plan", "krok-poza-planem"])
+def test_bieg_konczy_sie_verify_fail_gdy_kroki_roznia_sie_od_planu(
+    przebieg: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], rozwidlenie: bool
+) -> None:
+    """Prawdziwy bieg zapisuje kroki, które uruchomił, i kończy się ``VERIFY FAIL``, gdy różnią się od planu wariantu,
+    jak tu workflow, który w biegu widzi swój katalog dowodów, a w planie nie (#1804 r2)."""
+
+    proces = przebieg.WorkflowProcess("proba", _workflow_proby(przebieg, rozwidlenie), (), ("cleanup",))
+    monkeypatch.setitem(przebieg.WORKFLOW_VARIANTS, "proba", przebieg.WorkflowVariant(proces))
+    monkeypatch.setattr(przebieg, "_launch", lambda arguments, environment: przebieg._Completed("", "", 0))
+
+    kod = przebieg._verify("proba", tmp_path / "wzorce", tmp_path / "run")
+
+    assert (kod, "differ from its plan" in capsys.readouterr().err) == ((1, True) if rozwidlenie else (0, False))
+
+
+def _modul_procesow(przebieg: ModuleType, warianty: dict[str, object], **nazwy: object) -> ModuleType:
+    """Moduł z procesami ``nazwy``, wariantami ``warianty`` i planem, który każdemu wariantowi daje jeden krok."""
+
+    modul = ModuleType("procesy_proby")
+    vars(modul).update(
+        WorkflowProcess=przebieg.WorkflowProcess,
+        WORKFLOW_VARIANTS=warianty,
+        plan=lambda wariant: [przebieg.PlannedStep("run", "proba.py --zawsze", 0)],
+        **nazwy,
+    )
+    return modul
+
+
+def test_polecenie_mapy_rozliczen_odmawia_nazwy_procesu_uzytej_drugi_raz(
+    przebieg: ModuleType, polecenie_rozliczen: ModuleType
+) -> None:
+    pierwszy = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
+    drugi = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
+    warianty = {"a": przebieg.WorkflowVariant(pierwszy), "b": przebieg.WorkflowVariant(drugi)}
+    modul = _modul_procesow(przebieg, warianty, PIERWSZY=pierwszy, DRUGI=drugi)
+
+    with pytest.raises(polecenie_rozliczen.Refusal, match="two processes are named proba"):
+        polecenie_rozliczen.section("proba", modul)
+
+
+def test_polecenie_mapy_rozliczen_odmawia_procesu_bez_wariantu(przebieg: ModuleType, polecenie_rozliczen: ModuleType) -> None:
+    proba = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
+    bez_wariantu = przebieg.WorkflowProcess("bez-wariantu", lambda *_: None, (), ())
+    modul = _modul_procesow(przebieg, {"a": przebieg.WorkflowVariant(proba)}, PROBA=proba, BEZ_WARIANTU=bez_wariantu)
+
+    with pytest.raises(polecenie_rozliczen.Refusal, match="no variant runs bez-wariantu"):
+        polecenie_rozliczen.section("proba", modul)
+
+
+def test_plan_wariantu_ktory_nie_dobiega_konca_to_odmowa_a_nie_krotsza_lista(
+    przebieg: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def workflow(variant: object, run_root: Path, evidence_root: Path, templates: object) -> None:
+        przebieg._run_step("pierwszy", ["proba.py"], evidence_root, {}, expected_exit=0)
+        (run_root / "nie-ma").read_text(encoding="utf-8")
+
+    proces = przebieg.WorkflowProcess("proba", workflow, (), ("cleanup",))
+    monkeypatch.setitem(przebieg.WORKFLOW_VARIANTS, "proba", przebieg.WorkflowVariant(proces))
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(przebieg.PlanFailure, match="the plan of proba stopped"):
+        przebieg.plan("proba")
+
+
+def test_polecenie_mapy_rozliczen_laczy_warianty_o_tym_samym_planie(przebieg: ModuleType, polecenie_rozliczen: ModuleType) -> None:
+    proba = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
+    warianty = {"a": przebieg.WorkflowVariant(proba), "b": przebieg.WorkflowVariant(proba, run_exit=1)}
+    modul = _modul_procesow(przebieg, warianty, PROBA=proba)
+
+    sekcja = polecenie_rozliczen.section("proba", modul)
+
+    assert sekcja.endswith("Variants `a`, `b`:\n\n- `run`: `proba.py --zawsze`, exit 0.\n"), sekcja
+
+
+# Znane luki planu wariantów (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z workflow „LUKA”, którego plan
+# nie pokazuje tego, co robi prawdziwy bieg, a który przechodzi przez ruff z konfiguracją scripts/ skilla, przez plan
+# i przez polecenie; LUKA_W_CI mówi, czy wariant biegnie w CI, gdzie bieg porównuje swoje kroki z planem.
+ZNANE_LUKI_ROZLICZEN: Final = {
+    "gałąź zależna od wyniku kroku, wariant spoza CI: plan ma tylko foldery zastępcze": """\
+from pathlib import Path
+
+from run_verification import _run_step
+
+LUKA_W_CI = False
+
+
+def workflow(variant: object, run_root: Path, evidence_root: Path, templates: object) -> None:
+    if evidence_root.exists():
+        _run_step("LUKA", ["luka.py"], evidence_root, {}, expected_exit=0)
+""",
+    "efekt uboczny poza zapisywanymi funkcjami: plan zapisuje tylko kroki i dwie zmiany katalogu runu": """\
+from pathlib import Path
+
+LUKA_W_CI = True
+
+
+def workflow(variant: object, run_root: Path, evidence_root: Path, templates: object) -> None:
+    (Path.cwd() / "LUKA").mkdir()
+""",
+    "podproces poza dwiema funkcjami kroków: plan i bieg zapisują tylko _run_step i _run_process_step": """\
+from pathlib import Path
+import subprocess
+import sys
+
+LUKA_W_CI = True
+
+
+def workflow(variant: object, run_root: Path, evidence_root: Path, templates: object) -> None:
+    subprocess.run([sys.executable, "-c", "print('LUKA')"], check=True, capture_output=True)
+""",
+}
+
+
+@wymaga_ruff
+def test_znane_luki_planu_wariantow_przechodza_przez_kazdy_jego_mechanizm(
+    przebieg: ModuleType, polecenie_rozliczen: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pliki = zapisz(ZNANE_LUKI_ROZLICZEN, tmp_path)
+    zgloszenia = ruff(pliki, sonda=WORKFLOW_SUB_FEATURES.parent / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        luka = _modul_luki(plik)
+        proces = przebieg.WorkflowProcess("luka", luka.workflow, (), ("cleanup",))
+        szablony = "synthetic" if luka.LUKA_W_CI else "config"
+        monkeypatch.setitem(przebieg.WORKFLOW_VARIANTS, "luka", przebieg.WorkflowVariant(proces, templates=szablony))
+        katalog = tmp_path / f"plan-{plik.stem}"
+        katalog.mkdir()
+        monkeypatch.chdir(katalog)
+        try:
+            sekcja = polecenie_rozliczen.section("luka", przebieg)
+        except (polecenie_rozliczen.Refusal, przebieg.PlanFailure) as odmowa:
+            zgloszenia[opis].append(f"plan: {odmowa}")
+        else:
+            if "LUKA" in sekcja:
+                zgloszenia[opis].append("plan pokazuje lukę")
+        monkeypatch.delitem(przebieg.WORKFLOW_VARIANTS, "luka")
+
+    assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
+
+
+def _modul_luki(plik: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(plik.stem, plik)
+    assert spec is not None and spec.loader is not None
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
