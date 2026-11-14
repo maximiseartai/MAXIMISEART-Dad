@@ -1316,6 +1316,31 @@ def test_zmiana_statusu_przerwana_miedzy_dzialaniami_okna_zatrzymuje_nastepne_dz
     assert (stopped.value.part, stopped.value.cause, searched) == (PagePart.RESULTS, StatusChangeBlocked.OUTSIDE_FORWARD, [])
 
 
+def test_przekazanie_otwartego_zlecenia_wyslane_przez_strone_po_udanym_przekazaniu_nie_dochodzi_do_efenix_a_okno_konczy_sie_zatrzymaniem(
+    page: Page,
+) -> None:
+    """Strażnik przepuszcza żądanie Przekazania do akceptacji tylko wtedy, gdy okno na nie czeka: po udanym Przekazaniu
+    to samo żądanie, wysłane przez stronę, nie dochodzi do efenix, a okno kończy się Zatrzymaniem."""
+
+    def forward_then_page_forwards_again(url: str) -> None:
+        with efenix_browser.window(page, url) as efenix:
+            [listed] = efenix.search("8399")
+            efenix.open_order(listed)
+            assert efenix.forward_to_accept() is None
+            page.evaluate(
+                "() => fetch('action_change_status.php', {method: 'POST', body: 'order_id=901&xstatus=Do%20akceptacji&comment='})"
+                ".catch(() => 'przerwane')"
+            )
+
+    order = Order("#8399", cells={"O": 1}, quantities={"012": 1})
+    with atrapa_efenix([replace(order.in_efenix("901"), execution_date=DAY)]) as atrapa:
+        with pytest.raises(UnexpectedPage) as stopped:
+            forward_then_page_forwards_again(atrapa.url)
+        requests = atrapa.status_requests()
+
+    assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [("POST", "Do akceptacji")])
+
+
 @pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
 @pytest.mark.parametrize("status_change", [StatusChange.ON_LOAD, StatusChange.POPUP], ids=lambda change: change.name.lower())
 def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_efenix_takze_z_nowego_okna_strony(
