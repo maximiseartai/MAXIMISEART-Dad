@@ -20,19 +20,19 @@ from rozliczenia.wall_clock import local_now
 
 VIEW_TIMING_EVENT = "pomiar"
 UNEXPECTED_FAILURE_EVENT = "nieoczekiwany-wyjatek"
-# Pomiar przychodzi po każdym widoku, więc na jedno uruchomienie Centrum dziennik przyjmuje ich najwyżej
-# tyle (spec #164, US29); kolejne przepadają po cichu, a wpisy o pracy serwera są zapisywane dalej.
 MAX_VIEW_TIMINGS = 200
+"""Najwięcej pomiarów widoku w dzienniku od startu Centrum: pomiar przychodzi po każdym widoku, więc kolejne przepadają
+po cichu, a wpisy o pracy serwera są zapisywane dalej."""
 _UPDATE = "aktualizacja"
-# Zdarzenia, które piszą ``update_started`` i ``update_finished``, dla ``update_awaits``.
 _UPDATE_STARTED = "aktualizacja-start"
+"""Zdarzenie, które pisze ``update_started``; ``update_awaits`` szuka go w dzienniku."""
 _UPDATE_FINISHED = "aktualizacja-koniec"
-# Okres wysyłki w tle z Uruchomienia, którego okresu nie ustalono.
+"""Zdarzenie, które pisze ``update_finished``; ``update_awaits`` szuka go w dzienniku."""
 _NO_PERIOD = "bez-okresu"
-# Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
-# nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki.
+"""Okres wysyłki w tle z Uruchomienia, którego okresu nie ustalono."""
 WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "odmowa-archiwum"]
-# Dlaczego sprawdzenie Przypomnień o raporcie nie wysłało wszystkiego, co się należało (``report_reminders``).
+"""Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
+nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki."""
 ReminderFailure = Literal[
     "bez-wdrozenia",
     "bez-ustawien",
@@ -45,12 +45,13 @@ ReminderFailure = Literal[
     "odmowa-wysylki",
     "zapis-por",
 ]
-# Dlaczego zmiany Ustawień Centrum nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest, ale
-# system nie daje go czytać.
+"""Dlaczego sprawdzenie Przypomnień o raporcie (``report_reminders``) nie wysłało wszystkiego, co się należało."""
 SettingsUnreadableCause = Literal["dostep", "historia"]
-# Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
-# dało się zapisać, więc następny odczyt spróbuje jeszcze raz.
+"""Dlaczego zmiany Ustawień Centrum nie zapisano: plik Ustawień (``dostep``) albo Historia Ustawień (``historia``) jest,
+ale system nie daje go czytać."""
 SettingsExternalResult = Literal["zapisano", "odrzucono", "bez-zapisu"]
+"""Co Ustawienia Centrum zrobiły z plikiem zmienionym poza Centrum; ``bez-zapisu``: wiersza Historii albo pamięci nie
+dało się zapisać, więc następny odczyt spróbuje jeszcze raz."""
 SettingsReleaseResult = Literal[
     "zastosowano", "bez-zmian", "odrzucono", "pozniej", "bez-zapisu", "bez-pamieci", "bez-historii"
 ]
@@ -329,11 +330,11 @@ class CentrumLog:
 
         Pomiary widoków są pominięte: po każdym przejściu w menu jest nowy, więc
         wyparłyby wpisy o pracy serwera, a pomiary zostają na komputerze taty.
+        Urwany zapis (np. przy utracie zasilania) psuje jeden wpis, nie odczyt całego dziennika.
         """
 
         try:
             with self._lock:
-                # urwany zapis (np. przy utracie zasilania) psuje jeden wpis, nie odczyt całego dziennika
                 lines = self._path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             return []
@@ -341,10 +342,11 @@ class CentrumLog:
         session = lines[starts[-1] :] if starts else lines
         return [line for line in session if event_of(line) != VIEW_TIMING_EVENT][-limit:]
 
-    # Format wpisu i zapis są tylko tutaj: wyrocznia podaje własny zapis przez ``append``, a podklasa, która je nadpisuje
-    # (#1115), to błąd mypy (``final``).
     @final
     def _write(self, event: str, **facts: str | int) -> None:
+        """Format wpisu i zapis są tylko tutaj: wyrocznia podaje własny zapis przez ``append``, a podklasa, która je
+        nadpisuje, to błąd mypy (``final``)."""
+
         line = self._line(event, **facts)
         with self._hold_lock:
             if self._held is not None:
@@ -360,13 +362,16 @@ class CentrumLog:
 
     @final
     def _to_file(self, line: str) -> None:
+        """Dopisuje wpis do pliku dziennika; brak dziennika nie zatrzymuje Centrum, bo dziennik tylko pomaga przy
+        wsparciu."""
+
         try:
             with self._lock:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 with self._path.open("a", encoding="utf-8") as log:
                     log.write(line + "\n")
         except OSError:
-            pass  # dziennik pomaga przy wsparciu; jego brak nie może zatrzymać Centrum
+            pass
 
 
 def event_of(line: str) -> str:
