@@ -560,7 +560,8 @@ def test_wyjatek_przed_pomocnikiem_konczy_bieg_w_try_z_finally_jak_w_ciele_drive
     """Wyjątek przed pomocnikiem przechodzi przez samo finally i kończy drive(), więc bieg drukuje początek sekcji i pada,
     jak w ciele drive(): w obu postaciach polecenie drukuje tę samą sekcję, a bieg jej początek."""
 
-    biegi, sekcje = [], []
+    biegi: list[list[tuple[str, str]]] = []
+    sekcje: list[list[tuple[str, list[str]]]] = []
     for opis, wstawka in RZUCA_PRZED_POMOCNIKIEM.items():
         zrodlo = NAPED.format(wstawka=wstawka) + POMOCNIK
         plik = tmp_path / f"sonda_{len(biegi)}.py"
