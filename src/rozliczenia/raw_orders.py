@@ -407,7 +407,7 @@ def pasted_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> 
 
 def above_paste(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns) -> AbovePaste:
     """Ostatni uporządkowany i żółty wiersz z tego samego rozpoznania dołu arkusza co ``recognize``, same numery
-    wierszy: Kopia wejścia niesie je, żeby odtworzenie Uruchomienia postawiło dzień w tych samych wierszach (#847)."""
+    wierszy: Kopia wejścia niesie je, żeby odtworzenie Uruchomienia postawiło dzień w tych samych wierszach."""
 
     _, yellow, _, ordered = _bottom(iter(rows_from_bottom), columns)
     return AbovePaste(None if ordered is None else ordered.number, yellow)
@@ -449,7 +449,7 @@ def both_positions(*, first: bool, left_of_date: object, date: object) -> bool:
     Pierwszy wiersz bloku pamięć zna tylko przesunięty, gdy jego przesunięcie widać (``shift_visible``). Każdy inny
     pierwszy wiersz (z datą z godziną pod ``DATA GODZ. POCZ.``, z datą tekstem, bez daty) zna w obu, bez uwagi w Logach,
     bo sam kształt treści nie mówi, gdzie wiersz stoi. Tak wygląda wiersz, który uchodzi za pierwszy, bo tata wpisał coś
-    w Calibri 8 w wiersz nad nim (przegląd #984 r1 i r2); granica bloku zostaje z kroju, bo reguła wyglądu z większości
+    w Calibri 8 w wiersz nad nim; granica bloku zostaje z kroju, bo reguła wyglądu z większości
     komórek przestawia u taty granice dziesiątek bloków. Inny wiersz pamięć zna w obu, gdy ma ślad przesunięcia
     (``shift_traced``), czyli widocznie łamie fakt domeny; tylko o nim Logi mają uwagę (``RowPositions.traced``).
     """

@@ -150,8 +150,8 @@ Centrum, a ona znała jedne pory, stałe z ADR 0030 (przegląd #1568 r2 W1)."""
 class SchedulesInEffect:
     """Pory przypomnień, przy których praca przypomnień sprawdzała, od najstarszych: każde obowiązują od chwili swojego
     pierwszego sprawdzenia do chwili następnych, a przed pierwszym obowiązują pory ``before``. Z nich nazwana pora
-    przypomnienia z „Wysłanych”: ta, w której poszło przy porach z chwili wysyłki, a nie przy bieżących (decyzja Maksa
-    W1 w #1568)."""
+    przypomnienia z „Wysłanych”: ta, w której poszło przy porach z chwili wysyłki, a nie przy bieżących
+    (decyzja Maksa)."""
 
     before: frozenset[ReminderSchedule] = OLD_VERSION_SCHEDULES
     changes: tuple[ScheduleSince, ...] = ()

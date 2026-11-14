@@ -111,7 +111,7 @@ class Stop:
     ``trace``: ślad wywołań dla Zgłoszenia do Maksa i Logów Uruchomienia:
     nieoczekiwanego wyjątku (``unexpected``, ``after_engine``) i każdego
     własnego zatrzymania, które ma przyczynę w wyjątku (``StopError`` z
-    ``__cause__``), także dla taty, z łańcuchem przyczyn (#976). ``facts``: fakty Zatrzymania procesu
+    ``__cause__``), także dla taty, z łańcuchem przyczyn. ``facts``: fakty Zatrzymania procesu
     dla Logów Uruchomienia (``StopError.facts``). Oba nie należą do tożsamości
     Zatrzymania i nie trafiają do dziennika ani metryk.
     """
@@ -295,7 +295,7 @@ def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
 
     Własne zatrzymanie z przyczyną w wyjątku ma ślad wywołań z łańcuchem przyczyn, bo Maks ustala z niego, gdzie proces
     stanął, także przy Zatrzymaniu dla taty: Wycena w efenix, której okno nie wystartowało, mówi w nim, która droga
-    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem (#976).
+    startu zawiodła (``EfenixUnreachable``, ``BrowserNotStarted``) i z jakim wyjątkiem.
     """
 
     if isinstance(error, Declined):
