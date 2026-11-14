@@ -749,3 +749,20 @@ def test_tryb_ast_widzi_ostrzezenie_kompilatora_takze_w_drugim_porownaniu_w_tym_
         seen.append((rownowaznosc.main(["--ast", "--baza", based]), capsys.readouterr().out.splitlines()))
 
     assert seen == [_refused("HEAD", _ESCAPE_STRING)] * 2
+
+
+def test_tryb_ast_zostawia_filtry_ostrzezen_procesu_takie_jak_przed_nim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository, base = _repository_with_module(tmp_path)
+    (repository / "src" / "modul.py").write_bytes(_ESCAPE_STRING)
+    monkeypatch.setattr(rownowaznosc, "ROOT", repository)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        before = list(warnings.filters)
+        code = rownowaznosc.main(["--ast", "--baza", base])
+        after = list(warnings.filters)
+
+    assert (code, after) == (1, before)
+    assert capsys.readouterr().out.splitlines() == _refused("HEAD", _ESCAPE_STRING)[1]
