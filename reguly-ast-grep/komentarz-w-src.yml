@@ -13,7 +13,8 @@ rule:
   # Gramatyka całego komentarza, a każdy inny komentarz jest zgłoszony: „# noqa: ”, kody [A-Z]+[0-9]+ rozdzielone „, ”,
   # „ - ” i powód od znaku innego niż biały; albo „# type: ignore[”, kody [a-z]+(-[a-z]+)* rozdzielone „, ”, „]”, a po
   # nim koniec albo „  # ” i powód od znaku innego niż biały. Treści powodu reguła nie sprawdza. \r? przed końcem, bo
-  # checkout na Windows ma CRLF.
+  # checkout na Windows ma CRLF. ast-grep wybiera język po rozszerzeniu, więc plik Pythona bez rozszerzenia albo z
+  # rozszerzeniem .pyw reguła pomija.
   not:
     regex: >-
       ^# (?:noqa: [A-Z]+[0-9]+(?:, [A-Z]+[0-9]+)* - \S.*|type: ignore\[[a-z]+(?:-[a-z]+)*(?:, [a-z]+(?:-[a-z]+)*)*\](?:  # \S.*)?)\r?$
