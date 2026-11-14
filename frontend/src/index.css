@@ -17,6 +17,9 @@
     --color-warning: var(--warning);
     --color-success: var(--success);
     --color-to-fill: var(--to-fill);
+    --color-reminder: var(--reminder);
+    --color-reminder-tile: var(--reminder-tile);
+    --color-reminder-tile-foreground: var(--reminder-tile-foreground);
     --color-success-tile: var(--success-tile);
     --color-success-tile-foreground: var(--success-tile-foreground);
     --color-warning-tile: var(--warning-tile);
@@ -83,6 +86,10 @@
     --warning-tile-foreground: color-mix(in oklab, var(--warning) 45%, var(--foreground));
     --destructive-tile: color-mix(in oklab, var(--destructive) 26%, var(--card));
     --destructive-tile-foreground: color-mix(in oklab, var(--destructive) 70%, var(--foreground));
+    /* Znaczek Przypomnienia o raporcie na kafelku i w popoverze: osobny kolor, bo przypomnienie nie jest stanem dnia. */
+    --reminder: oklch(0.6 0.15 300);
+    --reminder-tile: color-mix(in oklab, var(--reminder) 26%, var(--card));
+    --reminder-tile-foreground: color-mix(in oklab, var(--reminder) 62%, var(--foreground));
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-accent: oklch(0.97 0 0);
@@ -125,6 +132,7 @@
     --success-tile: color-mix(in oklab, var(--success) 34%, var(--card));
     --warning-tile: color-mix(in oklab, var(--warning) 30%, var(--card));
     --destructive-tile: color-mix(in oklab, var(--destructive) 30%, var(--card));
+    --reminder: oklch(0.72 0.14 300);
     --sidebar-ring: oklch(0.556 0 0);
 }
 

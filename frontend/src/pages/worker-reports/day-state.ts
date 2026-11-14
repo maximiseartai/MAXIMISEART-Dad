@@ -59,3 +59,14 @@ function status(found: ReportsWorkerDay, day: string, today: string): Status {
 export function hasStatus(state: DayState): state is Extract<DayState, { kind: Status }> {
   return state.kind === "problem" || state.kind === "without_report" || state.kind === "waiting" || state.kind === "complete"
 }
+
+/**
+ * Pozycja filtra Status: stan dnia albo `reminded` (Przypomniane), czyli dzień, za który poszło Przypomnienie o
+ * raporcie. Przypomniane to nie stan, bo dzień z przypomnieniem ma też swój stan (np. Bez raportu albo Komplet).
+ */
+export type Choice = Status | "reminded"
+
+/** Dzień z wynikiem kliknięcia pasuje do filtra: ma wybrany stan albo, przy Przypomnianych, przypomnienie. */
+export function isChosen(state: DayState, chosen: ReadonlySet<Choice>): boolean {
+  return hasStatus(state) && (chosen.has(state.kind) || (chosen.has("reminded") && state.day.reminders.length > 0))
+}
