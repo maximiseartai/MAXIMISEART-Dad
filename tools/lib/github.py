@@ -5,6 +5,7 @@
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
 ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Akcje issue (``Zaloz``, ``Skomentuj``,
 ``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
+``ustaw_status`` to jedyne miejsce, które ustawia status commita.
 
 W workflow ``gh`` dostaje token z ``GH_TOKEN``, lokalnie z logowania Maksa. Moduł używa tylko biblioteki standardowej,
 bo Zgłoszenia CI biegną systemowym ``python3`` runnera.
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import itertools
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -39,6 +41,10 @@ CZERWONY_MAIN = "czerwony-main"
 # Temat commitu scalenia PR na GitHubie: merge commit albo squash.
 MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
 SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")
+# Status commita, który ``tools/scal_pr.py --status`` ustawia na HEAD otwartego PR do `main` (workflow
+# ``.github/workflows/werdykt-i-bramka.yml``), a raport tygodniowy czyta po merge'u.
+WERDYKT_I_BRAMKA = "Werdykt i bramka"
+OPIS_STATUSU_LIMIT = 140  # GitHub odrzuca dłuższy opis statusu commita
 LIMIT_S = 60
 STRONA = 100
 
@@ -76,6 +82,26 @@ def gh_bajty(*argumenty: str, wejscie: bytes | None = None, limit_s: float | Non
 
     wyjscie: bytes = _run(argumenty, wejscie, limit_s, cwd, tekst=False)
     return wyjscie
+
+
+def ustaw_status(commit: str, kontekst: str, stan: str, opis: str) -> str | None:
+    """Status commita ``kontekst`` w stanie ``stan`` na ``commit`` repozytorium checkoutu, z ``opis`` przyciętym do
+    ``OPIS_STATUSU_LIMIT`` i, w runie GitHub Actions, z linkiem do runu; błąd GitHuba, gdy status nie przeszedł."""
+
+    if len(opis) > OPIS_STATUSU_LIMIT:
+        opis = opis[: OPIS_STATUSU_LIMIT - 1] + "…"
+    pola = {"state": stan, "context": kontekst, "description": opis}
+    run = ("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+    if all(os.environ.get(nazwa) for nazwa in run):
+        pola["target_url"] = "{}/{}/actions/runs/{}".format(*(os.environ[nazwa] for nazwa in run))
+    flagi = [czesc for nazwa, wartosc in pola.items() for czesc in ("-f", f"{nazwa}={wartosc}")]
+    try:
+        gh("api", "--method", "POST", "--silent", f"{REPO}/statuses/{commit}", *flagi)
+    except subprocess.TimeoutExpired:
+        return f"gh api bez odpowiedzi przez {LIMIT_S} s"
+    except subprocess.CalledProcessError as blad:
+        return blad.stderr.strip() or f"gh api: kod {blad.returncode}"
+    return None
 
 
 def html_markdownu(tekst: str, repozytorium: str) -> str:
