@@ -80,9 +80,9 @@ class WorkerPeriods:
     """Szukanie loginów w okresach jednym uchwytem plików taty pracy Centrum.
 
     Pamięta Wykonawców każdego przeczytanego Pliku zbiorczego z jego rozmiarem i chwilą zmiany z listowania Folderu
-    okresu, więc następne szukanie czyta tylko Pliki zbiorcze zmienione od tamtej pory: pełne przejście lustra folderów
-    taty z 52 okresami to 5 s na Macu, z 260 okresami 25 s (pomiar #1474), a plik „tylko online” OneDrive pobiera się
-    przy każdym odczycie. Rejestr zleceń czyta za każdym razem (1 s na Rejestrze taty), bo zmienia się codziennie.
+    okresu, więc następne szukanie czyta tylko Pliki zbiorcze zmienione od tamtej pory: pełne przejście czyta Plik
+    zbiorczy każdego okresu, a plik „tylko online” OneDrive pobiera się przy każdym odczycie. Rejestr zleceń czyta za
+    każdym razem, bo zmienia się codziennie.
     Pamięć żyje tyle co praca Centrum.
     """
 

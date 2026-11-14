@@ -279,12 +279,11 @@ class BrowserEfenix:
         """Karta okna jest zamknięta: tata zamknął ją albo całe okno przeglądarki.
 
         Najpierw pyta kartę o jej dokument (``:root``), bo karta zamknięta w trakcie nawigacji przerywa ją błędem, który
-        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` jest jeszcze fałszem, pomiar #878: 89 na 100
-        zamknięć karty, gdy okno czeka na stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało
-        nawigację, więc po niej ``Page.is_closed`` już je zna (pomiar #886: 247 z 247 zamknięć karty w trakcie
-        nawigacji). Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o zamknięciu mówi wtedy też
-        ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie odpowiada, inaczej zatrzymałaby
-        okno tu bez końca (#886).
+        Playwright podaje, zanim powie o zamknięciu karty (``Page.is_closed`` bywa wtedy jeszcze fałszem, gdy okno
+        czeka na stronę). Odpowiedź przychodzi po wiadomości o zamknięciu karty, które przerwało nawigację, więc po
+        niej ``Page.is_closed`` już je zna. Pytanie w zamkniętej karcie albo przeglądarce kończy się błędem, a o
+        zamknięciu mówi wtedy też ``Page.is_closed``. Pytanie ma czas okna, bo przeglądarka albo strona, która nie
+        odpowiada, inaczej zatrzymałaby okno tu bez końca.
         """
 
         with suppress(PlaywrightError):

@@ -3,7 +3,9 @@ language: python
 severity: error
 message: >-
   docstring w src z „#” i cyfrą, adresem w domenie github.com albo skrótem commitu (słowo z 7 albo więcej znaków
-  0-9a-f z literą): historię zmiany zostaw w opisie PR albo w issue, a docstring niech mówi, co kod robi teraz
+  0-9a-f z literą): historię zmiany zostaw w opisie PR albo w issue, a docstring niech mówi, co kod robi teraz; liczbę
+  z pomiaru niech nazywa polecenie albo narzędzie repozytorium, które ją daje, a numer issue albo PR pomiaru idzie do
+  opisu PR
 files:
   - src/**
 rule:

@@ -3,9 +3,7 @@ ma na Liście Wykonawców, do dodania przyciskiem „Dodaj Wykonawcę”.
 
 Ostatnie zlecenia to uporządkowane zlecenia bieżącego okresu i okresów, które Tablica okresów pokazuje razem z nim od
 razu (``RECENT_PERIODS``): nowy pracownik taty pojawia się w nich w pierwszym tygodniu pracy, a login, którego dawno nie
-ma w zleceniach (pracownik sprzed narzędzia albo literówka sprzed miesięcy), nie wraca przy każdym otwarciu sekcji:
-cały Rejestr taty z 20.10.2026 ma 7 loginów spoza ówczesnego pliku Wykonawców (``worker_mapping.yaml``), każdy z
-ostatnim zleceniem najpóźniej w sierpniu 2026 (pomiar #1475 na kopii Rejestru na Macu Maksa).
+ma w zleceniach (pracownik sprzed narzędzia albo literówka sprzed miesięcy), nie wraca przy każdym otwarciu sekcji.
 
 Login, który ma Wykonawca (także Nieaktywny), albo login sprawy „login bez Wykonawcy” po przeniesieniu starych plików,
 który ma już swój przycisk z adresami, nie jest podpowiedzią. Po dodaniu Wykonawcy z loginem podpowiedź znika. Odczyt

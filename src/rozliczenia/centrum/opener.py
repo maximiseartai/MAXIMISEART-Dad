@@ -1,11 +1,11 @@
 """Otwieracz żądań HTTP Centrum z jednym kontekstem TLS na proces.
 
 ``urllib.request.build_opener`` bez podanego ``HTTPSHandler`` tworzy nowy kontekst TLS przy każdym otwieraczu, także do
-``http://``, a na Windows wczytuje on wtedy cały magazyn certyfikatów systemu: w sondzie #1673 na runnerze Windows 3.13
-trwało to 42–75 ms (pierwsze w procesie 242 ms), poza limitem czasu żądania. Zjadało to limit sprawdzenia Wydań (#1580)
-i limit czekania launchera na ``health`` (``version.running_centrum``). Dlatego otwieracz w ``src/`` daje tylko
-``opener`` (zakaz ``build_opener`` i ``urlopen`` w ``src/ruff.toml``). Moduł używa tylko biblioteki standardowej:
-launcher woła ``health`` przed wczytaniem FastAPI, a opiekun ponownego startu działa z jego kopii.
+``http://``, a na Windows wczytuje on wtedy cały magazyn certyfikatów systemu poza limitem czasu żądania, co zjada
+limit sprawdzenia Wydań i limit czekania launchera na ``health`` (``version.running_centrum``). Dlatego otwieracz w
+``src/`` daje tylko ``opener`` (zakaz ``build_opener`` i ``urlopen`` w ``src/ruff.toml``). Moduł używa tylko
+biblioteki standardowej: launcher woła ``health`` przed wczytaniem FastAPI, a opiekun ponownego startu działa z jego
+kopii.
 """
 
 from __future__ import annotations
