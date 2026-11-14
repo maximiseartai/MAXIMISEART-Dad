@@ -962,8 +962,9 @@ def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_krok_w_m
         (["--baza", "baza"], "PLAN CI | pull_request | wybór 1 plików |"),
         # Push to pełne CI ``main``, więc baza, której nie ma, nie przeszkadza.
         (["--zdarzenie", "push", "--baza", "nie-ma-takiej-bazy"], "PLAN CI | push | wszystkie pliki |"),
+        ([], "PLAN CI | pull_request | wybór 1 plików |"),
     ],
-    ids=["bez zdarzenia to pull request", "push bez bazy"],
+    ids=["bez zdarzenia to pull request", "push bez bazy", "bez bazy to origin/main"],
 )
 def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], arguments: list[str], plan_line: str
@@ -971,6 +972,7 @@ def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "A = 1\n", "tests/test_a.py": "def test_a() -> None:\n    pass\n", **SKILL})
     commit(repo, "baza")
     git(repo, "branch", "baza")
+    git(repo, "update-ref", "refs/remotes/origin/main", "baza")
     (repo / "tests" / "test_a.py").write_text("def test_a() -> None:\n    assert True\n", encoding="utf-8")
     commit(repo, "zmiana")
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))

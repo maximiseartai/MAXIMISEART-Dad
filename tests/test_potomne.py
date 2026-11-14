@@ -331,6 +331,62 @@ def test_git_narzedzia_nie_uruchamia_konserwacji_w_tle_takze_gdy_komputer_ja_wla
     assert (started, git(path, "log", "-1", "--format=%an")) == ([], "z wołającego")
 
 
+def test_polecenie_gita_po_zatrzymaniu_nie_rusza(tmp_path: Path) -> None:
+    path = _repository(tmp_path / "repo")
+    stop = threading.Event()
+    stop.set()
+
+    with pytest.raises(potomne.Stopped):
+        repo.run_git(path, "commit", "--quiet", "--all", "--message", "po zatrzymaniu", stop=stop)
+
+    assert git(path, "rev-list", "--count", "HEAD") == "1"
+
+
+# Atrapa gita, która wisi na liście nieśledzonych plików, a inne polecenia oddaje prawdziwemu gitowi.
+HANGING_LS_FILES = """import os, sys, time
+real, arguments = os.environ["SHIM_GIT"], sys.argv[1:]
+if "ls-files" in arguments:
+    time.sleep(10)
+os.execv(real, [real, *arguments])
+"""
+
+
+@POSIX_ONLY
+def test_zmienione_pliki_z_drzewa_roboczego_koncza_sie_limitem_czasu_takze_na_liscie_niesledzonych(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _repository(tmp_path / "repo")
+    shim = fake_cli(tmp_path / "atrapa", "git", HANGING_LS_FILES)
+    monkeypatch.setenv("SHIM_GIT", str(shutil.which("git")))
+    monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ['PATH']}")
+
+    with pytest.raises(subprocess.TimeoutExpired, match="ls-files"):
+        repo.changed(path, "HEAD", timeout=2)
+
+
+def test_lista_worktree_repozytorium_bare_pomija_samo_repozytorium(tmp_path: Path) -> None:
+    source = _repository(tmp_path / "zrodlo")
+    bare = tmp_path / "repo.git"
+    git(tmp_path, "clone", "--quiet", "--bare", str(source), str(bare))
+    git(bare, "worktree", "add", "--quiet", "--detach", str(tmp_path / "praca"), "HEAD")
+
+    listed = repo.worktrees(bare)
+
+    assert [(tree.path, tree.missing) for tree in listed] == [((tmp_path / "praca").resolve(), False)]
+
+
+def test_zablokowany_worktree_bez_katalogu_jest_brakujacy(tmp_path: Path) -> None:
+    path = _repository(tmp_path / "repo")
+    gone = tmp_path / "zablokowany"
+    git(path, "worktree", "add", "--quiet", "--detach", str(gone), "HEAD")
+    git(path, "worktree", "lock", str(gone))
+    shutil.rmtree(gone)
+
+    listed = {tree.path: (tree.locked, tree.missing) for tree in repo.worktrees(path)}
+
+    assert listed[gone.resolve()] == (True, True)
+
+
 def test_nieudana_kopia_commitu_niesie_komunikat_gita(tmp_path: Path) -> None:
     repo = _repository(tmp_path / "repo")
 

@@ -163,6 +163,33 @@ def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_dan
     assert {secret for secret in secrets if secret in published} == set()
 
 
+def test_pomiar_bez_odpowiedzi_gita_zapisuje_commit_i_stan_checkoutu_jako_nieznane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = tmp_path / "dziennik.jsonl"
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "nie-ma-repozytorium"))
+
+    measured = run_benchmark(
+        "measure",
+        "--scenario",
+        "maly-tydzien",
+        "--templates-dir",
+        str(write_templates(tmp_path / "wzorce")),
+        "--wykonawcy",
+        str(write_worker_list(tmp_path / WORKERS_FILE)),
+        "--mirror-dir",
+        str(tmp_path / "lustro"),
+        "--journal",
+        str(journal),
+        "--machine",
+        "test",
+    )
+
+    assert measured.returncode == 0, measured.stderr
+    [record] = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert (record["git_sha"], record["dirty"]) == (None, None)
+
+
 def change_rate(worker_template: Path) -> None:
     """Inny, nadal poprawny Wzorzec rozliczenia pracownika: zmieniona stawka w arkuszu ``Rates``."""
 
