@@ -54,8 +54,8 @@ after a rollback when the port was never released (#726).
 **TataNieZostajeBezOdpowiedzi**: when nothing runs any more (no update, no
 guardian, no Centrum), Dad sees a native dialog with a Komunikat or a computer
 that switched off, never only a card that no longer answers. The docstring of
-`restart_guardian.py` and the comment in `main` promise it: „Karta nie ma już z
-kim rozmawiać: jedno okienko zamiast ciszy”.
+`restart_guardian.py` and the docstring of `main` promise it: „karta nie ma już
+z kim rozmawiać, więc tata widzi jedno okienko zamiast ciszy”.
 
 **KartaNieKlamie**: the card says „Narzędzie zaktualizowane” only while
 Centrum runs in the new version. Every Centrum reads the result file
