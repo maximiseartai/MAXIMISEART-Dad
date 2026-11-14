@@ -104,6 +104,7 @@ PARSERS = frozenset(
     tools/lib/rozjazd_modelu.py
     tools/lib/wplyw_zmiany.py
     tools/mutacje_zmiany.py
+    tools/rownowaznosc.py
     """.split()
 )
 PARSER_FOLDERS = ("tests", "tools", ".agents/skills")

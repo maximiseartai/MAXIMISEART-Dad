@@ -20,8 +20,8 @@ from typing import Final, Generic, TypeVar
 from rozliczenia.wall_clock import utc_now
 
 SHOWN_FAILING_AFTER_S: Final = 60.0
-# Strona ponawia nieudany odczyt co 3 s; dłuższa cisza znaczy, że nikt nie patrzył (ukryta karta, inna strona).
 RETRY_GAP_S: Final = 15.0
+"""Strona ponawia nieudany odczyt co 3 s; dłuższa cisza znaczy, że nikt nie patrzył (ukryta karta, inna strona)."""
 
 T = TypeVar("T")
 
