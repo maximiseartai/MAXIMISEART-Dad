@@ -14,10 +14,10 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-# Zapis tokenu bez sprawdzania dni tygodnia; wspólny dla nazw plików i metryk.
 PERIOD_TOKEN_PATTERN = r"\d{2}_\d{2}_\d{2}_\d{4}"
-# Okres w rekordzie metryk, gdy tokenu nie udało się ustalić.
+"""Zapis tokenu bez sprawdzania dni tygodnia; wspólny dla nazw plików i metryk."""
 UNKNOWN_PERIOD = "nieznany"
+"""Okres w rekordzie metryk, gdy tokenu nie udało się ustalić."""
 _TUESDAY = 1
 
 

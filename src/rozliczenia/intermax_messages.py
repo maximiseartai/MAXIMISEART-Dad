@@ -25,8 +25,8 @@ _PROCESS = "Uporządkowanie INTERMAX"
 _UNCHANGED = "INTERMAX nie został zmieniony."
 _INTERMAX = DadWorkbook("INTERMAX", "INTERMAX", "order_register", _UNCHANGED, "uruchom ponownie")
 _AGAIN = "przywróć kopię jeszcze raz"
-# Miejsce w Centrum, w którym tata widzi i przywraca Kopie INTERMAX; Komunikaty o Kopiach nazywają je tylko stąd.
 _COPIES_PLACE = "w Ustawieniach, w sekcji Kopie INTERMAX"
+"""Miejsce w Centrum, w którym tata widzi i przywraca Kopie INTERMAX; Komunikaty o Kopiach nazywają je tylko stąd."""
 
 
 @dataclass(frozen=True)

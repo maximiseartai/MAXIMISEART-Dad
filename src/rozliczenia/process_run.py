@@ -11,6 +11,10 @@ renderuje wynik. Decyzję składa proces, nie rozmówca. Proces
 opisuje tylko to, co jest jego i wspólne dla każdego rozmówcy (``Process``).
 Tekst wyjątku nigdy nie przechodzi przez ten seam: tata widzi wyłącznie
 Komunikaty podane przez proces.
+
+Rekord metryk Uruchomienia bez wyniku (``Stop``) ma zero dróg zapisu, tak jak
+liczników, bo drogi zapisu są wtedy nieznane: także gdy zatrzymanie przyszło
+dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
 """
 
 from __future__ import annotations
@@ -304,9 +308,9 @@ def _stop_from(error: Exception, process: Process[Any, Any, Any]) -> Stop:
     return Stop("unexpected", process.unexpected_failure, CallTrace.of(error))
 
 
-# Budowa podsumowania i widoku rozmówcy odroczona do chwili po pomiarze Czasu
-# uruchomienia, żeby jej czas się nie liczył.
 _DeferredSummary = Callable[[], tuple[Finished, ViewT]]
+"""Budowa podsumowania i widoku rozmówcy odroczona do chwili po pomiarze Czasu
+uruchomienia, żeby jej czas się nie liczył."""
 
 
 def _run_engine(
@@ -382,8 +386,6 @@ def run_process(
             else RecordedStop(kind=ending.stop_kind, code=ending.message.code)
         ),
         counters=finished.counters if finished else {counter.name: 0 for counter in process.counters},
-        # Bez wyniku drogi zapisu są nieznane i rekord ma ich zero, tak jak liczników: także gdy zatrzymanie przyszło
-        # dopiero przy pokazaniu wyniku, a pliki z Wzorca już powstały.
         routes=finished.routes if finished else {},
     )
     technical_notes: list[str] = []

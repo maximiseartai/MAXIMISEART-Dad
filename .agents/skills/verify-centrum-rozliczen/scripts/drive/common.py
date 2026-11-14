@@ -859,7 +859,7 @@ def next_step_names_current_step(run: Run, page: Page, token: str, current: str)
     heading, button, row_button = CARD_STEPS[current]
     card = page.get_by_role("region", name="Następny krok")
     expect(card).to_contain_text(token)
-    expect(card.get_by_role("heading", level=2)).to_have_text(heading)
+    expect(card.get_by_role("heading", name=heading, level=2, exact=True)).to_be_visible()
     expect(card.get_by_role("list", name="Droga okresu").locator('[aria-current="step"]')).to_contain_text(current)
     expect(card.get_by_role("button").first).to_have_accessible_name(button)
     row_step = period_row(page, token).get_by_role("cell").last.get_by_role("button").last
