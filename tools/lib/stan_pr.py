@@ -18,6 +18,12 @@ JOB_NOT_FAILED = frozenset({"SUCCESS", "SKIPPED", "NEUTRAL"})
 _JOB_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/(?P<run>[0-9]+)/job/[0-9]+")
 
 
+class Waiting(str):
+    """Przyczyna odmowy merge'a, która minie bez zmiany w PR: CI na HEAD jeszcze nie skończyło albo HEAD nie ma
+    jeszcze werdyktu; każdą inną przyczynę usuwa dopiero działanie autora. Rodzaj nadaje ten, kto przyczynę tworzy,
+    a ``tools/scal_pr.py --status`` daje ``pending`` zamiast ``failure``, gdy każda przyczyna jest tego typu."""
+
+
 @dataclass(frozen=True)
 class Pull:
     number: int
@@ -32,12 +38,13 @@ class Pull:
     body: str
     closed_by_github: frozenset[int]  # issues tego repozytorium z ``closingIssuesReferences``
     checks: tuple[dict[str, str | None], ...]
+    mergeable: str  # MERGEABLE, CONFLICTING albo UNKNOWN, gdy GitHub jeszcze liczy scalenie z bazą
 
 
 def pull(number: int) -> Pull:
     fields = (
         "number,title,state,isDraft,isCrossRepository,baseRefName,headRefOid,statusCheckRollup,comments,reviews,"
-        "url,body,closingIssuesReferences"
+        "url,body,closingIssuesReferences,mergeable"
     )
     return from_view(json.loads(github.gh("pr", "view", str(number), "--json", fields)))
 
@@ -67,6 +74,7 @@ def from_view(found: dict[str, Any]) -> Pull:
         found["body"],
         closed_by_github,
         tuple(found["statusCheckRollup"]),
+        found["mergeable"],
     )
 
 
@@ -126,21 +134,27 @@ def latest_ci_run(checks: tuple[dict[str, str | None], ...] | list[dict[str, str
 
 
 def ci_problem(pull: Pull) -> str | None:
-    """Przyczyna odmowy merge'a, gdy najnowszy run CI na HEAD nie skończył się zielonym ``Required CI status``."""
+    """Przyczyna odmowy merge'a, gdy najnowszy run CI na HEAD nie skończył się zielonym ``Required CI status``.
+
+    Brak runu to ``Waiting``, chyba że PR ma konflikt z bazą: GitHub nie uruchamia na nim ``pull_request``, więc run
+    nie przyjdzie bez merge'a bazy do PR."""
 
     try:
         run = latest_ci_run(pull.checks)
     except UnknownRun as unknown:
         return f"CI: check „{unknown.name}” workflow „{github.CI_WORKFLOW}” bez identyfikatora runu w detailsUrl {unknown.url}"
     if run is None:
-        return f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD"
+        if pull.mergeable == "CONFLICTING":
+            return f"CI: brak „{github.REQUIRED}” na HEAD, bo PR ma konflikt z {pull.base}: zrób merge origin/{pull.base}"
+        return Waiting(f"CI: brak „{github.REQUIRED}” z GitHub Actions na HEAD")
     check = run.required
     if check is None:
-        return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa"
-    result = (check.get("conclusion") if check.get("status") == "COMPLETED" else check.get("status")) or "?"
-    if result != "SUCCESS":
+        return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa")
+    if check.get("status") != "COMPLETED":
+        return Waiting(f"CI: „{github.REQUIRED}” {check.get('status') or '?'}")
+    if (result := check.get("conclusion") or "?") != "SUCCESS":
         return f"CI: „{github.REQUIRED}” {result}"
-    return f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa" if run.running else None
+    return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa") if run.running else None
 
 
 def ci_line(pull: Pull) -> str:
