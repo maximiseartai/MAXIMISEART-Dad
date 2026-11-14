@@ -972,6 +972,32 @@ def test_wybory_mutacji_w_roznych_plikach_dziela_limit_podstawy(tmp_path: Path) 
     ], answered.stderr
 
 
+def test_wybor_podstawy_daje_plikom_dalej_niz_obok_mutacji_ten_sam_budzet(tmp_path: Path) -> None:
+    """Plik testów w odległości 2 od mutacji (przez ``src/posrednik.py``) waży w czasach CI 60 s, a jeden worker ma przy
+    ``--podstawa-s 300`` budżet 100 s: biegnie w podstawie i łapie mutację, której nie łapie test obok niej. Budżet
+    kroku szybko dla dalszych plików (45 s) by go odłożył (przegląd #1831, D1)."""
+
+    far = {
+        "src/posrednik.py": "from rozliczenia import WARTOSC\n",
+        "tests/test_daleki.py": "import posrednik\n\n\ndef test_daleki():\n    assert posrednik.WARTOSC >= 0\n",
+    }
+    seconds = {"tests/test_stary.py": 0.1, "tests/test_n.py": 0.1, "tests/test_daleki.py": 60.0}
+    lane = {f"pytest:{path}": [{"run": 1, "proba": 1, "zadanie": "z", "s": s, "status": "ok", "testy": 1}] for path, s in seconds.items()}
+    repo, _ = _branch_with_new_test(tmp_path, LOOSE_OLD_TEST, LOOSE_OLD_TEST, ASSERTING_NEW_TEST.format(condition="0 <= rozliczenia.WARTOSC < 5"), files=far)
+    (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps({"runy": [{"run": 1}], "tory": {"linux-3.14": lane}}), encoding="utf-8")
+
+    answered = _in_repository(
+        repo, "--baza", "glowna", "--podstawa-s", "300", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = -1",
+        "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER,
+    )
+
+    caught = (
+        "JUŻ ŁAPIE tests/test_daleki.py::test_daleki: ten test sprzed zmiany sam łapie mutację „mutacja” (pada z nią, bez "
+        "niej przechodzi), więc sprawdź, czy nowy test dodaje coś ponad niego; asercję możesz dopisać tam"
+    )
+    assert _already_lines(answered, ["mutacja"]) == [caught], answered.stderr
+
+
 def test_mutacja_z_oczekiwana_linia_nie_dostaje_juz_lapie(tmp_path: Path) -> None:
     """Mutację z ``oczekiwane`` wykrywa linia wyjścia, nie porażka testu, więc sprawdzenie testami sprzed zmiany jej nie
     dotyczy, choć ten sam test sprzed zmiany ją łapie."""
