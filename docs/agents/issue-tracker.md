@@ -40,6 +40,9 @@ An open decision that only Maks can make lives as an issue labelled
   - <issue, PR, ADR or work that moves after the answer>
   ```
 
+- Every term, trial and number the question rests on is defined in the body
+  or linked to an ADR, PR or issue; run notes and agent memory are never its
+  source ([ADR 0034](../adr/0034-kod-jest-pamiecia.md), „Notatki biegów”).
 - The body holds public facts only: Dad's data, names, logins, addresses,
   firm names, home paths and Zgłoszenie content stay out
   ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)). A
