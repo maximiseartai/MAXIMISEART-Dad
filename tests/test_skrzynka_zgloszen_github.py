@@ -15,7 +15,6 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -48,6 +47,7 @@ from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.reports import report_target
 from rozliczenia.centrum import report_box
+from rozliczenia.client_data import tool
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
@@ -55,12 +55,11 @@ from tests.fixtures.github_api import Answer, github_api
 from tests.fixtures.proxy_systemu import system_proxy
 from atrapy.sluchacz_kolejki import QueueListener
 
-SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
-sys.path.insert(0, str(SKILL / "scripts"))  # noqa: TID251 - katalog scripts skilla, którego conftest nie kładzie
+import github_przypadki_archiwum
+import github_skrzynki
+import github_wymiana
 
-import github_przypadki_archiwum  # noqa: E402
-import github_skrzynki  # noqa: E402
-import github_wymiana  # noqa: E402
+SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-github-skrzynki"
 
 TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
@@ -888,7 +887,7 @@ LOGS = PeriodThread("logi-uruchomienia", "- Logi Uruchomienia okresu: 08_14_09_2
 
 def logs_post(text: str) -> Post:
     archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), text)
-    return Post(LOGS, "08_14_09_2026", "627b45fe219e4274b722953c34d4af54", "Logi okresu", ("podsumowanie\n",), archive)
+    return Post(LOGS, "08_14_09_2026", "627b45fe219e4274b722953c34d4af54", tool("Logi okresu"), (tool("podsumowanie\n"),), archive)
 
 
 def github_queue(tmp_path: Path, github: GitHubOnTransport) -> Outbox:
@@ -981,7 +980,7 @@ def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochod
     log = tmp_path / "logs" / "centrum-rozliczen.log"
     queue = Outbox(tmp_path / "kolejka", keyed, CentrumLog(log), clock=clock, listener=listener)
     report_run = "9b1c2d3e4f5a6b7c3f2a9c1b8e7d4f0a"
-    report = Post(REPORT, "08_14_09_2026", report_run, None, (f"Zgłoszenie\n\n{fingerprint_line(FINGERPRINT)}\n",))
+    report = Post(REPORT, "08_14_09_2026", report_run, None, (tool(f"Zgłoszenie\n\n{fingerprint_line(FINGERPRINT)}\n"),))
     queued_before_start(tmp_path / "kolejka", logs_post("{}\n"), report)
 
     queue.resume()

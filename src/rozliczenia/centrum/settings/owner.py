@@ -4,16 +4,24 @@ Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``)
 (``reminders``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
-razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, oraz pliki Reguł
-ilości i Listy Urządzeń (``quantity_rules``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
+razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, pliki Reguł
+ilości i Listy Urządzeń (``quantity_rules``) oraz wyjątki Kontroli ilości (``quantity_exceptions``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
 czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSettings`` czyta je przy każdym odczycie od
 nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
 wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_checked``: odczyt,
 zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego nie pasuje, jest zły tak samo jak plik z
-uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Plik, który zaczyna pasować dopiero po zmianie drugiego, ma
-wtedy wiersz ``spoza`` jak zmiana jego treści.
+uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
+dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania; składnik,
+którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest dobra (``quantity_rules``). Plik, który zaczyna
+pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści.
+Każdy zapis taty pary (formularz sekcji, „Dodaj” z podpowiedzi, „Popraw regułę”, „Cofnij”) idzie przez ``_dad_change``,
+które sprawdza go jako zmianę, zanim ``_checked`` zobaczy plik: odmowa mówi, co zmiana psuje (zapis u dwóch składników,
+składnik potrzebny regule, reguła bez składnika, zapis, który tata musi zwolnić dla składnika z Wydania), tym samym
+zdaniem dla formularza i „Cofnij”, a zdanie reguły ma kolumny z cennika (``column_names``). Przy Regułach ilości z
+Wydania zmiana listy dostaje listę uzupełnioną i zapisuje ją uzupełnioną, a pierwszy plik reguł taty zapisuje najpierw
+listę, do której pasuje (``quantity_rules.dad_devices_edit``, ``devices_for_dad_rules``, ``dad_rules_problem``).
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -109,10 +117,24 @@ from rozliczenia.centrum.settings.history import (
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.quantity_rules import DEVICES, RULES, devices_problem, quantity_rules, rules_problem
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, QuantityException
+from rozliczenia.centrum.settings.quantity_rules import (
+    DEVICES,
+    RULES,
+    ColumnNames,
+    DevicesEdit,
+    dad_devices_edit,
+    dad_rules_problem,
+    devices_for_dad_rules,
+    devices_problem,
+    listed_name,
+    quantity_rules,
+    rules_problem,
+    taken_problem,
+)
 from rozliczenia.centrum.settings.reminders import REMINDERS
 from rozliczenia.centrum.settings.workers import WORKERS
-from rozliczenia.quantity_engine import Component, QuantityRule, QuantityRules
+from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
 from rozliczenia.worker_report_inbox import InboxState
@@ -124,6 +146,8 @@ REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
 HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 """Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
+_RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem]
+"""Zmiana taty Reguł ilości: bieżące reguły → reguły po zmianie albo problem, który jest odmową bez zapisu."""
 
 
 @dataclass(frozen=True)
@@ -143,12 +167,19 @@ class SettingsSnapshot:
 
 @dataclass(frozen=True)
 class QuantityRulesView:
-    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, i problem każdego pliku (``None``:
-    plik dobry). Plik, który nie pasuje do drugiego, ma problem jak zły plik."""
+    """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, wyjątki Kontroli ilości (przy złym
+    pliku ostatnie dobre) i problem każdego pliku (``None``: plik dobry). Plik reguł albo listy, który nie pasuje do
+    drugiego, ma problem jak zły plik. Lista Urządzeń, której zapisy ma składnik z Listy Urządzeń z Wydania, a Reguły
+    ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``), a Reguły ilości zdanie, że
+    ich zmiana zapisze się dopiero ze zwolnionym zapisem (``devices_for_dad_rules``). ``source_rules``: reguły z pliku
+    albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
+    source_rules: tuple[QuantityRule, ...]
+    exceptions: tuple[QuantityException, ...]
+    exceptions_problem: FieldProblem | None
 
 
 @dataclass(frozen=True)
@@ -238,16 +269,19 @@ class CentrumSettings:
         pause: Callable[[float], None],
         autostart: Autostart,
         periods: WorkerPeriods,
+        column_names: ColumnNames,
     ) -> None:
         """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
         wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
-        trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców."""
+        trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców, a ``column_names``
+        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary."""
 
         self._config = config
         self._log = log
         self._now = now
         self._pause = pause
         self._periods = periods
+        self._column_names = column_names
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
@@ -260,6 +294,7 @@ class CentrumSettings:
             AUTOSTART.name: AutostartPlace(autostart),
             DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
             RULES.name: _ConfigFile(config / RULES.name, pause),
+            EXCEPTIONS.name: _ConfigFile(config / EXCEPTIONS.name, pause),
         }
 
     def snapshot(self) -> SettingsSnapshot:
@@ -275,7 +310,8 @@ class CentrumSettings:
             )
 
     def quantity_rules(self) -> QuantityRulesView:
-        """Reguły ilości i Lista Urządzeń dla okna Ustawień, każdy plik porównany z pamięcią jak przy każdym odczycie."""
+        """Reguły ilości, Lista Urządzeń i wyjątki Kontroli ilości dla okna Ustawień, każdy plik porównany z pamięcią jak
+        przy każdym odczycie."""
 
         with self._lock:
             return self._quantity_rules()
@@ -300,7 +336,7 @@ class CentrumSettings:
         return self._by_dad(file, edit, undoes=None)
 
     def change_with_used_keys(
-        self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T]
+        self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T | FieldProblem]
     ) -> Saved | Refused | NotSaved:
         """Zapis taty jak ``change``, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``),
         przeczytane pod tą samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc
@@ -311,9 +347,20 @@ class CentrumSettings:
             if isinstance(keys, Unreadable):
                 self._log.settings_unreadable(cause="historia")
                 return NotSaved()
-            return self._change(
-                file, lambda current: edit(current, keys), undoes=None, source=ByDad(), undoable=True, checked=frozenset()
-            )
+            return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
+
+    def rules_after(self, edit: _RulesEdit) -> QuantityRules | FieldProblem:
+        """Reguły ilości z Listą Urządzeń, które da zapis taty zmiany ``edit`` pliku reguł, albo jego odmowa, bez zapisu:
+        podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``)."""
+
+        with self._lock:
+            paired = self._rules_after(edit)
+            return paired if isinstance(paired, FieldProblem) else QuantityRules(paired[0], DeviceList(paired[1]))
+
+    def _release(self) -> bool:
+        """Procesy liczą Regułami ilości z Wydania: tata nie ma pliku reguł."""
+
+        return self._places[RULES.name].read() is None
 
     def used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
         """Klucze, które plik ``file`` ma w wierszach Historii Ustawień, z każdego źródła i wyniku. Linia Historii, której
@@ -477,13 +524,24 @@ class CentrumSettings:
     def _quantity_rules(self) -> QuantityRulesView:
         rules = self._observe(RULES)
         devices = self._observe(DEVICES)
+        exceptions = self._observe(EXCEPTIONS)
+        usable_rules, usable_devices = _usable(rules, RULES), _usable(devices, DEVICES)
+        waiting = devices_for_dad_rules(usable_devices, usable_rules, usable_rules) if self._release() else None
         return QuantityRulesView(
-            quantity_rules(_usable(rules, RULES), _usable(devices, DEVICES)), _problem(rules, RULES), _problem(devices, DEVICES)
+            quantity_rules(usable_rules, usable_devices),
+            _problem(rules, RULES) or (waiting if isinstance(waiting, FieldProblem) else None),
+            _problem(devices, DEVICES) or taken_problem(usable_rules, usable_devices),
+            usable_rules,
+            _usable(exceptions, EXCEPTIONS),
+            _problem(exceptions, EXCEPTIONS),
         )
 
-    def _checked(self, file: SettingsFile[T], parsed: T | FieldProblem) -> T | FieldProblem:
-        """Wartość pliku z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój ``parse``."""
+    def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
+        """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój
+        ``parse``. Reguły ilości z Wydania (brak pliku reguł) pasować nie muszą: pasować musi do nich lista taty."""
 
+        if data is None and file.name == RULES.name:
+            return parsed
         together: Mapping[str, Callable[[Any], FieldProblem | None]] = {
             RULES.name: self._rules_problem,
             DEVICES.name: self._devices_problem,
@@ -502,7 +560,12 @@ class CentrumSettings:
     def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | None:
         """Lista z regułami, którymi liczą procesy: reguły przyjmuje się pierwsze."""
 
-        return devices_problem(devices, _usable(self._observe(RULES), RULES), _last_good_devices(self._memory.read(DEVICES.name)))
+        return devices_problem(
+            devices,
+            _usable(self._observe(RULES), RULES),
+            _last_good_devices(self._memory.read(DEVICES.name)),
+            release=self._release(),
+        )
 
     def _by_dad(
         self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None
@@ -513,13 +576,77 @@ class CentrumSettings:
         with self._lock:
             removed = self._removed_logins(file, edit)
             if removed is None:
-                return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=frozenset())
+                return self._dad_change(file, edit, undoes=undoes, checked=frozenset())
             folders = _usable(self._observe(FOLDERS), FOLDERS)
         presence = self._periods.find(removed.logins, folders.register, folders.periods_directory)
         if not isinstance(presence, NotInPeriods):
             return KeptInPeriods(presence, removed.what)
         with self._lock:
-            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=removed.logins)
+            return self._dad_change(file, edit, undoes=undoes, checked=removed.logins)
+
+    def _dad_change(
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None, checked: frozenset[str]
+    ) -> Saved | Refused | NotSaved:
+        """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń i Reguł ilości, więc jedyne miejsce, które
+        sprawdza go jako zmianę pary i daje odmowę zdaniem o tej zmianie (``_dad_devices``, ``_dad_rules``)."""
+
+        paired: Mapping[str, Callable[..., Saved | Refused | NotSaved]] = {
+            DEVICES.name: self._dad_devices,
+            RULES.name: self._dad_rules,
+        }
+        write = paired.get(file.name)
+        if write is None:
+            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+        return write(edit, undoes=undoes, checked=checked)
+
+    def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+        """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z
+        Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``)."""
+
+        rules = _usable(self._observe(RULES), RULES)
+        changed = dad_devices_edit(edit, rules, self._column_names, release=self._release())
+        return self._change(DEVICES, changed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+
+    def _dad_rules(self, edit: _RulesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+        """Zmiana taty Reguł ilości sprawdzona jako zmiana z Listą Urządzeń (``_rules_after``). Pierwszy plik reguł taty w
+        miejsce Reguł ilości z Wydania zapisuje najpierw listę, do której pasuje (osobny wiersz Historii, jak „ołówek,
+        Zapisz” przy składniku z Wydania)."""
+
+        paired = self._rules_after(edit)
+        if isinstance(paired, FieldProblem):
+            return Refused(paired)
+        _, devices = paired
+        if devices != _usable(self._observe(DEVICES), DEVICES):
+            listed = self._change(DEVICES, lambda _: devices, undoes=None, source=ByDad(), undoable=True, checked=checked)
+            if not isinstance(listed, Saved):
+                return listed
+        return self._change(RULES, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+
+    def _rules_after(self, edit: _RulesEdit) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem:
+        """Reguły po zmianie taty ``edit`` z Listą Urządzeń, z którą się zapiszą, albo odmowa zdaniem o tej zmianie: przy
+        Regułach ilości z Wydania lista dostaje składniki z Wydania, których reguły potrzebują, albo zmiana czeka na
+        zapis, który tata musi zwolnić (``devices_for_dad_rules``); reguła bez składnika na liście to jej zdanie ze
+        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``)."""
+
+        current = _usable(self._observe(RULES), RULES)
+        rules = edit(current)
+        if isinstance(rules, FieldProblem):
+            return rules
+        devices = _usable(self._observe(DEVICES), DEVICES)
+        if self._release():
+            needed = devices_for_dad_rules(devices, rules, current)
+            if isinstance(needed, FieldProblem):
+                return needed
+            devices = needed
+        problem = dad_rules_problem(rules, devices, self._column_names, self._listed_name)
+        return (rules, devices) if problem is None else problem
+
+    def _listed_name(self, component: str) -> str:
+        """Nazwa składnika spoza Listy Urządzeń z wierszy Historii Ustawień listy (``listed_name``)."""
+
+        history = self._history.read()
+        rows = () if isinstance(history, Unreadable) else history.rows
+        return listed_name(component, (change.change() for row in rows if row.file == DEVICES.name for change in row.changes))
 
     def _removed_logins(self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]) -> RemovedLogins | None:
         """Loginy, które ``edit`` usunąłby teraz z Listy Wykonawców; ``None`` też przy odmowie, którą da ``_change``."""
@@ -559,7 +686,7 @@ class CentrumSettings:
         if isinstance(value, FieldProblem):
             return Refused(value)
         new = file.dump(value).encode("utf-8")
-        edited = self._checked(file, file.parse(new))
+        edited = self._checked(file, new, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
         if checked is not None and file.removed_logins is not None:
@@ -640,7 +767,7 @@ class CentrumSettings:
 
     def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
 
-        parsed = self._checked(file, file.parse(data))
+        parsed = self._checked(file, data, file.parse(data))
         remembered = self._memory.read(file.name)
         if isinstance(remembered, Unreadable):
             return _read(parsed, None)
@@ -706,6 +833,7 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     AUTOSTART.name: AUTOSTART,
     DEVICES.name: DEVICES,
     RULES.name: RULES,
+    EXCEPTIONS.name: EXCEPTIONS,
 }
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu."""
 _FILES: Final[Mapping[str, SettingsFile[Any]]] = {**_UNDOABLE, INBOX.name: INBOX}
@@ -721,7 +849,10 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
     rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
-    devices = _read_only(config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices)))
+    release = settings_bytes(config / RULES.name) is None
+    devices = _read_only(
+        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)
+    )
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),
         workers=_read_only_view(config, WORKERS),

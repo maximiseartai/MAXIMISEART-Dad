@@ -71,8 +71,10 @@ WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 CEL_S = 90.0
 KROK_CELU_S = 5.0
 # Organizacja ma 60 zadań naraz ze wszystkich workflowów (plan Team od 26.10): run pull request bierze najwyżej 40, a
-# noc 20 (ADR 0021). Push do main bierze 25 (ADR 0020, Z6): krótszy run main skraca czas od merge'a do werdyktu, a
-# największy run PR i pełne CI main razem przekraczają 60 tylko o 5 zadań, rzadko i krótko.
+# push do main 25 (ADR 0020, Z6): krótszy run main skraca czas od merge'a do werdyktu, a największy run PR i pełne CI
+# main razem przekraczają 60 tylko o 5 zadań, rzadko i krótko. Noc bierze najwyżej 20 zadań naraz przez max-parallel
+# 17 + 3 w mutacje-nocne.yml (ADR 0021); ZADANIA_RUNU_NOCY minus STALE_ZADANIA to tylko liczba zadań skryptów skilli
+# nocą (Mutation checks (k/16) w runie 43392201527).
 ZADANIA_RUNU = 40
 ZADANIA_RUNU_MAIN = 25
 ZADANIA_RUNU_NOCY = 20
@@ -232,7 +234,9 @@ def _limit_runu(zdarzenie: Zdarzenie) -> int:
     return {Zdarzenie.PULL_REQUEST: ZADANIA_RUNU, Zdarzenie.PUSH: ZADANIA_RUNU_MAIN, Zdarzenie.NOC: ZADANIA_RUNU_NOCY}[zdarzenie]
 
 
-def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = ()) -> Plan:
+def rozplanuj(
+    wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = (), zmienione_pliki_testow: tuple[str, ...] = ()
+) -> Plan:
     """Najmniej zadań na tor przy celu ``CEL_S``; gdy run przekroczyłby limit zadań zdarzenia (``ZADANIA_RUNU``,
     ``ZADANIA_RUNU_MAIN`` albo ``ZADANIA_RUNU_NOCY``), cel wszystkich torów rośnie o ``KROK_CELU_S``. Tor bez pracy nie
     ma zadań."""
@@ -258,7 +262,7 @@ def rozplanuj(wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, .
                     przegladarka=any(str(Klucz.z_tekstu(j.klucz).calosc) in wycena.przegladarka for j in jednostki),
                 )
             )
-    return Plan(zdarzenie, cel, runy, tuple(zadania), bledy)
+    return Plan(zdarzenie, cel, runy, tuple(zadania), bledy, zmienione_pliki_testow)
 
 
 def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
@@ -280,6 +284,8 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
         print(f"WYBRANY {wybrany.krok.name} ({wybrany.powod})" if wybrany.powod else f"WYBRANY {wybrany.krok.name}")
     for krok, powod in praca.pominiete:
         print(f"POMINIĘTY {krok.name}: {powod}")
+    if plan.zmienione_pliki_testow:
+        print(f"BEZ PONOWIENIA | {len(plan.zmienione_pliki_testow)} plików testów zmienionych przez ten PR")
     print(f"PLAN CI DIGEST | {plan.digest}")
 
 
@@ -290,7 +296,8 @@ def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")
     praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(root, args.baza), root)
     wyceny = [*(wycen(tor, praca.pliki, czasy, praca.przegladarka) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
-    plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy))
+    bledy = tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy)
+    plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, bledy, tuple(sorted(praca.zmienione_pliki_testow)))
     _wypisz(plan, praca, wyceny)
     if args.wyjscie:
         args.wyjscie.parent.mkdir(parents=True, exist_ok=True)

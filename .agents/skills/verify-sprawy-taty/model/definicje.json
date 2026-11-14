@@ -28,7 +28,7 @@
     "Reports.__init__": "db1f98e5d8739b60",
     "Reports.handle": "5b8dc9ce041dbe39",
     "Reports._heard": "85f65a53791e3c05",
-    "Reports._queue": "c9198a7ca79b1ccf",
+    "Reports._queue": "916f62cbec5c8880",
     "Reports._pending": "933676e05a1deb0a",
     "Reports._ask_box": "dd0928ff48ccdd20",
     "Reports._state_of": "92c365569ed8ffdb"
@@ -44,7 +44,7 @@
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.resume": "2a67b7d7c8f5622c",
-    "Outbox.post": "0b94d6b029142eda",
+    "Outbox.post": "5256e2e151b13327",
     "Outbox.wait_delivered": "1d38b4544e2ddfc4",
     "Outbox._send_all": "6ce16b9dc87b40f0",
     "Outbox._mark_delivered": "03180b6b20fe0ccc"

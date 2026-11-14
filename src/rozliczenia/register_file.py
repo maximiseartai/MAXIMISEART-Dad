@@ -44,9 +44,10 @@ from __future__ import annotations
 import html
 import re
 import zipfile
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import cached_property, lru_cache
 from pathlib import Path
 from types import MappingProxyType
@@ -389,6 +390,20 @@ def _paste_area(
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)
 
 
+def recent_workers(areas: Sequence[PasteArea], since: date) -> Counter[str]:
+    """Ile uporządkowanych zleceń z dni od ``since`` ma każdy Wykonawca (``WYKONAWCA`` po ``normalize_text``, bez
+    pustych), z przeglądu od dołu każdego obszaru wklejania ``areas`` tą samą regułą co zlecenia Wpisania raportów
+    (``raw_orders.ordered_rows``): Surowe zlecenia na dole i starsze dni nie wchodzą. ``UnsupportedShape``, gdy wierszy
+    arkusza nie da się rozdzielić."""
+
+    found: Counter[str] = Counter()
+    for area in areas:
+        for row in raw_orders.ordered_rows(area.rows_from_bottom(), area.columns, since):
+            found[normalize_text(row.value(area.columns.worker))] += 1
+    del found[""]
+    return found
+
+
 class PasteArea:
     """Obszar wklejania arkusza zleceń (od ``AKCJE`` do ``UWAGI``) czytany od dołu: fakty wierszy, pamięć i Kopia."""
 
@@ -604,7 +619,7 @@ def _windows(path: Path, content: bytes, sheets: _SheetsKey, ranges: Mapping[str
     """Okno każdego arkusza zleceń w openpyxl z bajtów ``content``: wiersze z ``ranges`` (od 2), a arkusz bez zakresu
     od wiersza 2 do końca."""
 
-    with workbook_files.open_workbook(path, content, read_only=True) as workbook:  # noqa: TID251 - okna arkuszy zleceń Rejestru z bajtów, które przeczytał uchwyt
+    with workbook_files.open_workbook(path, content, read_only=True) as workbook:
         windows = []
         for name, columns, look_columns in sheets:
             with workbook_files.unreadable_as_error(path):

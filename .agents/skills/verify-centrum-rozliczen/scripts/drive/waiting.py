@@ -1,0 +1,92 @@
+"""The drive's one way to wait until a file or a state of the run is ready, the budgets that limit a wait, and the
+drive's ``expect`` of Playwright, whose assertions wait a budget too.
+
+The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
+exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
+``NOT_YET``: the wait reads again, as it does after a ``None`` or ``False``. Any other error is a defect of the drive
+or of Centrum and ends the wait at once.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from enum import Enum
+import json
+import time
+from typing import TypeVar
+
+from playwright.sync_api import Expect
+import yaml
+
+# A file of the run in a state the server or the harness has not finished: missing, refused for a moment (Windows,
+# #1087), or empty or half written as JSON, JSON Lines, YAML or UTF-8 text (#963, #1195, #1651).
+NOT_YET: tuple[type[Exception], ...] = (
+    FileNotFoundError,
+    PermissionError,
+    json.JSONDecodeError,
+    UnicodeDecodeError,
+    yaml.YAMLError,
+)
+
+# How often a wait reads again.
+POLL_S = 0.1
+
+
+class Budget(Enum):
+    """The longest a wait may take, in seconds, named by what the drive waits for."""
+
+    # An assertion of ``expect`` sees the state it names on the screen: Playwright's own default, which every assertion
+    # of the drive without ``timeout=`` has waited; a longer one would lengthen each failure of a mutant of the drive.
+    ASSERTION = 5.0
+    # Centrum answers on its screen, through its API or in the run's files to what Dad or the harness has just done.
+    SCREEN = 10.0
+    # A step of Aktualizacja narzędzia: Git, pip or the guardian of the restart answers after the pacing of the harness.
+    UPDATE = 20.0
+    # Centrum started again by Aktualizacja narzędzia answers: its guardian waits up to 60 s for it, and the tab reloads
+    # when it answers.
+    RESTART = 60.0
+
+    @property
+    def ms(self) -> float:
+        """The budget in milliseconds, the unit of a limit of Playwright."""
+
+        return self.value * 1000
+
+
+# The drive's ``expect``: an assertion without ``timeout=`` waits ``Budget.ASSERTION``. An instance of its own, so that
+# ``expect`` imported straight from Playwright keeps Playwright's default.
+expect = Expect()
+expect.set_options(timeout=Budget.ASSERTION.ms)
+
+
+class TimedOut(Exception):
+    """A wait outlasted its budget; the message names what the drive waited for and the last state it read."""
+
+
+T = TypeVar("T")
+
+
+def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN) -> T:
+    """Read ``ready`` until it gives something other than ``None`` or ``False``, and return that; ``what`` names it.
+
+    An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
+    ``budget`` (a number of seconds is a limit that a call of ``Run.wait_for`` still names itself) the wait fails with
+    ``TimedOut``, naming the error of ``NOT_YET`` the last read raised, if it raised one, so a file that stays half
+    written is a failure that names its state.
+    """
+
+    limit_s = budget.value if isinstance(budget, Budget) else budget
+    deadline = time.monotonic() + limit_s
+    while True:
+        last: Exception | None = None
+        try:
+            value = ready()
+        except NOT_YET as not_yet:
+            last, value = not_yet, None
+        if value is not None and value is not False:
+            print(f"  ok: {what}", flush=True)
+            return value
+        if time.monotonic() > deadline:
+            state = "" if last is None else f"; the last read was not ready: {type(last).__name__}: {last}"
+            raise TimedOut(f"timed out: {what}{state}") from last
+        time.sleep(POLL_S)

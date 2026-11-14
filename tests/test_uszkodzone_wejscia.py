@@ -43,6 +43,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
@@ -484,6 +485,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "getMetrics": _route("getMetrics", "GET", "/api/metrics"),
     "getConfiguration": _route("getConfiguration", "GET", "/api/configuration"),
+    "getQuantityDifferences": _route("getQuantityDifferences", "GET", "/api/settings/quantity-rules/differences"),
     "getQuantityRules": _route("getQuantityRules", "GET", "/api/settings/quantity-rules"),
     "addQuantityRule": _route("addQuantityRule", "POST", "/api/settings/quantity-rules", EDITOR_RULE),
     "changeQuantityRule": _route("changeQuantityRule", "PUT", "/api/settings/quantity-rules/nokia", EDITOR_RULE),
@@ -491,6 +493,12 @@ ENTRIES: dict[str, Entry] = {
     "previewQuantityRules": _route(
         "previewQuantityRules", "POST", "/api/settings/quantity-rules/preview", {"kind": "add", "rule": EDITOR_RULE}
     ),
+    "addDevice": _route("addDevice", "POST", "/api/settings/devices", {"name": "ont x", "other_spellings": [], "group": None}),
+    "changeDevice": _route(
+        "changeDevice", "PUT", "/api/settings/devices/gateway", {"name": "gateway", "other_spellings": ["zyxel", "ont x"], "group": "router"}
+    ),
+    "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
+    "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -501,6 +509,7 @@ ENTRIES: dict[str, Entry] = {
     "sendDadNote": _route("sendDadNote", "POST", "/api/dad-notes", DAD_NOTE),
     "uwaga-przypieta": _pinned_dad_note(),
     "usuniecie-wykonawcy": _worker_removal(),
+    "getWorkerSuggestions": _route("getWorkerSuggestions", "GET", "/api/settings/workers/suggestions"),
     "podglad[przygotowanie]": _process_run("preparation", PERIOD),
     "podglad[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD),
     "zapis[przebieg]": _process_run("settlement", SETTLEMENT_PERIOD, saving=True),
@@ -531,6 +540,8 @@ NOT_SWEPT: dict[str, str] = {
     "treści plików taty; zła wartość: test_centrum_rozliczen",
     "previewReminder": "składa przypomnienie z formularza, bez plików taty i bez zapisu: test_centrum_wpisanie_raportow",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
+    "markQuantityException": "zapisuje w config wyjątek różnicy, którą liczy getQuantityDifferences z tych samych plików "
+    "taty; różnicy już bez niej, nieczytelny Plik zbiorczy i zły plik wyjątków: test_centrum_kontrola_ilosci",
     "undoSettingsChange": "cofa wiersz Historii Ustawień jak changeTheme i changeFolders, bez treści plików taty: "
     "test_centrum_rozliczen",
     "changeInboxPassword": "zmienia tylko linię hasła pliku dostępu skrzynki raportów w config i loguje się do skrzynki, "
@@ -539,6 +550,8 @@ NOT_SWEPT: dict[str, str] = {
     "przypomnienia po przełączniku: test_centrum_rozliczen, test_centrum_wpisanie_raportow",
     "changeWorker": "usunięty login sprawdza okresy tą samą drogą co usuniecie-wykonawcy, a ostrzeżenie o starej nazwie "
     "listuje tylko Foldery rozliczeń pracowników i nieczytelnego folderu nie zgłasza; odmowy: test_centrum_rozliczen",
+    "assignWorkerAddress": "dopisuje tylko adres w Liście Wykonawców w config, bez plików taty; adres innego Wykonawcy i "
+    "cofnięcie: test_centrum_wpisanie_raportow",
 }
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
@@ -577,11 +590,16 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
+    "getQuantityDifferences": _BOARD,
     "getQuantityRules": {"wzorzec_zbiorczy"},
     "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "previewQuantityRules": _BOARD | {"wzorzec_zbiorczy"},
+    "addDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "getDeviceSuggestions": _BOARD,
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
@@ -591,6 +609,7 @@ READS: dict[str, set[str]] = {
     "sendDadNote": {"dziennik_centrum", "folder_zgloszen", "klucz_zgloszen", "sprawy_taty"},
     "uwaga-przypieta": _METRICS | {"uruchomienia_centrum", "adresy_skrzynki"},
     "usuniecie-wykonawcy": _SETTINGS | _FOLDERS | {"plik_zbiorczy", "dziennik_centrum"},
+    "getWorkerSuggestions": _OWNER | {"rejestr"},
     "podglad[przygotowanie]": _PREPARATION,
     "podglad[przebieg]": _SETTLEMENT,
     "zapis[przebieg]": _SETTLEMENT,
@@ -809,6 +828,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
+        "wyjatki_kontroli_ilosci": TOOL.config / EXCEPTIONS_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -829,6 +849,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",
+        "wyjatki_kontroli_ilosci": "config/wyjatki-ilosci.yaml",
     }
 
 

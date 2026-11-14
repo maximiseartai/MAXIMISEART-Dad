@@ -2,17 +2,15 @@ import * as React from "react"
 import { ArrowLeftIcon, PlusIcon, XIcon } from "lucide-react"
 
 import { addQuantityRule, changeQuantityRule, removeQuantityRule } from "@/api/centrum"
-import { failureMessage, refusedField } from "@/api/client"
 import type { QuantityRulesSettings, RuleForm, RuleWrite } from "@/api/generated"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useAction } from "@/lib/action"
-import { useSettings } from "@/lib/settings"
 import { useUnsavedForm } from "@/lib/unsaved"
 import { RulePreview } from "@/pages/settings/quantity-rule-preview"
+import { useQuantityRulesSave } from "@/pages/settings/quantity-rules-save"
 import { columnLabel } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
 
@@ -20,7 +18,7 @@ type Condition = RuleForm["conditions"][number]
 
 type Action = NonNullable<RuleForm["action"]>
 
-type Option<T extends string> = { value: T; label: string }
+export type Option<T extends string> = { value: T; label: string }
 
 const SCOPES: ReadonlyArray<Option<RuleForm["scope"]>> = [
   { value: "known", label: "Gdy Lista Urządzeń zna każdy składnik" },
@@ -68,9 +66,6 @@ const MULTIPLIERS: ReadonlyArray<Option<RuleWrite["multiplier"]>> = [
   { value: "pieces", label: "razy „N szt” z CZYNNOŚCI" },
 ]
 
-/** Odmowa zapisu: pole formularza z serwera (`jesli[0].tekst`, `to.wpisy[1].kolumna`) albo `null` i jedno zdanie. */
-type Refusal = { field: string | null; message: string }
-
 /** Miejsce zdania odmowy w formularzu: warunek, kolumna działania, samo działanie albo nad formularzem. */
 type Place = { kind: "condition"; index: number } | { kind: "write"; index: number } | { kind: "action" } | { kind: "form" }
 
@@ -93,41 +88,31 @@ function placeOf(field: string | null): Place {
 /**
  * Edytor jednej Reguły ilości w miejscu listy: zakres, warunki („Gdy” albo „Ale nie gdy”), działanie z kolumną po
  * nazwie z cennika i podgląd skutku na ostatnich Plikach zbiorczych. Zapisuje się dopiero przyciskiem „Zapisz”, także
- * przy różnicach z tatą; zła reguła to jedno zdanie przy polu. Okno pyta przed zamknięciem z niezapisaną zmianą.
+ * przy różnicach z tatą; zła reguła to jedno zdanie przy polu. Okno pyta przed zamknięciem z niezapisaną zmianą, a
+ * formularz z różnicy (`prefilled`) jest niezapisany od początku.
  */
 export function RuleEditor({
   id,
   initial,
+  prefilled = false,
   settings,
   close,
 }: {
   id: string | null
   initial: RuleForm
+  prefilled?: boolean
   settings: QuantityRulesSettings
   close: (saved: QuantityRulesSettings | null) => void
 }) {
-  const { changed } = useSettings()
   const [rule, setRule] = React.useState<RuleForm>(initial)
   const [removing, setRemoving] = React.useState(false)
-  const [refusal, setRefusal] = React.useState<Refusal | null>(null)
-  const dirty = removing || JSON.stringify(rule) !== JSON.stringify(initial)
+  const { saving, refusal, setRefusal } = useQuantityRulesSave(close)
+  const dirty = removing || prefilled || JSON.stringify(rule) !== JSON.stringify(initial)
 
   useUnsavedForm(dirty)
 
-  const saving = useAction(async () => {
-    setRefusal(null)
-
-    const request =
-      removing && id !== null ? removeQuantityRule(id) : id === null ? addQuantityRule(rule) : changeQuantityRule(id, rule)
-
-    await request.then(
-      (result) => {
-        changed(result.change)
-        close(result.quantity_rules)
-      },
-      (failure: Error) => setRefusal({ field: refusedField(failure), message: failureMessage(failure) })
-    )
-  })
+  const request = () =>
+    removing && id !== null ? removeQuantityRule(id) : id === null ? addQuantityRule(rule) : changeQuantityRule(id, rule)
 
   const edit =
     removing && id !== null
@@ -191,7 +176,7 @@ export function RuleEditor({
           <Button
             variant={removing ? "destructive" : "default"}
             disabled={!dirty || saving.running !== null}
-            onClick={() => void saving.run()}
+            onClick={() => void saving.run(request)}
           >
             {saving.running === null ? null : <Spinner data-icon="inline-start" />}
             {removing ? "Usuń" : "Zapisz"}
@@ -502,7 +487,7 @@ function TextField({ label, value, change }: { label: string; value: string; cha
 }
 
 /** Wybór z listy: jedna wartość z opcji, a bez wartości napis zachęty. */
-function Choice<T extends string>({
+export function Choice<T extends string>({
   label,
   value,
   options,

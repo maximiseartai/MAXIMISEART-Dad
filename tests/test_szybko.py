@@ -42,6 +42,20 @@ BY_CHANGE_ONLY = {
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
+    "tests/test_regula_danych.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_i_ruff": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę outbox.py, której "
+        "próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
+    "tests/test_regula_danych.py::test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
+        "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
+    ),
+    "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
+        "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
+    ),
+    "tests/test_zgloszenia_ci.py::test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem": (
+        "sprawdza tools/ponow_ci.py na atrapie GitHuba; graf wybiera go przy zmianie narzędzia i niestabilne_testy.py"
+    ),
     "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
@@ -62,6 +76,8 @@ RULE_GUARDS = frozenset(
     tests/test_jeden_zapis_skoroszytu.py
     tests/test_ksztalt_bramki.py
     tests/test_kwarantanna.py
+    tests/test_granice_wyjatkow.py::test_kazde_noqa_ma_powod_na_linii
+    tests/test_granice_wyjatkow.py::test_liczba_tlumien_w_kazdym_katalogu_jest_rowna_zapisanej
     tests/test_mapy_funkcji.py
     tests/test_miejsce_skilli.py
     tests/test_mutacje_skilli.py::test_kazdy_modul_silnika_jest_w_pilnuje_verify_rozliczenia_albo_na_liscie_wylaczen

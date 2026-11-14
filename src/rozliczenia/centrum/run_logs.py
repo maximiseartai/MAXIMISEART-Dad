@@ -55,6 +55,7 @@ from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_actions import ButtonPressed, DadActions, StoredRunMode
 from rozliczenia.centrum.report_entering_logs import LoggedReports
+from rozliczenia.client_data import READ_VALUES
 from rozliczenia.domain import ProgressPhase, WorkerStatus
 from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_pricing import OrderKind, OrderResult, PricingStopped, PricingSummary, StoppedOrder
@@ -126,14 +127,6 @@ class StartFacts(_Record):
 
         return StartFacts.model_validate({name: getattr(self, name) for name in StartFacts.model_fields})
 
-
-class _ReadValues:
-    """Znacznik pola Logów (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze strony efenix,
-    także liczby: strażnik (``guard_logs``) maskuje w nim liczbę z zakazaną wartością albo telefonem jak tekst. Każda inna
-    liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba, którą policzyło narzędzie."""
-
-
-READ_VALUES: Final = _ReadValues()
 
 LoggedQuantity = int | str
 """Ilość pozycji przy zleceniu Wyceny w efenix; tekst to maska strażnika (``[numer Orange]``) zamiast liczby."""

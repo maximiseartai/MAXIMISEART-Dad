@@ -26,16 +26,10 @@ class _Catalog:
 
 
 _CATALOG: Final = _Catalog()
-"""Dowód katalogu odmów: ``Refusal`` bez niego, także przez ``functools.partial(Refusal, 500)``, to błąd mypy (brak
-argumentu albo zły typ). Poza tym modułem ruff (``TID251`` w ``pyproject.toml``) odrzuca ``from … import _CATALOG``
-(także z aliasem) i atrybut modułu (``refusal._CATALOG``, także przez alias albo pełną ścieżkę), tak samo ``_Catalog``
-i ``_refused``, która sama wkłada dowód.
-Mypy odrzuca też ``type(odmowa)(…)`` bez dowodu, a podklasę ``Refusal`` (``final``). Łapie tylko te postacie: nie łapie
-``getattr(refusal, "_CATALOG")``, wartości ``Any``, dowodu ani ``_refused`` zaimportowanych z ``# noqa: TID251``,
-odmowy bez konstruktora (``Refusal.__new__(Refusal)``) ani klasy wyjętej z argumentów typu (``get_args(…)[0]``).
-``tests/test_komunikaty_expect.py`` łapie w ``src`` każde odwołanie do ``Refusal`` po nazwie poza typem, także
-``Refusal(…, _CATALOG)`` z dowodem z ``noqa``, ale nie ``type(odmowa)(…, _CATALOG)`` ani ``_refused(…)`` z ``noqa``;
-te zostają przeglądowi."""
+"""Dowód katalogu odmów: ``Refusal`` bez niego to błąd mypy, a poza tym modułem dowód, ``_Catalog`` i ``_refused``, która
+sama wkłada dowód, odrzuca ruff (``TID251``). Odwołanie do ``Refusal`` poza typem łapie
+``tests/test_komunikaty_expect.py``, a postacie, których nie łapie żaden z tych mechanizmów, są tam próbkami
+``ZNANE_LUKI``."""
 
 
 @final
@@ -189,6 +183,19 @@ def quantity_rule_unknown() -> Refusal:
     """Reguły ilości o tym id nie ma już w regułach, którymi liczy Centrum (np. cofnięta w Historii w innym oknie)."""
 
     return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
+
+
+def device_component_unknown() -> Refusal:
+    """Składnika o tym id nie ma już na Liście Urządzeń, którą liczy Centrum (np. cofnięty w Historii w innym oknie)."""
+
+    return _refused(404, "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.")
+
+
+def quantity_difference_unknown() -> Refusal:
+    """Różnicy z Kontroli ilości o tym id nie ma już na liście „Tu wpisałeś inaczej niż reguła” (np. tata poprawił Plik
+    zbiorczy albo regułę), więc nie ma czego oznaczyć jako wyjątek."""
+
+    return _refused(404, "Tej różnicy już nie ma na liście. Odśwież okno Ustawień.")
 
 
 def settings_change_not_undoable() -> Refusal:

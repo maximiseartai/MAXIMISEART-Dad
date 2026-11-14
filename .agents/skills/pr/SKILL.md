@@ -88,7 +88,8 @@ Dowód: <polecenie i wynik>
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
 - A code that another merged PR already uprooted (a block with `Szczebel:` in its `## Korzeń`) needs a rung higher than the highest earlier one, closer to (a).
   After (a) no higher rung exists, so Maks decides: the merge needs a comment in this PR from an account with `admin` rights on the repository with the line `ZGODA KORZEŃ: R-KOD`.
-- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
+- A PR that uproots a weed names its issue on a line `Korzeń z #N: R-KOD` outside `## Korzeń`, and `tools/scal_pr.py` closes the issue `Chwast: R-KOD` after the merge.
+  A PR with a Ważne whose code (from the latest verdict on it) has an open issue `Chwast: R-KOD` needs that line, or `Wyrwany w #M` in every block with that code, before `tools/scal_pr.py` merges it; a thread whose first verdict came before the merge that added `tools/lib/bramka_chwastu.py` finishes without it.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
 ## Language and length
@@ -96,7 +97,8 @@ Dowód: <polecenie i wynik>
 - Write the prose in Polish, with the terms of `GLOSSARY.md` (Komunikat, Zatrzymanie, Uruchomienie procesu, Wzorzec), and keep the template's headings and bold labels as they are.
 - Skip preambles and keep prose brief: short sentences, one thought each.
   Keep it under about 40 lines: Maks and the reviewer read it in a minute.
-  Long logs, tables of every run and lane recitals go into a PR comment or a file under `~/.t3/notes/<run>/`, linked from the body.
+  The body keeps the shortened result; long logs, tables of every run and lane recitals go into a PR comment or stay in the CI run that printed them, linked from the body, so an agent on another machine reads them.
+  A log with Dad's data or a Zgłoszenie's content stays off GitHub, not in the body, a PR comment, an issue or a CI run log: the body gives its shortened result without that data and names what the evidence covers.
 - The body describes the HEAD it is on.
   After a review round, rewrite the sections that changed instead of adding a section about what changed after the review: the history lives in the verdicts and comments.
 - The repository is public: no client address, order or contract number, Wykonawca, row content of Dad's files, and nothing copied from a Zgłoszenie or a Kontrola ilości.

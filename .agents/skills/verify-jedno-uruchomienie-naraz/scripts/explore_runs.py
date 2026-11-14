@@ -377,7 +377,7 @@ class ModelThreading:
         self._events.append(event)
         return event
 
-    def Thread(self, *, target: Callable[[], object], name: str, daemon: bool = False) -> ModelThread:  # noqa: N802
+    def Thread(self, *, target: Callable[[], object], name: str, daemon: bool = False) -> ModelThread:  # noqa: N802 - same name as threading.Thread
         return ModelThread(self._scheduler, self._tracked, target=target, name=name, daemon=daemon)
 
     def __getattr__(self, name: str) -> Any:

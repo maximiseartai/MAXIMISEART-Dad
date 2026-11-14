@@ -29,7 +29,7 @@ Pomiar na poligonie (publiczna kopia repozytorium, `claude -p` na Opusie, 19 syt
   Pozostałe miary bez pogorszenia: czas próby (mediana 13,8 s wobec 17,8 s), tokeny wejścia, koszt i cel nazwany w pozostałych 13 sytuacjach (13/13 wobec 12/13).
 - Pierwsza wersja (L4) przeniosła do `tools/ci/` także `plan_ci` i `mutacje_zmiany`, które dokumenty każą agentowi uruchamiać, i agent ich nie znajdował; stąd reguła, że skrypt agenta zostaje w `tools/`, i strażnik dokumentów.
 - Agent, który zna narzędzie tylko ze spisu, rzadziej czyta `--help`: przy zdaniu `plan_ci` bez podkomendy pisał `tools/plan_ci.py` bez `plan` (1/5 dobrych poleceń, `main` 5/5), a po dopisaniu `plan --baza origin/main` 5/5; stąd reguła o podkomendzie.
-- Dane: `~/.t3/notes/hillclimb-przeglad-2026-10-30/` na Macu Maksa (`decision.tsv`, `L4b/RAPORT.md`, `L4eval/`).
+- PR #705 (sekcja Evidence) podaje z tego pomiaru wynik `main` bez spisu 49/57 (86%), 56/57, −0,7 i −0,73 tury, bootstrap 0,27–1,23 i 1/5; pozostałe liczby tej sekcji stoją tylko w tym ADR.
 
 ## Obserwacja
 

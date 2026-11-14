@@ -102,7 +102,9 @@ jest w `.gitignore`. W repozytorium jest tylko `config/wykonawcy.example.yaml`
 z syntetycznymi Wykonawcami, który pokazuje format. Tata prowadzi Listę
 Wykonawców sam w oknie Ustawienia, w sekcji Wykonawcy (ADR 0032): dodaje,
 zmienia i oznacza Nieaktywnego, a usuwa tylko Wykonawcę, którego login nie
-występuje w żadnym okresie. Pierwszy start Centrum po
+występuje w żadnym okresie. Sekcja podpowiada loginy z ostatnich zleceń Rejestru
+zleceń, których nie ma na liście, a adres nadawcy Raportu wykonawcy spoza listy
+tata przypisuje Wykonawcy z widoku Raporty. Pierwszy start Centrum po
 Aktualizacji łączy stare pliki `config\worker_mapping.yaml` i
 `config\adresy-wykonawcow.yaml` w Listę Wykonawców i zostawia je jako kopię.
 Testy i skrypty weryfikacyjne używają wyłącznie syntetycznych Wykonawców i nie
@@ -188,12 +190,18 @@ powstają razem albo żaden.
   `src/rozliczenia/quantity_engine.py`. Tata zmienia je w oknie Ustawień
   (sekcja Reguły ilości, ADR 0033) z podglądem na ostatnich Plikach zbiorczych
   po Przebiegu rozliczeń; zapis trafia do `config/reguly-ilosci.yaml` i Historii
-  Ustawień. Logi Uruchomienia Przygotowania i Przebiegu zapisują Reguły ilości
+  Ustawień. Listę Urządzeń zmienia w sekcji Urządzenia (`config/lista-urzadzen.yaml`),
+  z podpowiedziami zapisów z ostatnich okresów. Logi Uruchomienia Przygotowania i Przebiegu zapisują Reguły ilości
   ze startu, więc odtworzenie z Logów liczy tymi samymi regułami. `tests/test_ilosci_uslug.py` sprawdza je
   z każdą linią instrukcji taty.
   `tools/pomiar_regul_ilosci.py` porównuje je z Plikami zbiorczymi, które
   wypełnił tata. Uruchamia go tylko Maks na swoim Macu, a wynik to same liczby
   i teksty `URZĄDZENIA`.
+- Nad Regułami ilości okno Ustawień pokazuje różnice Kontroli ilości ostatnich
+  Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi regułami
+  (`src/rozliczenia/centrum/quantity_differences.py`), z „Popraw regułę” i „To
+  był wyjątek”. Wyjątki są w `config/wyjatki-ilosci.yaml` z Historią Ustawień;
+  Kontroli ilości w Skrzynce Zgłoszeń nie zmieniają.
 - Wypełnienia, kolory czcionki, pogrubienia, kursywa i formaty dat przechodzą z
   Rejestru. Krój i rozmiar czcionki, szerokości kolumn, wysokości wierszy,
   nagłówek i blokada nagłówka pochodzą z wzorca. Autofiltr obejmuje nagłówek i

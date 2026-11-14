@@ -8,6 +8,9 @@ konfiguracji ruff jest ``ruff.toml``, ``.ruff.toml`` i ``pyproject.toml`` z tabe
 
 Próbka biegnie przez ``ruff check --stdin-filename <katalog zakazu>/sonda_zakazu.py -``, więc ruff bierze konfigurację
 tego katalogu, a usunięcie albo literówka w linii zakazu wywraca jego próbkę.
+
+Z ``TID251`` konfiguracja ruff zwalnia tylko pliki z prawem właściciela (``OWNERS``), a kod każdego z nich zgłasza poza
+zwolnieniem dokładnie nazwy, których jest właścicielem.
 """
 
 from __future__ import annotations
@@ -91,6 +94,16 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.workbook_files.open_workbook",
     ),
+    # Tekst do wysyłki z komórki taty bez strażnika pracy Centrum (przegląd #1648, D1).
+    "from rozliczenia.client_data import tool\ntext = tool(cell)": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.client_data.tool"),
+    "from rozliczenia import client_data\nguarded = client_data.empty_memory().guard(cell, 'komórka')": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.client_data.empty_memory",
+    ),
+    # Zmieniona kopia dataclassy z polami Any, obok dataclasses.replace (przegląd #1660, W1).
+    "import copy\nsent = copy.replace(post, run_id=run)": (SRC_CONFIG, ("rozliczenia", "centrum"), "copy.replace"),
+    "from copy import replace as copied": (SRC_CONFIG, ("rozliczenia",), "copy.replace"),
     "from . import workbook_files\nworkbook_files.template_content(p)": (
         SRC_CONFIG,
         ("rozliczenia",),
@@ -203,7 +216,107 @@ def test_ruff_odrzuca_probke_zakazu_w_jego_katalogu(code: str) -> None:
     assert found == [banned], f"{config.relative_to(ROOT).as_posix()} ma odrzucić zakazem {banned}:\n{code}"
 
 
-# Właściciel zegara ściennego w src/: jedyny plik zwolniony z zakazów zegara.
+# Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
+# których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
+# zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
+OWNERS: dict[str, frozenset[str]] = {
+    "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now", "time.time"}),
+    "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
+    "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
+    "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),
+    "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/quantity_check_run.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/reports.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
+    "src/rozliczenia/template_file.py": frozenset(
+        {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}
+    ),
+    "tests/conftest.py": frozenset({"sys.path"}),
+    "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
+    ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
+}
+# Zakaz z pyproject.toml, który obowiązuje w każdym katalogu (test zgodności wyżej), więc jego brak w zgłoszeniu znaczy
+# zwolnienie pliku z TID251.
+SHARED_PROBE = "import os\nsystem = os.name\n"
+
+
+def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[tuple[str, str]]:
+    """``(plik, nazwa)`` każdego ``TID251`` i każdego ``import *`` (``F403``, nazwa ``F403``), które ``ruff check`` z
+    ``--ignore-noqa`` zgłasza w ``cwd``. Reguły wybiera konfiguracja jak w CI: ``--select`` z wiersza poleceń zastąpiłby
+    jej ``ignore``, a to też zwolnienie z ``TID251``."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json", *arguments],
+        input=code,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=cwd,
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    return [
+        (
+            Path(finding["filename"]).resolve().relative_to(cwd.resolve()).as_posix(),
+            STAR if finding["code"] == STAR else finding["message"].split("`")[1],
+        )
+        for finding in json.loads(result.stdout)
+        if finding["code"] in ("TID251", STAR)
+    ]
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) -> None:
+    """Zwolnienie z ``TID251`` daje każdy mechanizm konfiguracji (``per-file-ignores``, ``ignore``, wzorzec ze ``**``),
+    więc test pyta ruff, a nie czyta konfiguracji: kopia drzewa z próbką ``os.name`` w miejscu każdego pliku, który ruff
+    sprawdza, i z każdym plikiem konfiguracji ruff repozytorium. Plik bez zgłoszenia jest zwolniony, a zwolniony może
+    być tylko właściciel z ``OWNERS``."""
+    for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
+        copy = tmp_path / config.relative_to(ROOT)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
+    shown = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--show-files"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    checked = {Path(line).resolve().relative_to(ROOT.resolve()).as_posix() for line in shown.splitlines() if line.strip()}
+    for name in checked:
+        probe = tmp_path / name
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(SHARED_PROBE, encoding="utf-8")
+
+    reported = {name for name, banned in _banned_names(cwd=tmp_path) if banned == "os.name"}
+
+    assert sorted(checked - reported) == sorted(OWNERS), (
+        "z TID251 konfiguracja ruff zwalnia tylko pliki z OWNERS w tests/test_zakazy_ruff.py: prawo właściciela to "
+        "jego ścieżka w per-file-ignores pyproject.toml i wiersz OWNERS z nazwami, a wyjątek tymczasowy stoi na linii"
+    )
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize("owner", list(OWNERS))
+def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
+    """Kod właściciela biegnie przez ruff jako sonda obok niego, poza jego zwolnieniem i z ``--ignore-noqa``: zgłasza
+    dokładnie nazwy z ``OWNERS``. Inna zakazana nazwa (np. zegar w ``dad_files.py``) albo ``import *`` to droga obok
+    właściciela tej nazwy, a nazwa, której właściciel już nie używa, to prawo do usunięcia."""
+    path = ROOT / owner
+    probe = path.with_name("sonda_zakazu.py")
+
+    found = {banned for _, banned in _banned_names("--stdin-filename", str(probe), "-", code=path.read_text(encoding="utf-8"))}
+
+    assert sorted(found) == sorted(OWNERS[owner]), (
+        f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
+        "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS"
+    )
+
+
+# Właściciel zegara ściennego w src/: jedyny plik z prawem do nazw zegara (OWNERS).
 CLOCK_OWNER = ROOT / "src" / "rozliczenia" / "wall_clock.py"
 # Zakazy zegara ściennego w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie
 # komunikatu, żeby nowy zakaz zegara o innym brzmieniu nie wypadł z niej po cichu.
@@ -261,7 +374,8 @@ def test_kazdy_zakaz_zegara_jest_na_liscie_clock() -> None:
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa() -> None:
     """``# noqa: TID251`` przy ``datetime.now`` byłoby drugą drogą do zegara obok właściciela (#1371), więc zakazy zegara
-    biegną tu z ``--ignore-noqa``; właściciel przechodzi tylko dzięki wyjątkowi w ``src/ruff.toml``."""
+    biegną tu z ``--ignore-noqa``; właściciel przechodzi tylko dzięki prawu właściciela w konfiguracji ruff, a że inny
+    plik z takim prawem nie używa zegara, sprawdza ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``."""
 
     assert _clock_findings("src") == [], "teraz i dzień taty bierz z rozliczenia.wall_clock, bez noqa i bez import *"
 
@@ -320,8 +434,9 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
     """Wyjątek od reguły w konfiguracji (``per-file-ignores``, ``extend-per-file-ignores``, ``ignore`` w każdym pliku
     konfiguracji ruff) to druga droga do zegara obok ``noqa``. Kopia drzewa ``src/`` z próbką zegara w miejscu każdego
     pliku i z każdym plikiem konfiguracji ruff repozytorium idzie przez ruff tak jak ``src/``: plik bez zgłoszenia jest
-    zwolniony, a zwolniony może być tylko właściciel. Że ruff w ogóle sprawdza każdy plik ``src/``, pilnuje
-    ``test_ruff_sprawdza_kazdy_plik_src`` na prawdziwym checkoucie."""
+    zwolniony, a zwolniony może być tylko plik z prawem właściciela (``OWNERS``), któremu nazw zegara poza
+    ``wall_clock.py`` odmawia ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``. Że ruff w ogóle sprawdza każdy
+    plik ``src/``, pilnuje ``test_ruff_sprawdza_kazdy_plik_src`` na prawdziwym checkoucie."""
     for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
         copy = tmp_path / config.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
@@ -332,10 +447,9 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
         probe.parent.mkdir(parents=True, exist_ok=True)
         probe.write_text(CLOCK_PROBE, encoding="utf-8")
 
-    owner = CLOCK_OWNER.relative_to(ROOT).as_posix()
-    expected = {f"{name}:{row}" for name in probes for row in ((3,) if name == owner else (2, 3))}
+    expected = {f"{name}:{row}" for name in probes for row in ((3,) if name in OWNERS else (2, 3))}
 
     assert sorted(expected ^ set(_clock_findings("src", cwd=tmp_path))) == [], (
-        "z zakazu zegara konfiguracja ruff zwalnia tylko rozliczenia/wall_clock.py, a z import * nikogo: "
+        "z zakazu zegara konfiguracja ruff zwalnia tylko pliki z OWNERS, a z import * nikogo: "
         "teraz i dzień taty bierz z wall_clock"
     )

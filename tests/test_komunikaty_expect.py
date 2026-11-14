@@ -27,7 +27,7 @@ import pkgutil
 import re
 from types import ModuleType
 import typing
-from typing import Final
+from typing import Final, get_args
 
 import pytest
 
@@ -87,6 +87,7 @@ from tests.fixtures.message_samples import (
     Samples,
 )
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGS: dict[str, tuple[ModuleType, Samples]] = {
@@ -162,6 +163,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_address_repeated": [settings_messages.worker_address_repeated],
             "worker_unknown": [settings_messages.worker_unknown],
             "worker_list_changed": [settings_messages.worker_list_changed],
+            "worker_suggestions_not_set": [settings_messages.worker_suggestions_not_set],
+            "worker_suggestions_unreadable": [settings_messages.worker_suggestions_unreadable],
             "worker_rename_old_files": [
                 partial(settings_messages.worker_rename_old_files, ("08_14_09_2026",)),
                 partial(settings_messages.worker_rename_old_files, ("08_14_09_2026", "01_07_09_2026", "25_31_08_2026")),
@@ -188,6 +191,36 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "rule_without_action": [settings_messages.rule_without_action],
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
+            "needed_by_release_rules": [partial(settings_messages.needed_by_release_rules, "wizja")],
+            # Zapis usuwa się tylko spośród innych zapisów składnika, a nazwę zmienia się albo usuwa cały składnik.
+            "release_component_taken": [
+                partial(settings_messages.release_component_taken, "wizja" if how == "zapis" else "instalacja ręczna", "instalacja ręczna", how)
+                for how in get_args(settings_messages.TakenAction)
+            ],
+            "rules_wait_for_release_component": [
+                partial(
+                    settings_messages.rules_wait_for_release_component,
+                    "wizja" if how == "zapis" else "instalacja ręczna",
+                    "instalacja ręczna",
+                    how,
+                )
+                for how in get_args(settings_messages.TakenAction)
+            ],
+            "spelling_taken": [partial(settings_messages.spelling_taken, "wizja", "instalacja ręczna")],
+            "component_used_by_rule": [
+                partial(
+                    settings_messages.component_used_by_rule,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
+            ],
+            "rule_needs_component": [
+                partial(
+                    settings_messages.rule_needs_component,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
+            ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
             ],
@@ -391,8 +424,9 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     """Klasa ``Refusal`` jako wartość stoi tylko w ``centrum/refusal.py``, więc tylko katalog tworzy odmowę.
 
     Konstruktor bez dowodu katalogu (``refusal._CATALOG``) i podklasę odrzuca też mypy, a dowód poza katalogiem ruff
-    (docstring ``_CATALOG``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
+    (``TID251``), ale typ gubi klasę wziętą jako wartość, np. ``Refusal.__new__(Refusal)`` (odmowa bez
     ``status_code``, przegląd #1371 r1) i ``get_args(Refusal | None)[0](…)`` (#1179 r2). Te łapie ten test.
+    Postacie, których nie łapie żaden z tych mechanizmów, są próbkami w ``ZNANE_LUKI``.
 
     Odwołanie do klasy to jej nazwa, alias importu modułu albo atrybut modułu (``refusal.Refusal``). Poza katalogiem
     odwołanie przechodzi tylko w typie: w adnotacji parametru, zwrotu, pola albo zmiennej, w nawiasach typu i unii
@@ -401,23 +435,178 @@ def test_odmowe_api_centrum_tworzy_tylko_katalog_odmow() -> None:
     Każde inne odwołanie pada, w tym wywołanie, argument wywołania (``partial(Refusal, 500)``), przypisanie do nazwy
     (także lokalnej), element kolekcji, wartość domyślna, klasa bazowa, odwołanie wewnątrz wywołania albo lambdy i
     nawiasy typu albo unia w ciele funkcji (``make = Refusal | Refusal``, ``list[Refusal].__args__[0](…)``).
-    Łapie tylko odwołania do ``Refusal`` po nazwie: nie łapie ``getattr`` z napisem (``"Refusal"``), importu wewnątrz
-    funkcji, ``type(odmowa)(…)`` z dowodem typu ``Any``, ``copy`` gotowej odmowy ani klasy wyjętej z aliasu typu modułu
-    bez odwołania do ``Refusal`` w tym miejscu (``ShutdownBlocker.__args__…``): to zostaje przeglądowi.
     """
 
-    def outside_type(module: ModuleType) -> bool:
-        tree = drzewo(Path(str(module.__file__)))
-        typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
-        return any(
-            isinstance(node, ast.Name | ast.Attribute) and id(node) not in typed and _resolved(module, node) is refusal.Refusal
-            for node in wezly(tree)
-        )
-
-    assert {module.__name__ for module in _engine_modules() if outside_type(module)} == {refusal.__name__}, (
+    assert {module.__name__ for module in _engine_modules() if _refusal_as_value(module)} == {refusal.__name__}, (
         "odmowę żądania API Centrum (Refusal: kod HTTP i zdanie dla taty) tworzy tylko katalog odmów "
         "src/rozliczenia/centrum/refusal.py: dopisz tam fabrykę z próbką w message_samples i wołaj ją, a poza katalogiem "
         "używaj Refusal tylko jako typu (adnotacja, except, isinstance, exception_handler)"
+    )
+
+
+# Znane luki strażnika katalogu odmów (tests/fixtures/znane_luki.py): opis postaci → moduł, który tworzy odmowę poza
+# katalogiem, a mimo to przechodzi przez mypy, ruff z konfiguracją src/ i test nazw wyżej.
+ZNANE_LUKI: Final = {
+    "_refused zaimportowana z noqa": """\
+from rozliczenia.centrum.refusal import Refusal, _refused  # noqa: TID251
+
+
+def odmowa() -> Refusal:
+    return _refused(500, "Zdanie spoza katalogu odmów.")
+""",
+    "dowód zaimportowany z noqa w type(odmowa)(…)": """\
+from rozliczenia.centrum.refusal import _CATALOG, Refusal  # noqa: TID251
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor)(500, "Zdanie spoza katalogu odmów.", _CATALOG)
+""",
+    "dowód z getattr modułu": """\
+from rozliczenia.centrum import refusal
+from rozliczenia.centrum.refusal import Refusal
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor)(500, "Zdanie spoza katalogu odmów.", getattr(refusal, "_CATALOG"))
+""",
+    "dowód typu Any": """\
+from typing import Any, cast
+
+from rozliczenia.centrum.refusal import Refusal
+
+
+def odmowa(wzor: Refusal) -> Refusal:
+    return type(wzor)(500, "Zdanie spoza katalogu odmów.", cast(Any, None))
+""",
+    "Refusal.__new__ z importem wewnątrz funkcji": """\
+def odmowa() -> Exception:
+    from rozliczenia.centrum.refusal import Refusal
+
+    return Refusal.__new__(Refusal)
+""",
+    "klasa wyjęta z argumentów aliasu typu modułu": """\
+from typing import get_args
+
+from rozliczenia.centrum.refusal import Refusal
+
+Odmowa = Refusal | None
+
+
+def odmowa() -> Exception:
+    wynik: Exception = get_args(Odmowa)[0](500, "Zdanie spoza katalogu odmów.", None)
+    return wynik
+""",
+    "klasa z getattr modułu": """\
+from rozliczenia.centrum import refusal
+
+
+def odmowa() -> Exception:
+    wynik: Exception = getattr(refusal, "Refusal")(500, "Zdanie spoza katalogu odmów.", None)
+    return wynik
+""",
+    "kopia gotowej odmowy": """\
+import copy
+
+from rozliczenia.centrum.refusal import Refusal, unexpected_failure
+
+
+def odmowa() -> Refusal:
+    return copy.copy(unexpected_failure())
+""",
+    "nowe zdanie w gotowej odmowie": """\
+from rozliczenia.centrum.refusal import Refusal, unexpected_failure
+
+
+def odmowa() -> Refusal:
+    wynik = unexpected_failure()
+    wynik.message = "Zdanie spoza katalogu odmów."
+    return wynik
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_strazy_katalogu_odmow_przechodza_przez_kazdy_jego_mechanizm(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "sonda_luki.py")
+    for opis, plik in pliki.items():
+        if _refusal_as_value(modul(plik)):
+            zgloszenia[opis].append("test_odmowe_api_centrum_tworzy_tylko_katalog_odmow: Refusal jako wartość")
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py")
+
+
+# Znane luki strażnika miejsca złego ustawienia (tests/fixtures/znane_luki.py): opis postaci → moduł Ustawień Centrum,
+# który kładzie tekst z pliku (nieznany klucz) w miejscu złego ustawienia albo w zdaniu o nim, a mimo to przechodzi przez
+# mypy na konstruktorze FieldPath i ruff z konfiguracją src/.
+ZNANE_LUKI_FIELD_PATH: Final = {
+    "klucz z json.loads jako Any": """\
+import json
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(tekst: str) -> FieldPath:
+    return FieldPath(json.loads(tekst)["klucz"])
+""",
+    "klucz przez cast": """\
+from typing import cast
+
+from rozliczenia.centrum.settings.files import FieldName, FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(cast(FieldName, klucz))
+""",
+    "klucz z type: ignore": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(klucz)  # type: ignore[arg-type]
+""",
+    "tekst wpisany po budowie": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    wynik = FieldPath("wykonawcy")
+    object.__setattr__(wynik, "text", klucz)
+    return wynik
+""",
+    "tekst przez dataclasses.replace": """\
+import dataclasses
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return dataclasses.replace(FieldPath("wykonawcy"), text=klucz)
+""",
+    "zdanie z kluczem w fabryce przyjmującej str": """\
+def zle_pole(plik: str, klucz: str) -> str:
+    return f"Plik {plik} w folderze config ma złą wartość pola {klucz}. Poprawia go Maks."
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_FIELD_PATH, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "settings" / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
+
+
+def _refusal_as_value(module: ModuleType) -> bool:
+    """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
+
+    tree = drzewo(Path(str(module.__file__)))
+    typed = {id(inner) for root in _type_positions(tree) for inner in _type_nodes(root)}
+    return any(
+        isinstance(node, ast.Name | ast.Attribute) and id(node) not in typed and _resolved(module, node) is refusal.Refusal
+        for node in wezly(tree)
     )
 
 
@@ -565,6 +754,8 @@ UI_TEXTS: Final = {
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
     "Zostaw moją": "frontend/src/pages/worker-reports/day-details.tsx",
+    "Zapisz": "frontend/src/pages/settings/devices-section.tsx",
+    "Usuń składnik": "frontend/src/pages/settings/devices-section.tsx",
 }
 # Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
 # albo napis UI w postaci, której ``_ui_text`` nie czyta.
@@ -580,6 +771,7 @@ QUOTES_OUTSIDE_UI: Final = {
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
     "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
+    "wizja": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
 }
 
 

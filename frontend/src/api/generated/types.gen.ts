@@ -58,7 +58,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -289,6 +289,28 @@ export type ComponentCondition = {
      * Negated
      */
     negated: boolean;
+};
+
+/**
+ * ComponentForm
+ *
+ * Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy
+ * Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez
+ * ``xg``.
+ */
+export type ComponentForm = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Other Spellings
+     */
+    other_spellings: Array<string>;
+    /**
+     * Group
+     */
+    group: 'router' | 'tv' | 'extender' | null;
 };
 
 /**
@@ -573,6 +595,40 @@ export type DeviceComponent = {
 };
 
 /**
+ * DeviceSuggestion
+ *
+ * Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;
+ * ``orders``: w ilu takich zleceniach jest.
+ */
+export type DeviceSuggestion = {
+    /**
+     * Spelling
+     */
+    spelling: string;
+    /**
+     * Orders
+     */
+    orders: number;
+};
+
+/**
+ * DeviceSuggestions
+ *
+ * Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku
+ * zbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta.
+ */
+export type DeviceSuggestions = {
+    /**
+     * Suggestions
+     */
+    suggestions: Array<DeviceSuggestion>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+};
+
+/**
  * DevicesCondition
  *
  * ``URZĄDZENIA`` są puste, są dokładnie tekstem albo zawierają tekst (przy ``empty`` tekst jest pusty).
@@ -649,6 +705,79 @@ export type DiagnosisCheck = {
      * Detail
      */
     detail: string;
+};
+
+/**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export type DifferencesReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Files
+     */
+    files: Array<PreviewFile>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+    /**
+     * Differences
+     */
+    differences: Array<QuantityDifference>;
+    /**
+     * More
+     */
+    more: number;
+    /**
+     * Exceptions
+     */
+    exceptions: number;
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export type DifferencesWithoutFiles = {
+    /**
+     * State
+     */
+    state: 'no_periods_directory' | 'no_settled_periods';
+    exceptions_problem: SettingProblem | null;
+};
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export type ExceptionSaved = {
+    /**
+     * Differences
+     */
+    differences: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+    /**
+     * Change
+     */
+    change: string | null;
 };
 
 /**
@@ -889,8 +1018,9 @@ export type HistoryRow = {
 /**
  * HistoryRuleChange
  *
- * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
- * ``None``: reguły nie było.
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
  */
 export type HistoryRuleChange = {
     /**
@@ -2376,6 +2506,61 @@ export type QuantitiesToFillReady = {
 };
 
 /**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export type QuantityDifference = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Devices
+     */
+    devices: string;
+    /**
+     * Activities
+     */
+    activities: string;
+    /**
+     * When
+     */
+    when: string;
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Rule
+     */
+    rule: number;
+    /**
+     * Tata
+     */
+    tata: number | 'nieliczbowa';
+    draft: RuleForm;
+};
+
+/**
  * QuantityRuleSentence
  *
  * Reguła ilości jako zdanie „jeśli … to …”, poskładane z tekstu i kolumn, w kolejności z pliku reguł, i jako
@@ -2400,7 +2585,7 @@ export type QuantityRuleSentence = {
 /**
  * QuantityRulesSaved
  *
- * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
  * zapis niczego nie zmienił.
  */
 export type QuantityRulesSaved = {
@@ -2415,7 +2600,10 @@ export type QuantityRulesSaved = {
  * QuantityRulesSettings
  *
  * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
- * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;
+ * ``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania
+ * liczą bez niego, a ``rules_problem`` przy Regułach ilości z Wydania, że ich zmiana zapisze się dopiero, gdy tata
+ * zwolni jego zapis.
  */
 export type QuantityRulesSettings = {
     /**
@@ -2883,7 +3071,7 @@ export type ReportsProblem = {
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export type ReportsView = {
     /**
@@ -3836,7 +4024,9 @@ export type ToolVersion = {
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export type UnknownReportSender = {
     /**
@@ -3851,6 +4041,10 @@ export type UnknownReportSender = {
      * Reason
      */
     reason: string;
+    /**
+     * Worker
+     */
+    worker: string | null;
 };
 
 /**
@@ -3979,6 +4173,19 @@ export type WithoutQuantityUnread = {
 };
 
 /**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export type WorkerAddress = {
+    /**
+     * Address
+     */
+    address: string;
+};
+
+/**
  * WorkerEdit
  *
  * Zmiana Wykonawcy z formularza; loginu, którego nie ma już w ``logins``, nie może mieć żaden okres.
@@ -4099,6 +4306,45 @@ export type WorkerSettlementRequest = {
      * Worker
      */
     worker: string;
+};
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export type WorkerSuggestion = {
+    /**
+     * Login
+     */
+    login: string;
+    /**
+     * Orders
+     */
+    orders: number;
+};
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export type WorkerSuggestions = {
+    /**
+     * State
+     */
+    state: 'read' | 'not_set' | 'unreadable';
+    /**
+     * Suggestions
+     */
+    suggestions: Array<WorkerSuggestion>;
+    /**
+     * Message
+     */
+    message: string | null;
 };
 
 /**
@@ -5625,6 +5871,115 @@ export type ChangeAutostartResponses = {
 
 export type ChangeAutostartResponse = ChangeAutostartResponses[keyof ChangeAutostartResponses];
 
+export type AddDeviceData = {
+    body: ComponentForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/devices';
+};
+
+export type AddDeviceErrors = {
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type AddDeviceError = AddDeviceErrors[keyof AddDeviceErrors];
+
+export type AddDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type AddDeviceResponse = AddDeviceResponses[keyof AddDeviceResponses];
+
+export type GetDeviceSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/devices/suggestions';
+};
+
+export type GetDeviceSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceSuggestions;
+};
+
+export type GetDeviceSuggestionsResponse = GetDeviceSuggestionsResponses[keyof GetDeviceSuggestionsResponses];
+
+export type RemoveDeviceData = {
+    body?: never;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/settings/devices/{device_id}';
+};
+
+export type RemoveDeviceErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type RemoveDeviceError = RemoveDeviceErrors[keyof RemoveDeviceErrors];
+
+export type RemoveDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type RemoveDeviceResponse = RemoveDeviceResponses[keyof RemoveDeviceResponses];
+
+export type ChangeDeviceData = {
+    body: ComponentForm;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/settings/devices/{device_id}';
+};
+
+export type ChangeDeviceErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Zła reguła ilości z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeDeviceError = ChangeDeviceErrors[keyof ChangeDeviceErrors];
+
+export type ChangeDeviceResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuantityRulesSaved;
+};
+
+export type ChangeDeviceResponse = ChangeDeviceResponses[keyof ChangeDeviceResponses];
+
 export type ChangeFoldersData = {
     body: FoldersChange;
     path?: never;
@@ -5785,6 +6140,62 @@ export type AddQuantityRuleResponses = {
 };
 
 export type AddQuantityRuleResponse = AddQuantityRuleResponses[keyof AddQuantityRuleResponses];
+
+export type GetQuantityDifferencesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/quantity-rules/differences';
+};
+
+export type GetQuantityDifferencesResponses = {
+    /**
+     * Response Getquantitydifferences
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'ready';
+    } & DifferencesReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & DifferencesWithoutFiles);
+};
+
+export type GetQuantityDifferencesResponse = GetQuantityDifferencesResponses[keyof GetQuantityDifferencesResponses];
+
+export type MarkQuantityExceptionData = {
+    body?: never;
+    path: {
+        /**
+         * Difference Id
+         */
+        difference_id: string;
+    };
+    query?: never;
+    url: '/api/settings/quantity-rules/differences/{difference_id}/exception';
+};
+
+export type MarkQuantityExceptionErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MarkQuantityExceptionError = MarkQuantityExceptionErrors[keyof MarkQuantityExceptionErrors];
+
+export type MarkQuantityExceptionResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExceptionSaved;
+};
+
+export type MarkQuantityExceptionResponse = MarkQuantityExceptionResponses[keyof MarkQuantityExceptionResponses];
 
 export type PreviewQuantityRulesData = {
     /**
@@ -6068,6 +6479,22 @@ export type AddWorkerResponses = {
 
 export type AddWorkerResponse = AddWorkerResponses[keyof AddWorkerResponses];
 
+export type GetWorkerSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/workers/suggestions';
+};
+
+export type GetWorkerSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkerSuggestions;
+};
+
+export type GetWorkerSuggestionsResponse = GetWorkerSuggestionsResponses[keyof GetWorkerSuggestionsResponses];
+
 export type RemoveWorkerData = {
     body?: never;
     path: {
@@ -6135,6 +6562,36 @@ export type ChangeWorkerResponses = {
 };
 
 export type ChangeWorkerResponse = ChangeWorkerResponses[keyof ChangeWorkerResponses];
+
+export type AssignWorkerAddressData = {
+    body: WorkerAddress;
+    path: {
+        /**
+         * Login
+         */
+        login: string;
+    };
+    query?: never;
+    url: '/api/settings/workers/{login}/addresses';
+};
+
+export type AssignWorkerAddressErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: Problem;
+};
+
+export type AssignWorkerAddressError = AssignWorkerAddressErrors[keyof AssignWorkerAddressErrors];
+
+export type AssignWorkerAddressResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type AssignWorkerAddressResponse = AssignWorkerAddressResponses[keyof AssignWorkerAddressResponses];
 
 export type SwitchWorkerData = {
     body: WorkerSwitches;

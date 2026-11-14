@@ -23,6 +23,7 @@ import type {
   RunInfo,
   RunOutcome,
   PreviewQuantityRulesData,
+  ComponentForm,
   RuleForm,
   RunRequest,
   SendDadNoteResponse,
@@ -174,9 +175,29 @@ export function removeWorker(login: string) {
   return call("removeWorker", { path: { login } })
 }
 
+/** Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców albo zdanie, dlaczego ich nie ma. */
+export function getWorkerSuggestions() {
+  return call("getWorkerSuggestions")
+}
+
+/** „Przypisz do Wykonawcy…”: adres nieznanego nadawcy u Wykonawcy z loginem `login`, zapisany od razu. */
+export function assignWorkerAddress(login: string, address: string) {
+  return call("assignWorkerAddress", { path: { login }, body: { address } })
+}
+
 /** Historia Ustawień od najnowszej zmiany. */
 export function getSettingsHistory() {
   return call("getSettingsHistory")
+}
+
+/** Różnice z Kontroli ilości ostatnich okresów, bez oznaczonych jako wyjątek: „Tu wpisałeś inaczej niż reguła”. */
+export function getQuantityDifferences() {
+  return call("getQuantityDifferences")
+}
+
+/** „To był wyjątek”: serwer zapisuje wyjątek różnicy o tym id i oddaje listę różnic po nim. */
+export function markQuantityException(id: string) {
+  return call("markQuantityException", { path: { difference_id: id } })
 }
 
 /** Reguły ilości jako zdania i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. */
@@ -201,6 +222,26 @@ export function removeQuantityRule(id: string) {
 /** Skutek zmiany Reguł ilości na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu. */
 export function previewQuantityRules(edit: PreviewQuantityRulesData["body"]) {
   return call("previewQuantityRules", { body: edit })
+}
+
+/** Nowy składnik Listy Urządzeń; zapis innego składnika albo pusta nazwa to odmowa z polem (`nazwa`, `zapisy[0]`). */
+export function addDevice(component: ComponentForm) {
+  return call("addDevice", { body: component })
+}
+
+/** Zmieniony składnik Listy Urządzeń: nazwa, inne zapisy i grupa; zostaje na swoim miejscu. */
+export function changeDevice(id: string, component: ComponentForm) {
+  return call("changeDevice", { path: { device_id: id }, body: component })
+}
+
+/** Usunięcie składnika; składnika, którego potrzebuje reguła, Centrum nie usuwa i podaje zdanie tej reguły. */
+export function removeDevice(id: string) {
+  return call("removeDevice", { path: { device_id: id } })
+}
+
+/** Zapisy z URZĄDZENIA ostatnich okresów, których Lista Urządzeń nie zna. */
+export function getDeviceSuggestions() {
+  return call("getDeviceSuggestions")
 }
 
 /** Cofa zmianę z Historii Ustawień; cofnięcie samo jest nową zmianą z własnym wierszem. */

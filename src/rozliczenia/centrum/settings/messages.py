@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 from rozliczenia.centrum.settings.files import FieldPath
 
@@ -116,6 +116,23 @@ def worker_rename_old_files(periods: tuple[str, ...]) -> str:
     )
 
 
+def worker_suggestions_not_set() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo tata nie wskazał Rejestru zleceń."""
+
+    return "Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń."
+
+
+def worker_suggestions_unreadable() -> str:
+    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo Rejestru zleceń nie da się teraz przeczytać (nie ma go, brak
+    dostępu, nie jest skoroszytem, wierszy nie da się rozdzielić); stan pliku pokazuje sekcja Foldery. Rejestr bez
+    obszaru wklejania ma zamiast tego zdanie Komunikatu procesów (``worker_suggestions``)."""
+
+    return (
+        "Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź "
+        "Rejestr w sekcji Foldery."
+    )
+
+
 def workers_not_moved(old_file: str, reason: str) -> str:
     return (
         f"Listy Wykonawców nie utworzono ze starego pliku {old_file} w folderze config: {reason}. Dodaj Wykonawców w "
@@ -218,6 +235,85 @@ def rule_hour() -> str:
     """Godzina warunku DATA z edytora Reguł ilości nie jest godziną z minutą."""
 
     return "Godzinę wpisz jako GG:MM, np. 17:00."
+
+
+def component_name_empty() -> str:
+    """Składnik z sekcji Urządzenia bez nazwy (pierwszego zapisu)."""
+
+    return "Wpisz nazwę składnika tak, jak stoi w URZĄDZENIA."
+
+
+def spelling_with_star(spelling: str) -> str:
+    """Zapis składnika z gwiazdką: Reguły ilości czytają ją w ``URZĄDZENIA`` jako krotność."""
+
+    return f"Zapis „{spelling}” nie może mieć gwiazdki: w URZĄDZENIA gwiazdka to liczba sztuk, np. 2*fut."
+
+
+def spelling_taken(spelling: str, component: str) -> str:
+    """Zapis, który ma już inny składnik; ``component``: jego nazwa, jak w sekcji Urządzenia."""
+
+    return f"Zapis „{spelling}” ma już składnik „{component}”. Jeden zapis należy do jednego składnika."
+
+
+def component_used_by_rule(component: str, rule: str) -> str:
+    """Usunięcie składnika, którego potrzebuje reguła; ``rule``: jej zdanie „jeśli … to …”."""
+
+    return f"Składnika „{component}” potrzebuje reguła: {rule} Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
+
+
+def rule_needs_component(component: str, rule: str) -> str:
+    """Reguła, której składnika nie ma na Liście Urządzeń (np. „Cofnij” jej usunięcia po usunięciu składnika);
+    ``component``: jego nazwa, jak ostatnio na liście, ``rule``: zdanie reguły „jeśli … to …”."""
+
+    return (
+        f"Reguła potrzebuje składnika „{component}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik "
+        "w sekcji Urządzenia."
+    )
+
+
+def needed_by_release_rules(component: str) -> str:
+    """Lista Urządzeń taty bez składnika, którego potrzebują Reguły ilości z Wydania (tata nie ma pliku reguł);
+    ``component``: jego nazwa z Listy Urządzeń z Wydania."""
+
+    return (
+        f"Reguły ilości z Wydania potrzebują składnika „{component}”, którego nie ma na Liście Urządzeń, więc Centrum "
+        "bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”."
+    )
+
+
+TakenAction = Literal["zapis", "skladnik", "nazwa"]
+"""Jak tata zwalnia zapis składnika z Wydania: usuwa go ze składnika z innymi zapisami, usuwa cały składnik albo zmienia
+jego nazwę."""
+
+
+def release_component_taken(component: str, owner: str, how: TakenAction) -> str:
+    """Składnik z Listy Urządzeń z Wydania, którego potrzebują Reguły ilości z Wydania, a którego każdy zapis ma składnik z
+    listy taty, więc Centrum liczy bez niego; ``component``: jego pierwszy zapis, który ma składnik ``owner``."""
+
+    return (
+        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
+        f"Centrum liczy bez niego. Żeby liczyło z nim, {_freed(component, owner, how)}."
+    )
+
+
+def rules_wait_for_release_component(component: str, owner: str, how: TakenAction) -> str:
+    """Sekcja Reguły ilości i odmowa pierwszego zapisu reguł taty w miejsce Reguł ilości z Wydania, które mają składnik
+    z Listy Urządzeń z Wydania, a każdy jego zapis ma składnik ``owner`` z listy taty: plik reguł taty musi pasować do
+    jego listy, więc zapisze się dopiero, gdy tata zwolni zapis ``component`` w sekcji Urządzenia."""
+
+    return (
+        f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
+        "Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia "
+        f"{_freed(component, owner, how)}."
+    )
+
+
+def _freed(component: str, owner: str, how: TakenAction) -> str:
+    return {
+        "zapis": f"usuń zapis „{component}” ze składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
+        "skladnik": f"usuń składnik „{owner}”: ołówek przy nim, potem „Usuń składnik”",
+        "nazwa": f"zmień nazwę składnika „{owner}”: ołówek przy nim, potem „Zapisz”",
+    }[how]
 
 
 def needed_by_rules(file: str, component: str) -> str:

@@ -67,12 +67,12 @@ def test_czesci_podstawy_centrum_przejezdzaja_kazda_funkcje_all_raz_w_kolejnosci
 
 
 def test_zla_czesc_centrum_konczy_przebieg_porazka_zanim_cokolwiek_wystartuje(runner: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    monkeypatch.setenv(ZMIENNA_CZESCI, "30/30")
+    driven_by_all = len([feature for feature in runner.FEATURES if not feature.measurement])
+    monkeypatch.setenv(ZMIENNA_CZESCI, f"{driven_by_all + 1}/{driven_by_all + 1}")
 
     code = runner.main(["--feature", "all", "--run-dir", "nie-powstanie"])
 
     assert code == 1
-    driven_by_all = len([feature for feature in runner.FEATURES if not feature.measurement])
     assert capsys.readouterr().err.startswith(
         f"VERIFY FAIL | features=all | MUTACJE_CZESC to K/N z 1 <= K <= N <= {driven_by_all}"
     )
@@ -202,6 +202,7 @@ class _Playwright(ModuleType):
 
     Error = type("Error", (Exception,), {})
     TimeoutError = type("TimeoutError", (Exception,), {})
+    Expect = type("Expect", (), {"set_options": lambda self, timeout: None})
 
     def __getattr__(self, name: str) -> Any:
         return type(name, (), {"__init__": lambda self, *args, **kwargs: None})

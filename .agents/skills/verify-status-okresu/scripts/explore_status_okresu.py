@@ -238,6 +238,7 @@ class Consumer(enum.Enum):
     KARTA_WYCENY = "karta startu Wyceny w efenix"
     UZUPELNIANIE = "Uzupełnienie (quantities-to-fill)"
     PODGLAD_REGUL = "podgląd zmiany Reguł ilości (quantity-rules/preview)"
+    LISTA_ROZNIC = "lista różnic Kontroli ilości (quantity-rules/differences)"
     WPISANIE_RAPORTOW = "Wpisanie raportów (enter_from_mail)"
     START_PRZYGOTOWANIA = "Sprawdzanie Przygotowania pliku zbiorczego (check_preparation)"
     START_PRZEBIEGU = "Sprawdzanie Przebiegu rozliczeń (check_settlement)"
@@ -259,6 +260,7 @@ ALLOWED: dict[Consumer, Status] = {
     Consumer.START_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.UZUPELNIANIE: Status.PRZYGOTOWANY,
     Consumer.PODGLAD_REGUL: Status.GOTOWE,
+    Consumer.LISTA_ROZNIC: Status.GOTOWE,
 }
 
 # Rule TA_SAMA_NAZWA: the consumers that show Dad a Status okresu.
@@ -469,7 +471,14 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
     CentrumSettings(
-        config, log=log, now=local_now, pause=lambda _: None, autostart=NO_AUTOSTART, periods=WorkerPeriods(DadFiles())
+        config,
+        log=log,
+        now=local_now,
+        pause=lambda _: None,
+        autostart=NO_AUTOSTART,
+        periods=WorkerPeriods(DadFiles()),
+        # The folder change below refuses nothing, so no rule sentence needs column names.
+        column_names=lambda: {},
     ).change(FOLDERS, lambda folders: replace(folders, periods_directory=periods))
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
@@ -573,6 +582,27 @@ def ask_rules_preview(client: TestClient) -> Answer:
     raise Unexpected(f"podgląd Reguł ilości: pliki {preview['files']}, nieprzeczytane {preview['unread']}")
 
 
+def ask_differences(client: TestClient) -> Answer:
+    """Whether the list of Kontrola ilości differences in the Reguły ilości section takes the period: only a period
+    after Przebieg rozliczeń, like the preview; a Plik zbiorczy it takes but cannot read it names among ``unread``."""
+
+    response = client.get("/api/settings/quantity-rules/differences")
+    if (unreadable := _unreadable_refusal(response)) is not None:
+        return Answer(Consumer.LISTA_ROZNIC, Act.NIE_CZYTA, detail=unreadable)
+    if response.status_code != 200:
+        raise Unexpected(f"lista różnic: HTTP {response.status_code} {response.text[:200]}")
+    found = response.json()
+    if found["state"] == "no_settled_periods":
+        return Answer(Consumer.LISTA_ROZNIC, Act.ODMAWIA, detail="nie ma okresu po Przebiegu rozliczeń")
+    if found["state"] != "ready":
+        raise Unexpected(f"lista różnic: stan {found['state']!r}")
+    if PERIOD.token in found["unread"]:
+        return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="bierze okres, a Pliku zbiorczego nie dało się przeczytać")
+    if [file["period"] for file in found["files"]] == [PERIOD.token]:
+        return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="liczy różnice na Pliku zbiorczym okresu")
+    raise Unexpected(f"lista różnic: pliki {found['files']}, nieprzeczytane {found['unread']}")
+
+
 def ask_entering(inputs: Inputs, periods: Path) -> Answer:
     """From which day Wpisanie raportów, deployed on the period's Tuesday, reads the Skrzynka raportów (``Window.first``).
 
@@ -652,6 +682,7 @@ def ask_all(case: Path, state: FolderState, inputs: Inputs) -> list[Answer]:
             *ask_cards(client),
             ask_filling(client),
             ask_rules_preview(client),
+            ask_differences(client),
             ask_entering(inputs, periods),
             *ask_starts(inputs, periods),
         ]

@@ -155,6 +155,10 @@ FEATURES = (
             "395-wykonawcy-lista",
             "396-wykonawcy-formularz-waski",
             "397-wykonawcy-lista-waska",
+            "410-wykonawcy-podpowiedz",
+            "412-wykonawcy-podpowiedz-waska",
+            "411-wykonawcy-formularz-z-podpowiedzi",
+            "413-wykonawcy-rejestr-nieczytelny",
         ),
     ),
     # Moves the run's tool clone right after Konfiguracja shows it.
@@ -313,6 +317,19 @@ FEATURES = (
         ),
         needs=("przebieg-rozliczen",),
     ),
+    # Shows the differences of the Kontrola ilości of the period Przebieg rozliczeń settled, opens a rule from one without
+    # saving it and marks one as an exception; ends with no exception (undone in Historia) and the rules unchanged.
+    Feature(
+        "roznice-z-kontroli",
+        (
+            "400-roznice-lista-szerokie",
+            "401-roznice-popraw-regule",
+            "402-roznice-wyjatek",
+            "403-roznice-historia",
+            "404-roznice-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
     # Edits the Reguły ilości with the preview on the Plik zbiorczy that Przebieg rozliczeń settled; ends with the rules
     # of the Release again (the change undone in Historia).
     Feature(
@@ -324,6 +341,23 @@ FEATURES = (
             "383-edytor-zapisana",
             "384-edytor-historia",
             "385-edytor-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
+    # Edits the Lista Urządzeń with the suggestions from the Plik zbiorczy that Przebieg rozliczeń settled; ends with the
+    # list of the Release again (both changes undone in Historia).
+    Feature(
+        "lista-urzadzen",
+        (
+            "370-urzadzenia-podpowiedzi",
+            "371-urzadzenia-inny-zapis",
+            "372-urzadzenia-zapis-innego-skladnika",
+            "373-urzadzenia-skladnik-potrzebny-regule",
+            "374-urzadzenia-po-podpowiedzi",
+            "375-urzadzenia-historia",
+            "376-urzadzenia-waskie",
+            "377-urzadzenia-nieczytelny-plik",
+            "378-urzadzenia-nieczytelny-plik-waskie",
         ),
         needs=("przebieg-rozliczen",),
     ),
@@ -493,6 +527,10 @@ FEATURES = (
             "285-raporty-blokada",
             "281-raporty-dzien-z-problemami",
             "282-raporty-zostaw-moja",
+            "414-raporty-przypisz",
+            "415-raporty-przypisz-wybor",
+            "417-raporty-przypisz-wybor-waski",
+            "416-raporty-przypisany",
             "283-raporty-dzien-bez-problemow",
             "284-raporty-waski-ekran",
             "287-raporty-w-czasie-innego",

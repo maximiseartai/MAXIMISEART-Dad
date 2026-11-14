@@ -65,6 +65,7 @@ from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
 from rozliczenia.centrum.workers_router import workers_router
+from rozliczenia.centrum.quantity_differences import quantity_differences_router, with_exception_sentences
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
@@ -76,6 +77,7 @@ from rozliczenia.centrum.tool_update import ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.file_state import path_state
 from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
@@ -84,7 +86,7 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.tool_files import HOST
 from rozliczenia.report_entering import ReportEnteringParts
-from rozliczenia.workbook_files import ByteSource, file_bytes  # noqa: TID251 - domyślne źródło bajtów uchwytu (create_app(source=...))
+from rozliczenia.workbook_files import ByteSource
 from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
 from rozliczenia.wall_clock import dad_today, local_now
@@ -112,7 +114,7 @@ def create_app(
     report_search_deadline_s: float = SEARCH_DEADLINE_S,
     tool_update: ToolClone | None = None,
     guardian: GuardianLauncher | None = None,
-    source: ByteSource = file_bytes,
+    source: ByteSource = DadFiles.source,
     template_check: TemplateCheck = check_on_disk,
     intermax_copies: Path | None = None,
     intermax_disk: Disk = LOCAL_DISK,
@@ -124,7 +126,7 @@ def create_app(
     reminder_rhythm: ReminderRhythm | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
-    work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
+    work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
@@ -196,19 +198,29 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
-    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX i sprawdzenie okresów przy usunięciu
-    # loginu z Listy Wykonawców czytają nim pliki taty ze źródła bajtów ``source``, a jego pamięć to pamięć reguły danych
-    # pracy.
+    # Uchwyt plików taty tej pracy: Uruchomienia, Diagnoza, Uzupełnienie, dni INTERMAX, sprawdzenie okresów przy usunięciu
+    # loginu z Listy Wykonawców i podpowiedzi sekcji Wykonawcy czytają nim pliki taty ze źródła bajtów ``source``, a jego
+    # pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
+    configuration = configuration_files or ConfigurationFiles.default()
+    price_list = PriceList(configuration.collective_template)
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
-    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
-    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart, periods=WorkerPeriods(files))
+    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień. Nazwy kolumn
+    # z cennika mają zdania reguł w odmowach zmian Reguł ilości i Listy Urządzeń.
+    settings = CentrumSettings(
+        config,
+        log=log,
+        now=local_now,
+        pause=pause,
+        autostart=autostart,
+        periods=WorkerPeriods(files),
+        column_names=price_list.names,
+    )
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
-    configuration = configuration_files or ConfigurationFiles.default()
-    price_list = PriceList(configuration.collective_template)
-    app.include_router(settings_router(settings, platform, inbox.try_login, today, history_sentences(settings, price_list)))
+    sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
+    app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
     app.include_router(periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
@@ -235,8 +247,11 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    app.include_router(workers_router(settings))
-    app.include_router(quantity_rules_router(settings, price_list, RecentCollectiveFiles(files)))
+    app.include_router(workers_router(settings, files, today))
+    # Ostatnie Pliki zbiorcze po Przebiegu: jeden odczyt dla podglądu zmiany reguł i różnic z Kontroli ilości.
+    recent = RecentCollectiveFiles(files)
+    app.include_router(quantity_rules_router(settings, price_list, recent))
+    app.include_router(quantity_differences_router(settings, price_list, recent))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)

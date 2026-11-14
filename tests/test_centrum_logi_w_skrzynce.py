@@ -10,11 +10,11 @@ i śladem. Żaden test nie łączy się z GitHubem.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 import copy
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import gzip
 import hashlib
@@ -26,6 +26,8 @@ import shutil
 import subprocess
 from typing import Any, Final, Protocol
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import pytest
@@ -49,10 +51,31 @@ from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
+from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
-from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+from rozliczenia.client_data import ForbiddenColumn, empty_memory
 from rozliczenia.domain import RunMode
+from rozliczenia.report_cells import ReportColumn
+from rozliczenia.report_entering import EnteringFacts, Orderless, SavedState
+from rozliczenia.worker_reports import (
+    Kept,
+    Login,
+    MailId,
+    OrderKey,
+    OrderNumber,
+    OwnEntries,
+    OwnEntry,
+    OwnMove,
+    ReadReport,
+    ReadStranger,
+    ReadUnreadable,
+    ReportEntry,
+    SenderAddress,
+    SubjectFault,
+    UnknownSender,
+)
+from rozliczenia.worker_reports import Verdict as Intent
 
 from atrapy.skrzynka import BoxIssue
 from atrapy.workbooks import excel_lock
@@ -1337,14 +1360,14 @@ def _preparation_with_edited_rule(folder: Path) -> _EditedRulesRun:
     collective = centrum.fixture.collective_file_path
     produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
 
-    assert _aa18(collective) == 3, "Przygotowanie u taty wpisało regułę z edytora"
-    return _EditedRulesRun(produced, lambda kept: _aa18(kept / "okresy" / collective.parent.name / collective.name), 3)
+    assert _quantity(collective, "AA18") == 3, "Przygotowanie u taty wpisało regułę z edytora"
+    return _EditedRulesRun(produced, lambda kept: _quantity(kept / "okresy" / collective.parent.name / collective.name, "AA18"), 3)
 
 
-def _aa18(collective: Path) -> object:
+def _quantity(collective: Path, cell: str) -> object:
     workbook = load_workbook(collective, read_only=True)
     try:
-        return workbook.worksheets[0]["AA18"].value
+        return workbook.worksheets[0][cell].value
     finally:
         workbook.close()
 
@@ -1378,6 +1401,32 @@ def test_odtworzenie_procesu_liczy_regulami_ilosci_taty_z_logow_i_jest_zgodne(
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert [line for line in lines if "Reguł ilości" in line] == []
     assert run.effect(kept) == run.expected
+
+
+def test_odtworzenie_przygotowania_liczy_lista_urzadzen_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tata dopisał zapis „ont nokia” do składnika „nokia” w sekcji Urządzenia, a Przygotowanie wpisało nim Z; odtworzenie
+    z Logów liczy Listą Urządzeń z chwili Uruchomienia, nie listą z Wydania, więc wpisuje to samo i jest zgodne."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    centrum = preparing_centrum(folder, [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "ont nokia"}])
+    write_report_key(ToolDirectory(folder))
+    nokia = next(device for device in centrum.client.get("/api/settings/quantity-rules").json()["devices"] if device["id"] == "nokia")
+    form = {**nokia, "other_spellings": [*nokia["other_spellings"], "ont nokia"]}
+    del form["id"]
+    assert centrum.client.put("/api/settings/devices/nokia", json=form).status_code == 200
+    run_to_end(centrum, dry_run=False)
+    collective = centrum.fixture.collective_file_path
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    assert _quantity(collective, "Z18") == 1, "Przygotowanie u taty liczyło zapisem z sekcji Urządzenia"
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert _quantity(kept / "okresy" / collective.parent.name / collective.name, "Z18") == 1
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
@@ -2137,6 +2186,13 @@ def _guard_cut(place: str) -> Callable[[dict[str, Any]], None]:
     )
 
 
+def _emptied_by_guard(record: dict[str, Any]) -> None:
+    record["report_entering"] = None
+    record["technical_notes"].append(
+        "Reguła danych: pole report_entering jest puste: strażnik zamaskował w nim wartość, której pole nie przyjmuje."
+    )
+
+
 def _stopped_at_saving(record: dict[str, Any]) -> None:
     record.update(ending="stop", stop_kind="for_tata", result=None)
     record["report_entering"]["written"] = None
@@ -2173,6 +2229,11 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
         3,
         ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych pominął w Logach report_entering.moves_before[0]",),
     ),
+    "ciecie_straznika_calego_pola": (
+        _emptied_by_guard,
+        3,
+        ("NIE DA SIĘ ODTWORZYĆ: strażnik reguły danych zostawił puste w Logach report_entering ",),
+    ),
     "bez_wpisow_przed_rdzeniem": (
         lambda record: record.update(report_entering=None),
         1,
@@ -2208,6 +2269,231 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
     else:
         granice = lines[lines.index("Granice:") + 1 :]
         assert all(any(line.startswith(text) for line in granice) for text in expected), granice
+
+
+CLICK_DAY: Final = date(2026, 11, 9)
+JAN, ANNA = Login("jan.testowy"), Login("anna.testowa")
+
+
+def _entering_facts() -> EnteringFacts:
+    """Fakty kliknięcia z numerem z zerem na początku we Wpisie (pamięć wpisów, pamięć zlecenia z innego dnia i od
+    innego Wykonawcy, numer bez zlecenia), decyzją „Zostaw moją”, mailem z nieczytelnym tematem i trzema mailami spoza
+    listy adresów, z których dwa mają ten sam Message-ID i różne adresy."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    zero, plain = OrderNumber("040000001"), OrderNumber("40000002")
+    twice, once = MailId("c" * 16), MailId("d" * 16)
+    entries = (ReportEntry(zero, Intent.YES, None, "montaż"), ReportEntry(plain, Intent.NO, None, "brak klienta"))
+    return EnteringFacts(
+        today=CLICK_DAY,
+        rollout_before=date(2026, 11, 2),
+        rollout=date(2026, 11, 2),
+        closed=("2_8_11_2026",),
+        memory_before=(OwnEntry(OrderKey(zero, CLICK_DAY, JAN), ReportColumn.SUCCESSFUL, "tak"),),
+        kept=(Kept(OrderKey(plain, CLICK_DAY, JAN), ReportColumn.COMPLETED, "brak klienta"),),
+        skipped=2,
+        mails=(
+            ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
+            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.NO_DATE, frozenset({plain})),
+            ReadStranger(twice, arrived, CLICK_DAY),
+            ReadStranger(twice, arrived, CLICK_DAY),
+            ReadStranger(once, arrived, CLICK_DAY),
+        ),
+        problems=(
+            UnknownSender(twice, SenderAddress("pierwszy@obcy.invalid"), CLICK_DAY),
+            UnknownSender(twice, SenderAddress("drugi@obcy.invalid"), CLICK_DAY),
+            UnknownSender(once, SenderAddress("trzeci@obcy.invalid"), CLICK_DAY),
+        ),
+        changes=(),
+        moves_before=(OwnMove(zero, date(2026, 11, 10), ANNA, CLICK_DAY, JAN, "Jan Testowy", arrived, True, False),),
+        orderless=(Orderless("Zlecenia", zero, None),),
+    )
+
+
+def _logged_reports(facts: EnteringFacts) -> dict[str, Any]:
+    logged = LoggedReports.of_run(None, facts)
+    assert logged is not None
+    loaded: dict[str, Any] = json.loads(logged.model_dump_json())
+    return loaded
+
+
+def test_wpisanie_raportow_z_logow_wraca_jako_te_same_fakty_klikniecia_z_numerem_z_zerem_z_wpisu() -> None:
+    """Logi mają numer pamięci wpisów, pamięci zleceń i numeru bez zlecenia tylko jako liczbę, a odczyt wejścia
+    kliknięcia z pliku Logów daje te same pamięć, decyzje „Zostaw moją”, maile i numery bez zlecenia co kliknięcie, z
+    zerem na początku z Wpisu. Mail spoza listy adresów dostaje po kolei jeden z różnych adresów jego Message-ID."""
+
+    facts = _entering_facts()
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved == SavedState(
+        facts.rollout_before, OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept)
+    )
+    assert replayed.mails == facts.mails
+    assert replayed.strangers == (0, 1, 0)
+    assert replayed.orderless == (ReplayedOrderless("Zlecenia", "040000001", None),)
+    assert (replayed.today, replayed.closed, replayed.skipped, replayed.reservations) == (
+        facts.today,
+        facts.closed,
+        facts.skipped,
+        (),
+    )
+
+
+def _second_form(entering: dict[str, Any]) -> None:
+    entering["mails"][0]["entries"].append({"number": "0040000002", "verdict": "nie", "fault": None, "activities": ""})
+
+
+# Zmiana Logów Wpisania raportów z ``_entering_facts`` i początek powodu, dla którego odtworzenie nie ma wejścia.
+UNREPLAYABLE: Final[dict[str, tuple[Callable[[dict[str, Any]], None], str]]] = {
+    "numer_wpisu_z_maska": (
+        lambda entering: entering["mails"][0]["entries"][1].update(number="[telefon]"),
+        "Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]: 9 cyfr",
+    ),
+    "pamiec_bez_wpisu": (
+        lambda entering: entering["memory_before"][0].update(number=40000009),
+        "pamięć wpisów w Logach ma zlecenie 40000009 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę, a jego numeru "
+        "nie ma w dokładnie jednym Wpisie",
+    ),
+    "zostaw_moja_z_dwiema_postaciami_numeru": (
+        _second_form,
+        "decyzje „Zostaw moją” w Logach ma zlecenie 40000002 Wykonawcy jan.testowy z 09.11.2026 tylko jako liczbę",
+    ),
+    "dwa_przeniesienia_jednej_postaci_numeru_z_jednego_dnia": (
+        lambda entering: entering["moves_before"].append({**entering["moves_before"][0], "worker": "ola.testowa"}),
+        "pamięć wpisów i zleceń w Logach z numerami w postaci z Wpisów raportu łamie regułę pamięci (Pamięć własnych "
+        "wpisów ma dwa Przeniesienia jednego zlecenia w jednym dniu)",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", UNREPLAYABLE)
+def test_logi_wpisania_raportow_bez_numeru_zlecenia_nie_daja_wejscia_klikniecia(case: str) -> None:
+    """Numer Wpisu z maską strażnika, numer pamięci albo decyzji „Zostaw moją”, którego postaci nie wyznacza dokładnie
+    jeden Wpis, i pamięć zleceń, w której postacie numerów z Wpisów dają dwa Przeniesienia jednego zlecenia w jednym
+    dniu, nie dają wejścia kliknięcia, tylko powód."""
+
+    change, reason = UNREPLAYABLE[case]
+    entering = _logged_reports(_entering_facts())
+    change(entering)
+
+    replayed = LoggedReports.model_validate(entering).replay()
+
+    assert isinstance(replayed, Unreplayable) and replayed.reason.startswith(reason), replayed
+
+
+OLA: Final = Login("ola.testowa")
+FORM_DAYS: Final = (date(2026, 11, 5), date(2026, 11, 8), CLICK_DAY)
+FORM_WORKERS: Final = (JAN, ANNA, OLA)
+# Numer z zerami na początku i bez nich to w INTERMAX różne zlecenia jednej liczby.
+FORMS: Final = (OrderNumber("0040000001"), OrderNumber("040000001"), OrderNumber("40000001"))
+PROPERTY: Final = settings(derandomize=True, database=None, deadline=None, max_examples=150)
+
+
+def _click_with_forms(
+    reported: dict[tuple[date, Login], frozenset[OrderNumber]],
+    moved: Sequence[OrderKey],
+    entries: Sequence[OwnEntry] = (),
+    kept: Sequence[Kept] = (),
+    orderless: Sequence[Orderless] = (),
+) -> EnteringFacts:
+    """Fakty kliknięcia z Wpisami ``reported`` po dniu i Wykonawcy i z pamięcią sprzed kliknięcia, pamięć zleceń w
+    kolejności, w której zapisuje ją kliknięcie (po dniu i numerze)."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    mails = tuple(
+        ReadReport(
+            MailId(f"{index:016x}"),
+            arrived,
+            worker,
+            day,
+            tuple(ReportEntry(form, Intent.YES, None, "montaż") for form in sorted(forms)),
+        )
+        for index, ((day, worker), forms) in enumerate(sorted(reported.items()))
+    )
+    moves = (OwnMove(key.number, key.day, key.worker, key.day, key.worker, "Jan Testowy", arrived) for key in moved)
+    return EnteringFacts(
+        today=CLICK_DAY,
+        rollout_before=date(2026, 11, 2),
+        rollout=date(2026, 11, 2),
+        closed=(),
+        memory_before=tuple(sorted(entries, key=lambda entry: (entry.key, entry.column.value))),
+        kept=tuple(kept),
+        skipped=0,
+        mails=mails,
+        problems=(),
+        changes=(),
+        moves_before=tuple(sorted(moves, key=lambda move: (move.day, move.number))),
+        orderless=tuple(orderless),
+    )
+
+
+@st.composite
+def _clicks_with_forms(draw: st.DrawFn) -> EnteringFacts:
+    """Fakty kliknięcia z kilkoma postaciami jednej liczby we Wpisach od jednego albo kilku Wykonawców z jednego albo
+    kilku dni: pamięć wpisów, decyzja „Zostaw moją” i pamięć zleceń pod Wpisem albo pod dowolnym dniem i Wykonawcą, z
+    najwyżej jednym Przeniesieniem zlecenia (tak pamięć zapisuje Wpisanie raportów od #1367 r4, ``memories_of``), i
+    numer bez zlecenia."""
+
+    places = st.tuples(st.sampled_from(FORM_DAYS), st.sampled_from(FORM_WORKERS))
+    single = st.sampled_from(FORMS).map(lambda form: frozenset({form}))
+    forms = st.one_of(single, single, st.frozensets(st.sampled_from(FORMS), min_size=2, max_size=2))
+    reported = draw(st.dictionaries(places, forms, min_size=2, max_size=4))
+    keys = sorted(OrderKey(form, day, worker) for (day, worker), found in reported.items() for form in found)
+    numbers = st.sampled_from(sorted({key.number for key in keys}))
+    elsewhere = st.builds(OrderKey, numbers, st.sampled_from(FORM_DAYS), st.sampled_from(FORM_WORKERS))
+    placed = st.one_of(st.sampled_from(keys), st.sampled_from(keys), elsewhere)
+    columns = st.sampled_from(ReportColumn)
+    return _click_with_forms(
+        reported,
+        draw(st.lists(placed, min_size=1, max_size=3, unique_by=lambda key: key.number)),
+        draw(st.lists(st.builds(OwnEntry, placed, columns, st.just("tak")), max_size=1)),
+        draw(st.lists(st.builds(Kept, st.sampled_from(keys), columns, st.just("brak klienta")), max_size=1)),
+        draw(st.lists(st.builds(Orderless, st.just("Zlecenia"), numbers, st.sampled_from((None, *FORM_DAYS))), max_size=1)),
+    )
+
+
+@PROPERTY
+@given(_clicks_with_forms())
+def test_odczyt_wejscia_klikniecia_z_logow_z_kilkoma_postaciami_jednej_liczby_nie_rzuca_wyjatku(
+    facts: EnteringFacts,
+) -> None:
+    """Numer z zerami na początku i bez nich to różne zlecenia, a Logi mają numer pamięci tylko jako liczbę. Odczyt
+    wejścia kliknięcia z pliku Logów daje wejście albo powód, dla którego Logi go nie wyznaczają, nigdy wyjątek, bo
+    wyjątek kończy odtworzenie bez raportu."""
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay | Unreplayable), replayed
+
+
+# Wpisy po dniu i Wykonawcy i miejsca dwóch Przeniesień jednej liczby z jednego dnia: pierwsze w Logach (po dniu i
+# numerze) pod Wpisem swojego Wykonawcy i dnia, drugie pod Wykonawcą bez Wpisu z tego dnia.
+TWO_MOVES_ONE_DAY: Final[dict[str, tuple[dict[tuple[date, Login], frozenset[OrderNumber]], tuple[OrderKey, OrderKey]]]] = {
+    "postac_drugiego_z_innego_dnia": (
+        {(CLICK_DAY, JAN): frozenset({FORMS[1]}), (FORM_DAYS[0], ANNA): frozenset({FORMS[2]})},
+        (OrderKey(FORMS[1], CLICK_DAY, JAN), OrderKey(FORMS[2], CLICK_DAY, ANNA)),
+    ),
+    "postac_drugiego_od_innego_wykonawcy_z_tego_dnia": (
+        {(CLICK_DAY, JAN): frozenset({FORMS[0]}), (CLICK_DAY, OLA): frozenset({FORMS[1]})},
+        (OrderKey(FORMS[0], CLICK_DAY, JAN), OrderKey(FORMS[1], CLICK_DAY, ANNA)),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", TWO_MOVES_ONE_DAY)
+def test_dwa_przeniesienia_jednej_liczby_z_jednego_dnia_wracaja_z_logow_jako_dwa_zlecenia(case: str) -> None:
+    """Zlecenie ma najwyżej jedno Przeniesienie na dzień, więc z dwóch Przeniesień jednej liczby z jednego dnia to pod
+    Wpisem swojego Wykonawcy i dnia ma postać z tego Wpisu, a drugie, które idzie w Logach po nim, drugą postać tej
+    liczby z Wpisów: odczyt wejścia kliknięcia z pliku Logów daje tę samą pamięć zleceń co kliknięcie."""
+
+    facts = _click_with_forms(*TWO_MOVES_ONE_DAY[case])
+
+    replayed = LoggedReports.model_validate(_logged_reports(facts)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved.memory == OwnEntries(frozenset(), frozenset(facts.moves_before))
 
 
 def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen(
@@ -2676,7 +2962,7 @@ def test_przesuniety_pierwszy_wiersz_wklejenia_rejestru_nie_wypuszcza_adresu_ani
 def _guarded_with(produced: Produced, folder: Path, word: str) -> Path:
     """Plik Logów z Archiwum po strażniku, który zapamiętał ``word`` jako ADRES z pliku taty, jak ``guard_logs`` w Centrum."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, word)
     kept = guard_logs(RunLog.model_validate(produced.record), forbidden).record
     path = folder / produced.archived.stem

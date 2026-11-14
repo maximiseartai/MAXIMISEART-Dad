@@ -2,23 +2,29 @@
 Wpisy, problemy i zmiany komórek bez adresów nadawców, tematów i treści maili poza Wpisami.
 
 ``LoggedReports.of_run`` składa je z faktów Uruchomienia, które wpis procesu w katalogu dostaje przy Logach
-(``ProcessKind.logs``), a ``logged_read`` czyta mail z nich z powrotem dla odtworzenia Uruchomienia z Logów. Kolejność
-deklaracji pól to kolejność kluczy w pliku, a pole, którego nie mają Logi z wcześniejszych Wydań, czyta się z domyślną
-(opis przy rekordzie), bo te pliki czytają karta z Logów, Historia i odtworzenie.
+(``ProcessKind.logs``), a ``LoggedReports.replay`` czyta z nich z powrotem wejście kliknięcia dla odtworzenia
+Uruchomienia z Logów albo powód, dla którego Logi go nie wyznaczają. Kolejność deklaracji pól to kolejność kluczy w
+pliku, a pole, którego nie mają Logi z wcześniejszych Wydań, czyta się z domyślną (opis przy rekordzie), bo te pliki
+czytają karta z Logów, Historia i odtworzenie.
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Annotated, Literal, assert_never
+from typing import Annotated, Final, Literal, assert_never
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from rozliczenia.client_data import MASKS
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import EnteringFacts, EnteringSummary
+from rozliczenia.report_entering import EnteringFacts, EnteringSummary, SavedState
 from rozliczenia.worker_reports import (
     AddBar,
     ConflictingVerdicts,
+    Kept,
     Login,
     MailId,
     MailRead,
@@ -28,6 +34,8 @@ from rozliczenia.worker_reports import (
     OrderNumber,
     MoveBar,
     RefusedMove,
+    OwnEntries,
+    OwnEntry,
     OwnMove,
     ReadReport,
     ReadStranger,
@@ -49,73 +57,13 @@ class _Record(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-LoggedColumn = Literal["SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"]
-"""Kolumna INTERMAX, którą zmienia Wpisanie raportów (``report_cells.ReportColumn``)."""
-LoggedVerdictFault = Literal["missing", "letter_yes", "letter_no", "word_yes", "word_no"]
-LoggedSubjectFault = Literal["no_date", "other_text", "no_year", "date_form", "separator", "year_digits", "not_a_day"]
-
-
-def _move_bar(bar: MoveBar) -> LoggedMoveBar:
-    match bar:
-        case MoveBar.NOT_ORDERED:
-            return "not_ordered"
-        case MoveBar.OTHER_SHEET:
-            return "other_sheet"
-        case MoveBar.CLOSED_TARGET:
-            return "closed_target"
-        case MoveBar.CLOSED_SOURCE:
-            return "closed_source"
-        case MoveBar.AFTER_TODAY:
-            return "after_today"
-
-
-def _column(column: ReportColumn) -> LoggedColumn:
-    match column:
-        case ReportColumn.SUCCESSFUL:
-            return "SKUTECZNE"
-        case ReportColumn.COMPLETED:
-            return "CZYNNOŚCI ZREALIZOWANE"
-
-
-def _verdict_fault(fault: VerdictFault) -> LoggedVerdictFault:
-    match fault:
-        case VerdictFault.MISSING:
-            return "missing"
-        case VerdictFault.LETTER_YES:
-            return "letter_yes"
-        case VerdictFault.LETTER_NO:
-            return "letter_no"
-        case VerdictFault.WORD_YES:
-            return "word_yes"
-        case VerdictFault.WORD_NO:
-            return "word_no"
-
-
-def _subject_fault(fault: SubjectFault) -> LoggedSubjectFault:
-    match fault:
-        case SubjectFault.NO_DATE:
-            return "no_date"
-        case SubjectFault.OTHER_TEXT:
-            return "other_text"
-        case SubjectFault.NO_YEAR:
-            return "no_year"
-        case SubjectFault.DATE_FORM:
-            return "date_form"
-        case SubjectFault.SEPARATOR:
-            return "separator"
-        case SubjectFault.YEAR_DIGITS:
-            return "year_digits"
-        case SubjectFault.NOT_A_DAY:
-            return "not_a_day"
-
-
 class LoggedReportEntry(_Record):
     """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr z rzędu maskuje jak telefon), ``tak``/``nie``
     albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
 
     number: str
     verdict: Literal["tak", "nie"] | None
-    fault: LoggedVerdictFault | None
+    fault: VerdictFault | None
     activities: str
 
     @classmethod
@@ -123,7 +71,7 @@ class LoggedReportEntry(_Record):
         return cls(
             number=entry.number,
             verdict=None if entry.verdict is None else entry.verdict.value,
-            fault=None if entry.fault is None else _verdict_fault(entry.fault),
+            fault=entry.fault,
             activities=entry.activities,
         )
 
@@ -147,7 +95,7 @@ class LoggedUnreadableMail(_Record):
     mail: str
     arrived: datetime
     worker: str
-    fault: LoggedSubjectFault
+    fault: SubjectFault
     numbers: list[str] | None = None
     """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, więc ostrzeżenie zdjęte przez poprawkę wraca w nim jako
@@ -179,7 +127,7 @@ def _mail(read: MailRead) -> LoggedMail:
                 mail=read.mail.digest,
                 arrived=read.arrived,
                 worker=read.worker,
-                fault=_subject_fault(read.fault),
+                fault=read.fault,
                 numbers=sorted(read.numbers),
             )
         case ReadStranger():
@@ -188,7 +136,7 @@ def _mail(read: MailRead) -> LoggedMail:
             assert_never(read)
 
 
-def logged_read(mail: LoggedMail) -> MailRead:
+def _read(mail: LoggedMail) -> MailRead:
     """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów (#1233) podaje
     go procesowi jako mail w postaci kanonicznej (``worker_reports.as_mail``)."""
 
@@ -198,7 +146,7 @@ def logged_read(mail: LoggedMail) -> MailRead:
                 ReportEntry(
                     OrderNumber(entry.number),
                     None if entry.verdict is None else Verdict(entry.verdict),
-                    None if entry.fault is None else _verdict_fault_of(entry.fault),
+                    entry.fault,
                     entry.activities,
                 )
                 for entry in mail.entries
@@ -206,37 +154,11 @@ def logged_read(mail: LoggedMail) -> MailRead:
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
             numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), _subject_fault_of(mail.fault), numbers)
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers)
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:
             assert_never(mail)
-
-
-def _verdict_fault_of(fault: LoggedVerdictFault) -> VerdictFault:
-    return {_verdict_fault(member): member for member in VerdictFault}[fault]
-
-
-def _subject_fault_of(fault: LoggedSubjectFault) -> SubjectFault:
-    return {_subject_fault(member): member for member in SubjectFault}[fault]
-
-
-LoggedMoveBar = Literal["not_ordered", "other_sheet", "closed_target", "closed_source", "after_today"]
-LoggedAddBar = Literal["in_intermax", "before_window", "form", "mistaken_subject", "not_ordered"]
-
-
-def _add_bar(bar: AddBar) -> LoggedAddBar:
-    match bar:
-        case AddBar.IN_INTERMAX:
-            return "in_intermax"
-        case AddBar.BEFORE_WINDOW:
-            return "before_window"
-        case AddBar.FORM:
-            return "form"
-        case AddBar.MISTAKEN_SUBJECT:
-            return "mistaken_subject"
-        case AddBar.NOT_ORDERED:
-            return "not_ordered"
 
 
 class LoggedOrderPlace(_Record):
@@ -266,11 +188,22 @@ class LoggedOrderProblem(_Record):
     worker: str
     day: date
     number: str
-    fault: LoggedVerdictFault | None = None
+    fault: VerdictFault | None = None
     owner: str | None = None
     order_days: list[date] = []
     places: list[LoggedOrderPlace] = []
-    bar: LoggedMoveBar | LoggedAddBar | None = None
+    bar: MoveBar | AddBar | None = None
+
+    @field_validator("bar", mode="before")
+    @classmethod
+    def _bar_of_kind(cls, bar: object, info: ValidationInfo) -> object:
+        """Słowo powodu z pliku to członek enuma rodzaju problemu, bo ``not_ordered`` mają oba."""
+
+        kind = _BARS.get(info.data.get("kind", ""))
+        return kind(bar) if isinstance(bar, str) and kind is not None else bar
+
+
+_BARS: Final[Mapping[str, type[MoveBar] | type[AddBar]]] = {"refused_move": MoveBar, "unknown_number": AddBar}
 
 
 class LoggedConflictProblem(_Record):
@@ -291,7 +224,7 @@ class LoggedSubjectProblem(_Record):
     mail: str
     worker: str
     arrived: datetime
-    fault: LoggedSubjectFault
+    fault: SubjectFault
 
 
 class LoggedSenderProblem(_Record):
@@ -310,12 +243,12 @@ class LoggedOwnEntry(_Record):
     number: int
     day: date
     worker: str
-    column: LoggedColumn
+    column: ReportColumn
     value: str
 
     @classmethod
     def of(cls, key: OrderKey, column: ReportColumn, value: str) -> LoggedOwnEntry:
-        return cls(number=int(key.number), day=key.day, worker=key.worker, column=_column(column), value=value)
+        return cls(number=int(key.number), day=key.day, worker=key.worker, column=column, value=value)
 
 
 class LoggedManualProblem(_Record):
@@ -341,7 +274,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 mail=problem.mail.digest,
                 worker=problem.worker,
                 arrived=problem.arrived,
-                fault=_subject_fault(problem.fault),
+                fault=problem.fault,
             )
         case UnknownSender():
             return LoggedSenderProblem(kind="unknown_sender", mail=problem.mail.digest, day=problem.day)
@@ -351,7 +284,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,
-                fault=_verdict_fault(problem.fault),
+                fault=problem.fault,
             )
         case ConflictingVerdicts():
             return LoggedConflictProblem(
@@ -369,7 +302,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,
-                bar=_add_bar(problem.bar),
+                bar=problem.bar,
             )
         case RepeatedOrder():
             return LoggedOrderProblem(kind="repeated_order", worker=problem.worker, day=problem.day, number=problem.number)
@@ -388,7 +321,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 day=problem.day,
                 number=problem.number,
                 order_days=[problem.order_day],
-                bar=_move_bar(problem.bar),
+                bar=problem.bar,
             )
         case ManualDifference():
             cell = LoggedOwnEntry.of(problem.key, problem.column, problem.reported)
@@ -402,7 +335,7 @@ class LoggedChange(_Record):
 
     sheet: str
     row: int
-    column: LoggedColumn
+    column: ReportColumn
     value: str
 
 
@@ -515,9 +448,7 @@ class LoggedReports(_Record):
             mails=[_mail(read) for read in facts.mails],
             problems=[_problem(problem) for problem in facts.problems],
             changes=[
-                LoggedChange(
-                    sheet=change.order.sheet, row=change.order.row, column=_column(change.column), value=change.value
-                )
+                LoggedChange(sheet=change.order.sheet, row=change.order.row, column=change.column, value=change.value)
                 for change in facts.changes
             ],
             memory_before=[LoggedOwnEntry.of(entry.key, entry.column, entry.value) for entry in facts.memory_before],
@@ -559,3 +490,190 @@ class LoggedReports(_Record):
                 return cls.of(stopped, None)
             case _:
                 return None
+
+    def replay(self) -> EnteringReplay | Unreplayable:
+        """Wejście kliknięcia z Logów dla odtworzenia Uruchomienia: maile, pamięć wpisów i decyzje „Zostaw moją” sprzed
+        kliknięcia i numery bez zlecenia, z zastrzeżeniami, a ``Unreplayable``, gdy Logi nie wyznaczają numeru zlecenia
+        Wpisu albo pamięci."""
+
+        masked = [entry.number for entry in _logged_entries(self) if not _digits(entry.number)]
+        if masked:
+            return Unreplayable(
+                f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
+                "z rzędu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis"
+            )
+        numbers = _numbers(self)
+        for name, logged in (("pamięć wpisów", self.memory_before), ("decyzje „Zostaw moją”", self.kept)):
+            unknown = [entry for entry in logged if len(_texts(numbers, entry.number, entry.day, entry.worker)) != 1]
+            if unknown:
+                entry = unknown[0]
+                return Unreplayable(
+                    f"{name} w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
+                    "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc "
+                    "odtworzenie nie wie, czy numer ma zera na początku"
+                )
+        try:
+            saved = _saved(self)
+        except ValueError as error:
+            return Unreplayable(
+                f"pamięć wpisów i zleceń w Logach z numerami w postaci z Wpisów raportu łamie regułę pamięci "
+                f"({str(error).rstrip('.')}), a Logi mają jej numery tylko jako liczbę, więc odtworzenie nie wie, które z "
+                "nich mają zera na początku"
+            )
+        reservations: list[str] = []
+        counted = Counter(
+            {mask: sum(entry.activities.count(mask) for entry in _logged_entries(self)) for mask in MASKS}
+        )
+        if +counted:
+            masks = ", ".join(f"{mask} ×{count}" for mask, count in (+counted).most_common())
+            reservations.append(
+                f"Wpisy raportu w Logach mają maski strażnika reguły danych ({masks}): odtworzenie wpisuje do INTERMAX "
+                "maskę w miejscu czynności Wykonawcy, więc reguła, która porównuje je z komórką, może zdecydować inaczej"
+            )
+        if any(isinstance(mail, LoggedUnreadableMail) and mail.numbers is None for mail in self.mails):
+            reservations.append(
+                "Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0): odtworzenie czyta ten mail bez Wpisów, "
+                "więc ostrzeżenie o nieczytelnym temacie, które u taty zdjął poprawiony mail, wraca w odtworzeniu jako "
+                "różnica"
+            )
+        return EnteringReplay(
+            today=self.today,
+            closed=tuple(self.closed),
+            skipped=self.skipped,
+            mails=tuple(_read(mail) for mail in self.mails),
+            strangers=tuple(_strangers(self)),
+            saved=saved,
+            orderless=tuple(_orderless(self)),
+            reservations=tuple(reservations),
+        )
+
+
+@dataclass(frozen=True)
+class EnteringReplay:
+    """Wejście kliknięcia Wpisania raportów z Logów: dzień kliknięcia, tokeny okresów zamkniętych, maile, których
+    Skrzynka raportów nie umiała przeczytać, przeczytane maile po kolei, numer adresu każdego maila spoza listy adresów
+    po kolei, pamięć wpisów i decyzje „Zostaw moją” sprzed kliknięcia, numery z Wpisem z wierszy INTERMAX bez
+    zlecenia i zastrzeżenia odtworzenia, które z nich wynikają."""
+
+    today: date
+    closed: tuple[str, ...]
+    skipped: int
+    mails: tuple[MailRead, ...]
+    strangers: tuple[int, ...]
+    saved: SavedState
+    orderless: tuple[ReplayedOrderless, ...]
+    reservations: tuple[str, ...]
+
+    @classmethod
+    def without_logs(cls, today: date) -> EnteringReplay:
+        """Kliknięcie z dnia ``today`` bez Logów Wpisania raportów: pusta skrzynka i pamięć bez dnia wdrożenia."""
+
+        return cls(today, (), 0, (), (), SavedState(None, OwnEntries.EMPTY), (), ())
+
+
+@dataclass(frozen=True)
+class ReplayedOrderless:
+    """Numer bez zlecenia z Logów (``LoggedOrderless``) z wartością ``NUMER ZL.`` wiersza, który odtworzenie stawia na
+    dole arkusza ``sheet``: postać z zerem na początku z Wpisu, gdy Wpis ją ma, a inaczej liczba."""
+
+    sheet: str
+    number: str | int
+    day: date | None
+
+
+@dataclass(frozen=True)
+class Unreplayable:
+    """Logi Wpisania raportów, z których odtworzenie nie wyznaczy wejścia kliknięcia, i powód."""
+
+    reason: str
+
+
+def _strangers(entering: LoggedReports) -> list[int]:
+    """Numer adresu każdego maila spoza listy adresów w Logach, po kolei: jeden z tylu adresów, ile problemów nieznanego
+    nadawcy mają w Logach jego skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
+
+    senders = Counter((problem.mail, problem.day) for problem in entering.problems if isinstance(problem, LoggedSenderProblem))
+    seen: Counter[tuple[str, date]] = Counter()
+    found: list[int] = []
+    for mail in entering.mails:
+        if isinstance(mail, LoggedStrangerMail):
+            key = (mail.mail, mail.day)
+            found.append(seen[key] % max(senders[key], 1))
+            seen[key] += 1
+    return found
+
+
+def _digits(number: str) -> bool:
+    return number.isascii() and number.isdigit()
+
+
+def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
+    return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
+
+
+def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
+    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, bez jego Wpisu od
+    każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia z każdego dnia: wpis pamięci idzie za wierszem, więc może
+    stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu (Przeniesienie na inny dzień)."""
+
+    return (
+        numbers.get((number, day, worker))
+        or {text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts}
+        or {text for (value, _, _), texts in numbers.items() if value == number for text in texts}
+    )
+
+
+def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
+    """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
+    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
+
+    numbers: dict[tuple[int, date, str], set[str]] = {}
+    for mail in entering.mails:
+        if isinstance(mail, LoggedReportMail):
+            for entry in mail.entries:
+                if _digits(entry.number):
+                    numbers.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
+    return numbers
+
+
+def _saved(entering: LoggedReports) -> SavedState:
+    numbers = _numbers(entering)
+
+    def key(logged: LoggedOwnEntry) -> OrderKey:
+        [number] = _texts(numbers, logged.number, logged.day, logged.worker)
+        return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
+
+    def number(logged: LoggedOwnMove) -> OrderNumber:
+        found = _texts(numbers, logged.number, logged.day, logged.worker)
+        # 0123 i 123 to dwa zlecenia, a Logi niosą numer pamięci tylko jako liczbę, więc jedyna postać spod Wpisu
+        # Wykonawcy i dnia Przeniesienia odchodzi z nim i każde następne Przeniesienie tej liczby bierze inną postać.
+        return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
+
+    entries = frozenset(OwnEntry(key(logged), logged.column, logged.value) for logged in entering.memory_before)
+    kept = frozenset(Kept(key(logged), logged.column, logged.value) for logged in entering.kept)
+    moves = frozenset(
+        OwnMove(
+            number(logged),
+            logged.day,
+            Login(logged.worker),
+            logged.origin_day,
+            Login(logged.origin_worker),
+            logged.origin_name,
+            logged.since,
+            logged.overridden,
+            logged.added,
+        )
+        for logged in entering.moves_before
+    )
+    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
+
+
+def _orderless(entering: LoggedReports) -> list[ReplayedOrderless]:
+    numbers = _numbers(entering)
+    replayed: list[ReplayedOrderless] = []
+    for logged in entering.orderless:
+        number = logged.number
+        texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
+        zero = sorted(text for text in texts if text.startswith("0"))
+        replayed.append(ReplayedOrderless(logged.sheet, zero[0] if zero else number, logged.day))
+    return replayed

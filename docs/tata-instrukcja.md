@@ -62,6 +62,12 @@ drugi login; zmiana zapisuje się przyciskiem `Zapisz`. Przełącznik
 Pracownika, który ma zlecenia w Rejestrze zleceń albo w Pliku zbiorczym
 któregoś tygodnia, nie da się usunąć: gdy odchodzi, kliknij
 `Oznacz jako nieaktywnego`, a jego tygodnie dalej się rozliczą.
+Pod listą sekcja podpowiada loginy z kolumny `WYKONAWCA` zleceń bieżącego
+tygodnia i 4 poprzednich, których nie ma na liście: `Dodaj Wykonawcę` przy
+loginie otwiera formularz z wpisanym loginem. Gdy raport przyjdzie z adresu
+spoza listy, widok `Raporty` pokazuje ten adres z przyciskiem
+`Przypisz do Wykonawcy…`: wybierz pracownika, a adres dopisze się od razu i
+następne `Wpisz raporty z maili` wpisze ten raport.
 
 ### Foldery tygodni
 
@@ -527,9 +533,33 @@ zostają bez zmian.
 4. Kliknij `Zapisz`, także gdy są różnice. Złą regułę Centrum odrzuci jednym
    zdaniem przy polu, które trzeba poprawić.
 
+Nad regułami stoi lista `Tu wpisałeś inaczej niż reguła`: wiersze ostatnich
+rozliczonych Plików zbiorczych, w których wpisałeś w kolumnie co innego niż
+reguła. To te same różnice, które Maks dostaje w Kontroli ilości.
+
+- `Popraw regułę` otwiera nową regułę z warunkami z `URZĄDZENIA` tego wiersza.
+  Nic się nie zapisuje, dopóki nie klikniesz `Zapisz`, więc najpierw sprawdź
+  podgląd.
+- `To był wyjątek` mówi, że w tym zleceniu wpisałeś dobrze. Ta różnica już nie
+  wraca na listę; w sekcji `Historia` cofniesz to przyciskiem `Cofnij`.
+
 Zmianę reguły widać w sekcji `Historia` jako zdanie reguły przed i po, a
 `Cofnij` przywraca poprzednie reguły. Regułę usuwasz przyciskiem
 `Usuń regułę` w tym samym oknie.
+
+### Lista Urządzeń
+
+Sekcja `Urządzenia` pokazuje składniki URZĄDZENIA, które znają Reguły ilości.
+Gdy INTERMAX zapisze ten sam składnik inaczej, nie trzeba nowej reguły:
+
+1. Kliknij ołówek przy składniku, potem `Dodaj zapis` i wpisz nowy zapis.
+2. Kliknij `Zapisz`. Zapis działa od następnego Przygotowania pliku zbiorczego.
+
+Nowy składnik dodajesz przyciskiem `Dodaj składnik`, z grupą router, TV albo
+extender, gdy ją ma. Pod listą Centrum podpowiada zapisy z ostatnich okresów,
+których lista nie zna; `Dodaj` przy podpowiedzi dodaje go jako nowy składnik
+albo inny zapis składnika z listy. Jeden zapis należy do jednego składnika, a
+składnika, którego potrzebuje reguła, Centrum nie usunie: poda zdanie tej reguły.
 
 ## Przebieg rozliczeń
 

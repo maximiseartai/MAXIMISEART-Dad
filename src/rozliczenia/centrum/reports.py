@@ -38,11 +38,11 @@ import threading
 import uuid
 import weakref
 from collections.abc import Callable, Sequence
-from dataclasses import astuple, dataclass, replace
+from dataclasses import astuple, dataclass
 import hashlib
 from typing import Final, Literal
 
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import ForbiddenValues, Outgoing, tool
 from rozliczenia.call_trace import CallTrace
 from rozliczenia.centrum import report_messages
 from rozliczenia.centrum.contract import common as common_contract
@@ -286,15 +286,15 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
     return Report(title=f"{message.code}: {message.what}", body=_body(lines), fingerprint=fingerprint, what=message.what)
 
 
-def _guarded(report: Report, forbidden: ForbiddenValues) -> Report:
-    """Zgłoszenie po strażniku reguły danych (``ForbiddenValues.guard``): tytuł i treść bez zakazanych wartości, z
-    zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
+def _guarded(report: Report, period: str | None, forbidden: ForbiddenValues) -> _Preview:
+    """Podgląd Zgłoszenia po strażniku reguły danych (``ForbiddenValues.guard``): tytuł i treść bez zakazanych wartości,
+    z zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
 
     title = forbidden.guard(report.title, "tytuł Zgłoszenia")
     body = forbidden.guard(report.body, "treść Zgłoszenia")
     notes = [*title.notes, *body.notes]
     tail = "" if not notes else "\n## Uwagi techniczne\n\n" + "".join(f"- {note}\n" for note in notes)
-    return replace(report, title=title.text, body=body.text + tail)
+    return _Preview(title.text, body.text + tool(tail), report.fingerprint, report.what, period)
 
 
 def _body(lines: list[str]) -> str:
@@ -370,7 +370,7 @@ def report_target(fingerprint: str, title: str) -> OpenIssue:
     return OpenIssue(REPORT.label, fingerprint_line(fingerprint), title, RETURNED_HEADING)
 
 
-def _unframed(_number: int, _count: int, text: str) -> str:
+def _unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:
     """Części Zgłoszenia bez nagłówków: issue i komentarze to razem dokładnie podgląd."""
 
     return text
@@ -378,14 +378,18 @@ def _unframed(_number: int, _count: int, text: str) -> str:
 
 @dataclass(frozen=True)
 class _Preview:
-    """Zamrożony podgląd Zgłoszenia i token okresu jego źródła (``None``: Aktualizacja narzędzia) do dziennika kolejki."""
+    """Zamrożony podgląd Zgłoszenia po strażniku (``_guarded``), jego odcisk i „Co się stało” (``Report``) i token okresu
+    jego źródła (``None``: Aktualizacja narzędzia) do dziennika kolejki."""
 
-    report: Report
+    title: Outgoing
+    body: Outgoing
+    fingerprint: str
+    what: str
     period: str | None
 
     @property
     def view(self) -> diagnosis_contract.ReportDraft:
-        return diagnosis_contract.ReportDraft(title=self.report.title, body=self.report.body)
+        return diagnosis_contract.ReportDraft(title=self.title, body=self.body)
 
 
 ReportShown = Callable[[diagnosis_contract.ReportState], None]
@@ -593,19 +597,19 @@ class Reports:
         sent = [case.number for case in self._cases.all() if case.kind == REPORT and case.id == fingerprint]
         previous = next((number for number in reversed(sent) if number is not None), None)
         report = source.report(commit=self._commit(), previous=previous, settings=self._settings_changes())
-        return _Preview(_guarded(report, self._forbidden), source.period)
+        return _guarded(report, source.period, self._forbidden)
 
     def _queue(self, preview: _Preview) -> diagnosis_contract.ReportState:
-        fingerprint = preview.report.fingerprint
+        fingerprint = preview.fingerprint
         if self._pending(fingerprint):
             return self._cases.queued(fingerprint, self._box)
-        case = Case(REPORT, fingerprint, preview.report.what, self._commit(), utc_now(), number=None)
+        case = Case(REPORT, fingerprint, preview.what, self._commit(), utc_now(), number=None)
         # Własny identyfikator wysyłki: odcisk wraca po zamknięciu, a kolejka czeka na dostarczenie po identyfikatorze.
         post = Post.of(
-            report_target(fingerprint, preview.report.title),
+            report_target(fingerprint, preview.title),
             period=preview.period,
             run_id=uuid.uuid4().hex,
-            blocks=[preview.report.body],
+            blocks=[preview.body],
             frame=_unframed,
         )
         self._cases.add(case)

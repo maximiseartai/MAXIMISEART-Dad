@@ -149,6 +149,32 @@ class DeviceComponent(Model):
     group: DeviceGroup | None
 
 
+class ComponentForm(Model):
+    """Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy
+    Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez
+    ``xg``."""
+
+    name: str
+    other_spellings: list[str]
+    group: DeviceGroup | None
+
+
+class DeviceSuggestion(Model):
+    """Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;
+    ``orders``: w ilu takich zleceniach jest."""
+
+    spelling: str
+    orders: int
+
+
+class DeviceSuggestions(Model):
+    """Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku
+    zbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta."""
+
+    suggestions: list[DeviceSuggestion]
+    unread: list[str]
+
+
 class RuleColumn(Model):
     """Kolumna Ilości usług ``N:AP`` z nazwą pozycji cennika (``None``: Wzorca nie da się przeczytać albo komórka jest
     pusta); ``writable`` fałszywe dla kolumn, które liczy narzędzie samo (P, Q, S): reguła może je tylko zostawić puste."""
@@ -160,7 +186,10 @@ class RuleColumn(Model):
 
 class QuantityRulesSettings(Model):
     """Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
-    ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to."""
+    ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;
+    ``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania
+    liczą bez niego, a ``rules_problem`` przy Regułach ilości z Wydania, że ich zmiana zapisze się dopiero, gdy tata
+    zwolni jego zapis."""
 
     rules: list[QuantityRuleSentence]
     devices: list[DeviceComponent]
@@ -170,7 +199,7 @@ class QuantityRulesSettings(Model):
 
 
 class QuantityRulesSaved(Model):
-    """Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+    """Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
     zapis niczego nie zmienił."""
 
     quantity_rules: QuantityRulesSettings

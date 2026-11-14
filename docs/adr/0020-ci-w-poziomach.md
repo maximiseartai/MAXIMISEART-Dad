@@ -10,13 +10,15 @@ Zdanie poziomu 3, że Change mutations na `main` nie biegną, też przestało ob
 Opisuje stan docelowy, który wchodził krokami, jeden PR na krok; wszystkie kroki weszły 26.10 (#541, #542, #551, #552, #553, #554), więc Kontekst opisuje CI sprzed tego ADR.
 Od #540 (26.10) repozytorium jest w organizacji GitHuba `maximiseartai`, więc odpada powód „wymagają organizacji GitHuba zamiast konta osobistego” przy odrzuconych runnerach Blacksmith; pozostałe powody zostają.
 Od 13.11 (decyzja Maksa) tor Windows 3.13 zastępuje Windows 3.11 na PR i na `main`: tata ma na laptopie Pythona 3.13.15 ([komputer taty](../agents/komputer-taty.md)), a dolnej granicy 3.11 nie ma komputer, na którym narzędzie działa, więc `requires-python` rośnie do 3.13. Windows 3.14 zostaje na `main` jako ostrzeżenie przed aktualizacją Pythona, a liczba torów i zadań się nie zmienia.
+Zmieniona 13.11 (Z7, decyzja Maksa): bramka PR nie ponawia testu z pliku testów, który zmienił ten PR (sekcja Niestabilne testy).
 Opiera się na [ADR 0014](0014-tata-dostaje-tylko-wydania.md), według którego tata dostaje tylko Wydanie z commitu `main` z zielonym `Required CI status`.
 Zmieniona 13.11 (Z2, zgoda Maksa): pełne CI `main` nie uruchamia już toru Windows 3.14, więc zdanie wyżej, że Windows 3.14 zostaje na `main`, przestało obowiązywać.
 E2E i straż czasu, które biegły na nim, biegną na Windows 3.13, Pythonie taty, a Pythona 3.14 dalej testuje tor Linux; tor Mutation checks na Windows 3.14 się nie zmienia.
 Bramka PR też się nie zmienia, bo Windows 3.14 nigdy na niej nie biegł (poziom 2).
 W runach pushu do `main` od 2.11 do 12.11 (379 runów, pomiar bazy hillclimbu CI) tor Windows 3.14 miał 654 zadania i 149 runner-godzin, a 23 jego zadania padły; 16 runów było czerwonych tylko przez niego, każdy przez jedno zadanie, a tor wracał do zieleni najpóźniej w drugim kolejnym runie `main`.
 Defekt tylko z Windows i Pythonem 3.14 CI pokaże dopiero wtedy, gdy tata przejdzie na 3.14, a z nim tor Windows i `requires-python`.
-Zmieniona 13.11 (Z6, zgoda Maksa): run pushu do `main` bierze najwyżej 25 zadań zamiast 20 (`ZADANIA_RUNU_MAIN` w `tools/plan_ci.py`), a noc zostaje przy 20 (`ZADANIA_RUNU_NOCY`, ADR 0021).
+Zmieniona 13.11 (Z6, zgoda Maksa): run pushu do `main` bierze najwyżej 25 zadań zamiast 20 (`ZADANIA_RUNU_MAIN` w `tools/plan_ci.py`), a noc się nie zmienia.
+Noc bierze najwyżej 20 zadań naraz przez `max-parallel` 17 + 3 w `mutacje-nocne.yml` (ADR 0021), a `ZADANIA_RUNU_NOCY` minus `STALE_ZADANIA` to tylko liczba zadań skryptów skilli nocą (`Mutation checks (k/16)` w runie 43392201527).
 Po Z1 i Z2 ścianę pełnego CI `main` trzyma ten limit: plan pushu na czasach runów `main` 43273944234, 43275471483 i 43284572897 ma cel 530 s przy 20 zadaniach, 395 s przy 25, 330 s przy 30 i 255 s przy 40, a pierwszy run po Z2 (43469203986) doszedł do `Required CI status` w 533 s.
 Symulacja na merge'ach i zadaniach organizacji z 2–12.11 (runy `main` po kolei, jak w grupie współbieżności) daje strażnikowi `main` (merge → pełny werdykt) p90 15,8 min przy 20 zadaniach, 11,3 przy 25, 9,1 przy 30 i 6,9 przy 40; ten sam model z runem 23,1 min z bazy hillclimbu daje p90 42,7 min wobec zmierzonych 41,8.
 Czasu, w którym organizacja chciałaby więcej niż 60 zadań naraz, przybywa wobec 20 o 9 min w 11 dniach przy 25, 56 przy 30 i 96 przy 40, a zadanie `ci.yml` utworzone, gdy biegło 40–59 zadań, czekało w kolejce p50 13–22 s.
@@ -72,6 +74,15 @@ Test kształtu planu bramki dla dwóch wzorcowych PR-ów, małego tylko z testam
 
 Bramka ponawia raz tylko test, który padł.
 Przejście po ponowieniu przechodzi, ale trafia do zapisu, z którego powstaje issue dla tego testu; dwa padnięcia to prawdziwa porażka.
+Od 13.11 (Z7, decyzja Maksa: odległość 0) bramka nie ponawia testu z pliku testów, który zmienił sam ten PR (plik z diffu PR-u, który jest plikiem testów według `wplyw_zmiany.is_test_file`).
+Zmiana pliku, od którego test zależy w grafie wpływu zmiany (`Impact.tests`: moduł, który test importuje, `tests/conftest.py`), ponowienia nie wyłącza: ten wariant pełny Maks odrzucił, bo kosztował 34 czerwone PR-y zamiast 6 (niżej).
+Taka porażka zostaje porażką, z linią `PONOWIENIE | test <id> z pliku testu zmienionego przez ten PR: bez ponowienia`, a `tools/ponow_ci.py` nie ponawia runu z tą linią, choćby test miał otwarte issue `Flaky test:`.
+Plan zapisuje te pliki raz w `plan.json` (`zmienione_pliki_testow`), a zadanie pytest je czyta.
+Ponowienie dalej ratuje test, którego pliku PR nie zmienił, a noc (baza części Change mutations) i push na `main` się nie zmieniają: noc nie jest bramką PR, a push nie ponawia.
+Powód: ponowienie na PR ukryło prawdziwy defekt w teście, którego plik zmienił sam PR (#1075: test z `tests/test_centrum_serwer.py`, który zmienił PR #1072, padł w runie PR, przeszedł po ponowieniu i PR scalono).
+Plan z narzędziami tej reguły na commicie scalenia #1072 ma ten plik w `zmienione_pliki_testow`, więc run byłby czerwony.
+Drugiej ucieczki, #759 (błąd `same_address` na PR #757), reguła nie łapie, także w wariancie pełnym: #757 nie zmienił `tests/test_adres_efenix.py` ani `efenix_address.py`, który ten test importuje, a w PR-ze, który wniósł defekt, test własności przeszedł za pierwszym razem.
+Koszt: od 2.11 do 12.11 ponowienie uratowało 44 porażki testów na 37 PR-ach (issues `Flaky test:`), przy 376 scalonych PR-ach w oknie; 12 z nich na 6 PR-ach (#851, #875, #888, #1072, #1327, #1397) było w pliku testów zmienionym przez PR, więc te PR-y byłyby czerwone, a w wariancie pełnym 41 na 34 PR-ach.
 Kwarantanna to wpis z numerem issue i datą wygaśnięcia najwyżej 7 dni od wpisania.
 Test w kwarantannie dalej biegnie na `main`, ale nie czerwieni `Required CI status`.
 Dlatego narzędzie Wydań sprawdza osobno, że na commicie Wydania testy z kwarantanny przeszły.

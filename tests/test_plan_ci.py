@@ -424,6 +424,30 @@ def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_
         plan_runu.Plan.z_json(unknown)
 
 
+def test_plan_zapisany_przed_dopisanym_polem_czyta_sie_z_digest_zapisow_jego_zadan() -> None:
+    """Artefakt ``plan`` runu main 43523010762 (13.11) nie ma ``zmienione_pliki_testow``, a czytają taki plik
+    ``tools/pomiar_ci.py --artefakty`` i ``tools/mutacje.py --jak-ci``: pole bierze wartość domyślną, a digest planu jest
+    tym z pliku, który stoi też w zapisach czasów jego zadań."""
+
+    tekst = (ROOT / "tests/fixtures/plan-43523010762.json").read_text(encoding="utf-8")
+
+    plan = plan_runu.Plan.z_json(tekst)
+
+    assert "zmienione_pliki_testow" not in json.loads(tekst)
+    assert (len(plan.zadania), plan.zmienione_pliki_testow, plan.digest) == (20, (), json.loads(tekst)["digest"])
+
+
+def test_plan_z_dopisanym_polem_zmienionym_po_zapisie_jest_nieczytelny() -> None:
+    """Dopisane pole z wartością inną niż domyślna wchodzi do digest, więc plik, w którym ktoś je zmienił, to ``ValueError``."""
+
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py",), 401.0)
+    tekst = plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,), zmienione_pliki_testow=("tests/test_adr.py",)).do_json()
+
+    assert plan_runu.Plan.z_json(tekst).zmienione_pliki_testow == ("tests/test_adr.py",)
+    with pytest.raises(ValueError, match="digest"):
+        plan_runu.Plan.z_json(tekst.replace('"tests/test_adr.py"\n ]', '"tests/test_b.py"\n ]'))
+
+
 @pytest.mark.parametrize("unit", ["tests/test_adr.py", "pytest:", "krok:e2e#0/2", "mutacje:verify-a/ci", "skill:verify-a/ci#3/2"])
 def test_plan_z_jednostka_spoza_postaci_klucza_jest_nieczytelny_zanim_zadanie_cokolwiek_uruchomi(unit: str) -> None:
     """Zadanie i Required czytają jednostki planu tylko w postaci klucza ``<rodzaj>:<nazwa>[#k/n]``, więc plan z inną
@@ -652,6 +676,23 @@ def test_bramka_ponawia_raz_test_ktory_padl_a_przejscie_po_ponowieniu_to_flaky_t
     assert (None if not found.exists() else [(flaky.test, flaky.run, flaky.zadanie) for flaky in niestabilne_testy.flaky_testy_z_json(found.read_text(encoding="utf-8"))[0]]) == (
         None if flaky is None else [(test, 40380584486, job.nazwa) for test in flaky]
     )
+
+
+@pytest.mark.parametrize(("zmienione", "code"), [((), 0), (("tests/test_flaky.py",), 1)], ids=["plik testu bez zmian", "plik testu zmieniony przez PR"])
+def test_bramka_nie_ponawia_testu_z_pliku_zmienionego_przez_pr_a_test_spoza_zmiany_dalej_ponawia(
+    mini_repo: Path, capsys: pytest.CaptureFixture[str], zmienione: tuple[str, ...], code: int
+) -> None:
+    """Z7 (ADR 0020): porażka testu z pliku testów, który zmienił PR (``Plan.zmienione_pliki_testow`` z ``plan.json``),
+    zostaje porażką, bo ponowienie ukryło w takim teście prawdziwy defekt (#1075 z PR #1072)."""
+
+    (mini_repo / "tests" / "test_flaky.py").write_text(FLAKY.format(always=True, second="return"), encoding="utf-8")
+    job = plan_runu.Zadanie("linux-3.14-1", "linux-3.14", "pytest (Python 3.14, Linux, 1/1)", ("pytest:tests/test_flaky.py",), 1.0)
+    (mini_repo / "plan.json").write_text(plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,), zmienione_pliki_testow=zmienione).do_json(), encoding="utf-8")
+
+    assert wykonaj_zadanie.main(["--plan", str(mini_repo / "plan.json"), "--zadanie", job.id], root=mini_repo) == code
+    out = capsys.readouterr().out.splitlines()
+    linia = f"PONOWIENIE | test tests/test_flaky.py::TestFlaky::test_pada_raz {niestabilne_testy.ZMIENIONY_PLIK_TESTU}"
+    assert (linia in out, "== ponowienie" in out, niestabilne_testy.FLAKY_TESTY.exists()) == (bool(code), not code, not code)
 
 
 def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
@@ -939,6 +980,33 @@ def test_plan_bez_zdarzenia_to_plan_pull_requestu_a_plan_pushu_nie_czyta_bazy(
 
     assert code == 0, out
     assert next(line for line in out.splitlines() if line.startswith("PLAN CI |")).startswith(plan_line), out
+
+
+@pytest.mark.parametrize(("event", "zmienione"), [("pull_request", ["tests/test_b.py"]), ("push", [])])
+def test_plan_pull_requestu_zapisuje_pliki_testow_zmienione_przez_pr_ktore_czyta_zadanie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], event: str, zmienione: list[str]
+) -> None:
+    """PR zmienia moduł, który importuje ``test_a.py``, i sam plik ``test_b.py``: plan zapisuje tylko ``test_b.py``,
+    bo Z7 działa w odległości 0 (decyzja Maksa 13.11), a ``test_a.py`` dalej dostaje ponowienie."""
+
+    files = {
+        "src/pakiet/a.py": "A = 1\n",
+        "tests/test_a.py": "from pakiet.a import A\n\n\ndef test_a() -> None:\n    assert A\n",
+        "tests/test_b.py": "def test_b() -> None:\n    pass\n",
+    }
+    repo = repository(tmp_path / "repo", files)
+    commit(repo, "baza")
+    git(repo, "branch", "baza")
+    (repo / "src/pakiet/a.py").write_text("A = 2\n", encoding="utf-8")
+    (repo / "tests/test_b.py").write_text("def test_b() -> None:\n    assert True\n", encoding="utf-8")
+    commit(repo, "zmiana")
+
+    code = plan_ci.main(["plan", "--zdarzenie", event, "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA)
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert list(plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8")).zmienione_pliki_testow) == zmienione
+    assert ("BEZ PONOWIENIA | 1 plików testów zmienionych przez ten PR" in out.splitlines()) == bool(zmienione), out
 
 
 @pytest.mark.parametrize("fixed", [True, False], ids=["części z zakresu", "bez części z zakresu"])

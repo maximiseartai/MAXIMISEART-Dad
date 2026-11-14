@@ -27,6 +27,10 @@ pokazuje (``shown``): liczba całkowita zapisana jako ułamek to jej cyfry. Tak 
 strażnik liczby (``ForbiddenValues.guard_number``), który maskuje całą liczbę, bo jej cyfry to cała wartość. Format
 General gubi ``+`` i zera z przodu, więc telefon ``+48600123456`` albo ``0048600123456`` to w komórce liczba
 ``48600123456``, a strażnik zna ją jako telefon. Tabela form telefonu z wynikiem strażnika i znane granice są w ADR 0025.
+
+Tekst, który kolejka Skrzynki Zgłoszeń przyjmuje, ma typ ``Outgoing``, a ``Outgoing`` daje tylko ten moduł: tekst po
+strażniku (``Guarded.text``), tekst narzędzia (``tool``) i ich sklejenie (``+``). Goły ``str`` z pliku taty podany
+kolejce bez strażnika to błąd mypy.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from datetime import date, datetime, time
 from enum import Enum
 import re
 import threading
-from typing import Final, TypeVar
+from typing import Final, TypeVar, final, overload
 
 from . import register_columns
 from .text import normalize_text
@@ -46,6 +50,16 @@ MIN_VALUE: Final = 5
 """Najkrótsza wartość zakazanej kolumny (po zwinięciu odstępów, od pierwszego słowa), której strażnik szuka w tekście."""
 
 _Position = TypeVar("_Position")
+
+
+class _ReadValues:
+    """Znacznik pola Logów Uruchomienia (``Annotated``), które niesie wartości przeczytane z komórek pliku taty albo ze
+    strony efenix, także liczby: strażnik Logów sprawdza w nim liczbę (``guard_number``) i maskuje ją z zakazaną
+    wartością albo telefonem jak tekst. Każda inna liczba Logów (numer wiersza, rozmiar, czas, liczba zleceń) to liczba,
+    którą policzyło narzędzie."""
+
+
+READ_VALUES: Final = _ReadValues()
 
 
 class ForbiddenColumn(Enum):
@@ -92,11 +106,48 @@ MASKS: Final = (*_MASKS.values(), _PHONE_MASK, _STREET_MASK)
 """Każda maska, którą strażnik wpisuje w miejsce wartości taty."""
 
 
+_PASSED: Final = object()
+"""Dowód, że ``Outgoing`` powstał w tym module; poza nim ruff (``TID251``) odrzuca jego import i atrybut modułu."""
+
+
+@final
+class Outgoing(str):
+    """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
+
+    Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``, a podklasy nie ma. Inna metoda ``str`` (wycinek, f-napis,
+    ``join``, ``+`` z gołym ``str``) daje ``str``, którego kolejka nie przyjmuje.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, text: str, proof: object) -> Outgoing:
+        if proof is not _PASSED:
+            raise TypeError("Tekst do wysyłki daje tylko rozliczenia.client_data: ForbiddenValues.guard albo tool.")
+        return super().__new__(cls, text)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Tekst do wysyłki nie ma podklas.")
+
+    @overload
+    def __add__(self, other: Outgoing, /) -> Outgoing: ...
+    @overload
+    def __add__(self, other: str, /) -> str: ...
+    def __add__(self, other: str, /) -> str:
+        joined = str(self) + other
+        return Outgoing(joined, _PASSED) if isinstance(other, Outgoing) else joined
+
+
+def tool(text: str) -> Outgoing:
+    """Tekst narzędzia do wysyłki: stałe, liczby, identyfikatory, tokeny okresu i uwagi techniczne, bez treści plików taty."""
+
+    return Outgoing(text, _PASSED)
+
+
 @dataclass(frozen=True)
 class Guarded:
     """Tekst po strażniku i uwagi techniczne o każdej zamaskowanej wartości (kolumna i miejsce, bez wartości)."""
 
-    text: str
+    text: Outgoing
     notes: tuple[str, ...]
 
 
@@ -108,7 +159,9 @@ class ForbiddenValues:
     nie było. Czytniki z wątków Uruchomień i producenci z wątków Centrum dzielą ją pod jednym zamkiem.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, proof: object) -> None:
+        if proof is not _PASSED:
+            raise TypeError("Pamięć reguły danych daje tylko rozliczenia.client_data.empty_memory.")
         self._lock = threading.Lock()
         self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
         self._lengths: dict[str, tuple[int, ...]] = {}
@@ -135,7 +188,7 @@ class ForbiddenValues:
         """
 
         masked, columns = self._masked(text)
-        return Guarded(free_text(masked), _notes(columns, place))
+        return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
     def guard_number(self, value: int | float, place: str) -> Guarded | None:
         """Liczba z komórki pliku taty albo ze strony efenix po strażniku, w tekście, który pokazuje Excel (``shown``).
@@ -149,9 +202,9 @@ class ForbiddenValues:
         text = shown(value)
         _, columns = self._masked(text)
         if columns:
-            return Guarded(" ".join(column.mask for column in _ordered(columns)), _notes(columns, place))
+            return Guarded(Outgoing(" ".join(column.mask for column in _ordered(columns)), _PASSED), _notes(columns, place))
         if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
-            return Guarded(_PHONE_MASK, ())
+            return Guarded(Outgoing(_PHONE_MASK, _PASSED), ())
         return None
 
     def _masked(self, text: str) -> tuple[str, set[ForbiddenColumn]]:
@@ -183,6 +236,12 @@ class ForbiddenValues:
                 if column is not None:
                     return length, column
         return None
+
+
+def empty_memory() -> ForbiddenValues:
+    """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
+
+    return ForbiddenValues(_PASSED)
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:

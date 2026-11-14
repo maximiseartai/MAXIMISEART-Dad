@@ -1022,6 +1022,29 @@ def test_test_ktory_bez_mutacji_pada_raz_jest_flaky_testem_a_czesc_mutuje_dalej(
     ]
 
 
+def test_mutacje_sprawdza_flaky_test_ktory_w_pierwszym_przebiegu_padl_przed_kodem_pliku_z_pokrycia_ponowienia(tmp_path: Path) -> None:
+    """Flaky test pada w pierwszym przebiegu, zanim wykona kod pliku, a inny test, który mutacji nie łapie, wykonał kod
+    tego pliku. Zmienione linie wykonał flaky test dopiero w ponowieniu, więc tylko pokrycie ponowienia każe go uruchomić
+    z mutacją; bez niego mutacja biegnie z testem, który dotknął pliku, i fałszywie przeżywa."""
+
+    counter = tmp_path / "przebiegi"
+    tests = (
+        "from pathlib import Path\n\nfrom rozliczenia.warunek import jeden, oba\n\n\n"
+        "def test_jeden() -> None:\n    assert jeden() == 1\n\n\n"
+        f"def test_oba_niestabilny() -> None:\n    licznik = Path({str(counter)!r})\n"
+        "    przebieg = int(licznik.read_text()) if licznik.exists() else 0\n    licznik.write_text(str(przebieg + 1))\n"
+        "    assert przebieg >= 1\n    assert oba(True, True) is True\n    assert oba(True, False) is False\n"
+    )
+    jeden = "\n\ndef jeden() -> int:\n    return 1\n"
+    repo = _repo(tmp_path / "repo", tests, CHANGED + jeden, BASE + jeden)
+
+    done = _run(repo)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_oba_niestabilny" in done.stdout.splitlines()
+    assert sorted(_caught(done)) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
+
+
 def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:
     repo = _repo(tmp_path, ONE_CASE, BASE)
     (repo / "tools" / "inne.py").write_text(

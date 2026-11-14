@@ -34,6 +34,8 @@ export const zApiTiming = z.object({
         'changeWorker',
         'switchWorker',
         'removeWorker',
+        'getWorkerSuggestions',
+        'assignWorkerAddress',
         'chooseRegister',
         'openRegister',
         'choosePeriodsDirectory',
@@ -45,11 +47,17 @@ export const zApiTiming = z.object({
         'changeReminders',
         'previewReminder',
         'getSettingsHistory',
+        'getQuantityDifferences',
+        'markQuantityException',
         'getQuantityRules',
         'addQuantityRule',
         'changeQuantityRule',
         'removeQuantityRule',
         'previewQuantityRules',
+        'addDevice',
+        'changeDevice',
+        'removeDevice',
+        'getDeviceSuggestions',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -213,6 +221,23 @@ export const zComponentCondition = z.object({
 });
 
 /**
+ * ComponentForm
+ *
+ * Składnik w formularzu sekcji Urządzenia: nazwa (pierwszy zapis), inne zapisy i grupa (``None``: żadna). Zapisy
+ * Centrum zapisuje tak, jak Reguły ilości czytają słowa ``URZĄDZENIA``: małymi literami, przecinki jak spacje, bez
+ * ``xg``.
+ */
+export const zComponentForm = z.object({
+    name: z.string(),
+    other_spellings: z.array(z.string()),
+    group: z.enum([
+        'router',
+        'tv',
+        'extender'
+    ]).nullable()
+});
+
+/**
  * ContractCondition
  *
  * Pierwsze słowo ``UMOWA`` jest tym słowem.
@@ -326,6 +351,28 @@ export const zDeviceComponent = z.object({
         'tv',
         'extender'
     ]).nullable()
+});
+
+/**
+ * DeviceSuggestion
+ *
+ * Zapis z ``URZĄDZENIA`` zleceń bez reguły w ostatnich Plikach zbiorczych, którego Lista Urządzeń nie zna;
+ * ``orders``: w ilu takich zleceniach jest.
+ */
+export const zDeviceSuggestion = z.object({
+    spelling: z.string(),
+    orders: z.int()
+});
+
+/**
+ * DeviceSuggestions
+ *
+ * Podpowiedzi sekcji Urządzenia, od najczęstszej, najwyżej ``SHOWN_SUGGESTIONS``; ``unread``: okresy, których Pliku
+ * zbiorczego nie dało się przeczytać. Bez folderu okresów albo okresu po Przebiegu rozliczeń lista jest pusta.
+ */
+export const zDeviceSuggestions = z.object({
+    suggestions: z.array(zDeviceSuggestion),
+    unread: z.array(z.string())
 });
 
 /**
@@ -1474,6 +1521,34 @@ export const zChangeRule = z.object({
 });
 
 /**
+ * QuantityDifference
+ *
+ * Komórka, w której tata wpisał inaczej niż Reguły ilości: okres, numer wiersza Pliku zbiorczego, ``URZĄDZENIA``,
+ * ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (``when``, np. „pt 16”), kolumna z nazwą pozycji cennika, ilość z
+ * reguł i wpis taty. Bez adresu, numeru zlecenia, ``UMOWA`` i daty dziennej.
+ *
+ * ``id``: id wyjątku, który zapisze „To był wyjątek”. ``draft``: formularz nowej reguły dla „Popraw regułę”, z
+ * warunkami z ``URZĄDZENIA`` tej różnicy i, gdy tata wpisał więcej niż reguła w kolumnie, którą reguła może wpisać,
+ * z wpisaniem brakującej ilości.
+ */
+export const zQuantityDifference = z.object({
+    id: z.string(),
+    period: z.string(),
+    row: z.int(),
+    devices: z.string(),
+    activities: z.string(),
+    when: z.string(),
+    column: z.string(),
+    name: z.string().nullable(),
+    rule: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ]),
+    draft: zRuleForm
+});
+
+/**
  * RunCardMissing
  *
  * Karty tego Uruchomienia nie ma: nie wystartowało z Centrum, nie ma jego Logów albo nie da się ich odczytać.
@@ -1789,8 +1864,9 @@ export const zSentenceText = z.object({
 /**
  * HistoryRuleChange
  *
- * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” przed i po, zamiast zapisu z pliku;
- * ``None``: reguły nie było.
+ * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
+ * ``wyjatki.<id>``) jako zdanie „To był wyjątek: …” przed i po, zamiast zapisu z pliku; ``None``: reguły albo wyjątku nie
+ * było.
  */
 export const zHistoryRuleChange = z.object({
     key: z.string(),
@@ -1866,10 +1942,59 @@ export const zSettingProblem = z.object({
 });
 
 /**
+ * DifferencesReady
+ *
+ * Różnice z Kontroli ilości ostatnich Plików zbiorczych po Przebiegu rozliczeń, liczone bieżącymi Regułami ilości,
+ * od najnowszego okresu, bez różnic oznaczonych jako wyjątek.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``differences``: najwyżej ``SHOWN`` różnic, a
+ * ``more`` reszta. ``exceptions``: różnice tych plików ukryte jako wyjątek. ``exceptions_problem``: zły plik wyjątków
+ * (lista liczy wtedy z ostatnimi dobrymi wyjątkami).
+ */
+export const zDifferencesReady = z.object({
+    state: z.literal('ready'),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    differences: z.array(zQuantityDifference),
+    more: z.int(),
+    exceptions: z.int(),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * DifferencesWithoutFiles
+ *
+ * Różnic nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zDifferencesWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods']),
+    exceptions_problem: zSettingProblem.nullable()
+});
+
+/**
+ * ExceptionSaved
+ *
+ * Lista różnic po zapisie wyjątku; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``: ta
+ * różnica już była wyjątkiem.
+ */
+export const zExceptionSaved = z.object({
+    differences: z.discriminatedUnion('state', [
+        zDifferencesReady,
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+        zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+    ]),
+    change: z.string().nullable()
+});
+
+/**
  * QuantityRulesSettings
  *
  * Reguły ilości i Lista Urządzeń, którymi liczy następne Przygotowanie pliku zbiorczego. ``rules_problem`` i
- * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to.
+ * ``devices_problem``: złe ustawienie w pliku, a wtedy pokazane są reguły, którymi Centrum liczy mimo to;
+ * ``devices_problem`` przy dobrej liście mówi też o składniku z Wydania, którego zapisy ma lista, więc reguły z Wydania
+ * liczą bez niego, a ``rules_problem`` przy Regułach ilości z Wydania, że ich zmiana zapisze się dopiero, gdy tata
+ * zwolni jego zapis.
  */
 export const zQuantityRulesSettings = z.object({
     rules: z.array(zQuantityRuleSentence),
@@ -1882,7 +2007,7 @@ export const zQuantityRulesSettings = z.object({
 /**
  * QuantityRulesSaved
  *
- * Reguły ilości po zapisie z edytora; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
+ * Reguły ilości po zapisie z edytora reguły albo sekcji Urządzenia; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”), ``None``:
  * zapis niczego nie zmienił.
  */
 export const zQuantityRulesSaved = z.object({
@@ -2171,12 +2296,15 @@ export const zConfiguration = z.object({
 /**
  * UnknownReportSender
  *
- * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza listy adresów Wykonawców, ze zdaniem dla taty.
+ * Raport wykonawcy z dnia ``day`` z adresu ``sender`` spoza Listy Wykonawców z ostatniego kliknięcia, ze zdaniem dla
+ * taty. ``worker``: login Wykonawcy, któremu tata przypisał ten adres po kliknięciu (Lista Wykonawców ma
+ * go teraz), więc następne kliknięcie wpisze ten raport; ``None``: adres dalej nieznany.
  */
 export const zUnknownReportSender = z.object({
     day: z.iso.date(),
     sender: z.string(),
-    reason: z.string()
+    reason: z.string(),
+    worker: z.string().nullable()
 });
 
 /**
@@ -2186,7 +2314,7 @@ export const zUnknownReportSender = z.object({
  *
  * ``clicked_at`` to chwila tego kliknięcia (``None``: jeszcze żadnego), ``today`` dzisiejszy dzień z zegara Centrum,
  * ``days`` dni okna od najstarszego (dni otwartych okresów z ostatniego kliknięcia i dziś), ``workers`` Wykonawcy
- * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza listy adresów Wykonawców.
+ * alfabetycznie, a ``unknown_senders`` Raporty wykonawcy z adresów spoza Listy Wykonawców.
  */
 export const zReportsView = z.object({
     clicked_at: z.iso.datetime().nullable(),
@@ -2279,6 +2407,16 @@ export const zWithoutQuantityRead = z.object({
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
+});
+
+/**
+ * WorkerAddress
+ *
+ * Adres nieznanego nadawcy Raportu wykonawcy z widoku Raporty, który tata przypisuje Wykonawcy („Przypisz do
+ * Wykonawcy…”).
+ */
+export const zWorkerAddress = z.object({
+    address: z.string()
 });
 
 /**
@@ -2648,6 +2786,34 @@ export const zRunEvent = z.object({
  */
 export const zWorkerSettlementRequest = z.object({
     worker: z.string()
+});
+
+/**
+ * WorkerSuggestion
+ *
+ * Login z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, którego nie ma na Liście Wykonawców; ``orders``: ile tych
+ * zleceń ma.
+ */
+export const zWorkerSuggestion = z.object({
+    login: z.string(),
+    orders: z.int()
+});
+
+/**
+ * WorkerSuggestions
+ *
+ * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
+ * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ */
+export const zWorkerSuggestions = z.object({
+    state: z.enum([
+        'read',
+        'not_set',
+        'unreadable'
+    ]),
+    suggestions: z.array(zWorkerSuggestion),
+    message: z.string().nullable()
 });
 
 /**
@@ -3299,6 +3465,38 @@ export const zChangeAutostartBody = zAutostartChange;
  */
 export const zChangeAutostartResponse = zChoice;
 
+export const zAddDeviceBody = zComponentForm;
+
+/**
+ * Successful Response
+ */
+export const zAddDeviceResponse = zQuantityRulesSaved;
+
+/**
+ * Successful Response
+ */
+export const zGetDeviceSuggestionsResponse = zDeviceSuggestions;
+
+export const zRemoveDevicePath = z.object({
+    device_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveDeviceResponse = zQuantityRulesSaved;
+
+export const zChangeDeviceBody = zComponentForm;
+
+export const zChangeDevicePath = z.object({
+    device_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeDeviceResponse = zQuantityRulesSaved;
+
 export const zChangeFoldersBody = zFoldersChange;
 
 /**
@@ -3343,6 +3541,26 @@ export const zAddQuantityRuleBody = zRuleForm;
  * Successful Response
  */
 export const zAddQuantityRuleResponse = zQuantityRulesSaved;
+
+/**
+ * Response Getquantitydifferences
+ *
+ * Successful Response
+ */
+export const zGetQuantityDifferencesResponse = z.discriminatedUnion('state', [
+    zDifferencesReady,
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zDifferencesWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
+
+export const zMarkQuantityExceptionPath = z.object({
+    difference_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zMarkQuantityExceptionResponse = zExceptionSaved;
 
 /**
  * Edit
@@ -3429,6 +3647,11 @@ export const zAddWorkerBody = zWorkerForm;
  */
 export const zAddWorkerResponse = zChoice;
 
+/**
+ * Successful Response
+ */
+export const zGetWorkerSuggestionsResponse = zWorkerSuggestions;
+
 export const zRemoveWorkerPath = z.object({
     login: z.string()
 });
@@ -3448,6 +3671,17 @@ export const zChangeWorkerPath = z.object({
  * Successful Response
  */
 export const zChangeWorkerResponse = zWorkerSaved;
+
+export const zAssignWorkerAddressBody = zWorkerAddress;
+
+export const zAssignWorkerAddressPath = z.object({
+    login: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zAssignWorkerAddressResponse = zChoice;
 
 export const zSwitchWorkerBody = zWorkerSwitches;
 

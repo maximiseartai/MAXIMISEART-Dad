@@ -28,6 +28,7 @@ from typing import Any, Final, NoReturn, cast
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
+from pydantic import ValidationError
 import pytest
 
 from rozliczenia import settlement_messages, workbook_files
@@ -51,15 +52,17 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.workbook_files import ByteSource
 from rozliczenia.preparation_register import period_sheets, read, register_problem
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, collective_file_name_with
 from rozliczenia.register_file import OrderSheets
+from rozliczenia.report_cells import ReportColumn
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.telemetry import MetricsStore
+from rozliczenia.worker_reports import AddBar, MoveBar, SubjectFault, VerdictFault
 
 from atrapy.atrapa_efenix import (
     CATALOG,
@@ -498,6 +501,131 @@ def test_karta_wraca_z_logow_sprzed_liczby_ilosci_tylko_dla_inea(tmp_path: Path)
 
     current = centrum.client.get("/api/runs/current").json()
     assert current == {"state": "idle", "previous": restored(live, record["started_at"])}
+
+
+VERDICT_FAULT_WORDS: Final = {
+    "missing": VerdictFault.MISSING,
+    "letter_yes": VerdictFault.LETTER_YES,
+    "letter_no": VerdictFault.LETTER_NO,
+    "word_yes": VerdictFault.WORD_YES,
+    "word_no": VerdictFault.WORD_NO,
+}
+SUBJECT_FAULT_WORDS: Final = {
+    "no_date": SubjectFault.NO_DATE,
+    "other_text": SubjectFault.OTHER_TEXT,
+    "no_year": SubjectFault.NO_YEAR,
+    "date_form": SubjectFault.DATE_FORM,
+    "separator": SubjectFault.SEPARATOR,
+    "year_digits": SubjectFault.YEAR_DIGITS,
+    "not_a_day": SubjectFault.NOT_A_DAY,
+}
+ADD_BAR_WORDS: Final = {
+    "in_intermax": AddBar.IN_INTERMAX,
+    "before_window": AddBar.BEFORE_WINDOW,
+    "form": AddBar.FORM,
+    "mistaken_subject": AddBar.MISTAKEN_SUBJECT,
+    "not_ordered": AddBar.NOT_ORDERED,
+}
+MOVE_BAR_WORDS: Final = {
+    "not_ordered": MoveBar.NOT_ORDERED,
+    "other_sheet": MoveBar.OTHER_SHEET,
+    "closed_target": MoveBar.CLOSED_TARGET,
+    "closed_source": MoveBar.CLOSED_SOURCE,
+    "after_today": MoveBar.AFTER_TODAY,
+}
+COLUMN_WORDS: Final = {"SKUTECZNE": ReportColumn.SUCCESSFUL, "CZYNNOŚCI ZREALIZOWANE": ReportColumn.COMPLETED}
+
+
+def _entering_words(entering: dict[str, Any]) -> list[object]:
+    """Powody i kolumny Logów Wpisania raportów po kolei: Wpisy maila, maile z nieczytelnym tematem, problemy, zmiany."""
+
+    [report, *unreadable] = entering["mails"]
+    return [
+        *(entry["fault"] for entry in report["entries"]),
+        *(mail["fault"] for mail in unreadable),
+        *(problem["bar"] for problem in entering["problems"]),
+        *(change["column"] for change in entering["changes"]),
+    ]
+
+
+def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszych_wydan_czytaja_sie_dalej() -> None:
+    """Plik Logów Wpisania raportów z każdym słowem powodu i kolumny, które zapisały wcześniejsze Wydania, czyta się do
+    tego samego powodu i tej samej kolumny, a zapisuje z powrotem tymi samymi słowami: te pliki czytają karta z Logów,
+    Historia i odtworzenie. ``not_ordered`` przy ``unknown_number`` to powód, dla którego Centrum nie dopisało
+    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia. Słowo spoza powodów odmowy Przeniesienia przy
+    ``refused_move`` (``form``) się nie czyta, bo żadne Wydanie go tam nie zapisało."""
+
+    day, arrived, worker = "2026-11-09", "2026-11-09T18:00:00Z", "jan.testowy"
+    entering = {
+        "today": day,
+        "rollout_before": None,
+        "rollout": day,
+        "skipped": 0,
+        "mails": [
+            {
+                "kind": "report",
+                "mail": "a" * 16,
+                "arrived": arrived,
+                "worker": worker,
+                "day": day,
+                "entries": [
+                    {"number": "40000001", "verdict": None, "fault": word, "activities": ""} for word in VERDICT_FAULT_WORDS
+                ],
+            },
+            *(
+                {"kind": "unreadable", "mail": "b" * 16, "arrived": arrived, "worker": worker, "fault": word}
+                for word in SUBJECT_FAULT_WORDS
+            ),
+        ],
+        "problems": [
+            {"kind": kind, "worker": worker, "day": day, "number": "40000001", "bar": word}
+            for kind, words in (("unknown_number", ADD_BAR_WORDS), ("refused_move", MOVE_BAR_WORDS))
+            for word in words
+        ],
+        "changes": [{"sheet": "Zlecenia", "row": 2, "column": word, "value": "tak"} for word in COLUMN_WORDS],
+        "memory_before": [],
+        "written": None,
+    }
+    logs = {
+        "run_id": "c" * 32,
+        "process": "report_entering",
+        "mode": "RUN",
+        "period": "10_16_11_2026",
+        "started_at": arrived,
+        "schema_version": 3,
+        "ended_at": arrived,
+        "duration_ms": 10,
+        "tool": {"wydanie": None, "commit": TOOL_COMMIT},
+        "result": "OK",
+        "ending": "finished",
+        "stop_kind": None,
+        "issue_count": 0,
+        "messages": [],
+        "technical_notes": [],
+        "summary": None,
+        "phases": [],
+        "templates": [],
+        "report_entering": entering,
+        "environment": {"system": "Windows-11", "python": "3.13.15", "files": None},
+        "trace": None,
+        "diagnosis": None,
+    }
+
+    record = RunLog.model_validate_json(json.dumps(logs, ensure_ascii=False))
+
+    assert _entering_words(record.model_dump()["report_entering"]) == [
+        *VERDICT_FAULT_WORDS.values(),
+        *SUBJECT_FAULT_WORDS.values(),
+        *ADD_BAR_WORDS.values(),
+        *MOVE_BAR_WORDS.values(),
+        *COLUMN_WORDS.values(),
+    ]
+    assert _entering_words(json.loads(record.text)["report_entering"]) == _entering_words(entering)
+    refused_form = {"kind": "refused_move", "worker": worker, "day": day, "number": "40000001", "bar": "form"}
+    with pytest.raises(ValidationError, match=r"refused_move\.bar"):
+        RunLog.model_validate_json(
+            json.dumps({**logs, "report_entering": {**entering, "problems": [refused_form]}}, ensure_ascii=False)
+        )
 
 
 def test_logi_po_bledzie_samego_adaptera_maja_czas_liczbe_problemow_i_przetworzenia_szablonow_z_rdzenia(
@@ -1024,7 +1152,7 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
     probe = {**register_order(77, datetime(2026, 9, 10, 11)), "DATA GODZ. POCZ.": "10.09.2026 11:00"}
     probe |= {"ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
     paste_raw_orders(register, [probe, register_order(78, datetime(2026, 9, 10, 12))], first=2)
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     register_problem(register, DadFiles(forbidden=memory))
 
@@ -1066,7 +1194,7 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
     ordered, paste = case
     register = write_register(tmp_path / "Rejestr.xlsx", default_register_rows() if ordered else [])
     paste(register)
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     register_problem(register, DadFiles(forbidden=memory))
 
@@ -1120,7 +1248,7 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
     register = write_register(tmp_path / "Rejestr.xlsx", [*earlier, *default_register_rows()])
     probe = {**register_order(1, datetime(2026, 9, 7, 15)), "ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
     paste_raw_orders(register, [probe], first=len(earlier) + 2, in_place_from="DATA GODZ. POCZ.")
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     [sheet] = period_sheets(read(register, DadFiles(forbidden=memory)), parse_period_token(PERIOD))
 
@@ -4390,7 +4518,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     ended = ended_line(utc("2026-09-16T10:17:00+00:00"), order)
     left_journal(centrum.log_path.parent, started, begun, ended)
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, None)
-    text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", ForbiddenValues())
+    text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", empty_memory())
     queue = ToolDirectory(tmp_path).queue
     queue.mkdir(parents=True)
     # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.

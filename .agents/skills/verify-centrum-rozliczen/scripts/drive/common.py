@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -22,10 +22,11 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize, expect
+from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Request, Response, ViewportSize
 import yaml
 
 from drive import feature
+from drive.waiting import Budget, TimedOut, expect, until
 from harness import File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -232,14 +233,15 @@ class Run:
         assert isinstance(document, dict)
         return document.get(key)
 
-    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: float = 10) -> None:
-        deadline = time.monotonic() + timeout_s
-        while not condition():
-            if time.monotonic() > deadline:
-                check_clock_alarm(self)
-                raise DriveFailure(f"timed out: {message}")
-            time.sleep(0.1)
-        print(f"  ok: {message}", flush=True)
+    def wait_for(self, condition: Callable[[], bool], message: str, timeout_s: Budget | float = Budget.SCREEN) -> None:
+        """Wait until ``condition`` holds, through ``until`` of ``drive/waiting.py``: a file it reads that is not ready
+        yet (missing, empty, half written, refused for a moment) is a state to wait out, not a failure."""
+
+        try:
+            until(lambda: bool(condition()), message, timeout_s)
+        except TimedOut as timed_out:
+            check_clock_alarm(self)
+            raise DriveFailure(str(timed_out)) from timed_out
 
 
 # The width from which the window Ustawienia lists its sections on the left instead of a combobox (Tailwind `md`).
@@ -311,6 +313,39 @@ def close_settings(page: Page) -> None:
 
     page.keyboard.press("Escape")
     expect(settings_window(page)).to_have_count(0)
+
+
+QUANTITY_DIFFERENCES = "/api/settings/quantity-rules/differences"
+"""The list „Tu wpisałeś inaczej niż reguła” above the Reguły ilości: rows of the settled Pliki zbiorcze."""
+ROW_TEXT = "<tekst wiersza>"
+"""What the evidence keeps instead of URZĄDZENIA and CZYNNOŚCI of a synthetic Plik zbiorczy (workbook content)."""
+
+
+def capture_quantity_rules(
+    run: Run, page: Page, name: str, *, full_page: bool = True, texts: tuple[str, ...] = ()
+) -> None:
+    """Screenshot of the section Reguły ilości, whose list of differences of the Kontrola ilości shows URZĄDZENIA and
+    CZYNNOŚCI of the settled Pliki zbiorcze: its ARIA snapshot gets those row texts, and ``texts`` (rows of a preview),
+    replaced (``without_row_texts``), as the saved answers do, or ``centrum_self_test.py`` fails on the fixture's row
+    marker."""
+
+    run.capture(page, name, full_page=full_page)
+    with urllib.request.urlopen(run.url.rstrip("/") + QUANTITY_DIFFERENCES, timeout=10) as response:
+        listed: dict[str, Any] = json.load(response)
+    shown = (*texts, *(difference[key] for difference in listed.get("differences", []) for key in ("devices", "activities")))
+    snapshot = run.evidence / "aria" / f"{name}.txt"
+    snapshot.write_text(without_row_texts(read_text(snapshot), shown), encoding="utf-8")
+
+
+def without_row_texts(text: str, texts: Iterable[str]) -> str:
+    """``text`` with each of ``texts`` (URZĄDZENIA, CZYNNOŚCI of a synthetic Plik zbiorczy) as ``ROW_TEXT``, also in the
+    form the rules read it (small letters, single spaces), as the form „Popraw regułę” has it."""
+
+    shown = {value for value in texts if value}
+    shown |= {" ".join(value.casefold().split()) for value in shown}
+    for value in sorted(shown, key=len, reverse=True):
+        text = text.replace(value, ROW_TEXT)
+    return text
 
 
 def point_in_settings(run: Run, page: Page, label: str, path: str) -> None:
@@ -418,7 +453,7 @@ def remove_tree(folder: Path, *, missing_ok: bool = False) -> None:
 
     if missing_ok and not folder.exists():
         return
-    while_open(lambda: shutil.rmtree(folder))  # noqa: TID251 - the helper remove_tree itself
+    while_open(lambda: shutil.rmtree(folder))
 
 
 def remove_empty_folder(folder: Path) -> None:
@@ -437,7 +472,7 @@ def replace_file(source: Path, target: Path) -> None:
     """Harness: put ``source`` in place of ``target`` at once, like Excel saving a whole file, even while the server
     reads ``target``."""
 
-    while_open(lambda: os.replace(source, target))  # noqa: TID251 - the helper replace_file itself
+    while_open(lambda: os.replace(source, target))
 
 
 def put_text(path: Path, text: str) -> None:
@@ -626,7 +661,12 @@ def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touc
 
 @contextmanager
 def dad_tab(
-    page: Page, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False, cpu: int = 1, timeout_ms: int = 10_000
+    page: Page,
+    *,
+    viewport: ViewportSize = DAD_VIEWPORT,
+    touch: bool = False,
+    cpu: int = 1,
+    timeout_ms: float = Budget.SCREEN.ms,
 ) -> Iterator[Page]:
     """A second window of the drive's browser (``dad_context``), its processor ``cpu`` times slower; closed after."""
 
