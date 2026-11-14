@@ -34,7 +34,7 @@ EXPRESSION = re.compile(r"\$\{\{.*?\}\}", re.DOTALL)
 # Pierwsze słowo ``shell:`` kroku i dialekt, którym shellcheck go czyta.
 SHELLS = {"bash": "bash", "sh": "sh"}
 SCRIPT = "skrypt.sh"
-FINDING = re.compile(r"^.*" + re.escape(SCRIPT) + r":(\d+):(\d+): (.*)$")
+FINDING = re.compile(rf"^.*{re.escape(SCRIPT)}:(\d+):(\d+): (.*)\r?$")
 
 
 def mapping_value(node: yaml.Node, key: str) -> yaml.Node | None:
