@@ -1,0 +1,37 @@
+id: historia-w-docstringu
+language: python
+severity: error
+message: >-
+  docstring w src z „#” i cyfrą, adresem w domenie github.com albo skrótem commitu (słowo z 7 albo więcej znaków
+  0-9a-f z literą): historię zmiany zostaw w opisie PR albo w issue, a docstring niech mówi, co kod robi teraz; liczbę
+  z pomiaru niech nazywa polecenie albo narzędzie repozytorium, które ją daje, a numer issue albo PR pomiaru idzie do
+  opisu PR
+files:
+  - src/**
+rule:
+  # Docstring: napis (także f, r, b i sklejony z kilku literałów) jako całe pierwsze wyrażenie modułu, funkcji albo
+  # klasy, komentarze przed nim się nie liczą. Reguła czyta tylko trzy postacie zapisane składnią, nie słowa prozy:
+  # „#” z cyfrą; adres w domenie github.com, czyli github.com albo każda jej subdomena w dowolnej wielkości liter: przed
+  # github.com stoi znak spoza [\w-], a po nim znak spoza [\w.-] albo kropka i znak spoza [\w-]; skrót commitu, czyli
+  # słowo z 7 albo więcej znaków 0-9a-f (dowolnej wielkości) z co najmniej jedną literą. Regex ast-grep nie ma
+  # lookahead, więc długość i literę skrótu mówi siedem gałęzi po liczbie cyfr przed pierwszą literą (0–5 albo 6+).
+  any:
+    - kind: string
+    - kind: concatenated_string
+  inside:
+    kind: expression_statement
+    nthChild:
+      position: 1
+      ofRule:
+        not:
+          kind: comment
+    inside:
+      any:
+        - kind: module
+        - kind: block
+          inside:
+            any:
+              - kind: function_definition
+              - kind: class_definition
+  regex: >-
+    #\d|(?i:[^\w-]github\.com(?:[^\w.-]|\.[^\w-]))|(?i:\b(?:[a-f][0-9a-f]{6,}|[0-9][a-f][0-9a-f]{5,}|[0-9]{2}[a-f][0-9a-f]{4,}|[0-9]{3}[a-f][0-9a-f]{3,}|[0-9]{4}[a-f][0-9a-f]{2,}|[0-9]{5}[a-f][0-9a-f]+|[0-9]{6,}[a-f][0-9a-f]*)\b)

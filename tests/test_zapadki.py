@@ -793,6 +793,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
+    "historia-w-docstringu": "zostaw w opisie PR albo w issue",
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
@@ -1049,6 +1050,114 @@ def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(t
 
     with pytest.raises(odpalenia_ast_grep.ScanFailed, match="(?s)ast-grep scan zakończył się kodem 8:\n.*nieznane_pole"):
         syntax_rules(tmp_path, base, config)
+
+
+_IN_FUNCTION = "def f() -> None:\n    "
+_SHORTS = ("deadbee", "1abcdef", "12abcde", "123abcd", "1234abc", "12345ab", "123456a", "1234567a")
+
+# Próbki reguły ``historia-w-docstringu``: „klasa: postać” → nowy plik ``src/`` i linie, które reguła zgłasza.
+_PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
+    "# z cyfrą: w docstringu modułu": ('"""Moduł z #1614."""\n', [1]),
+    "# z cyfrą: po nawiasie": (f'{_IN_FUNCTION}"""Wzór z (#1614)."""\n', [2]),
+    "# z cyfrą: po słowie ze spacją i bez": (f'{_IN_FUNCTION}"""Wzór z issue #1614 i PR#12."""\n', [2]),
+    "# z cyfrą: po nazwie repozytorium": ('class K:\n    """Od o/r#1614."""\n', [2]),
+    "adres github.com: z https i /issues/": ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [1]),
+    "adres github.com: bez schematu": (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
+    "adres github.com: wielkie litery": (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
+    "adres github.com: subdomena gist.": (f'{_IN_FUNCTION}"""Zob. https://gist.github.com/o/1."""\n', [2]),
+    "adres github.com: subdomena api.": (f'{_IN_FUNCTION}"""Zob. https://api.github.com/repos/o/r/issues/1614."""\n', [2]),
+    "adres github.com: subdomena uploads.": (f'{_IN_FUNCTION}"""Zob. https://uploads.github.com/o."""\n', [2]),
+    "adres github.com: subdomena redirect.": (f'{_IN_FUNCTION}"""Zob. https://redirect.github.com/o/r/compare/a...b."""\n', [2]),
+    "adres github.com: git@ z dwukropkiem": (f'{_IN_FUNCTION}"""Zob. git@github.com:o/r."""\n', [2]),
+    "adres github.com: kropka na końcu zdania": (f'{_IN_FUNCTION}"""Repozytorium jest na github.com."""\n', [2]),
+    "skrót commitu: 10 znaków": (f'{_IN_FUNCTION}"""Naprawione w 5b2edaf2f9."""\n', [2]),
+    "skrót commitu: wielkie litery": (f'{_IN_FUNCTION}"""Naprawione w 2FF78B6B3."""\n', [2]),
+    "skrót commitu: pełny SHA": (f'{_IN_FUNCTION}"""Naprawione w 8d3f7b66dfe85c4f3e0fae27b05a66340c076deb."""\n', [2]),
+    **{
+        f"skrót commitu: pierwsza litera na pozycji {len(short) - len(short.lstrip('0123456789')) + 1} ({short})": (
+            f'{_IN_FUNCTION}"""Naprawione w {short}."""\n',
+            [2],
+        )
+        for short in _SHORTS
+    },
+    "miejsce docstringu: po komentarzu": ('#!/usr/bin/env python3\n"""Moduł z #1614."""\n', [2]),
+    "miejsce docstringu: wieloliniowy, linia węzła to pierwsza": (f'{_IN_FUNCTION}"""Opis.\n\n    Wzór z #808.\n    """\n', [2]),
+    "miejsce docstringu: sklejony z dwóch literałów": (f'{_IN_FUNCTION}"Część z #1 " "i dalej"\n', [2]),
+    "miejsce docstringu: napis r": (f"{_IN_FUNCTION}r'''Z a1b2c3d.'''\n", [2]),
+    "miejsce docstringu: napis b": (f'{_IN_FUNCTION}b"""Z #1614."""\n', [2]),
+    "miejsce docstringu: f-string": ('def f(x: int) -> None:\n    f"""Z #1614 i {x}."""\n', [2]),
+    "miejsce docstringu: metoda asynchroniczna z dekoratorem": (
+        'class K:\n    @staticmethod\n    async def f() -> None:\n        """Z #1614."""\n',
+        [4],
+    ),
+    "miejsce docstringu: funkcja zagnieżdżona": (f'{_IN_FUNCTION}def g() -> None:\n        """Z #1614."""\n', [3]),
+    "bez postaci: liczby, data, telefon, słowa hex do 6 znaków i literał 0x": (
+        '"""Moduł bez historii: 600 s, 2026-11-14, telefon 48600123456, słowa added i deadbe, 0xdeadbeef1."""\n',
+        [],
+    ),
+    "bez postaci: # przed literą": ('"""Kolor #fff, kotwica #L12 i sekcja #opis."""\n', []),
+    "bez postaci: domena inna niż github.com": (
+        f'{_IN_FUNCTION}"""Adresy notgithub.com, my-github.com, github.com.pl, github.company i githubusercontent.com."""\n',
+        [],
+    ),
+    "nie docstring: napis przypisany": ('w = "#123 w napisie, który nie jest docstringiem"\n', []),
+    "nie docstring: drugi napis funkcji": (
+        'def f() -> str:\n    s = "zwykły napis"\n    """Drugi napis z #9 nie jest docstringiem."""\n    return s\n',
+        [],
+    ),
+    "nie docstring: napis w bloku if": ('if True:\n    """Napis z #9 w bloku if nie jest docstringiem."""\n', []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_HISTORII.values(), ids=_PROBKI_HISTORII.keys())
+def test_historia_w_docstringu_zglasza_docstring_z_numerem_adresem_github_albo_skrotem_commitu(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == lines
+
+
+# Znane luki reguły ``historia-w-docstringu`` (tests/fixtures/znane_luki.py): klasa mechanizmu, który ją przepuszcza:
+# postać → nowy plik ``src/`` z docstringiem z historią, który przechodzi przez regułę i ruff z konfiguracją ``src/``.
+ZNANE_LUKI_HISTORII: Final = {
+    "numer bez # przed cyfrą: PR 12": '"""Wzór z PR 12."""\n',
+    "numer bez # przed cyfrą: issue 1614": '"""Wzór z issue 1614."""\n',
+    "numer bez # przed cyfrą: PRy 12": '"""Wzór z PRy 12."""\n',
+    "numer bez # przed cyfrą: PRów 12": '"""Wzór z PRów 12."""\n',
+    "numer bez # przed cyfrą: GH-1614": '"""Wzór z GH-1614."""\n',
+    "numer bez # przed cyfrą: odstęp po #": '"""Wzór z # 1614."""\n',
+    "ścieżka bez domeny github.com: o/r/issues/1614": '"""Zob. o/r/issues/1614."""\n',
+    "ścieżka bez domeny github.com: /pull/77": '"""Zob. /pull/77."""\n',
+    "skrót bez litery a-f: same cyfry": '"""Naprawione w 4801234."""\n',
+    "skrót krótszy niż 7 znaków: abc123": '"""Naprawione w abc123."""\n',
+    "historia bez numeru, adresu i skrótu: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
+    "napis, który nie jest całym pierwszym wyrażeniem bloku: w nawiasach": (
+        '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n'
+    ),
+    "napis, który nie jest całym pierwszym wyrażeniem bloku: pod przypisaniem atrybutu": (
+        '"""Moduł."""\n\nLIMIT = 5\n"""Limit z #1614."""\n'
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_HISTORII, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(
+        zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff"
+    )
 
 
 @needs_ast_grep
