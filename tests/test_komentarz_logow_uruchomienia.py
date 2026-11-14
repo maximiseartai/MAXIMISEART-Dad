@@ -2750,12 +2750,17 @@ def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dic
     return narzedzia, dump
 
 
-def _wstawienia_komorki(narzedzia: str) -> list[str]:
-    """Tekst narzędzia ze wstawioną komórką: z przodu, z tyłu i za każdym separatorem (znakiem, który nie jest literą
-    ani cyfrą), bo za separatorem zepsuta gramatyka mogłaby przyjąć dowolny tekst."""
+def _wstawienia_komorki(narzedzia: str) -> list[tuple[str, str]]:
+    """Tekst narzędzia z komórką ``_KOMORKA`` wstawioną w każdym miejscu (przed każdym znakiem i za ostatnim), w dwóch
+    zapisach: słowa komórki i jej granice to spacje albo przecinki. Strażnik rozpoznaje wartość jako ciąg słów z
+    dowolnymi innymi znakami między nimi (ADR 0025), a przecinka nie przyjmuje żadna gramatyka narzędzia. Para: tekst
+    i zapis komórki w nim."""
 
-    miejsca = sorted({0, len(narzedzia), *(numer + 1 for numer, znak in enumerate(narzedzia) if not znak.isalnum())})
-    return [f"{narzedzia[:miejsce]} {_KOMORKA} {narzedzia[miejsce:]}".strip() for miejsce in miejsca]
+    return [
+        (f"{narzedzia[:miejsce]}{znak}{znak.join(_KOMORKA.split())}{znak}{narzedzia[miejsce:]}", znak.join(_KOMORKA.split()))
+        for znak in (" ", ",")
+        for miejsce in range(len(narzedzia) + 1)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -2765,18 +2770,22 @@ def _wstawienia_komorki(narzedzia: str) -> list[str]:
 )
 def test_tekst_pola_narzedzia_z_komorka_wstawiona_gdziekolwiek_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
     """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
-    poddrzewie śladu, pasuje do niej, a z zapamiętaną komórką wstawioną z przodu, z tyłu albo za którymkolwiek
-    separatorem (``_wstawienia_komorki``) już nie: strażnik (``_kept``) i ``tool_text`` biorą całą gramatykę, więc
-    część w gramatyce nie przepuszcza reszty (przeglądy #1849 i #1853, D1)."""
+    poddrzewie śladu, pasuje do niej, a z zapamiętaną komórką wstawioną w każdym miejscu tego tekstu
+    (``_wstawienia_komorki``, ze spacjami albo z przecinkami) nie wychodzi bez maski ani z ``guard_logs``, ani z
+    ``tool_text``. Pada więc pełne dopasowanie zamienione na częściowe i gramatyka, która przyjmuje którykolwiek z tych
+    zapisów gdziekolwiek w tekście narzędzia. Gramatyka, która w środku przyjmuje tylko znaki gramatyk narzędzia
+    (litery, cyfry, ``_``, ``.``, ``-``, ``/``), przechodzi ten test: komórki zapisanej samymi takimi znakami test nie
+    wstawia, bo gramatyka identyfikatora przyjmuje ją z konstrukcji (znana luka „gramatyka identyfikatora przepuszcza
+    jedno słowo z komórki” w ``ZNANE_LUKI_LOGOW``; przeglądy #1849 i #1853)."""
 
     narzedzia, _ = _z_tekstem(sciezka, str)
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
 
     assert TOOL_TEXT_GRAMMAR[pole].fullmatch(narzedzia), narzedzia
-    for tekst in _wstawienia_komorki(narzedzia):
-        assert _KOMORKA not in guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text, tekst
-        assert _KOMORKA not in tool_text(pole, tekst), tekst
+    for tekst, zapis in _wstawienia_komorki(narzedzia):
+        assert zapis not in guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text, tekst
+        assert zapis not in tool_text(pole, tekst), tekst
 
 
 @pytest.mark.parametrize(
