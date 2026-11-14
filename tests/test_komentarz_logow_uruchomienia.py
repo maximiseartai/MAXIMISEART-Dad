@@ -31,7 +31,7 @@ import threading
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 import pytest
 
 from rozliczenia.centrum.cloud_files import CloudFiles
@@ -83,7 +83,7 @@ from rozliczenia.centrum import run_comments
 from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, TOOL_TEXT_GRAMMAR, GuardedLogs, guard_cuts, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, TOOL_TEXT_GRAMMAR, GuardedLogs, guard_cuts, guard_logs, guard_text, tool_text
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown, tool
 from rozliczenia.efenix_pricing import OrderKind
@@ -2708,3 +2708,83 @@ def test_pole_z_listy_pol_narzedzia_ma_w_typie_tylko_zamkniete_listy_chwile_licz
     assert sorted(found - set(TOOL_TEXT)) == []
     assert sorted(set(TOOL_TEXT) - found) == [], "wyjątek bez pola w poddrzewie listy"
     assert sorted(set(TOOL_TEXT) ^ set(TOOL_TEXT_GRAMMAR)) == [], "każdy tekst pola z listy ma gramatykę w run_logs_guard.TOOL_TEXT_GRAMMAR"
+
+
+_Sciezka = tuple[str | int, ...]
+
+
+def _teksty_pol_narzedzia(logs: RunLog) -> Iterator[tuple[str, _Sciezka]]:
+    """Każdy tekst w poddrzewach ``TOOL_FIELDS`` Logów ``logs``: pole jak klucz ``TOOL_TEXT_GRAMMAR`` (``Model.pole``
+    modelu, z którego powstał JSON, tak jak nazywa je strażnik) i ścieżka tekstu w JSON-ie."""
+
+    def walk(source: object, value: object, place: str, path: _Sciezka, owner: str, tool_field: bool) -> Iterator[tuple[str, _Sciezka]]:
+        if isinstance(value, str) and tool_field:
+            yield owner, path
+        elif isinstance(value, list):
+            sources = list(source) if isinstance(source, (list, tuple)) else [None] * len(value)
+            for index, (item, entry) in enumerate(zip(sources, value, strict=True)):
+                yield from walk(item, entry, place, (*path, index), owner, tool_field)
+        elif isinstance(value, dict):
+            for key, entry in value.items():
+                field = f"{place}.{key}" if place else key
+                child = getattr(source, key, None)
+                yield from walk(child, entry, field, (*path, key), f"{type(source).__name__}.{key}", tool_field or field in TOOL_FIELDS)
+
+    yield from walk(logs, logs.model_dump(mode="json"), "", (), "", False)
+
+
+_TEKSTY_POL_NARZEDZIA: Final = list(_teksty_pol_narzedzia(full_logs()))
+"""Teksty pól narzędzia pełnych Logów; nowe pole gramatyki albo listy pól narzędzia dostaje tu przypadek samo."""
+
+
+def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
+    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst ma dopisaną komórkę."""
+
+    dump = full_logs().model_dump(mode="json")
+    *droga, ostatni = sciezka
+    miejsce: Any = dump
+    for krok in droga:
+        miejsce = miejsce[krok]
+    narzedzia = miejsce[ostatni]
+    miejsce[ostatni] = f"{narzedzia} {_KOMORKA}"
+    return narzedzia, dump
+
+
+@pytest.mark.parametrize(
+    "pole, sciezka",
+    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR],
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
+)
+def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
+    """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
+    poddrzewie śladu, pasuje do niej, a z dopisaną zapamiętaną komórką już nie: strażnik (``_kept``) i ``tool_text``
+    biorą całą gramatykę, więc początek w gramatyce nie przepuszcza reszty (przegląd #1849, D1)."""
+
+    narzedzia, dump = _z_dopisana_komorka(sciezka)
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+
+    assert TOOL_TEXT_GRAMMAR[pole].fullmatch(narzedzia), narzedzia
+    assert _KOMORKA not in guard_logs(RunLog.model_validate(dump), pamiec).text
+    assert _KOMORKA not in tool_text(pole, f"{narzedzia} {_KOMORKA}")
+
+
+@pytest.mark.parametrize(
+    "pole, sciezka",
+    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole not in TOOL_TEXT_GRAMMAR],
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
+)
+def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje_komorki(pole: str, sciezka: _Sciezka) -> None:
+    """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
+    dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
+
+    _, dump = _z_dopisana_komorka(sciezka)
+
+    with pytest.raises(ValidationError):
+        RunLog.model_validate(dump)
+
+
+def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
+    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst."""
+
+    assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
