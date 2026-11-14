@@ -42,6 +42,7 @@ from drive.common import (
     switch_theme,
     toggle_theme,
 )
+from drive.waiting import Budget
 from harness import Pace, comment_address, issue_file, rejects
 from drive.teksty import FOR_KEY, MODES, WRITE
 from rozliczenia.centrum.contract.common import ProcessKey
@@ -174,7 +175,7 @@ def _draft(run: Run, title: str, body: str, name: str, run_id: str | None = None
         method="POST",
         headers={"Content-Type": "application/json", "Origin": run.url.rstrip("/")},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(request, timeout=Budget.SCREEN.value) as response:
         draft = json.load(response)
     (run.evidence / "api" / f"{name}.json").write_text(
         json.dumps(draft, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -617,7 +618,7 @@ def drive(run: Run, page: Page) -> None:
         send.click()
         expect(dialog.get_by_role("button", name="Trwa Wyślij", exact=True)).to_be_disabled()
         run.capture(page, "175-uwaga-wysylanie", live=True)
-        expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
+        expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=Budget.SEND.ms)
     finally:
         remove(pacing, missing_ok=True)
     run.capture(page, "176-uwaga-wyslana")
@@ -699,7 +700,7 @@ def _drive_refused(run: Run, page: Page, config: Path, box: Path) -> list[Path]:
 
 def _note_runs(run: Run, selected: str | None, name: str) -> list[dict[str, Any]]:
     query = urllib.parse.urlencode({} if selected is None else {"selected": selected})
-    with urllib.request.urlopen(run.url.rstrip("/") + f"/api/dad-notes/runs?{query}", timeout=10) as response:
+    with urllib.request.urlopen(run.url.rstrip("/") + f"/api/dad-notes/runs?{query}", timeout=Budget.SCREEN.value) as response:
         runs = json.load(response)
     (run.evidence / "api" / f"{name}.json").write_text(
         json.dumps(runs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -794,7 +795,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     run.wait_for(
         lambda: _logs_comment(run, run_id) is not None,
         "with the key the preview's Logi reached the skrzynka at the end of the Uruchomienie",
-        timeout_s=60,
+        timeout_s=Budget.BACKGROUND,
     )
     run.capture(page, "190-uwaga-przycisk-na-karcie")
 
@@ -846,7 +847,7 @@ def _drive_pinned(run: Run, page: Page, config: Path, box: Path) -> None:
     run.step(FEATURE, "uwaga-przypieta-wyslana")
     issues_before = len(box_issues(run, LABEL))
     send.click()
-    expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
+    expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=Budget.SEND.ms)
     expect(error_toasts(page)).to_have_count(0)
     new = box_issues(run, LABEL)[issues_before:]
     (run.evidence / "api" / "uwaga-przypieta-skrzynka.json").write_text(
@@ -1022,7 +1023,7 @@ def _send_pinned(run: Run, page: Page, box: Path, run_id: str, note: tuple[str, 
     run.check(draft["body"].endswith("\n" + _waiting_logs(run_id)), "the draft says the preview's Logi are on their way")
     issues_before = len(box_issues(run, LABEL))
     dialog.get_by_role("button", name="Wyślij", exact=True).click()
-    expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=15_000)
+    expect(dialog.get_by_role("status")).to_have_text(SENT, timeout=Budget.SEND.ms)
     expect(error_toasts(page)).to_have_count(0)
     new = box_issues(run, LABEL)[issues_before:]
     run.check(
@@ -1099,9 +1100,9 @@ def _drive_missing_logs(run: Run, page: Page, config: Path, box: Path, period: s
     run.wait_for(
         lambda: queued(run, LOGS_LABEL, run_id, leaving=True) == queued(run, LABEL, run_id, leaving=True) == [],
         "at the start the skrzynka took the Logi and then the comment",
-        timeout_s=30,
+        timeout_s=Budget.WORK,
     )
-    run.wait_for(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", timeout_s=30)
+    run.wait_for(lambda: not any(path.exists() for path in refused), "at the start the queue tried the rejected Uwaga again", timeout_s=Budget.WORK)
     run.check(
         [(issue["title"], issue["body"]) for issue in box_issues(run, LABEL) if issue["title"] == REFUSED[0]]
         == [(REFUSED[0], read_json(run.evidence / "api" / "uwaga-szkic-odrzucona.json")["body"])],

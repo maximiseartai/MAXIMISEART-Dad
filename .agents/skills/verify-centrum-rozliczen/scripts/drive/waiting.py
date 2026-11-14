@@ -41,20 +41,31 @@ class Budget(Enum):
 
     # One question whether Centrum answers at all, inside a wait that asks again.
     PROBE = 2.0
+    # A state the screen shows for a few seconds: shorter than the 5 s in which a notification closes itself (`timeout` of
+    # Base UI's `ToastProvider`), so a notification covered for good fails with the sentence of its step.
+    TRANSIENT = 3.0
     # An assertion of ``expect`` sees the state it names on the screen: Playwright's own default, which every assertion
     # of the drive without ``timeout=`` has waited; a longer one would lengthen each failure of a mutant of the drive.
     ASSERTION = 5.0
-    # Centrum answers on its screen, through its API or in the run's files to what Dad or the harness has just done.
+    # Centrum, or a server of the harness such as the Atrapa efenix, answers on its screen, through its API or in the
+    # run's files to what Dad or the harness has just done.
     SCREEN = 10.0
+    # Centrum sends to the skrzynka what Dad wrote, and the window waits for the skrzynka's answer.
+    SEND = 15.0
     # Work the harness slows on purpose answers: a step after the pacing of the harness (Git, pip or the guardian of
-    # Aktualizacja narzędzia) or a tab on a processor as slow as Dad's.
+    # Aktualizacja narzędzia, Szablony pracowników), a tab on a processor as slow as Dad's, or a save onto state files
+    # another program holds.
     SLOWED = 20.0
-    # Centrum answers after work heavier than a screen: its start, or a step of the efenix window.
+    # Centrum answers after work heavier than a screen: its start, the queue it sends at its start, a step of the efenix
+    # window, or a read of the latest Pliki zbiorcze.
     WORK = 30.0
-    # Centrum finishes work of many steps on its own: started again by Aktualizacja narzędzia (its guardian waits up to
-    # 60 s, and the tab reloads when it answers), or a whole Wycena through the efenix window (5.6–5.9 s on Maks's Mac,
-    # past 10 s on the Windows runner of CI, #1296).
+    # Work of many steps, of which the drive sees only the end, finishes on its own: Centrum started again by
+    # Aktualizacja narzędzia (its guardian waits up to 60 s, and the tab reloads when it answers), a whole Wycena through
+    # the efenix window (5.6–5.9 s on Maks's Mac, past 10 s on the Windows runner of CI, #1296), the queue delivered to
+    # the skrzynka in the background, or the launcher of Centrum (``run_centrum.py``).
     BACKGROUND = 60.0
+    # A process of the tool outside Centrum (``tools/uruchom_proces.py``) ends.
+    PROCESS = 120.0
 
     @property
     def ms(self) -> float:

@@ -27,6 +27,7 @@ from drive.common import (
     Run,
     toggle_theme,
 )
+from drive.waiting import Budget
 from drive.teksty import BELL_FRESH, UPDATE_BUTTON, UP_TO_DATE, WRITE
 from atrapy.pliki_taty import DAD_CASES_FILE, NOTIFICATIONS_FILE, REPORT_KEY_FILE
 from harness import File, Log, Switch
@@ -430,7 +431,7 @@ def _drive_unavailable_files(run: Run, page: Page, config: Path, box: Path) -> N
             message = run.api("/api/notifications", "powiadomienia-plik-niedostepny")["message"]
             return isinstance(message, dict) and all(name in str(message["where"]) for name in STATE_FILES)
 
-        run.wait_for(both_named, "Powiadomienia name both state files Centrum could not save", timeout_s=20)
+        run.wait_for(both_named, "Powiadomienia name both state files Centrum could not save", timeout_s=Budget.SLOWED)
         answer = run.api("/api/notifications", "powiadomienia-plik-niedostepny")
         message, items = answer["message"], answer["items"]
         assert isinstance(message, dict) and isinstance(items, list)
