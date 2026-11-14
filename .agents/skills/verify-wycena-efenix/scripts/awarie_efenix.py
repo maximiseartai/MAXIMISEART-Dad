@@ -291,6 +291,9 @@ def _handler(proxy: Proxy) -> type[BaseHTTPRequestHandler]:
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        # Like the Atrapa: headers and body go in separate writes, and on a persistent connection with Nagle's algorithm
+        # the body waited for the window's delayed ACK, ~40 ms per answer on Linux.
+        disable_nagle_algorithm = True
 
         def handle(self) -> None:
             try:

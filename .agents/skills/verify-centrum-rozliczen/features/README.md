@@ -157,7 +157,7 @@ behaviour, then exactly these H2s in order:
    - every `run.check` that ran under a step is either a row under it (each place once, with its message as written at
      its call: a field of an f-string prints as `…`, except a module constant, which prints its value; a message of
      another form fails the run) or outside the section, with its reason and count in `sekcje-z-biegu/poza-sekcja.txt`
-     (one reason today: a helper of `drive/common.py`); a check that is neither fails the run.
+     (one reason today: a helper of `drive/common.py`).
 
    The run writes the section to `sekcje-z-biegu/<feature>.md` of its evidence and fails, printing the difference, when
    the file has another. A file without it stands in `NOT_COMPARED` of `scripts/drive/__init__.py`, which only shrinks.
