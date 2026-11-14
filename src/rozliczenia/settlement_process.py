@@ -1,7 +1,9 @@
 """Przebieg rozliczeń dla Uruchomienia procesu: silnik i fakty zakończenia.
 
 Opis procesu (``PROCESS``) jest wspólny dla każdego rozmówcy, więc liczby,
-Komunikaty i rekord metryk są te same.
+Komunikaty i rekord metryk są te same. Licznik ``skipped`` jest zawsze 0: został
+ze schematu metryk sprzed usunięcia pominiętych szablonów, żeby stare i nowe
+rekordy miały te same klucze.
 """
 
 from __future__ import annotations
@@ -21,8 +23,6 @@ PROCESS: Process[SettlementInputs, SettlementSummary, RunContext] = Process(
         Counter("written", lambda summary: summary.written_count),
         Counter("empty", lambda summary: summary.empty_count),
         Counter("planned", lambda summary: summary.planned_count),
-        # Licznik ze schematu metryk sprzed usunięcia pominiętych szablonów; zawsze 0,
-        # żeby stare i nowe rekordy miały te same klucze.
         Counter("skipped", lambda _summary: 0),
         Counter("issues", lambda summary: len(summary.warnings)),
     ),

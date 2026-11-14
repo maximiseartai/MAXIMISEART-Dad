@@ -57,6 +57,7 @@ from rozliczenia.centrum.comment_versions import (
 )
 from rozliczenia.centrum.contract.runs import Progress
 from rozliczenia.centrum.contract.runs import RunInfo
+from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.diagnosis import Diagnosis
@@ -76,7 +77,8 @@ from rozliczenia.centrum.logs_disk import (
     name_of,
 )
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
-from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker, RunComments
+from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
+from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
@@ -469,15 +471,53 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_strazn
         type(logs.text)("ul. Syntetyczna 1", object())
 
 
-@pytest.mark.parametrize("kind", ["logi", "tekst", "plik"])
-def test_logi_i_tekst_po_strazniku_nie_maja_podklas_takze_zrobionych_w_trakcie_dzialania(kind: str) -> None:
-    """Podklasa Logów, tekstu albo tekstu pliku Logów po strażniku mogłaby podać tekst sprzed strażnika jako po
-    strażniku, więc jej utworzenie odmawia, także przez ``type()`` w trakcie działania (przegląd #1038, runda 2)."""
+def _proof_value(kind: str) -> object:
+    """Wartość typu-dowodu reguły danych: Logi i tekst po strażniku, tekst pliku Logów, tekst do wysyłki, wysyłka Logów,
+    pamięć i każda wersja komentarza Uruchomienia, którą bierze ``post_of``."""
 
-    value = guard_logs(record(), empty_memory()).text if kind == "plik" else _guarded(kind)
+    memory = empty_memory()
+    match kind:
+        case "postep" | "wynik-bez-logow" | "logi-z-pliku-albo-urwane" | "logi-z-wynikiem-albo-diagnoza":
+            return TAKES_GUARDED[kind](_guarded("logi" if "logi-z" in kind else "tekst"), Path())
+        case "plik":
+            return guard_logs(record(), memory).text
+        case "wysylka":
+            return guarded(memory, "Postęp.", "postęp").text
+        case "wysylka-logow":
+            return post_of(OwnLogs(guard_logs(record(), memory)))
+        case "pamiec":
+            return memory
+        case _:
+            return _guarded(kind)
+
+
+_DROGI_PODKLASY: Final[dict[str, Callable[[type, dict[str, object]], object]]] = {
+    "type": lambda proof, namespace: type("Inne", (proof,), namespace),
+    "type-z-baza-przed-bez-super": lambda proof, namespace: type("Inne", (_BezSuper, proof), namespace),
+    "type-new-z-metaklasa-typu": lambda proof, namespace: type.__new__(type(proof), "Inne", (proof,), namespace),
+}
+"""Drogi do podklasy typu-dowodu przy jej tworzeniu: dwie przez ``__new__`` metaklasy i jedna z jego pominięciem."""
+
+
+@pytest.mark.parametrize("droga", _DROGI_PODKLASY.keys())
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "logi", "tekst", "plik", "wysylka", "wysylka-logow", "pamiec",
+        "postep", "wynik-bez-logow", "logi-z-pliku-albo-urwane", "logi-z-wynikiem-albo-diagnoza",
+    ],
+)
+def test_typy_dowody_reguly_danych_odmawiaja_podklasy_przy_tworzeniu(kind: str, droga: str) -> None:
+    """Typ-dowód i wersja komentarza odmawiają podklasy już przy tworzeniu przez ``type()`` (przegląd #1038, runda 2),
+    także z bazą przed typem, której ``__init_subclass__`` nie woła ``super()``, bo odmawia sama metaklasa
+    ``client_data.WithoutSubclasses``, a ``type.__new__`` z metaklasą typu, który ją pomija, zatrzymuje ``__init_subclass__``
+    typu. To wcześniejszy błąd; regułę trzyma kontrola dokładnego typu przy użyciu (#1551)."""
+
+    proof = type(_proof_value(kind))
+    namespace: dict[str, object] = {"text": property(lambda self: "ul. Syntetyczna 1")}
 
     with pytest.raises(TypeError, match="podklas"):
-        type("Inne", (type(value),), {"text": property(lambda self: "ul. Syntetyczna 1")})
+        _DROGI_PODKLASY[droga](proof, namespace)
 
 
 _PLIK: Final = """\
@@ -680,6 +720,15 @@ def wysylka(komorka: str, post: Post) -> Post:
         ),
         _LOGS_TEXT,
     ),
+    "parser pliku kolejki z tekstem z komórki": (
+        """from rozliczenia.centrum import outbox
+
+
+def plik(komorka: str) -> outbox.ArchiveFile | None:
+    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
+        "Private member accessed: `_archive_file`",
+    ),
 }
 
 _WERSJA_Z_ATRAPA: Final = """from types import SimpleNamespace
@@ -831,11 +880,12 @@ from rozliczenia.client_data import LogsText
 def plik(komorka: str) -> ArchiveFile:
     return ArchiveFile("t", "t", "d", "n", LogsText(komorka, getattr(client_data, "_PASSED")))
 """,
-    "parser pliku kolejki z tekstem z komórki": """from rozliczenia.centrum import outbox
+    "parser pliku kolejki z tekstem z komórki przez moduł pod nazwą cls": """from rozliczenia.centrum import outbox as cls
+from rozliczenia.centrum.outbox import ArchiveFile
 
 
-def plik(komorka: str) -> outbox.ArchiveFile | None:
-    return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+def plik(komorka: str) -> ArchiveFile | None:
+    return cls._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
 """,
     "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
@@ -919,7 +969,7 @@ ODMOWY_LOGOW: Final = {
     klasa: Any = type("Wersja", (ProgressVersion,), {_PUSTE_PRZYJECIE})
     return post_of(klasa(postep.progress, SimpleNamespace(text=komorka)))
 """,
-        "bieg TypeError: Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie Wersja.",
+        "bieg TypeError: Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji.",
     ),
     "type.__new__ z bazą bez super() i pustym __post_init__: podklasa wersji z Logami, potem post_of": (
         _PODKLASA
@@ -1252,7 +1302,7 @@ def test_start_centrum_zamyka_dziennik_wyceny_wersja_zastepcza_po_strazniku_z_te
         return INTERRUPTED
 
     forbidden = _forbidden()
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), read if first_line else None, logs)
+    left = LeftJournal(JournalKey(), read if first_line else None, logs)
 
     closing = close(left, forbidden, interrupted)
 
@@ -1271,7 +1321,7 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_z_bledem_
     dziennik następnemu startowi, i niczego nie składa."""
 
     failure = PermissionError("plik trzyma antywirus")
-    left = LeftJournal(JournalKey(Path("dziennik.jsonl")), _journal(None), Refused(failure))
+    left = LeftJournal(JournalKey(), _journal(None), Refused(failure))
     asked: list[JournalRead] = []
 
     def interrupted(journal: JournalRead) -> RunLog:
@@ -1376,15 +1426,20 @@ def _started(comments: RunComments) -> None:
 
 
 def _comments(
-    directory: Path, queue: RecordingQueue, disk: LogsOnDisk | None = None, clock: ManualClock | None = None
+    directory: Path,
+    queue: RecordingQueue,
+    disk: LogsOnDisk | None = None,
+    clock: ManualClock | None = None,
+    files: ProcessFiles = lambda process, period, settings: [],
 ) -> RunComments:
-    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu i bez plików procesu."""
+    """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu, a pliki procesu
+    z ``files`` (domyślnie żadnych)."""
 
     work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
-        files=lambda process, period, settings: [],
+        files=files,
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
     )
@@ -1546,6 +1601,104 @@ def _priced(comments: RunComments, disk: LogsOnDisk) -> None:
     disk.journal.begun(19, 1, 1)
 
 
+def _logs_file(directory: Path) -> dict[str, Any]:
+    [path] = (directory / RUN_LOGS_DIRECTORY).glob(f"*-{RUN_ID}.json")
+    logs: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return logs
+
+
+@pytest.mark.parametrize(
+    "failure", [OSError("brak dostępu"), PeriodFolderInaccessible(Path("08_14_09_2026"))], ids=["oserror", "folder-okresu"]
+)
+def test_logi_z_folderem_procesu_bez_dostepu_maja_pliki_none_bez_wpisu_nieoczekiwanego_wyjatku(
+    tmp_path: Path, failure: Exception
+) -> None:
+    """Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek: Logi Uruchomienia mają wtedy pliki ``None``,
+    a dziennik Centrum nie ma wpisu, który Diagnoza by zgłosiła."""
+
+    def files(process: object, period: object, settings: object) -> list[Path]:
+        raise failure
+
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, RecordingQueue(), disk, files=files)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["environment"]["files"] is None
+    log = tmp_path / "centrum-rozliczen.log"
+    assert UNEXPECTED_FAILURE_EVENT not in (log.read_text(encoding="utf-8") if log.exists() else "")
+
+
+def test_krok_konca_wyceny_z_nieoczekiwanym_wyjatkiem_nie_pomija_logow_z_wynikiem_ani_ich_wysylki(tmp_path: Path) -> None:
+    """Każdy krok końca Wyceny biegnie we własnej osłonie: wpis końca w dzienniku, który rzucił nieoczekiwanym wyjątkiem,
+    trafia do dziennika Centrum, a plik Logów z wynikiem i jego wysyłka i tak powstają."""
+
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+
+    class BrokenEndJournal(Journal):
+        def end(self, run_id: str, result: RunResult) -> None:
+            raise RuntimeError("syntetyczna awaria wpisu końca")
+
+    journal = BrokenEndJournal(tmp_path / "dzienniki-wyceny", log, process="efenix")
+
+    class Disk(LogsOnDisk):
+        @property
+        def journal(self) -> Journal:
+            return journal
+
+    disk = Disk(log, journaled="efenix")
+    queue = RecordingQueue()
+    comments = _comments(tmp_path, queue, disk)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+
+    assert _logs_file(tmp_path)["run_id"] == RUN_ID
+    assert Rank.OWN in [post.rank for post in queue.posts]
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
+
+
+def test_logi_urwanego_uruchomienia_ktorych_pliku_katalog_logow_nie_przyjal_i_tak_ida_do_maksa(tmp_path: Path) -> None:
+    """Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia, nie zatrzymuje tych Logów
+    w drodze do Maksa: wersja zastępcza idzie do Kolejki wysyłki, a dziennik znika za nią."""
+
+    journal = _urwane(tmp_path)
+    queue = RecordingQueue()
+
+    class Refusing(LogsOnDisk):
+        def write(self, logs: GuardedLogs) -> None:
+            raise PermissionError("katalog Logów nie przyjmuje pliku")
+
+    _started(_comments(tmp_path, queue, Refusing(CentrumLog(tmp_path / "centrum-rozliczen.log"), journaled="efenix")))
+
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+
+
+def test_wyjatek_wysylki_wersji_zastepczej_zostawia_dziennik_na_dysku_a_wersja_idzie_przy_nastepnym_starcie(
+    tmp_path: Path,
+) -> None:
+    """Nieoczekiwany wyjątek przy wysyłce wersji zastępczej trafia do dziennika Centrum i zostawia jej dziennik na
+    dysku, więc następny start wysyła tę wersję raz."""
+
+    journal = _urwane(tmp_path)
+
+    class FailingQueue(RecordingQueue):
+        def post(self, post: LogsPost) -> bool:
+            raise RuntimeError("syntetyczna awaria kolejki")
+
+    _started(_comments(tmp_path, FailingQueue()))
+    after_failure = journal.exists()
+    queue = RecordingQueue()
+    _started(_comments(tmp_path, queue))
+
+    assert after_failure
+    assert [post.rank for post in queue.posts] == [Rank.STAND_IN]
+    assert not journal.exists()
+    assert f"{UNEXPECTED_FAILURE_EVENT} typ=RuntimeError" in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8")
+
+
 # Zgaśnięcie Centrum przed krokiem końca Wyceny (model ``verify-urwane-uruchomienie``; ``None``: bez zgaśnięcia) i czy na
 # miejscu katalogu Logów stoi plik → co zostaje: wpis końca w dzienniku, plik Logów z wynikiem i stopnie wysyłek tej pracy
 # Centrum (postęp przy starcie Wyceny, Logi z wynikiem), a potem wersja zastępcza następnego startu: Logi z pliku, wynik bez
@@ -1625,6 +1778,19 @@ def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nas
     [post] = queue.posts
     assert (len(left), post.rank) == (1, Rank.STAND_IN)
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
+def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
+    """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
+    (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
+
+    directory = tmp_path / "dzienniki-wyceny"
+    journal = Journal(directory, CentrumLog(tmp_path / "centrum-rozliczen.log"), process="efenix")
+
+    with pytest.raises(TypeError, match="LogsOnDisk.started"):
+        journal.run_started(PRICING_START, object())
+
+    assert (directory.exists(), journal.progress(RUN_ID)) == (False, None)
 
 
 def test_blad_wpisu_konca_nie_zatrzymuje_logow_z_wynikiem_a_blad_pliku_logow_ich_wysylki(tmp_path: Path) -> None:

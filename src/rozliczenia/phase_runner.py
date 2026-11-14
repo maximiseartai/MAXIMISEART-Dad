@@ -62,6 +62,11 @@ class PhaseRunner:
     sprawdza kolejność etapów. Pomyłka to ``ProgressProtocolError`` w miejscu
     wywołania, także bez obserwatora.
 
+    Przerwany etap kończy uruchomienie: kolejnego etapu już nie ma, a jego
+    wywołanie to ``ProgressProtocolError``. Zapisywanie przerwane wyjątkiem
+    Szablonu pracownika ma jedno FAILED, ``WorkerFailed`` tego Szablonu: drugiego
+    FAILED etapu (``PhaseFailed``) sekwencer już nie wysyła.
+
     Zegar uruchomienia startuje przy utworzeniu. Awaria obserwatora odłącza go
     do końca uruchomienia i nie zmienia wyniku etapów. Czas etapu jest
     zapisywany także po przerwaniu. ``clock`` to zegar w sekundach, z którego
@@ -77,10 +82,7 @@ class PhaseRunner:
         self._phase_started = self._run_started
         self._next_phase = 0
         self._active_phase: ProgressPhase | None = None
-        # Któryś etap tego uruchomienia został przerwany; kolejnego etapu już nie ma.
         self._run_interrupted = False
-        # Bieżące Zapisywanie zgłosiło już FAILED zdarzeniem wykonawcy, więc
-        # sekwencer nie wysyła drugiego FAILED etapu.
         self._worker_failure_reported = False
         self._issue_count = 0
         self._templates: Sequence[str] = ()

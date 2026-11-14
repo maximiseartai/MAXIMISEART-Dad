@@ -6,7 +6,7 @@ order, and its line joins the messages of the ``run.check`` calls after it, whic
 only once, at its top level, to a string) or an f-string. A placeholder of the f-string that is such a constant, with
 no conversion and no format spec, prints its value; every other placeholder prints as ``…``, whatever its expression,
 conversion or format spec, because the value is known only when the drive runs. The literal text prints as it is,
-``{{`` as ``{``. The rule has one owner, ``tools/lib/komunikat_mapy.py``, shared with the map of ``verify-rozliczenia``.
+``{{`` as ``{``. The rule has one owner, ``tools/lib/komunikat_mapy.py``, for the map commands of every skill.
 
 The command reads only that form and fails, naming the file, the line and what to do, on anything else: a ``drive``
 whose first parameter is not ``run``, a step or a check without exactly two positional arguments or with a starred

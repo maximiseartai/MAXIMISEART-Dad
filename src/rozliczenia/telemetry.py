@@ -17,16 +17,17 @@ from .settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD
 from .write_routes import Route, RouteCounts, TemplateKind
 
 
-# Wersja 2 dodaje ``stop``: Rodzaj Zatrzymania i kod Komunikatu przerwanego Uruchomienia procesu.
-# Wersja 3 dodaje ``routes``: ile zapisanych plików każdego rodzaju powstało każdą drogą zapisu z Wzorca (ADR 0008).
 METRICS_SCHEMA_VERSION = 3
+"""Wersja schematu rekordu metryk. Wersja 2 dodaje ``stop``: Rodzaj Zatrzymania i kod Komunikatu przerwanego
+Uruchomienia procesu. Wersja 3 dodaje ``routes``: ile zapisanych plików każdego rodzaju powstało każdą drogą zapisu z
+Wzorca (ADR 0008)."""
 MINIMUM_STATISTIC_SAMPLES = 5
 METRIC_MODES = frozenset(RunMode)
 METRIC_RESULTS = frozenset({"OK", "WYMAGA_SPRAWDZENIA", "BLAD_KRYTYCZNY"})
 PERIOD_PATTERN = re.compile(rf"^(?:{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD})$")
 STOP_KINDS = frozenset(get_args(StopKind))
-# Kod Komunikatu, nigdy jego treść (ADR 0004): wielkie litery, cyfry i podkreślenia, bez ścieżek i danych klientów.
 STOP_CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+"""Kod Komunikatu, nigdy jego treść (ADR 0004): wielkie litery, cyfry i podkreślenia, bez ścieżek i danych klientów."""
 ROUTE_NAMES = frozenset(route.value for route in Route)
 TEMPLATE_KIND_NAMES = frozenset(kind.value for kind in TemplateKind)
 _V1_FIELDS = frozenset(
@@ -42,8 +43,8 @@ _V1_FIELDS = frozenset(
         "counters",
     }
 )
-# Pola rekordu każdej czytanej wersji schematu; stare rekordy zostają w historii taty.
 _FIELDS_BY_VERSION = {1: _V1_FIELDS, 2: _V1_FIELDS | {"stop"}, METRICS_SCHEMA_VERSION: _V1_FIELDS | {"stop", "routes"}}
+"""Pola rekordu każdej czytanej wersji schematu; stare rekordy zostają w historii taty."""
 
 
 class RecordedStop(TypedDict):
@@ -177,6 +178,9 @@ class MetricsStore:
         self.counter_names = counter_names
 
     def append(self, record: dict[str, Any]) -> None:
+        """Dopisuje ``record`` na końcu pliku. Ostatnia linia, która nie jest JSON-em, to urwany zapis i nowy rekord ją
+        zastępuje, a pełny rekord innej wersji narzędzia zostaje."""
+
         if not _is_valid_record(record, self.counter_names):
             raise ValueError("Niepoprawny rekord metryk.")
         serialized = (json.dumps(record, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n").encode(
@@ -196,7 +200,6 @@ class MetricsStore:
                     final_line_start = content.rfind(b"\n", 0, last_newline) + 1
                     final_line = content[final_line_start:last_newline].rstrip(b"\r")
                     has_newline = True
-                # Urwany zapis to linia, która nie jest JSON-em; pełny rekord innej wersji narzędzia zostaje.
                 try:
                     json.loads(final_line.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):

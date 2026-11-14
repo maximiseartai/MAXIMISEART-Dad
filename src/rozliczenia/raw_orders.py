@@ -488,10 +488,11 @@ def first_in_block(rows_from_bottom: Iterable[_Row], look: Callable[[_Row], RowL
     """Wiersze arkusza zleceń od ostatniego w górę, każdy z tym, czy jest pierwszym wierszem swojego bloku wklejenia:
     wiersz z wyglądem z aplikacji, nad którym najbliższy wiersz z wartościami ma wygląd uporządkowany albo nie ma
     żadnego. To pierwszy wiersz bloku na dole arkusza i każdego bloku nad uporządkowanymi. Wiersz z wyglądem z aplikacji
-    wychodzi dopiero po przeczytaniu najbliższego wiersza z wartościami nad nim, więc odczyt sięga o jeden taki wiersz
-    dalej niż ten, kto przestaje czytać. Wiersz może być dowolnego typu, bo jego wygląd daje ``look``."""
+    wychodzi dopiero po przeczytaniu najbliższego wiersza z wartościami nad nim, a puste wiersze między nimi czekają
+    razem z nim, więc odczyt sięga o jeden taki wiersz dalej niż ten, kto przestaje czytać. Wiersz może być dowolnego
+    typu, bo jego wygląd daje ``look``."""
 
-    waiting: list[_Row] = []  # wiersz z wyglądem z aplikacji i puste wiersze nad nim
+    waiting: list[_Row] = []
     for row in rows_from_bottom:
         found = look(row)
         if found is RowLook.BLANK:
