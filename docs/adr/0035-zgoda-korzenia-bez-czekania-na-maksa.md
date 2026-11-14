@@ -21,7 +21,7 @@ Rejestr korzeni od wdrożenia szablonu (93 wystąpienia, 14.11.2026) ma 47 wyst�
 ## Decyzja
 
 - **Powrót w obszarze kodu.** Wcześniejsze wyrwanie kodu jest powrotem tylko wtedy, gdy wystąpienie leży w tym samym obszarze kodu co Ważne, które to wyrwanie wyrwało.
-  Obszar wyznaczają ścieżki pola `Gdzie` Ważnego: plik w pakiecie `src/rozliczenia/<pakiet>/` ma obszar tego pakietu, plik wprost w `src/rozliczenia/` obszar `src/rozliczenia/`, a inny plik grupę (`produkt`, `weryfikacja`, `maszyneria`) z listy dwóch szop `tools/lib/szopa.toml` i reguły katalogu `REGULY` w `tools/ci/rozmiar_pr.py`; plik bez grupy ma obszar swojego katalogu najwyższego poziomu, a plik w korzeniu repo obszar korzenia.
+  Obszar wyznaczają ścieżki pola `Gdzie` Ważnego: plik w pakiecie `src/rozliczenia/<pakiet>/` ma obszar tego pakietu, plik wprost w `src/rozliczenia/` obszar `src/rozliczenia/`, a inny plik grupę (`produkt`, `weryfikacja`, `maszyneria`) z listy dwóch szop `tools/lib/szopa.toml` i jej reguły katalogu, tej samej, z której liczy workflow rozmiaru PR; plik bez grupy ma obszar swojego katalogu najwyższego poziomu, a plik w korzeniu repo obszar korzenia.
   Wystąpienie z kilkoma ścieżkami ma kilka obszarów i wraca, gdy jeden z nich jest wspólny; wystąpienie bez ścieżki (blok czerwonego `main`, `Gdzie` bez ścieżki repo) leży w każdym obszarze.
   Powód: wyrwanie w jednym obszarze (druga droga w narzędziu chwastów) nie zapobiega temu korzeniowi w innym (Centrum), a obszar z istniejącej listy i z pakietów nie wymaga nowej listy do utrzymania.
   Na rejestrze z 14.11.2026 zostaje 29 z 47 powrotów, 18 z 31 po (a) i 14 z 20 PR-ów ze zgodą.
