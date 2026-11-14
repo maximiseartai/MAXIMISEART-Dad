@@ -29,7 +29,8 @@ def without_inea_only(
     """Wiersze danych bez Ilości tylko dla INEA według ``rules`` i liczba wyczyszczonych komórek w każdej kolumnie.
 
     ``header``: znormalizowany nagłówek wiersza 17 → kolumna od 1. Wyczyszczona komórka zostaje z Wyróżnieniami i
-    formatem liczby, jak po skasowaniu liczby w Excelu. Bez nagłówka ``URZĄDZENIA`` nic nie jest czyszczone, a bez
+    formatem liczby, jak po skasowaniu liczby w Excelu, i bez Hiperłącza, bo komórka ma je tylko przy wartości
+    (``DataCell``). Bez nagłówka ``URZĄDZENIA`` nic nie jest czyszczone, a bez
     nagłówka ``UMOWA``, ``CZYNNOŚCI`` albo ``DATA`` ta kolumna czyta się jak pusta komórka.
     """
 
@@ -43,7 +44,6 @@ def without_inea_only(
         for column in evaluate(rules, content).leave_empty:
             index = column_index_from_string(column) - 1
             cleared[column] += not is_blank(cells[index].value)
-            # Hiperłącze komórka ma tylko przy wartości (``DataCell``).
             cells[index] = cells[index]._replace(value=None, hyperlink=None)
         result.append(replace(row, cells=tuple(cells)))
     return result, cleared
