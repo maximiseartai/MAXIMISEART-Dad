@@ -16,8 +16,8 @@ from typing import Final
 
 from rozliczenia.centrum.log import CentrumLog
 
-# Przerwy przed kolejnymi próbami zamiany zablokowanego pliku: pięć prób w 0,75 s.
 RETRY_PAUSES_S: Final = (0.05, 0.1, 0.2, 0.4)
+"""Przerwy przed kolejnymi próbami zamiany zablokowanego pliku: pięć prób w 0,75 s."""
 
 
 def replace_atomically(

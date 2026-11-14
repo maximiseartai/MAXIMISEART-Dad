@@ -89,22 +89,25 @@ from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.work import CentrumWork
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
-# Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
-# ``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę.
 OPENING_FILE: Final = "skrzynka-zakladanie.txt"
+"""Ostatni zapis każdego rodzaju, którego skutek widać tylko na liście (``KeyedBox._ready``), obok klucza; poza
+``config/zgloszenia``, w którym weryfikacja Kontroli ilości widzi tylko kolejkę."""
 KEY_CHECK_THREAD: Final = "skrzynka-klucz"
-# Przyjęty klucz Centrum pamięta jak każdą odpowiedź GitHuba, a brak odpowiedzi o kluczu jak każdy brak odpowiedzi.
 ACCEPTED_KEPT_S: Final = ANSWER_KEPT_S
-# Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia tokenu.
+"""Przyjęty klucz Centrum pamięta jak każdą odpowiedź GitHuba, a brak odpowiedzi o kluczu jak każdy brak odpowiedzi."""
 REFUSED_KEPT_S: Final = 15 * 60
-# Tyle po zapisie lista może go jeszcze nie pokazywać. W nagraniach ``verify-github-skrzynki`` (2026-11-05) lista issue
-# nadążyła po 3,0–6,8 s, a lista Release'ów za nowym Archiwum po 2,8 s (#887). Liczy się od chwili zapisu, więc mieści
-# też zapytanie do ``report_box._TIMEOUT_S``; mniej niż ``outbox.RETRY_S`` (test w ``test_klucz_zgloszen.py``), więc
-# ponowienie po budzeniu kolejki już nie czeka.
+"""Odrzucony klucz nie zmieni się sam: Maks wymienia plik (nowy skrót, więc sprawdzenie od razu) albo uprawnienia
+tokenu."""
 LIST_LAG_S: Final = 30.0
-# Zapis bez odpowiedzi dawniejszy niż to nie wstrzyma już żadnego zapisu: lista, na której kolejka opiera zapis, jest
-# najwyżej kilka zapytań (każde do ``report_box._TIMEOUT_S``) przed nim, więc każda późniejsza jest dużo po nim.
+"""Tyle po zapisie lista może go jeszcze nie pokazywać.
+
+W nagraniach ``verify-github-skrzynki`` (2026-11-05) lista issue nadążyła po 3,0–6,8 s, a lista Release'ów za nowym
+Archiwum po 2,8 s. Liczy się od chwili zapisu, więc mieści też zapytanie do ``report_box._TIMEOUT_S``; mniej niż
+``outbox.RETRY_S`` (test w ``test_klucz_zgloszen.py``), więc ponowienie po budzeniu kolejki już nie czeka.
+"""
 PENDING_KEPT_S: Final = 60 * 60.0
+"""Zapis bez odpowiedzi dawniejszy niż to nie wstrzyma już żadnego zapisu: lista, na której kolejka opiera zapis, jest
+najwyżej kilka zapytań (każde do ``report_box._TIMEOUT_S``) przed nim, więc każda późniejsza jest dużo po nim."""
 
 _Outcome = TypeVar("_Outcome")
 
@@ -234,18 +237,23 @@ class KeyedBox:
     def __init__(
         self, box: ReportBox, key: Callable[[], str | None], *, clock: Callable[[], float], opening: NotesFile | None = None
     ) -> None:
+        """``_no_answer``: skrót klucza i chwila ostatniego pytania bez odpowiedzi; ``_remembered``: zapisy bez pliku
+        ``opening``; ``_lists.listed_at``: chwila ostatniego pytania wątku o listę, na które przyszła odpowiedź;
+        ``_unavailable_noted``: pierwszy błąd pliku ``opening`` w tej pracy Centrum jest już w ``unavailable``;
+        ``_names``: nazwa każdego pliku Archiwum po jego id z ostatnich odpowiedzi ``archive``."""
+
         self._box = box
         self._key = key
         self._clock = clock
         self._lock = threading.Lock()
         self._verdict: _Verdict | None = None
-        self._no_answer: tuple[str, float] | None = None  # skrót klucza i chwila ostatniego pytania bez odpowiedzi
+        self._no_answer: tuple[str, float] | None = None
         self._probe: threading.Thread | None = None
         self._opening = opening
-        self._remembered = _Notes()  # zapisy bez pliku ``opening``
-        self._lists = threading.local()  # listed_at: chwila ostatniego pytania wątku o listę, na które przyszła
-        self._unavailable_noted = False  # pierwszy błąd pliku ``opening`` w tej pracy Centrum już w ``unavailable``
-        self._names: dict[int, str] = {}  # id pliku Archiwum z ostatnich odpowiedzi ``archive``: jego nazwa
+        self._remembered = _Notes()
+        self._lists = threading.local()
+        self._unavailable_noted = False
+        self._names: dict[int, str] = {}
 
     @classmethod
     def of_work(cls, box: ReportBox, work: CentrumWork) -> KeyedBox:
@@ -688,10 +696,10 @@ class KeyedBox:
         return not silent and now - verdict.asked_at >= (REFUSED_KEPT_S if verdict.refused else ACCEPTED_KEPT_S)
 
 
-# Wysłanie i usunięcie pliku Archiwum widać na liście plików Archiwum (``archive``): rodzaj zapisu to nazwa pliku
-# (``_file_kind``), a chwila listy jest wspólna dla wszystkich plików.
 _FILE_PREFIX: Final = "plik "
 _FILES_LIST: Final = "pliki archiwum"
+"""Wysłanie i usunięcie pliku Archiwum widać na liście plików Archiwum (``archive``): rodzaj zapisu to nazwa pliku
+(``_file_kind``), a chwila listy jest wspólna dla wszystkich plików."""
 
 
 def _file_kind(name: str) -> str:
@@ -711,11 +719,13 @@ def _archive_kind(tag: str) -> str:
 
 
 def read_report_key(config_directory: Path) -> str | None:
-    """Klucz do Skrzynki Zgłoszeń z lokalnego pliku; ``None``, gdy pliku nie ma albo jest pusty."""
+    """Klucz do Skrzynki Zgłoszeń z lokalnego pliku; ``None``, gdy pliku nie ma albo jest pusty.
+
+    Notatnik dopisuje BOM UTF-8, a ``>`` i ``Out-File`` w PowerShell 5.1 zapisują UTF-16 z BOM.
+    """
 
     try:
         content = (config_directory / REPORT_KEY_FILE).read_bytes()
-        # Notatnik dopisuje BOM UTF-8, a ``>`` i ``Out-File`` w PowerShell 5.1 zapisują UTF-16 z BOM.
         encoding = "utf-16" if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) else "utf-8-sig"
         key = content.decode(encoding).strip()
     except (OSError, UnicodeError):
