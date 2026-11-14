@@ -2,8 +2,9 @@ id: historia-w-docstringu
 language: python
 severity: error
 message: >-
-  odwołanie do PR, issue albo commitu (numer, adres github.com, skrót commitu) w docstringu src: historię zmiany zostaw
-  w opisie PR albo w issue, a docstring niech mówi, co kod robi teraz (ADR 0034, „Komentarze w src”)
+  odwołanie do PR, issue albo commitu (# z numerem, adres w domenie github.com poza api.github.com i
+  uploads.github.com, skrót commitu) w docstringu src: historię zmiany zostaw w opisie PR albo w issue, a docstring
+  niech mówi, co kod robi teraz (ADR 0034, „Komentarze w src”)
 files:
   - src/**
 rule:
@@ -25,10 +26,10 @@ rule:
             any:
               - kind: function_definition
               - kind: class_definition
-  # Odwołanie do PR, issue albo commitu w postaci, którą GitHub sam zamienia w link (#N i o/r#N, GH-N, adres github.com
-  # poza hostami api. i uploads., skrót commitu i o@skrót), ścieżka /commit/ ze skrótem, oraz rzeczownik obiektu GitHuba
-  # (PR, pull, pull request, issue, ticket, commit, z odmianą, „nr”, „numer” albo ścieżką /issues/) przed numerem. Skrót commitu to słowo z 7 albo więcej znaków 0-9a-f,
-  # w którym są i cyfra, i litera, więc numer telefonu z samych cyfr nie jest skrótem. Regex ast-grep nie ma lookahead,
-  # więc każda gałąź skrótu mówi, ile znaków jednego rodzaju stoi przed pierwszym znakiem drugiego.
+  # Trzy znaki o jednoznacznej składni: # z cyfrą (#N, o/r#N); adres w domenie github.com, czyli github.com na dowolnym
+  # hoście poza api.github.com i uploads.github.com, których kod używa; skrót commitu, czyli słowo z 7 albo więcej
+  # znaków 0-9a-f, w którym są i cyfra, i litera. Numer po słowie (PR 12, issue 1614) zostaje recenzentowi i jest
+  # próbką ZNANE_LUKI. Regex ast-grep nie ma lookahead ani lookbehind, więc host inny niż api i uploads wylicza po
+  # długości etykiety i pozycji pierwszej różnej litery, a skrót mówi, ile znaków jednego rodzaju stoi przed drugim.
   regex: >-
-    #\d|\b(?i:gh)-\d|(?:^|[^\w.-])(?:www\.)?github\.com/|/commit/(?i:[0-9a-f])|\b(?i:pr(?:-\w+)?|pull(?:\s+request\w*)?|issue\w*|ticket\w*|commit\w*)[\s/-]*(?i:(?:nr|numer|no)\.?\s*)?\d|\b(?:[0-9][a-f][0-9a-f]{5}|[0-9]{2}[a-f][0-9a-f]{4}|[0-9]{3}[a-f][0-9a-f]{3}|[0-9]{4}[a-f][0-9a-f]{2}|[0-9]{5}[a-f][0-9a-f]|[0-9]{6,}[a-f]|[a-f][0-9][0-9a-f]{5}|[a-f]{2}[0-9][0-9a-f]{4}|[a-f]{3}[0-9][0-9a-f]{3}|[a-f]{4}[0-9][0-9a-f]{2}|[a-f]{5}[0-9][0-9a-f]|[a-f]{6,}[0-9])[0-9a-f]*\b
+    #\d|(?i:(?:^|[^\w.\-])(?:[\w\-]{1,2}\.|[\w\-]{4,6}\.|[\w\-]{8,}\.|[\w\-]+\.[\w\-]+(?:\.[\w\-]+)*\.|[[\w\-]&&[^a]][\w\-]{2}\.|a[[\w\-]&&[^p]][\w\-]\.|ap[[\w\-]&&[^i]]\.|[[\w\-]&&[^u]][\w\-]{6}\.|u[[\w\-]&&[^p]][\w\-]{5}\.|up[[\w\-]&&[^l]][\w\-]{4}\.|upl[[\w\-]&&[^o]][\w\-]{3}\.|uplo[[\w\-]&&[^a]][\w\-]{2}\.|uploa[[\w\-]&&[^d]][\w\-]\.|upload[[\w\-]&&[^s]]\.)?github\.com\b)|\b(?:[0-9][a-f][0-9a-f]{5}|[0-9]{2}[a-f][0-9a-f]{4}|[0-9]{3}[a-f][0-9a-f]{3}|[0-9]{4}[a-f][0-9a-f]{2}|[0-9]{5}[a-f][0-9a-f]|[0-9]{6,}[a-f]|[a-f][0-9][0-9a-f]{5}|[a-f]{2}[0-9][0-9a-f]{4}|[a-f]{3}[0-9][0-9a-f]{3}|[a-f]{4}[0-9][0-9a-f]{2}|[a-f]{5}[0-9][0-9a-f]|[a-f]{6,}[0-9])[0-9a-f]*\b

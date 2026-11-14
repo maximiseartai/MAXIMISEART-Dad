@@ -100,7 +100,9 @@ extend-select = [
     "S110",
     "TID251",
     # Martwe tłumienie to wzór do skopiowania. N802 ożywia cztery noqa z powodem (nazwy jak w threading i tempfile).
+    # RUF102 odrzuca w noqa kod, którego ruff nie zna, więc proza w kształcie kodu nie przechodzi jako tłumienie.
     "RUF100",
+    "RUF102",
     "N802",
     # Zapadki: przy włączeniu 0 naruszeń, więc wzorzec nie wróci ani się nie rozleje. Tłumienie tylko z kodem,
     # bez TODO i zakomentowanego kodu, bez exec/eval, breakpoint() i yaml.load, bez pułapek wartości domyślnych i pętli.

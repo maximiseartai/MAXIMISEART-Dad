@@ -841,10 +841,20 @@ def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
         ("def f() -> None:\n    # mypy: ignore-errors\n    pass\n", [(2, _COMMENT)]),
         ("x = [\n    # mypy: ignore-errors\n    1,\n]\n", [(2, _COMMENT)]),
         ("#mypy: ignore-errors\nx = 1\n", [(1, _COMMENT)]),
+        ("    # mypy: wyjaśnienie\nx = 1\n", [(1, _COMMENT)]),
+        ('# mypy: disable-error-code="misc"\nx = 1\n', [(1, _COMMENT)]),
+        ("# mypy: always-true=uwaga od PR 1234\nx = 1\n", [(1, _COMMENT)]),
+        ("# mypy: ignore-errors, tu wyjaśnienie\nx = 1\n", [(1, _COMMENT)]),
+        ("# ruff: noqa: E501\nx = 1\n", [(1, _COMMENT)]),
+        ("# ruff: noqa: F401 - moduł eksportuje nazwy\n# mypy: warn-unreachable\nimport os\n", [(1, _COMMENT), (2, _COMMENT)]),
         ("x = 1  # ruff: noqa\n", [(1, _COMMENT)]),
         ("# ruff: noqa: tu wyjaśnienie\nx = 1\n", [(1, _COMMENT)]),
         ("x = 1  # noqa: tu wyjaśnienie\n", [(1, _COMMENT)]),
         ("x = 1  # noqa:wyjaśnienie\n", [(1, _COMMENT)]),
+        ("x = 1  # noqa: E501:od PR 1234\n", [(1, _COMMENT)]),
+        ("x = 1  # noqa: E501 F401x tu wyjaśnienie\n", [(1, _COMMENT)]),
+        ("x = 1  # noqa: E501,,F401\n", [(1, _COMMENT)]),
+        ("x = 1  # noqa : E501-wyjaśnienie\n", [(1, _COMMENT)]),
         ("x = []  # type: list[int]\n", [(1, _COMMENT)]),
         ("x = 1  # ast-grep-ignore\n", [(1, _BLANKET)]),
         ("# ast-grep-ignore: komentarz-w-src\nx = 1  # wyjaśnienie\n", [(1, _COMMENT)]),
@@ -852,19 +862,14 @@ def _src_sample(root: Path, text: str, name: str = "probka.py") -> str:
         ('#!/usr/bin/env python\n"""Moduł z #123."""\n', [(1, _COMMENT), (2, _HISTORY)]),
         ('def f() -> None:\n    """Naprawione w 5b2edaf2f9."""\n', [(2, _HISTORY)]),
         ('def f() -> None:\n    """Naprawione w 1234567a."""\n', [(2, _HISTORY)]),
-        ('class K:\n    """Od PR 1234."""\n', [(2, _HISTORY)]),
-        ('class K:\n    """Od PR-1234."""\n', [(2, _HISTORY)]),
-        ('class K:\n    """Z PR-u 1234."""\n', [(2, _HISTORY)]),
-        ('class K:\n    """Z pull requestu numer 77."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Wzór z issue 1614."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Wzór z Issues nr 1614."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Wzór z ticketu 1614."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Od commitu 4801234."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Od gh-1614."""\n', [(2, _HISTORY)]),
+        ('class K:\n    """Od o/r#1234."""\n', [(2, _HISTORY)]),
         ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [(1, _HISTORY)]),
         ('def f() -> None:\n    """Zob. github.com/o/r/compare/main...feat."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Zob. /pull/77."""\n', [(2, _HISTORY)]),
-        ('def f() -> None:\n    """Zob. /commit/ABC123."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. GitHub.com/o/r/pull/77."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. https://redirect.github.com/o/r/compare/a...b."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. https://gist.github.com/o/1 i git@github.com:o/r."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. https://x.api.github.com/o i https://uploads2.github.com/o."""\n', [(2, _HISTORY)]),
+        ('def f() -> None:\n    """Zob. https://apis.github.com/o i https://upload.github.com/o."""\n', [(2, _HISTORY)]),
         ('def f() -> None:\n    """Zob. https://www.github.com/o/r/actions/runs/43519817847."""\n', [(2, _HISTORY)]),
         ("async def f() -> None:\n    '''Zob. https://github.com/o/r/pull/77'''\n", [(2, _HISTORY)]),
         ('def f() -> None:\n    """Zob. https://github.com/o/r/commit/abc."""\n', [(2, _HISTORY)]),
@@ -885,19 +890,16 @@ def test_reguly_ast_grep_lapia_komentarz_i_historie_w_docstringu(tmp_path: Path,
     [
         "import os  # noqa: F401 - używany przez wtyczkę\n",
         "import os  # noqa: F401\n",
+        "import os  # noqa:F401, F811 Używany przez wtyczkę\n",
         "z = x.y  # type: ignore[attr-defined]  # stub nie zna y\n",
         "z = x.y  # type: ignore[attr-defined]\n",
-        "# ruff: noqa: E501\nx = 1\n",
-        '# mypy: disable-error-code="misc"\nx = 1\n',
-        "# mypy: ignore-errors, warn-unused-ignores=False\nx = 1\n",
         '"""Moduł bez historii: 600 s, 2026-11-13, telefon 48600123456 i słowo deadbeef."""\n',
         'w = "#123 w napisie, który nie jest docstringiem"\n',
         'def f() -> str:\n    s = "zwykły napis"\n    """Drugi napis z #9 nie jest docstringiem."""\n    return s\n',
         'if True:\n    """Napis z #9 w bloku if nie jest docstringiem."""\n',
         'def f() -> None:\n    """Opis bez numeru PR, PRZYKŁAD 12 i test e2e."""\n',
         'def f() -> None:\n    """Tworzy issue w repozytorium Zgłoszeń 2026 roku, pola PRICE i PROD3."""\n',
-        'def f() -> None:\n    """Woła https://api.github.com/repos i https://uploads.github.com/repos."""\n',
-        "# ruff: noqa: F401 - moduł eksportuje nazwy\n# mypy: warn-unreachable\nimport os\n",
+        'def f() -> None:\n    """Woła https://api.github.com/repos i https://UPLOADS.GitHub.com/repos."""\n',
     ],
 )
 def test_reguly_ast_grep_przepuszczaja_tlumienie_z_powodem_i_napisy_bez_historii(tmp_path: Path, text: str) -> None:
@@ -912,7 +914,7 @@ def test_reguly_ast_grep_przepuszczaja_tlumienie_z_powodem_i_napisy_bez_historii
     reason="tłumienie z prozą ocenia prawdziwy ruff i mypy z dodatku dev",
 )
 def test_tlumienie_z_proza_zamiast_kodu_przepuszcza_regula_a_odrzuca_ruff_albo_mypy(tmp_path: Path) -> None:
-    """Reguła ``komentarz-w-src`` przepuszcza tłumienie, które ruff albo mypy czyta, bo prozę zamiast kodu odrzuca on sam
+    """Reguła ``komentarz-w-src`` przepuszcza ``noqa`` i ``type: ignore``, bo prozę zamiast kodu odrzuca samo narzędzie
     (komentarz reguły w ``reguly-ast-grep/komentarz-w-src.yml``)."""
 
     from tests.fixtures.znane_luki import ruff_i_mypy, zapisz
@@ -920,10 +922,11 @@ def test_tlumienie_z_proza_zamiast_kodu_przepuszcza_regula_a_odrzuca_ruff_albo_m
     probki = {
         "noqa z prozą": "x = 1  # noqa wyjaśnienie\n",
         "noqa: z nieużytym kodem i prozą": "x = 1  # noqa: F841 wyjaśnienie\n",
-        "ruff: noqa z prozą w nagłówku": "# ruff: noqa wyjaśnienie\nx = 1\n",
+        "noqa: z prozą w kształcie kodu": "x = 1  # noqa: PR1614\n",
         "type: ignore z prozą obok kodu": 'x: int = "a"  # type: ignore wyjaśnienie\n',
+        "type: ignore z prozą w nawiasie": "x = 1  # type: ignore[od PR 1614]\n",
         "type: ignore z prozą na własnej linii": "def f() -> None:\n    # type: ignore[misc] wyjaśnienie\n    pass\n",
-        "mypy: z prozą w nagłówku": "# mypy: warn-unreachable - wyjaśnienie\nx = 1\n",
+        "type: ignore całego pliku": "# type: ignore\nx = 1\n",
     }
     for numer, (opis, text) in enumerate(probki.items()):
         (root := tmp_path / str(numer)).mkdir()
@@ -943,7 +946,9 @@ def test_komunikat_kazdej_reguly_ast_grep_mowi_co_zrobic(tmp_path: Path) -> None
 
     assert messages.keys() == {_COMMENT, _HISTORY, _BLANKET}
     assert "lepszą nazwą albo testem" in messages[_COMMENT]
+    assert "w konfiguracji ruff albo mypy w pyproject.toml" in messages[_COMMENT]
     assert "w opisie PR albo w issue" in messages[_HISTORY]
+    assert "poza api.github.com i uploads.github.com" in messages[_HISTORY]
     assert messages[_BLANKET] == _BLANKET_HELPER
 
 
@@ -988,15 +993,12 @@ ZNANE_LUKI: Final = {
         "docstring z historią i dyrektywą ast-grep-ignore obu reguł na jego linii": (
             'def f() -> None:\n    """Z #123."""  # ast-grep-ignore: historia-w-docstringu, komentarz-w-src\n'
         ),
-        "proza w opcjach mypy: nagłówka, które wyłączają błąd mypy o nieznanej opcji": (
-            "# mypy: ignore-errors, tu wyjaśnienie\nx = 1\n"
-        ),
-        "wcięty mypy: w nagłówku, którego mypy nie czyta": "    # mypy: wyjaśnienie\nx = 1\n",
         "skrót commitu z samych cyfr albo samych liter a-f": 'def f() -> None:\n    """Wzór z 4801234 i z deadbee."""\n',
         "skrót commitu wielkimi literami": 'def f() -> None:\n    """Wzór z 5B2EDAF2F9."""\n',
-        "numer bez #, adresu i słowa PR, pull request, issue, ticket, commit": (
-            'def f() -> None:\n    """Wzór ze zgłoszenia 1614, ze zmiany 77 i z 1615."""\n'
-        ),
+        **{
+            f"numer po słowie, bez znaku #: {numer}": f'def f() -> None:\n    """Wzór z {numer}."""\n'
+            for numer in ("PR 12", "PRy 12", "PR-u 12", "issue 1614", "zgłoszenia 1614", "GH-1614", "/pull/77", "1615")
+        },
         "napis pod przypisaniem, czyli docstring atrybutu": 'LIMIT = 5\n"""Limit z #123."""\n',
         "docstring w nawiasach": 'def f() -> None:\n    ("Z #123.")\n',
     },

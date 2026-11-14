@@ -3,25 +3,20 @@ language: python
 severity: error
 message: >-
   komentarz # w src: powód i ostrzeżenie z komentarza wyraź lepszą nazwą albo testem, który pada bez tego kodu, a
-  historię zmiany zostaw w PR albo issue; w src zostają tylko tłumienia ruff i mypy (noqa: z kodem i type: ignore na
-  linii, którą tłumią, a ruff: noqa i mypy: w nagłówku modułu, przed pierwszą instrukcją), a powód tłumienia dopisz na
-  jego linii (ADR 0034, „Komentarze w src”)
+  historię zmiany zostaw w PR albo issue; w src zostają tylko tłumienia na linii, którą tłumią: noqa: z kodem i
+  type: ignore, a powód tłumienia dopisz na jego linii; dyrektywę całego pliku (ruff: noqa, mypy:) zapisz w
+  konfiguracji ruff albo mypy w pyproject.toml (ADR 0034, „Komentarze w src” i „Prawo właściciela i wyjątek”)
 files:
   - src/**
 rule:
   kind: comment
-  # Przechodzi tylko tłumienie, które czyta ruff albo mypy, bo ono samo odrzuca prozę zamiast kodu: noqa i noqa: z kodem
-  # (PGH004, RUF100), type: ignore (mypy: Invalid "type: ignore" comment). Pliku ruff: noqa i mypy: (dokładnie „# mypy: ”,
-  # jak w get_mypy_comments) ruff i mypy nie czytają obok kodu, a ast-grep nie widzi kolumny, więc oba przechodzą tylko
-  # w nagłówku modułu: przed nimi nie stoi żaden węzeł poza komentarzem (komentarz w nawiasie, bloku albo po kodzie ma
-  # przed sobą token rodzica), więc stoją na własnej linii, a mypy odrzuca tam nieznaną opcję (Unrecognized option).
+  # Przechodzi tylko tłumienie, którego prozę zamiast kodu odrzuca samo narzędzie: noqa (ruff PGH004, RUF100), noqa:
+  # z kodami (RUF100, RUF102) oraz type: ignore (mypy: Invalid "type: ignore" comment, Unused "type: ignore" comment;
+  # całego pliku ruff PGH003). Dyrektywę noqa:, której ruff nie umie przeczytać, ruff tylko ostrzega, więc noqa: z
+  # kodami przechodzi w gramatyce ruff: kody [A-Z]+[0-9]+ rozdzielone spacją albo jednym przecinkiem, a po nich
+  # koniec, # albo powód, którego pierwsze słowo nie ma kształtu kodu. Dyrektywy całego pliku ruff: noqa i mypy:
+  # przechodzą przez ruff i mypy z prozą w wartości opcji, a ich miejsce to konfiguracja w pyproject.toml, więc reguła
+  # je zgłasza.
   not:
-    any:
-      - regex: '^#\s*(?:(?i:noqa)(?::\s*[A-Z]+[0-9]+|\s|$)|type:\s*ignore\b)'
-      - all:
-          - regex: '^(?:#\s*ruff:\s*noqa(?::\s*[A-Z]+[0-9]+|\s|$)|# mypy: )'
-          - not:
-              follows:
-                not:
-                  kind: comment
-                stopBy: end
+    regex: >-
+      ^#\s*(?:(?i:noqa)(?:\s*|\s+[^\s:].*)|(?i:noqa)\s*:\s*[A-Z]+[0-9]+(?:\s*,\s*[A-Z]+[0-9]+|\s+[A-Z]+[0-9]+)*(?:[\s,]*(?:#.*)?|[\s,]+(?:[^A-Z\s,#]|[A-Z]+(?:[^A-Z0-9]|$)).*)|type:\s*ignore\b.*)$
