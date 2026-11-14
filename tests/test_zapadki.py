@@ -1827,6 +1827,9 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s+$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\s?$")\n', [3]),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
 ]

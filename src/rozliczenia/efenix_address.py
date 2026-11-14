@@ -6,7 +6,7 @@ numer budynku i lokal. Numer budynku to jedna część (``12A``) albo dwie po ``
 Lokal to słowo po ``Lokal`` zaraz za numerem (``12A Lokal 24``, ``13/14 Lokal 16``, ``8B Lokal 27/3``, zapis efenix)
 albo część po ``/`` przy numerze bez ``Lokal`` (zapis Pliku zbiorczego): jeden ``/`` (``12A/24``) dzieli numer i lokal,
 a nie dwie części numeru. Dwa ``/`` bez ``Lokal`` mają dwa odczyty, bo tata pisze tak oba adresy: budynek ``13/14`` z
-lokalem ``16`` (``13/14/16``, #829) i budynek ``8B`` z lokalem ``27/3`` (``8B/27/3``, Uwaga taty z 7.11.2026). Który
+lokalem ``16`` (``13/14/16``) i budynek ``8B`` z lokalem ``27/3`` (``8B/27/3``, Uwaga taty z 7.11.2026). Który
 to podział, wie efenix, więc adres jest równy, gdy pasuje którykolwiek odczyt. ``Lokal`` gdzie indziej to słowo nazwy ulicy.
 Wszystko przed rodzajem (w efenix miejscowość z dzielnicą) się pomija.
 Adres, którego nie da się tak rozebrać (bez rodzaju, bez nazwy ulicy, bez numeru, z numerem budynku z więcej niż

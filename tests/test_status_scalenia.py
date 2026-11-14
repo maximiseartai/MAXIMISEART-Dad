@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
@@ -156,6 +157,33 @@ def test_gdy_baza_sama_pada_pr_ktory_jej_nie_naprawia_dostaje_blad_a_bez_publiku
     assert any(line.startswith("#2 success | ") for line in lines)
     assert github.statuses_by_head() == {}
 
+
+
+def test_baza_bez_wyniku_krokow_daje_pr_z_porazka_scalenia_blad_z_przyczyna_bazy_a_log_ma_bledy_mypy(tmp_path: Path) -> None:
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
+    checks = (github.checkout / "tools/ci_lokalnie.py").read_text(encoding="utf-8")
+    main = github.push_main({"tools/ci_lokalnie.py": "raise SystemExit(3)\n"})
+    github.open_pull(1, {"tools/ci_lokalnie.py": checks, "kod/zly.py": TYPE_ERROR}, parent=main)
+
+    answered = github.run()
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert f"#1 error | main {main[:7]}: tools/ci_lokalnie.py skończyło się bez wyniku, kod 3" in answered.stdout.splitlines()
+    assert "kod/zly.py:1: error: Incompatible types in assignment" in answered.stdout
+
+
+def test_fetch_bez_odpowiedzi_origin_konczy_narzedzie_po_limicie_linia_fail_zamiast_czekania(tmp_path: Path) -> None:
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
+    (github.bin / "pulls.json").write_text("[]", encoding="utf-8")
+    client = github.checkout / "tools/lib/github.py"
+    client.write_text(client.read_text(encoding="utf-8").replace("LIMIT_S = 60", "LIMIT_S = 3"), encoding="utf-8")
+    git(github.checkout, "config", "remote.origin.uploadpack", f"{sys.executable} -c 'import time; time.sleep(60)'")
+
+    answered = github.run()
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    last = answered.stdout.splitlines()[-1]
+    assert last.startswith("SCALENIA FAIL | Command ") and "'fetch'" in last and last.endswith("timed out after 3 seconds"), last
 
 def test_pr_do_innej_bazy_dostaje_jej_werdykt_a_odrzucony_status_nie_zatrzymuje_reszty(tmp_path: Path) -> None:
     github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})

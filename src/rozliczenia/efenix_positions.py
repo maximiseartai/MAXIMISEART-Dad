@@ -1,9 +1,9 @@
 """Pozycje wyceny efenix: przypisanie kolumn Ilości usług do kodów pozycji i czyste reguły porównania ilości i kwot.
 
-Przypisanie (``POSITION_OF_COLUMN``) to konfiguracja narzędzia ze specyfikacji #741, wersjonowana z narzędziem, nie
-dane taty: kolumna Pliku zbiorczego → kod pozycji efenix (``NNN`` z ``INDEKS_NNN``). Pozycja efenix bez kolumny ma w
-Pliku zbiorczym ilość 0. Reguły biorą ilości pliku po kodach
-(``file_quantities``) i ilości ze strony zlecenia (kod → ilość, pole puste to 0).
+Przypisanie (``POSITION_OF_COLUMN``) to konfiguracja narzędzia ze specyfikacji Wyceny w efenix, wersjonowana z
+narzędziem, nie dane taty: kolumna Pliku zbiorczego → kod pozycji efenix (``NNN`` z ``INDEKS_NNN``). Pozycja efenix bez
+kolumny ma w Pliku zbiorczym ilość 0. Reguły biorą ilości pliku po kodach (``file_quantities``) i ilości ze strony
+zlecenia (kod → ilość, pole puste to 0).
 Wycenę zlecenia proces dokańcza do Pliku zbiorczego tylko w górę (ADR 0026, ``completion``): w każdej pozycji, w której
 strona ma mniej niż plik, wpisuje ilość z pliku, także w miejsce ilości Emmetta, a pozycji, w której strona ma więcej niż
 plik (także ilość w pozycji z 0 w pliku albo bez kolumny), nie obniża i nie czyści, tylko zgłasza ją jako nadmiar.
@@ -69,7 +69,8 @@ POSITION_OF_COLUMN: Final[Mapping[str, str]] = MappingProxyType(
         "AP": "021",
     }
 )
-"""Pary pewne ze specyfikacji #741 (zgadzają się ceny); tata potwierdza je raz przed pierwszym przebiegiem."""
+"""Pary pewne ze specyfikacji Wyceny w efenix (zgadzają się ceny); tata potwierdza je raz przed pierwszym
+przebiegiem."""
 UNPAIRED_COLUMNS: Final = tuple(column for column in PRICED_COLUMNS if column not in POSITION_OF_COLUMN)
 """Kolumny Ilości usług bez pewnej pozycji efenix; ilość w nich to błąd zlecenia."""
 _COLUMN_OF_POSITION: Final = {position: column for column, position in POSITION_OF_COLUMN.items()}

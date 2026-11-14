@@ -551,6 +551,14 @@ def test_czesci_dziela_mutacje_miedzy_siebie(tmp_path: Path) -> None:
     assert not names[0] & names[1]
 
 
+
+def test_czesc_bez_mutacji_przy_mutacjach_zmiany_konczy_sie_ok_z_numerem_czesci(tmp_path: Path) -> None:
+    # Dwie mutacje zmiany na trzy części: część 1/3 to pusty kawałek listy.
+    done = _run(_repo(tmp_path, ONE_CASE), "--czesc", "1/3")
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza w części 1/3"
+
 def test_czesc_bierze_kolejne_mutacje_wiec_pokrycie_biegnie_na_testach_mniejszej_liczby_plikow(tmp_path: Path) -> None:
     # Noc mutuje zmiany wielu PR-ów; co N-ta mutacja dałaby każdej części testy wszystkich zmienionych plików.
     repo = _repo(tmp_path, ONE_CASE, other="def inny(a: bool, b: bool) -> bool:\n    return a\n")

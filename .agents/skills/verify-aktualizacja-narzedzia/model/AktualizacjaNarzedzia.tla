@@ -163,8 +163,8 @@ OkienkoTylkoGdyNicNieDziala ==
 OkienkoTylkoGdyNicNieDzialaPozaZnanymi == OkienkoTylkoGdyNicNieDziala \/ Po(WybaczoneOkienkoTylkoGdyNicNieDziala)
 
 \* Gdy nic już nie działa (żadna aktualizacja ani opiekun, żadne Centrum), tata widzi okienko z
-\* Komunikatem albo zgaszony komputer, nigdy samą martwą kartę. Docstring restart_guardian.py
-\* i komentarz w main: „Karta nie ma już z kim rozmawiać: jedno okienko zamiast ciszy”.
+\* Komunikatem albo zgaszony komputer, nigdy samą martwą kartę. Docstring modułu restart_guardian.py
+\* i docstring main: „karta nie ma już z kim rozmawiać, więc tata widzi jedno okienko zamiast ciszy”.
 TataNieZostajeBezOdpowiedzi ==
     pc = "spoczynek" /\ centrum = "brak" => widzi \in {"okienko", "wylaczony"}
 

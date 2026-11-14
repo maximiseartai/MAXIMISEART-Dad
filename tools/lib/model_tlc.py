@@ -20,8 +20,12 @@ z przyczynami znanych znalezisk) i opowieść kontrprzykładu krokami kodu. Resz
   nimi). Wybaczony przebieg sprawdza warianty ``…PozaZnanymi`` obietnic, a stała ``Wybaczone<obietnica>`` każdej to
   przyczyny jej znalezisk.
 - Werdykt to ostatnia linia: ``<werdykt> OK`` albo ``<werdykt> OK, ZNANE ZNALEZISKA: n`` (kod 0, z ``--strict`` 1),
-  ``NOWE NARUSZENIE`` i ``ZNALEZISKO ZNIKNĘŁO`` (kod 1) albo ``BŁĄD MODELU`` (kod 2: TLC bez werdyktu, niezmiennik
-  spoza obietnic, na przykład ``TypeOK``, albo konfiguracje w innej postaci).
+  ``NOWE NARUSZENIE`` i ``ZNALEZISKO ZNIKNĘŁO`` (kod 1), ``BŁĄD MODELU`` (kod 2: TLC bez werdyktu, niezmiennik
+  spoza obietnic, na przykład ``TypeOK``, albo konfiguracje w innej postaci) albo ``ZAWIESZENIE TLC`` (kod 2).
+- Przebieg TLC bez wyniku w swoim limicie (``LIMIT_MUTANTA_S`` w kopii mutacji, ``LIMIT_SPRAWDZENIA_S`` poza nią) to
+  zawieszenie: ``jcmd`` obok Javy zapisuje zrzut wątków JVM tego przebiegu, po ``ZRZUT_S`` drzewo TLC ginie, a
+  sprawdzenie kończy się od razu werdyktem ``ZAWIESZENIE TLC`` ze zrzutem, zamiast czekać na limit polecenia mutacji
+  albo zadania CI (zawieszenia w runach 42335147260 i 42393988844, #1040).
 """
 
 from __future__ import annotations
@@ -34,7 +38,9 @@ import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import tempfile
+import threading
 from typing import NamedTuple
 
 import narzedzia_tlc
@@ -45,14 +51,19 @@ __all__ = [
     "JAR",
     "JAVA",
     "KONFIGURACJE",
+    "LIMIT_MUTANTA_S",
+    "LIMIT_SPRAWDZENIA_S",
     "MUTACJA",
     "NARUSZA",
     "PRZECHODZI",
+    "ZAWIESZENIE",
+    "ZRZUT_S",
     "Konfiguracja",
     "Model",
     "Obietnica",
     "Stan",
     "Werdykt",
+    "Zawieszenie",
     "Znalezisko",
     "akcje_next",
     "cfg",
@@ -68,11 +79,23 @@ __all__ = [
 PRZECHODZI, NARUSZA = "przechodzi", "narusza"
 KONFIGURACJE = "model/konfiguracje.json"
 JAVA, JAR, MUTACJA = "TLC_JAVA", "TLC_JAR", "TLC_MUTACJA"
+ZAWIESZENIE = "ZAWIESZENIE TLC"
+# Limit jednego przebiegu TLC w kopii mutacji. Najdłuższe polecenie skryptu mutacji modelu w CI, całe, z kilkoma
+# przebiegami TLC, trwało 184 s (Mutation checks na windows-latest w nocach runów 43183893292, 43392201527 i
+# 43572533066, 12–14.11.2026), więc 300 s go nie skraca, a razem z ``ZRZUT_S`` mieści się w limicie polecenia mutacji
+# silnika (600 s, ``silnik_mutacji.TIMEOUT``), po którym zawieszony mutant dawał PRZEKROCZONY CZAS bez zrzutu.
+LIMIT_MUTANTA_S = 300.0
+# Limit jednego przebiegu TLC pełnego sprawdzenia modelu. Najdłuższy cały skrypt sprawdzenia modelu w części zadania
+# CI, ze wszystkimi konfiguracjami i przebiegami, trwał 553 s (run 43183893292, windows-latest), a 1200 s to ponad dwa razy tyle.
+LIMIT_SPRAWDZENIA_S = 1200.0
+# Czas na zrzut wątków JVM po limicie przebiegu: ``jcmd -l`` i ``jcmd <pid> Thread.print`` mają po połowie, a po nim
+# drzewo TLC ginie, więc zrzut, który sam się zawiesi, nie przedłuża przebiegu.
+ZRZUT_S = 30.0
 _POZA_ZNANYMI = "PozaZnanymi"
 _STATE = re.compile(r"^State \d+: ")
 _STUTTERING = re.compile(r"^State \d+: Stuttering")
 _BACK = re.compile(r"^Back to state (\d+): ")
-_VARIABLE = re.compile(r"^/\\ (\w+) = (.*)$")
+_VARIABLE = re.compile(r"^/\\ (\w+) = (.*)\r?$")
 _CAUSE = re.compile(r'"([\w-]+)"')
 
 
@@ -111,6 +134,15 @@ class Znalezisko:
     obietnica: str
     przyczyna: str
     opis: str
+
+
+class Zawieszenie(Exception):
+    """Przebieg TLC bez wyniku w ``limit_s``: drzewo TLC już nie żyje, ``zrzut`` to zrzut wątków JVM albo linia, czemu go
+    nie ma, a ``wyjscie`` to wyjście TLC wypisane do limitu."""
+
+    def __init__(self, limit_s: float, zrzut: str, wyjscie: str) -> None:
+        super().__init__(f"przebieg TLC bez wyniku po {limit_s:g} s")
+        self.limit_s, self.zrzut, self.wyjscie = limit_s, zrzut, wyjscie
 
 
 @dataclass(frozen=True)
@@ -182,8 +214,31 @@ def sprawdz(
     strict: bool = False,
     uwaga: str | None = None,
 ) -> int:
-    """Werdykt modelu na konfiguracjach ``chosen``; ``run_tlc(nazwa, treść .cfg)`` to wyjście TLC. Zwraca kod wyjścia."""
+    """Werdykt modelu na konfiguracjach ``chosen``; ``run_tlc(nazwa, treść .cfg)`` to wyjście TLC. Zwraca kod wyjścia.
 
+    Zawieszenie przebiegu (``Zawieszenie`` z ``run_tlc``) kończy sprawdzenie od razu, bo każdy następny przebieg mógłby
+    czekać tyle samo."""
+
+    try:
+        return _sprawdz(model, chosen, run_tlc, strict=strict, uwaga=uwaga)
+    except Zawieszenie as hang:
+        tail = "\n".join(hang.wyjscie.splitlines()[-20:])
+        print(f"   {ZAWIESZENIE}: {hang}, drzewo TLC zabite. Wyjście TLC do limitu (koniec):\n{tail}")
+        print(f"   Zrzut wątków JVM tego przebiegu:\n{hang.zrzut}")
+        if uwaga is not None:
+            print(f"\nUWAGA: {uwaga}")
+        print(f"\n{model.werdykt}: {ZAWIESZENIE} (1)")
+        return 2
+
+
+def _sprawdz(
+    model: Model,
+    chosen: Sequence[Konfiguracja],
+    run_tlc: Callable[[str, str], str],
+    *,
+    strict: bool,
+    uwaga: str | None,
+) -> int:
     new: list[str] = []
     gone: list[str] = []
     known: list[str] = []
@@ -397,41 +452,105 @@ def akcje_next(spec: str) -> frozenset[str]:
     return frozenset(re.findall(r"\\/\s*(?:\\E[^:]*:\s*)?(\w+)", found[1]))
 
 
-def tlc(java: str, jar: Path, spec: Path, name: str, text: str, *, w_trakcie: bool = False) -> str:
+def tlc(
+    java: str,
+    jar: Path,
+    spec: Path,
+    name: str,
+    text: str,
+    *,
+    w_trakcie: bool = False,
+    limit_s: float | None = None,
+    zrzut_s: float = ZRZUT_S,
+) -> str:
     """Wyjście TLC dla specyfikacji ``spec`` z konfiguracją ``text`` (treść pliku ``name.cfg``).
 
-    Liveness TLC sprawdza na pełnym grafie stanów, a z ``w_trakcie`` także co minutę BFS na grafie, który już zna.
+    Liveness TLC sprawdza na pełnym grafie stanów, a z ``w_trakcie`` (kopia mutacji) także co minutę BFS na grafie,
+    który już zna.
 
     TLC zapisuje ślady i stany obok specyfikacji, a moduły standardowe (``Naturals.tla``) rozpakowuje pod stałą nazwą
     do ``java.io.tmpdir`` i usuwa przy wyjściu, więc każdy przebieg ma własny katalog tymczasowy i w nim swój
     ``java.io.tmpdir``. Ze wspólnym przebiegi naraz (mutacje skilla) czytają moduł, który inny przebieg właśnie
     nadpisał albo usunął, i TLC kończy się błędem parsowania zamiast werdyktu.
+
+    Przebieg bez wyniku po ``limit_s`` (domyślnie ``LIMIT_MUTANTA_S`` z ``w_trakcie``, inaczej ``LIMIT_SPRAWDZENIA_S``)
+    dostaje zrzut wątków JVM, a po kolejnych ``zrzut_s`` drzewo TLC ginie i ``tlc`` rzuca ``Zawieszenie``.
     """
 
+    limit = limit_s if limit_s is not None else LIMIT_MUTANTA_S if w_trakcie else LIMIT_SPRAWDZENIA_S
     with tempfile.TemporaryDirectory(prefix="tlc-") as work:
         shutil.copy2(spec, work)
         Path(work, f"{name}.cfg").write_text(text, encoding="utf-8")
-        result = potomne.run(
-            [
-                java,
-                "-XX:+UseParallelGC",
-                f"-Djava.io.tmpdir={work}",
-                "-cp",
-                str(jar),
-                "tlc2.TLC",
-                "-workers",
-                "auto",
-                "-lncheck",
-                "default" if w_trakcie else "final",
-                "-metadir",
-                str(Path(work, "stany")),
-                "-config",
-                f"{name}.cfg",
-                spec.name,
-            ],
-            cwd=Path(work),
-        )
+        metadir = Path(work, "stany")
+        done = threading.Event()
+        dump: list[str] = []
+
+        def watch() -> None:
+            if not done.wait(limit):
+                dump.append(_thread_dump(java, metadir, zrzut_s / 2))
+
+        watcher = threading.Thread(target=watch, daemon=True)
+        watcher.start()
+        try:
+            result = _run_tlc(java, jar, spec, name, metadir, w_trakcie=w_trakcie, timeout=limit + zrzut_s)
+        except potomne.TimeoutExpired as expired:
+            watcher.join(zrzut_s)
+            said = dump[0] if dump else f"ZRZUT WĄTKÓW: jcmd nie skończył w {zrzut_s:g} s"
+            raise Zawieszenie(limit, said, "".join(expired.printed)) from None
+        finally:
+            done.set()
+            watcher.join(zrzut_s)  # zrzut przebiegu, który skończył się po limicie, nie biegnie w usuniętym katalogu
     return result.stdout + result.stderr
+
+
+def _run_tlc(
+    java: str, jar: Path, spec: Path, name: str, metadir: Path, *, w_trakcie: bool, timeout: float
+) -> subprocess.CompletedProcess[str]:
+    work = metadir.parent
+    return potomne.run(
+        [
+            java,
+            "-XX:+UseParallelGC",
+            f"-Djava.io.tmpdir={work}",
+            "-cp",
+            str(jar),
+            "tlc2.TLC",
+            "-workers",
+            "auto",
+            "-lncheck",
+            "default" if w_trakcie else "final",
+            "-metadir",
+            str(metadir),
+            "-config",
+            f"{name}.cfg",
+            spec.name,
+        ],
+        cwd=work,
+        timeout=timeout,
+    )
+
+
+def _thread_dump(java: str, metadir: Path, each_s: float) -> str:
+    """Zrzut wątków JVM przebiegu TLC z ``-metadir metadir`` przez ``jcmd`` obok ``java`` (jdk4py ma go na Windows,
+    Linuksie i macOS); JVM przebiegu wskazuje ``jcmd -l`` po katalogu ``metadir``, którego nie ma żaden inny przebieg.
+
+    Gdy zrzutu nie da się zrobić, zwraca jedną linię z przyczyną; każde polecenie ma limit ``each_s``.
+    """
+
+    jcmd = Path(java).with_name(f"jcmd{Path(java).suffix}")
+    if not jcmd.is_file():
+        return f"ZRZUT WĄTKÓW: brak {jcmd.name} obok {java}"
+    try:
+        listed = potomne.run([str(jcmd), "-l"], cwd=metadir.parent, timeout=each_s)
+        pid = next((line.split()[0] for line in listed.stdout.splitlines() if str(metadir) in line), None)
+        if pid is None:
+            return f"ZRZUT WĄTKÓW: {jcmd.name} -l nie zna JVM przebiegu z -metadir {metadir}"
+        dumped = potomne.run([str(jcmd), pid, "Thread.print"], cwd=metadir.parent, timeout=each_s)
+    except potomne.TimeoutExpired:
+        return f"ZRZUT WĄTKÓW: {jcmd.name} nie odpowiedział w {each_s:g} s"
+    except OSError as error:
+        return f"ZRZUT WĄTKÓW: {jcmd.name} nie ruszył ({error})"
+    return dumped.stdout + dumped.stderr
 
 
 def narzedzia_dla_kopii(root: Path) -> None:

@@ -34,7 +34,8 @@ _COLUMNS: Final = (ORDER_NUMBER, ADDRESS, DATE, WORKER)
 
 
 PRICED_COLUMNS: Final = (*QUANTITY_LETTERS, letter(CHARGE_AMOUNT), letter(REMARKS_AMOUNT))
-"""Kolumny, które spec #741 przypisuje pozycjom efenix albo wymienia jako kolumny bez pary (N:AP, AR, AS)."""
+"""Kolumny, które specyfikacja Wyceny w efenix przypisuje pozycjom efenix albo wymienia jako kolumny bez pary (N:AP,
+AR, AS)."""
 _PHOTO: Final = tuple(letter(number) for number in PHOTO_COLUMNS)
 _DEFECT: Final = letter(DEFECT_COLUMN)
 _AMOUNT: Final = letter(AMOUNT_COLUMN)
