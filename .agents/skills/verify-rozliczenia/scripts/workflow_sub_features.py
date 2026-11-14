@@ -17,11 +17,8 @@ hold.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 from types import ModuleType
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import run_verification
 

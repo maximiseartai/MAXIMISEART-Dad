@@ -713,13 +713,16 @@ def test_bieg_konczy_sie_verify_fail_gdy_kroki_roznia_sie_od_planu(
     assert (kod, "differ from its plan" in capsys.readouterr().err) == ((1, True) if rozwidlenie else (0, False))
 
 
-def _modul_procesow(przebieg: ModuleType, **procesy: object) -> ModuleType:
+def _modul_procesow(przebieg: ModuleType, warianty: dict[str, object], **nazwy: object) -> ModuleType:
+    """Moduł z procesami ``nazwy``, wariantami ``warianty`` i planem, który każdemu wariantowi daje jeden krok."""
+
     modul = ModuleType("procesy_proby")
-    modul.WorkflowProcess = przebieg.WorkflowProcess  # type: ignore[attr-defined]
-    modul.plan = lambda wariant: []  # type: ignore[attr-defined]
-    modul.WORKFLOW_VARIANTS = {}  # type: ignore[attr-defined]
-    for nazwa, wartosc in procesy.items():
-        setattr(modul, nazwa, wartosc)
+    vars(modul).update(
+        WorkflowProcess=przebieg.WorkflowProcess,
+        WORKFLOW_VARIANTS=warianty,
+        plan=lambda wariant: [przebieg.PlannedStep("run", "proba.py --zawsze", 0)],
+        **nazwy,
+    )
     return modul
 
 
@@ -728,8 +731,8 @@ def test_polecenie_mapy_rozliczen_odmawia_nazwy_procesu_uzytej_drugi_raz(
 ) -> None:
     pierwszy = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
     drugi = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
-    modul = _modul_procesow(przebieg, PIERWSZY=pierwszy, DRUGI=drugi)
-    modul.WORKFLOW_VARIANTS.update(a=przebieg.WorkflowVariant(pierwszy), b=przebieg.WorkflowVariant(drugi))
+    warianty = {"a": przebieg.WorkflowVariant(pierwszy), "b": przebieg.WorkflowVariant(drugi)}
+    modul = _modul_procesow(przebieg, warianty, PIERWSZY=pierwszy, DRUGI=drugi)
 
     with pytest.raises(polecenie_rozliczen.Refusal, match="two processes are named proba"):
         polecenie_rozliczen.section("proba", modul)
@@ -738,8 +741,7 @@ def test_polecenie_mapy_rozliczen_odmawia_nazwy_procesu_uzytej_drugi_raz(
 def test_polecenie_mapy_rozliczen_odmawia_procesu_bez_wariantu(przebieg: ModuleType, polecenie_rozliczen: ModuleType) -> None:
     proba = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
     bez_wariantu = przebieg.WorkflowProcess("bez-wariantu", lambda *_: None, (), ())
-    modul = _modul_procesow(przebieg, PROBA=proba, BEZ_WARIANTU=bez_wariantu)
-    modul.WORKFLOW_VARIANTS.update(a=przebieg.WorkflowVariant(proba))
+    modul = _modul_procesow(przebieg, {"a": przebieg.WorkflowVariant(proba)}, PROBA=proba, BEZ_WARIANTU=bez_wariantu)
 
     with pytest.raises(polecenie_rozliczen.Refusal, match="no variant runs bez-wariantu"):
         polecenie_rozliczen.section("proba", modul)
@@ -762,9 +764,8 @@ def test_plan_wariantu_ktory_nie_dobiega_konca_to_odmowa_a_nie_krotsza_lista(
 
 def test_polecenie_mapy_rozliczen_laczy_warianty_o_tym_samym_planie(przebieg: ModuleType, polecenie_rozliczen: ModuleType) -> None:
     proba = przebieg.WorkflowProcess("proba", lambda *_: None, (), ())
-    modul = _modul_procesow(przebieg, PROBA=proba)
-    modul.WORKFLOW_VARIANTS.update(a=przebieg.WorkflowVariant(proba), b=przebieg.WorkflowVariant(proba, run_exit=1))
-    modul.plan = lambda wariant: [przebieg.PlannedStep("run", "proba.py --zawsze", 0)]
+    warianty = {"a": przebieg.WorkflowVariant(proba), "b": przebieg.WorkflowVariant(proba, run_exit=1)}
+    modul = _modul_procesow(przebieg, warianty, PROBA=proba)
 
     sekcja = polecenie_rozliczen.section("proba", modul)
 
