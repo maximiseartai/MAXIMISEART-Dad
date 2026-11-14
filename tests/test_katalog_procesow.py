@@ -8,7 +8,10 @@ Metryk oraz kolejność sprawdzeń Diagnozy. Dokładne teksty i listy sprawdzeń
 from __future__ import annotations
 
 from collections.abc import Callable
+import copy
+import dataclasses
 from pathlib import Path
+import sys
 from typing import Any, Final, get_args
 
 from fastapi.testclient import TestClient
@@ -18,7 +21,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.efenix_chrome import atrapa_opening
-from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, ProcessKind, Start
+from rozliczenia.centrum.process_kind import HostParts, PathNeed, PeriodProcessKind, PreparedRun, ProcessKind, Start
 from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.efenix_pricing import PricingMode
@@ -278,3 +281,25 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     assert ("Folder okresu" in labels) is declaration.reads_period_folder
     assert ("Pliki okresu w Excelu" in labels) is declaration.reads_period_folder
     assert any(label.startswith("Wzorzec ") for label in labels) is bool(declaration.templates)
+
+
+@pytest.mark.parametrize(
+    "kopia",
+    [
+        pytest.param(lambda gotowe: dataclasses.replace(gotowe, period="2026-11"), id="dataclasses.replace"),
+        pytest.param(
+            lambda gotowe: copy.replace(gotowe, period="2026-11"),
+            id="copy.replace",
+            marks=pytest.mark.skipif(sys.version_info < (3, 13), reason="copy.replace jest od Pythona 3.13"),
+        ),
+    ],
+)
+def test_kopia_gotowego_uruchomienia_przez_replace_rzuca_takze_obok_mypy(kopia: Callable[[Any], object]) -> None:
+    """Kopię ``PreparedRun`` przez ``replace`` odrzuca mypy, a z ``# type: ignore[…]`` rzuca Python, bo to nie dataclassa
+    i nie ma ``__replace__``: ta postać nie jest próbką ``ZNANE_LUKI_KATALOGU`` (``tests/test_granice_importow.py``).
+    Wartość bez pól wystarcza, bo ``replace`` odmawia po typie, zanim przeczyta pole."""
+
+    gotowe: Any = object.__new__(PreparedRun)
+
+    with pytest.raises(TypeError, match=r"replace\(\)"):
+        kopia(gotowe)

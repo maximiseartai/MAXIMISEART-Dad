@@ -27,6 +27,7 @@ import gzip
 import json
 from pathlib import Path
 import pickle
+import sys
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
@@ -479,6 +480,29 @@ def _logs_on_disk(directory: Path) -> LogsOnDisk:
     """Logi na dysku w katalogu Logów ``directory`` (obok dziennika Centrum)."""
 
     return LogsOnDisk(CentrumLog(directory / "centrum-rozliczen.log"), journaled="efenix")
+
+
+
+@pytest.mark.parametrize(
+    "kopia",
+    [
+        pytest.param(lambda gotowa: dataclasses.replace(gotowa, header=None), id="dataclasses.replace"),
+        pytest.param(
+            lambda gotowa: copy.replace(gotowa, header=None),
+            id="copy.replace",
+            marks=pytest.mark.skipif(sys.version_info < (3, 13), reason="copy.replace jest od Pythona 3.13"),
+        ),
+    ],
+)
+def test_kopia_wysylki_logow_przez_replace_rzuca_takze_obok_mypy(kopia: Callable[[Any], object]) -> None:
+    """Kopię ``LogsPost`` przez ``replace`` odrzuca mypy, a z ``# type: ignore[…]`` rzuca Python, bo to nie dataclassa
+    i nie ma ``__replace__``: ta postać nie jest próbką ``ZNANE_LUKI_WYSYLKI`` (``tests/test_granice_importow.py``).
+    Wartość bez pól wystarcza, bo ``replace`` odmawia po typie, zanim przeczyta pole."""
+
+    gotowa: Any = object.__new__(LogsPost)
+
+    with pytest.raises(TypeError, match=r"replace\(\)"):
+        kopia(gotowa)
 
 
 # Wszystko, co bierze Logi albo tekst po strażniku: cztery wersje komentarza Uruchomienia i plik Logów.

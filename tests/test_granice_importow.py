@@ -833,6 +833,20 @@ from rozliczenia.centrum.process_kind import PreparedRun
 def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
     object.__setattr__(gotowe, "period", okres)
 """,
+    "przypisanie pola z type: ignore": """\
+from typing import Any
+
+from rozliczenia.centrum.process_kind import PreparedRun
+
+
+def podmien(gotowe: PreparedRun[Any, Any], okres: str) -> None:
+    gotowe.period = okres  # type: ignore[misc]  # próbka
+""",
+    "type(gotowe) z dowodem z type: ignore": "from typing import Any\n\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
+    + _GOTOWE
+    + "    return type(gotowe)("
+    + _POLA.format(dowod="None")
+    + ")  # type: ignore[arg-type]  # próbka\n",
 }
 
 
@@ -1167,6 +1181,22 @@ from rozliczenia.centrum.run_logs_guard import GuardedLogs
 
 def przebierz(record: RunLog, logs: GuardedLogs) -> None:
     object.__setattr__(record, "__class__", type(logs))
+""",
+    "zmiana __class__ przez setattr": """\
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def przebierz(record: RunLog, logs: GuardedLogs) -> None:
+    setattr(record, "__class__", type(logs))
+""",
+    "zmiana __class__ przypisaniem z type: ignore": """\
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import GuardedLogs
+
+
+def przebierz(record: RunLog, logs: GuardedLogs) -> None:
+    record.__class__ = type(logs)  # type: ignore[assignment]  # próbka
 """,
     "type(logs) z dowodem z napisu sklejonego": """\
 from rozliczenia.centrum import run_logs_guard
@@ -1559,6 +1589,21 @@ from rozliczenia.centrum.outbox import Post
 
 def wysylka(post: Post, dowody: dict[str, Any]) -> LogsPost:
     return LogsPost(post, dowody["wersje"])
+""",
+    "dowód wersji z type: ignore": """\
+from rozliczenia.centrum.comment_versions import LogsPost
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(post: Post) -> LogsPost:
+    return LogsPost(post, None)  # type: ignore[arg-type]  # próbka
+""",
+    "podklasa gotowej wysyłki z type: ignore": """\
+from rozliczenia.centrum.comment_versions import LogsPost
+
+
+class Moja(LogsPost):  # type: ignore[misc]  # próbka
+    pass
 """,
     "type(gotowa) z dowodem z getattr": """\
 from rozliczenia.centrum import comment_versions
@@ -2167,6 +2212,8 @@ FIXTURES = module_from_spec(SPEC)
     "sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "tests/fixtures")\n',
     "sys pod inną nazwą": 'import sys as system\n\nsystem.path.insert(0, "tests/fixtures")\n',
     "sys.modules": 'import sys\n\nFIXTURES = sys.modules["tests.fixtures.settlement"]\n',
+    "exec pod inną nazwą": 'URUCHOM = exec\nURUCHOM("import tests.fixtures.settlement")\n',
+    "exec z noqa": 'exec("import tests.fixtures.settlement")  # noqa: S102 - próbka\n',
 }
 
 

@@ -4,6 +4,10 @@ Strażnik trzyma próbki w słowniku ``ZNANE_LUKI`` swojego testu (opis postaci 
 prawdziwe mechanizmy strażnika: ``ruff check`` z konfiguracją repozytorium na ścieżce sondy, ``mypy`` z konfiguracją
 ``pyproject.toml``, gdy strażnik stoi na typie, i własne sprawdzenie strażnika na module próbki. Próbka przechodzi przez
 każdy z nich, a gdy któryś zaczyna ją łapać, ``assert_znane_luki`` każe usunąć ją ze ``ZNANE_LUKI``.
+
+Postać, którą łapie tylko reguła ruff albo mypy, nie jest przez to poza granicą: jej wariant z ``# noqa`` albo
+``# type: ignore[…]`` i wariant pod inną nazwą są próbkami, chyba że taki wariant rzuca w trakcie działania, a pokazuje
+to test (np. ``replace`` wartości, która nie jest dataclassą).
 """
 
 from __future__ import annotations
