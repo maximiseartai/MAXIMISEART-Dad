@@ -186,4 +186,8 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_role("heading", name="Centrum rozliczeń jest zamknięte", exact=True)).to_be_visible()
     until(lambda: not answers(run.url), "the Centrum process stops serving")
     until(lambda: _log_events(served_log)[-2:] == ["zamkniecie", "stop"], "the log ends with zamkniecie, stop")
+    run.check(
+        _log_events(served_log).count("zamkniecie") == closings + 1,
+        "„Zamknij Centrum” closes Centrum once: the log has exactly one closing more than before",
+    )
     run.capture(page, "92-start-i-zamykanie-zamkniete")

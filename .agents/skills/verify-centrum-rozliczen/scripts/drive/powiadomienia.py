@@ -228,7 +228,12 @@ def drive(run: Run, page: Page) -> None:
     expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
     _bell(page).click()
     expect(page.get_by_role("heading", name=BELL, exact=True)).to_be_visible()
-    expect(page.get_by_role("list", name=BELL).get_by_label("nowe", exact=True)).to_have_count(0)
+    rows = page.get_by_role("list", name=BELL).get_by_role("listitem")
+    expect(rows.first).to_be_visible()
+    run.check(
+        rows.get_by_label("nowe", exact=True).count() == 0,
+        f"after leaving the view, none of the {rows.count()} rows has the mark „nowe” any more",
+    )
     expect(_bell(page)).to_have_accessible_name(BELL)
 
     run.step(FEATURE, "powiadomienia-brak-sieci")

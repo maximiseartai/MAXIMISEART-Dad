@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 from urllib.parse import urlsplit
@@ -217,8 +218,13 @@ def drive(run: Run, page: Page) -> None:
     run.step(feature, "ustawienia-niedostepna-sciezka")
     with _without_access(run, page) as (register_path, periods_path):
         page.reload()
-        for row, path in ((register, register_path), (periods, periods_path)):
-            expect(row.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True)).to_be_visible()
+        rows = ((register, register_path), (periods, periods_path))
+        for row, path in rows:
+            expect(row.get_by_text(re.compile(rf"^(Nie da się teraz odczytać|Nie ma już): {re.escape(path.name)}$"))).to_be_visible()
+        run.check(
+            all(row.get_by_text(f"Nie da się teraz odczytać: {path.name}", exact=True).is_visible() for row, path in rows),
+            "a Rejestr zleceń and a folder okresów in a folder without access read „Nie da się teraz odczytać”, not „Nie ma już”",
+        )
         run.capture(page, "276-ustawienia-niedostepna-sciezka")
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
@@ -230,8 +236,12 @@ def drive(run: Run, page: Page) -> None:
     expect(page.locator("html")).not_to_have_class("dark")
     until(lambda: run.remembered("motyw") == "light", "the settings file remembers the light theme")
     page.reload()
-    expect(themes.get_by_role("button", name="Jasny", exact=True)).to_have_attribute("aria-pressed", "true")
-    expect(page.locator("html")).not_to_have_class("dark")
+    light = themes.get_by_role("button", name="Jasny", exact=True)
+    expect(light).to_be_visible()
+    run.check(
+        light.get_attribute("aria-pressed") == "true" and "dark" not in (page.locator("html").get_attribute("class") or "").split(),
+        "after a reload the page reads the light theme from the settings file",
+    )
     run.capture(page, "05-ustawienia-motyw-jasny")
     themes.get_by_role("button", name="Ciemny", exact=True).click()
     expect(page.locator("html")).to_have_class("dark")
