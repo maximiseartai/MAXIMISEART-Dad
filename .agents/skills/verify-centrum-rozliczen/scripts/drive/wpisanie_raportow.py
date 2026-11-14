@@ -94,8 +94,11 @@ WINDOW_FIRST = date(2026, 10, 26)
 HOLIDAYS = {"2026-11-01": "Wszystkich Świętych", WINDOW_TODAY: "Narodowe Święto Niepodległości"}
 # Days on which wykonawca.c sent a mail but has no orders and no problem: nothing to enter, so an empty cell.
 MAIL_ONLY = ("2026-11-07", "2026-11-08")
-# Przypomnienia o raporcie za 05.11 do wykonawca.b, 06.11 at 8:00 and 18:00 in Dad's time (UTC+1 in November).
-REMINDERS = ("2026-11-06T07:00:00Z", "2026-11-06T17:00:00Z")
+# Przypomnienia o raporcie za 05.11 do wykonawca.b, 06.11 and 07.11 at 8:00 in Dad's time (UTC+1 in November): two days,
+# so the line under his name names the later one.
+REMINDERS = ("2026-11-06T07:00:00Z", "2026-11-07T07:00:00Z")
+WAITING_REMINDER = ("2026-11-11T07:00:00Z",)
+"""The Przypomnienie of `wykonawca.a` for 10.11, which still waits for his Raport: no „Raport przyszedł” in its course."""
 HANDED_REMINDER = ("2026-11-04T07:00:00Z",)
 """The Przypomnienie of `wykonawca.a` for 03.11, before his late Raport: one popover with a note and a Przypomnienie."""
 WINDOW_WORKERS = ("wykonawca.a", "wykonawca.b", "wykonawca.c")
@@ -377,7 +380,7 @@ def _window_view(clicked_at: str) -> Json:
     workdays = [day for day in days if date.fromisoformat(day).weekday() < 6 and day not in HOLIDAYS]
     special: dict[tuple[str, str], dict[str, Any]] = {
         ("wykonawca.a", "2026-11-03"): {"orders": 2, "reminders": HANDED_REMINDER},
-        ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0},
+        ("wykonawca.a", "2026-11-10"): {"orders": 3, "without": 3, "mails": 0, "reminders": WAITING_REMINDER},
         ("wykonawca.b", "2026-11-03"): {"orders": 3, "problem": True, "taken": True},
         ("wykonawca.b", "2026-11-05"): {"orders": 2, "without": 1, "reminders": REMINDERS},
         ("wykonawca.c", "2026-11-09"): {"orders": 4, "added": True},
@@ -477,7 +480,7 @@ def _range_map(run: Run, page: Page) -> None:
             expect(_row(page, "wykonawca.c").locator(f'td[data-day="{day}"]')).to_be_empty()
         run.check(True, "a day with a mail but no orders and no problem is an empty cell, on Sunday struck through")
         run.capture(page, "293-raporty-mapa-bez-popovera", full_page=False)
-        _tile_is(page, "wykonawca.a", "2026-11-10", "Czeka", 0, 3)
+        _tile_is(page, "wykonawca.a", "2026-11-10", "Czeka", 0, 3, sent=", 1 przypomnienie wysłane")
         _tile_is(page, "wykonawca.b", "2026-11-03", "Problem", 2, 3)
         _tile_is(page, "wykonawca.b", "2026-11-05", "Bez raportu", 1, 2, sent=", 2 przypomnienia wysłane")
         _tile_is(page, "wykonawca.a", "2026-11-03", "Komplet", 2, 2, sent=", 1 przypomnienie wysłane")
@@ -526,7 +529,7 @@ def _range_map(run: Run, page: Page) -> None:
             (
                 ("2 zlecenia w INTERMAX", "cz. 05.11"),
                 ("Przypomnienie wysłane", "pt. 06.11, 08:00"),
-                ("Kolejne przypomnienie", "pt. 06.11, 18:00"),
+                ("Kolejne przypomnienie", "sb. 07.11, 08:00"),
                 ("Raport przyszedł", "1 mail"),
             ),
         )
@@ -534,6 +537,9 @@ def _range_map(run: Run, page: Page) -> None:
         _close(page, popover)
         popover = _popover(page, "wykonawca.b", "2026-11-03")
         expect(popover.get_by_text("Przypomnieni", exact=False)).to_have_count(0)
+        _close(page, popover)
+        popover = _popover(page, "wykonawca.a", "2026-11-10")
+        _reminder_steps(popover, (("3 zlecenia w INTERMAX", "wt. 10.11"), ("Przypomnienie wysłane", "śr. 11.11, 08:00")))
         _close(page, popover)
         popover = _popover(page, "wykonawca.a", "2026-11-03")
         expect(popover.get_by_role("listitem").filter(has_text=HANDED_NOTE)).to_have_count(1)
@@ -557,7 +563,8 @@ def _range_map(run: Run, page: Page) -> None:
         run.check(
             True,
             "the tiles with a Przypomnienie name its count; the popover of 05.11 lists its orders, both Przypomnienia "
-            "in Dad's time and the Raport that came, 03.11 has no such list; the page says the footer file is missing; "
+            "in Dad's time and the Raport that came, 03.11 has no such list, and 10.11 of wykonawca.a, still without "
+            "a Raport, ends with its Przypomnienie; the page says the footer file is missing; "
             "the popover of wykonawca.a 03.11 has both „przekazane wykonawca.b” and its Przypomnienie; the popover of wykonawca.c 09.11 has „dopisane z raportu, uzupełnij resztę” under its last "
             "order, entered and without a Problem badge (#1354)",
         )
@@ -619,7 +626,7 @@ def _range_map(run: Run, page: Page) -> None:
         expect(_map(page).get_by_role("row")).to_have_count(3)
         expect(page.get_by_text("2 z 3 Wykonawców", exact=True)).to_be_visible()
         expect(_row(page, "wykonawca.a")).to_contain_text("1 przypomnienie · ost. 04.11")
-        expect(_row(page, "wykonawca.b")).to_contain_text("2 przypomnienia · ost. 06.11")
+        expect(_row(page, "wykonawca.b")).to_contain_text("2 przypomnienia · ost. 07.11")
         dimmed = _tile(page, "wykonawca.b", "2026-11-03").evaluate("tile => Number(getComputedStyle(tile).opacity)")
         kept = _tile(page, "wykonawca.b", "2026-11-05").evaluate("tile => Number(getComputedStyle(tile).opacity)")
         run.check(
