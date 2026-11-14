@@ -63,12 +63,12 @@ from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 from rozliczenia.wall_clock import utc_now
 
-# Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`.
 SEARCH_DEADLINE_S: Final = 3.0
+"""Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`."""
 REPORT_THREAD: Final = "zgloszenie-skrzynka"
 
-# Zgłoszenie nieudanej Aktualizacji narzędzia ma tyle ostatnich wpisów dziennika co Zgłoszenie z Diagnozy.
 _UPDATE_LOG_ENTRIES: Final = 20
+"""Zgłoszenie nieudanej Aktualizacji narzędzia ma tyle ostatnich wpisów dziennika co Zgłoszenie z Diagnozy."""
 
 _CHECK_STATES: Final = {"passed": "przeszło", "failed": "nie przeszło", "not_checked": "nie sprawdzono"}
 
@@ -307,6 +307,9 @@ def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int
     ``lines`` dostaje, ile pierwszych ramek śladu wywołań i ile najstarszych wpisów dziennika pominąć. Skraca się
     najpierw ślad, potem dziennik, każde o najmniej, ile trzeba; treść, która nie mieści się nawet bez śladu i
     dziennika, zostaje taka, a ``Post`` ją odrzuci.
+
+    Każdy krok po pierwszym skraca treść, więc pierwszy, który się mieści, znajduje bisekcja. Pierwszy krok (całe
+    Zgłoszenie) sprawdza osobno, bo dopisek o pominiętych ramkach bywa dłuższy niż jedna ramka.
     """
 
     steps = [
@@ -317,8 +320,6 @@ def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int
     def fits(step: tuple[int, int]) -> bool:
         return len(_body(lines(*step))) <= PART_LIMIT
 
-    # Każdy krok po pierwszym skraca treść, więc pierwszy, który się mieści, znajduje bisekcja. Pierwszy krok (całe
-    # Zgłoszenie) sprawdza osobno, bo dopisek o pominiętych ramkach bywa dłuższy niż jedna ramka.
     first = 0 if fits(steps[0]) else bisect_left(steps, True, lo=1, key=fits)
     return lines(*steps[min(first, len(steps) - 1)])
 
@@ -441,7 +442,8 @@ class ReportHandle:
     Po każdej odpowiedzi skrzynki, każdej wysyłce i dostarczeniu z kolejki nowy stan dostaje ``shown`` właściciela.
     Odpowiedź na pytanie sprzed wysyłki przepada, bo stan to już wynik wysyłki. ``shown`` biegnie pod blokadą
     uchwytu, więc dostaje stany w kolejności ich zmian, i nie woła uchwytu. Właściciel, który pokazuje stan dopiero
-    po odpowiedzi skrzynki, czeka na nią przez ``wait_for_box``.
+    po odpowiedzi skrzynki, czeka na nią przez ``wait_for_box``. Wysyłka, której dostarczenie przyszło tuż po końcu
+    czekania, zanim uchwyt pokazał „czeka w kolejce”, kończy się stanem „wysłane”.
     """
 
     def __init__(self, desk: _Desk, fingerprint: str, shown: ReportShown | None) -> None:
@@ -452,9 +454,9 @@ class ReportHandle:
         self._state = desk.state_of(fingerprint)
         self._preview: _Preview | None = None
         self._asking: threading.Thread | None = None
-        self._sends = 0  # wysyłki zaczęte do tej pory: odpowiedź skrzynki na pytanie sprzed wysyłki przepada
+        self._sends = 0
         self._sending = False
-        self._returned = False  # powrót problemu już poszedł do kolejki: drugi z tego uchwytu by go dublował
+        self._returned = False
         self._ear = _Ear(self._delivered, self._rejected)
         desk.listen(fingerprint, self._ear)
 
@@ -532,7 +534,6 @@ class ReportHandle:
             raise
         with self._changed:
             self._sending = False
-            # Dostarczenie mogło przyjść tuż po końcu czekania, zanim uchwyt pokazał „czeka w kolejce”.
             if isinstance(state, common_contract.Queued) and not self._desk.pending(self._fingerprint):
                 state = common_contract.Sent(state="sent")
             self._show(state)
@@ -568,6 +569,12 @@ class Reports:
     otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka dopisuje do niego
     komentarz „Zgłoszenie wróciło” zamiast zakładać nowe (powrót po Diagnozie Zatrzymania kładzie w kolejce sam
     uchwyt), a problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej drugi raz.
+
+    Wysyłka ma własny identyfikator, nie odcisk problemu: odcisk wraca po zamknięciu Zgłoszenia, a kolejka czeka na
+    dostarczenie po identyfikatorze. Sprawa, której wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby
+    wiecznie, a tata nie mógłby kliknąć jeszcze raz. Blokada chroni tylko stan w pamięci (ostatnią odpowiedź skrzynki o
+    otwarte Zgłoszenie każdego problemu w tej pracy Centrum i to, ile numerów issue dostały jego sprawy); pytania do
+    skrzynki idą bez niej.
     """
 
     def __init__(
@@ -591,11 +598,8 @@ class Reports:
         self._queue_directory = outbox.directory
         self._box = box
         self._outbox = outbox
-        # Blokada chroni tylko stan w pamięci; pytania do skrzynki idą bez niej.
         self._lock = threading.Lock()
-        # Ostatnia odpowiedź skrzynki w tej pracy Centrum: odcisk problemu → numer otwartego Zgłoszenia albo None.
         self._open: dict[str, int | None] = {}
-        # Ile numerów issue dostały sprawy problemu w tej pracy Centrum: odpowiedź na pytanie sprzed numeru jest starsza.
         self._numbered: dict[str, int] = {}
         self._ears: dict[str, weakref.WeakSet[_Ear]] = {}
         self._desk = _Desk(
@@ -645,7 +649,6 @@ class Reports:
         if self._pending(fingerprint):
             return self._cases.queued(fingerprint, self._box)
         case = Case(REPORT, fingerprint, preview.what, self._commit(), utc_now(), number=None)
-        # Własny identyfikator wysyłki: odcisk wraca po zamknięciu, a kolejka czeka na dostarczenie po identyfikatorze.
         post = Post.of(
             report_target(fingerprint, preview.title),
             period=preview.period,
@@ -658,7 +661,7 @@ class Reports:
         try:
             queued = self._outbox.post(post)
         finally:
-            if not queued:  # sprawa bez pliku kolejki czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz
+            if not queued:
                 self._cases.withdraw(case)
         if not queued:
             message = report_messages.not_queued(self._queue_directory)
