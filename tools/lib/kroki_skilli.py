@@ -27,12 +27,12 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import cache
-import importlib.util
 import os
 from pathlib import Path
 import re
 from typing import Any, NamedTuple
 
+from import_dynamiczny import modul_z_pliku
 from jednostka import Klucz, Rodzaj
 from ostatnie_linie import MUTACJE_OK
 
@@ -62,12 +62,7 @@ def _name(path: Path, root: Path) -> str:
 
 @cache
 def _mutations(script: Path) -> tuple[Any, ...]:
-    spec = importlib.util.spec_from_file_location(f"_mutacje_{script.parents[1].name}", script)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"nie da się wczytać {_name(script, _root(script.parents[1]))}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return tuple(module.MUTATIONS)
+    return tuple(modul_z_pliku(f"_mutacje_{script.parents[1].name}", script).MUTATIONS)
 
 
 def _front(skill_md: Path) -> list[str]:
