@@ -83,7 +83,7 @@ from rozliczenia.centrum import run_comments
 from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
-from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, TOOL_TEXT_GRAMMAR, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, guarded, shown, tool
 from rozliczenia.efenix_pricing import OrderKind
@@ -927,7 +927,9 @@ from rozliczenia.centrum.outbox import ArchiveFile
 def plik(komorka: str) -> ArchiveFile | None:
     return cls._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
 """,
-    "pole TOOL_TEXT Logów z komórki w pliku Archiwum (run_id)": _GOTOWY_PLIK
+    # Pole TOOL_TEXT spoza gramatyki pola idzie przez strażnika, który maskuje tylko wartości z pamięci; wartość spoza
+    # pamięci przechodzi, jak każdy tekst Logów (krok B: lista dozwolonych słów).
+    "strażnik zna tylko zapamiętane wartości: pole TOOL_TEXT spoza gramatyki z wartością spoza pamięci (run_id)": _GOTOWY_PLIK
     + """from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenValues
@@ -936,19 +938,20 @@ from rozliczenia.client_data import ForbiddenValues
 def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:
     return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
 """,
-    "pole str wywołującego w tekście narzędzia z prawem tool (okres postępu w post_of)": """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
-from rozliczenia.centrum.outbox import NewIssue, PeriodThread
-from rozliczenia.centrum.pricing_progress import PricingProgress
-from rozliczenia.centrum.report_box import Label
-from rozliczenia.centrum.run_logs import StartFacts
+    # Do gramatyki identyfikatora (typ wyjątku, plik i funkcja ramki, system) pasuje jedno słowo, a strażnik zostawia tekst
+    # w gramatyce pola bez maski także wtedy, gdy pamięć go zna (#936: słowo narzędzia równe wartości z pliku taty).
+    "gramatyka identyfikatora przepuszcza jedno słowo z komórki: zapamiętane słowo jako funkcja ramki śladu": _GOTOWY_PLIK
+    + """from rozliczenia.call_trace import CallFrame, CallTrace
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
 
 
-def cel(komorka: str, etykieta: Label, postep: ProgressVersion) -> NewIssue:
-    s = postep.progress.started
-    start = StartFacts(run_id=s.run_id, process=s.process, mode=s.mode, period=komorka, started_at=s.started_at)
-    watek = post_of(ProgressVersion(PricingProgress(start, (), None, None), postep.text)).target
-    assert isinstance(watek, PeriodThread)
-    return NewIssue(etykieta, watek.title)
+def plik(slowo: str, logi: RunLog, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, slowo)
+    slad = CallTrace("ValueError", (CallFrame("src/rozliczenia/engine.py", 1, slowo),))
+    zle = logi.model_copy(update={"trace": slad})
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_logs(zle, pamiec).text)
 """,
 }
 
@@ -978,6 +981,62 @@ _PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
 # Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
 # z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
 ODMOWY_LOGOW: Final = {
+    "okres z faktów startu dziennika Wyceny w tekście narzędzia post_of (postęp)": (
+        """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
+from rozliczenia.centrum.outbox import NewIssue, PeriodThread
+from rozliczenia.centrum.pricing_progress import PricingProgress
+from rozliczenia.centrum.report_box import Label
+from rozliczenia.centrum.run_logs import StartFacts
+
+
+def cel(komorka: str, etykieta: Label, postep: ProgressVersion) -> NewIssue:
+    s = postep.progress.started
+    start = StartFacts(run_id=s.run_id, process=s.process, mode=s.mode, period=komorka, started_at=s.started_at)
+    watek = post_of(ProgressVersion(PricingProgress(start, (), None, None), postep.text)).target
+    assert isinstance(watek, PeriodThread)
+    return NewIssue(etykieta, watek.title)
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
+    "identyfikator z faktów startu dziennika Wyceny w identyfikatorze wysyłki post_of (postęp)": (
+        """from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post_of
+from rozliczenia.centrum.pricing_progress import PricingProgress
+from rozliczenia.centrum.run_logs import StartFacts
+
+
+def wysylka(slowo: str, postep: ProgressVersion) -> LogsPost:
+    s = postep.progress.started
+    start = StartFacts(run_id=slowo, process=s.process, mode=s.mode, period=s.period, started_at=s.started_at)
+    return post_of(ProgressVersion(PricingProgress(start, (), None, None), postep.text))
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
+    "pole TOOL_TEXT spoza gramatyki z zapamiętaną wartością komórki: run_id w pliku Archiwum": (
+        _GOTOWY_PLIK
+        + """from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+
+
+def plik(komorka: str, logi: RunLog, pamiec: ForbiddenValues, plik: ArchiveFile) -> ArchiveFile:
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, guard_logs(logi.model_copy(update={"run_id": komorka}), pamiec).text)
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
+    "pole TOOL_TEXT spoza gramatyki z zapamiętaną wartością komórki: okres w tagu, tytule i opisie pliku Archiwum": (
+        """from rozliczenia.centrum.comment_versions import LogsPost, OwnLogs, post_of
+from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.run_logs_guard import guard_logs
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues
+
+
+def wysylka(komorka: str, logi: RunLog, pamiec: ForbiddenValues) -> LogsPost:
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    return post_of(OwnLogs(guard_logs(logi.model_copy(update={"period": komorka}), pamiec)))
+""",
+        "bieg: plik kolejki bez wartości komórki",
+    ),
     "atrapa pliku Archiwum z polami prawdziwego pliku": (
         """from types import SimpleNamespace
 from typing import cast
@@ -2648,3 +2707,4 @@ def test_pole_z_listy_pol_narzedzia_ma_w_typie_tylko_zamkniete_listy_chwile_licz
 
     assert sorted(found - set(TOOL_TEXT)) == []
     assert sorted(set(TOOL_TEXT) - found) == [], "wyjątek bez pola w poddrzewie listy"
+    assert sorted(set(TOOL_TEXT) ^ set(TOOL_TEXT_GRAMMAR)) == [], "każdy tekst pola z listy ma gramatykę w run_logs_guard.TOOL_TEXT_GRAMMAR"

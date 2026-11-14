@@ -1481,6 +1481,28 @@ def test_plik_starszego_centrum_ze_znacznikiem_dostarczenia_znika_po_starcie_bez
     assert "skrzynka-archiwum" not in queue.log()
 
 
+@pytest.mark.parametrize("schemat", [3, 2])
+def test_plik_kolejki_starszego_wydania_z_identyfikatorem_innej_postaci_wychodzi_w_pierwszym_przejsciu(schemat: int, tmp_path: Path) -> None:
+    """Plik kolejki, który zapisało starsze Wydanie (schemat 3 sprzed typu ``Outgoing`` identyfikatora albo 2 bez pliku do
+    Archiwum), z identyfikatorem spoza ``uuid4().hex``: parser daje mu typ do wysyłki (``tool``), więc przejście go
+    wysyła, a kolejka u taty nie staje. ``passed`` wraca z końcem przejścia także wtedy, gdy przejście padło na kontroli
+    typu, więc test pada od razu, bez limitu czekania na skrzynkę (przegląd #1843, D2)."""
+
+    queue = Queue(tmp_path, FakeReportBox())
+    queue.directory.mkdir(parents=True)
+    document = json.loads(post(["treść\n"], run_id="20261023-101500-kontrola").to_json())
+    if schemat == 2:
+        for key in ("archive", "archived", "rank", "state"):
+            del document[key]
+    document.update(schema_version=schemat)
+    (queue.directory / "20261023T101500000000Z-0001-kontrola-ilosci-20261023.json").write_text(json.dumps(document), encoding="utf-8")
+
+    queue.outbox.resume()
+    queue.passed()
+
+    assert (queue.files(), [(issue.title, "treść" in issue.body) for issue in queue.box.issues]) == ([], [(THREAD.title, True)])
+
+
 def test_kontrole_ilosci_okresu_w_jednym_przejsciu_ida_do_jednego_issue_zanim_lista_je_pokaze(tmp_path: Path) -> None:
     """Lista issue GitHuba pokazuje nowe issue po kilku sekundach (#879). Druga Kontrola ilości okresu, która w tym samym
     przejściu idzie zaraz po tym, jak pierwsza założyła issue okresu, trafia do niego komentarzem."""
@@ -1936,6 +1958,16 @@ def wysylka(komorka: str, cel: NewIssue, post: Post) -> Post:
 # który daje kolejce wartość z komórki taty bez strażnika pracy Centrum, a przechodzi przez mypy i ruff z konfiguracją src/
 # i przez plik kolejki (tests/fixtures/plik_kolejki.py).
 ZNANE_LUKI_TEKSTU: Final = {
+    # Identyfikator Uwagi taty bierze note_post jako str i owija w tool (prawo TID251 case_delivery), więc napis
+    # wywołującego idzie do znacznika w Skrzynce bez gramatyki; identyfikator z faktów startu post_of ma ją (tool_text).
+    "pole str wywołującego w tekście narzędzia z prawem tool: identyfikator Uwagi taty (note_post)": """\
+from rozliczenia.centrum.case_delivery import note_post
+from rozliczenia.centrum.outbox import Post
+
+
+def wysylka(slowo: str, post: Post) -> Post:
+    return note_post(slowo, post.parts[0], post.parts[0], logs_on_the_way=False)
+""",
     "str.__new__ z klasą Outgoing": _POST
     + """from rozliczenia.client_data import Outgoing
 

@@ -4,7 +4,7 @@
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
-    "_guarded": "672c1bc84aaff827",
+    "_guarded": "62e60d8fcb97c5d6",
     "guard_logs": "220c4b2868ecc3fc",
     "GuardedLogs": "4eb55b05819bbd16"
   },
@@ -16,7 +16,7 @@
     "WithoutLogsVersion": "e9e83bbbbd6c2545",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "2c5b1585c12e9ce9",
+    "post_of": "17e4f0022892a2aa",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },
@@ -36,7 +36,7 @@
     "_read_logs": "42f7c04a89d9683f",
     "_names": "e0cb74814c580cb5",
     "_NAME": "7e5bf69553e4b18c",
-    "_RUN_ID": "38b226cc6aeae33a",
+    "_RUN_ID": "2663ee55d3c60890",
     "LogsRead": "2dfbc7e2c338f6b7",
     "Journal": "355e5548440b680f",
     "_first_line": "f9a16b6e76575975",
