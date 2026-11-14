@@ -1,175 +1,66 @@
-"""Prints the section ``## Sub-features`` of a feature file from the workflow of its process.
+"""Prints the section ``## Sub-features`` of a feature file from the plan of the variants of its process.
 
-A feature is a process ``WorkflowProcess("<feature>", <workflow>, …)`` of ``run_verification.py``, and its variants are
-the keys of ``WORKFLOW_VARIANTS`` whose ``WorkflowVariant(<process>)`` has no other argument. Each line is a step of the
-workflow, in source order: a statement ``_run_step("<step>", [str(HELPER_DIRECTORY / "<script>"), …], …,
-expected_exit=<n>)`` or ``_run_process_step("<step>", ["<command>", …], …, expected_exit=<n>)`` of the workflow
-function's own body, which runs that helper script or ``tools/uruchom_proces.py <command>`` and expects that exit code.
+A feature is a process ``WorkflowProcess("<feature>", …)`` of ``run_verification.py``, and its variants are the entries
+of ``WORKFLOW_VARIANTS`` on that process once the module has run. The command makes the plan of each variant
+(``run_verification.plan``): ``_verify`` runs the variant's workflow, but every step and every change the workflow
+makes to the run root between steps is recorded instead of run, with the run's folders as placeholders. So the
+section holds what runs, ``cleanup`` and ``self-test`` included, and variants with the same plan share one list. A real
+run compares the steps it ran with this plan and fails on a difference, so the variants CI runs prove the plan on every
+run; the variants on the real Wzorce run only locally, and nothing compares their plan with a run.
 
-The command reads only that form and fails, naming the file, the line and what to do, on anything else: a process
-without a string literal name, or a workflow that is no function of the module; a variant with fields; a step that is
-no statement of the workflow's own body (in an ``if``, a loop, a nested function, or kept as a value); a call in the
-workflow of a function of the module that runs steps; a step without a string literal name, a list literal of
-arguments starting with the script, or an ``expected_exit`` integer literal. It does not see a step run without
-``_run_step`` or ``_run_process_step``. The steps ``cleanup`` and ``self-test`` that ``_verify`` runs after every
-workflow are not part of the section, nor yet how a helper fails.
+The command refuses a feature name two processes share and a process no variant runs. It does not see a step run
+other than through ``_run_step`` or ``_run_process_step``, a change to the run root other than through the two changes
+the plan records, nor a branch of a workflow on what an earlier step left, which the plan's placeholder folders never
+hold.
 """
 
 from __future__ import annotations
 
 import argparse
-import ast
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 import sys
+from types import ModuleType
 
-SCRIPTS = Path(__file__).resolve().parent
-WORKFLOWS = "run_verification.py"
-STEPS = {"_run_step": "helper", "_run_process_step": "process"}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-
-class Unreadable(Exception):
-    """A form the command does not read; ``str`` is the file, the line and what to do."""
+import run_verification
 
 
-def _refuse(module: str, node: ast.AST, what: str) -> Unreadable:
-    return Unreadable(f"{module}:{getattr(node, 'lineno', 1)}: {what}")
+class Refusal(Exception):
+    """The processes of ``run_verification.py`` give no section for the feature; ``str`` says why and what to do."""
 
 
-@dataclass
-class Step:
-    name: str
-    runs: str
-    exit_code: int
+def section(feature: str, workflows: ModuleType = run_verification) -> str:
+    """The section of ``feature`` from the processes and variants of ``workflows``."""
 
-
-def _functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
-    return {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
-
-
-def _names(node: ast.AST) -> set[str]:
-    return {each.id for each in ast.walk(node) if isinstance(each, ast.Name)}
-
-
-def _process(tree: ast.Module, feature: str) -> tuple[str, ast.FunctionDef, list[str]]:
-    processes: dict[str, tuple[str, ast.expr]] = {}
-    variants: list[tuple[str, ast.expr, ast.Call]] = []
-    for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-            continue
-        value = node.value
-        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == "WorkflowProcess":
-            first = value.args[0] if value.args else value
-            if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
-                raise _refuse(WORKFLOWS, value, "WorkflowProcess has no string literal feature as its first argument; write one")
-            processes[first.value] = (node.targets[0].id, value.args[1] if len(value.args) > 1 else value)
-        if node.targets[0].id == "WORKFLOW_VARIANTS" and isinstance(value, ast.Dict):
-            for key, variant in zip(value.keys, value.values, strict=True):
-                if not (isinstance(key, ast.Constant) and isinstance(variant, ast.Call) and variant.args):
-                    raise _refuse(WORKFLOWS, variant, "the command reads only a variant `\"<name>\": WorkflowVariant(<process>)`")
-                variants.append((str(key.value), variant.args[0], variant))
-    if feature not in processes:
-        raise _refuse(WORKFLOWS, tree, f"no WorkflowProcess(\"{feature}\", …); name the process of the feature so")
-    constant, workflow = processes[feature]
-    function = _functions(tree).get(workflow.id) if isinstance(workflow, ast.Name) else None
-    if function is None:
-        raise _refuse(WORKFLOWS, workflow, "the workflow of WorkflowProcess is no function of the module; define it there")
-    own = [(name, variant) for name, process, variant in variants if ast.unparse(process) == constant]
-    for _, variant in own:
-        if len(variant.args) != 1 or variant.keywords:
-            raise _refuse(WORKFLOWS, variant, "the command does not print the fields of a variant; give its process none")
-    return constant, function, [name for name, _ in own]
-
-
-def _running(tree: ast.Module) -> set[str]:
-    """Functions of the module that run steps, through any chain of calls of functions of the module."""
-
-    functions = _functions(tree)
-    running = set(STEPS)
-    while grown := {name for name, function in functions.items() if name not in running and _names(function) & running}:
-        running |= grown
-    return running - set(STEPS)
-
-
-def _script(arguments: ast.expr, kind: str) -> str | None:
-    first = arguments.elts[0] if isinstance(arguments, ast.List) and arguments.elts else None
-    if kind == "process":
-        return f"tools/uruchom_proces.py {first.value}" if isinstance(first, ast.Constant) and isinstance(first.value, str) else None
-    if (
-        isinstance(first, ast.Call)
-        and ast.unparse(first.func) == "str"
-        and len(first.args) == 1
-        and isinstance(path := first.args[0], ast.BinOp)
-        and isinstance(path.op, ast.Div)
-        and ast.unparse(path.left) == "HELPER_DIRECTORY"
-        and isinstance(path.right, ast.Constant)
-        and isinstance(path.right.value, str)
-    ):
-        return path.right.value
-    return None
-
-
-def _step(call: ast.Call) -> Step:
-    assert isinstance(call.func, ast.Name)
-    kind = STEPS[call.func.id]
-    name = call.args[0] if call.args else call
-    if not (isinstance(name, ast.Constant) and isinstance(name.value, str)):
-        raise _refuse(WORKFLOWS, call, f"{call.func.id} names its step without a string literal; write the name as one")
-    runs = _script(call.args[1], kind) if len(call.args) > 1 else None
-    if runs is None:
-        start = 'str(HELPER_DIRECTORY / "<script>.py")' if kind == "helper" else '"<command>"'
-        raise _refuse(WORKFLOWS, call, f"{call.func.id} takes no list literal of arguments starting with {start}; write it so")
-    exits = [keyword.value for keyword in call.keywords if keyword.arg == "expected_exit"]
-    if len(exits) != 1 or not (isinstance(exits[0], ast.Constant) and type(exits[0].value) is int):
-        raise _refuse(WORKFLOWS, call, f"{call.func.id} has no expected_exit integer literal; write expected_exit=<n>")
-    return Step(name.value, runs, exits[0].value)
-
-
-def _steps(tree: ast.Module, workflow: ast.FunctionDef) -> list[Step]:
-    running = _running(tree)
-    steps: list[Step] = []
-    for statement in workflow.body:
-        value = statement.value if isinstance(statement, ast.Expr) else None
-        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in STEPS:
-            steps.append(_step(value))
-            reached = [node for node in ast.walk(value) if node is not value.func]
-        else:
-            reached = list(ast.walk(statement))
-        for node in reached:
-            if isinstance(node, ast.Name) and node.id in STEPS:
-                raise _refuse(
-                    WORKFLOWS, node, f"`{node.id}` is not called as a statement of {workflow.name}() itself; call it there"
-                )
-            if isinstance(node, ast.Name) and node.id in running:
-                raise _refuse(
-                    WORKFLOWS, node, f"{workflow.name}() runs steps in `{node.id}`; run them in {workflow.name}() itself"
-                )
-    if not steps:
-        raise _refuse(WORKFLOWS, workflow, f"{workflow.name}() runs no step; run each with _run_step or _run_process_step")
-    return steps
-
-
-def sub_features(feature: str, source: Callable[[str], str]) -> tuple[list[str], list[Step]]:
-    """The variants and the steps of ``feature``; ``source`` gives the text of a script of the skill by its file name."""
-
-    tree = ast.parse(source(WORKFLOWS))
-    _, workflow, variants = _process(tree, feature)
-    return variants, _steps(tree, workflow)
-
-
-def section(feature: str) -> str:
-    variants, steps = sub_features(feature, lambda name: (SCRIPTS / name).read_text(encoding="utf-8"))
+    variants = workflows.WORKFLOW_VARIANTS
+    processes = {id(each): each for each in vars(workflows).values() if isinstance(each, workflows.WorkflowProcess)}
+    processes |= {id(variant.process): variant.process for variant in variants.values()}
+    names = [process.feature for process in processes.values()]
+    if doubled := sorted({name for name in names if names.count(name) > 1}):
+        raise Refusal(f"run_verification.py: two processes are named {', '.join(doubled)}; give each its own feature")
+    if idle := sorted(p.feature for p in processes.values() if not any(v.process is p for v in variants.values())):
+        raise Refusal(f"run_verification.py: no variant runs {', '.join(idle)}; add one to WORKFLOW_VARIANTS")
+    if feature not in names:
+        raise Refusal(f"run_verification.py: no WorkflowProcess(\"{feature}\", …); name the process of the feature so")
+    plans: dict[tuple[run_verification.PlannedStep, ...], list[str]] = {}
+    for name, variant in variants.items():
+        if variant.process.feature == feature:
+            plans.setdefault(tuple(workflows.plan(name)), []).append(name)
     lines = [
         "## Sub-features",
         "",
-        f"Printed by `scripts/workflow_sub_features.py --feature {feature}` from the steps of the workflow; refresh the "
+        f"Printed by `scripts/workflow_sub_features.py --feature {feature}` from the plan of each variant; refresh the "
         "section with it.",
-        "",
-        f"Variants: {', '.join(f'`{variant}`' for variant in variants)}.",
-        "",
     ]
-    lines += [f"- `{step.name}` runs `{step.runs}` and expects exit {step.exit_code}." for step in steps]
+    for steps, named in plans.items():
+        lines += ["", f"{'Variants' if len(named) > 1 else 'Variant'} {', '.join(f'`{name}`' for name in named)}:", ""]
+        lines += [
+            f"- `{step.name}`: `{step.command}`, exit {step.expected_exit}."
+            if step.expected_exit is not None
+            else f"- `{step.name}`: makes {step.command} in the run root."
+            for step in steps
+        ]
     return "\n".join(lines) + "\n"
 
 
@@ -178,7 +69,7 @@ def main() -> int:
     parser.add_argument("--feature", required=True, help="feature of the map, the first argument of its WorkflowProcess")
     try:
         printed = section(parser.parse_args().feature)
-    except Unreadable as refusal:
+    except Refusal as refusal:
         raise SystemExit(str(refusal)) from None
     # Bytes, so the Windows console (cp1252) neither refuses Polish letters nor turns line ends into CRLF.
     sys.stdout.buffer.write(printed.encode("utf-8"))

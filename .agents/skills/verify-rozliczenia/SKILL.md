@@ -275,6 +275,9 @@ explicitly, so no run reads `config/`. Its ordered stages are:
    stop's code>}`: each of these stops is one Dad removes himself.
 6. Invoke cleanup in `finally`, then run the mechanical self-test against the
    retained evidence.
+7. Compare the steps that ran with the variant's plan (`plan` in `run_verification.py`: the same workflow with every
+   step recorded instead of run) and print `VERIFY FAIL` on a difference; `scripts/workflow_sub_features.py` prints
+   that plan as the `## Sub-features` section of a feature file.
 
 The `preparation` variant follows the same stages with its own primitives:
 `create_preparation_fixture.py`, `preparation_doctor.py`,
@@ -463,8 +466,8 @@ already performs both checks and prints `scratch_removed=true`.
 - `scripts/quantity_rules_conformance.py` runs the test of every line of Dad's
   instruction in `tests/test_ilosci_uslug.py` and ends with `ILOŚCI USŁUG OK`.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\quantity_rules_conformance.py`.
-- `scripts/workflow_sub_features.py` prints the `## Sub-features` section of a feature file from the workflow of its
-  process (`features/README.md`, Feature entry contract).
+- `scripts/workflow_sub_features.py` prints the `## Sub-features` section of a feature file from the plan of the
+  variants of its process (`features/README.md`, Feature entry contract).
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\workflow_sub_features.py --feature order-intermax`.
 - `scripts/check_quantity_rules_mutations.py` is the mutation table of Reguły
   ilości (see that section). Invocation:

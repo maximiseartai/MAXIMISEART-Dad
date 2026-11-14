@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+import contextlib
+from dataclasses import dataclass, field
+import io
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -17,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 import repo
-from skrypt_skilla import SKIPPED, Parser, child_environment, new_run
+from skrypt_skilla import SKIPPED, Parser, Run, child_environment, new_run
 
 from atrapy.scenariusz_rozliczen import (
     COLLECTIVE_TEMPLATE_NAME,
@@ -97,6 +100,71 @@ class VerificationFailure(RuntimeError):
     """A workflow step failed its expected contract."""
 
 
+class PlanFailure(RuntimeError):
+    """The workflow of a variant did not run to its end as a plan."""
+
+
+@dataclass(frozen=True)
+class PlannedStep:
+    """A step of a variant: its name, the command it runs with the run's folders as their ``PLACEHOLDERS``, and the
+    exit code it expects; ``None`` for a change the workflow makes to the run root between steps, whose command says
+    what it makes."""
+
+    name: str
+    command: str
+    expected_exit: int | None
+
+
+@dataclass
+class _Record:
+    """The steps one ``_verify`` passes through, and whether they only get recorded (a plan) or also run."""
+
+    planning: bool
+    folders: dict[str, str]
+    steps: list[PlannedStep] = field(default_factory=list)
+
+
+_record: _Record | None = None
+PLACEHOLDERS = {"run root": "<run-root>", "evidence": "<evidence>", "templates": "<templates>", "run dir": "<run-dir>"}
+
+
+def _noted(name: str, words: list[str], expected_exit: int | None) -> bool:
+    """Records the step of the running ``_verify``; ``True`` when it makes a plan, so the caller does not run it."""
+
+    if _record is None:
+        return False
+    shown = [_shown(word, _record.folders) for word in words]
+    command = " ".join(f'"{word}"' if " " in word and expected_exit is not None else word for word in shown)
+    _record.steps.append(PlannedStep(name, command, expected_exit))
+    return _record.planning
+
+
+def _shown(word: str, folders: dict[str, str]) -> str:
+    """``word`` with a run's folder, the longest that holds it, replaced by its placeholder, in forward slashes."""
+
+    for folder in sorted(folders, key=len, reverse=True):
+        if word == folder or word.startswith(folder + os.sep):
+            return (folders[folder] + word[len(folder):]).replace(os.sep, "/")
+    return word
+
+
+def plan(variant: str) -> list[PlannedStep]:
+    """The steps ``variant`` runs: ``_verify`` runs its workflow, but every step and every change to the run root is
+    recorded instead of run, with ``PLACEHOLDERS`` for the run's folders. A workflow that does not reach its end so is a ``PlanFailure``."""
+
+    global _record
+    outer, _record = _record, _Record(planning=True, folders={})
+    try:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            ended = _verify(variant, Path(PLACEHOLDERS["templates"]), Path(PLACEHOLDERS["run dir"]))
+        if ended != 0:
+            raise PlanFailure(f"the plan of {variant} stopped: {output.getvalue().strip()}")
+        return _record.steps
+    finally:
+        _record = outer
+
+
 def _display_command(arguments: list[str]) -> str:
     return shlex.join([*PYTHON_COMMAND, *arguments])
 
@@ -161,6 +229,8 @@ def _run_step(
     *,
     expected_exit: int,
 ) -> None:
+    if _noted(name, [Path(arguments[0]).name, *arguments[1:]], expected_exit):
+        return
     completed = _launch(arguments, environment)
     sections = [f"command: {_display_command(arguments)}", "stdout:", completed.stdout, "stderr:", completed.stderr]
     if completed.launch_error is not None:
@@ -188,6 +258,8 @@ def _run_process_step(
     expected_exit: int,
 ) -> None:
     command = [PROCESS_SCRIPT, *arguments, "--metrics", str(metrics)]
+    if _noted(name, [Path(PROCESS_SCRIPT).as_posix(), *command[1:]], expected_exit):
+        return
     completed = _launch(command, environment)
     evidence = {
         "command": _display_command(command),
@@ -203,11 +275,15 @@ def _run_process_step(
 
 
 def _create_lock(run_root: Path) -> None:
+    if _noted("lock", ["the Excel lock of the Wzorzec rozliczenia pracownika"], None):
+        return
     worker_template = run_root / WORKER_TEMPLATE_NAME
     excel_lock(worker_template).touch()
 
 
 def _create_existing_output(run_root: Path) -> None:
+    if _noted("existing-output", ["the Folder rozliczeń pracowników with a file in it"], None):
+        return
     target_directory = run_root / PERIOD / WORKER_SETTLEMENTS_DIRECTORY
     target_directory.mkdir()
     (target_directory / "existing-synthetic.txt").write_text("preserve", encoding="utf-8")
@@ -631,8 +707,16 @@ def _missing_templates(variant: str, templates_directory: Path) -> list[str]:
 
 
 def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
+    global _record
     variant_config = WORKFLOW_VARIANTS[variant]
-    run = new_run(run_dir, f"rozliczenia-{uuid.uuid4().hex}")
+    planning = _record is not None and _record.planning
+    if planning:
+        run = Run(Path(PLACEHOLDERS["run root"]), Path(PLACEHOLDERS["evidence"]))
+    else:
+        run = new_run(run_dir, f"rozliczenia-{uuid.uuid4().hex}")
+        folders = {run.root: "run root", run.evidence: "evidence", templates_directory: "templates", run_dir: "run dir"}
+        _record = _Record(planning=False, folders={str(path): PLACEHOLDERS[key] for path, key in folders.items()})
+    ran = _record
     run_root, evidence_root = run.root, run.evidence
     failure: BaseException | None = None
     cleanup_failure: BaseException | None = None
@@ -664,7 +748,7 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
     if run_root.exists():
         print(f"VERIFY FAIL | scratch root remains: {run_root}", file=sys.stderr)
         return 1
-    required = set(variant_config.evidence_names)
+    required = set() if planning else set(variant_config.evidence_names)
     missing = sorted(name for name in required if not (evidence_root / name).is_file())
     if missing:
         print(f"VERIFY FAIL | missing evidence: {', '.join(missing)}", file=sys.stderr)
@@ -688,10 +772,14 @@ def _verify(variant: str, templates_directory: Path, run_dir: Path) -> int:
         print(f"VERIFY FAIL | self-test={exc} | evidence={evidence_root}", file=sys.stderr)
         return 1
 
-    required.add("self-test.txt")
+    required |= set() if planning else {"self-test.txt"}
     missing = sorted(name for name in required if not (evidence_root / name).is_file())
     if missing:
         print(f"VERIFY FAIL | missing evidence: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    if not planning and ran is not None and ran.steps != (planned := plan(variant)):
+        differing = next(f"{a} != {b}" for a, b in zip([*ran.steps, None], [*planned, None], strict=False) if a != b)
+        print(f"VERIFY FAIL | variant={variant} | the steps that ran differ from its plan: {differing}", file=sys.stderr)
         return 1
     print(f"VERIFY OK | variant={variant} | evidence={evidence_root} | scratch_removed=true")
     return 0

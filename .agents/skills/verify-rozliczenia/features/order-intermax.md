@@ -7,13 +7,15 @@ the pasted day ordered by Wykonawca and hour.
 
 ## Sub-features
 
-Printed by `scripts/workflow_sub_features.py --feature order-intermax` from the steps of the workflow; refresh the section with it.
+Printed by `scripts/workflow_sub_features.py --feature order-intermax` from the plan of each variant; refresh the section with it.
 
-Variants: `intermax`.
+Variant `intermax`:
 
-- `fixture` runs `create_intermax_fixture.py` and expects exit 0.
-- `run` runs `tools/uruchom_proces.py intermax` and expects exit 0.
-- `assert-run` runs `assert_intermax.py` and expects exit 0.
+- `fixture`: `create_intermax_fixture.py --root <run-root>`, exit 0.
+- `run`: `tools/uruchom_proces.py intermax --register "<run-root>/ZLECENIA INTERMAX OD 08_11_2021.xlsx" --copies "<run-root>/Kopie INTERMAX" --metrics <run-root>/metrics.jsonl`, exit 0.
+- `assert-run`: `assert_intermax.py --root <run-root> --result <evidence>/run.json`, exit 0.
+- `cleanup`: `cleanup.py --root <run-root>`, exit 0.
+- `self-test`: `self_test.py --evidence-root <evidence> --run-dir <run-dir>`, exit 0.
 
 ## How to get to it (user POV)
 
