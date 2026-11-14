@@ -27,6 +27,7 @@ from rozliczenia.domain import RunMode
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.tool_freshness import GitHubReleases, ToolFreshness
+from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.tool_update import ToolClone, find_git
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.message import Message, StopError
@@ -163,7 +164,8 @@ class Surroundings:
     ``release_unanswered`` to GitHub, który przy ``tool`` nie odpowiada o najnowsze Wydanie, chociaż klon dalej
     pobiera z „origin”. ``source`` daje bajty plików taty (Rejestru zleceń, Pliku zbiorczego), a ``template_check``
     sprawdza Wzorce, oba w Uruchomieniu procesu, Diagnozie i Konfiguracji.
-    ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma). ``efenix_url`` to lista zleceń
+    ``find_git`` znajduje Gita, którego przy ``tool`` używa Centrum (``None``: Gita nie ma), a
+    ``update_threads`` daje blokadę widoku Aktualizacji narzędzia (``ToolUpdates``). ``efenix_url`` to lista zleceń
     okna efenix Wyceny w efenix w Chromium Playwrighta bez okna: domyślnie adres, pod którym nic nie odpowiada, a w testach
     Wyceny adres Atrapy efenix, nigdy efenix.pl; ``efenix_arguments`` to dodatkowe argumenty tej przeglądarki (np. port
     debugowania, przez który test zamyka okno), a ``efenix_pace`` tempo ludzkie tego okna, domyślnie wyłączone.
@@ -183,6 +185,7 @@ class Surroundings:
     source: ByteSource = file_bytes
     template_check: TemplateCheck = check_on_disk
     find_git: Callable[[], Path | None] = find_git
+    update_threads: Threading = threading
     efenix_url: str = NO_EFENIX
     efenix_arguments: tuple[str, ...] = ()
     efenix_pace: Pace | None = None
@@ -295,6 +298,7 @@ def _app(
         report_search_deadline_s=surroundings.report_search_deadline_s,
         tool_update=surroundings.tool_update(),
         guardian=surroundings.guardian,
+        update_threads=surroundings.update_threads,
         source=surroundings.source,
         template_check=surroundings.template_check,
         window=efenix_window(

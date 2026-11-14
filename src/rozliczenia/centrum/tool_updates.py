@@ -47,6 +47,7 @@ from rozliczenia.centrum.reports import ReportHandle, Reports, UpdateReport
 from rozliczenia.centrum.restart_guardian import Restart
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.shutdown import Shutdown
+from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.tool_freshness import CommitSource, GitHubReleases, ReleaseSource
 from rozliczenia.centrum.tool_update import (
     RESULT_FILE,
@@ -97,7 +98,11 @@ class ToolUpdates:
         shutdown: Shutdown,
         guardian: GuardianLauncher,
         release: ReleaseSource,
+        threads: Threading = threading,
     ) -> None:
+        """``threads`` daje blokadę widoku (``threads.Threading``); inną niż moduł ``threading`` daje tylko test, który
+        zatrzymuje wątek aktualizacji przy niej."""
+
         self._clone = clone
         self._runs = runs
         self._log = work.log
@@ -107,7 +112,7 @@ class ToolUpdates:
         self._guardian = guardian
         self._result_file = work.config / RESULT_FILE
         self._release = release
-        self._lock = threading.Lock()
+        self._lock = threads.Lock()
         self._view: tool_update_contract.ToolUpdate | _Failed = tool_update_contract.ToolUpdateIdle(state="idle")
         self._up_to_date_with: GitHubReleases | None = None
         self._after_restart()

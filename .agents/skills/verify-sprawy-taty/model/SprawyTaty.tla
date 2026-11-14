@@ -498,9 +498,9 @@ Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 
 (* Obietnice. *)
 \* Każda sprawa, która czeka (bez numeru issue), ma swój plik w Kolejce wysyłki, poza chwilą jednego zapytania między
-\* dopisaniem sprawy a zapisem jej pliku albo jej wycofaniem (reports.py, finally w Reports._queue: „sprawa bez pliku
-\* kolejki czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”; dad_cases.py: Uwaga „bez numeru czeka w kolejce
-\* Skrzynki, dopóki numbered nie dopisze numeru”).
+\* dopisaniem sprawy a zapisem jej pliku albo jej wycofaniem (reports.py, finally w Reports._queue, a w docstringu
+\* klasy Reports: „Sprawa, której wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie”;
+\* dad_cases.py: Uwaga „bez numeru czeka w kolejce Skrzynki, dopóki numbered nie dopisze numeru”).
 CzekaMaPlik == bezPliku = {}
 \* Karta nie mówi „czeka w kolejce” o sprawie, której treść Skrzynka odrzuciła w tej pracy Centrum, gdy uchwyt już to
 \* usłyszał (reports.py: „Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic”, ``Rejected``; GLOSSARY,
