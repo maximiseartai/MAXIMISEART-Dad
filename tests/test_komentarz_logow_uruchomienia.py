@@ -81,7 +81,7 @@ from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, GuardedLogs, guard_cuts, guard_logs, guard_text
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, shown
+from rozliczenia.client_data import MIN_VALUE, READ_VALUES, ForbiddenColumn, ForbiddenValues, empty_memory, shown
 from rozliczenia.efenix_pricing import OrderKind
 from tests.fixtures.clock import ManualClock
 from atrapy.dziennik_wyceny import begun_line, left_journal
@@ -292,7 +292,7 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
     )
     assert len(logs.text) > 3 * COMMENT_LIMIT
 
-    post = post_of(OwnLogs(guard_logs(logs, ForbiddenValues())))
+    post = post_of(OwnLogs(guard_logs(logs, empty_memory())))
 
     name = f"20261023T204720Z-settlement-{RUN_ID}.json.gz"
     link = f"https://github.com/{REPOSITORY}/releases/download/logi-08_14_09_2026/{name}"
@@ -307,12 +307,12 @@ def test_logi_ponad_limit_komentarza_ida_jednym_komentarzem_a_cale_w_pliku_archi
 def _versions() -> dict[str, CommentVersion]:
     """Każda wersja komentarza jednego Uruchomienia Wyceny w efenix, z tekstem po strażniku."""
 
-    logs = guard_logs(record(process="efenix", run_id=RUN_ID), ForbiddenValues())
+    logs = guard_logs(record(process="efenix", run_id=RUN_ID), empty_memory())
     started = StartFacts(
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=logs.record.started_at
     )
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
-    text = guard_text("Postęp albo wynik bez Logów.", "komentarz", ForbiddenValues())
+    text = guard_text("Postęp albo wynik bez Logów.", "komentarz", empty_memory())
     return {
         "postep": ProgressVersion(progress, text),
         "logi-z-pliku-albo-urwane": StandInLogs(logs),
@@ -395,7 +395,7 @@ def test_postep_i_wynik_bez_logow_ida_do_skrzynki_z_tekstem_po_strazniku(kind: s
     0025): wartość z kolumny ``ADRES``, która trafiła do jego tekstu (tu w miejscu identyfikatora Uruchomienia), jest
     maską z uwagą techniczną, a nie wartością sprzed strażnika."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, RUN_ID)
 
     [comment] = post_of(_text_version(kind, forbidden)).parts
@@ -426,7 +426,7 @@ def _field_change(value: object) -> dict[str, object]:
 def _guarded(kind: str) -> Any:
     """Logi (``logi``) albo tekst (``tekst``) po strażniku z ``guard_logs`` i ``guard_text``."""
 
-    return guard_logs(record(), ForbiddenValues()) if kind == "logi" else guard_text("Postęp.", "postęp", ForbiddenValues())
+    return guard_logs(record(), empty_memory()) if kind == "logi" else guard_text("Postęp.", "postęp", empty_memory())
 
 
 def _slot(value: object) -> str:
@@ -455,8 +455,8 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
 
 
 def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_straznika() -> None:
-    logs = guard_logs(record(), ForbiddenValues())
-    text = guard_text("Postęp.", "postęp", ForbiddenValues())
+    logs = guard_logs(record(), empty_memory())
+    text = guard_text("Postęp.", "postęp", empty_memory())
 
     with pytest.raises(TypeError, match="guard_logs"):
         type(logs)(logs.record, logs.record, object())
@@ -537,7 +537,7 @@ ADDRESS: Final = "Syntetyczna Kwarcowa 9"
 
 
 def _forbidden() -> ForbiddenValues:
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, ADDRESS)
     forbidden.remember_value(ForbiddenColumn.ADDRESS, RUN_ID)
     return forbidden
@@ -1142,7 +1142,7 @@ def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp
 
 
 def test_zakazana_wartosc_w_kluczu_slownika_logow_jest_zamaskowana_z_uwaga_o_polu_bez_wartosci() -> None:
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, "Syntetyczna Kwarcowa 9")
     logs = record(process="intermax", intermax_entries={"rows": {"SYNTETYCZNA KWARCOWA 9": [12]}, "without_entry": []})
 
@@ -1166,7 +1166,7 @@ def test_liczba_policzona_przez_narzedzie_w_ksztalcie_telefonu_zostaje_a_ta_sama
     sheet = {"sheet": "Sheet1", "header_row": 17, "columns": {}, "rows": [{"row": row, "cells": {"AS": row, "AT": size}}], "empty_rows": []}
     copied = {"name": "plik.xlsx", "fingerprint": {"size": size, "modified_at": None, "sha256": "0" * 64}, "sheets": [sheet]}
 
-    kept = guard_logs(record(input_copy=[copied]), ForbiddenValues()).record
+    kept = guard_logs(record(input_copy=[copied]), empty_memory()).record
 
     assert kept.input_copy is not None
     [file] = kept.input_copy
@@ -1195,7 +1195,7 @@ def test_maska_w_kwocie_logow_nie_gubi_logow_tylko_kwote_albo_zlecenie_z_uwaga_o
     stoi: kwota strony, która może być pusta, jest pusta, a zlecenie z kwotą z pliku, która pusta być nie może, odpada,
     każde z uwagą techniczną o polu bez wartości; reszta Logów wychodzi, a numer z nich znika."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
     orders = [
         {"row": 18, "outcome": "gotowe", "code": None, "file": {}, "file_amount": "12345.67", "steps": [_step(None)]},
@@ -1219,7 +1219,7 @@ def test_maska_w_chwili_zmiany_pliku_kopii_wejscia_daje_puste_pole_z_uwaga_kopii
     """Chwila zmiany pliku w Kopii wejścia jest datą, więc numer Orange ``123456Z`` w niej (część ułamkowa sekundy z
     oznaczeniem UTC) zostawia pole puste, a uwaga idzie do uwag Kopii, których karta nie pokazuje."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
     fingerprint = {"size": 10, "modified_at": "2026-10-23T20:47:20.123456Z", "sha256": "0" * 64}
     logs = record(input_copy=[{"name": "plik.xlsx", "fingerprint": fingerprint, "sheets": []}])
@@ -1240,7 +1240,7 @@ def test_miejsca_ktore_straznik_pominal_albo_zostawil_puste_wracaja_z_uwag_logow
     (``guard_cuts``) każde miejsce, które straciło wartość, z tym samym rodzajem: pominięty element listy i puste pole,
     w uwagach technicznych i w uwagach Kopii wejścia."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ORANGE, 12345)
     forbidden.remember_value(ForbiddenColumn.ORANGE, "123456Z")
     orders = [
@@ -1553,7 +1553,7 @@ def test_pole_ze_slowami_i_chwilami_narzedzia_zostaje_w_logach_choc_plik_taty_ma
     albo chwili narzędzia zostaje w polu, które niesie tylko to, co dało narzędzie. Logi powstają i idą do issue swojego
     okresu jako swoje Uruchomienie, a w Komunikacie, który cytuje komórkę, ta wartość jest maską."""
 
-    forbidden = ForbiddenValues()
+    forbidden = empty_memory()
     forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
     logs = full_logs(messages=[{**FULL_LOGS["messages"][0], "where": f"Komórka „{value}”."}])
     assert forbidden.guard(_json_at(logs, place), place).notes, "pole ma wartość z kolumny ADRES"
@@ -1645,7 +1645,7 @@ def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_
 
     swept = 0
     for value in sorted({value for value, _ in scalars}, key=shown):
-        forbidden = ForbiddenValues()
+        forbidden = empty_memory()
         forbidden.remember_value(ForbiddenColumn.ADDRESS, value)
         if not forbidden.guard(shown(value), "").notes:
             continue  # krótsza niż ``MIN_VALUE``: strażnik jej nie szuka

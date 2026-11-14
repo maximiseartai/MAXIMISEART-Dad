@@ -1,58 +1,48 @@
 name: Rozmiar PR
 
 # Each PR gets one label size:XS … size:XXL from its effective changed lines (tools/ci/rozmiar_pr.py, after t3code's
-# pr-size.yml) and, when it adds process machinery lines without removing more (directory rule REGULY in that script,
-# exceptions in the base's tools/lib/szopa.toml, ADR 0034) or changes that list, the counter or this workflow, the
-# label „wymaga ZGODA SZOPA”, which an admin's comment ZGODA SZOPA takes off. The labels only inform: no ruleset or
-# Required CI status depends on this workflow.
+# pr-size.yml), and the job summary gets its SZOPA line: added and removed lines of process machinery and of product
+# verification, each with its tests, and two test ratios (directory rule REGULY in that script, exceptions in the base's
+# tools/lib/szopa.toml, ADR 0034). Both only inform: no ruleset or Required CI status depends on this workflow.
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] the PR's commits are only git data here, never run
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
-  # issue_comment always runs the default branch's workflow and code, also for a comment on a PR from a fork.
-  issue_comment:
-    types: [created, edited, deleted]
 
 permissions:
   contents: read
 
 concurrency:
-  # A comment that neither has nor had ZGODA SZOPA (an edit that removes it counts again) skips the job, so its run
-  # gets a group of its own and cancels no count of the PR.
-  group: rozmiar-pr-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name == 'issue_comment' && !contains(github.event.comment.body, 'ZGODA SZOPA') && !contains(github.event.changes.body.from, 'ZGODA SZOPA') && github.run_id || 'licz' }}
+  group: rozmiar-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   rozmiar:
     name: Etykieta rozmiaru PR
-    if: github.event_name == 'pull_request_target' || (github.event.issue.pull_request && (contains(github.event.comment.body, 'ZGODA SZOPA') || contains(github.event.changes.body.from, 'ZGODA SZOPA')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
     steps:
-      # Both events run main's workflow and main's tools/ci/rozmiar_pr.py with a token that can write labels, so the
-      # PR's commits are only git data here: never check them out, install from them or run their code.
+      # pull_request_target runs main's workflow and main's tools/ci/rozmiar_pr.py with a token that can write labels,
+      # so the PR's commits are only git data here: never check them out, install from them or run their code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch the PR base and head as git data
-        id: pr
+      - name: Fetch the PR head as git data
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
-        run: |
-          baza="$(gh api "repos/$GH_REPO/pulls/$PR" --jq .base.sha)"
-          git fetch --no-tags origin "$baza" "+refs/pull/$PR/head:refs/remotes/rozmiar-pr/$PR"
-          echo "baza=$baza" >> "$GITHUB_OUTPUT"
+          PR: ${{ github.event.pull_request.number }}
+          BAZA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags origin "$BAZA" "+refs/pull/$PR/head:refs/remotes/rozmiar-pr/$PR"
 
-      - name: Label the PR with its size and its process machinery lines
+      - name: Label the PR with its size and count its process machinery lines
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
-          BAZA: ${{ steps.pr.outputs.baza }}
+          PR: ${{ github.event.pull_request.number }}
+          BAZA: ${{ github.event.pull_request.base.sha }}
+        # An explicit bash runs with pipefail, so a failing count fails the step despite tee.
+        shell: bash
         run: python3 tools/ci/rozmiar_pr.py --baza "$BAZA" --glowa "refs/remotes/rozmiar-pr/$PR" --pr "$PR" | tee -a "$GITHUB_STEP_SUMMARY"

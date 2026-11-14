@@ -479,7 +479,7 @@ def _kept(results: Sequence[OrderResult], current: OrderTrace | None, error: Win
 
 
 def _outcome(
-    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues, mode: PricingMode
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None, mode: PricingMode
 ) -> Outcome:
     outcome = _priced_outcome(order, file, efenix, forbidden)
     if mode is PricingMode.FORWARD and isinstance(outcome, Ready):
@@ -487,7 +487,7 @@ def _outcome(
     return outcome
 
 
-def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues) -> Forwarded | OrderError:
+def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbidden: ForbiddenValues | None) -> Forwarded | OrderError:
     """Gotowe zlecenie ``order`` (wiersz listy ``ready``) przekazane do akceptacji i potwierdzone ponownym szukaniem:
     lista ze statusem „Do akceptacji” i realizatorem i adresem z pliku (``listing``); każda inna to ``NOT_FORWARDED``, a
     odmowa efenix przy Przekazaniu błąd z jej przyczyną."""
@@ -498,17 +498,19 @@ def _forwarded(order: CollectiveOrder, ready: ListedOrder, efenix: Efenix, forbi
     return confirmed if isinstance(confirmed, Forwarded) else OrderError(OrderProblem.NOT_FORWARDED)
 
 
-def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues) -> Sequence[ListedOrder]:
-    """Wiersze listy po szukaniu ``number``; ich dane adresowe poznaje reguła danych ``forbidden``."""
+def _searched(efenix: Efenix, number: str, forbidden: ForbiddenValues | None) -> Sequence[ListedOrder]:
+    """Wiersze listy po szukaniu ``number``; ich dane adresowe poznaje reguła danych ``forbidden`` (``None``: praca bez
+    wysyłki)."""
 
     found = efenix.search(number)
-    for listed in found:
-        forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
+    if forbidden is not None:
+        for listed in found:
+            forbidden.remember_value(ForbiddenColumn.ADDRESS, listed.address)
     return found
 
 
 def _priced_outcome(
-    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues
+    order: CollectiveOrder, file: FileQuantities, efenix: Efenix, forbidden: ForbiddenValues | None
 ) -> Outcome:
     searched = searched_number(order)
     if isinstance(searched, OrderProblem):

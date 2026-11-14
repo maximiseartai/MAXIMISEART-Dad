@@ -68,7 +68,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, BinaryIO, Final, Literal, Protocol, assert_never, get_args
+from typing import TYPE_CHECKING, Any, BinaryIO, Final, Literal, Protocol, assert_never, final, get_args
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.clock import Clock
@@ -91,8 +91,11 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
-from rozliczenia.client_data import Outgoing
+from rozliczenia.client_data import Outgoing, tool
 from rozliczenia.wall_clock import utc_now
+
+if TYPE_CHECKING:
+    from rozliczenia.centrum.comment_versions import LogsPost
 
 if sys.platform == "win32":
     import msvcrt
@@ -144,7 +147,7 @@ DELIVERY_WAIT_S: Final = 5.0
 # Miejsce (``where``) wyjątku przejścia kolejki w dzienniku Centrum (``CentrumLog.unexpected_failure``).
 DRAIN: Final = "wysyłka do Skrzynki Zgłoszeń"
 
-Frame = Callable[[int, int, str], str]
+Frame = Callable[[int, int, Outgoing], Outgoing]
 """Komentarz części ``k`` z ``n`` z jej tekstu."""
 
 # Foldery kolejki z trwającym przejściem w tym procesie i czy inna kolejka tego folderu prosi o następne. Dwie
@@ -360,6 +363,7 @@ class Version:
         return cls(Rank.OWN, text)
 
 
+@final
 @dataclass(frozen=True)
 class Post:
     """Gotowa wysyłka do Skrzynki Zgłoszeń, wyrenderowana przez wersję narzędzia, która ją utworzyła.
@@ -369,14 +373,17 @@ class Post:
     wysyłce do issue okresu w jednej części, która idzie z dopiskiem, gdy Archiwum pliku nie przyjmie. ``rank``: stopień
     wersji tej wysyłki (``Rank``). ``state``: stan wysyłki, który nadaje i czyta jej słuchacz (``Listener``, Uwaga taty:
     czy Logi Uruchomienia są w drodze); kolejka zapisuje go w pliku i oddaje bez zmian, a do Skrzynki nie wysyła.
+
+    Podklasy nie ma (``final``), więc plik kolejki zapisuje zawsze ``to_json`` tej klasy, a zmienioną kopię daje tylko
+    ``dataclasses.replace`` albo ``__replace__``, których pola sprawdza mypy (``copy.replace`` ma zakaz ruff w ``src``).
     """
 
     target: Target
     period: str | None
     """Token okresu do dziennika Centrum; ``None``: Uruchomienie bez okresu."""
     run_id: str
-    header: str | None
-    parts: tuple[str, ...]
+    header: Outgoing | None
+    parts: tuple[Outgoing, ...]
     archive: ArchiveFile | None = None
     rank: Rank = Rank.OWN
     state: str | None = None
@@ -408,7 +415,7 @@ class Post:
         run_id: str,
         blocks: Sequence[Outgoing],
         frame: Frame,
-        header: str | None = None,
+        header: Outgoing | None = None,
     ) -> Post:
         """Dzieli ``blocks`` (tekst po strażniku reguły danych, ``Outgoing``) na części mieszczące się w komentarzu
         (``_pack``) i opisuje każdą przez ``frame``.
@@ -442,22 +449,6 @@ class Post:
 
     def to_json(self) -> str:
         return _queue_text(self, delivered_parts=0, archived=False)
-
-
-class Queueable(Protocol):
-    """To, co ``Outbox.post`` czyta z wysyłki: ``Post`` albo wysyłka, której nadawca nie daje zmienić przed kolejką
-    (``comment_versions.LogsPost``)."""
-
-    @property
-    def target(self) -> Target: ...
-
-    @property
-    def period(self) -> str | None: ...
-
-    @property
-    def run_id(self) -> str: ...
-
-    def to_json(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -596,8 +587,8 @@ def _parse(text: str) -> _Queued | None:
             target,
             _optional_string(document["period"]),
             _string(document["run_id"]),
-            _optional_string(document["header"]),
-            tuple(_string(part) for part in document["parts"]),
+            None if document["header"] is None else tool(_string(document["header"])),
+            tuple(tool(_string(part)) for part in document["parts"]),
             archive,
             _rank(document.get("rank", Rank.OWN.value)),
             _optional_string(document.get("state")),
@@ -687,7 +678,7 @@ def _optional_string(value: object) -> str | None:
     return None if value is None else _string(value)
 
 
-def _pack(blocks: Sequence[str], budget: int) -> tuple[str, ...]:
+def _pack(blocks: Sequence[Outgoing], budget: int) -> tuple[Outgoing, ...]:
     """Bloki sklejone w kolejności w części najwyżej ``budget`` znaków; blok, który się mieści, nie jest dzielony."""
 
     parts: list[str] = []
@@ -706,7 +697,7 @@ def _pack(blocks: Sequence[str], budget: int) -> tuple[str, ...]:
         current = rest
     if current:
         parts.append(current)
-    return tuple(parts)
+    return tuple(tool(part) for part in parts)
 
 
 def _read_addresses(path: Path) -> dict[tuple[str, Label], str | None]:
@@ -1287,10 +1278,11 @@ class Outbox:
             self._changed.wait_for(settled, timeout_s)
             return (run_id, label) in self._first_comments
 
-    def post(self, post: Queueable) -> bool:
+    def post(self, post: Post | LogsPost) -> bool:
         """Zapisuje ``post`` w nowym pliku kolejki i budzi wysyłkę w tle; nie pyta skrzynki i nie czeka na sieć.
 
-        Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
+        Kolejka bierze tylko ``Post`` i ``comment_versions.LogsPost``, obie bez podklas, więc treść pliku kolejki daje
+        zawsze ``Post.to_json``. Nazwa pliku sortuje się po nazwie każdej wcześniejszej wysyłki tej kolejki, także gdy zegar komputera się cofnął
         (Windows poprawia czas): chwila w nazwie jest wtedy o ``_TICK`` późniejsza od poprzedniej, więc wysyłka zapisana
         później ma nowszą wersję (``_version``). ``False``: pliku nie udało się zapisać (typ wyjątku jest w dzienniku) i
         wysyłka przepadła.

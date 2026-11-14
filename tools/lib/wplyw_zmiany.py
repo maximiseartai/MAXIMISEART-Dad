@@ -98,9 +98,8 @@ TEST_FILES = ("test_*.py", "*_test.py")
 _RUN_ALL = (
     # Konfiguracja pytest i narzędzi (#305) i biblioteki zadań kroków skilli, które instalują dodatek dev (#293).
     _Rule("pyproject.toml", frozenset({_TESTS, _GATE, _SKILLS})),
-    # Biblioteki testów (#305) i kroki skilli (#293) z czasu, gdy zadania mutacji instalowały tylko je; zdjęcie kroków
-    # skilli stąd zwęża bramkę PR, więc czeka na zgodę Maksa (ADR 0020).
-    _Rule("requirements.txt", frozenset({_TESTS, _GATE, _SKILLS})),
+    # Biblioteki testów (#305); zadania kroków skilli z nich nie instalują (test_zadania_ci), więc kroków nie wybierają.
+    _Rule("requirements.txt", frozenset({_TESTS, _GATE})),
     # conftest każdego testu (#305) i fixture gita, którą wczytuje dla całej sesji (#360).
     _Rule("tests/conftest.py", frozenset({_TESTS, _GATE})),
     _Rule("tests/fixtures/git_config.py", frozenset({_TESTS, _GATE})),
@@ -502,7 +501,7 @@ def _package_data(files: frozenset[str]) -> dict[str, set[str]]:
     ``tests/ruff.toml`` wejście każdego testu. ``tests/fixtures`` zostaje pakietem z danymi, bo jego plik czyta fixture
     (``uwagi-taty-z-powiadomieniami.json`` dla ``test_zgloszenia_ci.py``).
 
-    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request tylko wtedy, gdy graf
+    Test, który czyta plik spod ``tests/``, jest więc wybierany na pull request, gdy graf
     (``sciezki_w_kodzie``) zobaczy ścieżkę tego pliku w pliku testu albo w module, który test importuje. Ten docstring
     nie wylicza form, które graf widzi: wyznaczają je przypadki ``test_test_widzi_plik_spod_tests_czytany_droga_grafu``
     (widziane) i ``test_test_nie_widzi_pliku_spod_tests_czytanego_poza_droga_grafu`` (przykłady niewidzianych, nie pełna

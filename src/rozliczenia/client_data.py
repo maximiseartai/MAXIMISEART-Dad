@@ -159,7 +159,9 @@ class ForbiddenValues:
     nie było. Czytniki z wątków Uruchomień i producenci z wątków Centrum dzielą ją pod jednym zamkiem.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, proof: object) -> None:
+        if proof is not _PASSED:
+            raise TypeError("Pamięć reguły danych daje tylko rozliczenia.client_data.empty_memory.")
         self._lock = threading.Lock()
         self._columns: dict[tuple[str, ...], ForbiddenColumn] = {}
         self._lengths: dict[str, tuple[int, ...]] = {}
@@ -234,6 +236,12 @@ class ForbiddenValues:
                 if column is not None:
                     return length, column
         return None
+
+
+def empty_memory() -> ForbiddenValues:
+    """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
+
+    return ForbiddenValues(_PASSED)
 
 
 def forbidden_columns(header: Mapping[str, _Position]) -> tuple[tuple[ForbiddenColumn, _Position], ...]:

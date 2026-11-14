@@ -3,13 +3,13 @@
     "price_orders.save": "944904a2f85b713b",
     "_mark": "ff2d5f2cd4908b67",
     "_efenix_stops": "83eec75cd9f80e07",
-    "_outcome": "7bb9e1e151640ffd",
+    "_outcome": "3483a402c4fd1613",
     "_priced": "59d65ecdffde4aac",
     "_emmett": "366167077661f347",
     "_dated": "086bfa4b2b50697b",
     "_completed": "eaf8ddaaaa37a86a",
-    "_priced_outcome": "630811d029a8d76a",
-    "_forwarded": "94343b103232aa5e"
+    "_priced_outcome": "e6750c60776e276c",
+    "_forwarded": "d1d62e554e0935bf"
   },
   "src/rozliczenia/efenix_positions.py": {
     "completion": "04cc1603fa80ed24",

@@ -16,7 +16,7 @@
     "WithoutLogsVersion": "92868149b99a61ae",
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "55d9aebdc4621587",
-    "post_of": "a5351ca209183263",
+    "post_of": "b6e7cf7bfece3230",
     "Drop": "c76b417cfc198b48",
     "close": "c1bbc66f5758bbfc"
   },
@@ -74,7 +74,7 @@
     "PreparedRun.conduct": "86381b107023395e"
   },
   "src/rozliczenia/centrum/outbox.py": {
-    "Outbox.post": "0b94d6b029142eda",
+    "Outbox.post": "5256e2e151b13327",
     "Outbox.resume": "2a67b7d7c8f5622c",
     "Rank": "d27ac44226b11a48",
     "Version": "b20196684cf428b5",

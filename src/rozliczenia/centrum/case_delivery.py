@@ -29,6 +29,7 @@ from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY, Deliveries, KnownIssue, NewIssue, OpenIssue, Outbox, Post
 from rozliczenia.centrum.report_issue import fingerprint_of
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import Outgoing, tool
 
 # Napis linii Logów przypiętej Uwagi, a w niej odnośnika do nich.
 _LOGS: Final = "Logi Uruchomienia"
@@ -80,7 +81,7 @@ def _logs_on_the_way_line(run_id: str) -> str:
     return f"{_LOGS}: w drodze (Uruchomienie {run_id})"
 
 
-def note_post(note_id: str, title: str, body: str, *, logs_on_the_way: bool) -> Post:
+def note_post(note_id: str, title: str, body: Outgoing, *, logs_on_the_way: bool) -> Post:
     """``logs_on_the_way``: stopka ma linię Logów w drodze (``logs_line`` bez adresu), którą słuchacz wymieni tuż przed
     wysłaniem."""
 
@@ -117,7 +118,7 @@ class _CaseDelivery:
             return post
         line, state = _sent_logs_line(run_id, sent)
         lines[len(lines) - 1 - lines[::-1].index(waiting)] = line
-        return replace(post, parts=("\n".join(lines), *post.parts[1:]), state=state)
+        return replace(post, parts=(tool("\n".join(lines)), *post.parts[1:]), state=state)
 
     def delivered(self, post: Post, number: int) -> tuple[Post, ...]:
         """Sprawa wysyłki dostaje numer issue; Uwaga, która wyszła przed odrzuconymi Logami swojego Uruchomienia,
@@ -186,9 +187,9 @@ def _rejected_logs_line(run_id: str) -> str:
     )
 
 
-def _logs_arrived(run_id: str, address: str) -> str:
-    return f"{logs_line(run_id, address)} dotarły do Skrzynki po tej Uwadze (Uruchomienie {run_id})."
+def _logs_arrived(run_id: str, address: str) -> Outgoing:
+    return tool(f"{logs_line(run_id, address)} dotarły do Skrzynki po tej Uwadze (Uruchomienie {run_id}).")
 
 
-def _logs_gone(run_id: str) -> str:
-    return f"Logi Uruchomienia nie dotrą: Centrum przestało je wysyłać (Uruchomienie {run_id})."
+def _logs_gone(run_id: str) -> Outgoing:
+    return tool(f"Logi Uruchomienia nie dotrą: Centrum przestało je wysyłać (Uruchomienie {run_id}).")

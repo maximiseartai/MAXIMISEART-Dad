@@ -27,7 +27,7 @@ import pkgutil
 import re
 from types import ModuleType
 import typing
-from typing import Final
+from typing import Final, get_args
 
 import pytest
 
@@ -191,6 +191,36 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "rule_without_action": [settings_messages.rule_without_action],
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],
+            "needed_by_release_rules": [partial(settings_messages.needed_by_release_rules, "wizja")],
+            # Zapis usuwa się tylko spośród innych zapisów składnika, a nazwę zmienia się albo usuwa cały składnik.
+            "release_component_taken": [
+                partial(settings_messages.release_component_taken, "wizja" if how == "zapis" else "instalacja ręczna", "instalacja ręczna", how)
+                for how in get_args(settings_messages.TakenAction)
+            ],
+            "rules_wait_for_release_component": [
+                partial(
+                    settings_messages.rules_wait_for_release_component,
+                    "wizja" if how == "zapis" else "instalacja ręczna",
+                    "instalacja ręczna",
+                    how,
+                )
+                for how in get_args(settings_messages.TakenAction)
+            ],
+            "spelling_taken": [partial(settings_messages.spelling_taken, "wizja", "instalacja ręczna")],
+            "component_used_by_rule": [
+                partial(
+                    settings_messages.component_used_by_rule,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
+            ],
+            "rule_needs_component": [
+                partial(
+                    settings_messages.rule_needs_component,
+                    "instalacja ręczna",
+                    "Jeśli URZĄDZENIA zawierają „instalacja ręczna”, to wpisz 1 w AN.",
+                )
+            ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
             ],
@@ -506,6 +536,69 @@ def test_znane_luki_strazy_katalogu_odmow_przechodza_przez_kazdy_jego_mechanizm(
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py")
 
 
+# Znane luki strażnika miejsca złego ustawienia (tests/fixtures/znane_luki.py): opis postaci → moduł Ustawień Centrum,
+# który kładzie tekst z pliku (nieznany klucz) w miejscu złego ustawienia albo w zdaniu o nim, a mimo to przechodzi przez
+# mypy na konstruktorze FieldPath i ruff z konfiguracją src/.
+ZNANE_LUKI_FIELD_PATH: Final = {
+    "klucz z json.loads jako Any": """\
+import json
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(tekst: str) -> FieldPath:
+    return FieldPath(json.loads(tekst)["klucz"])
+""",
+    "klucz przez cast": """\
+from typing import cast
+
+from rozliczenia.centrum.settings.files import FieldName, FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(cast(FieldName, klucz))
+""",
+    "klucz z type: ignore": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return FieldPath(klucz)  # type: ignore[arg-type]
+""",
+    "tekst wpisany po budowie": """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    wynik = FieldPath("wykonawcy")
+    object.__setattr__(wynik, "text", klucz)
+    return wynik
+""",
+    "tekst przez dataclasses.replace": """\
+import dataclasses
+
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsce(klucz: str) -> FieldPath:
+    return dataclasses.replace(FieldPath("wykonawcy"), text=klucz)
+""",
+    "zdanie z kluczem w fabryce przyjmującej str": """\
+def zle_pole(plik: str, klucz: str) -> str:
+    return f"Plik {plik} w folderze config ma złą wartość pola {klucz}. Poprawia go Maks."
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_FIELD_PATH, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "settings" / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
+
+
 def _refusal_as_value(module: ModuleType) -> bool:
     """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
 
@@ -661,6 +754,8 @@ UI_TEXTS: Final = {
     "Uzupełnij bez zapisu": "frontend/src/lib/pricing.tsx",
     "Kontynuuj": "frontend/src/pages/runs/run-dialogs.tsx",
     "Zostaw moją": "frontend/src/pages/worker-reports/day-details.tsx",
+    "Zapisz": "frontend/src/pages/settings/devices-section.tsx",
+    "Usuń składnik": "frontend/src/pages/settings/devices-section.tsx",
 }
 # Cytaty Komunikatów, których test nie szuka w pliku frontendu, każdy z powodem: tekst spoza UI Centrum rozliczeń
 # albo napis UI w postaci, której ``_ui_text`` nie czyta.
@@ -676,6 +771,7 @@ QUOTES_OUTSIDE_UI: Final = {
     tool_files.WORKER_TEMPLATE.name: "nazwa pliku Wzorca w folderze config, na którą tata zmienia placeholder.xlsx",
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
     "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
+    "wizja": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
 }
 
 

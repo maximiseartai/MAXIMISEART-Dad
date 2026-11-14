@@ -5,9 +5,9 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
   wejścia wiersze plików taty. Wpisanie raportów ma maile ze Skrzynki raportów tylko jako Wpisy raportu w Logach
-  (``report_entering``), więc odtworzenie podaje je procesowi jako maile w postaci kanonicznej
-  (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Listą Wykonawców z
-  loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
+  (``report_entering``, wejście kliknięcia z nich daje ``LoggedReports.replay``), więc odtworzenie podaje je procesowi
+  jako maile w postaci kanonicznej (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Listą
+  Wykonawców z loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
   zlecenie śladu efenix, które strażnik reguły danych pominął) kończy odtworzenie bez uruchomienia procesu: wynik
@@ -82,22 +82,11 @@ from rozliczenia.centrum.process_kind import (
     ProcessKind,
     Start,
 )
-from rozliczenia.centrum.report_entering_logs import (
-    LoggedOwnEntry,
-    LoggedOrderless,
-    LoggedOwnMove,
-    LoggedReportEntry,
-    LoggedReportMail,
-    LoggedReports,
-    LoggedSenderProblem,
-    LoggedStrangerMail,
-    LoggedUnreadableMail,
-    logged_read,
-)
+from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
-from rozliczenia.client_data import MASKS, ForbiddenColumn, forbidden_columns
+from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.decision import Decision
@@ -126,18 +115,7 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_list import WorkerEntry, WorkerList
-from rozliczenia.worker_reports import (
-    Kept,
-    Login,
-    OrderKey,
-    OrderNumber,
-    OwnEntries,
-    OwnEntry,
-    OwnMove,
-    ReadStranger,
-    SenderAddress,
-    as_mail,
-)
+from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, SenderAddress, as_mail
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
@@ -293,7 +271,8 @@ def replay(
         limits += rebuilt.limits
         if any(limit.blocking for limit in rebuilt.limits):
             return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
-        replayed = _run(record, _prepared(record, kind, rebuilt, here))
+        memory = empty_memory()
+        replayed = _run(record, _prepared(record, kind, rebuilt, here, memory), memory)
     difference = first_difference(record, replayed)
     return Report(
         Verdict.AGREES if difference is None else Verdict.DIFFERS,
@@ -829,28 +808,9 @@ def _entering_limits(record: RunLog) -> list[Limit]:
                 "pamięci wpisów się nie powtarza i różnica wychodzi w wyniku"
             )
         ]
-    masked = [entry.number for entry in _logged_entries(entering) if not _digits(entry.number)]
-    if masked:
-        return [
-            Limit(
-                f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
-                "z rzędu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis",
-                blocking=True,
-            )
-        ]
-    numbers = _numbers(entering)
-    for name, logged in (("pamięć wpisów", entering.memory_before), ("decyzje „Zostaw moją”", entering.kept)):
-        unknown = [entry for entry in logged if len(_texts(numbers, entry.number, entry.day, entry.worker)) != 1]
-        if unknown:
-            entry = unknown[0]
-            return [
-                Limit(
-                    f"{name} w Logach ma zlecenie {entry.number} Wykonawcy {entry.worker} z {entry.day:%d.%m.%Y} "
-                    "tylko jako liczbę, a jego numeru nie ma w dokładnie jednym Wpisie raportu w Logach, więc "
-                    "odtworzenie nie wie, czy numer ma zera na początku",
-                    blocking=True,
-                )
-            ]
+    replay = entering.replay()
+    if isinstance(replay, Unreplayable):
+        return [Limit(replay.reason, blocking=True)]
     limits = [
         Limit(
             "maili taty Logi nie mają: odtworzenie czyta Wpisy raportu z Logów z maili w postaci kanonicznej (temat "
@@ -858,26 +818,8 @@ def _entering_limits(record: RunLog) -> list[Limit]:
             "Konfiguracją wykonawców i plikiem adresów z loginów Wpisów, więc powtarza dopasowanie do zleceń, pamięć "
             "wpisów, decyzje „Zostaw moją” i Nienadpisywanie, ale nie rozpoznanie tekstu maila taty"
         ),
+        *(Limit(text) for text in replay.reservations),
     ]
-    counted = Counter(
-        {mask: sum(entry.activities.count(mask) for entry in _logged_entries(entering)) for mask in MASKS}
-    )
-    if +counted:
-        masks = ", ".join(f"{mask} ×{count}" for mask, count in (+counted).most_common())
-        limits.append(
-            Limit(
-                f"Wpisy raportu w Logach mają maski strażnika reguły danych ({masks}): odtworzenie wpisuje do INTERMAX "
-                "maskę w miejscu czynności Wykonawcy, więc reguła, która porównuje je z komórką, może zdecydować inaczej"
-            )
-        )
-    if any(isinstance(mail, LoggedUnreadableMail) and mail.numbers is None for mail in entering.mails):
-        limits.append(
-            Limit(
-                "Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0): odtworzenie czyta ten mail bez Wpisów, "
-                "więc ostrzeżenie o nieczytelnym temacie, które u taty zdjął poprawiony mail, wraca w odtworzeniu jako "
-                "różnica"
-            )
-        )
     if record.ending != "finished" and entering.written is None and entering.changes:
         limits.append(
             Limit(
@@ -898,24 +840,28 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
 
     register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
+    started = record.started_at.astimezone()
     entering = record.report_entering
-    if entering is not None and entering.orderless:
-        _add_orderless(register, entering)
-    reads = [] if entering is None else [logged_read(mail) for mail in entering.mails]
+    replay = EnteringReplay.without_logs(started.date()) if entering is None else entering.replay()
+    assert isinstance(replay, EnteringReplay), "Logi bez wejścia kliknięcia to granica blokująca (_entering_limits)"
+    if replay.orderless:
+        _add_orderless(register, replay)
+    reads = replay.mails
     logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
     workers = WorkerList.of([WorkerEntry([login], login, [sender.shown()]) for login, sender in senders.items()])
     assert isinstance(workers, WorkerList), "login Wpisu jest nazwą pliku, bo Logi niosą go po Liście Wykonawców taty"
-    strangers = iter(_strangers(entering))
-    mails = [as_mail(read, next(strangers) if isinstance(read, ReadStranger) else senders[read.worker]) for read in reads]
-    saved = SavedState(None, OwnEntries.EMPTY) if entering is None else _saved(entering)
-    started = record.started_at.astimezone()
-    moment = datetime.combine(started.date() if entering is None else entering.today, started.timetz())
+    strangers = iter(replay.strangers)
+    mails = [
+        as_mail(read, _sender(f"obcy-{read.mail.digest}-{next(strangers)}") if isinstance(read, ReadStranger) else senders[read.worker])
+        for read in reads
+    ]
+    moment = datetime.combine(replay.today, started.timetz())
     warned = any(message.code == _MEMORY_NOT_SAVED for message in record.messages)
-    inbox = FakeInbox(mails, skipped=0 if entering is None else entering.skipped)
-    parts = HostParts(now=lambda: moment, reports=ReportEnteringParts(inbox, _LoggedState(saved, saves=not warned)))
+    inbox = FakeInbox(mails, skipped=replay.skipped)
+    parts = HostParts(now=lambda: moment, reports=ReportEnteringParts(inbox, _LoggedState(replay.saved, saves=not warned)))
     periods = work.folder("okresy")
-    for token in [] if entering is None else entering.closed:
+    for token in replay.closed:
         collective = PeriodFolder(periods, parse_period_token(token)).collective_file
         collective.parent.mkdir(parents=True, exist_ok=True)
         collective.touch()
@@ -923,7 +869,7 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     return _Rebuilt(paths, parts, limits, workers)
 
 
-def _add_orderless(register: Path, entering: LoggedReports) -> None:
+def _add_orderless(register: Path, replay: EnteringReplay) -> None:
     """Numery z wierszy bez zlecenia z Logów jako Surowe zlecenia pod ostatnim wierszem swojego arkusza (z pustym
     wierszem nad nimi), jak wklejenie z aplikacji: pierwsze przesunięte o ``SHIFT`` kolumn w lewo, reszta pod
     nagłówkami, każde z ``NUMER ZL.`` w postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem
@@ -932,23 +878,19 @@ def _add_orderless(register: Path, entering: LoggedReports) -> None:
     położeniu, jak u taty. Numer, którego każdy wiersz był u taty zleceniem sprzed ``Window.start`` (``day``), dostaje
     ten dzień i ``WYKONAWCA``, więc rdzeń daje ten sam powód (``AddBar.BEFORE_WINDOW``)."""
 
-    numbers = _numbers(entering)
     workbook = load_workbook(register)
-    by_sheet: dict[str, list[LoggedOrderless]] = {}
-    for logged in entering.orderless:
+    by_sheet: dict[str, list[ReplayedOrderless]] = {}
+    for logged in replay.orderless:
         by_sheet.setdefault(logged.sheet, []).append(logged)
     for name, orderless in by_sheet.items():
         sheet = workbook[name]
         header = {normalize_text(cell.value): cell.column for cell in sheet[1] if cell.value is not None}
         first = sheet.max_row + 2
         for index, logged in enumerate(orderless):
-            number = logged.number
-            texts = {text for (value, _, _), found in numbers.items() if value == number for text in found}
-            zero = sorted(text for text in texts if text.startswith("0"))
-            day = entering.today if logged.day is None else logged.day
+            day = replay.today if logged.day is None else logged.day
             cells: dict[Column, datetime | int | str] = {
                 DATE: datetime.combine(day, time()),
-                ORDER_NUMBER: zero[0] if zero else number,
+                ORDER_NUMBER: logged.number,
             }
             if logged.day is not None:
                 cells[WORKER] = _NO_WORKER
@@ -976,90 +918,10 @@ class _LoggedState:
         """Widoku Raporty odtworzenie nie ma, a wynik kliknięcia porównuje z Logów."""
 
 
-def _strangers(entering: LoggedReports | None) -> list[SenderAddress]:
-    """Adres każdego maila spoza listy adresów w Logach, po kolei: jeden z tylu adresów, ile problemów nieznanego
-    nadawcy mają w Logach jego skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
-
-    if entering is None:
-        return []
-    senders = Counter((problem.mail, problem.day) for problem in entering.problems if isinstance(problem, LoggedSenderProblem))
-    seen: Counter[tuple[str, date]] = Counter()
-    found: list[SenderAddress] = []
-    for mail in entering.mails:
-        if isinstance(mail, LoggedStrangerMail):
-            key = (mail.mail, mail.day)
-            found.append(_sender(f"obcy-{mail.mail}-{seen[key] % max(senders[key], 1)}"))
-            seen[key] += 1
-    return found
-
-
 def _sender(local: str) -> SenderAddress:
     sender = SenderAddress.of(f"{local}@{_REPLAY_DOMAIN}")
     assert sender is not None, local
     return sender
-
-
-def _digits(number: str) -> bool:
-    return number.isascii() and number.isdigit()
-
-
-def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
-    return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
-
-
-def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
-    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, bez jego Wpisu od
-    każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia z każdego dnia: wpis pamięci idzie za wierszem, więc może
-    stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu (Przeniesienie na inny dzień)."""
-
-    return (
-        numbers.get((number, day, worker))
-        or {text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts}
-        or {text for (value, _, _), texts in numbers.items() if value == number for text in texts}
-    )
-
-
-def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
-    """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
-    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
-
-    numbers: dict[tuple[int, date, str], set[str]] = {}
-    for mail in entering.mails:
-        if isinstance(mail, LoggedReportMail):
-            for entry in mail.entries:
-                if _digits(entry.number):
-                    numbers.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
-    return numbers
-
-
-def _saved(entering: LoggedReports) -> SavedState:
-    numbers = _numbers(entering)
-
-    def key(logged: LoggedOwnEntry) -> OrderKey:
-        [number] = _texts(numbers, logged.number, logged.day, logged.worker)
-        return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
-
-    def number(logged: LoggedOwnMove) -> OrderNumber:
-        found = _texts(numbers, logged.number, logged.day, logged.worker)
-        return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
-
-    entries = frozenset(OwnEntry(key(logged), logged.column, logged.value) for logged in entering.memory_before)
-    kept = frozenset(Kept(key(logged), logged.column, logged.value) for logged in entering.kept)
-    moves = frozenset(
-        OwnMove(
-            number(logged),
-            logged.day,
-            Login(logged.worker),
-            logged.origin_day,
-            Login(logged.origin_worker),
-            logged.origin_name,
-            logged.since,
-            logged.overridden,
-            logged.added,
-        )
-        for logged in entering.moves_before
-    )
-    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
 
 
 def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
@@ -1088,7 +950,9 @@ def _from_configuration(kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> list[
     return [*templates, WORKERS_FILE] if "workers" in kind.needs and not rebuild.workers else templates
 
 
-def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work) -> PreparedRun[Any, Any]:
+def _prepared(
+    record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work, memory: ForbiddenValues
+) -> PreparedRun[Any, Any]:
     """Uruchomienie z Logów ``record`` z plikami odbudowanymi i z folderu Konfiguracji, z Kopią wejścia i plikiem
     metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
     procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
@@ -1106,7 +970,7 @@ def _prepared(record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, wo
         warnings=record.start_warnings(),
     )
     metrics = work.path("metryki.jsonl")
-    return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts().new())
+    return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts(files=DadFiles(forbidden=memory)).new())
 
 
 def _quantity_rules(record: RunLog) -> QuantityRules:
@@ -1163,7 +1027,7 @@ class _Tata:
         self.progress = self._prepared.progress_view(snapshot)
 
 
-def _run(record: RunLog, prepared: PreparedRun[Any, Any]) -> RunLog:
+def _run(record: RunLog, prepared: PreparedRun[Any, Any], memory: ForbiddenValues) -> RunLog:
     """Uruchomienie odtworzenia przez rdzeń procesu i jego Logi po strażniku, jak w Centrum (``RunComments.run_ended``)."""
 
     tata = _Tata(prepared, consent=record.ending != "declined")
@@ -1186,7 +1050,7 @@ def _run(record: RunLog, prepared: PreparedRun[Any, Any]) -> RunLog:
         environment=environment,
         dad_actions=DadActions(entries=[], omitted=0),
     )
-    return guard_logs(replayed, prepared.context.files.forbidden).record
+    return guard_logs(replayed, memory).record
 
 
 # --- porównanie -----------------------------------------------------------------------------------------------------

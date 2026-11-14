@@ -94,6 +94,16 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.workbook_files.open_workbook",
     ),
+    # Tekst do wysyłki z komórki taty bez strażnika pracy Centrum (przegląd #1648, D1).
+    "from rozliczenia.client_data import tool\ntext = tool(cell)": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.client_data.tool"),
+    "from rozliczenia import client_data\nguarded = client_data.empty_memory().guard(cell, 'komórka')": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.client_data.empty_memory",
+    ),
+    # Zmieniona kopia dataclassy z polami Any, obok dataclasses.replace (przegląd #1660, W1).
+    "import copy\nsent = copy.replace(post, run_id=run)": (SRC_CONFIG, ("rozliczenia", "centrum"), "copy.replace"),
+    "from copy import replace as copied": (SRC_CONFIG, ("rozliczenia",), "copy.replace"),
     "from . import workbook_files\nworkbook_files.template_content(p)": (
         SRC_CONFIG,
         ("rozliczenia",),
@@ -213,6 +223,13 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/wall_clock.py": frozenset({"datetime.datetime.now", "time.time"}),
     "src/rozliczenia/centrum/catalog.py": frozenset({"rozliczenia.centrum.process_kind._CATALOG"}),
     "src/rozliczenia/dad_files.py": frozenset({"rozliczenia.workbook_files.file_bytes"}),
+    "src/rozliczenia/centrum/app.py": frozenset({"rozliczenia.client_data.empty_memory"}),
+    "src/rozliczenia/centrum/case_delivery.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/comment_versions.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/dad_notes.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/outbox.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/quantity_check_run.py": frozenset({"rozliczenia.client_data.tool"}),
+    "src/rozliczenia/centrum/reports.py": frozenset({"rozliczenia.client_data.tool"}),
     "src/rozliczenia/register_file.py": frozenset({"rozliczenia.workbook_files.open_workbook"}),
     "src/rozliczenia/template_file.py": frozenset(
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}

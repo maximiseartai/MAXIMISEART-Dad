@@ -18,13 +18,14 @@ import shutil
 import sys
 import threading
 import time
+from typing import Final
 
 import pytest
 
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE, BoxState, KeyedBox, NotesFile
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import Outgoing, tool
 from rozliczenia.centrum.outbox import (
     DRAIN,
     PART_LIMIT,
@@ -50,6 +51,7 @@ from tests.fixtures.potomne import wait_for
 from atrapy.sluchacz_kolejki import QueueListener
 from atrapy.widok_skrzynki import shown
 from tests.fixtures.stare_centrum import SharedBox, killed_after_comment, old_centrum, queue_on
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 THREAD = PeriodThread(
@@ -63,12 +65,12 @@ RUN_ID = "3f2a9c1b8e7d4f0a9b1c2d3e4f5a6b7c"
 NEXT_RUN_IDS = ("9b1c2d3e4f5a6b7c3f2a9c1b8e7d4f0a", "c2d3e4f5a6b7c3f2a9c1b8e7d4f0a9b1")
 
 
-def unframed(_number: int, _count: int, text: str) -> str:
+def unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:
     return text
 
 
-def numbered(number: int, count: int, text: str) -> str:
-    return f"Część {number}/{count}\n\n{text}"
+def numbered(number: int, count: int, text: Outgoing) -> Outgoing:
+    return tool(f"Część {number}/{count}\n\n") + text
 
 
 def post(blocks: list[str], *, frame: Frame = numbered, run_id: str = RUN_ID) -> Post:
@@ -161,7 +163,7 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
             period="08_14_09_2026",
             run_id=RUN_ID,
             blocks=[tool("x" * 60_000)],
-            frame=lambda _number, _count, text: "nagłówek " * 1_000 + text,
+            frame=lambda _number, _count, text: tool("nagłówek " * 1_000) + text,
         )
 
 
@@ -172,17 +174,17 @@ def test_czesc_ponad_limit_komentarza_to_blad_programu() -> None:
 )
 def test_identyfikator_wysylki_pusty_dlugi_ze_spacja_albo_w_dwoch_liniach_to_blad_programu(run_id: str) -> None:
     # Znacznik wysyłki to jedna linia z identyfikatorem jako jednym słowem, w zapasie _MARK_RESERVE każdego komentarza.
-    assert Post(THREAD, period="08_14_09_2026", run_id="x" * 64, header=None, parts=("treść",)).run_id == "x" * 64
+    assert Post(THREAD, period="08_14_09_2026", run_id="x" * 64, header=None, parts=(tool("treść"),)).run_id == "x" * 64
 
     with pytest.raises(ValueError, match="Identyfikator wysyłki"):
-        Post(THREAD, period="08_14_09_2026", run_id=run_id, header=None, parts=("treść",))
+        Post(THREAD, period="08_14_09_2026", run_id=run_id, header=None, parts=(tool("treść"),))
 
 
 def test_granica_tresci_liczy_znaki_a_nie_bajty_takze_z_polskimi_literami() -> None:
     first_line = len(f"{THREAD.line}\n\n")
 
     def opening(text: str) -> Post:
-        return Post(THREAD, period="08_14_09_2026", run_id=RUN_ID, header=None, parts=(text,))
+        return Post(THREAD, period="08_14_09_2026", run_id=RUN_ID, header=None, parts=(tool(text),))
 
     longest = opening("ą" * (TEXT_LIMIT - first_line))
 
@@ -253,7 +255,7 @@ def test_watek_ktory_zostaje_po_zamknieciu_dostaje_czesci_jako_komentarze_w_zamk
     queue = Queue(tmp_path, box)
 
     queue.outbox.post(
-        Post.of(LOGS, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("logi\n")], frame=numbered, header="Nagłówek")
+        Post.of(LOGS, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("logi\n")], frame=numbered, header=tool("Nagłówek"))
     )
 
     assert queue.box.wait_until(lambda box: bool(closed.comments))
@@ -658,7 +660,7 @@ def test_uwaga_ktorej_komentarz_skrzynka_odrzucila_dostaje_reszte_czesci_w_swoim
     tmp_path: Path,
 ) -> None:
     queue = Queue(tmp_path, FakeReportBox(comment_outcomes=[Rejected()]))
-    note = Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Część 1/2\n\na", "Część 2/2\n\nb"))
+    note = Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Część 1/2\n\na"), tool("Część 2/2\n\nb")))
 
     queue.outbox.post(note)
     queue.passed()
@@ -826,8 +828,8 @@ def run_logs(
     """Logi Uruchomienia ``run_id`` w ``count`` częściach; ``version`` mówi, po której Diagnozie, a każda Diagnoza
     kolejkuje nowszą wersję tej samej wysyłki (``RunComments.diagnosed``)."""
 
-    parts = tuple(f"Logi {version}, część {number}/{count}\n" for number in range(1, count + 1))
-    return Post(LOGS, "08_14_09_2026", run_id, header, parts)
+    parts = tuple(tool(f"Logi {version}, część {number}/{count}\n") for number in range(1, count + 1))
+    return Post(LOGS, "08_14_09_2026", run_id, None if header is None else tool(header), parts)
 
 
 @pytest.mark.parametrize(
@@ -1036,7 +1038,7 @@ def test_po_wyslaniu_kolejka_zna_adres_pierwszego_komentarza_uruchomienia(tmp_pa
         label="logi-uruchomienia", line="- Logi Uruchomienia okresu: 08_14_09_2026", closed="reuse", title="Logi"
     )
     run_logs = Post.of(
-        logs, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("podsumowanie\n")], frame=numbered, header="Logi okresu"
+        logs, period="08_14_09_2026", run_id=RUN_ID, blocks=[tool("podsumowanie\n")], frame=numbered, header=tool("Logi okresu")
     )
 
     queue.outbox.post(run_logs)
@@ -1214,13 +1216,13 @@ class FollowingUp(QueueListener):
         super().delivered(post, number)
         if not isinstance(post.target, NewIssue):
             return ()
-        return (Post(KnownIssue("uwaga-taty", number), None, "komentarz", None, ("Komentarz po Uwadze",)),)
+        return (Post(KnownIssue("uwaga-taty", number), None, "komentarz", None, (tool("Komentarz po Uwadze"),)),)
 
 
 def test_wysylka_nastepcza_sluchacza_idzie_w_tym_samym_przejsciu_kolejki(tmp_path: Path) -> None:
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1276,7 +1278,7 @@ def test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_po
     queue = Queue(tmp_path, FakeReportBox(list_lag=True), listener=FollowingUp())
     fault(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1299,7 +1301,7 @@ def test_komentarz_do_issue_ktore_lista_juz_pokazuje_dochodzi_takze_bez_odczytu_
     queue = Queue(tmp_path, FakeReportBox(), listener=FollowingUp())
     _unreadable_at_comment_list(queue, monkeypatch)
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     [issue] = queue.box.issues_with("uwaga-taty")
@@ -1311,7 +1313,7 @@ def logs_with_file(run_id: str) -> Post:
     """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum Logów okresu, jak ``comment_versions.post_of``."""
 
     archive = ArchiveFile("logi-08_14_09_2026", "Logi Uruchomień 08_14_09_2026", "Opis.", f"{run_id}.json", "{}\n")
-    return Post(LOGS, "08_14_09_2026", run_id, "Logi okresu", (f"podsumowanie {run_id}\n",), archive)
+    return Post(LOGS, "08_14_09_2026", run_id, tool("Logi okresu"), (tool(f"podsumowanie {run_id}\n"),), archive)
 
 
 def test_przejscie_w_ktorym_archiwum_odmowilo_nie_pyta_go_o_pliki_nastepnych_logow(tmp_path: Path) -> None:
@@ -1352,7 +1354,7 @@ def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_ar
 
     def logs(length: int) -> Post | None:
         try:
-            return replace(logs_with_file(RUN_ID), parts=("ą" * length,))
+            return replace(logs_with_file(RUN_ID), parts=(tool("ą" * length),))
         except ValueError:
             return None
 
@@ -1375,7 +1377,7 @@ def test_najdluzszy_komentarz_logow_z_plikiem_zostawia_miejsce_na_dopisek_gdy_ar
 
 def test_plik_do_archiwum_z_wysylka_w_dwoch_czesciach_to_blad_programu() -> None:
     with pytest.raises(ValueError, match="Plik do Archiwum okresu idzie z jedną częścią do issue okresu"):
-        replace(logs_with_file(RUN_ID), parts=("pierwsza\n", "druga\n"))
+        replace(logs_with_file(RUN_ID), parts=(tool("pierwsza\n"), tool("druga\n")))
 
 
 def test_logi_z_plikiem_bez_naglowka_maja_w_tresci_nowego_issue_dopisek_ze_plik_czeka(tmp_path: Path) -> None:
@@ -1566,7 +1568,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_nowa_wysylka_zanim_lista_ja_pok
     issue pokaże to issue; Uwaga czeka wtedy na budzenie ``RETRY_S`` zamiast założyć drugie issue."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox.post(report())
@@ -1589,7 +1591,7 @@ def test_zgubiona_odpowiedz_na_zalozenie_uwagi_i_start_centrum_zanim_lista_ja_po
     (#879): nowe Centrum zna chwilę tamtego zakładania z pliku obok klucza i czeka na budzenie ``RETRY_S``."""
 
     queue = Queue(tmp_path, FakeReportBox(lost_answers=1, list_lag=True))
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, ("Uwaga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Uwaga taty"), None, RUN_ID, None, (tool("Uwaga"),)))
     queue.passed()
 
     queue.outbox = queue.restarted()
@@ -1609,9 +1611,9 @@ def test_dwie_uwagi_taty_jedna_po_drugiej_zakladaja_dwa_issue_bez_czekania_na_li
 
     queue = Queue(tmp_path, FakeReportBox(list_lag=True))
 
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Pierwsza"), None, RUN_ID, None, ("Pierwsza",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Pierwsza"), None, RUN_ID, None, (tool("Pierwsza"),)))
     queue.passed()
-    queue.outbox.post(Post(NewIssue("uwaga-taty", "Druga"), None, NEXT_RUN_IDS[0], None, ("Druga",)))
+    queue.outbox.post(Post(NewIssue("uwaga-taty", "Druga"), None, NEXT_RUN_IDS[0], None, (tool("Druga"),)))
     queue.passed()
 
     assert [note.body for note in queue.box.issues_with("uwaga-taty")] == ["Pierwsza", "Druga"]
@@ -1640,3 +1642,113 @@ def test_logi_dwoch_uruchomien_nowego_okresu_w_jednym_przejsciu_ida_do_archiwum_
     assert sorted(queue.box.archived("logi-08_14_09_2026")) == sorted(f"{run_id}.json.gz" for run_id in run_ids)
     assert len(queue.box.archives) == 1
     assert queue.files() == []
+
+
+_GOTOWA: Final = "from rozliczenia.centrum.outbox import Outbox, Post\n\n"
+
+# Drogi do pliku kolejki obok wysyłki zbudowanej przez konstruktor ``Post`` (przegląd #1660, W1) → zgłoszenie mypy albo
+# ruff, które każdą odrzuca w nowym module ``src/rozliczenia/centrum``.
+DROGI_OBOK_POST: Final = {
+    "własna klasa z to_json": (
+        """from rozliczenia.centrum.outbox import Outbox
+
+
+class Wysylka:
+    def to_json(self) -> str:
+        return "{}"
+
+
+def wyslij(kolejka: Outbox, wysylka: Wysylka) -> bool:
+    return kolejka.post(wysylka)
+""",
+        'expected "Post | LogsPost"',
+    ),
+    "podklasa Post z to_json": (
+        """from rozliczenia.centrum.outbox import Post
+
+
+class Inna(Post):
+    def to_json(self) -> str:
+        return "{}"
+""",
+        'Cannot inherit from final class "Post"',
+    ),
+    "copy.replace": (
+        _GOTOWA
+        + """import copy
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(copy.replace(post, run_id=1))
+""",
+        "`copy.replace` is banned",
+    ),
+    "replace z modułu copy": (
+        _GOTOWA
+        + """from copy import replace
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(replace(post, run_id=1))
+""",
+        "`copy.replace` is banned",
+    ),
+    "__replace__ z polem złego typu": (
+        _GOTOWA
+        + """def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(post.__replace__(run_id=1))
+""",
+        '"__replace__" of "Post" has incompatible type',
+    ),
+}
+
+# Znane luki kolejki (tests/fixtures/znane_luki.py): postaci, które zmieniają pole gotowej wysyłki albo dają kolejce
+# inny obiekt, a mypy i ruff ich nie łapią.
+ZNANE_LUKI: Final = {
+    "object.__setattr__ na gotowej wysyłce": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post) -> bool:
+    object.__setattr__(post, "run_id", 1)
+    return kolejka.post(post)
+""",
+    "zapis do __dict__ gotowej wysyłki": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    post.__dict__["parts"] = (komorka,)
+    return kolejka.post(post)
+""",
+    "setattr to_json na klasie Post": _GOTOWA
+    + """def wyslij(kolejka: Outbox, post: Post, komorka: str) -> bool:
+    setattr(Post, "to_json", lambda self: komorka)
+    return kolejka.post(post)
+""",
+    "replace z getattr modułu copy": _GOTOWA
+    + """import copy
+
+
+def wyslij(kolejka: Outbox, post: Post) -> bool:
+    return kolejka.post(getattr(copy, "replace")(post, run_id=1))
+""",
+    "cast innej klasy na Post": _GOTOWA
+    + """from typing import cast
+
+
+def wyslij(kolejka: Outbox, wysylka: object) -> bool:
+    return kolejka.post(cast(Post, wysylka))
+""",
+    "wartość typu Any": """from typing import Any
+
+from rozliczenia.centrum.outbox import Outbox
+
+
+def wyslij(kolejka: Outbox, wysylki: dict[str, Any]) -> bool:
+    return kolejka.post(wysylki["inna"])
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_OBOK_POST.items()} | ZNANE_LUKI
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_kolejki.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_OBOK_POST.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI}, "tests/test_kolejka_skrzynki_zgloszen.py")

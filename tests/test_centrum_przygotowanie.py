@@ -788,6 +788,22 @@ def test_regula_dodana_w_edytorze_daje_swoje_ilosci_w_nastepnym_przygotowaniu_pl
     assert (_quantity(centrum, "AA18"), _quantity(centrum, "Z18")) == (3, 1)
 
 
+def test_zapis_dopisany_do_skladnika_w_ustawieniach_dziala_w_nastepnym_przygotowaniu_bez_nowej_reguly(tmp_path: Path) -> None:
+    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "URZĄDZENIA": "ont nokia"}]
+    centrum = preparing_centrum(tmp_path, rows)
+    nokia = next(device for device in centrum.client.get("/api/settings/quantity-rules").json()["devices"] if device["id"] == "nokia")
+
+    saved = centrum.client.put(
+        "/api/settings/devices/nokia",
+        json={"name": nokia["name"], "other_spellings": [*nokia["other_spellings"], "ONT Nokia"], "group": nokia["group"]},
+    )
+    run_to_end(centrum, dry_run=False)
+
+    assert saved.status_code == 200, saved.text
+    # Reguła „nokia” z Wydania: Z razy liczba „nokia”; bez dopisanego zapisu „ont nokia” to składnik spoza listy.
+    assert _quantity(centrum, "Z18") == 1
+
+
 def _quantity(centrum: PreparingCentrum, cell: str) -> object:
     workbook = load_workbook(centrum.fixture.collective_file_path, read_only=True)
     try:

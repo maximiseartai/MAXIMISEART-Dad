@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox, note_post
+from rozliczenia.client_data import tool
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_NOTES_FILE, OLD_REPORTS_FILE, REPORT, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
@@ -295,7 +296,7 @@ def test_numer_issue_dostaje_tylko_sprawa_z_wysylki_o_jej_etykiecie_i_identyfika
 
     skrzynka.sent(
         *(
-            Post(target, period=None, run_id=QUEUED_NOTE, header=None, parts=("treść",))
+            Post(target, period=None, run_id=QUEUED_NOTE, header=None, parts=(tool("treść"),))
             for target in (
                 NewIssue("uwaga-taty", "Wiersz zniknął"),
                 PeriodThread(label="logi-uruchomienia", line="- Logi", closed="reuse", title="Logi"),
@@ -579,7 +580,7 @@ class Skrzynka:
         """Logi Uruchomień ``run_ids`` doszły do Skrzynki z adresem komentarza."""
 
         logs = PeriodThread(label="logi-uruchomienia", line="- Logi", closed="reuse", title="Logi")
-        self.sent(*(Post(logs, period=None, run_id=run_id, header="Logi okresu", parts=("Logi",)) for run_id in run_ids))
+        self.sent(*(Post(logs, period=None, run_id=run_id, header=tool("Logi okresu"), parts=(tool("Logi"),)) for run_id in run_ids))
         assert all(self.outbox.delivered(run_id, "logi-uruchomienia") is not None for run_id in run_ids)
 
     def texts(self) -> list[str]:
@@ -602,7 +603,7 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
     # Logi także pod identyfikatorem Uwagi: wysyłka innej etykiety nie dostaje odnośnika, choć Logi o nim są.
     skrzynka.logs_delivered(PINNED_RUN, PINNED_ID)
 
-    skrzynka.sent(Post(target, period=None, run_id=PINNED_ID, header=None, parts=(f"Treść\n{WAITING_LOGS}",)))
+    skrzynka.sent(Post(target, period=None, run_id=PINNED_ID, header=None, parts=(tool(f"Treść\n{WAITING_LOGS}"),)))
 
     assert f"Treść\n{WAITING_LOGS}" in skrzynka.texts()
 
@@ -614,8 +615,8 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path) -> N
     skrzynka = Skrzynka(tmp_path, stored, box)
     logs = PeriodThread(label="logi-uruchomienia", line="- Logi", closed="reuse", title="Logi")
 
-    assert skrzynka.outbox.post(Post(logs, period=None, run_id=PINNED_RUN, header="Logi okresu", parts=("Logi",)))
-    skrzynka.sent(note_post(PINNED_ID, "Uwaga", f"Treść\n{WAITING_LOGS}", logs_on_the_way=True), left=2)
+    assert skrzynka.outbox.post(Post(logs, period=None, run_id=PINNED_RUN, header=tool("Logi okresu"), parts=(tool("Logi"),)))
+    skrzynka.sent(note_post(PINNED_ID, "Uwaga", tool(f"Treść\n{WAITING_LOGS}"), logs_on_the_way=True), left=2)
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}", [])
@@ -634,7 +635,7 @@ def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
-    skrzynka.sent(note_post(PINNED_ID, "Uwaga", f"Treść\n{WAITING_LOGS}\nwersja narzędzia abc1234", logs_on_the_way=True))
+    skrzynka.sent(note_post(PINNED_ID, "Uwaga", tool(f"Treść\n{WAITING_LOGS}\nwersja narzędzia abc1234"), logs_on_the_way=True))
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     linked = f"[Logi Uruchomienia]({skrzynka.outbox.delivered(PINNED_RUN, 'logi-uruchomienia')})"
@@ -692,7 +693,7 @@ def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
-    skrzynka.sent(Post(NewIssue("uwaga-taty", "Uwaga"), period=None, run_id="nieznana", header=None, parts=(WAITING_LOGS,)))
+    skrzynka.sent(Post(NewIssue("uwaga-taty", "Uwaga"), period=None, run_id="nieznana", header=None, parts=(tool(WAITING_LOGS),)))
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     assert (issue.body, issue.comments) == (WAITING_LOGS, [])

@@ -547,6 +547,20 @@ Zmianę reguły widać w sekcji `Historia` jako zdanie reguły przed i po, a
 `Cofnij` przywraca poprzednie reguły. Regułę usuwasz przyciskiem
 `Usuń regułę` w tym samym oknie.
 
+### Lista Urządzeń
+
+Sekcja `Urządzenia` pokazuje składniki URZĄDZENIA, które znają Reguły ilości.
+Gdy INTERMAX zapisze ten sam składnik inaczej, nie trzeba nowej reguły:
+
+1. Kliknij ołówek przy składniku, potem `Dodaj zapis` i wpisz nowy zapis.
+2. Kliknij `Zapisz`. Zapis działa od następnego Przygotowania pliku zbiorczego.
+
+Nowy składnik dodajesz przyciskiem `Dodaj składnik`, z grupą router, TV albo
+extender, gdy ją ma. Pod listą Centrum podpowiada zapisy z ostatnich okresów,
+których lista nie zna; `Dodaj` przy podpowiedzi dodaje go jako nowy składnik
+albo inny zapis składnika z listy. Jeden zapis należy do jednego składnika, a
+składnika, którego potrzebuje reguła, Centrum nie usunie: poda zdanie tej reguły.
+
 ## Przebieg rozliczeń
 
 ### Przed uruchomieniem

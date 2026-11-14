@@ -699,6 +699,37 @@ def test_podglad_liczy_wiersz_ktory_zmiana_reguly_tylko_zostawia_pusty_w_rozlicz
     assert (preview["differences_before"], preview["differences_after"]) == (7, 7)
 
 
+SUGGESTIONS_URL = "/api/settings/devices/suggestions"
+
+
+def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okresow_i_znikaja_po_dodaniu(tmp_path: Path) -> None:
+    # Zlecenie z dwoma zapisami spoza listy rozdzielonymi składnikiem z listy: dwie podpowiedzi.
+    two_unknown: dict[str, CellValue] = {"C": "u", "D": "przeniesienie nokia ont x", "G": MON.replace(hour=10), "T": 1}
+    centrum = centrum_with(tmp_path, [*TATA_ROWS, two_unknown])
+    before = centrum.client.get(SUGGESTIONS_URL).json()
+    run_to_end(centrum, dry_run=False)
+
+    suggested = centrum.client.get(SUGGESTIONS_URL).json()
+    added = centrum.client.post("/api/settings/devices", json={"name": "przeniesienie", "other_spellings": [], "group": None})
+
+    assert before == {"suggestions": [], "unread": []}
+    # „prewencja” jest nieznana, ale zlecenie z nią rozlicza się z opisu, więc ma już swoją regułę.
+    assert suggested == {
+        "suggestions": [{"spelling": "przeniesienie", "orders": 3}, {"spelling": "ont x", "orders": 1}],
+        "unread": [],
+    }
+    assert added.status_code == 200, added.text
+    assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
+
+
+def test_podpowiedzi_listy_urzadzen_przy_pliku_zbiorczym_ktorego_nie_da_sie_przeczytac_maja_jego_okres(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    centrum.collective_file.write_bytes(b"to nie jest skoroszyt")
+
+    assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [], "unread": [PERIOD]}
+
+
 DIFFERENCES_URL = f"{RULES_URL}/differences"
 NEWER = "15_21_09_2026"
 # Różnice Kontroli ilości z TATA_ROWS (expected_body), po jednej na komórkę: okres, wiersz Pliku zbiorczego, URZĄDZENIA,

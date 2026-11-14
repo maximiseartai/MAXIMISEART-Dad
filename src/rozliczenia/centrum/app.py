@@ -77,6 +77,7 @@ from rozliczenia.centrum.tool_update import ToolClone
 from rozliczenia.centrum.tool_updates import GuardianLauncher, ToolUpdates, tool_update_router
 from rozliczenia.centrum.version import SERVICE, short_commit
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.file_state import path_state
 from rozliczenia.run_context import RunContexts, TemplateCheck, check_on_disk
@@ -125,7 +126,7 @@ def create_app(
     reminder_rhythm: ReminderRhythm | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
 ) -> FastAPI:
-    work = CentrumWork(config=config, log=log, clock=clock, pause=pause)
+    work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
@@ -201,14 +202,23 @@ def create_app(
     # loginu z Listy Wykonawców i podpowiedzi sekcji Wykonawcy czytają nim pliki taty ze źródła bajtów ``source``, a jego
     # pamięć to pamięć reguły danych pracy.
     files = DadFiles(source=source, forbidden=work.forbidden)
+    configuration = configuration_files or ConfigurationFiles.default()
+    price_list = PriceList(configuration.collective_template)
     # Ustawienia Centrum w ``config``: jedyny czytelnik i pisarz ich plików, Historii i pamięci (ADR 0032). Chwila wiersza
-    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień.
-    settings = CentrumSettings(config, log=log, now=local_now, pause=pause, autostart=autostart, periods=WorkerPeriods(files))
+    # Historii to zegar ścienny, nie zegar procesów ``now``, który testy podają jako listę chwil Uruchomień. Nazwy kolumn
+    # z cennika mają zdania reguł w odmowach zmian Reguł ilości i Listy Urządzeń.
+    settings = CentrumSettings(
+        config,
+        log=log,
+        now=local_now,
+        pause=pause,
+        autostart=autostart,
+        periods=WorkerPeriods(files),
+        column_names=price_list.names,
+    )
     # Skrzynka raportów taty w Gmailu z dostępem od właściciela Ustawień, więc nowe hasło taty działa od następnej sesji;
     # testy i skille podają połączenie z atrapą albo całą atrapę skrzynki.
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
-    configuration = configuration_files or ConfigurationFiles.default()
-    price_list = PriceList(configuration.collective_template)
     sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
     app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
     app.include_router(periods_router(settings, platform, today, catalog))

@@ -28,6 +28,7 @@ from typing import Any, Final, NoReturn, cast
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
+from pydantic import ValidationError
 import pytest
 
 from rozliczenia import settlement_messages, workbook_files
@@ -51,7 +52,7 @@ from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, WindowAction
-from rozliczenia.client_data import ForbiddenValues
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.workbook_files import ByteSource
@@ -551,7 +552,8 @@ def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszyc
     """Plik Logów Wpisania raportów z każdym słowem powodu i kolumny, które zapisały wcześniejsze Wydania, czyta się do
     tego samego powodu i tej samej kolumny, a zapisuje z powrotem tymi samymi słowami: te pliki czytają karta z Logów,
     Historia i odtworzenie. ``not_ordered`` przy ``unknown_number`` to powód, dla którego Centrum nie dopisało
-    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia."""
+    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia. Słowo spoza powodów odmowy Przeniesienia przy
+    ``refused_move`` (``form``) się nie czyta, bo żadne Wydanie go tam nie zapisało."""
 
     day, arrived, worker = "2026-11-09", "2026-11-09T18:00:00Z", "jan.testowy"
     entering = {
@@ -619,6 +621,11 @@ def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszyc
         *COLUMN_WORDS.values(),
     ]
     assert _entering_words(json.loads(record.text)["report_entering"]) == _entering_words(entering)
+    refused_form = {"kind": "refused_move", "worker": worker, "day": day, "number": "40000001", "bar": "form"}
+    with pytest.raises(ValidationError, match=r"refused_move\.bar"):
+        RunLog.model_validate_json(
+            json.dumps({**logs, "report_entering": {**entering, "problems": [refused_form]}}, ensure_ascii=False)
+        )
 
 
 def test_logi_po_bledzie_samego_adaptera_maja_czas_liczbe_problemow_i_przetworzenia_szablonow_z_rdzenia(
@@ -1145,7 +1152,7 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
     probe = {**register_order(77, datetime(2026, 9, 10, 11)), "DATA GODZ. POCZ.": "10.09.2026 11:00"}
     probe |= {"ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
     paste_raw_orders(register, [probe, register_order(78, datetime(2026, 9, 10, 12))], first=2)
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     register_problem(register, DadFiles(forbidden=memory))
 
@@ -1187,7 +1194,7 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
     ordered, paste = case
     register = write_register(tmp_path / "Rejestr.xlsx", default_register_rows() if ordered else [])
     paste(register)
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     register_problem(register, DadFiles(forbidden=memory))
 
@@ -1241,7 +1248,7 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
     register = write_register(tmp_path / "Rejestr.xlsx", [*earlier, *default_register_rows()])
     probe = {**register_order(1, datetime(2026, 9, 7, 15)), "ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
     paste_raw_orders(register, [probe], first=len(earlier) + 2, in_place_from="DATA GODZ. POCZ.")
-    memory = ForbiddenValues()
+    memory = empty_memory()
 
     [sheet] = period_sheets(read(register, DadFiles(forbidden=memory)), parse_period_token(PERIOD))
 
@@ -4511,7 +4518,7 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     ended = ended_line(utc("2026-09-16T10:17:00+00:00"), order)
     left_journal(centrum.log_path.parent, started, begun, ended)
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, None)
-    text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", ForbiddenValues())
+    text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", empty_memory())
     queue = ToolDirectory(tmp_path).queue
     queue.mkdir(parents=True)
     # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.

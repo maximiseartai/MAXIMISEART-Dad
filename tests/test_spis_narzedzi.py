@@ -24,13 +24,14 @@ w workflow rozmiaru PR liczy linie maszynerii procesu, obejmuje co najmniej jede
 wpisów. Plik bez wpisu ma grupę z reguły katalogu, więc test nie wymaga wpisu dla nowego pliku.
 
 Granica: test nie ocenia, czy zdanie mówi „kiedy” słowami sytuacji agenta (czerwone CI, przed merge'em); to łapie
-tylko przegląd. Importu przez ``importlib`` ani polecenia składanego w czasie biegu strażnik importów nie widzi.
+tylko przegląd. Postacie, których nie łapią strażnicy kierunku zależności i kontraktu napisów, są próbkami
+``ZNANE_LUKI_*`` przy ich testach.
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 import re
 import sys
@@ -44,6 +45,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from tests.fixtures.expect import assert_expected
 from tests.fixtures.git_repo import git
 from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
+from tests.fixtures.znane_luki import assert_znane_luki, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_MD = ROOT / "AGENTS.md"
@@ -381,10 +383,8 @@ def _library_reaches_tools(root: Path = ROOT) -> list[str]:
     Łapie dokładnie te postacie: ``import X``, ``import X.y`` i ``from X import …`` (także w funkcji i pod ``if``), gdzie
     ``X`` to nazwa pliku ``tools/*.py`` bez ``.py``, oraz ``sys.path.insert`` i ``sys.path.append`` (pełną nazwą) ze
     stałym napisem w argumencie, który kończy się na ``tools``. Import względny (``from . import x``) zostaje w
-    ``tools/lib``, więc go nie liczy. Nie widzi importu narzędzia przez pakiet ``tools`` (``import tools.X``,
-    ``from tools import X``, ``from tools.X import …``), importu przez ``importlib``, ``__import__``, ``runpy`` i
-    ``spec_from_file_location``, ścieżki składanej w czasie biegu bez takiego napisu ani ``sys.path`` pod inną nazwą;
-    uruchomienie narzędzia jako procesu (``SCRIPT`` w ``tools/lib/benchmark``) nie jest importem i przechodzi."""
+    ``tools/lib``, więc go nie liczy, a uruchomienie narzędzia jako procesu (``SCRIPT`` w ``tools/lib/benchmark``) nie
+    jest importem i przechodzi. Postacie, których nie łapie, są próbkami w ``ZNANE_LUKI_NARZEDZI``."""
 
     tools = {path.stem for path in (root / "tools").glob("*.py")}
     found = []
@@ -424,6 +424,131 @@ def test_straznik_biblioteki_widzi_kazda_postac_importu_narzedzia_z_docstringu(t
         "tools/lib/pakiet/modul.py: import narzedzie",
         "tools/lib/pakiet/modul.py: import narzedzie",
     ]
+
+
+def _drzewo_tools(korzen: Path) -> None:
+    """Drzewo ``tools/`` w ``korzen`` z narzędziem ``narzedzie``, skryptem CI ``skrypt`` i pustym hookiem ``pre-push``."""
+
+    for katalog in ("lib", "ci", "hooks"):
+        (korzen / "tools" / katalog).mkdir(parents=True)
+    for plik in (korzen / "tools" / "narzedzie.py", korzen / "tools" / "ci" / "skrypt.py", korzen / "tools" / "hooks" / "pre-push"):
+        plik.write_text("", encoding="utf-8")
+
+
+def _zgloszenia_straznika(test: Callable[[], None], korzen: Path) -> list[str]:
+    """Linie zgłoszenia testu strażnika całego repo uruchomionego na drzewie ``korzen`` zamiast repozytorium, bez wcięcia,
+    które pytest dodaje liniom komunikatu po pierwszej."""
+
+    kontrakty = tuple((wzor, korzen / wlasciciel.relative_to(ROOT)) for wzor, wlasciciel in CONTRACTS)
+    with pytest.MonkeyPatch.context() as podmiana:
+        for nazwa, wartosc in {"ROOT": korzen, "TOOLS": korzen / "tools", "SKILLS": korzen / ".agents" / "skills", "CONTRACTS": kontrakty}.items():
+            podmiana.setattr(sys.modules[__name__], nazwa, wartosc)
+        try:
+            test()
+        except AssertionError as blad:
+            return [linia.strip() for linia in str(blad).splitlines()]
+    return []
+
+
+def _wedlug_probek(pliki: Mapping[str, Path], korzen: Path, linie: list[str]) -> dict[str, list[str]]:
+    """Linie zgłoszenia strażnika na drzewie ``korzen`` przy próbce, której plik zaczyna linię."""
+
+    opisy = {plik.relative_to(korzen).as_posix(): opis for opis, plik in pliki.items()}
+    zgloszenia: dict[str, list[str]] = {opis: [] for opis in pliki}
+    for linia in linie:
+        if (opis := opisy.get(linia.partition(":")[0])) is not None:
+            zgloszenia[opis].append(linia)
+    return zgloszenia
+
+
+def test_straznik_skryptow_ci_widzi_import_skryptu_i_sys_path_z_napisem_w_narzedziu_bibliotece_i_hooku(tmp_path: Path) -> None:
+    _drzewo_tools(tmp_path)
+    pliki = {
+        "narzędzie": tmp_path / "tools" / "narzedzie.py",
+        "biblioteka": tmp_path / "tools" / "lib" / "modul.py",
+        "hook": tmp_path / "tools" / "hooks" / "hook.py",
+    }
+    pliki["narzędzie"].write_text('"""Narzędzie."""\nimport skrypt\n', encoding="utf-8")
+    biblioteka = "import json\ndef f() -> None:\n    from skrypt import x\nimport sys\nsys.path.insert(0, 'repo/tools/ci/')\nsys.path.append('repo/tools')\n"
+    pliki["biblioteka"].write_text(biblioteka, encoding="utf-8")
+    pliki["hook"].write_text("#!/usr/bin/env python3\nimport skrypt.czesc\n", encoding="utf-8")
+
+    assert _wedlug_probek(pliki, tmp_path, _zgloszenia_straznika(test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci, tmp_path)) == {
+        "narzędzie": ["tools/narzedzie.py: import skrypt"],
+        "biblioteka": ["tools/lib/modul.py: sys.path z 'repo/tools/ci/'", "tools/lib/modul.py: import skrypt"],
+        "hook": ["tools/hooks/hook.py: import skrypt"],
+    }
+
+
+# Znane luki strażników kierunku zależności w tools/ (tests/fixtures/znane_luki.py): opis postaci → moduł, który sięga
+# do skryptu CI ``skrypt`` (``ZNANE_LUKI_SKRYPTOW_CI`` w tools/lib, ``ZNANE_LUKI_HOOKOW`` w tools/hooks) albo do
+# narzędzia ``narzedzie`` (``ZNANE_LUKI_NARZEDZI`` w tools/lib) drzewa ``_drzewo_tools``, a mimo to przechodzi przez
+# strażnika.
+ZNANE_LUKI_SKRYPTOW_CI = {
+    "import przez pakiet tools": "import tools.ci.skrypt\n",
+    "from tools.ci import": "from tools.ci import skrypt\n",
+    "importlib.import_module": 'import importlib\n\nSKRYPT = importlib.import_module("skrypt")\n',
+    "__import__": 'SKRYPT = __import__("skrypt")\n',
+    "runpy.run_path": 'from pathlib import Path\nimport runpy\n\nSKRYPT = runpy.run_path(str(Path(__file__).parents[1] / "ci" / "skrypt.py"))\n',
+    "spec_from_file_location": """\
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+SPEC = spec_from_file_location("skrypt", Path(__file__).parents[1] / "ci" / "skrypt.py")
+assert SPEC is not None
+SKRYPT = module_from_spec(SPEC)
+""",
+    "ścieżka w zmiennej": 'from pathlib import Path\nimport sys\n\nCI = Path(__file__).parents[1] / "ci"\nsys.path.insert(0, str(CI))\n',
+    "sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "repo/tools/ci")\n',
+    "sys pod aliasem": 'import sys as system\n\nsystem.path.insert(0, "repo/tools/ci")\n',
+    "sys.path.extend": 'import sys\n\nsys.path.extend(["repo/tools/ci"])\n',
+    "przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["repo/tools/ci"]\n',
+}
+ZNANE_LUKI_HOOKOW = {
+    "hook bez shebangu i docstringu": "import sys\n\nimport skrypt\n",
+}
+ZNANE_LUKI_NARZEDZI = {
+    "import przez pakiet tools": "import tools.narzedzie\n",
+    "from tools import": "from tools import narzedzie\n",
+    "from tools.narzedzie import": "from tools.narzedzie import main\n",
+    "importlib.import_module": 'import importlib\n\nNARZEDZIE = importlib.import_module("narzedzie")\n',
+    "__import__": 'NARZEDZIE = __import__("narzedzie")\n',
+    "runpy.run_path": 'from pathlib import Path\nimport runpy\n\nNARZEDZIE = runpy.run_path(str(Path(__file__).parents[1] / "narzedzie.py"))\n',
+    "spec_from_file_location": """\
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+SPEC = spec_from_file_location("narzedzie", Path(__file__).parents[1] / "narzedzie.py")
+assert SPEC is not None
+NARZEDZIE = module_from_spec(SPEC)
+""",
+    "ścieżka bez napisu kończącego się na tools": "from pathlib import Path\nimport sys\n\nsys.path.insert(0, str(Path(__file__).parents[1]))\n",
+    "ścieżka w zmiennej": 'import sys\n\nTOOLS = "repo/tools"\nsys.path.insert(0, TOOLS)\n',
+    "sys.path pod inną nazwą": 'from sys import path\n\npath.insert(0, "repo/tools")\n',
+    "sys pod aliasem": 'import sys as system\n\nsystem.path.insert(0, "repo/tools")\n',
+    "sys.path.extend": 'import sys\n\nsys.path.extend(["repo/tools"])\n',
+    "przypisanie do wycinka sys.path": 'import sys\n\nsys.path[:0] = ["repo/tools"]\n',
+}
+
+
+@pytest.mark.parametrize(
+    ("nazwa", "probki", "katalog", "straznik"),
+    [
+        ("ZNANE_LUKI_SKRYPTOW_CI", ZNANE_LUKI_SKRYPTOW_CI, "lib", lambda korzen: _zgloszenia_straznika(test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci, korzen)),
+        ("ZNANE_LUKI_HOOKOW", ZNANE_LUKI_HOOKOW, "hooks", lambda korzen: _zgloszenia_straznika(test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci, korzen)),
+        ("ZNANE_LUKI_NARZEDZI", ZNANE_LUKI_NARZEDZI, "lib", _library_reaches_tools),
+    ],
+    ids=["skrypty-ci-z-biblioteki", "skrypty-ci-z-hooka", "narzedzia-z-biblioteki"],
+)
+def test_znane_luki_kierunku_zaleznosci_tools_przechodza_przez_straznikow(
+    tmp_path: Path, nazwa: str, probki: dict[str, str], katalog: str, straznik: Callable[[Path], list[str]]
+) -> None:
+    _drzewo_tools(tmp_path)
+    pliki = zapisz(probki, tmp_path / "tools" / katalog)
+
+    zgloszenia = _wedlug_probek(pliki, tmp_path, straznik(tmp_path))
+
+    assert_znane_luki(zgloszenia, f"tests/test_spis_narzedzi.py ({nazwa})")
 
 
 def _system_python_scripts() -> set[Path]:
@@ -503,8 +628,8 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
     i początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, pisze w ``tools/`` i skryptach skilli tylko
     ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
     zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. Każdy stały kawałek f-stringu liczy się od
-    swojego początku, a nazwy zmiennej szuka w całym kawałku. Napisu złożonego w czasie biegu ani części ``#k/n``
-    doklejonej do klucza poza właścicielem test nie widzi: separator ``#`` stoi też w napisach spoza kontraktu."""
+    swojego początku, a nazwy zmiennej szuka w całym kawałku. Postacie, których nie łapie, są próbkami w
+    ``ZNANE_LUKI_KONTRAKTU``."""
 
     paths = sorted({*TOOLS.rglob("*.py"), TOOLS / "hooks" / "pre-push", *SKILLS.glob("*/scripts/**/*.py")})
     found = [
@@ -523,6 +648,58 @@ def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None
             "„nieznane”.",
         ]
     )
+
+
+def test_straznik_kontraktu_napisow_widzi_napis_i_kawalek_fstringu_poza_wlascicielem(tmp_path: Path) -> None:
+    _drzewo_tools(tmp_path)
+    pliki = {
+        "biblioteka": tmp_path / "tools" / "lib" / "modul.py",
+        "hook pre-push": tmp_path / "tools" / "hooks" / "pre-push",
+        "skrypt skilla": tmp_path / ".agents" / "skills" / "verify-x" / "scripts" / "skrypt.py",
+        "właściciel": tmp_path / CONTRACTS[2][1].relative_to(ROOT),
+    }
+    pliki["biblioteka"].write_text(
+        'def f(x: str) -> str:\n    """MUTACJE OK w docstringu."""\n    "MUTACJE OK samotnie"\n'
+        '    print("MUTACJE OK")\n    print(f"{x}pytest:{x}")\n    return f"{x}=1 MUTACJE_CZESC {x}"\n',
+        encoding="utf-8",
+    )
+    pliki["hook pre-push"].write_text('print("AKTUALIZACJA: niepotrzebna")\n', encoding="utf-8")
+    pliki["skrypt skilla"].parent.mkdir(parents=True)
+    pliki["skrypt skilla"].write_text('KONIEC = "SKILLE VERIFY: brak"\n', encoding="utf-8")
+    pliki["właściciel"].write_text('KONIEC = "MUTACJE OK"\n', encoding="utf-8")
+
+    zgloszenia = _wedlug_probek(pliki, tmp_path, _zgloszenia_straznika(test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela, tmp_path))
+
+    assert {opis: sorted(linia.split(": ")[0].rpartition(":")[2] for linia in linie) for opis, linie in zgloszenia.items()} == {
+        "biblioteka": ["4", "5", "6"],
+        "hook pre-push": ["1"],
+        "skrypt skilla": ["1"],
+        "właściciel": [],
+    }
+
+
+# Znane luki strażnika kontraktu napisów (tests/fixtures/znane_luki.py): opis postaci → moduł w tools/lib drzewa
+# ``_drzewo_tools``, który poza właścicielem pisze klucz jednostki planu, zmienną części albo początek ostatniej linii
+# z ``CONTRACTS``, a mimo to przechodzi przez strażnika.
+ZNANE_LUKI_KONTRAKTU = {
+    "napis złożony w trakcie działania": 'KONIEC = "MUTACJE " + "OK"\n',
+    "klucz z kawałków w f-stringu": "def klucz(plik: str) -> str:\n    return f\"{'pytest'}:{plik}\"\n",
+    "część #k/n doklejona do klucza": 'def jednostka(klucz: str, k: int, n: int) -> str:\n    return f"{klucz}#{k}/{n}"\n',
+    "klucz przez str.format": 'def klucz(plik: str) -> str:\n    return "{}:{}".format("pytest", plik)\n',
+    "napis z join": 'KONIEC = " ".join(("MUTACJE", "OK"))\n',
+    "napis od nowej linii": 'print("\\nMUTACJE OK")\n',
+    "napis zmieniony metodą": 'KONIEC = "mutacje ok".upper()\n',
+    "napis w bajtach": 'KONIEC = b"MUTACJE OK".decode()\n',
+}
+
+
+def test_znane_luki_kontraktu_napisow_przechodza_przez_straznika(tmp_path: Path) -> None:
+    _drzewo_tools(tmp_path)
+    pliki = zapisz(ZNANE_LUKI_KONTRAKTU, tmp_path / "tools" / "lib")
+
+    zgloszenia = _wedlug_probek(pliki, tmp_path, _zgloszenia_straznika(test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela, tmp_path))
+
+    assert_znane_luki(zgloszenia, "tests/test_spis_narzedzi.py (ZNANE_LUKI_KONTRAKTU)")
 
 
 def test_kazdy_wpis_listy_dwoch_szop_obejmuje_plik_a_zaden_plik_nie_ma_dwoch_wpisow() -> None:

@@ -58,6 +58,13 @@ function keyOf(change: HistoryChange): Key {
   return KEYS.get(change.key) ?? { label: change.key, shown: (value) => value }
 }
 
+/** Nazwa zmiany ze zdaniem przed i po po kluczu Historii: składnik, wyjątek Kontroli ilości albo reguła. */
+function ruleLabel(key: string): string {
+  if (key.startsWith("urzadzenia.")) return "Lista Urządzeń"
+
+  return key.startsWith("wyjatki.") ? "Wyjątek Kontroli ilości" : "Reguła ilości"
+}
+
 /**
  * Historia Ustawień: każda zmiana od najnowszej, z wartością przed i po, kiedy i skąd, i „Cofnij” przy zmianie, którą
  * da się cofnąć. Cofnięcie jest nową zmianą na górze listy, a jego odmowa to jedno zdanie pod wierszem.
@@ -112,11 +119,10 @@ function Row({ row }: { row: HistoryRow }) {
     await undoSettingsChange(row.id).then(undone, (failure: Error) => setRefusal(failureMessage(failure)))
   })
 
-  // Reguła ilości i wyjątek Kontroli ilości mają w wierszu zdanie przed i po zamiast zapisu z pliku.
+  // Reguła ilości, składnik Listy Urządzeń i wyjątek Kontroli ilości mają w wierszu zdanie przed i po zamiast zapisu z pliku.
   const rules = new Map(row.rules.map((rule) => [rule.key, rule]))
 
-  const label = (change: HistoryChange) =>
-    rules.has(change.key) ? (change.key.startsWith("wyjatki.") ? "Wyjątek Kontroli ilości" : "Reguła ilości") : keyOf(change).label
+  const label = (change: HistoryChange) => (rules.has(change.key) ? ruleLabel(change.key) : keyOf(change).label)
 
   const title = row.changes.length === 0 ? row.file : [...new Set(row.changes.map(label))].join(", ")
 
@@ -188,7 +194,10 @@ function sourceOf(row: HistoryRow): string[] {
   }
 }
 
-/** Reguła ilości albo wyjątek Kontroli ilości przed i po jako zdania; nowy ma tylko „Dodano”, usunięty tylko „Usunięto”. */
+/**
+ * Reguła ilości, składnik albo wyjątek Kontroli ilości przed i po jako zdania; nowy ma tylko „Dodano”, usunięty tylko
+ * „Usunięto”.
+ */
 function RuleValues({ rule }: { rule: HistoryRuleChange }) {
   const lines: ReadonlyArray<[string, HistoryRuleChange["before"]]> =
     rule.before === null

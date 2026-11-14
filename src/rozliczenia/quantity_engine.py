@@ -76,6 +76,14 @@ class QuantityRulesRefused(ValueError):
 
 
 @dataclass(frozen=True)
+class _Unknown:
+    """Słowo ``URZĄDZENIA``, którego Lista Urządzeń nie zna, bez krotności ``n*``; ``counted``: miało krotność."""
+
+    word: str
+    counted: bool
+
+
+@dataclass(frozen=True)
 class DeviceList:
     """Lista Urządzeń: identyfikatory składników są różne, a jeden zapis należy do jednego składnika."""
 
@@ -113,8 +121,28 @@ class DeviceList:
     def find(self, words: list[str]) -> tuple[list[tuple[Component, int]], bool]:
         """Składniki słów ``URZĄDZENIA`` z krotnością, najdłuższy zapis od lewej, i czy lista zna każde słowo."""
 
-        found: list[tuple[Component, int]] = []
-        all_known = True
+        scanned = self._scan(words)
+        return [item for item in scanned if not isinstance(item, _Unknown)], not any(isinstance(item, _Unknown) for item in scanned)
+
+    def unknown_spellings(self, devices: str) -> tuple[str, ...]:
+        """Zapisy w ``URZĄDZENIA`` ``devices``, których lista nie zna: kolejne nieznane słowa to jeden zapis, bez krotności
+        ``n*``. Słowo z krotnością zaczyna nowy zapis, bo krotność stoi przed pierwszym słowem składnika, a słowo z
+        gwiazdką, które nie jest krotnością, nie może być zapisem, więc dzieli zapisy i nim nie jest."""
+
+        found: list[str] = []
+        run: list[str] = []
+        for item in [*self._scan(_words(devices)), None]:
+            if run and not (isinstance(item, _Unknown) and "*" not in item.word and not item.counted):
+                found.append(" ".join(run))
+                run = []
+            if isinstance(item, _Unknown) and "*" not in item.word:
+                run.append(item.word)
+        return tuple(found)
+
+    def _scan(self, words: list[str]) -> list[tuple[Component, int] | _Unknown]:
+        """Słowa ``URZĄDZENIA`` od lewej: składnik najdłuższego zapisu z krotnością albo słowo, którego lista nie zna."""
+
+        scanned: list[tuple[Component, int] | _Unknown] = []
         position = 0
         while position < len(words):
             counted = _COUNTED.fullmatch(words[position])
@@ -122,13 +150,13 @@ class DeviceList:
             for length in range(min(self._longest, len(words) - position), 0, -1):
                 component = self._by_spelling.get(" ".join([first, *words[position + 1 : position + length]]))
                 if component is not None:
-                    found.append((component, count))
+                    scanned.append((component, count))
                     position += length
                     break
             else:
-                all_known = False
+                scanned.append(_Unknown(first, counted is not None))
                 position += 1
-        return found, all_known
+        return scanned
 
 
 class TextMode(StrEnum):
@@ -387,6 +415,12 @@ def evaluate(rules: QuantityRules, order: OrderContent) -> RuleResult:
     return ServiceQuantities(_sum(contributions), leave_empty, contributions, fired)
 
 
+def device_spelling(text: str) -> str:
+    """Zapis składnika z tekstu taty tak, jak silnik czyta słowa ``URZĄDZENIA``; pusty, gdy tekst nie ma słów."""
+
+    return _devices_words(text)
+
+
 @dataclass(frozen=True)
 class DevicesRead:
     """``URZĄDZENIA`` zlecenia tak, jak je czytają Reguły ilości: składniki Listy Urządzeń w kolejności z tekstu, bez
@@ -589,6 +623,32 @@ def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
     except QuantityRulesRefused as refused:
         return refused.problem
     return None
+
+
+def without_components(rules: tuple[QuantityRule, ...], absent: frozenset[str]) -> tuple[QuantityRule, ...]:
+    """Reguły ``rules`` tak, jakby żadne zlecenie nie miało składników ``absent``, bez odwołań do nich: reguła z warunkiem
+    „zawierają” taki składnik nie działa nigdy, więc odpada, warunek „nie zawierają” go zachodzi zawsze, więc odpada sam,
+    a wpis razy liczba albo sztuki takiego składnika jest zerem, więc odpada wpis. Reguła „wpisz”, której nie zostaje żaden
+    wpis, odpada; jedyna różnica od reguły z takim składnikiem nigdy nieznalezionym jest wtedy, gdy jej warunki go nie
+    wymagają: działałaby, wpisując zero (``fired``, a z warunkiem „dokładnie” brałaby zlecenie innym regułom)."""
+
+    if not absent:
+        return rules
+    kept: list[QuantityRule] = []
+    for rule in rules:
+        conditions = tuple(
+            condition for condition in rule.conditions if not (isinstance(condition, ContainsComponent) and condition.component in absent)
+        )
+        if any(isinstance(condition, ContainsComponent) and condition.component in absent and not condition.negated for condition in rule.conditions):
+            continue
+        action = rule.action
+        if isinstance(action, Fill):
+            writes = tuple(write for write in action.writes if write.component not in absent)
+            if not writes:
+                continue
+            action = Fill(writes)
+        kept.append(QuantityRule(rule.id, conditions, rule.scope, action))
+    return tuple(kept)
 
 
 def _check_rules(rules: tuple[QuantityRule, ...], components: frozenset[str] | None) -> None:

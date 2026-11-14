@@ -8,8 +8,9 @@ odczytu daje w odcisku chwilę wcześniejszej wersji; o wersji rozstrzyga skrót
 Wiersz pliku trafia do procesu dopiero przez świadka arkusza: ``WitnessedSheet.row`` zapisuje go jednym wywołaniem w
 pamięci reguły danych (``forbidden``) i w Kopii wejścia (``copy``), więc Kopia nie ma wiersza, którego nie zna pamięć.
 ``SheetMemory`` zapisuje wiersz tylko w pamięci: wiersze, które czytnik czyta tylko do przeglądu (nad wklejeniem
-INTERMAX), nie należą do Kopii. Pamięć jest w każdym uchwycie, a Kopia tylko w uchwycie Uruchomienia z Logami
-(``DadFiles.for_run``); pamięci Skryptu dla maszyn nic nie czyta, bo Skrypt nic nie wysyła.
+INTERMAX), nie należą do Kopii. Pamięć ma tylko uchwyt pracy Centrum (``CentrumWork.forbidden``), a Kopię tylko uchwyt
+Uruchomienia z Logami (``DadFiles.for_run``); uchwyt bez pamięci (Skrypt dla maszyn, test silnika) nic nie zapamiętuje,
+bo nic nie wysyła, więc pustej pamięci, której strażnik przepuściłby wartości taty, uchwyt nie tworzy.
 
 Uchwyt jest niezmienny i dzielony między wątkami pracy Centrum; zmienny stan to pamięć (``ForbiddenValues`` ma zamek) i
 Kopia jednego Uruchomienia.
@@ -34,10 +35,11 @@ ForbiddenPositions = Sequence[tuple[ForbiddenColumn, int]]
 
 @dataclass(frozen=True)
 class DadFiles:
-    """Pliki taty jednej pracy: źródło bajtów, pamięć reguły danych i Kopia wejścia Uruchomienia (``None``: bez Logów)."""
+    """Pliki taty jednej pracy: źródło bajtów, pamięć reguły danych pracy Centrum (``None``: praca bez wysyłki) i Kopia
+    wejścia Uruchomienia (``None``: bez Logów)."""
 
     source: ByteSource = workbook_files.file_bytes
-    forbidden: ForbiddenValues = field(default_factory=ForbiddenValues)
+    forbidden: ForbiddenValues | None = None
     copy: InputCopy | None = None
 
     def for_run(self) -> DadFiles:
@@ -71,7 +73,7 @@ class ReadFile:
     path: Path
     content: bytes = field(repr=False)
     modified_at: datetime | None
-    _forbidden: ForbiddenValues = field(repr=False)
+    _forbidden: ForbiddenValues | None = field(repr=False)
     _copy: InputCopy | None = field(repr=False)
     _copied: WorkbookCopy | None = field(default=None, init=False, repr=False)
 
@@ -120,12 +122,14 @@ class ReadFile:
 class SheetMemory:
     """Pamięć reguły danych jednego arkusza: komórki jego zakazanych kolumn."""
 
-    _forbidden: ForbiddenValues
+    _forbidden: ForbiddenValues | None
     _columns: tuple[tuple[ForbiddenColumn, int], ...]
 
     def remember(self, values: Values, positions: RowPositions = UNDER_HEADER) -> None:
         """Komórki zakazanych kolumn wiersza ``values`` w każdym jego położeniu (kolumna − przesunięcie z ``known``)."""
 
+        if self._forbidden is None:
+            return
         for offset in positions.known:
             for column, number in self._columns:
                 self._forbidden.remember_value(column, _value_at(values, number - offset))
