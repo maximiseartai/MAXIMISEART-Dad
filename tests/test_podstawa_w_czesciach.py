@@ -403,7 +403,7 @@ def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazk
 ) -> None:
     """Czekanie, które minęło budżet, gdy wątek budzika zegara Centrum już padł, czekało na budzik, który nie zadzwoni:
     ``DRIVE FAIL`` nazywa martwy zegar dla każdego ``until`` funkcji napędu, a przy żywym zegarze samo czekanie (#1539).
-    Porażka inna niż czekanie zostaje sobą także przy martwym zegarze, jak dawniej w ``Run.wait_for``."""
+    Porażka inna niż czekanie zostaje sobą także przy martwym zegarze."""
 
     waiting = sys.modules["drive.waiting"]
     harness = sys.modules["harness"]

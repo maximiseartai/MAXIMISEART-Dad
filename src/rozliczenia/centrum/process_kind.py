@@ -31,6 +31,7 @@ from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, 
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
 from rozliczenia.efenix_window import OpenEfenix
@@ -447,11 +448,10 @@ odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``pro
 pełną ścieżkę), tak samo ``_Catalog``.
 
 ``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
-plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Łapie tylko te postacie: nie łapie
-``getattr(process_kind, "_CATALOG")``, wartości ``Any``, ``copy.copy`` gotowego Uruchomienia ani dowodu zaimportowanego
-z ``# noqa: TID251``. Konstruktor ``PreparedRun`` poza ``catalog.py``, także z takim dowodem, łapie po nazwie albo
-atrybucie ``PreparedRun`` ``tests/test_granice_importow.py``, ale nie ``type(gotowe)(…, _CATALOG)``; to zostaje
-przeglądowi."""
+plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Konstruktor ``PreparedRun`` poza ``catalog.py``
+łapie po nazwie ``PreparedRun``, nazwie z importu albo atrybucie ``tests/test_granice_importow.py``, a odmowy podklasy
+opisuje docstring ``PreparedRun`` (metaklasa przy tworzeniu, ``startable`` przy użyciu). Granice tych mechanizmów
+pokazują tam próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie."""
 
 
 _NO_SUBCLASSES: Final = (
@@ -461,7 +461,7 @@ _NO_SUBCLASSES: Final = (
 
 
 @final
-class PreparedRun(Generic[InputsT, SummaryT]):
+class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
@@ -471,13 +471,17 @@ class PreparedRun(Generic[InputsT, SummaryT]):
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
 
-    Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Regułę trzyma
-    kontrola w chwili użycia (``startable``: typ dokładnie ``PreparedRun``, bez względu na to, jak powstała klasa
-    obiektu): przed ``conduct`` w każdym miejscu, które go woła (``runs.Run.work``, Skrypt dla maszyn
-    ``tools/uruchom_proces.py``, odtworzenie z Logów ``tools/lib/odtworzenie.py``), i na początku samego ``conduct``.
-    ``__init_subclass__`` i ``startable`` w ``runs.Run.__init__`` tylko mówią tę regułę wcześniej: przy tworzeniu
-    podklasy i przy starcie w Centrum. Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Znane luki kontroli są
-    próbkami ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
+    Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Przy tworzeniu
+    odmawia metaklasa (``client_data.WithoutSubclasses``) pod każdą nazwą i przy każdej kolejności baz, a
+    ``__init_subclass__`` klasie zrobionej z pominięciem ``__new__`` metaklasy, gdy żadna wcześniejsza baza w MRO nie
+    przesłania jego odmowy. Tworzenie nie zamyka klasy zrobionej z pominięciem ``__new__`` metaklasy ani relacji
+    podklasy przypisanej w trakcie działania, więc regułę trzyma kontrola w chwili użycia (``startable``: typ dokładnie
+    ``PreparedRun``, bez względu na to, jak powstała klasa obiektu): przed ``conduct`` w każdym miejscu, które go woła
+    (``runs.Run.work``, Skrypt dla maszyn ``tools/uruchom_proces.py``, odtworzenie z Logów
+    ``tools/lib/odtworzenie.py``), i na początku samego ``conduct``; ``startable`` w ``runs.Run.__init__`` mówi ją
+    wcześniej, przy starcie w Centrum. Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Odmowy przy tworzeniu
+    i przy użyciu pokazują ``PODKLASY_GOTOWEGO_URUCHOMIENIA`` i ``URUCHOMIENIA_OBOK_KATALOGU``, a znane luki kontroli
+    w chwili użycia próbki ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
     """
 
     __slots__ = (
@@ -553,8 +557,10 @@ class PreparedRun(Generic[InputsT, SummaryT]):
 
 def startable(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:
     """``run``, gdy w chwili tego wywołania jego typ to dokładnie ``PreparedRun``; obiekt podklasy, jakkolwiek powstała,
-    także z ``__class__`` podmienionym przed tym wywołaniem, daje ``TypeError`` z drogą naprawy. Miejsca, które wołają
-    ``conduct``, wołają je na wyniku tej funkcji (``startable(run).conduct(…)``)."""
+    także z ``__class__`` podmienionym przed tym wywołaniem, daje ``TypeError`` z drogą naprawy. Ta kontrola trzyma
+    regułę „bez podklas”, bo odmowa metaklasy przy tworzeniu nie zamyka klasy zrobionej z pominięciem jej ``__new__``
+    ani relacji podklasy przypisanej w trakcie działania. Miejsca, które wołają ``conduct``, wołają je na wyniku tej
+    funkcji (``startable(run).conduct(…)``)."""
 
     if type(run) is not PreparedRun:
         raise TypeError(f"{_NO_SUBCLASSES} Start dostał {type(run).__qualname__}.")
