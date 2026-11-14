@@ -447,6 +447,7 @@ def _check_result_of_start(errors: list[str]) -> None:
     import threading
 
     from drive.common import DriveFailure, Run, result_of_start
+    from drive.waiting import TimedOut
 
     for late in (2, 0):
         # Reads of the current Uruchomienie since Dad's click; the server shows the new one after `late` of them.
@@ -479,7 +480,7 @@ def _check_result_of_start(errors: list[str]) -> None:
                 run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
                 with contextlib.redirect_stdout(io.StringIO()):
                     result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
-        except DriveFailure as failure:
+        except (DriveFailure, TimedOut) as failure:
             result = failure
         finally:
             server.shutdown()

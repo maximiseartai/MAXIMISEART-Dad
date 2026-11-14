@@ -10,7 +10,7 @@ import urllib.request
 from playwright.sync_api import Page, Request, Response, Route, expect
 
 from drive.common import PAGES, REPO_ROOT, Run, close_settings, ensure_files_set, read_json, settings_window
-from drive.waiting import Budget, answer_late
+from drive.waiting import Budget, answer_late, until
 
 FEATURE = "pomiar-u-taty"
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
@@ -48,7 +48,7 @@ def _timings(run: Run, since: int) -> list[dict[str, str]]:
 
 
 def _wait_for_timings(run: Run, since: int, count: int, message: str) -> list[dict[str, str]]:
-    run.wait_for(lambda: len(_timings(run, since)) >= count, message)
+    until(lambda: len(_timings(run, since)) >= count, message)
     return _timings(run, since)
 
 

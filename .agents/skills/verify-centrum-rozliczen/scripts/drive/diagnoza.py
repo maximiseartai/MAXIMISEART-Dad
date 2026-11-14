@@ -26,6 +26,7 @@ from drive.common import (
     stop_banner,
     unreadable,
 )
+from drive.waiting import until
 from harness import File, Log, Switch
 from drive.teksty import FILES_UNCHANGED, FOR_KEY, NOT_FOUND, PROPOSAL, TEMPLATE_MISSING, UPDATE_BUTTON
 from atrapy.scenariusz_centrum import PERIOD_WITHOUT_FILES, ROW_MARKER
@@ -114,7 +115,7 @@ def drive(run: Run, page: Page) -> None:
     run.capture(page, "50-diagnoza-dla-taty")
     opened_before = len(run.lines(Log.OPENED))
     for_tata.get_by_role("button", name="Otwórz Rejestr zleceń", exact=True).click()
-    run.wait_for(
+    until(
         lambda: run.lines(Log.OPENED)[opened_before:] == [{"path": str(register)}],
         "Otwórz Rejestr zleceń opens the Rejestr zleceń from Dad's settings",
     )
@@ -331,7 +332,7 @@ def drive(run: Run, page: Page) -> None:
         expect(page.get_by_role("heading", name="Okresy", exact=True)).to_be_visible()
         page.get_by_role("link", name="Uruchomienia", exact=True).click()
         expect(diagnosis.get_by_label("Wyjaśnienie Diagnozy")).to_contain_text(NOT_FOUND)
-        run.wait_for(
+        until(
             lambda: run.log().count(diagnosed) == diagnoses + 2,
             "a reload and Okresy → Uruchomienia each start the automatic Diagnoza again",
         )
