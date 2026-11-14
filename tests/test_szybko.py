@@ -53,6 +53,9 @@ BY_CHANGE_ONLY = {
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
     ),
+    "tests/test_zgloszenia_ci.py::test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem": (
+        "sprawdza tools/ponow_ci.py na atrapie GitHuba; graf wybiera go przy zmianie narzędzia i niestabilne_testy.py"
+    ),
     "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"

@@ -750,6 +750,8 @@ TLC_SUMA = f"2026-11-09T06:09:10.8Z BŁĄD POBIERANIA NARZĘDZIA TLC: {_JAR} ma 
 HTTP_504 = "2026-11-05T09:12:43.9735858Z urllib.error.HTTPError: HTTP Error 504: Gateway Time-out\n2026-11-05T09:12:44Z WYKONANIE FAIL | skill:verify-urwane-uruchomienie/ci\n"
 TEST_OPIEKUNA = "tests/test_opiekun_ponownego_startu.py::test_opiekun_czeka_na_zwolnienie_portu_i_startuje_nowa_wersje_z_nowym_identyfikatorem_startu"
 PADLY_TEST = f"2026-11-07T16:56:41.7827770Z FAILED {TEST_OPIEKUNA} - TimeoutError: timed out\n2026-11-07T16:56:42Z WYKONANIE FAIL | krok:pytest\n"
+# Linia zadania PR-u, które nie ponowiło testu, bo PR zmienił jego plik testów (Z7): run z nią to defekt, choćby test miał issue.
+PLIK_TESTU_PR = f"2026-11-07T16:56:40Z PONOWIENIE | test {TEST_OPIEKUNA} {niestabilne_testy.ZMIENIONY_PLIK_TESTU}\n"
 MUTACJA = "2026-11-08T01:50:00Z FAIL skill:verify-kolejka-skrzynki/check_outbox_mutations.py#2/3 (41 s): kod wyjścia 1\n2026-11-08T01:50:01Z WYKONANIE FAIL | skill:verify-kolejka-skrzynki/ci\n"
 CYTAT_503 = (
     "2026-11-07T16:56:40Z E   urllib.error.HTTPError: HTTP Error 503: Service Unavailable\n"
@@ -889,9 +891,10 @@ def _krok(numer: int, krok: Krok) -> dict[str, Any]:
     return {"number": numer, "name": nazwa, "conclusion": wynik, "started_at": f"{czasy[0]}Z", "completed_at": f"{czasy[-1]}Z"}
 
 
-def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0) -> dict[str, Any]:
+def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_toku: int = 0, koniec_linii: str = "\n") -> dict[str, Any]:
     """Zadania próby runu: padnięte z krokami i logami, ``Required CI status`` padły po nich, jedno zielone i ``w_toku``
-    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii."""
+    biegnących. Log zadania to logi jego kroków po kolei, jak w API, a krok ``skipped`` nie ma w nim linii; linie kończy
+    ``koniec_linii`` (log zadania Windows z API ma ``\\r\\n``)."""
 
     kroki = {run_id * 100 + numer: (nazwa, _kroki(log)) for numer, (nazwa, log) in enumerate(logi.items())}
     kroki[run_id * 100 + 99] = (REQUIRED, [_wykonany("Require every CI check to succeed", "failure", "2026-11-11T14:00:00Z REQUIRED FAIL\n")])
@@ -907,7 +910,7 @@ def _proba(run_id: int, proba: int, logi: Mapping[str, str | list[Krok]], *, w_t
     return {
         f"{REPO}/actions/runs/{run_id}/attempts/{proba}/jobs?per_page=100&page=1": {"total_count": len(zadania), "jobs": zadania},
         **{
-            f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, wynik, log in jego if wynik != "skipped").encode()
+            f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, wynik, log in jego if wynik != "skipped").replace("\n", koniec_linii).encode()
             for id_zadania, (_, jego) in kroki.items()
         },
     }
@@ -921,11 +924,19 @@ def _runy_ci(runy: list[dict[str, Any]]) -> dict[str, Any]:
     return {f"{adres}&page={numer}": {"total_count": len(runy), "workflow_runs": strona} for numer, strona in enumerate(strony, start=1)}
 
 
-def _github(run: dict[str, Any], logi: Mapping[str, str | list[Krok]], *, ponowione: tuple[dict[str, Any], ...] = (), flaky: tuple[str, ...] = (), odpowiedzi: dict[str, Any] | None = None) -> Nagrany:
+def _github(
+    run: dict[str, Any],
+    logi: Mapping[str, str | list[Krok]],
+    *,
+    ponowione: tuple[dict[str, Any], ...] = (),
+    flaky: tuple[str, ...] = (),
+    odpowiedzi: dict[str, Any] | None = None,
+    koniec_linii: str = "\n",
+) -> Nagrany:
     return Nagrany(
         {
             f"{REPO}/actions/runs/{run['id']}": run,
-            **_proba(run["id"], run["run_attempt"], logi),
+            **_proba(run["id"], run["run_attempt"], logi, koniec_linii=koniec_linii),
             **_runy_ci([run, *ponowione]),
             **_issues(niestabilne_testy.ETYKIETA_FLAKY, "open", [{"number": 7, "title": niestabilne_testy.tytul_issue(test)} for test in flaky]),
             **(odpowiedzi or {}),
@@ -964,6 +975,7 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (6/6)": HTTP_504}, (), "awaria: HTTP 5xx serwera", True),
         ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA,), f"znany flaky test: {TEST_OPIEKUNA}", True),
         ({"pytest (Python 3.11, 2/2)": PADLY_TEST}, (), "ci_lokalnie.py --tylko pytest", False),
+        ({"pytest (Python 3.11, 2/2)": PLIK_TESTU_PR + PADLY_TEST}, (TEST_OPIEKUNA,), "defekt: pytest (Python 3.11, 2/2) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS, "pytest (Python 3.11, 2/2)": PADLY_TEST}, (TEST_OPIEKUNA + "[inny]",), "defekt: pytest (Python 3.11, 2/2) |", False),
         ({"Mutation checks (6/6)": MUTACJA}, (), "ci_lokalnie.py --tylko mutations --odtwarzam 42435998596", False),
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
@@ -993,7 +1005,7 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (1/1)": CYTAT_ARTEFAKTU}, (), "defekt: Mutation checks (1/1) |", False),
     ],
     ids=[
-        "dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "awaria-obok-testu", "mutacje",
+        "dns-apt", "pobranie-tlc", "http-404-tlc", "inna-suma-tlc", "http-504", "znany-flaky-test", "padly-test", "znany-flaky-z-pliku-zmienionego-przez-pr", "awaria-obok-testu", "mutacje",
         "cytat-503-w-sprawdzeniu", "awaria-i-test-w-jednym-logu", "mypy", "pobranie-artefaktu-etimedout", "wyslanie-artefaktu-etimedout",
         "defekt-skilla-obok-wyslania-czasow-continue-on-error", "defekt-e2e-obok-http-503-continue-on-error-w-tej-samej-sekundzie", "defekt-po-http-503-continue-on-error",
         "defekt-po-http-503-continue-on-error-w-sekundzie-startu", "defekt-skilla-przed-wyslaniem-dowodow-if-failure-etimedout",
@@ -1003,17 +1015,19 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         "wyslanie-artefaktu-http-503", "wyslanie-artefaktu-http-403", "brak-artefaktu", "cytat-artefaktu-w-sprawdzeniu",
     ],
 )
+@pytest.mark.parametrize("koniec_linii", ["\n", "\r\n"], ids=["lf", "crlf-windows"])
 def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem(
-    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool
+    logi: dict[str, str | list[Krok]], flaky: tuple[str, ...], linia: str, ponowiony: bool, koniec_linii: str
 ) -> None:
     """Sygnatura awarii liczy się tylko w kroku, który zaczerwienił zadanie, czyli w pierwszym kroku z ``failure``: krok
     z ``continue-on-error`` i krok ``if: failure()`` po nim też drukują ``##[error]``, ale defektu nie zamieniają w awarię,
-    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem."""
+    a gdy nagłówki kroków w logu nie pasują do kroków z API, porażka jest defektem. Log zadania Windows (``\\r\\n``) daje
+    ten sam wynik co log z Linuksa."""
 
     run = _run_ci(42435998596)
     ponowienia = Ponowienia()
 
-    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+    wynik = ponow_ci.ponow(_github(run, logi, flaky=flaky, koniec_linii=koniec_linii), run["id"], None, PONOW_TERAZ, ponowienia.akcje)
 
     assert linia in wynik.linia
     assert (wynik.kod, ponowienia.zapisane) == ((0, [("rerun", run["id"])]) if ponowiony else (1, []))

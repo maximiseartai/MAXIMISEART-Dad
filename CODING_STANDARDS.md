@@ -106,9 +106,9 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 | Rule | Guard |
 |---|---|
 | The files that the system Python runs before `.venv` (the list in `per-file-target-version` in `pyproject.toml`) work under the Python 3.9 of macOS. | ruff `per-file-target-version`, `tests/test_systemowy_python.py` |
-| Dependencies between `tools/` folders point one way: a tool, a module in `tools/lib/` and a hook never reach a script of `tools/ci/`, and a module in `tools/lib/` never reaches a tool from `tools/*.py` (ADR 0022). | `tests/test_spis_narzedzi.py::test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci`, `tests/test_spis_narzedzi.py::test_biblioteka_narzedzi_nie_importuje_narzedzia_z_tools` (boundary: docstring of `_library_reaches_tools`) |
+| Dependencies between `tools/` folders point one way: a tool, a module in `tools/lib/` and a hook never reach a script of `tools/ci/`, and a module in `tools/lib/` never reaches a tool from `tools/*.py` (ADR 0022). | `tests/test_spis_narzedzi.py::test_narzedzie_biblioteka_ani_hook_nie_siega_do_skryptow_ci`, `tests/test_spis_narzedzi.py::test_biblioteka_narzedzi_nie_importuje_narzedzia_z_tools` (known gaps: `ZNANE_LUKI_SKRYPTOW_CI`, `ZNANE_LUKI_HOOKOW` and `ZNANE_LUKI_NARZEDZI` in the same file, run by `test_znane_luki_kierunku_zaleznosci_tools_przechodza_przez_straznikow`) |
 | A tool in `tools/` runs `gh` only through `gh` and `gh_bajty` of [`tools/lib/github.py`](tools/lib/github.py), and the names it shares with CI (`REQUIRED`, `MERGE`, `SQUASH`) come from that module. | `tests/test_spis_narzedzi.py::test_narzedzie_uruchamia_gh_tylko_przez_github`; the shared names only review |
-| A string that one CI tool writes and another reads is written in `tools/` and in skill scripts only by its owner. | `tests/test_spis_narzedzi.py::test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela` (boundary: its docstring) |
+| A string that one CI tool writes and another reads is written in `tools/` and in skill scripts only by its owner. | `tests/test_spis_narzedzi.py::test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela` (known gaps: `ZNANE_LUKI_KONTRAKTU` in the same file, run by `test_znane_luki_kontraktu_napisow_przechodza_przez_straznika`) |
 
 ## Frontend
 

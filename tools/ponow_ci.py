@@ -10,8 +10,9 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
    ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
    z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
-   to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``).
-   Każda inna porażka, także nieznana, to defekt.
+   to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``),
+   a żaden nie ma linii ``niestabilne_testy.ZMIENIONY_PLIK_TESTU``: plik takiego testu zmienił PR, więc jego porażka to
+   defekt, choćby był znanym flaky testem (ADR 0020, Z7). Każda inna porażka, także nieznana, to defekt.
 3. Awarię i znany flaky test narzędzie ponawia tylko po próbie ``NAJWIECEJ_PONOWIEN`` runu, a w dalszej odmawia
    z poleceniem diagnozy. Porażka, która wróciła po ponowieniu, nie jest już chwilowa: zadanie PR samo ponawia padnięte
    testy raz (``tools/ci/wykonaj_zadanie.py``), więc znany flaky test w drugiej próbie padł czwarty raz z rzędu.
@@ -72,6 +73,7 @@ NAJWIECEJ_TESTOW = 5
 _LINE = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 # Id testu kończy się przed `` - <błąd>`` pytest, bo błąd też bywa w nawiasach kwadratowych.
 TEST_LINE = re.compile(_LINE + r"(?:FAILED|ERROR) (tests/[\w/]+\.py(?:::\w+)+(?:\[.*?\])?)(?= - |\s*$)")
+PLIK_TESTU_PR = re.compile(_LINE + r"PONOWIENIE \| test .* " + re.escape(niestabilne_testy.ZMIENIONY_PLIK_TESTU) + r"$")
 # Znaczniki runnera w logu zadania: każdy wykonany krok zaczyna się nagłówkiem ``##[group]Run``, podkroki akcji złożonej
 # (``uses: ./.github/actions/chromium``) mają swoje nagłówki między ``##[start-action`` i ``##[end-action``, a kroki
 # ``Post …`` i ``Complete job`` po krokach zadania zaczynają się swoją pierwszą linią.
@@ -118,6 +120,7 @@ class Zadanie:
     nazwa: str
     sygnatury: tuple[str, ...]
     testy: tuple[str, ...]
+    plik_testu_pr: bool = False  # zadanie nie ponowiło testu z pliku testu zmienionego przez PR
 
 
 @dataclass(frozen=True)
@@ -144,7 +147,8 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     if zadania and all(zadanie.sygnatury and not zadanie.testy for zadanie in zadania):
         return Awaria(tuple(sorted({nazwa for zadanie in zadania for nazwa in zadanie.sygnatury})))
     testy = tuple(dict.fromkeys(test for zadanie in zadania for test in zadanie.testy))
-    if zadania and all(zadanie.testy for zadanie in zadania) and all(niestabilne_testy.tytul_issue(test) in flaky for test in testy):
+    znane = all(niestabilne_testy.tytul_issue(test) in flaky for test in testy) and not any(zadanie.plik_testu_pr for zadanie in zadania)
+    if zadania and all(zadanie.testy for zadanie in zadania) and znane:
         return ZnanyFlaky(testy)
     return Defekt(tuple(zadanie for zadanie in zadania if not zadanie.sygnatury or zadanie.testy))
 
@@ -184,13 +188,19 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
 
 
 def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
-    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania."""
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania.
 
+    Log zadania Windows z API kończy linie ``\\r\\n`` (``pytest (Python 3.13, 5/5)`` runu 43523010762: 593 z 600 linii), a wzorce
+    czytają linie zakończone ``\\n``, więc funkcja zamienia ``\\r\\n`` na ``\\n`` raz, zanim czyta log którymkolwiek wzorcem.
+    """
+
+    log = log.replace("\r\n", "\n")
     porazka = log_porazki(log, kroki)
     return Zadanie(
         nazwa,
         tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(porazka)),
         tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
+        PLIK_TESTU_PR.search(log) is not None,
     )
 
 

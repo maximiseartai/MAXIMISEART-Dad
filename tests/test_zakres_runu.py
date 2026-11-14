@@ -123,6 +123,30 @@ def test_bramka_pr_biegnie_na_windows_313_i_linuksie_z_wyborem_szybko_a_e2e_i_st
     assert list(gate.pliki) == (pliki_testow(repo) if files is None else [*files, *STRUCTURE])
 
 
+@pytest.mark.parametrize(
+    ("event", "changed", "zmienione"),
+    [
+        (Zdarzenie.PULL_REQUEST, "tests/test_b.py", {"tests/test_b.py"}),
+        (Zdarzenie.PULL_REQUEST, "src/pakiet/a.py", set()),
+        (Zdarzenie.PULL_REQUEST, "README.md", set()),
+        (Zdarzenie.PULL_REQUEST, ".github/workflows/ci.yml", set()),
+        (Zdarzenie.PULL_REQUEST, "tests/conftest.py", set()),
+        (Zdarzenie.PUSH, "tests/test_b.py", set()),
+        (Zdarzenie.NOC, "tests/test_b.py", set()),
+    ],
+    ids=["plik testu", "plik importowany przez test", "dokument", "workflow uruchamia wszystko", "plik regul wyboru testow", "push", "noc"],
+)
+def test_bramka_pr_podaje_pliki_testow_zmienione_przez_pr_bez_plikow_od_ktorych_zaleza_a_push_i_noc_zadnego(
+    tmp_path: Path, event: Zdarzenie, changed: str, zmienione: set[str]
+) -> None:
+    """Z7 w wariancie odległości 0 (ADR 0020, decyzja Maksa 13.11): bez ponowienia zostaje tylko test, którego plik
+    testów zmienił sam PR; zmiana modułu, który test importuje, albo pliku reguły wyboru testów ponowienia nie wyłącza."""
+
+    repo = repository(tmp_path / "repo", GATE)
+
+    assert zakres(event, frozenset({changed}), repo).zmienione_pliki_testow == zmienione
+
+
 def test_bramka_pr_biegnie_wybrany_plik_testow_raz_bez_jego_wezlow_ze_struktury(tmp_path: Path) -> None:
     file = next(node.partition("::")[0] for node in STRUCTURE if "::" in node)
     repo = repository(tmp_path / "repo", {**GATE, file: "def test_wezel() -> None:\n    pass\n"})
