@@ -131,6 +131,8 @@ def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
     def failing(run: object, page: object) -> None:
         raise getattr(drive_centrum, failure)("funkcja nie zobaczyła przycisku")
 
+    # Atrapa przeglądarki nie ma linii poleceń, z której launch_options bierze listę funkcji wyłączonych przez Playwright.
+    monkeypatch.setattr(drive_centrum, "launch_options", lambda playwright: {})
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=failing))
     (tmp_path / "fixture.json").write_text("{}", encoding="utf-8")
@@ -606,6 +608,8 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
         if funkcja == "pada":
             raise PlaywrightError("Locator.click: Timeout 10000ms exceeded.")
 
+    # Atrapa przeglądarki nie ma linii poleceń, z której launch_options bierze listę funkcji wyłączonych przez Playwright.
+    monkeypatch.setattr(drive_centrum, "launch_options", lambda playwright: {})
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright_fake)
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=click_behind_the_backdrop))
     (tmp_path / "fixture.json").write_text("{}", encoding="utf-8")
