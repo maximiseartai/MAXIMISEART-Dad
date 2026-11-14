@@ -28,6 +28,7 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.skladnia import drzewo, wezly
 from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -525,8 +526,9 @@ def test_kazda_nazwa_pakietu_importlib_jest_zakazana_albo_dozwolona_z_powodem() 
 def _stdlib_import_callers() -> set[str]:
     """Moduły biblioteki standardowej działającego Pythona, które wołają wejście systemu importu: każdy plik ``*.py``
     katalogu ``sysconfig.get_paths()["stdlib"]`` poza ``site-packages``, ``__pycache__`` i pakietem ``importlib`` (jego
-    nazwy sprawdza test obok), w którym ``ast.Call`` woła nazwę albo atrybut z ``IMPORT_ENTRIES``; AST czyta tylko pliki z
-    napisem jednej z tych nazw. Moduł to ścieżka pliku względem katalogu biblioteki, a pakiet nazwa jego ``__init__``.
+    nazwy sprawdza test obok), w którym ``ast.Call`` woła nazwę albo atrybut z ``IMPORT_ENTRIES``; drzewo składni
+    (``tests/fixtures/skladnia.py``) powstaje tylko dla plików z napisem jednej z tych nazw. Moduł to ścieżka pliku
+    względem katalogu biblioteki, a pakiet nazwa jego ``__init__``.
     Pliku modułu, który ``DYNAMIC_IMPORT`` już zakazuje (wprost albo przez moduł nadrzędny, np. pakiet ``test``), skan nie
     czyta, bo wynik testu niżej od niego nie zależy."""
     root = Path(sysconfig.get_paths()["stdlib"])
@@ -541,11 +543,7 @@ def _stdlib_import_callers() -> set[str]:
         text = path.read_text(encoding="utf-8", errors="replace")
         if not any(entry in text for entry in IMPORT_ENTRIES):
             continue
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
+        for node in wezly(drzewo(path)):
             if isinstance(node, ast.Call):
                 called = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", None)
                 if called in IMPORT_ENTRIES:
