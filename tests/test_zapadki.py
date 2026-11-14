@@ -791,7 +791,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 # do końca, który kopiuje prawdziwy ``sgconfig.yml`` do drzewa tymczasowego.
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
-AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {}
+AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {"komentarz-w-src": "wyraź lepszą nazwą albo testem"}
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
     reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
@@ -1059,6 +1059,138 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
     assert syntax_rules(tmp_path, base, config) == [
         odpalenia_ast_grep.Finding("src/rozliczenia/probka.py", 1, rule, odpalenia_ast_grep.BUILTIN_MESSAGES[rule]) for rule in rules
     ]
+
+
+_DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'
+_NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n    "
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "lines"),
+    [
+        ("import os  # noqa: F401 - import dla efektu ubocznego\n", []),
+        ("import os  # noqa: F401, E501 - powód\n", []),
+        ('x: int = "a"  # type: ignore[assignment]\n', []),
+        ('x: int = "a"  # type: ignore[assignment, no-untyped-call]  # powód\n', []),
+        ('x: int = "a"  # type: ignore[assignment]\r\ny = 1\r\n', []),
+        ("x = 1  # wyjaśnienie\n", [1]),
+        ('"""Moduł."""\n# uwaga\nx = max(\n    1,  # pierwszy\n)\n# koniec', [2, 4, 6]),
+        ("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n# fmt: off\nx = 1  # pragma: no cover\n", [1, 2, 3, 4]),
+        ("x = []  # type: list[int]\n", [1]),
+        ("x = 1  # mypy: patrz, tu jest cała historia z #1234 i powód\n", [1]),
+        ("# mypy: always-true=uwaga od PR 1234\n# mypy: ignore-errors\nx = 1\n", [1, 2]),
+        ("# ruff: noqa: F401\nimport os\n", [1]),
+        (f"{_DARWIN}[historia z PR 1614]\n", [4]),
+        ("import os  # noqa: F401 , proza\n", [1]),
+        ("import os  # noqa: F401, , proza\n", [1]),
+        ("import os  # noqa\n", [1]),
+        ("import os  # noqa: F401\n", [1]),
+        ("import os  # noqa: F401 - \n", [1]),
+        ("import os  # noqa: F401 E501 - powód\n", [1]),
+        ("import os  # noqa: F401: powód\n", [1]),
+        ("import os  # noqa:F401 - powód\n", [1]),
+        ("import os  # NOQA: F401 - powód\n", [1]),
+        ("import os  # noqa: f401 - powód\n", [1]),
+        ("import os  # noqa: 1614 - powód\n", [1]),
+        ("import os  # noqa: F401x - powód\n", [1]),
+        ("import os  # noqa: UWAGA - powód\n", [1]),
+        ("import os  # uwaga: noqa: F401 - powód\n", [1]),
+        ("import os  # import z PR 12 # noqa: F401 - powód\n", [1]),
+        ("import os  #noqa: F401 - powód\n", [1]),
+        ("import os  #\tnoqa: F401 - powód\n", [1]),
+        ('x: int = "a"  # type: ignore\n', [1]),
+        ('x: int = "a"  # type: ignore[]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment] powód\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment] # powód\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment,misc]\n', [1]),
+        ('x: int = "a"  # type:ignore[assignment]\n', [1]),
+        ('x: int = "a"  #  type: ignore[assignment]\n', [1]),
+        ('x: int = "a"  # Type: Ignore[assignment]\n', [1]),
+        ('x: int = "a"  # type: ignore[ASSIGNMENT]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment2]\n', [1]),
+        ('x: int = "a"  # type: ignore[assign--ment]\n', [1]),
+        ('x: int = "a"  # type: ignore[assignment-]\n', [1]),
+        ('x: int = "a"  # bo PR 12, type: ignore[assignment]\n', [1]),
+    ],
+)
+def test_komentarz_w_src_przechodzi_tylko_jako_tlumienie_w_gramatyce_reguly(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [
+        (line, "komentarz-w-src") for line in lines
+    ]
+
+
+@needs_ast_grep
+def test_komentarz_w_src_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozszerzenia(tmp_path: Path) -> None:
+    """Granica zbioru plików reguły: ``files:`` ma globy ``.py``, ``.pyi`` i ``.py3``, więc ``.pyw`` i skrypt Pythona
+    bez rozszerzenia przechodzą z komentarzem prozy; gdy reguła zacznie je czytać, ten test każe przesunąć granicę."""
+
+    base = _empty_base(tmp_path)
+    names = ("a.py", "pakiet/b.py", "c.pyi", "d.py3", "e.pyw", "skrypt")
+    for name in names:
+        (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / name).write_text("#!/usr/bin/env python3\nx = 1\n", encoding="utf-8")
+
+    assert [finding.path for finding in syntax_rules(tmp_path, base)] == sorted(f"src/{name}" for name in names[:4])
+
+
+# Znane luki reguły ``komentarz-w-src`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z komentarzem
+# poza tłumieniem, który mimo to przechodzi przez regułę, ruff z konfiguracją ``src/`` i mypy z ``pyproject.toml`` na
+# każdej platformie kroków mypy zadania CI „Ruff, mypy” (``_ci_mypy_platforms``), nie na platformie hosta.
+ZNANE_LUKI_KOMENTARZY: Final = {
+    "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
+    "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
+    "powód tłumienia: drugie type: ignore w powodzie": 'x: int = "a"  # type: ignore[assignment]  # type: ignore[misc]\n',
+    "kod mypy: słowo w kształcie kodu pod if not TYPE_CHECKING": f"{_NOT_TYPE_CHECKING}x: int = 'a'  # type: ignore[historia]\n",
+    "kod mypy: słowo w kształcie kodu obok prawdziwego pod if not TYPE_CHECKING": (
+        f"{_NOT_TYPE_CHECKING}x: int = 'a'  # type: ignore[assignment, historia]\n"
+    ),
+    "kod mypy: słowo w kształcie kodu w gałęzi sys.platform == \"darwin\", której żaden krok mypy w CI nie sprawdza": (
+        f"{_DARWIN}[historia]\n"
+    ),
+    "kod mypy: słowo w kształcie kodu obok prawdziwego w gałęzi sys.platform == \"darwin\", której żaden krok mypy w CI nie sprawdza": (
+        f"{_DARWIN}[assignment, historia]\n"
+    ),
+    "kod mypy: słowo w kształcie kodu w gałęzi sys.version_info nowszej niż python_version mypy": (
+        "import sys\n\nif sys.version_info >= (3, 14):\n    x: int = 'a'  # type: ignore[historia]\n"
+    ),
+    "dyrektywa ast-grep-ignore: nazwa tej reguły i proza w komentarzu obok kodu": (
+        "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
+    ),
+}
+
+
+def _ci_mypy_platforms() -> list[str]:
+    """Platformy kroków ``python -m mypy --platform`` zadania CI „Ruff, mypy” z ``ci.yml``, w kolejności kroków."""
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    runs = [str(step.get("run", "")) for step in workflow["jobs"]["ruff-mypy"]["steps"]]
+    return [match[1] for run in runs if (match := re.search(r"-m mypy --platform (\S+)", run))]
+
+
+@needs_ast_grep
+@pytest.mark.skipif(
+    importlib.util.find_spec("ruff") is None or importlib.util.find_spec("mypy") is None,
+    reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff i mypy",
+)
+def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_KOMENTARZY, tmp_path / "src" / "rozliczenia")
+    platforms = _ci_mypy_platforms()
+    assert platforms, "zadanie CI „Ruff, mypy” nie ma kroku python -m mypy --platform"
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py", platformy=platforms)
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy")
 
 
 _PAGE = "from playwright.sync_api import Page\n\n\n"

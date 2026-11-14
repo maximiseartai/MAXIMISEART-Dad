@@ -2,45 +2,40 @@
 reguły”): PR z Ważnym z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` scala się tylko wtedy, gdy na HEAD
 PR stoi reguła ast-grep o tym id, a jej dowód przechodzi.
 
-Ważne z polem to Ważne werdyktów ``FAIL`` tego PR (``szablon_werdyktu.findings``, każda runda). Reguła to dokument YAML
-z polem ``id`` równym ``<id>`` w pliku ``*.yml`` albo ``*.yaml`` katalogu z ``ruleDirs`` pliku ``sgconfig.yml`` na
-HEAD PR, czyli tam, skąd czyta ją zapadka w Required CI. Próbka ``ZNANE_LUKI`` nie jest regułą, więc nigdy jej nie
-zastępuje. Postać ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` niczego nie wymaga.
+Ważne z polem to Ważne werdyktów ``FAIL`` tego PR (``szablon_werdyktu.findings``, każda runda). Postać ``Idiom: bez
+reguły <klasa> jak #N W<n> r<k>`` niczego nie wymaga.
 
-Dowód to ``tools/na_scalonych_pr.py --regula`` z kodu bazy PR (``tools/scal_pr.py`` biegnie z kopii bazy, linia
-``SĘDZIA``) na regule z HEAD PR i na każdym przypadku tego id z historii pól ``Idiom:``: na każdym Ważnym, którego pole
-nazywa ``<id>``, i na Ważnym z jego ``jak #N W<n> r<k>``, w tym PR i w każdym PR rejestru korzeni od wdrożenia szablonu
-werdyktu (``rejestr_korzeni.idioms``). Przechodzi tylko z ostatnią linią ``DOWÓD OK``: dowód łapie ``Gdzie`` każdego
+Dowód to ``tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>`` z kodu bazy PR (``tools/scal_pr.py``
+biegnie z kopii bazy, linia ``SĘDZIA``), tym samym Pythonem: regułę bierze z katalogów ``ruleDirs`` pliku
+``sgconfig.yml`` na HEAD PR, czyli tam, skąd czyta ją zapadka w Required CI, a bez niej odmawia, więc próbka
+``ZNANE_LUKI`` nigdy reguły nie zastępuje. Biegnie na każdym przypadku tego id z historii pól ``Idiom:``: na każdym
+Ważnym, którego pole nazywa ``<id>``, i na Ważnym z jego ``jak #N W<n> r<k>``, w tym PR i w każdym PR rejestru korzeni
+od wdrożenia szablonu werdyktu (``rejestr_korzeni.idioms``). Przechodzi tylko z ostatnią linią ``DOWÓD OK``: dowód łapie ``Gdzie`` każdego
 przypadku, ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych i odmawia reguły bez pola ``files:``,
 której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``).
 
 Granica: dowód umie dziś tylko ast-grep, więc ``<id>``, które jest kluczem ``banned-api`` ruff albo kontraktem
 import-linter, to odmowa, dopóki na HEAD nie stanie reguła ast-grep o tym id. Przypadek ``jak #N W<n> r<k>`` sprzed
 szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
-ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną.
+ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Moduł bierze tylko bibliotekę
+standardową, bo status „Werdykt i bramka” uruchamia ``tools/scal_pr.py`` systemowym ``python3``; YAML reguły czyta
+dowód.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
-from pathlib import Path
+from collections.abc import Sequence
 import subprocess
 import sys
-import tempfile
-
-import yaml
 
 import potomne
 import rejestr_korzeni
 from rejestr_korzeni import IdiomCase
 from repo import ROOT
-import repo
 from stan_pr import Pull
 import szablon_werdyktu
 import werdykt_pr
 
-CONFIG = "sgconfig.yml"
 PROOF = ROOT / "tools" / "na_scalonych_pr.py"
 PROOF_OK = "DOWÓD OK |"
 FIELD = "Idiom:"
@@ -87,50 +82,16 @@ def _cases(every: Sequence[IdiomCase], rule: str) -> list[str]:
 
 
 def _proved(pull: Pull, rule: str, cases: Sequence[str]) -> list[str]:
-    label = f"idiom: {rule}"
+    arguments = ["--regula-id", rule, "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case))]
     try:
-        document = _rule(pull.head, rule)
-    except (subprocess.CalledProcessError, yaml.YAMLError, OSError) as error:
-        return [f"{label}: nie odczytano reguł ast-grep z HEAD PR {pull.head[:7]} ({error}), uruchom ponownie"]
-    if document is None:
-        return [
-            f"{label}: na HEAD PR nie ma reguły ast-grep o id {rule} w katalogu z ruleDirs {CONFIG}, a Ważne {', '.join(cases)} ma pole Idiom: {rule}; "
-            "dodaj tę regułę z dowodem (tools/na_scalonych_pr.py --regula); próbka ZNANE_LUKI nie zastępuje reguły, a klucz banned-api "
-            "ani kontrakt import-linter jej dziś nie spełnia, bo dowód umie tylko ast-grep (ADR 0036)"
-        ]
-    with _rule_file(document) as path:
-        command = [sys.executable, str(PROOF), "--regula", str(path), *(part for case in cases for part in ("--wazne", case))]
-        try:
-            done = potomne.run(command, cwd=ROOT, timeout=PROOF_TIMEOUT_S, echo=True)
-        except subprocess.TimeoutExpired:
-            return [f"{label}: dowód reguły nie skończył się w {PROOF_TIMEOUT_S} s, uruchom ponownie"]
+        done = potomne.run([sys.executable, str(PROOF), *arguments], cwd=ROOT, timeout=PROOF_TIMEOUT_S, echo=True)
+    except subprocess.TimeoutExpired:
+        return [f"idiom: {rule}: dowód reguły nie skończył się w {PROOF_TIMEOUT_S} s, uruchom ponownie"]
     lines = (done.stdout + done.stderr).strip().splitlines()
     last = lines[-1] if lines else ""
     if done.returncode == 0 and last.startswith(PROOF_OK):
         return []
-    shown = " ".join(["tools/na_scalonych_pr.py --regula <reguła z HEAD>", *(f"--wazne {case}" for case in cases)])
-    return [f"{label}: dowód reguły nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; popraw regułę i sprawdź ją poleceniem {shown}"]
-
-
-def _rule(head: str, rule: str) -> dict[str, object] | None:
-    """Dokument reguły ast-grep o id ``rule`` z katalogów ``ruleDirs`` pliku ``CONFIG`` na ``head``; ``None`` bez niej."""
-
-    if not repo.succeeds(ROOT, "cat-file", "-e", f"{head}:{CONFIG}"):
-        return None
-    directories = (yaml.safe_load(repo.git(ROOT, "show", f"{head}:{CONFIG}")) or {}).get("ruleDirs") or []
-    for path in repo.git(ROOT, "ls-tree", "-r", "--name-only", head, "--", *map(str, directories)).splitlines() if directories else []:
-        if path.endswith((".yml", ".yaml")):
-            for document in yaml.safe_load_all(repo.git(ROOT, "show", f"{head}:{path}")):
-                if isinstance(document, dict) and str(document.get("id")) == rule:
-                    return document
-    return None
-
-
-@contextmanager
-def _rule_file(document: dict[str, object]) -> Iterator[Path]:
-    """Plik tymczasowy z jednym dokumentem reguły dla ``--regula``, usuwany po bloku."""
-
-    with tempfile.TemporaryDirectory(prefix="regula-idiomu-") as folder:
-        path = Path(folder) / f"{document['id']}.yml"
-        path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        yield path
+    return [
+        f"idiom: {rule}: Ważne {', '.join(cases)} ma pole Idiom: {rule}, a dowód reguły nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; "
+        f"dodaj albo popraw regułę ast-grep o id {rule} i sprawdź ją poleceniem tools/na_scalonych_pr.py {' '.join(arguments)}"
+    ]

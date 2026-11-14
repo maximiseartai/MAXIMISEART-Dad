@@ -19,7 +19,6 @@ import sys
 from typing import cast
 
 import pytest
-import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
@@ -163,6 +162,18 @@ elif arguments[:2] == ["api", "graphql"]:
     nodes.sort(key=lambda node: (node[field + "At"], node["number"]), reverse=direction == "desc")
     found = [html_node({**node, **{kind: node[kind]["nodes"] for kind in ("comments", "reviews")}}, {"comments": 0, "reviews": 0}) for node in nodes[: int(variables["first"])]]
     print(json.dumps({"data": {"search": {"nodes": found}}}))
+elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") for argument in arguments):
+    # zapis statusu commita: pola z -f
+    method = arguments[arguments.index("--method") + 1] if "--method" in arguments else "GET"
+    path = next(argument for argument in arguments if argument.startswith("repos/{owner}/{repo}/"))
+    if method == "GET":
+        sys.exit(f"atrapa gh nie zna: {arguments}")
+    fields = dict(value.split("=", 1) for flag, value in zip(arguments, arguments[1:]) if flag == "-f")
+    with (here / "writes.jsonl").open("a") as log:
+        log.write(json.dumps([method, path, fields]) + "\\n")
+    if path.startswith("repos/{owner}/{repo}/statuses/") and (here / "statusy_odrzucane").exists():
+        sys.exit("gh: Validation Failed (HTTP 422)")
+    print("{}")
 elif arguments[:2] == ["issue", "close"]:
     issues[arguments[2]] = json.dumps({"state": "closed"})
     (here / "issues.json").write_text(json.dumps(issues))
@@ -336,6 +347,11 @@ class MergeGitHub(FakeGitHub):
 
     def renders(self) -> list[list[str]]:
         return self._log("renders.jsonl")
+
+    def writes(self) -> list[list[str]]:
+        """Zapisy ``gh api --method`` w repozytorium checkoutu: metoda, ścieżka i pola."""
+
+        return self._log("writes.jsonl")
 
     def _log(self, name: str) -> list[list[str]]:
         log = self.bin / name
@@ -2369,28 +2385,23 @@ def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path, mon
     assert len(github._log("graphql.jsonl")) == 1, github._log("graphql.jsonl")
 
 
-# Warunek merge'a z polem Idiom: (ADR 0036, „Warunek merge'a”): reguła ast-grep o id z pola na HEAD PR w katalogu
-# z ruleDirs sgconfig.yml i dowód tools/na_scalonych_pr.py --regula na każdym przypadku tego id z historii pól Idiom:.
-# Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje regułę i przypadki do ``dowody.jsonl`` w katalogu atrapy gh
-# i kończy się kodem i linią z ``dowod.json``; prawdziwy dowód sprawdza tests/test_na_scalonych_pr.py.
-IDIOM_RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: "Zamień zakazane() na dozwolone()."\nfiles:\n  - kod/**\nrule:\n  pattern: zakazane()\n'
+# Warunek merge'a z polem Idiom: (ADR 0036, „Warunek merge'a”): dowód tools/na_scalonych_pr.py --regula-id z regułą
+# z HEAD PR na każdym przypadku tego id z historii pól Idiom:. Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje swoje
+# argumenty do ``dowody.jsonl`` w katalogu atrapy gh i kończy się kodem i linią z ``dowod.json``; prawdziwy dowód,
+# także odmowę bez reguły na HEAD, sprawdza tests/test_na_scalonych_pr.py.
 FAKE_PROOF = """\
 import json, pathlib, sys
 
 state = pathlib.Path(sys.argv[0]).resolve().parents[2] / "bin"
-arguments = sys.argv[1:]
-rule = pathlib.Path(arguments[arguments.index("--regula") + 1]).read_text(encoding="utf-8")
 with (state / "dowody.jsonl").open("a", encoding="utf-8") as log:
-    log.write(json.dumps({"regula": rule, "wazne": [arguments[index + 1] for index, value in enumerate(arguments) if value == "--wazne"]}) + "\\n")
+    log.write(json.dumps(sys.argv[1:]) + "\\n")
 answer = json.loads((state / "dowod.json").read_text(encoding="utf-8"))
 print(answer["linia"])
 sys.exit(answer["kod"])
 """
 PROOF_OK = (0, "DOWÓD OK | zakazane-wywolanie | złapane 2/2 | FP 0 w 0 z 20 PR (0%) | main 0")
 PROOF_REFUSED = (1, "DOWÓD ODMOWA | zakazane-wywolanie | złapane 1/2 | FP 0 w 0 z 20 PR (0%) | main 0")
-NO_RULE = "idiom: zakazane-wywolanie: na HEAD PR nie ma reguły ast-grep o id zakazane-wywolanie w katalogu z ruleDirs sgconfig.yml"
-SAMPLE_WITHOUT_RULE = {"tests/fixtures/znane_luki_zakazanego.py": 'ZNANE_LUKI = {"zakazane: wywołanie": "zakazane()\\n"}\n'}
-WITH_RULE = {"reguly-ast-grep/zakazane-wywolanie.yml": IDIOM_RULE}
+PROOF_WITHOUT_RULE = (1, "DOWÓD ODMOWA | zakazane-wywolanie | na 12345678 nie ma reguły ast-grep o id zakazane-wywolanie w katalogach ruleDirs sgconfig.yml")
 
 
 def _idiom_verdict(name: str) -> str:
@@ -2398,52 +2409,45 @@ def _idiom_verdict(name: str) -> str:
 
 
 def _idiom_gate(
-    tmp_path: Path, verdict: str, head_files: dict[str, str], *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK
-) -> tuple[MergeGitHub, subprocess.CompletedProcess[str]]:
+    tmp_path: Path, verdict: str, *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK
+) -> tuple[MergeGitHub, str, subprocess.CompletedProcess[str]]:
     """``--bez-merge`` PR 1 z werdyktem ``FAIL`` z polem Idiom (``_idiom_verdict``) na starszym commicie, sekcją
-    ``## Korzeń`` i ``PASS`` na HEAD z plikami ``head_files``; rejestr podaje PR-y ``registry``, a dowód ``proof``."""
+    ``## Korzeń`` i ``PASS`` na HEAD; rejestr podaje PR-y ``registry``, a dowód kończy się ``proof``."""
 
-    files = {"kod/__init__.py": SUM, "sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", "tools/na_scalonych_pr.py": FAKE_PROOF}
+    files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF}
     github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
     _deploy_template(github)
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **head_files})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
     github.graphql = registry or []
     github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
     github.comment(1, verdict.format(commit=OLD))
     github.comment(1, SPRAWDZONE_PASS.format(head=head))
-    return github, github.run("1", "--bez-merge")
+    return github, head, github.run("1", "--bez-merge")
 
 
-def _proofs(github: MergeGitHub) -> list[tuple[object, list[str]]]:
-    return [(yaml.safe_load(str(run["regula"])), cast(list[str], run["wazne"])) for run in cast(list[dict[str, object]], github._log("dowody.jsonl"))]
+def _proofs(github: MergeGitHub) -> list[list[str]]:
+    return github._log("dowody.jsonl")
 
 
-@pytest.mark.parametrize(
-    ("verdict", "head_files", "proof", "fragment"),
-    [
-        ("drugie-wystapienie", SAMPLE_WITHOUT_RULE, PROOF_OK, NO_RULE),
-        ("ucieczka", {}, PROOF_OK, NO_RULE),
-        ("drugie-wystapienie", {"reguly-ast-grep/inna-regula.yml": IDIOM_RULE.replace("zakazane-wywolanie", "inna-regula")}, PROOF_OK, NO_RULE),
-        ("drugie-wystapienie", WITH_RULE, PROOF_REFUSED, f"idiom: zakazane-wywolanie: dowód reguły nie przeszedł (kod 1): {PROOF_REFUSED[1]}"),
-        ("drugie-wystapienie", WITH_RULE, (0, "DOWÓD ZAWIESZONY"), "idiom: zakazane-wywolanie: dowód reguły nie przeszedł (kod 0): DOWÓD ZAWIESZONY"),
-    ],
-    ids=["probka-znane-luki-bez-reguly", "ucieczka-bez-reguly-na-head", "regula-o-innym-id", "dowod-odmawia", "dowod-bez-linii-dowod-ok"],
-)
-def test_wazne_z_polem_idiom_scala_sie_tylko_z_regula_ast_grep_tego_id_na_head_i_jej_dowodem(
-    tmp_path: Path, verdict: str, head_files: dict[str, str], proof: tuple[int, str], fragment: str
-) -> None:
-    """Próbka ``ZNANE_LUKI`` nigdy nie zastępuje reguły (ADR 0036), a dowód przechodzi tylko linią ``DOWÓD OK``."""
+def _proof_arguments(head: str, *cases: str) -> list[str]:
+    return ["--regula-id", "zakazane-wywolanie", "--z-commita", head, *(part for case in cases for part in ("--wazne", case))]
 
-    _, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict), head_files, proof=proof)
+
+@pytest.mark.parametrize("proof", [PROOF_WITHOUT_RULE, PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY")], ids=["bez-reguly-na-head", "dowod-odmawia", "dowod-bez-linii-dowod-ok"])
+def test_wazne_z_polem_idiom_nie_scala_sie_bez_dowodu_ok_reguly_z_head(tmp_path: Path, proof: tuple[int, str]) -> None:
+    """Próbka ``ZNANE_LUKI`` nigdy nie zastępuje reguły (ADR 0036), a dowód przechodzi tylko kodem 0 i linią ``DOWÓD OK``."""
+
+    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof)
 
     last = _last_line(answered)
-    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
-    assert fragment in last, last
+    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | idiom: zakazane-wywolanie: Ważne 1/W1/r1, 1553/W1/r2 ma pole Idiom: zakazane-wywolanie"), answered.stdout
+    assert f"dowód reguły nie przeszedł (kod {proof[0]}): {proof[1]}; dodaj albo popraw regułę ast-grep o id zakazane-wywolanie" in last, last
+    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", "1553/W1/r2")]
 
 
-def test_wazne_z_polem_idiom_i_regula_na_head_scala_sie_po_dowodzie_na_kazdym_przypadku_z_historii_pol_idiom(tmp_path: Path) -> None:
+def test_wazne_z_polem_idiom_scala_sie_po_dowodzie_na_kazdym_przypadku_z_historii_pol_idiom(tmp_path: Path) -> None:
     """Przypadki dowodu to Ważne tego PR z polem, Ważne z jego ``jak`` i każde Ważne z polem tego id w innym PR rejestru
     razem z jego ``jak``; Ważne z polem innej reguły do dowodu nie należy."""
 
@@ -2452,18 +2456,18 @@ def test_wazne_z_polem_idiom_i_regula_na_head_scala_sie_po_dowodzie_na_kazdym_pr
         _node([(_idiom_verdict("innej-reguly"), AFTER_DEPLOYMENT)], number=1437),
     ]
 
-    github, answered = _idiom_gate(tmp_path, _idiom_verdict("ucieczka"), WITH_RULE, registry=registry)
+    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict("ucieczka"), registry=registry)
 
-    assert answered.returncode == 0 and _last_line(answered).startswith("SCAL OK | #1 "), answered.stdout + answered.stderr
-    assert _proofs(github) == [(yaml.safe_load(IDIOM_RULE), ["1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2"])]
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2")]
 
 
-@pytest.mark.parametrize(("verdict", "proofs"), [("drugie-wystapienie", [["1/W1/r1", "1553/W1/r2"]]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
-def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_ze_wczesniejszym_waznym(tmp_path: Path, verdict: str, proofs: list[list[str]]) -> None:
-    github, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict), WITH_RULE if proofs else {})
+@pytest.mark.parametrize(("verdict", "cases"), [("drugie-wystapienie", [("1/W1/r1", "1553/W1/r2")]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
+def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_ze_wczesniejszym_waznym(tmp_path: Path, verdict: str, cases: list[tuple[str, ...]]) -> None:
+    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict))
 
-    assert answered.returncode == 0 and _last_line(answered).startswith("SCAL OK | #1 "), answered.stdout + answered.stderr
-    assert [cases for _, cases in _proofs(github)] == proofs
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == [_proof_arguments(head, *found) for found in cases]
 
 
 @pytest.mark.parametrize(
@@ -2492,3 +2496,119 @@ def test_merge_pr_z_linia_korzen_z_issue_zamyka_issue_chwastu_z_komentarzem_o_pr
 
 def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:
     assert sorted(chwasty.rendered()) == sorted(set(chwasty.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.chwasty"
+
+
+# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–4 tools/scal_pr.py jako status commita
+# na HEAD PR, bez merge'a; w runie Actions z linkiem do runu, w którym linia STATUS podaje przyczyny w całości.
+RUN = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": opisy_pr.REPO, "GITHUB_RUN_ID": "77"}
+RUN_URL = f"https://github.com/{opisy_pr.REPO}/actions/runs/77"
+
+
+def _status(github: MergeGitHub, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return _run_from(github, github.checkout, *arguments, environment=RUN)
+
+
+def _statuses(github: MergeGitHub) -> list[list[str]]:
+    return [write for write in github.writes() if str(write[1]).startswith("repos/{owner}/{repo}/statuses/")]
+
+
+def test_status_gotowego_pr_jest_zielony_na_jego_head_a_pr_nie_jest_scalany(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–4 tools/scal_pr.py spełnione"
+    assert _statuses(github) == [
+        [
+            "POST",
+            f"repos/{{owner}}/{{repo}}/statuses/{head}",
+            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–4 tools/scal_pr.py spełnione", "target_url": RUN_URL},
+        ]
+    ]
+    assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"isDraft": True},
+        {"statusCheckRollup": [_check_run("COMPLETED", "FAILURE")]},
+        {"body": BODY.replace("## Merge Danger", "## Ryzyko")},
+        {"comments": []},
+    ],
+    ids=["szkic", "ci-czerwone", "opis-bez-naglowka-wzoru", "bez-werdyktu"],
+)
+def test_status_pr_niegotowego_jest_czerwony_z_ta_sama_przyczyna_co_odmowa_bez_merge(tmp_path: Path, fields: dict[str, object]) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, **fields)
+
+    refused = github.run("1", "--bez-merge")
+    answered = _status(github, "1", "--status")
+
+    reasons = _last_line(refused).removeprefix(f"SCAL ODMOWA | #1 {head[:7]} | ")
+    assert reasons != _last_line(refused), refused.stdout + refused.stderr
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | {reasons}"
+    # GitHub przyjmuje opis statusu do 140 znaków, a pełne przyczyny podaje linia STATUS w runie z target_url.
+    limit = klient_github.OPIS_STATUSU_LIMIT
+    described = reasons if len(reasons) <= limit else reasons[: limit - 1] + "…"
+    assert _statuses(github) == [
+        ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": "failure", "context": "Werdykt i bramka", "description": described, "target_url": RUN_URL}]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    [
+        ({"state": "MERGED"}, "PR MERGED, więc status HEAD zostaje z chwili zamknięcia"),
+        ({"state": "CLOSED"}, "PR CLOSED, więc status HEAD zostaje z chwili zamknięcia"),
+        ({"baseRefName": "wydanie"}, "PR do wydanie, a status dostają PR-y do main"),
+    ],
+    ids=["scalony", "zamkniety", "do-innej-galezi"],
+)
+def test_pr_zamkniety_albo_do_innej_galezi_niz_main_nie_dostaje_statusu(tmp_path: Path, fields: dict[str, object], reason: str) -> None:
+    """Status scalonego HEAD zostaje taki, jak w chwili merge'a, więc raport po fakcie widzi merge bez zielonego statusu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, **fields)
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [f"STATUS POMINIĘTY | #1 {head[:7]} | {reason}"]
+    assert _statuses(github) == []
+
+
+def test_status_pr_ktory_zmienia_wzor_opisu_sadzi_wzor_z_bazy_takze_z_checkoutu_head_pr(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    main = git(github.origin, "rev-parse", "refs/heads/main")
+    template = TEMPLATE.read_text(encoding="utf-8").replace("## Merge Danger\n", "", 1)
+    head = github.open_pull(1, {".agents/skills/pr/SKILL.md": template, "kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=BODY.replace("## Merge Danger", "## Ryzyko"))
+    github.comment(1, PASS.format(head=head))
+    checkout = _checkout_of(github, head, tmp_path)
+
+    answered = _run_from(github, checkout, "1", "--status", environment=RUN)
+
+    assert answered.stdout.splitlines()[0] == f"SĘDZIA | #1 | reguły z origin/main {main[:7]}, nie z checkoutu {head[:7]}: biegnę z kopii tego commitu"
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | opis: brak „## Merge Danger” w kolejności wzoru .agents/skills/pr/SKILL.md"
+    assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == ["failure"]
+
+
+def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    (github.bin / "statusy_odrzucane").write_text("", encoding="utf-8")
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS FAIL | #1 {head[:7]} | success niewysłany: gh: Validation Failed (HTTP 422)"

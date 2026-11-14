@@ -279,11 +279,13 @@ ODMOWY: Final = {
     "check: pole f-stringu z formatem": 'run.check(True, f"x {SHOW_ALL:>20}")  # tu',
     "check: w funkcji zagnieżdżonej": 'def _pomocnik() -> None:\n        run.check(True, "x")  # tu',
     "check: w lambdzie": '_pomocnik = lambda: run.check(True, "x")  # tu',
+    "check: w ciele klasy": 'class _Pomocnik:\n        run.check(True, "x")  # tu',
     "check: jako wartość": 'sprawdz = run.check  # tu',
     "step: nazwa nazwana": 'run.step(feature, name="x")  # tu',
     "step: nazwa zmienną": "run.step(feature, feature)  # tu",
     "step: *args": 'run.step(*(feature, "x"))  # tu',
     "check: na aliasie run": 'plansza = run\n    plansza.check(True, "x")  # tu',
+    "step: na aliasie run": 'plansza = run\n    plansza.step(feature, "x")  # tu',
     "check: na celu pętli": 'for r in (run,):\n        r.check(True, "x")  # tu',
     "check: na wyniku walrusa": '(r := run).check(True, "x")  # tu',
     "check: na parametrze lambdy": '(lambda r: r.check(True, "x"))(run)  # tu',
@@ -321,7 +323,7 @@ def _odmowy() -> dict[str, str]:
 def test_polecenie_podfunkcji_odmawia_postaci_run_ktorej_nie_czyta_z_plikiem_i_linia(polecenie: ModuleType, opis: str) -> None:
     """Postać spoza tej jednej, którą polecenie czyta (``run.step``/``run.check`` z dwoma argumentami pozycyjnymi w ciele
     ``drive(run, page)``), czerwieni je zdaniem z plikiem i linią, także atrybut ``.check`` na obiekcie innym niż ``run``,
-    zamiast zgubić komunikat, który napęd drukuje w ``drive.txt`` (W1 r1 i r2 #1690)."""
+    zamiast zgubić komunikat, który napęd drukuje w ``drive.txt`` (W1 r1 i r2, D1 i D2 r3 #1690)."""
 
     zrodlo = _odmowy()[opis]
     linia = next(numer for numer, tekst in enumerate(zrodlo.splitlines(), start=1) if "# tu" in tekst)

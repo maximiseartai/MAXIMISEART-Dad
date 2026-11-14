@@ -1,0 +1,23 @@
+id: komentarz-w-src
+language: python
+severity: error
+message: >-
+  komentarz # w src: to, co mówi komentarz, wyraź lepszą nazwą albo testem, który pada bez tego kodu, a historię zmiany
+  zostaw w PR albo issue; w src zostaje tylko komentarz, który w całości jest tłumieniem w jednej z dwóch postaci:
+  „# noqa: F401 - powód” (kody ruff rozdzielone „, ”, potem „ - ” i powód) albo „# type: ignore[attr-defined]” (kody
+  mypy rozdzielone „, ”, potem koniec komentarza albo „  # powód”); reguła czyta pliki .py, .pyi i .py3 w src, a plik
+  .pyw i plik bez rozszerzenia pomija
+files:
+  - src/**/*.py
+  - src/**/*.pyi
+  - src/**/*.py3
+rule:
+  kind: comment
+  # Gramatyka całego komentarza, a każdy inny komentarz jest zgłoszony: „# noqa: ”, kody [A-Z]+[0-9]+ rozdzielone „, ”,
+  # „ - ” i powód od znaku innego niż biały; albo „# type: ignore[”, kody [a-z]+(-[a-z]+)* rozdzielone „, ”, „]”, a po
+  # nim koniec albo „  # ” i powód od znaku innego niż biały. Treści powodu reguła nie sprawdza. \r? przed końcem, bo
+  # checkout na Windows ma CRLF. Pliki to globy z files:, a .pyw i plik Pythona bez rozszerzenia
+  # są poza nimi i poza językami ast-grep, więc reguła je pomija.
+  not:
+    regex: >-
+      ^# (?:noqa: [A-Z]+[0-9]+(?:, [A-Z]+[0-9]+)* - \S.*|type: ignore\[[a-z]+(?:-[a-z]+)*(?:, [a-z]+(?:-[a-z]+)*)*\](?:  # \S.*)?)\r?$

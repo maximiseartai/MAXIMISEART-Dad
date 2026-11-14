@@ -178,11 +178,17 @@ def _merge(github: FakeGitHub, number: int, *versions: dict[str, str]) -> list[s
 
 
 def _proof(
-    tmp_path: Path, failed: str, clean: dict[str, str], start: dict[str, str] | None = None, where: str = WHERE, rule: str = RULE
+    tmp_path: Path,
+    failed: str,
+    clean: dict[str, str],
+    start: dict[str, str] | None = None,
+    where: str = WHERE,
+    rule: str = RULE,
+    chosen: tuple[str, ...] = ("--regula", "regula.yml"),
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Bieg dowodu reguły ``rule`` na ``main`` z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami:
-    PR #5, którego werdykt FAIL z polem ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6
-    z plikami ``clean``."""
+    """Bieg dowodu reguły wybranej argumentami ``chosen`` (domyślnie plik ``regula.yml`` z treścią ``rule``) na ``main``
+    z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami: PR #5, którego werdykt FAIL z polem
+    ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6 z plikami ``clean``."""
 
     files = {"stare.py": OLD.format("obiekt"), "regula.yml": rule, **(start or {})}
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
@@ -199,7 +205,7 @@ def _proof(
         **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
-    return github.run("--regula", "regula.yml", "--wazne", "5/W1/r1", "--ostatnie", "2"), sha
+    return github.run(*chosen, "--wazne", "5/W1/r1", "--ostatnie", "2"), sha
 
 
 @needs_ast_grep
@@ -264,3 +270,41 @@ def test_dowod_reguly_odmawia_reguly_bez_pola_files_ktorej_zapadka_nie_przyjmie(
         "DOWÓD ODMOWA | zakazane-wywolanie | zakazane-wywolanie: reguła bez pola files: obejmuje każdy plik repozytorium;"
         " dopisz files: z globami plików, w których obowiązuje (np. src/**/*.py albo .agents/skills/**/*.py), a wyjątki w ignores:"
     ), done.stdout
+
+
+# Reguła z katalogu ruleDirs sgconfig.yml na commicie (``--regula-id`` z ``--z-commita``), tak jak dowód uruchamia
+# tools/scal_pr.py dla Ważnego z polem Idiom: (ADR 0036): HEAD tego repozytorium to merge PR #6 do ``main``.
+BY_ID = ("--regula-id", "zakazane-wywolanie", "--z-commita", "HEAD")
+SGCONFIG = "ruleDirs:\n  - reguly-ast-grep\n"
+
+
+@needs_ast_grep
+def test_dowod_reguly_o_id_bierze_regule_z_katalogu_ruledirs_na_commicie(tmp_path: Path) -> None:
+    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazy.yml": RULE.replace("zakazane-wywolanie", "inna-regula") + "---\n" + RULE}
+
+    done, sha = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=BY_ID)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines()[0] == f"#5 W1 r1 | {sha[:8]} | złapane | odpalenia kod/inne.py:2 | Gdzie: kod/inne.py:1", done.stdout
+    assert done.stdout.splitlines()[-1] == "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1", done.stdout
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        {"sgconfig.yml": SGCONFIG, "tests/fixtures/znane_luki_zakazanego.py": 'ZNANE_LUKI = {"zakazane: wywołanie": "obiekt.zakazane()\\n"}\n'},
+        {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/inna.yml": RULE.replace("zakazane-wywolanie", "inna-regula")},
+        {"sgconfig.yml": SGCONFIG, "inne-reguly/zakazane-wywolanie.yml": RULE},
+        {"reguly-ast-grep/zakazane-wywolanie.yml": RULE},
+    ],
+    ids=["tylko-probka-znane-luki", "regula-o-innym-id", "regula-poza-ruledirs", "bez-sgconfig"],
+)
+def test_dowod_reguly_o_id_odmawia_commita_bez_reguly_ast_grep_tego_id(tmp_path: Path, start: dict[str, str]) -> None:
+    """Próbka ``ZNANE_LUKI`` nie jest regułą, więc dowód Ważnego z polem Idiom: bez reguły na commicie nie przechodzi."""
+
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=BY_ID)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    last = done.stdout.splitlines()[-1]
+    assert last.startswith("DOWÓD ODMOWA | zakazane-wywolanie | na "), done.stdout
+    assert last.endswith(" nie ma reguły ast-grep o id zakazane-wywolanie w katalogach ruleDirs sgconfig.yml; próbka ZNANE_LUKI nie zastępuje reguły"), done.stdout
