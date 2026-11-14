@@ -287,13 +287,14 @@ class ArchiveFile:
 
     ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów po strażniku); w
     Archiwum leży spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i
-    ``description`` to tytuł i opis Archiwum, gdy kolejka musi je założyć.
+    ``description`` to tytuł i opis Archiwum, gdy kolejka musi je założyć. Tag, tytuł, opis i nazwa wychodzą do Skrzynki
+    (Release i nazwa pliku), więc mają typ tekstu do wysyłki (``Outgoing``), który plik kolejki sprawdza w chwili zapisu.
     """
 
-    tag: str
-    title: str
-    description: str
-    name: str
+    tag: Outgoing
+    title: Outgoing
+    description: Outgoing
+    name: Outgoing
     text: LogsText
 
     @property
@@ -492,7 +493,8 @@ def _file_name(version: str, label: str, run_id: str) -> str:
 def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) -> str:
     """Treść pliku kolejki z ``post``, sprawdzona w chwili zapisu, bo plik daje swoim tekstom ``Outgoing`` od nowa
     (``_parse``): wysyłka dokładnie ``Post`` albo ``comment_versions.LogsPost``, każde pole czytane raz, a tekst inny niż
-    dokładnie ``Outgoing``, tekst pliku Archiwum inny niż dokładnie ``LogsText`` i stopień inny niż ``Rank`` dają
+    dokładnie ``Outgoing``, cel i plik Archiwum inne niż dokładnie ich klasa albo z polem innym niż jego adnotacja
+    (``_checked_fields``: tag, tytuł, opis i nazwa ``Outgoing``, tekst ``LogsText``) i stopień inny niż ``Rank`` dają
     ``TypeError``. Typ sprawdza porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa z własnym
     ``__eq__``. Nie zamyka zmiany obiektu, klasy albo modułu w chwili działania ani ``str.__new__`` z klasą ``Outgoing``.
     ``LogsPost`` bierze w chwili wywołania, bo ``comment_versions`` importuje ten moduł."""
@@ -506,10 +508,9 @@ def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) 
         raise TypeError("Plik kolejki bierze tylko tekst Outgoing z rozliczenia.client_data i stopień Rank.")
     file: dict[str, str] | None = None
     if archive is not None:
-        text = archive.text
-        if type(archive) is not ArchiveFile or type(text) is not LogsText:
-            raise TypeError("Plik kolejki bierze tylko plik ArchiveFile z tekstem LogsText z rozliczenia.client_data.")
-        file = {"tag": archive.tag, "title": archive.title, "description": archive.description, "name": archive.name, "text": str.__str__(text)}
+        if type(archive) is not ArchiveFile:
+            raise TypeError(f"Plik kolejki bierze tylko plik ArchiveFile z rozliczenia.centrum.outbox, nie {type(archive).__name__}.")
+        file = {name: str(value) for name, value in _checked_fields(ArchiveFile, archive).items()}
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,
@@ -535,8 +536,9 @@ _FIELDS: Final[dict[str, Callable[[object], bool]]] = {
     "Label": lambda value: type(value) is str and value in _LABELS,
     "Closed": lambda value: type(value) is str and value in _CLOSED,
     "int": lambda value: type(value) is int,
+    "LogsText": lambda value: type(value) is LogsText,
 }
-"""Sprawdzenie pola celu po jego adnotacji w klasie celu; pole z inną adnotacją wywraca zapis, zamiast przejść."""
+"""Sprawdzenie pola celu i pliku Archiwum po jego adnotacji w klasie; pole z inną adnotacją wywraca zapis, zamiast przejść."""
 
 
 def _target_json(target: object) -> dict[str, str | int]:
@@ -547,12 +549,19 @@ def _target_json(target: object) -> dict[str, str | int]:
     if found is None:
         raise TypeError(f"Plik kolejki bierze tylko cel z rozliczenia.centrum.outbox, nie {type(target).__name__}.")
     kind, name = found
-    entry: dict[str, str | int] = {"kind": name}
+    return {"kind": name, **_checked_fields(kind, target)}
+
+
+def _checked_fields(kind: type[Target] | type[ArchiveFile], value: object) -> dict[str, str | int]:
+    """Pola obiektu ``value`` dokładnie klasy ``kind`` z ``fields`` tej klasy, nie z adnotacji wejścia: każde czytane raz,
+    sprawdzone po adnotacji (``_FIELDS``) i skopiowane do ``str`` albo ``int``."""
+
+    entry: dict[str, str | int] = {}
     for field in fields(kind):
-        value, check = getattr(target, field.name), _FIELDS.get(str(field.type))
-        if check is None or not check(value):
-            raise TypeError(f"Pole celu {kind.__name__}.{field.name} w pliku kolejki ma typ {type(value).__name__}.")
-        entry[field.name] = value if type(value) is int else str.__str__(value)
+        read, check = getattr(value, field.name), _FIELDS.get(str(field.type))
+        if check is None or not check(read):
+            raise TypeError(f"Pole {kind.__name__}.{field.name} w pliku kolejki ma typ {type(read).__name__}.")
+        entry[field.name] = read if type(read) is int else str.__str__(read)
     return entry
 
 
@@ -646,10 +655,10 @@ def _archive_file(entry: object) -> ArchiveFile | None:
     if not isinstance(entry, dict):
         raise TypeError("plik do Archiwum")
     return ArchiveFile(
-        _string(entry["tag"]),
-        _string(entry["title"]),
-        _string(entry["description"]),
-        _string(entry["name"]),
+        tool(_string(entry["tag"])),
+        tool(_string(entry["title"])),
+        tool(_string(entry["description"])),
+        tool(_string(entry["name"])),
         logs_text(_string(entry["text"])),
     )
 

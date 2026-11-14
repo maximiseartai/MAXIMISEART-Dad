@@ -202,6 +202,15 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Handler sygnału dostaje ramkę przerwanej funkcji, a hak audytu biegnie w środku audytowanego wywołania (przegląd #1809, W1).
     "import signal\nsignal.signal(signal.SIGALRM, obsluz)": (SRC_CONFIG, ("rozliczenia", "centrum"), "signal.signal"),
     "from sys import addaudithook\naddaudithook(sluchaj)": (SRC_CONFIG, ("rozliczenia",), "sys.addaudithook"),
+    # Moduł C i prywatne nazwy pod nazwami z listy: signal.signal owija _signal.signal, threading.*_all_threads woła
+    # sys._settraceallthreads i sys._setprofileallthreads, a threading.settrace i setprofile ustawiają _trace_hook i
+    # _profile_hook (przegląd #1809, runda 2, D1).
+    "import _signal\n_signal.signal(14, obsluz)": (SRC_CONFIG, ("rozliczenia", "centrum"), "_signal"),
+    "from _signal import signal as sygnal": (SRC_CONFIG, ("rozliczenia",), "_signal"),
+    "from sys import _settraceallthreads": (SRC_CONFIG, ("rozliczenia",), "sys._settraceallthreads"),
+    "from sys import _setprofileallthreads": (SRC_CONFIG, ("rozliczenia",), "sys._setprofileallthreads"),
+    "from threading import _trace_hook": (SRC_CONFIG, ("rozliczenia",), "threading._trace_hook"),
+    "from threading import _profile_hook": (SRC_CONFIG, ("rozliczenia",), "threading._profile_hook"),
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
