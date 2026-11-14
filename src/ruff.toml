@@ -24,6 +24,9 @@ extend = "../pyproject.toml"
 "rozliczenia.tool_files.WORKER_CONFIG".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); nazwę pliku daje WORKERS_FILE"
 "rozliczenia.worker_config".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); typ to rozliczenia.worker_list.WorkerList"
 "rozliczenia.worker_addresses".msg = "Listę Wykonawców czytaj przez rozliczenia.centrum.settings (snapshot().workers, a bez zapisu read_snapshot); adresy daje WorkerList.addresses()"
+# Otwieracz bez wspólnego kontekstu TLS wczytuje certyfikaty systemu przy każdym żądaniu (#1580, przegląd #1675 D1).
+"urllib.request.build_opener".msg = "otwieracz HTTP w src/ daje rozliczenia.centrum.opener.opener(…): jeden kontekst TLS na proces, bo nowy wczytuje magazyn certyfikatów Windows poza limitem czasu żądania"
+"urllib.request.urlopen".msg = "otwieracz HTTP w src/ daje rozliczenia.centrum.opener.opener(…): jeden kontekst TLS na proces, bo nowy wczytuje magazyn certyfikatów Windows poza limitem czasu żądania"
 "rozliczenia.worker_config_messages".msg = "zła Lista Wykonawców ma Komunikat w rozliczenia.centrum.configuration.workers_problem"
 # Plik taty czyta jedna droga (tests/test_jeden_odczyt_skoroszytu.py): bajty i skoroszyt obok uchwytu omijają
 # sprawdzenie dostępności, źródło bajtów uchwytu, pamięć reguły danych i Kopię wejścia (#1087).

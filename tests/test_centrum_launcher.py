@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from rozliczenia.centrum import launcher, restart_guardian
+from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.platform import run_console_program
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, Folder, Shortcut, StartupShortcut, shortcuts
@@ -232,6 +233,8 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
     monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
     monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
     exit_codes: list[int] = []
+    # Certyfikaty systemu proces wczytuje raz, poza limitem: pierwsze wczytanie na Windows 3.13 to 242 ms (sonda #1673).
+    opener()
 
     with socket.socket() as foreign_program:
         foreign_program.bind(("127.0.0.1", 0))
