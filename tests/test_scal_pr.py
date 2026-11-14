@@ -24,6 +24,7 @@ from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
+import bramka_chwastu
 import czasy_ci
 import github as klient_github
 import naprawia
@@ -136,6 +137,8 @@ elif arguments[:2] == ["api", "graphql"] and "label=chwast" in arguments:
     created = [{"number": 9001, "title": sent["title"], "body": sent["body"]} for method, path, sent in writes if [method, path] == ["POST", "repos/{owner}/{repo}/issues"]]
     after = json.loads((here / "weeds_after.json").read_text())
     found = [*after, *created] if created and after is not None else json.loads((here / "weeds.json").read_text())
+    if isinstance(found, str):
+        sys.exit(found)
     nodes = [{**issue, "bodyHTML": body_html(str(issue["body"]), markdown)} for issue in found]
     print(json.dumps({"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}}}))
 elif arguments[:2] == ["api", "graphql"] and any(argument.startswith("number=") for argument in arguments):
@@ -283,7 +286,7 @@ class MergeGitHub(FakeGitHub):
         self.markdown = {**opisy_pr.rendered(), **werdykty_szablonu.rendered(), **korzenie_pr.rendered(), **chwasty.rendered()}  # HTML opisu i treści werdyktu, a jak w ``answer_issue`` błąd albo ``zawiesza``
         self.graphql: list[dict[str, object]] = []  # PR-y repozytorium dla wyszukiwania rejestru korzeni
         self.graphql_changes: list[dict[str, object]] = []  # zmiany PR-ów po danej liczbie zapytań GraphQL
-        self.weeds: list[dict[str, object]] = []  # otwarte issues z etykietą chwast
+        self.weeds: list[dict[str, object]] | str = []  # otwarte issues z etykietą chwast albo błąd ``gh`` (napis)
         self.weeds_after: list[dict[str, object]] | None = None  # otwarte issues innej publikacji po założeniu issue
         self.labels = ["ready-for-agent"]
         self.permissions: dict[str, str] = {}  # prawo konta do repozytorium z ``gh api …/collaborators/<login>/permission``
@@ -2035,8 +2038,11 @@ def _root_gate(
     (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
     albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
     domyślnie ``baza``) i na HEAD (``skill``), kod dopisany do listy korzeni na HEAD (``listed``), chwilę założenia
-    issues z ``labels`` (``issue_created``), PR-y z zapytania rejestru korzeni (``registry``) i komentarz ze zgodą
-    Maksa z ``chwasty.ZGODY`` od konta z danym prawem do repozytorium (``consent``: klucz i prawo) po werdyktach."""
+    issues z ``labels`` (``issue_created``), PR-y z zapytania rejestru korzeni (``registry``), komentarz ze zgodą
+    Maksa z ``chwasty.ZGODY`` od konta z danym prawem do repozytorium (``consent``: klucz i prawo) po werdyktach,
+    otwarte issues z etykietą chwast albo błąd ``gh`` (``weeds``), odpowiedź renderera na opis PR (``render``) i na
+    inne treści (``renders``: treść i odpowiedź); opis
+    ``body`` to klucz ``korzenie_pr.OPISY`` albo ``chwasty.OPISY``."""
 
     skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
@@ -2047,7 +2053,7 @@ def _root_gate(
     if "listed" in setup:
         files[szablon_werdyktu.LIST] = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + str(setup["listed"])
     github.open_pull(1, files)
-    github.update(1, body=korzenie_pr.OPISY[body])
+    github.update(1, body=korzenie_pr.OPISY.get(body) or chwasty.OPISY[body])
     if "root" in setup:
         state, root_body, *merged_into = cast(tuple[str, ...], setup["root"])
         root = _pr_view(korzenie_pr.ROOT_PR, OLD, state=state, body=korzenie_pr.PR_KORZENIA[root_body], baseRefName=next(iter(merged_into), "main"))
@@ -2058,6 +2064,10 @@ def _root_gate(
         created = {"created_at": setup["issue_created"]} if "issue_created" in setup else {}
         github.answer_issue(number, answer=json.dumps({"state": "closed", "labels": [{"name": label}], **created}))
     github.graphql = cast(list[dict[str, object]], setup.get("registry", []))
+    github.weeds = cast(list[dict[str, object]] | str, setup.get("weeds", []))
+    if "render" in setup:
+        github.markdown[korzenie_pr.OPISY.get(body, chwasty.OPISY.get(body, ""))] = str(setup["render"])
+    github.markdown.update(cast(dict[str, str], setup.get("renders", {})))
     github._save()
     for index, verdict in enumerate(verdicts):
         if edited and index == 0:
@@ -2581,6 +2591,137 @@ def test_merge_pr_z_linia_korzen_z_issue_zamyka_issue_chwastu_z_komentarzem_o_pr
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     comment = f"Naprawione przez #1, scalone jako {merge_commit}."
     assert github.closed() == ([["issue", "close", str(chwasty.WEED_ISSUE), "--repo", opisy_pr.REPO, "--comment", comment]] if closed else [])
+
+
+# Bramka chwastu (#1619): PR z Ważnym, którego kod z ostatniego werdyktu ma otwarte issue chwastu, zamyka je w tym
+# samym PR linią „Korzeń z” albo wskazuje scalony PR korzenia blokiem „Wyrwany w”; obowiązuje od własnego wdrożenia.
+def _unclosed(code: str = chwasty.CODE) -> str:
+    return (
+        f"chwast: otwarte #{chwasty.WEED_ISSUE} „Chwast: {code}” ma Ważne tego PR z kodem {code}, więc ten PR je zamyka: dopisz poza sekcją „## Korzeń” linię "
+        f"„Korzeń z #{chwasty.WEED_ISSUE}: {code}”, a gdy {code} wyrwał scalony PR korzenia, każdy blok {code} sekcji „## Korzeń” ma tylko „Wyrwany w #M”"
+    )
+
+
+UNCLOSED = _unclosed()
+FIX_BODY = "chwast: opis popraw przez gh pr edit 1 --body-file PLIK, bez nowego commita i bez nowego werdyktu"
+
+
+def _weed(issue: str, title: str = WEED_TITLE) -> dict[str, object]:
+    return {"number": chwasty.WEED_ISSUE, "title": title, "body": chwasty.ISSUES[issue]}
+
+
+def _deploy_weed_gate(github: MergeGitHub, started: str, when: str) -> None:
+    """Bramka chwastu wdrożona na ``main`` w chwili ``when``, a bramka korzenia w chwili ``started`` commitu ``start``:
+    ``start`` traci moduł bramki chwastu, który dodaje następny commit z datą ``when``, i od niego odchodzą PR-y."""
+
+    module = (github.checkout / bramka_chwastu.MARKER).read_text(encoding="utf-8")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", started)
+        git(github.checkout, "rm", "--quiet", bramka_chwastu.MARKER)
+        git(github.checkout, "commit", "--quiet", "--amend", "--no-edit")
+        patch.setenv("GIT_COMMITTER_DATE", when)
+        (github.checkout / bramka_chwastu.MARKER).write_text(module, encoding="utf-8")
+        github.start = commit(github.checkout, "bramka chwastu")
+    git(github.checkout, "push", "--quiet", "--force", "origin", "main")
+
+
+@pytest.mark.parametrize(
+    ("deployed", "refused"),
+    [("2026-10-24T03:00:01Z", True), ("2026-10-24T03:00:02Z", False)],
+    ids=["pierwszy-werdykt-w-chwili-wdrozenia-bramki-chwastu", "pierwszy-werdykt-przed-wdrozeniem-bramki-chwastu"],
+)
+def test_pr_z_waznym_kodu_otwartego_issue_chwastu_scala_sie_dopiero_z_linia_korzen_z_ktora_je_zamyka(tmp_path: Path, deployed: str, refused: bool) -> None:
+    """PR 1 z Ważnym W1 r1 (werdykt FAIL 24.10.2026 o 3:00:01) i blokiem szczebla (c) ma kod R-BEZ-TESTU otwartego
+    issue chwastu; bramka korzenia jest wdrożona przed werdyktami, a bramka chwastu w chwili ``deployed``."""
+
+    files = {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}
+    github = MergeGitHub(tmp_path, files, started=GATE_BEFORE_VERDICTS)
+    _deploy_weed_gate(github, GATE_BEFORE_VERDICTS, deployed)
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
+    github.weeds = [_weed("zalozone-z-pr-1")]
+    github.answer_issue(chwasty.WEED_ISSUE, answer=json.dumps({"state": "open", "title": WEED_TITLE}))
+    github.comment(1, FAIL_W1.format(commit=OLD))
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+
+    without_line = github.run("1", "--bez-merge")
+    github.update(1, body=chwasty.OPISY["szczebel-c-zamyka-chwast"])
+    merged = github.run("1")
+
+    if refused:
+        assert without_line.returncode == 1, without_line.stdout + without_line.stderr
+        assert _last_line(without_line) == f"SCAL ODMOWA | #1 {head[:7]} | {UNCLOSED}; {FIX_BODY}", without_line.stdout
+    else:
+        assert without_line.returncode == 0, without_line.stdout + without_line.stderr
+        assert _last_line(without_line).startswith(f"SCAL OK | #1 {head[:7]} | gotowy do merge'a"), without_line.stdout
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert f" | zamknięte: #{chwasty.WEED_ISSUE} |" in _last_line(merged), merged.stdout
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    comment = f"Naprawione przez #1, scalone jako {merge_commit}."
+    assert github.closed() == [["issue", "close", str(chwasty.WEED_ISSUE), "--repo", opisy_pr.REPO, "--comment", comment]]
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "body", "setup", "fragments"),
+    [
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED, FIX_BODY]),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")]}, []),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast-innym-kodem", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c-korzen-z-pr", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c-korzen-z-w-bloku-kodu", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "wyrwany", {"weeds": [_weed("zalozone-z-pr-1")], "root": ("MERGED", "ten-kod")}, []),
+        ([FAIL_TWO_SAME], "wyrwany-i-szczebel-c", {"weeds": [_weed("zalozone-z-pr-1")], "root": ("MERGED", "ten-kod")}, [UNCLOSED]),
+        ([FAIL_W1], "inny-kod", {"weeds": [_weed("zalozone-z-pr-1")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("w-szablonie")]}, [UNCLOSED]),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("zalozone-z-pr-1", "Chwast: R-DRUGA-DROGA")]}, []),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("z-proza-o-pr-1", "Chwast: R-DRUGA-DROGA")]}, []),
+        ([FAIL_W1, PASS_RESOLVES], "kod-rozstrzygniety", {"weeds": [_weed("zalozone-z-pr-1")]}, []),
+        ([FAIL_W1, PASS_RESOLVES], "kod-rozstrzygniety", {"weeds": [_weed("zalozone-z-pr-1", "Chwast: R-DRUGA-DROGA")]}, [_unclosed("R-DRUGA-DROGA")]),
+        ([FAIL_W1], "szczebel-c", {}, []),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("zalozone-z-pr-1", "Chwast R-BEZ-TESTU")]}, []),
+        ([FAIL_W1], "szczebel-c", {"weeds": "gh: HTTP 502"}, ["chwast: GitHub nie podał otwartych issues z etykietą chwast (", "uruchom ponownie"]),
+        ([FAIL_W1], "szczebel-c-zamyka-chwast", {"weeds": [_weed("zalozone-z-pr-1")], "render": "gh: HTTP 502"}, ["chwast: GitHub nie wyrenderował opisu PR ("]),
+        (
+            [FAIL_W1],
+            "szczebel-c-zamyka-chwast",
+            {"weeds": [_weed("zalozone-z-pr-1")], "renders": {werdykty_szablonu.WERDYKTY["wazne"]: "gh: HTTP 502"}},
+            ["chwast: GitHub nie wyrenderował treści werdyktów ("],
+        ),
+        ([FAIL_W1], "szczebel-c", {"weeds": [_weed("w-szablonie", "Chwast: R-DRUGA-DROGA")], "render": "gh: HTTP 502"}, []),
+    ],
+    ids=[
+        "bez-linii",
+        "linia-korzen-z-issue-z-kodem-z-tytulu",
+        "linia-korzen-z-innym-kodem",
+        "linia-korzen-z-numerem-pr",
+        "linia-korzen-z-w-bloku-kodu",
+        "blok-wyrwany-w-scalonym-pr-korzenia",
+        "jeden-blok-kodu-wyrwany-a-drugi-ze-szczeblem",
+        "bez-bloku-z-kodem-issue",
+        "issue-kodu-waznego-bez-wiersza-tego-pr",
+        "wiersz-tego-pr-w-issue-innego-kodu",
+        "link-do-pr-w-prozie-issue-innego-kodu",
+        "kod-rozstrzygniety-innym-zostawia-issue-pierwszego-kodu",
+        "kod-rozstrzygniety-innym-wymaga-issue-tego-kodu",
+        "brak-otwartych-issues-chwastu",
+        "tytul-poza-wzorem",
+        "blad-githuba-przy-issues",
+        "blad-renderera-przy-opisie",
+        "blad-renderera-przy-werdyktach",
+        "bez-issue-kodu-waznego-opisu-nie-renderuje",
+    ],
+)
+def test_bramka_chwastu_przepuszcza_pr_z_waznym_kodu_issue_chwastu_tylko_z_linia_ktora_je_zamyka_albo_z_wyrwanym(
+    tmp_path: Path, verdicts: list[str], body: str, setup: dict[str, object], fragments: list[str]
+) -> None:
+    answered = _root_gate(tmp_path, verdicts, body, setup)
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    missing = [fragment for fragment in fragments if fragment not in last]
+    assert missing == [], last
+    assert ("chwast:" in last) == bool(fragments), last
 
 
 @pytest.mark.parametrize("dry", [True, False], ids=["bez-zapisu", "z-zapisem"])
