@@ -26,7 +26,7 @@ from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Pag
 import yaml
 
 from drive import feature
-from drive.waiting import Budget, TimedOut, expect, until
+from drive.waiting import LATE_WRITE_MS, Budget, TimedOut, expect, quiet_for, until
 from harness import SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
@@ -48,9 +48,6 @@ PAGES = {
 DAD_TIME_ZONE = ZoneInfo("Europe/Warsaw")
 # Dad's screen: the drive's tab and every other tab it opens unless a feature needs another window.
 DAD_VIEWPORT: ViewportSize = {"width": 1440, "height": 1000}
-# Dad double-clicks out of habit and double-taps the touch screen: the second click comes within milliseconds,
-# so a repeated request is sent well within this, and an answer reaches the screen (a refusal as a toast) too.
-REPEAT_SETTLE_MS = 300
 # Dad's return to Centrum's window: the pages read the server again (`useResource`).
 FOCUS = "window.dispatchEvent(new Event('focus'))"
 # Harness: the page reports itself hidden, so the Uruchomienia stream pauses and its next view arrives late.
@@ -654,9 +651,8 @@ def local_time(moment: str) -> str:
 
 
 # The browser of the mode „wolny runner” (SLOW_RUNNER): animations run at this rate, so a notification that closes stays
-# on the screen five times longer (#1534), and each write of the tab leaves it this late, as the start of #1570 did.
+# on the screen five times longer (#1534), and each write of the tab leaves it LATE_WRITE_MS late.
 SLOW_ANIMATIONS = 0.2
-LATE_WRITE_MS = 1500
 LATE_WRITES = """(() => {
     const send = window.fetch
     window.fetch = (input, init) => {
@@ -1049,10 +1045,10 @@ def settle(page: Page, sent: list[Request], at_least: int = 1) -> int:
     """Waits until a repeated click would have sent its request and every answer reached the screen; the count."""
 
     until(lambda: len(sent) >= at_least, f"the click sends {at_least} request(s) (a write of the tab can leave late)", page=page)
-    page.wait_for_timeout(REPEAT_SETTLE_MS)
+    quiet_for(page)
     for request in list(sent):
         request.response()
-    page.wait_for_timeout(REPEAT_SETTLE_MS)
+    quiet_for(page)
     return len(sent)
 
 
