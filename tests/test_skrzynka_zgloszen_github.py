@@ -47,7 +47,7 @@ from rozliczenia.centrum.outbox import ArchiveFile, Outbox, PeriodThread, Post
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.reports import report_target
 from rozliczenia.centrum import report_box
-from rozliczenia.client_data import tool
+from rozliczenia.client_data import logs_text, tool
 
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
@@ -886,7 +886,7 @@ LOGS = PeriodThread("logi-uruchomienia", tool("- Logi Uruchomienia okresu: 08_14
 
 
 def logs_post(text: str) -> Post:
-    archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), text)
+    archive = ArchiveFile(TAG, "Logi Uruchomień 08_14_09_2026", "Opis.", ASSET.removesuffix(".gz"), logs_text(text))
     return Post(LOGS, "08_14_09_2026", "627b45fe219e4274b722953c34d4af54", tool("Logi okresu"), (tool("podsumowanie\n"),), archive)
 
 

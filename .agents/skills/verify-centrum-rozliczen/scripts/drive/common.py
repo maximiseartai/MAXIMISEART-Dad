@@ -150,7 +150,7 @@ class Run:
         self.feature = feature
         print(f"STEP {feature} | {name}", flush=True)
 
-    def check(self, condition: bool, message: str) -> None:
+    def check(self, condition: bool, message: str, /) -> None:
         if not condition:
             raise DriveFailure(message)
         print(f"  ok: {message}", flush=True)
@@ -1045,9 +1045,10 @@ def unreadable(path: Path) -> Iterator[None]:
             path.chmod(mode)
 
 
-def settle(page: Page, sent: list[Request]) -> int:
+def settle(page: Page, sent: list[Request], at_least: int = 1) -> int:
     """Waits until a repeated click would have sent its request and every answer reached the screen; the count."""
 
+    until(lambda: len(sent) >= at_least, f"the click sends {at_least} request(s) (a write of the tab can leave late)", page=page)
     page.wait_for_timeout(REPEAT_SETTLE_MS)
     for request in list(sent):
         request.response()

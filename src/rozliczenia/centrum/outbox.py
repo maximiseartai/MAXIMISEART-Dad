@@ -91,7 +91,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
-from rozliczenia.client_data import Outgoing, tool
+from rozliczenia.client_data import LogsText, Outgoing, logs_text, tool
 from rozliczenia.wall_clock import utc_now
 
 if TYPE_CHECKING:
@@ -280,20 +280,21 @@ Target = PeriodThread | NewIssue | KnownIssue | OpenIssue
 """Dokąd w Skrzynce Zgłoszeń idzie wysyłka; każde pole tekstowe celu to ``Outgoing``, a cel nie ma podklas (``final``)."""
 
 
+@final
 @dataclass(frozen=True)
 class ArchiveFile:
     """Plik wysyłki w Archiwum okresu (GitHub Release z tagiem ``tag`` w repozytorium Skrzynki Zgłoszeń).
 
-    ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów); w Archiwum leży
-    spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i ``description`` to
-    tytuł i opis Archiwum, gdy kolejka musi je założyć.
+    ``name`` i ``text`` to plik przed spakowaniem (Logi Uruchomienia: nazwa i treść pliku Logów po strażniku); w
+    Archiwum leży spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i
+    ``description`` to tytuł i opis Archiwum, gdy kolejka musi je założyć.
     """
 
     tag: str
     title: str
     description: str
     name: str
-    text: str
+    text: LogsText
 
     @property
     def packed_name(self) -> str:
@@ -626,7 +627,7 @@ def _archive_file(entry: object) -> ArchiveFile | None:
         _string(entry["title"]),
         _string(entry["description"]),
         _string(entry["name"]),
-        _string(entry["text"]),
+        logs_text(_string(entry["text"])),
     )
 
 

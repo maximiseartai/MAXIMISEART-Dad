@@ -296,7 +296,7 @@ def post_of(version: CommentVersion) -> LogsPost:
             start, comment, archive = progress.started, text.text, None
         case OwnLogs(logs=logs) | StandInLogs(logs=logs):
             record = logs.record
-            start, comment, archive = record.start, summary_markdown(record), _archive_file(record)
+            start, comment, archive = record.start, summary_markdown(logs), _archive_file(logs)
         case WithoutLogsVersion(final=final, text=text):
             start, comment, archive = final.journal.started, text.text, None
         case _:
@@ -372,7 +372,8 @@ def _orders_done(progress: PricingProgress) -> str | None:
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 
-def _archive_file(record: RunLog) -> ArchiveFile:
+def _archive_file(logs: GuardedLogs) -> ArchiveFile:
+    record = logs.record
     period = record.period
     return ArchiveFile(
         tag=f"logi-{period}",
@@ -382,14 +383,15 @@ def _archive_file(record: RunLog) -> ArchiveFile:
             "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
         ),
         name=name_of(record.start),
-        text=record.text,
+        text=logs.text,
     )
 
 
-def summary_markdown(record: RunLog) -> str:
+def summary_markdown(logs: GuardedLogs) -> str:
+    record = logs.record
     commit = "nieznany" if record.tool.commit is None else short_commit(record.tool.commit)
     diagnosis = "" if record.diagnosis is None else f"- Diagnoza: {_diagnosis(record.diagnosis)}\n"
-    archive = _archive_file(record)
+    archive = _archive_file(logs)
     return (
         _comment_title(record)
         + f"- Wynik: {_result(record)}\n"

@@ -23,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
-from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded
+from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, logs_text
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
@@ -384,8 +384,8 @@ class GuardedLogs:
         return self.__record
 
     @property
-    def text(self) -> str:
-        return self.__record.text
+    def text(self) -> LogsText:
+        return logs_text(self.__record.text)
 
     def with_diagnosis(self, diagnosis: LoggedDiagnosis, forbidden: ForbiddenValues) -> GuardedLogs | None:
         """Te Logi z Diagnozą ``diagnosis``, przepuszczone przez strażnika drugi raz razem z nią, jak Logi z wynikiem;
