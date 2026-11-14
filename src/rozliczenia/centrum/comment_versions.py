@@ -398,13 +398,13 @@ def _archive_file(logs: GuardedLogs) -> ArchiveFile:
     record = logs.record
     period = record.period
     return ArchiveFile(
-        tag=f"logi-{period}",
-        title=f"Logi Uruchomień {period}",
-        description=(
+        tag=tool(f"logi-{period}"),
+        title=tool(f"Logi Uruchomień {period}"),
+        description=tool(
             f"Pełne Logi Uruchomień okresu {period} z Centrum rozliczeń taty: jeden plik na Uruchomienie, nazwany jak "
             "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
         ),
-        name=name_of(record.start),
+        name=tool(name_of(record.start)),
         text=logs.text,
     )
 
