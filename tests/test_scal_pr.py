@@ -19,6 +19,7 @@ import sys
 from typing import cast
 
 import pytest
+import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
@@ -2366,6 +2367,103 @@ def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path, mon
 
     assert found == [(1, "W1 r1", chwasty.CODE)]
     assert len(github._log("graphql.jsonl")) == 1, github._log("graphql.jsonl")
+
+
+# Warunek merge'a z polem Idiom: (ADR 0036, „Warunek merge'a”): reguła ast-grep o id z pola na HEAD PR w katalogu
+# z ruleDirs sgconfig.yml i dowód tools/na_scalonych_pr.py --regula na każdym przypadku tego id z historii pól Idiom:.
+# Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje regułę i przypadki do ``dowody.jsonl`` w katalogu atrapy gh
+# i kończy się kodem i linią z ``dowod.json``; prawdziwy dowód sprawdza tests/test_na_scalonych_pr.py.
+IDIOM_RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: "Zamień zakazane() na dozwolone()."\nfiles:\n  - kod/**\nrule:\n  pattern: zakazane()\n'
+FAKE_PROOF = """\
+import json, pathlib, sys
+
+state = pathlib.Path(sys.argv[0]).resolve().parents[2] / "bin"
+arguments = sys.argv[1:]
+rule = pathlib.Path(arguments[arguments.index("--regula") + 1]).read_text(encoding="utf-8")
+with (state / "dowody.jsonl").open("a", encoding="utf-8") as log:
+    log.write(json.dumps({"regula": rule, "wazne": [arguments[index + 1] for index, value in enumerate(arguments) if value == "--wazne"]}) + "\\n")
+answer = json.loads((state / "dowod.json").read_text(encoding="utf-8"))
+print(answer["linia"])
+sys.exit(answer["kod"])
+"""
+PROOF_OK = (0, "DOWÓD OK | zakazane-wywolanie | złapane 2/2 | FP 0 w 0 z 20 PR (0%) | main 0")
+PROOF_REFUSED = (1, "DOWÓD ODMOWA | zakazane-wywolanie | złapane 1/2 | FP 0 w 0 z 20 PR (0%) | main 0")
+NO_RULE = "idiom: zakazane-wywolanie: na HEAD PR nie ma reguły ast-grep o id zakazane-wywolanie w katalogu z ruleDirs sgconfig.yml"
+SAMPLE_WITHOUT_RULE = {"tests/fixtures/znane_luki_zakazanego.py": 'ZNANE_LUKI = {"zakazane: wywołanie": "zakazane()\\n"}\n'}
+WITH_RULE = {"reguly-ast-grep/zakazane-wywolanie.yml": IDIOM_RULE}
+
+
+def _idiom_verdict(name: str) -> str:
+    return "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY[f"wazne-idiom-{name}"]
+
+
+def _idiom_gate(
+    tmp_path: Path, verdict: str, head_files: dict[str, str], *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK
+) -> tuple[MergeGitHub, subprocess.CompletedProcess[str]]:
+    """``--bez-merge`` PR 1 z werdyktem ``FAIL`` z polem Idiom (``_idiom_verdict``) na starszym commicie, sekcją
+    ``## Korzeń`` i ``PASS`` na HEAD z plikami ``head_files``; rejestr podaje PR-y ``registry``, a dowód ``proof``."""
+
+    files = {"kod/__init__.py": SUM, "sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", "tools/na_scalonych_pr.py": FAKE_PROOF}
+    github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n", **head_files})
+    github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
+    github.graphql = registry or []
+    github._save()
+    (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
+    github.comment(1, verdict.format(commit=OLD))
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+    return github, github.run("1", "--bez-merge")
+
+
+def _proofs(github: MergeGitHub) -> list[tuple[object, list[str]]]:
+    return [(yaml.safe_load(str(run["regula"])), cast(list[str], run["wazne"])) for run in cast(list[dict[str, object]], github._log("dowody.jsonl"))]
+
+
+@pytest.mark.parametrize(
+    ("verdict", "head_files", "proof", "fragment"),
+    [
+        ("drugie-wystapienie", SAMPLE_WITHOUT_RULE, PROOF_OK, NO_RULE),
+        ("ucieczka", {}, PROOF_OK, NO_RULE),
+        ("drugie-wystapienie", {"reguly-ast-grep/inna-regula.yml": IDIOM_RULE.replace("zakazane-wywolanie", "inna-regula")}, PROOF_OK, NO_RULE),
+        ("drugie-wystapienie", WITH_RULE, PROOF_REFUSED, f"idiom: zakazane-wywolanie: dowód reguły nie przeszedł (kod 1): {PROOF_REFUSED[1]}"),
+        ("drugie-wystapienie", WITH_RULE, (0, "DOWÓD ZAWIESZONY"), "idiom: zakazane-wywolanie: dowód reguły nie przeszedł (kod 0): DOWÓD ZAWIESZONY"),
+    ],
+    ids=["probka-znane-luki-bez-reguly", "ucieczka-bez-reguly-na-head", "regula-o-innym-id", "dowod-odmawia", "dowod-bez-linii-dowod-ok"],
+)
+def test_wazne_z_polem_idiom_scala_sie_tylko_z_regula_ast_grep_tego_id_na_head_i_jej_dowodem(
+    tmp_path: Path, verdict: str, head_files: dict[str, str], proof: tuple[int, str], fragment: str
+) -> None:
+    """Próbka ``ZNANE_LUKI`` nigdy nie zastępuje reguły (ADR 0036), a dowód przechodzi tylko linią ``DOWÓD OK``."""
+
+    _, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict), head_files, proof=proof)
+
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith("SCAL ODMOWA | #1 "), answered.stdout + answered.stderr
+    assert fragment in last, last
+
+
+def test_wazne_z_polem_idiom_i_regula_na_head_scala_sie_po_dowodzie_na_kazdym_przypadku_z_historii_pol_idiom(tmp_path: Path) -> None:
+    """Przypadki dowodu to Ważne tego PR z polem, Ważne z jego ``jak`` i każde Ważne z polem tego id w innym PR rejestru
+    razem z jego ``jak``; Ważne z polem innej reguły do dowodu nie należy."""
+
+    registry = [
+        _node([(_idiom_verdict("drugie-wystapienie"), AFTER_DEPLOYMENT)], number=chwasty.OTHER),
+        _node([(_idiom_verdict("innej-reguly"), AFTER_DEPLOYMENT)], number=1437),
+    ]
+
+    github, answered = _idiom_gate(tmp_path, _idiom_verdict("ucieczka"), WITH_RULE, registry=registry)
+
+    assert answered.returncode == 0 and _last_line(answered).startswith("SCAL OK | #1 "), answered.stdout + answered.stderr
+    assert _proofs(github) == [(yaml.safe_load(IDIOM_RULE), ["1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2"])]
+
+
+@pytest.mark.parametrize(("verdict", "proofs"), [("drugie-wystapienie", [["1/W1/r1", "1553/W1/r2"]]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
+def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_ze_wczesniejszym_waznym(tmp_path: Path, verdict: str, proofs: list[list[str]]) -> None:
+    github, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict), WITH_RULE if proofs else {})
+
+    assert answered.returncode == 0 and _last_line(answered).startswith("SCAL OK | #1 "), answered.stdout + answered.stderr
+    assert [cases for _, cases in _proofs(github)] == proofs
 
 
 @pytest.mark.parametrize(

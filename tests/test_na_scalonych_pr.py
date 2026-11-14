@@ -177,11 +177,14 @@ def _merge(github: FakeGitHub, number: int, *versions: dict[str, str]) -> list[s
     return made
 
 
-def _proof(tmp_path: Path, failed: str, clean: dict[str, str], start: dict[str, str] | None = None, where: str = WHERE) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Bieg dowodu na ``main`` z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami: PR #5, którego
-    werdykt FAIL z polem ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6 z plikami ``clean``."""
+def _proof(
+    tmp_path: Path, failed: str, clean: dict[str, str], start: dict[str, str] | None = None, where: str = WHERE, rule: str = RULE
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Bieg dowodu reguły ``rule`` na ``main`` z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami:
+    PR #5, którego werdykt FAIL z polem ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6
+    z plikami ``clean``."""
 
-    files = {"stare.py": OLD.format("obiekt"), "regula.yml": RULE, **(start or {})}
+    files = {"stare.py": OLD.format("obiekt"), "regula.yml": rule, **(start or {})}
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     sha = _merge(github, 5, {"kod/inne.py": failed}, {"kod/inne.py": CLEAN})[0]
     _merge(github, 6, clean)
@@ -243,3 +246,21 @@ def test_dowod_reguly_odmawia_gdy_nie_zlapal_waznego_albo_alarmuje_w_ponad_10_pr
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | zakazane-wywolanie | {summary}", done.stdout
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [RULE.replace('files:\n  - "**/*.py"\n', ""), RULE.replace('files:\n  - "**/*.py"\n', "files: []\n")],
+    ids=["bez-pola-files", "puste-pole-files"],
+)
+def test_dowod_reguly_odmawia_reguly_bez_pola_files_ktorej_zapadka_nie_przyjmie(tmp_path: Path, rule: str) -> None:
+    """Zapadka podaje ast-grep każdy plik z dodaną linią, więc reguła bez ``files:`` objęłaby całe repozytorium
+    i nie wejdzie (``tests/test_zapadki.py``): ``DOWÓD OK`` znaczy też, że reguła może wejść."""
+
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, rule=rule)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == (
+        "DOWÓD ODMOWA | zakazane-wywolanie | zakazane-wywolanie: reguła bez pola files: obejmuje każdy plik repozytorium;"
+        " dopisz files: z globami plików, w których obowiązuje (np. src/**/*.py albo .agents/skills/**/*.py), a wyjątki w ignores:"
+    ), done.stdout

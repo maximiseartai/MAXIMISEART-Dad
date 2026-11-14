@@ -22,7 +22,7 @@ standardową, ``repo`` i ``potomne`` (same z biblioteki standardowej), bo zapadk
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 import json
 from pathlib import Path, PurePath
 import re
@@ -54,6 +54,19 @@ class Finding(NamedTuple):
 class ScanFailed(ValueError):
     """Brak ast-grep przy dodanej linii albo ast-grep z kodem innym niż 0 i 1 lub niezgodnym z wyjściem (np. plik
     reguły, którego nie wczyta): porażka, nie brak odpaleń."""
+
+
+def unscoped(rule: Mapping[str, object]) -> str | None:
+    """Przyczyna z poleceniem naprawy, gdy reguła ast-grep (dokument YAML) nie ma niepustego pola ``files:``: zapadka
+    podaje ast-grep każdy plik repozytorium z dodaną linią, więc reguła bez ``files:`` obejmowałaby całe repozytorium,
+    a dowód reguły takiej nie przyjmuje; ``None``, gdy pole jest."""
+
+    if rule.get("files"):
+        return None
+    return (
+        f"{rule.get('id')}: reguła bez pola files: obejmuje każdy plik repozytorium; dopisz files: z globami plików, w"
+        " których obowiązuje (np. src/**/*.py albo .agents/skills/**/*.py), a wyjątki w ignores:"
+    )
 
 
 def added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:

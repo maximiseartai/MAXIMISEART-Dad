@@ -874,12 +874,7 @@ def ast_grep_rules_without_scope(config: Path) -> list[str]:
     """Reguły ast-grep z ``config`` bez niepustego pola ``files:``, każda z poleceniem naprawy: zapadka podaje ast-grep
     każdy plik repozytorium z dodaną linią, więc reguła bez ``files:`` obejmowałaby całe repozytorium."""
 
-    return sorted(
-        f"{rule['id']}: reguła bez pola files: obejmuje każdy plik repozytorium; dopisz files: z globami plików, w"
-        " których obowiązuje (np. src/**/*.py albo .agents/skills/**/*.py), a wyjątki w ignores:"
-        for rule in _ast_grep_rule_documents(config)
-        if not rule.get("files")
-    )
+    return sorted(problem for rule in _ast_grep_rule_documents(config) if (problem := odpalenia_ast_grep.unscoped(rule)))
 
 
 def test_kazda_regula_ast_grep_ma_zakres_w_polu_files() -> None:

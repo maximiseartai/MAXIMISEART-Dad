@@ -40,9 +40,11 @@ którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzł
    ``.agents/``), tylko jako dana.
 
 Kończy się ``DOWÓD OK|ODMOWA | <id reguły> | złapane k/n | FP x w y z N PR (p%) | main z``, gdzie ``x`` to odpalenia
-w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; błąd
-GitHuba, brak werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to
-``DOWÓD ODMOWA | <reguła> | <błąd>``.
+w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; reguła bez
+niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``), błąd GitHuba, brak
+werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
+``DOWÓD OK`` znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
+z polem ``Idiom:`` (``bramka_idiomu``).
 """
 
 from __future__ import annotations
@@ -259,7 +261,11 @@ def _fork(base: str, commit: str) -> str:
 
 
 def proof(rule: Path, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
-    name = str(yaml.safe_load(rule.read_text(encoding="utf-8"))["id"])
+    document = yaml.safe_load(rule.read_text(encoding="utf-8"))
+    name = str(document["id"])
+    if problem := odpalenia_ast_grep.unscoped(document):
+        print(f"DOWÓD ODMOWA | {name} | {problem}")
+        return 1
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         catches = sum(caught(rule, repository, *one) for one in majors)

@@ -145,6 +145,11 @@ WERDYKTY = {
     "sprawdzone": _text("## Sprawdzone", "- diff"),
     "drobne": _text("### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
     "wazne": _text(*_MAJOR, "## Sprawdzone", "- diff"),
+    # Ważne z polem Idiom: dla warunku merge'a (ADR 0036): drugie wystąpienie, ucieczka, bez reguły i inna reguła.
+    "wazne-idiom-drugie-wystapienie": _text(*_MAJOR, "Idiom: zakazane-wywolanie jak #1553 W1 r2", "## Sprawdzone", "- diff"),
+    "wazne-idiom-ucieczka": _text(*_MAJOR, "Idiom: zakazane-wywolanie", "## Sprawdzone", "- diff"),
+    "wazne-idiom-bez-reguly": _text(*_MAJOR, "Idiom: bez reguły brak-testu jak #1553 W1 r2", "## Sprawdzone", "- diff"),
+    "wazne-idiom-innej-reguly": _text(*_MAJOR, "Idiom: inna-regula jak #1553 W2 r1", "## Sprawdzone", "- diff"),
     "proza": "Wszystko dobrze, bez uwag.",
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }

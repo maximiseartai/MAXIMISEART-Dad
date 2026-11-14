@@ -16,15 +16,19 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
    ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej);
-5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
+5. każde Ważne werdyktu ``FAIL`` z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` ma na HEAD PR regułę
+   ast-grep o tym id, a jej dowód ``tools/na_scalonych_pr.py --regula`` przechodzi na każdym przypadku tego id z historii
+   pól ``Idiom:`` (``bramka_idiomu``, niżej);
+6. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
-6. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
+7. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
 
 Mutacje zmienionych linii nie biegną na PR i nie czeka na nie: biegną nocą na ``main`` (ADR 0021,
 ``tools/mutacje_nocne.py``).
 
 Gdy któryś warunek nie zachodzi, narzędzie nie scala i kończy się linią ``SCAL ODMOWA | #N <sha> | <przyczyny>``.
-Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5 i 6 trwają dłużej, więc biegną dopiero po nich.
+Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5–7 trwają dłużej, więc biegną dopiero po nich, po
+kolei.
 Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie sprawdzania, a ``gh pr merge
 --match-head-commit`` odrzuca PR, którego HEAD zmienił się po sprawdzeniu. Po merge'u uruchamia
 ``tools/sprzatanie.py`` i podaje ostatnią linię jego raportu: bez ``--usun`` sprzątanie niczego nie
@@ -66,6 +70,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import bramka_idiomu
 import bramka_korzenia
 import github
 import kontekst_przegladu
@@ -161,6 +166,8 @@ def _check(pull: Pull, base: str) -> str:
     checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
     if problems := _problems(pull):
         raise _Refused("; ".join(problems))
+    if problems := bramka_idiomu.problems(pull):
+        raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
     print(f"== #{pull.number} {pull.head[:7]} na {where}", flush=True)
     with potomne.commit_copy(ROOT, base) as copy:
@@ -239,7 +246,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )

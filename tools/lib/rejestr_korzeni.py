@@ -226,6 +226,34 @@ def read(repository: str, deployed: datetime | None) -> list[Occurrence]:
     return sorted(found, key=_order)
 
 
+@dataclass(frozen=True)
+class IdiomCase:
+    """Pole ``Idiom:`` Ważnego ``idiom.label`` werdyktu ``FAIL`` rundy ``round`` PR ``pull``."""
+
+    pull: int
+    round: int
+    idiom: szablon_werdyktu.Idiom
+
+
+def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCase]:
+    """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` rund ``rounds`` PR ``number``."""
+
+    return [IdiomCase(number, current.number, idiom) for current in rounds if current.verdict.decision == "FAIL" for idiom in current.findings.idioms]
+
+
+def idioms(repository: str, deployed: datetime | None) -> list[IdiomCase]:
+    """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` w PR-ach ``repository`` zmienionych od wdrożenia szablonu ``deployed``
+    (``None``: szablon niewdrożony, więc żadnych), w kolejności PR; ten sam skan co ``read``. Błąd GitHuba to wyjątek."""
+
+    if deployed is None:
+        return []
+    found = []
+    for node in _pulls(repository, deployed):
+        pull = _pull(node if _complete(node) else pull_node(repository, node["number"]))
+        found.extend(idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql)))
+    return sorted(found, key=lambda case: (case.pull, case.round))
+
+
 def occurrences(node: dict[str, Any], deployed: datetime) -> list[Occurrence]:
     """Wystąpienia kodów w PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja) po chwili
     wdrożenia ``deployed``; blok czerwonego `main` ma tylko PR scalony (``mergedAt``)."""
