@@ -357,6 +357,8 @@ def test_drive_przejezdza_podane_funkcje_w_podanej_kolejnosci_po_potrzebach_ktor
     driven: list[str] = []
     for feature, module in drive_centrum.MODULES.items():
         monkeypatch.setattr(module, "drive", lambda run, page, feature=feature, **options: driven.append(feature))
+    # Napędy bez kroków dają puste sekcje; ich porównanie z mapą sprawdza tests/test_mapy_funkcji.py.
+    monkeypatch.setattr(drive_centrum, "compare", lambda evidence, sections: None)
     (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
     features = ["uwaga-taty", "logi-uruchomienia", "powiadomienia"]
 
@@ -385,6 +387,7 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
     received: dict[str, dict[str, Any]] = {}
     for feature, module in drive_centrum.MODULES.items():
         monkeypatch.setattr(module, "drive", lambda run, page, feature=feature, **options: received.update({feature: options}))
+    monkeypatch.setattr(drive_centrum, "compare", lambda evidence, sections: None)
     (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
 
     code = drive_centrum.main(

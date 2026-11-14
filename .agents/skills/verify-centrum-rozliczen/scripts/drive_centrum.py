@@ -4,12 +4,18 @@ Each feature step pairs a user action with the resulting screen, the server's
 answer, and the side effect on disk (settings file, picker dialogs, opened
 paths). Screenshots and ARIA snapshots go to ``<evidence>/screenshots`` and
 ``<evidence>/aria``; API answers to ``<evidence>/api``; the run's state files
-to ``<evidence>/state``.
+to ``<evidence>/state``. The section Sub-features of each driven feature, from the run's steps and checks (``sections``),
+goes to ``<evidence>/sekcje-z-biegu/<feature>.md``, and the drive fails, printing the difference, when it differs from
+the feature's file in ``features/`` (``compare``).
 """
 
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
+from collections.abc import Iterable, Sequence
+from difflib import unified_diff
+from functools import cache
+import inspect
 from pathlib import Path
 import shutil
 import sys
@@ -22,23 +28,31 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
-from drive.common import DriveFailure, Run, check_clock_alarm, dad_context, page_requests
+from drive import ALL, DEFAULT_REPEATS, FEATURES, NOT_COMPARED, feature
+from drive.common import Call, DriveFailure, Run, check_clock_alarm, dad_context, page_requests
 from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
 from harness import Log
 from import_dynamiczny import modul
+from komunikat_mapy import call_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
 
 MODULES = {each.name: modul(each.module) for each in FEATURES}
+FEATURE_FILES = Path(__file__).resolve().parents[1] / "features"
+SECTIONS = "sekcje-z-biegu"
+SECTION_START, SECTION_END = "\n## Sub-features\n", "\n## How to get to it (user POV)\n"
 
 
-def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any]) -> None:
+def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any], owners: list[str]) -> None:
+    """Drives ``name`` after its needs this run has not driven; ``owners`` gets ``name`` for each of its drive's calls."""
+
     for need in feature(name).needs:
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
-            drive(run, page, need, driven, options)
+            drive(run, page, need, driven, options, owners)
+    # A check before the drive's first step names no feature, not the feature driven before.
+    run.feature = ""
     try:
         MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
     except TimedOut:
@@ -46,7 +60,93 @@ def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str,
         # never fires: the failure names the dead clock.
         check_clock_alarm(run)
         raise
+    owners += [name] * (len(run.calls) - len(owners))
     driven.append(name)
+
+
+def _needed(name: str) -> set[str]:
+    return {each for need in feature(name).needs for each in (need, *_needed(need))}
+
+
+def sections(calls: Sequence[Call], owners: Sequence[str], driven: Iterable[str]) -> dict[str, str]:
+    """The section Sub-features of each ``driven`` feature from the run's ``calls``; ``owners`` names the feature whose
+    drive made each call.
+
+    A feature's section is the ``run.step`` and ``run.check`` calls of the drive modules of ``FEATURES`` (not of the
+    helpers they share in ``drive/common.py``) made while the last ``run.step`` named the feature, whichever module
+    holds them: each step's place once, in the order of its first call, with its name and the checks that ran under it,
+    each check's place once under that step, in the order of its first call there, with the message of its call as
+    written in the module (``tools/lib/komunikat_mapy.py``; a message that rule cannot print prints as ``…``). So
+    that the section does not depend on the features a CI part drives before the feature, a check before the first
+    step of a drive and a step of a feature called from the drive of one it does not need fail the run.
+    """
+
+    modules = {each.module for each in FEATURES}
+    found: dict[str, dict[tuple[str, int, int], tuple[str, dict[tuple[str, int, int], Call]]]] = {}
+    current: dict[str, tuple[str, int, int]] = {}
+    for call, owner in zip(calls, owners, strict=True):
+        if call.module not in modules:
+            continue
+        where = f"{call.module}:{call.line}"
+        if not call.feature:
+            raise DriveFailure(f"{where}: run.check before the first run.step of the drive of {owner}; move it after the step")
+        if call.feature != owner and owner not in _needed(call.feature):
+            raise DriveFailure(
+                f"{where}: the drive of {owner} runs a step of {call.feature}, which does not need {owner}, so the section "
+                f"of {call.feature} would depend on the features of the CI part; add {owner} to its needs"
+            )
+        place, steps = (call.module, call.line, call.column), found.setdefault(call.feature, {})
+        if call.step is not None:
+            current[call.feature] = place
+            steps.setdefault(place, (call.step, {}))
+        else:
+            steps[current[call.feature]][1].setdefault(place, call)
+    return {name: _section(name, found.get(name, {}).values()) for name in driven}
+
+
+def _section(name: str, steps: Iterable[tuple[str, dict[tuple[str, int, int], Call]]]) -> str:
+    return "\n".join([
+        "## Sub-features",
+        "",
+        f"Printed by `scripts/sub_features.py --feature {name}` from the drive's steps and checks; refresh the section with it.",
+        "",
+        *(f"- `{step}`: {'; '.join(map(_message, checks.values()))}." if checks else f"- `{step}`." for step, checks in steps),
+    ]) + "\n"
+
+
+@cache
+def _messages(module: str) -> dict[tuple[int, int], str | None]:
+    # The source of the imported module, not of a path the frame names, so the section is the same on every system.
+    return call_messages(inspect.getsource(sys.modules[module]))
+
+
+def _message(call: Call) -> str:
+    printed = _messages(call.module)[call.line, call.column]
+    return "…" if printed is None else printed
+
+
+def compare(evidence: Path, printed: dict[str, str]) -> None:
+    """Writes each section to ``evidence`` and fails, printing the difference, where a feature outside ``NOT_COMPARED``
+    has another section in its file in ``features/``."""
+
+    folder = evidence / SECTIONS
+    folder.mkdir(exist_ok=True)
+    differ = []
+    for name, section in printed.items():
+        (folder / f"{name}.md").write_text(section, encoding="utf-8", newline="\n")
+        mapped = (FEATURE_FILES / f"{name}.md").read_text(encoding="utf-8")
+        start = mapped.find(SECTION_START) + 1
+        end = mapped.find(SECTION_END, start)
+        in_file = mapped[start:end] if 0 < start < end else ""
+        if name not in NOT_COMPARED and in_file != section:
+            lines = unified_diff(in_file.splitlines(keepends=True), section.splitlines(keepends=True), f"features/{name}.md", f"{SECTIONS}/{name}.md")
+            sys.stderr.writelines(lines)
+            differ.append(name)
+    if differ:
+        raise DriveFailure(
+            f"the section Sub-features of {', '.join(differ)} from this run differs from its file in features/ (difference "
+            f"above); put {SECTIONS}/<feature>.md of the evidence into the file"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -72,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     options = {"baseline_path": args.baseline.resolve(), "repeats": args.powtorzenia}
     selected = ALL if args.feature == ["all"] else tuple(args.feature)
     driven: list[str] = []
+    owners: list[str] = []
     try:
         with sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch()
@@ -79,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 page = dad_context(browser).new_page()
                 page.set_default_timeout(Budget.SCREEN.ms)
                 for name in selected:
-                    drive(run, page, name, driven, options)
+                    drive(run, page, name, driven, options, owners)
             except Exception as exc:
                 if "page" in locals():
                     try:
@@ -91,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 browser.close()
         page_requests.check()
+        compare(run.evidence, sections(run.calls, owners, driven))
     except (DriveFailure, TimedOut, AssertionError, PlaywrightError) as exc:
         print(f"DRIVE FAIL | {exc}" + "".join(f" | {note}" for note in getattr(exc, "__notes__", ())), file=sys.stderr)
         return 1

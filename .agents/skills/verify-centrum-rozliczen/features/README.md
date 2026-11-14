@@ -151,26 +151,28 @@ Each feature file starts with an H1 and one paragraph on the user-visible
 behaviour, then exactly these H2s in order:
 
 1. `Sub-features`: short IDs with one line each; the IDs match the
-   `STEP <feature> | <id>` lines in `drive.txt`, and a section that names
-   `scripts/sub_features.py --feature <feature>` is that command's output, which `tests/test_mapy_funkcji.py` compares.
-   The command reads only `run.step(feature, "<id>")` and `run.check(condition, message)`
-   called in the body of `drive(run, page)` and of a helper of the module that `drive`
-   calls as a whole statement `helper(run, …)` or `name = helper(run, …)`, before any
-   `return`, of its body or of the body of a `try` in it with only a `finally` that does not
-   return: each such statement runs once when `drive` runs to its end, so the helper's steps
-   and checks print at each call, in the order of the statements. It refuses, with the file
-   and the line, every other form of them, every other `.step` or `.check` attribute in the
-   module, on whatever object, any other use of such a helper and one that is decorated or
-   yields, as it cannot tell whether, how many times or in which order that runs. It does not
-   see a check reached without such an attribute, as `getattr(run, "check")`, a function of
-   another drive module, or a helper reached without its name. A field of an f-string message prints
-   as `…`, except a module constant, which prints its value. A line with the ID
+   `STEP <feature> | <id>` lines in `drive.txt`. A section that names
+   `scripts/sub_features.py --feature <feature>` comes from the run: `drive_centrum.py` builds it from the
+   `run.step(feature, "<id>")` and `run.check(condition, message)` calls the drive ran while the last step named the
+   feature, in whichever drive module but not in the shared `drive/common.py`: each step's place once, in the order of
+   its first call, with the checks that ran under it, each check's place once under that step, and a check with its
+   message as written at its call (a field of an f-string prints as `…`, except a module constant, which prints its
+   value; a message of another form prints as `…`). The run writes it to
+   `sekcje-z-biegu/<feature>.md` of its evidence and fails, printing the difference, when the file has another. A file
+   without it stands in `NOT_COMPARED` of `scripts/drive/__init__.py`, which only shrinks. After a change of a drive,
+   take the new section from a local run (`run_centrum_verification.py --feature <feature>`, then
+   `scripts/sub_features.py --feature <feature> --evidence <its EVIDENCE>`) or from the `evidence-*` artifact of the red
+   CI run. The comparison holds what the run reaches: a call place it does not reach (a branch not taken, a loop that
+   turns zero times) is not in the section, and a branch that depends on the state an earlier feature of the CI part
+   left gives another section in another part, which then fails there. A check before the first step of a drive, and a
+   step of a feature run from the drive of one it does not need, fail the run, as their section would depend on the
+   CI part. CI compares only the features of `all`, so a local run of `wydajnosc` alone compares its section. A line with the ID
    alone is a step without its own `run.check`: what it waits for (`until`,
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
 3. `Driving it with Playwright for Python`: the one command that drives the
    feature and where its proof stands in the evidence. A file whose
-   `Sub-features` is not yet the command's output keeps `Preconditions:` and
+   `Sub-features` is not yet from the run keeps `Preconditions:` and
    labelled bullets pairing each action with the exact handle and the
    observable result, until #1629 and #1630 move it.
 4. `Gotchas`: traps that waste or invalidate a run.

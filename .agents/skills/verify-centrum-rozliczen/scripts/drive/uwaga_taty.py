@@ -457,9 +457,8 @@ def drive(run: Run, page: Page) -> None:
     drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(box_issues(run, LABEL))
-    run.check(queued_posts(run, LABEL, leaving=True) == [], "the skrzynka queue is empty before the first Uwaga")
-
     run.step(FEATURE, "uwaga-ikona")
+    run.check(queued_posts(run, LABEL, leaving=True) == [], "the skrzynka queue is empty before the first Uwaga")
     for page_id, heading in PAGES.items():
         page.goto(run.url + f"#/{page_id}")
         expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()

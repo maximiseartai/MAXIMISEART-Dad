@@ -854,6 +854,9 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
         page.route("**/api/settings", lambda route: route.fulfill(json=answer))
         try:
             yield register, periods
+            # chmod does not take access away here, so the answer the page gets stands for the server's: the check is
+            # the same on every system, as the section Sub-features from the run must be.
+            _reported_inaccessible(run, answer, register, periods)
         finally:
             page.unroute("**/api/settings")
         return
@@ -868,15 +871,18 @@ def _without_access(run: Run, page: Page) -> Iterator[tuple[Path, Path]]:
     _point(run, page, "Folder okresów", "folder_okresow", str(periods))
     with unreadable(onedrive):
         yield register, periods
-        settings = run.api("/api/settings", "ustawienia-niedostepna-sciezka")
-        run.check(
-            settings["order_register"] == {"state": "inaccessible", "path": str(register), "name": register.name}
-            and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
-            "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
-        )
+        _reported_inaccessible(run, run.api("/api/settings", "ustawienia-niedostepna-sciezka"), register, periods)
     _point(run, page, "Rejestr zleceń", "rejestr_zlecen", run.fixture["order_register"])
     _point(run, page, "Folder okresów", "folder_okresow", run.fixture["periods_directory"])
     remove_tree(onedrive)
+
+
+def _reported_inaccessible(run: Run, settings: dict[str, object], register: Path, periods: Path) -> None:
+    run.check(
+        settings["order_register"] == {"state": "inaccessible", "path": str(register), "name": register.name}
+        and settings["periods_directory"] == {"state": "inaccessible", "path": str(periods), "name": periods.name},
+        "a Rejestr zleceń and a folder okresów in a folder without access are reported as inaccessible, not missing",
+    )
 
 
 def _point(run: Run, page: Page, label: str, key: str, path: str) -> None:

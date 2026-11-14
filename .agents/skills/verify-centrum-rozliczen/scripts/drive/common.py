@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatchcase
+import inspect
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,17 @@ class Answer(NamedTuple):
     body: Any
 
 
+class Call(NamedTuple):
+    """One ``run.step`` (``step`` is its name) or ``run.check`` (``step`` is None): the feature the last ``run.step``
+    named and the module, line and column of the call."""
+
+    feature: str
+    module: str
+    line: int
+    column: int
+    step: str | None
+
+
 @dataclass(frozen=True)
 class LogEntry:
     """One line of the Centrum log: ``<moment> <event> key=value …``, a value with a space in quotes (``log.py``).
@@ -103,6 +115,7 @@ class Run:
         self.evidence = evidence
         self.fixture = read_json(File.FIXTURE.file(root))
         self.feature = ""
+        self.calls: list[Call] = []
         for name in ("screenshots", "aria", "api", "state"):
             (evidence / name).mkdir(parents=True, exist_ok=True)
 
@@ -142,11 +155,19 @@ class Run:
     def log_entries(self) -> list[LogEntry]:
         return log_entries(self.log_path)
 
+    def _called(self, feature: str, step: str | None) -> None:
+        caller = sys._getframe(2)
+        where = inspect.getframeinfo(caller, context=0).positions
+        assert where is not None and where.lineno is not None and where.col_offset is not None
+        self.calls.append(Call(feature, caller.f_globals["__name__"], where.lineno, where.col_offset, step))
+
     def step(self, feature: str, name: str) -> None:
+        self._called(feature, name)
         self.feature = feature
         print(f"STEP {feature} | {name}", flush=True)
 
     def check(self, condition: bool, message: str, /) -> None:
+        self._called(self.feature, None)
         if not condition:
             raise DriveFailure(message)
         print(f"  ok: {message}", flush=True)
