@@ -15,7 +15,9 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
-   ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej);
+   ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej), a PR z Ważnym,
+   którego kod ma otwarte issue „Chwast: R-KOD”, zamyka je linią ``Korzeń z #N: R-KOD`` (bramka chwastu,
+   ``bramka_chwastu``, niżej);
 5. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 6. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
@@ -66,6 +68,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import bramka_chwastu
 import bramka_korzenia
 import github
 import kontekst_przegladu
@@ -127,7 +130,8 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
     consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template)]
-    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
+    gates = [*bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER)), *bramka_chwastu.problems(pull, werdykt_pr.deployment(pull.base, bramka_chwastu.MARKER))]
+    return [*problems, *filter(None, consent), *gates]
 
 
 def _remote_base(base: str) -> str:
@@ -240,7 +244,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, bramka_chwastu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )

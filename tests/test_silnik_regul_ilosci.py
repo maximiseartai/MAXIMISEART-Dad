@@ -9,9 +9,12 @@ Oczekiwania pochodzą z ADR 0033 i z docstringów ``quantity_engine``, nie z prz
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, time
 from pathlib import Path
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from openpyxl import load_workbook
 import pytest
 import yaml
@@ -52,6 +55,7 @@ from rozliczenia.quantity_engine import (
     Write,
     WriteNothing,
     evaluate,
+    without_components,
 )
 from rozliczenia.quantity_rules_file import (
     DEFAULT_QUANTITY_RULES,
@@ -583,3 +587,71 @@ def test_podpowiedz_wiersza_bez_reguly_wymienia_kolumny_regul_dla_skladnika_spoz
     assert fill_hint(FillKind.WITHOUT_RULE, DEFAULT_QUANTITY_RULES) == "Dopisz ilości poza V, T i N."
     assert fill_hint(FillKind.WITHOUT_RULE, only_known) == "Dopisz ilości."
     assert fill_hint(FillKind.FROM_DESCRIPTION, only_known) == "Wpisz ilości według opisu technika."
+
+
+# Słowa URZĄDZENIA zleceń w teście reguł bez składnika: każdy zapis Listy Urządzeń z Wydania, krotność i słowo spoza listy.
+_RELEASE_WORDS = (*sorted({spelling for component in DEFAULT_QUANTITY_RULES.devices.components for spelling in component.spellings}), "2*fut", "ont x")
+_NEVER_SPELLED = "zapis spoza zlecen"
+
+
+@settings(derandomize=True, database=None, deadline=None, max_examples=300)
+@given(
+    st.sampled_from([component.id for component in DEFAULT_QUANTITY_RULES.devices.components]),
+    st.lists(st.sampled_from(_RELEASE_WORDS), max_size=4),
+    st.sampled_from(("", "instalacja", "montaż 2 szt", "akt int")),
+    st.sampled_from(("u", "a")),
+    st.sampled_from((datetime(2026, 9, 14, 9), datetime(2026, 9, 18, 18), datetime(2026, 9, 19, 10), None)),
+)
+def test_reguly_z_wydania_bez_skladnika_licza_jak_z_tym_skladnikiem_ktorego_zapisu_nie_ma_w_zadnym_zleceniu(
+    absent: str, words: list[str], activities: str, contract: str, started: datetime | None
+) -> None:
+    """Reguły bez składnika (``without_components``) z listą bez niego dają każdemu zleceniu ten sam wynik co reguły z tym
+    składnikiem na liście, gdy żadne zlecenie nie ma jego zapisu: rodzaj, ilości, puste kolumny i reguły, które zadziałały."""
+
+    components = DEFAULT_QUANTITY_RULES.devices.components
+    never_found = QuantityRules(
+        DEFAULT_QUANTITY_RULES.rules,
+        DeviceList(tuple(replace(component, spellings=(_NEVER_SPELLED,)) if component.id == absent else component for component in components)),
+    )
+    without = QuantityRules(
+        without_components(DEFAULT_QUANTITY_RULES.rules, frozenset({absent})),
+        DeviceList(tuple(component for component in components if component.id != absent)),
+    )
+    order = OrderContent.of(contract, " ".join(words), activities, started)
+
+    assert evaluate(without, order) == evaluate(never_found, order)
+
+
+@pytest.mark.parametrize("devices", ["ruter", "ruter kabel", "dekoder", "2*ruter wzmacniacz", ""])
+def test_regula_bez_skladnika_traci_tylko_jego_wpis_i_warunek_a_liczy_jak_z_nieznalezionym(devices: str) -> None:
+    """Reguła z wpisem razy liczba składnika, którego warunki nie wymagają, i reguła z warunkiem „nie zawierają” go liczą
+    bez tego składnika tak samo jak z nim, gdy żadne zlecenie nie ma jego zapisu."""
+
+    rules = (
+        _rule("ruter-i-kable", ContainsComponent("router"), action=Fill((Write("N", 1), Write("O", 1, Multiplier.COMPONENT, "kabel")))),
+        _rule("bez-kabla", ContainsComponent("kabel", negated=True), action=_fill("T", 1)),
+        _rule("kabel", ContainsComponent("kabel"), action=_fill("V", 1)),
+    )
+    never_found = QuantityRules(rules, DeviceList((*DEVICES.components[:3], Component("kabel", (_NEVER_SPELLED,)))))
+    without = QuantityRules(without_components(rules, frozenset({"kabel"})), DeviceList(DEVICES.components[:3]))
+
+    assert evaluate(without, _order(devices)) == evaluate(never_found, _order(devices))
+
+
+@pytest.mark.parametrize("devices", ["ruter", "2*ruter", "ruter dekoder", ""])
+def test_regula_wpisz_tylko_razy_skladnik_bez_niego_odpada_a_reszta_liczy_te_same_ilosci_co_z_nieznalezionym(devices: str) -> None:
+    """Reguła „wpisz”, której jedyny wpis to razy liczba składnika, a warunki go nie wymagają, bez tego składnika nie ma
+    czego wpisać, więc odpada, a reguły bez niego dalej powstają. Ilości i puste kolumny są te same co ze składnikiem
+    nigdy nieznalezionym; różni się tylko lista reguł, które zadziałały (z nim reguła wpisałaby zero)."""
+
+    rules = (
+        _rule("kable-przy-ruterze", ContainsComponent("router"), action=_fill("O", 1, Multiplier.COMPONENT, "kabel")),
+        _rule("ruter", ContainsComponent("router"), action=_fill("N", 1)),
+    )
+    never_found = QuantityRules(rules, DeviceList((*DEVICES.components[:3], Component("kabel", (_NEVER_SPELLED,)))))
+    without = QuantityRules(without_components(rules, frozenset({"kabel"})), DeviceList(DEVICES.components[:3]))
+
+    result, expected = evaluate(without, _order(devices)), evaluate(never_found, _order(devices))
+
+    assert [rule.id for rule in without.rules] == ["ruter"]
+    assert (type(result), result.quantities, result.leave_empty) == (type(expected), expected.quantities, expected.leave_empty)

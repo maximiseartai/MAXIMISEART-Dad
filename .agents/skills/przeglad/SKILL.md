@@ -73,6 +73,7 @@ Reguły szczebla i dowodu:
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
   Większy korzeń (ponad `size:M`) idzie osobnym PR-em korzenia z linią `Korzeń z #N: R-KOD`, który scala się najpierw.
   Rozmiaru wyrwania `tools/scal_pr.py` nie liczy, więc recenzent rozstrzyga, czy wyrwanie mieści się w PR (do `size:M`), czy należy do PR korzenia.
+- Chwast z przeglądu wyrywa autor w tym samym PR: PR z Ważnym, którego kod z ostatniego werdyktu ma otwarte issue „Chwast: R-KOD”, `tools/scal_pr.py` scala dopiero z linią `Korzeń z #N: R-KOD` poza sekcją `## Korzeń`, która przy merge'u zamyka to issue, albo z `Wyrwany w #M` w każdym bloku tego kodu.
 - Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.
   `tools/scal_pr.py --werdykt` przyjmuje `NOWY` tylko z kodem w postaci kodów listy, którego nie ma na liście HEAD PR, i z niepustym opisem.
   Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.

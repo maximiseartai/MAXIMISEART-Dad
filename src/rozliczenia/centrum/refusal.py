@@ -185,6 +185,12 @@ def quantity_rule_unknown() -> Refusal:
     return _refused(404, "Tej reguły już nie ma w Regułach ilości. Odśwież okno Ustawień.")
 
 
+def device_component_unknown() -> Refusal:
+    """Składnika o tym id nie ma już na Liście Urządzeń, którą liczy Centrum (np. cofnięty w Historii w innym oknie)."""
+
+    return _refused(404, "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.")
+
+
 def quantity_difference_unknown() -> Refusal:
     """Różnicy z Kontroli ilości o tym id nie ma już na liście „Tu wpisałeś inaczej niż reguła” (np. tata poprawił Plik
     zbiorczy albo regułę), więc nie ma czego oznaczyć jako wyjątek."""

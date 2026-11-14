@@ -82,6 +82,8 @@ FieldName = Literal[
     "kolumna",
     "wartosc",
     "kolumny",
+    # składnik pliku lista-urzadzen.yaml w sekcji Urządzenia (nazwa składnika to "nazwa")
+    "zapisy",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``."""
 
@@ -224,6 +226,11 @@ class EntriesById(Generic[_Entry]):
             for identifier in dict.fromkeys((*old, *new))
             if old.get(identifier) != new.get(identifier)
         )
+
+    def ids(self, keys: frozenset[str]) -> frozenset[str]:
+        """Id wpisów z kluczy Historii Ustawień tej sekcji (``<sekcja>.<id>``)."""
+
+        return frozenset(key.removeprefix(f"{self.section}.") for key in keys if key.startswith(f"{self.section}."))
 
     def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
         """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
