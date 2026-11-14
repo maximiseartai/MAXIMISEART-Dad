@@ -77,6 +77,7 @@ Preconditions:
 
 ## Gotchas
 
+- A folder without access is a real chmod only off Windows: there the drive waits for `GET /api/settings` to report both paths `inaccessible`. On Windows chmod takes no access away, so the page gets that answer from `page.route` and only the screen is checked.
 - `Wskaż folder okresów` (the empty state's title) and `Wskaż Folder okresów` (the button in Foldery) differ only in case. Use `exact=True`.
 - The picker request blocks until the picker answers. Write `answer.txt` before the click, never after.
 - The scripted picker answers at once, while Dad's native window stays open for seconds. A step about what happens while a picker is open holds the request with `page.route` and continues it afterwards; without that, the window is over before the second click.

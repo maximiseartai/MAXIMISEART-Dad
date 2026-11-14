@@ -457,9 +457,8 @@ def drive(run: Run, page: Page) -> None:
     drop_report_key(key_file, missing_ok=True)
     notes_before = len(_notes(config))
     issues_before = len(box_issues(run, LABEL))
-    run.check(queued_posts(run, LABEL, leaving=True) == [], "the skrzynka queue is empty before the first Uwaga")
-
     run.step(FEATURE, "uwaga-ikona")
+    run.check(queued_posts(run, LABEL, leaving=True) == [], "the skrzynka queue is empty before the first Uwaga")
     for page_id, heading in PAGES.items():
         page.goto(run.url + f"#/{page_id}")
         expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
@@ -729,12 +728,11 @@ def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: 
         "each row shows process, period, podgląd or zapis, date and result, newest first",
     )
     states = [radio.get_attribute("aria-checked") for radio in choices.get_by_role("radio").all()]
-    run.check(
-        states == ["true" if entry["run_id"] == checked else "false" for entry in offered],
-        f"exactly the Uruchomienie {checked} is checked"
-        if checked in [entry["run_id"] for entry in offered]
-        else f"no Uruchomienie is checked ({checked} is not in the list)",
-    )
+    expected = ["true" if entry["run_id"] == checked else "false" for entry in offered]
+    if checked in [entry["run_id"] for entry in offered]:
+        run.check(states == expected, f"exactly the Uruchomienie {checked} is checked")
+    else:
+        run.check(states == expected, f"no Uruchomienie is checked ({checked} is not in the list)")
 
 
 def _logs_comment(run: Run, run_id: str) -> str | None:

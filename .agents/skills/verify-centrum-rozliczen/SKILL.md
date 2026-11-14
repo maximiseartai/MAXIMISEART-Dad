@@ -42,6 +42,9 @@ names it in `needs` of its `Feature`, and the drive drives that one first when i
 request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci` after a change that
 picks this check on a pull request. A red run leaves its evidence in the `evidence-<job id>-<attempt>` artifact (e.g.
 `evidence-mutacje-2-1`), and its job name in the plan says which part.
+Every run compares the section `Sub-features` of each feature it drives with the feature's file and fails, printing
+the difference, when they differ; after a change of a drive, put `sekcje-z-biegu/<feature>.md` from the evidence of your
+local run or of the red run's artifact into the file (`features/README.md`, Feature entry contract).
 The `check_centrum_<feature>_mutations.py` scripts run in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`)
 after a change of this skill's folder. Run `all` and the mutations locally only to reproduce a red Mutation checks step
 or the night's issue. What stays with you: drive the feature you change and look at its

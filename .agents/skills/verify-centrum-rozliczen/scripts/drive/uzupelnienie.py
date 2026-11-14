@@ -656,7 +656,7 @@ def drive(run: Run, page: Page) -> None:
     aside = left.with_name(f".{left.name}.na-bok")
     if on_disk:
         move(left, aside)
-        run.check(True, f"harness: the Plik zbiorczy tablica-okresow left in {EMPTY_PERIOD} is set aside for this step")
+        print(f"  harness: the Plik zbiorczy tablica-okresow left in {EMPTY_PERIOD} is set aside for this step", flush=True)
     try:
         page.get_by_role("button", name="Gotowe, rozlicz pracowników", exact=True).click()
         expect(page.get_by_role("radio", name="Przebieg rozliczeń")).to_be_checked()

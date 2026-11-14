@@ -1,17 +1,29 @@
 """Komunikat sprawdzenia z kodu skilla, jak drukuje go sekcja ``## Sub-features`` mapy funkcji (``features/``).
 
-Jeden właściciel tej reguły dla poleceń mapy skilli ``verify-*``; ``binds`` mówi im też, które nazwy wiąże węzeł.
+Jeden właściciel tej reguły dla sekcji mapy skilli ``verify-*``; ``binds`` mówi też, które nazwy wiąże węzeł.
 Komunikat to literał napisu, stała modułu (nazwa, którą moduł wiąże tylko raz, na swoim najwyższym poziomie, z
 napisem) albo f-string. Pole f-stringu, które jest taką stałą, bez konwersji i bez formatu, drukuje jej wartość; każde
 inne pole drukuje się jako ``…``, bez względu na wyrażenie, konwersję i format, bo wartość zna dopiero przebieg skilla.
-Tekst f-stringu drukuje się, jak stoi, ``{{`` jako ``{``. Komunikat innej postaci nie ma wydruku (``None``), a
-polecenie odmawia go z plikiem i linią.
+Tekst f-stringu drukuje się, jak stoi, ``{{`` jako ``{``. Komunikat innej postaci nie ma wydruku (``None``).
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
+
+
+def call_messages(source: str) -> dict[tuple[int, int], str | None]:
+    """Wydruk komunikatu (``message``), czyli drugiego argumentu, każdego wywołania ``source`` z dwoma argumentami
+    pozycyjnymi, po linii i kolumnie początku wywołania: tych samych, które bieg czyta z pozycji instrukcji wywołania."""
+
+    tree = ast.parse(source)
+    known = constants(tree)
+    return {
+        (node.lineno, node.col_offset): message(node.args[1], known)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and len(node.args) == 2
+    }
 
 
 def constants(tree: ast.Module) -> dict[str, str]:

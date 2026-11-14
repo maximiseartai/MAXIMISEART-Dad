@@ -18,11 +18,11 @@ import re
 import subprocess
 import sys
 from types import ModuleType
-from typing import Final
+from typing import Any, Final
 
 import pytest
 
-from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff, wymaga_ruff, zapisz
+from tests.fixtures.znane_luki import assert_znane_luki, ruff, wymaga_ruff, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / ".agents" / "skills"
@@ -210,10 +210,15 @@ def test_kazdy_plik_funkcji_i_modul_pakietu_ma_funkcje_w_kodzie_skilla(skill: Pa
 
 
 CENTRUM = SKILLS / "verify-centrum-rozliczen"
-SUB_FEATURES = ROOT / ".agents/skills/verify-centrum-rozliczen/scripts/sub_features.py"
+DRIVE_CENTRUM = CENTRUM / "scripts" / "drive_centrum.py"
+# NOT_COMPARED z 14.11.2026 (drive/__init__.py): lista funkcji bez sekcji z biegu tylko maleje.
+BEZ_POROWNANIA_14_11: Final = frozenset(
+    "aktualizacja blad-odczytu kopie-intermax metryki pomiar-u-taty powiadomienia ustawienia uwaga-taty uzupelnienie "
+    "wpisanie-raportow wycena-w-efenix zgloszenie".split()
+)
 
 
-def _sub_features(feature: str, polecenie: Path = SUB_FEATURES) -> str:
+def _sub_features(feature: str, polecenie: Path) -> str:
     done = subprocess.run(
         [sys.executable, str(polecenie), "--feature", feature], capture_output=True, timeout=60, check=False
     )
@@ -221,406 +226,298 @@ def _sub_features(feature: str, polecenie: Path = SUB_FEATURES) -> str:
     return done.stdout.decode("utf-8")
 
 
-def test_podfunkcje_mapy_centrum_sa_wynikiem_polecenia_z_kodu_napedu() -> None:
-    """Plik funkcji, który nazywa polecenie ``sub_features.py`` swojej funkcji, ma jego wynik jako całą sekcję
-    ``## Sub-features``, tuż przed ``## How to get to it (user POV)``."""
-
-    printed = [path for path in _feature_files(CENTRUM) if f"sub_features.py --feature {path.stem}`" in path.read_text(encoding="utf-8")]
-
-    problems = [
-        f"verify-centrum-rozliczen/features/{path.name}: sekcja ## Sub-features nie jest wynikiem kodu napędu; zastąp ją "
-        f"wynikiem `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/sub_features.py --feature {path.stem}` "
-        "(Windows: `py -3`)"
-        for path in printed
-        if f"\n{_sub_features(path.stem)}\n## How to get to it (user POV)\n" not in path.read_text(encoding="utf-8")
-    ]
-
-    assert printed, "żaden plik mapy verify-centrum-rozliczen nie nazywa polecenia sub_features.py swojej funkcji"
-    assert problems == [], "\n".join(problems)
-
-
 @pytest.fixture
-def polecenie(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    monkeypatch.syspath_prepend(str(SUB_FEATURES.parent))
-    spec = importlib.util.spec_from_file_location("sub_features", SUB_FEATURES)
+def naped(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.syspath_prepend(str(DRIVE_CENTRUM.parent))
+    spec = importlib.util.spec_from_file_location("drive_centrum", DRIVE_CENTRUM)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "drive_centrum", module)
     spec.loader.exec_module(module)
     return module
 
 
-NAPED: Final = """\
-from drive.common import Run
+def test_plik_funkcji_bez_sekcji_z_biegu_stoi_na_liscie_bez_porownania_a_lista_tylko_maleje(naped: ModuleType) -> None:
+    """Bieg porównuje sekcję ``## Sub-features`` każdej funkcji spoza ``NOT_COMPARED``, więc plik funkcji z tej listy
+    nie ma sekcji z biegu (jej pierwszego zdania), a każdy inny ją ma; funkcja schodzi z listy razem z sekcją z biegu."""
 
-SHOW_ALL = "Pokaż wszystkie"
+    pliki = {path.stem: path.read_text(encoding="utf-8") for path in _feature_files(CENTRUM)}
+    z_biegu = {nazwa for nazwa, tekst in pliki.items() if f"Printed by `scripts/sub_features.py --feature {nazwa}`" in tekst}
 
-
-def drive(run: Run, page: object) -> None:
-    feature = "sonda"
-    run.step(feature, "sonda-krok")
-    run.check(True, "pierwszy")
-    {wstawka}
-"""
-
-# Postać → wstawka w ciele drive() napędu NAPED; linia, którą odmowa wskazuje, ma komentarz `# tu`.
-ODMOWY: Final = {
-    "check: komunikat nazwany": 'run.check(True, message="x")  # tu',
-    "check: oba argumenty nazwane": 'run.check(condition=True, message="x")  # tu',
-    "check: *args": 'run.check(*(True, "x"))  # tu',
-    "check: *args przed komunikatem": 'run.check(*[True], "x")  # tu',
-    "check: **kwargs": 'run.check(True, **{"message": "x"})  # tu',
-    "check: **kwargs po komunikacie": 'run.check(True, "x", **{})  # tu',
-    "check: jeden argument": "run.check(True)  # tu",
-    "check: trzy argumenty": 'run.check(True, "x", 1)  # tu',
-    "check: komunikat zmienną lokalną": "run.check(True, feature)  # tu",
-    "check: komunikat konkatenacją": 'run.check(True, "x" + "y")  # tu',
-    "check: komunikat wywołaniem": 'run.check(True, "x {}".format(1))  # tu',
-    "check: komunikat warunkiem": 'run.check(True, "x" if True else "y")  # tu',
-    "check: w funkcji zagnieżdżonej": 'def _pomocnik() -> None:\n        run.check(True, "x")  # tu',
-    "check: w lambdzie": '_pomocnik = lambda: run.check(True, "x")  # tu',
-    "check: w ciele klasy": 'class _Pomocnik:\n        run.check(True, "x")  # tu',
-    "check: jako wartość": 'sprawdz = run.check  # tu',
-    "step: nazwa nazwana": 'run.step(feature, name="x")  # tu',
-    "step: nazwa zmienną": "run.step(feature, feature)  # tu",
-    "step: *args": 'run.step(*(feature, "x"))  # tu',
-    "check: na aliasie run": 'plansza = run\n    plansza.check(True, "x")  # tu',
-    "step: na aliasie run": 'plansza = run\n    plansza.step(feature, "x")  # tu',
-    "check: na celu pętli": 'for r in (run,):\n        r.check(True, "x")  # tu',
-    "check: na wyniku walrusa": '(r := run).check(True, "x")  # tu',
-    "check: na parametrze lambdy": '(lambda r: r.check(True, "x"))(run)  # tu',
-    "check: przez klasę Run": 'Run.check(run, True, "x")  # tu',
-    "check: przez klasę obiektu": 'run.__class__.check(run, True, "x")  # tu',
-}
-# Postać → cały napęd, gdy odmowa dotyczy miejsca poza wstawką.
-ODMOWY_MODULU: Final = {
-    "check przed pierwszym step": NAPED.replace('    run.step(feature, "sonda-krok")\n', '    run.check(True, "x")  # tu\n    run.step(feature, "sonda-krok")\n'),
-    "check w pomocniku modułu": NAPED + '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "x")  # tu\n',
-    "check na parametrze pomocnika r: Run": NAPED + '\n\ndef _pomocnik(r: Run) -> None:\n    r.check(True, "x")  # tu\n',
-    'check na parametrze pomocnika r: "Run"': NAPED + '\n\ndef _pomocnik(r: "Run") -> None:\n    r.check(True, "x")  # tu\n',
-    "check na parametrze pomocnika r: Run | None": NAPED
-    + '\n\ndef _pomocnik(r: Run | None) -> None:\n    assert r\n    r.check(True, "x")  # tu\n',
-    "check w metodzie podklasy Run": NAPED + '\n\nclass _Run(Run):\n    def sprawdz(self) -> None:\n        self.check(True, "x")  # tu\n',
-    "drive bez parametru run": NAPED.replace(
-        "def drive(run: Run, page: object) -> None:", "def drive(r: Run, page: object) -> None:  # tu"
-    ),
-    "moduł bez drive": NAPED.replace("def drive(", "def napedz(").replace(
-        "from drive.common import Run", "from drive.common import Run  # tu"
-    ),
-    "drive bez run.step": NAPED.replace(
-        "def drive(run: Run, page: object) -> None:", "def drive(run: Run, page: object) -> None:  # tu"
-    ).replace('    run.step(feature, "sonda-krok")\n    run.check(True, "pierwszy")\n', ""),
-}
-
-# Pomocnik modułu z run.check, którego wywołanie wstawka stawia w ciele drive() napędu NAPED.
-POMOCNIK: Final = '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")\n'
-# Postać wywołania pomocnika z krokami albo sprawdzeniami → wstawka w drive(); polecenie odmawia, bo nie wie, czy, ile
-# razy i w jakiej kolejności krok pomocnika biegnie (mechanizm: czyta tylko jedno wywołanie, które jest całą
-# instrukcją ciała drive() albo całą prawą stroną przypisania do nazwy). Linia odmowy ma komentarz `# tu`.
-ODMOWY_POMOCNIKA: Final = {
-    "cel pętli for (W1 r1)": "d = {}\n    for d[_pomocnik(run)] in range(2):  # tu\n        pass",
-    "dalszy człon łańcucha porównań (W1 r1)": "0 > 1 > _pomocnik(run)  # tu",
-    "adnotacja zmiennej lokalnej (W1 r1)": "x: _pomocnik(run) = 1  # tu",
-    "wartość przypisania z adnotacją": "x: object = _pomocnik(run)  # tu",
-    "cel przypisania biegnie po wartości (W2 r1)": 'd = {}\n    d[run.check(True, "w celu")] = _pomocnik(run)  # tu',
-    "przypisanie rozszerzone": "x = 0\n    x += _pomocnik(run)  # tu",
-    "argument innego wywołania": "print(_pomocnik(run))  # tu",
-    "argument sprawdzenia": 'run.check(_pomocnik(run), "po")  # tu',
-    "run.check w argumencie pomocnika": '_pomocnik(run, run.check(True, "w argumencie"))  # tu',
-    "ciało with": "with open(__file__, encoding='utf-8'):\n        _pomocnik(run)  # tu",
-    "ciało try": "try:\n        _pomocnik(run)  # tu\n    except ValueError:\n        pass",
-    "finally": "try:\n        pass\n    finally:\n        _pomocnik(run)  # tu",
-    "iterowane pętli for": "for _ in [_pomocnik(run)]:  # tu\n        pass",
-    "warunek if": "if _pomocnik(run):  # tu\n        pass",
-    "pierwszy argument or": "_pomocnik(run) or None  # tu",
-    "przedmiot match": "match _pomocnik(run):  # tu\n        case _:\n            pass",
-    "warunek assert": "assert _pomocnik(run) is None  # tu",
-    "po return drive()": 'if feature == "sonda":\n        return\n    _pomocnik(run)  # tu',
-    "pętla for": "for _ in range(2):\n        _pomocnik(run)  # tu",
-    "pętla while": "while feature:\n        _pomocnik(run)  # tu\n        break",
-    "wyrażenie listowe": "[_pomocnik(run) for _ in range(2)]  # tu",
-    "gałąź if": "if feature:\n        _pomocnik(run)  # tu",
-    "gałąź else": "if feature:\n        pass\n    else:\n        _pomocnik(run)  # tu",
-    "wyrażenie warunkowe": "_pomocnik(run) if feature else None  # tu",
-    "drugi argument or": "feature or _pomocnik(run)  # tu",
-    "except": "try:\n        pass\n    except ValueError:\n        _pomocnik(run)  # tu",
-    "else po try": "try:\n        pass\n    except ValueError:\n        pass\n    else:\n        _pomocnik(run)  # tu",
-    "przypadek match": "match feature:\n        case _:\n            _pomocnik(run)  # tu",
-    "komunikat assert": "assert feature, _pomocnik(run)  # tu",
-    "try z else": "try:\n        _pomocnik(run)  # tu\n    except ValueError:\n        pass\n    else:\n        pass",
-    "try zagnieżdżony w try z finally": "try:\n        try:\n            _pomocnik(run)  # tu\n        finally:\n"
-    "            pass\n    finally:\n        pass",
-    "try z finally, które zwraca": "try:\n        _pomocnik(run)  # tu\n    finally:\n        return",
-    "drugie wywołanie w pętli": "_pomocnik(run)\n    for _ in range(2):\n        _pomocnik(run)  # tu",
-    "lambda w drive()": "(lambda: _pomocnik(run))()  # tu",
-    "funkcja w drive()": "def _w_drive() -> None:\n        _pomocnik(run)  # tu\n\n    _w_drive()",
-    "inna nazwa": "inny = _pomocnik  # tu\n    inny(run)",
-    "run nie pierwszy": "_pomocnik(*[run])  # tu",
-    "run nazwany": "_pomocnik(run=run)  # tu",
-    "inny pierwszy argument": "_pomocnik(feature)  # tu",
-    "przekazany jako argument": "print(run, _pomocnik)  # tu",
-}
-# Postać pomocnika → cały napęd, gdy odmowa dotyczy miejsca poza wstawką.
-ODMOWY_POMOCNIKA_MODULU: Final = {
-    "pomocnik pomocnika": NAPED.replace("{wstawka}", "_zewnetrzny(run)")
-    + POMOCNIK
-    + "\n\ndef _zewnetrzny(run: Run) -> None:\n    _pomocnik(run)  # tu\n",
-    "pomocnik z dekoratorem": NAPED.replace("{wstawka}", "_pomocnik(run)")
-    + '\n\n@staticmethod\ndef _pomocnik(run: Run) -> None:  # tu\n    run.check(True, "z pomocnika")\n',
-    "pomocnik z yield": NAPED.replace("{wstawka}", "next(_pomocnik(run))")
-    + '\n\ndef _pomocnik(run: Run) -> object:  # tu\n    run.check(True, "z pomocnika")\n    yield\n',
-    "wywołanie na poziomie modułu": NAPED.replace("{wstawka}", "pass") + POMOCNIK + "\n\n_pomocnik(run)  # tu\n",
-    "run nie pierwszym parametrem": NAPED.replace("{wstawka}", "_pomocnik(run, page)")
-    + '\n\ndef _pomocnik(page: object, run: Run) -> None:\n    run.check(True, "z pomocnika")  # tu\n',
-    "nazwa pomocnika związana drugi raz": NAPED.replace("{wstawka}", "_pomocnik(run)")
-    + '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")  # tu\n\n\n_pomocnik = print\n',
-    "dwóch pomocników w przypisaniu (W2 r1)": NAPED.replace("{wstawka}", "d = {}\n    d[_a(run)] = _b(run)  # tu")
-    + '\n\ndef _a(run: Run) -> int:\n    run.step("sonda", "krok-a")\n    return 0\n'
-    + '\n\ndef _b(run: Run) -> int:\n    run.step("sonda", "krok-b")\n    return 0\n',
-    "check pomocnika przed pierwszym step": NAPED.replace(
-        '    run.step(feature, "sonda-krok")\n', '    _pomocnik(run)\n    run.step(feature, "sonda-krok")\n'
-    ).replace("{wstawka}", "pass")
-    + '\n\ndef _pomocnik(run: Run) -> None:\n    run.check(True, "z pomocnika")  # tu\n',
-}
-
-
-def _odmowy() -> dict[str, str]:
-    return {
-        **{opis: NAPED.format(wstawka=wstawka) for opis, wstawka in ODMOWY.items()},
-        **{opis: zrodlo.replace("{wstawka}", "pass") for opis, zrodlo in ODMOWY_MODULU.items()},
-        **{f"pomocnik: {opis}": NAPED.format(wstawka=wstawka) + POMOCNIK for opis, wstawka in ODMOWY_POMOCNIKA.items()},
-        **{f"pomocnik: {opis}": zrodlo for opis, zrodlo in ODMOWY_POMOCNIKA_MODULU.items()},
-    }
-
-
-@pytest.mark.parametrize("opis", list(_odmowy()))
-def test_polecenie_podfunkcji_odmawia_postaci_run_ktorej_nie_czyta_z_plikiem_i_linia(polecenie: ModuleType, opis: str) -> None:
-    """Postać spoza tej jednej, którą polecenie czyta (``run.step``/``run.check`` z dwoma argumentami pozycyjnymi w ciele
-    ``drive(run, page)`` i pomocnika, którego drive() woła raz jako ``pomocnik(run, …)`` poza pętlą i warunkiem),
-    czerwieni je zdaniem z plikiem i linią, także atrybut ``.check`` na obiekcie innym niż ``run``, zamiast zgubić
-    komunikat, który napęd drukuje w ``drive.txt``, albo wydrukować go raz tam, gdzie napęd drukuje go inaczej (W1 r1
-    i r2, D1 i D2 r3 #1690)."""
-
-    zrodlo = _odmowy()[opis]
-    linia = next(numer for numer, tekst in enumerate(zrodlo.splitlines(), start=1) if "# tu" in tekst)
-
-    with pytest.raises(polecenie.Unreadable) as odmowa:
-        polecenie.sub_features(zrodlo, "sonda.py")
-
-    assert str(odmowa.value).startswith(f"sonda.py:{linia}: "), str(odmowa.value)
-
-
-def test_polecenie_podfunkcji_czyta_komunikaty_ze_stalych_modulu_jak_naped(polecenie: ModuleType) -> None:
-    """Komunikat to literał, stała modułu (także z adnotacją) albo f-string; pole f-stringu spoza stałych, w tym
-    nazwa, którą moduł wiąże drugi raz (przypisaniem, importem, parametrem, ``def``, ``except ... as``, wzorcem
-    ``match``, parametrem typu), jest wielokropkiem."""
-
-    zrodlo = NAPED.format(
-        wstawka="\n    ".join(
-            [
-                "run.check(True, SHOW_ALL)",
-                "run.check(True, ADNOTOWANA)",
-                'run.check(True, f"{SHOW_ALL} i {feature}")',
-                'run.check(True, f"{DWA_RAZY}")',
-                'LOKALNA = "lokalna"',
-                'run.check(True, f"{LOKALNA} {IMPORT} {PARAMETR} {FUNKCJA} {WYJATEK}")',
-                'run.check(True, f"{WZORZEC} {GWIAZDKA} {RESZTA} {TYP} {SPEC} {KROTKA}")',
-                'run.step(feature, "sonda-drugi")',
-            ]
-        )
-    ) + "".join(
-        f"\n{wiersz}\n"
-        for wiersz in [
-            'ADNOTOWANA: str = "z adnotacją"',
-            'DWA_RAZY = "a"\nDWA_RAZY = "b"',
-            'LOKALNA = "moduł"',
-            'IMPORT = "moduł"\nfrom os import sep as IMPORT',
-            'PARAMETR = "moduł"\n\n\ndef _pomocnik(PARAMETR: str) -> None:\n    pass',
-            'FUNKCJA = "moduł"\n\n\ndef FUNKCJA() -> None:\n    pass',
-            'WYJATEK = "moduł"\ntry:\n    pass\nexcept ValueError as WYJATEK:\n    pass',
-            'WZORZEC = "moduł"\nmatch 1:\n    case WZORZEC:\n        pass',
-            'GWIAZDKA = "moduł"\nmatch []:\n    case [*GWIAZDKA]:\n        pass',
-            'RESZTA = "moduł"\nmatch {}:\n    case {**RESZTA}:\n        pass',
-            'TYP = "moduł"\n\n\ndef _typ[TYP]() -> None:\n    pass',
-            'SPEC = "moduł"\n\n\ndef _spec[**SPEC]() -> None:\n    pass',
-            'KROTKA = "moduł"\n\n\ndef _krotka[*KROTKA]() -> None:\n    pass',
-        ]
-    )
-
-    assert polecenie.sub_features(zrodlo, "sonda.py") == [
-        (
-            "sonda-krok",
-            [
-                "pierwszy",
-                "Pokaż wszystkie",
-                "z adnotacją",
-                "Pokaż wszystkie i …",
-                "…",
-                "… … … … …",
-                "… … … … … …",
-            ],
-        ),
-        ("sonda-drugi", []),
+    problems = [
+        f"verify-centrum-rozliczen/features/{nazwa}.md ma sekcję z biegu, więc bieg ją porównuje: usuń `{nazwa}` z "
+        "NOT_COMPARED w scripts/drive/__init__.py"
+        for nazwa in sorted(naped.NOT_COMPARED & z_biegu)
+    ] + [
+        f"verify-centrum-rozliczen/features/{nazwa}.md nie ma sekcji ## Sub-features z biegu: wstaw ją z dowodu biegu "
+        f"`run_centrum_verification.py --feature {nazwa}` (sekcje-z-biegu/{nazwa}.md)"
+        for nazwa in sorted(pliki.keys() - z_biegu - naped.NOT_COMPARED)
     ]
 
-
-# Pole f-stringu komunikatu → jak stoi w sekcji: stała modułu bez konwersji i formatu daje swoją wartość, każde inne
-# pole wielokropek, bez wyrażenia i formatu, bo wartość zna dopiero przebieg napędu (D2 #1708).
-POLA: Final = {
-    "pole proste": ('f"każda z {len(feature)} reguł"', "każda z … reguł"),
-    "pole z formatem": ('f"po {len(feature):>3} s"', "po … s"),
-    "pole z konwersją": ('f"adres {feature!r}"', "adres …"),
-    "pole zagnieżdżone": ('f"szerokość {feature:{len(feature)}} i {f\'{feature}\'}"', "szerokość … i …"),
-    "podwójne klamry": ('f"{{wiersz}} {feature} }}"', "{wiersz} … }"),
-    "stała z formatem": ('f"{SHOW_ALL:>20}"', "…"),
-    "stała z konwersją": ('f"{SHOW_ALL!r}"', "…"),
-}
+    assert problems == [], "\n".join(problems)
+    assert naped.NOT_COMPARED <= BEZ_POROWNANIA_14_11, "NOT_COMPARED tylko maleje: funkcja wchodzi do mapy z sekcją z biegu"
 
 
-@pytest.mark.parametrize("opis", list(POLA))
-def test_polecenie_podfunkcji_drukuje_pole_f_stringu_spoza_stalych_wielokropkiem(polecenie: ModuleType, opis: str) -> None:
-    komunikat, sekcja = POLA[opis]
+def _naped_funkcji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, funkcja: str, zrodlo: str) -> ModuleType:
+    """Napęd funkcji ``funkcja`` z ``zrodlo``, zaimportowany pod nazwą jej modułu zamiast prawdziwego."""
 
-    czytane = polecenie.sub_features(NAPED.format(wstawka=f"run.check(True, {komunikat})"), "sonda.py")
+    if "from drive.common import sprawdz_wspolne" in zrodlo:
+        _naped_funkcji(monkeypatch, tmp_path, "common", WSPOLNY_POMOCNIK)
+    plik = tmp_path / f"{funkcja}.py"
+    plik.write_text(zrodlo, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("drive." + funkcja.replace("-", "_"), plik)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
 
-    assert czytane == [("sonda-krok", ["pierwszy", sekcja])]
+
+def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, napedy: dict[str, ModuleType], funkcje: list[str]) -> dict[str, Any]:
+    """Sekcje z biegu ``funkcje`` po kolei (``drive_centrum.Section``), jak ``drive_centrum.main``, z napędami
+    ``napedy`` zamiast prawdziwych."""
+
+    for funkcja, modul_napedu in napedy.items():
+        monkeypatch.setitem(naped.MODULES, funkcja, modul_napedu)
+    korzen = tmp_path / f"bieg-{len(list(tmp_path.glob('bieg-*')))}"
+    korzen.mkdir()
+    (korzen / "fixture.json").write_text("{}", encoding="utf-8")
+    run = naped.Run(korzen, "http://127.0.0.1:1", korzen / "dowod")
+    driven: list[str] = []
+    owners: list[str] = []
+    for funkcja in funkcje:
+        if funkcja not in driven:
+            naped.drive(run, None, funkcja, driven, {}, owners)
+    sekcje: dict[str, Any] = naped.sections(run.calls, owners, driven)
+    return sekcje
 
 
-# Napęd, którego pomocnika polecenie czyta: wywołanie jest całą instrukcją ciała drive() albo całą prawą stroną
-# przypisania do nazw. Pomocnik bez run.step i run.check może stać gdziekolwiek i ile razy.
-CZYTANE_POMOCNIKI: Final = {
-    "instrukcja": NAPED.format(wstawka="_pomocnik(run)") + POMOCNIK,
-    "przypisanie do nazwy": NAPED.format(wstawka="wynik = _pomocnik(run)") + POMOCNIK,
-    "przypisanie do dwóch nazw": NAPED.format(wstawka="a = b = _pomocnik(run)") + POMOCNIK,
-    "return funkcji w drive() przed pomocnikiem": NAPED.format(
-        wstawka="def _w_drive() -> int:\n        return 1\n\n    _pomocnik(run)"
+NAPED_PROBY: Final = '''\
+KOMUNIKAT = "ze stałej"
+
+
+from drive.common import sprawdz_wspolne
+
+
+def wspolne(run):
+    run.check(True, "wspólne")
+
+
+def krok(run, nazwa):
+    run.step("okno-ustawien", nazwa)
+
+
+def drive(run, page):
+    krok(run, "pierwszy")
+    for numer in range(2):
+        run.check(True, f"obrót {numer} {KOMUNIKAT}")
+        wspolne(run)
+        sprawdz_wspolne(run)
+    run.check(True, f"{page}")
+    krok(run, "drugi")
+    wspolne(run)
+'''
+# Wspólny pomocnik napędu (drive/common.py) ze sprawdzeniem, które nie należy do sekcji żadnej funkcji.
+WSPOLNY_POMOCNIK: Final = '''\
+def sprawdz_wspolne(run):
+    run.check(True, "ze wspólnego pomocnika")
+'''
+SEKCJA_PROBY: Final = """\
+## Sub-features
+
+Printed by `scripts/sub_features.py --feature okno-ustawien` from the drive's steps and checks; refresh the section with it.
+
+- `pierwszy`: obrót … ze stałej; wspólne; ….
+- `drugi`: wspólne.
+"""
+
+
+@pytest.mark.parametrize("rozni_sie", [False, True], ids=["sekcja-jak-plik", "sekcja-inna-niz-plik"])
+def test_bieg_konczy_sie_drive_fail_gdy_sekcja_z_biegu_rozni_sie_od_pliku_mapy(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], rozni_sie: bool
+) -> None:
+    """Sekcja z biegu to kroki napędu, każdy raz na miejsce i nazwę z biegu (pomocnik woła tu ``run.step`` z nazwą z
+    parametru), a pod każdym miejsca sprawdzeń, które przebiegły pod nim, każde raz, w kolejności pierwszego wywołania,
+    z komunikatem z wywołania w kodzie; sprawdzenia wspólnego pomocnika z ``drive/common.py`` są policzone poza sekcją.
+    Sekcja i to, co poza nią, trafia do dowodu, a bieg kończy się porażką z różnicą, gdy plik mapy ma inną sekcję."""
+
+    mapa = tmp_path / "features"
+    mapa.mkdir()
+    w_pliku = SEKCJA_PROBY.replace("- `drugi`: wspólne.", "- `drugi`: stare.") if rozni_sie else SEKCJA_PROBY
+    (mapa / "okno-ustawien.md").write_text(f"# Okno\n\n{w_pliku}\n## How to get to it (user POV)\n", encoding="utf-8")
+    monkeypatch.setattr(naped, "FEATURE_FILES", mapa)
+    sekcje = _bieg(naped, monkeypatch, tmp_path, {"okno-ustawien": _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", NAPED_PROBY)}, ["okno-ustawien"])
+
+    try:
+        naped.compare(tmp_path / "bieg-0" / "dowod", sekcje)
+    except naped.DriveFailure as porazka:
+        wynik = ("porażka", str(porazka).startswith("the section Sub-features of okno-ustawien"), "-- `drugi`: stare." in capsys.readouterr().err)
+    else:
+        wynik = ("bez porażki", False, False)
+
+    assert sekcje == {"okno-ustawien": (SEKCJA_PROBY, {"a helper the drives share (drive.common)": 2})}
+    assert (tmp_path / "bieg-0" / "dowod" / "sekcje-z-biegu" / "poza-sekcja.txt").read_text(encoding="utf-8") == (
+        "okno-ustawien | a helper the drives share (drive.common) | 2\n"
     )
-    + POMOCNIK,
-    "return drive() po pomocniku": NAPED.format(wstawka="_pomocnik(run)\n    return") + POMOCNIK,
-    "dwa wywołania": NAPED.format(wstawka='_pomocnik(run)\n    run.check(True, "między")\n    wynik = _pomocnik(run)') + POMOCNIK,
-    "ciało try z samym finally": NAPED.format(
-        wstawka='try:\n        _pomocnik(run)\n        run.check(True, "w try")\n    finally:\n        run.check(True, "w finally")'
-    )
-    + POMOCNIK,
-    "kroki pomocników między krokami drive()": NAPED.format(
-        wstawka="\n    ".join(
-            [
-                "_pomocnik(run, page)",
-                'run.check(True, "po pomocniku")',
-                "for _ in range(2):\n        _bez_krokow(run)",
-                "_bez_krokow(run)",
-                "wynik = _drugi(run)",
-                'run.step(feature, "sonda-ostatni")',
-            ]
-        )
-    )
-    + "\n\ndef _pomocnik(run: Run, page: object) -> None:\n"
-    '    run.check(True, SHOW_ALL)\n    run.step("sonda", "sonda-pomocnik")\n    run.check(True, f"w {SHOW_ALL}")\n'
-    + '\n\ndef _drugi(run: Run) -> bool:\n    run.check(True, "w drugim")\n    run.step("sonda", "sonda-drugi")\n    return True\n'
-    + "\n\ndef _bez_krokow(run: Run) -> None:\n    pass\n",
+    assert (tmp_path / "bieg-0" / "dowod" / "sekcje-z-biegu" / "okno-ustawien.md").read_bytes() == SEKCJA_PROBY.encode("utf-8")
+    assert wynik == (("porażka", True, True) if rozni_sie else ("bez porażki", False, False))
+
+
+def test_sekcja_z_biegu_jest_ta_sama_gdy_ramka_nazywa_plik_sciezka_windows(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Na Windows ramka napędu nazywa swój plik ścieżką z literą dysku i ``\\``; sekcja bierze kod z zaimportowanego
+    modułu, nie ze ścieżki ramki, więc jest ta sama na każdym systemie, a ten test pada bez Windows (#1804 r2)."""
+
+    modul_napedu = _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", NAPED_PROBY)
+    modul_napedu.drive.__code__ = modul_napedu.drive.__code__.replace(co_filename=r"C:\a\drive\okno_ustawien.py")
+
+    na_windows = _bieg(naped, monkeypatch, tmp_path, {"okno-ustawien": modul_napedu}, ["okno-ustawien"])
+
+    assert na_windows["okno-ustawien"].text == SEKCJA_PROBY
+
+
+WSPOLNY_Z_KROKIEM: Final = '''\
+def krok_wspolny(run, funkcja):
+    run.step(funkcja, "ze-wspolnego")
+'''
+NAPED_Z_KROKIEM_ZE_WSPOLNEGO: Final = '''\
+from drive.common import krok_wspolny
+
+
+def drive(run, page):
+    run.step("okno-ustawien", "pierwszy")
+    krok_wspolny(run, "okno-ustawien")
+    run.check(True, "po kroku ze wspólnego")
+'''
+
+
+def test_krok_ze_wspolnego_pomocnika_jest_krokiem_sekcji(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kroki sekcji to linie ``STEP`` funkcji, z którego modułu by nie biegły: krok ze wspólnego pomocnika
+    ``drive/common.py`` jest w sekcji, a sprawdzenie po nim pod nim (sonda #1845 r2)."""
+
+    _naped_funkcji(monkeypatch, tmp_path, "common", WSPOLNY_Z_KROKIEM)
+    okno = _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", NAPED_Z_KROKIEM_ZE_WSPOLNEGO)
+
+    sekcje = _bieg(naped, monkeypatch, tmp_path, {"okno-ustawien": okno}, ["okno-ustawien"])
+
+    assert [linia for linia in capsys.readouterr().out.splitlines() if linia.startswith("STEP")] == [
+        "STEP okno-ustawien | pierwszy",
+        "STEP okno-ustawien | ze-wspolnego",
+    ]
+    assert sekcje["okno-ustawien"].text.endswith("\n- `pierwszy`.\n- `ze-wspolnego`: po kroku ze wspólnego.\n")
+
+
+NAPED_UZUPELNIENIA: Final = '''\
+def z_przygotowania(run, page):
+    run.step("uzupelnienie", "wynik")
+    run.check(True, "karta wyniku")
+
+
+def drive(run, page):
+    run.step("uzupelnienie", "wlasny")
+'''
+NAPED_Z_KROKIEM_UZUPELNIENIA: Final = '''\
+from drive.uzupelnienie import z_przygotowania
+
+
+def drive(run, page):
+    run.step("{funkcja}", "przed")
+    z_przygotowania(run, page)
+    run.step("{funkcja}", "po")
+'''
+
+
+@pytest.mark.parametrize(
+    "funkcje",
+    [["uzupelnienie"], ["przygotowanie-pliku-zbiorczego", "uzupelnienie"], ["okno-ustawien", "przygotowanie-pliku-zbiorczego", "uzupelnienie"]],
+    ids=["sama", "po-potrzebnej", "w-srodku-czesci"],
+)
+def test_kroki_funkcji_z_napedu_innej_naleza_do_niej_przy_kazdym_podziale(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, funkcje: list[str]
+) -> None:
+    """Krok, który napęd Przygotowania woła z modułu Uzupełnienia, należy do funkcji z ``run.step``: Uzupełnienie
+    potrzebuje Przygotowania, więc dostaje ten krok pierwszy, bez względu na to, które funkcje jego część CI jedzie."""
+
+    przygotowanie = "przygotowanie-pliku-zbiorczego"
+    napedy = {
+        "uzupelnienie": _naped_funkcji(monkeypatch, tmp_path, "uzupelnienie", NAPED_UZUPELNIENIA),
+        przygotowanie: _naped_funkcji(monkeypatch, tmp_path, przygotowanie, NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja=przygotowanie)),
+        "okno-ustawien": _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", NAPED_PROBY),
+    }
+
+    sekcje = _bieg(naped, monkeypatch, tmp_path, napedy, funkcje)
+
+    assert sekcje["uzupelnienie"].text.endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
+    assert sekcje[przygotowanie].text.endswith("\n- `przed`.\n- `po`.\n")
+
+
+def test_krok_funkcji_z_napedu_potrzebnej_posrednio_nalezy_do_niej(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Logi Uruchomienia potrzebują Przebiegu rozliczeń, a ten Przygotowania, więc krok Logów z napędu Przygotowania
+    biegnie zawsze przed nimi i należy do ich sekcji: potrzeba jest przechodnia."""
+
+    napedy = {
+        "logi-uruchomienia": _naped_funkcji(
+            monkeypatch, tmp_path, "logi-uruchomienia", NAPED_UZUPELNIENIA.replace('"uzupelnienie"', '"logi-uruchomienia"')
+        ),
+        "przebieg-rozliczen": _naped_funkcji(monkeypatch, tmp_path, "przebieg-rozliczen", 'def drive(run, page):\n    run.step("przebieg-rozliczen", "jeden")\n'),
+        "przygotowanie-pliku-zbiorczego": _naped_funkcji(
+            monkeypatch,
+            tmp_path,
+            "przygotowanie-pliku-zbiorczego",
+            NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja="przygotowanie-pliku-zbiorczego").replace("drive.uzupelnienie", "drive.logi_uruchomienia"),
+        ),
+    }
+
+    sekcje = _bieg(naped, monkeypatch, tmp_path, napedy, ["logi-uruchomienia"])
+
+    assert sekcje["logi-uruchomienia"].text.endswith("\n- `wynik`: karta wyniku.\n- `wlasny`.\n")
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "odmowa"),
+    [
+        (NAPED_PROBY.replace('    krok(run, "pierwszy")\n', '    run.check(True, "przed krokiem")\n    krok(run, "pierwszy")\n'),
+         "run.check before the first run.step of the drive of okno-ustawien"),
+        (NAPED_PROBY.replace('run.check(True, f"{page}")', "run.check(True, page)"), "the message of this run.check cannot be printed"),
+        (NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja="okno-ustawien"), "the drive of okno-ustawien runs a step of uzupelnienie, which does not need okno-ustawien"),
+    ],
+    ids=["sprawdzenie-przed-krokiem", "komunikat-bez-wydruku", "krok-funkcji-ktora-go-nie-potrzebuje"],
+)
+def test_bieg_odmawia_sekcji_ktora_zalezy_od_funkcji_przed_nia_w_czesci_ci(
+    naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, zrodlo: str, odmowa: str
+) -> None:
+    """Bieg odmawia sekcji, która zależy od funkcji przejechanych przed nią w tym samym biegu (sprawdzenia przed
+    pierwszym krokiem napędu i kroku funkcji z napędu innej, której ta nie potrzebuje), i sprawdzenia, którego komunikatu
+    mapa nie wydrukuje."""
+
+    przygotowanie = "przygotowanie-pliku-zbiorczego"
+    napedy = {
+        "uzupelnienie": _naped_funkcji(monkeypatch, tmp_path, "uzupelnienie", NAPED_UZUPELNIENIA),
+        przygotowanie: _naped_funkcji(monkeypatch, tmp_path, przygotowanie, NAPED_Z_KROKIEM_UZUPELNIENIA.format(funkcja=przygotowanie)),
+        "okno-ustawien": _naped_funkcji(monkeypatch, tmp_path, "okno-ustawien", zrodlo),
+    }
+
+    with pytest.raises(naped.DriveFailure, match=re.escape(odmowa)):
+        _bieg(naped, monkeypatch, tmp_path, napedy, [przygotowanie, "okno-ustawien"])
+
+
+# Znane luki porównania sekcji z biegu (tests/fixtures/znane_luki.py): klasa mechanizmu → funkcja z sekcją z biegu w
+# pliku mapy, której sekcji CI nie porównuje; puszczona przez wybór funkcji, które CI jedzie (`--feature all`).
+ZNANE_LUKI_SEKCJI: Final = {
+    "porównuje tylko funkcje, które bieg jedzie, a CI jedzie `all`: pomiar poza `all`": "wydajnosc",
 }
 
 
-class _Zapis:
-    """Run próbki napędu, który zapisuje kroki i sprawdzenia w kolejności biegu."""
-
-    def __init__(self) -> None:
-        self.bieg: list[tuple[str, str]] = []
-
-    def step(self, feature: str, name: str) -> None:
-        self.bieg.append(("step", name))
-
-    def check(self, condition: bool, message: str) -> None:
-        self.bieg.append(("check", message))
-
-
-@pytest.mark.parametrize("opis", list(CZYTANE_POMOCNIKI))
-def test_polecenie_podfunkcji_drukuje_pomocnika_tak_jak_bieg_napedu(polecenie: ModuleType, opis: str, tmp_path: Path) -> None:
-    """Wydruk polecenia to kroki i sprawdzenia w kolejności i liczbie, w jakiej drukuje je prawdziwy bieg napędu próbki,
-    a nie w kolejności tekstu (W1 i W2 r1 #1769)."""
-
-    zrodlo = CZYTANE_POMOCNIKI[opis]
-    plik = tmp_path / "sonda_biegu.py"
-    plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
-    run = _Zapis()
-    modul(plik).drive(run, None)
-
-    czytane = polecenie.sub_features(zrodlo, "sonda.py")
-
-    assert [wpis for krok, komunikaty in czytane for wpis in [("step", krok), *(("check", k) for k in komunikaty)]] == run.bieg
-
-
-# Ciało drive() i ciało try z samym finally, w którym instrukcja przed pomocnikiem rzuca wyjątek.
-RZUCA_PRZED_POMOCNIKIEM: Final = {
-    "ciało drive()": 'run.check(True, "przed")\n    raise ValueError("w próbce")\n    _pomocnik(run)',
-    "ciało try z samym finally": 'try:\n        run.check(True, "przed")\n        raise ValueError("w próbce")\n        _pomocnik(run)\n'
-    "    finally:\n        pass",
-}
-
-
-def test_wyjatek_przed_pomocnikiem_konczy_bieg_w_try_z_finally_jak_w_ciele_drive(polecenie: ModuleType, tmp_path: Path) -> None:
-    """Wyjątek przed pomocnikiem przechodzi przez samo finally i kończy drive(), więc bieg drukuje początek sekcji i pada,
-    jak w ciele drive(): w obu postaciach polecenie drukuje tę samą sekcję, a bieg jej początek."""
-
-    biegi: list[list[tuple[str, str]]] = []
-    sekcje: list[list[tuple[str, list[str]]]] = []
-    for opis, wstawka in RZUCA_PRZED_POMOCNIKIEM.items():
-        zrodlo = NAPED.format(wstawka=wstawka) + POMOCNIK
-        plik = tmp_path / f"sonda_{len(biegi)}.py"
-        plik.write_text(zrodlo.replace("from drive.common import Run\n", "Run = object\n"), encoding="utf-8")
-        run = _Zapis()
-        with pytest.raises(ValueError, match="w próbce"):
-            modul(plik).drive(run, None)
-        biegi.append(run.bieg)
-        sekcje.append(polecenie.sub_features(zrodlo, "sonda.py"))
-
-    assert biegi[0] == biegi[1] == [("step", "sonda-krok"), ("check", "pierwszy"), ("check", "przed")]
-    assert sekcje[0] == sekcje[1] == [("sonda-krok", ["pierwszy", "przed", "z pomocnika"])]
-
-
-# Znane luki polecenia podfunkcji (tests/fixtures/znane_luki.py): opis postaci → (napęd, ile razy jego bieg drukuje
-# komunikat LUKA; None, gdy drukuje kroki innego modułu). Każdy przechodzi przez ruff z konfiguracją drive/ i przez
-# polecenie, a sekcja drukuje LUKA inną liczbę razy niż bieg. Polecenie odmawia każdego atrybutu .step/.check poza
-# tymi, które czyta, i każdego użycia nazwy pomocnika poza jednym wywołaniem w instrukcji drive(), więc te postacie
-# sięgają po check bez atrybutu, po pomocnika bez jego nazwy albo po funkcję innego modułu.
-POMOCNIK_LUKI: Final = '\n\ndef sprawdz(run: Run) -> None:\n    run.check(True, "LUKA")\n'
-ZNANE_LUKI: Final = {
-    "zna tylko atrybut .check: check przez getattr": (NAPED.format(wstawka='getattr(run, "check")(True, "LUKA")'), 1),
-    "zna tylko atrybut .check: check przez operator.methodcaller": (
-        NAPED.format(wstawka='import operator\n\n    operator.methodcaller("check", True, "LUKA")(run)'),
-        1,
-    ),
-    "zna tylko atrybut .check: check ze słownika klasy": (
-        NAPED.format(wstawka='type(run).__dict__["check"](run, True, "LUKA")'),
-        1,
-    ),
-    "czyta tylko ten moduł: funkcja innego modułu napędu z run": (
-        "from drive.uzupelnienie import drive_result_card\n" + NAPED.format(wstawka="drive_result_card(run, page)"),
-        None,
-    ),
-    "zna pomocnika tylko po nazwie: drugi raz przez globals()": (
-        NAPED.format(wstawka='sprawdz(run)\n    globals()["sprawdz"](run)') + POMOCNIK_LUKI,
-        2,
-    ),
-    "zna pomocnika tylko po nazwie: drugi raz przez atrybut modułu": (
-        NAPED.format(wstawka="import sys\n\n    sprawdz(run)\n    sys.modules[__name__].sprawdz(run)") + POMOCNIK_LUKI,
-        2,
-    ),
-}
-
-
-@wymaga_ruff
-def test_znane_luki_polecenia_podfunkcji_przechodza_przez_kazdy_jego_mechanizm(polecenie: ModuleType, tmp_path: Path) -> None:
-    pliki = zapisz({opis: zrodlo for opis, (zrodlo, _) in ZNANE_LUKI.items()}, tmp_path)
-    zgloszenia = ruff(pliki, sonda=SUB_FEATURES.parent / "drive" / "sonda_luki.py")
-    for opis, plik in pliki.items():
-        try:
-            czytane = polecenie.sub_features(plik.read_text(encoding="utf-8"), plik.name)
-        except polecenie.Unreadable as odmowa:
-            zgloszenia[opis].append(f"sub_features.py: {odmowa}")
-        else:
-            razy = ZNANE_LUKI[opis][1]
-            if razy is not None and [komunikat for _, komunikaty in czytane for komunikat in komunikaty].count("LUKA") == razy:
-                zgloszenia[opis].append(f"sub_features.py: drukuje LUKA {razy} raz(y), jak bieg napędu")
+def test_znane_luki_porownania_sekcji_z_biegu_przechodza_przez_wybor_funkcji_ci(naped: ModuleType) -> None:
+    zgloszenia = {
+        opis: [f"CI jedzie {funkcja} w --feature all i porównuje jej sekcję"] if funkcja in naped.ALL else []
+        for opis, funkcja in ZNANE_LUKI_SEKCJI.items()
+    }
 
     assert_znane_luki(zgloszenia, "tests/test_mapy_funkcji.py")
 
