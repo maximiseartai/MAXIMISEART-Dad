@@ -1082,7 +1082,7 @@ _PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
     },
     "miejsce docstringu: po komentarzu": ('#!/usr/bin/env python3\n"""Moduł z #1614."""\n', [2]),
     "miejsce docstringu: wieloliniowy, linia węzła to pierwsza": (f'{_IN_FUNCTION}"""Opis.\n\n    Wzór z #808.\n    """\n', [2]),
-    "miejsce docstringu: sklejony z dwóch literałów": (f'{_IN_FUNCTION}"Część z #1 " "i dalej"\n', [2]),
+    "tekst źródła: # i cyfra w jednym z dwóch sklejonych literałów": (f'{_IN_FUNCTION}"Część z #1 " "i dalej"\n', [2]),
     "miejsce docstringu: napis r": (f"{_IN_FUNCTION}r'''Z a1b2c3d.'''\n", [2]),
     "miejsce docstringu: napis b": (f'{_IN_FUNCTION}b"""Z #1614."""\n', [2]),
     "miejsce docstringu: f-string": ('def f(x: int) -> None:\n    f"""Z #1614 i {x}."""\n', [2]),
@@ -1119,6 +1119,23 @@ def test_historia_w_docstringu_zglasza_docstring_z_numerem_adresem_github_albo_s
     assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == lines
 
 
+@needs_ast_grep
+def test_historia_w_docstringu_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozszerzenia(tmp_path: Path) -> None:
+    """Granica zbioru plików reguły, ta sama co ``komentarz-w-src``: ``files:`` ma globy ``.py``, ``.pyi`` i ``.py3``,
+    więc ``.pyw`` i skrypt Pythona bez rozszerzenia przechodzą z docstringiem z „#” i cyfrą; gdy reguła zacznie je
+    czytać, ten test każe przesunąć granicę."""
+
+    base = _empty_base(tmp_path)
+    names = ("a.py", "pakiet/b.py", "c.pyi", "d.py3", "e.pyw", "skrypt")
+    for name in names:
+        (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / name).write_text('"""Wzór z #1614."""\n', encoding="utf-8")
+
+    assert [finding.path for finding in syntax_rules(tmp_path, base) if finding.rule == "historia-w-docstringu"] == sorted(
+        f"src/{name}" for name in names[:4]
+    )
+
+
 # Znane luki reguły ``historia-w-docstringu`` (tests/fixtures/znane_luki.py): klasa mechanizmu, który ją przepuszcza:
 # postać → nowy plik ``src/`` z docstringiem z historią, który przechodzi przez regułę i ruff z konfiguracją ``src/``.
 ZNANE_LUKI_HISTORII: Final = {
@@ -1132,6 +1149,14 @@ ZNANE_LUKI_HISTORII: Final = {
     "ścieżka bez domeny github.com: /pull/77": '"""Zob. /pull/77."""\n',
     "skrót bez litery a-f: same cyfry": '"""Naprawione w 4801234."""\n',
     "skrót krótszy niż 7 znaków: abc123": '"""Naprawione w abc123."""\n',
+    "wartość napisu inna niż tekst źródła: # i cyfra rozcięte między sklejone literały": (
+        'def f() -> None:\n    "Wzór z #" "1614."\n'
+    ),
+    "wartość napisu inna niż tekst źródła: # zapisany ucieczką": '"""Wzór z \\x231614."""\n',
+    "wartość napisu inna niż tekst źródła: # i cyfra rozcięte backslashem i nową linią": '"""Wzór z #\\\n1614."""\n',
+    "wartość napisu inna niż tekst źródła: # wstawiony polem f-stringu": (
+        'def f() -> None:\n    f"""Wzór z {"#"}1614."""\n'
+    ),
     "historia bez numeru, adresu i skrótu: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
     "napis, który nie jest całym pierwszym wyrażeniem bloku: w nawiasach": (
         '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n'
