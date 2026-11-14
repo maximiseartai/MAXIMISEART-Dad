@@ -51,6 +51,13 @@ from the repository root (Windows: `py -3`). The proof is in the evidence folder
 `STEP wpisanie-raportow` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
 `api/raporty-*.json` and `state/` (the Logi of Wpisanie raportów).
 
+The days, holidays and Przypomnienia of `mapa-zakresu` and `przypomnienia` come from a routed window.
+`tests/test_centrum_wpisanie_raportow.py::test_widok_raporty_daje_kazdy_dzien_okna_z_nazwa_swieta` checks the server's
+own window: every day of the window, with 11.11 named a public holiday;
+`tests/test_centrum_wpisanie_raportow.py::test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stopki_do_sprawdzenia_po_jej_wpisaniu`
+checks that the view shows the moments of the Przypomnienia at each Wykonawca's day, and the missing footer until the
+check after it is filled in.
+
 ### Real mailbox (only on the machine with the access file, with Maks's consent)
 
 The synthetic mails prove the rules; only Dad's real Raporty wykonawców show the forms no test has yet. On 11.11.2026

@@ -75,6 +75,13 @@ from the repository root (Windows: `py -3`). The proof is in the evidence folder
 `STEP uzupelnienie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/uzupelnienie-*.json`.
 
+The run does not wait a minute for the Komunikat after a failed read:
+`tests/test_centrum_uzupelnienie_na_zywo.py::test_nieudany_odczyt_przez_minute_pokazuje_ostatni_dobry_stan_potem_komunikat`
+checks that a read failing for a minute shows the last good state, then the Komunikat. The steps after Przebieg stand in
+the Folder rozliczeń pracowników for a real Przebieg rozliczeń:
+`tests/test_centrum_uzupelnienie.py::test_po_przebiegu_rozliczen_wiersze_bez_wpisu_taty_sa_bez_ilosci_na_kazdej_stronie`
+runs one and checks that the rows without Dad's entry are „bez ilości” on every page.
+
 ## Gotchas
 
 - `Uzupełnij` has role `button`, not `link`: it is a Base UI `Button` rendered as `<a>`, like the bell.
