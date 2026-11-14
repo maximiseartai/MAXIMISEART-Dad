@@ -1334,26 +1334,62 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
 }
 _PATTERN = "import re\n\nLINE = "
+# Wzorzec napisu r w ``re.compile`` → (linia, którą widzi z końcem LF, czy reguła kotwica-konca-linii go zgłasza).
+# Zgłaszany gubi tę linię z końcem CRLF, a przepuszczany ją widzi, co sprawdza
+# ``test_wzorzec_zgloszony_przez_kotwice_konca_linii_gubi_linie_crlf_a_przepuszczony_ja_widzi``. Reguła przepuszcza
+# tylko \r? albo atom z nieograniczoną górną granicą, który na pewno bierze \r, tuż przed $.
+_KOTWICE: Final[list[tuple[str, str, bool]]] = [
+    (r"PONOWIENIE \| test .*$", "PONOWIENIE | test x", False),
+    (r"PONOWIENIE(.*)$", "PONOWIENIE x", False),
+    (r"PONOWIENIE .*?$", "PONOWIENIE x", False),
+    (r"PONOWIENIE\s+$", "PONOWIENIE ", False),
+    (r"PONOWIENIE\s*$", "PONOWIENIE", False),
+    (r"PONOWIENIE\r?$", "PONOWIENIE", False),
+    (r'PONOWIENIE "[^"]+$', 'PONOWIENIE "x', False),
+    (r"PONOWIENIE [^|]+ .*$", "PONOWIENIE a b", False),
+    (r"PONOWIENIE[ \t\r]+$", "PONOWIENIE ", False),
+    (r"PONOWIENIE x.{1,}$", "PONOWIENIE xy", False),
+    (r"cena w \$", "cena w $", False),
+    (r"PONOWIENIE$", "PONOWIENIE", True),
+    (r"PONOWIENIE [a-z]$", "PONOWIENIE x", True),
+    (r"PONOWIENIE\.$", "PONOWIENIE.", True),
+    (r"PONOWIENIE.$", "PONOWIENIEa", True),
+    (r"PONOWIENIE\s$", "PONOWIENIE ", True),
+    (r'PONOWIENIE [^"]$', "PONOWIENIE x", True),
+    (r"PONOWIENIE[\s]$", "PONOWIENIE ", True),
+    (r"PONOWIENIE x.?$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x\s?$", "PONOWIENIE x ", True),
+    (r"PONOWIENIE x.{2}$", "PONOWIENIE xyz", True),
+    (r"PONOWIENIE x.{0,3}$", "PONOWIENIE xyzw", True),
+    (r"PONOWIENIE x(.)$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x(?:.)$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x[^\d]$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x[^\x0d]+$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x[^\015]+$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x[^\W]+$", "PONOWIENIE xy", True),
+    (r"PONOWIENIE x[^\D]+$", "PONOWIENIE x1", True),
+    (r"PONOWIENIE [^\r\n]$", "PONOWIENIE x", True),
+    (r"PONOWIENIE(: .*)?$", "PONOWIENIE", True),
+    (r"PONOWIENIE (?:OK|BŁĄD.*)$", "PONOWIENIE OK", True),
+]
+
+
+def _re_compile_r(wzorzec: str) -> str:
+    """Tekst pliku próbki z ``re.compile`` na napisie r ``wzorzec`` w cudzysłowie, którego wzorzec nie zawiera."""
+
+    cudzyslow = "'" if '"' in wzorzec else '"'
+    return f"{_PATTERN}re.compile(r{cudzyslow}{wzorzec}{cudzyslow})\n"
+
+
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
-# (#1584 W1 r1), i postać po poprawce, którą przepuszcza. Przepuszcza też ostatni atom przed $, który bierze \r
-# (``.``, ``\s``), więc linię CRLF wzorzec widzi z samego kształtu, a zgłasza pominiętą grupę i alternatywę, bo wtedy $
-# może stanąć za atomem, który \r nie bierze.
+# (#1584 W1 r1), wzorce z ``_KOTWICE``, napis bez r (zgłaszany, bo bez r reguła nie wie, co znaczy ukośnik w tekście
+# źródła) i napis z $ poza wywołaniem re (przepuszczany).
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE \\| test .*$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"(?m)^" + r"PONOWIENIE$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.search(rf"{{LINE}}$", "")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [a-z]$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [^\\r\\n]$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\.$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE(: .*)?$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE (?:OK|BŁĄD.*)$")\n', [3]),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\r?$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s*$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\s$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE[ \\t\\r]+$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE [^|]+ .*$")\n', []),
-    ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
+    ("kotwica-konca-linii", f'{_PATTERN}re.compile("PONOWIENIE .*$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+    *(("kotwica-konca-linii", _re_compile_r(wzorzec), [3] if zglasza else []) for wzorzec, _, zglasza in _KOTWICE),
 ]
 
 
@@ -1381,6 +1417,16 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
+@pytest.mark.parametrize(("wzorzec", "linia", "zglasza"), _KOTWICE)
+def test_wzorzec_zgloszony_przez_kotwice_konca_linii_gubi_linie_crlf_a_przepuszczony_ja_widzi(
+    wzorzec: str, linia: str, zglasza: bool
+) -> None:
+    lf = re.search("(?m)^" + wzorzec, f"a\n{linia}\nb\n")
+    crlf = re.search("(?m)^" + wzorzec, f"a\r\n{linia}\r\nb\r\n")
+
+    assert (lf is not None, crlf is not None) == (True, not zglasza)
+
+
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
 # ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
 # konfiguracją swojego katalogu.
@@ -1390,8 +1436,8 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
-        "napis bez r: reguła czyta tekst źródła jak surowy": f'{_PATTERN}re.compile("PONOWIENIE\\\\.$")\n',
-        "lookaround tuż przed $: reguła czyta ostatni atom w nim": f'{_PATTERN}re.compile(r"PONOWIENIE(?<!\\s)$")\n',
+        "nawias zamykający po atomie: reguła nie paruje nawiasów, więc lookahead albo komentarz (?#…) kończący się .*"
+        " przechodzi": f'{_PATTERN}re.compile(r"PONOWIENIE(?=.*)$")\n',
     },
 }
 

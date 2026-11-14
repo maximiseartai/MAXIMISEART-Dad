@@ -3,8 +3,8 @@ language: python
 severity: error
 message: >-
   kotwica $ na końcu wzorca re nie pasuje do linii zakończonej \r\n (log zadania Windows z API GitHuba, tekst z bajtów
-  bez uniwersalnych końców linii), więc wzorzec po cichu nie widzi linii; użyj \r?$ zamiast $ (albo \s*$, gdy biały
-  znak na końcu linii jest dozwolony)
+  bez uniwersalnych końców linii), więc wzorzec po cichu nie widzi linii; w napisie r użyj \r?$ zamiast $ (albo \s*$,
+  gdy biały znak na końcu linii jest dozwolony)
 files:
   - tools/**/*.py
 rule:
@@ -14,11 +14,12 @@ rule:
   kind: string
   regex: '[^\\]\$["'']$'
   not:
-    # Przepuszcza literał bez | poza ucieczką i klasą, którego ostatni atom przed $ bierze \r: ., \r, \s, klasa [^…]
-    # bez \r i \s albo klasa z \r lub \s, z kwantyfikatorem i nawiasami zamykającymi bez ? ani * po nich. Linię CRLF
-    # taki wzorzec widzi z samego kształtu, bo atom bierze \r, a $ pasuje przed końcowym \n.
+    # Lista dozwolonych: napis r bez | poza ucieczką i klasą, w którym tuż przed $ (i nawiasami zamykającymi bez
+    # kwantyfikatora) stoi \r? albo atom z nieograniczoną górną granicą (*, +, {n,}), którego zbiór znaków na pewno
+    # zawiera \r: ., \r, \s, klasa z jawnym \r albo \s, klasa zanegowana bez żadnej ucieczki. Taki wzorzec widzi linię
+    # CRLF, bo ostatnie powtórzenie bierze \r, a $ pasuje przed końcowym \n. Każda inna postać jest zgłaszana.
     regex: >-
-      ^[a-zA-Z]*("""|'''|"|')([^|\\\[]|\\.|\[([^\]\\]|\\.)*\])*(\.|\\[rs]|\[\^([^\]\\]|\\[^rs])*\]|\[(\\[rs]|([^\]\\^]|\\.)([^\]\\]|\\.)*?\\[rs])([^\]\\]|\\.)*\])([*+?]|\{[0-9,]*\})?\??(\)(\+|\{[1-9][0-9,]*\})?)*\$("""|'''|"|')$
+      ^([rR][bBfF]?|[bBfF][rR])("""|'''|"|')([^|\\\[]|\\.|\[([^\]\\]|\\.)*\])*(\\r\?|(\.|\\[rs]|\[\^[^\]\\]+\]|\[(\\[rs]|([^\]\\^]|\\.)([^\]\\]|\\.)*?\\[rs])([^\]\\]|\\.)*\])(\*|\+|\{[0-9]+,\})[?+]?)\)*\$("""|'''|"|')$
   inside:
     kind: call
     stopBy: end
