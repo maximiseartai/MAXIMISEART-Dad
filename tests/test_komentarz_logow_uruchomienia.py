@@ -27,7 +27,6 @@ import gzip
 import json
 from pathlib import Path
 import pickle
-import string
 import threading
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
@@ -37,7 +36,6 @@ import pytest
 
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.domain import RunMode
-from rozliczenia.settlement_period import UNKNOWN_PERIOD
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.comment_versions import (
     LABEL,
@@ -2739,8 +2737,8 @@ _TEKSTY_POL_NARZEDZIA: Final = list(_teksty_pol_narzedzia(full_logs()))
 """Teksty pól narzędzia pełnych Logów; nowe pole gramatyki albo listy pól narzędzia dostaje tu przypadek samo."""
 
 
-def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
-    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
+def _z_dopisana_komorka(sciezka: _Sciezka) -> tuple[str, dict[str, Any]]:
+    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst ma dopisaną komórkę."""
 
     dump = full_logs().model_dump(mode="json")
     *droga, ostatni = sciezka
@@ -2748,115 +2746,45 @@ def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dic
     for krok in droga:
         miejsce = miejsce[krok]
     narzedzia = miejsce[ostatni]
-    miejsce[ostatni] = tekst(narzedzia)
+    miejsce[ostatni] = f"{narzedzia} {_KOMORKA}"
     return narzedzia, dump
 
 
-_ZNAKI_IDENTYFIKATORA: Final = string.ascii_letters + string.digits + "_"
-_HEX: Final = string.digits + "abcdef"
+@pytest.mark.parametrize(
+    "pole, sciezka",
+    [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR],
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
+)
+def test_tekst_pola_narzedzia_z_dopisana_komorka_spoza_calej_gramatyki_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
+    """Tekst narzędzia każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``), w każdym miejscu pełnych Logów, także w liście i
+    poddrzewie śladu, pasuje do niej, a z dopisaną zapamiętaną komórką już nie: strażnik (``_kept``) i ``tool_text``
+    biorą całą gramatykę, więc początek w gramatyce nie przepuszcza reszty (przegląd #1849, D1)."""
 
-ALFABETY: Final = {
-    "RunLog.run_id": _HEX,
-    "RunLog.period": string.digits + "_" + UNKNOWN_PERIOD,
-    "Tool.wydanie": string.digits + ".",
-    "Tool.commit": _HEX,
-    "CallTrace.exception_type": _ZNAKI_IDENTYFIKATORA + ".",
-    "CallCause.exception_type": _ZNAKI_IDENTYFIKATORA + ".",
-    "CallFrame.file": _ZNAKI_IDENTYFIKATORA + ".-/",
-    "CallFrame.function": _ZNAKI_IDENTYFIKATORA + "<>",
-    "Environment.system": _ZNAKI_IDENTYFIKATORA + ".-",
-    "Environment.python": _ZNAKI_IDENTYFIKATORA + ".",
-}
-"""Alfabet każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``): znaki, które gramatyka pola może przyjąć. Gramatyka, która
-przyjmuje znak spoza alfabetu swojego pola, czerwieni test alfabetu."""
-
-_PROBY: Final = "".join(map(chr, range(128))) + "ąŻéß" + "٣１" + "\u00a0\u2028" + "€"
-"""Znaki próby: każdy znak ASCII (także sterujący) i znaki spoza ASCII, które przyjmują ``\\w``, ``\\d`` albo ``\\s``
-Pythona bez ``re.ASCII`` albo klasa zaprzeczona: litery (ą, Ż, é, ß), cyfry (arabska ٣, pełnej szerokości １), odstępy
-(twarda spacja, separator wiersza), symbol €."""
-
-_GRAMATYKI: Final = [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR]
-
-
-def _id(wartosc: object) -> str:
-    """Nazwa przypadku: pole albo ścieżka tekstu w JSON-ie Logów."""
-
-    return ".".join(map(str, wartosc)) if isinstance(wartosc, tuple) else str(wartosc)
-
-
-@pytest.mark.parametrize("pole, sciezka", _GRAMATYKI, ids=_id)
-def test_gramatyka_pola_narzedzia_nie_przyjmuje_znaku_spoza_alfabetu_pola_wstawionego_ani_zamienionego_w_zadnym_miejscu(pole: str, sciezka: _Sciezka) -> None:
-    """Tekst narzędzia każdego pola z gramatyką, w każdym miejscu pełnych Logów, pasuje do gramatyki, a z jednym znakiem
-    próby (``_PROBY``) spoza alfabetu pola (``ALFABETY``) wstawionym przed którymkolwiek znakiem albo za ostatnim, albo
-    w miejsce któregokolwiek znaku, już nie pasuje w całości, więc idzie przez strażnika. Zamiana trzyma długość, więc
-    łapie też znak spoza alfabetu w gramatyce o stałej albo najdłuższej długości. Sprawdza samą gramatykę (przegląd
-    #1853, runda 3). Nie widzi znaku spoza próby ani znaku, który gramatyka przyjmuje tylko w ciągu dłuższym niż jedna
-    taka zmiana tekstu narzędzia z pełnych Logów (np. ``(?:\\+local)?``)."""
-
-    narzedzia, _ = _z_tekstem(sciezka, str)
-    gramatyka = TOOL_TEXT_GRAMMAR[pole]
-    zmienione = [
-        f"{narzedzia[:miejsce]}{znak}{narzedzia[miejsce + zamiana:]}"
-        for znak in _PROBY
-        if znak not in ALFABETY[pole]
-        for zamiana in (0, 1)
-        for miejsce in range(len(narzedzia) + 1 - zamiana)
-    ]
-    przyjete = [tekst for tekst in zmienione if gramatyka.fullmatch(tekst)]
-
-    assert gramatyka.fullmatch(narzedzia), narzedzia
-    assert przyjete == []
-
-
-def _separatory_straznika() -> list[str]:
-    """Znaki próby, którymi strażnik rozdziela słowa wartości (ADR 0025): ``guarded`` maskuje komórkę, której słowa
-    rozdziela ten znak. Źródłem jest sam strażnik, nie lista."""
-
+    narzedzia, dump = _z_dopisana_komorka(sciezka)
     pamiec = empty_memory()
     pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
-    return [znak for znak in _PROBY if znak.join(_KOMORKA.split()) not in guarded(pamiec, znak.join(_KOMORKA.split()), "").text]
 
-
-@pytest.mark.parametrize("pole, sciezka", _GRAMATYKI, ids=_id)
-def test_komorka_zapisana_separatorem_straznika_spoza_alfabetu_pola_nie_wychodzi_bez_maski(pole: str, sciezka: _Sciezka) -> None:
-    """Koniec do końca: zapamiętana komórka zapisana każdym separatorem strażnika spoza alfabetu pola
-    (``_separatory_straznika``) i wstawiona z przodu, w środku i z tyłu tekstu narzędzia nie wychodzi bez maski ani z
-    ``guard_logs``, ani z ``tool_text``. Miejsca w tekście pokrywa test alfabetu; ten test pokazuje, że strażnik i
-    ``tool_text`` biorą gramatykę pola w całości (``fullmatch``), także w liście i w poddrzewie śladu. Zostaje komórka
-    zapisana samymi znakami alfabetu pola: znana luka „gramatyka identyfikatora przepuszcza jedno słowo z komórki”
-    (``ZNANE_LUKI_LOGOW``)."""
-
-    narzedzia, _ = _z_tekstem(sciezka, str)
-    pamiec = empty_memory()
-    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
-    separatory = [znak for znak in _separatory_straznika() if znak not in ALFABETY[pole]]
-
-    assert " " in separatory
-    for znak in separatory:
-        zapis = znak.join(_KOMORKA.split())
-        for miejsce in (0, len(narzedzia) // 2, len(narzedzia)):
-            tekst = f"{narzedzia[:miejsce]}{znak}{zapis}{znak}{narzedzia[miejsce:]}"
-            assert zapis not in guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text, repr(tekst)
-            assert zapis not in tool_text(pole, tekst), repr(tekst)
+    assert TOOL_TEXT_GRAMMAR[pole].fullmatch(narzedzia), narzedzia
+    assert _KOMORKA not in guard_logs(RunLog.model_validate(dump), pamiec).text
+    assert _KOMORKA not in tool_text(pole, f"{narzedzia} {_KOMORKA}")
 
 
 @pytest.mark.parametrize(
     "pole, sciezka",
     [(pole, sciezka) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole not in TOOL_TEXT_GRAMMAR],
-    ids=_id,
+    ids=lambda wartosc: wartosc if isinstance(wartosc, str) else ".".join(map(str, wartosc)),
 )
 def test_tekst_pola_narzedzia_bez_gramatyki_ma_zamkniety_typ_ktory_nie_przyjmuje_komorki(pole: str, sciezka: _Sciezka) -> None:
     """Tekst pola z ``TOOL_FIELDS`` bez gramatyki strażnik zostawia bez maski, więc Logi nie powstają z takim polem z
     dopisaną komórką: to zamknięta lista albo chwila schematu. Nowe pole z dowolnym tekstem bez gramatyki tu czerwieni."""
 
-    _, dump = _z_tekstem(sciezka, lambda narzedzia: f"{narzedzia} {_KOMORKA}")
+    _, dump = _z_dopisana_komorka(sciezka)
 
     with pytest.raises(ValidationError):
         RunLog.model_validate(dump)
 
 
 def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
-    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst i alfabet."""
+    """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst."""
 
     assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
-    assert sorted(set(TOOL_TEXT_GRAMMAR) ^ set(ALFABETY)) == [], "każde pole gramatyki ma alfabet w ALFABETY"
