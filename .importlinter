@@ -1,12 +1,15 @@
 # Kontrakty import-linter: granice importów src/, które trzyma graf importów (ADR 0034, „Nowa reguła struktury”).
 # Uruchamia je tests/test_granice_importow.py::test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow.
 #
-# Graf buduje grimp z kodu bez jego wykonania: ma każdy plik .py pakietu rozliczenia (katalog bez __init__.py odrzuca ruff
-# INP001 w src/ruff.toml) i każdą instrukcję import i from … import w nim, bezwzględną i względną, w funkcji, w klasie,
-# w gałęzi warunku, w try i pod TYPE_CHECKING. Import po nazwie w trakcie działania (__import__, sys.modules) i plik .pyw
-# są poza grafem: to znane luki ZNANE_LUKI_KONTRAKTOW w tests/test_granice_importow.py (importlib w src/ zakazuje
-# ruff TID251). Komentarz w kodzie nie wyłącza kontraktu; wyłącza go tylko zmiana tego pliku (ignore_imports,
-# exclude_type_checking_imports, usunięcie kontraktu).
+# Graf buduje grimp z kodu bez jego wykonania, z każdej instrukcji import i from … import, bezwzględnej i względnej,
+# w funkcji, w klasie, w gałęzi warunku, w try i pod TYPE_CHECKING. Kontrakt mówi tylko o plikach, które grimp czyta:
+# pomija katalog bez __init__.py z całym poddrzewem, katalog o nazwie spoza identyfikatora, plik z kropką na początku
+# albo z drugą kropką i plik bez końcówki .py. Że każdy plik *.py pakietu rozliczenia jest modułem tego grafu,
+# sprawdza test_graf_kontraktow_importow_ma_kazdy_plik_py_pakietu_rozliczenia obok. Import po nazwie w trakcie
+# działania (__import__, sys.modules) i moduł bez pliku .py (.pyw na Windows, .pyc bez źródła) są poza grafem i poza
+# tym testem: to znane luki ZNANE_LUKI_KONTRAKTOW (importlib w src/ zakazuje ruff TID251). Komentarz w kodzie nie
+# wyłącza kontraktu; wyłącza go tylko zmiana tego pliku (ignore_imports, exclude_type_checking_imports, usunięcie
+# kontraktu).
 
 [importlinter]
 root_package = rozliczenia

@@ -92,6 +92,7 @@ from dataclasses import dataclass
 import importlib
 import os
 from pathlib import Path, PureWindowsPath
+import py_compile
 import subprocess
 import sys
 import typing
@@ -378,9 +379,97 @@ def test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow() -> No
     assert f"Contracts: {len(IMPORT_CONTRACTS)} kept, 0 broken." in wynik, wynik
 
 
+# Moduły grafu, na którym import-linter sprawdza kontrakty ``IMPORT_LINTER_CONFIG``: skrypt uruchamia to samo
+# ``use_cases.lint_imports``, które woła ``lint-imports``, zatrzymuje raport z ``create_report`` i po linii
+# ``GRAPH_MARK`` drukuje moduły jego grafu, po jednym w linii.
+GRAPH_MARK: typing.Final = "MODUŁY GRAFU"
+GRAPH_MODULES: typing.Final = f"""\
+import sys
+
+from importlinter import api
+from importlinter.application import use_cases
+
+assert api
+reports = []
+create_report = use_cases.create_report
+use_cases.create_report = lambda *args, **kwargs: reports.append(create_report(*args, **kwargs)) or reports[-1]
+use_cases.lint_imports(config_filename=sys.argv[1], cache_dir=None, no_logo=True)
+print("{GRAPH_MARK}", *sorted(reports[0].graph.modules), sep="\\n")
+"""
+
+
+def _outside_graph(src: Path) -> list[str]:
+    """Pliki ``*.py`` pod ``src/rozliczenia`` poza grafem kontraktów: moduł pliku (ścieżka bez ``.py`` i bez
+    ``__init__``) nie jest w grafie albo ma go też inny plik (``a.b.py`` obok ``a/b.py``). Graf liczy tylko to, co
+    grimp przeczytał, więc test pada na każdym pliku, którego grimp nie wziął, z każdego powodu."""
+
+    done = subprocess.run(
+        [sys.executable, "-c", GRAPH_MODULES, str(IMPORT_LINTER_CONFIG)],
+        cwd=src,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert f"\n{GRAPH_MARK}\n" in done.stdout, done.stdout + done.stderr
+    graph = frozenset(done.stdout.partition(f"\n{GRAPH_MARK}\n")[2].split())
+    files: dict[str, list[str]] = {}
+    for path in sorted((src / "rozliczenia").rglob("*.py")):
+        parts = path.relative_to(src).with_suffix("").parts
+        files.setdefault(".".join(parts[:-1] if parts[-1] == "__init__" else parts), []).append(
+            path.relative_to(src).as_posix()
+        )
+    return [file for module, found in files.items() for file in found if module not in graph or len(found) > 1]
+
+
+@wymaga_import_linter
+def test_graf_kontraktow_importow_ma_kazdy_plik_py_pakietu_rozliczenia() -> None:
+    assert _outside_graph(SRC) == [], (
+        "kontrakty .importlinter nie widzą tych plików, bo grimp ich nie czyta: dodaj __init__.py w każdym katalogu "
+        "nad plikiem, nazwij każdy katalog identyfikatorem Pythona, a plik bez kropki na początku i bez drugiej kropki"
+    )
+
+
+# Pliki pakietu, których grimp nie czyta (``grimp/adaptors/modulefinder.py``), → pliki, które ``_outside_graph``
+# zgłasza; ``a.b.py`` obok ``a/b.py`` daje ten sam moduł, więc zgłasza oba.
+OUTSIDE_GRAPH: typing.Final = {
+    "katalog-bez-init": ({"bez_init/x.py": ""}, ["bez_init/x.py"]),
+    "podpakiet-pod-katalogiem-bez-init": (
+        {"bez_init/pod/__init__.py": "", "bez_init/pod/x.py": ""},
+        ["bez_init/pod/__init__.py", "bez_init/pod/x.py"],
+    ),
+    "katalog-o-nazwie-spoza-identyfikatora": (
+        {"zly-katalog/__init__.py": "", "zly-katalog/x.py": ""},
+        ["zly-katalog/__init__.py", "zly-katalog/x.py"],
+    ),
+    "katalog-ukryty": ({".ukryty/__init__.py": "", ".ukryty/x.py": ""}, [".ukryty/__init__.py", ".ukryty/x.py"]),
+    "plik-ukryty": ({".x.py": ""}, [".x.py"]),
+    "plik-z-dwiema-kropkami": ({"a.b.py": ""}, ["a.b.py"]),
+    "plik-z-dwiema-kropkami-obok-modulu-o-tej-nazwie": (
+        {"a/__init__.py": "", "a/b.py": "", "a.b.py": ""},
+        ["a/b.py", "a.b.py"],
+    ),
+}
+
+
+@wymaga_import_linter
+@pytest.mark.parametrize(("files", "outside"), OUTSIDE_GRAPH.values(), ids=OUTSIDE_GRAPH.keys())
+def test_zupelnosc_grafu_kontraktow_lapie_kazdy_plik_ktorego_grimp_nie_czyta(
+    tmp_path: Path, files: dict[str, str], outside: list[str]
+) -> None:
+    _contract_tree(tmp_path)
+    for name, code in files.items():
+        (tmp_path / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "rozliczenia" / name).write_text(code, encoding="utf-8")
+
+    assert _outside_graph(tmp_path) == [f"rozliczenia/{name}" for name in outside]
+
+
 # Znane luki kontraktów z ``IMPORT_LINTER_CONFIG`` (tests/fixtures/znane_luki.py): „klasa: postać” → moduł
 # ``rozliczenia.znana_luka_<n>`` w drzewie ``_contract_tree``, który łamie granicę kontraktu, a mimo to przechodzi przez
-# ruff w ``src/`` i ``lint-imports``. Próbka z opisem kończącym się na ``.pyw`` leży w pliku ``.pyw``.
+# ruff w ``src/``, ``lint-imports`` i ``_outside_graph``. Próbka z opisem kończącym się na ``.pyw`` leży w pliku ``.pyw``,
+# a z ``.pyc`` w pliku ``.pyc`` bez źródła, który Python importuje (``SourcelessFileLoader``).
 ZNANE_LUKI_KONTRAKTOW: typing.Final = {
     "czyta tylko instrukcje importu: Centrum przez wbudowane __import__": 'GOSPODARZ = __import__("rozliczenia.centrum.runs")\n',
     "czyta tylko instrukcje importu: Centrum z sys.modules": (
@@ -405,6 +494,8 @@ def skrzynka() -> ssl.SSLSocket:
     "czyta tylko pliki .py: imaplib z modułu, który Python na Windows importuje z .pyw": (
         "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n"
     ),
+    "czyta tylko pliki .py: Centrum z modułu bez źródła .pyc": "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n",
+    "czyta tylko pliki .py: imaplib z modułu bez źródła .pyc": "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n",
 }
 
 
@@ -429,14 +520,20 @@ def _contract_tree(src: Path) -> None:
 def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tmp_path: Path) -> None:
     _contract_tree(tmp_path)
     pliki = zapisz(ZNANE_LUKI_KONTRAKTOW, tmp_path / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "sonda_luki.py")
     for opis, plik in pliki.items():
         if opis.endswith(".pyw"):
             pliki[opis] = plik.rename(plik.with_suffix(".pyw"))
+        elif opis.endswith(".pyc"):
+            py_compile.compile(str(plik), cfile=str(plik.with_suffix(".pyc")), doraise=True)
+            plik.unlink()
+            pliki[opis] = plik.with_suffix(".pyc")
 
-    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "sonda_luki.py")
     wynik = _lint_imports(tmp_path)
+    poza_grafem = _outside_graph(tmp_path)
     for opis, plik in pliki.items():
         zgloszenia[opis] += [line for line in wynik.splitlines() if f"rozliczenia.{plik.stem}" in line]
+        zgloszenia[opis] += [f"poza grafem: {found}" for found in poza_grafem if found.startswith(f"rozliczenia/{plik.stem}.")]
 
     assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
     assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
