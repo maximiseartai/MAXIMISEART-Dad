@@ -1,0 +1,56 @@
+# Kontrakty import-linter: granice importów src/, które trzyma graf importów (ADR 0034, „Nowa reguła struktury”).
+# Uruchamia je tests/test_granice_importow.py::test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow.
+#
+# Graf buduje grimp z kodu bez jego wykonania: ma każdy plik .py pakietu rozliczenia (katalog bez __init__.py odrzuca ruff
+# INP001 w src/ruff.toml) i każdą instrukcję import i from … import w nim, bezwzględną i względną, w funkcji, w klasie,
+# w gałęzi warunku, w try i pod TYPE_CHECKING. Import po nazwie w trakcie działania (__import__, sys.modules) i plik .pyw
+# są poza grafem: to znane luki ZNANE_LUKI_KONTRAKTOW w tests/test_granice_importow.py (importlib w src/ zakazuje
+# ruff TID251). Komentarz w kodzie nie wyłącza kontraktu; wyłącza go tylko zmiana tego pliku (ignore_imports,
+# exclude_type_checking_imports, usunięcie kontraktu).
+
+[importlinter]
+root_package = rozliczenia
+include_external_packages = True
+
+[importlinter:contract:silnik-bez-centrum]
+name = Silnik nie importuje Centrum rozliczeń
+type = forbidden
+# Każdy moduł i podpakiet pod rozliczenia oprócz samego Centrum (parę Centrum z Centrum kontrakt pomija). Każdy z nich
+# jest źródłem, więc import wprost wystarcza: łańcuch do Centrum zaczyna się od modułu silnika, który je importuje.
+source_modules =
+    rozliczenia.*
+forbidden_modules =
+    rozliczenia.centrum
+allow_indirect_imports = True
+broken_contract_guidance =
+    Silnik nie zależy od Centrum rozliczeń, adaptera Uruchomienia procesu (ADR 0004): przenieś potrzebny kod do silnika,
+    a Centrum niech importuje go stamtąd.
+
+[importlinter:contract:pakiet-silnika-bez-centrum]
+name = Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń
+type = forbidden
+# Pakiet nad Centrum zawiera Centrum, więc rozliczenia.* go nie obejmuje; as_packages = False bierze sam __init__.py.
+source_modules =
+    rozliczenia
+forbidden_modules =
+    rozliczenia.centrum
+    rozliczenia.centrum.**
+as_packages = False
+allow_indirect_imports = True
+broken_contract_guidance =
+    Silnik nie zależy od Centrum rozliczeń, adaptera Uruchomienia procesu (ADR 0004): przenieś potrzebny kod do silnika,
+    a Centrum niech importuje go stamtąd.
+
+[importlinter:contract:skrzynka-raportow]
+name = imaplib i smtplib importuje tylko port Skrzynki raportów
+type = protected
+# Tylko import wprost: port otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia
+# o raporcie (ADR 0030), a moduł, który importuje port, przechodzi.
+protected_modules =
+    imaplib
+    smtplib
+allowed_importers =
+    rozliczenia.worker_report_inbox
+broken_contract_guidance =
+    Skrzynkę raportów czyta tylko rozliczenia/worker_report_inbox.py, który otwiera ją tylko do odczytu (ADR 0028):
+    weź z niego ImapInbox, WorkerReportInbox albo ReminderMailbox zamiast imaplib i smtplib.

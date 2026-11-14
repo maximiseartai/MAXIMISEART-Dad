@@ -3,6 +3,11 @@
 # w src/, każdy z próbką w tests/test_zakazy_ruff.py. Prawo właściciela stoi w per-file-ignores pyproject.toml.
 extend = "../pyproject.toml"
 
+[lint]
+# Plik w katalogu bez __init__.py nie jest modułem pakietu rozliczenia, więc grafu importów kontraktów z .importlinter
+# nie ma w nim wcale; ruff dokłada tę regułę do wybranych w pyproject.toml.
+extend-select = ["INP001"]
+
 [lint.flake8-tidy-imports.banned-api]
 "os.name".msg = 'sprawdzaj system przez sys.platform == "win32": mypy zawęża gałęzie tylko po sys.platform'
 "typing.no_type_check".msg = "nie wyłączaj mypy dla całej funkcji: popraw typy albo stłum jedną linię przez # type: ignore[kod] z powodem, które liczy tests/test_granice_wyjatkow.py"

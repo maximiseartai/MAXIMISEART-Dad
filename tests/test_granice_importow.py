@@ -1,7 +1,14 @@
 """Graf importów ``src/`` trzyma granice, które łamie jeden import.
 
-Silnik nie zależy od Centrum rozliczeń (ADR 0004: Centrum to adapter Uruchomienia procesu). Moduły, z których
-Centrum mówi o brakującej bibliotece, importują przy wczytaniu tylko bibliotekę standardową. Kopia opiekuna ponownego
+Dwie granice trzymają kontrakty import-linter z ``.importlinter``, które uruchamia
+``test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow``: silnik nie zależy od Centrum rozliczeń (ADR 0004:
+Centrum to adapter Uruchomienia procesu), a ``imaplib`` i ``smtplib`` importuje w ``src/`` tylko port Skrzynki raportów
+(``worker_report_inbox.py``), który otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia
+o raporcie (ADR 0030): inny moduł z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail
+z hasłem aplikacji poza portem. Co widzi graf kontraktów, mówi komentarz na początku ``.importlinter``, a luki pokazują
+próbki ``ZNANE_LUKI_KONTRAKTOW``.
+
+Moduły, z których Centrum mówi o brakującej bibliotece, importują przy wczytaniu tylko bibliotekę standardową. Kopia opiekuna ponownego
 startu (``_COPIED`` w ``restart_guardian.py``) importuje tylko bibliotekę standardową i siebie: moduł spoza kopii
 kończy się ``ModuleNotFoundError``, bo pakiet ``rozliczenia`` kopii szuka modułów tylko w niej, a bibliotekę
 spoza standardowej aktualizacja, którą opiekun kończy, mogła właśnie zmienić (``pip_install``). Test uruchomienia
@@ -39,10 +46,6 @@ Wersje komentarza Uruchomienia (``centrum/comment_versions.py``) nie robią I/O:
 ``PURE_VERSIONS``, więc stopień wersji, los dziennika Wyceny i macierz startu Centrum (``close``) sprawdza test bez
 plików i wątków.
 
-``imaplib`` i ``smtplib`` importuje w ``src/`` tylko port Skrzynki raportów (``worker_report_inbox.py``), który
-otwiera skrzynkę taty tylko do odczytu (ADR 0028) i wysyła z niej tylko Przypomnienia o raporcie (ADR 0030): inny moduł
-z własnym połączeniem IMAP mógłby wysłać ``SELECT`` albo ``STORE``, a z SMTP mail z hasłem aplikacji poza portem.
-
 Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły danych albo przerobił gotową wysyłkę Logów
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
 
@@ -73,11 +76,11 @@ trzyma tylko pomocniki testów. Sprawdzenie nie ma wyjątków i łapie postacie 
 ``_tests_imports``; uruchomienie testu po ścieżce (``pytest.main([".../tests/test_x.py::test"])``) nie jest importem i
 przechodzi.
 
-Test czyta AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy moduł bez zależności
-trafia do ``STDLIB_ONLY`` z powodem. Granice czytania importów, Skryptu dla maszyn, składania ``PreparedRun``,
-strażnika Logów, wysyłki Logów i granicy testów pokazują próbki ``ZNANE_LUKI_GRAFU``, ``ZNANE_LUKI_SKRYPTU``,
-``ZNANE_LUKI_KATALOGU``, ``ZNANE_LUKI_STRAZNIKA``, ``ZNANE_LUKI_WYSYLKI`` i ``ZNANE_LUKI_TESTOW`` przy ich testach,
-każda za klasą nazwaną w swojej nazwie (``tests/fixtures/znane_luki.py``).
+Sprawdzenia poza kontraktami czytają AST importów, także względnych, importów w funkcji i pakietów nad modułem. Nowy
+moduł bez zależności trafia do ``STDLIB_ONLY`` z powodem. Granice kontraktów, czytania importów, Skryptu dla maszyn,
+składania ``PreparedRun``, strażnika Logów, wysyłki Logów i granicy testów pokazują próbki ``ZNANE_LUKI_KONTRAKTOW``,
+``ZNANE_LUKI_GRAFU``, ``ZNANE_LUKI_SKRYPTU``, ``ZNANE_LUKI_KATALOGU``, ``ZNANE_LUKI_STRAZNIKA``, ``ZNANE_LUKI_WYSYLKI``
+i ``ZNANE_LUKI_TESTOW`` przy ich testach, każda za klasą nazwaną w swojej nazwie (``tests/fixtures/znane_luki.py``).
 """
 
 from __future__ import annotations
@@ -87,8 +90,12 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import importlib
+import os
 from pathlib import Path, PureWindowsPath
+import shutil
+import subprocess
 import sys
+import sysconfig
 import typing
 
 import pytest
@@ -199,8 +206,6 @@ STDLIB_ONLY = {
     "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
     "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",
 }
-# Jedyny moduł src, który rozmawia z serwerem IMAP: Skrzynka raportów otwiera skrzynkę tylko do odczytu (ADR 0028).
-IMAP_PORT = "rozliczenia/worker_report_inbox.py"
 WITHOUT_WORKBOOK = {
     "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",
     "rozliczenia/telemetry.py": "rekord metryk Uruchomienia wspólny dla wszystkich procesów",
@@ -312,23 +317,6 @@ def _copied() -> tuple[str, ...]:
     raise AssertionError(f"{GUARDIAN.relative_to(SRC.parent)}: brak listy _COPIED, którą czyta ten test")
 
 
-def test_silnik_nie_importuje_centrum_rozliczen() -> None:
-    found = {
-        str(found)
-        for path in sorted((SRC / "rozliczenia").glob("*.py"))
-        for found in _imports(path.relative_to(SRC).as_posix())
-        if found.module == "rozliczenia.centrum"
-    }
-
-    assert not found, "\n".join(
-        [
-            *sorted(found),
-            "Silnik (src/rozliczenia/*.py) nie zależy od Centrum rozliczeń, adaptera Uruchomienia procesu (ADR 0004): "
-            "przenieś potrzebny kod do silnika, a Centrum niech importuje go stamtąd.",
-        ]
-    )
-
-
 def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     allowed = {_module_name(file) for file in STDLIB_ONLY}
     found = {
@@ -348,23 +336,106 @@ def test_moduly_bez_zaleznosci_wczytuja_tylko_biblioteke_standardowa() -> None:
     )
 
 
-def test_imap_i_smtp_importuje_tylko_port_skrzynki_raportow() -> None:
-    found = {
-        str(found)
-        for path in sorted((SRC / "rozliczenia").rglob("*.py"))
-        if path.relative_to(SRC).as_posix() != IMAP_PORT
-        for found in _imports(path.relative_to(SRC).as_posix())
-        if found.module in ("imaplib", "smtplib")
-    }
+IMPORT_LINTER = shutil.which("lint-imports", path=sysconfig.get_path("scripts"))
+IMPORT_LINTER_CONFIG = ROOT / ".importlinter"
+# Nazwa (``name``) każdego kontraktu z ``IMPORT_LINTER_CONFIG``: przebieg, który któregoś nie zgłosi, nie przechodzi.
+IMPORT_CONTRACTS: typing.Final = (
+    "Silnik nie importuje Centrum rozliczeń",
+    "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
+    "imaplib i smtplib importuje tylko port Skrzynki raportów",
+)
+wymaga_import_linter = pytest.mark.skipif(
+    IMPORT_LINTER is None,
+    reason="import-linter z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt, czyli zależności "
+    "taty; kontrakty biegną w zadaniach pytest na Linuksie w każdym runie PR i w tools/szybko.py",
+)
 
-    assert (SRC / IMAP_PORT).is_file()
-    assert not found, "\n".join(
-        [
-            *sorted(found),
-            f"Skrzynkę raportów czyta tylko {IMAP_PORT}, który otwiera ją tylko do odczytu (ADR 0028): "
-            "weź z niego ImapInbox, WorkerReportInbox albo ReminderMailbox zamiast imaplib i smtplib.",
-        ]
+
+def _lint_imports(src: Path) -> str:
+    """Wynik ``lint-imports`` z kontraktami ``IMPORT_LINTER_CONFIG`` na pakiecie ``rozliczenia`` z katalogu ``src``,
+    z kodem wyjścia w pierwszej linii; bez pamięci podręcznej, więc graf jest z plików, które są teraz."""
+
+    assert IMPORT_LINTER is not None
+    done = subprocess.run(
+        [IMPORT_LINTER, "--config", str(IMPORT_LINTER_CONFIG), "--no-cache", "--no-logo"],
+        cwd=src,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
+    return f"kod wyjścia {done.returncode}\n{done.stdout}{done.stderr}"
+
+
+@wymaga_import_linter
+def test_kontrakty_importow_trzymaja_granice_silnika_i_skrzynki_raportow() -> None:
+    wynik = _lint_imports(SRC)
+
+    assert wynik.startswith("kod wyjścia 0\n"), wynik
+    assert [name for name in IMPORT_CONTRACTS if f"{name} KEPT" not in wynik] == [], wynik
+    assert f"Contracts: {len(IMPORT_CONTRACTS)} kept, 0 broken." in wynik, wynik
+
+
+# Znane luki kontraktów z ``IMPORT_LINTER_CONFIG`` (tests/fixtures/znane_luki.py): „klasa: postać” → moduł
+# ``rozliczenia.znana_luka_<n>`` w drzewie ``_contract_tree``, który łamie granicę kontraktu, a mimo to przechodzi przez
+# ruff w ``src/`` i ``lint-imports``. Próbka z opisem kończącym się na ``.pyw`` leży w pliku ``.pyw``.
+ZNANE_LUKI_KONTRAKTOW: typing.Final = {
+    "czyta tylko instrukcje importu: Centrum przez wbudowane __import__": 'GOSPODARZ = __import__("rozliczenia.centrum.runs")\n',
+    "czyta tylko instrukcje importu: Centrum z sys.modules": (
+        'import sys\n\nGOSPODARZ = sys.modules["rozliczenia.centrum.runs"]\n'
+    ),
+    "czyta tylko instrukcje importu: imaplib przez wbudowane __import__": 'SKRZYNKA = __import__("imaplib")\n',
+    "zna tylko moduły imaplib i smtplib: biblioteka spoza src z własnym IMAP": (
+        "import imapclient\n\nSKRZYNKA = imapclient.IMAPClient\n"
+    ),
+    "zna tylko moduły imaplib i smtplib: IMAP przez gniazdo TLS": """\
+import socket
+import ssl
+
+
+def skrzynka() -> ssl.SSLSocket:
+    gniazdo = socket.create_connection(("imap.gmail.com", 993))
+    return ssl.create_default_context().wrap_socket(gniazdo, server_hostname="imap.gmail.com")
+""",
+    "czyta tylko pliki .py: Centrum z modułu, który Python na Windows importuje z .pyw": (
+        "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n"
+    ),
+    "czyta tylko pliki .py: imaplib z modułu, który Python na Windows importuje z .pyw": (
+        "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n"
+    ),
+}
+
+
+def _contract_tree(src: Path) -> None:
+    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``."""
+
+    for name, code in {
+        "__init__.py": "",
+        "centrum/__init__.py": "",
+        "centrum/runs.py": "",
+        "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
+    }.items():
+        (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
+        (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
+
+
+@wymaga_ruff
+@wymaga_import_linter
+def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tmp_path: Path) -> None:
+    _contract_tree(tmp_path)
+    pliki = zapisz(ZNANE_LUKI_KONTRAKTOW, tmp_path / "rozliczenia")
+    for opis, plik in pliki.items():
+        if opis.endswith(".pyw"):
+            pliki[opis] = plik.rename(plik.with_suffix(".pyw"))
+
+    zgloszenia = ruff(pliki, sonda=SRC / "rozliczenia" / "sonda_luki.py")
+    wynik = _lint_imports(tmp_path)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += [line for line in wynik.splitlines() if f"rozliczenia.{plik.stem}" in line]
+
+    assert "\nContracts: " in wynik, wynik
+    assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
 # Rdzeń raportów przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161): spoza biblioteki standardowej bierze tylko
