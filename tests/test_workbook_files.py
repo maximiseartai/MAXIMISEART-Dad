@@ -28,6 +28,7 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
 
 from rozliczenia import tool_files
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import collective_layout
 from rozliczenia.highlights import Highlights
@@ -46,8 +47,11 @@ from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_parts import (
     FirstRows,
+    IrregularSheetData,
+    RowsFromBottom,
     UnsupportedShape,
     active_sheet,
+    appended,
     first_rows,
     package_parts,
     rows_dated_between,
@@ -683,12 +687,17 @@ VALUE_ROWS: list[ExcelRow] = [
 ]
 
 
-@pytest.mark.parametrize("template", ["maly", "syntetyczny"])
+@pytest.mark.parametrize("template", ["maly", "maly-z-datami-od-1904", "syntetyczny"])
 def test_rozliczenie_pracownika_ma_wartosci_kazdego_typu_jak_plik_z_wzorca(tmp_path: Path, template: str) -> None:
-    if template == "maly":
-        template_path = linked_template(tmp_path / "Wzorzec.xlsx")
-    else:
+    """Wzorzec z datami liczonymi od 1904 r. (``date1904``, opcja Excela) dostaje daty jako liczby od tej epoki, więc
+    Excel pokazuje w nim te same dni co we Wzorcu z epoką 1900 r."""
+
+    if template == "syntetyczny":
         template_path = write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE
+    else:
+        template_path = linked_template(tmp_path / "Wzorzec.xlsx")
+    if template == "maly-z-datami-od-1904":
+        rewrite_parts(template_path, _workbook_xml(_once(b"workbookPr />", b'workbookPr date1904="1" />')))
 
     created, expected = _settlement_folders(tmp_path, template_path, [_data_row(values) for values in VALUE_ROWS])
 
@@ -1440,3 +1449,49 @@ def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teks
     assert (b"UM-SYN-002" in table, b"UM-SYN-100" in table, b"UM-SYN-101" in table) == (True, False, False)
     whole = _rows(content)
     assert _rows(narrowed) == {1: whole[1], 3: whole[3]}
+
+
+STYLES_WITHOUT_BORDERS = (
+    b'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    b'<fonts x14ac:knownFonts="1" count="1"><font/></fonts><cellXfs count="1"><xf/></cellXfs></styleSheet>'
+)
+
+
+@pytest.mark.parametrize(("tag", "existing"), [(b"fonts", 1), (b"borders", 0)], ids=["lista-z-count-na-koncu", "brak-listy"])
+def test_style_bez_nowych_wpisow_zostaja_bajt_w_bajt(tag: bytes, existing: int) -> None:
+    """Zapis dopisuje do każdej listy stylów nowe wpisy, także pustą listę: bez nowych wpisów ``xl/styles.xml`` zostaje
+    taki, jaki był, również gdy listy nie ma albo jej ``count`` nie stoi pierwszy."""
+
+    assert appended(STYLES_WITHOUT_BORDERS, tag, [], existing) == STYLES_WITHOUT_BORDERS
+
+
+SHEET_ROWS_2_TO_4 = b'<worksheet><sheetData><row r="2"><c r="A2"/></row><row r="3"/><row r="4"><c r="A4"/></row></sheetData></worksheet>'
+
+
+def test_wiersze_od_dolu_koncza_sie_na_pierwszym_wierszu_arkusza() -> None:
+    """Wiersze nad numerem mniejszym niż pierwszy wiersz arkusza to wszystkie jego wiersze, a wiersza nad pierwszym
+    arkusz nie ma (``KeyError``)."""
+
+    sheet = RowsFromBottom(SHEET_ROWS_2_TO_4)
+
+    assert [row.number for row in sheet.above(1)] == [2, 3, 4]
+    with pytest.raises(KeyError):
+        sheet.row(1)
+
+
+def test_wiersze_od_dolu_z_tym_samym_numerem_dwa_razy_to_ksztalt_spoza_excela() -> None:
+    sheet = RowsFromBottom(SHEET_ROWS_2_TO_4.replace(b'<row r="3"/>', b'<row r="4"/>'))
+
+    with pytest.raises(IrregularSheetData, match="kolejność wierszy"):
+        sheet.above(1)
+
+
+def test_repr_przeczytanego_pliku_taty_to_sciezka_i_chwila_zmiany_bez_bajtow_pamieci_i_kopii(tmp_path: Path) -> None:
+    """Bajty pliku taty, pamięć reguły danych i Kopia wejścia mają wartości taty, więc ``repr`` przeczytanego pliku, który
+    trafia do tekstu błędu, pokazuje tylko ścieżkę i chwilę zmiany."""
+
+    path = styled_template(tmp_path / "Skoroszyt.xlsx")
+    read = DadFiles(forbidden=empty_memory()).for_run().read(path, despite_excel_lock=False)
+    read.enter_copy()
+
+    assert repr(read) == f"ReadFile(path={path!r}, modified_at={read.modified_at!r})"
