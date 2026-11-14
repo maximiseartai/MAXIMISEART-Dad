@@ -10,13 +10,16 @@ HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowany
 Płytki checkout bez bazy (zadania pytest w CI) nie ma czego porównać, więc zapadka się pomija; pilnuje jej
 ``tools/szybko.py`` przed pushem, a reguł ast-grep na dodanych liniach całego repozytorium także zadanie CI „Ruff, mypy”
 z bazą ``HEAD^1``. Linie dodane i odpalenia reguł ast-grep na nich liczy ``tools/lib/odpalenia_ast_grep.py``, ten sam
-co dowód reguły ``tools/na_scalonych_pr.py --regula``. Moduł importuje tylko bibliotekę standardową, pytest i ten moduł
-(z ``repo`` i ``potomne``, które importują tylko bibliotekę standardową), bo pomiar zapadek uruchamia go też w kopii
-starego commitu; ta kopia potrzebuje więc obok także tych trzech plików ``tools/lib/``.
+co dowód reguły ``tools/na_scalonych_pr.py --regula``. Krok „niczego nie ukrywa” (``tools/lib/ukrycia_regul.py``,
+ADR 0036) biegnie z zapadkami. Moduł importuje tylko bibliotekę standardową, pytest i te dwa moduły (z ``repo``
+i ``potomne``, które importują tylko bibliotekę standardową, a ``ukrycia_regul`` jeszcze PyYAML z
+``requirements.txt``), bo pomiar zapadek uruchamia go też w kopii starego commitu; ta kopia potrzebuje więc obok także
+tych czterech plików ``tools/lib/``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib.util
 import os
 from pathlib import Path
@@ -30,6 +33,7 @@ from typing import Final
 import pytest
 
 import odpalenia_ast_grep
+import ukrycia_regul
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
@@ -1520,3 +1524,206 @@ def test_znane_luki_zapadki_przechodza_przez_zapadke_i_ruff(tmp_path: Path, zapa
         zgloszenia[opisy[linia.split(":", 1)[0]]].append(f"{zapadka}: {linia}")
 
     assert_znane_luki(zgloszenia, f"tests/test_zapadki.py::{zapadka}")
+
+
+def test_regula_chwastu_niczego_nie_ukrywa_poza_wlascicielem() -> None:
+    """Krok Required CI „niczego nie ukrywa” (ADR 0036, ``tools/lib/ukrycia_regul.py``): od bazy zmiany żadne
+    tłumienie ani zmiana konfiguracji nie chowa zgłoszenia reguły ast-grep ani zakazu ``banned-api`` poza prawem
+    właściciela z bazy."""
+
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    if importlib.util.find_spec("ruff") is None:
+        pytest.skip("krok ocenia prawdziwy ruff z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
+    assert [found.shown() for found in ukrycia_regul.hidden(ROOT, base, AST_GREP)] == []
+
+
+# Repozytorium-fikstura kroku „niczego nie ukrywa” (kryteria z komentarza #1676): zakazy banned-api ``os.name``
+# i ``time.time`` z właścicielem ``src/zegar.py`` (zwolnionym z całego TID251, jak 16 plików właścicieli repozytorium),
+# reguła ast-grep ``zakazane-wywolanie`` z właścicielem ``src/wlasciciel.py`` w ``ignores:``, stare tłumienie
+# w ``src/stare.py`` i stare, widoczne zgłoszenie ast-grep w ``src/stary_kod.py``.
+_HIDING_PYPROJECT = """\
+[tool.ruff]
+include = ["src/**/*.py"]
+
+[tool.ruff.lint]
+select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"os.name".msg = "sprawdzaj system przez sys.platform"
+"time.time".msg = "bierz czas z src/zegar.py"
+
+[tool.ruff.lint.per-file-ignores]
+"src/zegar.py" = ["TID251"]
+"""
+_HIDING_RULE = """\
+id: zakazane-wywolanie
+language: python
+severity: error
+message: "Zamień zakazane() na dozwolone() z src/wlasciciel.py."
+files:
+  - src/**
+ignores:
+  - src/wlasciciel.py
+rule:
+  pattern: zakazane()
+"""
+_HIDING_BASE: Final = {
+    ".gitignore": "__pycache__/\n",
+    "pyproject.toml": _HIDING_PYPROJECT,
+    "sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n",
+    "reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE,
+    "src/zegar.py": "import time\n\n\ndef teraz() -> float:\n    return time.time()\n",
+    "src/wlasciciel.py": "def zakazane() -> None:\n    pass\n\n\nzakazane()\n",
+    "src/stare.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - stare tłumienie z bazy\n",
+    "src/stary_kod.py": "zakazane()\n",
+    "src/a.py": "X = 1\n",
+}
+_OS_NAME = "banned-api os.name"
+_CALL = "ast-grep zakazane-wywolanie"
+_OWNERS_ROW = 'OWNERS = {"src/a.py": frozenset({"os.name"})}\n'
+
+
+def _hiding_repo(root: Path, changes: Mapping[str, str | None]) -> str:
+    """Fikstura ``_HIDING_BASE`` w commicie bazy repozytorium ``root``, a w drzewie roboczym zmiana ``changes``
+    (plik → treść, ``None``: usunięty); zwraca bazę."""
+
+    for name, text in _HIDING_BASE.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    for name, change in changes.items():
+        if change is None:
+            (root / name).unlink()
+        else:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(change, encoding="utf-8")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+def _hidden(root: Path, base: str) -> list[tuple[str, int, str]]:
+    return [(found.path, found.line, found.rule) for found in ukrycia_regul.hidden(root, base, AST_GREP)]
+
+
+_PER_FILE = _HIDING_PYPROJECT + '"src/a.py" = ["TID251"]\n'
+_UNTOUCHED_OLD_LINES = "import os\n\n\n\nSYSTEM = os.name  # noqa: TID251 - stare tłumienie z bazy\n"
+# Kryterium (forma) → zmiana fikstury i odpalenia kroku (plik, linia, reguła).
+_HIDINGS: Final[dict[str, tuple[dict[str, str | None], list[tuple[str, int, str]]]]] = {
+    "2: noqa z kodem na dodanej linii": ({"src/a.py": "import os\n\nX = os.name  # noqa: TID251 - powód\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "2: noqa bez kodu": ({"src/a.py": "import os\n\nX = os.name  # noqa\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "2: stare tłumienie na zmienionej linii to linia dodana": (
+        {"src/stare.py": _HIDING_BASE["src/stare.py"].replace("stare tłumienie z bazy", "nowy powód")},
+        [("src/stare.py", 3, _OS_NAME)],
+    ),
+    "3: ruff: noqa z kodem na całym pliku": ({"src/a.py": "# ruff: noqa: TID251\nimport os\n\nX = os.name\n"}, [("src/a.py", 4, _OS_NAME)]),
+    "3: ruff: noqa bez kodu": ({"src/a.py": "# ruff: noqa\nimport os\n\nX = os.name\n"}, [("src/a.py", 4, _OS_NAME)]),
+    "3a: ast-grep-ignore z regułą nad linią": ({"src/a.py": "# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n"}, [("src/a.py", 2, _CALL)]),
+    "3a: ast-grep-ignore z regułą na tej samej linii": ({"src/a.py": "zakazane()  # ast-grep-ignore: zakazane-wywolanie\n"}, [("src/a.py", 1, _CALL)]),
+    "3a: ast-grep-ignore bez reguły nad linią": ({"src/a.py": "# ast-grep-ignore\nzakazane()\n"}, [("src/a.py", 2, _CALL)]),
+    "3a: ast-grep-ignore nad starą linią": ({"src/stary_kod.py": "# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n"}, [("src/stary_kod.py", 2, _CALL)]),
+    "4: nowy wpis per-file-ignores z wierszem OWNERS": (
+        {"pyproject.toml": _PER_FILE, "tests/test_zakazy_ruff.py": _OWNERS_ROW, "src/a.py": "import os\n\nX = os.name\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "4: nowy wpis ignores reguły ast-grep": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/a.py\n"), "src/a.py": "zakazane()\n"},
+        [("src/a.py", 1, _CALL)],
+    ),
+    "5: właściciel całego TID251 dopisuje inną zakazaną nazwę": (
+        {"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\nimport os\n\nSYSTEM = os.name\n"},
+        [("src/zegar.py", 10, _OS_NAME)],
+    ),
+    "6: zmieniony msg z nowym zwolnieniem": (
+        {"pyproject.toml": _PER_FILE.replace("przez sys.platform", "przez src/a.py"), "src/a.py": "import os\n\nX = os.name\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "7: zmiana konfiguracji ukrywa starą linię": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/stary_kod.py\n")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: zawężone files ukrywa starą linię": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/**\n", "  - src/a.py\n")},
+        [("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: usunięta reguła ukrywa nowe i stare wywołanie": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": None, "src/a.py": "zakazane()\n"},
+        [("src/a.py", 1, _CALL), ("src/stary_kod.py", 1, _CALL)],
+    ),
+    "7: nowy ruff.toml podkatalogu bez zakazów": ({"src/ruff.toml": "[lint]\nselect = []\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "7: .gitignore ukrywa śledzony plik": ({".gitignore": "__pycache__/\nsrc/a.py\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "7: .ignore ukrywa śledzony plik": ({".ignore": "src/a.py\n", "src/a.py": "import os\n\nX = os.name\n"}, [("src/a.py", 3, _OS_NAME)]),
+    "8: wyjątek tymczasowy z terminem i zgodą Maksa": (
+        {"src/a.py": "import os\n\nX = os.name  # noqa: TID251 - wyjątek tymczasowy do 2027-01-31, zgoda Maksa\n"},
+        [("src/a.py", 3, _OS_NAME)],
+    ),
+    "właściciel używa swojej nazwy": ({"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\ndef znowu() -> float:\n    return time.time()\n"}, []),
+    "stare tłumienie przesunięte": ({"src/stare.py": _UNTOUCHED_OLD_LINES}, []),
+    "widoczne zgłoszenie bez tłumienia to nie ukrycie": ({"src/a.py": "import os\n\nX = os.name\nzakazane()\n"}, []),
+    "zmiana bez reguł chwastu": ({"src/a.py": "X = 2\n"}, []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("changes", "expected"), _HIDINGS.values(), ids=_HIDINGS)
+def test_tlumienie_albo_zmiana_konfiguracji_reguly_chwastu_to_odpalenie_poza_wlascicielem_z_bazy(
+    tmp_path: Path, changes: dict[str, str | None], expected: list[tuple[str, int, str]]
+) -> None:
+    base = _hiding_repo(tmp_path, changes)
+
+    assert _hidden(tmp_path, base) == expected
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_stare_tlumienie_w_przeniesionym_pliku_nie_jest_odpaleniem(tmp_path: Path) -> None:
+    """Pozycję linii w bazie daje ``git diff -M``, więc plik przeniesiony ze starym tłumieniem niczego nie ukrywa,
+    a nowe tłumienie w nim tak."""
+
+    base = _hiding_repo(tmp_path, {})
+    _git(tmp_path, "mv", "src/stare.py", "src/przeniesione.py")
+    assert _hidden(tmp_path, base) == []
+
+    (tmp_path / "src" / "przeniesione.py").write_text(_HIDING_BASE["src/stare.py"] + "INNY = os.name  # noqa: TID251\n", encoding="utf-8")
+    assert _hidden(tmp_path, base) == [("src/przeniesione.py", 4, _OS_NAME)]
+
+
+def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -> None:
+    """Dowód braku fałszywych alarmów zapadek liczy od pustego drzewa (``tests/test_struktura_testow.py``)."""
+
+    _hiding_repo(tmp_path, {"src/a.py": "import os\n\nX = os.name  # noqa: TID251\n"})
+    empty_tree = subprocess.run(["git", "hash-object", "-t", "tree", "--stdin"], cwd=tmp_path, input="", capture_output=True, text=True, check=True).stdout.strip()
+
+    assert ukrycia_regul.hidden(tmp_path, empty_tree, AST_GREP) == []
+
+
+# Znane luki kroku „niczego nie ukrywa”: obejście, które nie ukrywa zgłoszenia, tylko omija wzorzec albo zakres
+# reguły z bazy, więc nie ma go w żadnym z porównywanych zbiorów. Klasa: postać → zmiana fikstury ``_HIDING_BASE``.
+ZNANE_LUKI_UKRYC: Final = {
+    "obejście wzorca: zakazana nazwa przez getattr z napisem": {"src/a.py": 'import os\n\nX = getattr(os, "na" + "me")\n'},
+    "obejście zakresu: kod w pliku bez rozszerzenia .py": {"src/a": "import os\n\nX = os.name  # noqa: TID251\n# ast-grep-ignore\nzakazane()\n"},
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="znane luki ocenia prawdziwy ruff z dodatku dev")
+def test_znane_luki_ukryc_przechodza_przez_ruff_zapadke_i_krok(tmp_path: Path) -> None:
+    """Każda próbka ``ZNANE_LUKI_UKRYC`` na fiksturze przechodzi przez wszystko, co biegnie w Required CI na zmianie:
+    ``ruff check`` z konfiguracją fikstury, zapadkę reguł ast-grep na dodanych liniach i krok „niczego nie ukrywa”."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, zmiana) in enumerate(ZNANE_LUKI_UKRYC.items()):
+        root = tmp_path / str(numer)
+        root.mkdir()
+        base = _hiding_repo(root, zmiana)
+        sprawdzenie = subprocess.run([sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "concise"], cwd=root, capture_output=True, text=True, check=False)
+        zgloszenia[opis] = [f"ruff: {linia}" for linia in sprawdzenie.stdout.splitlines() if ": TID251 " in linia]
+        zgloszenia[opis] += [f"zapadka: {finding}" for finding in syntax_rules(root, base, root / "sgconfig.yml")]
+        zgloszenia[opis] += [f"krok: {found.shown()}" for found in ukrycia_regul.hidden(root, base, AST_GREP)]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py (ZNANE_LUKI_UKRYC)")

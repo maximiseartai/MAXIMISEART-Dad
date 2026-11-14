@@ -112,6 +112,7 @@ RULE_GUARDS = frozenset(
     tests/test_wywolanie_skryptow_skilli.py
     tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona
     tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
+    tests/test_zapadki.py::test_regula_chwastu_niczego_nie_ukrywa_poza_wlascicielem
     tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
     tests/test_zapadki.py::test_stan_pliku_w_src_tylko_przez_file_state
     tests/test_zapadki.py::test_watki_testu_tylko_przez_linie_watkow
