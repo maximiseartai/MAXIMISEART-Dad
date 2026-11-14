@@ -28,10 +28,14 @@ Prawo właściciela wyznacza baza, nie HEAD, jednym liczeniem dla obu rodzajów 
 baza zgłasza bez zwolnień (``per-file-ignores`` ruff, ``ignores:`` reguły ast-grep), a ze zwolnieniami nie, czyli
 reguła, którą kod bazy w pliku zwolnionym przez bazę narusza. Zwolnienie z całego ``TID251`` nie obejmuje więc
 innego klucza, a nowy wpis zwolnienia, wiersz ``OWNERS``, zmieniony ``msg`` w HEAD i nowy plik pod globem zwolnienia
-niczego nie dają. Plik zgłoszenia w HEAD ma ścieżkę w bazie z ``odpalenia_ast_grep.Changes.base_path``, więc
-przeniesiony właściciel zostaje właścicielem, a gdy HEAD go nie zwalnia (zwolnienie zostało na starej ścieżce), krok
-zgłasza jego linię z poleceniem przeniesienia zwolnienia w tym samym PR: inaczej późniejsza poprawka zwolnienia
-ukryłaby zgłoszenie, które baza tego PR-u już pokazuje. Zakres ``files:`` reguły ast-grep bierze się z bazy, jak
+niczego nie dają, a krok mówi wtedy, że zwolnienie bazy obejmuje plik, który reguły w bazie nie łamał. Plik
+zgłoszenia w HEAD ma ścieżkę w bazie z ``odpalenia_ast_grep.Changes.base_path``, więc przeniesiony właściciel zostaje
+właścicielem, a gdy HEAD go nie zwalnia (zwolnienie zostało na starej ścieżce), krok zgłasza jego linię z poleceniem
+przeniesienia zwolnienia w tym samym PR: inaczej późniejsza poprawka zwolnienia ukryłaby zgłoszenie, które baza tego
+PR-u już pokazuje. Właściciel przeniesiony i tak rozbudowany, że ``git diff -M`` go nie paruje (podobieństwo poniżej
+50%), to plik usunięty i nowy, więc zgłoszenie nowego pliku bez ścieżki w bazie dostaje parę po regule i treści linii
+wśród zgłoszeń właściciela, którego pliku HEAD nie ma, każde zgłoszenie bazy najwyżej raz: stare użycia idą za
+zwolnieniem, a nowa zakazana nazwa albo dodatkowe wywołanie pary nie ma. Zakres ``files:`` reguły ast-grep bierze się z bazy, jak
 cała jej konfiguracja. Zgłoszenia ast-grep liczą się od pierwszej linii węzła, z wyjątkiem wbudowanych reguł
 o dyrektywie (``odpalenia_ast_grep.BUILTIN_MESSAGES``), które zgłasza już zapadka. Wiersz ruff (koniec linii to
 także samotne ``\\r``) krok przelicza na linię gita, którą kończy tylko ``\\n``, jak w ``Changes``.
@@ -47,7 +51,8 @@ zapadki widzą, a w Required CI zmiana jest w commicie, którego każdy plik bie
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 import json
 from pathlib import Path, PurePath
@@ -81,10 +86,17 @@ class Hidden(NamedTuple):
     rule: str  # ``banned-api <nazwa>`` albo ``ast-grep <id>``
     message: str  # komunikat reguły z bazy
     moved_from: str | None = None  # ścieżka w bazie przeniesionego właściciela, którego HEAD nie zwalnia
+    unused_exemption: bool = False  # zwolnienie bazy obejmuje plik, który w bazie tej reguły nie łamał
 
     def shown(self) -> str:
+        exemption = "per-file-ignores w pyproject.toml i OWNERS w tests/test_zakazy_ruff.py" if self.rule.startswith("banned-api ") else "ignores: reguły"
+        if self.unused_exemption:
+            return (
+                f"{self.path}:{self.line}: {self.rule}: plik jest w zwolnieniu reguły chwastu ({exemption}), ale w bazie jej"
+                " nie łamał, więc zwolnienie nie jest prawem właściciela; usuń wpis albo dodaj pierwsze użycie w PR,"
+                " który tworzy właściciela (ADR 0036)"
+            )
         if self.moved_from is not None:
-            exemption = "per-file-ignores w pyproject.toml i OWNERS w tests/test_zakazy_ruff.py" if self.rule.startswith("banned-api ") else "ignores: reguły"
             return (
                 f"{self.path}:{self.line}: {self.rule}: plik właściciela reguły chwastu przeniesiony z {self.moved_from}, a jego"
                 f" zwolnienie zostało na starej ścieżce; przenieś je ({exemption}) na {self.path} w tym samym PR (ADR 0036)"
@@ -120,22 +132,39 @@ def hidden(root: Path, base: str, ast_grep: str | None) -> list[Hidden]:
         old_listed = [name for name in repo.git(root, "ls-tree", "-r", "-z", "--name-only", base).split("\0") if name and (old / name).is_file()]
         base_visible = [*_ruff(old), *_ast_grep(old, old_listed, ast_grep)]
         exempted, unexempted = _without_suppressions(old, old_listed, ast_grep)
+        owned = set(unexempted) - set(exempted)
         present = [name for name in listed if (head / name).is_file()]
-        bare = _without_suppressions(head, present, ast_grep)[1]
-    owners = {(finding.path, finding.rule) for finding in set(unexempted) - set(exempted)}
+        base_exempted, bare = _without_suppressions(head, present, ast_grep)
+        # Właściciel, którego plik zniknął, a ``git diff -M`` nie sparował go z nowym (podobieństwo poniżej 50%):
+        # jego zgłoszenia po regule i treści linii, w porządku zgłoszeń.
+        paired = {moved.base_path(name) for name in listed}
+        orphaned: defaultdict[tuple[str, bytes], list[str]] = defaultdict(list)
+        for finding in sorted(owned):
+            if finding.path not in paired:
+                orphaned[finding.rule, _text(old / finding.path, finding.line)].append(finding.path)
+        texts = {finding: _text(head / finding.path, finding.line) for finding in set(bare) if moved.base_path(finding.path) is None}
+    owners = {(finding.path, finding.rule) for finding in owned}
     visible = set(_ruff(root)) | set(_ast_grep(root, listed, ast_grep))
     before = {(finding.path, finding.line, finding.rule) for finding in set(exempted) - set(base_visible)}
     found = []
     for finding in sorted(set(bare)):
         base_path = moved.base_path(finding.path)
+        if base_path is None and orphaned[finding.rule, texts[finding]]:
+            base_path = orphaned[finding.rule, texts[finding]].pop(0)
         if (base_path, finding.rule) in owners:
             if finding in visible and base_path != finding.path:
                 found.append(Hidden(finding.path, finding.line, finding.rule, finding.message, base_path))
             continue
         place = moved.old(finding.path, finding.line)
         if finding not in visible and (place is None or (*place, finding.rule) not in before):
-            found.append(Hidden(finding.path, finding.line, finding.rule, finding.message))
+            found.append(Hidden(finding.path, finding.line, finding.rule, finding.message, unused_exemption=finding not in base_exempted))
     return found
+
+
+def _text(path: Path, line: int) -> bytes:
+    """Treść linii gita ``line`` pliku ``path`` bez białych znaków na brzegach."""
+
+    return path.read_bytes().split(b"\n")[line - 1].strip()
 
 
 def _without_suppressions(tree: Path, names: Sequence[str], ast_grep: str | None) -> tuple[list[_Finding], list[_Finding]]:
@@ -158,11 +187,24 @@ def _drop_ignores(tree: Path) -> bool:
         for path in sorted((tree / directory).rglob("*")):
             if path.suffix not in (".yml", ".yaml") or not path.is_file():
                 continue
-            rules = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
-            if any(isinstance(rule, dict) and "ignores" in rule for rule in rules):
-                path.write_text(yaml.safe_dump_all([{key: value for key, value in rule.items() if key != "ignores"} if isinstance(rule, dict) else rule for rule in rules], allow_unicode=True, sort_keys=False), encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
+            spans = [span for rule in yaml.compose_all(text) if isinstance(rule, yaml.MappingNode) for span in _ignores_spans(rule)]
+            for start, end in reversed(spans):
+                text = text[:start] + text[end:]
+            if spans:
+                path.write_text(text, encoding="utf-8")
                 dropped = True
     return dropped
+
+
+def _ignores_spans(rule: yaml.MappingNode) -> Iterator[tuple[int, int]]:
+    """Fragmenty tekstu reguły z kluczem ``ignores:`` i jego wartością, do początku następnego klucza; tekst reszty
+    reguły zostaje, bo przepisanie przez PyYAML (YAML 1.1) zmienia skalary, które ast-grep czyta jako YAML 1.2
+    (``severity: off``)."""
+
+    for number, (key, value) in enumerate(rule.value):
+        if isinstance(key, yaml.ScalarNode) and key.value == "ignores":
+            yield key.start_mark.index, rule.value[number + 1][0].start_mark.index if number + 1 < len(rule.value) else value.end_mark.index
 
 
 def _listed(root: Path) -> list[str]:

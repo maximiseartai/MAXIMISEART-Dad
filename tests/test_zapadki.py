@@ -1891,6 +1891,10 @@ _HIDINGS: Final[dict[str, tuple[dict[str, str | None], list[tuple[str, int, str]
         {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/a.py\n"), "src/a.py": "zakazane()\n"},
         [("src/a.py", 1, _CALL)],
     ),
+    "4: nowy plik z linią właściciela, który zostaje, pod nowym wpisem ignores": (
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/nowy.py\n"), "src/nowy.py": "zakazane()\n"},
+        [("src/nowy.py", 1, _CALL)],
+    ),
     "5: właściciel całego TID251 dopisuje inną zakazaną nazwę": (
         {"src/zegar.py": _HIDING_BASE["src/zegar.py"] + "\n\nimport os\n\nSYSTEM = os.name\n"},
         [("src/zegar.py", 10, _OS_NAME)],
@@ -2001,6 +2005,93 @@ def test_przeniesiony_wlasciciel_reguly_chwastu_jest_wlascicielem_a_jego_zwolnie
     assert [(hidden.path, hidden.line, hidden.rule) for hidden in found] == expected
     exemption = "ignores:" if move[0] == "src/wlasciciel.py" else "per-file-ignores"
     assert all(f"przeniesiony z {move[0]}" in hidden.shown() and f"przenieś je ({exemption}" in hidden.shown() for hidden in found)
+
+
+# Funkcja bez reguł chwastu, z którą plik właściciela przeniesiony w tym samym PR ma podobieństwo poniżej progu
+# ``git diff -M`` (50%), więc git widzi plik usunięty i nowy.
+_GROWTH = "\n\ndef opisz(dni: int) -> str:\n" + "".join(f"    if dni == {numer}:\n        return '{numer} dni'\n" for numer in range(12)) + "    return 'inaczej'\n"
+# Przeniesiony i rozbudowany plik właściciela (stara ścieżka, nowa) → dopisek, zwolnienie na nowej ścieżce i odpalenia.
+_GROWN_OWNERS: Final[dict[str, tuple[tuple[str, str], str, dict[str, str], list[tuple[str, int, str]]]]] = {
+    "ast-grep: stare wywołanie idzie za ignores:": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        _GROWTH,
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [],
+    ),
+    "ast-grep: nowe wywołanie odpala": (
+        ("src/wlasciciel.py", "src/wlasciciel2.py"),
+        _GROWTH + "\n\nzakazane()\n",
+        {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel2.py\n")},
+        [("src/wlasciciel2.py", 36, _CALL)],
+    ),
+    "banned-api: stara nazwa idzie za per-file-ignores": (
+        ("src/zegar.py", "src/zegar2.py"),
+        _GROWTH,
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [],
+    ),
+    "banned-api: nowa zakazana nazwa odpala": (
+        ("src/zegar.py", "src/zegar2.py"),
+        _GROWTH + "\n\nimport os\n\nSYSTEM = os.name\n",
+        {"pyproject.toml": _HIDING_PYPROJECT.replace('"src/zegar.py" = ["TID251"]', '"src/zegar2.py" = ["TID251"]')},
+        [("src/zegar2.py", 38, _OS_NAME)],
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+@pytest.mark.parametrize(("move", "growth", "changes", "expected"), _GROWN_OWNERS.values(), ids=_GROWN_OWNERS)
+def test_wlasciciel_przeniesiony_i_rozbudowany_ponizej_progu_git_zostaje_wlascicielem_starych_zgloszen(
+    tmp_path: Path, move: tuple[str, str], growth: str, changes: dict[str, str], expected: list[tuple[str, int, str]]
+) -> None:
+    """Prawo właściciela idzie za zwolnieniem, nie za parą ``git diff -M``: zgłoszenia nowego pliku pod zwolnieniem HEAD
+    mają parę po regule i treści linii wśród zgłoszeń właściciela, którego pliku HEAD nie ma, a nowe zgłoszenie jej nie
+    ma, więc odpala (kryterium 4)."""
+
+    base = _hiding_repo(tmp_path, {move[0]: _HIDING_BASE[move[0]] + growth, **changes})
+    _git(tmp_path, "mv", *move)
+    _git(tmp_path, "add", "-A")
+    assert _git(tmp_path, "diff", "--cached", "-M", "--name-status", base, "--", "src").split() == ["D", move[0], "A", move[1]]
+
+    assert _hidden(tmp_path, base) == expected
+
+
+def _changed_base(root: Path, base_changes: Mapping[str, str], changes: Mapping[str, str]) -> str:
+    """Fikstura ``_HIDING_BASE`` ze zmianą ``base_changes`` w commicie bazy, a w drzewie roboczym zmiana ``changes``."""
+
+    _hiding_repo(root, base_changes)
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza ze zmianą")
+    for name, text in changes.items():
+        (root / name).write_text(text, encoding="utf-8")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_regula_bazy_z_severity_off_i_ignores_niczego_nie_wywraca(tmp_path: Path) -> None:
+    """Zdjęcie ``ignores:`` reguły bazy nie przepisuje reszty jej tekstu, więc ``severity: off``, który PyYAML (YAML 1.1)
+    czyta jako ``False``, zostaje napisem dla ast-grep (YAML 1.2)."""
+
+    base = _changed_base(tmp_path, {"reguly-ast-grep/zakazane-wywolanie.yml": _HIDING_RULE.replace("severity: error", "severity: off")}, {"src/a.py": "X = 2\n"})
+
+    assert _hidden(tmp_path, base) == []
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="krok ocenia prawdziwy ruff z dodatku dev")
+def test_nieuzywany_wpis_ignores_bazy_nie_jest_prawem_wlasciciela_i_krok_to_mowi(tmp_path: Path) -> None:
+    """Wpis ``ignores:`` bazy dla pliku, który w bazie reguły nie łamie, nie daje prawa właściciela, a odpalenie mówi
+    o nieużywanym wpisie, nie o tłumieniu w PR, którego nie ma."""
+
+    rule = _HIDING_RULE.replace("  - src/wlasciciel.py\n", "  - src/wlasciciel.py\n  - src/a.py\n")
+    base = _changed_base(tmp_path, {"reguly-ast-grep/zakazane-wywolanie.yml": rule}, {"src/a.py": "zakazane()\n"})
+
+    found = ukrycia_regul.hidden(tmp_path, base, AST_GREP)
+
+    assert [(hidden.path, hidden.line, hidden.rule) for hidden in found] == [("src/a.py", 1, _CALL)]
+    assert "w bazie jej nie łamał, więc zwolnienie nie jest prawem właściciela" in found[0].shown()
 
 
 def test_baza_bez_commita_nie_ma_regul_wiec_niczego_nie_ukrywa(tmp_path: Path) -> None:
