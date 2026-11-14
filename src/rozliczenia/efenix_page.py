@@ -12,7 +12,7 @@ biegną. Kolumny rozpoznaje po nagłówkach (``Numer dokumentu``, ``Status``, ``
 komórki bez jej ``<small>`` (identyfikator Fenix, województwo), login realizatora z ``small.text-default`` komórki
 Wykonawca (obok niego w ``<small>`` stoi data), a stronę zlecenia otwiera linkiem ``page_order_edit.php?id=`` z wiersza.
 Wiersz w innej budowie okno zgłasza pierwszą jego różnicą (``listed``), a każdą różnicę tabeli z liczbą wierszy według
-tych samych reguł podaje ``table_faults``, którym narzędzie zgodności tłumaczy tabelę, której Wycena nie czyta. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, sprawdza ``tools/zgodnosc_efenix.py``): „Nie
+tych samych reguł podaje ``table_faults``, którym narzędzie zgodności tłumaczy tabelę, której Wycena nie czyta. Na szukanie bez tabeli wyników efenix odpowiada samym ostrzeżeniem (``SearchWarning``, pomiar 4.11.2026, #828): „Nie
 znaleziono pasujących wyników” to brak wyników, a ostrzeżenie o wygasłej sesji to ``LoggedOut``, bo na szukanie bez
 sesji efenix nie przekierowuje.
 
@@ -279,8 +279,7 @@ adresów działań, których używa okno."""
 
 class SearchWarning(enum.Enum):
     """Ostrzeżenie, którym efenix odpowiada na szukanie zamiast tabeli wyników: cała odpowiedź to ono samo, 200 bez
-    przekierowania (sprawdza ``tools/zgodnosc_efenix.py``). Wartość to tekst odpowiedzi, po którym okno je
-    rozpoznaje."""
+    przekierowania (pomiar na efenix 4.11.2026, #828). Wartość to tekst odpowiedzi, po którym okno je rozpoznaje."""
 
     NOT_FOUND = "Ostrzeżenie: Nie znaleziono pasujących wyników !"
     """Szukanie nie znalazło żadnego zlecenia: efenix nie zna numeru."""
