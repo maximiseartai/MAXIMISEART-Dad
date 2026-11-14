@@ -184,8 +184,12 @@ elif arguments[0] == "api" and any(argument.startswith("repos/{owner}/{repo}/") 
     method = arguments[arguments.index("--method") + 1] if "--method" in arguments else "GET"
     path = next(argument for argument in arguments if argument.startswith("repos/{owner}/{repo}/"))
     if method != "GET":
+        # pola z -f (status commita) albo treść JSON z wejścia (--input -)
+        fields = dict(value.split("=", 1) for flag, value in zip(arguments, arguments[1:]) if flag == "-f")
         with (here / "writes.jsonl").open("a") as log:
-            log.write(json.dumps([method, path, json.loads(sys.stdin.read())]) + "\\n")
+            log.write(json.dumps([method, path, fields or json.loads(sys.stdin.read())]) + "\\n")
+        if path.startswith("repos/{owner}/{repo}/statuses/") and (here / "statusy_odrzucane").exists():
+            sys.exit("gh: Validation Failed (HTTP 422)")
     if method == "GET" and path.startswith("repos/{owner}/{repo}/labels?"):
         print(json.dumps([{"name": name} for name in json.loads((here / "labels.json").read_text())]))
     elif method == "POST" and path == "repos/{owner}/{repo}/issues":
@@ -2830,3 +2834,119 @@ def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path) -> 
 
 def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:
     assert sorted(chwasty.rendered()) == sorted(set(chwasty.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.chwasty"
+
+
+# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–4 tools/scal_pr.py jako status commita
+# na HEAD PR, bez merge'a; w runie Actions z linkiem do runu, w którym linia STATUS podaje przyczyny w całości.
+RUN = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": opisy_pr.REPO, "GITHUB_RUN_ID": "77"}
+RUN_URL = f"https://github.com/{opisy_pr.REPO}/actions/runs/77"
+
+
+def _status(github: MergeGitHub, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return _run_from(github, github.checkout, *arguments, environment=RUN)
+
+
+def _statuses(github: MergeGitHub) -> list[list[str]]:
+    return [write for write in github.writes() if str(write[1]).startswith("repos/{owner}/{repo}/statuses/")]
+
+
+def test_status_gotowego_pr_jest_zielony_na_jego_head_a_pr_nie_jest_scalany(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–4 tools/scal_pr.py spełnione"
+    assert _statuses(github) == [
+        [
+            "POST",
+            f"repos/{{owner}}/{{repo}}/statuses/{head}",
+            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–4 tools/scal_pr.py spełnione", "target_url": RUN_URL},
+        ]
+    ]
+    assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"isDraft": True},
+        {"statusCheckRollup": [_check_run("COMPLETED", "FAILURE")]},
+        {"body": BODY.replace("## Merge Danger", "## Ryzyko")},
+        {"comments": []},
+    ],
+    ids=["szkic", "ci-czerwone", "opis-bez-naglowka-wzoru", "bez-werdyktu"],
+)
+def test_status_pr_niegotowego_jest_czerwony_z_ta_sama_przyczyna_co_odmowa_bez_merge(tmp_path: Path, fields: dict[str, object]) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, **fields)
+
+    refused = github.run("1", "--bez-merge")
+    answered = _status(github, "1", "--status")
+
+    reasons = _last_line(refused).removeprefix(f"SCAL ODMOWA | #1 {head[:7]} | ")
+    assert reasons != _last_line(refused), refused.stdout + refused.stderr
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | {reasons}"
+    # GitHub przyjmuje opis statusu do 140 znaków, a pełne przyczyny podaje linia STATUS w runie z target_url.
+    limit = klient_github.OPIS_STATUSU_LIMIT
+    described = reasons if len(reasons) <= limit else reasons[: limit - 1] + "…"
+    assert _statuses(github) == [
+        ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": "failure", "context": "Werdykt i bramka", "description": described, "target_url": RUN_URL}]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    [
+        ({"state": "MERGED"}, "PR MERGED, więc status HEAD zostaje z chwili zamknięcia"),
+        ({"state": "CLOSED"}, "PR CLOSED, więc status HEAD zostaje z chwili zamknięcia"),
+        ({"baseRefName": "wydanie"}, "PR do wydanie, a status dostają PR-y do main"),
+    ],
+    ids=["scalony", "zamkniety", "do-innej-galezi"],
+)
+def test_pr_zamkniety_albo_do_innej_galezi_niz_main_nie_dostaje_statusu(tmp_path: Path, fields: dict[str, object], reason: str) -> None:
+    """Status scalonego HEAD zostaje taki, jak w chwili merge'a, więc raport po fakcie widzi merge bez zielonego statusu."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, **fields)
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [f"STATUS POMINIĘTY | #1 {head[:7]} | {reason}"]
+    assert _statuses(github) == []
+
+
+def test_status_pr_ktory_zmienia_wzor_opisu_sadzi_wzor_z_bazy_takze_z_checkoutu_head_pr(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    main = git(github.origin, "rev-parse", "refs/heads/main")
+    template = TEMPLATE.read_text(encoding="utf-8").replace("## Merge Danger\n", "", 1)
+    head = github.open_pull(1, {".agents/skills/pr/SKILL.md": template, "kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=BODY.replace("## Merge Danger", "## Ryzyko"))
+    github.comment(1, PASS.format(head=head))
+    checkout = _checkout_of(github, head, tmp_path)
+
+    answered = _run_from(github, checkout, "1", "--status", environment=RUN)
+
+    assert answered.stdout.splitlines()[0] == f"SĘDZIA | #1 | reguły z origin/main {main[:7]}, nie z checkoutu {head[:7]}: biegnę z kopii tego commitu"
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | opis: brak „## Merge Danger” w kolejności wzoru .agents/skills/pr/SKILL.md"
+    assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == ["failure"]
+
+
+def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    (github.bin / "statusy_odrzucane").write_text("", encoding="utf-8")
+
+    answered = _status(github, "1", "--status")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS FAIL | #1 {head[:7]} | success niewysłany: gh: Validation Failed (HTTP 422)"

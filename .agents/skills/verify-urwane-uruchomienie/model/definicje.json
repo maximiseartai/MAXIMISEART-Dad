@@ -64,14 +64,14 @@
     "create_app.runs": "1ff32ac319f54834"
   },
   "src/rozliczenia/centrum/runs.py": {
-    "Run.work": "0f5b17bc2e7efeb6",
+    "Run.work": "d0f7b0f1286316ca",
     "RunHost.__init__": "5847fd718edb1804",
     "RunHost.after": "ef0aefab73842450",
     "RunHost.shutdown_refusal": "28c8f086b7300aed",
     "RunHost.start": "08dd69ac2bb960a7"
   },
   "src/rozliczenia/centrum/process_kind.py": {
-    "PreparedRun.conduct": "86381b107023395e"
+    "PreparedRun.conduct": "197b9ba739afa456"
   },
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "5256e2e151b13327",
