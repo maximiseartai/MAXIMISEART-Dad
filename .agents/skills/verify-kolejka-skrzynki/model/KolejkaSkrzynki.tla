@@ -1014,7 +1014,8 @@ Budzenie(q) ==
 MaPort == {q \in Q : zyje[q] = "tak"}
 Port == CHOOSE q \in MaPort : \A r \in MaPort : q <= r
 
-\* outbox.py Outbox.post: nazwa z chwili i next(self._sequence) na początku, potem replace_atomically
+\* outbox.py Outbox.post: tekst pliku z _queue_text (bez dysku; wysyłka albo tekst innego typu to TypeError,
+\* którego wysyłki Centrum nie dają), nazwa z chwili i next(self._sequence), potem replace_atomically
 \* nowego pliku (write_text pliku .json.tmp, potem zamiana), OSError to False (wysyłka przepadła, typ
 \* wyjątku w dzienniku), potem send_in_background. Numer wysyłki to kolejność nazw: wysyłka w zaczyna
 \* się po wysyłce w-1, a ich zapisy mogą się przeplatać.

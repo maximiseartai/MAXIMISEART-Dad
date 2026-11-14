@@ -494,9 +494,10 @@ def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) 
     (``_parse``): wysyłka dokładnie ``Post`` albo ``comment_versions.LogsPost``, każde pole czytane raz, a tekst inny niż
     dokładnie ``Outgoing``, tekst pliku Archiwum inny niż dokładnie ``LogsText`` i stopień inny niż ``Rank`` dają
     ``TypeError``. Typ sprawdza porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa z własnym
-    ``__eq__``. Nie zamyka zmiany klasy albo modułu w chwili działania ani ``str.__new__`` z klasą ``Outgoing``."""
+    ``__eq__``. Nie zamyka zmiany obiektu, klasy albo modułu w chwili działania ani ``str.__new__`` z klasą ``Outgoing``.
+    ``LogsPost`` bierze w chwili wywołania, bo ``comment_versions`` importuje ten moduł."""
 
-    from rozliczenia.centrum.comment_versions import LogsPost  # comment_versions importuje ten moduł
+    from rozliczenia.centrum.comment_versions import LogsPost
 
     if type(post) is not Post and type(post) is not LogsPost:
         raise TypeError(f"Plik kolejki bierze tylko Post i LogsPost, nie {type(post).__name__}.")
