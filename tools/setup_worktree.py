@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Na Windows `#!/usr/bin/env python3` w sh z Git for Windows trafia zwykle na alias Microsoft Store.
     if sys.platform != "win32":
-        _gate_pushes()
+        _gate_pushes(ROOT)
     _merge_generated(ROOT)
 
     imported = _imported_package_directory()
@@ -72,18 +72,18 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _gate_pushes() -> None:
+def _gate_pushes(root: Path) -> None:
     try:
-        configured = repo.git(ROOT, "config", "--get", "core.hooksPath").strip()
+        configured = repo.git(root, "config", "--get", "core.hooksPath").strip()
     except subprocess.CalledProcessError:
         configured = ""  # bez core.hooksPath
     if configured == HOOKS:
         return
-    current = ROOT / repo.git(ROOT, "rev-parse", "--git-path", "hooks").strip()
+    current = root / repo.git(root, "rev-parse", "--git-path", "hooks").strip()
     disabled = sorted(hook.name for hook in current.glob("*") if hook.is_file() and hook.suffix != ".sample")
     if disabled:
         print(f"UWAGA: core.hooksPath={HOOKS} wyłącza hooki z {current}: {', '.join(disabled)}.", file=sys.stderr)
-    repo.git(ROOT, "config", "core.hooksPath", HOOKS)
+    repo.git(root, "config", "core.hooksPath", HOOKS)
     print(f"OK: push sprawdza {HOOKS}/pre-push.")
 
 

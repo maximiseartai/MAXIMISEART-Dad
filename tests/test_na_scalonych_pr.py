@@ -57,6 +57,23 @@ def test_polecenie_biegnie_na_commicie_z_narzedziami_checkoutu_takze_niezacommit
     assert (repo.parent / "wyniki" / f"{first[:8]}.txt").read_text(encoding="utf-8").strip() == "stare dane nowe narzędzie"
 
 
+def test_bez_folderu_wynikow_wynik_trafia_do_katalogu_gita_checkoutu(tmp_path: Path) -> None:
+    repo, first = _repo(tmp_path)
+
+    done = subprocess.run(
+        [sys.executable, str(repo / "tools" / "na_scalonych_pr.py"), "--commit", first, "--", "tools/wypisz.py"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (repo / ".git" / "na-scalonych-pr" / f"{first[:8]}.txt").read_text(encoding="utf-8").strip() == "stare dane stare narzędzie"
+
+
 def test_commit_podany_nazwa_rewizji_ma_etykiete_i_plik_wyniku_ze_skrotu_sha(tmp_path: Path) -> None:
     """Nazwę zdalnej gałęzi (``origin/main``) sprawdza ``test_narzedzie_uruchomione_spoza_repozytorium…``."""
 

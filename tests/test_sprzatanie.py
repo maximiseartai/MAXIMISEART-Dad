@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -14,6 +15,8 @@ import pytest
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import AUTHOR, built_once, commit, git
+
+import sprzatanie
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "sprzatanie.py"
 LONG_AGO = "2026-01-01T12:00:00+0000"
@@ -343,6 +346,109 @@ def test_odmowa_gita_zostawia_worktree_z_powodem(merged: Path, fake_lsof: Callab
     assert (path / "pusty.txt").is_file()
     assert "| git odmówił (" in _line(lines, str(path))
     assert lines[-1] == "SPRZĄTANIE OK | usunięte 0 | zostawione 2 (główny checkout 1, git odmówił 1)"
+
+
+def test_bez_origin_main_konczy_sie_bledem_i_niczego_nie_usuwa(merged: Path, fake_lsof: Callable[..., None]) -> None:
+    main, path = merged, merged.parent / "zrobione"
+    fake_lsof(ELSEWHERE)
+    git(main, "remote", "remove", "origin")
+
+    code, lines = _cleanup(main, "--usun")
+
+    assert (code, lines[-1]) == (1, "SPRZĄTANIE FAIL | brak origin/main, nie ma z czym porównać")
+    assert path.is_dir()
+    assert "zrobione" in _branches(main)
+
+
+# Atrapa gita: po udanym ``git worktree remove`` gałąź usuniętego worktree zmienia ktoś inny (PO_USUNIECIU).
+_GIT_RUSZA_GALAZ = """import os, pathlib, subprocess, sys
+real, arguments = os.environ["SHIM_GIT"], sys.argv[1:]
+if "worktree" not in arguments or "remove" not in arguments:
+    os.execv(real, [real, *arguments])
+code = subprocess.call([real, *arguments])
+after = os.environ["PO_USUNIECIU"]
+if code == 0 and after == "usunieta":
+    subprocess.check_call([real, "update-ref", "-d", "refs/heads/zrobione"])
+elif code == 0 and after == "przesunieta":
+    subprocess.check_call([real, "update-ref", "refs/heads/zrobione", "refs/heads/main"])
+elif code == 0:
+    common = subprocess.check_output([real, "rev-parse", "--git-common-dir"], text=True).strip()
+    (pathlib.Path(common) / "refs" / "heads" / "zrobione.lock").touch()
+sys.exit(code)
+"""
+
+
+@pytest.mark.parametrize(
+    ("after", "reason", "branches"),
+    [
+        ("usunieta", None, {"main"}),
+        ("przesunieta", "gałąź przesunęła się w trakcie", {"main", "zrobione"}),
+        ("zablokowana", "git odmówił (", {"main", "zrobione"}),
+    ],
+)
+def test_galaz_zmieniona_po_usunieciu_worktree_zostaje_z_powodem_a_usunieta_liczy_sie_jako_usunieta(
+    merged: Path, fake_lsof: Callable[..., None], monkeypatch: pytest.MonkeyPatch, after: str, reason: str | None, branches: set[str]
+) -> None:
+    main, path = merged, merged.parent / "zrobione"
+    fake_lsof(ELSEWHERE)
+    shim = fake_cli(main.parent / "atrapa-gita", "git", _GIT_RUSZA_GALAZ)
+    monkeypatch.setenv("SHIM_GIT", str(shutil.which("git")))
+    monkeypatch.setenv("PO_USUNIECIU", after)
+    monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ['PATH']}")
+
+    code, lines = _cleanup(main, "--usun")
+
+    assert code == 0
+    assert not path.exists()
+    assert _branches(main) == branches
+    if reason is None:
+        assert _line(lines, str(path)).startswith("- usunięte |")
+    else:
+        assert _line(lines, str(path)).startswith("- zostaje |")
+        assert f"| {reason}" in _line(lines, str(path))
+
+
+# Atrapa gita, która wisi 10 s na poleceniu z argumentem WISI_NA, a potem oddaje je prawdziwemu gitowi.
+_GIT_WISI = """import os, sys, time
+real, arguments = os.environ["SHIM_GIT"], sys.argv[1:]
+if os.environ["WISI_NA"] in arguments:
+    time.sleep(10)
+os.execv(real, [real, *arguments])
+"""
+
+
+@pytest.mark.parametrize(
+    ("hangs", "limit", "removed", "said"),
+    [
+        ("fetch", "FETCH_TIMEOUT_S", True, "FETCH POMINIĘTY | git fetch przekroczył 1 s"),
+        ("remove", "REMOVE_TIMEOUT_S", False, "| git worktree remove przekroczył 1 s"),
+    ],
+)
+def test_zawieszony_git_konczy_sie_po_limicie_czasu_powodem_zamiast_czekania(
+    merged: Path,
+    fake_lsof: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    hangs: str,
+    limit: str,
+    removed: bool,
+    said: str,
+) -> None:
+    main, path = merged, merged.parent / "zrobione"
+    fake_lsof(ELSEWHERE)
+    shim = fake_cli(main.parent / "atrapa-gita", "git", _GIT_WISI)
+    monkeypatch.setenv("SHIM_GIT", str(shutil.which("git")))
+    monkeypatch.setenv("WISI_NA", hangs)
+    monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(sprzatanie, limit, 1)
+    monkeypatch.chdir(main)
+
+    code = sprzatanie.main(["--usun"])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert path.exists() != removed
+    assert any(said in line for line in lines), lines
 
 
 @pytest.fixture
