@@ -441,7 +441,7 @@ _HTTP_STATUS: Final = "strona błędu HTTP serwera efenix zamiast strony albo od
 class LoggedWindowStop(_Record):
     """Zatrzymanie okna efenix w Wycenie w efenix: przyczyna techniczna i zlecenie, przy którym Wycena stanęła.
 
-    ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w przebiegu (od 1), ``steps``: udane
+    ``row``: wiersz Pliku zbiorczego, ``order`` z ``orders``: miejsce zlecenia w Uruchomieniu (od 1), ``steps``: udane
     działania okna przy nim, ``failed``: działanie, które się nie udało, z rodzajem i czasem. Przy Zatrzymaniu przed
     pierwszym zleceniem (otwarcie okna, logowanie) ``row``, ``order``, ``orders`` i ``failed`` są ``None``, a ``steps``
     puste.
@@ -516,9 +516,9 @@ def _json_text(document: dict[str, object]) -> str:
 class LoggedInterruption(_Record):
     """Urwana Wycena w efenix z dziennika: zlecenie zaczęte bez wyniku i wpisy dziennika, których nie dało się odczytać.
 
-    ``row`` (wiersz Pliku zbiorczego), ``place`` i ``total`` (miejsce w przebiegu, od 1): zlecenie, w którego trakcie Centrum
-    zgasło, więc jego zmiany w efenix mogą być niepełne; ``None``, gdy zgasło między zleceniami. ``omitted``: wpisy
-    dziennika, których nie dało się odczytać (np. wpis urwany zgaśnięciem w trakcie zapisu).
+    ``row`` (wiersz Pliku zbiorczego), ``place`` i ``total`` (miejsce w Uruchomieniu, od 1): zlecenie, w którego trakcie
+    Centrum zgasło, więc jego zmiany w efenix mogą być niepełne; ``None``, gdy zgasło między zleceniami. ``omitted``:
+    wpisy dziennika, których nie dało się odczytać (np. wpis urwany zgaśnięciem w trakcie zapisu).
     """
 
     row: int | None

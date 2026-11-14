@@ -4,9 +4,9 @@
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
-    "_guarded": "c4da644923d4d5b9",
+    "_guarded": "672c1bc84aaff827",
     "guard_logs": "220c4b2868ecc3fc",
-    "GuardedLogs": "ac2a4b3ae5a84651"
+    "GuardedLogs": "4eb55b05819bbd16"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
     "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
@@ -38,10 +38,10 @@
     "_NAME": "7e5bf69553e4b18c",
     "_RUN_ID": "38b226cc6aeae33a",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "0ff78f975646e494",
+    "Journal": "355e5548440b680f",
     "_first_line": "f9a16b6e76575975",
-    "_RunEnded": "de0df1f225b6c810",
-    "JournalRead": "0e4cbc86128d9c88",
+    "_RunEnded": "477bfb1ffeda6787",
+    "JournalRead": "481b8340dbb55851",
     "_read_journal": "0566cf4fcc730794",
     "_remove": "e246b45d4dad5104",
     "LogsOnDisk.started": "75738ee9bb3ba332",

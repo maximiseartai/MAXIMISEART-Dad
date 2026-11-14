@@ -1,18 +1,9 @@
 """Notka Wydania: tekst GitHub Release, który czyta też Powiadomienie o nowej wersji (ADR 0015).
 
-Notka to „Co nowego” dla taty jego językiem: krótkie zdanie wstępu (może go nie być) i punkty, każdy w linii ``- ``,
-a pod nią, gdy są, rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w jednej linii z rodzajem, numerem po „#” i
-tytułem::
-
-    Ta wersja oszczędza Ci wpisywania.
-
-    - Przygotowanie pliku zbiorczego samo wpisuje ilości usług.
-    - Centrum rozliczeń pokazuje „Co nowego” jako listę.
-
-    ## Rozwiązane sprawy taty
-
-    - Uwaga taty #<numer>: Brakuje ilości przy montażu
-    - Zgłoszenie #<numer>: Zatrzymanie przy pustym ADRES
+Notka to „Co nowego” dla taty jego językiem: krótkie zdanie wstępu (może go nie być) i punkty, każdy w linii ``- ``.
+Pod nią, gdy są, stoją nagłówek ``CASES_HEADING`` i rozwiązane sprawy taty ze Skrzynki Zgłoszeń, każda w jednej linii
+``- ``: rodzaj sprawy (``CASE_KINDS``), spacja, „#” z numerem issue, dwukropek i tytuł w jednej linii. Przykładową
+notkę z dwiema sprawami czyta i pisze ``tests/test_notka_wydania.py``.
 
 Release jest publiczny, a Skrzynka prywatna, więc sprawa ma tylko numer i tytuł, nigdy treść. Ten moduł jest
 jedynym miejscem formatu: notkę pisze ``render`` (narzędzie Wydań), a czyta ``parse`` (Centrum).

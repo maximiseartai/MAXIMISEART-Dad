@@ -5,7 +5,7 @@ i wysyłka (``comment_versions.post_of``) biorą tylko Logi z niego (``GuardedLo
 (``GuardedText``, ``guard_text``): wartość ``ADRES`` albo numeru Orange z przeczytanych plików, także wpisana w inną
 komórkę Kopii wejścia albo zapisana przez Excel jako liczba, staje się maską z uwagą techniczną, a telefony i ulice w
 tekście są zamaskowane. Pola, które niosą tylko słowa i chwile narzędzia (``TOOL_FIELDS``), i nazwy pól schematu
-zostają bez maski (#936). Pole typowane, które maski nie przyjmuje, traci wartość (``GuardCut``), a uwaga o tym jest
+zostają bez maski. Pole typowane, które maski nie przyjmuje, traci wartość (``GuardCut``), a uwaga o tym jest
 jedynym zapisem cięcia w pliku Logów, z którego odtworzenie czyta cięcia (``guard_cuts``).
 
 Diagnoza Zatrzymania dopisuje się do Logów, które przeszły przez strażnika (``GuardedLogs.with_diagnosis``), i
@@ -37,8 +37,8 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
     trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
-    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiła całe Logi
-    albo ich okres, Uruchomienie i commit (#936). Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
+    w nich wartość z rekordu, a klucza pola modelu Logów (nazwy pola schematu) też nie: maska w nich gubiłaby całe Logi
+    albo ich okres, Uruchomienie i commit. Klucz słownika (operator, kod pozycji, litera kolumny) to dane, więc go
     maskuje.
 
     Pole to ścieżka JSON z nazw pól, a klucz z danych (operator, kod pozycji) jest w niej ``[…]``, żeby uwaga nie
@@ -120,7 +120,7 @@ TOOL_FIELDS: Final = frozenset(
     }
 )
 """Pola Logów (ścieżka JSON jak w uwadze strażnika), które niosą tylko słowa i chwile narzędzia, więc strażnik
-(``guard_logs``) zostawia w nich wartość z rekordu (#936). Każde ma wartość z kodu narzędzia, a nie z pliku taty:
+(``guard_logs``) zostawia w nich wartość z rekordu. Każde ma wartość z kodu narzędzia, a nie z pliku taty:
 ``run_id`` to ``uuid4``, ``period`` token okresu z ``parse_period_token`` albo z zegara (INTERMAX), ``process``,
 ``mode``, ``result``, ``ending`` i ``stop_kind`` to wartości zamkniętych list schematu, ``started_at`` i ``ended_at``
 chwile zegara Centrum (w Logach Urwanego Uruchomienia z dziennika Wyceny, który pisze Centrum), ``tool`` Wydanie i
@@ -149,7 +149,7 @@ class UnrepresentableLogs(ValueError):
     ``None`` spoza listy pól narzędzia (``TOOL_FIELDS``), albo ``stuck``: cięcia (``_representable``) przestały zmieniać
     Logi, czyli błąd w cięciach. ``place``: to pole albo miejsce ostatniego cięcia.
 
-    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi (#936). Nowe takie pole wywraca
+    Schemat Logów nie ma dziś pola najwyższego poziomu bez ``None``, które gubiłoby Logi. Nowe takie pole wywraca
     przemiatanie pełnych Logów w ``tests/test_komentarz_logow_uruchomienia.py``, które każe pełnym Logom mieć wartość w
     każdym polu ``RunLog``: każdy tekst i każda liczba tych Logów (od ``MIN_VALUE`` znaków) po kolei jako wartość z pliku
     taty, także liczba w polu ``READ_VALUES``."""
@@ -220,7 +220,7 @@ def _representable(walked: dict[str, object]) -> RunLog:
     przyjmuje, odpada najbliższy element listy nad nim (zlecenie, krok, plik) albo ``None`` dostaje pole nad nim
     (``_cut``), z uwagą techniczną o tym miejscu (``GuardCut``). Pole Logów najwyższego poziomu bez ``None`` i poza
     listą nie ma czego stracić, więc dałoby ``UnrepresentableLogs``, ale każde takie pole niesie słowa narzędzia, których
-    strażnik nie maskuje (``TOOL_FIELDS``, #936).
+    strażnik nie maskuje (``TOOL_FIELDS``).
 
     Każde cięcie zabiera Logom co najmniej jedną wartość, więc cięć jest najwyżej tyle, ile Logi mają wartości:
     po tylu obrotach bez poprawnych Logów pętla kończy się ``UnrepresentableLogs``, a nie wisi z końcem Uruchomienia.
@@ -369,8 +369,8 @@ class GuardedLogs(metaclass=WithoutSubclasses, refusal=_NO_LOGS_SUBCLASSES):
     """Logi Uruchomienia po strażniku reguły danych tej pracy Centrum (ADR 0025), z ``guard_logs``.
 
     Plik Logów (``LogsOnDisk.write``) i wysyłka Logów (``comment_versions.post_of``) biorą tylko takie Logi, więc Logi,
-    które ominęły strażnika (Logi Urwanego Uruchomienia przed 2ff78b6b3), to błąd typu (``_MINTED``). ``text``: znaki
-    pliku Logów i pliku w Archiwum Logów okresu.
+    które ominęłyby strażnika (np. Logi Urwanego Uruchomienia złożone bez niego), to błąd typu (``_MINTED``). ``text``:
+    znaki pliku Logów i pliku w Archiwum Logów okresu.
     """
 
     __slots__ = ("__record", "__source")

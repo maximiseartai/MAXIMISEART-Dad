@@ -19,26 +19,26 @@ swoim starcie bierze z niego ostatnie Uruchomienie (``RunCards.last``).
 Plik Logów zmienia się tylko przy Diagnozie, więc widok każdego pliku (``LogsOnDisk.viewed``) zostaje w pamięci, dopóki
 plik nie zmieni czasu zmiany albo rozmiaru.
 
-Dziennik Wyceny w efenix (#845, ``Journal``) to ślad Uruchomienia na dysku taty w trakcie, który przeżywa nagłe zgaśnięcie
-Centrum. Wycena w efenix trwa do półtorej godziny, a Logi Uruchomienia powstają dopiero na jej końcu i tylko pełne (ADR 0017
+Dziennik Wyceny w efenix (``Journal``) to ślad Uruchomienia na dysku taty w trakcie, który przeżywa nagłe zgaśnięcie
+Centrum. Wycena w efenix trwa długo, a Logi Uruchomienia powstają dopiero na jej końcu i tylko pełne (ADR 0017
 odrzucił niepełny plik Logów). Dziennik to osobny plik Uruchomienia w ``logs/dzienniki-wyceny/``, obok katalogu Logów, o
 nazwie pliku Logów z rozszerzeniem ``.jsonl``. Silnik dopisuje do niego wpis po wpisie (``efenix_pricing.OrderJournal``):
-„zaczynam zlecenie” z wierszem Pliku zbiorczego i miejscem w przebiegu przed pierwszym działaniem okna efenix przy
+„zaczynam zlecenie” z wierszem Pliku zbiorczego i miejscem w Uruchomieniu przed pierwszym działaniem okna efenix przy
 zleceniu, więc przed każdym zapisem w efenix, i „zlecenie skończone” zaraz po wyniku, ze śladem zlecenia jak w Logach
 (``run_logs.LoggedOrder``), każdy z chwilą w UTC. Pierwsza linia pliku to start Uruchomienia, te same bezpieczne fakty co
 plik ostatniego startu, które Centrum zapisuje przed nim przy każdym starcie Uruchomienia (``LogsOnDisk.started``).
 Dziennik pisze tylko Wycena w efenix (``journaled``), a jego pierwsza linia trafia na dysk już przy jej starcie, zanim ruszy
-jej wątek (#846), więc każda Wycena z Centrum, także zamknięta przed pierwszym zleceniem (np. gdy okno efenix czeka na
+jej wątek, więc każda Wycena z Centrum, także zamknięta przed pierwszym zleceniem (np. gdy okno efenix czeka na
 logowanie taty), ma dziennik, a procesy, które go nie piszą (Przygotowanie pliku zbiorczego, Przebieg rozliczeń,
 Uporządkowanie INTERMAX), niczego nie zapisują. Każdy wpis jest na dysku (``fsync``), zanim silnik zrobi następny krok,
 więc zgaśnięcie Centrum, także brak prądu, urywa najwyżej wpis w trakcie zapisu. Nieudany zapis pierwszej linii albo
 wpisu to jedna linia dziennika Centrum na Uruchomienie, a Wycena biegnie dalej: ślad jest dla Maksa, a nie warunkiem pracy
 taty; pierwsza linia, której nie dało się zapisać, idzie razem z następnym wpisem. Postęp w trakcie
-(``Journal.progress``, #846) jest tylko z tego, co dziennik ma na dysku, więc bez jego pierwszej linii go nie ma.
+(``Journal.progress``) jest tylko z tego, co dziennik ma na dysku, więc bez jego pierwszej linii go nie ma.
 Dziennik ma tylko dane Logów Uruchomienia: bez numeru zlecenia i bez danych adresowych.
 
 Wpis „koniec Uruchomienia” z wynikiem (``Journal.end``) mówi startowi Centrum, że Uruchomienie doszło do wyniku i do
-jakiego (#870, #871). Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie, zamiast niego usuwa
+jakiego. Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie, zamiast niego usuwa
 dziennik, który mógł po nim zostać: postęp do niego nie poszedł, a zapis, w którym ``flush`` albo ``fsync`` rzucił po
 ``write``, zostawia na dysku całą pierwszą linię, a Zatrzymanie przed pierwszym zleceniem albo przy nim kończy Wycenę bez
 następnego wpisu. Kiedy wpis końca idzie i kiedy dziennik znika po wyniku, decyduje ``run_comments.RunComments``, a co
@@ -158,7 +158,8 @@ class _JournalStarted(StartFacts):
 
 
 class _OrderBegun(_JournalRecord):
-    """Zaczynam zlecenie z wiersza ``row``, ``place`` z ``total`` w przebiegu, przed pierwszym działaniem okna efenix."""
+    """Zaczynam zlecenie z wiersza ``row``, ``place`` z ``total`` w Uruchomieniu, przed pierwszym działaniem okna
+    efenix."""
 
     at: datetime
     entry: Literal["zaczynam zlecenie"]
@@ -177,7 +178,7 @@ class _OrderEnded(_JournalRecord):
 
 class _RunEnded(_JournalRecord):
     """Koniec Uruchomienia, które doszło do wyniku ``result``: ``run_process`` wrócił, a Logi z wynikiem jeszcze nie
-    powstały. ``None``: wpis sprzed #910, który wyniku nie zapisywał."""
+    powstały. ``None``: wpis wersji, która wyniku jeszcze nie zapisywała."""
 
     at: datetime
     entry: Literal["koniec Uruchomienia"]
@@ -229,7 +230,7 @@ class Journal:
             self._append_locked(start)
 
     def progress(self, run_id: str) -> PricingProgress | None:
-        """Postęp Uruchomienia ``run_id`` z wpisów, które dziennik ma już na dysku, więc nigdy przed dziennikiem (#846);
+        """Postęp Uruchomienia ``run_id`` z wpisów, które dziennik ma już na dysku, więc nigdy przed dziennikiem;
         ``None``: dziennik pisze inne Uruchomienie albo żadne, albo nie ma jeszcze na dysku pierwszej linii. Wpis, którego
         nie dało się zapisać, postępu nie zmienia."""
 
@@ -316,7 +317,8 @@ class Journal:
 
 @dataclass(frozen=True)
 class EndEntry:
-    """Wpis końca dziennika: Uruchomienie doszło do wyniku ``result`` (``None``: wpis sprzed #910, bez wyniku)."""
+    """Wpis końca dziennika: Uruchomienie doszło do wyniku ``result`` (``None``: wpis wersji, która wyniku jeszcze nie
+    zapisywała)."""
 
     result: RunResult | None
 
@@ -324,8 +326,8 @@ class EndEntry:
 @dataclass(frozen=True)
 class JournalRead:
     """Dziennik odczytany przy starcie Centrum: start, zlecenia skończone, zlecenie zaczęte bez wyniku, ostatni wpis,
-    liczba zleceń przebiegu z ostatniego „zaczynam zlecenie” (``None`` przed pierwszym) i wpis końca (``end``; ``None``:
-    Uruchomienie nie doszło do wyniku albo jego wpis końca się nie zapisał)."""
+    liczba zleceń Uruchomienia z ostatniego „zaczynam zlecenie” (``None`` przed pierwszym) i wpis końca (``end``;
+    ``None``: Uruchomienie nie doszło do wyniku albo jego wpis końca się nie zapisał)."""
 
     started: StartFacts
     orders: list[LoggedOrder]

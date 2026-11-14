@@ -9,6 +9,33 @@ from rozliczenia.centrum.release_notes import CASES_HEADING, DadCase, ReleaseNot
 SUMMARY = "Przygotowanie pliku zbiorczego samo wpisuje ilości usług.\nCentrum pokazuje, co nowego."
 
 
+EXAMPLE = """Ta wersja oszczędza Ci wpisywania.
+
+- Przygotowanie pliku zbiorczego samo wpisuje ilości usług.
+- Centrum rozliczeń pokazuje „Co nowego” jako listę.
+
+## Rozwiązane sprawy taty
+
+- Uwaga taty #12: Brakuje ilości przy montażu
+- Zgłoszenie #7: Zatrzymanie przy pustym ADRES
+"""
+"""Notka Wydania, jak ją pisze narzędzie Wydań: wstęp, dwa punkty „Co nowego” i dwie rozwiązane sprawy taty."""
+
+
+def test_przykladowa_notka_ma_wstep_dwa_punkty_i_dwie_sprawy_taty_i_wraca_ta_sama() -> None:
+    notes = parse(EXAMPLE)
+
+    assert notes.cases == (
+        DadCase(12, "Brakuje ilości przy montażu", "uwaga-taty"),
+        DadCase(7, "Zatrzymanie przy pustym ADRES", "zgloszenie"),
+    )
+    assert whats_new(notes.summary) == WhatsNew(
+        "Ta wersja oszczędza Ci wpisywania.",
+        ("Przygotowanie pliku zbiorczego samo wpisuje ilości usług.", "Centrum rozliczeń pokazuje „Co nowego” jako listę."),
+    )
+    assert render(notes) == EXAMPLE
+
+
 @pytest.mark.parametrize(
     "cases",
     [
