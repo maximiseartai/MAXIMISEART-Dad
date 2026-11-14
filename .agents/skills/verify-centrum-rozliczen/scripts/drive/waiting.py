@@ -15,7 +15,7 @@ refuses today.
 
 The server and its threads write the run's files at any moment, so a read inside a wait can meet a file that does not
 exist yet, is empty, half written, or refused for a moment on Windows while it is put in place. Each of those is
-``NOT_YET``: the wait reads again, as it does after a ``None`` or ``False``. Any other error is a defect of the drive
+``NOT_YET``: the wait reads again, as it does after a false value. Any other error is a defect of the drive
 or of Centrum and ends the wait at once.
 """
 
@@ -132,7 +132,8 @@ def while_open(action: Callable[[], T], *, limit_s: float = RETRY_OPEN_S) -> T:
 
 
 def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Budget.SCREEN, *, page: Page | None = None) -> T:
-    """Read ``ready`` until it gives something other than ``None`` or ``False``, and return that; ``what`` names it.
+    """Read ``ready`` until it gives a true value in Python's sense, and return that; ``what`` names it: ``None``,
+    ``False``, ``0``, an empty text and an empty collection are a state not there yet (#1857).
 
     An error of ``NOT_YET`` from ``ready`` is a state not ready yet, read again; any other error leaves at once. After
     ``budget`` (or a number of seconds, which only the tests of the wait pass) the wait fails with
@@ -151,7 +152,7 @@ def until(ready: Callable[[], T | None], what: str, budget: Budget | float = Bud
             value = ready()
         except NOT_YET as not_yet:
             last, value = not_yet, None
-        if value is not None and value is not False:
+        if value:
             print(f"  ok: {what}", flush=True)
             return value
         if time.monotonic() > deadline:

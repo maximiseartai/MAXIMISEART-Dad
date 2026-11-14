@@ -599,8 +599,8 @@ ALL = tuple(feature.name for feature in FEATURES if not feature.measurement)
 # Features whose file in features/ has no section Sub-features from the run yet: the run writes their section to its
 # evidence but does not compare it. The list only shrinks: a feature leaves it with the section from the run in its file.
 NOT_COMPARED = frozenset({
-    "aktualizacja", "blad-odczytu", "kopie-intermax", "metryki", "pomiar-u-taty", "powiadomienia", "ustawienia",
-    "uwaga-taty", "uzupelnienie", "wpisanie-raportow", "wycena-w-efenix", "zgloszenie",
+    "aktualizacja", "pomiar-u-taty", "powiadomienia", "ustawienia", "uwaga-taty", "uzupelnienie", "wpisanie-raportow",
+    "wycena-w-efenix", "zgloszenie",
 })
 # wydajnosc: repetitions of every scenario per CPU profile unless `--powtorzenia` says otherwise; a baseline
 # comes only from a run with this many (features/wydajnosc.md).

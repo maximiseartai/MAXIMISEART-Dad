@@ -374,6 +374,9 @@ def atrapa_efenix(
         # przy HTTP/1.0, co pod xdist na Windows wyczerpywało gniazda (``net::ERR_NO_BUFFER_SPACE``, #778). Każda
         # odpowiedź ma ``Content-Length``.
         protocol_version = "HTTP/1.1"
+        # Nagłówki i treść idą osobnymi zapisami, a na trwałym połączeniu z algorytmem Nagle'a treść czeka na ACK klienta,
+        # który Linux opóźnia o ~40 ms: każda odpowiedź kosztowała tyle (box Linux: 41 ms, z flagą 0,1 ms).
+        disable_nagle_algorithm = True
         # Odpowiedź żądania, które Atrapa wykonała, gdy efenix był wolny (``Outage.SLOW``), czeka na koniec bloku, a gdy
         # sieć zrywała odpowiedzi (``Outage.TORN``) albo stawała (``Outage.STALLED``), urywa się albo staje w połowie treści
         # (przekierowanie bez treści przychodzi całe).
