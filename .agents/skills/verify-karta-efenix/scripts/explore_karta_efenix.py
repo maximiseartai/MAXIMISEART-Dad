@@ -476,7 +476,7 @@ def in_pool(chosen: Sequence[Case], workers: int) -> list[tuple[Case, Run]]:
 
     def worker() -> None:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
+            browser = playwright.chromium.launch(**efenix_browser.launch_options(playwright))
             try:
                 while True:
                     try:
@@ -497,7 +497,7 @@ def in_pool(chosen: Sequence[Case], workers: int) -> list[tuple[Case, Run]]:
 
 def references() -> dict[PricingMode, Run]:
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = playwright.chromium.launch(**efenix_browser.launch_options(playwright))
         try:
             return {mode: run_once(browser, mode, None) for mode in PricingMode}
         finally:
