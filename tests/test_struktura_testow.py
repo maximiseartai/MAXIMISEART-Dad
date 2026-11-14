@@ -58,6 +58,9 @@ SIMULATED_TIME = {
     "test_opiekun_ponownego_startu.py::test_skrot_klikniety_w_trakcie_ponownego_startu_nie_cofa_nowej_wersji_ktora_dziala": (
         "test gra skrót, który trzyma port przez 3 s w trakcie startu nowej wersji"
     ),
+    "test_sen_w_tescie.py::test_sen_watku_sasiada_nie_trafia_do_podmiany_a_sen_watku_testu_trafia": (
+        "sen wątku testu idzie do podmiany sleep_in_test_thread i nie czeka; test sprawdza, że do niej trafia"
+    ),
 }
 
 
