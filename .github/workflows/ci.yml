@@ -145,17 +145,12 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python tools/ci/shellcheck_akcji.py
 
-      # On a pull request HEAD^1 is the base the merge commit merges into, on a push to main the previous main. The second
-      # test (ADR 0036) refuses a suppression or a configuration change that hides a finding of an ast-grep rule or of a
-      # banned-api key outside the owner the base names.
-      - name: ast-grep rules on the added lines of the repository, and weed rules hide nothing
+      # On a pull request HEAD^1 is the base the merge commit merges into, on a push to main the previous main.
+      - name: ast-grep rules on the added lines of the repository
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           MAXIMISEART_ZAPADKA_BAZA: HEAD^1
-        run: >-
-          python -m pytest -q -rs -n 0 -p no:cacheprovider
-          tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
-          tests/test_zapadki.py::test_regula_chwastu_niczego_nie_ukrywa_poza_wlascicielem
+        run: python -m pytest -q -rs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
 
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green

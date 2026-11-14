@@ -20,6 +20,7 @@ W tym repo Ważne były zwykle:
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
 - przypisanie albo zakres liczony od złej linii lub złego commitu (np. `git blame` pierwszej linii wielowierszowej instrukcji).
 - zmiana wspólnego elementu okna Centrum (sekcja okna Ustawień, menu, toast, okno dialogowe), która wywraca funkcję drive `verify-centrum-rozliczen` inną niż ta, którą autor uruchomił (#1517: nowa sekcja wywróciła `okno-ustawien`, które wymienia każdą sekcję).
+- tłumienie reguły chwastu na dodanej linii (`# noqa`, `# ruff: noqa`, `# ast-grep-ignore`, także z powodem, terminem i zgodą Maksa) albo jej zwolnienie poza prawem właściciela z `AGENTS.md` (nowy wpis `per-file-ignores` albo `ignores:`, zawężone `files:`, usunięta reguła), dopóki nie odmawia go krok Required CI PR kroku ukryć ticketu #1676 (#1720, [ADR 0036](../../../docs/adr/0036-chwast-to-regula.md), reguła przejściowa).
 
 Dziura w sprawdzeniu to też defekt zachowania.
 W PR, który dodaje albo zmienia sprawdzenie (test struktury, checker, hook, skrypt mutacji, bramka CI, reguła lintu), Ważne jest odtworzony przypadek, który według wiersza reguły, docstringu albo opisu PR to sprawdzenie powinno wywrócić, a ono go przepuszcza, i wywrócenie się sprawdzenia na poprawnym wejściu.
@@ -87,7 +88,7 @@ Drugie wystąpienie idiomu ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.m
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły; wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
   Dowód to `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>` z każdym przypadkiem tej reguły z historii jej pól `Idiom:`, a `tools/scal_pr.py` uruchamia go z kodu bazy przy merge'u; dziś umie tylko reguły ast-grep.
 - Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
-- Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela, czego pilnuje `tests/test_zapadki.py::test_regula_chwastu_niczego_nie_ukrywa_poza_wlascicielem` w Required CI.
+- Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela; do merge'a PR kroku ukryć ticketu #1676 to Ważne z sekcji „Co jest porażką”.
 
 ## Dowody
 
