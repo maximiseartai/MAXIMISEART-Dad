@@ -51,7 +51,7 @@ Printed by `scripts/sub_features.py --feature uzupelnienie` from the drive's ste
 - `uzupelnienie-tabela-na-zywo`: harness typed 1 into Y…: the row turns done with Dad's green value without a click or reload; harness deleted Y… again: the row is to fill again by itself.
 - `uzupelnienie-blokada-excela`: …: the server read the Plik zbiorczy; with Excel's lock file next to the Plik zbiorczy the server reads its last saved version unchanged; …: counters, row numbers with their done state, and column counters match the server.
 - `uzupelnienie-odczyt-nieudany`: …: the server read the Plik zbiorczy; a Plik zbiorczy Centrum cannot read keeps the last good state, marked as retried; …: counters, row numbers with their done state, and column counters match the server; once the file reads again the time disappears, without a click.
-- `uzupelnienie-otworz`.
+- `uzupelnienie-otworz`: one click on „Otwórz Plik zbiorczy” opens the period's Plik zbiorczy, once.
 - `uzupelnienie-powrot`: the link Okresy leads back, and Wstecz returns to the summary of the same period.
 - `uzupelnienie-gotowe`: harness: Dad closed Excel, so no lock file keeps Uruchom disabled; …: the server read the Plik zbiorczy; Gotowe chose Przebieg rozliczeń and …; without it the form shows the first process; the period's rows without quantity are 19 and 20, the summary's rows not done.
 - `uzupelnienie-gotowe-potwierdzenie`: the confirm dialog lists the rows without quantity, and Dad may still start.
@@ -74,6 +74,13 @@ Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centru
 from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
 `STEP uzupelnienie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/uzupelnienie-*.json`.
+
+The run does not wait a minute for the Komunikat after a failed read:
+`tests/test_centrum_uzupelnienie_na_zywo.py::test_nieudany_odczyt_przez_minute_pokazuje_ostatni_dobry_stan_potem_komunikat`
+checks that a read failing for a minute shows the last good state, then the Komunikat. The steps after Przebieg stand in
+the Folder rozliczeń pracowników for a real Przebieg rozliczeń:
+`tests/test_centrum_uzupelnienie.py::test_po_przebiegu_rozliczen_wiersze_bez_wpisu_taty_sa_bez_ilosci_na_kazdej_stronie`
+runs one and checks that the rows without Dad's entry are „bez ilości” on every page.
 
 ## Gotchas
 
