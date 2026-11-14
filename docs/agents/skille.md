@@ -23,18 +23,18 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
 - Przebieg na żywo skillu procesów: `run_verification.py --variant all` na boxie (skill `boat-offload`).
   Warianty z prawdziwymi Wzorcami biegną tylko na Macu, bo Wzorce z `config/` nie opuszczają Maca.
   Ich `VERIFY SKIP` to `verified-unreachable` z warunkiem „Wzorce w `config/`”.
-- Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo inne wątki też go prowadzą.
-  `--feature all` to jeden bieg po kolei.
-  Napęd ma tylko atrapy (Atrapa efenix, atrapa skrzynki) i dane syntetyczne.
-  Sekcja `Real mailbox` w `wpisanie-raportow` należy do Maksa i nie wchodzi do przebiegu.
-  `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor” (`tools/quiet_machine.py`).
+- Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo procesor Maca dzielą wszystkie wątki; bieg innego wątku pokazuje `tools/quiet_machine.py --status` (`drive_centrum.py`), a wtedy czekasz na jego koniec.
+  Sekcja `Real mailbox` w `wpisanie-raportow` wymaga zgody Maksa na każdy bieg, więc nie wchodzi do przebiegu.
+  `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor”.
 - Dryf mapy w tym repo to także zdanie o tym, czego bieg nie sprawdza, bez nazwy testu, który to trzyma.
-  Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza.
-- Wynik `changed` to jeden PR dla obu skilli (commit na skill, w opisie `Część #1597`), zwykłą drogą z `AGENTS.md`.
-  Przebieg kończy się na otwartym PR.
-  Błąd produktu idzie do raportu z plikiem, linią i dowodem, poza PR.
-- Ostatnia linia przebiegu, którą czyta Maks: `clean`, `changed <URL PR>` albo `blocked <skill>: <powód>`.
-  Gdy jeden skill zablokował, a drugi dał PR, dopisz jego URL.
+  Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza, a gdy takiego testu nie ma, zostaje i opis PR wymienia je jako brak.
+- Wynik `changed` to jeden PR dla obu skilli (commit na skill, w opisie `Część #1597`).
+  Właścicielem tego PR jest agent zadania: linię wyniku pisze dopiero po merge'u, a PR, który do merge'a nie doszedł, daje `blocked` z powodem.
+- Błąd produktu znaleziony w przebiegu opisz w końcowej odpowiedzi nad linią wyniku: co, gdzie w kodzie i jak go odtworzyć.
+  Ticket z niego zakłada Maks.
+- Ostatnia linia odpowiedzi to `<mapy> | produkt: <stan>`.
+  `<mapy>` to `clean`, `changed <URL PR>`, `blocked <skill>: <powód>` (przy obu skillach dwa człony `<skill>: <powód>` po `; `) albo `blocked <skill>: <powód>, changed <URL PR>`, gdy jeden skill zablokował, a PR drugiego wszedł.
+  `<stan>` to `brak` albo jedno zdanie o błędzie produktu opisanym wyżej.
 
 ## Co wyrocznia bierze z `src`
 
