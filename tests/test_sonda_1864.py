@@ -16,12 +16,13 @@ CASE = """
 import json, sys
 from pathlib import Path
 from playwright.sync_api import Error, sync_playwright
-channel, headless, kind, profile, arguments = json.loads(sys.argv[1])
+channel, headless, kind, profile, arguments, env = json.loads(sys.argv[1])
 outcome = "start"
 try:
     with sync_playwright() as playwright:
         if kind == "profil-plik":
-            playwright.chromium.launch_persistent_context(profile, channel=channel, headless=headless, args=arguments, timeout=20000).close()
+            import os
+            playwright.chromium.launch_persistent_context(profile, channel=channel, headless=headless, args=arguments, timeout=20000, env={**os.environ, **env}).close()
         else:
             playwright.chromium.launch(channel=channel, headless=headless, args=["--enable-automation", *arguments], timeout=20000).close()
 except Error as error:
@@ -36,15 +37,15 @@ def test_sonda_1864_dziennik_przegladarki_w_katalogu_roboczym(tmp_path: Path) ->
     assert efenix_browser.PROFILE_DIRECTORY
     elsewhere = tmp_path / "gdzie-indziej"
     elsewhere.mkdir()
-    variants = {"brak": [], "log-file": [f"--log-file={elsewhere / 'przegladarka.log'}"], "disable-logging": ["--disable-logging"]}
-    cases = [
-        (channel, headless, name, kind)
-        for kind in ("profil-plik", "sonda")
-        for channel in (None, "chrome")
-        for headless in (True, False)
-        for name in variants
-        if not (kind == "sonda" and not headless)
-    ]
+    log = str(elsewhere / "przegladarka.log")
+    variants = {
+        "brak": ([], {}),
+        "env-CHROME_LOG_FILE": ([], {"CHROME_LOG_FILE": log}),
+        "enable-logging-log-file": (["--enable-logging", f"--log-file={log}"], {}),
+        "enable-logging-stderr": (["--enable-logging=stderr"], {}),
+        "env-i-enable-logging": (["--enable-logging", f"--log-file={log}"], {"CHROME_LOG_FILE": log}),
+    }
+    cases = [(None, True, name, "profil-plik") for name in variants]
     end = time.monotonic() + 420
     results = []
     for channel, headless, name, kind in cases:
@@ -58,7 +59,7 @@ def test_sonda_1864_dziennik_przegladarki_w_katalogu_roboczym(tmp_path: Path) ->
         profile.write_text("", encoding="utf-8")
         try:
             done = subprocess.run(
-                [sys.executable, "-c", CASE, json.dumps([channel, headless, kind, str(profile), variants[name]])],
+                [sys.executable, "-c", CASE, json.dumps([channel, headless, kind, str(profile), *variants[name]])],
                 cwd=working, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
             )
             outcome = (done.stdout.strip() or done.stderr.strip()[-120:]).replace("\n", " ")
