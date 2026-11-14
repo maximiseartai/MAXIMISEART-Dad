@@ -10,13 +10,13 @@ from playwright.sync_api import Page, expect
 from drive.common import (
     Run,
     close_settings,
-    last_opened_is,
     next_step_names_current_step,
     open_settings,
     period_row,
     point_in_settings,
 )
 from drive.waiting import until
+from harness import Log
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 
 
@@ -75,8 +75,13 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder")
 
     run.step(feature, "taty-otwieranie")
+    opened_before = len(run.lines(Log.OPENED))
     page.get_by_role("button", name=f"Plik zbiorczy, okres {LAST_COMPLETE}", exact=True).click()
-    until(last_opened_is(run, Path(dad["opened"])), "the Plik zbiorczy opens from the October INEA folder")
+    until(lambda: len(run.lines(Log.OPENED)) > opened_before, "the click on the Plik zbiorczy opened a file")
+    run.check(
+        run.lines(Log.OPENED)[opened_before:] == [{"path": str(Path(dad["opened"]))}],
+        "one click opens the Plik zbiorczy from the October INEA folder, once",
+    )
     run.capture(page, "16-uklad-taty-otwieranie", full_page=False)
 
     run.step(feature, "taty-przywrocenie")
