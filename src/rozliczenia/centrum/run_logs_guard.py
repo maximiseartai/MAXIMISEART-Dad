@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import re
-from typing import Final, final
+from typing import Final, Literal, final
 
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
@@ -413,7 +413,10 @@ def guard_logs(record: RunLog, forbidden: ForbiddenValues) -> GuardedLogs:
     return GuardedLogs(_guarded(record, forbidden), record, _MINTED)
 
 
-def guard_text(text: str, place: str, forbidden: ForbiddenValues) -> Outgoing:
+Place = Literal["postęp Wyceny w efenix", "wynik Wyceny w efenix bez Logów"]
+
+
+def guard_text(text: str, place: Place, forbidden: ForbiddenValues) -> Outgoing:
     """Tekst ``text`` po strażniku reguły danych ``forbidden``: zamaskowana wartość to uwaga techniczna na jego końcu, z
     miejscem ``place``."""
 

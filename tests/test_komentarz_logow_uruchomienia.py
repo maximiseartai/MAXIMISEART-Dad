@@ -314,7 +314,7 @@ def _versions() -> dict[str, CommentVersion]:
         run_id=RUN_ID, process="efenix", mode=RunMode.RUN, period="08_14_09_2026", started_at=logs.record.started_at
     )
     progress = PricingProgress(started, (OrderDone(18, OrderKind.READY, None),), 2, 19)
-    text = guard_text("Postęp albo wynik bez Logów.", "komentarz", empty_memory())
+    text = guard_text("Postęp albo wynik bez Logów.", "postęp Wyceny w efenix", empty_memory())
     return {
         "postep": ProgressVersion(progress, text),
         "logi-z-pliku-albo-urwane": StandInLogs(logs),
@@ -386,9 +386,9 @@ def _text_version(kind: str, forbidden: ForbiddenValues) -> ProgressVersion | Wi
 
     progress = _progress()
     if kind == "postep":
-        return ProgressVersion(progress, guard_text(progress_markdown(progress, elapsed_s=90), "postęp", forbidden))
+        return ProgressVersion(progress, guard_text(progress_markdown(progress, elapsed_s=90), "postęp Wyceny w efenix", forbidden))
     final = ResultWithoutLogs(progress, "OK", "niezapisane")
-    return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik bez Logów", forbidden))
+    return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", forbidden))
 
 
 @pytest.mark.parametrize("kind", ["postep", "wynik-bez-logow"])
@@ -428,7 +428,7 @@ def _field_change(value: object) -> dict[str, object]:
 def _guarded(kind: str) -> Any:
     """Logi (``logi``) albo tekst (``tekst``) po strażniku z ``guard_logs`` i ``guard_text``."""
 
-    return guard_logs(record(), empty_memory()) if kind == "logi" else guard_text("Postęp.", "postęp", empty_memory())
+    return guard_logs(record(), empty_memory()) if kind == "logi" else guard_text("Postęp.", "postęp Wyceny w efenix", empty_memory())
 
 
 def _slot(value: object) -> str:
@@ -458,7 +458,7 @@ def test_logi_i_tekst_po_strazniku_nie_powstaja_z_kopii_ani_zmiany_istniejacych(
 
 def test_logi_i_tekst_po_strazniku_nie_powstaja_z_konstruktora_bez_dowodu_straznika() -> None:
     logs = guard_logs(record(), empty_memory())
-    text = guard_text("Postęp.", "postęp", empty_memory())
+    text = guard_text("Postęp.", "postęp Wyceny w efenix", empty_memory())
 
     with pytest.raises(TypeError, match="guard_logs"):
         type(logs)(logs.record, logs.record, object())
@@ -486,6 +486,12 @@ def plik({komorka}, tekst: Outgoing) -> ArchiveFile:
     return ArchiveFile({pola})
 """
 _GOTOWY_PLIK: Final = "from rozliczenia.centrum.outbox import ArchiveFile\n\n\n"
+_MIEJSCE: Final = (
+    "from rozliczenia.centrum.outbox import ArchiveFile\nfrom rozliczenia.centrum.run_logs_guard import guard_text\n"
+    "from rozliczenia.client_data import ForbiddenValues\n{importy}\n\n"
+    "def plik(komorka: str, pamiec: ForbiddenValues) -> ArchiveFile:\n"
+    '    return ArchiveFile("t", "t", "d", "n", guard_text("Postęp.", {miejsce}, pamiec))\n'
+)
 _POSTEP: Final = (
     "from rozliczenia.centrum.comment_versions import ProgressVersion\n"
     "from rozliczenia.centrum.pricing_progress import PricingProgress\n"
@@ -562,6 +568,10 @@ def wysylka(komorka: str, post: Post) -> Post:
 """,
         'Argument 6 to "Post" has incompatible type "Plik"; expected "ArchiveFile | None"',
     ),
+    "miejsce uwagi technicznej guard_text z komórki": (
+        _MIEJSCE.format(importy="", miejsce="komorka"),
+        'Argument 2 to "guard_text" has incompatible type "str"',
+    ),
     "plik Logów z Logów sprzed strażnika": (
         "from rozliczenia.centrum.logs_disk import LogsOnDisk\nfrom rozliczenia.centrum.run_logs import RunLog\n\n\n"
         "def zapis(dysk: LogsOnDisk, logi: RunLog) -> None:\n    dysk.write(logi)\n",
@@ -572,7 +582,8 @@ def wysylka(komorka: str, post: Post) -> Post:
 # Znane luki drogi Logów (tests/fixtures/znane_luki.py): postaci, które dają plikowi w Archiwum albo komentarzowi
 # Uruchomienia wartość z komórki taty bez strażnika, a mypy i ruff ich nie łapią. Wersję komentarza z ``cast`` łapie
 # dopiero jej konstruktor (``TypeError``), plik w Archiwum nie. Pola z tekstem narzędzia (``_TEKST_NARZEDZIA``) dostaną
-# ``Outgoing`` w osobnym PR (#1551).
+# ``Outgoing`` w osobnym PR (#1551). Pole ``str`` od wywołującego, które moduł z prawem ``tool`` wpisuje w tekst narzędzia,
+# też przechodzi: próbką tej klasy jest okres postępu w ``post_of``.
 ZNANE_LUKI_LOGOW: Final = {
     **{f"ArchiveFile.{pole} z komórki": _plik(_pola(pole)) for pole in _TEKST_NARZEDZIA},
     "cast na Outgoing w pliku Archiwum": _plik(
@@ -591,6 +602,24 @@ ZNANE_LUKI_LOGOW: Final = {
 
 def plik(komorka: str) -> outbox.ArchiveFile | None:
     return outbox._archive_file({"tag": "t", "title": "t", "description": "d", "name": "n", "text": komorka})
+""",
+    "cast na miejsce uwagi technicznej guard_text": _MIEJSCE.format(
+        importy="from rozliczenia.centrum.run_logs_guard import Place\nfrom typing import cast\n",
+        miejsce="cast(Place, komorka)",
+    ),
+    "pole str wywołującego w tekście narzędzia z prawem tool (okres postępu w post_of)": _GOTOWY_PLIK
+    + """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
+from rozliczenia.centrum.outbox import PeriodThread
+from rozliczenia.centrum.pricing_progress import PricingProgress
+from rozliczenia.centrum.run_logs import StartFacts
+
+
+def plik(komorka: str, postep: ProgressVersion) -> ArchiveFile:
+    s = postep.progress.started
+    start = StartFacts(run_id=s.run_id, process=s.process, mode=s.mode, period=komorka, started_at=s.started_at)
+    cel = post_of(ProgressVersion(PricingProgress(start, (), None, None), postep.text)).target
+    assert isinstance(cel, PeriodThread)
+    return ArchiveFile("t", "t", "d", "n", cel.title)
 """,
     "cast na Outgoing w postępie": "from typing import cast\n\n"
     + _POSTEP
