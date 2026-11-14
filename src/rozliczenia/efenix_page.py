@@ -134,7 +134,6 @@ _QUANTITY_TEXT: Final = re.compile(r"[0-9]*")
 _LOGIN: Final = re.compile(r"\(([^()\s]+)\)")
 _DAY: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-# Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym jej skrypty nie biegną.
 _READ_RESULTS: Final = """(html) => {
     const template = document.createElement('template');
     template.innerHTML = html;
@@ -158,13 +157,15 @@ _READ_RESULTS: Final = """(html) => {
         })),
     };
 }"""
+"""Tabela z odpowiedzi szukania przeczytana parserem HTML przeglądarki w ``<template>``, w którym skrypty i obsługa
+zdarzeń odpowiedzi nie biegną."""
 
-# Cały tekst odpowiedzi szukania bez tabeli (białe znaki jak jedna spacja); ``null``, gdy odpowiedź ma tabelę.
 _ANSWER_TEXT: Final = """(html) => {
     const template = document.createElement('template');
     template.innerHTML = html;
     return template.content.querySelector('table') ? null : template.content.textContent.replace(/\\s+/g, ' ').trim();
 }"""
+"""Cały tekst odpowiedzi szukania bez tabeli (białe znaki jak jedna spacja); ``null``, gdy odpowiedź ma tabelę."""
 
 SHOWS_ANYTHING: Final = "(element) => element.childElementCount > 0 || element.textContent.trim() !== ''"
 """Reguła okna Wyceny, czy element pokazuje cokolwiek: ma element albo tekst, a ``false`` tylko dla pustego (same białe
