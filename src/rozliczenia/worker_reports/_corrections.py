@@ -93,7 +93,7 @@ def uncorrected(
     dnia nie ma poprawki, więc ich numery się dopisują. Zlecenia Wykonawcy z dnia są sprzed Przeniesień Centrum, bez
     dopisanych (``Board.own_numbers``): Przeniesienie albo dopisanie tego kliknięcia nie zmienia więc w następnym
     kliknięciu, który mail jest poprawką, i numer odrzucony jako literówka nie dopisuje się drugim kliknięciem (własność
-    N4, przegląd #1374 r5)."""
+    N4 w ``tests/test_rdzen_raportow.py``)."""
 
     return tuple(
         addition

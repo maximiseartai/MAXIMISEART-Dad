@@ -1,4 +1,4 @@
-"""Uchwyt plików taty: jedyna droga czytnika do wartości pliku taty (ADR 0025, #841).
+"""Uchwyt plików taty: jedyna droga czytnika do wartości pliku taty (ADR 0025).
 
 Każdy plik taty czyta ``DadFiles.read``: najpierw sprawdza, że plik jest na dysku i nie jest otwarty w Excelu, potem
 bierze chwilę zmiany pliku, a dopiero potem jego bajty ze źródła uchwytu (``source``), więc plik zapisany znowu zaraz po

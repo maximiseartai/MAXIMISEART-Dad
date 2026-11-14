@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from types import ModuleType
 import urllib.error
 
@@ -119,8 +120,20 @@ def _checked(
         (_violation("Pomocniczy", '{"a"}'), PASSED, "MODEL M: BŁĄD MODELU (1)", 2),
         ("Error: TLC threw an unexpected exception.\n", PASSED, "MODEL M: BŁĄD MODELU (1)", 2),
         (_violation("Jedno", '{"a"}'), wyjscie_tlc(None, ("Init", {"slady": "{}"}), ("Stuttering", {})), "MODEL M: NOWE NARUSZENIE (1)", 1),
+        (_violation("Jedno", '{"a"}'), "Error: TLC threw an unexpected exception.\n", "MODEL M: BŁĄD MODELU (1)", 2),
     ],
-    ids=["znane", "zniknelo", "inna-obietnica-w-reszcie", "inna-obietnica", "bez-przyczyny", "typeok", "spoza-obietnic", "bez-werdyktu", "reszta-nie-zbiega"],
+    ids=[
+        "znane",
+        "zniknelo",
+        "inna-obietnica-w-reszcie",
+        "inna-obietnica",
+        "bez-przyczyny",
+        "typeok",
+        "spoza-obietnic",
+        "bez-werdyktu",
+        "reszta-nie-zbiega",
+        "reszta-bez-werdyktu",
+    ],
 )
 def test_znane_znalezisko_wybacza_tylko_swoja_obietnice_po_swojej_przyczynie(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], own: str, rest: str, last: str, returncode: int
@@ -171,6 +184,47 @@ def test_konfiguracja_bez_znalezisk_z_kontrprzykladem_to_nowe_naruszenie(tmp_pat
     assert (code, lines[-1]) == (1, "MODEL M: NOWE NARUSZENIE (1)")
 
 
+def test_raport_mowi_kazdy_przebieg_konfiguracji_z_wynikiem_i_wynikiem_oczekiwanym(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    model = _model(tmp_path, {"f": _config(znane=[FINDING]), "g": {"opis": "Bez znanych.", "stale": {"Czesci": 1}}})
+
+    code, lines, _ = _checked(model, lambda text: PASSED if "PozaZnanymi" in text or "Bez znanych" in text else _violation("Jedno", '{"a"}'), capsys)
+
+    assert code == 0
+    assert lines == [
+        "",
+        "== f: Opis.",
+        "   znane znalezisko „a”, Jedno: opis",
+        "   naruszone Jedno: drugie issue.",
+        "   wynik: narusza Jedno, oczekiwany: narusza Jedno po „a”",
+        "   reszta przebiegów, bez wszystkich znanych znalezisk tej konfiguracji:",
+        "   wynik: przechodzi, oczekiwany: przechodzi",
+        "",
+        "== g: Bez znanych.",
+        "   wynik: przechodzi, oczekiwany: przechodzi",
+        "",
+        "MODEL M OK, ZNANE ZNALEZISKA: 1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("own", "told"),
+    [
+        (PASSED, "   znalezisko zniknęło: opisz zmianę w SKILL.md i usuń je z model/konfiguracje.json."),
+        (_violation("Jedno", '{"b"}'), "   to nie jest znane znalezisko: przebieg łamie Jedno po ['b']."),
+        ("Error: TLC threw an unexpected exception.\n", "   BŁĄD MODELU: TLC nie dał werdyktu.\nError: TLC threw an unexpected exception."),
+    ],
+    ids=["zniknelo", "bez-przyczyny", "bez-werdyktu"],
+)
+def test_przebieg_znanego_znaleziska_z_innym_wynikiem_mowi_co_poszlo_inaczej(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], own: str, told: str
+) -> None:
+    model = _model(tmp_path, {"f": _config(znane=[FINDING])})
+
+    _, lines, _ = _checked(model, lambda text: PASSED if "PozaZnanymi" in text else own, capsys)
+
+    assert told in "\n".join(lines)
+
+
 def test_cfg_sprawdza_typeok_i_kazda_obietnice_a_wybaczony_przebieg_ich_warianty_poza_znanymi(tmp_path: Path) -> None:
     model = _model(tmp_path, {"f": _config(znane=[FINDING])})
     [config] = model_tlc.konfiguracje(model)
@@ -184,6 +238,14 @@ def test_cfg_sprawdza_typeok_i_kazda_obietnice_a_wybaczony_przebieg_ich_warianty
     )
     assert forgiven.splitlines()[2:4] == ["INVARIANTS TypeOK JednoPozaZnanymi RownoPozaZnanymi", "PROPERTIES Zbieganie"]
     assert forgiven.splitlines()[-2:] == ['    WybaczoneJedno = {"a", "b"}', '    WybaczoneRowno = {"c"}']
+
+
+def test_model_bez_zakleszczenie_false_sprawdza_zakleszczenie(tmp_path: Path) -> None:
+    base = _model(tmp_path, {"f": _config()})
+    model = model_tlc.Model(base.werdykt, base.skill, base.specyfikacja, base.obietnice, base.opowiedz)
+    [config] = model_tlc.konfiguracje(model)
+
+    assert "CHECK_DEADLOCK" not in model_tlc.cfg(model, config, frozenset())
 
 
 def test_kontrprzyklad_skleja_wartosc_z_kilku_linii_i_konczy_przebieg_bez_konca_slowami_petli() -> None:
@@ -207,6 +269,14 @@ def test_kontrprzyklad_skleja_wartosc_z_kilku_linii_i_konczy_przebieg_bez_konca_
     assert states[3].zmienne == states[1].zmienne
 
 
+def test_wartosc_zmiennej_konczy_sie_na_linii_bez_wciecia_po_kontrprzykladzie() -> None:
+    output = wyjscie_tlc("Jedno", ("Init", {"slady": "{}"}), ("Pisz", {"slady": '{"a",\n   "b"}'}))
+
+    states = model_tlc.slad(output + "\n2 states generated, 2 distinct states found, 0 states left on queue.\n")
+
+    assert states[-1].zmienne == {"slady": '{"a", "b"}'}
+
+
 @pytest.mark.parametrize(
     ("obietnica", "causes"),
     [(model_tlc.Obietnica("x", czasowa=True), {"a", "b-c"}), (model_tlc.Obietnica("x", None, czasowa=True), set())],
@@ -225,6 +295,23 @@ def test_przebieg_bez_konca_lamie_obietnice_czasowa_z_przyczynami_ostatniego_sta
     assert [state.petla for state in told[0]] == [None, None, "(stąd znów krok 0 i tak bez końca)"]
 
 
+def test_niezmiennik_spoza_obietnic_to_blad_modelu_z_opowiedzianym_kontrprzykladem(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    told: list[Sequence[model_tlc.Stan]] = []
+    model = model_tlc.Model("MODEL M", tmp_path, "M.tla", {"Jedno": model_tlc.Obietnica("y")}, told.append)
+
+    assert model_tlc.werdykt(model, _violation("TypeOK")) is None
+    assert capsys.readouterr().out == "   BŁĄD MODELU: naruszony TypeOK, czyli model wyszedł poza swoje wartości.\n"
+    assert [state.akcja for state in told[0]] == ["Init", "Pisz"]
+
+
+def test_naruszenie_bez_stanow_kontrprzykladu_to_werdykt_bez_przyczyn(tmp_path: Path) -> None:
+    """Wyjście TLC urwane po linii naruszenia (zabity proces) nie ma stanów, a werdykt i tak mówi naruszoną obietnicę."""
+
+    model = model_tlc.Model("MODEL M", tmp_path, "M.tla", {"Jedno": model_tlc.Obietnica("y")}, lambda states: None)
+
+    assert model_tlc.werdykt(model, "Error: Invariant Jedno is violated.\n") == model_tlc.Werdykt("Jedno")
+
+
 @pytest.mark.parametrize(
     "configs",
     [
@@ -233,15 +320,34 @@ def test_przebieg_bez_konca_lamie_obietnice_czasowa_z_przyczynami_ostatniego_sta
         {"f": {"opis": "Opis."}},
         {"f": _config(inne=1)},
         {"f": _config(opis="")},
+        {"f": _config(opis="Opis.\nDalej.")},
         {"f": {"opis": "Opis.", "stale": {}}},
         {"f": {"opis": "Opis.", "stale": {"X": [1]}}},
         {"f": {"opis": "Opis.", "stale": {"X": 'a"b'}}},
         {"f": _config(znane={"obietnica": "Jedno"})},
+        {"f": _config(znane=None)},
         {"f": _config(znane=[{"obietnica": "Jedno", "przyczyna": "a"}])},
+        {"f": _config(znane=[{**FINDING, "przyczyna": ""}])},
         {"f": _config(znane=[{**FINDING, "obietnica": "Zbieganie"}])},
         {"f": _config(znane=[{**FINDING, "obietnica": "Nieznana"}])},
     ],
-    ids=["pusty", "lista", "bez-stalych", "obcy-klucz", "pusty-opis", "puste-stale", "stala-lista", "stala-z-cudzyslowem", "znane-nie-lista", "znalezisko-bez-opisu", "znalezisko-bez-wybaczenia", "znalezisko-nieznanej-obietnicy"],
+    ids=[
+        "pusty",
+        "lista",
+        "bez-stalych",
+        "obcy-klucz",
+        "pusty-opis",
+        "opis-w-dwoch-liniach",
+        "puste-stale",
+        "stala-lista",
+        "stala-z-cudzyslowem",
+        "znane-nie-lista",
+        "znane-null",
+        "znalezisko-bez-opisu",
+        "znalezisko-z-pusta-przyczyna",
+        "znalezisko-bez-wybaczenia",
+        "znalezisko-nieznanej-obietnicy",
+    ],
 )
 def test_konfiguracje_w_innej_postaci_to_blad_modelu_przed_tlc(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], configs: object
@@ -260,6 +366,33 @@ def test_konfiguracja_spoza_pliku_konfiguracji_to_blad_modelu(tmp_path: Path, mo
 
     assert model_tlc.main(model, ["--config", "f", "--config", "usunieta"]) == 2
     assert capsys.readouterr().out.splitlines()[0] == f"BŁĄD MODELU: {model_tlc.KONFIGURACJE} nie ma konfiguracji usunieta"
+
+
+@pytest.mark.parametrize("text", ["{", None], ids=["nie-json", "brak-pliku"])
+def test_konfiguracje_ktorych_nie_da_sie_odczytac_to_blad_modelu_przed_tlc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], text: str | None
+) -> None:
+    model = _model(tmp_path, {})
+    path = model.skill / model_tlc.KONFIGURACJE
+    if text is None:
+        path.unlink()
+    else:
+        path.write_text(text, encoding="utf-8")
+    _without_drift_or_tools(monkeypatch)
+
+    assert model_tlc.main(model, []) == 2
+    assert capsys.readouterr().out.startswith(f"BŁĄD MODELU: {model_tlc.KONFIGURACJE} nie da się odczytać (")
+
+
+def test_pomoc_skryptu_modelu_mowi_jego_opis_i_plik_konfiguracji(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    model = _model(tmp_path, {"f": _config()})
+
+    with pytest.raises(SystemExit) as stopped:
+        model_tlc.main(model, ["--help"], opis="Model kolejki skrzynki.")
+
+    said = " ".join(capsys.readouterr().out.split())
+    assert stopped.value.code == 0
+    assert "Model kolejki skrzynki." in said and f"Tylko ta konfiguracja (nazwa z {model_tlc.KONFIGURACJE})." in said
 
 
 @pytest.mark.parametrize(
@@ -395,6 +528,21 @@ def test_liveness_poza_mutacja_tylko_na_pelnym_grafie_a_w_mutacji_takze_w_trakci
     assert [command[command.index("-lncheck") + 1] for command in commands] == [lncheck, lncheck]
 
 
+def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_strumienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = tmp_path / "M.tla"
+    spec.write_text(SPEC, encoding="utf-8")
+    seen: dict[str, str] = {}
+
+    def run(command: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        seen.update({path.name: path.read_text(encoding="utf-8") for path in cwd.iterdir() if path.is_file()})
+        return subprocess.CompletedProcess(command, 0, "wyjście\n", "błędy\n")
+
+    monkeypatch.setattr(potomne, "run", run)
+
+    assert model_tlc.tlc("java", tmp_path / "tla2tools.jar", spec, "f", "\\* Opis.\n") == "wyjście\nbłędy\n"
+    assert seen == {"M.tla": SPEC, "f.cfg": "\\* Opis.\n"}
+
+
 @pytest.mark.parametrize("ustawiona", [model_tlc.JAVA, model_tlc.JAR, model_tlc.MUTACJA])
 def test_narzedzia_dla_kopii_ustawiaja_jave_jar_i_mutacje_a_ustawionej_zmiennej_nie_zmieniaja(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ustawiona: str
@@ -502,8 +650,9 @@ def test_pobrany_jar_z_inna_suma_konczy_sie_bledem_pobierania_i_nie_zostaje_w_ka
     assert list(tmp_path.iterdir()) == []
 
 
-def _pip_answers(monkeypatch: pytest.MonkeyPatch, codes: list[int]) -> list[list[str]]:
-    """Atrapa ``potomne.run``: instalacja ``jdk4py`` kończy się kolejno kodami z ``codes`` (0 instaluje pakiet); zwraca próby."""
+def _pip_answers(monkeypatch: pytest.MonkeyPatch, codes: list[int], found: int = 0) -> list[list[str]]:
+    """Atrapa ``potomne.run``: instalacja ``jdk4py`` kończy się kolejno kodami z ``codes`` (0 instaluje pakiet), a odczyt
+    ścieżki Javy z pakietu kodem ``found``; zwraca próby instalacji."""
 
     installs: list[list[str]] = []
 
@@ -517,7 +666,7 @@ def _pip_answers(monkeypatch: pytest.MonkeyPatch, codes: list[int]) -> list[list
                 (Path(args[args.index("--target") + 1]) / "jdk4py").mkdir(parents=True)
             return subprocess.CompletedProcess(args, code)
         assert "import jdk4py" in args[-1], args
-        return subprocess.CompletedProcess(args, 0, stdout="/atrapa/java\n")
+        return subprocess.CompletedProcess(args, found, stdout="/atrapa/java\n" if found == 0 else "", stderr="ModuleNotFoundError")
 
     monkeypatch.setattr(potomne, "run", run)
     monkeypatch.setattr(narzedzia_tlc, "PRZERWY_S", (0.0, 0.0))
@@ -542,6 +691,35 @@ def test_instalacja_javy_ktora_zawodzi_do_konca_konczy_sie_bledem_pobierania_a_n
 
     assert str(stopped.value).startswith(f"{narzedzia_tlc.CHWILOWA_AWARIA}: {narzedzia_tlc.JDK4PY} po 3 próbach (instalacja skończyła się kodem 1)")
     assert len(installs) == 3
+
+
+def test_instalacja_javy_drukuje_wyjscie_instalatora_bo_blad_pobierania_podaje_tylko_kod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    real = potomne.run
+
+    def run(args: list[str], *, cwd: Path, echo: bool = False) -> subprocess.CompletedProcess[str]:
+        if "--target" not in args:
+            return subprocess.CompletedProcess(args, 0)
+        installer = "import sys; print('ERROR: No matching distribution found for jdk4py'); sys.exit(1)"
+        return real([sys.executable, "-c", installer], cwd=cwd, echo=echo)
+
+    monkeypatch.setattr(potomne, "run", run)
+    monkeypatch.setattr(narzedzia_tlc, "PRZERWY_S", (0.0, 0.0))
+
+    with pytest.raises(SystemExit):
+        narzedzia_tlc.java(tmp_path)
+
+    assert capsys.readouterr().out.count("ERROR: No matching distribution found for jdk4py") == 3
+
+
+def test_jdk4py_ktorego_nie_da_sie_zaimportowac_konczy_sie_bledem_polecenia_a_nie_pusta_java(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _pip_answers(monkeypatch, [0], found=1)
+
+    with pytest.raises(subprocess.CalledProcessError) as failed:
+        narzedzia_tlc.java(tmp_path)
+
+    assert (failed.value.returncode, failed.value.stderr) == (1, "ModuleNotFoundError")
 
 
 def _zapis() -> ModuleType:
