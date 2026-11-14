@@ -1142,7 +1142,8 @@ def test_komentarz_w_src_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozsze
 
 
 # Znane luki reguły ``komentarz-w-src`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z komentarzem
-# poza tłumieniem, który mimo to przechodzi przez regułę, ruff z konfiguracją ``src/`` i mypy z ``pyproject.toml``.
+# poza tłumieniem, który mimo to przechodzi przez regułę, ruff z konfiguracją ``src/`` i mypy z ``pyproject.toml`` na
+# każdej platformie kroków mypy zadania CI „Ruff, mypy” (``_ci_mypy_platforms``), nie na platformie hosta.
 ZNANE_LUKI_KOMENTARZY: Final = {
     "powód tłumienia: drugie noqa w powodzie noqa": "import os  # noqa: F401 - powód  # noqa: E501 - drugi\n",
     "powód tłumienia: type: ignore w powodzie noqa": "import os  # noqa: F401 - powód  # type: ignore[misc]\n",
@@ -1151,6 +1152,12 @@ ZNANE_LUKI_KOMENTARZY: Final = {
     "kod mypy: słowo w kształcie kodu obok prawdziwego pod if not TYPE_CHECKING": (
         f"{_NOT_TYPE_CHECKING}x: int = 'a'  # type: ignore[assignment, historia]\n"
     ),
+    "kod mypy: słowo w kształcie kodu w gałęzi sys.platform == \"darwin\", której żaden krok mypy w CI nie sprawdza": (
+        f"{_DARWIN}[historia]\n"
+    ),
+    "kod mypy: słowo w kształcie kodu obok prawdziwego w gałęzi sys.platform == \"darwin\", której żaden krok mypy w CI nie sprawdza": (
+        f"{_DARWIN}[assignment, historia]\n"
+    ),
     "kod mypy: słowo w kształcie kodu w gałęzi sys.version_info nowszej niż python_version mypy": (
         "import sys\n\nif sys.version_info >= (3, 14):\n    x: int = 'a'  # type: ignore[historia]\n"
     ),
@@ -1158,6 +1165,16 @@ ZNANE_LUKI_KOMENTARZY: Final = {
         "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
     ),
 }
+
+
+def _ci_mypy_platforms() -> list[str]:
+    """Platformy kroków ``python -m mypy --platform`` zadania CI „Ruff, mypy” z ``ci.yml``, w kolejności kroków."""
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    runs = [str(step.get("run", "")) for step in workflow["jobs"]["ruff-mypy"]["steps"]]
+    return [match[1] for run in runs if (match := re.search(r"-m mypy --platform (\S+)", run))]
 
 
 @needs_ast_grep
@@ -1171,7 +1188,9 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
     base = _empty_base(tmp_path)
     (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
     pliki = zapisz(ZNANE_LUKI_KOMENTARZY, tmp_path / "src" / "rozliczenia")
-    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    platforms = _ci_mypy_platforms()
+    assert platforms, "zadanie CI „Ruff, mypy” nie ma kroku python -m mypy --platform"
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py", platformy=platforms)
     opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
     for finding in syntax_rules(tmp_path, base):
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
