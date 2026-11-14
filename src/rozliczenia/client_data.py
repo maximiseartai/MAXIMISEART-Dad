@@ -115,7 +115,7 @@ class Outgoing(str):
     """Tekst, który może wyjść z komputera taty: po strażniku, tekst narzędzia (``tool``) albo sklejenie takich tekstów.
 
     Konstruktor bez dowodu ``_PASSED`` rzuca ``TypeError``, a podklasy nie ma. Inna metoda ``str`` (wycinek, f-napis,
-    ``join``, ``+`` z gołym ``str``) daje ``str``, którego kolejka nie przyjmuje.
+    ``join``, ``+`` z gołym ``str`` albo z podklasą) daje ``str``, którego kolejka nie przyjmuje.
     """
 
     __slots__ = ()
@@ -134,7 +134,7 @@ class Outgoing(str):
     def __add__(self, other: str, /) -> str: ...
     def __add__(self, other: str, /) -> str:
         joined = str(self) + other
-        return Outgoing(joined, _PASSED) if isinstance(other, Outgoing) else joined
+        return Outgoing(joined, _PASSED) if type(self) is Outgoing and type(other) is Outgoing else joined
 
 
 def tool(text: str) -> Outgoing:
@@ -252,7 +252,7 @@ def guarded(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
     Tekst bez zakazanych wartości, telefonów i ulic wraca bez zmian i bez uwag.
     """
 
-    masked, columns = _masked(_memory(forbidden), text)
+    masked, columns = _masked(_memory(forbidden), str.__str__(text))
     return Guarded(Outgoing(free_text(masked), _PASSED), _notes(columns, place))
 
 
