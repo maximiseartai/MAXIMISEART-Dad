@@ -10,12 +10,13 @@ czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSet
 nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
 wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
-Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_checked``: odczyt,
-zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego nie pasuje, jest zły tak samo jak plik z
-uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z Wydania (tata nie ma pliku reguł) są zawsze
-dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten składnik z Listy Urządzeń z Wydania; składnik,
-którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest dobra (``quantity_rules``). Plik, który zaczyna
-pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak zmiana jego treści.
+Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
+odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
+nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
+Wydania (tata nie ma pliku reguł) są zawsze dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten
+składnik z Listy Urządzeń z Wydania; składnik, którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest
+dobra (``quantity_rules``). Plik, który zaczyna pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak
+zmiana jego treści.
 Każdy zapis taty pary (formularz sekcji, „Dodaj” z podpowiedzi, „Popraw regułę”, „Cofnij”) idzie przez ``_dad_change``,
 które sprawdza go jako zmianę, zanim ``_checked`` zobaczy plik: odmowa mówi, co zmiana psuje (zapis u dwóch składników,
 składnik potrzebny regule, reguła bez składnika, zapis, który tata musi zwolnić dla składnika z Wydania), tym samym
@@ -70,7 +71,9 @@ zmieniony poza Centrum) przy pamięci bez tej zmiany puszcza ją jeszcze raz, ta
 (usunięty folder).
 
 Moduł nie wczytuje FastAPI: czyta go też katalog procesów i gospodarze Uruchomień, a interfejs HTTP jest w
-``settings_router``. Narzędzia i Skrypt dla maszyn czytają przez ``read_snapshot``, które niczego nie pisze.
+``settings_router``. Próby skrzynki i Przypomnień (``tools/proba_*``) czytają przez ``read_snapshot``, które niczego
+nie pisze; Skrypt dla maszyn czyta Listę Wykonawców regułą ``WORKERS.parse`` bez Historii i pamięci, a Reguły ilości
+bierze z Wydania.
 """
 
 from __future__ import annotations
@@ -146,6 +149,8 @@ REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
 HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 """Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
+_PairCheck = Callable[[Any], FieldProblem | None]
+"""Problem dobrej wartości pliku pary Reguł ilości i Listy Urządzeń razem z drugim plikiem; ``None``: para pasuje."""
 _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem]
 """Zmiana taty Reguł ilości: bieżące reguły → reguły po zmianie albo problem, który jest odmową bez zapisu."""
 
@@ -154,7 +159,7 @@ _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | Fie
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
     dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje
-    (``workers_usable``)."""
+    (odmowa ``refusal.workers_unusable``)."""
 
     folders: FolderSettings
     workers: Read[WorkerList] | Unreadable
@@ -537,18 +542,14 @@ class CentrumSettings:
         )
 
     def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
-        """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń; inne pliki mają tylko swój
-        ``parse``. Reguły ilości z Wydania (brak pliku reguł) pasować nie muszą: pasować musi do nich lista taty."""
+        """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń (``_paired``) z bieżącymi
+        plikami i pamięcią właściciela."""
 
-        if data is None and file.name == RULES.name:
-            return parsed
-        together: Mapping[str, Callable[[Any], FieldProblem | None]] = {
+        together: Mapping[str, _PairCheck] = {
             RULES.name: self._rules_problem,
             DEVICES.name: self._devices_problem,
         }
-        check = together.get(file.name)
-        problem = None if check is None or isinstance(parsed, FieldProblem) else check(parsed)
-        return parsed if problem is None else problem
+        return _paired(file, data, parsed, together)
 
     def _rules_problem(self, rules: tuple[QuantityRule, ...]) -> FieldProblem | None:
         """Reguły z bieżącą Listą Urządzeń albo z ostatnią dobrą; listy nie porównuje z pamięcią, bo jej przyjęcie
@@ -843,15 +844,17 @@ _SECTION: Final = re.compile(r"[.\[]")
 
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
-    """Migawka bez zapisu dla narzędzi i Skryptu dla maszyn: plik, przy złej treści ostatnia dobra z pamięci właściciela;
-    nie dopisuje Historii ani pamięci."""
+    """Migawka bez zapisu dla prób skrzynki i Przypomnień (``tools/proba_*``): plik, przy złej treści ostatnia dobra z
+    pamięci właściciela; nie dopisuje Historii ani pamięci."""
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
-    rules = _read_only(config, RULES, lambda value: _rules_problem(value, devices_data, remembered_devices))
+    rules = _read_only(config, RULES, {RULES.name: lambda value: _rules_problem(value, devices_data, remembered_devices)})
     release = settings_bytes(config / RULES.name) is None
     devices = _read_only(
-        config, DEVICES, lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)
+        config,
+        DEVICES,
+        {DEVICES.name: lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)},
     )
     return SettingsSnapshot(
         folders=_read_only(config, FOLDERS),
@@ -862,27 +865,39 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     )
 
 
-def _read_only(config: Path, file: SettingsFile[T], together: Callable[[T], FieldProblem | None] | None = None) -> T:
+def _read_only(config: Path, file: SettingsFile[T], together: Mapping[str, _PairCheck] | None = None) -> T:
     return _usable(_read_only_view(config, file, together), file)
 
 
 def _read_only_view(
-    config: Path, file: SettingsFile[T], together: Callable[[T], FieldProblem | None] | None = None
+    config: Path, file: SettingsFile[T], together: Mapping[str, _PairCheck] | None = None
 ) -> Read[T] | Unreadable:
     """Wartość pliku bez porównania z pamięcią: zła treść z ostatnią dobrą z pamięci właściciela, gdy ją ma;
-    ``together``: problem pliku razem z drugim plikiem pary, jak ``CentrumSettings._checked``."""
+    ``together``: sprawdzenia pary z plików w ``config`` i pamięci (``_paired``)."""
 
     data = settings_bytes(config / file.name)
     if isinstance(data, OSError):
         return Unreadable()
-    parsed = file.parse(data)
-    if not isinstance(parsed, FieldProblem) and together is not None:
-        parsed = together(parsed) or parsed
+    parsed = _paired(file, data, file.parse(data), together or {})
     if not isinstance(parsed, FieldProblem):
         return Good(parsed)
     remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
     return _with_secret_value(file, Bad(parsed, None if good is None else _good_value(good, file)), data)
+
+
+def _paired(
+    file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem, together: Mapping[str, _PairCheck]
+) -> T | FieldProblem:
+    """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń (``together``) dla
+    właściciela i ``read_snapshot``; inne pliki mają tylko swój ``parse``. Reguły ilości z Wydania (brak pliku reguł)
+    pasować nie muszą: pasować musi do nich lista taty."""
+
+    if data is None and file.name == RULES.name:
+        return parsed
+    check = together.get(file.name)
+    problem = None if check is None or isinstance(parsed, FieldProblem) else check(parsed)
+    return parsed if problem is None else problem
 
 
 def _with_secret_value(file: SettingsFile[T], read: Read[T], data: bytes | None) -> Read[T]:

@@ -57,7 +57,7 @@ Każda decyzja niżej ma jedno zdanie decyzji, jedno zdanie powodu i ticket, kt�
   Wchodzi w #1626 i #1627.
 - **Autor wyrywa swój chwast.** PR, którego Ważne założyło albo uzupełniło issue „Chwast”, zamyka to issue linią „Korzeń z #N”, chyba że wyrwanie przekracza rozmiar M i idzie osobnym PR-em korzenia z tego samego wątku.
   Powód: chwast bez właściciela czeka, a autor ma kontekst, którego nie ma nikt inny.
-  Wchodzi w #1619.
+  Wchodzi w #1619; bramkę z #1644 wycofuje #1683 do rozstrzygnięcia, co zamyka issue „Chwast”.
 - **Czerwony `main` w wątku autora.** Issue `czerwony-main` trafia do wątku T3, którego merge zaczerwienił `main`.
   Powód: autor naprawia korzeń, póki ma kontekst, a czerwony `main` blokuje wszystkie wątki.
   Wchodzi w #1621.

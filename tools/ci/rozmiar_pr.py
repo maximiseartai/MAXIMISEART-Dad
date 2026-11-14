@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from github import REPO, GhApi, GitHub, strony
 import repo
+from szopa import LISTA, PRZEPUSZCZA
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,6 @@ POWIEKSZA = Etykieta(
 # Pliki testów repozytorium: pytest w tests/, plik test_*.py gdziekolwiek i testy frontendu (*.test.*, *.spec.*).
 TESTY = ("tests/**", "**/test_*.py", "frontend/**/*.test.*", "frontend/**/*.spec.*")
 
-LISTA = "tools/lib/szopa.toml"
 PRODUKT = "produkt"
 WERYFIKACJA = "weryfikacja"
 MASZYNERIA = "maszyneria"
@@ -144,13 +144,13 @@ def zmierz(root: Path, baza: str, glowa: str) -> Rozmiar:
 
 def wpisy(tekst: str) -> dict[str, str]:
     """Każdy wpis listy w treści TOML ``tekst`` (jednostka i każdy plik jej testów) z nazwą swojej grupy. Inny kształt
-    niż tabele ``GRUPY``, w których jednostka ma listę plików testów, i wpis, który stoi dwa razy, to ``ValueError``."""
+    niż tabele ``GRUPY`` z podtabelą ``PRZEPUSZCZA``, w których jednostka ma listę plików testów, i wpis, który stoi dwa razy, to ``ValueError``."""
 
     wynik: dict[str, str] = {}
     for grupa, jednostki in tomllib.loads(tekst).items():
-        if grupa not in GRUPY or not isinstance(jednostki, dict):
+        if grupa not in GRUPY or not isinstance(jednostki, dict) or not isinstance(oznaczone := jednostki.pop(PRZEPUSZCZA, {}), dict):
             raise ValueError(f"{LISTA}: tabela [{grupa}] nie jest grupą listy ({', '.join(GRUPY)})")
-        for jednostka, testy in jednostki.items():
+        for jednostka, testy in [*jednostki.items(), *oznaczone.items()]:
             if not isinstance(testy, list) or not all(isinstance(test, str) for test in testy):
                 raise ValueError(f"{LISTA}: jednostka {jednostka} ma mieć listę plików testów")
             for wpis in (jednostka, *testy):

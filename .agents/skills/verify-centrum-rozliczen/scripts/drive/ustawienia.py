@@ -34,6 +34,7 @@ from drive.common import (
     settle,
     unreadable,
 )
+from drive.waiting import Budget
 from harness import INBOX_ADDRESS, INBOX_PASSWORD, File, Log, Switch
 
 
@@ -292,9 +293,6 @@ def _saved_and_undo(run: Run, page: Page) -> None:
 # How late the failed save answers: after the two frames in which the theme switch turns transitions off, as a save
 # at tata's answers, so the notification slides in from under the window's edge (400 ms) instead of standing at once.
 LATE_ANSWER_S = 0.3
-# How long the drive waits for the notification to stand over everything: shorter than the 5 s in which it closes
-# itself (`timeout` of Base UI's `ToastProvider`), so a notification covered for good fails with this step's sentence.
-UNCOVERED_WAIT_S = 3
 
 
 def _failure_in_window(run: Run, page: Page) -> None:
@@ -318,7 +316,7 @@ def _failure_in_window(run: Run, page: Page) -> None:
         run.wait_for(
             lambda: failure.evaluate(CENTRE_TAKES_CLICK),
             "a failed save is a notification in the window Ustawienia that nothing covers",
-            timeout_s=UNCOVERED_WAIT_S,
+            timeout_s=Budget.TRANSIENT,
         )
         run.capture(page, "315-ustawienia-blad-w-oknie", full_page=False)
         expect(page.locator("html")).to_have_class("dark")
@@ -388,7 +386,7 @@ def _failure_keeps_next_choice(run: Run, page: Page) -> None:
             route.fulfill(status=500, body="")
         page.unroute(theme)
     expect(page.locator("html")).to_have_class("dark")
-    expect(error_toasts(page)).to_have_count(0, timeout=10_000)
+    expect(error_toasts(page)).to_have_count(0, timeout=Budget.SCREEN.ms)
     close_settings(page)
     run.check(run.remembered("motyw") == "dark", "the failed saves left the theme as it was")
 
