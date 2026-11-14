@@ -35,11 +35,12 @@ the sidebar, returning to the browser tab.
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wydajnosc`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP wydajnosc` in `drive.txt`, screenshots `84`–`86`, `api/wydajnosc-*.json`, `wydajnosc/raport.txt` and
-`wydajnosc/raport.json` (every scenario and profile with median, baseline, budget and verdict, then the API requests,
-the bundle, the CPU traces and the failures), `wydajnosc/baseline-kandydat.json` and the CPU traces
-`wydajnosc/slad-*.json` (open them in Chrome DevTools → Performance).
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP wydajnosc` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/wydajnosc-*.json`, `wydajnosc/raport.txt` and `wydajnosc/raport.json` (every scenario and profile with median,
+baseline, budget and verdict, then the API requests, the bundle, the CPU traces and the failures),
+`wydajnosc/baseline-kandydat.json` and the CPU traces `wydajnosc/slad-*.json` (open them in Chrome DevTools →
+Performance).
 
 ## Gotchas
 

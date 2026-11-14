@@ -41,9 +41,9 @@ procesu`; the tabs `Uruchomienie` and `Historia` show the live run and the past 
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature przygotowanie-pliku-zbiorczego`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP przygotowanie-pliku-zbiorczego` in `drive.txt`, screenshots `30`–`39`, `3a`–`3d` and `149`, and
-`api/przygotowanie-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP przygotowanie-pliku-zbiorczego` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+and `api/przygotowanie-*.json`.
 
 ## Gotchas
 

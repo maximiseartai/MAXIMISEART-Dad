@@ -26,8 +26,9 @@ above the rules. A bookmark of `#/ustawienia/reguly-ilosci` opens it too.
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature roznice-z-kontroli`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP roznice-z-kontroli` in `drive.txt`, screenshots `400`–`404` and `api/roznice-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP roznice-z-kontroli` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/roznice-*.json`.
 
 ## Gotchas
 

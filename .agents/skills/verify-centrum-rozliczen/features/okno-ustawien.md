@@ -30,8 +30,8 @@ next to an unset file on Okresy, Uruchomienia and Raporty. A bookmark of `#/usta
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature okno-ustawien`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP okno-ustawien` in `drive.txt` and screenshots `300`–`305`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP okno-ustawien` in `drive.txt` and the screenshots of its `Feature` in `scripts/drive/__init__.py`.
 
 ## Gotchas
 
