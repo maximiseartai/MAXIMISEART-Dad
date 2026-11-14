@@ -97,7 +97,8 @@ from rozliczenia.efenix_window import (
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, emmett_window, emmett_window_fault, read_order, read_results
+from rozliczenia.efenix_page import EmmettWindow, ResultsTable, SearchWarning, emmett_window, emmett_window_fault, read_order
+from rozliczenia.efenix_page import read_results, results_table, search_warning
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState, ProgressSnapshot, SavingStep
@@ -2250,6 +2251,46 @@ def test_strona_ktora_nie_odpowiada_konczy_dzialanie_okna_zatrzymaniem_w_czasie_
     )
     with pytest.raises(PlaywrightError, match="Timeout"):
         page.locator(":root").wait_for(state="attached", timeout=1_000)
+
+
+def test_koniec_bloku_okna_nie_czeka_na_strone_ktorej_skrypt_nie_odpowiada(page: Page) -> None:
+    """Strażnik zmiany statusu zostaje na kontekście karty do jego zamknięcia: okno go nie zdejmuje (``unroute``), bo
+    zdjęcie czeka na stronę, której skrypt nie odpowiada. Blok okna kończy się więc przy stronie w pętli 20 s bez czekania
+    na nią, a po bloku strona dalej nie odpowiada."""
+
+    with atrapa_efenix([]) as atrapa:
+        with efenix_browser.window(page, atrapa.url, timeout_ms=2_000):
+            page.evaluate("setTimeout(() => { const end = Date.now() + 20_000; while (Date.now() < end) {} }, 0)")
+            with pytest.raises(PlaywrightError, match="Timeout"):
+                page.locator(":root").wait_for(state="attached", timeout=1_000)
+
+        with pytest.raises(PlaywrightError, match="Timeout"):
+            page.locator(":root").wait_for(state="attached", timeout=1_000)
+
+
+def test_tabela_wynikow_szukania_czyta_sie_bez_skryptow_i_obslugi_zdarzen_odpowiedzi(page: Page) -> None:
+    """Okno czyta tabelę wyników z odpowiedzi szukania parserem przeglądarki w ``<template>``, w którym kod odpowiedzi nie
+    biegnie: obrazek bez treści z ``onerror`` w komórce tabeli nie uruchamia swojego kodu w karcie okna, a tabela jest
+    przeczytana."""
+
+    html = (
+        "<table><thead><tr><th>Numer dokumentu</th></tr></thead><tbody><tr>"
+        '<td>8001<img src="data:," onerror="window.uruchomione = true"></td></tr></tbody></table>'
+    )
+
+    table = results_table(page, html)
+
+    assert isinstance(table, ResultsTable) and table.headers == ("Numer dokumentu",)
+    with pytest.raises(PlaywrightTimeoutError):
+        page.wait_for_function("() => window.uruchomione === true", timeout=1_000)
+
+
+@pytest.mark.parametrize("warning", list(SearchWarning), ids=[warning.name for warning in SearchWarning])
+def test_odpowiedz_szukania_z_tabela_nie_jest_ostrzezeniem_efenix_takze_z_tekstem_ostrzezenia(page: Page, warning: SearchWarning) -> None:
+    """Ostrzeżenie efenix to cała odpowiedź szukania bez tabeli: odpowiedź z tabelą nie jest ostrzeżeniem, także gdy cały
+    jej tekst to tekst ostrzeżenia."""
+
+    assert search_warning(page, f"<table><tbody><tr><td>{warning.value}</td></tr></tbody></table>") is None
 
 
 # Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
