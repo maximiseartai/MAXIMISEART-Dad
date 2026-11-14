@@ -76,8 +76,8 @@
   "src/rozliczenia/centrum/outbox.py": {
     "Outbox.post": "083f22f284c67464",
     "Outbox.resume": "2a67b7d7c8f5622c",
-    "Rank": "d27ac44226b11a48",
-    "Version": "b20196684cf428b5",
+    "Rank": "ec9968dacada2754",
+    "Version": "923fbac578fd34bd",
     "_version_of": "34ae931f25c75815",
     "_superseded": "563aa9a41628837b"
   },

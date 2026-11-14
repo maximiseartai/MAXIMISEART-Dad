@@ -8,15 +8,15 @@ niego komentarzem z nagłówkiem celu). Najpierw trafia do własnego pliku JSON 
 ``config/zgloszenia/kolejka/`` (poza Gitem), potem jeden wątek w tle wysyła wszystkie pliki po kolei i usuwa
 wysłane. Porażka (brak klucza, odmowa, brak sieci) zostawia plik bez Komunikatu; wątek rusza znów sam po
 ``RETRY_S``, przy starcie Centrum (``resume``) i po każdej nowej wysyłce. Plik do ``KnownIssue``, którego skrzynka
-już nie ma, kolejka porzuca z linią dziennika (#402). Wysłany plik dostaje znacznik dostarczenia, zanim zniknie,
+już nie ma, kolejka porzuca z linią dziennika. Wysłany plik dostaje znacznik dostarczenia, zanim zniknie,
 więc plik, którego nie da się usunąć, nie idzie drugi raz. Treść nigdy nie trafia do dziennika Centrum: tylko
 etykieta, okres, numer issue i przyczyna czekania (decyzja 13).
 
-Wysyłka jest dokładnie raz (#840): każda część trafia do Skrzynki raz, także gdy przerwanie (zerwane połączenie,
+Wysyłka jest dokładnie raz: każda część trafia do Skrzynki raz, także gdy przerwanie (zerwane połączenie,
 zgaśnięcie Centrum) przyjdzie między jej przyjęciem przez skrzynkę a znacznikiem dostarczenia. Każdy tekst, który
 kolejka zapisuje w skrzynce, kończy się niewidocznym znacznikiem (``_mark``, komentarz HTML w osobnej linii): z
 identyfikatorem wysyłki, czyli etykietą (rodzajem) i ``run_id`` (Uruchomieniem), z numerem części (0: nagłówek) i z
-wersją (``Version``): najpierw stopniem, który wybiera nadawca (``Rank``, #910), potem chwilą i numerem z nazwy pliku
+wersją (``Version``): najpierw stopniem, który wybiera nadawca (``Rank``), potem chwilą i numerem z nazwy pliku
 kolejki (``_version``). Przed wysłaniem kolejka czyta treść i komentarze issue celu (``_settle``): issue ze znacznikiem
 tej wysyłki w nowszej wersji nie dostaje od niej niczego, część, której znacznik już tam jest w tej wersji, nie idzie
 drugi raz, komentarz części w starszej wersji dostaje nowy tekst (``edit_comment``), a komentarz części, której nowsza
@@ -25,7 +25,7 @@ identyfikatorem, zmienia komentarz swojego Uruchomienia, a starszy plik, który 
 nieczytelny), niczego w issue nie zmienia ani nie dopisuje. Plik, gdy przejście odczytało plik nowszej wersji tej samej
 wysyłki (ten sam cel i ``run_id``, ``_superseded``), także zapisany przed nim, kolejka oznacza znacznikiem
 dostarczenia i usuwa bez wysyłania, bo Skrzynce należy się nowsza: bez sieci w kolejce zostaje tylko najnowszy postęp
-Wyceny w efenix (#846, ``run_comments``) i tylko Logi z ostatnią Diagnozą. Chwila i numer porządkują tylko wersje
+Wyceny w efenix (``run_comments``) i tylko Logi z ostatnią Diagnozą. Chwila i numer porządkują tylko wersje
 jednego stopnia, a te powstają w jednej pracy Centrum (Diagnozę ma tylko ostatnie Uruchomienie tej pracy,
 ``run_comments``, a postęp tylko trwające), w której wersja rośnie z każdą wysyłką, także gdy zegar komputera się cofnie
 (``Outbox.post``), albo są wersjami zastępczymi jednego dziennika Wyceny z kolejnych startów. Wersja zastępcza z
@@ -38,7 +38,7 @@ komentarze. Bez niego zakłada nowe issue: pierwsza część (albo nagłówek) j
 issue, które założyła przerwana próba, dostaje tylko brakujące części. Kto czeka na wynik (Uwaga taty), może poczekać
 na dostarczenie przez ``wait_delivered``.
 
-Wysyłka do issue okresu może nieść plik do Archiwum okresu (``ArchiveFile``, #844: pełne Logi Uruchomienia), GitHub
+Wysyłka do issue okresu może nieść plik do Archiwum okresu (``ArchiveFile``: pełne Logi Uruchomienia), GitHub
 Release z tagiem w repozytorium Skrzynki. Plik idzie tuż przed częściami, a wysyłka jest dokładnie raz także w
 Archiwum: GitHub trzyma jeden plik jednej nazwy, a etykieta pliku niesie wersję wysyłki, więc ponowienie nie wysyła
 pliku, który już jest w tej albo nowszej wersji, plik starszej wersji ustępuje nowszej (``remove``, potem ``upload``),
@@ -104,60 +104,67 @@ else:
 
 QUEUE_DIRECTORY: Final = "kolejka"
 QUEUE_THREAD: Final = "skrzynka-kolejka"
-# Poza ``config/zgloszenia``: weryfikacja Kontroli ilości sprawdza, że jest tam tylko kolejka.
 ADDRESSES_FILE: Final = "skrzynka-adresy.jsonl"
-# Schemat 3 (#844) niesie plik do Archiwum okresu; stare Centrum, które go nie zna, zostawia taki plik w kolejce,
-# zamiast wysłać same części i usunąć plik razem z plikiem do Archiwum.
+"""Poza ``config/zgloszenia``: weryfikacja Kontroli ilości sprawdza, że jest tam tylko kolejka."""
 SCHEMA_VERSION: Final = 3
-# Pliki kolejki od ``NewIssue`` (#273) do #844: cel w kluczu ``target``, bez pliku do Archiwum.
+"""Schemat 3 niesie plik do Archiwum okresu; stare Centrum, które go nie zna, zostawia taki plik w kolejce, zamiast
+wysłać same części i usunąć plik razem z plikiem do Archiwum."""
 _TARGET_SCHEMA: Final = 2
-# Pliki kolejki sprzed ``NewIssue`` (#273) mają cel w kluczu ``thread`` i zawsze jest nim issue okresu.
+"""Pliki kolejki od celu ``NewIssue`` do schematu 3: cel w kluczu ``target``, bez pliku do Archiwum."""
 _PERIOD_THREAD_SCHEMA: Final = 1
-# Rodzaj celu ``OpenIssue`` w pliku kolejki: nazwa z czasu, gdy był nim tylko cel Zgłoszenia, którą czyta też Centrum
-# sprzed ``OpenIssue`` po cofnięciu Aktualizacji.
+"""Pliki kolejki sprzed celu ``NewIssue`` mają cel w kluczu ``thread`` i zawsze jest nim issue okresu."""
 _OPEN_ISSUE: Final = "report_issue"
-# Nagłówek celu ``OpenIssue`` w pliku bez klucza ``again``: takie pliki zapisało Centrum sprzed ``OpenIssue``, w którym
-# tym celem było tylko Zgłoszenie (warunek usunięcia przy ``_parse``).
+"""Rodzaj celu ``OpenIssue`` w pliku kolejki: nazwa z czasu, gdy był nim tylko cel Zgłoszenia, którą czyta też Centrum
+sprzed ``OpenIssue`` po cofnięciu Aktualizacji."""
 _AGAIN_BEFORE_OPEN_ISSUE: Final = RETURNED_HEADING
-# Miejsce w komentarzu na nagłówek części, wiersz rozpoznawczy i znacznik wysyłki, ponad tekst bloków.
+"""Nagłówek celu ``OpenIssue`` w pliku bez klucza ``again``: takie pliki zapisało Centrum sprzed ``OpenIssue``, w którym
+tym celem było tylko Zgłoszenie (warunek usunięcia przy ``_parse``)."""
 _FRAME_RESERVE: Final = 2_000
-# Najwięcej znaków tekstu bloków w jednej części; treść celu ``OpenIssue`` mieści się w jednej.
+"""Miejsce w komentarzu na nagłówek części, wiersz rozpoznawczy i znacznik wysyłki, ponad tekst bloków."""
 PART_LIMIT: Final = COMMENT_LIMIT - _FRAME_RESERVE
-# Najwięcej znaków ``run_id``: identyfikator Uruchomienia, Uwagi taty albo Zgłoszenia (32 znaki ``uuid4().hex``).
+"""Najwięcej znaków tekstu bloków w jednej części; treść celu ``OpenIssue`` mieści się w jednej."""
 _RUN_ID_LIMIT: Final = 64
-# Miejsce na znacznik wysyłki (``_mark``) z linią przed nim: przy ``run_id`` do ``_RUN_ID_LIMIT`` znaków i wersji z
-# nazwy pliku z ``post`` ma najwyżej 150 znaków.
+"""Najwięcej znaków ``run_id``: identyfikator Uruchomienia, Uwagi taty albo Zgłoszenia (32 znaki ``uuid4().hex``)."""
 _MARK_RESERVE: Final = 200
-# Najwięcej znaków tekstu wysyłki w treści issue albo komentarzu, bez znacznika.
+"""Miejsce na znacznik wysyłki (``_mark``) z linią przed nim: przy ``run_id`` do ``_RUN_ID_LIMIT`` znaków i wersji z
+nazwy pliku z ``post`` ma najwyżej 150 znaków."""
 TEXT_LIMIT: Final = COMMENT_LIMIT - _MARK_RESERVE
-# Znacznik wysyłki: linia ``<!-- wysyłka <etykieta> <run_id> część <k> wersja <wersja> -->`` (``_mark``).
+"""Najwięcej znaków tekstu wysyłki w treści issue albo komentarzu, bez znacznika."""
 _MARK_START: Final = "<!-- wysyłka "
 _MARK_REST: Final = re.compile(r"część ([0-9]+) wersja (\S+) -->")
-# Najmniejszy krok chwili w nazwie pliku kolejki (``%f``): wysyłka po cofnięciu zegara dostaje chwilę tuż po poprzedniej.
+"""Znacznik wysyłki: linia ``<!-- wysyłka <etykieta> <run_id> część <k> wersja <wersja> -->`` (``_mark``)."""
 _TICK: Final = timedelta(microseconds=1)
-# Tekst komentarza części, której nowsza wersja wysyłki już nie ma (Logi po Diagnozie krótsze o część).
+"""Najmniejszy krok chwili w nazwie pliku kolejki (``%f``): wysyłka po cofnięciu zegara dostaje chwilę tuż po
+poprzedniej."""
 _RETIRED: Final = "Ta część jest pusta: nowsza wersja tej wysyłki ma mniej części."
-# Po przejściu, które stanęło na przyczynie dla całej kolejki (brak sieci, brak klucza, odmowa klucza), kolejka
-# próbuje znowu po minucie. Odrzucony klucz nie kosztuje przy tym zapytania: ``KeyedBox`` odpowiada ``Refused`` bez
-# sieci przez kwadrans, a brak klucza to odczyt pliku. Nieudana próba DNS raz na minutę nic nie kosztuje, a dłuższa
-# przerwa opóźniłaby wysyłkę po powrocie sieci.
+"""Tekst komentarza części, której nowsza wersja wysyłki już nie ma (Logi po Diagnozie krótsze o część)."""
 RETRY_S: Final = 60.0
-# Tyle „Wyślij” Uwagi taty i „Wyślij do Maksa” czekają na skrzynkę, zanim powiedzą, że wysyłka czeka w kolejce.
+"""Po przejściu, które stanęło na przyczynie dla całej kolejki (brak sieci, brak klucza, odmowa klucza), kolejka
+próbuje znowu po minucie.
+
+Odrzucony klucz nie kosztuje przy tym zapytania: ``KeyedBox`` odpowiada ``Refused`` bez sieci przez kwadrans, a brak
+klucza to odczyt pliku. Nieudana próba DNS raz na minutę nic nie kosztuje, a dłuższa przerwa opóźniłaby wysyłkę po
+powrocie sieci.
+"""
 DELIVERY_WAIT_S: Final = 5.0
-# Miejsce (``where``) wyjątku przejścia kolejki w dzienniku Centrum (``CentrumLog.unexpected_failure``).
+"""Tyle „Wyślij” Uwagi taty i „Wyślij do Maksa” czekają na skrzynkę, zanim powiedzą, że wysyłka czeka w kolejce."""
 DRAIN: Final = "wysyłka do Skrzynki Zgłoszeń"
+"""Miejsce (``where``) wyjątku przejścia kolejki w dzienniku Centrum (``CentrumLog.unexpected_failure``)."""
 
 Frame = Callable[[int, int, Outgoing], Outgoing]
 """Komentarz części ``k`` z ``n`` z jej tekstu."""
 
-# Foldery kolejki z trwającym przejściem w tym procesie i czy inna kolejka tego folderu prosi o następne. Dwie
-# kolejki jednego folderu (restart Centrum w procesie) nie wysyłają naraz: obie nie znalazłyby issue okresu, którego
-# druga jeszcze nie założyła, i założyłyby je dwa razy. Kolejka, która zastanie tu przejście drugiej, nie czeka na
-# budzenie, bo druga po swoim przejściu robi następne. Kolejki dwóch procesów rozdziela blokada folderu (``_folder_lock``).
 _PASSES_LOCK: Final = threading.Lock()
 _PASSES: Final[dict[Path, bool]] = {}
-# Plik blokady folderu kolejki, obok plików kolejki; nie jest ani ``*.json``, ani ``*.tmp``.
+"""Foldery kolejki z trwającym przejściem w tym procesie i czy inna kolejka tego folderu prosi o następne.
+
+Dwie kolejki jednego folderu (restart Centrum w procesie) nie wysyłają naraz: obie nie znalazłyby issue okresu, którego
+druga jeszcze nie założyła, i założyłyby je dwa razy. Kolejka, która zastanie tu przejście drugiej, nie czeka na
+budzenie, bo druga po swoim przejściu robi następne. Kolejki dwóch procesów rozdziela blokada folderu
+(``_folder_lock``).
+"""
 PASS_LOCK: Final = "przejscie.lock"
+"""Plik blokady folderu kolejki, obok plików kolejki; nie jest ani ``*.json``, ani ``*.tmp``."""
 
 
 def _claimed(directory: Path) -> bool:
@@ -183,7 +190,8 @@ def _folder_lock(directory: Path) -> Iterator[bool]:
     Rozdziela przejścia kolejek jednego folderu także w dwóch procesach Centrum, których ``_PASSES`` nie widzi: stare
     Centrum po zwolnieniu portu jeszcze kończy pracę, a nowe już wysyła (Ponowny start Centrum albo skrót kliknięty
     zaraz po zamknięciu). Blokadę zwalnia zamknięcie pliku, a system także koniec procesu, nawet zabitego, więc nie
-    zostaje po nim. Plik, którego nie da się otworzyć (folderu kolejki jeszcze nie ma), nie wstrzymuje przejścia:
+    zostaje po nim; na Windows blok zwalnia zakres przed zamknięciem pliku, bo tak zaleca dokumentacja ``LockFileEx``.
+    Plik, którego nie da się otworzyć (folderu kolejki jeszcze nie ma), nie wstrzymuje przejścia:
     ``True`` bez blokady.
     """
 
@@ -202,7 +210,7 @@ def _folder_lock(directory: Path) -> Iterator[bool]:
         try:
             yield True
         finally:
-            if sys.platform == "win32":  # dokumentacja LockFileEx zaleca zwolnić zakres przed zamknięciem pliku
+            if sys.platform == "win32":
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
 
 
@@ -262,11 +270,11 @@ class OpenIssue:
     """Jedno otwarte issue z etykietą ``label`` na wiersz rozpoznawczy ``line``, który nadawca stawia w treści (Zgłoszenie:
     wiersz odcisku problemu, ``report_issue``).
 
-    Wysyłka ma zawsze jedną część, treść issue albo komentarza (``Post`` odrzuca więcej, #724). Dostarczenie szuka
+    Wysyłka ma zawsze jedną część, treść issue albo komentarza (``Post`` odrzuca więcej). Dostarczenie szuka
     otwartego issue z tym wierszem. Bez niego zakłada issue z ``title`` i tą częścią. Otwarte issue dokładnie z tą treścią
     założyła przerwana próba tej wysyłki: wysyłka je przejmuje bez komentarza. Inne otwarte issue tego wiersza
     (wcześniejsze, z tego albo innego komputera) dostaje komentarz z nagłówkiem ``again`` i tą częścią, więc Maks widzi,
-    że problem wraca (#820).
+    że problem wraca.
     """
 
     label: Label
@@ -326,13 +334,13 @@ def _noted(text: str, note: str) -> str:
 
 
 class Rank(IntEnum):
-    """Stopień wersji wysyłki (#910): wersja wyższego stopnia jest nowsza od każdej wersji niższego, bez względu na chwilę
+    """Stopień wersji wysyłki: wersja wyższego stopnia jest nowsza od każdej wersji niższego, bez względu na chwilę
     w nazwie pliku kolejki, a chwila i numer porządkują tylko wersje jednego stopnia.
 
     Stopień wybiera nadawca, a nie zegar komputera. Logi Uruchomienia (``run_logs``) mają trzy: postęp Wyceny w efenix
     (``DRAFT``), wersję zastępczą, którą start Centrum odtwarza z dziennika Wyceny (``STAND_IN``: Logi z pliku, Logi
     Urwanego Uruchomienia albo wynik bez Logów), i Logi z pracy Centrum Uruchomienia (``OWN``: z wynikiem, z Diagnozą).
-    Każda inna wysyłka ma ``OWN``, tak jak wersja bez stopnia, którą zapisało Centrum sprzed #910: żadne Wydanie nie
+    Każda inna wysyłka ma ``OWN``, tak jak wersja bez stopnia, którą zapisało starsze Centrum: żadne Wydanie nie
     wysyłało postępu ani Logów z dziennika.
     """
 
@@ -341,8 +349,8 @@ class Rank(IntEnum):
     OWN = 2
 
 
-# Numer stopnia przed chwilą w tekście wersji (``Version.text``); ``OWN`` go nie ma.
 _LOWER_RANKS: Final = {str(rank.value): rank for rank in Rank if rank is not Rank.OWN}
+"""Numer stopnia przed chwilą w tekście wersji (``Version.text``); ``OWN`` go nie ma."""
 
 
 @dataclass(frozen=True, order=True)
@@ -354,8 +362,8 @@ class Version:
 
     @property
     def text(self) -> str:
-        """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer, jak przed #910,
-        a niższy stopień z numerem stopnia przed nimi (``1:20261105T063021123456Z-0001``)."""
+        """Wersja w znaczniku wysyłki i w etykiecie pliku w Archiwum: stopień ``OWN`` sama chwila i numer,
+        jak wersja bez stopnia, a niższy stopień z numerem stopnia przed nimi (``1:20261105T063021123456Z-0001``)."""
 
         return self.name if self.rank is Rank.OWN else f"{self.rank.value}:{self.name}"
 
@@ -396,20 +404,25 @@ class Post:
     state: str | None = None
 
     def __post_init__(self) -> None:
+        """Odmawia (``ValueError``) wysyłki, której kolejka nie dostarczy w całości dokładnie raz.
+
+        Identyfikator wysyłki stoi w znaczniku w jednej linii (``_mark``), a znacznik mieści się w ``_MARK_RESERVE``.
+        Przerwaną wysyłkę do ``OpenIssue`` następna próba znajduje po wierszu rozpoznawczym w treści; bez niego
+        założyłaby drugie issue. Taką wysyłkę następna próba poznaje też po treści issue równej części 1 i przejmuje bez
+        komentarzy, więc część 2 by przepadła: wysyłka do ``OpenIssue`` ma jedną część, a nagłówek ``OpenIssue.again``
+        mieści się w zapasie ``PART_LIMIT``.
+        """
+
         body, comments = self.opening()
         note = 0 if self.archive is None else len(_noted("", _waiting_note(self.archive)))
         if not self.parts or any(len(text) + note > TEXT_LIMIT for text in (body, *comments)):
             raise ValueError("Wysyłka musi mieć części mieszczące się w komentarzu Skrzynki Zgłoszeń.")
         if self.archive is not None and (not isinstance(self.target, PeriodThread) or len(self.parts) != 1):
             raise ValueError("Plik do Archiwum okresu idzie z jedną częścią do issue okresu.")
-        # Identyfikator wysyłki stoi w znaczniku w jednej linii (``_mark``), a znacznik mieści się w ``_MARK_RESERVE``.
         if not 0 < len(self.run_id) <= _RUN_ID_LIMIT or not self.run_id.isprintable() or " " in self.run_id:
             raise ValueError("Identyfikator wysyłki musi być krótkim napisem bez spacji.")
-        # Przerwaną wysyłkę następna próba znajduje po tym wierszu; bez niego założyłaby drugie issue.
         if isinstance(self.target, OpenIssue) and self.target.line not in body.splitlines():
             raise ValueError("Treść nowego issue musi mieć wiersz rozpoznawczy celu.")
-        # Przerwaną wysyłkę następna próba poznaje po treści issue równej części 1 i przejmuje bez komentarzy, więc
-        # część 2 by przepadła. Nagłówek ``OpenIssue.again`` mieści się w zapasie ``PART_LIMIT``.
         if isinstance(self.target, OpenIssue) and comments:
             raise ValueError("Wysyłka do jednego otwartego issue musi mieścić się w jednej części.")
 
@@ -586,11 +599,11 @@ def _target(entry: dict[str, Any], kind: object) -> Target | None:
 
 
 def _parse(text: str) -> _Queued | None:
-    """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: pliki z #273 go nie mają i nic nie dostarczyły.
+    """Granica plików kolejki. ``delivered_parts`` jest opcjonalne: najstarsze pliki go nie mają i nic nie dostarczyły.
 
-    Pliki od #665 do #840 mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
+    Starsze pliki mogą mieć numer issue Uwagi taty (``issue``) i kolejka go pomija: issue wysyłki znajduje po
     znaczniku, a Uwaga ma jedną część, więc żadna jej próba nie zostawiła issue bez całej treści. Pliki schematu 1 i 2
-    nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: pliki sprzed #910 go nie mają i mają ``OWN``.
+    nie mają pliku do Archiwum. Stopień wersji (``rank``) jest opcjonalny: starsze pliki go nie mają i mają ``OWN``.
     Stan słuchacza (``state``) i nagłówek ``OpenIssue.again`` są opcjonalne: pliki sprzed ``OpenIssue`` ich nie mają.
 
     Te odczyty są dla plików, które Centrum starszej wersji zostawiło w kolejce taty, bo ich nie wysłało (brak tokenu,
@@ -904,7 +917,7 @@ def _deliver_to_known(post: Post, version: Version, known: KnownIssue, box: Keye
     Komentarz do issue, które Maks usunął, to 404, czyli odmowa, która zatrzymałaby całą kolejkę, więc kolejka
     najpierw pyta o issue z etykietą (``KeyedBox.known_issue``). Issue nie ma (``Gone``) tylko wtedy, gdy lista bez tego
     numeru pokazuje każdy zapis tej etykiety; świeże issue, którego lista jeszcze nie pokazuje, a plik zapisów
-    ``KeyedBox`` o nim nie mówi, to ``Unreachable``, więc wysyłka czeka na budzenie (#915).
+    ``KeyedBox`` o nim nie mówi, to ``Unreachable``, więc wysyłka czeka na budzenie.
     """
 
     found = box.known_issue(known.label, known.number)
@@ -1210,6 +1223,13 @@ class Outbox:
     ``Listener.prepare``, budzenia nie nastawiają: ponowienie im nie pomoże. Linia „skrzynka-czeka” trafia do dziennika
     tylko przy zmianie przyczyny (zeruje ją każde dostarczenie i przejście do końca), bo budzenie co minutę zapełniłoby
     ostatnie wpisy, które niesie Diagnoza.
+
+    Chwilę i numer nazwy pliku ``post`` bierze razem pod ``_lock``, więc każda następna nazwa tej kolejki sortuje się po
+    poprzedniej. Wysyłkę, którą zastąpiła nowsza wersja, przejście oznacza jak wysłaną, zanim usunie jej plik, więc
+    plik, którego nie da się usunąć, nie czeka w kolejce bez znacznika. Zapis w pliku kolejki, którego nie dało się
+    zrobić, wysyłki nie dubluje: bez znacznika dostarczenia następna próba znajdzie każdą część w Skrzynce
+    (``_settle``) i plik w Archiwum okresu, a bez liczby dostarczonych części pliku, który czeka na Archiwum, znajdzie
+    te części w Skrzynce.
     """
 
     def __init__(
@@ -1227,7 +1247,16 @@ class Outbox:
     ) -> None:
         """``disk`` czyta, zapisuje i usuwa pliki kolejki, a ``start`` uruchamia przejście (``_drain``) w tle; inne niż
         domyślne daje tylko wyrocznia ``verify-kolejka-skrzynki``, która decyduje o każdym kroku. ``now`` to zegar
-        ścienny komputera w UTC, z którego ``post`` bierze chwilę do nazwy pliku."""
+        ścienny komputera w UTC, z którego ``post`` bierze chwilę do nazwy pliku.
+
+        ``_lock`` chroni ``_draining``, ``_again``, ``_retry_armed``, ``_first_comments``, ``_rejected_posts``,
+        ``_sequence`` i ``_last_moment``: chwilę z nazwy ostatniego pliku, który zapisał ``post``. Tylko wątek kolejki
+        używa ``_stopped_on`` i flag, czy ostatnie przejście pominęło plik, którego nie dało się odczytać
+        (``_read_failed``), zastało blokadę folderu u innego procesu (``_locked_out``) albo odmowę Archiwum okresu
+        (``_archive_refused``). Zbiory nazw plików, które już są w dzienniku tej pracy Centrum: ``_undeleted`` wysłane,
+        których usunięcie się nie udało, ``_unreadable`` nieczytelne, ``_rejected`` z treścią odrzuconą przez Skrzynkę
+        (następna próba po starcie), ``_archive_logged`` czekające na Archiwum; ``_rejected_posts`` to ``run_id`` i
+        etykieta plików z ``_rejected``."""
 
         self._directory = directory
         self._disk = disk
@@ -1239,23 +1268,22 @@ class Outbox:
         self._listener = listener
         self._addresses = addresses
         self._sequence = itertools.count(1)
-        self._last_moment: datetime | None = None  # chwila z nazwy ostatniego pliku, który zapisał ``post``
-        # _draining, _again, _retry_armed, _first_comments, _rejected_posts, _sequence, _last_moment
+        self._last_moment: datetime | None = None
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._draining = False
         self._again = False
         self._retry_armed = False
-        self._stopped_on: WaitingCause | None = None  # tylko wątek kolejki
-        self._read_failed = False  # tylko wątek kolejki: ostatnie przejście pominęło plik, którego nie dało się odczytać
-        self._locked_out = False  # tylko wątek kolejki: ostatnie przejście zastało blokadę folderu u innego procesu
-        self._archive_refused = False  # tylko wątek kolejki: Archiwum okresu odmówiło w ostatnim przejściu
+        self._stopped_on: WaitingCause | None = None
+        self._read_failed = False
+        self._locked_out = False
+        self._archive_refused = False
         self._first_comments: dict[tuple[str, Label], str | None] = {} if addresses is None else _read_addresses(addresses)
-        self._undeleted: set[str] = set()  # wysłane w tej pracy Centrum, usunięcie się nie udało i jest w dzienniku
-        self._unreadable: set[str] = set()  # nieczytelne, już w dzienniku tej pracy Centrum
-        self._rejected: set[str] = set()  # treść odrzucona przez skrzynkę, w dzienniku; następna próba po starcie
-        self._rejected_posts: set[tuple[str, Label]] = set()  # run_id i etykieta plików z _rejected
-        self._archive_logged: set[str] = set()  # pliki czekające na Archiwum, już w dzienniku tej pracy Centrum
+        self._undeleted: set[str] = set()
+        self._unreadable: set[str] = set()
+        self._rejected: set[str] = set()
+        self._rejected_posts: set[tuple[str, Label]] = set()
+        self._archive_logged: set[str] = set()
 
     def resume(self) -> None:
         """Przy starcie Centrum: usuwa pozostałości urwanego zapisu i wysyła w tle wszystko, co czeka.
@@ -1333,7 +1361,7 @@ class Outbox:
         """
 
         text = _queue_text(post, delivered_parts=0, archived=False)
-        with self._lock:  # chwila i numer razem: każda następna nazwa tej kolejki sortuje się po poprzedniej
+        with self._lock:
             now = self._now()
             moment = now if self._last_moment is None else max(now, self._last_moment + _TICK)
             self._last_moment = moment
@@ -1417,7 +1445,6 @@ class Outbox:
                 self._remove(path)
                 continue
             if path in superseded:
-                # Znacznik jak po wysłaniu: plik, którego nie da się usunąć, nie czeka w kolejce bez niego.
                 self._mark_delivered(path, queued.post)
                 continue
             prepared = self._listener.prepare(queued.post, self)
@@ -1463,7 +1490,7 @@ class Outbox:
             self._remember_address(post, outcome)
             if outcome.archive_waits:
                 self._archive_waits(path, post)
-                with suppress(OSError):  # bez znacznika części następna próba znajdzie je w skrzynce (_settle)
+                with suppress(OSError):
                     self._disk.write(path, _queue_text(post, delivered_parts=len(post.parts), archived=False))
                 continue
             self._mark_delivered(path, post)
@@ -1488,7 +1515,7 @@ class Outbox:
             self._log.box_post_waiting(label=post.target.label, period=post.period, cause="odmowa-archiwum", file=path.name)
 
     def _mark_delivered(self, path: Path, post: Post) -> None:
-        with suppress(OSError):  # bez znacznika następna próba znajdzie każdą część w skrzynce (_settle) i plik w Archiwum
+        with suppress(OSError):
             self._disk.write(path, _queue_text(post, delivered_parts=len(post.parts), archived=True))
         self._remove(path)
 
