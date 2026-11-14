@@ -191,6 +191,15 @@ def test_przeliczenie_skrotow_po_zmianie_kodu_konczy_rozjazd_i_wymienia_przelicz
     assert rozjazd_modelu.rozjazd(skill, tmp_path) is None
 
 
+def test_przeliczenie_zapisuje_nazwe_calego_pliku_wprost_jak_pliki_definicji_w_repozytorium(tmp_path: Path) -> None:
+    """Pliki definicji skilli w repozytorium mają „cały plik” wprost, a nie ``ca\\u0142y plik``: przeliczenie, które
+    zapisałoby ucieczki, zmieniłoby w PR każdy plik definicji z całym plikiem, także bez zmiany jego skrótu."""
+
+    skill = _skill(tmp_path)
+
+    assert f'  "{WHOLE}": {{\n    "{rozjazd_modelu.CALY_PLIK}": "' in (skill / rozjazd_modelu.DEFINICJE).read_text(encoding="utf-8")
+
+
 def test_przeliczenie_nie_zapisuje_skrotow_gdy_definicji_nie_ma(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     recorded = (skill / rozjazd_modelu.DEFINICJE).read_text(encoding="utf-8")
