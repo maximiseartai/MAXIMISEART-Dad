@@ -16,16 +16,17 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 |---|---|---|
 | Duży bieg, który dzieli się na niezależne części: `mutacje.py --plik` z kilkoma różnymi `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan`, jedna część na linię (niżej) |
 | Pełny pytest | jeden box, bo lokalnie zajmuje wszystkie rdzenie na kilka minut | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
-| `szybko.py`, `mutacje.py --plik` z jednym `polecenie`, budowa frontendu | Mac, gdy ma wolne rdzenie, a box, gdy Mac jest wąskim gardłem | `boatbox auto '<polecenie>'` |
+| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac, gdy ma wolne rdzenie, a box, gdy Mac jest wąskim gardłem | `boatbox auto '<polecenie>'` |
 | Odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC | box | `boatbox run` albo `boatbox job` |
 | Pojedynczy plik testów, `mutacje.py --zmiana`, ruff, mypy, git, `gh`, `tools/scal_pr.py` | Mac | bezpośrednio |
+| Budowa frontendu | Mac, bo box nie ma `npm`, a zbudowane pliki w `src/rozliczenia/centrum/static/` muszą trafić do worktree | bezpośrednio |
 | Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty | Mac, jedno ciężkie polecenie naraz | bezpośrednio |
 | Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions | workflow `mutacje-nocne.yml` |
 
 `boatbox auto` wybiera Maca, gdy obciążenie z ostatniej minuty jest niższe niż liczba rdzeni, gdy budżetu boat nie da się odczytać, gdy zostało mniej niż 30 startów albo gdy ostatnie 24 h zużyły co najmniej dzienne tempo godzin planu, a w przeciwnym razie box.
 Linia `boatbox: auto -> ...` na stderr mówi, gdzie polecenie pobiegło i dlaczego.
-`szybko.py` uruchamiaj tak: `boatbox auto '.venv/bin/python tools/szybko.py'`.
-Liczbę workerów ustala `czasy_ci.workery_lokalne()`: na Macu 4, a na boxie wszystkie rdzenie, bo `boatbox` ustawia tam zmienną `BOATBOX`.
+`szybko.py` uruchamiaj tak: `boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 '.venv/bin/python tools/szybko.py'`.
+`--box-env` działa tylko na boxie, który ma 8 vCPU, a na Macu `czasy_ci.workery_lokalne()` zostaje przy 4 workerach.
 
 Zestaw mutacji dziel po `polecenie` i uruchamiaj części naraz:
 
@@ -46,7 +47,6 @@ Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomi
 `boatbox status` pokazuje oba limity i tempo zużycia godzin, `boatbox auto` przy ich braku wybiera Maca, a `boatbox fan` przy braku startów uruchamia części po kolei na jednym boxie.
 Przed pełnym pytestem i przed `fan` uruchom `boatbox status`.
 Gdy pokazuje linię `over pace:`, pełny pytest zostaw CI, a `fan` uruchamiaj tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej równe liczbie rdzeni), bo `run`, `job` i `fan` przy przekroczonym tempie tylko ostrzegają i biegną dalej.
-Zadanie kończ poleceniem `boatbox stop`.
 
 ## Dane
 
