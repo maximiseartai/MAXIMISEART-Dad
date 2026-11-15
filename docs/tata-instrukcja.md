@@ -7,13 +7,19 @@ Co tydzień są dwa kroki, zawsze w tej kolejności:
 2. **Przebieg rozliczeń**: z Pliku zbiorczego powstają rozliczenia
    pracowników.
 
-Oba kroki robisz w Centrum rozliczeń, które otwierasz skrótem na pulpicie:
+Do tego dochodzą dwa procesy, które też uruchamiasz w Centrum rozliczeń:
+codziennie Uporządkowanie INTERMAX zleceń dnia wklejonych do INTERMAX, a
+między krokiem 1 i 2, po Uzupełnieniu pliku zbiorczego, Wycena w efenix.
+
+Wszystko robisz w Centrum rozliczeń, które otwierasz skrótem na pulpicie:
 
 | Co chcesz zrobić | Gdzie w Centrum rozliczeń |
 |---|---|
 | Zobaczyć Status okresu każdego tygodnia | Strona `Okresy` |
 | Otworzyć Plik zbiorczy, Rozliczenie wewnętrzne albo Folder okresu | Jedno kliknięcie w wierszu okresu |
+| Uporządkować zlecenia dnia wklejone do INTERMAX | Strona `Uruchomienia`, karta `Uporządkowanie INTERMAX` (niżej, „Uporządkowanie INTERMAX”) |
 | Przygotować plik zbiorczy | Strona `Uruchomienia`, proces `Przygotowanie pliku zbiorczego` |
+| Wycenić zlecenia okresu w efenix | Strona `Uruchomienia`, proces `Wycena w efenix` (niżej, „Wycena w efenix”) |
 | Utworzyć rozliczenia pracowników | Strona `Uruchomienia`, proces `Przebieg rozliczeń` |
 | Zaktualizować narzędzie | Przycisk `Zaktualizuj narzędzie`, gdy jest nowsza wersja: w oknie `Ustawienia` (sekcja `Narzędzie`), w Powiadomieniach i w Diagnozie |
 | Napisać do Maksa, ogólnie albo o jednym Uruchomieniu | Ikona „Napisz do Maksa” w prawym górnym rogu albo na karcie Uruchomienia |
@@ -317,6 +323,107 @@ Plik `logs\centrum-rozliczen.log` to dziennik Centrum: zapisuje tylko start,
 zamknięcie, port, rodzaj błędu, aktualizacje narzędzia i czas otwierania
 stron, bez danych z Twoich plików. Możesz go bezpiecznie przekazać do diagnozy.
 
+## Uporządkowanie INTERMAX
+
+INTERMAX to Rejestr zleceń `ZLECENIA INTERMAX OD 08_11_2021.xlsx`.
+Uporządkowanie INTERMAX robi za Ciebie to, co dotąd robiłeś ręcznie ze
+zleceniami dnia wklejonymi z aplikacji firmowej: dzieli je na Wykonawców,
+układa po godzinie i nadaje im wygląd reszty INTERMAX. Porządkuje jeden dzień,
+nie okres.
+
+### Kiedy uruchomić
+
+- Ty albo pracownik wkleiliście z aplikacji firmowej zlecenia **jednego dnia**
+  na dół arkusza zleceń INTERMAX, pod ostatni uporządkowany dzień.
+- Ten dzień nie jest jeszcze uporządkowany: na karcie nie ma przy nim znaku.
+- INTERMAX jest zapisany i **zamknięty** w Excelu. Jeśli zlecenia wkleił
+  pracownik na swoim komputerze, poczekaj, aż OneDrive skończy synchronizację.
+
+Narzędzie zmienia w INTERMAX tylko wklejone zlecenia i widok po otwarciu.
+Wiersze nad nimi zostają bez zmian. Przed każdym zapisem narzędzie robi Kopię
+INTERMAX, czyli stan INTERMAX sprzed zmiany, na Twoim komputerze poza OneDrive.
+
+### Kroki
+
+1. Na stronie `Uruchomienia` pod wyborem procesu jest karta
+   `Uporządkowanie INTERMAX`. Pokazuje INTERMAX wskazany w oknie `Ustawienia`,
+   w sekcji `Foldery`, i rząd dni: dziś, 6 dni przed nim i każdy późniejszy
+   dzień uporządkowany. Dzień uporządkowany ma znak, nieuporządkowany pusty
+   krąg, a dziś obwódkę.
+2. Zapisz i zamknij INTERMAX w Excelu. Dopóki jest otwarty, przycisk jest
+   nieaktywny, a karta pisze, że INTERMAX jest otwarty w Excelu.
+3. Kliknij `Uporządkuj INTERMAX`. Nie ma podglądu bez zapisu ani okienka
+   potwierdzenia: narzędzie od razu porządkuje wklejone zlecenia.
+4. Wynik `INTERMAX uporządkowany` pokazuje liczby `Zlecenia` i `Wykonawcy`,
+   `Uporządkowany dzień` z liczbą zleceń i `Kopia sprzed zapisu` z nazwą Kopii
+   INTERMAX. Przycisk `Otwórz INTERMAX` otwiera plik.
+
+Zatrzymanie pokazuje od razu trzy części komunikatu: co się stało (tytuł),
+gdzie (pinezka) i co zrobić (klucz). Komunikaty są w tabeli niżej. Po
+poprawce kliknij `Uruchom ponownie`.
+
+### Co sprawdzić po zakończeniu
+
+- INTERMAX otwiera się na dzisiejszym dniu, a gdy dziś nie ma zleceń, na
+  ostatnim wcześniejszym dniu ze zleceniami.
+- Zlecenia dnia są podzielone na Wykonawców w kolejności alfabetycznej,
+  oddzielonych jednym pustym wierszem, a u każdego Wykonawcy ułożone od
+  najwcześniejszej godziny do najpóźniejszej.
+- Nowy dzień stoi jeden pusty wiersz pod żółtym wierszem, którym oddzielasz
+  dni. Gdy żółtego wiersza nie ma, stoi 10 pustych wierszy pod ostatnim
+  uporządkowanym zleceniem.
+- Wiersze mają wygląd reszty INTERMAX, z cienką ramką i pogrubionym tylko
+  `WYKONAWCA`. Kolumny z aplikacji za `UWAGI` zniknęły.
+- Kolory operatora: `CZYNNOŚCI` i `NUMER UMOWY` są zielone przy T-Mobile,
+  pomarańczowe przy Orange, jasnoniebieskie przy innych operatorach, a przy
+  Netii `CZYNNOŚCI` jest ciemniejsza niebieska. INEA i zlecenie bez operatora
+  zostają bez koloru. Usterka ma różowe `URZĄDZENIA`.
+- Zlecenia `Instalacja Hurt` mają wpisane `URZĄDZENIA` i dopisaną czynność w
+  `CZYNNOŚCI`, np. Orange `gniazdo` i ` - akt pętli LLU`. Zlecenie Orange,
+  które okazało się BSA, poprawiasz ręcznie na `nokia` i ` - akt pętli BSA`.
+- Na karcie dzień ma znak.
+
+Potem Ty i pracownicy uzupełniacie dzień ręcznie, tak jak dotąd. Zlecenia
+dopisane później do uporządkowanego dnia wpisujesz ręcznie: narzędzie nie
+porządkuje tego samego dnia drugi raz.
+
+Jeśli Uporządkowanie zrobiło coś nie tak, otwórz okno `Ustawienia`, sekcję
+`Kopie INTERMAX`. Lista ma 10 najnowszych Kopii INTERMAX z datą i godziną.
+Kliknij `Przywróć` przy kopii sprzed uporządkowania i potwierdź przyciskiem
+`Przywróć tę kopię`. Wszystkie zmiany w INTERMAX późniejsze od tej kopii
+znikną, także te, które wpisaliście ręcznie. Przed przywróceniem narzędzie
+robi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć tak samo.
+
+### Uporządkowanie INTERMAX → co zrobić
+
+Po każdym zatrzymaniu INTERMAX został bez zmian, więc po poprawce wystarczy
+uruchomić ponownie. Wyjątki to komunikaty o starszych Kopiach INTERMAX i o
+niepokazanym podsumowaniu: wtedy INTERMAX jest już uporządkowany.
+
+| Co się stało (fragment) | Co zrobić |
+|---|---|
+| „Nie znaleziono INTERMAX” | W oknie `Ustawienia`, w sekcji `Foldery`, wskaż właściwy plik INTERMAX i uruchom ponownie. |
+| „INTERMAX jest otwarty w Excelu” | Zapisz i zamknij INTERMAX, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z folderu INTERMAX pozostawiony plik `~$ZLECENIA INTERMAX OD 08_11_2021.xlsx`. |
+| „Nie można teraz odczytać INTERMAX” | Nie poprawiaj INTERMAX. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „Nie można odczytać INTERMAX jako skoroszytu Excela” | Otwórz INTERMAX w Excelu. Jeśli się otwiera, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „OneDrive jeszcze synchronizuje INTERMAX” | Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie. |
+| „W INTERMAX nie ma arkusza zleceń” | Sprawdź, czy w `Ustawieniach` wskazano INTERMAX i czy wiersz 1 arkusza zleceń ma nagłówki od `AKCJE` do `UWAGI`. Uruchom ponownie. |
+| „więcej niż raz, więc nie wiadomo, z której kolumny brać dane” | Zostaw wymieniony nagłówek tylko w jednej kolumnie: zmień nazwę drugiej kolumny albo ją usuń. Zapisz i zamknij INTERMAX, uruchom ponownie. |
+| „nie ma wklejonych zleceń do uporządkowania” | Wklej zlecenia dnia z aplikacji firmowej na dół arkusza zleceń, zapisz i zamknij INTERMAX i uruchom ponownie. |
+| „Wklejone zlecenia są w więcej niż jednym arkuszu zleceń” | Zostaw wklejone zlecenia tylko na dole jednego arkusza zleceń, a z pozostałych arkuszy wymienionych w `Gdzie` je usuń. Zapisz i zamknij INTERMAX, uruchom ponownie. |
+| „wygląda jak wklejone zlecenie, ale stoi nad uporządkowanym wierszem” | Przenieś wklejone zlecenia na dół arkusza zleceń, pod ostatni uporządkowany wiersz. Jeśli wskazany wiersz jest już uporządkowany, nadaj mu taką czcionkę, jaką podaje komunikat. Zapisz i zamknij INTERMAX, uruchom ponownie. |
+| „nie ma daty z godziną w kolumnie” | Wpisz datę z godziną w komórce wskazanej w `Gdzie`, zapisz i zamknij INTERMAX i uruchom ponownie. |
+| „nie ma Wykonawcy w kolumnie” | Wpisz Wykonawcę w komórce wskazanej w `Gdzie`, zapisz i zamknij INTERMAX i uruchom ponownie. |
+| „Wklejone zlecenia są z więcej niż jednego dnia” | Zostaw na dole arkusza zleceń zlecenia jednego dnia, a pozostałe usuń. Zapisz i zamknij INTERMAX, uruchom ponownie. Następny dzień wklej i uporządkuj osobno. |
+| „jest już uporządkowany” | Ten dzień był już uporządkowany, więc narzędzie nie porządkuje go drugi raz. Wklejone wiersze wskazane w `Gdzie` usuń, a nowe zlecenia na ten dzień dopisz ręcznie. |
+| „mają układ, którego narzędzie nie porządkuje” | Przekaż komunikat osobie utrzymującej narzędzie. Do czasu poprawki uporządkuj ten dzień ręcznie. |
+| „Nie udało się zrobić Kopii INTERMAX” | Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „Nie udało się zapisać INTERMAX” | Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „Sprawdzenie zapisu wykazało różnicę” | Narzędzie odrzuciło własny zapis, więc INTERMAX jest taki jak przedtem. Przekaż komunikat osobie utrzymującej narzędzie. |
+| „nie udało się usunąć starszych Kopii INTERMAX” | Ostrzeżenie pod wynikiem: INTERMAX jest uporządkowany. Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie. |
+| „Wystąpił nieoczekiwany błąd” | Kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „INTERMAX został uporządkowany, ale nie udało się pokazać podsumowania” | Nie uruchamiaj ponownie: INTERMAX jest już uporządkowany. Sprawdź INTERMAX i przekaż komunikat osobie utrzymującej narzędzie. |
+
 ## Przygotowanie pliku zbiorczego
 
 ### Kiedy uruchomić
@@ -560,6 +667,154 @@ extender, gdy ją ma. Pod listą Centrum podpowiada zapisy z ostatnich okresów,
 których lista nie zna; `Dodaj` przy podpowiedzi dodaje go jako nowy składnik
 albo inny zapis składnika z listy. Jeden zapis należy do jednego składnika, a
 składnika, którego potrzebuje reguła, Centrum nie usunie: poda zdanie tej reguły.
+
+## Wycena w efenix
+
+Wycena w efenix wpisuje za Ciebie w efenix wycenę zleceń z Pliku zbiorczego
+okresu, w oknie efenix, w którym sam się logujesz. Narzędzie nie zna Twojego
+hasła. Pomija Zlecenia ze zdjęciami i usterki: te wyceniasz sam, tak jak
+dotąd. Zleceń, które w efenix są już „Rozliczone” albo „Do akceptacji”, nie
+otwiera i niczego w nich nie zmienia.
+
+W każdym zleceniu narzędzie:
+
+1. ustawia datę wykonania z `DATA`, gdy zlecenie w efenix jej nie ma;
+2. do zlecenia bez żadnej ilości ładuje Wycenę Emmetta;
+3. w każdej pozycji, w której efenix ma mniej niż Plik zbiorczy, wpisuje
+   ilość z pliku. Ilości w efenix nigdy nie obniża ani nie czyści.
+
+Zlecenie jest gotowe, gdy kwota w efenix jest równa `Kwota` (AU) w Pliku
+zbiorczym. Narzędzie nigdy nie anuluje zlecenia.
+
+### Kiedy uruchomić
+
+- Plik zbiorczy okresu jest uzupełniony, zapisany w Excelu i **zamknięty**.
+  Zapis w Excelu liczy kwoty w kolumnie AU, z którymi narzędzie porównuje
+  wycenę.
+- Na komputerze jest Google Chrome i działa internet.
+- Dzień z `DATA` nie jest starszy niż pierwszy dzień poprzedniego miesiąca:
+  starszej daty wykonania efenix nie przyjmuje.
+- Masz czas: narzędzie pracuje w tempie człowieka, ok. 20 sekund na każde
+  zlecenie, w którym coś wpisuje w efenix. Zlecenia już gotowe sprawdza bez
+  przerw.
+
+Wycena w efenix nie zmienia Statusu okresu. Rozliczenia pracowników możesz
+utworzyć także bez niej, na przykład gdy efenix nie działa.
+
+### Kroki
+
+1. Na stronie `Okresy` kliknij na karcie `Następny krok` przycisk
+   `Wyceń w efenix`. Otworzy się strona `Uruchomienia` z Wyceną w efenix i tym
+   okresem. Dla innego tygodnia wybierz na stronie `Uruchomienia` kafelek
+   `Wycena w efenix` i okres z listy `Okres`. Lista ma okresy z Plikiem
+   zbiorczym.
+2. Wycena w efenix nie ma podglądu bez zapisu. Wybierz tryb jednym z dwóch
+   przycisków. Centrum nie pamięta trybu, więc wybierasz go za każdym razem:
+   - `Uzupełnij bez zapisu`: zielony „Zapisz” w efenix klikasz sam. Gotowe
+     zlecenia dostają w Pliku zbiorczym Znacznik efenix.
+   - `Uzupełnij i zapisz`: zielony „Zapisz” przy gotowych zleceniach klika
+     Centrum, czyli przekazuje je do akceptacji. Takie zlecenia dostają
+     Znacznik przekazania. Przekazania nie da się łatwo cofnąć.
+
+   Oba tryby wpisują wycenę w efenix, więc `Uzupełnij bez zapisu` to nie
+   podgląd. Błędów zleceń i Ostrzeżeń Emmetta narzędzie nie przekazuje w
+   żadnym trybie.
+3. Potwierdź w okienku `Uzupełnić bez zapisu?` albo `Uzupełnić i zapisać?`.
+4. Centrum otworzy okno Google Chrome z efenix, a karta pokaże krok
+   `Zaloguj się w oknie efenix`. Jeśli okno pokazuje stronę logowania,
+   zaloguj się w nim. Okno czeka na zalogowanie 15 minut.
+5. Narzędzie idzie przez zlecenia po kolei: Wykonawcy alfabetycznie, a u
+   każdego od najstarszej `DATA`. Karta pokazuje bieżącego Wykonawcę i liczbę
+   sprawdzonych zleceń ze wszystkich. Zostaw okno efenix otwarte do końca.
+   Zamknięcie Centrum rozliczeń jest wtedy zablokowane.
+6. Na końcu narzędzie raz zapisuje Plik zbiorczy: komórka `ADRES` gotowego
+   zlecenia dostaje Znacznik efenix (jasny fiolet), a zlecenia przekazanego do
+   akceptacji Znacznik przekazania (ciemniejszy fiolet). Dlatego Plik
+   zbiorczy musi zostać zamknięty do końca Wyceny.
+7. Wynik `Wycena w efenix gotowa` oznacza, że żadne zlecenie nie zostało dla
+   Ciebie: każde jest gotowe, przekazane albo rozliczone. Wynik
+   `Wycena w efenix gotowa · wymaga sprawdzenia` oznacza, że są błędy zleceń
+   albo Ostrzeżenia Emmetta. Karta pokazuje liczby `Zlecenia w zakresie`,
+   `Gotowe do przekazania`, `Przekazane do akceptacji`, `Rozliczone`,
+   `Błędy zleceń` i `Ostrzeżenia Emmetta`, a w grupie `Pominięte`
+   `Ze zdjęciami`, `Usterki` i `Nieznalezione w efenix`. Niżej są listy
+   zleceń z numerem wiersza Pliku zbiorczego i Wykonawcą, najpierw te, które
+   zostały dla Ciebie.
+
+Po Wycenie z wynikiem OK karta `Następny krok` pokazuje
+`Utwórz rozliczenia pracowników` (niżej, „Przebieg rozliczeń”).
+
+### Co sprawdzić po zakończeniu
+
+- Każde zlecenie z list `Błędy zleceń` i `Ostrzeżenia Emmetta`: wiersz Pliku
+  zbiorczego i jego komunikat. Co zrobić, mówi tabela niżej. Takie zlecenia
+  nie mają Znacznika efenix i nie są przekazane.
+- Po trybie `Uzupełnij bez zapisu` przekaż gotowe zlecenia do akceptacji sam
+  zielonym „Zapisz” w efenix albo uruchom Wycenę jeszcze raz przyciskiem
+  `Uzupełnij i zapisz`: gotowe zlecenia narzędzie tylko sprawdzi i przekaże.
+- W Pliku zbiorczym gotowe zlecenia mają jasnofioletowy `ADRES`, a przekazane
+  ciemniejszy fiolet.
+- Zlecenia ze zdjęciami i usterki wycenisz sam w efenix.
+- Po wyniku możesz zamknąć okno efenix.
+
+Ponowne uruchomienie jest bezpieczne: gotowe zlecenia narzędzie tylko
+sprawdza, a resztę wycenia dalej.
+
+### Wycena w efenix → co zrobić
+
+Są dwa rodzaje komunikatów:
+
+- **Zatrzymanie** kończy całą Wycenę. Pierwsza część mówi, czy przed
+  zatrzymaniem narzędzie zmieniło coś w efenix: „W efenix nic się nie
+  zmieniło.” albo „Wycena zleceń sprzed zatrzymania została w efenix.” Po
+  poprawce kliknij `Uruchom ponownie`: gotowe zlecenia narzędzie tylko
+  sprawdzi, a resztę wyceni dalej.
+- **Błąd zlecenia** albo **Ostrzeżenie Emmetta** dotyczy jednego zlecenia,
+  które zostało dla Ciebie. Wycena idzie dalej, a zlecenie jest na liście pod
+  wynikiem. `Gdzie` podaje wiersz Pliku zbiorczego.
+
+#### Zatrzymania
+
+| Co się stało (fragment) | Co zrobić |
+|---|---|
+| „Nie znaleziono Pliku zbiorczego” | Sprawdź, czy Plik zbiorczy okresu leży w Folderze okresu pod nazwą `Rozliczenie {okres} - zbiorcze.xlsx`, i uruchom ponownie. |
+| „Plik zbiorczy jest otwarty w Excelu, a Wycena w efenix oznacza” | Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie. Jeśli Excel jest zamknięty, a komunikat wraca, usuń z Folderu okresu pozostawiony plik `~$` z nazwą Pliku zbiorczego. |
+| „Nie można teraz odczytać Pliku zbiorczego” | Nie poprawiaj Pliku zbiorczego. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy plik otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „Plik zbiorczy jest uszkodzony albo nie ma układu Pliku zbiorczego” | Otwórz Plik zbiorczy w Excelu i sprawdź, czy otwiera się poprawnie. Jeśli tak, przekaż komunikat osobie utrzymującej narzędzie. |
+| „W Pliku zbiorczym brakuje nagłówków” | Przywróć wymienione nagłówki w wierszu 17 Pliku zbiorczego tak jak we Wzorcu pliku zbiorczego, zapisz plik i uruchom ponownie. |
+| „nie ma kwot w kolumnie AU policzonych przez Excel” | Otwórz Plik zbiorczy w Excelu, zapisz go, zamknij i uruchom ponownie. |
+| „Nie udało się otworzyć przeglądarki Google Chrome” | Zamknij okno efenix, jeśli zostało otwarte z poprzedniej Wyceny w efenix, i uruchom ponownie. Jeśli na komputerze nie ma Google Chrome albo błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „Nie udało się otworzyć efenix” | Sprawdź połączenie z internetem i czy efenix otwiera się w przeglądarce, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „efenix wylogował i pokazał stronę logowania” | efenix Cię wylogował albo nie zalogowałeś się w ciągu 15 minut. Uruchom ponownie i zaloguj się w oknie efenix. |
+| „Okno efenix zostało zamknięte” | Uruchom ponownie i zostaw okno efenix otwarte do końca Wyceny. |
+| „Wycena w efenix się zatrzymała, Maks już wie” | Okno efenix nie dokończyło kroku, np. po zerwanym połączeniu z internetem albo gdy efenix działa wolno lub inaczej niż zwykle. Wycena zatrzymuje się wtedy od razu. Uruchom ponownie. Jeśli zatrzyma się znowu, wyceń pozostałe zlecenia w efenix sam albo poczekaj na poprawkę narzędzia, i przekaż komunikat osobie utrzymującej narzędzie. |
+| „nie dostały Znacznika efenix, bo Plik zbiorczy jest otwarty w Excelu” | Wycena gotowych zleceń jest już w efenix, brakuje tylko Znaczników w pliku. Zapisz i zamknij Plik zbiorczy w Excelu, potem uruchom ponownie: narzędzie oznaczy je bez zmian w efenix. |
+| „bo Plik zbiorczy zmienił się w trakcie Wyceny w efenix” | Wycena gotowych zleceń jest już w efenix. Nie zmieniaj Pliku zbiorczego w trakcie Wyceny. Zamknij go w Excelu i uruchom ponownie: narzędzie oznaczy gotowe zlecenia bez zmian w efenix. |
+| „bo nie udało się zapisać Pliku zbiorczego” | Wycena gotowych zleceń jest już w efenix. Zamknij Plik zbiorczy w Excelu, poczekaj, aż OneDrive skończy synchronizację, i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
+| „zatrzymała się przez nieoczekiwany błąd” | Część zleceń mogła zostać już wyceniona w efenix. Przekaż komunikat osobie utrzymującej narzędzie. |
+| „skończyła się, ale nie udało się pokazać wyniku” | Wycena się skończyła, tylko karta nie pokazała wyniku. Przekaż komunikat osobie utrzymującej narzędzie. |
+
+#### Błędy zleceń i Ostrzeżenia Emmetta
+
+| Co się stało (fragment) | Co zrobić |
+|---|---|
+| „Wiersz nie ma numeru zlecenia w NUMER ZL.” | Uzupełnij `NUMER ZL.` w tym wierszu Pliku zbiorczego i uruchom ponownie albo wyceń zlecenie w efenix sam. |
+| „Wiersz nie ma daty w DATA” | Uzupełnij `DATA` w tym wierszu Pliku zbiorczego i uruchom ponownie albo wyceń zlecenie w efenix sam. |
+| „efenix nie zna zlecenia o numerze” | Sprawdź `NUMER ZL.` w Pliku zbiorczym i zlecenie w efenix. Takie zlecenia liczy też `Nieznalezione w efenix`. |
+| „efenix ma kilka zleceń o numerze” | Sprawdź zlecenie w efenix i wyceń je sam. |
+| „Zlecenie w efenix nie ma statusu” | Zlecenie w efenix nie jest „Do wyceny”, „Rozliczone” ani „Do akceptacji”. Sprawdź jego status w efenix. |
+| „Realizator zlecenia w efenix jest inny” | Sprawdź zlecenie w efenix i wyceń je sam. Jeśli w Pliku zbiorczym jest zły `WYKONAWCA`, popraw go. |
+| „Dane adresowe zlecenia w efenix są inne” | Sprawdź zlecenie w efenix i wyceń je sam. |
+| „Data wykonania zlecenia w efenix różni się” | Sprawdź zlecenie w efenix i wyceń je sam. |
+| „Dzień z DATA jest poza zakresem dat wykonania” | Sprawdź `DATA` w Pliku zbiorczym. Jeśli jest błędna, popraw ją i uruchom ponownie. Jeśli jest dobra, okres jest za stary dla efenix: ustaw datę wykonania i wyceń zlecenie w efenix sam. |
+| „efenix nie zapisał daty wykonania” | Ustaw datę wykonania w efenix sam i uruchom ponownie. |
+| „ilość w kolumnach, które nie mają pozycji w efenix” | Sprawdź zlecenie w efenix i wyceń je sam. |
+| „nie jest liczbą całkowitą większą od 0” | Popraw ilość we wskazanych kolumnach Pliku zbiorczego i uruchom ponownie albo wyceń zlecenie w efenix sam. |
+| „Strona zlecenia w efenix nie ma pozycji” | Sprawdź ilości we wskazanych kolumnach Pliku zbiorczego i pozycje zlecenia w efenix, a potem wyceń zlecenie w efenix sam. |
+| „kwota w efenix to” | Ilości z pliku są już wpisane w efenix, a kwoty się różnią. Sprawdź wycenę w efenix i Plik zbiorczy, popraw tę, która jest błędna, i uruchom ponownie. |
+| „efenix ma więcej niż Plik zbiorczy” | Ostrzeżenie Emmetta: w podanych pozycjach efenix ma więcej niż plik, a pozostałe ilości narzędzie wpisało. Jeśli rację ma efenix, popraw Plik zbiorczy i uruchom ponownie. Jeśli rację ma plik, zmniejsz tę ilość w efenix sam. |
+| „efenix nie przyjął Przekazania do akceptacji” | Tylko w trybie `Uzupełnij i zapisz`. Wycena jest już w efenix, a komunikat mówi, czego efenix brakuje: zdjęć, długości przyłącza, wyceny albo daty wykonania. Uzupełnij to w efenix, a potem przekaż zlecenie do akceptacji sam albo uruchom ponownie przyciskiem `Uzupełnij i zapisz`. Gdy efenix pokazał informację, której narzędzie nie zna, sprawdź w efenix, czego brakuje, i przekaż zlecenie sam. |
+| „efenix nie pokazuje go potem ze statusem” | Tylko w trybie `Uzupełnij i zapisz`. Sprawdź zlecenie w efenix i, jeśli nie jest przekazane, przekaż je do akceptacji sam. |
 
 ## Przebieg rozliczeń
 
