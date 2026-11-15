@@ -25,8 +25,10 @@ T = TypeVar("T")
 
 # Korzeń repozytorium i biblioteki narzędzi: proces z ``alive_code`` importuje stąd ``hold_lock``.
 _PATHS = (str(Path(__file__).resolve().parents[2]), str(Path(potomne.__file__).resolve().parent))
-# Na POSIX tyle ``dead(..., after_guard=True)`` czeka na strażnika narzędzia zabitego SIGKILL.
+# Na POSIX tyle ``dead(..., after_guard=True)`` czeka na strażnika narzędzia zabitego SIGKILL, a na macOS też ``dead``.
 _GUARD_S = 5.0
+# Na Linuksie tyle ``dead`` czeka, aż proces, który już dostał SIGKILL, zamknie pliki.
+_EXIT_S = 10.0
 
 
 def _lock_of(path: Path) -> Path:
@@ -34,16 +36,16 @@ def _lock_of(path: Path) -> Path:
 
 
 def alive_code(path: Path, seconds: float = 600) -> str:
-    """Kod Pythona procesu, który bierze blokadę pliku obok ``path`` (``hold_lock``), potem tworzy ``path`` i żyje
-    ``seconds`` s: ``path`` istnieje więc dopiero wtedy, gdy blokada jest wzięta, a ``alive(path)`` mówi, czy proces
-    jeszcze żyje."""
+    """Kod Pythona procesu, który bierze blokadę pliku obok ``path`` (``hold_lock``), potem zapisuje w ``path`` swój PID
+    i żyje ``seconds`` s: ``path`` istnieje więc dopiero wtedy, gdy blokada jest wzięta, a ``alive(path)`` mówi, czy
+    proces jeszcze żyje."""
 
     return (
-        "import pathlib, sys, time\n"
+        "import os, pathlib, sys, time\n"
         f"sys.path[:0] = {list(_PATHS)!r}\n"
         "from tests.fixtures.potomne import hold_lock\n"
         f"lock = hold_lock(pathlib.Path({str(_lock_of(path))!r}))\n"
-        f"pathlib.Path({str(path)!r}).touch()\n"
+        f"pathlib.Path({str(path)!r}).write_text(str(os.getpid()))\n"
         f"time.sleep({seconds!r})\n"
     )
 
@@ -59,25 +61,44 @@ def dead(path: Path, *, after_guard: bool = False) -> bool:
     ``potomne.run`` (albo innego zabijania, które czeka na koniec polecenia) albo sprzątaniu strażnika, które widać po
     zniknięciu jego kopii (strażnik zabija drzewa przed usuwaniem kopii).
 
-    Na POSIX odpowiada od razu: zabijanie wysyła SIGKILL całej grupie, zanim doczeka się końca jej lidera, a zabity
-    proces zamyka pliki, więc i blokadę ``flock``, bez powrotu do Pythona; drzewo, które żyje po powrocie ``run``, to
-    błąd. Tylko ``after_guard`` czeka najwyżej ``_GUARD_S`` na strażnika narzędzia zabitego SIGKILL, gdy test nie
-    widzi końca jego sprzątania (narzędzie bez kopii). Znana luka: strażnik spóźniony mniej niż ``_GUARD_S``.
+    Zabijanie na POSIX wysyła SIGKILL całej grupie, ale czeka tylko na jej lidera, więc proces może jeszcze trzymać
+    blokadę: pod obciążeniem jądro kończy go dopiero po powrocie ``run``. Na Linuksie ``dead`` pyta więc jądro, czy
+    proces już dostał SIGKILL (``_killed``): jeśli nie, odpowiada od razu ``False``, a drzewo zabite po powrocie
+    ``run`` pada niezależnie od tego, jak długo po nim ginie; jeśli tak, czeka najwyżej ``_EXIT_S``, aż proces zamknie
+    pliki, a z nimi blokadę ``flock``. Tylko ``after_guard`` czeka najwyżej ``_GUARD_S`` na strażnika narzędzia
+    zabitego SIGKILL, gdy test nie widzi końca jego sprzątania (narzędzie bez kopii). Znane luki: strażnik spóźniony
+    mniej niż ``_GUARD_S``, a na macOS, bez ``/proc``, każde drzewo zabite przed tym terminem.
 
     Na Windows czeka najwyżej ``potomne._RELEASE_S`` na zwolnienie blokady przez system. ``TerminateJobObject`` i
     zabicie przy zamknięciu uchwytu zadania (KILL_ON_JOB_CLOSE, gdy ginie narzędzie) tylko zaczynają kończenie
     procesów, a dokumentacja ``LockFileEx`` mówi, że blokady zakończonego procesu system zwalnia w czasie zależnym od
-    dostępnych zasobów, i nie wiąże tego z sygnałem końca procesu, na który czeka ``_Tree.kill``. Zdarzenie zamiast
-    terminu (PID zapisany przez wnuka i czekanie na uchwyt jego procesu) też wymaga terminu: spóźnione zabicie opóźnia
-    ten sam koniec procesu, a od wolnego kończenia odróżnia je tylko czas. Znana luka: drzewo zabite na Windows
-    później, ale przed terminem, przechodzi; spóźnienie w kodzie wspólnym obu systemów łapie strona POSIX.
+    dostępnych zasobów, i nie wiąże tego z sygnałem końca procesu, na który czeka ``_Tree.kill``. Windows nie pokazuje
+    zabicia, które już zaczęło się w jądrze, a koniec procesu po jego uchwycie też wymaga terminu, bo spóźnione
+    zabicie opóźnia ten sam koniec. Znana luka: drzewo zabite na Windows później, ale przed terminem, przechodzi;
+    spóźnienie w kodzie wspólnym obu systemów łapie strona POSIX.
     """
 
+    if not alive(path):
+        return True
     if sys.platform == "win32":
         return wait_for(lambda: not alive(path), potomne._RELEASE_S)
-    if after_guard:
+    if after_guard or sys.platform != "linux":
         return wait_for(lambda: not alive(path), _GUARD_S)
-    return not alive(path)
+    return _killed(int(path.read_text(encoding="utf-8"))) and wait_for(lambda: not alive(path), _EXIT_S)
+
+
+def _killed(pid: int) -> bool:
+    """Czy proces ``pid`` dostał już SIGKILL albo go nie ma. SIGKILL wysłany procesowi albo jego grupie zostaje w zbiorze
+    sygnałów czekających całego procesu (``ShdPnd``) do jego pogrzebania, a jądro dokłada go też wątkom (``SigPnd``);
+    zombie (``Z``, ``X``) pliki już zamknął."""
+
+    try:
+        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return True
+    fields = dict(line.split(":\t", 1) for line in status.splitlines() if ":\t" in line)
+    pending = int(fields["SigPnd"], 16) | int(fields["ShdPnd"], 16)
+    return bool(pending & 1 << (signal.SIGKILL - 1)) or fields["State"][:1] in ("Z", "X")
 
 
 def with_grandchild(alive_file: Path, then: str) -> list[str]:
