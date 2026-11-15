@@ -110,7 +110,7 @@ def _parse_devices(data: bytes | None) -> tuple[Component, ...] | FieldProblem:
     return _problem(DEVICES_FILE, devices) if isinstance(devices, RulesProblem) else devices.components
 
 
-def _dump(document: dict[str, object]) -> str:
+def _dump(document: dict[str, object]) -> bytes:
     return settings_yaml(document)
 
 

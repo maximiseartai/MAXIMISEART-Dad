@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Any, Final, Literal, get_args
 import imaplib
 
 from fastapi.testclient import TestClient
@@ -112,6 +112,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_list
@@ -1340,7 +1341,7 @@ def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_
     path = app.tool.config / DEVICES_FILE
     dad_list = DEVICES.parse(path.read_bytes())
     assert isinstance(dad_list, tuple)
-    path.write_text(DEVICES.dump((*dad_list, Component("ont-x", ("ont x",)))), encoding="utf-8")
+    path.write_bytes(DEVICES.dump((*dad_list, Component("ont-x", ("ont x",)))))
 
     assert "ont-x" in read_snapshot(app.tool.config).quantity_rules.devices.ids()
 
@@ -1354,8 +1355,8 @@ def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_cen
     devices = tuple(component for component in DEVICES.default if component.id != "instalacja-reczna")
     rules = tuple(rule for rule in RULES.default if rule.id not in {"v-znane", "instalacja-reczna"})
     app.tool.config.mkdir(parents=True, exist_ok=True)
-    (app.tool.config / DEVICES_FILE).write_text(DEVICES.dump(devices), encoding="utf-8")
-    (app.tool.config / RULES_FILE).write_text(RULES.dump(rules), encoding="utf-8")
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump(devices))
+    (app.tool.config / RULES_FILE).write_bytes(RULES.dump(rules))
     accepted = app.client.get(QUANTITY_RULES_URL).json()
     assert (accepted["rules_problem"], accepted["devices_problem"], len(accepted["rules"])) == (None, None, len(rules))
     (app.tool.config / RULES_FILE).unlink()
@@ -5703,7 +5704,7 @@ def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
     """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
 
     tool.settings.parent.mkdir(parents=True, exist_ok=True)
-    tool.settings.write_text(FOLDERS.dump(folders), encoding="utf-8")
+    tool.settings.write_bytes(FOLDERS.dump(folders))
 
 
 PERIODS_FROM_ATTACHMENTS = "2026-11-folder-okresow-od-zalacznikow"
@@ -5819,13 +5820,13 @@ def test_zly_plik_ustawien_z_tygodniem_zostaje_po_aktualizacji_bajt_w_bajt_a_zmi
     tool = ToolDirectory(tmp_path / "narzedzie-taty")
     write_folder_settings(tool, FolderSettings(periods_directory=week))
     started(tool, ()).stop()
-    bad = FOLDERS.dump(FolderSettings(periods_directory=week)) + "nieznany_klucz: 1\n"
-    tool.settings.write_text(bad, encoding="utf-8")
+    bad = FOLDERS.dump(FolderSettings(periods_directory=week)) + b"nieznany_klucz: 1\n"
+    tool.settings.write_bytes(bad)
 
     while_bad = started(tool, RELEASE_CHANGES)
     problem = while_bad.get("/api/settings").json()["folders_problem"]
     while_bad.stop()
-    after_bad = tool.settings.read_text(encoding="utf-8")
+    after_bad = tool.settings.read_bytes()
     write_folder_settings(tool, FolderSettings(periods_directory=week))
     repaired = started(tool, RELEASE_CHANGES)
     periods = repaired.get("/api/settings").json()["periods_directory"]
@@ -6462,3 +6463,86 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
     ]
     log = app.log_path.read_text(encoding="utf-8")
     assert "Syntetyczna" not in log and "CENTRUM-SYN-ROW" not in log and str(periods) not in log
+
+
+# Plik Ustawień Centrum ma tylko bajty: ``SettingsFile.dump`` daje ``bytes``, więc jego treści nie da się zapisać trybem
+# tekstowym, który na Windows zamienia ``\n`` na ``\r\n``.
+#
+# Właściciel Ustawień zapisuje bajty ``dump`` bez zmiany, a krok drive i test porównują plik bajt w bajt (#1585 W1 r2:
+# fikstura pisała ``write_text(WORKERS.dump(...))``, na Windows CRLF, i krok ``wykonawcy-usuniecie-i-powrot`` czekał na
+# bajty, których serwer nie pisze). Z ``bytes`` zapis tekstowy, doklejenie napisu, ponowne kodowanie, porównanie z
+# tekstem pliku i kodek tekstu w ``SettingsFile`` nie przechodzą mypy, a ``write_text`` bajtów rzuca ``TypeError`` w biegu na
+# każdym systemie. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` pokazują postacie, które mypy i ruff przepuszczają, a nazwa próbki mówi ich klasę.
+_GLOWA_BAJTOW: Final = """from pathlib import Path
+
+from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
+from rozliczenia.centrum.settings.workers import WORKERS
+
+"""
+
+DROGI_TEKSTU_USTAWIEN: Final = {
+    "zapis tekstowy bajtów pliku Ustawień (#1585 W1 r2)": (
+        _GLOWA_BAJTOW + 'def zapis(path: Path) -> None:\n    path.write_text(WORKERS.dump(WORKERS.default), encoding="utf-8")\n',
+        'incompatible type "bytes"; expected "str"',
+    ),
+    "ponowne kodowanie bajtów pliku Ustawień": (
+        _GLOWA_BAJTOW + 'def zapis(path: Path) -> None:\n    path.write_bytes(WORKERS.dump(WORKERS.default).encode("utf-8"))\n',
+        '"bytes" has no attribute "encode"',
+    ),
+    "doklejenie napisu do bajtów pliku Ustawień": (
+        _GLOWA_BAJTOW + 'def zly() -> bytes:\n    return FOLDERS.dump(FolderSettings()) + "nieznany_klucz: 1\\n"\n',
+        "Unsupported operand types",
+    ),
+    "tekst pliku porównany z bajtami pliku Ustawień": (
+        _GLOWA_BAJTOW + 'def taki_sam(path: Path) -> bool:\n    return path.read_text(encoding="utf-8") == FOLDERS.dump(FolderSettings())\n',
+        "Non-overlapping equality check",
+    ),
+    "plik Ustawień z kodekiem tekstu": (
+        _GLOWA_BAJTOW
+        + """from rozliczenia.centrum.settings.files import SettingsFile
+
+TEKST = SettingsFile(
+    name="x.yaml",
+    parse=lambda data: data is not None,
+    dump=lambda value: "x: 1\\n",
+    diff=lambda before, after: (),
+    restore=lambda value, changes: value,
+    reported=str,
+    default=False,
+)
+""",
+        "Incompatible return value type",
+    ),
+}
+
+_GLOWA_LISTY_WYKONAWCOW: Final = """from pathlib import Path
+
+from rozliczenia.centrum.settings.workers import WORKERS
+
+"""
+
+ZNANE_LUKI_BAJTOW_USTAWIEN: Final = {
+    "zdekodowane bajty pliku Ustawień w zapisie tekstowym: str z bytes.decode niesie treść bez typu pliku": _GLOWA_LISTY_WYKONAWCOW
+    + 'def zapis(path: Path) -> None:\n    path.write_text(WORKERS.dump(WORKERS.default).decode("utf-8"), encoding="utf-8")\n',
+    "plik Ustawień z literału w zapisie tekstowym: typ nie zna treści literału (#1568 W2 r1)": "from pathlib import Path\n\n\n"
+    + 'def zapis(path: Path) -> None:\n    path.write_text("schema_version: 1\\nwykonawcy: []\\n", encoding="utf-8")\n',
+    "treść pliku Logów w zapisie tekstowym: RunLog.text to str, choć Centrum pisze plik Logów z newline=''": """from pathlib import Path
+
+from rozliczenia.centrum.run_logs import RunLog
+
+
+def zapis(record: RunLog, path: Path) -> None:
+    path.write_text(record.text, encoding="utf-8")
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_tresc_pliku_ustawien_poza_bajtami_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_TEKSTU_USTAWIEN.items()} | ZNANE_LUKI_BAJTOW_USTAWIEN
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=Path(__file__).with_name("sonda_bajtow_ustawien.py"))
+
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_TEKSTU_USTAWIEN.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_BAJTOW_USTAWIEN}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_BAJTOW_USTAWIEN)")
