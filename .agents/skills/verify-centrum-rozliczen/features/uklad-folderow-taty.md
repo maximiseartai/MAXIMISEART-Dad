@@ -31,3 +31,6 @@ from the repository root (Windows: `py -3`). The proof is in the evidence folder
 
 - A period in two month folders is shown once, from the first, and opening it or starting an Uruchomienie of it is
   refused with 409 until Dad leaves it in one month; the drive does not drive it.
+  `tests/test_centrum_rozliczen.py::test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany` checks
+  that the board shows such a period once and that opening its Plik zbiorczy answers 409 naming both month folders and
+  opens nothing; no test checks the refused start of an Uruchomienie.

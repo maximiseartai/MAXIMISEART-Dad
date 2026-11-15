@@ -21,6 +21,7 @@ W tym repo Ważne były zwykle:
 - stan, który jedna część przebiegu zakłada po innej (część podstawy skilla startująca od środka porządku);
 - przypisanie albo zakres liczony od złej linii lub złego commitu (np. `git blame` pierwszej linii wielowierszowej instrukcji).
 - zmiana wspólnego elementu okna Centrum (sekcja okna Ustawień, menu, toast, okno dialogowe), która wywraca funkcję drive `verify-centrum-rozliczen` inną niż ta, którą autor uruchomił (#1517: nowa sekcja wywróciła `okno-ustawien`, które wymienia każdą sekcję).
+- linia wyniku dla człowieka przepisana z listy wyników cudzego narzędzia (skilla pstack, kroku CI) bez gałęzi, którą to narzędzie zgłasza obok wyniku, więc człowiek czytający tylko linię jej nie widzi (#1875: błąd produktu znaleziony w przebiegu utrzymania skilli kończył się linią `clean`);
 - tłumienie reguły chwastu na dodanej linii (`# noqa`, `# ruff: noqa`, `# ast-grep-ignore`, także z powodem, terminem i zgodą Maksa) albo jej zwolnienie poza prawem właściciela z `AGENTS.md` (nowy wpis `per-file-ignores` albo `ignores:`, zawężone `files:`, usunięta reguła), dopóki nie odmawia go krok Required CI PR kroku ukryć ticketu #1676 (#1720, [ADR 0036](../../../docs/adr/0036-chwast-to-regula.md), reguła przejściowa).
 
 Dziura w sprawdzeniu to też defekt zachowania.

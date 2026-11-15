@@ -101,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The ast-grep rules report only the lines a change adds, counted from HEAD^1.
+          # The ast-grep rules on added lines count them from HEAD^1; the rules of the whole src need no history.
           fetch-depth: 2
           persist-credentials: false
 
