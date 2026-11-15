@@ -74,3 +74,4 @@ Wyjątek tymczasowy zapisz na linii, której dotyczy, z powodem, terminem i zgod
 
 - Tickety: podział specyfikacji (tytuł, blokady, co daje) pokazujesz Maksowi i publikujesz dopiero po jego „tak” na tę listę, a issue specyfikacji, także jego etykiety, zostaje bez zmian.
 - Długi bieg (hillclimb, noc, program wielu PR-ów) kończysz spokojną wizualizacją HTML wyniku w wątku T3 (`html_render`).
+- Wiedza: lekcję, regułę i fakt zapisujesz w repo (dokument reguły, ADR, skill), a stan pracy na GitHubie (issue, PR, komentarz), bo pamięć Claude spoza repo wyłącza `.claude/settings.json`.
