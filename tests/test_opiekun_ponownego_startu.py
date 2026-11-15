@@ -214,13 +214,15 @@ def test_port_zajety_przez_centrum_nie_jest_wolny_a_jego_sprawdzenie_zamyka_gnia
     # Opiekun pyta o port co 0,2 s przez minutę, czekając, aż stare Centrum go zwolni (restart_guardian._port_released).
     with tool_files.listen_locally(0) as listener:
         port = listener.getsockname()[1]
+        # Śmieci testów wcześniej w tym workerze ostrzegają tu, a nie w pomiarze, i pomiar liczy tylko gniazda (#1923).
+        gc.collect()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always", ResourceWarning)
             taken_free = tool_files.port_free(port)
             gc.collect()
 
     assert taken_free is False
-    assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
+    assert [str(warning.message) for warning in caught if isinstance(warning.source, socket.socket)] == []
     assert tool_files.port_free(port)
 
 
