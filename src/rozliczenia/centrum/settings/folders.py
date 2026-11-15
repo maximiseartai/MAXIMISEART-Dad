@@ -116,22 +116,28 @@ FoldersEdit = ChangeFolders | ChooseRegister | ChoosePeriodsDirectory | ChangeTh
 """Zmiana taty pliku Folderów i motywu, którą zapisuje właściciel Ustawień (``dad_folders``)."""
 
 
-def dad_folders(current: FolderSettings, edit: FoldersEdit) -> FolderSettings:
-    """Foldery po zmianie taty ``edit``. Wskazany na nowo folder okresów zapisuje się od korzenia układu
-    (``periods_directory_root``), a folder, który sekcja odesłała bez zmiany, zostaje, jaki jest (np. tydzień, do
-    którego tata cofnął zmianę z Wydania)."""
+def dad_folders(edit: FoldersEdit) -> Callable[[FolderSettings], FolderSettings]:
+    """Zmiana taty ``edit`` jako Foldery po niej z bieżących. Wskazany na nowo folder okresów zapisuje się od korzenia
+    układu (``periods_directory_root``), który listuje folder okresów, każdy rok i miesiąc w OneDrive taty, więc liczy
+    się tu, w wywołaniu, a nie w zwróconej zmianie, którą właściciel woła pod blokadą. Folder, który sekcja odesłała bez
+    zmiany, zostaje, jaki jest (np. tydzień, do którego tata cofnął zmianę z Wydania)."""
 
     match edit:
         case ChangeFolders(register=register, periods_directory=periods_directory):
-            if periods_directory is None or periods_directory == current.periods_directory:
-                return replace(current, register=register, periods_directory=periods_directory)
-            return replace(current, register=register, periods_directory=periods_directory_root(periods_directory))
+            root = None if periods_directory is None else periods_directory_root(periods_directory)
+
+            def folders(current: FolderSettings) -> FolderSettings:
+                kept = periods_directory is None or periods_directory == current.periods_directory
+                return replace(current, register=register, periods_directory=periods_directory if kept else root)
+
+            return folders
         case ChooseRegister(register=register):
-            return replace(current, register=register)
+            return lambda current: replace(current, register=register)
         case ChoosePeriodsDirectory(chosen=chosen):
-            return replace(current, periods_directory=periods_directory_root(chosen))
+            chosen_root = periods_directory_root(chosen)
+            return lambda current: replace(current, periods_directory=chosen_root)
         case ChangeTheme(theme=theme):
-            return replace(current, theme=theme)
+            return lambda current: replace(current, theme=theme)
         case _:
             assert_never(edit)
 

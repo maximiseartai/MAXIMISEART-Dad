@@ -10,6 +10,9 @@ czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSet
 nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
 wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
+Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie wartości domyślne (``_usable``): trasa okna
+Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), odmawia
+wtedy zdaniem o tym pliku, a procesy liczą treścią z Wydania (``_or_release``), jak mówi zdanie pliku w oknie Ustawień.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -163,8 +166,9 @@ _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | Fie
 @dataclass(frozen=True)
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
-    dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje
-    (odmowa ``refusal.workers_unusable``)."""
+    dobre albo domyślne, a przy pliku, którego system nie daje teraz czytać, z Wydania (``_or_release``). Lista
+    Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa
+    ``refusal.workers_unusable``)."""
 
     folders: FolderSettings
     workers: Read[WorkerList] | Unreadable
@@ -182,12 +186,13 @@ class QuantityRulesView:
     drugiego, ma problem jak zły plik. Lista Urządzeń, której zapisy ma składnik z Listy Urządzeń z Wydania, a Reguły
     ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``), a Reguły ilości zdanie, że
     ich zmiana zapisze się dopiero ze zwolnionym zapisem (``devices_for_dad_rules``). ``source_rules``: reguły z pliku
-    albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty."""
+    albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty. Pliku reguł, którego system nie daje
+    teraz czytać, nikt nie zna (``Unreadable``), choć procesy liczą wtedy regułami z Wydania."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
-    source_rules: tuple[QuantityRule, ...]
+    source_rules: tuple[QuantityRule, ...] | Unreadable
     exceptions: tuple[QuantityException, ...]
     exceptions_problem: FieldProblem | None
 
@@ -318,12 +323,19 @@ class CentrumSettings:
 
         with self._lock:
             return SettingsSnapshot(
-                folders=_usable(self._observe(FOLDERS), FOLDERS),
+                folders=_or_release(self._observe(FOLDERS), FOLDERS),
                 workers=self._observe(WORKERS),
                 inbox=inbox.state(self._observe(INBOX)),
-                reminders=_usable(self._observe(REMINDERS), REMINDERS),
+                reminders=_or_release(self._observe(REMINDERS), REMINDERS),
                 quantity_rules=self._quantity_rules().rules,
             )
+
+    def folders(self) -> FolderSettings | Unreadable:
+        """Foldery dla trasy okna Ustawień, która odpowiada tacie z bieżących Folderów (otwarcie Rejestru zleceń, podgląd
+        reguły): plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie Rejestr i folder niewskazane."""
+
+        with self._lock:
+            return _usable(self._observe(FOLDERS), FOLDERS)
 
     def quantity_rules(self) -> QuantityRulesView:
         """Reguły ilości, Lista Urządzeń i wyjątki Kontroli ilości dla okna Ustawień, każdy plik porównany z pamięcią jak
@@ -344,9 +356,10 @@ class CentrumSettings:
             )
 
     def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
-        """Zapis taty sekcji Foldery albo motywu (``dad_folders``)."""
+        """Zapis taty sekcji Foldery albo motywu (``dad_folders``). Folder okresów od korzenia układu, który listuje
+        folder okresów w OneDrive taty, liczy się przed blokadą, więc inne żądania Ustawień na niego nie czekają."""
 
-        return self._by_dad(FOLDERS, lambda current: dad_folders(current, edit), undoes=None)
+        return self._by_dad(FOLDERS, dad_folders(edit), undoes=None)
 
     def change_autostart(self, enabled: bool) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty przełącznika startu razem z Windows."""
@@ -405,15 +418,17 @@ class CentrumSettings:
                 return NotSaved()
             return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
 
-    def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem:
+    def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem | Unreadable:
         """Reguły ilości z Listą Urządzeń, które da zapis taty polecenia ``edit`` (``change_rules``), albo jego odmowa,
         bez zapisu: podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``). Id nowej reguły spoza
         kluczy Historii nadaje dopiero zapis; podgląd go nie pokazuje, a żadna odmowa reguł nie zależy od niego, więc
-        Historii nie czyta."""
+        Historii nie czyta. Plik reguł, którego system nie daje teraz czytać, to ``Unreadable``: zapis by go odmówił."""
 
         with self._lock:
             paired = self._rules_after(lambda current: rule_forms.dad_rules(current, edit, frozenset()))
-            return paired if isinstance(paired, FieldProblem) else QuantityRules(paired[0], DeviceList(paired[1]))
+            if isinstance(paired, FieldProblem | Unreadable):
+                return paired
+            return QuantityRules(paired[0], DeviceList(paired[1]))
 
     def _release(self) -> bool:
         """Procesy liczą Regułami ilości z Wydania: tata nie ma pliku reguł."""
@@ -581,14 +596,15 @@ class CentrumSettings:
         rules = self._observe(RULES)
         devices = self._observe(DEVICES)
         exceptions = self._observe(EXCEPTIONS)
-        usable_rules, usable_devices = _usable(rules, RULES), _usable(devices, DEVICES)
+        source_rules = _usable(rules, RULES)
+        usable_rules, usable_devices = _or_release(rules, RULES), _or_release(devices, DEVICES)
         waiting = devices_for_dad_rules(usable_devices, usable_rules, usable_rules) if self._release() else None
         return QuantityRulesView(
             quantity_rules(usable_rules, usable_devices),
             _problem(rules, RULES) or (waiting if isinstance(waiting, FieldProblem) else None),
             _problem(devices, DEVICES) or taken_problem(usable_rules, usable_devices),
-            usable_rules,
-            _usable(exceptions, EXCEPTIONS),
+            source_rules,
+            _or_release(exceptions, EXCEPTIONS),
             _problem(exceptions, EXCEPTIONS),
         )
 
@@ -614,7 +630,7 @@ class CentrumSettings:
 
         return devices_problem(
             devices,
-            _usable(self._observe(RULES), RULES),
+            _or_release(self._observe(RULES), RULES),
             _last_good_devices(self._memory.read(DEVICES.name)),
             release=self._release(),
         )
@@ -630,6 +646,9 @@ class CentrumSettings:
             if removed is None:
                 return self._dad_change(file, edit, undoes=undoes, checked=frozenset())
             folders = _usable(self._observe(FOLDERS), FOLDERS)
+            if isinstance(folders, Unreadable):
+                self._log.settings_unreadable(cause="dostep")
+                return NotSaved()
         presence = self._periods.find(removed.logins, folders.register, folders.periods_directory)
         if not isinstance(presence, NotInPeriods):
             return KeptInPeriods(presence, removed.what)
@@ -655,7 +674,7 @@ class CentrumSettings:
         """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z
         Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``)."""
 
-        rules = _usable(self._observe(RULES), RULES)
+        rules = _or_release(self._observe(RULES), RULES)
         changed = dad_devices_edit(edit, rules, self._column_names, release=self._release())
         return self._change(DEVICES, changed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
@@ -667,24 +686,32 @@ class CentrumSettings:
         paired = self._rules_after(edit)
         if isinstance(paired, FieldProblem):
             return Refused(paired)
+        if isinstance(paired, Unreadable):
+            self._log.settings_unreadable(cause="dostep")
+            return NotSaved()
         _, devices = paired
-        if devices != _usable(self._observe(DEVICES), DEVICES):
+        if devices != _or_release(self._observe(DEVICES), DEVICES):
             listed = self._change(DEVICES, lambda _: devices, undoes=None, source=ByDad(), undoable=True, checked=checked)
             if not isinstance(listed, Saved):
                 return listed
         return self._change(RULES, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
-    def _rules_after(self, edit: _RulesEdit) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem:
+    def _rules_after(
+        self, edit: _RulesEdit
+    ) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem | Unreadable:
         """Reguły po zmianie taty ``edit`` z Listą Urządzeń, z którą się zapiszą, albo odmowa zdaniem o tej zmianie: przy
         Regułach ilości z Wydania lista dostaje składniki z Wydania, których reguły potrzebują, albo zmiana czeka na
         zapis, który tata musi zwolnić (``devices_for_dad_rules``); reguła bez składnika na liście to jej zdanie ze
-        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``)."""
+        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``). Pliku reguł, którego system nie daje teraz
+        czytać, zmiana nie zna (``Unreadable``)."""
 
         current = _usable(self._observe(RULES), RULES)
+        if isinstance(current, Unreadable):
+            return current
         rules = edit(current)
         if isinstance(rules, FieldProblem):
             return rules
-        devices = _usable(self._observe(DEVICES), DEVICES)
+        devices = _or_release(self._observe(DEVICES), DEVICES)
         if self._release():
             needed = devices_for_dad_rules(devices, rules, current)
             if isinstance(needed, FieldProblem):
@@ -706,6 +733,8 @@ class CentrumSettings:
         if file.removed_logins is None:
             return None
         current = _usable(self._observe(file), file)
+        if isinstance(current, Unreadable):
+            return None
         value = edit(current)
         return None if isinstance(value, FieldProblem) else file.removed_logins(current, value)
 
@@ -733,7 +762,7 @@ class CentrumSettings:
         observed = self._observed(file, data)
         if isinstance(observed, Bad) and file.secret and observed.usable is None:
             return Refused(observed.problem)
-        current = _usable(observed, file)
+        current = _value(observed, file)
         value = edit(current)
         if isinstance(value, FieldProblem):
             return Refused(value)
@@ -917,7 +946,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
 
 
 def _read_only(config: Path, file: SettingsFile[T], together: Mapping[str, _PairCheck] | None = None) -> T:
-    return _usable(_read_only_view(config, file, together), file)
+    return _or_release(_read_only_view(config, file, together), file)
 
 
 def _read_only_view(
@@ -1021,14 +1050,32 @@ def _read(parsed: T | FieldProblem, usable: T | None) -> Read[T]:
     return Bad(parsed, usable) if isinstance(parsed, FieldProblem) else Good(parsed)
 
 
-def _usable(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
+def _usable(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T | Unreadable:
+    """Wartość, którą liczy Centrum (``_value``); pliku, którego system nie daje teraz czytać, nikt nie zna, więc zostaje
+    ``Unreadable``, a nie wartości domyślne, które tata wziąłby za niewskazane ustawienie."""
+
     match observed:
+        case Good() | Bad():
+            return _value(observed, file)
+        case Unreadable():
+            return observed
+
+
+def _value(read: Read[T], file: SettingsFile[T]) -> T:
+    """Dobra wartość, a przy złej treści ostatnia dobra albo domyślna."""
+
+    match read:
         case Good(value=value):
             return value
         case Bad(usable=usable):
             return file.default if usable is None else usable
-        case Unreadable():
-            return file.default
+
+
+def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
+    """Wartość, którą liczą procesy (``_value``): plik, którego system nie daje teraz czytać, ma treść z Wydania, jak mówi
+    jego zdanie w oknie Ustawień (``messages.unavailable``)."""
+
+    return file.default if isinstance(observed, Unreadable) else _value(observed, file)
 
 
 def _reported(row: HistoryRow) -> str:

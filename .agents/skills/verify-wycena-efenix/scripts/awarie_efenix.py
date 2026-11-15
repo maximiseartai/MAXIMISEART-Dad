@@ -223,6 +223,11 @@ class Proxy:
         with self._lock:
             return [seen.call for seen in self.seen]
 
+    def now(self) -> float:
+        """Seconds from the proxy's start, the clock of ``Seen.at``."""
+
+        return time.monotonic() - self._started
+
     def _decide(self, method: str, url: str, body: str) -> tuple[Call, Fault | None]:
         call = self._counter.next(call_kind(method, url, body))
         with self._lock:
@@ -235,7 +240,7 @@ class Proxy:
             if hit in OUTAGES:
                 self._outage = hit
             fault = self._outage if self._outage is not None else hit
-            self.seen.append(Seen(call, time.monotonic() - self._started, "" if fault is None else fault.name))
+            self.seen.append(Seen(call, self.now(), "" if fault is None else fault.name))
         if fault in LOGOUTS:
             self.expire_session()
         return call, fault
