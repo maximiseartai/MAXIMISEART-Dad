@@ -23,9 +23,9 @@ import shutil
 import sys
 from typing import Any, NamedTuple
 
-from playwright.sync_api import BrowserContext
+from playwright.sync_api import Browser
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page
+from playwright.sync_api import Page, StorageState
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
@@ -50,19 +50,17 @@ OUTSIDE = "poza-sekcja.txt"
 SECTION_START, SECTION_END = "\n## Sub-features\n", "\n## How to get to it (user POV)\n"
 
 
-def drive(
-    run: Run, context: BrowserContext, name: str, driven: list[str], options: dict[str, Any], owners: list[str]
-) -> None:
-    """Drives ``name`` in a tab of its own (``feature_tab``) after its needs this run has not driven; ``owners`` gets
-    ``name`` for each of its drive's calls."""
+def drive(run: Run, windows: FeatureWindows, name: str, driven: list[str], options: dict[str, Any], owners: list[str]) -> None:
+    """Drives ``name`` in a window of its own (``FeatureWindows``) after its needs this run has not driven; ``owners``
+    gets ``name`` for each of its drive's calls."""
 
     for need in feature(name).needs:
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
-            drive(run, context, need, driven, options, owners)
+            drive(run, windows, need, driven, options, owners)
     # A check before the drive's first step names no feature, not the feature driven before.
     run.feature = ""
-    with feature_tab(run, context) as page:
+    with windows.open(run) as page:
         try:
             MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
         except TimedOut:
@@ -74,28 +72,36 @@ def drive(
     driven.append(name)
 
 
-@contextmanager
-def feature_tab(run: Run, context: BrowserContext) -> Iterator[Page]:
-    """A new tab of the drive's window for one feature, closed after it with every other tab of the window.
+class FeatureWindows:
+    """The windows of the drive's browser, one per feature: the only place the drive opens the page a feature drives.
 
-    The only place the drive opens the tab a feature drives: whatever a feature leaves in its tab (an open or closing
-    window or dialog, a route, a listener, a narrow size) ends with the feature, so every feature finds the tab the
-    fixture gives, whichever feature ran before it (#1589). The window keeps what Dad's browser keeps between tabs
-    (``localStorage``). A failure leaves ``zz-failure.png`` of the tab and ends the drive, which closes the browser.
+    Whatever a feature leaves in the browser (an open or closing window or dialog, a route or listener of its tab or of
+    its window, the window's clock, a narrow size, another tab or window it opened) ends with the feature, so every
+    feature finds the window the fixture gives, whichever feature ran before it (#1589). Only what Dad's browser keeps
+    between visits, the window's cookies and ``localStorage``, carries to the next window. A failure leaves
+    ``zz-failure.png`` of the feature's page and ends the drive, which closes the browser.
     """
 
-    page = context.new_page()
-    page.set_default_timeout(Budget.SCREEN.ms)
-    try:
-        yield page
-    except Exception as exc:
+    def __init__(self, browser: Browser) -> None:
+        self.browser = browser
+        self.kept: StorageState | None = None
+
+    @contextmanager
+    def open(self, run: Run) -> Iterator[Page]:
+        window = dad_context(self.browser, storage_state=self.kept)
+        page = window.new_page()
+        page.set_default_timeout(Budget.SCREEN.ms)
         try:
-            page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
-        except PlaywrightError as shot:
-            exc.add_note(f"zz-failure.png not taken: {shot.message}")
-        raise
-    for tab in context.pages:
-        tab.close()
+            yield page
+        except Exception as exc:
+            try:
+                page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
+            except PlaywrightError as shot:
+                exc.add_note(f"zz-failure.png not taken: {shot.message}")
+            raise
+        self.kept = window.storage_state()
+        for each in self.browser.contexts:
+            each.close()
 
 
 def _needed(name: str) -> set[str]:
@@ -222,9 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         with sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch(**launch_options(playwright))
             try:
-                context = dad_context(browser)
+                windows = FeatureWindows(browser)
                 for name in selected:
-                    drive(run, context, name, driven, options, owners)
+                    drive(run, windows, name, driven, options, owners)
             except Exception as exc:
                 page_requests.check(exc)
                 raise

@@ -273,10 +273,13 @@ def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, na
     run = naped.Run(korzen, "http://127.0.0.1:1", korzen / "dowod")
     driven: list[str] = []
     owners: list[str] = []
-    okno = SimpleNamespace(new_page=lambda: SimpleNamespace(set_default_timeout=lambda timeout: None), pages=[])
+    okno = SimpleNamespace(
+        new_page=lambda: SimpleNamespace(set_default_timeout=lambda timeout: None), pages=[], storage_state=dict, close=lambda: None
+    )
+    okna = naped.FeatureWindows(SimpleNamespace(new_context=lambda **options: okno, contexts=[]))
     for funkcja in funkcje:
         if funkcja not in driven:
-            naped.drive(run, okno, funkcja, driven, {}, owners)
+            naped.drive(run, okna, funkcja, driven, {}, owners)
     sekcje: dict[str, Any] = naped.sections(run.calls, owners, driven)
     return sekcje
 
