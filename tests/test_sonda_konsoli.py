@@ -73,7 +73,7 @@ with atrapa_efenix([AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Test
     conhost = sorted(f"{names.get(every[pid][0], '?')}>{name}" for pid, (_, name) in every.items() if name == "conhost.exe")
     during = consoles()
     context.close()
-print(json.dumps({"conhost": conhost, "okna_konsoli_przed": len(before), "okna_konsoli_w_trakcie": len(during),
+print(json.dumps({"url": atrapa.url, "conhost": conhost, "okna_konsoli_przed": len(before), "okna_konsoli_w_trakcie": len(during),
                   "okna_konsoli_drzewa": len([pid for pid in during if pid in every])}))
 """
 
@@ -85,21 +85,23 @@ def test_sonda_1873_konsola_i_stderr_google_chrome(tmp_path: Path) -> None:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     results = []
-    for parent in ("pythonw", "python-CREATE_NO_WINDOW"):
-        for headless in (False, True):
-            for flag in (False, True):
-                case = f"chrome-{'bez-okna' if headless else 'okno'}-{'flaga' if flag else 'bez-flagi'}-{parent}"
-                interpreter = str(pythonw) if parent == "pythonw" else sys.executable
-                flags = 0 if parent == "pythonw" else 0x08000000  # CREATE_NO_WINDOW
-                try:
-                    done = subprocess.run(
-                        [interpreter, "-c", CASE, json.dumps(["chrome", headless, flag, str(tmp_path / f"profil-{case}")])],
-                        cwd=tmp_path, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                        timeout=90, check=False, creationflags=flags,
-                    )
-                    err_lines = [line for line in done.stderr.splitlines() if "pw:browser" in line and "[err]" in line]
-                    outcome = done.stdout.strip().splitlines()[-1] if done.stdout.strip() else f"kod {done.returncode}: {done.stderr.strip()[-200:]}"
-                    results.append(f"{case}: {outcome}; stderr przeglądarki {len(err_lines)} linii, {sum(len(line) for line in err_lines)} B; próbka {err_lines[:2]}")
-                except subprocess.TimeoutExpired:
-                    results.append(f"{case}: zawieszenie 90 s")
+    for headless in (False, True):
+        for flag in (False, True):
+            case = f"chrome-{'bez-okna' if headless else 'okno'}-{'flaga' if flag else 'bez-flagi'}-pythonw"
+            try:
+                done = subprocess.run(
+                    [str(pythonw), "-c", CASE, json.dumps(["chrome", headless, flag, str(tmp_path / f"profil-{case}")])],
+                    cwd=tmp_path, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=90, check=False,
+                )
+                err_lines = [line.split("[err] ", 1)[-1] for line in done.stderr.splitlines() if "pw:browser" in line and "[err]" in line]
+                answer = json.loads(done.stdout.strip().splitlines()[-1]) if done.stdout.strip() else {}
+                url = answer.get("url", "?")
+                host = url.split("/")[2] if url.count("/") >= 2 else "?"
+                results.append(
+                    f"{case}: adres {url!r} w stderr: {any(url in line for line in err_lines)}, host {host!r}: "
+                    f"{any(host in line for line in err_lines)}; linie od 3.: {[line[:400] for line in err_lines[2:]]}"
+                )
+            except subprocess.TimeoutExpired:
+                results.append(f"{case}: zawieszenie 90 s")
     pytest.fail("SONDA 1873\n" + "\n".join(results))
