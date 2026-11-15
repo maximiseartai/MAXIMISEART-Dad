@@ -57,7 +57,6 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 import json
-import os
 from pathlib import Path, PurePath
 import re
 import sqlite3
@@ -175,7 +174,7 @@ def doubt(root: str) -> Doubt | None:
     if PurePath(root).name == REPO:
         return None
     try:
-        if not stat.S_ISDIR(os.stat(root).st_mode):
+        if not stat.S_ISDIR(Path(root).stat().st_mode):
             return Doubt.MISSING
         url = repo.git(
             Path(root),

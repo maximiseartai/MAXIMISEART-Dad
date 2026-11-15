@@ -729,15 +729,16 @@ def test_projekt_z_katalogu_ktorego_juz_nie_ma_jest_w_linii_ok_a_z_wymuszeniem_l
             tmp_path / "narzedzie-taty",
             "git@github.com:maximiseartai/MAXIMISEART-Dad.git",
         )
-        roots = {"repo": moved, "other": new}
+        repo, other = moved, new
         old_thread, new_thread = COORDINATOR, STRANGER
     else:
-        roots = {"repo": REPO, "other": moved}
+        repo, other = REPO, moved
         old_thread, new_thread = STRANGER, COORDINATOR
     base = _base(
         tmp_path / "statev2.sqlite",
         [*_week(old_thread, (2, 3, 3)), *_week(new_thread, (5, 6, 7))],
-        **roots,
+        repo=repo,
+        other=other,
     )
 
     code, (*lines, last) = _run(base, capsys)
