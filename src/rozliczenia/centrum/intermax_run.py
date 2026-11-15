@@ -42,7 +42,7 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
 
 _KIND: Final = declaration_of("intermax")
 _VIEW: Final = _KIND.view
@@ -86,20 +86,21 @@ class IntermaxEntry:
     def setup(self, last: runs_contract.RunRestored | None) -> intermax_contract.IntermaxSetup:
         """Karta przed startem z ostatnim Uporządkowaniem INTERMAX ``last`` z Logów Uruchomienia."""
 
-        settings = self.settings.snapshot().folders
-        register = settings.register
+        snapshot = self.settings.snapshot()
+        register = _chosen_register(snapshot.folders)
         return intermax_contract.IntermaxSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
-            blocker=_KIND.settings_blocker(settings),
+            blocker=_KIND.settings_blocker(snapshot),
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
             last=last,
         )
 
     def days(self) -> intermax_contract.IntermaxDays:
-        """Dni INTERMAX z Ustawień Centrum ze stanem; bez wskazanego Rejestru zleceń żadnych dni i żadnego Komunikatu."""
+        """Dni INTERMAX z Ustawień Centrum ze stanem; bez wskazanego Rejestru zleceń albo przy pliku Folderów, którego
+        system nie daje teraz czytać, żadnych dni i żadnego Komunikatu: kartę blokuje wtedy zdanie ``setup``."""
 
-        register = self.settings.snapshot().folders.register
+        register = _chosen_register(self.settings.snapshot().folders)
         if register is None:
             return intermax_contract.IntermaxDays(days=[], problem=None)
         today = self.parts.now().date()
@@ -121,7 +122,7 @@ class IntermaxEntry:
 
         snapshot = self.settings.snapshot()
         start = start_from_settings(
-            _KIND, snapshot, {"register": _register(snapshot.folders), "copies_directory": self.copies_directory},
+            _KIND, snapshot, {"register": _register(snapshot), "copies_directory": self.copies_directory},
             period=None, dry_run=False,
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
@@ -138,7 +139,7 @@ class IntermaxEntry:
     def restore(self, name: str) -> intermax_contract.IntermaxRestore:
         """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień Centrum; ``Refusal``, gdy go nie wskazano."""
 
-        register = _register(self.settings.snapshot().folders)
+        register = _register(self.settings.snapshot())
         try:
             parts = self.parts
             restored = intermax_restore.restore(
@@ -167,8 +168,12 @@ def _day(day: intermax_ordering.RegisterDay, today: date) -> intermax_contract.I
     return intermax_contract.IntermaxDay(day=day.day, label=label, today=day.day == today, ordered=day.ordered)
 
 
-def _register(settings: FolderSettings) -> Path:
+def _register(settings: SettingsSnapshot) -> Path:
     return _KIND.required_paths(settings)["register"]
+
+
+def _chosen_register(folders: FolderSettings | UnreadableFile) -> Path | None:
+    return None if isinstance(folders, UnreadableFile) else folders.register
 
 
 def intermax_router(

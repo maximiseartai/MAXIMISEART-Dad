@@ -1,8 +1,8 @@
 """Tygodniowy pomiar korzeni w issue „Rejestr korzeni”: wystąpienia, powtórzenia, kody i chwasty; biegnie w poniedziałek, ręcznie z --bez-zapisu.
 
 Pomiar z ADR 0031 (decyzje Q1, Q19, Q23): workflow ``.github/workflows/rejestr-korzeni.yml`` uruchamia go
-w poniedziałek o 6:17 czasu polskiego, zanim zadanie T3 o 8:00 dołoży kartę i osąd o kodach. Minuta 17, a nie
-pełna godzina, bo GitHub opóźnia, a przy dużym obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze tylko
+w poniedziałek o 6:17 czasu polskiego. Minuta 17, a nie pełna godzina, bo GitHub opóźnia, a przy dużym obciążeniu
+porzuca biegi z cronu na początku godziny. Liczby bierze tylko
 z rejestru korzeni (``rejestr_korzeni.read``) od wdrożenia szablonu werdyktu na ``origin/main``:
 
 - wystąpienie to wystąpienie kodu z rejestru: Ważne werdyktu ``FAIL`` albo blok czerwonego `main` scalonego PR,
@@ -19,7 +19,7 @@ pomiar tygodnia daje te same liczby, kiedykolwiek go uruchomić, dopóki rejestr
 
 Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar`` (tydzień i od wdrożenia), ``## Kody`` (każdy kod
 z wystąpieniem od wdrożenia), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”) i ``## Historia`` z wierszem na każdy
-z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia, z którego zadanie T3 rysuje kartę XmR. Historię pomiar liczy
+z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia. Historię pomiar liczy
 od nowa z rejestru przy każdym uruchomieniu, a starej treści issue nie czyta: rozstrzygnięcie kodu (Q25) poprawia też
 minione tygodnie, a issue nie staje się drugim rejestrem. Treść należy do narzędzia, więc uwagi idą w komentarze.
 
@@ -47,13 +47,12 @@ import argparse
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
-from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
@@ -63,11 +62,11 @@ from rejestr_korzeni import Occurrence
 from repo import MAIN, REMOTE, ROOT
 import repo
 import szablon_werdyktu
+from tydzien_polski import WARSAW, last_full_week, midnight, week_of
 import werdykt_pr
 
 TITLE = "Rejestr korzeni"
 PREFIX = "REJESTR KORZENI"
-WARSAW = ZoneInfo("Europe/Warsaw")
 HOUR = 6
 HISTORY = 26
 CRON = re.compile(r"(\d{1,2}) (\d{1,2}) \* \* 1")
@@ -95,19 +94,6 @@ class Count:
         return f"{self.occurrences} | {self.repeats} | {self.share()}"
 
 
-def week_of(moment: datetime) -> date:
-    """Poniedziałek tygodnia czasu polskiego, do którego należy chwila ``moment``."""
-
-    day = moment.astimezone(WARSAW).date()
-    return day - timedelta(days=day.weekday())
-
-
-def last_full_week(now: datetime) -> date:
-    """Poniedziałek ostatniego pełnego tygodnia czasu polskiego przed chwilą ``now``."""
-
-    return week_of(now) - timedelta(days=7)
-
-
 def on_time(cron: str, now: datetime) -> bool:
     """Czy cron ``M H * * 1`` (w UTC) wypada w dniu ``now`` (w UTC) w godzinie ``HOUR`` czasu polskiego, w dowolnej
     minucie; inna postać to ``ValueError``."""
@@ -117,10 +103,6 @@ def on_time(cron: str, now: datetime) -> bool:
         raise ValueError(f"cron „{cron}” to nie „M H * * 1”")
     planned = now.astimezone(UTC).replace(hour=int(found[2]), minute=int(found[1]), second=0, microsecond=0)
     return planned.astimezone(WARSAW).hour == HOUR
-
-
-def _start(week: date) -> datetime:
-    return datetime.combine(week, time(), WARSAW)
 
 
 def _repeats(found: Sequence[Occurrence]) -> list[bool]:
@@ -138,7 +120,7 @@ def body(found: Sequence[Occurrence], weeds: Sequence[tuple[int, str]], week: da
     """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z wystąpień rejestru ``found``, otwartych issues
     chwastów ``weeds`` (numer i kod) i chwili wdrożenia ``deployed``."""
 
-    start, end = _start(week), _start(week + timedelta(days=7))
+    start, end = midnight(week), midnight(week + timedelta(days=7))
     repeats = _repeats(found)
     lines = ["## Pomiar", "", f"| Okres | {' | '.join(COLUMNS)} |", "| --- | --- | --- | --- |"]
     lines.append(f"| Tydzień {week.isoformat()} | {_count(found, repeats, start, end).cells()} |")
@@ -152,7 +134,7 @@ def body(found: Sequence[Occurrence], weeds: Sequence[tuple[int, str]], week: da
     lines += ["", "## Historia", "", f"| Tydzień | {' | '.join(COLUMNS)} |", "| --- | --- | --- | --- |"]
     first = week_of(deployed)
     weeks = [first + timedelta(days=7 * index) for index in range((week - first).days // 7 + 1)] if week >= first else []
-    lines += [f"| {monday.isoformat()} | {_count(found, repeats, _start(monday), _start(monday + timedelta(days=7))).cells()} |" for monday in weeks[-HISTORY:]]
+    lines += [f"| {monday.isoformat()} | {_count(found, repeats, midnight(monday), midnight(monday + timedelta(days=7))).cells()} |" for monday in weeks[-HISTORY:]]
     return "\n".join([*lines, ""])
 
 
@@ -187,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cron and not on_time(args.cron, now):
             print(f"{PREFIX} POMINIĘTY | cron „{args.cron}” nie wypada dziś w godzinie {HOUR} czasu polskiego")
             return 0
-        week = last_full_week(now) if args.tydzien is None else week_of(_start(args.tydzien))
+        week = last_full_week(now) if args.tydzien is None else week_of(midnight(args.tydzien))
         repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, f"+refs/heads/{MAIN}:refs/remotes/{REMOTE}/{MAIN}", timeout=github.LIMIT_S).check_returncode()
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         deployed = werdykt_pr.deployment(MAIN, szablon_werdyktu.ADR)
@@ -209,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.bez_zapisu:
         print(text)
     repeats = _repeats(found)
-    count = _count(found, repeats, _start(week), _start(week + timedelta(days=7)))
+    count = _count(found, repeats, midnight(week), midnight(week + timedelta(days=7)))
     print(f"{PREFIX} OK | tydzień {week.isoformat()}: {count.occurrences} wystąpień, {count.repeats} powtórzeń, udział {count.share()}")
     return 0
 

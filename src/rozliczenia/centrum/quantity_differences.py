@@ -48,7 +48,15 @@ from rozliczenia.centrum.contract.quantity_rules import (
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum.quantity_rules_preview import Recent, RecentCollectiveFiles
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import (
+    CentrumSettings,
+    KeptInPeriods,
+    NotSaved,
+    Refused,
+    Saved,
+    release_if_unreadable,
+)
 from rozliczenia.centrum.settings.quantity_exceptions import (
     SECTION,
     QuantityException,
@@ -116,7 +124,7 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
         view = settings.quantity_rules()
         rules, bad = view.rules, view.exceptions_problem
         problem = None if bad is None else SettingProblem(field=bad.place, message=bad.sentence)
-        directory = settings.snapshot().folders.periods_directory_to_read
+        directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
         if directory is None:
             return contract.DifferencesWithoutFiles(state="no_periods_directory", exceptions_problem=problem), []
         found = recent.read(directory)
