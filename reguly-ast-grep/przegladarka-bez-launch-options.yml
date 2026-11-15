@@ -17,25 +17,81 @@ ignores:
   - src/rozliczenia/efenix_browser.py
   - tests/fixtures/wzorzec_playwrighta.py
 rule:
-  # Zgłasza każde wywołanie metody launch albo launch_persistent_context (wyrażenie funkcji kończy się kropką i tą nazwą,
-  # także w nawiasach), chyba że jego argumenty mają **launch_options(…) albo **<nazwa>.launch_options(…), albo
-  # wołany obiekt to moduł excel albo restart_guardian, których launch nie startuje przeglądarki. Postacie, których
-  # reguła nie widzi, są w ZNANE_LUKI_PRZEGLADARKI w tests/test_zapadki.py.
-  kind: call
+  # Zgłasza każde odwołanie do metody launch albo launch_persistent_context (węzeł attribute w dowolnym miejscu drzewa:
+  # wywołanie, argument, przypisanie, partial, to_thread), chyba że to wołana funkcja wywołania, także w nawiasach,
+  # którego argumenty mają **launch_options(…) albo **<nazwa>.launch_options(…), albo jej obiekt to nazwa związana
+  # importem w tym pliku (import excel, from rozliczenia.centrum import restart_guardian) albo parametr otaczającej
+  # funkcji z typem ModuleType (fikstura modułu), czyli funkcja modułu, a nie metoda przeglądarki. Głośno zgłasza też
+  # cel przypisania, del i adnotację. Postacie, których drzewo składni nie pokazuje albo które nazwa z importu albo typ
+  # ModuleType przepuszcza, są w ZNANE_LUKI_PRZEGLADARKI w tests/test_zapadki.py.
+  kind: attribute
   has:
-    field: function
-    regex: '\.\s*(?:launch|launch_persistent_context)[)\s]*$'
+    field: attribute
+    regex: '^(?:launch|launch_persistent_context)$'
   not:
     any:
-      - has:
-          field: arguments
+      - inside:
+          kind: call
+          stopBy:
+            not:
+              kind: parenthesized_expression
           has:
-            kind: dictionary_splat
+            field: arguments
             has:
-              kind: call
+              kind: dictionary_splat
               has:
-                field: function
-                regex: '^(?:[A-Za-z_]\w*\.)*launch_options$'
-      - has:
-          field: function
-          regex: '^\(*(?:excel|restart_guardian)\.launch\b'
+                kind: call
+                has:
+                  field: function
+                  regex: '^(?:[A-Za-z_]\w*\.)*launch_options$'
+      - all:
+          - has:
+              field: object
+              pattern: $MODULE
+          - inside:
+              kind: function_definition
+              stopBy: end
+              has:
+                has:
+                  kind: typed_parameter
+                  all:
+                    - has:
+                        kind: identifier
+                        pattern: $MODULE
+                    - has:
+                        field: type
+                        regex: '^(?:[A-Za-z_]\w*\.)*ModuleType$'
+      - all:
+          - has:
+              field: object
+              pattern: $MODULE
+          - inside:
+              kind: module
+              stopBy: end
+              has:
+                stopBy: end
+                any:
+                  - kind: import_statement
+                    has:
+                      any:
+                        - kind: dotted_name
+                          has:
+                            kind: identifier
+                            nthChild: 1
+                            pattern: $MODULE
+                        - kind: aliased_import
+                          has:
+                            field: alias
+                            pattern: $MODULE
+                  - kind: import_from_statement
+                    has:
+                      nthChild: n+2
+                      any:
+                        - kind: dotted_name
+                          has:
+                            kind: identifier
+                            pattern: $MODULE
+                        - kind: aliased_import
+                          has:
+                            field: alias
+                            pattern: $MODULE

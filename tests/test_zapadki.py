@@ -1484,53 +1484,87 @@ def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(
     )
 
 
-# Reguła ``przegladarka-bez-launch-options`` (#1871): start przeglądarki Playwrighta bez argumentów jej właściciela.
+# Reguła ``przegladarka-bez-launch-options`` (#1871): odwołanie do metody startu przeglądarki Playwrighta poza wywołaniem
+# z argumentami jej właściciela.
 _PRZEGLADARKA = "przegladarka-bez-launch-options"
-_START = (
-    "from playwright.sync_api import Playwright\n\nfrom rozliczenia.efenix_browser import launch_options\n\n\n"
-    "def start(p: Playwright) -> object:\n    return "
-)
-# Tekst nowego pliku ``src/`` → linie, które reguła zgłasza: postacie wywołania metody startu z gramatyki (argumenty
-# nazwane, ``**`` innego wyrażenia, nawiasy wokół metody i obiektu, obiekt przez nazwę pośrednią, wywołanie w kilku
-# liniach, metoda w ``functools.partial``) i postacie, które przechodzą: ``**launch_options(…)`` pod dowolną kropkowaną
-# nazwą, łączenie z innymi argumentami, ``connect_over_cdp`` (przeglądarka już uruchomiona), metody o podobnej nazwie
-# i ``launch`` modułów ``excel`` i ``restart_guardian``, które nie startują przeglądarki.
+
+
+def _start(text: str, prefix: str = "", signature: str = "p: Playwright") -> str:
+    """Nowy plik ``src/`` z ``prefix`` i funkcją, której ciało to ``text``: pierwsza linia ciała to linia 7 bez ``prefix``."""
+
+    return (
+        f"{prefix}from playwright.sync_api import Playwright\n\nfrom rozliczenia.efenix_browser import launch_options\n\n\n"
+        f"def start({signature}) -> object:\n    {text}\n"
+    )
+
+
+_IMPORT_EXCEL = "import excel\n"
+# Tekst nowego pliku ``src/`` → linie, które reguła zgłasza. Odwołanie do metody ``launch`` albo
+# ``launch_persistent_context`` w każdym miejscu drzewa (wywołanie, argument, przypisanie, dekorator, ``partial``,
+# ``to_thread``, atrybut odwołania) jest zgłoszone, chyba że to wołana funkcja wywołania z ``**launch_options(…)``, albo
+# obiekt to nazwa z importu w tym pliku albo parametr z typem ``ModuleType``. Pełny korpus par gramatyki (rodzaj węzła,
+# pole) z miejscem na węzeł ``attribute`` stoi w komentarzu PR #1877.
 _PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
-    "bez argumentów": (f"{_START}p.chromium.launch()\n", [7]),
-    "argument nazwany": (f"{_START}p.chromium.launch(headless=False)\n", [7]),
-    "inna przeglądarka": (f"{_START}p.firefox.launch()\n", [7]),
-    "kontekst z profilem": (f'{_START}p.chromium.launch_persistent_context("profil")\n', [7]),
-    "** słownika": (f'{_START}p.chromium.launch(**{{"args": []}})\n', [7]),
-    "** innego wywołania": (f"{_START}p.chromium.launch(**dict(args=[]))\n", [7]),
-    "** nazwy launch_options bez wywołania": (f"{_START}p.chromium.launch(**launch_options)\n", [7]),
-    "** wywołania o nazwie kończącej się na launch_options": (f"{_START}p.chromium.launch(**my_launch_options(p))\n", [7]),
-    "** launch_options w nawiasach": (f"{_START}p.chromium.launch(**(launch_options(p)))\n", [7]),
-    "metoda w nawiasach": (f"{_START}(p.chromium.launch)()\n", [7]),
-    "obiekt w nawiasach": (f"{_START}(p.chromium).launch()\n", [7]),
-    "obiekt przez nazwę pośrednią": (f"{_START[: -len('return ')]}browser_type = p.chromium\n    return browser_type.launch()\n", [8]),
-    "wywołanie w kilku liniach": (f"{_START}p.chromium.launch(\n        headless=True,\n    )\n", [7]),
-    "metoda w functools.partial": (f"{_START}functools.partial(p.chromium.launch)()\n", [7]),
-    "obiekt o nazwie zaczynającej się od excel": (f"{_START}excel_launcher.launch()\n", [7]),
-    "obiekt o nazwie kończącej się na excel": (f"{_START}notexcel.launch()\n", [7]),
-    "z launch_options": (f"{_START}p.chromium.launch(**launch_options(p))\n", []),
-    "z launch_options i innymi argumentami": (
-        f'{_START}p.chromium.launch(headless=True, **launch_options(p, arguments=["--x"]))\n',
+    "bez argumentów": (_start("return p.chromium.launch()"), [7]),
+    "argument nazwany": (_start("return p.chromium.launch(headless=False)"), [7]),
+    "inna przeglądarka": (_start("return p.firefox.launch()"), [7]),
+    "kontekst z profilem": (_start('return p.chromium.launch_persistent_context("profil")'), [7]),
+    "** słownika": (_start('return p.chromium.launch(**{"args": []})'), [7]),
+    "** innego wywołania": (_start("return p.chromium.launch(**dict(args=[]))"), [7]),
+    "** nazwy launch_options bez wywołania": (_start("return p.chromium.launch(**launch_options)"), [7]),
+    "** wywołania o nazwie kończącej się na launch_options": (_start("return p.chromium.launch(**my_launch_options(p))"), [7]),
+    "** launch_options w nawiasach": (_start("return p.chromium.launch(**(launch_options(p)))"), [7]),
+    "launch_options w argumentach wywołania, które metodę dostaje": (
+        _start("return g(p.chromium.launch, **launch_options(p))"),
+        [7],
+    ),
+    "metoda w nawiasach": (_start("return (p.chromium.launch)()"), [7]),
+    "obiekt w nawiasach": (_start("return (p.chromium).launch()"), [7]),
+    "obiekt przez nazwę pośrednią": (_start("browser_type = p.chromium\n    return browser_type.launch()"), [8]),
+    "wywołanie w kilku liniach": (_start("return p.chromium.launch(\n        headless=True,\n    )"), [7]),
+    "metoda w partial bez argumentów": (_start("return functools.partial(p.chromium.launch)()", "import functools\n"), [8]),
+    "metoda w partial z argumentem": (_start("return functools.partial(p.chromium.launch, headless=True)()", "import functools\n"), [8]),
+    "metoda w asyncio.to_thread": (_start("return asyncio.to_thread(p.chromium.launch, headless=True)", "import asyncio\n"), [8]),
+    "metoda zapisana pod nazwą": (_start("launch = p.chromium.launch\n    return launch()"), [7]),
+    "metoda przez __call__": (_start("return p.chromium.launch.__call__()"), [7]),
+    "metoda jako dekorator": (_start("@p.chromium.launch\n    def g() -> None:\n        pass\n\n    return g"), [7]),
+    "obiekt o nazwie modułu bez importu": (_start("excel = p.chromium\n    return excel.launch()"), [8]),
+    "obiekt o nazwie ścieżki modułu z from": (_start("return excel.launch()", "from excel import zgoda\n"), [8]),
+    "obiekt o nazwie dalszej części ścieżki importu": (_start("return excel.launch()", "import narzedzia.excel\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu": (_start("return excel.launch()", "import excel as xl\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu w from": (_start("return excel.launch()", "from narzedzia import excel as xl\n"), [8]),
+    "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
+    "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
+    "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
+    "z launch_options": (_start("return p.chromium.launch(**launch_options(p))"), []),
+    "z launch_options i innymi argumentami": (_start('return p.chromium.launch(headless=True, **launch_options(p, arguments=["--x"]))'), []),
+    "z launch_options modułu": (_start("return p.chromium.launch(**efenix_browser.launch_options(p))"), []),
+    "kontekst z profilem i launch_options": (_start('return p.chromium.launch_persistent_context("profil", **launch_options(p))'), []),
+    "metoda w nawiasach z launch_options": (_start("return (p.chromium.launch)(**launch_options(p))"), []),
+    "connect_over_cdp": (_start('return p.chromium.connect_over_cdp("http://127.0.0.1:9222")'), []),
+    "metoda z launch w środku nazwy": (_start("return p.relaunch()"), []),
+    "metoda z launch na początku nazwy": (_start("return p.chromium.launched()"), []),
+    "funkcja modułu z importu": (_start("return excel.launch(timeout=20)", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w nawiasach": (_start("return (excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu przekazana dalej": (_start("return retry(excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w funkcji": (_start("import excel\n\n    return excel.launch()"), []),
+    "funkcja modułu z importu kilku modułów": (_start("return excel.launch()", "import os, excel\n"), []),
+    "funkcja modułu pod aliasem": (_start("return xl.launch()", "import excel as xl\n"), []),
+    "funkcja modułu z from i kilku nazw": (
+        _start("return restart_guardian.launch(a, b)", "from rozliczenia.centrum import launcher, restart_guardian\n"),
         [],
     ),
-    "z launch_options modułu": (f"{_START}p.chromium.launch(**efenix_browser.launch_options(p))\n", []),
-    "kontekst z profilem i launch_options": (f'{_START}p.chromium.launch_persistent_context("profil", **launch_options(p))\n', []),
-    "connect_over_cdp": (f'{_START}p.chromium.connect_over_cdp("http://127.0.0.1:9222")\n', []),
-    "metoda z launch w środku nazwy": (f"{_START}p.relaunch()\n", []),
-    "metoda z launch na początku nazwy": (f"{_START}p.chromium.launched()\n", []),
-    "launch modułu excel": (f"{_START}excel.launch(timeout=20)\n", []),
-    "launch modułu excel w nawiasach": (f"{_START}(excel.launch)()\n", []),
-    "launch modułu restart_guardian": (f"{_START}restart_guardian.launch(copy, restart)\n", []),
+    "funkcja modułu z from pod aliasem": (_start("return excel.launch()", "from narzedzia import zgoda, xl as excel\n"), []),
+    "funkcja modułu z parametru ModuleType": (_start("return excel.launch()", signature="excel: ModuleType"), []),
+    "funkcja modułu z parametru types.ModuleType": (_start("return excel.launch()", signature="excel: types.ModuleType"), []),
 }
 
 
 @needs_ast_grep
 @pytest.mark.parametrize(("text", "lines"), _PROBKI_PRZEGLADARKI.values(), ids=_PROBKI_PRZEGLADARKI.keys())
-def test_przegladarka_bez_launch_options_zglasza_start_bez_argumentow_wlasciciela(tmp_path: Path, text: str, lines: list[int]) -> None:
+def test_przegladarka_bez_launch_options_zglasza_odwolanie_do_startu_poza_wywolaniem_z_argumentami_wlasciciela(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
     base = _src_sample(tmp_path, text)
 
     assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA] == lines
@@ -1567,23 +1601,23 @@ def test_przegladarka_bez_launch_options_czyta_src_tools_tests_i_skrypty_skilli_
 # ``src/`` ze startem przeglądarki bez argumentów właściciela, który przechodzi przez regułę i ruff.
 _LUKA_PRZEGLADARKI = "from playwright.sync_api import Browser, Playwright\n\n\ndef start(p: Playwright) -> Browser:\n"
 ZNANE_LUKI_PRZEGLADARKI: Final = {
-    "zna tylko metodę na obiekcie: metoda zapisana pod nazwą": f"{_LUKA_PRZEGLADARKI}    launch = p.chromium.launch\n    return launch()\n",
-    "zna tylko nazwę z kodu: metoda po nazwie z napisu": (
+    "drzewo nie zna nazwy z napisu: metoda po nazwie z getattr": (
         f'{_LUKA_PRZEGLADARKI}    name = "launch"\n    return getattr(p.chromium, name)()\n'
+    ),
+    "drzewo nie czyta napisów: start w skrypcie dla procesu potomnego": (
+        'SKRYPT = "from playwright.sync_api import sync_playwright\\nsync_playwright().start().chromium.launch()\\n"\n'
+    ),
+    "zna tylko API Playwrighta: przeglądarka uruchomiona jako proces": (
+        "import subprocess\n\n\ndef chrome(binary: str) -> None:\n    subprocess.run([binary, \"--headless=new\", \"about:blank\"], check=True)\n"
     ),
     "zna tylko nazwę launch_options: funkcja innego obiektu o tej nazwie": (
         "from types import SimpleNamespace\n\n"
         f"{_LUKA_PRZEGLADARKI}    helpers = SimpleNamespace(launch_options=lambda playwright: {{}})\n"
         "    return p.chromium.launch(**helpers.launch_options(p))\n"
     ),
-    "zna tylko nazwę obiektu: przeglądarka pod nazwą zwolnionego modułu": (
-        f"{_LUKA_PRZEGLADARKI}    excel = p.chromium\n    return excel.launch()\n"
-    ),
-    "czyta tylko kod, nie napisy: start w skrypcie dla procesu potomnego": (
-        'SKRYPT = "from playwright.sync_api import sync_playwright\\nsync_playwright().start().chromium.launch()\\n"\n'
-    ),
-    "zna tylko API Playwrighta: przeglądarka uruchomiona jako proces": (
-        "import subprocess\n\n\ndef chrome(binary: str) -> None:\n    subprocess.run([binary, \"--headless=new\", \"about:blank\"], check=True)\n"
+    "nazwa z importu to dla reguły moduł: obiekt przeglądarki zaimportowany pod nazwą": (
+        "from playwright.sync_api import Browser\n\nfrom narzedzia.przegladarki import chromium\n\n\n"
+        "def start() -> Browser:\n    return chromium.launch()\n"
     ),
 }
 
