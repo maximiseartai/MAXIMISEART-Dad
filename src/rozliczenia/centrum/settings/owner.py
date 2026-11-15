@@ -88,7 +88,10 @@ import threading
 from typing import Any, Final, Protocol, TypeVar
 import uuid
 
+from rozliczenia.centrum import device_forms, rule_forms
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
+from rozliczenia.centrum.contract.quantity_rules import RuleEdit
+from rozliczenia.centrum.device_forms import DeviceEdit
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
 from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
@@ -127,11 +130,13 @@ from rozliczenia.centrum.settings.quantity_rules import (
     ColumnNames,
     DevicesEdit,
     dad_devices_edit,
+    device_ids,
     dad_rules_problem,
     devices_for_dad_rules,
     devices_problem,
     listed_name,
     quantity_rules,
+    rule_ids,
     rules_problem,
     taken_problem,
 )
@@ -144,6 +149,10 @@ from rozliczenia.worker_report_inbox import InboxState
 from rozliczenia.worker_reports import ReminderSettings
 
 T = TypeVar("T")
+_Plain = TypeVar("_Plain", FolderSettings, bool, InboxFile, ReminderSettings, WorkerList, tuple[QuantityException, ...])
+"""Wartość pliku Ustawień, którego zapis taty nie sprawdza pary: tylko taki plik zmienia ``change`` funkcją z trasy.
+Listę Urządzeń i Reguły ilości tata zmienia tylko poleceniem formularza (``change_devices``, ``change_rules``), więc
+zmiana, uzupełnienie i reguła tej pary nie mają drogi obok właściciela."""
 
 REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
@@ -275,11 +284,15 @@ class CentrumSettings:
         autostart: Autostart,
         periods: WorkerPeriods,
         column_names: ColumnNames,
+        release_changes: tuple[ReleaseChange[Any], ...],
+        release_origin: Callable[[], ReleaseOrigin],
     ) -> None:
         """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
         wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
         trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców, a ``column_names``
-        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary."""
+        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary. ``release_changes`` to zmiany z Wydania, a
+        ``release_origin`` daje wersję narzędzia do ich wiersza Historii (``apply_release_changes``): dostaje je tylko
+        konstruktor, więc kod z właścicielem w ręku nie poda mu zmiany z własną funkcją zapisu obok zapisu taty."""
 
         self._config = config
         self._log = log
@@ -287,6 +300,8 @@ class CentrumSettings:
         self._pause = pause
         self._periods = periods
         self._column_names = column_names
+        self._release_changes = release_changes
+        self._release_origin = release_origin
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
@@ -333,19 +348,30 @@ class CentrumSettings:
             )
 
     def change(
-        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem]
+        self, file: SettingsFile[_Plain], edit: Callable[[_Plain], _Plain | FieldProblem]
     ) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową albo problem
         zmiany (np. pole formularza sekcji Wykonawcy), który jest odmową bez zapisu."""
 
         return self._by_dad(file, edit, undoes=None)
 
-    def change_with_used_keys(
+    def change_devices(self, edit: DeviceEdit) -> Saved | Refused | NotSaved:
+        """Zapis taty polecenia sekcji Urządzenia (``device_forms.dad_devices``) z id nowego składnika spoza kluczy
+        Historii; parę z regułami i uzupełnienie listy sprawdza ``_dad_change``, ta sama droga co „Cofnij”."""
+
+        return self._with_used_keys(DEVICES, lambda current, keys: device_forms.dad_devices(current, edit, device_ids(keys)))
+
+    def change_rules(self, edit: RuleEdit) -> Saved | Refused | NotSaved:
+        """Zapis taty polecenia edytora reguł (``rule_forms.dad_rules``) z id nowej reguły spoza kluczy Historii."""
+
+        return self._with_used_keys(RULES, lambda current, keys: rule_forms.dad_rules(current, edit, rule_ids(keys)))
+
+    def _with_used_keys(
         self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T | FieldProblem]
     ) -> Saved | Refused | NotSaved:
-        """Zapis taty jak ``change``, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``),
-        przeczytane pod tą samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc
-        „Cofnij” starszego wiersza go nie rusza. Historia, której nie da się przeczytać, to ``NotSaved``."""
+        """Zapis taty, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``), przeczytane pod tą
+        samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc „Cofnij” starszego
+        wiersza go nie rusza. Historia, której nie da się przeczytać, to ``NotSaved``."""
 
         with self._lock:
             keys = self._used_keys(file)
@@ -354,12 +380,14 @@ class CentrumSettings:
                 return NotSaved()
             return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
 
-    def rules_after(self, edit: _RulesEdit) -> QuantityRules | FieldProblem:
-        """Reguły ilości z Listą Urządzeń, które da zapis taty zmiany ``edit`` pliku reguł, albo jego odmowa, bez zapisu:
-        podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``)."""
+    def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem:
+        """Reguły ilości z Listą Urządzeń, które da zapis taty polecenia ``edit`` (``change_rules``), albo jego odmowa,
+        bez zapisu: podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``). Id nowej reguły spoza
+        kluczy Historii nadaje dopiero zapis; podgląd go nie pokazuje, a żadna odmowa reguł nie zależy od niego, więc
+        Historii nie czyta."""
 
         with self._lock:
-            paired = self._rules_after(edit)
+            paired = self._rules_after(lambda current: rule_forms.dad_rules(current, edit, frozenset()))
             return paired if isinstance(paired, FieldProblem) else QuantityRules(paired[0], DeviceList(paired[1]))
 
     def _release(self) -> bool:
@@ -367,14 +395,10 @@ class CentrumSettings:
 
         return self._places[RULES.name].read() is None
 
-    def used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
+    def _used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
         """Klucze, które plik ``file`` ma w wierszach Historii Ustawień, z każdego źródła i wyniku. Linia Historii, której
         nie da się przeczytać, nie daje klucza, ale też nie da się jej cofnąć."""
 
-        with self._lock:
-            return self._used_keys(file)
-
-    def _used_keys(self, file: SettingsFile[Any]) -> frozenset[str] | Unreadable:
         history = self._history.read()
         if isinstance(history, Unreadable):
             return history
@@ -407,12 +431,12 @@ class CentrumSettings:
                     self._observe(file)
             return self._history.read()
 
-    def apply_release_changes(
-        self, changes: tuple[ReleaseChange[Any], ...], origin: Callable[[], ReleaseOrigin]
-    ) -> None:
-        """Zmiany z Wydania, których pamięć jeszcze nie ma, po kolei; ``origin`` daje wersję narzędzia do Historii i
-        pyta Gita tylko wtedy, gdy jest co zastosować. Niczego nie podnosi: start Centrum nie pada na zmianie z Wydania."""
+    def apply_release_changes(self) -> None:
+        """Zmiany z Wydania z konstruktora, których pamięć jeszcze nie ma, po kolei; ``release_origin`` daje wersję
+        narzędzia do Historii i pyta Gita tylko wtedy, gdy jest co zastosować. Niczego nie podnosi: start Centrum nie pada
+        na zmianie z Wydania."""
 
+        changes = self._release_changes
         with self._lock:
             remembered = self._memory.applied()
             if isinstance(remembered, AppliedUnknown):
@@ -421,7 +445,7 @@ class CentrumSettings:
                 applied: dict[str, Applied] = {}
             else:
                 applied = remembered
-                self._apply_pending(changes, applied, origin)
+                self._apply_pending(changes, applied, self._release_origin)
             self._absent = {
                 change.file.name: sentence
                 for change in changes
