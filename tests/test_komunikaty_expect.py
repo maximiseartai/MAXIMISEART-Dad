@@ -683,6 +683,25 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
 """,
         "ruff SLF001",
     ),
+    "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania (#1904 W1 r1)": (
+        """\
+from rozliczenia.centrum.settings.history import ReleaseOrigin
+from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+from rozliczenia.quantity_engine import Component
+
+
+def zapisz(settings: CentrumSettings) -> None:
+    def propose(inputs: ReleaseInputs[tuple[Component, ...]]) -> Proposal[tuple[Component, ...]]:
+        return Edit(lambda current: current[1:])
+
+    settings.apply_release_changes(
+        (ReleaseChange("2026-11-trasa", DEVICES, propose),), lambda: ReleaseOrigin(release=None, commit=None)
+    )
+""",
+        'Too many arguments for "apply_release_changes" of "CentrumSettings"',
+    ),
 }
 
 ZNANE_LUKI_POLECENIA_PARY: Final = {
@@ -708,7 +727,7 @@ def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotS
     uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
     return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
 """,
-    "plik pary przez cast na Any": """\
+    "plik pary jako Any przez cast (Any spełnia każde ograniczenie _Plain)": """\
 from typing import Any, cast
 
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
@@ -717,6 +736,44 @@ from rozliczenia.centrum.settings.quantity_rules import DEVICES
 
 def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
     return settings.change(cast(Any, DEVICES), lambda current: current)
+""",
+    "plik pary jako Any przez getattr modułu (Any spełnia każde ograniczenie _Plain)": """\
+from rozliczenia.centrum.settings import quantity_rules
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(getattr(quantity_rules, "DEVICES"), lambda current: current[1:])
+""",
+    "drugi właściciel z własną zmianą z Wydania (konstruktor przyjmuje zmiany od każdego wołającego)": """\
+from pathlib import Path
+
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.settings.history import ReleaseOrigin
+from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+from rozliczenia.quantity_engine import Component
+from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_periods import WorkerPeriods
+
+
+def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerPeriods) -> None:
+    def propose(inputs: ReleaseInputs[tuple[Component, ...]]) -> Proposal[tuple[Component, ...]]:
+        return Edit(lambda current: current[1:])
+
+    CentrumSettings(
+        config,
+        log=log,
+        now=local_now,
+        pause=lambda _: None,
+        autostart=autostart,
+        periods=periods,
+        column_names=lambda: {},
+        release_changes=(ReleaseChange("2026-11-trasa", DEVICES, propose),),
+        release_origin=lambda: ReleaseOrigin(release=None, commit=None),
+    ).apply_release_changes()
 """,
 }
 

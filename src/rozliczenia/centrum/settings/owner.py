@@ -284,11 +284,15 @@ class CentrumSettings:
         autostart: Autostart,
         periods: WorkerPeriods,
         column_names: ColumnNames,
+        release_changes: tuple[ReleaseChange[Any], ...],
+        release_origin: Callable[[], ReleaseOrigin],
     ) -> None:
         """Ustawienia w folderze ``config`` i skrót Centrum w folderze Autostart (``autostart``); ``now`` daje chwilę
         wiersza Historii, a ``pause`` czeka przed kolejną próbą odczytu albo zapisu pliku, który system na chwilę
         trzyma. ``periods`` szuka w okresach loginów, które zmiana taty usuwa z Listy Wykonawców, a ``column_names``
-        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary."""
+        daje nazwy kolumn z cennika do zdania reguły w odmowie zmiany pary. ``release_changes`` to zmiany z Wydania, a
+        ``release_origin`` daje wersję narzędzia do ich wiersza Historii (``apply_release_changes``): dostaje je tylko
+        konstruktor, więc kod z właścicielem w ręku nie poda mu zmiany z własną funkcją zapisu obok zapisu taty."""
 
         self._config = config
         self._log = log
@@ -296,6 +300,8 @@ class CentrumSettings:
         self._pause = pause
         self._periods = periods
         self._column_names = column_names
+        self._release_changes = release_changes
+        self._release_origin = release_origin
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
@@ -425,12 +431,12 @@ class CentrumSettings:
                     self._observe(file)
             return self._history.read()
 
-    def apply_release_changes(
-        self, changes: tuple[ReleaseChange[Any], ...], origin: Callable[[], ReleaseOrigin]
-    ) -> None:
-        """Zmiany z Wydania, których pamięć jeszcze nie ma, po kolei; ``origin`` daje wersję narzędzia do Historii i
-        pyta Gita tylko wtedy, gdy jest co zastosować. Niczego nie podnosi: start Centrum nie pada na zmianie z Wydania."""
+    def apply_release_changes(self) -> None:
+        """Zmiany z Wydania z konstruktora, których pamięć jeszcze nie ma, po kolei; ``release_origin`` daje wersję
+        narzędzia do Historii i pyta Gita tylko wtedy, gdy jest co zastosować. Niczego nie podnosi: start Centrum nie pada
+        na zmianie z Wydania."""
 
+        changes = self._release_changes
         with self._lock:
             remembered = self._memory.applied()
             if isinstance(remembered, AppliedUnknown):
@@ -439,7 +445,7 @@ class CentrumSettings:
                 applied: dict[str, Applied] = {}
             else:
                 applied = remembered
-                self._apply_pending(changes, applied, origin)
+                self._apply_pending(changes, applied, self._release_origin)
             self._absent = {
                 change.file.name: sentence
                 for change in changes

@@ -59,7 +59,8 @@ from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, 
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.rule_forms import form_of
-from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.device_forms import ChangeComponent, DeviceEdit, RemoveComponent
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved, read_snapshot
 from rozliczenia.centrum.settings.proposal import (
     Edit,
     Later,
@@ -989,6 +990,33 @@ def test_zmiana_albo_usuniecie_skladnika_ktorego_juz_nie_ma_to_odmowa_bez_zapisu
     unknown = {"message": "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień."}
     assert [(changed.status_code, changed.json()), (removed.status_code, removed.json())] == [(404, unknown)] * 2
     assert history_rows(app) == []
+
+
+def test_zmiana_skladnika_usunietego_po_sprawdzeniu_trasy_nie_rusza_listy_ani_nie_dopisuje_wiersza(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inny zapis usuwa składnik po sprawdzeniu 404 w trasie, a przed blokadą właściciela: polecenie zmiany tego
+    składnika nie przywraca go i nie zmienia reszty Listy Urządzeń."""
+
+    app = centrum(tmp_path)
+    change_devices = CentrumSettings.change_devices
+    removals: list[Saved | Refused | NotSaved] = []
+
+    def removed_first(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | NotSaved:
+        assert isinstance(edit, ChangeComponent)
+        removals.append(change_devices(settings, RemoveComponent(edit.component)))
+        return change_devices(settings, edit)
+
+    monkeypatch.setattr(CentrumSettings, "change_devices", removed_first)
+    before = [device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]]
+
+    changed = app.client.put(f"{DEVICES_URL}/globo", json={"name": "globo", "other_spellings": ["globo box"], "group": "tv"})
+
+    assert changed.status_code == 200, changed.text
+    assert [device["id"] for device in changed.json()["quantity_rules"]["devices"]] == [i for i in before if i != "globo"]
+    [removal] = removals
+    assert isinstance(removal, Saved) and removal.change is not None
+    assert [row["id"] for row in history_rows(app)] == [removal.change]
 
 
 DEVICE_FORMS: dict[str, dict[str, Any]] = {
