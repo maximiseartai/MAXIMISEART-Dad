@@ -27,8 +27,10 @@ commitem przed i po; treść Komunikatów należy do Centrum
 terminala, bez pomocnika logowania i bez okna konsoli w Windows. Każde kończy
 się w swoim limicie czasu, także gdy pomocnik Gita (np. ``git-remote-https``)
 zostaje po nim przy zerwanym połączeniu: wyjście idzie do plików tymczasowych,
-nie do potoków, a po limicie polecenie wraca, gdy całe drzewo procesów Gita
-nie żyje. Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
+nie do potoków, a po limicie polecenie wraca po zabiciu całego drzewa procesów
+Gita: w Windows, gdy każdy jego proces się skończył, w POSIX, gdy cała sesja
+dostała SIGKILL, a sam Git się skończył (jego pomocnicy mogą jeszcze przez
+chwilę zamykać pliki). Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
 konfiguracja Gita taty zostaje bez zmian. Adres repozytorium wstrzykuje się
 z zewnątrz; ``origin`` w klonie taty nie ma znaczenia.
 
@@ -734,8 +736,9 @@ class _Git:
     root: Path
 
     def run(self, *args: str, timeout_s: float = _LOCAL_TIMEOUT_S) -> subprocess.CompletedProcess[str]:
-        """Polecenie Gita z wyjściem i błędami jako tekst; po ``timeout_s`` ``subprocess.TimeoutExpired``, gdy jego drzewo
-        już nie żyje, albo ``OSError``, gdy przeżyje ``_KILL_TIMEOUT_S``.
+        """Polecenie Gita z wyjściem i błędami jako tekst; po ``timeout_s`` ``subprocess.TimeoutExpired`` po zabiciu jego
+        drzewa (``_run_tree``: co to znaczy w każdym systemie), a w Windows ``OSError``, gdy drzewo przeżyje
+        ``_KILL_TIMEOUT_S``.
 
         Wyjście idzie do plików tymczasowych: potok, który pomocnik Gita trzyma
         otwarty po końcu Gita, wstrzymałby odczyt, a w Windows także po limicie czasu.
@@ -949,8 +952,10 @@ else:
     ) -> int:
         """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to sesja Gita.
 
-        Po ``timeout_s`` zabija całą sesję i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jej
-        procesów już nie żyje; sesji, której nie ma, bo Git i jego pomocnicy już się zakończyli, nie zabija.
+        Po ``timeout_s`` wysyła SIGKILL całej grupie procesów sesji i rzuca ``subprocess.TimeoutExpired``, gdy Git się
+        skończył: na pozostałe procesy grupy nie czeka, więc już zabite mogą jeszcze przez chwilę zamykać swoje pliki.
+        Proces, który opuścił grupę (``setsid``, ``setpgid``), jest poza zasięgiem. Sesji, której nie ma, bo Git i jego
+        pomocnicy już się zakończyli, nie zabija.
         """
 
         process = subprocess.Popen(
