@@ -3,7 +3,7 @@
 W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę
 poza regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``.
 Formę, która ma jeszcze stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test;
-reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany. Reguły ast-grep
+reguła ast-grep na liniach dodanych dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany. Reguły ast-grep
 ``REGULY_CALEGO_DRZEWA`` zgłaszają każdą linię swoich plików (``test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii``),
 bez bazy, w ``tools/szybko.py`` i w zadaniu CI „Ruff, mypy”.
 
@@ -87,11 +87,8 @@ PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
 _PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
 _NEW_PARSER = (
     "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
-    " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md: (a) jedna droga i jeden"
-    " właściciel, (b) typ albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania,"
-    " (d) dopiero zapadka"
-    " w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w"
-    " opisie PR"
+    " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md; plik, który mimo to"
+    " parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w opisie PR"
 )
 _GONE_PARSER = "plik zniknął: usuń go z PARSERS w tests/test_zapadki.py"
 
@@ -257,6 +254,11 @@ def test_zapadka_nawigacji_przepuszcza_odpowiedz_podana_dalej_po_zlamaniu_linii(
         ('    log("lista #1,")', "    page.goto(url)"),
         # ``#`` bez odstępu przed nim nie zaczyna komentarza.
         ('    log("lista(#1)")', "    page.goto(url)"),
+        # Dwie postacie, które reguła ast-grep z drzewa gubi, więc ta zapadka zostaje regexem (CODING_STANDARDS.md): odbiorca
+        # nad wywołaniem dostaje wartość policzoną z odpowiedzi, a menedżer expect_navigation idzie do innego wywołania
+        # w with bez as.
+        ("    loaded = \\", "        page.goto(url) is not None"),
+        ("def open_order(page, timed):", "    with timed(page.expect_navigation()):"),
     ],
 )
 def test_zapadka_lapie_odrzucona_odpowiedz_nawigacji(previous: str, line: str) -> None:
