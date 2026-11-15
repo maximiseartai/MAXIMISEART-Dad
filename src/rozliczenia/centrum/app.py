@@ -147,7 +147,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Callable[[], None]]]:
-        settings.apply_release_changes(release_changes, release_origin)
+        settings.apply_release_changes()
         notifications.check_in_background()
         box.check_in_background()
         outbox.resume()
@@ -176,6 +176,18 @@ def create_app(
     def health() -> Health:
         return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
 
+    box = KeyedBox.of_work(report_box or GitHubReportBox(), work)
+    freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
+
+    def release_origin() -> ReleaseOrigin:
+        """Wersja narzędzia tego Centrum dla wiersza Historii zmiany z Wydania: numer Wydania i skrót commitu."""
+
+        commit = freshness.local()
+        at_commit = None if commit is None else freshness.wydanie(commit)
+        return ReleaseOrigin(
+            release=None if at_commit is None else at_commit.version, commit=None if commit is None else short_commit(commit)
+        )
+
     files = DadFiles(source=source, forbidden=work.forbidden)
     configuration = configuration_files or ConfigurationFiles.default()
     price_list = PriceList(configuration.collective_template)
@@ -187,6 +199,8 @@ def create_app(
         autostart=autostart,
         periods=WorkerPeriods(files),
         column_names=price_list.names,
+        release_changes=release_changes,
+        release_origin=release_origin,
     )
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
     sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
@@ -196,18 +210,7 @@ def create_app(
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
     cases = DadCases(work)
-    box = KeyedBox.of_work(report_box or GitHubReportBox(), work)
-    freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
     release = RememberedRelease(freshness.release, clock=clock)
-
-    def release_origin() -> ReleaseOrigin:
-        """Wersja narzędzia tego Centrum dla wiersza Historii zmiany z Wydania: numer Wydania i skrót commitu."""
-
-        commit = freshness.local()
-        at_commit = None if commit is None else freshness.wydanie(commit)
-        return ReleaseOrigin(
-            release=None if at_commit is None else at_commit.version, commit=None if commit is None else short_commit(commit)
-        )
 
     surroundings = Surroundings(
         replace(freshness, release=release.fresh),

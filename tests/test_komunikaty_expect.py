@@ -623,6 +623,177 @@ def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_pa
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
 
 
+# Drogi funkcji z trasy do zapisu pary Listy Urządzeń i Reguł ilości (#1577 W1 r2: trasa uzupełniała listę w funkcji
+# podanej właścicielowi, a „Cofnij” tego kroku nie miało): opis → (moduł Centrum, fragment zgłoszenia, które go odrzuca).
+DROGI_DO_PARY: Final = {
+    "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …) (#1577 W1 r2)": (
+        """\
+from rozliczenia.centrum import device_forms
+from rozliczenia.centrum.device_forms import DeviceEdit
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES, devices_for_dad_rules
+from rozliczenia.quantity_engine import Component
+
+
+def zapisz(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+    view = settings.quantity_rules()
+
+    def applied(current: tuple[Component, ...]) -> tuple[Component, ...] | FieldProblem:
+        completed = devices_for_dad_rules(current, view.source_rules, view.source_rules)
+        if isinstance(completed, FieldProblem):
+            return completed
+        changed = device_forms.edited(completed, edit, frozenset())
+        return changed if isinstance(changed, tuple | FieldProblem) else current
+
+    return settings.change(DEVICES, applied)
+""",
+        'Value of type variable "_Plain" of "change" of "CentrumSettings" cannot be "tuple[Component, ...]"',
+    ),
+    "funkcja trasy do change(RULES, …)": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import RULES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(RULES, lambda current: current[1:])
+""",
+        'Value of type variable "_Plain" of "change" of "CentrumSettings" cannot be "tuple[QuantityRule, ...]"',
+    ),
+    "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
+    return settings.change_with_used_keys(DEVICES, lambda current, keys: current)
+""",
+        '"CentrumSettings" has no attribute "change_with_used_keys"',
+    ),
+    "funkcja trasy przez prywatne _with_used_keys": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
+    return settings._with_used_keys(DEVICES, lambda current, keys: current)
+""",
+        "ruff SLF001",
+    ),
+    "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania (#1904 W1 r1)": (
+        """\
+from rozliczenia.centrum.settings.history import ReleaseOrigin
+from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+from rozliczenia.quantity_engine import Component
+
+
+def zapisz(settings: CentrumSettings) -> None:
+    def propose(inputs: ReleaseInputs[tuple[Component, ...]]) -> Proposal[tuple[Component, ...]]:
+        return Edit(lambda current: current[1:])
+
+    settings.apply_release_changes(
+        (ReleaseChange("2026-11-trasa", DEVICES, propose),), lambda: ReleaseOrigin(release=None, commit=None)
+    )
+""",
+        'Too many arguments for "apply_release_changes" of "CentrumSettings"',
+    ),
+}
+
+ZNANE_LUKI_POLECENIA_PARY: Final = {
+    "trasa zmienia treść polecenia przed zapisem (typ widzi polecenie, nie jego treść)": """\
+from rozliczenia.centrum.contract.quantity_rules import ComponentForm
+from rozliczenia.centrum.device_forms import AddComponent
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+
+
+def dodaj(settings: CentrumSettings, form: ComponentForm) -> Saved | Refused | NotSaved:
+    uzupelniony = form.model_copy(update={"other_spellings": [*form.other_spellings, "wizja"]})
+    return settings.change_devices(AddComponent(uzupelniony))
+""",
+    "funkcja z trasy dla pliku bez pary (zna tylko typ wartości pliku)": """\
+from dataclasses import replace
+
+from rozliczenia.centrum.settings import workers
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
+
+
+def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotSaved | KeptInPeriods:
+    uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
+    return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
+""",
+    "plik pary jako Any przez cast (Any spełnia każde ograniczenie _Plain)": """\
+from typing import Any, cast
+
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(cast(Any, DEVICES), lambda current: current)
+""",
+    "plik pary jako Any przez getattr modułu (Any spełnia każde ograniczenie _Plain)": """\
+from rozliczenia.centrum.settings import quantity_rules
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(getattr(quantity_rules, "DEVICES"), lambda current: current[1:])
+""",
+    "drugi właściciel z własną zmianą z Wydania (konstruktor przyjmuje zmiany od każdego wołającego)": """\
+from pathlib import Path
+
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.settings.history import ReleaseOrigin
+from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+from rozliczenia.quantity_engine import Component
+from rozliczenia.wall_clock import local_now
+from rozliczenia.worker_periods import WorkerPeriods
+
+
+def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerPeriods) -> None:
+    def propose(inputs: ReleaseInputs[tuple[Component, ...]]) -> Proposal[tuple[Component, ...]]:
+        return Edit(lambda current: current[1:])
+
+    CentrumSettings(
+        config,
+        log=log,
+        now=local_now,
+        pause=lambda _: None,
+        autostart=autostart,
+        periods=periods,
+        column_names=lambda: {},
+        release_changes=(ReleaseChange("2026-11-trasa", DEVICES, propose),),
+        release_origin=lambda: ReleaseOrigin(release=None, commit=None),
+    ).apply_release_changes()
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_funkcja_trasy_do_zapisu_pary_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    """Listę Urządzeń i Reguły ilości tata zmienia tylko poleceniem formularza do właściciela, więc trasa nie poda mu
+    funkcji, której krok „Cofnij” by ominął (#1577 W1 r2); znane luki tego typu przechodzą."""
+
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_PARY.items()} | ZNANE_LUKI_POLECENIA_PARY
+    pliki = zapisz(probki, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_PARY.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_POLECENIA_PARY}, "tests/test_komunikaty_expect.py (ZNANE_LUKI_POLECENIA_PARY)"
+    )
+
+
 def _refusal_as_value(module: ModuleType) -> bool:
     """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
 
