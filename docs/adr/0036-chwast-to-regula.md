@@ -60,16 +60,16 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 - **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
 - **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a bramka niczego w nim nie sprawdza; każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
-  To jedyne miejsce osądu w pętli: klasę wybiera niezależny recenzent według warunku z tabeli, a recenzent następnej rundy daje Ważne, gdy sprawdzenie z kolumny „Następna runda” się nie zgadza.
+  To jedyne miejsce osądu w pętli: klasę wybiera niezależny recenzent według warunku z tabeli, a recenzent następnej rundy sprawdza ją według ostatniej kolumny.
 
-  | Klasa | Recenzent pisze ją, gdy | Następna runda |
+  | Klasa | Recenzent pisze ją, gdy | Recenzent następnej rundy daje Ważne, gdy |
   |---|---|---|
-  | `brak-testu` | brakuje testu, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokazuje regułę, która idiom wyraża, albo nie ma Ważnego; brak testu zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)) |
-  | `stan-kroku` | błąd to stan po wykonaniu kroku, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokazuje regułę, która idiom wyraża, albo nie ma Ważnego |
-  | `typ` | idiom zamyka typ, z którym zła postać nie przechodzi mypy (szczebel (b)), także gdy regułą też da się go wyrazić | podaje dowód mutacji, a reguły nie żąda |
-  | `test-klasy` | idiom zamyka test zachowania, który łapie całą klasę (szczebel (c)), także gdy regułą też da się go wyrazić | podaje dowód mutacji, a reguły nie żąda |
+  | `brak-testu` | brakuje testu, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokaże regułę, która idiom wyraża; brak testu zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)) |
+  | `stan-kroku` | błąd to stan po wykonaniu kroku, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokaże regułę, która idiom wyraża |
+  | `typ` | idiom zamyka typ, z którym zła postać nie przechodzi mypy (szczebel (b)), także gdy regułą też da się go wyrazić | jego dowód mutacji nie daje `WYKRYTA`; reguły nie żąda |
+  | `test-klasy` | idiom zamyka test zachowania, który łapie całą klasę (szczebel (c)), także gdy regułą też da się go wyrazić | jego dowód mutacji nie daje `WYKRYTA`; reguły nie żąda |
 
-  Dowód mutacji to punkt „## Sprawdzone” recenzenta rundy po poprawce: polecenie `tools/mutacje.py`, które przywraca na HEAD złą postać z `Gdzie`, z linią `WYKRYTA` i ostatnią linią `MUTACJE OK`; brak tego punktu albo nieprawdziwy dowód to Ważne.
+  Dowód mutacji to punkt „## Sprawdzone” recenzenta rundy po poprawce: polecenie `tools/mutacje.py`, które przywraca na HEAD złą postać z `Gdzie`, z linią `WYKRYTA` i ostatnią linią `MUTACJE OK`.
   Luka: gdy runda po poprawce kończy się `PASS` bez punktu dowodu, PR scala się bez dowodu, bo następnej rundy nie ma, a bramka tego nie sprawdza; ślad zostaje tylko w poniedziałkowym raporcie.
   Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
   Powód klas `typ` i `test-klasy`: bramka, która przyjmowała tylko regułę ast-grep, popychała autora na szczebel (d), choć wyższy działał, a automatyczny dowód typu i testu po czterech rundach przeglądu dało się obejść przez tekst wyjścia narzędzi; Maks 15.11.2026 wybrał recenzenta jako bramkę ([#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)), jak w [#1888](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1888#issuecomment-6902408070), i przyjął tę lukę zamiast maszynerii dowodu.
