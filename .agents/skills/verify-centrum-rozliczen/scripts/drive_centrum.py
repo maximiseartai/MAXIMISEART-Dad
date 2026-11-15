@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from difflib import unified_diff
 from functools import cache
 import inspect
@@ -22,6 +23,7 @@ import shutil
 import sys
 from typing import Any, NamedTuple
 
+from playwright.sync_api import BrowserContext
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
@@ -48,24 +50,52 @@ OUTSIDE = "poza-sekcja.txt"
 SECTION_START, SECTION_END = "\n## Sub-features\n", "\n## How to get to it (user POV)\n"
 
 
-def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str, Any], owners: list[str]) -> None:
-    """Drives ``name`` after its needs this run has not driven; ``owners`` gets ``name`` for each of its drive's calls."""
+def drive(
+    run: Run, context: BrowserContext, name: str, driven: list[str], options: dict[str, Any], owners: list[str]
+) -> None:
+    """Drives ``name`` in a tab of its own (``feature_tab``) after its needs this run has not driven; ``owners`` gets
+    ``name`` for each of its drive's calls."""
 
     for need in feature(name).needs:
         if need not in driven:
             print(f"  harness: {name} needs the state of {need}, which this drive has not driven, so it runs first", flush=True)
-            drive(run, page, need, driven, options, owners)
+            drive(run, context, need, driven, options, owners)
     # A check before the drive's first step names no feature, not the feature driven before.
     run.feature = ""
-    try:
-        MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
-    except TimedOut:
-        # A wait that outlasted its budget after the wake-up thread of Centrum's clock died waited for a wake-up that
-        # never fires: the failure names the dead clock.
-        check_clock_alarm(run)
-        raise
+    with feature_tab(run, context) as page:
+        try:
+            MODULES[name].drive(run, page, **(options if feature(name).measurement else {}))
+        except TimedOut:
+            # A wait that outlasted its budget after the wake-up thread of Centrum's clock died waited for a wake-up
+            # that never fires: the failure names the dead clock.
+            check_clock_alarm(run)
+            raise
     owners += [name] * (len(run.calls) - len(owners))
     driven.append(name)
+
+
+@contextmanager
+def feature_tab(run: Run, context: BrowserContext) -> Iterator[Page]:
+    """A new tab of the drive's window for one feature, closed after it with every other tab of the window.
+
+    The only place the drive opens the tab a feature drives: whatever a feature leaves in its tab (an open or closing
+    window or dialog, a route, a listener, a narrow size) ends with the feature, so every feature finds the tab the
+    fixture gives, whichever feature ran before it (#1589). The window keeps what Dad's browser keeps between tabs
+    (``localStorage``). A failure leaves ``zz-failure.png`` of the tab and ends the drive, which closes the browser.
+    """
+
+    page = context.new_page()
+    page.set_default_timeout(Budget.SCREEN.ms)
+    try:
+        yield page
+    except Exception as exc:
+        try:
+            page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
+        except PlaywrightError as shot:
+            exc.add_note(f"zz-failure.png not taken: {shot.message}")
+        raise
+    for tab in context.pages:
+        tab.close()
 
 
 def _needed(name: str) -> set[str]:
@@ -192,16 +222,10 @@ def main(argv: list[str] | None = None) -> int:
         with sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch(**launch_options(playwright))
             try:
-                page = dad_context(browser).new_page()
-                page.set_default_timeout(Budget.SCREEN.ms)
+                context = dad_context(browser)
                 for name in selected:
-                    drive(run, page, name, driven, options, owners)
+                    drive(run, context, name, driven, options, owners)
             except Exception as exc:
-                if "page" in locals():
-                    try:
-                        page.screenshot(path=run.evidence / "screenshots" / "zz-failure.png", full_page=True)
-                    except PlaywrightError as shot:
-                        exc.add_note(f"zz-failure.png not taken: {shot.message}")
                 page_requests.check(exc)
                 raise
             finally:

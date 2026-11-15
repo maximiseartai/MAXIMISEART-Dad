@@ -17,7 +17,7 @@ import importlib.util
 import re
 import subprocess
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, Final
 
 import pytest
@@ -273,9 +273,10 @@ def _bieg(naped: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, na
     run = naped.Run(korzen, "http://127.0.0.1:1", korzen / "dowod")
     driven: list[str] = []
     owners: list[str] = []
+    okno = SimpleNamespace(new_page=lambda: SimpleNamespace(set_default_timeout=lambda timeout: None), pages=[])
     for funkcja in funkcje:
         if funkcja not in driven:
-            naped.drive(run, None, funkcja, driven, {}, owners)
+            naped.drive(run, okno, funkcja, driven, {}, owners)
     sekcje: dict[str, Any] = naped.sections(run.calls, owners, driven)
     return sekcje
 

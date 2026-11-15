@@ -312,7 +312,7 @@ class _Playwright(ModuleType):
     @contextmanager
     def sync_playwright() -> Iterator[Any]:
         page = SimpleNamespace(set_default_timeout=lambda timeout: None)
-        context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+        context = SimpleNamespace(new_page=lambda: page, pages=[], add_init_script=lambda script: None, on=lambda event, handler: None)
         browser = SimpleNamespace(new_context=lambda **options: context, close=lambda: None)
         yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
 
@@ -404,6 +404,78 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
     }
 
 
+class _Okno:
+    """Okno przeglądarki atrapy: jego otwarte karty, jak w Playwright świeża lista przy każdym odczycie; każda karta
+    trzyma, co zostawiła w niej funkcja."""
+
+    def __init__(self) -> None:
+        self.otwarte: list[_Karta] = []
+
+    @property
+    def pages(self) -> list[_Karta]:
+        return list(self.otwarte)
+
+    def new_page(self) -> _Karta:
+        karta = _Karta(self)
+        self.otwarte.append(karta)
+        return karta
+
+    def add_init_script(self, script: str) -> None:
+        pass
+
+    def on(self, event: str, handler: object) -> None:
+        pass
+
+
+class _Karta:
+    def __init__(self, okno: _Okno) -> None:
+        self.context = okno
+        self.zostawione: list[str] = []
+
+    def set_default_timeout(self, timeout: float) -> None:
+        pass
+
+    def close(self) -> None:
+        self.context.otwarte.remove(self)
+
+
+def test_funkcja_zastaje_karte_bez_okna_dialogu_i_kart_zostawionych_przez_funkcje_przed_nia(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``konfiguracja`` kończyła z otwartym oknem Ustawień, a ``wykonawcy`` po niej klikał w zamykające się okno (#1585
+    W3 r1, R-STAN-KROKU): każda funkcja jedzie na nowej karcie, a karta poprzedniej, z każdą kartą, którą ta otworzyła,
+    jest wtedy już zamknięta."""
+
+    okno = _Okno()
+    zastane: list[tuple[list[str], int]] = []
+
+    def zostawia_okno_i_karte(run: object, page: _Karta) -> None:
+        page.zostawione += ["okno Ustawień na Wzorcach", "trasa /api/settings przerwana", "wąskie okno"]
+        page.context.new_page().zostawione.append("okno „Napisz do Maksa”")
+
+    def zastaje(run: object, page: _Karta) -> None:
+        zastane.append((page.zostawione, len(page.context.pages)))
+
+    monkeypatch.setitem(drive_centrum.MODULES, "konfiguracja", SimpleNamespace(drive=zostawia_okno_i_karte))
+    monkeypatch.setitem(drive_centrum.MODULES, "wykonawcy", SimpleNamespace(drive=zastaje))
+    monkeypatch.setattr(drive_centrum, "compare", lambda evidence, sections: None)
+
+    @contextmanager
+    def playwright() -> Iterator[SimpleNamespace]:
+        browser = SimpleNamespace(new_context=lambda **options: okno, close=lambda: None)
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
+
+    monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+
+    code = drive_centrum.main(
+        ["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"),
+         "--feature", "konfiguracja", "wykonawcy"]
+    )
+
+    assert (code, zastane, okno.pages) == (0, [([], 1)], [])
+
+
 @pytest.mark.parametrize(("zegar", "porazka"), [("padl", "czekanie"), ("zyje", "czekanie"), ("padl", "sprawdzenie")])
 def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazka_zegara(
     drive_centrum: ModuleType,
@@ -427,7 +499,7 @@ def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazk
 
     monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=waits_past_its_budget))
     page = SimpleNamespace(set_default_timeout=lambda timeout: None, screenshot=lambda **options: b"")
-    context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
+    context = SimpleNamespace(new_page=lambda: page, pages=[], add_init_script=lambda script: None, on=lambda event, handler: None)
 
     @contextmanager
     def playwright_fake() -> Iterator[SimpleNamespace]:

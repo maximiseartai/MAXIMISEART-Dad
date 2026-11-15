@@ -288,9 +288,9 @@ def settings_section(page: Page) -> Locator:
 def open_settings(page: Page, section: str) -> Locator:
     """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title).
 
-    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier feature
-    left open is closing, still visible while it fades out, so the gear waits until it is gone: no feature depends on how
-    the one before it ended (#1589).
+    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier step of
+    the feature left open is closing, still visible while it fades out, so the gear waits until it is gone; a window of
+    an earlier feature ends with its tab (``drive_centrum.feature_tab``).
     """
 
     window = settings_window(page)

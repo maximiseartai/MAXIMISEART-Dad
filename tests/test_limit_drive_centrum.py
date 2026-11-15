@@ -119,7 +119,7 @@ def test_nieudany_zrzut_po_bledzie_drive_nie_zastepuje_przyczyny_bledu(
 
     class Browser:
         def new_context(self, **options: object) -> SimpleNamespace:
-            return SimpleNamespace(new_page=ClosedPage, add_init_script=lambda script: None, on=lambda event, handler: None)
+            return SimpleNamespace(new_page=ClosedPage, pages=[], add_init_script=lambda script: None, on=lambda event, handler: None)
 
         def close(self) -> None:
             pass
@@ -594,7 +594,7 @@ def test_przebieg_ze_strona_bez_arkusza_stylow_pada_najpierw_na_arkuszu_a_potem_
 
     class Browser:
         def new_context(self, **options: object) -> SimpleNamespace:
-            return SimpleNamespace(new_page=Page, add_init_script=lambda script: None, on=handlers.__setitem__)
+            return SimpleNamespace(new_page=Page, pages=[], add_init_script=lambda script: None, on=handlers.__setitem__)
 
         def close(self) -> None:
             pass
