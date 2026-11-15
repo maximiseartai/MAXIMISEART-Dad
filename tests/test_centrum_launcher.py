@@ -241,8 +241,9 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
 def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    real_wait_s = launcher._HEALTH_TIMEOUT_S
-    monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", 0.5)
+    # Zapas 0,8 limitu (1,6 s) mieści cały narzut startu z #1782 (1,34 s ponad limit), choćby padł w czekaniu.
+    wait_s = 2.0
+    monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
     monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
     exit_codes: list[int] = []
 
@@ -254,7 +255,6 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
         start = threading.Thread(
             target=lambda: exit_codes.append(launcher.main(["--port", str(port), "--no-browser"])), daemon=True
         )
-        started = time.monotonic()
         start.start()
         # Obcy program przyjmuje pytanie o health i milczy, aż launcher sam zamknie połączenie (pusty odczyt).
         asked, _ = foreign_program.accept()
@@ -263,9 +263,10 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
             request = b""
             while b"\r\n\r\n" not in request and (chunk := asked.recv(4096)):
                 request += chunk
+            asked_at = time.monotonic()
             after_request = asked.recv(4096)
+            waited = time.monotonic() - asked_at
         start.join(30)
-        took = time.monotonic() - started
         foreign_program.setblocking(False)
         with pytest.raises(BlockingIOError):
             foreign_program.accept()[0].close()
@@ -273,8 +274,7 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
     assert request.startswith(b"GET /api/health ")
     assert after_request == b""
     assert not start.is_alive()
-    # Granica końca kontra czekania na prawdziwym limicie: skrócony limit zostawia startowi 4,5 s pracy (1,84 s w #1782).
-    assert took < real_wait_s
+    assert waited < wait_s * 1.8
     assert exit_codes == [1]
     assert capsys.readouterr().out.splitlines()[0] == (
         f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program."

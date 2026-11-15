@@ -542,6 +542,12 @@ CONSTANT_TIME_BOUNDS = {
     "::time.monotonic() - started < 1.5": (
         "serwer nie odpowiada nigdy, więc bez limitu 0,3 s diagnoza czekałaby bez końca; granica to 5× ten limit"
     ),
+    "test_centrum_launcher.py::test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health"
+    "::waited < wait_s * 1.8": (
+        "obcy program mierzy samo czekanie launchera, od pytania o health do zamknięcia połączenia, bez reszty startu; "
+        "granica poniżej dwóch skróconych limitów (2 s) łapie launcher, który czeka dwa razy dłużej albo na prawdziwym "
+        "limicie 5 s"
+    ),
     "test_centrum_powiadomienia.py::test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje"
     "::took < wait_s * 1.8": (
         "skrzynka trzyma odpowiedź do końca testu, a granica poniżej dwóch skróconych limitów CHECK_WAIT_S (1 s) łapie "
