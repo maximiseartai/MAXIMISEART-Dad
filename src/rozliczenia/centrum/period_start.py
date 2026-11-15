@@ -33,7 +33,7 @@ from rozliczenia.centrum.process_kind import (
     start_from_settings,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
 from rozliczenia.period_folder import PeriodFolders, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
@@ -52,8 +52,8 @@ class PeriodStarts:
     parts: HostParts
 
     def setup(self) -> runs_contract.RunSetup:
-        settings = self.settings.snapshot().folders
-        return runs_contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), settings) for key in _TILES])
+        snapshot = self.settings.snapshot()
+        return runs_contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), snapshot) for key in _TILES])
 
     def prepare(self, request: runs_contract.RunRequest) -> PreparedRun[Any, Any]:
         """Uruchomienie z karty: ``Refusal``, gdy tata czegoś jeszcze nie wskazał albo wybrał coś, czego nie ma."""
@@ -62,8 +62,7 @@ class PeriodStarts:
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
             raise refusal.no_forwarding(kind.title)
         snapshot = self.settings.snapshot()
-        folders = snapshot.folders
-        chosen = kind.required_paths(folders)
+        chosen = kind.required_paths(snapshot)
         if request.mode.dry_run and kind.start.no_preview is not None:
             raise kind.start.no_preview
         period = requested_period(request.period)
@@ -87,9 +86,39 @@ class PeriodStarts:
             case _:
                 assert_never(need)
 
-    def _setup(self, kind: PeriodProcessKind[Any, Any], settings: FolderSettings) -> runs_contract.ProcessSetup:
+    def _setup(self, kind: PeriodProcessKind[Any, Any], snapshot: SettingsSnapshot) -> runs_contract.ProcessSetup:
+        """Kafelek procesu; bez okresów do wyboru, gdy pliku Folderów nie da się teraz przeczytać, bo nikt nie zna
+        folderu okresów, a kartę blokuje zdanie o tym pliku (``settings_blocker``)."""
+
         view = kind.view
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
+        choices: tuple[list[runs_contract.PeriodChoice], str, str | None]
+        match snapshot.folders:
+            case UnreadableFile():
+                choices = [], last_complete_period(self.today()).token, None
+            case FolderSettings() as settings:
+                choices = self._choices(kind, settings, open_templates)
+        periods, preselected, blocker = choices
+        return runs_contract.ProcessSetup(
+            process=kind.key,
+            title=kind.title,
+            creates=kind.start.creates,
+            reads="register" if kind.reads_register else "collective_file",
+            reminder=view.reminder,
+            confirms_readiness=view.confirms_readiness,
+            preview_hint=kind.preview_hint,
+            pricing_modes=list(view.pricing_modes),
+            periods=periods,
+            preselected_period=preselected,
+            blocker=kind.settings_blocker(snapshot) or blocker,
+        )
+
+    def _choices(
+        self, kind: PeriodProcessKind[Any, Any], settings: FolderSettings, open_templates: list[str]
+    ) -> tuple[list[runs_contract.PeriodChoice], str, str | None]:
+        """Okresy do wyboru na kafelku, okres zaznaczony i czego brakuje w folderze okresów."""
+
+        view = kind.view
         previewed = previewed_periods(self.catalog.metrics(kind.key)) if kind.preview_hint is not None else frozenset()
         chooser = kind.start.chooser
         match chooser:
@@ -125,19 +154,7 @@ class PeriodStarts:
                 blocker = None
             case _:
                 assert_never(chooser)
-        return runs_contract.ProcessSetup(
-            process=kind.key,
-            title=kind.title,
-            creates=kind.start.creates,
-            reads="register" if kind.reads_register else "collective_file",
-            reminder=view.reminder,
-            confirms_readiness=view.confirms_readiness,
-            preview_hint=kind.preview_hint,
-            pricing_modes=list(view.pricing_modes),
-            periods=periods,
-            preselected_period=preselected,
-            blocker=kind.settings_blocker(settings) or blocker,
-        )
+        return periods, preselected, blocker
 
 
 def _collective_files(periods_directory: Path | None, rows: list[periods_contract.PeriodRow]) -> dict[str, Path]:

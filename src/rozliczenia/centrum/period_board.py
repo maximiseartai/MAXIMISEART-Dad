@@ -27,7 +27,8 @@ from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, release_if_unreadable
 from rozliczenia.file_state import file_state, path_state
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -260,7 +261,7 @@ def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
     """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”, a folder
     okresów, którego nie da się odczytać, to ``PeriodFolderInaccessible`` z jego odszukania."""
 
-    periods_directory = settings.snapshot().folders.periods_directory_to_read
+    periods_directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
     if periods_directory is None:
         raise refusal.first_choose((PERIODS_DIRECTORY.name,))
     return located_period_folder(periods_directory, requested_period(token))
@@ -276,7 +277,7 @@ def periods_router(
 
     @router.get("", operation_id="getPeriodBoard")
     def board() -> periods_contract.PeriodBoard:
-        return read_board(settings.snapshot().folders.periods_directory, today(), catalog)
+        return read_board(release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory, today(), catalog)
 
     @router.post("/{token}/open", operation_id="openPeriodPath", responses=NOT_FOUND_OR_CONFLICT)
     def open_period_path(token: str, request: periods_contract.OpenRequest) -> common_contract.Opened:

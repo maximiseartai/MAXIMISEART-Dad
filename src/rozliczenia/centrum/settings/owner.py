@@ -12,8 +12,11 @@ wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie wartości domyślne (``_usable``): trasa okna
 Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), i zapis taty,
-który sprawdza nim zmianę (``NotSaved.unreadable``), odmawiają wtedy zdaniem o tym pliku, a procesy liczą treścią z
-Wydania (``_or_release``), jak mówi zdanie pliku w oknie Ustawień.
+który sprawdza nim zmianę (``NotSaved.unreadable``), odmawiają wtedy zdaniem o tym pliku. Migawka dla procesu ma w miejscu
+nieczytelnego pliku Folderów albo pliku pary Reguł ilości i Listy Urządzeń ``UnreadableFile`` z jego nazwą, więc start
+procesu odmawia tym samym zdaniem, a miejsca, które go jeszcze nie mówią, biorą treść z Wydania
+(``release_if_unreadable``); Przypomnienia o raporcie liczą treścią z Wydania (``_or_release``), jak mówi zdanie pliku w
+oknie Ustawień.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -165,19 +168,28 @@ _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | Fie
 
 
 @dataclass(frozen=True)
+class UnreadableFile:
+    """Plik Ustawień ``name`` (nazwa w ``config``) jest, ale system nie daje go teraz czytać: jego treści nikt nie zna,
+    więc proces, który z niego bierze wejście, nie startuje (``refusal.settings_file_unreadable``), zamiast liczyć treścią z
+    Wydania jak tata bez własnego pliku."""
+
+    name: str
+
+
+@dataclass(frozen=True)
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
-    dobre albo domyślne, a przy pliku, którego system nie daje teraz czytać, z Wydania (``_or_release``). Lista
-    Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa
-    ``refusal.workers_unusable``)."""
+    dobre albo domyślne; Foldery przy pliku, którego system nie daje teraz czytać, to ``UnreadableFile``, a Przypomnienia
+    o raporcie treść z Wydania (``_or_release``). Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej
+    listy nie startuje (odmowa ``refusal.workers_unusable``)."""
 
-    folders: FolderSettings
+    folders: FolderSettings | UnreadableFile
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
     reminders: ReminderSettings
-    quantity_rules: QuantityRules
+    quantity_rules: QuantityRules | UnreadableFile
     """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
-    drugiego, ostatnia dobra para."""
+    drugiego, ostatnia dobra para, a przy pliku pary, którego system nie daje teraz czytać, ``UnreadableFile``."""
 
 
 @dataclass(frozen=True)
@@ -188,7 +200,8 @@ class QuantityRulesView:
     ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``), a Reguły ilości zdanie, że
     ich zmiana zapisze się dopiero ze zwolnionym zapisem (``devices_for_dad_rules``). ``source_rules``: reguły z pliku
     albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty. Pliku reguł, którego system nie daje
-    teraz czytać, nikt nie zna (``Unreadable``), choć procesy liczą wtedy regułami z Wydania."""
+    teraz czytać, nikt nie zna (``Unreadable``), a okno pokazuje wtedy reguły z Wydania. ``unreadable``: plik pary
+    (nazwa w ``config``), którego system nie daje teraz czytać; ``None``: oba pliki dało się przeczytać."""
 
     rules: QuantityRules
     rules_problem: FieldProblem | None
@@ -196,6 +209,7 @@ class QuantityRulesView:
     source_rules: tuple[QuantityRule, ...] | Unreadable
     exceptions: tuple[QuantityException, ...]
     exceptions_problem: FieldProblem | None
+    unreadable: str | None
 
 
 @dataclass(frozen=True)
@@ -328,12 +342,17 @@ class CentrumSettings:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
 
         with self._lock:
+            folders = self._observe(FOLDERS)
+            workers = self._observe(WORKERS)
+            inbox_state = inbox.state(self._observe(INBOX))
+            reminders = _or_release(self._observe(REMINDERS), REMINDERS)
+            rules = self._quantity_rules()
             return SettingsSnapshot(
-                folders=_or_release(self._observe(FOLDERS), FOLDERS),
-                workers=self._observe(WORKERS),
-                inbox=inbox.state(self._observe(INBOX)),
-                reminders=_or_release(self._observe(REMINDERS), REMINDERS),
-                quantity_rules=self._quantity_rules().rules,
+                folders=UnreadableFile(FOLDERS.name) if isinstance(folders, Unreadable) else _value(folders, FOLDERS),
+                workers=workers,
+                inbox=inbox_state,
+                reminders=reminders,
+                quantity_rules=rules.rules if rules.unreadable is None else UnreadableFile(rules.unreadable),
             )
 
     def folders(self) -> FolderSettings | Unreadable:
@@ -608,13 +627,15 @@ class CentrumSettings:
         source_rules = _usable(rules, RULES)
         usable_rules, usable_devices = _or_release(rules, RULES), _or_release(devices, DEVICES)
         waiting = devices_for_dad_rules(usable_devices, usable_rules, usable_rules) if self._release() else None
+        unreadable = next((file.name for read, file in ((rules, RULES), (devices, DEVICES)) if isinstance(read, Unreadable)), None)
         return QuantityRulesView(
             quantity_rules(usable_rules, usable_devices),
-            _problem(rules, RULES) or (waiting if isinstance(waiting, FieldProblem) else None),
-            _problem(devices, DEVICES) or taken_problem(usable_rules, usable_devices),
+            _problem(rules, RULES, messages.unreadable) or (waiting if isinstance(waiting, FieldProblem) else None),
+            _problem(devices, DEVICES, messages.unreadable) or taken_problem(usable_rules, usable_devices),
             source_rules,
             _or_release(exceptions, EXCEPTIONS),
-            _problem(exceptions, EXCEPTIONS),
+            _problem(exceptions, EXCEPTIONS, messages.unavailable),
+            unreadable,
         )
 
     def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
@@ -1038,14 +1059,17 @@ def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
     return file.default if isinstance(parsed, FieldProblem) else parsed
 
 
-def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> FieldProblem | None:
+def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T], unreadable: Callable[[str], str]) -> FieldProblem | None:
+    """Problem pliku dla okna Ustawień; ``unreadable`` daje zdanie pliku, którego system nie daje teraz czytać: odmowa
+    procesów (``messages.unreadable``) albo treść z Wydania (``messages.unavailable``)."""
+
     match observed:
         case Good():
             return None
         case Bad(problem=problem):
             return problem
         case Unreadable():
-            return FieldProblem(None, messages.unavailable(file.name))
+            return FieldProblem(None, unreadable(file.name))
 
 
 def _absent_sentence(change: ReleaseChange[Any], applied: Mapping[str, Applied], config: Path) -> str | None:
@@ -1091,6 +1115,14 @@ def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
     jego zdanie w oknie Ustawień (``messages.unavailable``)."""
 
     return file.default if isinstance(observed, Unreadable) else _value(observed, file)
+
+
+def release_if_unreadable(value: T | UnreadableFile, file: SettingsFile[T]) -> T:
+    """Wartość z migawki, a w miejscu pliku, którego system nie daje teraz czytać, treść z Wydania, jak u taty bez
+    własnego pliku: Logi i Diagnoza Urwanego Uruchomienia, Przypomnienia o raporcie i odczyty okna Centrum, które jeszcze
+    nie mówią zdania o tym pliku."""
+
+    return file.default if isinstance(value, UnreadableFile) else value
 
 
 def _reported(row: HistoryRow) -> str:

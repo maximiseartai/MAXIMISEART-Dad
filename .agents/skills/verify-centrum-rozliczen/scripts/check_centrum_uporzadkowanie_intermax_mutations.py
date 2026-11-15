@@ -19,7 +19,7 @@ from silnik_mutacji import Edit, Mutation, check_all
 MUTATIONS = (
     Mutation(
         "karta bez braku INTERMAX w Ustawieniach",
-        (Edit(INTERMAX_RUN, "            blocker=_KIND.settings_blocker(settings),\n", "            blocker=None,\n"),),
+        (Edit(INTERMAX_RUN, "            blocker=_KIND.settings_blocker(snapshot),\n", "            blocker=None,\n"),),
         UPORZADKOWANIE,
         "bez wskazanego INTERMAX karta nie mówi tacie, co ustawić",
     ),
