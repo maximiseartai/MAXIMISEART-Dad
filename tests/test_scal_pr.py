@@ -2736,9 +2736,10 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
     tmp_path: Path, proof: tuple[int, str] | None, passed: bool, fields: dict[str, object], state: str, reasons: list[str], proved: bool
 ) -> None:
     """Status „Werdykt i bramka” wymaga reguły z pola ``Idiom:`` jak merge, więc merge z pominięciem ``tools/scal_pr.py``
-    jej nie omija. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez rejestru korzeni to
-    ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają. Token statusów nie uruchamia kodu PR, więc dowód
-    dostaje ``--bez-kodu-pr``, a merge go nie dostaje (``_proof_arguments`` w testach merge'a)."""
+    nie omija reguły ani postaci jej dowodu. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez
+    rejestru korzeni to ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają. Token statusów nie uruchamia kodu
+    PR, więc dowód dostaje ``--bez-kodu-pr`` i mutacji dowodu typu albo testu nie uruchamia: mutację NIEWYKRYTĄ widzi
+    dopiero merge przez ``tools/scal_pr.py``, który ``--bez-kodu-pr`` nie dostaje (``_proof_arguments`` w testach merge'a)."""
 
     github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof or PROOF_OK, passed=passed)
     github.update(1, **fields)

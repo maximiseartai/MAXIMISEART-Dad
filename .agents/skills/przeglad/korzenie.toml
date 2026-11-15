@@ -142,3 +142,7 @@ przyklad = 1698
 [R-WYNIK-BEZ-GALEZI]
 opis = "Jednoliniowy wynik dla człowieka przepisany z listy wyników cudzego narzędzia bez gałęzi, którą to narzędzie zgłasza obok wyniku, więc człowiek czytający tylko linię jej nie widzi."
 przyklad = 1875
+
+[R-KOD-PR-Z-TOKENEM]
+opis = "Droga z tokenem do zapisu (status pod pull_request_target) woła na kopii PR funkcję repo, która wykonuje kod z kopii (exec_module, import, bieg polecenia), bo granicę „bez kodu PR” trzyma pominięcie jednego wywołania, a nie funkcje, które kopię tylko czytają."
+przyklad = 1912

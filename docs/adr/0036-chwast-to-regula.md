@@ -50,7 +50,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
   - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
   Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył. Autor nie wybiera postaci, więc nie może wybrać tańszej.
-- **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N Wn rk` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
+- **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N Wn rk` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep albo nazwa pliku `dowody-idiomow/<id>.json` z mutacjami, które dowodzą typu, zakazu ruff albo testu) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły. Wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
   Sprawdza to `tools/scal_pr.py` bez osądu i bez linii zgody.
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
