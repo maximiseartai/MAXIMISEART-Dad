@@ -377,7 +377,8 @@ poprawce kliknij `Uruchom ponownie`.
 - Kolory operatora: `CZYNNOŚCI` i `NUMER UMOWY` są zielone przy T-Mobile,
   pomarańczowe przy Orange, jasnoniebieskie przy innych operatorach, a przy
   Netii `CZYNNOŚCI` jest ciemniejsza niebieska. INEA i zlecenie bez operatora
-  zostają bez koloru. Usterka ma różowe `URZĄDZENIA`.
+  zostają bez koloru. Usterka zamiast tego ma tylko różowe `URZĄDZENIA`, bez
+  koloru w `CZYNNOŚCI` i `NUMER UMOWY`.
 - Zlecenia `Instalacja Hurt` mają wpisane `URZĄDZENIA` i dopisaną czynność w
   `CZYNNOŚCI`, np. Orange `gniazdo` i ` - akt pętli LLU`. Zlecenie Orange,
   które okazało się BSA, poprawiasz ręcznie na `nokia` i ` - akt pętli BSA`.
