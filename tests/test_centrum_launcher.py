@@ -241,8 +241,8 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
 def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Zapas 0,8 limitu (1,6 s) mieści cały narzut startu z #1782 (1,34 s ponad limit), choćby padł w czekaniu.
-    wait_s = 2.0
+    # Cały narzut startu na runnerze Windows w #1782 to 1,34 s ponad limit: zapas granic niżej jest od niego większy.
+    wait_s = 2.5
     monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
     monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
     exit_codes: list[int] = []
@@ -255,6 +255,7 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
         start = threading.Thread(
             target=lambda: exit_codes.append(launcher.main(["--port", str(port), "--no-browser"])), daemon=True
         )
+        started = time.monotonic()
         start.start()
         # Obcy program przyjmuje pytanie o health i milczy, aż launcher sam zamknie połączenie (pusty odczyt).
         asked, _ = foreign_program.accept()
@@ -267,6 +268,7 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
             after_request = asked.recv(4096)
             waited = time.monotonic() - asked_at
         start.join(30)
+        took = time.monotonic() - started
         foreign_program.setblocking(False)
         with pytest.raises(BlockingIOError):
             foreign_program.accept()[0].close()
@@ -275,6 +277,7 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
     assert after_request == b""
     assert not start.is_alive()
     assert waited < wait_s * 1.8
+    assert took < wait_s * 2
     assert exit_codes == [1]
     assert capsys.readouterr().out.splitlines()[0] == (
         f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program."
