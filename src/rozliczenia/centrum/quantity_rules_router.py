@@ -133,7 +133,11 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         source_rules = _known_rule(edit, view)
         after = settings.rules_after(edit)
         if isinstance(after, NotSaved):
-            raise refusal.settings_not_saved() if after.unreadable is None else refusal.settings_file_unreadable(after.unreadable)
+            match after:
+                case NotSaved(unreadable=str(file)):
+                    raise refusal.settings_file_unreadable(file)
+                case NotSaved():
+                    raise refusal.settings_not_saved()
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(source_rules, after.rules)
