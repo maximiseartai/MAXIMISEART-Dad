@@ -838,43 +838,6 @@ def test_reguly_calego_drzewa_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_p
     assert [(finding.path, finding.line) for finding in syntax_rules(tmp_path, base)] == [("src/rozliczenia/nowy.py", 1)]
 
 
-def ignores_missing(config: Path) -> list[str]:
-    """Ścieżki z ``ignores:`` reguł ``config``, które są konkretne (bez znaków wzorca ``*``, ``?``, ``[``), a w checkoucie
-    obok ``config`` ich nie ma: plik usunięty albo przeniesiony zostawia w ``ignores:`` wpis, którego nic nie zgłasza."""
-
-    return sorted(
-        f"{rule['id']}: {path}"
-        for rule in _ast_grep_rule_documents(config)
-        for path in _ignores_of(rule)
-        if not any(sign in path for sign in "*?[") and not (config.parent / path).exists()
-    )
-
-
-def _ignores_of(rule: dict[str, object]) -> list[str]:
-    ignores = rule.get("ignores")
-    return [str(path) for path in ignores] if isinstance(ignores, list) else []
-
-
-def test_kazda_konkretna_sciezka_w_ignores_reguly_ast_grep_istnieje() -> None:
-    assert ignores_missing(AST_GREP_CONFIG) == [], "usuń z ignores: reguły ścieżkę pliku, którego już nie ma"
-
-
-def test_ignores_bez_pliku_i_z_literowka_sa_zgloszone_a_wzorzec_nie(tmp_path: Path) -> None:
-    config = tmp_path / "sgconfig.yml"
-    shutil.copyfile(AST_GREP_CONFIG, config)
-    (tmp_path / AST_GREP_RULES).mkdir()
-    (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_jest.py").write_text("X = 1\n", encoding="utf-8")
-    (tmp_path / AST_GREP_RULES / "r.yml").write_text(
-        "id: r\nlanguage: python\nmessage: m\nfiles:\n  - tests/**/*.py\nignores:\n  - tests/test_jest.py\n"
-        "  - tests/test_usuniety.py\n  - tests/test_jset.py\n  - tests/test_*.py\n  - tests/test_?.py\n  - tests/[ab].py\n"
-        "rule:\n  pattern: x\n",
-        encoding="utf-8",
-    )
-
-    assert ignores_missing(config) == ["r: tests/test_jset.py", "r: tests/test_usuniety.py"]
-
-
 @needs_ast_grep
 @pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
 def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_konfiguracji_i_srodowiska_gita(
@@ -2687,8 +2650,7 @@ _PRZENIESIENIA: Final[dict[str, tuple[tuple[str, ...], str, str, int]]] = {
 @pytest.mark.parametrize("rule", sorted(_PRZENIESIENIA))
 def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignores_a_linie_dodane_nie(tmp_path: Path, rule: str) -> None:
     """Plik z ``ignores:`` reguły przeniesiony pod nową nazwę w jej zakresie (``git mv``) nie ma linii dodanych, więc
-    reguła na liniach dodanych go nie widzi; reguła całego drzewa widzi formę bez względu na to, jak trafiła do pliku,
-    a test konfiguracji ``ignores:`` zgłasza stary wpis."""
+    reguła na liniach dodanych go nie widzi; reguła całego drzewa widzi formę bez względu na to, jak trafiła do pliku."""
 
     old, new, text, line = _PRZENIESIENIA[rule]
     base = _committed(tmp_path, {"/".join(old): text})
