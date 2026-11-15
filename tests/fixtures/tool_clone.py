@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import random
 import shutil
 import socket
 import subprocess
@@ -250,11 +251,27 @@ def _next_release(tags: list[str]) -> str:
     return f"v{major}.{minor}.{patch + 1}"
 
 
+FREE_PORTS = range(20000, 32768)
+"""Porty ``free_port``: poniżej zakresu, z którego system sam daje porty (bind na port 0, port źródłowy połączenia):
+Linux od 32768, Windows i macOS od 49152."""
+
+
 def free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port: int = probe.getsockname()[1]
-        return port
+    """Port, na którym teraz nikt nie słucha, dla procesu, który test uruchamia z numerem portu.
+
+    Proces zbinduje go dopiero po starcie, więc port spoza zakresu systemu nie trafi w tym czasie do serwera, który bierze
+    port od systemu (Atrapa efenix sąsiedniego workera pytest), ani do połączenia jako port źródłowy (#1917, #1918). Proces
+    testu, który może sam wziąć port od systemu i go podać, nie potrzebuje ``free_port`` (``centrum_w_procesie``).
+    """
+
+    for port in random.sample(FREE_PORTS, 50):
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise AssertionError(f"Żaden z 50 losowych portów z {FREE_PORTS} nie jest wolny.")
 
 
 def centrum_health(
