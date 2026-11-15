@@ -263,6 +263,21 @@ MUTATIONS = (
         "pozycja z ilością większą niż plik daje błąd kwoty zamiast Ostrzeżenia Emmetta z pozycją",
         NEW,
     ),
+    Mutation(
+        "#908: okno staje na padniętej propozycji Emmetta, zanim kliknie „Załaduj do zlecenia”",
+        (
+            Edit(
+                BROWSER,
+                "        load = self._element(Element.EMMETT_LOAD, PagePart.EMMETT)\n",
+                "        if seen is Proposal.LOST:\n"
+                "            raise WindowStop.of(PagePart.EMMETT, HttpStatus(500))\n"
+                "        load = self._element(Element.EMMETT_LOAD, PagePart.EMMETT)\n",
+            ),
+        ),
+        explorer("odpowiedzi", "zaladuj-do-zlecenia"),
+        "awaria, która zadziałała na żądaniu przed swoim celem, wygląda jak luka modelu zamiast naruszenia przyczyny",
+        NEW,
+    ),
     *(mutation for parts in BOUNDARIES.values() for mutations in parts.values() for mutation in mutations),
     Mutation(
         "okno klika Przekazanie do akceptacji",

@@ -770,9 +770,10 @@ class Run:
     snapshots: dict[str, Disk] = field(default_factory=dict)
     injected: bool = True
     """The fault took effect before the run ended: the browser side did what it asks (``TAB_CLOSED``, ``LOGIN_*``), or
-    the proxy gave its request the fault. Up to that request a run with a fault is the run without one, so a window
-    that stopped before it (a step on a busy machine over ``LIMIT_MS``) checked nothing of the fault. A case whose fault
-    did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
+    the proxy gave any request a fault (``faulted``, which ``Proxy`` decides, also the failed proposal before the refused
+    „Załaduj do zlecenia” of ``REFUSED_NO_PROPOSAL``). Up to the first such request a run with a fault is the run
+    without one, so a window that stopped before it (a step on a busy machine over ``LIMIT_MS``) checked nothing of the
+    fault. A case whose fault did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
 
 
 @dataclass(frozen=True)
@@ -894,7 +895,7 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
         logs=logs_text(outcome, after.journal),
         error=error,
         snapshots=taken,
-        injected=dad_acted if by_dad else plan.target is None or plan.target in faulted,
+        injected=dad_acted if by_dad else plan.fault is None or bool(faulted),
     )
 
 
