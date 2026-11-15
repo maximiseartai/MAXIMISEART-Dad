@@ -51,6 +51,51 @@ _NAVIGATION_HELPER = (
     " zgłasza błędu przy statusie 4xx i 5xx"
 )
 
+# Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
+# Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
+# zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
+PARSERS = frozenset(
+    """
+    .agents/skills/verify-centrum-rozliczen/scripts/centrum_self_test.py
+    tests/fixtures/skladnia.py
+    tests/test_decyzje_na_faktach.py
+    tests/test_eksplorator_w_procesie.py
+    tests/test_granice_importow.py
+    tests/test_granice_wyjatkow.py
+    tests/test_jeden_odczyt_skoroszytu.py
+    tests/test_jeden_zapis_skoroszytu.py
+    tests/test_komunikaty_expect.py
+    tests/test_limit_drive_centrum.py
+    tests/test_mapy_funkcji.py
+    tests/test_potomne.py
+    tests/test_rodzaj_zatrzymania.py
+    tests/test_skrypty_bez_instalacji.py
+    tests/test_spis_narzedzi.py
+    tests/test_struktura_testow.py
+    tests/test_tabela_zatrzyman_efenix.py
+    tests/test_wywolanie_skryptow_skilli.py
+    tools/lib/komunikat_mapy.py
+    tools/lib/kroki_skilli.py
+    tools/lib/niestabilne_testy.py
+    tools/lib/rozjazd_modelu.py
+    tools/lib/wplyw_zmiany.py
+    tools/mutacje_zmiany.py
+    tools/rownowaznosc.py
+    """.split()
+)
+PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
+_PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
+_NEW_PARSER = (
+    "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
+    " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md: (a) jedna droga i jeden"
+    " właściciel, (b) typ albo reguła ruff (banned-api TID251 z msg „użyj X” w pyproject.toml), (c) test zachowania,"
+    " (d) dopiero zapadka"
+    " w tests/test_zapadki.py; plik, który mimo to parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w"
+    " opisie PR"
+)
+_GONE_PARSER = "plik zniknął: usuń go z PARSERS w tests/test_zapadki.py"
+
+
 def _git(root: Path, *args: str) -> str:
     """Wyjście ``git``; bajt spoza UTF-8 (różnica pliku w innym kodowaniu, np. cp1250) staje się znakiem zastępczym."""
 
@@ -508,6 +553,156 @@ def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch)
     assert _base() == "galaz-rodzica"
 
 
+def parsers_off_entry(root: Path, base: str) -> list[str]:
+    """Pliki zmiany od ``base``, na których wpis ``PARSERS`` rozjeżdża się ze stanem, każdy z poleceniem naprawy.
+
+    Łapie tylko plik ``*.py`` w ``tests/``, ``tools/`` albo ``.agents/skills/`` (bez ``tests/test_zapadki.py``), który
+    zmiana dodaje, zmienia albo usuwa (zmiana nazwy to usunięcie i dodanie), gdy po zmianie jego tekst, z komentarzami i
+    napisami, ma ``ast.parse(``, ``ast.walk(`` albo ``tokenize.``, a ``PARSERS`` go nie ma: nowy plik z ręcznym
+    parserem albo istniejący, do którego zmiana dopisała pierwsze takie wywołanie.
+    Z wpisu każe usunąć tylko plik z ``PARSERS``, którego zmiana usuwa.
+    Plik z ``PARSERS``, z którego zmiana usuwa ostatnie takie wywołanie, przechodzi i zostaje we wpisie, bo zapadka pada
+    tylko na dodanym: inaczej nocna mutacja, która usuwa linię parsera, byłaby WYKRYTA przez wpis, a nie przez test
+    zachowania, i linia bez testu nie trafiłaby do ``Przeżyte mutacje z #N`` (#670).
+    Nie łapie matchera dopisanego do pliku z ``PARSERS`` ani do ``tests/test_zapadki.py``, regexu,
+    ``from ast import parse``, ``import ast as a``, samego ``import tokenize``, ``from tokenize import …``,
+    ``compile(…, ast.PyCF_ONLY_AST)``, ``ast.NodeVisitor``, wywołania pomocnika, który parsuje za wywołującego
+    (``tests/fixtures/skladnia.py``), ani parsera w ``src/`` i poza tymi trzema folderami; te zostają przeglądowi.
+    Pliku z ``PARSERS``, którego zmiana nie dotyka, nie sprawdza.
+    """
+
+    patterns = [f"{folder}/*.py" for folder in PARSER_FOLDERS]
+    changed = {
+        *_git(root, "diff", "--no-renames", "--name-only", base, "--", *patterns).splitlines(),
+        *_git(root, "ls-files", "--others", "--exclude-standard", "--", *patterns).splitlines(),
+    }
+    found = []
+    for path in sorted(changed - {"tests/test_zapadki.py"}):
+        file = root / path
+        parses = file.is_file() and _PARSER_CALL.search(file.read_text(encoding="utf-8")) is not None
+        if parses and path not in PARSERS:
+            found.append(f"{path}: {_NEW_PARSER}")
+        elif not file.is_file() and path in PARSERS:
+            found.append(f"{path}: {_GONE_PARSER}")
+    return found
+
+
+def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+
+    assert parsers_off_entry(ROOT, base) == []
+
+
+# Plik z ``PARSERS``, który testy zapadki kładą w swoim repozytorium (zmienna, nie napis, z powodu jak przy ``PARSERS``).
+_IN_ENTRY = min(PARSERS)
+
+
+def _repo_with_parser(root: Path) -> str:
+    """Repozytorium z jednym plikiem z ``PARSERS`` i jednym bez parsera; zwraca commit bazy."""
+
+    for path, text in {
+        _IN_ENTRY: "import ast\n\ntree = ast.parse(source)\n",
+        "tests/test_zwykly.py": "def test_zwykly() -> None:\n    assert True\n",
+    }.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost", "commit", "-q", "-m", "baza")
+    return _git(root, "rev-parse", "HEAD").strip()
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        ("tests/test_nowy.py", "import ast\n\nnodes = list(ast.walk(ast.parse(source)))\n"),
+        ("tests/fixtures/nowy.py", "for node in ast.walk(tree):\n    pass\n"),
+        ("tools/lib/nowy.py", "import tokenize\n\ntokens = tokenize.generate_tokens(readline)\n"),
+        (".agents/skills/verify-x/scripts/nowy.py", "tree = ast.parse(path.read_text())\n"),
+        ("tests/test_zwykly.py", "import ast\n\n\ndef test_zwykly() -> None:\n    assert ast.parse('x')\n"),
+    ],
+    ids=["nowy-test", "nowy-pomocnik", "tokenize-w-tools", "skrypt-skilla", "pierwsze-wywolanie-w-istniejacym"],
+)
+def test_zapadka_parsera_lapie_plik_spoza_wpisu_z_recznym_parserem(tmp_path: Path, path: str, text: str) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / path).write_text(text, encoding="utf-8")
+
+    assert parsers_off_entry(tmp_path, base) == [f"{path}: {_NEW_PARSER}"]
+
+
+def test_zapadka_parsera_widzi_nowy_plik_oznaczony_git_add_n(tmp_path: Path) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / "tests" / "test_nowy.py").write_text("tree = ast.parse(source)\n", encoding="utf-8")
+    _git(tmp_path, "add", "-N", "tests/test_nowy.py")
+
+    assert parsers_off_entry(tmp_path, base) == [f"tests/test_nowy.py: {_NEW_PARSER}"]
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        (_IN_ENTRY, "import ast\n\ntree = ast.parse(source)\nnodes = list(ast.walk(tree))\n"),
+        ("tests/test_nowy.py", "import re\n\nCALL = re.compile(r'open\\(')\n"),
+        ("tests/test_nowy.py", "from ast import parse\n\ntree = parse(source)\n"),
+        ("tests/test_nowy.py", "import ast as syntax\n\ntree = syntax.parse(source)\n"),
+        ("tests/test_nowy.py", "import tokenize\n"),
+        ("tests/test_nowy.py", "from tokenize import generate_tokens\n\ntokens = generate_tokens(readline)\n"),
+        ("tests/test_nowy.py", "from tests.fixtures.skladnia import calls\n\nfound = calls(tree)\n"),
+        ("tests/test_nowy.py", "tree = myast.parse(source)\nvalue = node.ast.walk(x)\n"),
+        ("src/pakiet/nowy.py", "tree = ast.parse(source)\n"),
+        ("tests/test_zapadki.py", "tree = ast.parse(source)\n"),
+    ],
+    ids=[
+        "matcher-w-pliku-z-wpisu",
+        "regex",
+        "from-ast-import",
+        "alias-modulu",
+        "import-tokenize",
+        "from-tokenize-import",
+        "pomocnik",
+        "inna-nazwa-przed-kropka",
+        "src",
+        "plik-zapadek",
+    ],
+)
+def test_zapadka_parsera_przepuszcza_formy_spoza_granicy(tmp_path: Path, path: str, text: str) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / path).write_text(text, encoding="utf-8")
+
+    assert parsers_off_entry(tmp_path, base) == []
+
+
+@pytest.mark.parametrize(
+    ("removed", "written", "expected"),
+    [
+        (True, {}, [f"{_IN_ENTRY}: {_GONE_PARSER}"]),
+        (False, {_IN_ENTRY: "from tests.fixtures.skladnia import calls\n"}, []),
+        (
+            True,
+            {"tests/test_granice.py": "import ast\n\ntree = ast.parse(source)\n"},
+            [f"{_IN_ENTRY}: {_GONE_PARSER}", f"tests/test_granice.py: {_NEW_PARSER}"],
+        ),
+    ],
+    ids=["usuniety", "bez-wywolania", "nowa-nazwa"],
+)
+def test_zapadka_parsera_kaze_usunac_z_wpisu_tylko_plik_ktory_zniknal(
+    tmp_path: Path, removed: bool, written: dict[str, str], expected: list[str]
+) -> None:
+    base = _repo_with_parser(tmp_path)
+    if removed:
+        (tmp_path / _IN_ENTRY).unlink()
+    for path, text in written.items():
+        (tmp_path / path).write_text(text, encoding="utf-8")
+    # W indeksie, jak w commicie gałęzi, git widzi przeniesienie pliku jako zmianę nazwy.
+    _git(tmp_path, "add", "-A")
+
+    assert parsers_off_entry(tmp_path, base) == expected
+
+
 def _empty_base(root: Path) -> str:
     """Repozytorium gita w ``root`` z pustym commitem bazy, więc każdy plik zapisany potem jest dodany; zwraca bazę."""
 
@@ -528,7 +723,6 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
-    "reczny-parser-pythona": "nazwij korzeń poprawki",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
@@ -591,7 +785,6 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 REGULY_CALEGO_DRZEWA: Final = (
     "historia-w-docstringu",
     "komentarz-w-src",
-    "reczny-parser-pythona",
     "stan-pliku-poza-file-state",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
@@ -2479,57 +2672,11 @@ def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_pa
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
-_PARSER_RULE = "reczny-parser-pythona"
-# Plik z listy plików, którym wolno parsować (``ignores:`` reguły parsera), jako części ścieżki, nie napis z ``/``, bo
-# napis ścieżki w pliku testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``).
-_Z_LISTY: Final = ("tests", "test_granice_importow.py")
-_PARSER = "import ast\n\ntree = ast.parse(source)\n"
-# Ścieżka i tekst dodanego pliku → linie, które reguła ``reczny-parser-pythona`` zgłasza: ręczny parser Pythona w pliku
-# spoza listy w każdej postaci, którą reguła czyta, i postacie bez parsera, które przepuszcza.
-_PROBKI_PARSERA: Final[list[tuple[str, str, list[int]]]] = [
-    ("tests/test_nowy.py", "import ast\n\ntree = ast.parse(source)\nnodes = list(ast.walk(tree))\n", [3, 4]),
-    ("tests/fixtures/nowy.py", "import ast\n\nfor node in ast.walk(tree):\n    pass\n", [3]),
-    ("tools/lib/nowy.py", "import tokenize\n\ntokens = tokenize.generate_tokens(readline)\n", [3]),
-    (".agents/skills/verify-x/scripts/nowy.py", "import ast\n\ntree = ast.parse(path.read_text())\n", [3]),
-    ("tests/test_nowy.py", "import ast\n\ntree = ast.parse(\n    source,\n)\n", [3]),
-    ("tests/test_nowy.py", "X = 1  # potem ast.parse(source)\n", [1]),
-    ("tests/test_nowy.py", 'CODE = "tokens = tokenize.generate_tokens(readline)"\n', [1]),
-    ("tests/test_nowy.py", "X = 1  # i ast.walk(tree)\n", [1]),
-    ("tests/test_nowy.py", "import re\n\nCALL = re.compile(r'open\\(')\n", []),
-    ("tests/test_nowy.py", "import tokenize\n", []),
-    ("tests/test_nowy.py", "tree = myast.parse(source)\nvalue = node.ast.walk(x)\n", []),
-    ("tests/test_nowy.py", "tree = ast.parsed(source)\n", []),
-    ("tests/test_nowy.py", "tokens = node.tokenize.generate(x)\nvalue = tokenizer.x\n", []),
-    ("tests/test_nowy.py", "X = 1  # myast.parse(source) i node.ast.walk(x)\n", []),
-    ("tests/test_nowy.py", "X = 1  # ast.parse bez nawiasu, moduł tokenize bez kropki\n", []),
-]
-
-
-@needs_ast_grep
-@pytest.mark.parametrize(("path", "text", "lines"), _PROBKI_PARSERA)
-def test_regula_parsera_zglasza_reczny_parser_pythona_a_nie_inne_nazwy(tmp_path: Path, path: str, text: str, lines: list[int]) -> None:
-    base = _empty_base(tmp_path)
-    (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-    (tmp_path / path).write_text(text, encoding="utf-8")
-
-    assert _findings_of(_PARSER_RULE, tmp_path, base) == [(path, line) for line in lines]
-
-
-@needs_ast_grep
-def test_regula_parsera_zglasza_tylko_tests_tools_i_skrypty_skilli_poza_lista(tmp_path: Path) -> None:
-    base = _empty_base(tmp_path)
-    for path in ("tests/test_nowy.py", "tools/nowy.py", ".agents/skills/s/scripts/nowy.py", "src/pakiet/nowy.py", "tests/test_zapadki.py", "/".join(_Z_LISTY)):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text(_PARSER, encoding="utf-8")
-
-    assert _findings_of(_PARSER_RULE, tmp_path, base) == [(".agents/skills/s/scripts/nowy.py", 3), ("tests/test_nowy.py", 3), ("tools/nowy.py", 3)]
-
-
-# Reguła z zapadki → plik z jej ignores: (części ścieżki, nie napis z ``/``, z powodu jak przy ``_Z_LISTY``), nowa nazwa
+# Reguła z zapadki → plik z jej ignores: (części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest
+# zależnością testu w grafie wpływu zmiany, ``tools/lib/wplyw_zmiany.py``), nowa nazwa
 # w jej zakresie, tekst z jej formą i linia formy. Zapadka biegła w CI na całym ``tests/`` i ``src/`` od pustego drzewa
 # (``test_zapadki_nie_zglaszaja_zadnej_linii_testow``), więc reguła z niej biegnie na całym drzewie.
 _PRZENIESIENIA: Final[dict[str, tuple[tuple[str, ...], str, str, int]]] = {
-    _PARSER_RULE: (_Z_LISTY, "tests/test_nowy.py", _PARSER, 3),
     "stan-pliku-poza-file-state": (("src", "rozliczenia", "file_state.py"), "src/rozliczenia/kopia.py", "def taken(path):\n    return path.exists()\n", 2),
     "watki-workera": (("tests", "fixtures", "linie_watkow.py"), "tests/test_watkow.py", "import threading\nstart = threading.Thread.start\n", 2),
     "wlasna-wyrocznia-numeru": (("tests", "test_zapadki.py"), "tests/test_numeru.py", 'import re\n\nNUMBER = re.compile(r"(?<![0-9])9401")\n', 3),
@@ -2549,37 +2696,3 @@ def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignor
 
     assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
     assert _findings_of(rule, tmp_path, base) == []
-
-
-# Znane luki reguły ``reczny-parser-pythona`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``
-# z ręcznym parserem Pythona, który mimo to przechodzi przez reguły ast-grep i ruff.
-ZNANE_LUKI_PARSERA: Final[dict[str, str]] = {
-    "funkcja z from-importu: from ast import parse": "from ast import parse\n\ntree = parse('x = 1')\n",
-    "moduł pod inną nazwą: import ast as syntax": "import ast as syntax\n\ntree = syntax.parse('x = 1')\n",
-    "funkcja z from-importu: from tokenize import": "import io\nfrom tokenize import generate_tokens\n\ntokens = list(generate_tokens(io.StringIO('x').readline))\n",
-    "klasa parsera: ast.NodeVisitor": "import ast\n\n\nclass Visitor(ast.NodeVisitor):\n    pass\n",
-    "kompilacja do drzewa: compile z ast.PyCF_ONLY_AST": "import ast\n\ntree = compile('x = 1', 'x', 'exec', ast.PyCF_ONLY_AST)\n",
-    "nazwa modułu i funkcji w osobnych liniach: kropka w następnej linii": "import ast\n\ntree = (ast\n    .parse('x = 1'))\n",
-    "pomocnik, który parsuje za wywołującego": "from tests.fixtures.skladnia import calls\n\n\ndef found(tree: object) -> object:\n    return calls(tree)\n",
-}
-
-
-@needs_ast_grep
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_znane_luki_reguly_parsera_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
-    """Reguła ``reczny-parser-pythona`` czyta wywołanie ``ast.parse`` i ``ast.walk`` pod pełną nazwą, atrybut na nazwie
-    ``tokenize`` i ten sam tekst w komentarzu albo napisie; funkcja z from-importu, moduł pod aliasem, klasa i flaga
-    kompilacji ``ast``, nazwa modułu i funkcji rozdzielone złamaniem linii przed kropką oraz pomocnik, który parsuje
-    za wywołującego, to znane luki."""
-
-    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
-
-    base = _empty_base(tmp_path)
-    (folder := tmp_path / "tests").mkdir()
-    pliki = zapisz(ZNANE_LUKI_PARSERA, folder)
-    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
-    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
-    for finding in syntax_rules(tmp_path, base):
-        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
-
-    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_parsera_przechodza_przez_reguly_ast_grep_i_ruff")
