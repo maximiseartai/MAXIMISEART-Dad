@@ -128,7 +128,7 @@ opis = "Decyzje Maksa przepisane własnymi słowami do ADR i skilla bez porówna
 przyklad = 1457
 
 [R-STAN-KROKU]
-opis = "Krok skilla albo testu zostawia włączoną pracę w tle albo zmieniony stan, a późniejsza funkcja tego samego przebiegu zakłada stan sprzed niego."
+opis = "Krok skilla albo testu zostawia włączoną pracę w tle albo zmieniony stan dysku lub serwera, a późniejsza funkcja tego samego przebiegu zakłada stan sprzed niego (stan karty przeglądarki napędu Centrum kończy się z funkcją w `feature_tab`)."
 przyklad = 1568
 
 [R-FORMAT-ZAPISU]

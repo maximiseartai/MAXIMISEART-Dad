@@ -35,9 +35,12 @@ server's answer and the files on disk.
 
 CI runs `run_centrum_verification.py --feature all` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, in up to `ci-czesci` parts: part k of n (`MUTACJE_CZESC=k/n`) drives the k-th of n consecutive runs of
-the order of `all` (`FEATURES` in `scripts/drive/__init__.py`) on its own fixture and Centrum, so a feature must also pass
-right after the fixture or after any earlier feature of that order: a feature that finds an earlier feature's state
-names it in `needs` of its `Feature`, and the drive drives that one first when it has not yet (`powiadomienia` needs
+the order of `all` (`FEATURES` in `scripts/drive/__init__.py`) on its own fixture and Centrum. Each feature drives a
+new tab of the run's window (`feature_tab` in `scripts/drive_centrum.py`), closed with every tab it opened when the
+feature ends, so a window, dialog, route, listener or size an earlier feature left reaches no later one; the disk, the
+server and the window's `localStorage` carry over. So a feature must also pass right after the fixture or after any
+earlier feature of that order: a feature that finds an earlier feature's state on disk or on the server names it in
+`needs` of its `Feature`, and the drive drives that one first when it has not yet (`powiadomienia` needs
 `zgloszenie` and `uwaga-taty`). A pull
 request runs the parts of one n, and the night on `main` runs every part of every n up to `ci-czesci` after a change that
 picks this check on a pull request. A red run leaves its evidence in the `evidence-<job id>-<attempt>` artifact (e.g.

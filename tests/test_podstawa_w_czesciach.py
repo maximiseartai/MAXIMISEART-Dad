@@ -8,7 +8,7 @@ zrzuty i dowody, wariant fixture'a i pomiar na wyłączność, a ``Run.capture``
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from functools import partial
@@ -20,11 +20,12 @@ import subprocess
 import sys
 import time
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
 from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from jednostka import ZMIENNA_CZESCI
 import kroki_skilli
 import skrypt_skilla
@@ -404,11 +405,27 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
     }
 
 
+class _Przegladarka:
+    """Przeglądarka atrapy: jej okna (konteksty), każde ze swoimi kartami."""
+
+    def __init__(self) -> None:
+        self.okna: list[_Okno] = []
+
+    def new_context(self, **options: object) -> _Okno:
+        okno = _Okno(self)
+        self.okna.append(okno)
+        return okno
+
+    def close(self) -> None:
+        pass
+
+
 class _Okno:
     """Okno przeglądarki atrapy: jego otwarte karty, jak w Playwright świeża lista przy każdym odczycie; każda karta
     trzyma, co zostawiła w niej funkcja."""
 
-    def __init__(self) -> None:
+    def __init__(self, browser: _Przegladarka) -> None:
+        self.browser = browser
         self.otwarte: list[_Karta] = []
 
     @property
@@ -439,31 +456,24 @@ class _Karta:
         self.context.otwarte.remove(self)
 
 
-def test_funkcja_zastaje_karte_bez_okna_dialogu_i_kart_zostawionych_przez_funkcje_przed_nia(
-    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``konfiguracja`` kończyła z otwartym oknem Ustawień, a ``wykonawcy`` po niej klikał w zamykające się okno (#1585
-    W3 r1, R-STAN-KROKU): każda funkcja jedzie na nowej karcie, a karta poprzedniej, z każdą kartą, którą ta otworzyła,
-    jest wtedy już zamknięta."""
+def _zastane_po(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, konfiguracja: Callable[[Any, _Karta], None],
+    wykonawcy: Callable[[Any, _Karta], list[str]],
+) -> tuple[int, list[list[str]], _Przegladarka]:
+    """Przebieg ``konfiguracja`` → ``wykonawcy`` w prawdziwym ``drive_centrum.main``: kod wyjścia, co ``wykonawcy``
+    zastaje (lista z każdego jej przejazdu) i przeglądarka atrapy po przebiegu."""
 
-    okno = _Okno()
-    zastane: list[tuple[list[str], int]] = []
-
-    def zostawia_okno_i_karte(run: object, page: _Karta) -> None:
-        page.zostawione += ["okno Ustawień na Wzorcach", "trasa /api/settings przerwana", "wąskie okno"]
-        page.context.new_page().zostawione.append("okno „Napisz do Maksa”")
-
-    def zastaje(run: object, page: _Karta) -> None:
-        zastane.append((page.zostawione, len(page.context.pages)))
-
-    monkeypatch.setitem(drive_centrum.MODULES, "konfiguracja", SimpleNamespace(drive=zostawia_okno_i_karte))
-    monkeypatch.setitem(drive_centrum.MODULES, "wykonawcy", SimpleNamespace(drive=zastaje))
+    przegladarka = _Przegladarka()
+    zastane: list[list[str]] = []
+    monkeypatch.setitem(drive_centrum.MODULES, "konfiguracja", SimpleNamespace(drive=konfiguracja))
+    monkeypatch.setitem(
+        drive_centrum.MODULES, "wykonawcy", SimpleNamespace(drive=lambda run, page: zastane.append(wykonawcy(run, page)))
+    )
     monkeypatch.setattr(drive_centrum, "compare", lambda evidence, sections: None)
 
     @contextmanager
     def playwright() -> Iterator[SimpleNamespace]:
-        browser = SimpleNamespace(new_context=lambda **options: okno, close=lambda: None)
-        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: przegladarka))
 
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
     (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
@@ -472,8 +482,71 @@ def test_funkcja_zastaje_karte_bez_okna_dialogu_i_kart_zostawionych_przez_funkcj
         ["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"),
          "--feature", "konfiguracja", "wykonawcy"]
     )
+    return code, zastane, przegladarka
 
-    assert (code, zastane, okno.pages) == (0, [([], 1)], [])
+
+def _w_kartach(run: object, page: _Karta) -> list[str]:
+    """Co zostało w każdej otwartej karcie każdego okna przeglądarki."""
+
+    return [each for okno in page.context.browser.okna for karta in okno.pages for each in karta.zostawione]
+
+
+def test_funkcja_zastaje_karte_bez_okna_dialogu_i_kart_zostawionych_przez_funkcje_przed_nia(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``konfiguracja`` kończyła z otwartym oknem Ustawień, a ``wykonawcy`` po niej klikał w zamykające się okno (#1585
+    W3 r1, R-STAN-KROKU): każda funkcja jedzie na nowej karcie, a karta poprzedniej, z każdą kartą, którą ta otworzyła,
+    jest wtedy już zamknięta.
+
+    Granica: ``feature_tab`` kończy stan karty po funkcji, nie po kroku, więc okno zostawione przez krok dla
+    następnego kroku tej samej funkcji zostaje; tego nie wyrazi próbka między funkcjami (``ZNANE_LUKI_KARTY``)."""
+
+    def zostawia_okno_i_karte(run: object, page: _Karta) -> None:
+        page.zostawione += ["okno Ustawień na Wzorcach", "trasa /api/settings przerwana", "wąskie okno"]
+        page.context.new_page().zostawione.append("okno „Napisz do Maksa”")
+
+    code, zastane, przegladarka = _zastane_po(drive_centrum, monkeypatch, tmp_path, zostawia_okno_i_karte, _w_kartach)
+
+    assert (code, zastane, [okno.pages for okno in przegladarka.okna]) == (0, [[]], [[]])
+
+
+# Znane luki karty funkcji (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z ``konfiguracja``, która coś
+# zostawia, i ``wykonawcy``, która zwraca, co z tego zastaje. ``feature_tab`` przepuszcza próbkę, gdy ``wykonawcy``
+# zastaje cokolwiek.
+ZNANE_LUKI_KARTY: Final = {
+    "zamyka tylko karty okna przebiegu: drugie okno przeglądarki, które funkcja otworzyła sama": (
+        "def konfiguracja(run, page):\n"
+        "    page.context.browser.new_context().new_page().zostawione.append('okno efenix')\n"
+        "\n"
+        "\n"
+        "def wykonawcy(run, page):\n"
+        "    return [each for okno in page.context.browser.okna for karta in okno.pages for each in karta.zostawione]\n"
+    ),
+    "kończy tylko stan przeglądarki: stan dysku albo serwera, który funkcja zostawiła": (
+        "def konfiguracja(run, page):\n"
+        "    (run.root / 'zostawiony.xlsx').write_text('pusty Plik zbiorczy', encoding='utf-8')\n"
+        "\n"
+        "\n"
+        "def wykonawcy(run, page):\n"
+        "    return [each.read_text(encoding='utf-8') for each in run.root.glob('zostawiony.xlsx')]\n"
+    ),
+}
+
+
+def test_znane_luki_karty_funkcji_przechodza_przez_feature_tab(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_KARTY, tmp_path).items()):
+        probka = modul(plik)
+        korzen = tmp_path / f"przebieg-{numer}"
+        korzen.mkdir()
+        with monkeypatch.context() as m:
+            code, zastane, _ = _zastane_po(drive_centrum, m, korzen, probka.konfiguracja, probka.wykonawcy)
+        assert code == 0, opis
+        zgloszenia[opis] = [] if zastane[0] else ["feature_tab kończy to z kartą funkcji"]
+
+    assert_znane_luki(zgloszenia, "tests/test_podstawa_w_czesciach.py (ZNANE_LUKI_KARTY)")
 
 
 @pytest.mark.parametrize(("zegar", "porazka"), [("padl", "czekanie"), ("zyje", "czekanie"), ("padl", "sprawdzenie")])
