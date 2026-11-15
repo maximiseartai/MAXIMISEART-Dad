@@ -32,7 +32,8 @@ Printed by `scripts/sub_features.py --feature tablica-okresow` from the drive's 
 
 ## How to get to it (user POV)
 
-Dad clicks `Okresy` in the sidebar menu; once the folder okresów is set, it is also the start page (`#/okresy`).
+Dad clicks `Okresy` in the sidebar menu; it is also the start page (`#/okresy`), which shows `Wskaż folder okresów`
+until the folder okresów is set.
 Returning to the Centrum tab, or reloading it, reads the board again.
 
 ## Driving it with Playwright for Python

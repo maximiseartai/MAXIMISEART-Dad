@@ -13,7 +13,9 @@ narzędzia also closes it, `aktualizacja.md`). During an Uruchomienie procesu or
 update the server refuses to close (409) and the tab shows the notification
 `Nie zamknięto Centrum rozliczeń` with the reason; the drives of
 `przygotowanie-pliku-zbiorczego`, `przebieg-rozliczen` and `aktualizacja` check
-the refusal at the API only. Every start, recognised second start, start failure, shutdown and
+the refusal at the API only. The server also refuses to close (409) while a Kopia INTERMAX is being restored, which no drive
+reaches
+(`tests/test_centrum_przywracanie_kopii_intermax.py::test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone`). Every start, recognised second start, start failure, shutdown and
 stop leaves a safe line in the Centrum log (`logs/centrum-rozliczen.log`).
 
 ## Sub-features

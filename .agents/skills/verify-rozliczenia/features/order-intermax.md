@@ -34,5 +34,6 @@ Run `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --varia
   `tests/test_uporzadkowanie_intermax.py` proves the stops and the look, `verify-zapis-intermax` the write.
 - Run by hand, the machine script without `--copies` writes the Kopia INTERMAX to the tool's own folder of Kopie, so
   pass one outside Dad's computer.
-- On a pull request the E2E step runs `--variant all` only when the change touches `src/`; a change to this skill
-  alone reaches it on `main`.
+- On a pull request the E2E step runs `--variant all` only when the change touches `src/` or a file that makes the
+  pull request run every test (`run_all` in `tools/lib/wplyw_zmiany.py`, e.g. `pyproject.toml`); a change to this
+  skill alone reaches it on `main`.

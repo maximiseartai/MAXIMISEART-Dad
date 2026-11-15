@@ -9,7 +9,7 @@ API requests of each scenario, the bundle size, and CPU traces of the cold start
 of Okresy and Metryki. It is the hill-climbing loop for frontend changes: every
 change that makes Centrum faster or slower updates the baseline in its own PR.
 It runs only when named (`--feature wydajnosc`), never in `all`: it takes a few
-minutes and holds the machine alone. Raporty (the fifth menu page, with no budget in the baseline yet,
+minutes and holds the machine alone. Raporty (a menu page with no budget in the baseline yet,
 `MEASURED_PAGES` in `drive/wydajnosc.py`), Powiadomienia (the header bell) and the dialog `Napisz do Maksa`
 are not measured.
 Every scenario runs in Chromium at CPU 4× (the reference profile of Dad's laptop) and 6× (the pessimistic
