@@ -38,8 +38,9 @@ from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, open
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
 POWOD_ZNAKOW = 10_000
-# Kod eksploratora przeplotów skilla w procesie pytest wywraca test (docstring pluginu).
-pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
+# Kod eksploratora przeplotów skilla w procesie pytest wywraca test, a test, którego plik zamknął dopiero gc, pada z jego
+# ścieżką (docstringi pluginów).
+pytest_plugins = ["tests.fixtures.eksplorator_w_procesie", "tests.fixtures.pliki_w_smieciach"]
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -37,7 +37,7 @@ import traceback
 import warnings
 import weakref
 from typing import Any, TypeVar, cast
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 from urllib.request import urlopen
 import zipfile
 
@@ -1692,6 +1692,97 @@ def test_zerwane_zadanie_przekazania_zatrzymuje_wycene_od_razu_a_nie_po_czasie_o
     assert failed is not None
     assert (facts.cause, failed.action) == (OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD)
     assert failed.duration_ms < efenix_browser.TIMEOUT_MS / 2, failed
+
+
+# Żądanie jednego zlecenia z pustą wyceną, na którego odpowiedź okno czeka, jak sieć je zrywa (``Outage``), i część
+# strony oraz działanie okna, w którym okno staje. Indeks żądania w przebiegu jest w ``WHOLE_RUN``.
+_ANSWER_LOST = [
+    pytest.param(SEARCH, Outage.CUT, PagePart.RESULTS, WindowAction.SEARCH, id="szukanie-zerwane"),
+    pytest.param(SET_DATE, Outage.CUT, PagePart.DATE, WindowAction.DATE, id="zapis-daty-zerwany"),
+    pytest.param(LOAD_EMMETT, Outage.CUT, PagePart.EMMETT, WindowAction.EMMETT, id="zaladuj-do-zlecenia-zerwane"),
+    pytest.param(SAVE_QUANTITY, Outage.CUT, PagePart.QUANTITY, WindowAction.QUANTITY, id="zapis-ilosci-zerwany"),
+    pytest.param(SAVE_QUANTITY, Outage.TORN, PagePart.QUANTITY, WindowAction.QUANTITY, id="zapis-ilosci-zerwany-w-polowie"),
+]
+
+
+@pytest.mark.parametrize(("path", "outage", "part", "action"), _ANSWER_LOST)
+def test_zerwane_zadanie_na_ktorego_odpowiedz_czeka_okno_zatrzymuje_wycene_od_razu_a_nie_po_czasie_okna(
+    tmp_path: Path, page: Page, path: str, outage: Outage, part: PagePart, action: WindowAction
+) -> None:
+    """Żądanie do efenix, które padło w czasie, gdy okno czeka na odpowiedź szukania albo zapisu (sieć zerwała połączenie
+    przed odpowiedzią albo w połowie jej treści), kończy czekanie od razu: to samo Zatrzymanie okna i ten sam Komunikat
+    co po czasie okna, ale przed czasem okna efenix taty (``TIMEOUT_MS``), z błędem przeglądarki w czekaniu na odpowiedź."""
+
+    [order] = _two_orders()[:1]
+    with atrapa_efenix([order.in_efenix("990")], outage_from=(outage, WHOLE_RUN.index(("POST", path)))) as atrapa:
+        outcome = _run(write_collective_file(tmp_path, [order]), page, atrapa.url, timeout_ms=efenix_browser.TIMEOUT_MS)
+
+    assert isinstance(outcome.ending, Stop), _ending(outcome)
+    facts = outcome.ending.facts
+    assert isinstance(facts, PricingStopped) and facts.stopped_at is not None
+    failed = facts.stopped_at.failed
+    assert failed is not None
+    assert (_stop(outcome), outcome.ending.stop_kind) == ("EFENIX_OKNO_ZATRZYMANE", "for_maks")
+    assert (facts.part, facts.cause, failed.action) == (part, BrowserFailure(PLAYWRIGHT_ERROR, Operation.ANSWER), action)
+    assert failed.duration_ms < efenix_browser.TIMEOUT_MS / 2, failed
+
+
+# Szukanie z tym samym numerem, które strona wysyła obok szukania listy po Enter w polu ``Numer``, i zasób spoza efenix,
+# po który sięga strona w tej samej chwili.
+_REPEATED_SEARCH = "powtorzone"
+_ELSEWHERE = "http://zasoby.invalid/czcionka.woff2"
+_SEARCHES_REPEATED_ON_ENTER = f"""
+document.addEventListener('keypress', (event) => {{
+  if (event.key !== 'Enter' || event.target.id !== 'field_numer') return;
+  for (let powtorzenie = 0; powtorzenie < 2; powtorzenie++) {{
+    const body = new URLSearchParams({{numer: event.target.value, rodzaj: '{_REPEATED_SEARCH}'}});
+    fetch('{SEARCH}', {{method: 'POST', body: body}}).catch(() => {{}});
+  }}
+  fetch('{_ELSEWHERE}', {{mode: 'no-cors'}}).catch(() => {{}});
+}}, true);
+"""
+
+
+def test_przerwane_szukania_z_tym_samym_numerem_i_zerwany_zasob_spoza_efenix_nie_zatrzymuja_okna_ktore_czeka_na_swoje_szukanie(
+    tmp_path: Path, page: Page
+) -> None:
+    """Strona wysyła po Enter w polu ``Numer`` obok szukania okna dwa szukania z tym samym numerem i przerywa je, zanim
+    efenix odpowie (``net::ERR_ABORTED``, jak żądanie, które przerywa sama strona albo nawigacja), a zasób spoza efenix,
+    po który sięga w tej samej chwili, nie odpowiada (``net::ERR_CONNECTION_REFUSED``). Szukanie okna dochodzi do efenix
+    dopiero po tych trzech porażkach, a efenix odpowiada na nie dopiero po wielu odstępach, w których okno sprawdza, czy
+    żądanie padło. Okno czeka dalej na odpowiedź na swoje szukanie: Wycena kończy się jak bez nich, bez Zatrzymania okna."""
+
+    ended: list[Route] = []
+    held: list[Route] = []
+
+    def end(route: Route, error_code: str) -> None:
+        route.abort(error_code)
+        ended.append(route)
+        if len(ended) == 3:
+            for search in held:
+                search.fallback()
+
+    def search(route: Route) -> None:
+        if parse_qs(route.request.post_data or "").get("rodzaj") == [_REPEATED_SEARCH]:
+            end(route, "aborted")
+        elif len(ended) == 3:
+            route.fallback()
+        else:
+            held.append(route)
+
+    failures: list[tuple[str, str | None]] = []
+    page.on("requestfailed", lambda request: failures.append((request.url.rpartition("/")[2], request.failure)))
+    page.add_init_script(_SEARCHES_REPEATED_ON_ENTER)
+    page.route(f"**/{SEARCH}", search)
+    page.route(_ELSEWHERE, lambda route: end(route, "connectionrefused"))
+    with atrapa_efenix([_READY.in_efenix("952")], answer_delay_s=0.5) as atrapa:
+        outcome = _price(tmp_path, page, atrapa.url, [_READY], timeout_ms=3_000)
+        searched = atrapa.searched()
+
+    assert sorted(failures) == sorted(
+        [(SEARCH, "net::ERR_ABORTED"), (SEARCH, "net::ERR_ABORTED"), (_ELSEWHERE.rpartition("/")[2], "net::ERR_CONNECTION_REFUSED")]
+    )
+    assert (outcome.result, _figures(outcome), searched) == ("OK", _figures_of(1, 1), ["9512"])
 
 
 def test_wylogowanie_zaraz_po_przekazaniu_zatrzymuje_wycene_na_przekazaniu_a_zlecenie_jest_juz_do_akceptacji(
