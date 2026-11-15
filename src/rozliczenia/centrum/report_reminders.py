@@ -30,8 +30,8 @@ Plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. tr
 przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
 plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
 sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
-przed nim pory z ADR 0030; wyniku dla widoku Raporty takie sprawdzenie nie pisze, bo nie wie, czy przypomnienia mają dzień
-wdrożenia.
+przed nim pory ostatniego sprawdzenia pracy z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
+takie sprawdzenie nie pisze, bo nie wie, czy przypomnienia mają dzień wdrożenia.
 
 Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
 czeka, nie bierze INTERMAX na wyłączność i nie pisze Kopii wejścia ani Logów Uruchomienia. Każda wysyłka i każda
@@ -208,7 +208,7 @@ class ReportReminders:
         self._in_effect: SchedulesInEffect | None = None
         self._settled: tuple[date, Pora, ReminderSchedule] | None = None
         self._last_failure: _Failed | None = None
-        self._schedule = DEFAULT_REMINDERS.schedule
+        self._schedule: ReminderSchedule | None = None
         self._unread: _Unread | None = None
 
     def check(self) -> None:
@@ -244,9 +244,10 @@ class ReportReminders:
         now = self._now()
         snapshot = self._settings.snapshot()
         reminders = snapshot.reminders
-        if not isinstance(reminders, UnreadableFile):
-            self._schedule = reminders.schedule
-        schedule = self._schedule
+        if isinstance(reminders, UnreadableFile):
+            schedule = self._unread_schedule()
+        else:
+            schedule = self._schedule = reminders.schedule
         pora = reminder_pora(now, schedule)
         self._close_unread(now.date(), pora)
         if pora is None or self._settled == (now.date(), pora, schedule):
@@ -271,6 +272,17 @@ class ReportReminders:
             self._log.reminders_failed(cause=failed.cause, failure=failed.failure)
         self._last_failure = failed
         self._write(now, pora, found)
+
+    def _unread_schedule(self) -> ReminderSchedule:
+        """Pory przy pliku Przypomnień bez odczytu: z ostatniego pliku przeczytanego w tej pracy Centrum, a przed nim
+        z ostatniego sprawdzenia pracy w ``REMINDERS_SCHEDULES``, bo plik zablokowany od startu Centrum nie mówi o porach
+        taty nic innego. Bez wpisu w tym pliku praca tej wersji jeszcze nie sprawdzała w porze, więc żadne pory taty nie
+        są znane i zostają pory z ADR 0030."""
+
+        if self._schedule is not None:
+            return self._schedule
+        in_effect = schedules_in_effect(self._schedules.path, DEFAULT_REMINDERS.schedule)
+        return in_effect.changes[-1].schedule if in_effect.changes else DEFAULT_REMINDERS.schedule
 
     def _close_unread(self, day: date, pora: Pora | None) -> None:
         """Wpis w dzienniku Centrum o pliku Ustawień, który do końca swojej pory nie dał się przeczytać: pierwsze

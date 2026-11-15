@@ -4000,6 +4000,54 @@ def test_plik_przypomnien_albo_folderow_bez_odczytu_ponawia_w_tej_samej_porze_a_
         assert (reminded, _failures_in_log(centrum)) == ([], [f"przyczyna=plik-bez-odczytu plik={file}"])
 
 
+def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatniego_sprawdzenia_pracy(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa przy porze taty spoza pór ADR 0030: wczoraj praca sprawdzała w porannej porze taty 6:00–7:30,
+    a dziś OneDrive trzyma plik Przypomnień od startu Centrum do końca tej pory. Porę zna plik pór pracy z wczoraj, więc
+    pierwsze sprawdzenie po 7:30 zostawia w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    form = _reminders_form(footer="Pozdrawiam\nTata\n", morning={"start": "06:00", "end": "07:30"}, first="06:00")
+    assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 6, 30))
+    centrum.rhythm.tick()
+    yesterday = len(mailbox.sends)
+    centrum.restart()
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        for moment in (datetime(2026, 11, 11, 6, 30), datetime(2026, 11, 11, 7, 30, 1)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert yesterday > 0, "wczoraj praca sprawdzała w porze taty"
+    assert (len(mailbox.sends), _failures_in_log(centrum)) == (yesterday, [f"przyczyna=plik-bez-odczytu plik={REMINDERS_FILE}"])
+
+
+def test_przypomnienia_wylaczone_w_tej_samej_porze_po_pliku_bez_odczytu_nie_zostawiaja_wpisu(tmp_path: Path) -> None:
+    """Plik Przypomnień bez odczytu w porze, a potem w tej samej porze tata wyłącza przypomnienia: wyłączone są
+    wyłączone, a nie zepsute, więc po końcu pory dziennik Centrum nie dostaje wpisu o pliku bez odczytu."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        centrum.moment.append(REMINDER_MORNING)
+        centrum.rhythm.tick()
+    assert centrum.client.put("/api/settings/reminders/enabled", json={"enabled": False}).status_code == 200
+    for moment in (datetime(2026, 11, 10, 8, 31), datetime(2026, 11, 10, 17, 1)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert (mailbox.sends, _failures_in_log(centrum)) == ([], [])
+
+
 def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie_wysylki(tmp_path: Path) -> None:
     """Praca przypomnień nie jest Uruchomieniem procesu: gdy czeka na Gmaila w trakcie wysyłki, tata klika „Wpisz
     raporty z maili”, a Wpisanie raportów startuje i kończy się, zanim wysyłka się skończy (US 46, ADR 0030)."""
