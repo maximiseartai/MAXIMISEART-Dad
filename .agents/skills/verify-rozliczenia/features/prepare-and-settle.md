@@ -64,7 +64,8 @@ skip.
   keep them non-zero in every column of `N:AT`.
 - That emptying an Ilość tylko dla INEA also drops its Hiperłącze is not reached here, because the synthetic cells
   have none; `tests/test_ilosci_tylko_dla_inea.py` checks it.
-- The `readiness` step saves with `save_workbook` (`workbook_files.py`), the openpyxl save the processes fall back to.
+- The `readiness` step saves with `save_workbook` (`workbook_save.py`): openpyxl, with the file's own
+  `xl/externalLinks/*` put back byte for byte, which the step checks (`external_links_preserved=true`).
   Excel keeps an external link only while a formula uses it, as in Dad's Wzorce, and drops the unused link of this
   variant's synthetic Wzorce on save; `verify-skoroszyty-w-excelu` covers Gotowość saved by the real Excel.
 - Przebieg rozliczeń copies `A:AT` by position, not by header: the real Wzorzec rozliczenia pracownika has `GODZINA`

@@ -109,5 +109,7 @@ from the repository root (macOS: `.venv/bin/python`). The proof is in the eviden
   `Rozliczenie pracowników` folder. An unreadable list gives `--wykonawcy: nie można teraz odczytać pliku
   wykonawcy.yaml`, never „niepoprawna”.
 - The source file must be named `Rozliczenie {okres} - zbiorcze.xlsx` and live in a folder named after the same period
-  token; a token that is not a Tuesday–Monday period (e.g. `09_15_09_2026`) stops with `ZLY_PLIK_ZBIORCZY`.
+  token; a token that is not a Tuesday–Monday period (e.g. `09_15_09_2026`) stops with `ZLY_PLIK_ZBIORCZY` and creates
+  no folder
+  (`tests/test_settlement_engine.py::test_plik_zbiorczy_z_tokenem_ktory_nie_jest_okresem_zatrzymuje_przebieg_rozliczen`).
 - A lock is the exact `~$` filename beside the file; do not kill Excel or delete a user's lock as cleanup.
