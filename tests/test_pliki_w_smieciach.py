@@ -113,10 +113,10 @@ class _PuszczaWatekWPrzegladzie:
     def __init__(self, puszcza: Callable[[], None]) -> None:
         self._puszcza = puszcza
 
-    @property  # type: ignore[misc]  # isinstance pyta o __class__ tylko do odczytu
-    def __class__(self) -> type:
-        self._puszcza()
-        return _PuszczaWatekWPrzegladzie
+    def __getattribute__(self, name: str) -> object:
+        if name == "__class__":
+            object.__getattribute__(self, "_puszcza")()
+        return object.__getattribute__(self, name)
 
 
 def test_plik_ktory_zywy_watek_puszcza_w_trakcie_przegladu_obiektow_nie_wywraca_testu(tmp_path: Path) -> None:
