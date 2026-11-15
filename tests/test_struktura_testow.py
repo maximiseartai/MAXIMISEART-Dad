@@ -543,9 +543,16 @@ CONSTANT_TIME_BOUNDS = {
         "serwer nie odpowiada nigdy, więc bez limitu 0,3 s diagnoza czekałaby bez końca; granica to 5× ten limit"
     ),
     "test_centrum_launcher.py::test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health"
-    "::took < wait_s * 1.8": (
-        "obcy program nie odpowiada nigdy, a granica poniżej dwóch skróconych limitów czekania na health (0,5 s) łapie "
-        "Centrum, które czeka dwa razy dłużej albo bez końca"
+    "::waited < wait_s * 1.8": (
+        "obcy program mierzy samo czekanie launchera, od pytania o health do zamknięcia połączenia, bez reszty startu; "
+        "granica poniżej dwóch skróconych limitów (2,5 s) łapie launcher, który czeka dwa razy dłużej albo na "
+        "prawdziwym limicie 5 s"
+    ),
+    "test_centrum_launcher.py::test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health"
+    "::took < wait_s * 2": (
+        "cały start to skrócony limit (2,5 s) i praca startu, której zapas to drugi limit, prawie dwa razy więcej niż "
+        "cały narzut runnera Windows w #1782 (1,34 s); łapie start, który czeka jeszcze limit przed pytaniem o health "
+        "albo po nim, także ponawianie portu przez 10 s"
     ),
     "test_centrum_powiadomienia.py::test_spozniona_odpowiedz_skrzynki_nie_wstrzymuje_powiadomien_a_jej_stan_i_tak_zostaje"
     "::took < wait_s * 1.8": (

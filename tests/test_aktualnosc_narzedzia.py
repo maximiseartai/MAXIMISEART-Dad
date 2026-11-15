@@ -8,7 +8,7 @@ Commit narzędzia pochodzi z syntetycznych katalogów ``.git``.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,11 +25,13 @@ import urllib.parse
 
 import pytest
 
-from rozliczenia.centrum import tool_freshness, tool_update
+from rozliczenia.centrum import tool_update
 from rozliczenia.centrum.github import TOOL_API
 from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.tool_freshness import (
+    AnswerSource,
     GitHubReleases,
+    KeySource,
     PublishedRelease,
     RateLimited,
     RememberedRelease,
@@ -44,8 +46,6 @@ from tests.fixtures.github_api import Answer, github_api, newest_on_main
 
 from tests.fixtures.proxy_systemu import system_proxy
 
-# Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
-GITHUB_RELEASES = tool_freshness.github_releases
 MAIN = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
 TOKEN = "token-wymyslony-w-tescie"
 WITH_TOKEN = f"Bearer {TOKEN}"
@@ -460,8 +460,10 @@ def test_wydanie_daleko_na_linii_main_kosztuje_tylko_logarytm_porownan(github: s
     assert _comparisons() <= 12  # log2(1001) + 2
 
 
-def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(github: str) -> None:
-    release = GITHUB_RELEASES(lambda: None, f"{github}/z-galezi")
+def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(
+    github: str, prawdziwe_wydania_githuba: Callable[[KeySource, str], AnswerSource]
+) -> None:
+    release = prawdziwe_wydania_githuba(lambda: None, f"{github}/z-galezi")
 
     assert release() == GitHubReleases(None, None)
     _ASKED.clear()

@@ -21,7 +21,6 @@ import pytest
 
 from rozliczenia.centrum import launcher, restart_guardian, shortcut
 from rozliczenia.centrum.platform import ConsoleRun
-from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.platform import run_console_program
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.shortcut import (
@@ -242,28 +241,43 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
 def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    wait_s = 0.5
+    # Cały narzut startu na runnerze Windows w #1782 to 1,34 s ponad limit: zapas granic niżej jest od niego większy.
+    wait_s = 2.5
     monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
     monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
     exit_codes: list[int] = []
-    # Certyfikaty systemu proces wczytuje raz, poza limitem: pierwsze wczytanie na Windows 3.13 to 242 ms (sonda #1673).
-    opener()
 
     with socket.socket() as foreign_program:
         foreign_program.bind(("127.0.0.1", 0))
         foreign_program.listen()
+        foreign_program.settimeout(30)
         port = foreign_program.getsockname()[1]
         start = threading.Thread(
             target=lambda: exit_codes.append(launcher.main(["--port", str(port), "--no-browser"])), daemon=True
         )
         started = time.monotonic()
         start.start()
-        start.join(10)
+        # Obcy program przyjmuje pytanie o health i milczy, aż launcher sam zamknie połączenie (pusty odczyt).
+        asked, _ = foreign_program.accept()
+        with asked:
+            asked.settimeout(30)
+            request = b""
+            while b"\r\n\r\n" not in request and (chunk := asked.recv(4096)):
+                request += chunk
+            asked_at = time.monotonic()
+            after_request = asked.recv(4096)
+            waited = time.monotonic() - asked_at
+        start.join(30)
         took = time.monotonic() - started
-        still_waiting = start.is_alive()
+        foreign_program.setblocking(False)
+        with pytest.raises(BlockingIOError):
+            foreign_program.accept()[0].close()
 
-    assert not still_waiting
-    assert took < wait_s * 1.8
+    assert request.startswith(b"GET /api/health ")
+    assert after_request == b""
+    assert not start.is_alive()
+    assert waited < wait_s * 1.8
+    assert took < wait_s * 2
     assert exit_codes == [1]
     assert capsys.readouterr().out.splitlines()[0] == (
         f"Co się stało: Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program."

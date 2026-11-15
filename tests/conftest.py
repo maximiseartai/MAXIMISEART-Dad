@@ -187,6 +187,22 @@ def jedna_petla_testclient() -> Iterator[None]:
         yield
 
 
+# Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` podmienia je w module.
+_GITHUB_RELEASES = tool_freshness.github_releases
+GITHUB_ATRAPA_S = 30.0
+"""Limit pytania o Wydania do atrapy API GitHuba w teście: atrapa na obciążonym runnerze Windows odpowiada dłużej niż
+``tool_freshness._TIMEOUT_S`` (#1734), a sam limit sprawdzają testy ``releases_from`` z krótkim ``timeout_s``."""
+
+
+@pytest.fixture
+def prawdziwe_wydania_githuba(monkeypatch: pytest.MonkeyPatch) -> Callable[[tool_freshness.KeySource, str], tool_freshness.AnswerSource]:
+    """Prawdziwe ``github_releases`` dla atrapy API GitHuba, z limitem ``GITHUB_ATRAPA_S`` zamiast krótkiego limitu
+    Centrum."""
+
+    monkeypatch.setattr(tool_freshness, "_TIMEOUT_S", GITHUB_ATRAPA_S)
+    return _GITHUB_RELEASES
+
+
 @pytest.fixture(autouse=True)
 def bez_githuba(monkeypatch: pytest.MonkeyPatch) -> None:
     """Żaden test nie łączy się z GitHubem: Centrum bez podstawionego ``tool_freshness`` kończy Diagnozę odpowiedzią 500."""
