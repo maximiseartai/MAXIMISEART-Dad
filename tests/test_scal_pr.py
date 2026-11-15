@@ -2531,6 +2531,20 @@ def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_z
     assert _proofs(github) == [_proof_arguments(head, *found) for found in cases]
 
 
+@pytest.mark.parametrize("klass", ["typ", "test-klasy"])
+def test_pole_idiom_klasy_typu_albo_testu_scala_sie_bez_reguly_z_dowodem_mutacji_w_pass(tmp_path: Path, klass: str) -> None:
+    """Klasę zamkniętą typem albo testem dowodzi recenzent mutacją w „## Sprawdzone” PASS (ADR 0036), a bramka nie
+    uruchamia dowodu reguły i nie żąda reguły ast-grep."""
+
+    github, head = _idiom_pull(tmp_path, _idiom_verdict(klass), passed=False)
+    github.comment(1, "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n{body}\n".format(head=head, body=werdykty_szablonu.WERDYKTY["sprawdzone-mutacja"]))
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == []
+
+
 @pytest.mark.parametrize(
     ("title", "closed", "suffix"),
     [

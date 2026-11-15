@@ -87,11 +87,12 @@ Drugie wystąpienie idiomu ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.m
 - Pole `Idiom:` pisze recenzent, nie autor, w Ważnym po polu `Szczebel:`, w jednej z trzech postaci:
   - `Idiom: <id> jak #N W<n> r<k>`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
-  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy żaden mechanizm z definicji chwastu nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
+  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy żaden mechanizm z definicji chwastu nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`, `typ`, `test-klasy`).
 - PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N W<n> r<k>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` i gdy jej dowód przechodzi.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły; wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
   Dowód to `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>` z każdym przypadkiem tej reguły z historii jej pól `Idiom:`, a `tools/scal_pr.py` uruchamia go z kodu bazy przy merge'u; dziś umie tylko reguły ast-grep.
 - Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
+  Klasa `typ` albo `test-klasy` znaczy, że idiom zamyka mypy albo test klasy, a dowodzi tego recenzent rundy po poprawce, nie bramka: w „## Sprawdzone” podaje polecenie `tools/mutacje.py`, które przywraca na HEAD złą postać z `Gdzie`, z linią `WYKRYTA` i ostatnią linią `MUTACJE OK`; brak tego punktu albo nieprawdziwy dowód to Ważne.
 - Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela; do merge'a PR kroku ukryć ticketu #1676 to Ważne z sekcji „Co jest porażką”.
 
 ## Dowody
@@ -116,7 +117,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
-Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>, albo Idiom: bez reguły <brak-testu|stan-kroku> jak #N W<n> r<k>; tylko gdy idiom się powtarza)
+Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>, albo Idiom: bez reguły <brak-testu|stan-kroku|typ|test-klasy> jak #N W<n> r<k>; tylko gdy idiom się powtarza)
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ## Sprawdzone

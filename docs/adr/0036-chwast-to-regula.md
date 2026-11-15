@@ -48,7 +48,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 - **Pole werdyktu.** Pole pisze recenzent, nie autor. Ma jedną z trzech postaci:
   - `Idiom: <id> jak #N Wn rk`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
-  - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`).
+  - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`, `typ`, `test-klasy`).
   Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył. Autor nie wybiera postaci, więc nie może wybrać tańszej.
 - **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N Wn rk` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły. Wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
@@ -62,6 +62,9 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 - **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
   To jedyne miejsce osądu w pętli. Pisze je niezależny recenzent, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
   Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
+
+- **Klasa zamknięta typem albo testem.** Klasę `typ` albo `test-klasy` recenzent pisze, gdy idiom zamyka mypy albo test klasy (szczebel (b) albo (c)). Bramka jej nie sprawdza: recenzent rundy po poprawce podaje w „## Sprawdzone” mutację `tools/mutacje.py`, która przywraca na HEAD złą postać z `Gdzie`, z poleceniem, linią `WYKRYTA` i ostatnią linią `MUTACJE OK`, a brak tego dowodu albo dowód nieprawdziwy to Ważne następnej rundy.
+  Powód: bramka, która przyjmowała tylko regułę ast-grep, popychała autora na szczebel (d), choć wyższy działał, a automatyczny dowód typu i testu po czterech rundach przeglądu dało się obejść przez tekst wyjścia narzędzi; Maks 15.11.2026 wybrał recenzenta jako bramkę ([#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)), jak w [#1888](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1888#issuecomment-6902408070).
 
 ### Issues „Chwast”
 
