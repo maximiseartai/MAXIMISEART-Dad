@@ -8,7 +8,7 @@ zrzuty i dowody, wariant fixture'a i pomiar na wyłączność, a ``Run.capture``
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from functools import partial
@@ -20,11 +20,12 @@ import subprocess
 import sys
 import time
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
 from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from jednostka import ZMIENNA_CZESCI
 import kroki_skilli
 import skrypt_skilla
@@ -311,10 +312,7 @@ class _Playwright(ModuleType):
     @staticmethod
     @contextmanager
     def sync_playwright() -> Iterator[Any]:
-        page = SimpleNamespace(set_default_timeout=lambda timeout: None)
-        context = SimpleNamespace(new_page=lambda: page, add_init_script=lambda script: None, on=lambda event, handler: None)
-        browser = SimpleNamespace(new_context=lambda **options: context, close=lambda: None)
-        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: browser))
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=_Przegladarka))
 
 
 @pytest.fixture
@@ -404,6 +402,176 @@ def test_drive_daje_opcje_pomiaru_tylko_funkcji_pomiaru(
     }
 
 
+class _Przegladarka:
+    """Przeglądarka atrapy: jej otwarte okna (konteksty), jak w Playwright świeża lista przy każdym odczycie."""
+
+    def __init__(self) -> None:
+        self.otwarte: list[_Okno] = []
+
+    @property
+    def contexts(self) -> list[_Okno]:
+        return list(self.otwarte)
+
+    def new_context(self, *, storage_state: dict[str, Any] | None = None, **options: object) -> _Okno:
+        okno = _Okno(self, storage_state)
+        self.otwarte.append(okno)
+        return okno
+
+    def close(self) -> None:
+        pass
+
+
+class _Okno:
+    """Okno przeglądarki atrapy: jego otwarte karty, jego ``localStorage`` (jedno źródło, jak ``ORIGIN`` Centrum) i
+    co zostawiła w samym oknie funkcja (trasa ``context.route``, zegar ``page.clock``); ``storage_state`` niesie tylko
+    ``localStorage``, jak w Playwright."""
+
+    ORIGIN: Final = "http://127.0.0.1:1"
+
+    def __init__(self, browser: _Przegladarka, storage_state: dict[str, Any] | None) -> None:
+        self.browser = browser
+        self.otwarte: list[_Karta] = []
+        self.zostawione: list[str] = []
+        self.local_storage = {
+            each["name"]: each["value"] for origin in (storage_state or {}).get("origins", []) for each in origin["localStorage"]
+        }
+
+    @property
+    def pages(self) -> list[_Karta]:
+        return list(self.otwarte)
+
+    def new_page(self) -> _Karta:
+        karta = _Karta(self)
+        self.otwarte.append(karta)
+        return karta
+
+    def add_init_script(self, script: str) -> None:
+        pass
+
+    def on(self, event: str, handler: object) -> None:
+        pass
+
+    def storage_state(self) -> dict[str, Any]:
+        stored = [{"name": name, "value": value} for name, value in self.local_storage.items()]
+        return {"cookies": [], "origins": [{"origin": self.ORIGIN, "localStorage": stored}] if stored else []}
+
+    def close(self) -> None:
+        self.otwarte.clear()
+        self.browser.otwarte.remove(self)
+
+
+class _Karta:
+    def __init__(self, okno: _Okno) -> None:
+        self.context = okno
+        self.zostawione: list[str] = []
+
+    def set_default_timeout(self, timeout: float) -> None:
+        pass
+
+    def close(self) -> None:
+        self.context.otwarte.remove(self)
+
+
+def _zastane_po(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, konfiguracja: Callable[[Any, _Karta], None],
+    wykonawcy: Callable[[Any, _Karta], list[str]],
+) -> tuple[int, list[list[str]], _Przegladarka]:
+    """Przebieg ``konfiguracja`` → ``wykonawcy`` w prawdziwym ``drive_centrum.main``: kod wyjścia, co ``wykonawcy``
+    zastaje (lista z każdego jej przejazdu) i przeglądarka atrapy po przebiegu."""
+
+    przegladarka = _Przegladarka()
+    zastane: list[list[str]] = []
+    monkeypatch.setitem(drive_centrum.MODULES, "konfiguracja", SimpleNamespace(drive=konfiguracja))
+    monkeypatch.setitem(
+        drive_centrum.MODULES, "wykonawcy", SimpleNamespace(drive=lambda run, page: zastane.append(wykonawcy(run, page)))
+    )
+    monkeypatch.setattr(drive_centrum, "compare", lambda evidence, sections: None)
+
+    @contextmanager
+    def playwright() -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: przegladarka))
+
+    monkeypatch.setattr(drive_centrum, "sync_playwright", playwright)
+    (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")
+
+    code = drive_centrum.main(
+        ["--root", str(tmp_path), "--url", "http://127.0.0.1:1", "--evidence", str(tmp_path / "dowody"),
+         "--feature", "konfiguracja", "wykonawcy"]
+    )
+    return code, zastane, przegladarka
+
+
+def _w_przegladarce(run: object, page: _Karta) -> list[str]:
+    """Co zostało w każdym otwartym oknie przeglądarki i w każdej jego karcie oraz ``localStorage`` okna ``page``."""
+
+    zostawione = [
+        each for okno in page.context.browser.contexts for each in (*okno.zostawione, *(z for karta in okno.pages for z in karta.zostawione))
+    ]
+    return zostawione + [f"localStorage {name}={value}" for name, value in page.context.local_storage.items()]
+
+
+def test_funkcja_zastaje_okno_bez_stanu_przegladarki_poprzedniej_a_z_jej_localstorage(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``konfiguracja`` kończyła z otwartym oknem Ustawień, a ``wykonawcy`` po niej klikał w zamykające się okno (#1585
+    W3 r1, R-STAN-KROKU); trasa okna i zegar ``page.clock`` należą w Playwright do okna, nie do karty (#1907 r1 W1):
+    każda funkcja jedzie w nowym oknie przeglądarki, a każde okno, z każdą kartą, jest wtedy już zamknięte. Przechodzi
+    tylko ``localStorage``, jak w przeglądarce taty między wizytami.
+
+    Granica: ``FeatureWindows`` kończy stan przeglądarki po funkcji, nie po kroku, więc okno zostawione przez krok dla
+    następnego kroku tej samej funkcji zostaje; tego nie wyrazi próbka między funkcjami (``ZNANE_LUKI_OKNA``)."""
+
+    def zostawia_stan_przegladarki(run: object, page: _Karta) -> None:
+        page.zostawione += ["okno Ustawień na Wzorcach", "trasa karty /api/settings przerwana"]
+        page.context.zostawione += ["trasa okna /api/settings przerwana", "zegar okna na 2000-01-01"]
+        page.context.new_page().zostawione.append("karta „Napisz do Maksa”")
+        page.context.browser.new_context().new_page().zostawione.append("okno efenix")
+        page.context.local_storage["motyw"] = "ciemny"
+
+    code, zastane, przegladarka = _zastane_po(drive_centrum, monkeypatch, tmp_path, zostawia_stan_przegladarki, _w_przegladarce)
+
+    assert (code, zastane, przegladarka.contexts) == (0, [["localStorage motyw=ciemny"]], [])
+
+
+# Znane luki okna funkcji (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z ``konfiguracja``, która coś
+# zostawia, i ``wykonawcy``, która zwraca, co z tego zastaje. ``FeatureWindows`` przepuszcza próbkę, gdy ``wykonawcy``
+# zastaje cokolwiek.
+ZNANE_LUKI_OKNA: Final = {
+    "niesie ciasteczka i localStorage poprzedniego okna: wpis localStorage, który funkcja zostawiła": (
+        "def konfiguracja(run, page):\n"
+        "    page.context.local_storage['baner-aktualizacji'] = 'zamknięty'\n"
+        "\n"
+        "\n"
+        "def wykonawcy(run, page):\n"
+        "    return [value for name, value in page.context.local_storage.items() if name == 'baner-aktualizacji']\n"
+    ),
+    "kończy tylko stan przeglądarki: stan dysku albo serwera, który funkcja zostawiła": (
+        "def konfiguracja(run, page):\n"
+        "    (run.root / 'zostawiony.xlsx').write_text('pusty Plik zbiorczy', encoding='utf-8')\n"
+        "\n"
+        "\n"
+        "def wykonawcy(run, page):\n"
+        "    return [each.read_text(encoding='utf-8') for each in run.root.glob('zostawiony.xlsx')]\n"
+    ),
+}
+
+
+def test_znane_luki_okna_funkcji_przechodza_przez_feature_windows(
+    drive_centrum: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_OKNA, tmp_path).items()):
+        probka = modul(plik)
+        korzen = tmp_path / f"przebieg-{numer}"
+        korzen.mkdir()
+        with monkeypatch.context() as m:
+            code, zastane, _ = _zastane_po(drive_centrum, m, korzen, probka.konfiguracja, probka.wykonawcy)
+        assert code == 0, opis
+        zgloszenia[opis] = [] if zastane[0] else ["FeatureWindows kończy to z oknem funkcji"]
+
+    assert_znane_luki(zgloszenia, "tests/test_podstawa_w_czesciach.py (ZNANE_LUKI_OKNA)")
+
+
 @pytest.mark.parametrize(("zegar", "porazka"), [("padl", "czekanie"), ("zyje", "czekanie"), ("padl", "sprawdzenie")])
 def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazka_zegara(
     drive_centrum: ModuleType,
@@ -431,7 +599,7 @@ def test_czekanie_po_budzecie_przy_martwym_budziku_zegara_konczy_przebieg_porazk
 
     @contextmanager
     def playwright_fake() -> Iterator[SimpleNamespace]:
-        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: SimpleNamespace(new_context=lambda **_: context, close=lambda: None)))
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda: SimpleNamespace(new_context=lambda **_: context, contexts=[], close=lambda: None)))
 
     monkeypatch.setattr(drive_centrum, "sync_playwright", playwright_fake)
     (tmp_path / "fixture.json").write_text(json.dumps({}), encoding="utf-8")

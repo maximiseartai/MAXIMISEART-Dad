@@ -711,9 +711,18 @@ def _proposal(order: AtrapaOrder) -> str:
     return f"<ul>{rows}</ul>" if rows else ""
 
 
+_MODAL_STYLE: Final = (
+    "<style>.modal{position:fixed;top:0;left:0;z-index:1050;width:100%;height:100%;overflow-x:hidden;overflow-y:auto}</style>"
+)
+"""Okno dialogowe stoi nad stroną w oknie przeglądarki, jak ``.modal`` bootstrapa 4 efenix (przy otwartym oknie
+``.modal-open .modal``), a nie na końcu strony zlecenia: okno efenix klika jego przyciski bez przewijania strony. Okno na
+końcu długiej strony kazało Playwrightowi przewijać przed kliknięciem zamknięcia, a pod obciążeniem klik po przewinięciu
+nie dochodził do przycisku i okno informacji zostawało otwarte."""
+
+
 def _page(title: str, body: str) -> str:
     return (
-        '<!doctype html><html lang="pl"><head><meta charset="utf-8">'
+        f'<!doctype html><html lang="pl"><head><meta charset="utf-8">{_MODAL_STYLE}'
         f"<title>{escape(title)}</title></head><body>{body}</body></html>"
     )
 
