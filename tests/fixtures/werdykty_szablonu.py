@@ -54,6 +54,8 @@ IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] 
     "drugie-wystapienie": ("Idiom: komentarz-w-src jak #1553 W1 r2", ("komentarz-w-src", None, (1553, "W1", 2))),
     "ucieczka-reguly": ("Idiom: os.name", ("os.name", None, None)),
     "bez-reguly": ("Idiom: bez reguły stan-kroku jak #1553 W2 r1", (None, "stan-kroku", (1553, "W2", 1))),
+    "bez-reguly-typ": ("Idiom: bez reguły typ jak #1904 W1 r1", (None, "typ", (1904, "W1", 1))),
+    "bez-reguly-test-klasy": ("Idiom: bez reguły test-klasy jak #1909 W2 r1", (None, "test-klasy", (1909, "W2", 1))),
 }
 PRZECHODZA = {
     "szablon": TEMPLATE,
@@ -150,6 +152,8 @@ WERDYKTY = {
     "wazne-idiom-ucieczka": _text(*_MAJOR, "Idiom: zakazane-wywolanie", "## Sprawdzone", "- diff"),
     "wazne-idiom-bez-reguly": _text(*_MAJOR, "Idiom: bez reguły brak-testu jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "wazne-idiom-innej-reguly": _text(*_MAJOR, "Idiom: inna-regula jak #1553 W2 r1", "## Sprawdzone", "- diff"),
+    "wazne-idiom-typ": _text(*_MAJOR, "Idiom: bez reguły typ jak #1553 W1 r2", "## Sprawdzone", "- diff"),
+    "wazne-idiom-test-klasy": _text(*_MAJOR, "Idiom: bez reguły test-klasy jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "proza": "Wszystko dobrze, bez uwag.",
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }

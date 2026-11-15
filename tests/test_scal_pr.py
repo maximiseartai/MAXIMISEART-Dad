@@ -298,6 +298,12 @@ class MergeGitHub(FakeGitHub):
         self.pulls[str(number)].update(fields)
         self._save()
 
+    def reload(self) -> None:
+        """Stan PR-ów z ``pulls.json``, do którego ``gh pr comment`` atrapy (``--werdykt``) dopisał komentarz, zanim
+        test zmieni PR dalej."""
+
+        self.pulls = json.loads((self.bin / "pulls.json").read_text(encoding="utf-8"))
+
     def comment(self, number: int, body: str, association: str = "OWNER") -> None:
         self._write(number, "comments", _verdict("comment", body, association, when=self._now()))
 
@@ -2430,14 +2436,13 @@ def _idiom_gate(
 
 def _idiom_pull(
     tmp_path: Path,
-    verdict: str,
-    *more: str,
+    *verdicts: str,
     registry: list[dict[str, object]] | None = None,
     proof: tuple[int, str] = PROOF_OK,
     passed: bool = True,
     gate: str = GATE_BEFORE_VERDICTS,
 ) -> tuple[MergeGitHub, str]:
-    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdict`` i ``more`` na starszym commicie,
+    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdicts`` na starszym commicie,
     sekcją ``## Korzeń`` i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, rejestr podaje
     PR-y ``registry``, a dowód kończy się ``proof``."""
 
@@ -2449,7 +2454,7 @@ def _idiom_pull(
     github.graphql = registry or []
     github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
-    for body in (verdict, *more):
+    for body in verdicts:
         github.comment(1, body.format(commit=OLD))
     if passed:
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
@@ -2529,6 +2534,27 @@ def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_z
 
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
     assert _proofs(github) == [_proof_arguments(head, *found) for found in cases]
+
+
+@pytest.mark.parametrize("klass", ["typ", "test-klasy"])
+def test_pole_idiom_klasy_typu_albo_testu_trafia_na_pr_a_scalenie_po_poprawce_nie_zada_reguly(tmp_path: Path, klass: str) -> None:
+    """Ważne z klasą ``typ`` albo ``test-klasy`` (ADR 0036, „Idiom bez reguły”) ``--werdykt`` publikuje, a bramka po
+    ``PASS`` poprawki nie uruchamia dowodu reguły."""
+
+    github, first = _idiom_pull(tmp_path, passed=False)
+    failed, passed = tmp_path / "runda-1.md", tmp_path / "runda-2.md"
+    failed.write_text(_idiom_verdict(klass).format(commit=first) + "\n", encoding="utf-8")
+    published = [github.run("1", "--werdykt", str(failed))]
+    github.reload()
+    head = github.push_pull(1, {"kod/inne.py": "INNE: Final = 1\n"})
+    passed.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
+    published.append(github.run("1", "--werdykt", str(passed)))
+
+    answered = github.run("1", "--bez-merge")
+
+    assert [_last_line(run).split(" | ")[:3] for run in published] == [["WERDYKT OK", f"#1 {first[:7]}", "FAIL"], ["WERDYKT OK", f"#1 {head[:7]}", "PASS"]]
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == []
 
 
 @pytest.mark.parametrize(

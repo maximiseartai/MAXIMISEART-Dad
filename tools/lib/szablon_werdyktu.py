@@ -62,7 +62,7 @@ HEADING = re.compile(r"([WD])(\d+)\. (\S.*)")
 ROOT_FIELD = re.compile(rf"Korzeń: (NOWY )?({CODE.pattern}) - (\S.*)")
 RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
 # Pole ``Idiom:`` Ważnego (ADR 0036, „Pole werdyktu”): id reguły, klasa idiomu bez reguły i wcześniejsze Ważne ``jak``.
-CLASSES = ("brak-testu", "stan-kroku")
+CLASSES = ("brak-testu", "stan-kroku", "typ", "test-klasy")
 RULE_ID = r"[\w.-]+"
 _EARLIER = r" jak #(\d+) (W\d+) r(\d+)"
 IDIOM_LIKE = re.compile(rf"Idiom: ({RULE_ID}){_EARLIER}")
