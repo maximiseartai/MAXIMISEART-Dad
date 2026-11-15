@@ -819,7 +819,7 @@ def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kaz
     run_to_end(centrum, dry_run=False)
     difference = at(differences(centrum), 21, "N")
     kept = KeptInPeriods(InRegister(), "worker")
-    monkeypatch.setattr(CentrumSettings, "change", lambda _settings, _file, _edit: kept)
+    monkeypatch.setattr(CentrumSettings, "change_exceptions", lambda _settings, _exception: kept)
 
     response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
 

@@ -106,7 +106,7 @@ from rozliczenia.centrum.settings.files import (
     SettingsFile,
     Unreadable,
 )
-from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
+from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings, FoldersEdit, dad_folders
 from rozliczenia.centrum.settings import inbox
 from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
 from rozliczenia.centrum.settings.history import (
@@ -123,7 +123,7 @@ from rozliczenia.centrum.settings.history import (
 from rozliczenia.centrum.settings.memory import Applied, AppliedResult, AppliedUnknown, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.proposal import Edit, Later, Nothing, Refuse, ReleaseChange, ReleaseInputs
 from rozliczenia.centrum.settings import messages
-from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, QuantityException
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, QuantityException, with_exception
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES,
     RULES,
@@ -140,8 +140,8 @@ from rozliczenia.centrum.settings.quantity_rules import (
     rules_problem,
     taken_problem,
 )
-from rozliczenia.centrum.settings.reminders import REMINDERS
-from rozliczenia.centrum.settings.workers import WORKERS
+from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
+from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
@@ -149,10 +149,6 @@ from rozliczenia.worker_report_inbox import InboxState
 from rozliczenia.worker_reports import ReminderSettings
 
 T = TypeVar("T")
-_Plain = TypeVar("_Plain", FolderSettings, bool, InboxFile, ReminderSettings, WorkerList, tuple[QuantityException, ...])
-"""Wartość pliku Ustawień, którego zapis taty nie sprawdza pary: tylko taki plik zmienia ``change`` funkcją z trasy.
-Listę Urządzeń i Reguły ilości tata zmienia tylko poleceniem formularza (``change_devices``, ``change_rules``), więc
-zmiana, uzupełnienie i reguła tej pary nie mają drogi obok właściciela."""
 
 REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
@@ -347,13 +343,42 @@ class CentrumSettings:
                 reminders=self._observe(REMINDERS),
             )
 
-    def change(
-        self, file: SettingsFile[_Plain], edit: Callable[[_Plain], _Plain | FieldProblem]
-    ) -> Saved | Refused | NotSaved | KeptInPeriods:
-        """Zapis taty: ``edit`` dostaje bieżącą wartość pliku (przy złym pliku ostatnią dobrą) i daje nową albo problem
-        zmiany (np. pole formularza sekcji Wykonawcy), który jest odmową bez zapisu."""
+    def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty sekcji Foldery albo motywu (``dad_folders``)."""
 
-        return self._by_dad(file, edit, undoes=None)
+        return self._by_dad(FOLDERS, lambda current: dad_folders(current, edit), undoes=None)
+
+    def change_autostart(self, enabled: bool) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty przełącznika startu razem z Windows."""
+
+        return self._by_dad(AUTOSTART, lambda _: enabled, undoes=None)
+
+    def change_inbox_password(self, typed: str) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty hasła skrzynki raportów wpisanego jako ``typed``: puste hasło i plik bez adresu to odmowa
+        (``inbox.new_password``), a nowe hasło zastępuje tylko linię hasła pliku."""
+
+        with self._lock:
+            password = inbox.new_password(self._observe(INBOX), typed)
+        if isinstance(password, FieldProblem):
+            return Refused(password)
+        return self._by_dad(INBOX, lambda current: inbox.with_password(current, password), undoes=None)
+
+    def change_reminders(self, edit: RemindersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty Przypomnień o raporcie (``dad_reminders``)."""
+
+        return self._by_dad(REMINDERS, lambda current: dad_reminders(current, edit), undoes=None)
+
+    def change_workers(self, edit: WorkersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty Listy Wykonawców (``dad_workers``); loginy, które usuwa, sprawdza w okresach ``_by_dad``,
+        ta sama droga co „Cofnij”."""
+
+        return self._by_dad(WORKERS, lambda current: dad_workers(current, edit), undoes=None)
+
+    def change_exceptions(self, exception: QuantityException) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty „To był wyjątek”: wyjątek Kontroli ilości ``exception`` dopisany do pliku wyjątków
+        (``with_exception``)."""
+
+        return self._by_dad(EXCEPTIONS, lambda current: with_exception(current, exception), undoes=None)
 
     def change_devices(self, edit: DeviceEdit) -> Saved | Refused | NotSaved:
         """Zapis taty polecenia sekcji Urządzenia (``device_forms.dad_devices``) z id nowego składnika spoza kluczy

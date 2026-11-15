@@ -154,6 +154,12 @@ def dump(exceptions: tuple[QuantityException, ...]) -> bytes:
     return settings_yaml({"schema_version": _SCHEMA_VERSION, SECTION: [_entry(exception) for exception in exceptions]})
 
 
+def with_exception(current: tuple[QuantityException, ...], exception: QuantityException) -> tuple[QuantityException, ...]:
+    """Wyjątki z wyjątkiem ``exception`` („To był wyjątek”) na końcu; wyjątek o tym id, który już jest, niczego nie zmienia."""
+
+    return current if any(known.id == exception.id for known in current) else (*current, exception)
+
+
 def described(exception: QuantityException) -> str:
     """Wyjątek w Zgłoszeniu i Logach: okres, wiersz, kolumna i wpis taty, bez treści wiersza."""
 

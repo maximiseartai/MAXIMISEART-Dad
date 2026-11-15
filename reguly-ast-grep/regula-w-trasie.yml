@@ -30,11 +30,12 @@ rule:
   # (#1727 r1–r3: nazwa pliku, APIRouter(…), identyfikator APIRouter nie widziały FastAPI ani adnotacji napisem), ani z
   # postaci wywołania (#1727 r4: getattr(settings, "change")(…), settings._dad_change(…)): każdy moduł Centrum poza
   # właścicielem, który nazywa metodę zapisu właściciela gdziekolwiek, atrybutem albo literałem napisu, cały, bo trasy,
-  # middleware i funkcje pomocnicze sprawdzają regułę obok zapisu. Metody zapisu: publiczne CentrumSettings.change,
-  # change_devices, change_rules, rules_after, undo, apply_release_changes, dawne change_with_used_keys (nazywają je
-  # commity z werdyktów, na których biegnie dowód reguły) i prywatne, które zapisują albo sprawdzają regułę przyjęcia
-  # (_by_dad, _dad_change, _dad_devices, _dad_rules, _with_used_keys, _change, _checked, _apply, _apply_pending, _refuse,
-  # _put_back, _remember): wołanie prywatnej metody właściciela spoza niego to ten sam zapis.
+  # middleware i funkcje pomocnicze sprawdzają regułę obok zapisu. Metody zapisu: publiczne CentrumSettings.change_<plik>
+  # (change_folders, change_workers, change_devices, …), rules_after, undo, apply_release_changes, dawne change i
+  # change_with_used_keys (nazywają je commity z werdyktów, na których biegnie dowód reguły) i prywatne, które zapisują
+  # albo sprawdzają regułę przyjęcia (_by_dad, _dad_change, _dad_devices, _dad_rules, _with_used_keys, _change, _checked,
+  # _apply, _apply_pending, _refuse, _put_back, _remember): wołanie prywatnej metody właściciela spoza niego to ten sam
+  # zapis.
   # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
   # sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga tylko do
   # rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej gałęzi, pod
@@ -50,12 +51,12 @@ rule:
             - kind: attribute
               has:
                 field: attribute
-                regex: '^(change|change_with_used_keys|change_devices|change_rules|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
             # Treść literału daje parser (string_content), więc przedrostek r/b/f i potrójny cudzysłów jej nie zmieniają.
             - kind: string
               has:
                 kind: string_content
-                regex: '^(change|change_with_used_keys|change_devices|change_rules|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
     - any:
         - kind: call
           has:

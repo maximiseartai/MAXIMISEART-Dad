@@ -12,7 +12,7 @@ Centrum), bez wartości i bez „Cofnij”, a pamięć właściciela trzyma tylk
 from __future__ import annotations
 
 import codecs
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Final
 
 from rozliczenia.centrum.settings import messages
@@ -97,6 +97,12 @@ def new_password(read: Read[InboxFile] | Unreadable, typed: str) -> str | FieldP
             return FieldProblem(FieldPath(ADDRESS), messages.inbox_no_address())
         case _:
             return password
+
+
+def with_password(inbox: InboxFile, password: str) -> InboxFile:
+    """Plik dostępu z hasłem ``password`` (``new_password``) w linii hasła; reszta linii zostaje."""
+
+    return replace(inbox, password=password)
 
 
 def dump(inbox: InboxFile) -> bytes:

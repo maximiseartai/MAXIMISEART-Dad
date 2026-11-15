@@ -41,7 +41,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -60,7 +60,7 @@ from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import NO_AUTOSTART
-from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.folders import ChoosePeriodsDirectory
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
@@ -471,6 +471,7 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         # No Historia: the Wycena w efenix of the period was never run.
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
+    # The folder of Foldery okresu is flat and outside ``Rozliczenia {rok}``, so choosing it saves it unchanged.
     CentrumSettings(
         config,
         log=log,
@@ -483,7 +484,7 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         # No changes from a Release, so the tool version for their Historia row is never asked.
         release_changes=(),
         release_origin=lambda: ReleaseOrigin(release=None, commit=None),
-    ).change(FOLDERS, lambda folders: replace(folders, periods_directory=periods))
+    ).change_folders(ChoosePeriodsDirectory(periods))
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
 
