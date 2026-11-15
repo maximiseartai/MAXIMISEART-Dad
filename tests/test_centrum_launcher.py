@@ -12,18 +12,28 @@ import tempfile
 import threading
 import time
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from rozliczenia.centrum import launcher, restart_guardian
+from rozliczenia.centrum import launcher, restart_guardian, shortcut
+from rozliczenia.centrum.platform import ConsoleRun
 from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.platform import run_console_program
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
-from rozliczenia.centrum.shortcut import SHORTCUT_FILE, Folder, Shortcut, StartupShortcut, shortcuts
+from rozliczenia.centrum.shortcut import (
+    SHORTCUT_FILE,
+    Folder,
+    PowerShellFailed,
+    PowerShellTimedOut,
+    Shortcut,
+    ShortcutNotMoved,
+    StartupShortcut,
+    shortcuts,
+)
 
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.centrum import CentrumClient, ToolDirectory, centrum_app
@@ -449,6 +459,59 @@ def _read_ascii_shortcut(link: Path) -> dict[str, str]:
     return shortcut
 
 
+def _powershell_timed_out(command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    raise subprocess.TimeoutExpired(list(command), timeout_s)
+
+
+def _powershell_failed(command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(list(command), 1, "", "")
+
+
+def _powershell_without_file(command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(list(command), 0, "", "")
+
+
+@pytest.mark.parametrize(
+    ("run", "kind", "cause"),
+    [
+        (_powershell_timed_out, PowerShellTimedOut, subprocess.TimeoutExpired),
+        (_powershell_failed, PowerShellFailed, type(None)),
+        (_powershell_without_file, ShortcutNotMoved, FileNotFoundError),
+    ],
+    ids=["limit-powershella", "kod-powershella", "przeniesienie"],
+)
+def test_kazda_galaz_porazki_zapisu_skrotu_ma_wlasny_typ_przyczyny(tmp_path: Path, run: ConsoleRun, kind: type[OSError], cause: type) -> None:
+    """Komunikat dla taty jest jeden dla każdej porażki zapisu skrótu, więc gałąź (limit PowerShella, jego kod, przeniesienie
+    pliku) niesie typ wyjątku, a błąd przeniesienia stoi w łańcuchu (#1883)."""
+
+    program = tmp_path / "pythonw.exe"
+    program.write_bytes(b"")
+
+    with pytest.raises(kind) as raised:
+        StartupShortcut(folder=tmp_path / "autostart", program=program, run=run).enable()
+
+    assert (type(raised.value), type(raised.value.__cause__)) == (kind, cause)
+
+
+def test_krok_instalacji_po_porazce_podaje_tacie_komunikat_a_na_stderr_sam_typ_przyczyny(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    program = tmp_path / "pythonw.exe"
+    program.write_bytes(b"")
+
+    def timed_out(*_: object) -> Path:
+        raise PowerShellTimedOut("PowerShell nie zapisał skrótu w 30 s.")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(shortcut, "_windowless_python", lambda: program)
+    monkeypatch.setattr(shortcut, "_write", timed_out)
+
+    assert shortcut.main(["--folder", str(tmp_path)]) == 1
+    printed = capsys.readouterr()
+    assert printed.out.startswith("Co się stało: Nie udało się utworzyć skrótu „Centrum rozliczeń”.\n")
+    assert printed.err == "Przyczyna techniczna: rozliczenia.centrum.shortcut.PowerShellTimedOut\n"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="The desktop shortcut and pythonw.exe are Windows-only.")
 def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchamiaja_centrum_przez_pythonw(
     tmp_path: Path,
@@ -481,7 +544,9 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
         )
 
     installed, installed_again = install(), install()
-    assert (installed.returncode, installed_again.returncode) == (0, 0), installed.stdout + installed_again.stdout
+    assert (installed.returncode, installed_again.returncode) == (0, 0), (
+        installed.stdout + installed.stderr + installed_again.stdout + installed_again.stderr
+    )
     # Jeden skrót w każdym folderze, o tej samej nazwie: ponowny krok nadpisuje, a nie dokłada.
     on_desktop, in_startup = list(desktop.iterdir()), list(startup.iterdir())
     # Nazwa, którą tata widzi na pulpicie, w każdej stronie kodowej Windows (runner CI ma 1252 bez „ń”).
