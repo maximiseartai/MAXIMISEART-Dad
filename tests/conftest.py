@@ -33,12 +33,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
+from tests.fixtures.potomne import ctrl_c_reaches_children
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
 POWOD_ZNAKOW = 10_000
 # Kod eksploratora przeplotów skilla w procesie pytest wywraca test (docstring pluginu).
 pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    ctrl_c_reaches_children()
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:
