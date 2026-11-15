@@ -249,7 +249,7 @@ def test_tydzien_bez_wiadomosci_operatora_w_watkach_repo_konczy_sie_porazka_z_li
     w innym projekcie nie liczą się do jego wiadomości operatora."""
 
     operator = [_operator(STRANGER, "2026-11-03T10:00:00.000Z", _zdanie(62)), _operator(STRANGER, "2026-11-05T10:00:00.000Z", _zdanie(63))]
-    noise = [_agent(STRANGER, "2026-11-05T10:01:00.000Z", _zdanie(64), "mcp"), (STRANGER, "2026-11-05T10:02:00.000Z", "user", {"creationSource": "web", "text": "tak"})]
+    noise: list[tuple[str, object, str, dict[str, object]]] = [_agent(STRANGER, "2026-11-05T10:01:00.000Z", _zdanie(64), "mcp"), (STRANGER, "2026-11-05T10:02:00.000Z", "user", {"creationSource": "web", "text": "tak"})]
     base = _base(tmp_path / "statev2.sqlite", [*repo_messages, *operator, *noise], other=other)
 
     code, lines = _run(base, capsys)
