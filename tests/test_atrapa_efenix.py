@@ -916,3 +916,29 @@ def test_wroga_strona_atrapy_w_zwyklej_przegladarce_sama_konczy_sesje_efenix(pat
         logged_out = wait_for(lambda: not atrapa.state()[1], seconds=10)
 
     assert logged_out
+
+
+def test_zamkniecie_okna_dialogowego_przed_koncem_jego_animacji_pokazania_nic_nie_robi_a_po_niej_zamyka_okno(browser: Browser) -> None:
+    """Jak w bootstrapie efenix, przycisk zamknięcia okna dialogowego nic nie robi do końca animacji jego ``.modal-dialog``,
+    więc okno, które kliknie × za wcześnie, widzi okno dalej otwarte. Pokazanie i pierwsze kliknięcie biegną w jednym
+    zadaniu skryptu strony, więc animacja nie może się między nimi skończyć."""
+
+    order = AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", forward_refusal=ForwardRefusal.NO_LENGTH.value)
+    with atrapa_efenix([order]) as atrapa, page_of(browser) as page:
+        page.goto(f"{atrapa.url.removesuffix(LIST_PAGE)}{ORDER_PAGE}?id=901")
+        during = page.evaluate(
+            """() => {
+              document.getElementById('button_forward_to_accept').click();
+              document.querySelector('#dialog_info .close').click();
+              return getComputedStyle(document.getElementById('dialog_info')).display;
+            }"""
+        )
+        page.wait_for_function("() => document.getElementById('dialog_info').getAnimations({subtree: true}).length === 0")
+        after = page.evaluate(
+            """() => {
+              document.querySelector('#dialog_info .close').click();
+              return getComputedStyle(document.getElementById('dialog_info')).display;
+            }"""
+        )
+
+    assert (during, after) == ("block", "none")

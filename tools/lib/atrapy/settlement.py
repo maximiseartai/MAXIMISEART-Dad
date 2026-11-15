@@ -119,7 +119,7 @@ SOURCE_ROWS = (
 UNMAPPED_SOURCE_ROW = SourceRow("POZNAŃ", "syntetyczny adres 4", "andrzej.nieznany2", "#4")
 
 
-def write_source(path: Path, *, include_unmapped: bool = True) -> None:
+def write_source(path: Path, *, include_unmapped: bool) -> None:
     write_source_rows(path, [*SOURCE_ROWS, UNMAPPED_SOURCE_ROW] if include_unmapped else SOURCE_ROWS)
 
 
