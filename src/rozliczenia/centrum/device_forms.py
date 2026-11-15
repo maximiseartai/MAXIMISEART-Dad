@@ -91,6 +91,16 @@ def edited(
             assert_never(edit)
 
 
+def dad_devices(
+    components: tuple[Component, ...], edit: DeviceEdit, used: frozenset[str]
+) -> tuple[Component, ...] | FieldProblem:
+    """Zmiana taty z sekcji Urządzenia, którą zapisuje właściciel Ustawień: lista po zmianie ``edit`` albo odmowa
+    formularza z polem; składnika, którego już nie ma, nie rusza (404 daje trasa przed zapisem)."""
+
+    changed = edited(components, edit, used)
+    return components if isinstance(changed, UnknownComponent) else changed
+
+
 def field_of(edit: DeviceEdit, spelling: str) -> FieldPath | None:
     """Pole formularza zmiany ``edit``, w którym tata wpisał zapis ``spelling`` (``None``: usunięcie składnika albo zapis
     spoza formularza): przy nim stoi odmowa właściciela o tym zapisie."""

@@ -108,6 +108,21 @@ def edited(
             assert_never(edit)
 
 
+def dad_rules(
+    rules: tuple[QuantityRule, ...], edit: contract.RuleEdit, used: frozenset[str]
+) -> tuple[QuantityRule, ...] | FieldProblem:
+    """Zmiana taty z edytora reguł, którą zapisuje i podgląda właściciel Ustawień: reguły po zmianie ``edit`` albo odmowa
+    formularza z polem; reguły, której już nie ma, nie rusza (404 daje trasa przed zapisem)."""
+
+    changed = edited(rules, edit, used)
+    if isinstance(changed, UnknownRule):
+        return rules
+    if isinstance(changed, FieldProblem):
+        return changed
+    rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(rules, changed)
+    return form_problem(changed, rule_id) or changed
+
+
 def edited_id(before: tuple[QuantityRule, ...], after: tuple[QuantityRule, ...]) -> str | None:
     """Id reguły, którą zmiana dodała albo zmieniła (``None``: zmiana tylko usunęła albo niczego nie zmieniła)."""
 

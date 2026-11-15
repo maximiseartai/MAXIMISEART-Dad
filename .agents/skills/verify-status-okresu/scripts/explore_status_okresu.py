@@ -61,6 +61,7 @@ from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import NO_AUTOSTART
 from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.dad_files import DadFiles
@@ -479,6 +480,9 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         periods=WorkerPeriods(DadFiles()),
         # The folder change below refuses nothing, so no rule sentence needs column names.
         column_names=lambda: {},
+        # No changes from a Release, so the tool version for their Historia row is never asked.
+        release_changes=(),
+        release_origin=lambda: ReleaseOrigin(release=None, commit=None),
     ).change(FOLDERS, lambda folders: replace(folders, periods_directory=periods))
     # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
     return TestClient(app, base_url="http://127.0.0.1")
