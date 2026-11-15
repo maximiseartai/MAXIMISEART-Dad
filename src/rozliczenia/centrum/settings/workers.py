@@ -185,7 +185,7 @@ _SENTENCES: Final = {
 }
 
 
-def dump(workers: WorkerList) -> str:
+def dump(workers: WorkerList) -> bytes:
     return _dump([_entry(worker) for worker in workers.workers], [_unresolved_entry(item) for item in workers.unresolved])
 
 
@@ -270,11 +270,11 @@ def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
         before = _documents(change.before)
         if before:
             entries.insert(len(entries) if at is None else at, before[0])
-    restored = parse(_dump(entries, unresolved).encode("utf-8"))
+    restored = parse(_dump(entries, unresolved))
     return workers if isinstance(restored, FieldProblem) else restored
 
 
-def _dump(entries: list[Document], unresolved: list[Document]) -> str:
+def _dump(entries: list[Document], unresolved: list[Document]) -> bytes:
     document: Document = {"schema_version": _SCHEMA_VERSION, WORKERS_KEY: entries}
     if unresolved:
         document[UNRESOLVED_KEY] = unresolved

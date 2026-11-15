@@ -150,7 +150,7 @@ def entry_of(entry: object) -> QuantityException | None:
     return None if isinstance(found, FieldProblem) else found
 
 
-def dump(exceptions: tuple[QuantityException, ...]) -> str:
+def dump(exceptions: tuple[QuantityException, ...]) -> bytes:
     return settings_yaml({"schema_version": _SCHEMA_VERSION, SECTION: [_entry(exception) for exception in exceptions]})
 
 

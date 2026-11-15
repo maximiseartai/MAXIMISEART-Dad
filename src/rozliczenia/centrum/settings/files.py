@@ -29,11 +29,12 @@ def _text(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _SettingsDumper.add_representer(str, _text)
 
 
-def settings_yaml(document: Mapping[str, object]) -> str:
-    """Treść pliku Ustawień w YAML: klucze w kolejności ``document``, polskie litery wprost, bez łamania długich
-    linii; każdy napis wraca z pliku bez zmian."""
+def settings_yaml(document: Mapping[str, object]) -> bytes:
+    """Bajty pliku Ustawień w YAML (UTF-8, ``\n`` na końcu linii na każdym systemie): klucze w kolejności ``document``,
+    polskie litery wprost, bez łamania długich linii; każdy napis wraca z pliku bez zmian."""
 
-    return yaml.dump(dict(document), Dumper=_SettingsDumper, allow_unicode=True, sort_keys=False, width=1_000_000)
+    text = yaml.dump(dict(document), Dumper=_SettingsDumper, allow_unicode=True, sort_keys=False, width=1_000_000)
+    return text.encode("utf-8")
 
 
 FieldName = Literal[
@@ -176,20 +177,21 @@ class RemovedLogins:
 class SettingsFile(Generic[T]):
     """Plik Ustawień Centrum w ``config``.
 
-    ``parse`` dostaje bajty pliku (``None``: pliku nie ma) i daje wartość albo pierwszy problem, ``dump`` daje treść
-    pliku, ``diff`` klucze, które różnią dwie wartości, a ``restore`` wartość z kluczami ustawionymi na ich wartość
-    ``before``. ``restore`` może dać wartość, której ``parse`` nie przyjmie; właściciel sprawdza ją jak każdą zmianę.
-    ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged`` klucz dla Logów Centrum, oba bez danych osobowych. Plik
-    ``secret`` ma w Historii tylko klucze, bez wartości, i nie da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie
-    pamięta, więc ``unchecked`` daje wartość jego treści bez reguł ``parse`` (``None``: treść nie daje wartości): zapis
-    taty na złej treści zaczyna od niej, a ``parse`` zapisu odrzuca to, czego zapis nie naprawił. ``removed_logins``
-    daje loginy, które zmiana wartości usuwa z Listy Wykonawców (``None``: żadnego): właściciel zapisuje zmianę taty
-    dopiero, gdy żaden z nich nie występuje w okresie (ADR 0032).
+    ``parse`` dostaje bajty pliku (``None``: pliku nie ma) i daje wartość albo pierwszy problem, ``dump`` daje bajty
+    pliku, które właściciel zapisuje bez zmiany, więc test i fikstura zapisują je ``write_bytes`` tymi samymi bajtami na
+    każdym systemie (zapis tekstowy dałby na Windows ``\r\n``), ``diff`` klucze, które różnią dwie wartości, a
+    ``restore`` wartość z kluczami ustawionymi na ich wartość ``before``. ``restore`` może dać wartość, której ``parse``
+    nie przyjmie; właściciel sprawdza ją jak każdą zmianę. ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged``
+    klucz dla Logów Centrum, oba bez danych osobowych. Plik ``secret`` ma w Historii tylko klucze, bez wartości, i nie
+    da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie pamięta, więc ``unchecked`` daje wartość jego treści bez
+    reguł ``parse`` (``None``: treść nie daje wartości): zapis taty na złej treści zaczyna od niej, a ``parse`` zapisu
+    odrzuca to, czego zapis nie naprawił. ``removed_logins`` daje loginy, które zmiana wartości usuwa z Listy Wykonawców
+    (``None``: żadnego): właściciel zapisuje zmianę taty dopiero, gdy żaden z nich nie występuje w okresie (ADR 0032).
     """
 
     name: str
     parse: Callable[[bytes | None], T | FieldProblem]
-    dump: Callable[[T], str]
+    dump: Callable[[T], bytes]
     diff: Callable[[T, T], tuple[KeyChange, ...]]
     restore: Callable[[T, tuple[KeyChange, ...]], T]
     reported: Callable[[KeyChange], str]
