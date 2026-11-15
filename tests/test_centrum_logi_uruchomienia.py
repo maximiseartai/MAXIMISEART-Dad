@@ -76,7 +76,7 @@ from atrapy.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
-from tests.fixtures.wzorzec_playwrighta import plain_chromium
+from tests.fixtures.przegladarka import plain_chromium
 from tests.fixtures.centrum import (
     STOP_S,
     TOOL_COMMIT,

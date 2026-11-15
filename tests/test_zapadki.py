@@ -1452,6 +1452,13 @@ _PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
     "obiekt o nazwie dalszej części ścieżki importu": (_start("return excel.launch()", "import narzedzia.excel\n"), [8]),
     "obiekt o nazwie modułu sprzed aliasu": (_start("return excel.launch()", "import excel as xl\n"), [8]),
     "obiekt o nazwie modułu sprzed aliasu w from": (_start("return excel.launch()", "from narzedzia import excel as xl\n"), [8]),
+    "klasa przeglądarki z importu playwright": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.sync_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł playwright z importu": (_start("return playwright.launch()", "import playwright\n"), [8]),
+    "moduł playwright pod aliasem": (_start("return api.launch()", "import playwright.sync_api as api\n"), [8]),
+    "moduł o nazwie playwright z innego pakietu": (_start("return playwright.launch()", "from narzedzia import playwright\n"), []),
     "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
     "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
     "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
@@ -1499,7 +1506,7 @@ _ZAKRES_PRZEGLADARKI: Final = (
 )
 _WLASCICIELE_PRZEGLADARKI: Final = (
     ("src", "rozliczenia", "efenix_browser.py"),
-    ("tests", "fixtures", "wzorzec_playwrighta.py"),
+    ("tests", "fixtures", "przegladarka.py"),
     ("frontend", "skrypt.py"),
 )
 
@@ -1513,6 +1520,56 @@ def test_przegladarka_bez_launch_options_czyta_src_tools_tests_i_skrypty_skilli_
 
     assert sorted(finding.path for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA) == sorted(
         "/".join(parts) for parts in _ZAKRES_PRZEGLADARKI
+    )
+
+
+# Prawo właściciela reguły ``przegladarka-bez-launch-options`` (``ignores:``): plik → funkcja → liczba odwołań do metody
+# startu bez ``**launch_options(…)`` w tym samym wywołaniu. Reguła zwalnia cały plik, więc ta tabela trzyma resztę
+# zakazu: plik właściciela poza zwolnieniem zgłasza dokładnie tyle w tych funkcjach. Ścieżka jako części, jak
+# w ``_ZAKRES_PRZEGLADARKI``.
+WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, int]]] = {
+    ("src", "rozliczenia", "efenix_browser.py"): {"_playwright_disabling": 1, "chrome": 1},
+    ("tests", "fixtures", "przegladarka.py"): {"plain_chromium": 1},
+}
+
+
+@needs_ast_grep
+def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z_tabeli_wlascicieli(tmp_path: Path) -> None:
+    import ast
+    import json
+
+    import yaml
+
+    rule_file = ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml"
+    rule = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
+    assert sorted(rule.pop("ignores")) == sorted("/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI)
+    unexempted = tmp_path / "bez-ignores.yml"
+    unexempted.write_text(yaml.safe_dump(rule, allow_unicode=True), encoding="utf-8")
+    paths = ["/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI]
+    scan = subprocess.run(
+        [str(AST_GREP), "scan", "--rule", str(unexempted), "--json=stream", "--", *paths],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in WLASCICIELE_PRZEGLADARKI}
+    for match in map(json.loads, scan.stdout.splitlines()):
+        parts = tuple(Path(match["file"]).parts)
+        line = match["range"]["start"]["line"] + 1
+        tree = ast.parse((ROOT.joinpath(*parts)).read_text(encoding="utf-8"))
+        functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= line <= (node.end_lineno or 0)
+        ]
+        name = max(functions, key=lambda node: node.lineno).name if functions else "<moduł>"
+        found[parts][name] = found[parts].get(name, 0) + 1
+
+    assert found == WLASCICIELE_PRZEGLADARKI, (
+        "goły start przeglądarki w pliku z ignores: reguły przegladarka-bez-launch-options stoi tylko w funkcjach z "
+        "WLASCICIELE_PRZEGLADARKI tyle razy, ile mówi tabela: podaj **launch_options(playwright) albo zmień tabelę"
     )
 
 
