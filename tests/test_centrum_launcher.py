@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 import socket
 import subprocess
@@ -135,6 +136,30 @@ def _opened_addresses(path: Path, count: int) -> list[str]:
     )
     assert done, "Przeglądarka nie dostała adresu Centrum."
     return addresses
+
+# Najniższy początek zakresu, z którego system sam daje porty (bind na port 0, port źródłowy połączenia): Linux 32768,
+# Windows i macOS 49152.
+SYSTEM_PORTS_START = 32768
+
+
+def test_wolny_port_dla_centrum_lezy_ponizej_zakresu_portow_ktore_system_daje_sam_i_da_sie_go_zbindowac() -> None:
+    """Port, który test daje Centrum przez ``--port``, nie trafi do serwera sąsiedniego workera pytest, który bierze port
+    od systemu (Atrapa efenix), zanim Centrum go zbinduje (#1917, #1918)."""
+
+    ports = [free_port() for _ in range(20)]
+
+    assert [port for port in ports if not 1024 <= port < SYSTEM_PORTS_START] == []
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", ports[-1]))
+
+
+def test_wolny_port_dla_centrum_omija_port_na_ktorym_ktos_slucha(monkeypatch: pytest.MonkeyPatch) -> None:
+    with socket.create_server(("127.0.0.1", free_port())) as busy:
+        taken = busy.getsockname()[1]
+        drawn = [taken, free_port()]
+        monkeypatch.setattr(random, "sample", lambda _population, _k: drawn)
+
+        assert free_port() == drawn[1]
 
 
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:
