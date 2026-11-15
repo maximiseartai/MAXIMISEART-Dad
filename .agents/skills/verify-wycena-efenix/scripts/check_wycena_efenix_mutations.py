@@ -85,13 +85,15 @@ MUTATIONS = (
         (
             Edit(
                 BROWSER,
-                "            with self._page.expect_request_finished(wanted, timeout=self._timeout_ms) as finished:\n"
-                "                act()\n"
-                "            response = finished.value.response()\n",
-                "            with self._page.expect_response(lambda answer: wanted(answer.request), timeout=self._timeout_ms) as finished:\n"
-                "                act()\n"
-                "            response = finished.value\n",
+                "        def on_finished(request: Request) -> None:\n"
+                "            if wanted(request):\n"
+                "                finished.append(request)\n",
+                "        def on_finished(answer: Response) -> None:\n"
+                "            if wanted(answer.request):\n"
+                "                finished.append(answer.request)\n",
             ),
+            Edit(BROWSER, 'self._page.on("requestfinished", on_finished)', 'self._page.on("response", on_finished)'),
+            Edit(BROWSER, 'self._page.remove_listener("requestfinished", on_finished)', 'self._page.remove_listener("response", on_finished)'),
         ),
         explorer("odciecia", "ilosc"),
         "odpowiedź, która stanęła w połowie, wiesza Wycenę w efenix",

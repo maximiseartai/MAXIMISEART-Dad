@@ -30,7 +30,9 @@ dokładnie raz, to element z jego liczbą, a nie błąd Playwrighta: odpowiedź 
 (nawigacja nie zgłasza błędu przy 4xx i 5xx). Czy to
 zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje: Maks ustala to z przyczyny w Logach. Na odpowiedź efenix
 okno czeka do jej końca, z całą treścią, a nie tylko do nagłówków, bo na treść, którą sieć wstrzymała w połowie,
-czekałoby bez końca. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
+czekałoby bez końca. Żądanie do efenix, które w tym czasie padło (``requestfailed``) z błędem innym niż
+``net::ERR_ABORTED``, kończy czekanie od razu błędem Playwrighta, tak jak strona, której otwarcie padło, a nie po czasie
+okna. Działanie w zamkniętej karcie albo oknie, także zamkniętym w trakcie działania, to
 ``WindowClosed``, cokolwiek zgłosił wtedy Playwright, także gdy błąd nawigacji przerwanej zamknięciem karty przyszedł,
 zanim Playwright powiedział o zamknięciu (``BrowserEfenix.closed``). Przeglądarkę daje rozmówca: stronę (``window``), Chromium
 Playwrighta (``chromium``) albo widoczne okno zainstalowanego Google Chrome w trwałym profilu narzędzia (``chrome``),
@@ -113,6 +115,7 @@ from typing import Concatenate, Final, ParamSpec, TypedDict, TypeVar
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import Locator, Page, Playwright, Request, Response, Route, sync_playwright
 
 from .tool_files import TOOL_ROOT
@@ -187,11 +190,13 @@ PROFILE_DIRECTORY: Final = "przegladarka-efenix"
 
 TIMEOUT_MS: Final = 30_000
 """Tyle okno czeka na stronę, odpowiedź albo element efenix; narzędzie zgodności czeka tyle samo."""
+_ABORTED: Final = "net::ERR_ABORTED"
+"""Błąd żądania, które przerwała sama strona albo nawigacja, a nie sieć: czekania na odpowiedź nie kończy."""
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
 """Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
-_STATUS_POLL_MS: Final = 50
-"""Co tyle okno sprawdza, czy żądanie Przekazania do akceptacji skończyło się albo strażnik je przerwał."""
+_POLL_MS: Final = 50
+"""Co tyle okno sprawdza, czy żądanie, na które czeka, skończyło się albo padło, albo czy strażnik przerwał zmianę statusu."""
 
 _PICK_DAY: Final = """(field, [year, month, day]) => {
     const jquery = window.jQuery;
@@ -595,10 +600,8 @@ class BrowserEfenix:
         self._forwarding = True
         try:
             act()
-            deadline = time.monotonic() + self._timeout_ms / 1000
-            while not (ended or self._blocked) and time.monotonic() < deadline:
-                with _doing(Operation.ANSWER):
-                    self._page.wait_for_timeout(_STATUS_POLL_MS)
+            with _doing(Operation.ANSWER):
+                self._until(lambda: bool(ended or self._blocked))
         finally:
             self._forwarding = False
             context.remove_listener("requestfinished", on_ended)
@@ -699,20 +702,60 @@ class BrowserEfenix:
 
     def _finished(self, wanted: Callable[[Request], bool], act: Callable[[], None]) -> Response:
         """Odpowiedź efenix z całą treścią na żądanie ``wanted``, które wysyła ``act``: okno czeka w czasie ``timeout_ms``
-        na koniec żądania, a nie na nagłówki odpowiedzi, po których treść może się urwać albo stanąć.
+        na koniec żądania, a nie na nagłówki odpowiedzi, po których treść może się urwać albo stanąć. Po czasie okna to
+        ``TimeoutError`` Playwrighta.
+
+        Żądanie do efenix (ten sam schemat, host i port co lista zleceń), które w tym czasie padło z błędem innym niż
+        ``net::ERR_ABORTED``, także samo ``wanted``, kończy czekanie od razu ``Error`` Playwrighta z tym błędem, jak
+        strona, której otwarcie padło: połączenie z efenix zerwane, więc odpowiedź nie przyjdzie. ``net::ERR_ABORTED``
+        czekania nie kończy, bo tak Chromium kończy żądanie, które przerwała sama strona albo nawigacja, np. szukanie
+        listy z tym samym numerem, a odpowiedź na ``wanted`` może jeszcze przyjść; nie kończy go też żądanie spoza efenix.
 
         Odpowiedź ze statusem błędu (4xx, 5xx) to ``_ErrorAnswer``, zanim okno ją przeczyta: skrypt strony efenix jej nie
         użyje, a jej treść to strona błędu serwera, nie odpowiedź w innej budowie. Przekierowanie (3xx) okno czyta dalej.
         """
 
-        with _doing(Operation.ANSWER):
-            with self._page.expect_request_finished(wanted, timeout=self._timeout_ms) as finished:
+        finished: list[Request] = []
+        failures: list[str] = []
+        efenix = urlparse(self._url)[:2]
+
+        def on_finished(request: Request) -> None:
+            if wanted(request):
+                finished.append(request)
+
+        def on_failed(request: Request) -> None:
+            if (failure := request.failure) is not None and failure != _ABORTED and urlparse(request.url)[:2] == efenix:
+                failures.append(failure)
+
+        self._page.on("requestfinished", on_finished)
+        self._page.on("requestfailed", on_failed)
+        try:
+            with _doing(Operation.ANSWER):
                 act()
-            response = finished.value.response()
+                if not self._until(lambda: bool(finished or failures)):
+                    raise PlaywrightTimeoutError(f"Timeout {self._timeout_ms}ms exceeded.")
+                if not finished:
+                    raise PlaywrightError(failures[0])
+                response = finished[0].response()
+        finally:
+            self._page.remove_listener("requestfinished", on_finished)
+            self._page.remove_listener("requestfailed", on_failed)
         assert response is not None, "zakończone żądanie ma odpowiedź"
         if response.status >= 400:
             raise _ErrorAnswer(HttpStatus(response.status))
         return response
+
+    def _until(self, done: Callable[[], bool]) -> bool:
+        """Czeka w czasie okna, aż ``done``, i pyta o nie co ``_POLL_MS``; ``False``, gdy czas okna minął bez niego.
+        Zdarzenia przeglądarki, z których czyta ``done``, przychodzą w czasie tego czekania."""
+
+        deadline = time.monotonic() + self._timeout_ms / 1000
+        while not done():
+            remaining_ms = round((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                return False
+            self._page.wait_for_timeout(min(_POLL_MS, remaining_ms))
+        return True
 
     def _ensure_logged_in(self, part: PagePart) -> None:
         if _on_login_page(self._page.url):

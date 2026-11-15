@@ -101,6 +101,7 @@ The script compares these definitions with their digests (`model/definicje.json`
 `src/rozliczenia/efenix_pricing.py`; `listing` in `src/rozliczenia/efenix_checks.py`; `Mark.replaces` in
 `src/rozliczenia/efenix_mark.py`; `completion`, `same_amount` in `src/rozliczenia/efenix_positions.py`;
 `BrowserEfenix.load_emmett`, `_came_whole`, `BrowserEfenix.enter_quantity`, `BrowserEfenix._finished`,
+`BrowserEfenix._until` (the wait of `_finished` and `_status_answer`),
 `BrowserEfenix.forward_to_accept`, `BrowserEfenix._refusal`,
 `BrowserEfenix._status_answer`, `BrowserEfenix._go`, `BrowserEfenix._reloaded` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix or
