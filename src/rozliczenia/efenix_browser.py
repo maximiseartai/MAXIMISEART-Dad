@@ -38,7 +38,8 @@ które nie startuje (``BrowserNotStarted``), gdy Chrome nie ma albo jego profil 
 startuje tak samo, gdy go nie ma, a każde okno także wtedy, gdy nie wystartował sterownik Playwrighta
 (``Operation.DRIVER``). Każda przeglądarka
 okna, także Chromium testów, startuje z argumentami ``launch_options``: bez losowania portu lokalnego każdego połączenia
-(``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne.
+(``TcpPortRandomizationWin``), przy którym Windows odmawia czasem połączenia, choć porty są wolne, i z dziennikiem na
+stderr zamiast pliku w katalogu roboczym procesu (``_LOG_TO_STDERR``).
 
 Okno z ``Login`` od silnika (``chrome`` zawsze, ``window`` na życzenie) na stronie logowania czeka, aż tata się zaloguje:
 pyta efenix o listę zleceń w tej samej sesji przeglądarki bez przekierowań, nie ruszając strony z formularzem, w którym
@@ -880,6 +881,11 @@ połączenia, a Windows odmawia wtedy czasem połączenia z WSAENOBUFS (``net::E
 wolne (crbug.com/572515601, microsoft/playwright#43545). Playwright wyłącza ją sam od microsoft/playwright#43605,
 scalonego po wydaniu 1.64.1."""
 _DISABLE_FEATURES: Final = "--disable-features="
+_LOG_TO_STDERR: Final = ("--enable-logging=stderr",)
+"""Dziennik przeglądarki idzie na jej stderr, który czyta Playwright, a nie do pliku. Bez tego ``chromium-headless-shell``
+na Windows zapisywał błąd startu (profil, którego nie mógł założyć) do ``debug.log`` w katalogu roboczym procesu, w CI
+w drzewie repozytorium (#1864); ani ``--disable-logging``, ani ``--log-file`` tego nie zmieniały, bo błąd pada przed
+odczytem tych przełączników (pomiar na Windows w CI). Plik dziennika mógłby nieść adresy efenix."""
 _PLAYWRIGHT_DISABLING: dict[str | None, tuple[str, ...]] = {}
 """Przełączniki ``--disable-features``, które Playwright daje przeglądarce danego kanału, raz na proces."""
 
@@ -901,7 +907,7 @@ def launch_options(playwright: Playwright, *, channel: str | None = None, argume
     theirs = _playwright_disabling(playwright, channel)
     features = [feature for switch in theirs for feature in switch.removeprefix(_DISABLE_FEATURES).split(",")]
     disabled = ",".join(dict.fromkeys([*features, *_DISABLED_FEATURES]))
-    return {"ignore_default_args": list(theirs), "args": [_DISABLE_FEATURES + disabled, *arguments]}
+    return {"ignore_default_args": list(theirs), "args": [_DISABLE_FEATURES + disabled, *_LOG_TO_STDERR, *arguments]}
 
 
 def _playwright_disabling(playwright: Playwright, channel: str | None) -> tuple[str, ...]:
@@ -909,7 +915,7 @@ def _playwright_disabling(playwright: Playwright, channel: str | None) -> tuple[
     okna, uruchomionej z ``--enable-automation``, bo ta flaga odblokowuje ``Browser.getBrowserCommandLine``."""
 
     if channel not in _PLAYWRIGHT_DISABLING:
-        probe = playwright.chromium.launch(channel=channel, headless=True, args=["--enable-automation"])
+        probe = playwright.chromium.launch(channel=channel, headless=True, args=["--enable-automation", *_LOG_TO_STDERR])
         try:
             line = probe.new_browser_cdp_session().send("Browser.getBrowserCommandLine")["arguments"]
         finally:
