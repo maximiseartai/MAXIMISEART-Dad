@@ -916,3 +916,32 @@ def test_wroga_strona_atrapy_w_zwyklej_przegladarce_sama_konczy_sesje_efenix(pat
         logged_out = wait_for(lambda: not atrapa.state()[1], seconds=10)
 
     assert logged_out
+
+
+def test_zamkniecie_okna_dialogowego_przed_koncem_animacji_jego_modal_dialog_nic_nie_robi_a_po_niej_zamyka_okno(browser: Browser) -> None:
+    """Jak w bootstrapie efenix, przycisk zamknięcia okna dialogowego nic nie robi do końca animacji jego ``.modal-dialog``,
+    także po końcu krótszej animacji samego okna, więc okno, które kliknie × za wcześnie, widzi okno dalej otwarte.
+    Animacja ``.modal-dialog`` stoi wstrzymana, dopóki test jej nie skończy, więc wynik nie zależy od tempa przeglądarki."""
+
+    order = AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", forward_refusal=ForwardRefusal.NO_LENGTH.value)
+    with atrapa_efenix([order]) as atrapa, page_of(browser) as page:
+        page.goto(f"{atrapa.url.removesuffix(LIST_PAGE)}{ORDER_PAGE}?id=901")
+        shown = page.evaluate(
+            """async () => {
+              const dialog = document.getElementById('dialog_info');
+              const close = () => { dialog.querySelector('.close').click(); return getComputedStyle(dialog).display; };
+              document.getElementById('button_forward_to_accept').click();
+              const inner = dialog.querySelector('.modal-dialog').getAnimations();
+              inner.forEach((animation) => animation.pause());
+              const appearing = close();
+              const outer = dialog.getAnimations();
+              outer.forEach((animation) => animation.finish());
+              await Promise.all(outer.map((animation) => animation.finished));
+              const outerDone = close();
+              inner.forEach((animation) => animation.finish());
+              await Promise.all(inner.map((animation) => animation.finished));
+              return [appearing, outerDone, close()];
+            }"""
+        )
+
+    assert shown == ["block", "block", "none"]
