@@ -76,6 +76,7 @@ from atrapy.atrapa_efenix import (
     amount_of,
     atrapa_efenix,
 )
+from tests.fixtures.wzorzec_playwrighta import plain_chromium
 from tests.fixtures.centrum import (
     STOP_S,
     TOOL_COMMIT,
@@ -2032,12 +2033,8 @@ def test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcj
             disabled_in_window = _disabled_features(window)
         atrapa.log_in()
         finished_view(centrum.client)
-    with sync_playwright() as playwright:
-        plain = playwright.chromium.launch(args=["--enable-automation"])
-        try:
-            [disabled_by_playwright] = _disabled_features(plain)
-        finally:
-            plain.close()
+    with plain_chromium() as plain:
+        [disabled_by_playwright] = _disabled_features(plain)
 
     assert disabled_in_window == [disabled_by_playwright | {"TcpPortRandomizationWin"}]
 

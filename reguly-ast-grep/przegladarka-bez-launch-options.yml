@@ -1,0 +1,41 @@
+id: przegladarka-bez-launch-options
+language: python
+severity: error
+message: >-
+  start przeglądarki Playwrighta bez argumentów jej właściciela: Chromium na Windows losuje wtedy port lokalny każdego
+  połączenia (TcpPortRandomizationWin), a Windows czasem takiego połączenia odmawia (net::ERR_NO_BUFFER_SPACE); podaj
+  w tym samym wywołaniu **launch_options(playwright) z rozliczenia.efenix_browser (launch i launch_persistent_context),
+  a w teście użyj chromium() z tests/fixtures/przegladarka.py
+files:
+  - src/**/*.py
+  - tools/**/*.py
+  - tests/**/*.py
+  - .agents/skills/**/*.py
+ignores:
+  # Prawo właściciela: efenix_browser.py daje launch_options i sam uruchamia sondę listy Playwrighta, a
+  # wzorzec_playwrighta.py to jedyny goły start w testach, wzorzec porównania bez żadnej strony.
+  - src/rozliczenia/efenix_browser.py
+  - tests/fixtures/wzorzec_playwrighta.py
+rule:
+  # Zgłasza każde wywołanie metody launch albo launch_persistent_context (wyrażenie funkcji kończy się kropką i tą nazwą,
+  # także w nawiasach), chyba że jego argumenty mają **launch_options(…) albo **<nazwa>.launch_options(…), albo
+  # wołany obiekt to moduł excel albo restart_guardian, których launch nie startuje przeglądarki. Postacie, których
+  # reguła nie widzi, są w ZNANE_LUKI_PRZEGLADARKI w tests/test_zapadki.py.
+  kind: call
+  has:
+    field: function
+    regex: '\.\s*(?:launch|launch_persistent_context)[)\s]*$'
+  not:
+    any:
+      - has:
+          field: arguments
+          has:
+            kind: dictionary_splat
+            has:
+              kind: call
+              has:
+                field: function
+                regex: '^(?:[A-Za-z_]\w*\.)*launch_options$'
+      - has:
+          field: function
+          regex: '^\(*(?:excel|restart_guardian)\.launch\b'
