@@ -68,6 +68,7 @@ def drive(run: Run, windows: FeatureWindows, name: str, driven: list[str], optio
             # that never fires: the failure names the dead clock.
             check_clock_alarm(run)
             raise
+    run.refuse_cr_in_settings()
     owners += [name] * (len(run.calls) - len(owners))
     driven.append(name)
 
@@ -225,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     driven: list[str] = []
     owners: list[str] = []
     try:
-        with sync_playwright() as playwright, page_requests.recording(run.evidence):
+        with run.refusing_text_settings_writes(), sync_playwright() as playwright, page_requests.recording(run.evidence):
             browser = playwright.chromium.launch(**launch_options(playwright))
             try:
                 windows = FeatureWindows(browser)

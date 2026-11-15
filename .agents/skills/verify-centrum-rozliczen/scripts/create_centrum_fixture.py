@@ -577,7 +577,7 @@ def _tool_clone(root: Path) -> dict[str, object]:
     _git(tool, "clone", "--quiet", "--bare", str(publisher), str(origin))
     _git(tool, "clone", "--quiet", str(origin), str(clone))
     for name, content in DAD_FILES.items():
-        (clone / name).write_text(content, encoding="utf-8")
+        (clone / name).write_bytes(content.encode("utf-8"))
     (publisher / ".gitignore").write_text(f"{WORKER_MAPPING_FILE}\n", encoding="utf-8")
     newest = _publish(publisher, 2, "Nowa wersja narzędzia", untrack=(WORKER_MAPPING_FILE,))
     _git(publisher, "push", "--quiet", str(origin), "main")
