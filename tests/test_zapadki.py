@@ -1298,6 +1298,19 @@ _PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
     "moduł playwright z importu": (_start("return playwright.launch()", "import playwright\n"), [8]),
     "moduł playwright pod aliasem": (_start("return api.launch()", "import playwright.sync_api as api\n"), [8]),
     "moduł o nazwie playwright z innego pakietu": (_start("return playwright.launch()", "from narzedzia import playwright\n"), []),
+    "klasa przeglądarki z importu playwright.async_api": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.async_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł o nazwie zaczynającej się od playwright": (_start("return playwright_stealth.launch()", "import playwright_stealth\n"), []),
+    "moduł z from pakietu o nazwie zaczynającej się od playwright": (
+        _start("return stealth.launch()", "from playwright_stealth import stealth\n"),
+        [],
+    ),
+    "moduł z importu ścieżki z playwright w środku": (_start("return narzedzia.launch()", "import narzedzia.playwright\n"), []),
+    "moduł z from ścieżki z playwright w środku": (_start("return excel.launch()", "from narzedzia.playwright import excel\n"), []),
+    "** wywołania o nazwie zaczynającej się od launch_options": (_start("return p.chromium.launch(**launch_options_x(p))"), [7]),
+    "parametr typu o nazwie zaczynającej się od ModuleType": (_start("return excel.launch()", signature="excel: ModuleTypeX"), [7]),
     "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
     "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
     "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
@@ -1362,13 +1375,14 @@ def test_przegladarka_bez_launch_options_czyta_src_tools_tests_i_skrypty_skilli_
     )
 
 
-# Prawo właściciela reguły ``przegladarka-bez-launch-options`` (``ignores:``): plik → funkcja → liczba odwołań do metody
-# startu bez ``**launch_options(…)`` w tym samym wywołaniu. Reguła zwalnia cały plik, więc ta tabela trzyma resztę
-# zakazu: plik właściciela poza zwolnieniem zgłasza dokładnie tyle w tych funkcjach. Ścieżka jako części, jak
-# w ``_ZAKRES_PRZEGLADARKI``.
-WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, int]]] = {
-    ("src", "rozliczenia", "efenix_browser.py"): {"_playwright_disabling": 1, "chrome": 1},
-    ("tests", "fixtures", "przegladarka.py"): {"plain_chromium": 1},
+# Prawo właściciela reguły ``przegladarka-bez-launch-options`` (``ignores:``): plik → funkcja → argument, który niesie
+# każdy jej start bez ``**launch_options(…)`` w tym samym wywołaniu (fragment ``ast.unparse`` wywołania). Reguła
+# zwalnia cały plik, więc ta tabela trzyma resztę zakazu: plik właściciela poza zwolnieniem zgłasza dokładnie tyle
+# startów w tych funkcjach, a każdy z argumentem z tabeli: sonda Playwrighta i wzorzec z ``--enable-automation``,
+# kontekst okna efenix z ``**options`` od ``launch_options``. Ścieżka jako części, jak w ``_ZAKRES_PRZEGLADARKI``.
+WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, tuple[str, ...]]]] = {
+    ("src", "rozliczenia", "efenix_browser.py"): {"_playwright_disabling": ("'--enable-automation'",), "chrome": ("**options",)},
+    ("tests", "fixtures", "przegladarka.py"): {"plain_chromium": ("'--enable-automation'",)},
 }
 
 
@@ -1393,7 +1407,7 @@ def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z
         encoding="utf-8",
         check=False,
     )
-    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in WLASCICIELE_PRZEGLADARKI}
+    found: dict[tuple[str, ...], dict[str, list[str]]] = {parts: {} for parts in WLASCICIELE_PRZEGLADARKI}
     for match in map(json.loads, scan.stdout.splitlines()):
         parts = tuple(Path(match["file"]).parts)
         line = match["range"]["start"]["line"] + 1
@@ -1404,12 +1418,31 @@ def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= line <= (node.end_lineno or 0)
         ]
         name = max(functions, key=lambda node: node.lineno).name if functions else "<moduł>"
-        found[parts][name] = found[parts].get(name, 0) + 1
+        calls = [
+            ast.unparse(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.lineno == line
+            and node.func.attr in ("launch", "launch_persistent_context")
+        ]
+        found[parts].setdefault(name, []).append(calls[0] if calls else "")
 
-    assert found == WLASCICIELE_PRZEGLADARKI, (
+    assert {parts: {name: len(texts) for name, texts in functions.items()} for parts, functions in found.items()} == {
+        parts: {name: len(fragments) for name, fragments in functions.items()} for parts, functions in WLASCICIELE_PRZEGLADARKI.items()
+    }, (
         "goły start przeglądarki w pliku z ignores: reguły przegladarka-bez-launch-options stoi tylko w funkcjach z "
         "WLASCICIELE_PRZEGLADARKI tyle razy, ile mówi tabela: podaj **launch_options(playwright) albo zmień tabelę"
     )
+    assert {
+        (parts, name, fragment): any(fragment in text for text in found[parts][name])
+        for parts, functions in WLASCICIELE_PRZEGLADARKI.items()
+        for name, fragments in functions.items()
+        for fragment in fragments
+    } == {
+        (parts, name, fragment): True
+        for parts, functions in WLASCICIELE_PRZEGLADARKI.items()
+        for name, fragments in functions.items()
+        for fragment in fragments
+    }, "start właściciela w WLASCICIELE_PRZEGLADARKI niesie argument z tabeli: przywróć go albo zmień tabelę"
 
 
 # Znane luki reguły ``przegladarka-bez-launch-options`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik

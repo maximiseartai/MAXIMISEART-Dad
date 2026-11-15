@@ -13,8 +13,9 @@ files:
   - tests/**/*.py
   - .agents/skills/**/*.py
 # Prawo właściciela: komunikat kieruje kod do launch_options z efenix_browser.py, a testy do chromium()
-# i plain_chromium() z tests/fixtures/przegladarka.py. Reguła zwalnia cały plik, więc WLASCICIELE_PRZEGLADARKI w tests/test_zapadki.py
-# trzyma resztę: plik właściciela poza zwolnieniem zgłasza dokładnie swoje funkcje z gołym startem.
+# i plain_chromium() z tests/fixtures/przegladarka.py. Reguła zwalnia cały plik, więc WLASCICIELE_PRZEGLADARKI
+# w tests/test_zapadki.py trzyma resztę: plik właściciela poza zwolnieniem zgłasza dokładnie swoje starty, każdy
+# z argumentem z tabeli.
 ignores:
   - src/rozliczenia/efenix_browser.py
   - tests/fixtures/przegladarka.py
