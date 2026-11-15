@@ -651,9 +651,14 @@ def ignores_missing(config: Path) -> list[str]:
     return sorted(
         f"{rule['id']}: {path}"
         for rule in _ast_grep_rule_documents(config)
-        for path in rule.get("ignores") or []
-        if not any(sign in str(path) for sign in "*?[") and not (config.parent / str(path)).exists()
+        for path in _ignores_of(rule)
+        if not any(sign in path for sign in "*?[") and not (config.parent / path).exists()
     )
+
+
+def _ignores_of(rule: dict[str, object]) -> list[str]:
+    ignores = rule.get("ignores")
+    return [str(path) for path in ignores] if isinstance(ignores, list) else []
 
 
 def test_kazda_konkretna_sciezka_w_ignores_reguly_ast_grep_istnieje() -> None:
