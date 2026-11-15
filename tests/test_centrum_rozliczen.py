@@ -83,6 +83,7 @@ from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, D
 from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
     FakeReportBox,
@@ -110,7 +111,6 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.potomne import wait_for
-from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.tool_clone import tool_repository
 
 from atrapy.pliki_taty import REGISTER_NAME
@@ -2961,6 +2961,338 @@ def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -
 
     assert (row["source"], row["undoable"]) == ("release", False)
     assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+# --- Plik Ustawień bez odczytu (#1529 W4, #1532 W2, #1572 W1): każda operacja i każda zmiana z Wydania ----------------
+# Test nie zna gałęzi „pliku nie da się przeczytać” z nazwy. Operacja Ustawień z kontraktu i zmiana z Wydania biegnie raz
+# na czytelnych plikach i zapisuje, które pliki katalogu narzędzia czyta (``tests/fixtures/odczyt_bez_dostepu.py``),
+# a potem raz na każdy z nich, gdy system nie daje go czytać. Wynik ma być jednym z dwóch, które nie gubią danych taty
+# (ADR 0032): taki sam jak przy czytelnym pliku albo nic. Nowa operacja i nowa zmiana z Wydania wchodzą do testu same.
+
+_ROW_ID = re.compile(r"\b[0-9a-f]{32}\b")
+_MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?")
+_COMMIT_FIELD = re.compile(r'"commit": ?"[0-9a-f]{7,40}"')
+
+
+def _without_run_differences(text: str, root: Path) -> str:
+    """Tekst bez tego, co różni dwa przebiegi tej samej operacji: katalog testu, id wiersza Historii, chwila i commit."""
+
+    for place in (str(root), json.dumps(str(root))[1:-1]):
+        text = text.replace(place, "<narzedzie>")
+    return _COMMIT_FIELD.sub('"commit":"<commit>"', _MOMENT.sub("<czas>", _ROW_ID.sub("<id>", text)))
+
+
+def _file_text(path: Path) -> str:
+    """Treść pliku jako tekst; pamięć pliku Ustawień z treścią (``widziany``, ``dobry``) zdekodowaną z base64."""
+
+    text = path.read_bytes().decode("utf-8", errors="replace")
+    if path.parent.name != MEMORY_DIRECTORY or path.suffix != ".json":
+        return text
+    document = json.loads(text)
+    if isinstance(document, dict):
+        for key in ("widziany", "dobry"):
+            if isinstance(document.get(key), str):
+                encoded = document[key] + "=" * (-len(document[key]) % 4)
+                document[key] = base64.urlsafe_b64decode(encoded).decode("utf-8", errors="replace")
+    return json.dumps(document, ensure_ascii=False)
+
+
+def _tool_files(tool: ToolDirectory) -> dict[str, str]:
+    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu."""
+
+    logs = tool.log_path.parent
+    return {
+        str(path.relative_to(tool.root)): _without_run_differences(_file_text(path), tool.root)
+        for path in sorted(tool.root.rglob("*"))
+        if path.is_file() and not path.is_relative_to(logs)
+    }
+
+
+def _settings_write_operations() -> set[str]:
+    return {
+        operation["operationId"]
+        for path, methods in _committed_contract()["paths"].items()
+        if path.startswith("/api/settings")
+        for method, operation in methods.items()
+        if method != "get"
+    }
+
+
+SIGNED_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "footer": "Pozdrawiam"}
+
+
+@dataclass(frozen=True)
+class SettingsWorld:
+    """Centrum po krokach taty, w których każdy plik Ustawień ma znaczenie: usunięta reguła, składnik i Wykonawca w
+    Historii (nowy wpis nie może dostać ich id) i wpisy, które operacja zmienia."""
+
+    app: Centrum
+    rule: str
+    device: str
+    worker: str
+    undo: str
+
+
+def _settings_world(tmp_path: Path) -> SettingsWorld:
+    """Świat próbek; wątki Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
+
+    app = centrum(tmp_path)
+    client = app.client
+    first = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
+    client.delete(f"{QUANTITY_RULES_URL}/{first}")
+    rule = client.post(QUANTITY_RULES_URL, json=EDITED["B"]).json()["quantity_rules"]["rules"][-1]["id"]
+    form: dict[str, object] = {"name": "ont x", "other_spellings": [], "group": None}
+    gone = client.post(DEVICES_URL, json=form).json()["quantity_rules"]["devices"][-1]["id"]
+    client.delete(f"{DEVICES_URL}/{gone}")
+    device = client.post(DEVICES_URL, json=form | {"name": "ont y"}).json()["quantity_rules"]["devices"][-1]["id"]
+    client.post("/api/settings/workers", json={"logins": ["ewa.znika"], "name": "Ewa Znika", "addresses": []})
+    client.delete("/api/settings/workers/ewa.znika")
+    client.post("/api/settings/workers", json={"logins": ["jan.zostaje"], "name": "Jan Zostaje", "addresses": []})
+    client.put("/api/settings/theme", json={"theme": "light"})
+    undo = next(row["id"] for row in client.get("/api/settings/history").json()["rows"] if row["undoable"])
+    (tmp_path / "INEA").mkdir()
+    (tmp_path / "Rejestr.xlsx").write_bytes(b"")
+    client.stop()
+    return SettingsWorld(app, rule, device, "jan.zostaje", undo)
+
+
+SettingsRequest = Callable[[SettingsWorld], tuple[str, str, object]]
+
+SETTINGS_WRITES: dict[str, SettingsRequest] = {
+    "changeAutostart": lambda w: ("PUT", "/api/settings/autostart", {"enabled": True}),
+    "addDevice": lambda w: ("POST", DEVICES_URL, {"name": "ont x", "other_spellings": [], "group": None}),
+    "changeDevice": lambda w: (
+        "PUT",
+        f"{DEVICES_URL}/{w.device}",
+        {"name": "ont y", "other_spellings": ["ont-y2"], "group": None},
+    ),
+    "removeDevice": lambda w: ("DELETE", f"{DEVICES_URL}/{w.device}", None),
+    "changeFolders": lambda w: (
+        "PUT",
+        "/api/settings/folders",
+        {"order_register": None, "periods_directory": str(w.app.tool.root / "INEA")},
+    ),
+    "undoSettingsChange": lambda w: ("POST", f"/api/settings/history/{w.undo}/undo", None),
+    "changeInboxPassword": lambda w: ("PUT", "/api/settings/inbox-password", {"password": "nowe haslo"}),
+    "choosePeriodsDirectory": lambda w: ("POST", "/api/settings/periods-directory/choose", None),
+    "addQuantityRule": lambda w: ("POST", QUANTITY_RULES_URL, EDITED["A"]),
+    "previewQuantityRules": lambda w: ("POST", f"{QUANTITY_RULES_URL}/preview", {"rules": [EDITED["A"]]}),
+    "changeQuantityRule": lambda w: ("PUT", f"{QUANTITY_RULES_URL}/{w.rule}", EDITED["A"]),
+    "removeQuantityRule": lambda w: ("DELETE", f"{QUANTITY_RULES_URL}/{w.rule}", None),
+    "chooseRegister": lambda w: ("POST", "/api/settings/register/choose", None),
+    "openRegister": lambda w: ("POST", "/api/settings/register/open", None),
+    "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),
+    "changeRemindersEnabled": lambda w: ("PUT", "/api/settings/reminders/enabled", {"enabled": True}),
+    "previewReminder": lambda w: ("POST", "/api/settings/reminders/preview", SIGNED_REMINDERS),
+    "changeTheme": lambda w: ("PUT", "/api/settings/theme", {"theme": "dark"}),
+    "addWorker": lambda w: ("POST", "/api/settings/workers", {"logins": ["ewa.znika"], "name": "Ewa", "addresses": []}),
+    "changeWorker": lambda w: (
+        "PUT",
+        f"/api/settings/workers/{w.worker}",
+        {"logins": [w.worker], "name": "Jan Inny", "addresses": [], "rename_confirmed": True},
+    ),
+    "removeWorker": lambda w: ("DELETE", f"/api/settings/workers/{w.worker}", None),
+    "assignWorkerAddress": lambda w: (
+        "POST",
+        f"/api/settings/workers/{w.worker}/addresses",
+        {"address": "jan@przyklad.invalid"},
+    ),
+    "switchWorker": lambda w: ("PUT", f"/api/settings/workers/{w.worker}/switches", {"active": False}),
+}
+"""Próbka każdej operacji Ustawień z kontraktu, która nie jest odczytem (GET): zapytanie w świecie ``_settings_world``."""
+
+SETTINGS_WRITES_WITHOUT_SAMPLE = {
+    "markQuantityException": "różnica Kontroli ilości istnieje tylko przy Pliku zbiorczym okresu z Przebiegu",
+}
+"""Operacje Ustawień bez próbki w ``SETTINGS_WRITES``, każda z powodem."""
+
+
+def test_kazda_operacja_zapisu_ustawien_z_kontraktu_ma_probke_pliku_bez_odczytu() -> None:
+    assert _settings_write_operations() <= set(SETTINGS_WRITES) | set(SETTINGS_WRITES_WITHOUT_SAMPLE), (
+        "Każda operacja Ustawień z kontraktu ma próbkę w SETTINGS_WRITES (albo powód w SETTINGS_WRITES_WITHOUT_SAMPLE), "
+        "żeby test pliku bez odczytu ją obejmował."
+    )
+
+
+@dataclass(frozen=True)
+class WriteOutcome:
+    status: int
+    body: str
+    files: dict[str, str]
+
+
+def _send_without_reading(
+    world: SettingsWorld, request: SettingsRequest, denied: frozenset[Path] = frozenset()
+) -> tuple[WriteOutcome, list[Path]]:
+    """Zapytanie ``request`` w świecie ``world``, gdy system nie daje czytać plików ``denied``: wynik i pliki katalogu
+    narzędzia poza Logami, które operacja otwierała do odczytu."""
+
+    method, url, body = request(world)
+    tool = world.app.tool
+    world.app.platform.chosen_folders.append(tool.root / "INEA")
+    world.app.platform.chosen_files.append(tool.root / "Rejestr.xlsx")
+    with reading(tool.root, frozenset(tool.root / path for path in denied)) as seen:
+        response = world.app.client.request(method, url, json=body)
+        world.app.client.stop()
+    logs = tool.log_path.parent
+    read = sorted(path.relative_to(tool.root) for path in seen if not path.is_relative_to(logs))
+    return WriteOutcome(response.status_code, _without_run_differences(response.text, tool.root), _tool_files(tool)), read
+
+
+@pytest.mark.parametrize("operation", sorted(set(SETTINGS_WRITES) & _settings_write_operations()))
+def test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_wynik_jak_przy_czytelnym(
+    tmp_path: Path, operation: str
+) -> None:
+    """Plik, którego system nie daje czytać, nie jest ani brakiem pliku, ani pustym plikiem: operacja taty odmawia ze
+    zdaniem i niczego nie zmienia albo zapisuje dokładnie to, co przy czytelnym pliku (widok w odpowiedzi może wtedy
+    pokazać sekcję tego pliku jako nieczytelną).
+
+    Granica: świat próbki musi mieć dane, przy których plik ma znaczenie (np. usunięta reguła w Historii), inaczej wynik
+    bez odczytu bywa przypadkiem taki sam; odczyt spoza Pythona w procesie testu zna granica ``odczyt_bez_dostepu``.
+    """
+
+    request = SETTINGS_WRITES[operation]
+    readable, read = _send_without_reading(_settings_world(tmp_path / "czytelne"), request)
+    wrong: list[str] = []
+    for index, locked in enumerate(read):
+        world = _settings_world(tmp_path / f"bez-odczytu-{index}")
+        before = _tool_files(world.app.tool)
+        outcome, _ = _send_without_reading(world, request, frozenset({locked}))
+        refused = outcome.status >= 400 and '"message"' in outcome.body and outcome.files == before
+        if not refused and (outcome.status, outcome.files) != (readable.status, readable.files):
+            changed = sorted(
+                name for name in {*outcome.files, *readable.files} if outcome.files.get(name) != readable.files.get(name)
+            )
+            wrong.append(f"{locked}: {outcome.status}, inne pliki {changed}: {outcome.body[:200]}")
+    assert not wrong, (
+        f"{operation} przy pliku bez odczytu ani nie odmówiła bez zmiany plików, ani nie dała wyniku jak przy czytelnym "
+        f"pliku ({readable.status} {readable.body[:200]}):\n" + "\n".join(wrong)
+    )
+
+
+def _old_worker_files(tool: ToolDirectory) -> None:
+    (tool.config / OLD_MAPPING_FILE).write_text(
+        "schema_version: 1\nworkers:\n  jan.testowy: Jan Testowy\n  anna.przyklad: Anna Przykład\n", encoding="utf-8"
+    )
+    (tool.config / OLD_ADDRESSES_FILE).write_text(
+        "schema_version: 1\nwykonawcy:\n  jan.testowy: [jan@przyklad.invalid]\n  obcy.login: [obcy@przyklad.invalid]\n",
+        encoding="utf-8",
+    )
+
+
+def _periods_folder_in_week(tool: ToolDirectory) -> None:
+    root = tool.root / "Załączniki"
+    week = root / "Rozliczenia 2026" / "10_Październik_2026" / "INEA"
+    week.mkdir(parents=True)
+    (root / "Rozliczenia 2026" / "09_Wrzesień_2026" / "INEA").mkdir(parents=True)
+    tool.settings.write_text(
+        f"schema_version: 1\nrejestr_zlecen: null\nfolder_okresow: {json.dumps(str(week))}\nmotyw: dark\n",
+        encoding="utf-8",
+    )
+
+
+def _old_reminder_files(tool: ToolDirectory) -> None:
+    (tool.config / OLD_ROLLOUT_FILE).write_text("2026-10-01\n", encoding="utf-8")
+    (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
+
+
+RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
+    "2026-11-lista-wykonawcow": _old_worker_files,
+    "2026-11-folder-okresow-od-zalacznikow": _periods_folder_in_week,
+    "2026-11-przypomnienia": _old_reminder_files,
+}
+"""Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
+
+
+def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
+    assert {change.id for change in RELEASE_CHANGES} <= set(RELEASE_CHANGE_WORLDS), (
+        "Każda zmiana z RELEASE_CHANGES ma w RELEASE_CHANGE_WORLDS świat, w którym wchodzi, żeby test pliku bez odczytu "
+        "ją obejmował."
+    )
+
+
+@dataclass(frozen=True)
+class ReleaseEffect:
+    """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
+
+    rows: tuple[str, ...]
+    remembered: str | None
+    file: str | None
+
+
+def _release_effect(tool: ToolDirectory, change: ReleaseChange[Any]) -> ReleaseEffect:
+    history = tool.config / HISTORY_FILE
+    lines = history.read_text(encoding="utf-8").splitlines() if history.exists() else []
+    rows = tuple(
+        _without_run_differences(line, tool.root) for line in lines if json.loads(line)["zrodlo"].get("zmiana") == change.id
+    )
+    memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+    applied = json.loads(memory.read_text(encoding="utf-8"))["zmiany"] if memory.exists() else {}
+    own = tool.config / change.file.name
+    return ReleaseEffect(
+        rows,
+        applied[change.id]["wynik"] if change.id in applied else None,
+        _without_run_differences(own.read_text(encoding="utf-8"), tool.root) if own.exists() else None,
+    )
+
+
+def _release_world(tmp_path: Path, change: ReleaseChange[Any]) -> ToolDirectory:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    RELEASE_CHANGE_WORLDS[change.id](tool)
+    return tool
+
+
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czytelnym(
+    tmp_path: Path, change: ReleaseChange[Any]
+) -> None:
+    """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
+    ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
+    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych."""
+
+    readable_tool = _release_world(tmp_path / "czytelne", change)
+    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
+    with reading(readable_tool.root) as seen:
+        started(readable_tool, RELEASE_CHANGES).stop()
+    readable = _release_effect(readable_tool, change)
+    assert readable.remembered == "zastosowano", f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"
+    logs = readable_tool.log_path.parent
+    read = sorted(path.relative_to(readable_tool.root) for path in seen if not path.is_relative_to(logs))
+
+    wrong: list[str] = []
+    for index, locked in enumerate(read):
+        tool = _release_world(tmp_path / f"bez-odczytu-{index}", change)
+        with reading(tool.root, frozenset({tool.root / locked})):
+            started(tool, RELEASE_CHANGES).stop()
+        held = _release_effect(tool, change)
+        started(tool, RELEASE_CHANGES).stop()
+        again = _release_effect(tool, change)
+        if held not in (readable, untouched) or again != readable:
+            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
+    assert not wrong, f"{change.id} (przy czytelnych plikach {readable}):\n" + "\n".join(wrong)
+
+
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change: ReleaseChange[Any]) -> None:
+    """Zły plik zmiany z Wydania zostaje bajt w bajt i bez wiersza ``zapisano``: zmiana nie pisze ostatniej dobrej
+    wartości na plik, który tata albo Maks właśnie poprawia (ADR 0032). Start bez zmian z Wydania najpierw zapamiętuje
+    dobry plik, więc właściciel ma ostatnią dobrą wartość, którą zmiana mogłaby nadpisać zły plik.
+
+    Granica: zła treść dotyczy tylko pliku samej zmiany z Wydania, nie plików czytanych przez operację taty."""
+
+    tool = _release_world(tmp_path, change)
+    remembering = started(tool, ())
+    assert remembering.get("/api/settings").status_code == 200
+    remembering.stop()
+    own = tool.config / change.file.name
+    bad = (own.read_bytes() if own.exists() else b"schema_version: 1\n") + b"nieznany_klucz: 1\n"
+    own.write_bytes(bad)
+
+    started(tool, RELEASE_CHANGES).stop()
+
+    assert own.read_bytes() == bad
+    assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
 
 
 # --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
@@ -6130,335 +6462,3 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
     ]
     log = app.log_path.read_text(encoding="utf-8")
     assert "Syntetyczna" not in log and "CENTRUM-SYN-ROW" not in log and str(periods) not in log
-
-
-# --- Plik Ustawień bez odczytu (#1529 W4, #1532 W2, #1572 W1): każda operacja i każda zmiana z Wydania ----------------
-# Test nie zna gałęzi „pliku nie da się przeczytać” z nazwy. Operacja Ustawień z kontraktu i zmiana z Wydania biegnie raz
-# na czytelnych plikach i zapisuje, które pliki katalogu narzędzia czyta (``tests/fixtures/odczyt_bez_dostepu.py``),
-# a potem raz na każdy z nich, gdy system nie daje go czytać. Wynik ma być jednym z dwóch, które nie gubią danych taty
-# (ADR 0032): taki sam jak przy czytelnym pliku albo nic. Nowa operacja i nowa zmiana z Wydania wchodzą do testu same.
-
-_ROW_ID = re.compile(r"\b[0-9a-f]{32}\b")
-_MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?")
-_COMMIT_FIELD = re.compile(r'"commit": ?"[0-9a-f]{7,40}"')
-
-
-def _without_run_differences(text: str, root: Path) -> str:
-    """Tekst bez tego, co różni dwa przebiegi tej samej operacji: katalog testu, id wiersza Historii, chwila i commit."""
-
-    for place in (str(root), json.dumps(str(root))[1:-1]):
-        text = text.replace(place, "<narzedzie>")
-    return _COMMIT_FIELD.sub('"commit":"<commit>"', _MOMENT.sub("<czas>", _ROW_ID.sub("<id>", text)))
-
-
-def _file_text(path: Path) -> str:
-    """Treść pliku jako tekst; pamięć pliku Ustawień z treścią (``widziany``, ``dobry``) zdekodowaną z base64."""
-
-    text = path.read_bytes().decode("utf-8", errors="replace")
-    if path.parent.name != MEMORY_DIRECTORY or path.suffix != ".json":
-        return text
-    document = json.loads(text)
-    if isinstance(document, dict):
-        for key in ("widziany", "dobry"):
-            if isinstance(document.get(key), str):
-                encoded = document[key] + "=" * (-len(document[key]) % 4)
-                document[key] = base64.urlsafe_b64decode(encoded).decode("utf-8", errors="replace")
-    return json.dumps(document, ensure_ascii=False)
-
-
-def _tool_files(tool: ToolDirectory) -> dict[str, str]:
-    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu."""
-
-    logs = tool.log_path.parent
-    return {
-        str(path.relative_to(tool.root)): _without_run_differences(_file_text(path), tool.root)
-        for path in sorted(tool.root.rglob("*"))
-        if path.is_file() and not path.is_relative_to(logs)
-    }
-
-
-def _settings_write_operations() -> set[str]:
-    return {
-        operation["operationId"]
-        for path, methods in _committed_contract()["paths"].items()
-        if path.startswith("/api/settings")
-        for method, operation in methods.items()
-        if method != "get"
-    }
-
-
-SIGNED_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "footer": "Pozdrawiam"}
-
-
-@dataclass(frozen=True)
-class SettingsWorld:
-    """Centrum po krokach taty, w których każdy plik Ustawień ma znaczenie: usunięta reguła, składnik i Wykonawca w
-    Historii (nowy wpis nie może dostać ich id) i wpisy, które operacja zmienia."""
-
-    app: Centrum
-    rule: str
-    device: str
-    worker: str
-    undo: str
-
-
-def _settings_world(tmp_path: Path) -> SettingsWorld:
-    """Świat próbek; wątki Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
-
-    app = centrum(tmp_path)
-    client = app.client
-    first = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
-    client.delete(f"{QUANTITY_RULES_URL}/{first}")
-    rule = client.post(QUANTITY_RULES_URL, json=EDITED["B"]).json()["quantity_rules"]["rules"][-1]["id"]
-    form: dict[str, object] = {"name": "ont x", "other_spellings": [], "group": None}
-    gone = client.post(DEVICES_URL, json=form).json()["quantity_rules"]["devices"][-1]["id"]
-    client.delete(f"{DEVICES_URL}/{gone}")
-    device = client.post(DEVICES_URL, json=form | {"name": "ont y"}).json()["quantity_rules"]["devices"][-1]["id"]
-    client.post("/api/settings/workers", json={"logins": ["ewa.znika"], "name": "Ewa Znika", "addresses": []})
-    client.delete("/api/settings/workers/ewa.znika")
-    client.post("/api/settings/workers", json={"logins": ["jan.zostaje"], "name": "Jan Zostaje", "addresses": []})
-    client.put("/api/settings/theme", json={"theme": "light"})
-    undo = next(row["id"] for row in client.get("/api/settings/history").json()["rows"] if row["undoable"])
-    (tmp_path / "INEA").mkdir()
-    (tmp_path / "Rejestr.xlsx").write_bytes(b"")
-    client.stop()
-    return SettingsWorld(app, rule, device, "jan.zostaje", undo)
-
-
-SettingsRequest = Callable[[SettingsWorld], tuple[str, str, object]]
-
-SETTINGS_WRITES: dict[str, SettingsRequest] = {
-    "changeAutostart": lambda w: ("PUT", "/api/settings/autostart", {"enabled": True}),
-    "addDevice": lambda w: ("POST", DEVICES_URL, {"name": "ont x", "other_spellings": [], "group": None}),
-    "changeDevice": lambda w: (
-        "PUT",
-        f"{DEVICES_URL}/{w.device}",
-        {"name": "ont y", "other_spellings": ["ont-y2"], "group": None},
-    ),
-    "removeDevice": lambda w: ("DELETE", f"{DEVICES_URL}/{w.device}", None),
-    "changeFolders": lambda w: (
-        "PUT",
-        "/api/settings/folders",
-        {"order_register": None, "periods_directory": str(w.app.tool.root / "INEA")},
-    ),
-    "undoSettingsChange": lambda w: ("POST", f"/api/settings/history/{w.undo}/undo", None),
-    "changeInboxPassword": lambda w: ("PUT", "/api/settings/inbox-password", {"password": "nowe haslo"}),
-    "choosePeriodsDirectory": lambda w: ("POST", "/api/settings/periods-directory/choose", None),
-    "addQuantityRule": lambda w: ("POST", QUANTITY_RULES_URL, EDITED["A"]),
-    "previewQuantityRules": lambda w: ("POST", f"{QUANTITY_RULES_URL}/preview", {"rules": [EDITED["A"]]}),
-    "changeQuantityRule": lambda w: ("PUT", f"{QUANTITY_RULES_URL}/{w.rule}", EDITED["A"]),
-    "removeQuantityRule": lambda w: ("DELETE", f"{QUANTITY_RULES_URL}/{w.rule}", None),
-    "chooseRegister": lambda w: ("POST", "/api/settings/register/choose", None),
-    "openRegister": lambda w: ("POST", "/api/settings/register/open", None),
-    "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),
-    "changeRemindersEnabled": lambda w: ("PUT", "/api/settings/reminders/enabled", {"enabled": True}),
-    "previewReminder": lambda w: ("POST", "/api/settings/reminders/preview", SIGNED_REMINDERS),
-    "changeTheme": lambda w: ("PUT", "/api/settings/theme", {"theme": "dark"}),
-    "addWorker": lambda w: ("POST", "/api/settings/workers", {"logins": ["ewa.znika"], "name": "Ewa", "addresses": []}),
-    "changeWorker": lambda w: (
-        "PUT",
-        f"/api/settings/workers/{w.worker}",
-        {"logins": [w.worker], "name": "Jan Inny", "addresses": [], "rename_confirmed": True},
-    ),
-    "removeWorker": lambda w: ("DELETE", f"/api/settings/workers/{w.worker}", None),
-    "assignWorkerAddress": lambda w: (
-        "POST",
-        f"/api/settings/workers/{w.worker}/addresses",
-        {"address": "jan@przyklad.invalid"},
-    ),
-    "switchWorker": lambda w: ("PUT", f"/api/settings/workers/{w.worker}/switches", {"active": False}),
-}
-"""Próbka każdej operacji Ustawień z kontraktu, która nie jest odczytem (GET): zapytanie w świecie ``_settings_world``."""
-
-SETTINGS_WRITES_WITHOUT_SAMPLE = {
-    "markQuantityException": "różnica Kontroli ilości istnieje tylko przy Pliku zbiorczym okresu z Przebiegu",
-}
-"""Operacje Ustawień bez próbki w ``SETTINGS_WRITES``, każda z powodem."""
-
-
-def test_kazda_operacja_zapisu_ustawien_z_kontraktu_ma_probke_pliku_bez_odczytu() -> None:
-    assert _settings_write_operations() <= set(SETTINGS_WRITES) | set(SETTINGS_WRITES_WITHOUT_SAMPLE), (
-        "Każda operacja Ustawień z kontraktu ma próbkę w SETTINGS_WRITES (albo powód w SETTINGS_WRITES_WITHOUT_SAMPLE), "
-        "żeby test pliku bez odczytu ją obejmował."
-    )
-
-
-@dataclass(frozen=True)
-class WriteOutcome:
-    status: int
-    body: str
-    files: dict[str, str]
-
-
-def _send_without_reading(
-    world: SettingsWorld, request: SettingsRequest, denied: frozenset[Path] = frozenset()
-) -> tuple[WriteOutcome, list[Path]]:
-    """Zapytanie ``request`` w świecie ``world``, gdy system nie daje czytać plików ``denied``: wynik i pliki katalogu
-    narzędzia poza Logami, które operacja otwierała do odczytu."""
-
-    method, url, body = request(world)
-    tool = world.app.tool
-    world.app.platform.chosen_folders.append(tool.root / "INEA")
-    world.app.platform.chosen_files.append(tool.root / "Rejestr.xlsx")
-    with reading(tool.root, frozenset(tool.root / path for path in denied)) as seen:
-        response = world.app.client.request(method, url, json=body)
-        world.app.client.stop()
-    logs = tool.log_path.parent
-    read = sorted(path.relative_to(tool.root) for path in seen if not path.is_relative_to(logs))
-    return WriteOutcome(response.status_code, _without_run_differences(response.text, tool.root), _tool_files(tool)), read
-
-
-@pytest.mark.parametrize("operation", sorted(set(SETTINGS_WRITES) & _settings_write_operations()))
-def test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_wynik_jak_przy_czytelnym(
-    tmp_path: Path, operation: str
-) -> None:
-    """Plik, którego system nie daje czytać, nie jest ani brakiem pliku, ani pustym plikiem: operacja taty odmawia ze
-    zdaniem i niczego nie zmienia albo zapisuje dokładnie to, co przy czytelnym pliku (widok w odpowiedzi może wtedy
-    pokazać sekcję tego pliku jako nieczytelną).
-
-    Granica: świat próbki musi mieć dane, przy których plik ma znaczenie (np. usunięta reguła w Historii), inaczej wynik
-    bez odczytu bywa przypadkiem taki sam; odczyt spoza Pythona w procesie testu zna granica ``odczyt_bez_dostepu``.
-    """
-
-    request = SETTINGS_WRITES[operation]
-    readable, read = _send_without_reading(_settings_world(tmp_path / "czytelne"), request)
-    wrong: list[str] = []
-    for index, locked in enumerate(read):
-        world = _settings_world(tmp_path / f"bez-odczytu-{index}")
-        before = _tool_files(world.app.tool)
-        outcome, _ = _send_without_reading(world, request, frozenset({locked}))
-        refused = outcome.status >= 400 and '"message"' in outcome.body and outcome.files == before
-        if not refused and (outcome.status, outcome.files) != (readable.status, readable.files):
-            changed = sorted(
-                name for name in {*outcome.files, *readable.files} if outcome.files.get(name) != readable.files.get(name)
-            )
-            wrong.append(f"{locked}: {outcome.status}, inne pliki {changed}: {outcome.body[:200]}")
-    assert not wrong, (
-        f"{operation} przy pliku bez odczytu ani nie odmówiła bez zmiany plików, ani nie dała wyniku jak przy czytelnym "
-        f"pliku ({readable.status} {readable.body[:200]}):\n" + "\n".join(wrong)
-    )
-
-
-def _old_worker_files(tool: ToolDirectory) -> None:
-    (tool.config / OLD_MAPPING_FILE).write_text(
-        "schema_version: 1\nworkers:\n  jan.testowy: Jan Testowy\n  anna.przyklad: Anna Przykład\n", encoding="utf-8"
-    )
-    (tool.config / OLD_ADDRESSES_FILE).write_text(
-        "schema_version: 1\nwykonawcy:\n  jan.testowy: [jan@przyklad.invalid]\n  obcy.login: [obcy@przyklad.invalid]\n",
-        encoding="utf-8",
-    )
-
-
-def _periods_folder_in_week(tool: ToolDirectory) -> None:
-    root = tool.root / "Załączniki"
-    week = root / "Rozliczenia 2026" / "10_Październik_2026" / "INEA"
-    week.mkdir(parents=True)
-    (root / "Rozliczenia 2026" / "09_Wrzesień_2026" / "INEA").mkdir(parents=True)
-    tool.settings.write_text(
-        f"schema_version: 1\nrejestr_zlecen: null\nfolder_okresow: {json.dumps(str(week))}\nmotyw: dark\n",
-        encoding="utf-8",
-    )
-
-
-def _old_reminder_files(tool: ToolDirectory) -> None:
-    (tool.config / OLD_ROLLOUT_FILE).write_text("2026-10-01\n", encoding="utf-8")
-    (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
-
-
-RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
-    "2026-11-lista-wykonawcow": _old_worker_files,
-    "2026-11-folder-okresow-od-zalacznikow": _periods_folder_in_week,
-    "2026-11-przypomnienia": _old_reminder_files,
-}
-"""Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
-
-
-def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
-    assert {change.id for change in RELEASE_CHANGES} <= set(RELEASE_CHANGE_WORLDS), (
-        "Każda zmiana z RELEASE_CHANGES ma w RELEASE_CHANGE_WORLDS świat, w którym wchodzi, żeby test pliku bez odczytu "
-        "ją obejmował."
-    )
-
-
-@dataclass(frozen=True)
-class ReleaseEffect:
-    """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
-
-    rows: tuple[str, ...]
-    remembered: str | None
-    file: str | None
-
-
-def _release_effect(tool: ToolDirectory, change: ReleaseChange[Any]) -> ReleaseEffect:
-    history = tool.config / HISTORY_FILE
-    lines = history.read_text(encoding="utf-8").splitlines() if history.exists() else []
-    rows = tuple(
-        _without_run_differences(line, tool.root) for line in lines if json.loads(line)["zrodlo"].get("zmiana") == change.id
-    )
-    memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
-    applied = json.loads(memory.read_text(encoding="utf-8"))["zmiany"] if memory.exists() else {}
-    own = tool.config / change.file.name
-    return ReleaseEffect(
-        rows,
-        applied[change.id]["wynik"] if change.id in applied else None,
-        _without_run_differences(own.read_text(encoding="utf-8"), tool.root) if own.exists() else None,
-    )
-
-
-def _release_world(tmp_path: Path, change: ReleaseChange[Any]) -> ToolDirectory:
-    tool = ToolDirectory(tmp_path)
-    tool.config.mkdir(parents=True)
-    RELEASE_CHANGE_WORLDS[change.id](tool)
-    return tool
-
-
-@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
-def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czytelnym(
-    tmp_path: Path, change: ReleaseChange[Any]
-) -> None:
-    """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
-    ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
-    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych."""
-
-    readable_tool = _release_world(tmp_path / "czytelne", change)
-    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
-    with reading(readable_tool.root) as seen:
-        started(readable_tool, RELEASE_CHANGES).stop()
-    readable = _release_effect(readable_tool, change)
-    assert readable.remembered == "zastosowano", f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"
-    logs = readable_tool.log_path.parent
-    read = sorted(path.relative_to(readable_tool.root) for path in seen if not path.is_relative_to(logs))
-
-    wrong: list[str] = []
-    for index, locked in enumerate(read):
-        tool = _release_world(tmp_path / f"bez-odczytu-{index}", change)
-        with reading(tool.root, frozenset({tool.root / locked})):
-            started(tool, RELEASE_CHANGES).stop()
-        held = _release_effect(tool, change)
-        started(tool, RELEASE_CHANGES).stop()
-        again = _release_effect(tool, change)
-        if held not in (readable, untouched) or again != readable:
-            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
-    assert not wrong, f"{change.id} (przy czytelnych plikach {readable}):\n" + "\n".join(wrong)
-
-
-@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
-def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change: ReleaseChange[Any]) -> None:
-    """Zły plik zmiany z Wydania zostaje bajt w bajt i bez wiersza ``zapisano``: zmiana nie pisze ostatniej dobrej
-    wartości na plik, który tata albo Maks właśnie poprawia (ADR 0032). Start bez zmian z Wydania najpierw zapamiętuje
-    dobry plik, więc właściciel ma ostatnią dobrą wartość, którą zmiana mogłaby nadpisać zły plik.
-
-    Granica: zła treść dotyczy tylko pliku samej zmiany z Wydania, nie plików czytanych przez operację taty."""
-
-    tool = _release_world(tmp_path, change)
-    remembering = started(tool, ())
-    assert remembering.get("/api/settings").status_code == 200
-    remembering.stop()
-    own = tool.config / change.file.name
-    bad = (own.read_bytes() if own.exists() else b"schema_version: 1\n") + b"nieznany_klucz: 1\n"
-    own.write_bytes(bad)
-
-    started(tool, RELEASE_CHANGES).stop()
-
-    assert own.read_bytes() == bad
-    assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
