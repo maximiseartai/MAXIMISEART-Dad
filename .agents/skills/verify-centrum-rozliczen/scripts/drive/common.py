@@ -261,8 +261,11 @@ class Run:
 
         Runs at each ``api`` and after each feature's drive (``drive_centrum.drive``), so the failure names the step
         that wrote the file; Mutation checks drive every feature on Windows, where a text write gives ``\\r\\n``. A file
-        the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next check."""
+        the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next check, and a
+        run whose fixture names no settings file (the tests of the harness) has none to check."""
 
+        if "settings" not in self.fixture:
+            return
         try:
             data = self.settings_bytes()
         except PermissionError:

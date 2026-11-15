@@ -476,7 +476,7 @@ def _check_result_of_start(errors: list[str]) -> None:
             with tempfile.TemporaryDirectory() as scratch:
                 root = Path(scratch) / "run"
                 root.mkdir()
-                File.FIXTURE.write(root, json.dumps({"settings": str(root / "config" / "s.yaml")}))
+                File.FIXTURE.write(root, "{}")
                 run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
                 with contextlib.redirect_stdout(io.StringIO()):
                     result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
