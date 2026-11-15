@@ -42,6 +42,12 @@ POWOD_ZNAKOW = 10_000
 pytest_plugins = ["tests.fixtures.eksplorator_w_procesie"]
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    from tests.fixtures.potomne import ctrl_c_reaches_children
+
+    ctrl_c_reaches_children()
+
+
 def pytest_itemcollected(item: pytest.Item) -> None:
     """Test z ``KWARANTANNA`` biegnie jako ``xfail(strict=False)``: jego porażka nie czerwieni CI, a junit ma jego wynik
     z własnością ``kwarantanna``, z której ``tools/ci/wykonaj_zadanie.py`` zapisuje wyniki testów z kwarantanny zadania."""
