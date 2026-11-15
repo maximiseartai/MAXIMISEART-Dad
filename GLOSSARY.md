@@ -506,8 +506,29 @@ _Avoid_: kasowanie jedynek, usuwanie cyfr
 Zasady taty, które z treści zlecenia (`UMOWA`, `URZĄDZENIA`, `CZYNNOŚCI`,
 `DATA`) wyznaczają Ilości usług. Są Ustawieniem Centrum: tata tworzy je i
 zmienia sam, każdą jako „jeśli … to …”. Ilości wynikające z opisu technika
-(`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości, bo wpisuje je tata.
+(`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości: wyznacza je Legenda
+czynności albo wpisuje tata.
 _Avoid_: scenariusze rozliczeń, instrukcja
+
+## Legenda czynności
+
+Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w
+Pliku zbiorczym. Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza
+Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` mają
+co najmniej jeden Kod czynności.
+_Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
+
+## Kod czynności
+
+Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast
+opisu, np. `inst20m` albo `spawpg`, bez względu na wielkość liter i spacje, w
+jednym z jego zapisów (np. `instmdik` i `instmdic`). Wyznacza w Pliku zbiorczym
+Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z
+nich naraz, a każde jego wystąpienie się dodaje. Liczba w kodzie albo nie ma
+znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera
+kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`); liczba spoza
+przedziałów niczego nie wyznacza.
+_Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Lista Urządzeń
 
@@ -524,7 +545,8 @@ Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, wię
 wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej
 V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste
 `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym
-wierszu. To miejsca zostawione tacie, nie błędy.
+wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności. To
+miejsca zostawione tacie, nie błędy.
 _Avoid_: błędy, braki, cyfry do wpisania
 
 ## Zlecenie ze zdjęciami
