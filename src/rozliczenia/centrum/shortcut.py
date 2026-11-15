@@ -38,6 +38,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from rozliczenia.call_trace import exception_type
 from rozliczenia.centrum.platform import NO_AUTOSTART, Autostart, AutostartState, ConsoleRun, run_console_program
 from rozliczenia.file_state import file_state
 from rozliczenia.message import refer_if
@@ -95,6 +96,22 @@ _CREATED = {
     Folder.STARTUP: "Utworzono skrót „Centrum rozliczeń” w Autostarcie (start po zalogowaniu, bez karty)",
 }
 
+class ShortcutNotWritten(OSError):
+    """Skrót nie powstał; podklasa mówi, w którym kroku zapisu, bo Komunikat dla taty jest jeden dla wszystkich."""
+
+
+class PowerShellTimedOut(ShortcutNotWritten):
+    """PowerShell nie zapisał skrótu w ``_POWERSHELL_TIMEOUT_S``."""
+
+
+class PowerShellFailed(ShortcutNotWritten):
+    """PowerShell skończył się kodem różnym od zera."""
+
+
+class ShortcutNotMoved(ShortcutNotWritten):
+    """Windows nie przeniósł zapisanego skrótu pod jego nazwę; błąd przeniesienia stoi w łańcuchu (``__cause__``)."""
+
+
 _SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:CENTRUM_SKROT_PLIK)
@@ -108,6 +125,9 @@ $link.Save()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Krok instalacji skrótów. Po porażce zapisu daje tacie jeden Komunikat, a na stderr przyczynę techniczną jak
+    w Logach, sam typ wyjątku (``ShortcutNotWritten`` i podklasy), bez treści i ścieżek, bo krok nie ma Logów."""
+
     parser = argparse.ArgumentParser(description="Tworzy skrót „Centrum rozliczeń” na pulpicie i w Autostarcie (Windows).")
     parser.add_argument("--folder", type=Path, help="Folder skrótu z pulpitu; domyślnie pulpit.")
     parser.add_argument(
@@ -131,12 +151,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     for shortcut in shortcuts(TOOL_ROOT):
         try:
             path = _write(shortcut, windowless_python, chosen[shortcut.folder], run_console_program)
-        except OSError:
+        except OSError as failure:
             print(
                 "Co się stało: Nie udało się utworzyć skrótu „Centrum rozliczeń”.\n"
                 f"Gdzie: {_WHERE[shortcut.folder]}\n"
                 f"Co zrobić: Uruchom ten krok ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż go')}"
             )
+            print(f"Przyczyna techniczna: {exception_type(failure)}", file=sys.stderr)
             return 1
         print(f"{_CREATED[shortcut.folder]}: {path}")
     return 0
@@ -214,7 +235,8 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
     """Zapisuje (albo nadpisuje) skrót „Centrum rozliczeń” w ``folder`` (``None``: folder systemu) i daje jego ścieżkę.
 
     WScript.Shell zapisuje pod nazwą ASCII, a Python przenosi plik pod ``shortcut_file``, więc nazwa nie zależy od
-    strony kodowej ANSI systemu. ``OSError``, gdy PowerShell padł, przekroczył limit czasu albo plik się nie przeniósł.
+    strony kodowej ANSI systemu. ``PowerShellTimedOut``, ``PowerShellFailed`` albo ``ShortcutNotMoved``, gdy PowerShell
+    przekroczył limit czasu, padł albo plik się nie przeniósł.
     Pod nazwą ASCII nic nie zostaje: po porażce plik znika, a po udanym przeniesieniu już go tam nie ma. Każdy argument
     skrótu stoi w cudzysłowie, bo ścieżka narzędzia może mieć spację, a nazwa pliku Windows nie ma cudzysłowu.
     """
@@ -235,10 +257,13 @@ def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run
         try:
             result = run(command, env=environment, timeout_s=_POWERSHELL_TIMEOUT_S)
         except subprocess.TimeoutExpired as late:
-            raise OSError(f"PowerShell nie zapisał skrótu w {_POWERSHELL_TIMEOUT_S:.0f} s.") from late
+            raise PowerShellTimedOut(f"PowerShell nie zapisał skrótu w {_POWERSHELL_TIMEOUT_S:.0f} s.") from late
         if result.returncode != 0:
-            raise OSError(f"PowerShell nie zapisał skrótu (kod {result.returncode}).")
-        os.replace(written, target)
+            raise PowerShellFailed(f"PowerShell nie zapisał skrótu (kod {result.returncode}).")
+        try:
+            os.replace(written, target)
+        except OSError as error:
+            raise ShortcutNotMoved("Windows nie przeniósł zapisanego skrótu pod jego nazwę.") from error
     finally:
         with suppress(OSError):
             written.unlink(missing_ok=True)
