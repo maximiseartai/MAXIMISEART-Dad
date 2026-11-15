@@ -3308,21 +3308,13 @@ def _trial(
     return Trial(outcome, read, own(reads.before_last_write(outside=logs)), absent)
 
 
-def _settings_reads() -> list[str]:
-    return sorted(
-        path
-        for path, methods in _committed_contract()["paths"].items()
-        if path.startswith("/api/settings") and "get" in methods and "{" not in path
-    )
-
-
 def _next_reading(client: CentrumClient) -> None:
-    """Następny odczyt Ustawień przy czytelnych plikach, jak okno Ustawień taty po zapisie: każdy odczyt (GET) Ustawień
-    z kontraktu bez parametru w ścieżce. Zapisuje wiersz zmiany spoza Centrum, który bieg przy pliku bez odczytu odłożył."""
+    """Następny odczyt Ustawień przy czytelnych plikach: okno Historii Ustawień, które najpierw porównuje każdy plik
+    Ustawień z pamięcią (``CentrumSettings.history``), więc zapisuje wiersz zmiany spoza Centrum, który bieg przy pliku
+    bez odczytu odłożył."""
 
-    for path in _settings_reads():
-        response = client.get(path)
-        assert response.status_code == 200, f"{path}: {response.status_code} {response.text[:200]}"
+    response = client.get("/api/settings/history")
+    assert response.status_code == 200, f"Historia Ustawień: {response.status_code} {response.text[:200]}"
     client.stop()
 
 
@@ -3639,7 +3631,11 @@ def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czy
 ) -> None:
     """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
     ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
-    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych."""
+    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
+
+    Granica: warunku znaczenia (``_meaningless``) ten test nie ma. Świat zmiany ma tylko jej stare pliki albo plik do
+    poprawy, a pamięci, Historii i plików startu spoza Ustawień w nim nie ma, więc odebrany odczyt tych plików niczego
+    tu nie sprawdza."""
 
     readable_tool = _release_world(tmp_path / "czytelne", change)
     untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
