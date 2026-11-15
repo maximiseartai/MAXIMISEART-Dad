@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
+from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
@@ -74,6 +75,31 @@ def pytest_terminal_summary(terminalreporter: TerminalReporter) -> None:
             text = f"… (początek ucięty, {len(text) - len(tail)} znaków)\n{tail}"
         terminalreporter.write_line(f"KWARANTANNA | {report.nodeid} padł ({report.when}), {reason}:")
         terminalreporter.write_line(text)
+
+
+_TREE_AT_START = pytest.StashKey[frozenset[str]]()
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Pliki z liniami dodanymi od ``HEAD`` przed testami; pod xdist liczy tylko kontroler (``tests/fixtures/drzewo_repo.py``)."""
+
+    if not hasattr(session.config, "workerinput") and (files := files_with_added_lines()) is not None:
+        session.config.stash[_TREE_AT_START] = files
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Sesja, po której w drzewie repozytorium został nowy plik z liniami dodanymi od ``HEAD``, kończy się porażką z jego
+    ścieżką: zapadka reguł ast-grep liczy go jako zmianę, więc wywraca CI zależnie od kolejności testów (#1864)."""
+
+    before = session.config.stash.get(_TREE_AT_START, None)
+    if before is None or not (left := left_behind(before)):
+        return
+    print(
+        "\nDRZEWO REPO | testy zostawiły w drzewie repozytorium pliki z liniami dodanymi od HEAD: "
+        + ", ".join(f"{path} ({opening(path)})" for path in left)
+        + " | test pisze do tmp_path albo przywraca plik bez zmiany jego czasu i bajtów (tests/fixtures/drzewo_repo.py)"
+    )
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
