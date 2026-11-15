@@ -37,14 +37,6 @@ import odpalenia_ast_grep
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 
-# Lookbehind wokół cyfr numeru, jak ``(?<![0-9a-f])`` w 5b2edaf2f9 i ``(?<![0-9])`` w cc7e5ced21.
-_ORDER_NUMBER_ORACLE = re.compile(r"\(\?<!\[?(?:\\d|0-9)")
-_ORDER_NUMBER_HELPER = (
-    "własna wyrocznia wycieku numeru zlecenia: sprawdź tekst przez zawiera_wartosc z tests/fixtures/wyciek.py, która"
-    " pyta strażnika reguły danych (ForbiddenValues.guard), bo cztery własne wzorce z rzędu rozjechały się ze strażnikiem,"
-    " a jeden zaczerwienił main, gdy losowy hex HMAC zawierał numer"
-)
-
 # Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
 # w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
 _WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
@@ -136,62 +128,6 @@ def _base() -> str | None:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
         return None
-
-
-def order_number_oracle(line: str) -> bool:
-    """Czy linia testu sprawdza wyciek numeru zlecenia własną definicją zamiast ``zawiera_wartosc``.
-
-    Łapie tylko napis ``(?<!``, po nim opcjonalnie ``[``, a po nim ``\\d`` z jednym ukośnikiem albo ``0-9``: tak zaczyna
-    się ``(?<![0-9a-f])``, ``(?<![0-9])``, ``(?<!0-9`` i ``r"(?<!\\d)"``. Postacie, których nie łapie ani zapadka, ani
-    ruff, są próbkami ``ZNANE_LUKI`` tego pliku. Każda forma ma 0 trafień, gdy każda linia ``tests/`` jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _ORDER_NUMBER_ORACLE.search(line) is not None
-
-
-def order_number_oracles(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza tym plikiem, które zmiana od ``base`` dodaje z ``order_number_oracle``, z komunikatem."""
-
-    return [
-        f"{path}:{number}: {_ORDER_NUMBER_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
-        if path != "tests/test_zapadki.py" and order_number_oracle(line)
-    ]
-
-
-def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert order_number_oracles(ROOT, base) == []
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        'return re.search(rf"(?<![0-9a-f]){re.escape(number.removeprefix(\'#\'))}(?![0-9a-f])", text) is not None',
-        'number = re.compile(r"(?<![0-9a-f])9401(?![0-9a-f])")',
-        'number = re.compile(r"(?<![0-9])9401(?![0-9])")',
-        r'assert re.search(r"(?<!\d)9401", text) is None',
-    ],
-)
-def test_zapadka_lapie_wlasna_wyrocznie_numeru_zlecenia(line: str) -> None:
-    assert order_number_oracle(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "assert [zawiera_wartosc(text, order.number) for text in texts] == [False, False]",
-        'FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\\\/]")',
-        'assert "TESTOWA" not in text',
-        'assert "2026" in text',
-        'assert re.fullmatch(r"CZAS: ([0-9]+) s", line)',
-    ],
-)
-def test_zapadka_przepuszcza_zawiera_wartosc_i_inne_wyrazenia(line: str) -> None:
-    assert not order_number_oracle(line)
 
 
 def worker_threads(line: str) -> bool:
@@ -887,6 +823,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1953,67 +1890,6 @@ def open_order(page: Page, url: str) -> None:
     ]
 """,
     },
-    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": {
-        "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search("(?<!\\d)94001(?!\\d)", text) is None
-''',
-        "klasa, w której 0-9 nie stoi zaraz po [": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"(?<![a-f0-9])94001(?![a-f0-9])", text) is None
-''',
-        r"\b wokół numeru": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"\b94001\b", text) is None
-''',
-        # W ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not in``.
-        "literał numeru przed not in": """\
-def test_bez_numeru(text: str) -> None:
-    assert "94001" not in text
-""",
-        "numer ze zmiennej": """\
-def test_bez_numeru(text: str, number: str) -> None:
-    assert number not in text
-""",
-        "str.find": """\
-def test_bez_numeru(text: str) -> None:
-    assert text.find("94001") == -1
-""",
-        "count": """\
-def test_bez_numeru(text: str) -> None:
-    assert text.count("94001") == 0
-""",
-        "re.search na samym numerze": """\
-import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search("94001", text) is None
-""",
-        "lookahead bez lookbehindu": r'''import re
-
-
-def test_bez_numeru(text: str) -> None:
-    assert re.search(r"94001(?!\d)", text) is None
-''',
-        "lookbehind złożony w kilku liniach": r'''import re
-
-NUMBER = re.compile(
-    r"(?<!"
-    r"\d)94001"
-)
-
-
-def test_bez_numeru(text: str) -> None:
-    assert NUMBER.search(text) is None
-''',
-    },
     "test_watki_testu_tylko_przez_linie_watkow": {
         # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc zapadka na niej dałaby alarm na historii.
         "threading.enumerate przed i po": """\
@@ -2086,7 +1962,6 @@ def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
 _ZAPADKI: Final = {
     "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
-    "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
     "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
 }
 
@@ -2255,6 +2130,8 @@ _PROBKI_STANU_PLIKU: Final[list[tuple[str, list[int]]]] = [
     (f"{_IN_TAKEN}    return myos.path.exists(path)\n", []),
     (f"{_IN_TAKEN}    return foo.myos.path.exists(path)\n", []),
     (f"{_IN_TAKEN}    return os.extras.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return foo.file_exists()\n", []),
+    (f'{_IN_TAKEN}    return "myos.path.exists(p)"\n', []),
 ]
 
 
@@ -2384,3 +2261,131 @@ def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(t
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_ORACLE_RULE = "wlasna-wyrocznia-numeru"
+_IN_TEST = "import re\n\n\ndef test_bez_numeru(text, number, texts, order, line):\n"
+# Tekst dodanego pliku ``tests/`` → linie, które reguła ``wlasna-wyrocznia-numeru`` zgłasza: własna wyrocznia numeru
+# zlecenia z lookbehindem wokół cyfr (``(?<![0-9a-f])`` z 5b2edaf2f9, ``(?<![0-9])`` z cc7e5ced21) w napisie
+# i w komentarzu, i wyrażenia bez lookbehindu cyfr, które przepuszcza.
+_PROBKI_WYROCZNI_NUMERU: Final[list[tuple[str, list[int]]]] = [
+    (_IN_TEST + "    return re.search(rf\"(?<![0-9a-f]){re.escape(number.removeprefix('#'))}(?![0-9a-f])\", text) is not None\n", [5]),
+    (_IN_TEST + '    number = re.compile(r"(?<![0-9a-f])9401(?![0-9a-f])")\n', [5]),
+    (_IN_TEST + '    number = re.compile(r"(?<![0-9])9401(?![0-9])")\n', [5]),
+    (_IN_TEST + '    assert re.search(r"(?<!\\d)9401", text) is None\n', [5]),
+    (_IN_TEST + "    assert text  # wzorzec (?<![0-9]) wokół numeru\n", [5]),
+    (_IN_TEST + '    assert text  # wzorzec r"(?<!\\d)" wokół numeru\n', [5]),
+    (_IN_TEST + "    assert [zawiera_wartosc(text, order.number) for text in texts] == [False, False]\n", []),
+    (_IN_TEST + '    FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\\\/]")\n', []),
+    (_IN_TEST + '    assert "TESTOWA" not in text\n', []),
+    (_IN_TEST + '    assert "2026" in text\n', []),
+    (_IN_TEST + '    assert re.fullmatch(r"CZAS: ([0-9]+) s", line)\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_WYROCZNI_NUMERU)
+def test_regula_wyroczni_numeru_zglasza_lookbehind_cyfr_w_napisie_i_komentarzu_a_nie_zawiera_wartosc(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_numeru.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_ORACLE_RULE, tmp_path, base) == [("tests/test_numeru.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_wyroczni_numeru_zglasza_tylko_tests_poza_plikiem_zapadek(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in ("tests/test_numeru.py", "tests/fixtures/pomocnik.py", "tests/test_zapadki.py", "src/rozliczenia/numer.py", "tools/numer.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text('import re\n\nNUMBER = re.compile(r"(?<![0-9])9401")\n', encoding="utf-8")
+
+    assert _findings_of(_ORACLE_RULE, tmp_path, base) == [("tests/fixtures/pomocnik.py", 3), ("tests/test_numeru.py", 3)]
+
+
+# Znane luki reguły ``wlasna-wyrocznia-numeru`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``
+# z własną wyrocznią numeru zlecenia, który mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_WYROCZNI_NUMERU: Final[dict[str, str]] = {
+    "lookbehind z dwoma ukośnikami w napisie bez r": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("(?<!\\d)94001(?!\\d)", text) is None
+''',
+    "klasa, w której 0-9 nie stoi zaraz po [": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"(?<![a-f0-9])94001(?![a-f0-9])", text) is None
+''',
+    r"\b wokół numeru": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"\b94001\b", text) is None
+''',
+    # W ``tests/`` stoją poprawne ``"2026" not in`` i ``"999999" not in``.
+    "literał numeru przed not in": """\
+def test_bez_numeru(text: str) -> None:
+    assert "94001" not in text
+""",
+    "numer ze zmiennej": """\
+def test_bez_numeru(text: str, number: str) -> None:
+    assert number not in text
+""",
+    "str.find": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.find("94001") == -1
+""",
+    "count": """\
+def test_bez_numeru(text: str) -> None:
+    assert text.count("94001") == 0
+""",
+    "re.search na samym numerze": """\
+import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search("94001", text) is None
+""",
+    "lookahead bez lookbehindu": r'''import re
+
+
+def test_bez_numeru(text: str) -> None:
+    assert re.search(r"94001(?!\d)", text) is None
+''',
+    "lookbehind złożony w kilku liniach": r'''import re
+
+NUMBER = re.compile(
+    r"(?<!"
+    r"\d)94001"
+)
+
+
+def test_bez_numeru(text: str) -> None:
+    assert NUMBER.search(text) is None
+''',
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``wlasna-wyrocznia-numeru`` czyta w napisie albo komentarzu tekst ``(?<!``, po nim opcjonalnie ``[``,
+    a po nim ``\\d`` z jednym ukośnikiem albo ``0-9``; lookbehind złożony z kilku literałów, ``\\d`` z dwoma ukośnikami
+    w napisie bez ``r``, klasa z ``0-9`` nie zaraz po ``[``, ``\\b``, sam lookahead i każda wyrocznia bez lookbehindu to
+    znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_WYROCZNI_NUMERU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff")
