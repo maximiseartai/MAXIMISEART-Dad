@@ -29,7 +29,7 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from drive import ALL, DEFAULT_REPEATS, FEATURES, NOT_COMPARED, feature
+from drive import ALL, DEFAULT_REPEATS, FEATURES, feature
 from drive.common import Call, DriveFailure, Run, check_clock_alarm, dad_context, page_requests
 from drive.waiting import Budget, TimedOut
 from skrypt_skilla import Parser
@@ -37,6 +37,7 @@ from harness import Log
 from import_dynamiczny import modul
 from komunikat_mapy import call_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
+from rozliczenia.efenix_browser import launch_options
 from rozliczenia.tool_files import config_dir
 
 MODULES = {each.name: modul(each.module) for each in FEATURES}
@@ -139,7 +140,7 @@ def _messages(module: str) -> dict[tuple[int, int], str | None]:
 
 def compare(evidence: Path, printed: dict[str, Section]) -> None:
     """Writes each section and its checks outside it (``OUTSIDE``) to ``evidence`` and fails, printing the difference,
-    where a feature outside ``NOT_COMPARED`` has another section in its file in ``features/``."""
+    where a feature has another section in its file in ``features/``."""
 
     folder = evidence / SECTIONS
     folder.mkdir(exist_ok=True)
@@ -152,7 +153,7 @@ def compare(evidence: Path, printed: dict[str, Section]) -> None:
         start = mapped.find(SECTION_START) + 1
         end = mapped.find(SECTION_END, start)
         in_file = mapped[start:end] if 0 < start < end else ""
-        if name not in NOT_COMPARED and in_file != section:
+        if in_file != section:
             lines = unified_diff(in_file.splitlines(keepends=True), section.splitlines(keepends=True), f"features/{name}.md", f"{SECTIONS}/{name}.md")
             sys.stderr.writelines(lines)
             differ.append(name)
@@ -189,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     owners: list[str] = []
     try:
         with sync_playwright() as playwright, page_requests.recording(run.evidence):
-            browser = playwright.chromium.launch()
+            browser = playwright.chromium.launch(**launch_options(playwright))
             try:
                 page = dad_context(browser).new_page()
                 page.set_default_timeout(Budget.SCREEN.ms)

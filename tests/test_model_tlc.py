@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import threading
 import time
 import sys
 from types import ModuleType
@@ -33,7 +34,7 @@ from tests.fixtures.ci_workflow import action
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.model_tlc import skrypt_modelu, wyjscie_tlc
-from tests.fixtures.potomne import beating
+from tests.fixtures.potomne import held, wait_for
 from tests.fixtures.sen import sleep_in_test_thread
 import model_tlc
 import narzedzia_tlc
@@ -573,30 +574,47 @@ def test_tlc_biegnie_w_katalogu_z_kopia_specyfikacji_i_konfiguracja_a_daje_oba_s
     assert seen == {"M.tla": SPEC, "f.cfg": "\\* Opis.\n"}
 
 
-# Atrapa Javy, której TLC nie kończy: zapisuje argumenty (po nich atrapa jcmd poznaje przebieg), uruchamia wnuka, który
-# co 0,1 s dopisuje znak do pliku ``bicie``, i śpi 60 s, czyli dłużej niż limit przebiegu z czasem na zrzut w teście.
-JAVA_STOI = (
-    "import pathlib, subprocess, sys, time\n"
+# Początek skryptu atrapy, który bierze blokadę żywego procesu z ``tests/fixtures/potomne.py`` (``hold_lock``, ``held``).
+_ZYWY = (
+    "import pathlib, sys, time\n"
+    f"sys.path[:0] = [{str(ROOT)!r}, {str(Path(potomne.__file__).parent)!r}]\n"
+    "from tests.fixtures.potomne import held, hold_lock\n"
+)
+# Wnuk atrapy Javy: trzyma blokadę pliku z argumentu do końca życia, a potem zapisuje obok plik ``…-gotowy``.
+_WNUK = _ZYWY + (
+    "lock = hold_lock(pathlib.Path(sys.argv[1]))\n"
+    "pathlib.Path(sys.argv[1] + '-gotowy').write_text('', encoding='utf-8')\n"
+    "time.sleep(60)\n"
+)
+# Atrapa Javy, której TLC nie kończy: trzyma blokadę ``zywe`` (żywa JVM dla atrapy jcmd), uruchamia wnuka z blokadą
+# ``wnuk`` (drzewo TLC żyje), czeka, aż wnuk ją weźmie, zapisuje argumenty (po nich atrapa jcmd poznaje przebieg) i śpi
+# 60 s, czyli dłużej niż limit przebiegu z czasem na zrzut w teście.
+JAVA_STOI = _ZYWY + (
+    "import subprocess\n"
     "here = pathlib.Path(__file__)\n"
-    "beat = \"import sys, time\\nwhile True:\\n    open(sys.argv[1], 'a').write('.')\\n    time.sleep(0.1)\\n\"\n"
-    "subprocess.Popen([sys.executable, '-c', beat, str(here.with_name('bicie'))])\n"
+    "lock = hold_lock(here.with_name('zywe'))\n"
+    f"subprocess.Popen([sys.executable, '-c', {_WNUK!r}, str(here.with_name('wnuk'))])\n"
+    "while not here.with_name('wnuk-gotowy').exists():\n"
+    "    time.sleep(0.05)\n"
     "here.with_name('argumenty').write_text(' '.join(sys.argv[1:]), encoding='utf-8')\n"
     "time.sleep(60)\n"
 )
-# Atrapa jcmd jak prawdziwy jcmd: ``-l`` nie czeka na JVM, tylko podaje JVM jcmd i JVM przebiegu z jego argumentami,
-# gdy ta już jest i jej drzewo żyje (plik ``bicie`` rośnie), bo JVM, która zginęła, jcmd nie zna; ``4242 Thread.print``
-# to zrzut jednego wątku, a chwilę zrzutu zapisuje w ``zrzut-czas``.
-JCMD = (
-    "import pathlib, sys, time\n"
+# Atrapa jcmd: ``-l`` podaje JVM jcmd i JVM przebiegu z jego argumentami, gdy ta żyje, czyli trzyma blokadę ``zywe``:
+# system zwalnia ją przy śmierci procesu, więc JVM, która zginęła, jest nieznana, a żywa, która chwilę nie dostała
+# procesora, znana (#1851). Prawdziwa JVM widać w ``jcmd -l`` od pierwszej sekundy, a start samej atrapy Javy bywa
+# opóźniony (w kopii silnika mutacji o ponad 3 s), więc ``-l`` czeka, aż atrapa zapisze argumenty, najwyżej 2,5 s, mniej niż
+# limit jednego polecenia jcmd w teście. Zrzut za wczesny łapie chwila zrzutu w ``zrzut-czas``, którą ``4242
+# Thread.print`` zapisuje razem ze zrzutem jednego wątku.
+JCMD = _ZYWY + (
     "here = pathlib.Path(__file__)\n"
-    "args, beats = here.with_name('argumenty'), here.with_name('bicie')\n"
+    "args = here.with_name('argumenty')\n"
     "if sys.argv[1:] == ['-l']:\n"
     "    print('11 jdk.jcmd/sun.tools.jcmd.JCmd -l')\n"
-    "    if args.exists() and beats.exists():\n"
-    "        before = beats.stat().st_size\n"
-    "        time.sleep(0.5)\n"
-    "        if beats.stat().st_size != before:\n"
-    "            print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
+    "    deadline = time.monotonic() + 2.5\n"
+    "    while not args.exists() and time.monotonic() < deadline:\n"
+    "        time.sleep(0.05)\n"
+    "    if args.exists() and held(here.with_name('zywe')):\n"
+    "        print('4242 tlc2.TLC ' + args.read_text(encoding='utf-8'))\n"
     "elif sys.argv[1:] == ['4242', 'Thread.print']:\n"
     "    here.with_name('zrzut-czas').write_text(repr(time.time()), encoding='utf-8')\n"
     "    print('\"TLCWorker1\" #21 prio=5 waiting on condition')\n"
@@ -643,7 +661,7 @@ def test_przebieg_tlc_bez_wyniku_w_limicie_konczy_sprawdzenie_zawieszeniem_ze_zr
     if jcmd == JCMD:
         assert float((tmp_path / "bin" / "zrzut-czas").read_text(encoding="utf-8")) - started_at >= limit_s
     assert took < 30
-    assert not beating(tmp_path / "bin" / "bicie")
+    assert wait_for(lambda: not held(tmp_path / "bin" / "wnuk"), 10)
 
 
 def test_przebieg_tlc_w_limicie_daje_werdykt_jak_bez_limitu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -658,6 +676,138 @@ def test_przebieg_tlc_w_limicie_daje_werdykt_jak_bez_limitu(tmp_path: Path, caps
     )
 
     assert (code, capsys.readouterr().out.splitlines()[-1]) == (0, "MODEL M OK")
+
+
+def test_zawieszenie_drukuje_uwage_o_rozjezdzie_modelu_z_kodem_przed_werdyktem_jak_kazdy_werdykt(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = _model(tmp_path, {"f": _config()})
+
+    def run_tlc(name: str, text: str) -> str:
+        raise model_tlc.Zawieszenie(300, "zrzut", "wyjście")
+
+    code = model_tlc.sprawdz(model, model_tlc.konfiguracje(model), run_tlc, uwaga="pokryty kod zmienił się")
+
+    assert (code, capsys.readouterr().out.splitlines()[-3:]) == (2, ["UWAGA: pokryty kod zmienił się", "", "MODEL M: ZAWIESZENIE TLC (1)"])
+
+
+ZRZUT = '"TLCWorker1" #21 prio=5 waiting on condition\n'
+
+
+class _Przebieg:
+    """Atrapa ``potomne.run`` dla ``model_tlc.tlc``: przebieg TLC (``tlc`` dostaje polecenie i limit) i polecenia jcmd
+    obok Javy, z kolejnością wyznaczoną zdarzeniami: ``started`` po starcie przebiegu (na nie czeka ``jcmd -l``, bo z
+    ``limit_s=0`` wątek zrzutu rusza razem z przebiegiem), ``listed`` po ``jcmd -l`` i ``dumped`` po ``Thread.print``,
+    przed którym biegnie ``before_dump``. Zapisuje limit każdego polecenia jcmd i to, czy katalog przebiegu był jeszcze
+    na dysku, gdy zrzut się kończył."""
+
+    def __init__(
+        self,
+        tlc: Callable[[_Przebieg, list[str], float], subprocess.CompletedProcess[str]],
+        before_dump: Callable[[], object] = lambda: None,
+    ) -> None:
+        self.tlc, self.before_dump = tlc, before_dump
+        self.started, self.listed, self.dumped, self.ended = (threading.Event() for _ in range(4))
+        self.jcmd_limits: list[float | None] = []
+        self.metadir = ""
+        self.dir_at_dump: bool | None = None
+
+    def __call__(self, command: Sequence[str], *, cwd: Path, timeout: float | None) -> subprocess.CompletedProcess[str]:
+        if "tlc2.TLC" in command:
+            self.metadir = command[list(command).index("-metadir") + 1]
+            self.started.set()
+            return self.tlc(self, list(command), timeout or 0.0)
+        self.jcmd_limits.append(timeout)
+        if list(command[1:]) == ["-l"]:
+            assert self.started.wait(10)
+            self.listed.set()
+            return subprocess.CompletedProcess(command, 0, f"4242 tlc2.TLC -metadir {self.metadir}\n", "")
+        self.before_dump()
+        self.dir_at_dump = Path(self.metadir).parent.exists()
+        self.dumped.set()
+        return subprocess.CompletedProcess(command, 0, ZRZUT, "")
+
+
+def _tlc_z_atrapa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, przebieg: _Przebieg, *, limit_s: float, zrzut_s: float) -> str:
+    """``model_tlc.tlc`` z atrapą Javy obok pliku ``jcmd`` i ``potomne.run`` z ``przebieg``."""
+
+    (tmp_path / "bin").mkdir()
+    for name in ("java", "jcmd"):
+        (tmp_path / "bin" / name).write_text("", encoding="utf-8")
+    spec = tmp_path / "M.tla"
+    spec.write_text(SPEC, encoding="utf-8")
+    monkeypatch.setattr(potomne, "run", przebieg)
+    return model_tlc.tlc(str(tmp_path / "bin" / "java"), tmp_path / "tla2tools.jar", spec, "f", "", limit_s=limit_s, zrzut_s=zrzut_s)
+
+
+def test_zawieszenie_czeka_na_zrzut_konczacy_sie_po_smierci_drzewa_a_kazde_polecenie_jcmd_ma_polowe_czasu_na_zrzut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Drzewo TLC ginie po ``limit + zrzut_s``, a zrzut zaczęty po limicie może skończyć się chwilę później (zabijanie
+    drzewa na Windows trwa), więc ``Zawieszenie`` czeka na wątek zrzutu, zamiast mówić, że zrzutu nie ma. Atrapa kończy
+    zrzut 0,2 s po śmierci drzewa: bez czekania na wątek odczyt zrzutu byłby wcześniej."""
+
+    def tlc(przebieg: _Przebieg, command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        assert przebieg.listed.wait(10)
+        przebieg.ended.set()
+        raise potomne.TimeoutExpired(command, timeout, "", "")
+
+    def after_tree_died() -> None:
+        assert przebieg.ended.wait(10)
+        time.sleep(0.2)
+
+    przebieg = _Przebieg(tlc, after_tree_died)
+
+    with pytest.raises(model_tlc.Zawieszenie) as hang:
+        _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=0, zrzut_s=8)
+
+    assert hang.value.zrzut == ZRZUT
+    assert przebieg.jcmd_limits == [4.0, 4.0]
+
+
+def test_przebieg_tlc_w_limicie_konczy_czekanie_na_zawieszenie_i_wraca_przed_czasem_na_zrzut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Przebieg, który skończył się przed limitem, kończy też czekanie na zawieszenie: ``tlc`` wraca, zanim minie
+    ``zrzut_s``, wątek zrzutu już nie żyje i nie zawołał jcmd.
+
+    ``tlc``, które nie kończy czekania wątku zrzutu, zanim na niego zaczeka (``done.set()`` za ``watcher.join``, brak
+    ``done.set()``, wątek, który nie słucha ``done``), wraca z konstrukcji nie wcześniej niż po ``zrzut_s``, bo tyle
+    czeka ``watcher.join(zrzut_s)``. Asercja porównuje więc czas powrotu z parametrem, który sam jest przedmiotem tej
+    własności, a nie z oknem dobranym do runnera: dobry kod wraca po samej atrapie przebiegu, w ułamku sekundy przy
+    każdym ``zrzut_s``, i przekroczyłby 20 s tylko wtedy, gdyby proces testu nie dostał procesora przez cały ten czas."""
+
+    przebieg = _Przebieg(lambda przebieg, command, timeout: subprocess.CompletedProcess(command, 0, PASSED, ""))
+    before = set(threading.enumerate())
+    zrzut_s = 20.0
+    started = time.perf_counter()
+
+    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=600, zrzut_s=zrzut_s) == PASSED
+    assert time.perf_counter() - started < zrzut_s
+    assert [thread for thread in threading.enumerate() if thread not in before] == []
+    assert przebieg.jcmd_limits == []
+
+
+def test_przebieg_tlc_skonczony_po_limicie_usuwa_swoj_katalog_dopiero_po_zrzucie_watkow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zrzut zaczęty po limicie przebiegu, który potem skończył się sam, biegnie w katalogu przebiegu, więc ``tlc`` wraca
+    i usuwa ten katalog dopiero po zrzucie. Atrapa kończy zrzut, gdy katalog zniknie, a najpóźniej po 0,5 s."""
+
+    def tlc(przebieg: _Przebieg, command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        assert przebieg.listed.wait(10)
+        przebieg.ended.set()
+        return subprocess.CompletedProcess(command, 0, PASSED, "")
+
+    def after_run_ended() -> None:
+        assert przebieg.ended.wait(10)
+        wait_for(lambda: not Path(przebieg.metadir).parent.exists(), 0.5)
+
+    przebieg = _Przebieg(tlc, after_run_ended)
+
+    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=0, zrzut_s=8) == PASSED
+    assert przebieg.dumped.wait(5)
+    assert przebieg.dir_at_dump
 
 
 @pytest.mark.parametrize("ustawiona", [model_tlc.JAVA, model_tlc.JAR, model_tlc.MUTACJA])

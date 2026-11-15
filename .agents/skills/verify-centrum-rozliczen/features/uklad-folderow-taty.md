@@ -12,7 +12,7 @@ Printed by `scripts/sub_features.py --feature uklad-folderow-taty` from the driv
 - `taty-wskazany-tydzien`: the server describes the folder okresów as Załączniki of all years; section Foldery shows Załączniki with „wszystkie lata”, not the week Dad pointed to.
 - `taty-tygodnie-ze-wszystkich-miesiecy`: the server finds every Folder okresu in Rozliczenia {rok}\{miesiąc}\INEA, newest first; the screen lists the same weeks except the one that has not started; folders that are not periods (Podpisane, Nowe rozliczenia) are absent.
 - `taty-nastepny-krok`: Następny krok sees the prepared Plik zbiorczy of the last complete period in its month folder.
-- `taty-otwieranie`.
+- `taty-otwieranie`: one click opens the Plik zbiorczy from the October INEA folder, once.
 - `taty-przywrocenie`: pointing back to the flat INEA folder restores the board the next features expect.
 
 ## How to get to it (user POV)
@@ -23,11 +23,14 @@ Dad opens Ustawienia (the gear in the menu's footer), section Foldery, clicks `Z
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uklad-folderow-taty`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP uklad-folderow-taty` in `drive.txt`, screenshots `102`, `15`–`16`, `api/uklad-taty-ustawienia.json`,
-`api/uklad-taty-tablica.json` and `state/opened.jsonl`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP uklad-folderow-taty` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/uklad-taty-ustawienia.json`, `api/uklad-taty-tablica.json` and `state/opened.jsonl`.
 
 ## Gotchas
 
 - A period in two month folders is shown once, from the first, and opening it or starting an Uruchomienie of it is
   refused with 409 until Dad leaves it in one month; the drive does not drive it.
+  `tests/test_centrum_rozliczen.py::test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany` checks
+  that the board shows such a period once and that opening its Plik zbiorczy answers 409 naming both month folders and
+  opens nothing; no test checks the refused start of an Uruchomienie.

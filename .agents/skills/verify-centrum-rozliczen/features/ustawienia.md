@@ -23,8 +23,8 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 - `ustawienia-anulowanie`: a cancelled picker leaves the settings file unchanged.
 - `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone is reported as missing.
 - `ustawienia-nieczytelny-plik`: a settings file that cannot be read now is reported as unreadable, not as nothing chosen.
-- `ustawienia-niedostepna-sciezka`.
-- `ustawienia-motyw`.
+- `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder without access read „Nie da się teraz odczytać”, not „Nie ma już”.
+- `ustawienia-motyw`: after a reload the page reads the light theme from the settings file and drops the dark class.
 - `ustawienia-zapisano-cofnij`: the switch shows „Zapisano · Cofnij” (… px).
 - `ustawienia-blad-w-oknie`: after the failed save the page is back in the theme of the settings file, without a reload; the failed save left the theme as it was.
 - `ustawienia-blad-po-zamknieciu`: the save of Motyw waits for its answer (… requests, held); a save that fails after the window Ustawienia closed is a notification over the page; the save that failed after the window closed left the theme as it was.
@@ -49,9 +49,9 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature ustawienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP ustawienia` in `drive.txt`, screenshots `01`–`05`, `18`, `19`, `275`, `276`, `306`–`319`, `330`–`333`,
-`340`, `341`, `350` and `360`–`363`, and `api/ustawienia-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP ustawienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/ustawienia-*.json`.
 
 ## Gotchas
 

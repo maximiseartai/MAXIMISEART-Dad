@@ -26,7 +26,7 @@ Printed by `scripts/sub_features.py --feature start-i-zamykanie` from the drive'
 - `karty-w-tle`: in the background the drive's tab gives its stream back (tabs hidden by the harness); each of … more tabs shows Uruchomienia from the API and the stream; back in front, the drive's tab connects to the stream again.
 - `zamykanie-karta`: closing a tab leaves Centrum running.
 - `zamykanie-potwierdzenie`: Anuluj leaves Centrum running.
-- `zamykanie`.
+- `zamykanie`: „Zamknij Centrum” closes Centrum once: the log has exactly one closing more than before.
 
 ## How to get to it (user POV)
 
@@ -36,12 +36,17 @@ Dad clicks the desktop shortcut „Centrum rozliczeń” to start Centrum or to 
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature start-i-zamykanie`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP start-i-zamykanie` in `drive.txt`, screenshots `90`–`92`, `api/start-health.json`, `api/start-*.txt` and
-`state/centrum-rozliczen.log`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP start-i-zamykanie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/start-health.json`, `api/start-*.txt` and `state/centrum-rozliczen.log`.
 
 ## Gotchas
 
 - The drive runs the console path of the launcher. The shortcut's path (`pythonw`, no console, start messages in a
-  native dialog Playwright cannot click) is `tests/test_centrum_launcher.py` and `verify-centrum-na-windowsie`, and a
-  Centrum of another version on the port (`INNA_WERSJA_CENTRUM`) is not driven.
+  native dialog Playwright cannot click) is `verify-centrum-na-windowsie`, and
+  `tests/test_centrum_launcher.py::test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka` checks that Centrum
+  started without a console answers, a second start recognises it and opens its tab, and it closes.
+  A Centrum of another version on the port (`INNA_WERSJA_CENTRUM`) is not driven:
+  `tests/test_centrum_launcher.py::test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wersji`
+  checks that a start after the clone moved says that Centrum of another version runs, leaves it serving and logs
+  `kod=INNA_WERSJA_CENTRUM`.

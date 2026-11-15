@@ -1,9 +1,11 @@
-"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę.
+"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę, i reguły całego ``src/``.
 
 W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę
 poza regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``.
 Formę, która ma jeszcze stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test;
-reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany.
+reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany. Reguły ast-grep
+``REGULY_CALEGO_SRC`` zgłaszają każdą linię ``src/`` (``test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src``), bez bazy,
+w ``tools/szybko.py`` i w zadaniu CI „Ruff, mypy”.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
@@ -41,15 +43,6 @@ _ORDER_NUMBER_HELPER = (
     "własna wyrocznia wycieku numeru zlecenia: sprawdź tekst przez zawiera_wartosc z tests/fixtures/wyciek.py, która"
     " pyta strażnika reguły danych (ForbiddenValues.guard), bo cztery własne wzorce z rzędu rozjechały się ze strażnikiem,"
     " a jeden zaczerwienił main, gdy losowy hex HMAC zawierał numer"
-)
-
-# Stan ścieżki bez file_state, jak ``copy.path.exists()`` w ea69c32bea i ``old.is_file()`` w 5f4e134ba5.
-_BARE_FILE_STATE = re.compile(r"\.(?:exists|is_file|is_dir)\(\s*\)|\bos\.path\.(?:exists|lexists|isfile|isdir)\(")
-_FILE_STATE = "src/rozliczenia/file_state.py"
-_FILE_STATE_HELPER = (
-    "stan pliku poza file_state: zapytaj src/rozliczenia/file_state.py (file_state, path_state, path_taken, a o wpis"
-    " folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu), bo gołe"
-    " .exists() albo .is_file() rzuca PermissionError na Pythonie 3.11–3.13 i odpowiada „brak” na 3.14 (#729, #1190)"
 )
 
 # Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
@@ -172,82 +165,6 @@ def test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc() -> N
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
     assert order_number_oracles(ROOT, base) == []
-
-
-def bare_file_state(line: str) -> bool:
-    """Czy linia ``src/`` pyta o stan ścieżki z pominięciem ``file_state``.
-
-    Łapie tylko ``.exists()``, ``.is_file()`` i ``.is_dir()`` bez argumentów, także ze spacją w nawiasie (na ``Path`` i
-    na wpisie ``os.DirEntry``), oraz ``os.path.exists(``, ``os.path.lexists(``, ``os.path.isfile(`` i
-    ``os.path.isdir(``, także w komentarzu i napisie. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami
-    ``ZNANE_LUKI`` tego pliku.
-    Żadna forma nie trafia w dzisiejsze ``src/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _BARE_FILE_STATE.search(line) is not None
-
-
-def file_state_bypasses(root: Path, base: str) -> list[str]:
-    """Linie ``src/`` poza ``file_state.py``, które zmiana od ``base`` dodaje z ``bare_file_state``, z komunikatem."""
-
-    return [
-        f"{path}:{number}: {_FILE_STATE_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "src")
-        if path != _FILE_STATE and bare_file_state(line)
-    ]
-
-
-def test_stan_pliku_w_src_tylko_przez_file_state() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert file_state_bypasses(ROOT, base) == []
-
-
-def test_zapadka_stanu_pliku_widzi_tylko_src_poza_file_state(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (_FILE_STATE, "src/rozliczenia/kopia.py", "tests/test_kopii.py", "tools/narzedzie.py"):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text("def taken(path):\n    return path.exists()\n", encoding="utf-8")
-
-    found = file_state_bypasses(tmp_path, base)
-
-    assert found == [f"src/rozliczenia/kopia.py:2: {_FILE_STATE_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    taken = copy.path.exists()",
-        "    return old.name if old.is_file() else None",
-        "    if STATIC_DIRECTORY.is_dir():",
-        "    for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)",
-        "    return os.path.exists(excel_lock_file(path))",
-        "            collective_file_exists=os.path.isfile(path),",
-        "    if not path.exists( ):",
-        "    taken = os.path.lexists(link)",
-        "    if os.path.isdir(folder):",
-    ],
-)
-def test_zapadka_lapie_stan_pliku_poza_file_state(line: str) -> None:
-    assert bare_file_state(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        '    return old.name if file_state(old) == "file" else None',
-        "    if path_taken(self._state):",
-        '    present = [period_place_label(place) for place in places if observed.exists(place)]',
-        "                taken = disk.exists(copy.path)",
-    ],
-)
-def test_zapadka_przepuszcza_file_state_i_metody_domeny(line: str) -> None:
-    assert not bare_file_state(line)
 
 
 @pytest.mark.parametrize(
@@ -969,6 +886,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
+    "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
 }
 needs_ast_grep = pytest.mark.skipif(
     AST_GREP is None,
@@ -1014,6 +932,62 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
             "strażnik drzewa repozytorium (tests/fixtures/drzewo_repo.py)"
         )
     assert syntax_rule_findings(ROOT, base) == []
+
+
+# Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię ``src/``, a nie tylko linie dodane przez zmianę.
+REGULY_CALEGO_SRC: Final = ("historia-w-docstringu", "komentarz-w-src")
+# Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły całego ``src/`` się
+# pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza Windows brak ast-grep to porażka
+# z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
+BEZ_DODATKU_DEV = sys.platform == "win32"
+windows_without_ast_grep = pytest.mark.skipif(
+    AST_GREP is None and BEZ_DODATKU_DEV,
+    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły całego src biegną"
+    " w zadaniach pytest na Linuksie, w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
+)
+
+
+def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
+    """Odpalenia reguł ``REGULY_CALEGO_SRC`` z ``config`` na każdej linii plików ``src/`` checkoutu ``root``: śledzonych,
+    także ignorowanych przez ``.gitignore``, i nieśledzonych bez ignorowanych (``odpalenia_ast_grep.on_added_lines`` od
+    pustego drzewa); linia odpalenia to pierwsza linia węzła."""
+
+    rules = ("--config", str(config), "--filter", f"^(?:{'|'.join(REGULY_CALEGO_SRC)})$")
+    return odpalenia_ast_grep.on_added_lines(root, odpalenia_ast_grep.EMPTY_TREE, rules, ast_grep, "src")
+
+
+@windows_without_ast_grep
+def test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src() -> None:
+    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_src_rules(ROOT)] == []
+
+
+def test_kazda_regula_calego_src_jest_w_katalogu_regul() -> None:
+    """``--filter`` z id, którego katalog reguł nie ma, obok id, które ma, gubi tę regułę bez błędu ast-grep."""
+
+    ids = {str(rule["id"]) for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
+    assert set(REGULY_CALEGO_SRC) - ids == set(), f"popraw REGULY_CALEGO_SRC na id reguł z {AST_GREP_RULES}/"
+
+
+@windows_without_ast_grep
+def test_reguly_calego_src_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik_nowy(tmp_path: Path) -> None:
+    """Komentarz i docstring z numerem issue w pliku ``src/`` z commitu bazy zgłaszają reguły całego ``src/``, choć
+    zapadka linii dodanych ich nie widzi; nowy plik nieśledzony zgłaszają obie, a komentarz w ``tests/`` żadna."""
+
+    base = _committed(
+        tmp_path,
+        {
+            "src/rozliczenia/stary.py": '"""Moduł z #1618."""\n\nX = 1  # stary komentarz\n',
+            "tests/test_stary.py": "X = 1  # komentarz testu\n",
+        },
+    )
+    (tmp_path / "src" / "rozliczenia" / "nowy.py").write_text("Y = 2  # nowy komentarz\n", encoding="utf-8")
+
+    assert [(finding.path, finding.line, finding.rule) for finding in whole_src_rules(tmp_path)] == [
+        ("src/rozliczenia/nowy.py", 1, "komentarz-w-src"),
+        ("src/rozliczenia/stary.py", 1, "historia-w-docstringu"),
+        ("src/rozliczenia/stary.py", 3, "komentarz-w-src"),
+    ]
+    assert [(finding.path, finding.line) for finding in syntax_rules(tmp_path, base)] == [("src/rozliczenia/nowy.py", 1)]
 
 
 @needs_ast_grep
@@ -1301,6 +1275,7 @@ _PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
     "# z cyfrą: po nawiasie": (f'{_IN_FUNCTION}"""Wzór z (#1614)."""\n', [2]),
     "# z cyfrą: po słowie ze spacją i bez": (f'{_IN_FUNCTION}"""Wzór z issue #1614 i PR#12."""\n', [2]),
     "# z cyfrą: po nazwie repozytorium": ('class K:\n    """Od o/r#1614."""\n', [2]),
+    "# z cyfrą: zgłoszenie w repozytorium spoza projektu": ('"""Zob. microsoft/playwright#43545."""\n', [1]),
     "adres github.com: z https i /issues/": ('"""Moduł z https://github.com/o/r/issues/1614."""\n', [1]),
     "adres github.com: bez schematu": (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
     "adres github.com: wielkie litery": (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
@@ -1398,6 +1373,11 @@ ZNANE_LUKI_HISTORII: Final = {
         'def f() -> None:\n    f"""Wzór z {"#"}1614."""\n'
     ),
     "historia bez numeru, adresu i skrótu: przegląd i data": '"""Tak od przeglądu z 14.11.2026, po drugim FAIL."""\n',
+    "historia bez numeru, adresu i skrótu: numer Wydania": '"""Pliki Wydań starszych niż v0.5.0 nie mają stopnia."""\n',
+    "odnośnik do zgłoszenia spoza github.com bez # przed cyfrą: crbug.com/572515601": '"""Zob. crbug.com/572515601."""\n',
+    "napis, który nie jest docstringiem: komunikat wyjątku": (
+        'def f() -> None:\n    message = "Logi bez maski (#936)."\n    raise ValueError(message)\n'
+    ),
     "napis, który nie jest całym pierwszym wyrażeniem bloku: w nawiasach": (
         '"""Moduł."""\n\n\ndef f() -> None:\n    ("""Z #1614.""")\n'
     ),
@@ -1900,94 +1880,6 @@ _PAGE = "from playwright.sync_api import Page\n\n\n"
 # Znane luki zapadek (tests/fixtures/znane_luki.py): test zapadki → opis postaci → plik, który dodaje formę zakazaną
 # regułą zapadki, a mimo to przechodzi przez zapadkę i ruff z konfiguracją swojego folderu.
 ZNANE_LUKI: Final = {
-    "test_stan_pliku_w_src_tylko_przez_file_state": {
-        # Po linii nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
-        "lista folderu z iterdir": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.name in {entry.name for entry in path.parent.iterdir()}
-""",
-        "os.scandir": """\
-import os
-
-
-def taken(folder: str, name: str) -> bool:
-    with os.scandir(folder) as entries:
-        return any(entry.name == name for entry in entries)
-""",
-        "glob": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return any(path.parent.glob(path.name))
-""",
-        "stat": """\
-from pathlib import Path
-import stat
-
-
-def is_folder(path: Path) -> bool:
-    return stat.S_ISDIR(path.stat().st_mode)
-""",
-        "try i except OSError napisane od nowa": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    try:
-        path.open("rb").close()
-    except OSError:
-        return False
-    return True
-""",
-        "wywołanie z argumentem": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.is_file(follow_symlinks=False)
-""",
-        "wywołanie rozbite na dwie linie": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return path.exists(
-    )
-""",
-        "metoda pod inną nazwą": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    check = path.exists
-    return check()
-""",
-        "metoda wołana na klasie": """\
-from pathlib import Path
-
-
-def taken(path: Path) -> bool:
-    return Path.exists(path)
-""",
-        "os.path pod aliasem": """\
-import os.path as osp
-
-
-def taken(path: str) -> bool:
-    return osp.exists(path)
-""",
-        "exists z from os.path import": """\
-from os.path import exists
-
-
-def taken(path: str) -> bool:
-    return exists(path)
-""",
-    },
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": {
         "po linii, której komentarz kończy się przecinkiem": _PAGE
         + """\
@@ -2196,7 +2088,6 @@ def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
 # Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
 _ZAPADKI: Final = {
     "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
-    "test_stan_pliku_w_src_tylko_przez_file_state": ("src/rozliczenia", file_state_bypasses),
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
     "test_wyciek_numeru_zlecenia_test_sprawdza_tylko_przez_zawiera_wartosc": ("tests", order_number_oracles),
     "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
@@ -2325,3 +2216,174 @@ def test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_lokatora_tytulu_okna_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+def _findings_of(rule: str, root: Path, base: str) -> list[tuple[str, int]]:
+    """Odpalenia reguły ``rule`` (z całego katalogu reguł) na liniach dodanych od ``base``: ścieżka i linia; reguły
+    ``src/`` o komentarzach i docstringach zgłaszają w tych samych próbkach swoje, więc liczy się tylko ta jedna."""
+
+    return [(finding.path, finding.line) for finding in syntax_rules(root, base) if finding.rule == rule]
+
+
+_STATE_RULE = "stan-pliku-poza-file-state"
+_IN_TAKEN = "def taken(path, copy, old, entries, link, folder):\n"
+# Tekst dodanego pliku ``src/`` → linie, które reguła ``stan-pliku-poza-file-state`` zgłasza: stan ścieżki z pominięciem
+# ``file_state`` z ea69c32bea (``copy.path.exists()``) i 5f4e134ba5 (``old.is_file()``) w każdej postaci, którą reguła
+# czyta, i pytania o stan przez ``file_state`` albo metodę domeny z argumentem, które przepuszcza.
+_PROBKI_STANU_PLIKU: Final[list[tuple[str, list[int]]]] = [
+    (f"{_IN_TAKEN}    taken = copy.path.exists()\n", [2]),
+    (f"{_IN_TAKEN}    return old.name if old.is_file() else None\n", [2]),
+    (f"{_IN_TAKEN}    if STATIC_DIRECTORY.is_dir():\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return [entry for entry in entries if entry.is_dir() and _YEAR_FOLDER.fullmatch(entry.name)]\n", [2]),
+    (f"{_IN_TAKEN}    return os.path.exists(excel_lock_file(path))\n", [2]),
+    (f"{_IN_TAKEN}    return dict(collective_file_exists=os.path.isfile(path))\n", [2]),
+    (f"{_IN_TAKEN}    if not path.exists( ):\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return path.exists(\n    )\n", [2]),
+    (f"{_IN_TAKEN}    taken = os.path.lexists(link)\n", [2]),
+    (f"{_IN_TAKEN}    if os.path.isdir(folder):\n        pass\n", [2]),
+    (f"{_IN_TAKEN}    return path  # path.exists() pomijam\n", [2]),
+    (f'{_IN_TAKEN}    return "os.path.isfile(x)"\n', [2]),
+    (f'{_IN_TAKEN}    return old.name if file_state(old) == "file" else None\n', []),
+    (f"{_IN_TAKEN}    if path_taken(self._state):\n        pass\n", []),
+    (f"{_IN_TAKEN}    return [period_place_label(place) for place in places if observed.exists(place)]\n", []),
+    # os.path na atrybucie os i łamane przed kropką (#1868 r1); tekst każdej nazwy w komentarzu i napisie.
+    (f"{_IN_TAKEN}    return foo.os.path.exists(path)\n", [2]),
+    (f"{_IN_TAKEN}    return (os\n        .path.isdir(path))\n", [2]),
+    (f"{_IN_TAKEN}    return path  # old.is_file()\n", [2]),
+    (f"{_IN_TAKEN}    return path  # d.is_dir()\n", [2]),
+    (f'{_IN_TAKEN}    return "os.path.exists(p)"\n', [2]),
+    (f'{_IN_TAKEN}    return "os.path.lexists(p)"\n', [2]),
+    (f'{_IN_TAKEN}    return "os.path.isdir(p)"\n', [2]),
+    (f"{_IN_TAKEN}    return disk.exists(copy.path)\n", []),
+    (f"{_IN_TAKEN}    return myos.path.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return foo.myos.path.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return os.extras.exists(path)\n", []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_STANU_PLIKU)
+def test_regula_stanu_pliku_zglasza_stan_sciezki_poza_file_state_a_nie_file_state_ani_metode_z_argumentem(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    (tmp_path / "src" / "rozliczenia" / "kopia.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_STATE_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_stanu_pliku_zglasza_tylko_src_poza_file_state(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in ("src/rozliczenia/file_state.py", "src/rozliczenia/kopia.py", "tests/test_kopii.py", "tools/narzedzie.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("def taken(path):\n    return path.exists()\n", encoding="utf-8")
+
+    assert _findings_of(_STATE_RULE, tmp_path, base) == [("src/rozliczenia/kopia.py", 2)]
+
+
+# Znane luki reguły ``stan-pliku-poza-file-state`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``src/``,
+# który pyta o stan ścieżki z pominięciem ``file_state``, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_STANU_PLIKU: Final[dict[str, str]] = {
+    # Po składni nie odróżnić od świadomego ``register.parent.iterdir()`` w ``try``/``except OSError`` z #1249.
+    "lista folderu z iterdir": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.name in {entry.name for entry in path.parent.iterdir()}
+""",
+    "os.scandir": """\
+import os
+
+
+def taken(folder: str, name: str) -> bool:
+    with os.scandir(folder) as entries:
+        return any(entry.name == name for entry in entries)
+""",
+    "glob": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return any(path.parent.glob(path.name))
+""",
+    "stat": """\
+from pathlib import Path
+import stat
+
+
+def is_folder(path: Path) -> bool:
+    return stat.S_ISDIR(path.stat().st_mode)
+""",
+    "try i except OSError napisane od nowa": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    try:
+        path.open("rb").close()
+    except OSError:
+        return False
+    return True
+""",
+    "wywołanie z argumentem": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return path.is_file(follow_symlinks=False)
+""",
+    "metoda pod inną nazwą": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    check = path.exists
+    return check()
+""",
+    "metoda wołana na klasie": """\
+from pathlib import Path
+
+
+def taken(path: Path) -> bool:
+    return Path.exists(path)
+""",
+    "os.path pod aliasem": """\
+import os.path as osp
+
+
+def taken(path: str) -> bool:
+    return osp.exists(path)
+""",
+    "exists z from os.path import": """\
+from os.path import exists
+
+
+def taken(path: str) -> bool:
+    return exists(path)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``stan-pliku-poza-file-state`` czyta wywołanie ``exists``, ``is_file`` albo ``is_dir`` bez argumentów na
+    dowolnym obiekcie, ``exists``, ``lexists``, ``isfile`` i ``isdir`` na ``path`` modułu ``os`` albo atrybutu ``os``
+    (także łamane przed kropką) oraz ten sam tekst
+    w komentarzu i napisie; metoda pod inną nazwą albo na klasie, ``os.path`` pod aliasem albo z from-importu
+    i każda inna droga do stanu ścieżki to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_STANU_PLIKU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_stanu_pliku_przechodza_przez_reguly_ast_grep_i_ruff")

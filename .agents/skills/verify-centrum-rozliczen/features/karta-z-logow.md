@@ -7,7 +7,7 @@ the same headline, Komunikaty, summary and files as before closing, the note
 server's next action, `Nowe Uruchomienie procesu` and `Napisz do Maksa o tym
 Uruchomieniu`, but no `Diagnoza`. An Urwane Uruchomienie (Centrum died during
 it) is named after the next start from `logs/ostatnie-uruchomienie.json`, with
-the advice for its mode and `Uruchom ponownie`; an urwana Wycena w efenix gets its Logi at that start, and its card shows the count tiles `Zlecenia przed zamknięciem Centrum` (not driven here). A last Uruchomienie without
+the advice for its mode and `Uruchom ponownie`; an urwana Wycena w efenix gets its Logi at that start, and its card shows the count tiles `Zlecenia przed zamknięciem Centrum` (not driven here: `tests/test_centrum_logi_uruchomienia.py::test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwanego_uruchomienia_ze_zleceniami_sprzed_zgasniecia` checks that the next start sends the Logi of the urwana Wycena with the orders from before Centrum went out, and `tests/test_centrum_karta_z_logow.py::test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega` that its card counts the orders finished before Centrum closed, zero as a plain number). A last Uruchomienie without
 Logi whose result is in Historia (Centrum died after the metrics record, before
 the Logi, #722) shows that result with a short note instead. A Historia row opens the card
 of its Uruchomienie in a side panel, read-only; a row without Logi says the
@@ -30,9 +30,9 @@ Dad starts Centrum with the shortcut and opens Uruchomienia: the last Uruchomien
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature karta-z-logow`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP karta-z-logow` in `drive.txt`, screenshots `210`–`214` and `211b`, `api/karta-*.json` and `state/` (the
-Logi and the Centrum log).
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP karta-z-logow` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, `api/karta-*.json`
+and `state/` (the Logi and the Centrum log).
 
 ## Gotchas
 

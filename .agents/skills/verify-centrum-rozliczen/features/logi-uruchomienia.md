@@ -48,9 +48,10 @@ Dad does nothing for it: he starts Uruchomienia procesu as always, on Uruchomien
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature logi-uruchomienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP logi-uruchomienia` in `drive.txt`, screenshots `160`–`162`, `api/logi-*.json`, `api/logi-komentarz.md` and
-`state/uruchomienia/` (every file of Logi of the run, also checked by the self-test's evidence hygiene).
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP logi-uruchomienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/logi-*.json`, `api/logi-komentarz.md` and `state/uruchomienia/` (every file of Logi of the run, also checked by the
+self-test's evidence hygiene).
 
 ## Gotchas
 
@@ -60,7 +61,8 @@ under `STEP logi-uruchomienia` in `drive.txt`, screenshots `160`–`162`, `api/l
   Uruchomienia start in the same second.
 - Logi surviving a restart of Centrum is proved only in `all`: `kontrola-ilosci` restarts Centrum twice after Przebieg
   rozliczeń, so `logi-kazde-uruchomienie` finds the files of the Uruchomienia before those restarts. Alone, the feature
-  does not restart; `tests/test_centrum_logi_uruchomienia.py` covers it over HTTP.
+  does not restart; `tests/test_centrum_logi_uruchomienia.py::test_logi_przezywaja_zamkniecie_i_ponowny_start_centrum`
+  checks over HTTP that the Logi survive closing and starting Centrum again.
 - In `all`, `logi-kazde-uruchomienie` covers every Uruchomienie of the run, the nieoczekiwane wyjątki of `diagnoza`
   too, and `diagnoza` and `zgloszenie` diagnose several Uruchomienia, whose Diagnozy change their comment and replace
   their file in the Archiwum; alone, this feature diagnoses nothing.

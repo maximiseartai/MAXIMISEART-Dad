@@ -66,9 +66,9 @@ Printed by `scripts/sub_features.py --feature uwaga-taty` from the drive's steps
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uwaga-taty`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP uwaga-taty` in `drive.txt`, screenshots `160`–`162`, `170`–`179` (with `170b`, `173b`, `174b`, `174c`,
-`177b`) and `190`–`200`, and `api/uwaga-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP uwaga-taty` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/uwaga-*.json`.
 
 ## Gotchas
 

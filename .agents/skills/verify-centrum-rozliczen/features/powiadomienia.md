@@ -44,7 +44,7 @@ Printed by `scripts/sub_features.py --feature powiadomienia` from the drive's st
 - `powiadomienia-zamkniete`: the 10 minutes passed, so Centrum asks once per kind of case; Centrum asked the skrzynka about Dad's open cases; a second read within 10 minutes does not ask the skrzynka again.
 - `powiadomienia-oznaczenie-bez-odpowiedzi`: marking the Powiadomienia read without an answer (unreachable, harness) says so in a notification; the Powiadomienia stay new on the server, so the dot on the bell is true.
 - `powiadomienia-widok`: the bell opens the view Powiadomienia in the same tab; a new row keeps its light background while Dad stays; config/… keeps them.
-- `powiadomienia-po-wyjsciu`.
+- `powiadomienia-po-wyjsciu`: after leaving the view, none of the … rows has the mark „nowe” any more.
 - `powiadomienia-brak-sieci`: after 10 minutes Centrum asks again.
 - `powiadomienia-nowa-wersja`: after 10 minutes Centrum asks GitHub for the Wydania once; the button of a newer Wydanie has no earlier `Masz najnowszą wersję.`; the card stands above the list; the newest Wydanie on `main` offers the update, the older one does not, the one from outside `main` is no Powiadomienie, and entering the view marked both read.
 - `powiadomienia-aktualizacja`: the update does not take a Wydanie that never was the tip of `main`, so the tool stays where it is; the clone stays on its commit.
@@ -59,8 +59,8 @@ Printed by `scripts/sub_features.py --feature powiadomienia` from the drive's st
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature powiadomienia`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP powiadomienia` in `drive.txt`, screenshots `180`–`189` (with `181b`, `181c`), `201` and `202`, and
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP powiadomienia` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/powiadomienia-*.json`.
 
 ## Gotchas

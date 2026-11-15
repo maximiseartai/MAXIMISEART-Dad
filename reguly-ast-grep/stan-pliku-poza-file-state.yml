@@ -1,0 +1,60 @@
+id: stan-pliku-poza-file-state
+language: python
+severity: error
+message: >-
+  stan pliku poza file_state: zapytaj src/rozliczenia/file_state.py (file_state, path_state, path_taken, a o wpis
+  folder_entries entry_kind), które rozróżnia brak od pliku niedostępnego (OneDrive, folder bez dostępu), bo gołe
+  .exists() albo .is_file() rzuca PermissionError na Pythonie 3.11–3.13 i odpowiada „brak” na 3.14 (#729, #1190)
+files:
+  - src/**/*.py
+ignores:
+  - src/rozliczenia/file_state.py
+rule:
+  # Reguła czyta trzy postacie: wywołanie metody exists, is_file albo is_dir bez argumentów na dowolnym obiekcie (na
+  # Path i na wpisie os.DirEntry), także z odstępami albo złamaniem linii w nawiasie; wywołanie exists, lexists, isfile
+  # albo isdir na path modułu os (albo atrybutu os), w każdym miejscu wyrażenia; i ten sam tekst w komentarzu albo
+  # napisie. Metoda pod inną nazwą albo wołana na klasie, os.path pod aliasem albo z from-importu oraz inne drogi do stanu
+  # ścieżki (iterdir, scandir, glob, stat, try i except OSError) to znane luki w ZNANE_LUKI_STANU_PLIKU
+  # w tests/test_zapadki.py.
+  any:
+    - kind: call
+      all:
+        - has:
+            field: function
+            kind: attribute
+            has:
+              field: attribute
+              regex: '^(exists|is_file|is_dir)$'
+        - has:
+            field: arguments
+            kind: argument_list
+            regex: '^\(\s*\)$'
+    # os.path.exists, lexists, isfile albo isdir na module os albo na atrybucie os, także łamane przed kropką.
+    - kind: call
+      has:
+        field: function
+        kind: attribute
+        all:
+          - has:
+              field: attribute
+              regex: '^(exists|lexists|isfile|isdir)$'
+          - has:
+              field: object
+              kind: attribute
+              all:
+                - has:
+                    field: attribute
+                    regex: '^path$'
+                - has:
+                    field: object
+                    any:
+                      - kind: identifier
+                        regex: '^os$'
+                      - kind: attribute
+                        has:
+                          field: attribute
+                          regex: '^os$'
+    - any:
+        - kind: comment
+        - kind: string
+      regex: '\.(exists|is_file|is_dir)\(\s*\)|\bos\.path\.(exists|lexists|isfile|isdir)\('

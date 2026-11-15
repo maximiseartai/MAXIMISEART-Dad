@@ -45,21 +45,21 @@ Printed by `scripts/sub_features.py --feature zgloszenie` from the drive's steps
 ## How to get to it (user POV)
 
 - Uruchomienia: a stop with `Diagnoza`; after it, region `Diagnoza` holds `Wyślij do Maksa` and `Co zostanie wysłane`, the confirmation, or the queued `status`.
-- Raporty: a stop „do Maksa” of Wpisanie raportów (e.g. `RAPORTY_HASLO_ODRZUCONE`, an unreadable access file) shows region `Zatrzymanie Wpisania raportów` with the link `Uruchomieniach`, whose card has the same `Diagnoza` and Zgłoszenie; this feature does not drive it (`tests/test_centrum_wpisanie_raportow.py` does).
+- Raporty: a stop „do Maksa” of Wpisanie raportów (e.g. `RAPORTY_HASLO_ODRZUCONE`, an unreadable access file) shows region `Zatrzymanie Wpisania raportów` with the link `Uruchomieniach`, whose card has the same `Diagnoza` and Zgłoszenie; this feature does not drive it, and `tests/test_centrum_wpisanie_raportow.py::test_odrzucone_haslo_to_komunikat_do_maksa_ze_zgloszeniem_a_powtorka_komentarzem_w_otwartym_zgloszeniu` checks that a rejected password is a Komunikat „do Maksa” with a Zgłoszenie and its repeat a comment in the open Zgłoszenie.
 - Before a Diagnoza (after a reload or in a new Uruchomienie) only the confirmation, the waiting `status`, or the queued `status` is shown under the stop.
 - Ustawienia (gear in the menu's footer), section Zgłoszenia: `Skrzynka Zgłoszeń` reads `Gotowe`, `Brak tokenu` or `Token odrzucony`.
 
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature zgloszenie`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP zgloszenie` in `drive.txt`, screenshots `60`–`66` (with `61b`, `63b`) and `68`–`75` (with `74b`), and
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP zgloszenie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
 `api/zgloszenie-*.json`.
 
 ## Gotchas
 
 - The preview belongs to the last Diagnoza of the Uruchomienie: a second `POST /api/runs/{id}/diagnosis` from the drive replaces it (its log tail differs), so compare the skrzynka with the preview shown in the tab, not with an extra API Diagnoza.
-- `ZGLOSZENIE_NIEZAPISANE` and its `Spróbuj ponownie` (a queue file that cannot be written) only pytest covers; the drive cannot make the queue folder unwritable without breaking the Logi beside it.
+- `ZGLOSZENIE_NIEZAPISANE` (a queue file that cannot be written) is not driven: the drive cannot make the queue folder unwritable without breaking the Logi beside it. `tests/test_centrum_zgloszenie.py::test_zgloszenie_ktorego_nie_da_sie_zapisac_w_kolejce_daje_komunikat` checks that such a Zgłoszenie gives the Komunikat.
 - The queue retries a minute after a failed pass on the real clock too, so a slow step may see the Zgłoszenie go out before the clock moves; the steps check the end state, not the moment.
 - The skrzynka rejects content only after it took the key, so `zgloszenie-odrzucone` runs with the key written; Centrum remembers the rejection only until it closes, and the next start tries the file again.
 - Before a Diagnoza the waiting `status` comes from the skrzynka's last answer in this Centrum, or from the local sent state when this Centrum has not asked yet; the Centrum asks the skrzynka for the open Zgłoszenie of the problem in the Diagnoza and again when sending, so in this Centrum a closed Zgłoszenie shows only after `Diagnoza`. After a restart, once Powiadomienia have asked the skrzynka and written Maks's closing into the sent state, the same stop shows `report` `ready` before any Diagnoza.

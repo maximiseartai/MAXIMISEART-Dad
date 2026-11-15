@@ -4,7 +4,10 @@ Centrum measures its own speed on Dad's computer without Dad seeing anything:
 every API answer carries `Server-Timing` with the handling time only, and after
 every ready view (the cold start of a page, a menu click, a click on the header bell) the browser sends one
 measurement that the server appends to the Centrum log as a `pomiar` entry. The
-entry holds the page id (`PageId`, the five pages of the menu, Powiadomienia and the Uzupełnienie page `#/uzupelnienie/<okres>`, which this feature does not drive), the times in milliseconds, and for each
+entry holds the page id (`PageId`, the five pages of the menu, Powiadomienia and the Uzupełnienie page `#/uzupelnienie/<okres>`, which this feature does not drive:
+`tests/test_centrum_uzupelnienie_tabela.py::test_po_odczycie_strony_rodzaju_teksty_wierszy_nie_wychodza_z_komputera`
+sends its measurement and checks that the request reaches the Centrum log while no row text reaches the log, a
+Zgłoszenie or the Logi), the times in milliseconds, and for each
 API request the operation name from the contract with the browser and server
 time, so Maks can tell slow OneDrive reads from a slow browser. No address,
 path, period token or content reaches the log.
@@ -28,9 +31,9 @@ Printed by `scripts/sub_features.py --feature pomiar-u-taty` from the drive's st
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature pomiar-u-taty`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP pomiar-u-taty` in `drive.txt`, screenshot `80`, `api/pomiar-*.{json,txt}` and
-`state/centrum-rozliczen.log`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP pomiar-u-taty` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
+`api/pomiar-*.{json,txt}` and `state/centrum-rozliczen.log`.
 
 ## Gotchas
 

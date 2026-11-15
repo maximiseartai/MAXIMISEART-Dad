@@ -34,8 +34,16 @@ when the disk lets the guardian neither remove the file of
 `NOWA_WERSJA_NIE_WYSTARTOWALA` from A to B nor write „ok” after Dad's next
 click, B, which answers, shows no failure (#725).
 A Centrum log that cannot be read lets the result through. The drive checks
-none of this: the rules are checked by `tests/test_centrum_aktualizacja.py`
-and the model of `verify-aktualizacja-narzedzia`.
+only „ok” on the old version (`aktualizacja-ok-przy-starej-wersji`); the model of `verify-aktualizacja-narzedzia`
+checks the rules, and `tests/test_centrum_aktualizacja.py` checks each:
+`test_zgloszony_wynik_nie_wraca_gdy_dysk_nie_pozwala_usunac_jego_pliku` that a reported result does not come back
+when the disk keeps its file,
+`test_porazka_z_pliku_wyniku_przy_wersji_innej_niz_sprzed_aktualizacji_jest_stara_i_karta_jej_nie_pokazuje` that a
+failure of another version is old and the card does not show it,
+`test_nowa_dzialajaca_wersja_po_dwoch_odmowach_dysku_nie_pokazuje_porazki_poprzedniej_proby` that the working new
+version shows no failure of the try before after two refusals of the disk, and
+`test_wynik_aktualizacji_trafia_na_karte_gdy_dziennika_nie_da_sie_przeczytac` that the result reaches the card when
+the log cannot be read.
 The read of the configuration keeps GitHub's answer about the newest Wydanie (one answer shared with
 Powiadomienia) for 10 minutes of Centrum's clock, so each harness change of the Wydanie also moves that clock on. In this run the tool
 is the fixture's synthetic clone with a local "origin", and its Centrum is the
@@ -69,13 +77,13 @@ Printed by `scripts/sub_features.py --feature aktualizacja` from the drive's ste
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualizacja`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines
-under `STEP aktualizacja` in `drive.txt`, screenshots `93`, `94`, `96`, `100`, `101`, `115`–`117`, `130`–`132` and
-`135`–`138`, and `api/aktualizacja-*.json`.
+from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
+`STEP aktualizacja` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
+`api/aktualizacja-*.json`.
 
 ## Gotchas
 
 - `main-commit.txt` must go when the feature ends: later features expect `main` to be the tool's own commit. After the update the clone's `HEAD` is the new commit, so leaving the file would still read as current, but it would mask a feature that pins another `main`.
 - The clone is moved by real Git on this machine. Its user configuration applies to the update; the fixture's own commits ignore it.
 - The restarted Centrum is a new process started by the restart guardian, not by the runner: `server.txt` holds only the first server's console, the new server rewrites `server.json` with its pid, and cleanup stops that one. In `all`, every later feature drives the restarted Centrum.
-- The version that does not start is only a `run_centrum.py` that fails at once; the real launcher's start failure without a dialog (`--bez-okienek`) is covered by `tests/test_opiekun_ponownego_startu.py`.
+- The version that does not start is only a `run_centrum.py` that fails at once. With the real launcher, `tests/test_opiekun_ponownego_startu.py::test_nowa_wersja_ktora_nie_wystartuje_wraca_do_starego_commitu_a_stara_startuje_z_komunikatem` checks that a new version that does not start goes back to the old commit and the old one starts with the Komunikat, and `tests/test_opiekun_ponownego_startu.py::test_polecenie_opiekuna_przyjmuje_launcher_kazdej_wersji_jako_start_bez_karty_i_bez_okienek` that the guardian starts it without a tab and without dialogs (`--bez-okienek`).

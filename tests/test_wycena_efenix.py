@@ -3636,6 +3636,30 @@ def test_okno_taty_otwiera_liste_zlecen_w_jedynej_karcie_przegladarki(tmp_path: 
     assert shown == [atrapa.url]
 
 
+def test_przegladarka_okna_ktora_nie_zalozyla_profilu_nie_zostawia_dziennika_w_katalogu_roboczym(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Przeglądarka okna, która nie może założyć profilu (w jego miejscu leży plik), zatrzymuje start, a jej dziennik
+    błędu nie ląduje w katalogu roboczym procesu: u taty to folder narzędzia, w CI drzewo repozytorium (#1864, na
+    Windows ``chromium-headless-shell`` pisał tam ``debug.log``)."""
+
+    working = tmp_path / "katalog-roboczy"
+    working.mkdir()
+    profile = tmp_path / "przegladarka-efenix"
+    profile.write_text("", encoding="utf-8")
+    monkeypatch.chdir(working)
+
+    def start() -> None:
+        with pytest.raises(WindowStop), efenix_browser.chrome("http://127.0.0.1:9/", profile, nullcontext, channel=None, headless=True):
+            pass
+
+    # Okno ``chrome`` startuje własny Playwright, a wątek testu może mieć już Playwright przeglądarki testów.
+    with ThreadPoolExecutor(max_workers=1) as own_thread:
+        own_thread.submit(start).result(timeout=120)
+
+    assert sorted(path.name for path in working.iterdir()) == []
+
+
 def test_strona_efenix_w_oknie_taty_ma_rozmiar_okna_przegladarki(tmp_path: Path) -> None:
     """Okno taty nie narzuca stronie własnego rozmiaru: strona efenix wypełnia okno przeglądarki, które tata ustawia, a
     nie stały prostokąt Playwrighta (1280×720), który przy innym oknie zostawia pasy albo ucina stronę."""
