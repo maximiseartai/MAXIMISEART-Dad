@@ -30,6 +30,8 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      ssh og-box 'python3 /tmp/polowanie/tools/poprawki_operatora.py --tydzien <poniedziałek>' > <bieg>/poprawki-og-box.txt
      ```
 
+     Linia `POPRAWKI OPERATORA FAIL` znaczy „źródło poprawek operatora tej maszyny bez danych w tym tygodniu”: idź dalej z pozostałymi źródłami, a jej plik i linia wyniku z kroku 5 dostają zdanie „niedostępne: <powód z linii>”.
+
    - Werdykty tygodnia: PR-y z werdyktem `FAIL`, potem werdykty każdego z nich.
      Wystąpienia z werdyktów utworzonych w tygodniu to Ważne z `Idiom: bez reguły`, Ważne z `Idiom: <id>` bez `jak` (ucieczka reguły) i PR z co najmniej 3 werdyktami `FAIL`, których Ważne w kolejnych rundach stoją na tej samej przesłance.
 
@@ -74,5 +76,5 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
 
    Klasa, której mechanizm wymaga decyzji Maksa, dostaje issue `decyzja-maksa` według [`issue-tracker.md`](../../../docs/agents/issue-tracker.md) zamiast PR, a PR bez merge'u przechodzi na następne polowanie i liczy się tam do limitu.
    Krok kończy się, gdy każda klasa bez mechanizmu i każda reguła ponad progiem ma w `klasy.md` link do PR z raportem klasy, issue `decyzja-maksa` albo zdanie „czeka: limit dwóch PR-ów”.
-5. Zakończ odpowiedź w wątku zadania jedną linią: `POLOWANIE <poniedziałek> | klasy <k> (nowe <n>) | PR: <URL-e albo brak> | reguły ponad progiem: <id p%, albo brak> | decyzje: <URL-e albo brak>`.
+5. Zakończ odpowiedź w wątku zadania jedną linią: `POLOWANIE <poniedziałek> | klasy <k> (nowe <n>) | PR: <URL-e albo brak> | reguły ponad progiem: <id p%, albo brak> | decyzje: <URL-e albo brak> | niedostępne: <plik źródła: powód, albo brak>`.
    Krok kończy się, gdy linia ma każdy PR i issue z kroku 4 i każdą regułę ponad progiem z kroku 3.

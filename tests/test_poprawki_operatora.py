@@ -3,7 +3,7 @@ repo w tygodniu czasu polskiego.
 
 Wymaganie bierzemy z jednostki H programu „11 z 11” (polowanie na powtarzane błędy): poprawki Maksa w wątkach agentów,
 bez tekstu, który do wątku włożył agent, zadanie T3 albo serwer, i bez cichego zera z wejścia, którego narzędzie nie
-przeczytało (#1914 r3: zero znaczy „bez poprawek” tylko przy żywej bazie). Baza jest syntetyczna, w kształcie bazy stanu serwera
+przeczytało (#1914 r3 i r4: tydzień bez wiadomości operatora w wątkach repo to porażka, nie zero). Baza jest syntetyczna, w kształcie bazy stanu serwera
 T3 w tym, co narzędzie czyta: tabele projektów, wątków i wiadomości, a w ``payload_json`` wiadomości pola nadawcy
 ``createdBy`` i ``creationSource`` z kontraktu ``orchestrationV2``. Teksty wiadomości są wymyślone (zdania z
 ``_zdanie`` i krótkie teksty wpisane w teście, jak ``/compact`` i „tak”), a identyfikatory wątków i katalogi projektów
@@ -52,13 +52,16 @@ def _agent(thread: str, when: str, text: str, source: str, **fields: object) -> 
     return (thread, when, "user", {"createdBy": "agent", "creationSource": source, "text": text, **fields})
 
 
-def _base(path: Path, messages: list[tuple[str, object, str, dict[str, object]]], repo: str = REPO, later: bool = True, ids: tuple[str, ...] = ()) -> Path:
+def _base(
+    path: Path, messages: list[tuple[str, object, str, dict[str, object]]], repo: str = REPO, later: bool = True, ids: tuple[str, ...] = (), other: str = OTHER
+) -> Path:
     """Baza T3 z wiadomościami ``messages``; ``later`` dokłada odpowiedź po końcu tygodnia, czyli bazę, którą T3 dalej
-    pisze, a ``ids`` daje identyfikatory pierwszych wiadomości zamiast ``m<numer>``."""
+    pisze, ``ids`` daje identyfikatory pierwszych wiadomości zamiast ``m<numer>``, a ``other`` to katalog projektu wątku
+    ``STRANGER``."""
 
     with closing(sqlite3.connect(path)) as db:
         db.executescript(SCHEMA)
-        db.executemany("INSERT INTO projection_projects VALUES (?, ?)", [("p-repo", repo), ("p-inny", OTHER)])
+        db.executemany("INSERT INTO projection_projects VALUES (?, ?)", [("p-repo", repo), ("p-inny", other)])
         threads = [(COORDINATOR, "p-repo"), (CHILD, "p-repo"), ("watek-b", "p-repo"), ("watek-c", "p-repo"), (STRANGER, "p-inny")]
         db.executemany("INSERT INTO orchestration_v2_projection_threads VALUES (?, ?)", threads)
         everything = [*messages, LATER] if later else messages
@@ -191,10 +194,11 @@ ZNANE_LUKI: dict[str, tuple[str, dict[str, object]]] = {
 def test_znane_luki_nadawcy_operatora(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     zgloszenia: dict[str, list[str]] = {}
     for at, (opis, (message_id, payload)) in enumerate(ZNANE_LUKI.items()):
-        base = _base(tmp_path / f"statev2-{at}.sqlite", [(COORDINATOR, "2026-11-03T10:00:00.000Z", "user", payload)], ids=(message_id,))
+        written = _operator(CHILD, "2026-11-03T10:05:00.000Z", _zdanie(41))
+        base = _base(tmp_path / f"statev2-{at}.sqlite", [(COORDINATOR, "2026-11-03T10:00:00.000Z", "user", payload), written], ids=(message_id,))
         code, (*lines, _) = _run(base, capsys)
         assert code == 0, opis
-        zgloszenia[opis] = [f"wypisana jako wiadomość operatora: {line}" for line in lines]
+        zgloszenia[opis] = [f"wypisana jako wiadomość operatora: {line}" for line in lines if str(payload["text"]) in line]
 
     assert_znane_luki(zgloszenia, "tests/test_poprawki_operatora.py (ZNANE_LUKI)")
 
@@ -221,14 +225,36 @@ def test_baza_z_ktorej_narzedzie_nie_przeczyta_tygodnia_konczy_sie_porazka_z_pow
     assert lines[0].startswith(f"POPRAWKI OPERATORA FAIL | baza T3 {base}: {reason}")
 
 
-def test_tydzien_bez_wiadomosci_user_w_watkach_repo_konczy_sie_porazka_choc_baza_zyje(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    base = _base(
-        tmp_path / "statev2.sqlite", [(COORDINATOR, "2026-11-03T10:00:00.000Z", "assistant", {"text": _zdanie(60)}), _operator(STRANGER, "2026-11-03T10:01:00.000Z", _zdanie(61))]
-    )
+@pytest.mark.parametrize(
+    ("repo_messages", "other", "last"),
+    [
+        (
+            [_agent(COORDINATOR, "2026-11-03T09:00:00.000Z", _zdanie(60), "server", notification={"kind": "pull_request"}), _agent(CHILD, "2026-11-04T09:00:00.000Z", _zdanie(61), "mcp")],
+            "/tmp/nowe-miejsce/MAXIMISEART-Dad-nowy",
+            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 2 wiadomości user | inne projekty T3 tej bazy: MAXIMISEART-Dad-nowy 2",
+        ),
+        (
+            [(COORDINATOR, "2026-11-03T09:00:00.000Z", "assistant", {"text": _zdanie(60)})],
+            OTHER,
+            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty T3 tej bazy: inny-projekt 2",
+        ),
+    ],
+    ids=["stary-projekt-z-wiadomosciami-agentow-po-przeniesieniu-repo", "watki-repo-bez-wiadomosci-user"],
+)
+def test_tydzien_bez_wiadomosci_operatora_w_watkach_repo_konczy_sie_porazka_z_liczba_z_innych_projektow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], repo_messages: list[tuple[str, object, str, dict[str, object]]], other: str, last: str
+) -> None:
+    """Sonda W1 #1914 r4: repo przeniesione do projektu T3 o innej nazwie katalogu, a stary projekt dostaje tylko
+    wiadomości agentów; zero operatora w wątkach repo nie jest linią ``OK``. Wiadomość agenta i nadawca spoza kontraktu
+    w innym projekcie nie liczą się do jego wiadomości operatora."""
+
+    operator = [_operator(STRANGER, "2026-11-03T10:00:00.000Z", _zdanie(62)), _operator(STRANGER, "2026-11-05T10:00:00.000Z", _zdanie(63))]
+    noise = [_agent(STRANGER, "2026-11-05T10:01:00.000Z", _zdanie(64), "mcp"), (STRANGER, "2026-11-05T10:02:00.000Z", "user", {"creationSource": "web", "text": "tak"})]
+    base = _base(tmp_path / "statev2.sqlite", [*repo_messages, *operator, *noise], other=other)
 
     code, lines = _run(base, capsys)
 
-    assert (code, lines) == (1, [f"POPRAWKI OPERATORA FAIL | baza T3 {base}: tydzień nie ma żadnej wiadomości user w wątkach MAXIMISEART-Dad"])
+    assert (code, lines) == (1, [f"POPRAWKI OPERATORA FAIL | tydzień {WEEK}: {last}"])
 
 
 def test_tydzien_ktory_jeszcze_trwa_konczy_sie_porazka(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

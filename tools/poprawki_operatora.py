@@ -23,12 +23,16 @@ wiadomości każdego nadawcy (``<createdBy>/<creationSource>`` albo ``COMPACT``)
 wiadomości idzie na standardowe wyjście, a zapis jej w repozytorium, PR albo issue łamie prywatność wątków Maksa, więc
 test narzędzia ma tylko tekst i identyfikatory wymyślone.
 
-Zero wiadomości operatora znaczy „operator nic nie poprawiał” tylko wtedy, gdy narzędzie przeczytało żywe wejście, więc
-przed liczeniem sprawdza je (``alive``), a każdy z tych stanów kończy się linią ``POPRAWKI OPERATORA FAIL`` z powodem i
-kodem 1: brak bazy albo tabel T3, ``created_at`` wiadomości w innym typie albo zapisie niż tekst ``toISOString``, żaden
-projekt T3 w katalogu ``REPO`` (klon pod inną nazwą), najnowsza wiadomość bazy sprzed końca tygodnia (baza, której T3
-już nie pisze, jak ``state.sqlite`` po przejściu na ``statev2.sqlite``), tydzień, który jeszcze trwa, i tydzień bez
-żadnej wiadomości ``user`` w wątkach repo. Tak samo kończy się wiadomość z nadawcą albo źródłem spoza kontraktu.
+Linia ``OK`` z zerem nie istnieje: tydzień bez wiadomości operatora w wątkach repo kończy się linią ``POPRAWKI OPERATORA
+FAIL | tydzień RRRR-MM-DD: 0 wiadomości operatora w wątkach REPO z m wiadomości user | inne projekty T3 tej bazy: <katalog>
+k, …`` i kodem 1, bo przy kilkuset wiadomościach operatora na tydzień zero częściej znaczy nieczytane wejście (repo
+przeniesione do nowego projektu T3, którego katalog ma inną nazwę, a stary dostaje tylko wiadomości agentów) niż
+tydzień bez poprawek, a liczba wiadomości operatora w innych projektach mówi, gdzie patrzeć. Przed liczeniem narzędzie
+sprawdza wejście (``alive``), a każdy z tych stanów też kończy się linią ``FAIL`` z powodem i kodem 1: brak bazy albo
+tabel T3, ``created_at`` wiadomości w innym typie albo zapisie niż tekst ``toISOString``, żaden projekt T3 w katalogu
+``REPO`` (klon pod inną nazwą), najnowsza wiadomość bazy sprzed końca tygodnia (baza, której T3 już nie pisze, jak
+``state.sqlite`` po przejściu na ``statev2.sqlite``) i tydzień, który jeszcze trwa. Tak samo kończy się wiadomość wątku
+repo z nadawcą albo źródłem spoza kontraktu.
 
 Granica: wiadomość wpisana poza oknem T3 (terminal Claude Code, ``claude -p``) nie ma wiersza w bazie, a wątki innej
 maszyny (og-box) są w bazie tamtej maszyny, więc narzędzie biegnie tam osobno. Odpowiedź operatora na pytanie dostawcy
@@ -136,20 +140,31 @@ def alive(db: sqlite3.Connection, until: datetime) -> None:
         )
 
 
-def messages(base: Path, since: datetime, until: datetime) -> list[tuple[str, Message]]:
-    """Nadawca i wiadomość każdej wiadomości ``user`` wątku repo z chwilą w ``[since, until)`` z żywej bazy (``alive``)."""
+def _operator_elsewhere(message_id: str, payload: dict[str, object]) -> bool:
+    """Czy wiadomość projektu spoza repo napisał operator; nadawca spoza kontraktu tam tylko jej nie liczy."""
+
+    try:
+        return sender(message_id, payload) == OPERATOR
+    except ShapeError:
+        return False
+
+
+def messages(base: Path, since: datetime, until: datetime) -> tuple[list[tuple[str, Message]], Counter[str]]:
+    """Nadawca i wiadomość każdej wiadomości ``user`` wątku repo z chwilą w ``[since, until)`` z żywej bazy (``alive``)
+    oraz liczba wiadomości operatora w tym czasie w każdym innym katalogu projektu T3."""
 
     with closing(sqlite3.connect(f"{base.resolve().as_uri()}?mode=ro", uri=True)) as db:
         alive(db, until)
         rows = db.execute(QUERY, (_iso(since), _iso(until))).fetchall()
     found = []
+    elsewhere: Counter[str] = Counter()
     for message_id, thread, created, payload_json, root in rows:
+        payload = json.loads(payload_json)
         if PurePath(root).name == REPO:
-            payload = json.loads(payload_json)
             found.append((sender(message_id, payload), Message(datetime.fromisoformat(created), thread, str(payload.get("text") or ""))))
-    if not found:
-        raise DeadInput(f"tydzień nie ma żadnej wiadomości user w wątkach {REPO}")
-    return found
+        elif _operator_elsewhere(message_id, payload):
+            elsewhere[PurePath(root).name] += 1
+    return found, elsewhere
 
 
 def _line(message: Message, chars: int) -> str:
@@ -174,11 +189,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{PREFIX} FAIL | tydzień {week.isoformat()} jeszcze trwa: kończy się {until.astimezone(WARSAW):%Y-%m-%d %H:%M}")
         return 1
     try:
-        found = messages(args.baza, midnight(week), until)
+        found, elsewhere = messages(args.baza, midnight(week), until)
     except (sqlite3.DatabaseError, ValueError) as error:
         print(f"{PREFIX} FAIL | baza T3 {args.baza}: {error}")
         return 1
     kept = sorted((message for name, message in found if name == OPERATOR), key=lambda message: (message.moment, message.thread))
+    if not kept:
+        projects = ", ".join(f"{name} {elsewhere[name]}" for name in sorted(elsewhere)) or "brak"
+        print(f"{PREFIX} FAIL | tydzień {week.isoformat()}: 0 wiadomości operatora w wątkach {REPO} z {len(found)} wiadomości user | inne projekty T3 tej bazy: {projects}")
+        return 1
     for message in kept:
         print(_line(message, args.znaki))
     others = Counter(name for name, _ in found if name != OPERATOR)
