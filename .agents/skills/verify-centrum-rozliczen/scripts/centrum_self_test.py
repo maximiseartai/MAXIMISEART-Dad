@@ -492,13 +492,18 @@ def _check_result_of_start(errors: list[str]) -> None:
 
 
 def _check_text_settings_refused(errors: list[str]) -> None:
-    """``Run.refuse_text_settings`` fails on a settings file written in text mode as on Windows and passes the bytes of
-    ``put_settings`` and a run before Centrum wrote the file."""
+    """While ``Run.refusing_text_settings_writes`` lasts, a text-mode write of the run's settings file or of its
+    ``.zapis`` fails at the write itself, before the server could write the file again, and ``put_settings``, a write of
+    bytes and a text read pass; afterwards ``open`` is Python's own again. ``Run.refuse_cr_in_settings`` fails on a file
+    a text write on Windows left and passes the bytes of ``put_settings`` and a run before Centrum wrote the file."""
 
+    import builtins
+    import io
     import json
+    import os
     import tempfile
 
-    from drive.common import DriveFailure, Run
+    from drive.common import DriveFailure, Run, put_text, read_bytes, read_text
 
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch) / "run"
@@ -506,18 +511,49 @@ def _check_text_settings_refused(errors: list[str]) -> None:
         settings = config_dir(root) / SETTINGS_FILE
         File.FIXTURE.write(root, json.dumps({"settings": str(settings)}))
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
-        run.refuse_text_settings()
+        run.refuse_cr_in_settings()
         settings.parent.mkdir()
-        run.put_settings(b"schema_version: 1\nmotyw: dark\n")
-        run.refuse_text_settings()
+        good = b"schema_version: 1\nmotyw: dark\n"
+
+        def append() -> None:
+            with open(settings, "a", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        def fdopen() -> None:
+            with os.fdopen(os.open(settings, os.O_WRONLY | os.O_TRUNC), "w", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        text_writes: dict[str, Callable[[], object]] = {
+            "Path.write_text": lambda: settings.write_text(read_text(settings), encoding="utf-8"),
+            "open in mode 'a'": append,
+            "put_text through its .zapis": lambda: put_text(settings, "motyw: light\n"),
+            "os.open with os.fdopen": fdopen,
+        }
+        python_open = (io.open, builtins.open, os.open)
+        with run.refusing_text_settings_writes():
+            run.put_settings(good)
+            for form, write in text_writes.items():
+                try:
+                    write()
+                except DriveFailure as failure:
+                    if "run.put_settings" not in str(failure):
+                        errors.append(f"the refusal of a text-mode write of the settings file names no way out: {failure}")
+                else:
+                    errors.append(f"Run.refusing_text_settings_writes passes a text-mode write of the settings file: {form}")
+            if read_bytes(settings) != good:
+                errors.append("a text-mode write changed the settings file while Run.refusing_text_settings_writes lasted")
+        if (io.open, builtins.open, os.open) != python_open:
+            errors.append("Run.refusing_text_settings_writes leaves its open in place after the drive")
+
+        run.refuse_cr_in_settings()
         settings.write_bytes(b"schema_version: 1\r\nmotyw: dark\r\n")  # a text write on Windows
         try:
-            run.refuse_text_settings()
+            run.refuse_cr_in_settings()
         except DriveFailure as failure:
             if "run.put_settings" not in str(failure):
                 errors.append(f"the refusal of a settings file written in text mode names no way out: {failure}")
         else:
-            errors.append("Run.refuse_text_settings passes a settings file written in text mode on Windows")
+            errors.append("Run.refuse_cr_in_settings passes a settings file written in text mode on Windows")
 
 
 def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:

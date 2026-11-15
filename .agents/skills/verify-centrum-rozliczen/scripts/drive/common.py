@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatchcase
 import inspect
+import io
 import json
 import os
 from pathlib import Path
@@ -206,7 +208,7 @@ class Run:
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
     def api(self, path: str, name: str) -> dict[str, object]:
-        self.refuse_text_settings()
+        self.refuse_cr_in_settings()
         with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=Budget.SCREEN.value) as response:
             body = json.load(response)
         (self.evidence / "api" / f"{name}.json").write_text(
@@ -265,15 +267,70 @@ class Run:
 
         put_bytes(Path(self.fixture["settings"]), data)
 
-    def refuse_text_settings(self) -> None:
-        """Fails when the settings file holds ``\\r``: Centrum writes it with ``\\n`` only and no drive step puts a
-        ``\\r`` in it, so a ``\\r`` is a text-mode write on Windows (#1585), whichever ``str`` and whichever path to
-        the file the write took, which ``put_settings`` taking ``bytes`` does not see.
+    @contextmanager
+    def refusing_text_settings_writes(self) -> Iterator[None]:
+        """Harness: while it lasts, this process refuses to open the run's settings file (``run.fixture["settings"]``)
+        or its ``.zapis`` of ``put_bytes`` and ``put_text`` for writing in text mode, at the open itself and on every
+        system: ``open``, ``io.open``, ``Path.open`` and ``Path.write_text`` with a writing mode without ``b``, and
+        ``os.open`` for writing with any flags, which is text mode on Windows without ``O_BINARY``. Text mode writes
+        ``\\n`` as ``\\r\\n`` on Windows (#1585), while the owner of the settings compares the file byte for byte with
+        what it wrote, so the drive writes the file only through ``put_settings``.
 
-        Runs at each ``api`` and after each feature's drive (``drive_centrum.drive``), so the failure names the step
-        that wrote the file; Mutation checks drive every feature on Windows, where a text write gives ``\\r\\n``. A file
-        the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next check, and a
-        run whose fixture names no settings file (the tests of the harness) has none to check."""
+        ``drive_centrum.main`` holds it for the whole drive, so a text write fails in the step that makes it, also on
+        Linux and macOS and when the server writes the file again before anything reads it. A run whose
+        fixture names no settings file (the tests of the harness) has none to guard. The forms it lets through are
+        ``ZNANE_LUKI_ZAPISU_TEKSTEM`` of ``tests/test_limit_drive_centrum.py``."""
+
+        if "settings" not in self.fixture:
+            yield
+            return
+        settings = Path(self.fixture["settings"])
+        names = {os.path.normcase(settings.name), os.path.normcase(f"{settings.name}.zapis")}
+        guarded = {os.path.normcase(os.path.realpath(settings.parent / name)) for name in names}
+
+        def refuse(file: object, how: str) -> None:
+            if isinstance(file, str | bytes | os.PathLike):
+                path = os.fsdecode(file)
+                if os.path.normcase(os.path.basename(path)) in names and os.path.normcase(os.path.realpath(path)) in guarded:
+                    raise DriveFailure(
+                        f"a drive step opens the settings file {path} for writing {how}, which writes \\r\\n on Windows: "
+                        "write bytes with run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
+                    )
+
+        text_open, raw_open = io.open, os.open
+
+        def guarded_open(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            if isinstance(mode, str) and "b" not in mode and not set(mode).isdisjoint("wax+"):
+                refuse(file, f"in text mode ({mode!r})")
+            return text_open(file, mode, *args, **kwargs)
+
+        def guarded_os_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+            if flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC):
+                refuse(path, "through os.open, in text mode on Windows without O_BINARY")
+            return raw_open(path, flags, *args, **kwargs)
+
+        replaced = (
+            (io, "open", text_open, guarded_open),
+            (builtins, "open", text_open, guarded_open),
+            (os, "open", raw_open, guarded_os_open),
+        )
+        for owner, name, _, replacement in replaced:
+            setattr(owner, name, replacement)
+        try:
+            yield
+        finally:
+            for owner, name, original, _ in replaced:
+                setattr(owner, name, original)
+
+    def refuse_cr_in_settings(self) -> None:
+        """Fails when the settings file holds ``\\r``: Centrum writes it with ``\\n`` only and no drive step puts a
+        ``\\r`` in it, so a ``\\r`` is a text-mode write on Windows that ``refusing_text_settings_writes`` did not see
+        (another process, a file written under another name and moved in place, text wrapped around a binary handle).
+
+        Runs at each ``api`` and after each feature's drive (``drive_centrum.drive``); Mutation checks drive every
+        feature on Windows, where such a write gives ``\\r\\n``, unless the server writes the file again before the
+        check. A file the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next
+        check, and a run whose fixture names no settings file (the tests of the harness) has none to check."""
 
         if "settings" not in self.fixture:
             return
@@ -283,9 +340,9 @@ class Run:
             return
         if data is not None and b"\r" in data:
             raise DriveFailure(
-                f"the settings file {self.fixture['settings']} holds \\r: a drive step wrote it in text mode, which turns "
-                "\\n into \\r\\n on Windows; write bytes with run.put_settings (from run.settings_bytes or the "
-                "owner's settings_yaml)"
+                f"the settings file {self.fixture['settings']} holds \\r: a text-mode write that refusing_text_settings_writes "
+                "does not see (another process, a file moved in place) turned \\n into \\r\\n on Windows; write bytes with "
+                "run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
             )
 
     def remembered(self, key: str) -> object:

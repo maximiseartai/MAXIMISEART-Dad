@@ -12,6 +12,9 @@ Czekanie drive'u (``until`` z ``drive/waiting.py``) przeczekuje plik, który ser
 jego wątek jeszcze pisze: brak pliku, pusty, w połowie zapisany i chwilowo bez prawa odczytu to stan „jeszcze nie”, a
 każdy inny błąd i plik, który po budżecie wciąż nie jest gotowy, kończą przebieg komunikatem (#1651, #1539). Stany
 pliku zmienia sam odczyt warunku, nie zegar.
+
+Nakładka napędu (``Run.refusing_text_settings_writes``) odmawia otwarcia pliku Ustawień runu do zapisu tekstem; postacie,
+które przepuszcza, są próbkami ``ZNANE_LUKI_ZAPISU_TEKSTEM``.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from contextlib import contextmanager
 import importlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import threading
 import time
@@ -239,6 +243,44 @@ def test_znane_luki_czekania_until_przechodza_przez_until(common: ModuleType, tm
             zgloszenia[opis].append("until czeka na pierwszy element leniwego iteratora")
 
     assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_UNTIL)")
+
+
+# Znane luki nakładki ``Run.refusing_text_settings_writes`` (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z
+# ``zapis(path)``, który pisze plik Ustawień runu tekstem, a nakładka go przepuszcza. Nakładka odmawia tylko otwarcia
+# do zapisu tekstem przez ``io.open`` i ``os.open`` procesu napędu, pliku o nazwie pliku Ustawień albo jego ``.zapis``;
+# na Windows takie zapisy łapie potem ``Run.refuse_cr_in_settings``, o ile serwer nie nadpisze pliku przed nim.
+ZNANE_LUKI_ZAPISU_TEKSTEM: Final = {
+    "nakładka zna tylko plik, który się otwiera: tekst do innego pliku przeniesiony na plik Ustawień": "import os\n\n\n"
+    + "def zapis(path):\n    obok = path.with_name('ustawienia.tmp')\n"
+    + "    obok.write_text('schema_version: 1\\n', encoding='utf-8')\n    os.replace(obok, path)\n",
+    "nakładka zna tylko plik, który się otwiera: tekst na deskryptorze pliku Ustawień": "def zapis(path):\n"
+    + "    with open(path, 'wb') as bajty, open(bajty.fileno(), 'w', encoding='utf-8', closefd=False) as tekst:\n"
+    + "        tekst.write('schema_version: 1\\n')\n",
+    "nakładka żyje w io.open i os.open procesu napędu: tekst owinięty na uchwyt bajtów": "import io\n\n\n"
+    + "def zapis(path):\n    with open(path, 'wb') as bajty, io.TextIOWrapper(bajty, encoding='utf-8') as tekst:\n"
+    + "        tekst.write('schema_version: 1\\n')\n",
+    "nakładka żyje w io.open i os.open procesu napędu: proces potomny": "import subprocess\nimport sys\n\n\n"
+    + "def zapis(path):\n    kod = 'import sys; open(sys.argv[1], \"w\", encoding=\"utf-8\").write(\"schema_version: 1\\\\n\")'\n"
+    + "    subprocess.run([sys.executable, '-c', kod, str(path)], check=True)\n",
+}
+
+
+def test_znane_luki_zapisu_tekstem_pliku_ustawien_przechodza_przez_nakladke_napedu(common: ModuleType, tmp_path: Path) -> None:
+    run = _run(common, tmp_path)
+    settings = Path(run.fixture["settings"])
+    zapisy = {opis: modul(plik).zapis for opis, plik in zapisz(ZNANE_LUKI_ZAPISU_TEKSTEM, tmp_path).items()}
+    zgloszenia: dict[str, list[str]] = {}
+    with run.refusing_text_settings_writes():
+        for opis, zapis in zapisy.items():
+            zgloszenia[opis] = []
+            try:
+                zapis(settings)
+            except common.DriveFailure as odmowa:
+                zgloszenia[opis].append(f"nakładka odmawia: {odmowa}")
+            else:
+                assert settings.read_bytes() == f"schema_version: 1{os.linesep}".encode(), opis
+
+    assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_ZAPISU_TEKSTEM)")
 
 
 class _Dlugosc:

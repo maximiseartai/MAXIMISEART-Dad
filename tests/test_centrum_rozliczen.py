@@ -6169,7 +6169,7 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
 # tekstem pliku i kodek tekstu w ``SettingsFile`` nie przechodzą mypy, a ``write_text`` bajtów rzuca ``TypeError`` w biegu na
 # każdym systemie. Krok drive czyta plik tylko przez ``Run.settings_bytes`` i pisze tylko przez ``Run.put_settings``,
 # oba na ``bytes``. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` („klasa: postać”) pokazują postacie, które mypy i ruff przepuszczają;
-# w napędzie łapie je w biegu na Windows ``Run.refuse_text_settings`` (``\r`` w pliku Ustawień runu).
+# w napędzie zapis tekstem pliku Ustawień runu odrzuca w chwili otwarcia ``Run.refusing_text_settings_writes``.
 _GLOWA_BAJTOW: Final = """from pathlib import Path
 
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
