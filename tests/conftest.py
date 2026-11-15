@@ -168,6 +168,23 @@ def gh_bez_logowania(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
         yield
 
 
+# Zmienne środowiska maszyny, które zmieniają domyślne zachowanie narzędzi repozytorium: ``BOATBOX`` ustawia ``boatbox`` na
+# boxie boat, a ``czasy_ci.workery_lokalne()`` bierze wtedy wszystkie rdzenie.
+_ZMIENNE_MASZYNY = ("BOATBOX",)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def srodowisko_jak_na_macu() -> Iterator[None]:
+    """Testy widzą to samo środowisko na Macu, w CI i na boxie boat: zmienne z ``_ZMIENNE_MASZYNY`` znikają z procesu
+    testów i jego potomków, więc test, który przypina domyślne zachowanie narzędzia (4 workery ``szybko.py``), nie pada
+    tylko na boxie. Test zachowania na boxie ustawia zmienną sam."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        for nazwa in _ZMIENNE_MASZYNY:
+            patch.delenv(nazwa, raising=False)
+        yield
+
+
 @pytest.fixture(autouse=True, scope="session")
 def jedna_petla_testclient() -> Iterator[None]:
     """Każdy ``TestClient`` poza ``with`` obsługuje żądania w jednej pętli zdarzeń procesu testów, nie w nowej na żądanie.

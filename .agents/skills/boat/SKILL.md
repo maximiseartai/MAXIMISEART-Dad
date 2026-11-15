@@ -45,7 +45,7 @@ Plan za 20 USD ma dwa limity i oba się kończą: 200 startów boxa na dobę ora
 Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
 `boatbox status` pokazuje oba limity i tempo zużycia godzin, `boatbox auto` przy ich braku wybiera Maca, a `boatbox fan` przy braku startów uruchamia części po kolei na jednym boxie.
 Przed pełnym pytestem i przed `fan` uruchom `boatbox status`.
-Gdy pokazuje linię `over pace:`, pełny pytest uruchamiaj lokalnie, a `fan` tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej równe liczbie rdzeni), bo `run`, `job` i `fan` przy przekroczonym tempie tylko ostrzegają i biegną dalej.
+Gdy pokazuje linię `over pace:`, pełny pytest zostaw CI, a `fan` uruchamiaj tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej równe liczbie rdzeni), bo `run`, `job` i `fan` przy przekroczonym tempie tylko ostrzegają i biegną dalej.
 Zadanie kończ poleceniem `boatbox stop`.
 
 ## Dane
