@@ -15,10 +15,10 @@ rule:
   # Wątki procesu workera pytest poza linie_watkow, jak monkeypatch.setattr(threading.Thread, "start", counted)
   # w 0e304aec7 (#633). W kodzie threading.Thread.start i threading.active_count odrzuca ruff TID251 (tests/ruff.toml),
   # ale nie na linii z # noqa: TID251, nie w napisie i nie pod samą nazwą z from-importu, więc reguła czyta: wywołanie
-  # active_count (samo albo po kropce), atrybut Thread.start (sam albo po kropce), argumenty z Thread, i napisem start
-  # (także w kilku liniach) oraz ten sam tekst w komentarzu i napisie. threading.enumerate, sys._current_frames,
-  # threading._active, klasa wątku w zmiennej i podmiana run albo __init__ to znane luki w ZNANE_LUKI_WATKOW
-  # w tests/test_zapadki.py.
+  # active_count (samo albo po kropce), atrybut Thread.start (sam albo po kropce), napis start po przecinku za
+  # wyrażeniem Thread w dowolnym ciągu wyrażeń oraz ten sam tekst w komentarzu i napisie. threading.enumerate,
+  # sys._current_frames, threading._active, klasa wątku w zmiennej i podmiana run albo __init__ to znane luki
+  # w ZNANE_LUKI_WATKOW w tests/test_zapadki.py.
   any:
     - kind: call
       has:
@@ -26,8 +26,20 @@ rule:
         regex: '(^|\.)active_count$'
     - kind: attribute
       regex: '(^|\.)Thread\.start$'
-    - kind: argument_list
-      regex: '\bThread,\s*["'']start["'']'
+    # Napis "start" zaraz po przecinku za wyrażeniem, które kończy się nazwą Thread, w dowolnym ciągu wyrażeń
+    # (argumenty, krotka, lista, zbiór, indeks, assert), także w kilku liniach.
+    - kind: string
+      regex: '^["'']start["'']'
+      follows:
+        pattern: ','
+        follows:
+          any:
+            - kind: identifier
+              regex: '^Thread$'
+            - kind: attribute
+              has:
+                field: attribute
+                regex: '^Thread$'
     - any:
         - kind: comment
         - kind: string
