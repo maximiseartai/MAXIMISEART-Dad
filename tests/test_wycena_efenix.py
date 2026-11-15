@@ -179,11 +179,14 @@ def _run(
     window: Callable[[Efenix], Efenix] = lambda efenix: efenix,
     tata: Tata | None = None,
     mode: PricingMode = PricingMode.FILL,
+    hurried_start: bool = False,
 ) -> Priced:
     """Uruchomienie Wyceny w efenix dla Pliku zbiorczego ``source``; ``meanwhile`` to to, co tata zrobił z plikiem, zanim
     proces skończył ostatnie zlecenie. Tempo ludzkie jest wyłączone, chyba że test poda ``pace``, a ``clock`` to zegar
     czasów etapów i śladu działań okna. ``window`` to okno efenix, które dostaje proces, zbudowane z okna przeglądarki.
-    ``tata``: rozmówca, który widzi postęp; bez niego ``Tata()``. ``mode``: tryb Wyceny.
+    ``tata``: rozmówca, który widzi postęp; bez niego ``Tata()``. ``mode``: tryb Wyceny. Otwarcie listy przy starcie ma
+    czas okna taty (``_UnhurriedStart``), a z ``hurried_start`` czas ``timeout_ms`` jak każde działanie okna, gdy test
+    sprawdza samo otwarcie.
 
     Karta ``page`` służy jednemu Uruchomieniu, jak przeglądarka okna taty (``efenix_browser.chrome``) i Skryptu dla maszyn
     (``efenix_browser.chromium``), która zamyka się z oknem, więc następne Uruchomienie dostaje nową kartę
@@ -201,7 +204,8 @@ def _run(
     @contextmanager
     def open_efenix(_login: Login) -> Iterator[Efenix]:
         try:
-            with efenix_browser.window(page, url, timeout_ms=timeout_ms) as efenix:
+            tab = page if hurried_start else _unhurried_start(page)
+            with efenix_browser.window(tab, url, timeout_ms=timeout_ms) as efenix:
                 yield window(efenix)
         except Exception as error:
             print("Błąd okna efenix:", "".join(traceback.format_exception(error)), sep="\n", file=sys.stderr)
@@ -267,6 +271,35 @@ def _read_only(stan: StanEfenix[AtrapaOrder]) -> bool:
     """Okno tylko szukało i otwierało strony zleceń."""
 
     return not any(_changes(stan))
+
+
+class _UnhurriedStart:
+    """Karta ``page``, w której pierwsza nawigacja okna, otwarcie listy zleceń przy starcie, ma czas okna taty
+    (``TIMEOUT_MS``), a każde późniejsze działanie okna krótki czas okna testu.
+
+    Krótki czas okna testu mierzy reakcję okna na efenix, który przestał odpowiadać po starcie. Pierwsza nawigacja nowej
+    karty pod obciążeniem xdist trwa legalnie dłużej niż ten czas (w CI dłużej niż 2 s, #1639), a lista, której okno nie
+    otworzyło przy starcie, to „Nie udało się otworzyć efenix”, czyli inne Zatrzymanie niż to, które test sprawdza
+    (#1398: po 0,5 s ani jedno pytanie o sesję). Test, w którym efenix przestaje odpowiadać już przy starcie, daje oknu
+    samą kartę.
+    """
+
+    def __init__(self, page: Page) -> None:
+        self._page = page
+        self._started = False
+
+    def goto(self, url: str, **options: Any) -> object:
+        if not self._started:
+            self._started = True
+            options["timeout"] = efenix_browser.TIMEOUT_MS
+        return self._page.goto(url, **options)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._page, name)
+
+
+def _unhurried_start(page: Page) -> Page:
+    return cast(Page, _UnhurriedStart(page))
 
 
 def _next_tab(page: Page) -> Page:
@@ -2259,7 +2292,7 @@ def test_koniec_bloku_okna_nie_czeka_na_strone_ktorej_skrypt_nie_odpowiada(page:
     na nią, a po bloku strona dalej nie odpowiada."""
 
     with atrapa_efenix([]) as atrapa:
-        with efenix_browser.window(page, atrapa.url, timeout_ms=2_000):
+        with efenix_browser.window(_unhurried_start(page), atrapa.url, timeout_ms=2_000):
             page.evaluate("setTimeout(() => { const end = Date.now() + 20_000; while (Date.now() < end) {} }, 0)")
             with pytest.raises(PlaywrightError, match="Timeout"):
                 page.locator(":root").wait_for(state="attached", timeout=1_000)
@@ -2977,6 +3010,9 @@ WHOLE_RUN = (
 # każde żądanie w każdym trybie (116 przypadków, ok. 8 min procesora), uruchamiasz przed zmianą okna efenix albo
 # odcięcia Atrapy efenix:
 # ``PELNY_PRZEGLAD_EFENIX=1 .venv/bin/python -m pytest tests/test_wycena_efenix.py -n 8 -k od_kazdego_zadania``.
+# Żądania przed pierwszym szukaniem to otwarcie listy przy starcie (strona i jej skrypt): tylko odcięcie od nich trafia
+# w samo otwarcie, więc tylko wtedy otwarcie ma krótki czas okna testu.
+_LIST_ON_START = WHOLE_RUN.index(("POST", SEARCH))
 _READ_BY_WINDOW = tuple(WHOLE_RUN.index(("POST", path)) for path in (SEARCH, FILL_EMMETT, SAVE_QUANTITY))
 _SECOND_ORDER_PAGE = WHOLE_RUN.index(("GET", ORDER_PAGE), WHOLE_RUN.index(("GET", LIST_PAGE), 1))
 _WRITES = {("POST", path) for path in (SET_DATE, LOAD_EMMETT, SAVE_QUANTITY)}
@@ -3048,7 +3084,7 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     with atrapa_efenix(_two_in_efenix(), outage_from=(outage, first)) as atrapa:
         untouched = _pricing(atrapa)
         with page_of(browser) as window:
-            stopped = _run(resumed, window, atrapa.url, timeout_ms=timeout_ms)
+            stopped = _run(resumed, window, atrapa.url, timeout_ms=timeout_ms, hurried_start=first < _LIST_ON_START)
         after_stop = _pricing(atrapa)
         atrapa.reconnect()
         with page_of(browser) as window:
@@ -3794,8 +3830,9 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
 ) -> None:
     """efenix przestaje odpowiadać, gdy okno czeka na logowanie taty: pytanie o sesję kończy się w czasie okna, okno pyta
     dalej, a po limicie czekania to efenix, którego okno nie otworzyło, z błędem przeglądarki przy otwarciu listy jak przy
-    starcie, a nie „tata się nie zalogował” (spis #27). Czas okna to ćwierć ``LOGIN_POLL_MS``, a domyślny limit karty dwa
-    ``LOGIN_POLL_MS``, dłużej niż limit czekania."""
+    starcie, a nie „tata się nie zalogował” (spis #27). Czas okna pytań o sesję to ćwierć ``LOGIN_POLL_MS`` (otwarcie listy
+    przy starcie ma czas okna taty, ``_UnhurriedStart``), a domyślny limit karty dwa ``LOGIN_POLL_MS``, dłużej niż limit
+    czekania."""
 
     page.context.set_default_timeout(2 * efenix_browser.LOGIN_POLL_MS)
     with atrapa_efenix([]) as atrapa:
@@ -3809,7 +3846,7 @@ def test_lista_ktora_nie_odpowiada_w_czasie_czekania_na_logowanie_nie_konczy_cze
         with (
             pytest.raises(EfenixUnreachable) as stopped,
             efenix_browser.window(
-                page,
+                _unhurried_start(page),
                 atrapa.url,
                 timeout_ms=efenix_browser.LOGIN_POLL_MS // 4,
                 login=efenix_silent,
