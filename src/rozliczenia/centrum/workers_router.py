@@ -23,7 +23,7 @@ from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
 from rozliczenia.centrum.settings.files import FieldProblem, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings
-from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
+from rozliczenia.centrum.settings.workers import AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
 from rozliczenia.dad_files import DadFiles
@@ -44,7 +44,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
 
     @router.post("", operation_id="addWorker", responses=_REFUSED)
     def add(form: contract.WorkerForm) -> settings_contract.Choice:
-        return choice(settings, settings.change(WORKERS, lambda current: workers.added(current, _form(form))))
+        return choice(settings, settings.change_workers(AddWorker(_form(form))))
 
     @router.put("/{login}", operation_id="changeWorker", responses=_KEPT)
     def change(login: str, edit: contract.WorkerEdit) -> settings_contract.WorkerSaved:
@@ -64,7 +64,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
                 return settings_contract.WorkerSaved(
                     settings=describe(settings.view()), rename_warning=messages.worker_rename_old_files(old)
                 )
-        saved = choice(settings, settings.change(WORKERS, lambda current: workers.edited(current, login, form)))
+        saved = choice(settings, settings.change_workers(ChangeWorker(login, form)))
         return settings_contract.WorkerSaved(settings=saved.settings, change=saved.change)
 
     @router.get("/suggestions", operation_id="getWorkerSuggestions")
@@ -82,19 +82,11 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         """„Przypisz do Wykonawcy…” z widoku Raporty: adres nieznanego nadawcy na końcu adresów Wykonawcy, zapisany od
         razu jak pojedynczy wybór (ADR 0032), tą samą drogą i regułami co formularz; loginów nie usuwa."""
 
-        return choice(
-            settings, settings.change(WORKERS, lambda current: workers.address_assigned(current, login, assigned.address))
-        )
+        return choice(settings, settings.change_workers(AssignAddress(login, assigned.address)))
 
     @router.put("/{login}/switches", operation_id="switchWorker", responses=_REFUSED)
     def switch(login: str, switches: contract.WorkerSwitches) -> settings_contract.Choice:
-        return choice(
-            settings,
-            settings.change(
-                WORKERS,
-                lambda current: workers.switched(current, login, active=switches.active, reminders=switches.reminders),
-            ),
-        )
+        return choice(settings, settings.change_workers(SwitchWorker(login, switches.active, switches.reminders)))
 
     @router.delete("/{login}", operation_id="removeWorker", responses=_KEPT)
     def remove(login: str) -> settings_contract.Choice:
@@ -102,7 +94,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         występuje."""
 
         _worker(_listed(settings), login)
-        return choice(settings, settings.change(WORKERS, lambda current: workers.removed(current, login)))
+        return choice(settings, settings.change_workers(RemoveWorker(login)))
 
     return router
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
-from typing import Final, Literal
+from typing import Final, Literal, assert_never
 
 import yaml
 
@@ -87,6 +87,53 @@ def periods_directory_root(path: Path) -> Path:
         return layout_root(path).directory
     except PeriodFolderInaccessible:
         return path
+
+
+@dataclass(frozen=True)
+class ChangeFolders:
+    """Sekcja Foldery odsyła obie ścieżki naraz (``None``: niewskazana)."""
+
+    register: Path | None
+    periods_directory: Path | None
+
+
+@dataclass(frozen=True)
+class ChooseRegister:
+    register: Path
+
+
+@dataclass(frozen=True)
+class ChoosePeriodsDirectory:
+    chosen: Path
+
+
+@dataclass(frozen=True)
+class ChangeTheme:
+    theme: Theme
+
+
+FoldersEdit = ChangeFolders | ChooseRegister | ChoosePeriodsDirectory | ChangeTheme
+"""Zmiana taty pliku Folderów i motywu, którą zapisuje właściciel Ustawień (``dad_folders``)."""
+
+
+def dad_folders(current: FolderSettings, edit: FoldersEdit) -> FolderSettings:
+    """Foldery po zmianie taty ``edit``. Wskazany na nowo folder okresów zapisuje się od korzenia układu
+    (``periods_directory_root``), a folder, który sekcja odesłała bez zmiany, zostaje, jaki jest (np. tydzień, do
+    którego tata cofnął zmianę z Wydania)."""
+
+    match edit:
+        case ChangeFolders(register=register, periods_directory=periods_directory):
+            if periods_directory is None or periods_directory == current.periods_directory:
+                return replace(current, register=register, periods_directory=periods_directory)
+            return replace(current, register=register, periods_directory=periods_directory_root(periods_directory))
+        case ChooseRegister(register=register):
+            return replace(current, register=register)
+        case ChoosePeriodsDirectory(chosen=chosen):
+            return replace(current, periods_directory=periods_directory_root(chosen))
+        case ChangeTheme(theme=theme):
+            return replace(current, theme=theme)
+        case _:
+            assert_never(edit)
 
 
 _TO_READ: tuple[SettingState, ...] = ("present", "inaccessible")
