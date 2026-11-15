@@ -298,6 +298,12 @@ class MergeGitHub(FakeGitHub):
         self.pulls[str(number)].update(fields)
         self._save()
 
+    def reload(self) -> None:
+        """Stan PR-ów z ``pulls.json``, do którego ``gh pr comment`` atrapy (``--werdykt``) dopisał komentarz, zanim
+        test zmieni PR dalej."""
+
+        self.pulls = json.loads((self.bin / "pulls.json").read_text(encoding="utf-8"))
+
     def comment(self, number: int, body: str, association: str = "OWNER") -> None:
         self._write(number, "comments", _verdict("comment", body, association, when=self._now()))
 
@@ -2536,15 +2542,17 @@ def test_pole_idiom_klasy_typu_albo_testu_trafia_na_pr_a_scalenie_po_poprawce_ni
     ``PASS`` poprawki nie uruchamia dowodu reguły."""
 
     github, first = _idiom_pull(tmp_path, passed=False)
-    path = tmp_path / "runda-1.md"
-    path.write_text(_idiom_verdict(klass).format(commit=first) + "\n", encoding="utf-8")
-    published = github.run("1", "--werdykt", str(path))
+    failed, passed = tmp_path / "runda-1.md", tmp_path / "runda-2.md"
+    failed.write_text(_idiom_verdict(klass).format(commit=first) + "\n", encoding="utf-8")
+    published = [github.run("1", "--werdykt", str(failed))]
+    github.reload()
     head = github.push_pull(1, {"kod/inne.py": "INNE: Final = 1\n"})
-    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+    passed.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
+    published.append(github.run("1", "--werdykt", str(passed)))
 
     answered = github.run("1", "--bez-merge")
 
-    assert published.returncode == 0, published.stdout + published.stderr
+    assert [_last_line(run).split(" | ")[:3] for run in published] == [["WERDYKT OK", f"#1 {first[:7]}", "FAIL"], ["WERDYKT OK", f"#1 {head[:7]}", "PASS"]]
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
     assert _proofs(github) == []
 
