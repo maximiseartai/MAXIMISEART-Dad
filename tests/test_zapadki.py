@@ -527,6 +527,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "reczny-parser-pythona": "nazwij korzeń poprawki",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
@@ -1093,6 +1094,219 @@ def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(
 
     assert_znane_luki(
         zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff"
+    )
+
+
+# Reguła ``przegladarka-bez-launch-options`` (#1871): odwołanie do metody startu przeglądarki Playwrighta poza wywołaniem
+# z argumentami jej właściciela.
+_PRZEGLADARKA = "przegladarka-bez-launch-options"
+
+
+def _start(text: str, prefix: str = "", signature: str = "p: Playwright") -> str:
+    """Nowy plik ``src/`` z ``prefix`` i funkcją, której ciało to ``text``: pierwsza linia ciała to linia 7 bez ``prefix``."""
+
+    return (
+        f"{prefix}from playwright.sync_api import Playwright\n\nfrom rozliczenia.efenix_browser import launch_options\n\n\n"
+        f"def start({signature}) -> object:\n    {text}\n"
+    )
+
+
+_IMPORT_EXCEL = "import excel\n"
+# Tekst nowego pliku ``src/`` → linie, które reguła zgłasza. Odwołanie do metody ``launch`` albo
+# ``launch_persistent_context`` w każdym miejscu drzewa (wywołanie, argument, przypisanie, dekorator, ``partial``,
+# ``to_thread``, atrybut odwołania) jest zgłoszone, chyba że to wołana funkcja wywołania z ``**launch_options(…)``, albo
+# obiekt to nazwa z importu w tym pliku albo parametr z typem ``ModuleType``. Pełny korpus par gramatyki (rodzaj węzła,
+# pole) z miejscem na węzeł ``attribute`` stoi w komentarzu PR #1877.
+_PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
+    "bez argumentów": (_start("return p.chromium.launch()"), [7]),
+    "argument nazwany": (_start("return p.chromium.launch(headless=False)"), [7]),
+    "inna przeglądarka": (_start("return p.firefox.launch()"), [7]),
+    "kontekst z profilem": (_start('return p.chromium.launch_persistent_context("profil")'), [7]),
+    "** słownika": (_start('return p.chromium.launch(**{"args": []})'), [7]),
+    "** innego wywołania": (_start("return p.chromium.launch(**dict(args=[]))"), [7]),
+    "** nazwy launch_options bez wywołania": (_start("return p.chromium.launch(**launch_options)"), [7]),
+    "** wywołania o nazwie kończącej się na launch_options": (_start("return p.chromium.launch(**my_launch_options(p))"), [7]),
+    "** launch_options w nawiasach": (_start("return p.chromium.launch(**(launch_options(p)))"), [7]),
+    "launch_options w argumentach wywołania, które metodę dostaje": (
+        _start("return g(p.chromium.launch, **launch_options(p))"),
+        [7],
+    ),
+    "metoda w nawiasach": (_start("return (p.chromium.launch)()"), [7]),
+    "obiekt w nawiasach": (_start("return (p.chromium).launch()"), [7]),
+    "obiekt przez nazwę pośrednią": (_start("browser_type = p.chromium\n    return browser_type.launch()"), [8]),
+    "wywołanie w kilku liniach": (_start("return p.chromium.launch(\n        headless=True,\n    )"), [7]),
+    "metoda w partial bez argumentów": (_start("return functools.partial(p.chromium.launch)()", "import functools\n"), [8]),
+    "metoda w partial z argumentem": (_start("return functools.partial(p.chromium.launch, headless=True)()", "import functools\n"), [8]),
+    "metoda w asyncio.to_thread": (_start("return asyncio.to_thread(p.chromium.launch, headless=True)", "import asyncio\n"), [8]),
+    "metoda zapisana pod nazwą": (_start("launch = p.chromium.launch\n    return launch()"), [7]),
+    "metoda przez __call__": (_start("return p.chromium.launch.__call__()"), [7]),
+    "metoda jako dekorator": (_start("@p.chromium.launch\n    def g() -> None:\n        pass\n\n    return g"), [7]),
+    "obiekt o nazwie modułu bez importu": (_start("excel = p.chromium\n    return excel.launch()"), [8]),
+    "obiekt o nazwie ścieżki modułu z from": (_start("return excel.launch()", "from excel import zgoda\n"), [8]),
+    "obiekt o nazwie dalszej części ścieżki importu": (_start("return excel.launch()", "import narzedzia.excel\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu": (_start("return excel.launch()", "import excel as xl\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu w from": (_start("return excel.launch()", "from narzedzia import excel as xl\n"), [8]),
+    "klasa przeglądarki z importu playwright": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.sync_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł playwright z importu": (_start("return playwright.launch()", "import playwright\n"), [8]),
+    "moduł playwright pod aliasem": (_start("return api.launch()", "import playwright.sync_api as api\n"), [8]),
+    "moduł o nazwie playwright z innego pakietu": (_start("return playwright.launch()", "from narzedzia import playwright\n"), []),
+    "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
+    "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
+    "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
+    "z launch_options": (_start("return p.chromium.launch(**launch_options(p))"), []),
+    "z launch_options i innymi argumentami": (_start('return p.chromium.launch(headless=True, **launch_options(p, arguments=["--x"]))'), []),
+    "z launch_options modułu": (_start("return p.chromium.launch(**efenix_browser.launch_options(p))"), []),
+    "kontekst z profilem i launch_options": (_start('return p.chromium.launch_persistent_context("profil", **launch_options(p))'), []),
+    "metoda w nawiasach z launch_options": (_start("return (p.chromium.launch)(**launch_options(p))"), []),
+    "connect_over_cdp": (_start('return p.chromium.connect_over_cdp("http://127.0.0.1:9222")'), []),
+    "metoda z launch w środku nazwy": (_start("return p.relaunch()"), []),
+    "metoda z launch na początku nazwy": (_start("return p.chromium.launched()"), []),
+    "funkcja modułu z importu": (_start("return excel.launch(timeout=20)", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w nawiasach": (_start("return (excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu przekazana dalej": (_start("return retry(excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w funkcji": (_start("import excel\n\n    return excel.launch()"), []),
+    "funkcja modułu z importu kilku modułów": (_start("return excel.launch()", "import os, excel\n"), []),
+    "funkcja modułu pod aliasem": (_start("return xl.launch()", "import excel as xl\n"), []),
+    "funkcja modułu z from i kilku nazw": (
+        _start("return restart_guardian.launch(a, b)", "from rozliczenia.centrum import launcher, restart_guardian\n"),
+        [],
+    ),
+    "funkcja modułu z from pod aliasem": (_start("return excel.launch()", "from narzedzia import zgoda, xl as excel\n"), []),
+    "funkcja modułu z parametru ModuleType": (_start("return excel.launch()", signature="excel: ModuleType"), []),
+    "funkcja modułu z parametru types.ModuleType": (_start("return excel.launch()", signature="excel: types.ModuleType"), []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_PRZEGLADARKI.values(), ids=_PROBKI_PRZEGLADARKI.keys())
+def test_przegladarka_bez_launch_options_zglasza_odwolanie_do_startu_poza_wywolaniem_z_argumentami_wlasciciela(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA] == lines
+
+
+# Pliki reguły ``przegladarka-bez-launch-options`` jako części ścieżki, bo napis ścieżki w pliku testu jest zależnością
+# testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``): zakres ``files:`` i dwaj właściciele z ``ignores:``.
+_ZAKRES_PRZEGLADARKI: Final = (
+    ("src", "rozliczenia", "okno.py"),
+    ("tools", "narzedzie.py"),
+    ("tests", "test_okna.py"),
+    (".agents", "skills", "verify-x", "scripts", "naped.py"),
+)
+_WLASCICIELE_PRZEGLADARKI: Final = (
+    ("src", "rozliczenia", "efenix_browser.py"),
+    ("tests", "fixtures", "przegladarka.py"),
+    ("frontend", "skrypt.py"),
+)
+
+
+@needs_ast_grep
+def test_przegladarka_bez_launch_options_czyta_src_tools_tests_i_skrypty_skilli_poza_wlascicielami(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for parts in (*_ZAKRES_PRZEGLADARKI, *_WLASCICIELE_PRZEGLADARKI):
+        tmp_path.joinpath(*parts).parent.mkdir(parents=True, exist_ok=True)
+        tmp_path.joinpath(*parts).write_text("def start(p: object) -> object:\n    return p.chromium.launch()\n", encoding="utf-8")
+
+    assert sorted(finding.path for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA) == sorted(
+        "/".join(parts) for parts in _ZAKRES_PRZEGLADARKI
+    )
+
+
+# Prawo właściciela reguły ``przegladarka-bez-launch-options`` (``ignores:``): plik → funkcja → liczba odwołań do metody
+# startu bez ``**launch_options(…)`` w tym samym wywołaniu. Reguła zwalnia cały plik, więc ta tabela trzyma resztę
+# zakazu: plik właściciela poza zwolnieniem zgłasza dokładnie tyle w tych funkcjach. Ścieżka jako części, jak
+# w ``_ZAKRES_PRZEGLADARKI``.
+WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, int]]] = {
+    ("src", "rozliczenia", "efenix_browser.py"): {"_playwright_disabling": 1, "chrome": 1},
+    ("tests", "fixtures", "przegladarka.py"): {"plain_chromium": 1},
+}
+
+
+@needs_ast_grep
+def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z_tabeli_wlascicieli(tmp_path: Path) -> None:
+    import ast
+    import json
+
+    import yaml
+
+    rule_file = ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml"
+    rule = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
+    assert sorted(rule.pop("ignores")) == sorted("/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI)
+    unexempted = tmp_path / "bez-ignores.yml"
+    unexempted.write_text(yaml.safe_dump(rule, allow_unicode=True), encoding="utf-8")
+    paths = ["/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI]
+    scan = subprocess.run(
+        [str(AST_GREP), "scan", "--rule", str(unexempted), "--json=stream", "--", *paths],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in WLASCICIELE_PRZEGLADARKI}
+    for match in map(json.loads, scan.stdout.splitlines()):
+        parts = tuple(Path(match["file"]).parts)
+        line = match["range"]["start"]["line"] + 1
+        tree = ast.parse((ROOT.joinpath(*parts)).read_text(encoding="utf-8"))
+        functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= line <= (node.end_lineno or 0)
+        ]
+        name = max(functions, key=lambda node: node.lineno).name if functions else "<moduł>"
+        found[parts][name] = found[parts].get(name, 0) + 1
+
+    assert found == WLASCICIELE_PRZEGLADARKI, (
+        "goły start przeglądarki w pliku z ignores: reguły przegladarka-bez-launch-options stoi tylko w funkcjach z "
+        "WLASCICIELE_PRZEGLADARKI tyle razy, ile mówi tabela: podaj **launch_options(playwright) albo zmień tabelę"
+    )
+
+
+# Znane luki reguły ``przegladarka-bez-launch-options`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik
+# ``src/`` ze startem przeglądarki bez argumentów właściciela, który przechodzi przez regułę i ruff.
+_LUKA_PRZEGLADARKI = "from playwright.sync_api import Browser, Playwright\n\n\ndef start(p: Playwright) -> Browser:\n"
+ZNANE_LUKI_PRZEGLADARKI: Final = {
+    "drzewo nie zna nazwy z napisu: metoda po nazwie z getattr": (
+        f'{_LUKA_PRZEGLADARKI}    name = "launch"\n    return getattr(p.chromium, name)()\n'
+    ),
+    "drzewo nie czyta napisów: start w skrypcie dla procesu potomnego": (
+        'SKRYPT = "from playwright.sync_api import sync_playwright\\nsync_playwright().start().chromium.launch()\\n"\n'
+    ),
+    "zna tylko API Playwrighta: przeglądarka uruchomiona jako proces": (
+        "import subprocess\n\n\ndef chrome(binary: str) -> None:\n    subprocess.run([binary, \"--headless=new\", \"about:blank\"], check=True)\n"
+    ),
+    "zna tylko nazwę launch_options: funkcja innego obiektu o tej nazwie": (
+        "from types import SimpleNamespace\n\n"
+        f"{_LUKA_PRZEGLADARKI}    helpers = SimpleNamespace(launch_options=lambda playwright: {{}})\n"
+        "    return p.chromium.launch(**helpers.launch_options(p))\n"
+    ),
+    "nazwa z importu to dla reguły moduł: obiekt przeglądarki zaimportowany pod nazwą": (
+        "from playwright.sync_api import Browser\n\nfrom narzedzia.przegladarki import chromium\n\n\n"
+        "def start() -> Browser:\n    return chromium.launch()\n"
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_przegladarki_bez_launch_options_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_PRZEGLADARKI, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(
+        zgloszenia, "tests/test_zapadki.py::test_znane_luki_przegladarki_bez_launch_options_przechodza_przez_regule_i_ruff"
     )
 
 

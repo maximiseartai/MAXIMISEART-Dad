@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import signal
 import sys
 import time
 from typing import IO, TypeVar
@@ -18,7 +19,7 @@ from typing import IO, TypeVar
 from tests.fixtures.git_repo import git
 import potomne
 
-__all__ = ["beating", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["beating", "ctrl_c_reaches_children", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
 
@@ -41,6 +42,17 @@ def with_grandchild(beats: Path, then: str) -> list[str]:
 def beating(beats: Path) -> bool:
     before = beats.stat().st_size
     return wait_for(lambda: beats.stat().st_size != before, 2)
+
+
+def ctrl_c_reaches_children() -> None:
+    """Ctrl+C (SIGINT), który test wysyła procesowi potomnemu, dochodzi do niego także wtedy, gdy proces testów odziedziczył
+    SIGINT ignorowany (``nohup`` i ``&`` w ``boatbox job``): sygnał ignorowany przechodzi przez ``exec`` do potomka, a
+    obsługiwany wraca w nim do domyślnego, więc proces testów, który go ignoruje, dostaje obsługę Pythona
+    (``KeyboardInterrupt``). Obsługi, którą ustawił ktoś inny, nie zmienia; woła ją ``pytest_configure`` w
+    ``tests/conftest.py`` w każdym procesie testów, przed startem workerów xdist."""
+
+    if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 def hold_lock(path: Path) -> IO[bytes]:
