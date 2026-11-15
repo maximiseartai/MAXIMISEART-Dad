@@ -437,9 +437,11 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
 
 @NO_ACCESS_ON_WINDOWS
 def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Path) -> None:
-    """Plik Ustawień Centrum trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”."""
+    """Plik Ustawień Centrum trzymany np. przez antywirus: wskazanych ścieżek nie widać, ale nie są „nie wskazano”, a motyw
+    jest nieznany (``None``), więc strona taty z jasnym motywem zostaje przy jasnym zamiast przejść na domyślny ciemny."""
 
     app, _ = with_periods_directory(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
 
     app.settings_path.chmod(0)
     try:
@@ -453,7 +455,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
             "order_register": UNREADABLE,
             "periods_directory": UNREADABLE,
             "periods_all_years": False,
-            "theme": "dark",
+            "theme": None,
             "folders_problem": None,
             "workers": NO_WORKERS,
             **NO_INBOX,
@@ -484,7 +486,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
             "order_register": UNREADABLE,
             "periods_directory": UNREADABLE,
             "periods_all_years": False,
-            "theme": "dark",
+            "theme": None,
             "folders_problem": None,
             "workers": NO_WORKERS,
             **NO_INBOX,
@@ -683,7 +685,7 @@ def test_zapis_bez_zmiany_nie_ma_wiersza_historii(tmp_path: Path) -> None:
 
 def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przywraca_zmiane(tmp_path: Path) -> None:
     app = centrum(tmp_path)
-    app.client.put("/api/settings/theme", json={"theme": "light"})
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
     [changed] = history_rows(app)
 
     undone = app.client.post(f"/api/settings/history/{changed['id']}/undo")
@@ -2827,7 +2829,7 @@ def test_urwana_linia_historii_jest_pominieta_i_policzona(tmp_path: Path) -> Non
     with (app.tool.config / HISTORY_FILE).open("a", encoding="utf-8") as history:
         history.write('{"v":1,"id":"urwa')
 
-    app.client.put("/api/settings/theme", json={"theme": "light"})
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
     read = app.client.get("/api/settings/history").json()
 
     assert ([row["changes"][0]["key"] for row in read["rows"]], read["skipped"]) == (
@@ -2928,7 +2930,7 @@ def test_bez_zbudowanego_frontendu_centrum_podaje_samo_api(tmp_path: Path, monke
 
 def test_start_centrum_z_wydania_bez_zmian_ustawien_zostawia_pliki_config_bajt_w_bajt(tmp_path: Path) -> None:
     app, _ = with_periods_directory(tmp_path)
-    app.client.put("/api/settings/theme", json={"theme": "light"})
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
     app.client.stop()
     before = config_bytes(app.tool.config)
 
