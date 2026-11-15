@@ -79,9 +79,10 @@ import wyniki_testow
 from zakres_runu import podstawa_na_pull_request
 
 GREEN = "szybko-zielone.json"
-# Zapadki padają tylko na liniach, które zmiana dodaje, więc biegną przy każdej zmianie jak ``STRUCTURE``. Plan CI ich
-# nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka się tam pomija; reguły ast-grep na dodanych
-# liniach całego repozytorium dostają ją w zadaniu CI „Ruff, mypy”.
+# Zapadki padają na liniach, które zmiana dodaje, a reguły ast-grep całego ``src/`` na każdej jego linii, więc biegną
+# przy każdej zmianie jak ``STRUCTURE``. Plan CI ich nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka
+# się tam pomija; reguły ast-grep na dodanych liniach całego repozytorium dostają ją w zadaniu CI „Ruff, mypy”, gdzie
+# biegną też reguły całego ``src/``.
 ZAPADKI = ("tests/test_zapadki.py",)
 # Zmienna, z której zapadki biorą bazę zmiany.
 ZAPADKA_BAZA = "MAXIMISEART_ZAPADKA_BAZA"

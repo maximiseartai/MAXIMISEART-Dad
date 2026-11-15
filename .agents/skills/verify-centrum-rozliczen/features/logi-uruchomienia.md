@@ -61,7 +61,8 @@ self-test's evidence hygiene).
   Uruchomienia start in the same second.
 - Logi surviving a restart of Centrum is proved only in `all`: `kontrola-ilosci` restarts Centrum twice after Przebieg
   rozliczeń, so `logi-kazde-uruchomienie` finds the files of the Uruchomienia before those restarts. Alone, the feature
-  does not restart; `tests/test_centrum_logi_uruchomienia.py` covers it over HTTP.
+  does not restart; `tests/test_centrum_logi_uruchomienia.py::test_logi_przezywaja_zamkniecie_i_ponowny_start_centrum`
+  checks over HTTP that the Logi survive closing and starting Centrum again.
 - In `all`, `logi-kazde-uruchomienie` covers every Uruchomienie of the run, the nieoczekiwane wyjątki of `diagnoza`
   too, and `diagnoza` and `zgloszenie` diagnose several Uruchomienia, whose Diagnozy change their comment and replace
   their file in the Archiwum; alone, this feature diagnoses nothing.
