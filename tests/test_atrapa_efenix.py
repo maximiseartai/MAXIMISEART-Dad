@@ -918,27 +918,30 @@ def test_wroga_strona_atrapy_w_zwyklej_przegladarce_sama_konczy_sesje_efenix(pat
     assert logged_out
 
 
-def test_zamkniecie_okna_dialogowego_przed_koncem_jego_animacji_pokazania_nic_nie_robi_a_po_niej_zamyka_okno(browser: Browser) -> None:
+def test_zamkniecie_okna_dialogowego_przed_koncem_animacji_jego_modal_dialog_nic_nie_robi_a_po_niej_zamyka_okno(browser: Browser) -> None:
     """Jak w bootstrapie efenix, przycisk zamknięcia okna dialogowego nic nie robi do końca animacji jego ``.modal-dialog``,
-    więc okno, które kliknie × za wcześnie, widzi okno dalej otwarte. Pokazanie i pierwsze kliknięcie biegną w jednym
-    zadaniu skryptu strony, więc animacja nie może się między nimi skończyć."""
+    także po końcu krótszej animacji samego okna, więc okno, które kliknie × za wcześnie, widzi okno dalej otwarte.
+    Animacja ``.modal-dialog`` stoi wstrzymana, dopóki test jej nie skończy, więc wynik nie zależy od tempa przeglądarki."""
 
     order = AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", forward_refusal=ForwardRefusal.NO_LENGTH.value)
     with atrapa_efenix([order]) as atrapa, page_of(browser) as page:
         page.goto(f"{atrapa.url.removesuffix(LIST_PAGE)}{ORDER_PAGE}?id=901")
-        during = page.evaluate(
-            """() => {
+        shown = page.evaluate(
+            """async () => {
+              const dialog = document.getElementById('dialog_info');
+              const close = () => { dialog.querySelector('.close').click(); return getComputedStyle(dialog).display; };
               document.getElementById('button_forward_to_accept').click();
-              document.querySelector('#dialog_info .close').click();
-              return getComputedStyle(document.getElementById('dialog_info')).display;
-            }"""
-        )
-        page.wait_for_function("() => document.getElementById('dialog_info').getAnimations({subtree: true}).length === 0")
-        after = page.evaluate(
-            """() => {
-              document.querySelector('#dialog_info .close').click();
-              return getComputedStyle(document.getElementById('dialog_info')).display;
+              const inner = dialog.querySelector('.modal-dialog').getAnimations();
+              inner.forEach((animation) => animation.pause());
+              const appearing = close();
+              const outer = dialog.getAnimations();
+              outer.forEach((animation) => animation.finish());
+              await Promise.all(outer.map((animation) => animation.finished));
+              const outerDone = close();
+              inner.forEach((animation) => animation.finish());
+              await Promise.all(inner.map((animation) => animation.finished));
+              return [appearing, outerDone, close()];
             }"""
         )
 
-    assert (during, after) == ("block", "none")
+    assert shown == ["block", "block", "none"]
