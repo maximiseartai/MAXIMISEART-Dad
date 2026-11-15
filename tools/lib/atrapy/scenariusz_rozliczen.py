@@ -56,6 +56,12 @@ UNMAPPED_ROW = (UNMAPPED_WORKER, "SYNTHETIC-4")
 # SKUTECZNE, URZĄDZENIA, CZYNNOŚCI i CZYNNOŚCI ZREALIZOWANE mają znacznik ROW_MARKER, którego nie wolno znaleźć w wyniku
 # ani w dowodach.
 ROW_MARKER = "PREP-SYN-"
+# Stawka Wzorca rozliczenia pracownika łańcucha, inna niż Wzorca pliku zbiorczego: stawka przeniesiona z Pliku
+# zbiorczego do Rozliczenia pracownika zmienia komórkę spoza Wierszy danych, którą assert_chain.py porównuje ze Wzorcem.
+WORKER_TEMPLATE_RATE = 12.0
+# Wiersze zer obu Wzorców łańcucha w układzie Wzorca pliku zbiorczego: więcej niż 6 Zleceń skutecznych scenariusza, więc
+# assert_preparation.py widzi zera Wzorca pod zapisanymi Wierszami danych.
+TEMPLATE_ZERO_ROWS = 8
 # Hiperłącze w NUMER ZL. każdego zlecenia ZLECENIA, jak do zlecenia w aplikacji firmowej; numer wiersza Rejestru
 # kończy adres.
 ORDER_LINK = "https://przyklad.invalid/zlecenie?caseId=PREP-SYN-LINK&tw=1&wiersz="
