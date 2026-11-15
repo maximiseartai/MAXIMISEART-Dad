@@ -28,12 +28,13 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor”.
 - Dryf mapy w tym repo to także zdanie o tym, czego bieg nie sprawdza, bez nazwy testu, który to trzyma.
   Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza, a gdy takiego testu nie ma, zostaje i opis PR wymienia je jako brak.
-- Wynik `changed` to jeden PR dla obu skilli (commit na skill, w opisie `Część #1597`).
-  Właścicielem tego PR jest agent zadania: linię wyniku pisze dopiero po merge'u, a PR, który do merge'a nie doszedł, daje `blocked` z powodem.
+- Wynik `changed` to jeden PR dla obu skilli (commit na skill), a jego opis nie wskazuje issue, bo przebieg nie ma ticketu.
+  Właścicielem tego PR jest agent zadania: linię wyniku pisze dopiero po merge'u.
+  PR, który do merge'a nie doszedł, blokuje każdy skill, którego commit w nim stoi, a powodem tego skillu jest PR bez merge'a.
 - Błąd produktu znaleziony w przebiegu opisz w końcowej odpowiedzi nad linią wyniku: co, gdzie w kodzie i jak go odtworzyć.
   Ticket z niego zakłada Maks.
 - Ostatnia linia odpowiedzi to `<mapy> | produkt: <stan>`.
-  `<mapy>` to `clean`, `changed <URL PR>`, `blocked <skill>: <powód>` (przy obu skillach dwa człony `<skill>: <powód>` po `; `) albo `blocked <skill>: <powód>, changed <URL PR>`, gdy jeden skill zablokował, a PR drugiego wszedł.
+  `<mapy>` to `clean`, `changed <URL PR>`, `blocked <skill>: <powód>` (przy obu skillach `blocked <skill procesów>: <powód>; <skill Centrum>: <powód>`) albo `blocked <skill>: <powód>, changed <URL PR>`, gdy jeden skill zablokował, a PR drugiego wszedł.
   `<stan>` to `brak` albo jedno zdanie o błędzie produktu opisanym wyżej.
 
 ## Co wyrocznia bierze z `src`
