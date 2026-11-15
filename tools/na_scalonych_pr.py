@@ -63,15 +63,15 @@ miejsca ``Gdzie`` w pliku ``.py`` dowód bierze z SHA werdyktu najmniejszy zakre
 a w module i klasie przypisanie, po nazwie i kolejności), który mają HEAD i baza, i wstawia jego wersję z werdyktu
 w miejsce tamtego, z importami z modułu werdyktu nazw, których plik nie wiąże; nazwa wolna spoza tych importów,
 postać, która stoi już na HEAD, i miejsce bez takiego zakresu pomijają miejsce, a Ważne bez żadnego miejsca to odmowa.
-Polecenie biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
-tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie przeniesionych plików. Bez przeniesienia
-przechodzi na HEAD, a przypadek jest wykryty, gdy któreś jego przeniesienie pada na HEAD z linią znaleziska
-(``plik:linia: …``, bez cyfr), której to samo przeniesienie na bazie nie daje, albo baza przechodzi. Błąd, który dawny
-zakres daje już na bazie (nazwa zmieniona w ``main`` od werdyktu), nie jest więc wykryciem. Gdy baza ma już plik dowodu
-tego id, przypadek, który pada i na niej, przechodzi bez nowego znaleziska, ale co najmniej jeden musi być wykryty. Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
-CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka” z tokenem do statusów) czyta commit tylko jako dane: plik
-dowodu, przeniesienia (``git``, ``ast``) i graf importów (``zakres_runu.pliki_pytest``); bieg polecenia, który wykonuje
-kod commitu, liczy merge. Granicę tego dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
+Polecenie to mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0 tests/<plik>::<test>`` z zakresu runu pull
+requestu przy zmianie przeniesionych plików; zakazu ruff ten dowód nie przyjmuje. Bez przeniesienia przechodzi na
+HEAD, a przypadek jest wykryty, gdy któreś jego przeniesienie pada na HEAD z linią znaleziska (``plik:linia: …``, bez
+cyfr), której to samo przeniesienie na bazie nie daje, albo baza przechodzi. Gdy baza ma już plik dowodu tego id,
+przypadek, który pada i na niej, przechodzi bez nowego znaleziska, ale co najmniej jeden musi być wykryty. Miejsce to
+dwa biegi (HEAD i baza) obok biegu podstawy, a dowód, którego biegi po ``RUN_S`` s przekraczają ``PROOF_TIMEOUT_S``
+dowodów PR, to odmowa przed biegiem. ``--bez-kodu-pr`` (status „Werdykt i bramka”) czyta commit tylko jako dane (plik
+dowodu, ``git``, ``ast``, ``zakres_runu.pliki_pytest``), a bieg polecenia liczy merge. Granicę pokazują próbki
+``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
 """
 
 from __future__ import annotations
@@ -95,6 +95,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+from bramka_idiomu import PROOF_TIMEOUT_S
 import ciezkie_ci
 import github
 from kroki_lokalne import environment, static_steps
@@ -123,8 +124,8 @@ Rule = tuple[str, ...]  # argumenty ``ast-grep scan`` wybierające regułę: ``-
 PROOFS = "dowody-idiomow"
 PYTEST = ("-m", "pytest", "-q", "-n", "0")
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-# Linia znaleziska ruff, mypy i tracebacku pytest: ``plik:linia[:kolumna]: …``.
-FINDING = re.compile(r"[^\s:][^:]*:\d+(?::\d+)?: ")
+FINDING = re.compile(r"[^\s:][^:]*:\d+: ")  # linia znaleziska mypy i tracebacku pytest
+RUN_S = 12  # bieg mypy całego drzewa na świeżej kopii: dowód D #1912 r3, 5 biegów w 47–58 s na Macu Maksa
 
 
 @dataclass(frozen=True)
@@ -447,11 +448,11 @@ def _ran(commit: str, files: dict[str, str], command: tuple[str, ...]) -> tuple[
 def off_ci(command: tuple[str, ...], copy: Path, paths: frozenset[str]) -> str | None:
     """Przyczyna, gdy ``command`` nie biegnie w Required CI pull requestu, który zmienia ``paths`` w kopii ``copy``."""
 
-    if command in {step.command[1:] for step in static_steps(copy)}:
+    if command in {step.command[1:] for step in static_steps(copy) if step.job == "mypy"}:
         return None
     nodes = command[len(PYTEST) :]
     if command[: len(PYTEST)] != PYTEST or not nodes or not all(node.startswith("tests/") for node in nodes):
-        return f"polecenie {' '.join(command)} to ruff albo mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
+        return f"polecenie {' '.join(command)} to mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
     chosen = set(zakres_runu.pliki_pytest(zakres_runu.Zdarzenie.PULL_REQUEST, paths, copy))
     missing = [node for node in nodes if not {node.partition("::")[0], node.partition("[")[0]} & chosen]
     return f"zakres runu pull requestu przy zmianie {', '.join(sorted(paths))} nie uruchamia {', '.join(missing)}" if missing else None
@@ -479,6 +480,8 @@ def mutation_proof(commit: str, rule: str, majors: list[tuple[int, str, int]], *
         with potomne.commit_copy(ROOT, commit) as copy:
             if problem := off_ci(command, copy, frozenset(one.path for _, found in cases for one in found)):
                 raise ValueError(problem)
+        if (runs := 1 + 2 * sum(len(found) for _, found in cases)) * RUN_S > PROOF_TIMEOUT_S:
+            raise ValueError(f"przypadki {len(cases)}, miejsca {runs // 2}: {runs} biegów po ~{RUN_S} s przekracza {PROOF_TIMEOUT_S} s dowodów PR; dowiedź id regułą ast-grep albo poproś recenzenta o osobne id dla części miejsc")
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {rule} | {error}")
         return 1

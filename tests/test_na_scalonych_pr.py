@@ -433,6 +433,7 @@ NOT_MOVED = "#5 W1 r1: żadnego miejsca z Gdzie nie da się przenieść z werdyk
 NOT_CAUGHT = "#5 W1 r1: żadne przeniesienie nie pada na HEAD bez tego samego na bazie {base}: kod/inne.py HEAD: {head}, baza: {old}"
 CLEAN_MYPY = "Success: no issues found in 3 source files"
 DRIFT_MYPY = "Found 2 errors in 1 file (checked 3 source files)"
+OFF_CI = "to mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>"
 HELPER = "from kod import stala\n\n\ndef pomoc() -> int:\n    return 2\n\n\ndef ustaw() -> int:\n    stala.LIMIT = pomoc()\n    return stala.LIMIT\n"
 # Pierwsza postać pliku dowodu (r1–r2 #1912): mutacja autora, która może wpisać złą postać tam, gdzie pada przez siebie.
 AUTHOR_MUTATION = json.dumps([{"nazwa": "nadpisanie", "zmiany": [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\n"]], "polecenie": MYPY}])
@@ -457,7 +458,9 @@ AUTHOR_MUTATION = json.dumps([{"nazwa": "nadpisanie", "zmiany": [["kod/inne.py",
         pytest.param(
             {**FINAL, "kod/zly.py": "X: int = 'tekst'\n"}, MYPY, OVERWRITE, AT_OVERWRITE, "podstawa -m mypy bez przeniesienia: Found 1 error in 1 file (checked 4 source files)", id="podstawa-czerwona", marks=needs_mypy
         ),
-        pytest.param(FINAL, ["-m", "mypy", "kod"], OVERWRITE, AT_OVERWRITE, "polecenie -m mypy kod to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="mypy-spoza-krokow-ci"),
+        pytest.param(FINAL, ["-m", "mypy", "kod"], OVERWRITE, AT_OVERWRITE, f"polecenie -m mypy kod {OFF_CI}", id="mypy-spoza-krokow-ci"),
+        # Zakaz ruff dowodzi jak dotąd reguła ast-grep albo recenzent (#1912 r3 W1: ruff drukuje znaleziska inaczej niż mypy).
+        pytest.param(FINAL, ["-m", "ruff", "check"], OVERWRITE, AT_OVERWRITE, f"polecenie -m ruff check {OFF_CI}", id="ruff-poza-lista-polecen"),
         pytest.param(
             LIMIT_TEST, [*NODE[:-1], "tests/test_inny.py::test_inny"], OVERWRITE, AT_OVERWRITE, "zakres runu pull requestu przy zmianie kod/inne.py nie uruchamia tests/test_inny.py::test_inny", id="test-spoza-zakresu-runu-pr"
         ),
@@ -518,13 +521,37 @@ def test_dowod_typu_albo_testu_bez_kodu_pr_nie_wykonuje_niczego_z_head_a_sprawdz
 
 # Znane luki dowodu typu albo testu (tests/fixtures/znane_luki.py): klasa → pliki otwartego PR #6 i polecenie. Kontrola
 # na bazie odróżnia błąd, który przyniósł PR, od błędu, który zakres z werdyktu daje już na bazie, ale nie mówi, czy pada
-# przez złą postać: PR, który zmienia nazwę atrybutu, którego ten zakres używa, przechodzi bez mechanizmu.
+# przez złą postać: PR, który zmienia nazwę atrybutu, którego ten zakres używa, albo sygnaturę funkcji z ``Gdzie``
+# i woła ją z innego pliku (#1912 r3 D1), przechodzi bez mechanizmu.
 ZNANE_LUKI = {
     "kontrola porównuje znaleziska z bazą, nie ich przyczynę: PR zmienia nazwę atrybutu, którego używa zakres z werdyktu": (
         {"kod/stala.py": "LIMIT2 = 1\n", "kod/inne.py": READ.replace("LIMIT", "LIMIT2")},
         MYPY,
     ),
+    "kontrola porównuje znaleziska z bazą, nie ich przyczynę: PR zmienia sygnaturę funkcji z Gdzie i woła ją z innego pliku": (
+        {"kod/inne.py": READ.replace("ustaw()", "ustaw(krok: int)"), "kod/uzycie.py": "from kod import inne\n\nWYNIK = inne.ustaw(1)\n"},
+        MYPY,
+    ),
 }
+
+
+# Każde miejsce to dwa biegi (HEAD i baza) obok biegu podstawy: 13 funkcji z nadpisaniem w Gdzie to 27 biegów.
+MANY = "from kod import stala\n" + "".join(f"\n\ndef ustaw{numer}() -> int:\n    stala.LIMIT = 2\n    return stala.LIMIT\n" for numer in range(13))
+AT_MANY = "Gdzie: " + ", ".join(f"kod/inne.py:{5 + 5 * numer}" for numer in range(13))
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_dowod_typu_albo_testu_ktory_nie_zmiesci_sie_w_limicie_to_odmowa_przed_biegiem(tmp_path: Path) -> None:
+    """Dowód liczy przypadki i miejsca przed biegiem, więc id, którego biegi nie zmieszczą się w limicie dowodów PR (#1912
+    r3 D2), dostaje od razu odmowę z drogą naprawy zamiast „uruchom ponownie” po 300 s."""
+
+    done, _, _ = _mutation_proof(tmp_path, FINAL, MYPY, "--bez-kodu-pr", failed=MANY, where=AT_MANY, fixed=MANY.replace("    stala.LIMIT = 2\n", ""))
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == (
+        f"DOWÓD ODMOWA | {LIMIT_ID} | przypadki 1, miejsca 13: 27 biegów po ~12 s przekracza 300 s dowodów PR; "
+        "dowiedź id regułą ast-grep albo poproś recenzenta o osobne id dla części miejsc"
+    ), done.stdout
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX

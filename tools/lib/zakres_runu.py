@@ -8,7 +8,6 @@ wynik, a ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``L
     praca.przegladarka                           # pliki testów, którym zadanie pytest instaluje Chromium
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
-    pliki_pytest(Zdarzenie.PULL_REQUEST, zmiana, kopia)  # same ``pliki`` bez kroków skilli: nie wykonuje kodu kopii
 
 Pytest. Na pushu to pełne CI ``main``: dwa tory (``TORY``: Windows 3.13, czyli Python taty, i Linux 3.14), na każdym
 każdy plik testów ``tests/``, oraz kroki CI (``KROKI``), E2E i straż czasu, na Windows 3.13 (ADR 0020, Z2). Na pull
@@ -227,9 +226,8 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
 
 
 def pliki_pytest(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> tuple[str, ...]:
-    """``zakres(zdarzenie, zmiana, root).pliki`` bez kroków skilli: z samego grafu importów plików ``root`` (``ast``), więc
-    niczego z ``root`` nie importuje ani nie uruchamia, jak ``Katalog.skanuj`` skrypty mutacji skilli (dowód chwastu
-    statusu „Werdykt i bramka”, ``tools/na_scalonych_pr.py``)."""
+    """``zakres(zdarzenie, zmiana, root).pliki`` z samego grafu importów (``ast``), bez kroków skilli, więc niczego z ``root``
+    nie importuje ani nie uruchamia (dowód typu albo testu ``tools/na_scalonych_pr.py --bez-kodu-pr``)."""
 
     return _pytest(zdarzenie, zmiana, root, cache(lambda: Repository.scan(root)))[1]
 
