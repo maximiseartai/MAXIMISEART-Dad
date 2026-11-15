@@ -3631,34 +3631,167 @@ def _in_world(root: Path, world: Callable[[ToolDirectory], None]) -> ToolDirecto
     return tool
 
 
-def _release_reports(
-    root: Path, change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
-) -> list[str]:
-    """Zgłoszenia próby pliku bez odczytu dla zmiany ``change`` z Wydania niosącego ``changes``, w katalogach pod
-    ``root`` ze światem ``world``: start na czytelnych plikach zapisuje, które pliki czyta, a potem jeden start na każdy
-    z nich bez odczytu i następny start z odczytem."""
+def _start_reads(tool: ToolDirectory, changes: tuple[ReleaseChange[Any], ...]) -> frozenset[Path]:
+    """Pliki katalogu narzędzia poza Logami, które start z Wydaniem niosącym ``changes`` otwierał do odczytu, także
+    brakujące."""
 
-    readable_tool = _in_world(root / "czytelne", world)
-    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
-    with reading(readable_tool.root) as reads:
-        started(readable_tool, changes).stop()
+    logs = tool.log_path.parent
+    with reading(tool.root) as reads:
+        started(tool, changes).stop()
+    return frozenset(path.relative_to(tool.root) for path in reads.seen if not path.is_relative_to(logs))
+
+
+def _after_start(
+    world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...], lost: tuple[Path, ...]
+) -> Callable[[ToolDirectory], None]:
+    """Świat ``world`` po starcie z Wydaniem niosącym ``changes``, z którego zginęły pliki ``lost`` folderu ``config``."""
+
+    def build(tool: ToolDirectory) -> None:
+        world(tool)
+        started(tool, changes).stop()
+        for path in lost:
+            (tool.config / path).unlink(missing_ok=True)
+
+    return build
+
+
+@dataclass(frozen=True)
+class ReleaseWorld:
+    """Świat próby zmiany z Wydania: zdanie w zgłoszeniu, budowa katalogu narzędzia i wymóg na ślad zmiany przy czytelnych
+    plikach (``readable``, ślad świata przed startem), zwracający zdanie, gdy świat nie jest tym, za który uchodzi."""
+
+    name: str
+    build: Callable[[ToolDirectory], None]
+    unmet: Callable[[ReleaseEffect, ReleaseEffect], str | None]
+    every_read: bool
+    """Próba odbiera każdy plik startu, a nie tylko pliki odczytów zmiany."""
+
+
+def _release_worlds(
+    change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
+) -> tuple[ReleaseWorld, ...]:
+    """Świat zmiany, w którym zmiana wchodzi, i dwa światy po jej starcie: Historia ma jej wiersz, a pamięć zmian z Wydań
+    go nie ma (zmiana bierze wynik z Historii), oraz zginęły i pamięć, i Historia (zmiana biegnie znów na swoim wyniku,
+    więc czyta swój plik, który już jest)."""
+
+    applied = Path(MEMORY_DIRECTORY) / APPLIED_FILE
+
+    def enters(readable: ReleaseEffect, _before: ReleaseEffect) -> str | None:
+        return None if readable.remembered == "zastosowano" else f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"
+
+    def from_history(readable: ReleaseEffect, before: ReleaseEffect) -> str | None:
+        if readable.remembered == "zastosowano" and readable.rows == before.rows:
+            return None
+        return f"Po starcie bez pamięci zmian z Wydań zmiana {change.id} ma wziąć wynik z wiersza Historii: {readable}"
+
+    return (
+        ReleaseWorld("zmiany", world, enters, every_read=True),
+        ReleaseWorld("Historii bez pamięci", _after_start(world, changes, (applied,)), from_history, every_read=False),
+        ReleaseWorld(
+            "bez pamięci i Historii",
+            _after_start(world, changes, (applied, Path(HISTORY_FILE))),
+            lambda _readable, _before: None,
+            every_read=False,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class ReleaseTrial:
+    """Próba zmiany z Wydania w jednym świecie: zgłoszenia, pliki odczytów zmiany (start z samą zmianą minus start bez
+    zmian), te z nich, które są w świecie przed startem, i te, bez których start daje inny ślad zmiany."""
+
+    reports: list[str]
+    own: frozenset[Path]
+    present: frozenset[Path]
+    meaningful: frozenset[Path]
+
+
+def _own_memory(change: ReleaseChange[Any]) -> Path:
+    """Pamięć pliku zmiany, którą warunek znaczenia pomija: czyta ją każda zmiana przez wspólny odczyt właściciela
+    (``_observe``, ``_change``), którego znaczenie i plik bez odczytu sprawdza test operacji Ustawień, a w światach
+    zmian z Wydania jej treść nie zmienia śladu zmiany, bo ostatnia dobra wartość liczy się tylko przy złym pliku
+    zmiany, przy którym zmiana czeka albo nie rusza pliku."""
+
+    return Path("config") / MEMORY_DIRECTORY / f"{change.file.name}.json"
+
+
+def _release_trial(
+    root: Path, change: ReleaseChange[Any], world: ReleaseWorld, changes: tuple[ReleaseChange[Any], ...]
+) -> ReleaseTrial:
+    """Próba zmiany ``change`` w świecie ``world``, w katalogach pod ``root``: start na czytelnych plikach zapisuje ślad
+    i pliki, które czyta, potem jeden start na każdy z nich bez odczytu i następny start z odczytem; ślad bez zmiany to
+    ślad świata przed startem."""
+
+    roots = (root / str(index) for index in itertools.count())
+    readable_tool = _in_world(next(roots), world.build)
+    before = _release_effect(readable_tool, change)
+    files = frozenset(path.relative_to(readable_tool.root) for path in readable_tool.root.rglob("*") if path.is_file())
+    read = _start_reads(readable_tool, changes)
     readable = _release_effect(readable_tool, change)
-    if readable.remembered != "zastosowano":
-        return [f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"]
-    logs = readable_tool.log_path.parent
-    read = sorted(path.relative_to(readable_tool.root) for path in reads.seen if not path.is_relative_to(logs))
+    unmet = world.unmet(readable, before)
+    if unmet is not None:
+        return ReleaseTrial([unmet], frozenset(), frozenset(), frozenset())
+    own = _start_reads(_in_world(next(roots), world.build), (change,)) - _start_reads(_in_world(next(roots), world.build), ())
+    present = own & files
+    own_file = Path("config") / change.file.name
+
+    def mark(effect: ReleaseEffect, path: Path) -> tuple[object, ...]:
+        return (effect.rows, effect.remembered) if path == own_file else (effect.rows, effect.remembered, effect.file)
+
+    meaningful: set[Path] = set()
+    for path in sorted(present - {_own_memory(change)}):
+        tool = _in_world(next(roots), world.build)
+        (tool.root / path).unlink()
+        started(tool, changes).stop()
+        if mark(_release_effect(tool, change), path) != mark(readable, path):
+            meaningful.add(path)
 
     wrong: list[str] = []
-    for index, locked in enumerate(read):
-        tool = _in_world(root / f"bez-odczytu-{index}", world)
+    for locked in sorted(read if world.every_read else own):
+        tool = _in_world(next(roots), world.build)
         with reading(tool.root, frozenset({tool.root / locked})):
             started(tool, changes).stop()
         held = _release_effect(tool, change)
         started(tool, changes).stop()
         again = _release_effect(tool, change)
-        if held not in (readable, untouched) or again != readable:
-            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
-    return [f"przy czytelnych plikach {readable}", *wrong] if wrong else []
+        if held not in (readable, before) or again != readable:
+            wrong.append(f"{locked}: w świecie {world.name} przy starcie bez odczytu {held}, przy następnym {again}")
+    reports = [f"w świecie {world.name} przy czytelnych plikach {readable}", *wrong] if wrong else []
+    return ReleaseTrial(reports, own, present, frozenset(meaningful))
+
+
+def _release_reports(
+    root: Path, change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
+) -> list[str]:
+    """Zgłoszenia próby pliku bez odczytu dla zmiany ``change`` z Wydania niosącego ``changes``, w katalogach pod
+    ``root``, w świecie ``world`` i w światach po jej starcie (``_release_worlds``), oraz warunki po wszystkich światach:
+    każdy plik odczytów zmiany jest przed startem w którymś świecie, w którym zmiana go czyta, i w którymś bieg bez
+    niego daje inny ślad zmiany (poza pamięcią pliku zmiany, ``_own_memory``)."""
+
+    trials = [
+        _release_trial(root / f"swiat-{index}", change, release_world, changes)
+        for index, release_world in enumerate(_release_worlds(change, world, changes))
+    ]
+    reports = [report for trial in trials for report in trial.reports]
+    own = frozenset[Path]().union(*(trial.own for trial in trials))
+    absent = sorted(path for path in own if not any(path in trial.present for trial in trials))
+    meaningless = sorted(
+        path
+        for path in own - {_own_memory(change), *absent}
+        if not any(path in trial.meaningful for trial in trials)
+    )
+    reports += [
+        f"{path}: zmiana go czyta, a nie ma go przed startem żaden jej świat, w którym go czyta, więc plik bez odczytu "
+        "wzięty za brak pliku daje ten sam ślad: daj go światowi zmiany w RELEASE_CHANGE_WORLDS"
+        for path in absent
+    ]
+    reports += [
+        f"{path} nic nie znaczy w światach zmiany: bieg bez niego daje ten sam ślad zmiany, więc odebrany odczyt niczego "
+        "nie sprawdza; daj światowi zmiany stan, w którym treść pliku zmienia ślad zmiany"
+        for path in meaningless
+    ]
+    return reports
 
 
 @pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
@@ -3668,7 +3801,10 @@ def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czy
     """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
     ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
     i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
-    Granicę pokazują próbki ``ZNANE_LUKI_ZMIAN_Z_WYDANIA``."""
+
+    Próba sprawdza coś tylko wtedy, gdy każdy plik, który czyta sama zmiana, jest w którymś jej świecie i coś w nim
+    znaczy: światy to świat zmiany i dwa światy po jej starcie (``_release_worlds``), w tym Historia z wierszem zmiany,
+    której pamięć zmian z Wydań nie ma. Granicę pokazują próbki ``ZNANE_LUKI_ZMIAN_Z_WYDANIA``."""
 
     reports = _release_reports(tmp_path, change, RELEASE_CHANGE_WORLDS[change.id], RELEASE_CHANGES)
 
@@ -3676,44 +3812,68 @@ def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czy
 
 
 ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
-    "świat zmiany nie ma pliku, który zmiana czyta (brak asercji absent): nieczytelny plik jak brak pliku (forma C2 r3)": (
+    "różnica odczytów nie widzi pliku, który czyta też start bez zmiany: nieczytelny plik innej części Centrum, którego "
+    "świat zmiany nie ma, jak brak pliku": (
         "from dataclasses import replace\n"
         "from typing import Any\n\n"
+        "from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE\n"
         "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
         "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
         "def swiat(tool: Any) -> None:\n"
         "    pass\n\n\n"
         "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
         "    try:\n"
-        "        stopka: str | None = (inputs.config / 'stopka.txt').read_text(encoding='utf-8')\n"
+        "        powiadomienia = (inputs.config / NOTIFICATIONS_FILE).read_text(encoding='utf-8')\n"
         "    except OSError:\n"
-        "        stopka = None\n"
-        "    if stopka is not None and 'ciemny' in stopka:\n"
+        "        powiadomienia = ''\n"
+        "    if 'ciemny' in powiadomienia:\n"
         "        return Nothing()\n"
         "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
-        "zmiana = ReleaseChange('2026-11-znana-luka-stopka', FOLDERS, propose)\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-powiadomienia', FOLDERS, propose)\n"
     ),
-    "plik czytany przy starcie bez warunku znaczenia: nieczytelny plik, którego treść w świecie nie zmienia zmiany, jak "
-    "pusty (forma B1 r3, Historia przy starcie jak pusta)": (
+    "warunek znaczenia usuwa plik, a nie zmienia jego treści: plik, który znaczy samym istnieniem, bez odczytu jak pusty": (
         "from dataclasses import replace\n"
         "from typing import Any\n\n"
         "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
         "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
         "def swiat(tool: Any) -> None:\n"
-        "    (tool.config / 'wiersze.txt').write_text('inna zmiana\\n', encoding='utf-8')\n\n\n"
+        "    (tool.config / 'flaga.txt').write_text('jasny\\n', encoding='utf-8')\n\n\n"
         "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    plik = inputs.config / 'flaga.txt'\n"
+        "    if not plik.exists():\n"
+        "        return Nothing()\n"
         "    try:\n"
-        "        wiersze = (inputs.config / 'wiersze.txt').read_text(encoding='utf-8')\n"
+        "        flaga = plik.read_text(encoding='utf-8')\n"
         "    except OSError:\n"
-        "        wiersze = ''\n"
-        "    if '2026-11-znana-luka-wiersze' in wiersze:\n"
+        "        flaga = ''\n"
+        "    if 'ciemny' in flaga:\n"
         "        return Nothing()\n"
         "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
-        "zmiana = ReleaseChange('2026-11-znana-luka-wiersze', FOLDERS, propose)\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-flaga', FOLDERS, propose)\n"
+    ),
+    "warunek znaczenia pomija pamięć pliku zmiany (``_own_memory``) przy każdym jej odczycie, także przez samą zmianę: "
+    "nieczytelna pamięć jak pusta": (
+        "from dataclasses import replace\n"
+        "from typing import Any\n\n"
+        "from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings\n"
+        "from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY\n"
+        "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
+        "def swiat(tool: Any) -> None:\n"
+        "    pass\n\n\n"
+        "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    try:\n"
+        "        pamiec = (inputs.config / MEMORY_DIRECTORY / f'{SETTINGS_FILE}.json').read_text(encoding='utf-8')\n"
+        "    except OSError:\n"
+        "        pamiec = ''\n"
+        "    if 'ciemny' in pamiec:\n"
+        "        return Nothing()\n"
+        "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-pamiec', FOLDERS, propose)\n"
     ),
 }
-"""Zmiana z Wydania, która bierze plik bez odczytu za brak pliku albo pusty, a próba pliku bez odczytu
-(``_release_reports``) tego nie zgłasza: każda próbka to moduł ze ``swiat(katalog_narzedzia)`` i zmianą ``zmiana``."""
+"""Zmiana z Wydania, która bierze plik bez odczytu za brak pliku albo pusty, a próba pliku bez odczytu z warunkami
+po światach zmiany (``_release_reports``) tego nie zgłasza: każda próbka to moduł ze ``swiat(katalog_narzedzia)`` i
+zmianą ``zmiana``."""
 
 
 def test_znane_luki_zmian_z_wydania_przechodza_przez_probe_pliku_bez_odczytu(tmp_path: Path) -> None:
