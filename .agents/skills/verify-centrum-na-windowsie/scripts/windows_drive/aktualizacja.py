@@ -73,7 +73,7 @@ def _click_update(run: Run, page: Page) -> tuple[dict[str, object], int]:
     expect(
         section,
         "the button needs the real GitHub API to name a Wydanie the run's clone lacks (ADR 0014, #319); "
-        "`Nie sprawdzono` means no network or GitHub's hourly limit",
+        "`Nie sprawdzono` means no network or GitHub's hourly limit (the run's token in config/ raises it)",
     ).to_contain_text("Jest nowsza wersja")
     expect(section.get_by_role("button", name=BUTTON, exact=True)).to_be_enabled()
     page.evaluate(f"{MARKER} = true")
