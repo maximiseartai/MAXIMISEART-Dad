@@ -16,8 +16,8 @@ zatrzymuje zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
 
 Dowód typu albo testu (plik ``dowody-idiomow/<id>.json`` z mutacjami złej postaci, ``tools/na_scalonych_pr.py --help``)
 uruchamia kod HEAD PR, więc status „Werdykt i bramka” podaje dowodowi ``--bez-kodu-pr``, a mutacje liczy merge.
-Przypadek ``jak #N W<n> r<k>`` sprzed szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
-ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Przyczyna, przy której dowód
+Przypadek ``jak #N W<n> r<k>`` sprzed szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę.
+Rejestr czyta bramka tylko wtedy, gdy PR ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Przyczyna, przy której dowód
 nie ma jeszcze danych (GitHub nie wyrenderował werdyktów albo nie podał rejestru), to ``stan_pr.Waiting``, bo mija
 przy następnym runie bez zmiany w PR; odmowa dowodu i jego przekroczony czas wymagają reguły albo poprawki autora.
 Dowody wszystkich reguł PR mają razem ``PROOF_TIMEOUT_S``: status „Werdykt i bramka” uruchamia bramkę w jobie

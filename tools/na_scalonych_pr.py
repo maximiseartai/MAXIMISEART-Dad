@@ -62,8 +62,8 @@ zmienia tylko pliki jego ``Gdzie`` i wpisuje (bez wcięcia) pierwszą linię jed
 każdej, bez ``oczekiwane``, biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
 tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie plików mutacji; bez mutacji przechodzi, a z nią
 jest WYKRYTA na kopii commitu (silnik z tego checkoutu). Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
-CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka”) pomija bieg poleceń, który liczy merge. Granica: reguł
-``npm run rules`` dowód nie ma, a mutację, która obok linii z ``Gdzie`` psuje typ albo test inaczej, łapie tylko recenzent.
+CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka”) pomija bieg poleceń, który liczy merge. Granicę tego
+dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
 """
 
 from __future__ import annotations
@@ -334,7 +334,7 @@ def mutation_proof(commit: str, rule: str, majors: list[tuple[int, str, int]], *
         problems += [f"podstawa {' '.join(command)} bez mutacji: {last}" for command, (verdict, last) in base if verdict is not Verdict.SURVIVED]
         found = [] if problems else zip(mutations, silnik_mutacji.verdicts(mutations, workers=1, commit=commit), strict=True)
         problems += [f"{mutation.name}: {verdict} → {last}" for mutation, (verdict, last) in found if not silnik_mutacji.in_ci(verdict, last)[0]]
-    done =f"przypadki {len(majors)}/{len(majors)} | mutacje {len(mutations)}/{len(mutations)} {'wykryte' if replay else 'bez biegu (--bez-kodu-pr)'}"
+    done = f"przypadki {len(majors)}/{len(majors)} | mutacje {len(mutations)}/{len(mutations)} {'wykryte' if replay else 'bez biegu (--bez-kodu-pr)'}"
     print(f"DOWÓD {'ODMOWA' if problems else 'OK'} | {rule} | {'; '.join(problems) or done}")
     return 1 if problems else 0
 
@@ -422,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--narzedzia", metavar="REV", help="Narzędzia z tego commitu zamiast z checkoutu, np. origin/main dla porównania.")
     rule = parser.add_mutually_exclusive_group()
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
-    rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
+    rule.add_argument("--regula-id", metavar="ID", help="Dowód o tym id na --z-commita: plik dowody-idiomow/ID.json albo reguła ast-grep, którą ładuje sgconfig.yml.")
     parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     parser.add_argument("--bez-kodu-pr", action="store_true", help="Dowód typu albo testu bez podstawy i mutacji, czyli bez kodu z --z-commita.")

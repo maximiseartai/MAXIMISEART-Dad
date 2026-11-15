@@ -2706,11 +2706,18 @@ def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(t
 
 
 def _idiom_refusal(head: str, proof: tuple[int, str]) -> str:
-    arguments = " ".join(_proof_arguments(head, "1/W1/r1", "1553/W1/r2"))
+    arguments = " ".join(_status_proof(head))
     return (
         f"idiom: zakazane-wywolanie: Ważne 1/W1/r1, 1553/W1/r2 ma pole Idiom: zakazane-wywolanie, a dowód reguły nie przeszedł (kod {proof[0]}): {proof[1]}; "
-        f"dodaj albo popraw regułę ast-grep o id zakazane-wywolanie i sprawdź ją poleceniem tools/na_scalonych_pr.py {arguments}"
+        "dodaj albo popraw regułę ast-grep o id zakazane-wywolanie albo dowód typu albo testu (tools/na_scalonych_pr.py --help) "
+        f"i sprawdź go poleceniem tools/na_scalonych_pr.py {arguments}"
     )
+
+
+def _status_proof(head: str) -> list[str]:
+    """Argumenty dowodu ze statusu, który nie uruchamia kodu PR: mutacje dowodu typu albo testu liczy merge."""
+
+    return [*_proof_arguments(head, "1/W1/r1", "1553/W1/r2"), "--bez-kodu-pr"]
 
 
 @pytest.mark.parametrize(
@@ -2730,7 +2737,8 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
 ) -> None:
     """Status „Werdykt i bramka” wymaga reguły z pola ``Idiom:`` jak merge, więc merge z pominięciem ``tools/scal_pr.py``
     jej nie omija. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez rejestru korzeni to
-    ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają."""
+    ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają. Token statusów nie uruchamia kodu PR, więc dowód
+    dostaje ``--bez-kodu-pr``, a merge go nie dostaje (``_proof_arguments`` w testach merge'a)."""
 
     github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof or PROOF_OK, passed=passed)
     github.update(1, **fields)
@@ -2754,7 +2762,7 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
     found = [name for name, reason in expected.items() if reason in description]
     assert sorted(found) == sorted(reasons), description
     assert ("idiom:" in description) is any(name in {"idiom", "rejestr"} for name in reasons), description
-    assert _proofs(github) == ([_proof_arguments(head, "1/W1/r1", "1553/W1/r2")] if proved else [])
+    assert _proofs(github) == ([_status_proof(head)] if proved else [])
     assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == [state]
 
 
