@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
 import os
 import subprocess
@@ -359,6 +360,7 @@ MYPY = ["-m", "mypy"]
 NODE = ["-m", "pytest", "-q", "-n", "0", "tests/test_inne.py::test_limit_to_jeden"]
 ON_TYPED = [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 2\n"]]
 ON_UNTYPED = [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\n"]]
+needs_mypy = pytest.mark.skipif(importlib.util.find_spec("mypy") is None, reason="dowód typu uruchamia mypy z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
 
 
 def _mutation_proof(tmp_path: Path, head: str, changes: list[list[str]], command: list[str], *flags: str, **more: str) -> tuple[subprocess.CompletedProcess[str], str]:
@@ -370,7 +372,9 @@ def _mutation_proof(tmp_path: Path, head: str, changes: list[list[str]], command
     return _proof(tmp_path, OVERWRITE, clean, start=SMALL_REPO, chosen=("--regula-id", LIMIT_ID, "--z-commita", "HEAD", *flags))
 
 
-@pytest.mark.parametrize(("head", "command"), [(TYPED, MYPY), (TYPED, NODE)], ids=["typ-final-w-mypy", "test-wartosci-w-pytest"])
+@pytest.mark.parametrize(
+    ("head", "command"), [pytest.param(TYPED, MYPY, id="typ-final-w-mypy", marks=needs_mypy), pytest.param(TYPED, NODE, id="test-wartosci-w-pytest")]
+)
 def test_dowod_typu_albo_testu_wpisuje_postac_z_gdzie_na_head_i_polecenie_required_ci_ja_wykrywa(tmp_path: Path, head: str, command: list[str]) -> None:
     done, sha = _mutation_proof(tmp_path, head, ON_TYPED, command)
 
@@ -385,24 +389,24 @@ NOT_COVERED = "#5 W1 r1: żadna mutacja nie zmienia samych plików z Gdzie i nie
 @pytest.mark.parametrize(
     ("head", "changes", "command", "more", "summary"),
     [
-        (UNTYPED + OVERWRITE, ON_TYPED, MYPY, {}, f"{NAME}: NIEAKTUALNA → kotwicy nie ma dokładnie raz w kod/inne.py: 'LIMIT: Final = 1'"),
-        (TYPED + OVERWRITE, ON_TYPED, MYPY, {}, "podstawa -m mypy bez mutacji: Found 1 error in 1 file (checked 2 source files)"),
-        (UNTYPED, ON_UNTYPED, MYPY, {}, f"{NAME}: NIEWYKRYTA → Success: no issues found in 2 source files"),
-        (TYPED, ON_TYPED, ["-m", "mypy", "kod"], {}, f"{NAME}: polecenie -m mypy kod bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>"),
-        (TYPED, ON_TYPED, MYPY, {"oczekiwane": "Found 1 error"}, f"{NAME}: polecenie -m mypy bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>"),
-        (TYPED, ON_TYPED, [*NODE[:-1], "tests/test_inny.py::test_inny"], {}, f"{NAME}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia tests/test_inny.py::test_inny"),
-        (TYPED, [*ON_TYPED, ["tests/test_inne.py", "== 1\n", "== 3\n"]], MYPY, {}, NOT_COVERED),
-        (TYPED, [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 3\n"]], MYPY, {}, NOT_COVERED),
-    ],
-    ids=[
-        "postac-na-head-bez-mechanizmu",
-        "postac-na-head-z-mechanizmem",
-        "mechanizm-nie-lapie",
-        "mypy-spoza-krokow-ci",
-        "polecenie-z-oczekiwana-linia",
-        "test-spoza-zakresu-runu-pr",
-        "plik-spoza-gdzie",
-        "zamiana-bez-linii-gdzie",
+        pytest.param(
+            UNTYPED + OVERWRITE, ON_TYPED, MYPY, {}, f"{NAME}: NIEAKTUALNA → kotwicy nie ma dokładnie raz w kod/inne.py: 'LIMIT: Final = 1'", id="postac-na-head-bez-mechanizmu", marks=needs_mypy
+        ),
+        pytest.param(
+            TYPED + OVERWRITE, ON_TYPED, MYPY, {}, "podstawa -m mypy bez mutacji: Found 1 error in 1 file (checked 2 source files)", id="postac-na-head-z-mechanizmem", marks=needs_mypy
+        ),
+        pytest.param(UNTYPED, ON_UNTYPED, MYPY, {}, f"{NAME}: NIEWYKRYTA → Success: no issues found in 2 source files", id="mechanizm-nie-lapie", marks=needs_mypy),
+        pytest.param(
+            TYPED, ON_TYPED, ["-m", "mypy", "kod"], {}, f"{NAME}: polecenie -m mypy kod bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="mypy-spoza-krokow-ci"
+        ),
+        pytest.param(
+            TYPED, ON_TYPED, MYPY, {"oczekiwane": "Found 1 error"}, f"{NAME}: polecenie -m mypy bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="polecenie-z-oczekiwana-linia"
+        ),
+        pytest.param(
+            TYPED, ON_TYPED, [*NODE[:-1], "tests/test_inny.py::test_inny"], {}, f"{NAME}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia tests/test_inny.py::test_inny", id="test-spoza-zakresu-runu-pr"
+        ),
+        pytest.param(TYPED, [*ON_TYPED, ["tests/test_inne.py", "== 1\n", "== 3\n"]], MYPY, {}, NOT_COVERED, id="plik-spoza-gdzie"),
+        pytest.param(TYPED, [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 3\n"]], MYPY, {}, NOT_COVERED, id="zamiana-bez-linii-gdzie"),
     ],
 )
 def test_dowod_typu_albo_testu_odmawia_falszywego_dowodu(
@@ -452,6 +456,7 @@ ZNANE_LUKI = {
 }
 
 
+@needs_mypy
 def test_znane_luki_dowodu_typu_albo_testu_przechodza_przez_dowod(tmp_path: Path) -> None:
     zgloszenia: dict[str, list[str]] = {}
     for numer, (opis, (head, changes, command)) in enumerate(ZNANE_LUKI.items()):
