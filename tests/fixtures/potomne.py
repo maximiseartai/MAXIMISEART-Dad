@@ -19,7 +19,17 @@ from typing import IO, TypeVar
 from tests.fixtures.git_repo import git
 import potomne
 
-__all__ = ["beating", "ctrl_c_reaches_children", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = [
+    "beating",
+    "ctrl_c_reaches_children",
+    "held",
+    "hold_lock",
+    "until_stopped",
+    "wait_for",
+    "wait_for_value",
+    "with_grandchild",
+    "worktrees",
+]
 
 T = TypeVar("T")
 
@@ -37,6 +47,21 @@ def with_grandchild(beats: Path, then: str) -> list[str]:
         f"{then}\n"
     )
     return [sys.executable, "-c", code]
+
+
+def until_stopped(stop: Path, *, each: str = "pass", seconds: int = 600) -> str:
+    """Kod końca procesu potomnego testu: co 0,05 s wykonuje ``each``, aż test utworzy plik ``stop`` albo minie ``seconds``
+    s. Test kończy swój proces tym plikiem, nie PID-em z pliku: proces, który już zginął, zwalnia PID dla obcego procesu
+    (na Windows ``os.kill`` to ``TerminateProcess`` każdego procesu z tym PID-em, także workera xdist), a plik z PID-em
+    istnieje, zanim ma treść, i zostaje pusty, gdy proces zginie w środku zapisu."""
+
+    return (
+        "import os as _os, time as _time\n"
+        f"_koniec = _time.monotonic() + {seconds}\n"
+        f"while not _os.path.exists({str(stop)!r}) and _time.monotonic() < _koniec:\n"
+        f"    {each}\n"
+        "    _time.sleep(0.05)\n"
+    )
 
 
 def beating(beats: Path) -> bool:

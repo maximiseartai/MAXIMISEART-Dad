@@ -28,7 +28,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import beating, until_stopped, wait_for, with_grandchild, worktrees
 import potomne
 import repo
 from tests.fixtures.skladnia import dotted, imports
@@ -222,12 +222,12 @@ def test_stop_konczy_trwajace_polecenie_a_nowe_nie_biegnie(tmp_path: Path) -> No
 
 @POSIX_ONLY
 def test_grupa_z_samymi_zombie_nie_wywraca_konca_polecenia(tmp_path: Path) -> None:
-    ready = tmp_path / "potomek-gotowy"
+    ready, stop = tmp_path / "potomek-gotowy", tmp_path / "potomek-stop"
     child = (
         "import os, pathlib, subprocess, sys, time\n"
         "subprocess.Popen([sys.executable, '-c', 'pass'])\n"
         "os.setsid()\n"
-        f"time.sleep(1)\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\ntime.sleep(600)\n"
+        f"time.sleep(1)\npathlib.Path({str(ready)!r}).touch()\n{until_stopped(stop)}"
     )
     code = (
         "import pathlib, subprocess, sys, time\n"
@@ -239,8 +239,7 @@ def test_grupa_z_samymi_zombie_nie_wywraca_konca_polecenia(tmp_path: Path) -> No
     try:
         done = potomne.run([sys.executable, "-c", code], cwd=tmp_path, timeout=60)
     finally:
-        if ready.exists():
-            os.kill(int(ready.read_text()), signal.SIGTERM)
+        stop.touch()
 
     assert (done.returncode, done.stdout) == (0, "gotowe\n")
 
@@ -250,8 +249,8 @@ def test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(potomne, "_DRAIN_S", 1.0)
-    ready = tmp_path / "potomek-gotowy"
-    child = f"import os, pathlib, time\nos.setsid()\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n"
+    ready, stop = tmp_path / "potomek-gotowy", tmp_path / "potomek-stop"
+    child = f"import os, pathlib\nos.setsid()\npathlib.Path({str(ready)!r}).touch()\n{until_stopped(stop, seconds=30)}"
     code = (
         "import pathlib, subprocess, sys, time\n"
         f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
@@ -263,7 +262,7 @@ def test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku(
         done = potomne.run([sys.executable, "-c", code], cwd=tmp_path)
         returned = time.time()
     finally:
-        os.kill(int(ready.read_text()), signal.SIGTERM)
+        stop.touch()
 
     assert done.returncode == 0
     assert returned - float(done.stdout) < 2 * potomne._DRAIN_S
