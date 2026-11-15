@@ -43,5 +43,10 @@ from the repository root (Windows: `py -3`). The proof is in the evidence folder
 ## Gotchas
 
 - The drive runs the console path of the launcher. The shortcut's path (`pythonw`, no console, start messages in a
-  native dialog Playwright cannot click) is `tests/test_centrum_launcher.py` and `verify-centrum-na-windowsie`, and a
-  Centrum of another version on the port (`INNA_WERSJA_CENTRUM`) is not driven.
+  native dialog Playwright cannot click) is `verify-centrum-na-windowsie`, and
+  `tests/test_centrum_launcher.py::test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka` checks that Centrum
+  started without a console answers, a second start recognises it and opens its tab, and it closes.
+  A Centrum of another version on the port (`INNA_WERSJA_CENTRUM`) is not driven:
+  `tests/test_centrum_launcher.py::test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wersji`
+  checks that a start after the clone moved says that Centrum of another version runs, leaves it serving and logs
+  `kod=INNA_WERSJA_CENTRUM`.

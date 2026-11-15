@@ -9,8 +9,14 @@ orders in the Rejestr zleceń or a Plik zbiorczy stays with a sentence that prop
 Rozliczenie pracownika with the old one lies in a period asks first. Closing Ustawienia with an unsaved form asks
 `Zamknąć bez zapisu?`. Under the list the section suggests the logins of the ordered orders of the current period and
 the 4 before it in the Rejestr zleceń that no Wykonawca has, each with `Dodaj Wykonawcę`, and says in one sentence when
-the Rejestr is not set or cannot be read (#1475). The change itself, its Historia row and the processes are tested
-through the API (`tests/test_centrum_rozliczen.py`, `tests/test_centrum_wpisanie_raportow.py`).
+the Rejestr is not set or cannot be read (#1475). The drive does not drive the Historia row of a change or
+what the processes do with the list:
+`tests/test_centrum_rozliczen.py::test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_nazwy_ani_adresu`
+checks that every change of a Wykonawca has its Historia row and that the Zgłoszenie has no login, name or address,
+`tests/test_centrum_rozliczen.py::test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_poprawic` that
+a process without a good Lista Wykonawców does not start and its refusal says what to fix, and
+`tests/test_centrum_wpisanie_raportow.py::test_nieaktywny_i_bez_przypomnien_z_ustawien_nie_dostaja_przypomnienia_od_nastepnego_sprawdzenia`
+that a Nieaktywny Wykonawca and one without Przypomnienia get none from the next check.
 
 ## Sub-features
 
