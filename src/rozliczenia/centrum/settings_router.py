@@ -12,7 +12,6 @@ bez „Cofnij” to 404.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import date, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -26,17 +25,20 @@ from rozliczenia.centrum.contract import settings_reminders as reminders_contrac
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.platform import Platform
-from rozliczenia.centrum.settings import inbox, messages
-from rozliczenia.centrum.settings.autostart import AUTOSTART, Unsupported
+from rozliczenia.centrum.settings import messages
+from rozliczenia.centrum.settings.autostart import Unsupported
 from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import (
     DEFAULT_THEME,
-    FOLDERS,
+    ChangeFolders,
+    ChangeTheme,
+    ChoosePeriodsDirectory,
+    ChooseRegister,
     FolderSettings,
+    FoldersEdit,
     SettingState,
-    periods_directory_root,
 )
-from rozliczenia.centrum.settings.inbox import INBOX, InboxFile
+from rozliczenia.centrum.settings.inbox import InboxFile
 from rozliczenia.centrum.settings.history import ByDad, FromRelease, HistoryRow, Outside
 from rozliczenia.centrum.settings.owner import (
     CentrumSettings,
@@ -47,7 +49,16 @@ from rozliczenia.centrum.settings.owner import (
     Saved,
     SettingsView,
 )
-from rozliczenia.centrum.settings.reminders import EVENING, FIRST, MORNING, REMINDERS, parse_range, parse_time, settings_of
+from rozliczenia.centrum.settings.reminders import (
+    EVENING,
+    FIRST,
+    MORNING,
+    ChangeReminders,
+    SwitchReminders,
+    parse_range,
+    parse_time,
+    settings_of,
+)
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
 from rozliczenia.worker_reports import (
@@ -89,8 +100,8 @@ def settings_router(
 
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
-    def saved(edit: Callable[[FolderSettings], FolderSettings]) -> settings_contract.Choice:
-        return choice(settings, settings.change(FOLDERS, edit))
+    def saved(edit: FoldersEdit) -> settings_contract.Choice:
+        return choice(settings, settings.change_folders(edit))
 
     @router.get("", operation_id="getSettings")
     def read() -> settings_contract.Settings:
@@ -98,40 +109,29 @@ def settings_router(
 
     @router.put("/folders", operation_id="changeFolders", responses=_REFUSED)
     def change_folders(change: settings_contract.FoldersChange) -> settings_contract.Choice:
-        register, periods_directory = _path(change.order_register), _path(change.periods_directory)
-        root = None if periods_directory is None else periods_directory_root(periods_directory)
-
-        def edit(current: FolderSettings) -> FolderSettings:
-            """Sekcja odsyła obie ścieżki, więc zapisany folder okresów zostaje, jaki jest (np. tydzień, do którego tata
-            cofnął zmianę z Wydania), a od korzenia układu zapisuje się tylko folder wskazany na nowo."""
-
-            kept = periods_directory == current.periods_directory
-            return replace(current, register=register, periods_directory=periods_directory if kept else root)
-
-        return saved(edit)
+        return saved(ChangeFolders(_path(change.order_register), _path(change.periods_directory)))
 
     @router.post("/register/choose", operation_id="chooseRegister")
     def choose_register() -> settings_contract.Choice:
         chosen = platform.choose_file(_REGISTER_DIALOG, _REGISTER_FILETYPES)
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
-        return saved(lambda current: replace(current, register=chosen))
+        return saved(ChooseRegister(chosen))
 
     @router.post("/periods-directory/choose", operation_id="choosePeriodsDirectory")
     def choose_periods_directory() -> settings_contract.Choice:
         chosen = platform.choose_folder(_PERIODS_DIALOG)
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
-        root = periods_directory_root(chosen)
-        return saved(lambda current: replace(current, periods_directory=root))
+        return saved(ChoosePeriodsDirectory(chosen))
 
     @router.put("/theme", operation_id="changeTheme")
     def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
-        return saved(lambda current: replace(current, theme=change.theme))
+        return saved(ChangeTheme(change.theme))
 
     @router.put("/autostart", operation_id="changeAutostart", responses=_REFUSED)
     def change_autostart(change: settings_contract.AutostartChange) -> settings_contract.Choice:
-        result = settings.change(AUTOSTART, lambda _: change.enabled)
+        result = settings.change_autostart(change.enabled)
         if isinstance(result, NotSaved):
             raise refusal.autostart_not_changed()
         return choice(settings, result)
@@ -141,10 +141,7 @@ def settings_router(
         """Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy
         skrzynka je przyjęła. Odrzucone hasło zostaje zapisane, a tata wpisuje je jeszcze raz."""
 
-        password = inbox.new_password(settings.view().inbox, change.password)
-        if isinstance(password, FieldProblem):
-            raise refusal.setting_refused(password)
-        saved = choice(settings, settings.change(INBOX, lambda current: replace(current, password=password)))
+        saved = choice(settings, settings.change_inbox_password(change.password))
         return settings_contract.InboxPasswordSaved(settings=saved.settings, change=saved.change, login=inbox_login())
 
     @router.put("/reminders/enabled", operation_id="changeRemindersEnabled", responses=_REFUSED)
@@ -152,11 +149,7 @@ def settings_router(
         """Przełącznik: pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia dawny, bo okno dni i tak
         kończy się na okresach z Plikiem zbiorczym."""
 
-        def switched(current: ReminderSettings) -> ReminderSettings:
-            since = current.since or today() if change.enabled else current.since
-            return replace(current, enabled=change.enabled, since=since)
-
-        return choice(settings, settings.change(REMINDERS, switched))
+        return choice(settings, settings.change_reminders(SwitchReminders(change.enabled, today())))
 
     @router.put("/reminders", operation_id="changeReminders", responses=_REFUSED)
     def change_reminders(form: reminders_contract.RemindersForm) -> settings_contract.Choice:
@@ -166,12 +159,7 @@ def settings_router(
         read = _form(form)
         if isinstance(read, FieldProblem):
             raise refusal.setting_refused(read)
-        return choice(
-            settings,
-            settings.change(
-                REMINDERS, lambda current: replace(current, schedule=read.schedule, text=read.text, footer=read.footer)
-            ),
-        )
+        return choice(settings, settings.change_reminders(ChangeReminders(read)))
 
     @router.post("/reminders/preview", operation_id="previewReminder", responses=_REFUSED)
     def preview_reminder(form: reminders_contract.RemindersForm) -> reminders_contract.ReminderPreview:

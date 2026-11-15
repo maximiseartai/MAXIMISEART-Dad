@@ -623,9 +623,9 @@ def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_pa
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
 
 
-# Drogi funkcji z trasy do zapisu pary Listy Urządzeń i Reguł ilości (#1577 W1 r2: trasa uzupełniała listę w funkcji
-# podanej właścicielowi, a „Cofnij” tego kroku nie miało): opis → (moduł Centrum, fragment zgłoszenia, które go odrzuca).
-DROGI_DO_PARY: Final = {
+# Drogi funkcji z trasy do zapisu pliku Ustawień (#1577 W1 r2: trasa uzupełniała Listę Urządzeń w funkcji podanej
+# właścicielowi, a „Cofnij” tego kroku nie miało): opis → (moduł Centrum, fragment zgłoszenia, które go odrzuca).
+DROGI_DO_ZAPISU_USTAWIEN: Final = {
     "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …) (#1577 W1 r2)": (
         """\
 from rozliczenia.centrum import device_forms
@@ -648,7 +648,7 @@ def zapisz(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | Not
 
     return settings.change(DEVICES, applied)
 """,
-        'Value of type variable "_Plain" of "change" of "CentrumSettings" cannot be "tuple[Component, ...]"',
+        '"CentrumSettings" has no attribute "change"',
     ),
     "funkcja trasy do change(RULES, …)": (
         """\
@@ -659,7 +659,7 @@ from rozliczenia.centrum.settings.quantity_rules import RULES
 def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
     return settings.change(RULES, lambda current: current[1:])
 """,
-        'Value of type variable "_Plain" of "change" of "CentrumSettings" cannot be "tuple[QuantityRule, ...]"',
+        '"CentrumSettings" has no attribute "change"',
     ),
     "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": (
         """\
@@ -702,20 +702,32 @@ def zapisz(settings: CentrumSettings) -> None:
 """,
         'Too many arguments for "apply_release_changes" of "CentrumSettings"',
     ),
-}
+    "funkcja trasy do change(FOLDERS, …) (Ustawienia)": (
+        """\
+from dataclasses import replace
 
-ZNANE_LUKI_POLECENIA_PARY: Final = {
-    "trasa zmienia treść polecenia przed zapisem (typ widzi polecenie, nie jego treść)": """\
-from rozliczenia.centrum.contract.quantity_rules import ComponentForm
-from rozliczenia.centrum.device_forms import AddComponent
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 
 
-def dodaj(settings: CentrumSettings, form: ComponentForm) -> Saved | Refused | NotSaved:
-    uzupelniony = form.model_copy(update={"other_spellings": [*form.other_spellings, "wizja"]})
-    return settings.change_devices(AddComponent(uzupelniony))
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(FOLDERS, lambda current: replace(current, theme="light"))
 """,
-    "funkcja z trasy dla pliku bez pary (zna tylko typ wartości pliku)": """\
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "funkcja trasy do change(EXCEPTIONS, …) (Kontrola ilości)": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(EXCEPTIONS, lambda current: current[1:])
+""",
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "funkcja trasy do change(WORKERS, …) (Wykonawcy)": (
+        """\
 from dataclasses import replace
 
 from rozliczenia.centrum.settings import workers
@@ -727,7 +739,10 @@ def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotS
     uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
     return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
 """,
-    "plik pary jako Any przez cast (Any spełnia każde ograniczenie _Plain)": """\
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "plik pary jako Any przez cast do dawnego change": (
+        """\
 from typing import Any, cast
 
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
@@ -737,13 +752,76 @@ from rozliczenia.centrum.settings.quantity_rules import DEVICES
 def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
     return settings.change(cast(Any, DEVICES), lambda current: current)
 """,
-    "plik pary jako Any przez getattr modułu (Any spełnia każde ograniczenie _Plain)": """\
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "plik pary jako Any przez getattr modułu do dawnego change": (
+        """\
 from rozliczenia.centrum.settings import quantity_rules
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 
 
 def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
     return settings.change(getattr(quantity_rules, "DEVICES"), lambda current: current[1:])
+""",
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "plik Folderów z nazwą pliku pary do dawnego change (#1904 r2 D1: właściciel rozpoznaje parę po nazwie pliku, a _Plain patrzył na typ wartości)": (
+        """\
+from dataclasses import replace
+
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(replace(FOLDERS, name=DEVICES.name), lambda current: current)
+""",
+        '"CentrumSettings" has no attribute "change"',
+    ),
+    "funkcja trasy w miejscu polecenia Wykonawców": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change_workers(lambda current: current)
+""",
+        'Argument 1 to "change_workers" of "CentrumSettings" has incompatible type',
+    ),
+    "funkcja trasy przez prywatne _by_dad": (
+        """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.workers import WORKERS
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings._by_dad(WORKERS, lambda current: current, undoes=None)
+""",
+        "ruff SLF001",
+    ),
+}
+
+ZNANE_LUKI_POLECENIA_USTAWIEN: Final = {
+    "trasa zmienia treść polecenia przed zapisem (typ widzi polecenie, nie jego treść)": """\
+from rozliczenia.centrum.contract.quantity_rules import ComponentForm
+from rozliczenia.centrum.device_forms import AddComponent
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+
+
+def dodaj(settings: CentrumSettings, form: ComponentForm) -> Saved | Refused | NotSaved:
+    uzupelniony = form.model_copy(update={"other_spellings": [*form.other_spellings, "wizja"]})
+    return settings.change_devices(AddComponent(uzupelniony))
+""",
+    "prywatna droga zapisu przez getattr z nazwą w napisie (SLF001 widzi tylko atrybut, getattr daje Any)": """\
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.workers import WORKERS
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    zapis = getattr(settings, "_by_dad")
+    wynik: Saved | Refused | NotSaved | KeptInPeriods = zapis(WORKERS, lambda current: current, undoes=None)
+    return wynik
 """,
     "drugi właściciel z własną zmianą z Wydania (konstruktor przyjmuje zmiany od każdego wołającego)": """\
 from pathlib import Path
@@ -779,18 +857,23 @@ def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerP
 
 
 @wymaga_ruff_i_mypy
-def test_funkcja_trasy_do_zapisu_pary_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
-    """Listę Urządzeń i Reguły ilości tata zmienia tylko poleceniem formularza do właściciela, więc trasa nie poda mu
-    funkcji, której krok „Cofnij” by ominął (#1577 W1 r2); znane luki tego typu przechodzą."""
+def test_funkcja_trasy_do_zapisu_ustawien_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    """Każdy plik Ustawień tata zmienia tylko typowanym poleceniem do właściciela, więc trasa nie poda mu funkcji, której
+    krok „Cofnij” by ominął (#1577 W1 r2); znane luki tego typu przechodzą."""
 
-    probki = {opis: kod for opis, (kod, _) in DROGI_DO_PARY.items()} | ZNANE_LUKI_POLECENIA_PARY
+    probki = {opis: kod for opis, (kod, _) in DROGI_DO_ZAPISU_USTAWIEN.items()} | ZNANE_LUKI_POLECENIA_USTAWIEN
     pliki = zapisz(probki, tmp_path)
 
     zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
 
-    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_DO_PARY.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert {
+        opis: zgloszenia[opis]
+        for opis, (_, odrzucenie) in DROGI_DO_ZAPISU_USTAWIEN.items()
+        if not any(odrzucenie in z for z in zgloszenia[opis])
+    } == {}
     assert_znane_luki(
-        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_POLECENIA_PARY}, "tests/test_komunikaty_expect.py (ZNANE_LUKI_POLECENIA_PARY)"
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_POLECENIA_USTAWIEN},
+        "tests/test_komunikaty_expect.py (ZNANE_LUKI_POLECENIA_USTAWIEN)",
     )
 
 

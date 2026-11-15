@@ -369,6 +369,58 @@ def removed(current: WorkerList, login: str) -> WorkerList | FieldProblem:
     return _problem(built) if isinstance(built, WorkerListProblem) else built
 
 
+@dataclass(frozen=True)
+class AddWorker:
+    form: WorkerForm
+
+
+@dataclass(frozen=True)
+class ChangeWorker:
+    login: str
+    form: WorkerForm
+
+
+@dataclass(frozen=True)
+class AssignAddress:
+    login: str
+    address: str
+
+
+@dataclass(frozen=True)
+class SwitchWorker:
+    login: str
+    active: bool | None
+    reminders: bool | None
+
+
+@dataclass(frozen=True)
+class RemoveWorker:
+    login: str
+
+
+WorkersEdit = AddWorker | ChangeWorker | AssignAddress | SwitchWorker | RemoveWorker
+"""Zmiana taty Listy Wykonawców z sekcji Wykonawcy albo widoku Raporty, którą zapisuje właściciel Ustawień
+(``dad_workers``)."""
+
+
+def dad_workers(current: WorkerList, edit: WorkersEdit) -> WorkerList | FieldProblem:
+    """Lista Wykonawców po zmianie taty ``edit`` albo odmowa z polem formularza."""
+
+    match edit:
+        case AddWorker(form=form):
+            return added(current, form)
+        case ChangeWorker(login=login, form=form):
+            return edited(current, login, form)
+        case AssignAddress(login=login, address=address):
+            return address_assigned(current, login, address)
+        case SwitchWorker(login=login, active=active, reminders=reminders):
+            return switched(current, login, active=active, reminders=reminders)
+        case RemoveWorker(login=login):
+            return removed(current, login)
+        case _:
+            assert_never(edit)
+
+
 def removed_logins(before: WorkerList, after: WorkerList) -> RemovedLogins | None:
     """Loginy Wykonawców z ``before``, których w ``after`` nie ma u żadnego Wykonawcy (``None``: żadnego), z ``worker``,
     gdy lista ma po zmianie mniej Wykonawców: tak usuwa formularz, „Usuń Wykonawcę” i „Cofnij” dodania albo dopisania
