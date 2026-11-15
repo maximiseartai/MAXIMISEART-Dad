@@ -11,17 +11,19 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
 import unicodedata
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Final, Literal, get_args
 import imaplib
 
@@ -57,7 +59,7 @@ from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.rule_forms import form_of
@@ -75,6 +77,7 @@ from rozliczenia.centrum.settings.proposal import (
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
+from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
@@ -86,6 +89,7 @@ from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, D
 from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
     FakeReportBox,
@@ -114,10 +118,10 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
-from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 from atrapy.pliki_taty import REGISTER_NAME
-from atrapy.settlement import PERIOD, worker_list, write_source, write_worker_list
+from atrapy.settlement import PERIOD, CellValue, worker_list, write_quantity_source, write_source, write_worker_list
 from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
 from atrapy.workbooks import rewrite_parts
 from atrapy.skrzynka_raportow import AtrapaImap
@@ -2991,6 +2995,758 @@ def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -
 
     assert (row["source"], row["undoable"]) == ("release", False)
     assert (undo.status_code, undo.json()) == (404, {"message": "Tej zmiany nie da się cofnąć."})
+
+
+# --- Plik Ustawień bez odczytu (#1529 W4, #1532 W2, #1572 W1): każda operacja i każda zmiana z Wydania ----------------
+# Test nie zna gałęzi „pliku nie da się przeczytać” z nazwy. Operacja Ustawień z kontraktu i zmiana z Wydania biegnie raz
+# na czytelnych plikach i zapisuje, które pliki katalogu narzędzia czyta (``tests/fixtures/odczyt_bez_dostepu.py``),
+# a potem raz na każdy z nich, gdy system nie daje go czytać. Wynik ma być jednym z dwóch, które nie gubią danych taty
+# (ADR 0032): taki sam jak przy czytelnym pliku albo nic. Nowa operacja i nowa zmiana z Wydania wchodzą do testu same.
+# Odebrany odczyt sprawdza coś tylko na pliku, który w świecie próbki coś znaczy, więc operacja biegnie też raz bez
+# każdego pliku, który czyta przed swoim zapisem, a bieg bez niego ma dać inny wynik niż czytelny (``_meaningless``).
+
+_ROW_ID = re.compile(r"\b[0-9a-f]{32}\b")
+_MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?")
+_COMMIT_FIELD = re.compile(r'"commit": ?"[0-9a-f]{7,40}"')
+_REJECTED_MOMENT = re.compile(r"\.\d{8}-\d{6}$")
+
+
+def _without_run_differences(text: str, root: Path) -> str:
+    """Tekst bez tego, co różni dwa przebiegi tej samej operacji: katalog testu, id wiersza Historii, chwila i commit."""
+
+    for place in (str(root), json.dumps(str(root))[1:-1]):
+        text = text.replace(place, "<narzedzie>")
+    return _COMMIT_FIELD.sub('"commit":"<commit>"', _MOMENT.sub("<czas>", _ROW_ID.sub("<id>", text)))
+
+
+def _file_text(path: Path) -> str:
+    """Treść pliku jako tekst; pamięć pliku Ustawień z treścią (``widziany``, ``dobry``) zdekodowaną z base64."""
+
+    text = path.read_bytes().decode("utf-8", errors="replace")
+    if path.parent.name != MEMORY_DIRECTORY or path.suffix != ".json":
+        return text
+    document = json.loads(text)
+    if isinstance(document, dict):
+        for key in ("widziany", "dobry"):
+            if isinstance(document.get(key), str):
+                encoded = document[key] + "=" * (-len(document[key]) % 4)
+                document[key] = base64.urlsafe_b64decode(encoded).decode("utf-8", errors="replace")
+    return json.dumps(document, ensure_ascii=False)
+
+
+def _tool_files(tool: ToolDirectory) -> dict[str, str]:
+    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu, także bez chwili w nazwie kopii złej
+    treści (``odrzucone/<plik>.RRRRMMDD-GGMMSS``). Wiersze Historii Ustawień stoją posortowane: wiersz zmiany spoza
+    Centrum, który bieg przy pliku bez odczytu odłożył, następny odczyt (``_next_reading``) dopisuje po wierszu operacji,
+    a czytelny bieg przed nim."""
+
+    logs = tool.log_path.parent
+    files: dict[str, str] = {}
+    for path in sorted(tool.root.rglob("*")):
+        if not path.is_file() or path.is_relative_to(logs):
+            continue
+        text = _without_run_differences(_file_text(path), tool.root)
+        if path.name == HISTORY_FILE:
+            text = "\n".join(sorted(text.splitlines()))
+        files[_REJECTED_MOMENT.sub(".<czas>", str(path.relative_to(tool.root)))] = text
+    return files
+
+
+def _settings_write_operations() -> set[str]:
+    return {
+        operation["operationId"]
+        for path, methods in _committed_contract()["paths"].items()
+        if path.startswith("/api/settings")
+        for method, operation in methods.items()
+        if method != "get"
+    }
+
+
+SIGNED_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "footer": "Pozdrawiam"}
+
+
+@dataclass(frozen=True)
+class SettingsWorld:
+    """Centrum po krokach taty, w których każdy plik Ustawień ma znaczenie: usunięta reguła, składnik i Wykonawca w
+    Historii (nowy wpis nie może dostać ich id), wpisy, które operacja zmienia, i zmiana każdego pliku poza Centrum
+    (``_dad_changed_every_file_outside_centrum``). Systemowe okno wyboru ma w kolejce folder ``INEA`` i plik
+    ``Rejestr.xlsx``, inne niż wybrane w świecie."""
+
+    client: CentrumClient
+    tool: ToolDirectory
+    rule: str = ""
+    device: str = ""
+    worker: str = ""
+    undo: str = ""
+    difference: str = ""
+
+
+EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
+"""Wyjątek Kontroli ilości, który tata oznaczył w świecie próbek, zanim przyszła próbka."""
+
+
+def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
+    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, przypomnienia ze stopką taty, usunięta reguła
+    i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    usuniętego składnika."""
+
+    (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    client.put("/api/settings/reminders", json=SIGNED_REMINDERS | {"footer": "Tata"})
+    rule = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
+    client.delete(f"{QUANTITY_RULES_URL}/{rule}")
+    form: dict[str, object] = {"name": "ont x", "other_spellings": [], "group": None}
+    device = client.post(DEVICES_URL, json=form).json()["quantity_rules"]["devices"][-1]["id"]
+    client.delete(f"{DEVICES_URL}/{device}")
+    return rule, device
+
+
+def _dad_changed_every_file_outside_centrum(tool: ToolDirectory) -> None:
+    """Tata zmienił każdy plik Ustawień poza Centrum, odkąd Centrum go ostatnio widziało: pamięć każdego pliku ma stan
+    sprzed tej zmiany (plik z pustym wierszem na końcu, który tata usunął; przy sekrecie inny odcisk). Pamięć ma wtedy
+    znaczenie: z nią zapis albo odczyt pliku dopisuje wiersz zmiany spoza Centrum, a bez niej nie."""
+
+    for path in sorted((tool.config / MEMORY_DIRECTORY).glob("*.json")):
+        if path.name == APPLIED_FILE:
+            continue
+        remembered = Remembered.model_validate_json(path.read_bytes())
+        earlier = Remembered(
+            seen=b"\n" if remembered.seen is None else remembered.seen + b"\n",
+            good=None if remembered.good is None else remembered.good + b"\n",
+        )
+        path.write_bytes(earlier.model_dump_json(by_alias=True).encode("utf-8"))
+
+
+def _settings_world(tmp_path: Path, name: str) -> SettingsWorld:
+    """Świat próbek: Rejestr zleceń i folder okresów bez loginów z Listy Wykonawców (więc usunięcie Wykonawcy przechodzi
+    sprawdzenie okresów), pliki taty i Maksa (``_files_of_dad_and_maks``), wyjątek Kontroli ilości, plik przypomnień,
+    który tata właśnie poprawia (zła treść, a pamięć ma ostatnią dobrą, więc zapis odkłada złą do ``odrzucone``, a bez
+    pamięci zapisałby wartości domyślne), i zmiana każdego pliku poza Centrum (``_dad_changed_every_file_outside_centrum``).
+    Katalog narzędzia to ``tmp_path / name``, a Rejestr, plik taty, a nie Ustawień, leży poza nim, jeden dla wszystkich
+    światów testu. Wątki Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
+
+    register = tmp_path / "Rejestr" / REGISTER_NAME
+    if not register.exists():
+        register.parent.mkdir(parents=True)
+        write_orders(register, ["inny.login"])
+    app = centrum(tmp_path / name)
+    client = app.client
+    root = app.tool.root
+    (root / "Okresy").mkdir(parents=True)
+    app.tool.config.mkdir(exist_ok=True)
+    (app.tool.config / EXCEPTIONS_FILE).write_bytes(EXCEPTIONS.dump((EXCEPTION_OF_WORLD,)))
+    app.platform.chosen_files.append(register)
+    app.platform.chosen_folders.append(root / "Okresy")
+    client.post("/api/settings/register/choose")
+    client.post("/api/settings/periods-directory/choose")
+    _files_of_dad_and_maks(client, app.tool)
+    rule = client.post(QUANTITY_RULES_URL, json=EDITED["B"]).json()["quantity_rules"]["rules"][-1]["id"]
+    form: dict[str, object] = {"name": "ont y", "other_spellings": [], "group": None}
+    device = client.post(DEVICES_URL, json=form).json()["quantity_rules"]["devices"][-1]["id"]
+    client.post("/api/settings/workers", json={"logins": ["ewa.znika"], "name": "Ewa Znika", "addresses": []})
+    client.delete("/api/settings/workers/ewa.znika")
+    client.post("/api/settings/workers", json={"logins": ["jan.zostaje"], "name": "Jan Zostaje", "addresses": []})
+    client.put("/api/settings/theme", json={"theme": "light"})
+    undo = next(row["id"] for row in client.get("/api/settings/history").json()["rows"] if row["undoable"])
+    (root / "INEA").mkdir()
+    (root / "Rejestr.xlsx").write_bytes(b"")
+    app.platform.chosen_folders.append(root / "INEA")
+    app.platform.chosen_files.append(root / "Rejestr.xlsx")
+    client.stop()
+    reminders = app.tool.config / REMINDERS_FILE
+    reminders.write_bytes(reminders.read_bytes() + b"nieznany_klucz: 1\n")
+    _dad_changed_every_file_outside_centrum(app.tool)
+    return SettingsWorld(client, app.tool, rule, device, "jan.zostaje", undo)
+
+
+DIFFERENCE_ROWS: list[dict[str, CellValue]] = [
+    {"C": "pr", "D": "usterka", "G": datetime(2026, 9, 11, 16, 30), "V": 1, "AI": 1, "N": 45},
+    {"C": "pr", "D": "technicolor", "G": datetime(2026, 9, 9, 12), "V": 1, "O": 1, "Z": 1, "S": 1},
+]
+"""Dwa Wiersze danych, każdy z jedną różnicą Kontroli ilości: wpis taty inny niż wartość Reguł ilości."""
+
+
+def _differences_world(tmp_path: Path, name: str) -> SettingsWorld:
+    """Świat „To był wyjątek”: okres po Przebiegu rozliczeń z dwiema różnicami Kontroli ilości, z których tata jedną już
+    oznaczył (plik wyjątków jest przed próbką), pliki taty i Maksa (``_files_of_dad_and_maks``) i zmiana każdego pliku
+    poza Centrum (``_dad_changed_every_file_outside_centrum``)."""
+
+    settling = settling_centrum(tmp_path / name)
+    write_quantity_source(settling.collective_file, DIFFERENCE_ROWS)
+    run_to_end(settling, dry_run=False)
+    client = settling.client
+    _files_of_dad_and_maks(client, settling.tool)
+    first, second = client.get(f"{QUANTITY_RULES_URL}/differences").json()["differences"]
+    assert client.post(f"{QUANTITY_RULES_URL}/differences/{first['id']}/exception").status_code == 200
+    client.stop()
+    _dad_changed_every_file_outside_centrum(settling.tool)
+    return SettingsWorld(client, settling.tool, difference=second["id"])
+
+
+SettingsRequest = Callable[[SettingsWorld], tuple[str, str, object]]
+
+SETTINGS_WRITES: dict[str, SettingsRequest] = {
+    "changeAutostart": lambda w: ("PUT", "/api/settings/autostart", {"enabled": True}),
+    "addDevice": lambda w: ("POST", DEVICES_URL, {"name": "ont x", "other_spellings": [], "group": None}),
+    "changeDevice": lambda w: (
+        "PUT",
+        f"{DEVICES_URL}/{w.device}",
+        {"name": "ont y", "other_spellings": ["ont-y2"], "group": None},
+    ),
+    "removeDevice": lambda w: ("DELETE", f"{DEVICES_URL}/{w.device}", None),
+    "changeFolders": lambda w: (
+        "PUT",
+        "/api/settings/folders",
+        {"order_register": None, "periods_directory": str(w.tool.root / "INEA")},
+    ),
+    "undoSettingsChange": lambda w: ("POST", f"/api/settings/history/{w.undo}/undo", None),
+    "changeInboxPassword": lambda w: ("PUT", "/api/settings/inbox-password", {"password": "nowe haslo"}),
+    "choosePeriodsDirectory": lambda w: ("POST", "/api/settings/periods-directory/choose", None),
+    "addQuantityRule": lambda w: ("POST", QUANTITY_RULES_URL, EDITED["A"]),
+    "previewQuantityRules": lambda w: ("POST", f"{QUANTITY_RULES_URL}/preview", {"kind": "change", "rule_id": w.rule, "rule": EDITED["A"]}),
+    "changeQuantityRule": lambda w: ("PUT", f"{QUANTITY_RULES_URL}/{w.rule}", EDITED["A"]),
+    "removeQuantityRule": lambda w: ("DELETE", f"{QUANTITY_RULES_URL}/{w.rule}", None),
+    "chooseRegister": lambda w: ("POST", "/api/settings/register/choose", None),
+    "openRegister": lambda w: ("POST", "/api/settings/register/open", None),
+    "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),
+    "changeRemindersEnabled": lambda w: ("PUT", "/api/settings/reminders/enabled", {"enabled": True}),
+    "previewReminder": lambda w: ("POST", "/api/settings/reminders/preview", SIGNED_REMINDERS),
+    "changeTheme": lambda w: ("PUT", "/api/settings/theme", {"theme": "dark"}),
+    "addWorker": lambda w: ("POST", "/api/settings/workers", {"logins": ["ewa.znika"], "name": "Ewa", "addresses": []}),
+    "changeWorker": lambda w: (
+        "PUT",
+        f"/api/settings/workers/{w.worker}",
+        {"logins": [w.worker], "name": "Jan Inny", "addresses": [], "rename_confirmed": True},
+    ),
+    "removeWorker": lambda w: ("DELETE", f"/api/settings/workers/{w.worker}", None),
+    "assignWorkerAddress": lambda w: (
+        "POST",
+        f"/api/settings/workers/{w.worker}/addresses",
+        {"address": "jan@przyklad.invalid"},
+    ),
+    "switchWorker": lambda w: ("PUT", f"/api/settings/workers/{w.worker}/switches", {"active": False}),
+    "markQuantityException": lambda w: ("POST", f"{QUANTITY_RULES_URL}/differences/{w.difference}/exception", None),
+}
+"""Próbka każdej operacji Ustawień z kontraktu, która nie jest odczytem (GET): zapytanie w świecie próbki."""
+
+OWN_WORLDS: dict[str, Callable[[Path, str], SettingsWorld]] = {"markQuantityException": _differences_world}
+"""Świat próbki innej niż ``_settings_world``; Przebieg rozliczeń robi tylko świat, który go potrzebuje."""
+
+
+def test_kazda_operacja_zapisu_ustawien_z_kontraktu_ma_probke_pliku_bez_odczytu() -> None:
+    assert _settings_write_operations() <= set(SETTINGS_WRITES), (
+        "Każda operacja Ustawień z kontraktu ma próbkę w SETTINGS_WRITES, żeby test pliku bez odczytu ją obejmował."
+    )
+
+
+def _writes_change(operation: str) -> bool:
+    """Operacja, której odpowiedź z kontraktu ma pole ``change`` (wiersz Historii Ustawień): zapis, a nie podgląd."""
+
+    contract = _committed_contract()
+    for methods in contract["paths"].values():
+        for operation_ in methods.values():
+            if operation_.get("operationId") == operation:
+                schema = operation_["responses"]["200"]["content"]["application/json"]["schema"]
+                name = schema.get("$ref", "").rsplit("/", 1)[-1]
+                return "change" in contract["components"]["schemas"].get(name, {}).get("properties", {})
+    raise AssertionError(f"{operation} nie ma w kontrakcie")
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """Wynik zapytania: status, odpowiedź i skutek w katalogu narzędzia poza Logami po następnym odczycie przy czytelnych
+    plikach (ścieżka → treść po nim, ``None`` dla usuniętego pliku) bez różnic przebiegu (``_tool_files``), więc pliki
+    świata sprzed zapytania (np. z Przebiegu) go nie zmieniają."""
+
+    status: int
+    body: str
+    changed: dict[str, str | None]
+
+
+@dataclass(frozen=True)
+class Trial:
+    """Bieg zapytania: wynik i pliki katalogu narzędzia poza Logami, które zapytanie otwierało do odczytu (``read``), te z
+    nich, które czytało przed swoim ostatnim zapisem (``read_before_write``), i te, których przed nim nie było."""
+
+    outcome: Outcome
+    read: tuple[Path, ...]
+    read_before_write: tuple[Path, ...]
+    absent: tuple[Path, ...]
+
+
+def _changed(before: Mapping[str, str], after: Mapping[str, str]) -> dict[str, str | None]:
+    return {name: after.get(name) for name in {*before, *after} if before.get(name) != after.get(name)}
+
+
+def _trial(
+    tool: ToolDirectory,
+    ask: Callable[[], tuple[int, str]],
+    settle: Callable[[], None],
+    *,
+    denied: Path | None = None,
+    missing: Path | None = None,
+) -> Trial:
+    """Bieg zapytania ``ask`` (status, odpowiedź) w katalogu ``tool``, gdy system nie daje czytać pliku ``denied`` albo gdy
+    pliku ``missing`` nie ma, a po nim następny odczyt przy czytelnych plikach (``settle``). Plik ``missing``, którego
+    zapytanie nie zapisało, wraca przed ``settle``: nieczytelny plik wzięty za brak pliku zostaje na dysku."""
+
+    root = tool.root
+    before = _tool_files(tool)
+    kept = None if missing is None else (root / missing, (root / missing).read_bytes())
+    if kept is not None:
+        kept[0].unlink()
+    with reading(root, frozenset() if denied is None else frozenset({root / denied})) as reads:
+        status, body = ask()
+    if kept is not None and not kept[0].exists():
+        kept[0].write_bytes(kept[1])
+    settle()
+    logs = tool.log_path.parent
+
+    def own(paths: Iterable[Path]) -> tuple[Path, ...]:
+        return tuple(sorted(path.relative_to(root) for path in paths if not path.is_relative_to(logs)))
+
+    read = own(reads.seen)
+    outcome = Outcome(status, _without_run_differences(body, root), _changed(before, _tool_files(tool)))
+    absent = tuple(path for path in read if str(path) not in before)
+    return Trial(outcome, read, own(reads.before_last_write(outside=logs)), absent)
+
+
+def _next_reading(client: CentrumClient) -> None:
+    """Następny odczyt Ustawień przy czytelnych plikach: okno Historii Ustawień, które najpierw porównuje każdy plik
+    Ustawień z pamięcią (``CentrumSettings.history``), więc zapisuje wiersz zmiany spoza Centrum, który bieg przy pliku
+    bez odczytu odłożył."""
+
+    response = client.get("/api/settings/history")
+    assert response.status_code == 200, f"Historia Ustawień: {response.status_code} {response.text[:200]}"
+    client.stop()
+
+
+def _send(
+    world: SettingsWorld, request: SettingsRequest, *, denied: Path | None = None, missing: Path | None = None
+) -> Trial:
+    """Bieg zapytania ``request`` w świecie ``world`` (``_trial``) z następnym odczytem Ustawień (``_next_reading``)."""
+
+    def ask() -> tuple[int, str]:
+        method, url, body = request(world)
+        response = world.client.request(method, url, json=body)
+        world.client.stop()
+        return response.status_code, response.text
+
+    return _trial(world.tool, ask, lambda: _next_reading(world.client), denied=denied, missing=missing)
+
+
+def _untouched(world: SettingsWorld) -> dict[str, str | None]:
+    """Skutek samego następnego odczytu Ustawień w świecie ``world``, bez zapytania: skutek odmowy, która nic nie gubi."""
+
+    before = _tool_files(world.tool)
+    _next_reading(world.client)
+    return _changed(before, _tool_files(world.tool))
+
+
+def _meaningless(readable: Trial, without: Callable[[Path], Outcome]) -> list[Path]:
+    """Pliki, które zapytanie czyta przed swoim ostatnim zapisem, a bieg bez pliku (``without``) daje ten sam status i
+    skutek co czytelny bieg, poza samym plikiem: produkt, który nieczytelny plik bierze za brak pliku, daje wtedy wynik
+    jak przy czytelnym, więc odebrany odczyt takiego pliku niczego nie sprawdza. Odczyt po ostatnim zapisie (widok w
+    odpowiedzi) nie zmienia niczego, co zapytanie zapisało, więc warunek go nie obejmuje."""
+
+    def apart_from(changed: Mapping[str, str | None], path: Path) -> dict[str, str | None]:
+        return {name: text for name, text in changed.items() if name != str(path)}
+
+    found: list[Path] = []
+    for path in readable.read_before_write:
+        missing = without(path)
+        same = apart_from(missing.changed, path) == apart_from(readable.outcome.changed, path)
+        if missing.status == readable.outcome.status and same:
+            found.append(path)
+    return found
+
+
+def _kept_data(locked: Outcome, readable: Outcome, untouched: Mapping[str, str | None]) -> bool:
+    """Wynik przy pliku bez odczytu, który nie gubi danych taty (ADR 0032): odmowa ze zdaniem, po której skutek jest jak
+    bez zapytania, albo status i skutek jak przy czytelnym pliku. Skutek liczy się po następnym odczycie, bo produkt
+    odkłada wiersz zmiany spoza Centrum w pliku, którego teraz nie czyta, do odczytu, który go przeczyta."""
+
+    if locked.status >= 400:
+        return '"message"' in locked.body and locked.changed == untouched
+    return (locked.status, locked.changed) == (readable.status, readable.changed)
+
+
+_USED_KEYS_ONLY_FOR_NEW_ENTRY = (
+    "klucze z Historii dostaje tylko nowy wpis (``_with_used_keys`` czyta Historię dla każdej zmiany sekcji Urządzenia "
+    "i edytora reguł), a zmiana i usunięcie nowego wpisu nie tworzą, więc treść Historii nie zmienia ich zapisu w żadnym "
+    "świecie; odebrana Historia daje odmowę"
+)
+READ_WITHOUT_EFFECT: Final[dict[tuple[str, Path], str]] = {
+    (operation, Path("config") / HISTORY_FILE): _USED_KEYS_ONLY_FOR_NEW_ENTRY
+    for operation in ("changeDevice", "removeDevice", "changeQuantityRule", "removeQuantityRule")
+}
+"""Plik, który operacja czyta przed zapisem, ale którego treść nie zmienia jej zapisu w żadnym świecie, z powodem: warunek
+znaczenia (``_meaningless``) go nie zgłasza, a test pada, gdy plik zaczyna coś znaczyć."""
+
+
+@pytest.mark.parametrize("operation", sorted(set(SETTINGS_WRITES) & _settings_write_operations()))
+def test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_wynik_jak_przy_czytelnym(
+    tmp_path: Path, operation: str
+) -> None:
+    """Plik, którego system nie daje czytać, nie jest ani brakiem pliku, ani pustym plikiem: operacja taty odmawia ze
+    zdaniem i niczego nie zmienia albo zapisuje dokładnie to, co przy czytelnym pliku (widok w odpowiedzi może wtedy
+    pokazać sekcję tego pliku jako nieczytelną); skutek liczy się po następnym odczycie Ustawień (``_kept_data``).
+
+    Próbka sprawdza coś tylko wtedy, gdy przy czytelnych plikach operacja wchodzi, operacja zapisu (odpowiedź z polem
+    ``change`` w kontrakcie) zapisuje zmianę z wierszem Historii, każdy plik, który operacja czyta, jest w świecie przed
+    nią, a każdy, który czyta przed swoim zapisem, coś w świecie znaczy (``_meaningless``, poza ``READ_WITHOUT_EFFECT``).
+    Podgląd i otwarcie Rejestru niczego nie zapisują, więc test sprawdza u nich status i skutek po następnym odczycie.
+    Granicę pokazują próbki ``ZNANE_LUKI_ODCZYTU`` (odczyt spoza haka audytu) i ``ZNANE_LUKI_ZNACZENIA`` (warunek
+    znaczenia i porównanie wyniku).
+    """
+
+    request = SETTINGS_WRITES[operation]
+    world_of = OWN_WORLDS.get(operation, _settings_world)
+    worlds = (world_of(tmp_path, f"swiat-{index}") for index in itertools.count())
+    readable = _send(next(worlds), request)
+    untouched = _untouched(next(worlds))
+    shown = f"{readable.outcome.status} {readable.outcome.body[:300]}"
+    assert readable.outcome.status < 400, f"{operation} przy czytelnych plikach ma wejść: {shown}"
+    assert not readable.absent, f"{operation} czyta pliki, których świat próbki nie ma przed nią: {readable.absent}"
+    if _writes_change(operation):
+        assert json.loads(readable.outcome.body)["change"] is not None and readable.outcome.changed != untouched, (
+            f"{operation} przy czytelnych plikach ma zapisać zmianę z wierszem Historii: {shown}"
+        )
+    meaningless = set(_meaningless(readable, lambda path: _send(next(worlds), request, missing=path).outcome))
+    without_effect = {path for (name, path) in READ_WITHOUT_EFFECT if name == operation}
+    assert meaningless <= without_effect, "\n".join(
+        [
+            *(f"plik {path} nic nie znaczy w świecie próbki operacji {operation}" for path in sorted(meaningless - without_effect)),
+            "Bieg bez pliku daje ten sam wynik co przy czytelnym, więc odebrany odczyt niczego nie sprawdza: daj światowi "
+            "próbki stan, w którym treść pliku zmienia wynik operacji.",
+        ]
+    )
+    assert without_effect <= meaningless, (
+        f"Pliki {sorted(map(str, without_effect - meaningless))} coś znaczą w świecie operacji {operation} albo nie są "
+        "czytane przed zapisem: usuń je z READ_WITHOUT_EFFECT."
+    )
+    wrong: list[str] = []
+    for locked in readable.read:
+        outcome = _send(next(worlds), request, denied=locked).outcome
+        if not _kept_data(outcome, readable.outcome, untouched):
+            expected = untouched if outcome.status >= 400 else readable.outcome.changed
+            other = sorted(n for n in {*outcome.changed, *expected} if outcome.changed.get(n) != expected.get(n))
+            wrong.append(f"{locked}: {outcome.status}, inne pliki {other}: {outcome.body[:200]}")
+    assert not wrong, (
+        f"{operation} przy pliku bez odczytu ani nie odmówiła bez zmiany plików, ani nie dała wyniku jak przy czytelnym "
+        f"pliku ({shown[:200]}):\n" + "\n".join(wrong)
+    )
+
+
+ZNANE_LUKI_ODCZYTU: Final = {
+    "proces potomny: odczyt w innym procesie Pythona": (
+        "from pathlib import Path\n"
+        "import subprocess\n"
+        "import sys\n\n\n"
+        "def czytaj(sciezka: Path) -> bytes:\n"
+        "    kod = 'import sys; sys.stdout.buffer.write(open(sys.argv[1], \"rb\").read())'\n"
+        "    return subprocess.run([sys.executable, '-c', kod, str(sciezka)], capture_output=True, check=True).stdout\n"
+    ),
+    "kod w C bez zdarzenia audytu open: sqlite3 otwiera plik bazy sam": (
+        "from contextlib import closing\n"
+        "from pathlib import Path\n"
+        "import sqlite3\n\n\n"
+        "def czytaj(sciezka: Path) -> bytes:\n"
+        "    with closing(sqlite3.connect(sciezka)) as baza:\n"
+        "        return str(baza.execute('select wartosc from t').fetchone()[0]).encode()\n"
+    ),
+}
+"""Odczyt pliku, którego hak audytu z ``tests/fixtures/odczyt_bez_dostepu.py`` nie odbiera i nie widzi: każda próbka
+to moduł z ``czytaj(sciezka) -> bytes``."""
+
+
+def test_znane_luki_odczytu_bez_dostepu_przechodza_przez_hak_audytu(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    czytania = {opis: modul(plik).czytaj for opis, plik in zapisz(ZNANE_LUKI_ODCZYTU, probki).items()}
+    plik = tmp_path / "dane" / "plik.sqlite"
+    plik.parent.mkdir()
+    with closing(sqlite3.connect(plik)) as baza, baza:
+        baza.execute("create table t (wartosc text)")
+        baza.execute("insert into t values ('tata')")
+    zgloszenia: dict[str, list[str]] = {}
+    for opis, czytaj in czytania.items():
+        with reading(plik.parent, frozenset({plik})) as reads:
+            try:
+                czytaj(plik)
+            except PermissionError as odmowa:
+                zgloszenia[opis] = [f"hak odmawia: {odmowa}"]
+                continue
+        zgloszenia[opis] = [f"hak widzi odczyt {plik.name}"] if reads.seen else []
+
+    assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ODCZYTU)")
+
+
+ZNANE_LUKI_ZNACZENIA: Final = {
+    "warunek usuwa plik, a nie zmienia jego treści: plik, który znaczy samym istnieniem, przechodzi z treścią bez znaczenia": (
+        "from pathlib import Path\n\n\n"
+        "def swiat(katalog: Path) -> None:\n"
+        "    (katalog / 'ustawienie.txt').write_text('stopka taty', encoding='utf-8')\n\n\n"
+        "def zapytanie(katalog: Path) -> tuple[int, str]:\n"
+        "    plik = katalog / 'ustawienie.txt'\n"
+        "    if not plik.exists():\n"
+        "        return 404, ''\n"
+        "    try:\n"
+        "        stare = plik.read_text(encoding='utf-8')\n"
+        "    except PermissionError:\n"
+        "        stare = ''\n"
+        "    if 'zakaz' in stare:\n"
+        "        return 409, ''\n"
+        "    (katalog / 'zapis.txt').write_text('nowe', encoding='utf-8')\n"
+        "    return 200, ''\n"
+    ),
+    "odczyt po ostatnim zapisie: warunek go pomija, a porównanie wyniku nie czyta odpowiedzi": (
+        "from pathlib import Path\n\n\n"
+        "def swiat(katalog: Path) -> None:\n"
+        "    (katalog / 'ustawienie.txt').write_text('stopka taty', encoding='utf-8')\n\n\n"
+        "def zapytanie(katalog: Path) -> tuple[int, str]:\n"
+        "    (katalog / 'zapis.txt').write_text('nowe', encoding='utf-8')\n"
+        "    try:\n"
+        "        widok = (katalog / 'ustawienie.txt').read_text(encoding='utf-8')\n"
+        "    except PermissionError:\n"
+        "        widok = 'Pozdrawiam'\n"
+        "    return 200, widok\n"
+    ),
+}
+"""Plik bez odczytu, który zapytanie bierze za pusty albo domyślny, a ani warunek znaczenia (``_meaningless``), ani
+porównanie wyniku (``_kept_data``) tego nie zgłaszają: każda próbka to moduł ze ``swiat(katalog)`` i
+``zapytanie(katalog) -> (status, odpowiedź)`` na plikach w katalogu narzędzia."""
+
+
+def _sample_trial(root: Path, sample: ModuleType, **trial: Path) -> Trial:
+    """Bieg próbki ``sample`` w nowym katalogu narzędzia ``root`` (``_trial``), bez następnego odczytu."""
+
+    root.mkdir(parents=True)
+    sample.swiat(root)
+    return _trial(ToolDirectory(root), lambda: sample.zapytanie(root), lambda: None, **trial)
+
+
+def _sample_reports(root: Path, sample: ModuleType) -> list[str]:
+    """Zgłoszenia warunku znaczenia i porównania wyniku dla próbki ``sample`` w katalogach pod ``root``; bez zapytania
+    próbka niczego nie zmienia."""
+
+    roots = (root / str(index) for index in itertools.count())
+    readable = _sample_trial(next(roots), sample)
+    untouched: dict[str, str | None] = {}
+    reports = [
+        f"plik {path} nic nie znaczy"
+        for path in _meaningless(readable, lambda path: _sample_trial(next(roots), sample, missing=path).outcome)
+    ]
+    for locked in readable.read:
+        outcome = _sample_trial(next(roots), sample, denied=locked).outcome
+        if not _kept_data(outcome, readable.outcome, untouched):
+            reports.append(f"{locked} bez odczytu: {outcome.status}, inny wynik niż czytelny")
+    return reports
+
+
+def test_znane_luki_znaczenia_pliku_przechodza_przez_warunek_i_porownanie_wyniku(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    zgloszenia = {
+        opis: _sample_reports(tmp_path / f"probka-{numer}", modul(plik))
+        for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_ZNACZENIA, probki).items())
+    }
+
+    assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ZNACZENIA)")
+
+
+def _old_worker_files(tool: ToolDirectory) -> None:
+    (tool.config / OLD_MAPPING_FILE).write_text(
+        "schema_version: 1\nworkers:\n  jan.testowy: Jan Testowy\n  anna.przyklad: Anna Przykład\n", encoding="utf-8"
+    )
+    (tool.config / OLD_ADDRESSES_FILE).write_text(
+        "schema_version: 1\nwykonawcy:\n  jan.testowy: [jan@przyklad.invalid]\n  obcy.login: [obcy@przyklad.invalid]\n",
+        encoding="utf-8",
+    )
+
+
+def _periods_folder_in_week(tool: ToolDirectory) -> None:
+    root = tool.root / "Załączniki"
+    week = root / "Rozliczenia 2026" / "10_Październik_2026" / "INEA"
+    week.mkdir(parents=True)
+    (root / "Rozliczenia 2026" / "09_Wrzesień_2026" / "INEA").mkdir(parents=True)
+    tool.settings.write_text(
+        f"schema_version: 1\nrejestr_zlecen: null\nfolder_okresow: {json.dumps(str(week))}\nmotyw: dark\n",
+        encoding="utf-8",
+    )
+
+
+def _old_reminder_files(tool: ToolDirectory) -> None:
+    (tool.config / OLD_ROLLOUT_FILE).write_text("2026-10-01\n", encoding="utf-8")
+    (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
+
+
+RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
+    "2026-11-lista-wykonawcow": _old_worker_files,
+    "2026-11-folder-okresow-od-zalacznikow": _periods_folder_in_week,
+    "2026-11-przypomnienia": _old_reminder_files,
+}
+"""Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
+
+
+def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
+    assert {change.id for change in RELEASE_CHANGES} <= set(RELEASE_CHANGE_WORLDS), (
+        "Każda zmiana z RELEASE_CHANGES ma w RELEASE_CHANGE_WORLDS świat, w którym wchodzi, żeby test pliku bez odczytu "
+        "ją obejmował."
+    )
+
+
+@dataclass(frozen=True)
+class ReleaseEffect:
+    """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
+
+    rows: tuple[str, ...]
+    remembered: str | None
+    file: str | None
+
+
+def _release_effect(tool: ToolDirectory, change: ReleaseChange[Any]) -> ReleaseEffect:
+    history = tool.config / HISTORY_FILE
+    lines = history.read_text(encoding="utf-8").splitlines() if history.exists() else []
+    rows = tuple(
+        _without_run_differences(line, tool.root) for line in lines if json.loads(line)["zrodlo"].get("zmiana") == change.id
+    )
+    memory = tool.config / MEMORY_DIRECTORY / APPLIED_FILE
+    applied = json.loads(memory.read_text(encoding="utf-8"))["zmiany"] if memory.exists() else {}
+    own = tool.config / change.file.name
+    return ReleaseEffect(
+        rows,
+        applied[change.id]["wynik"] if change.id in applied else None,
+        _without_run_differences(own.read_text(encoding="utf-8"), tool.root) if own.exists() else None,
+    )
+
+
+def _release_world(tmp_path: Path, change: ReleaseChange[Any]) -> ToolDirectory:
+    return _in_world(tmp_path, RELEASE_CHANGE_WORLDS[change.id])
+
+
+def _in_world(root: Path, world: Callable[[ToolDirectory], None]) -> ToolDirectory:
+    tool = ToolDirectory(root)
+    tool.config.mkdir(parents=True)
+    world(tool)
+    return tool
+
+
+def _release_reports(
+    root: Path, change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
+) -> list[str]:
+    """Zgłoszenia próby pliku bez odczytu dla zmiany ``change`` z Wydania niosącego ``changes``, w katalogach pod
+    ``root`` ze światem ``world``: start na czytelnych plikach zapisuje, które pliki czyta, a potem jeden start na każdy
+    z nich bez odczytu i następny start z odczytem."""
+
+    readable_tool = _in_world(root / "czytelne", world)
+    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
+    with reading(readable_tool.root) as reads:
+        started(readable_tool, changes).stop()
+    readable = _release_effect(readable_tool, change)
+    if readable.remembered != "zastosowano":
+        return [f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"]
+    logs = readable_tool.log_path.parent
+    read = sorted(path.relative_to(readable_tool.root) for path in reads.seen if not path.is_relative_to(logs))
+
+    wrong: list[str] = []
+    for index, locked in enumerate(read):
+        tool = _in_world(root / f"bez-odczytu-{index}", world)
+        with reading(tool.root, frozenset({tool.root / locked})):
+            started(tool, changes).stop()
+        held = _release_effect(tool, change)
+        started(tool, changes).stop()
+        again = _release_effect(tool, change)
+        if held not in (readable, untouched) or again != readable:
+            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
+    return [f"przy czytelnych plikach {readable}", *wrong] if wrong else []
+
+
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czytelnym(
+    tmp_path: Path, change: ReleaseChange[Any]
+) -> None:
+    """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
+    ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
+    i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
+    Granicę pokazują próbki ``ZNANE_LUKI_ZMIAN_Z_WYDANIA``."""
+
+    reports = _release_reports(tmp_path, change, RELEASE_CHANGE_WORLDS[change.id], RELEASE_CHANGES)
+
+    assert not reports, f"{change.id}:\n" + "\n".join(reports)
+
+
+ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
+    "świat zmiany nie ma pliku, który zmiana czyta (brak asercji absent): nieczytelny plik jak brak pliku (forma C2 r3)": (
+        "from dataclasses import replace\n"
+        "from typing import Any\n\n"
+        "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
+        "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
+        "def swiat(tool: Any) -> None:\n"
+        "    pass\n\n\n"
+        "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    try:\n"
+        "        stopka: str | None = (inputs.config / 'stopka.txt').read_text(encoding='utf-8')\n"
+        "    except OSError:\n"
+        "        stopka = None\n"
+        "    if stopka is not None and 'ciemny' in stopka:\n"
+        "        return Nothing()\n"
+        "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-stopka', FOLDERS, propose)\n"
+    ),
+    "plik czytany przy starcie bez warunku znaczenia: nieczytelny plik, którego treść w świecie nie zmienia zmiany, jak "
+    "pusty (forma B1 r3, Historia przy starcie jak pusta)": (
+        "from dataclasses import replace\n"
+        "from typing import Any\n\n"
+        "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
+        "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
+        "def swiat(tool: Any) -> None:\n"
+        "    (tool.config / 'wiersze.txt').write_text('inna zmiana\\n', encoding='utf-8')\n\n\n"
+        "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    try:\n"
+        "        wiersze = (inputs.config / 'wiersze.txt').read_text(encoding='utf-8')\n"
+        "    except OSError:\n"
+        "        wiersze = ''\n"
+        "    if '2026-11-znana-luka-wiersze' in wiersze:\n"
+        "        return Nothing()\n"
+        "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-wiersze', FOLDERS, propose)\n"
+    ),
+}
+"""Zmiana z Wydania, która bierze plik bez odczytu za brak pliku albo pusty, a próba pliku bez odczytu
+(``_release_reports``) tego nie zgłasza: każda próbka to moduł ze ``swiat(katalog_narzedzia)`` i zmianą ``zmiana``."""
+
+
+def test_znane_luki_zmian_z_wydania_przechodza_przez_probe_pliku_bez_odczytu(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_ZMIAN_Z_WYDANIA, probki).items()):
+        probka = modul(plik)
+        zgloszenia[opis] = _release_reports(tmp_path / f"probka-{numer}", probka.zmiana, probka.swiat, (probka.zmiana,))
+
+    assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ZMIAN_Z_WYDANIA)")
+
+
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change: ReleaseChange[Any]) -> None:
+    """Zły plik zmiany z Wydania zostaje bajt w bajt i bez wiersza ``zapisano``: zmiana nie pisze ostatniej dobrej
+    wartości na plik, który tata albo Maks właśnie poprawia (ADR 0032). Start bez zmian z Wydania najpierw zapamiętuje
+    dobry plik, więc właściciel ma ostatnią dobrą wartość, którą zmiana mogłaby nadpisać zły plik.
+
+    Granica: zła treść dotyczy tylko pliku samej zmiany z Wydania, nie plików czytanych przez operację taty."""
+
+    tool = _release_world(tmp_path, change)
+    remembering = started(tool, ())
+    assert remembering.get("/api/settings").status_code == 200
+    remembering.stop()
+    own = tool.config / change.file.name
+    bad = (own.read_bytes() if own.exists() else b"schema_version: 1\n") + b"nieznany_klucz: 1\n"
+    own.write_bytes(bad)
+
+    started(tool, RELEASE_CHANGES).stop()
+
+    assert own.read_bytes() == bad
+    assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
 
 
 # --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
