@@ -376,14 +376,12 @@ class CentrumSettings:
 
     def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem:
         """Reguły ilości z Listą Urządzeń, które da zapis taty polecenia ``edit`` (``change_rules``), albo jego odmowa,
-        bez zapisu: podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``). Historia, której nie
-        da się przeczytać, nie daje id do pominięcia: id nowej reguły w podglądzie może wtedy być inne niż przy zapisie,
-        ale zapis i tak się wtedy nie uda."""
+        bez zapisu: podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``). Id nowej reguły spoza
+        kluczy Historii nadaje dopiero zapis; podgląd go nie pokazuje, a żadna odmowa reguł nie zależy od niego, więc
+        Historii nie czyta."""
 
         with self._lock:
-            used = self._used_keys(RULES)
-            keys = frozenset() if isinstance(used, Unreadable) else rule_ids(used)
-            paired = self._rules_after(lambda current: rule_forms.dad_rules(current, edit, keys))
+            paired = self._rules_after(lambda current: rule_forms.dad_rules(current, edit, frozenset()))
             return paired if isinstance(paired, FieldProblem) else QuantityRules(paired[0], DeviceList(paired[1]))
 
     def _release(self) -> bool:
