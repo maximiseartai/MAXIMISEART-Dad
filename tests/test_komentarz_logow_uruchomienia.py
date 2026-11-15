@@ -27,6 +27,8 @@ import gzip
 import json
 from pathlib import Path
 import pickle
+import re
+import string
 import threading
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, Final, Literal, Union, get_args, get_origin, get_type_hints
@@ -36,6 +38,7 @@ import pytest
 
 from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.domain import RunMode
+from rozliczenia.settlement_period import UNKNOWN_PERIOD
 from rozliczenia.centrum.report_box import COMMENT_LIMIT, REPOSITORY
 from rozliczenia.centrum.comment_versions import (
     LABEL,
@@ -2788,3 +2791,206 @@ def test_kazde_pole_gramatyki_ma_tekst_w_pelnych_logach() -> None:
     """Przypadki pól narzędzia biorą teksty z pełnych Logów, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam tekst."""
 
     assert sorted(set(TOOL_TEXT_GRAMMAR) - {pole for pole, _ in _TEKSTY_POL_NARZEDZIA}) == []
+
+
+def _z_tekstem(sciezka: _Sciezka, tekst: Callable[[str], str]) -> tuple[str, dict[str, Any]]:
+    """Tekst narzędzia pełnych Logów pod ``sciezka`` i JSON pełnych Logów, w którym ten tekst zamienia ``tekst``."""
+
+    dump = full_logs().model_dump(mode="json")
+    *droga, ostatni = sciezka
+    miejsce: Any = dump
+    for krok in droga:
+        miejsce = miejsce[krok]
+    narzedzia = miejsce[ostatni]
+    miejsce[ostatni] = tekst(narzedzia)
+    return narzedzia, dump
+
+
+_ZNAKI_IDENTYFIKATORA: Final = string.ascii_letters + string.digits + "_"
+_HEX: Final = string.digits + "abcdef"
+
+ALFABETY: Final = {
+    "RunLog.run_id": _HEX,
+    "RunLog.period": string.digits + "_" + UNKNOWN_PERIOD,
+    "Tool.wydanie": string.digits + ".",
+    "Tool.commit": _HEX,
+    "CallTrace.exception_type": _ZNAKI_IDENTYFIKATORA + ".",
+    "CallCause.exception_type": _ZNAKI_IDENTYFIKATORA + ".",
+    "CallFrame.file": _ZNAKI_IDENTYFIKATORA + ".-/",
+    "CallFrame.function": _ZNAKI_IDENTYFIKATORA + "<>",
+    "Environment.system": _ZNAKI_IDENTYFIKATORA + ".-",
+    "Environment.python": _ZNAKI_IDENTYFIKATORA + ".",
+}
+"""Alfabet każdego pola z gramatyką (``TOOL_TEXT_GRAMMAR``): znaki, które gramatyka pola może przyjąć. Gramatyka, która
+przyjmuje znak spoza alfabetu swojego pola, czerwieni test alfabetu."""
+
+_PROBY: Final = "".join(map(chr, range(128))) + "ąŻéß" + "٣１" + "\u00a0\u2028" + "€"
+"""Znaki próby: każdy znak ASCII (także sterujący) i znaki spoza ASCII, które przyjmują ``\\w``, ``\\d`` albo ``\\s``
+Pythona bez ``re.ASCII`` albo klasa zaprzeczona: litery (ą, Ż, é, ß), cyfry (arabska ٣, pełnej szerokości １), odstępy
+(twarda spacja, separator wiersza), symbol €."""
+
+DRUGIE_GALEZIE: Final = {"RunLog.period": (UNKNOWN_PERIOD,), "CallFrame.function": ("<module>",)}
+"""Tekst narzędzia gałęzi gramatyki, której nie ma w pełnych Logach: okres ``nieznany`` i ramka kodu modułu."""
+
+
+def _galezie(wzor: str) -> list[str]:
+    """Gałęzie najwyższego poziomu wzoru: części między ``|`` poza nawiasami i klasą znaków."""
+
+    galezie: list[str] = []
+    poczatek = glebokosc = 0
+    klasa = ucieczka = False
+    for numer, znak in enumerate(wzor):
+        if ucieczka:
+            ucieczka = False
+        elif znak == "\\":
+            ucieczka = True
+        elif klasa:
+            klasa = znak != "]"
+        elif znak in "()":
+            glebokosc += 1 if znak == "(" else -1
+        elif znak == "[":
+            klasa = True
+        elif znak == "|" and glebokosc == 0:
+            galezie.append(wzor[poczatek:numer])
+            poczatek = numer + 1
+    return [*galezie, wzor[poczatek:]]
+
+
+_PODSTAWY: Final = [
+    *((pole, sciezka, _z_tekstem(sciezka, str)[0]) for pole, sciezka in _TEKSTY_POL_NARZEDZIA if pole in TOOL_TEXT_GRAMMAR),
+    *((pole, sciezka, tekst) for pole, sciezka in _TEKSTY_POL_NARZEDZIA for tekst in DRUGIE_GALEZIE.get(pole, ())),
+]
+"""Pole, ścieżka w JSON-ie pełnych Logów i poprawny tekst narzędzia: tekst pełnych Logów i tekst drugiej gałęzi."""
+
+
+def _id(wartosc: object) -> str:
+    """Nazwa przypadku: pole, ścieżka tekstu w JSON-ie Logów albo tekst narzędzia."""
+
+    return ".".join(map(str, wartosc)) if isinstance(wartosc, tuple) else str(wartosc)
+
+
+@pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
+def test_gramatyka_pola_narzedzia_nie_przyjmuje_znaku_spoza_alfabetu_pola_wstawionego_ani_zamienionego_w_zadnym_miejscu(
+    pole: str, sciezka: _Sciezka, narzedzia: str
+) -> None:
+    """Każdy poprawny tekst narzędzia pola z gramatyką (``_PODSTAWY``: tekst pełnych Logów i tekst drugiej gałęzi z
+    ``DRUGIE_GALEZIE``) pasuje do gramatyki, a z jednym znakiem próby (``_PROBY``) spoza alfabetu pola (``ALFABETY``),
+    wstawionym przed którymkolwiek znakiem albo za ostatnim albo w miejsce któregokolwiek znaku, nie pasuje w całości.
+    Pada więc gramatyka, która przyjmuje taki znak w którejkolwiek gałęzi, także przez ``\\w`` albo ``\\d`` bez
+    ``re.ASCII`` i w klasie o stałej albo najdłuższej długości. Nie pada gramatyka, która przyjmuje znak spoza próby, ani
+    taka, która przyjmuje znak spoza alfabetu tylko w ciągu dłuższym niż jedna taka zmiana tekstu (np.
+    ``(?:\\+local)?``)."""
+
+    gramatyka = TOOL_TEXT_GRAMMAR[pole]
+    zmienione = [
+        f"{narzedzia[:miejsce]}{znak}{narzedzia[miejsce + zamiana:]}"
+        for znak in _PROBY
+        if znak not in ALFABETY[pole]
+        for zamiana in (0, 1)
+        for miejsce in range(len(narzedzia) + 1 - zamiana)
+    ]
+    przyjete = [tekst for tekst in zmienione if gramatyka.fullmatch(tekst)]
+
+    assert gramatyka.fullmatch(narzedzia), narzedzia
+    assert przyjete == []
+
+
+def _separatory_straznika() -> list[str]:
+    """Znaki próby, którymi strażnik rozdziela słowa wartości (ADR 0025): ``guarded`` maskuje komórkę, której słowa
+    rozdziela ten znak. Źródłem jest sam strażnik, nie lista."""
+
+    pamiec = empty_memory()
+    pamiec.remember_value(ForbiddenColumn.ADDRESS, _KOMORKA)
+    return [znak for znak in _PROBY if znak.join(_KOMORKA.split()) not in guarded(pamiec, znak.join(_KOMORKA.split()), "").text]
+
+
+_KOMORKI: Final = (_KOMORKA, "7 Lipowa Syntetyczna")
+"""Komórki testów komórki w polu narzędzia: pierwsza zaczyna się literą i kończy cyfrą, druga zaczyna się cyfrą i
+kończy literą, więc dopisek gramatyki z każdą z tych klas na krańcu komórki ma próbkę."""
+
+
+def _pamiec_komorek() -> ForbiddenValues:
+    """Pamięć strażnika, która zna każdą komórkę ``_KOMORKI`` jako ADRES."""
+
+    pamiec = empty_memory()
+    for komorka in _KOMORKI:
+        pamiec.remember_value(ForbiddenColumn.ADDRESS, komorka)
+    return pamiec
+
+
+def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
+    """Tekst narzędzia z zapamiętaną komórką i zapis komórki w nim: pierwsza komórka ``_KOMORKI`` zapisana każdym
+    separatorem strażnika spoza alfabetu pola, druga spacją; komórka otoczona separatorem z przodu, w środku i z tyłu
+    tekstu oraz komórka na samym początku albo na samym końcu tekstu z separatorem tylko od strony tekstu."""
+
+    separatory = [znak for znak in _separatory_straznika() if znak not in ALFABETY[pole]]
+    assert " " in separatory
+    for komorka, znaki in ((_KOMORKI[0], separatory), (_KOMORKI[1], [" "])):
+        for znak in znaki:
+            zapis = znak.join(komorka.split())
+            for miejsce in (0, len(narzedzia) // 2, len(narzedzia)):
+                yield f"{narzedzia[:miejsce]}{znak}{zapis}{znak}{narzedzia[miejsce:]}", zapis
+            yield f"{zapis}{znak}{narzedzia}", zapis
+            yield f"{narzedzia}{znak}{zapis}", zapis
+
+
+def _napisy(wartosc: object) -> Iterator[str]:
+    """Każdy napis i klucz zdekodowanego JSON-a."""
+
+    if isinstance(wartosc, str):
+        yield wartosc
+    elif isinstance(wartosc, list):
+        for element in wartosc:
+            yield from _napisy(element)
+    elif isinstance(wartosc, dict):
+        for klucz, element in wartosc.items():
+            yield klucz
+            yield from _napisy(element)
+
+
+@pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
+def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
+    """Zapamiętana komórka z ``_komorki_w_tekscie`` (pierwsza zapisana każdym separatorem strażnika spoza alfabetu
+    pola: znakiem zwykłym, sterującym, cudzysłowem, ukośnikiem i pozostałymi; druga spacją), otoczona separatorem z
+    przodu, w środku i z tyłu poprawnego tekstu narzędzia albo stojąca na samym początku lub końcu tekstu z separatorem
+    od strony tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``. Pada więc ``_kept``,
+    który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek (``match``), właściciel pola
+    w poddrzewie bez klasy i lista w poddrzewie bez gramatyki. Komórki sklejonej z tekstem narzędzia bez separatora test
+    nie wstawia; przy znaku słowa strażnik nie rozpoznaje sklejonego słowa komórki (ADR 0025)."""
+
+    pamiec = _pamiec_komorek()
+
+    for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
+        logi = json.loads(guard_logs(RunLog.model_validate(_z_tekstem(sciezka, lambda _: tekst)[1]), pamiec).text)
+        assert not any(zapis in napis for napis in _napisy(logi)), repr(tekst)
+
+
+@pytest.mark.parametrize("pole, sciezka, narzedzia", _PODSTAWY, ids=_id)
+def test_komorka_w_tekscie_narzedzia_nie_wychodzi_bez_maski_z_tool_text(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
+    """Te same teksty z komórką (``_komorki_w_tekscie``) nie dają zapisu komórki w wyniku ``tool_text``. Pada więc
+    ``tool_text``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
+    (``match``)."""
+
+    for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
+        assert zapis not in tool_text(pole, tekst), repr(tekst)
+
+
+def test_kazda_galaz_gramatyki_pola_narzedzia_ma_poprawny_tekst_narzedzia() -> None:
+    """Każda gałąź najwyższego poziomu każdej gramatyki (``_galezie``) ma w ``_PODSTAWY`` tekst, który do niej pasuje,
+    więc test alfabetu i testy komórki sprawdzają każdą gałąź; nowa gałąź bez tekstu czerwieni ten test."""
+
+    brak = [
+        (pole, galaz)
+        for pole, gramatyka in TOOL_TEXT_GRAMMAR.items()
+        for galaz in _galezie(gramatyka.pattern)
+        if not any(re.fullmatch(galaz, tekst, re.ASCII) for inne, _, tekst in _PODSTAWY if inne == pole)
+    ]
+
+    assert sorted(set(DRUGIE_GALEZIE) - set(TOOL_TEXT_GRAMMAR)) == []
+    assert brak == []
+
+
+def test_kazde_pole_gramatyki_ma_alfabet() -> None:
+    """Test alfabetu bierze alfabet pola z ``ALFABETY``, więc każde pole ``TOOL_TEXT_GRAMMAR`` ma tam alfabet."""
+
+    assert sorted(set(TOOL_TEXT_GRAMMAR) ^ set(ALFABETY)) == []
