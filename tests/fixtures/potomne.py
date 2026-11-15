@@ -4,7 +4,8 @@ Na Windows ``os.kill(pid, 0)`` nie sprawdza procesu, tylko wysyła mu Ctrl+C (``
 
 Żywy proces bez okna czasu: ``hold_lock`` trzyma blokadę pliku do końca życia procesu, a ``held`` pyta, czy ktoś ją
 trzyma. Blokadę zwalnia system, gdy proces ginie, także zabity, więc odpowiedź nie zależy od tego, czy proces dostał
-ostatnio procesor (bicie z ``beating`` zależy).
+ostatnio procesor (bicie z ``beating`` zależy). ``alive_code`` to kod procesu, który tak trzyma blokadę pliku obok
+``path`` i potem tworzy ``path``, a ``alive(path)`` pyta o tę blokadę.
 """
 
 from __future__ import annotations
@@ -19,9 +20,12 @@ from typing import IO, TypeVar
 from tests.fixtures.git_repo import git
 import potomne
 
-__all__ = ["beating", "ctrl_c_reaches_children", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["alive", "alive_code", "beating", "ctrl_c_reaches_children", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
+
+# Korzeń repozytorium i biblioteki narzędzi: proces z ``alive_code`` importuje stąd ``hold_lock``.
+_PATHS = (str(Path(__file__).resolve().parents[2]), str(Path(potomne.__file__).resolve().parent))
 
 GRANDCHILD = "import sys, time\nwhile True:\n    open(sys.argv[1], 'a').write('.')\n    time.sleep(0.1)\n"
 
@@ -37,6 +41,32 @@ def with_grandchild(beats: Path, then: str) -> list[str]:
         f"{then}\n"
     )
     return [sys.executable, "-c", code]
+
+
+def _lock_of(path: Path) -> Path:
+    return path.with_name(path.name + ".blokada")
+
+
+def alive_code(path: Path, seconds: float = 600) -> str:
+    """Kod Pythona procesu, który bierze blokadę pliku obok ``path`` (``hold_lock``), potem tworzy ``path`` i żyje
+    ``seconds`` s: ``path`` istnieje więc dopiero wtedy, gdy blokada jest wzięta, a ``alive(path)`` mówi, czy proces
+    jeszcze żyje."""
+
+    return (
+        "import pathlib, sys, time\n"
+        f"sys.path[:0] = {list(_PATHS)!r}\n"
+        "from tests.fixtures.potomne import hold_lock\n"
+        f"lock = hold_lock(pathlib.Path({str(_lock_of(path))!r}))\n"
+        f"pathlib.Path({str(path)!r}).touch()\n"
+        f"time.sleep({seconds!r})\n"
+    )
+
+
+def alive(path: Path) -> bool:
+    """Czy proces z ``alive_code(path)`` jeszcze żyje (trzyma blokadę). Na POSIX po powrocie ``potomne.run`` drzewo już
+    nie żyje, więc pytaj od razu."""
+
+    return held(_lock_of(path))
 
 
 def beating(beats: Path) -> bool:

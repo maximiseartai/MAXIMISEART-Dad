@@ -28,7 +28,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import alive, alive_code, beating, wait_for, with_grandchild, worktrees
 import potomne
 import repo
 from tests.fixtures.skladnia import dotted, imports
@@ -60,6 +60,27 @@ def test_potomek_trzymajacy_wyjscie_ginie_z_koncem_polecenia_a_wynik_jest_pelny(
     assert (done.returncode, done.stdout, done.stderr) == (3, "gotowe\n", "uwaga\n")
     assert not beating(beats)
 
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("then", ["pass", "time.sleep(60)"], ids=["koniec polecenia", "limit czasu"])
+def test_run_wraca_dopiero_gdy_drzewo_nie_zyje_takze_wnuk_bez_wspolnego_wyjscia(tmp_path: Path, then: str) -> None:
+    """Wnuk nie dziedziczy wyjścia polecenia, więc ``run`` nie czeka na jego EOF: blokadę wnuka zwalnia tylko jego
+    koniec, a ``run`` ma wrócić dopiero po nim."""
+
+    beats = tmp_path / "wnuk-zyje"
+    code = (
+        "import pathlib, subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, '-c', {alive_code(beats)!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        f"while not pathlib.Path({str(beats)!r}).exists():\n"
+        "    time.sleep(0.01)\n"
+        f"{then}\n"
+    )
+
+    with contextlib.suppress(potomne.TimeoutExpired):
+        potomne.run([sys.executable, "-c", code], cwd=tmp_path, timeout=5)
+
+    assert (beats.exists(), alive(beats)) == (True, False)
 
 def test_echo_drukuje_wyjscie_razem_z_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     code = "import sys; print('a', flush=True); print('b', file=sys.stderr, flush=True)"

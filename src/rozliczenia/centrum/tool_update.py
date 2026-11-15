@@ -950,7 +950,9 @@ else:
         """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to sesja Gita.
 
         Po ``timeout_s`` zabija całą sesję i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jej
-        procesów już nie żyje; sesji, której nie ma, bo Git i jego pomocnicy już się zakończyli, nie zabija.
+        procesów już nie żyje; ``OSError``, gdy sesja przeżyje ``_KILL_TIMEOUT_S``. Sesji, której nie ma, bo Git i
+        jego pomocnicy już się zakończyli, nie zabija. SIGKILL dochodzi do procesów sesji, gdy ``killpg`` już wrócił,
+        więc po końcu Gita czeka, aż sesja zniknie (``_session_ended``).
         """
 
         process = subprocess.Popen(
@@ -959,11 +961,30 @@ else:
         try:
             return process.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
+            deadline = time.monotonic() + _KILL_TIMEOUT_S
             with suppress(OSError):
                 os.killpg(process.pid, signal.SIGKILL)
             process.kill()
             process.wait()
+            if not _session_ended(process.pid, deadline):
+                raise OSError("drzewo procesów Gita przeżyło zabicie") from None
             raise
+
+    def _session_ended(session: int, deadline: float) -> bool:
+        """Czy grupa procesów sesji ``session`` zniknęła przed ``deadline`` (``time.monotonic``). Grupa znika, gdy rodzic
+        albo init pogrzebie jej ostatni proces (ESRCH); macOS odpowiada EPERM, gdy zostały same zombie, a te pliki już
+        zamknęły. Pyta coraz rzadziej: zabity proces kończy się zwykle w milisekundy."""
+
+        pause = 0.001
+        while True:
+            try:
+                os.killpg(session, 0)
+            except (ProcessLookupError, PermissionError):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(pause)
+            pause = min(2 * pause, 0.1)
 
 
 def _quiet_environment() -> dict[str, str]:

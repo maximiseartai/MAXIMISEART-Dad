@@ -31,7 +31,7 @@ from rozliczenia.centrum.tool_update import (
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
-from tests.fixtures.potomne import beating
+from tests.fixtures.potomne import alive, alive_code, beating
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
     git_failing_on,
@@ -1024,14 +1024,16 @@ def test_gdy_git_nie_porowna_wymagan_klon_wraca_sprzed_klikniecia_bez_instalacji
     assert clone.interrupted_update() is None
 
 
-def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path:
-    """Git, którego pobranie stoi, a jego pomocnik dopisuje do ``heartbeat``, dopóki żyje (najwyżej pół minuty).
+def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path, *, helper: str | None = None) -> Path:
+    """Git, którego pobranie stoi, a jego pomocnik dopisuje do ``heartbeat``, dopóki żyje (najwyżej pół minuty), albo
+    biegnie jako kod ``helper``.
 
     Pomocnika uruchamia proces, który zaraz się kończy, więc pomocnik nie ma żywego rodzica.
     Poza pobraniem odpowiada jak klon na `main` na commicie ``commit``.
     """
 
-    helper = f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
+    if helper is None:
+        helper = f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
     middle = f"import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', {helper!r}])\n"
     return fake_cli(
         tmp_path,
@@ -1060,6 +1062,20 @@ def test_pobranie_ktore_stoi_po_limicie_czasu_konczy_sie_brakiem_polaczenia_bez_
     assert result == UpdateResult("BRAK_POLACZENIA", before=commit, after=None)
     assert heartbeat.read_text(encoding="utf-8")
     assert not beating(heartbeat)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="sesja Gita i grupa procesów są tylko na POSIX")
+def test_pobranie_po_limicie_czasu_wraca_dopiero_gdy_pomocnik_gita_nie_zyje(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tool_update, "_FETCH_TIMEOUT_S", 2.0)
+    commit = "1" * 40
+    helper = tmp_path / "pomocnik-zyje"
+    git = git_whose_fetch_stalls(tmp_path, commit, helper, helper=alive_code(helper, 30))
+
+    result = ToolClone(tmp_path, origin="https://example.invalid/narzedzie.git", find_git=lambda: git).update()
+
+    assert (result.code, helper.exists(), alive(helper)) == ("BRAK_POLACZENIA", True, False)
 
 
 def test_klikniecie_w_trakcie_ponownego_startu_nie_zastepuje_dziennika_aktualizacji_nowsza_wersja(

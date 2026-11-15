@@ -15,8 +15,9 @@ potomków (POSIX: własna sesja, Windows: Job Object). Drzewo nie przeżywa:
 Strażnik to ten plik uruchomiony ``python -I`` we własnej sesji. Po EOF na stdin, czyli po końcu
 narzędzia, zabija zgłoszone drzewa i usuwa zgłoszone kopie. Narzędzie uruchomione przez inne narzędzie
 ma własnego strażnika, więc śmierć zewnętrznego kończy kolejne poziomy po kolei. Gdy strażnik nie żyje,
-``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji. Na Windows
-zabite drzewo, które żyje jeszcze ``_KILL_S`` po zabiciu, ``run`` nazywa na stderr i wraca jak zwykle.
+``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji. ``run`` wraca
+dopiero, gdy zabite drzewo już nie żyje; drzewo, które żyje jeszcze ``_KILL_S`` po zabiciu, nazywa na stderr i wraca
+jak zwykle.
 
 Granice: na POSIX potomek, który sam założył sesję albo grupę procesów (``setsid``, ``setpgid``), jest poza
 drzewem i przeżywa; ``run`` czeka na resztę wyjścia najwyżej ``_DRAIN_S``. Na Windows narzędzie zabite razem z cudzym Job Object
@@ -383,8 +384,16 @@ else:
                 raise
 
         def kill(self) -> None:
+            """SIGKILL dochodzi do procesów grupy, gdy ``killpg`` już wrócił, a każdy kończy się dopiero, gdy dostanie
+            procesor, więc czeka na lidera i potem na koniec grupy, najwyżej ``_KILL_S``. Po tym terminie nie wywraca
+            wołającego, tylko nazywa grupę na stderr."""
+
+            started = time.monotonic()
             _kill_group(self.process.pid)
             self.process.wait()
+            if not _group_ended(self.process.pid, started + _KILL_S):
+                took = time.monotonic() - started
+                print(f"potomne: po zabiciu po {took:.1f} s żyje grupa procesów {self.process.pid}", file=sys.stderr, flush=True)
             with suppress(OSError):
                 self._guard.report("-", "drzewo", str(self.process.pid))
 
@@ -393,6 +402,22 @@ else:
 
         with suppress(ProcessLookupError, PermissionError):
             os.killpg(group, signal.SIGKILL)
+
+    def _group_ended(group: int, deadline: float) -> bool:
+        """Czy grupa procesów ``group`` zniknęła przed ``deadline`` (``time.monotonic``). Grupa znika, gdy rodzic albo
+        init pogrzebie jej ostatni proces (ESRCH); macOS odpowiada EPERM, gdy zostały same zombie, a te pliki już
+        zamknęły. Pyta coraz rzadziej: zabity proces kończy się zwykle w milisekundy."""
+
+        pause = 0.001
+        while True:
+            try:
+                os.killpg(group, 0)
+            except (ProcessLookupError, PermissionError):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(pause)
+            pause = min(2 * pause, _POLL_S)
 
 
 class _Guard:
