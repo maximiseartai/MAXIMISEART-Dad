@@ -201,6 +201,8 @@ def choice(settings: CentrumSettings, result: Saved | Refused | NotSaved | KeptI
             return settings_contract.Choice(settings=describe(settings.view()), change=change)
         case Refused(problem=problem):
             raise refusal.setting_refused(problem)
+        case NotSaved(unreadable=str(file)):
+            raise refusal.settings_file_unreadable(file)
         case NotSaved():
             raise refusal.settings_not_saved()
         case KeptInPeriods(presence=presence, what=what):
