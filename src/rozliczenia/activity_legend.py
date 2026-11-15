@@ -9,7 +9,7 @@ Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co
 ``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Rachunek tekstu:
 
 1. Tekst czyta się małymi literami (``casefold``). Zapis pasuje także ze spacjami między znakami (``inst utp17m``,
-   ``dzielnik 1 /2``), a ``{n}`` to ciąg cyfr. Zapis nie zaczyna się po literze ani cyfrze (``xinst20m`` to nie kod),
+   ``dzielnik 1 /2``), a ``{n}`` to ciąg cyfr bez spacji. Zapis nie zaczyna się po literze ani cyfrze (``xinst20m`` to nie kod),
    a zapis kończący się cyfrą nie ma po niej cyfry (``rt25`` to nie ``rt2``).
 2. Zapisy pasują od najdłuższego (najwięcej znaków poza ``{n}``), przy równej długości w kolejności legendy; tekst
    dopasowany raz nie pasuje drugi raz, więc ``instwewrg610m`` jest tylko ``instwewrg6``, a nie także ``instwew``.

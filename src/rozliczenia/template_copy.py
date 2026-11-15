@@ -258,6 +258,9 @@ class SheetLayout:
     """Flagi przeliczania w ``calcPr`` skoroszytu; pozostałe atrybuty ``calcPr`` zostają z Wzorca."""
     quantity_columns: range = range(0)
     """Kolumny Ilości usług; formuła w nich w Wierszach danych to ``UnsupportedShape``, jak w kolumnach Wiersza danych."""
+    written_columns: range = range(0)
+    """Kolumny za danymi wejściowymi, w które zapis wpisuje liczby i wypełnienia (``Row.numbers``, ``Row.fills``): Ilości
+    usług i kwota w ``AS``."""
 
 
 class TemplateCopy:
@@ -583,7 +586,7 @@ class _Sheet:
         self._epoch = epoch
         self._letters = [
             get_column_letter(column).encode("ascii")
-            for column in range(1, max(layout.data_columns, layout.look_columns, layout.quantity_columns.stop - 1) + 1)
+            for column in range(1, max(layout.data_columns, layout.look_columns, layout.written_columns.stop - 1) + 1)
         ]
         try:
             sheet_data = SheetData.of(xml)

@@ -108,6 +108,7 @@ _COLLECTIVE_FILE = _Rules(
         period_file=True,
         recalculation=Recalculation.FORCED,
         quantity_columns=QUANTITY_COLUMNS,
+        written_columns=range(QUANTITY_COLUMNS.start, REMARKS_AMOUNT + 1),
     ),
     kind=TemplateKind.COLLECTIVE_FILE,
     worker_header=True,
@@ -413,13 +414,13 @@ class TemplateFile:
 def _ensure_unmerged(
     path: Path, sheet: str, merged_ranges: Sequence[CellRange], layout: SheetLayout, columns: Collection[int], row_count: int
 ) -> None:
-    """Zły układ z ``MergedCells``, gdy komórki ``row_count`` zapisanych Wierszy danych są scalone; we Wzorcu z
-    kolumnami Ilości usług do kolumny ``AS``, w którą Przygotowanie wpisuje kwotę Legendy czynności."""
+    """Zły układ z ``MergedCells``, gdy komórki ``row_count`` zapisanych Wierszy danych są scalone, także w kolumnach
+    liczb i wypełnień (``SheetLayout.written_columns``)."""
 
     if row_count == 0:
         return
     first_row, last_row = layout.first_data_row, layout.first_data_row + row_count - 1
-    last_column = max(_last_written_column(layout, columns), REMARKS_AMOUNT if layout.quantity_columns else 0)
+    last_column = max(_last_written_column(layout, columns), layout.written_columns.stop - 1)
     for merged in merged_ranges:
         if merged.min_row <= last_row and merged.max_row >= first_row and merged.min_col <= last_column:
             raise WorkbookError(path, Problem.LAYOUT, MergedCells(sheet, merged.coord))

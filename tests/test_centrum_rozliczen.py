@@ -85,8 +85,10 @@ from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
 from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.odczyt_bez_dostepu import reading
@@ -7214,16 +7216,17 @@ def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem
     assert _config_files(app.tool.config) == before
 
 
-@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE, LEGEND_FILE])
 def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Decyzja 2A Maksa: plik Reguł ilości albo Listy Urządzeń, którego system nie daje teraz czytać, nie znaczy reguł
-    z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez reguł taty. Karta i start Przygotowania i
-    Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; procesy bez Reguł ilości (Wycena w efenix,
-    Uporządkowanie INTERMAX, Wpisanie raportów) nie mają tej blokady."""
+    """Decyzja 2A Maksa: plik Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać,
+    nie znaczy reguł ani legendy z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez ustawień taty.
+    Karta i start Przygotowania i Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; procesy bez
+    Reguł ilości (Wycena w efenix, Uporządkowanie INTERMAX, Wpisanie raportów) nie mają tej blokady."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
+    (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     sentence = refusal.settings_file_unreadable(unreadable).message
     counted = ("preparation", "settlement")
     readable = _start_blockers(app)

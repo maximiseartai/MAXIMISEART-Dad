@@ -46,6 +46,9 @@ from odtworzenie import (
 )
 from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.activity_legend import FixedColumn
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia import intermax_copies, settlement_messages
 from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG, KINDS
@@ -1427,6 +1430,32 @@ def test_odtworzenie_przygotowania_liczy_lista_urzadzen_taty_z_logow_i_jest_zgod
     assert _quantity(collective, "Z18") == 1, "Przygotowanie u taty liczyło zapisem z sekcji Urządzenia"
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert _quantity(kept / "okresy" / collective.parent.name / collective.name, "Z18") == 1
+
+
+def test_odtworzenie_przygotowania_liczy_legenda_czynnosci_taty_z_logow_i_jest_zgodne(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tata ma w ``config`` własną Legendę czynności, w której ``inst{n}m`` daje 2 w AA zamiast 1 w Y z Wydania, a
+    Przygotowanie wpisało nią AA; Logi Uruchomienia mają tę legendę, więc odtworzenie z nich liczy legendą taty, nie
+    legendą z Wydania, wpisuje to samo i jest zgodne, bez granicy o Logach bez legendy."""
+
+    folder = tmp_path / "taty"
+    folder.mkdir()
+    centrum = preparing_centrum(folder, [{**register_order(1, PERIOD_MONDAY), "CZYNNOŚCI ZREALIZOWANE": "inst20m"}])
+    write_report_key(ToolDirectory(folder))
+    own = replace(DEFAULT_ACTIVITY_LEGEND.codes[0], column=FixedColumn("AA"), value=2)
+    (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump((own, *DEFAULT_ACTIVITY_LEGEND.codes[1:])))
+    run_to_end(centrum, dry_run=False)
+    collective = centrum.fixture.collective_file_path
+    produced = Produced(_archive_file(centrum, folder), ("--konfiguracja", str(folder / "config")))
+    kept = tmp_path / "odtworzenie"
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", kept, *produced.arguments)
+
+    assert (_quantity(collective, "AA18"), _quantity(collective, "Y18")) == (2, 0), "Przygotowanie liczyło legendą taty"
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line for line in lines if "Legend" in line] == []
+    assert _quantity(kept / "okresy" / collective.parent.name / collective.name, "AA18") == 2
 
 
 # Proces i jego nazwa w granicy Kopii wejścia z innej liczby plików niż jeden plik taty, który czyta.
