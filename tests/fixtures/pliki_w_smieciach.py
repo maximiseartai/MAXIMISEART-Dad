@@ -128,8 +128,15 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
             # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
             item.funcargs = {}
         _check("po tym teście")
-    except BaseException:
-        _ended_fixtures.clear()
+    except BaseException as error:
+        # Teardown, który rzuca (także Skipped z pytest.skip, który testu nie czerwieni), też puszcza pliki: sprawdzenie
+        # biegnie przed powrotem gc, a błąd straży niesie pierwotny wyjątek jako przyczynę (W1 r3 PR #1930).
+        if isinstance(item, pytest.Function):
+            item.funcargs = {}
+        try:
+            _check("po tym teście")
+        except AssertionError as found:
+            raise found from error
         raise
     finally:
         _release_gc()

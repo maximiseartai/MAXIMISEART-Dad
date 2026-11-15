@@ -162,7 +162,8 @@ def plik_w_cyklu(path):
 # teardown robi zwykłą pracę, w której samoczynny gc zebrałby puszczony plik przed sprawdzeniem. Fixtura modułu z jednym
 # testem ma setup i koniec w tym samym teście. Ciało testu zostawia plik w śmieciach, a raport testu robi zwykłą pracę
 # przed teardownem. Setup, który pada, pomija ciało testu, a teardown fixtury funkcji puszcza plik i robi zwykłą pracę.
-# Fixtura sesji kończy się po ostatnim teście, czyli po sąsiedzie.
+# Fixtura sesji kończy się po ostatnim teście, czyli po sąsiedzie. Teardown fixtury modułu, który rzuca (Skipped z
+# pytest.skip, który testu nie czerwieni, albo RuntimeError), też puszcza plik (W1 r3).
 _SONDY_FIXTUR: Final = {
     "conftest.py": _PLIK_W_CYKLU
     + """
@@ -277,6 +278,34 @@ def plik_samotnego(tmp_path_factory):
 def test_jedyny_w_module(plik_samotnego):
     assert plik_samotnego
 """,
+    "test_c_teardown_skip.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture(scope="module")
+def plik_skip(tmp_path_factory):
+    yield plik_w_cyklu(tmp_path_factory.mktemp("k") / "skip.bin")
+    pytest.skip("sprzątanie bez zasobu")
+
+
+def test_teardown_skip(plik_skip):
+    assert plik_skip
+""",
+    "test_c_teardown_rzuca.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture(scope="module")
+def plik_rzuca(tmp_path_factory):
+    yield plik_w_cyklu(tmp_path_factory.mktemp("r") / "rzuca.bin")
+    raise RuntimeError("teardown fixtury pada")
+
+
+def test_teardown_rzuca(plik_rzuca):
+    assert plik_rzuca
+""",
     "test_d_sasiad.py": """
 import gc
 import warnings
@@ -310,11 +339,21 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
         check=False,
     )
 
+    cases = list(ET.parse(report).iter("testcase"))
     errors = {
         case.attrib["name"]: " ".join(
             element.get("message", "") for element in case if element.tag in ("error", "failure")
         )
-        for case in ET.parse(report).iter("testcase")
+        for case in cases
+    }
+    causes = {
+        case.attrib["name"]: [
+            cause
+            for cause in ("sprzątanie bez zasobu", "teardown fixtury pada", "direct cause")
+            if any(cause in (element.text or "") for element in case if element.tag == "error")
+        ]
+        for case in cases
+        if case.attrib["name"].startswith("test_teardown_")
     }
     owners = {
         name: [
@@ -332,6 +371,10 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
                 "fixtura plik_parametru zasięgu module",
                 "samotny.bin",
                 "fixtura plik_samotnego zasięgu module",
+                "skip.bin",
+                "fixtura plik_skip zasięgu module",
+                "rzuca.bin",
+                "fixtura plik_rzuca zasięgu module",
                 "sesja.bin",
                 "fixtura plik_sesji zasięgu session",
             )
@@ -340,15 +383,20 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
         for name, message in errors.items()
         if message
     }
-    assert owners == {
+    assert (owners, causes) == ({
         "test_z_fixtura_funkcji": ["on teardown", "funkcja.bin"],
         "test_cialo_zostawia_plik": ["on teardown", "cialo.bin"],
         "test_setup_pada": ["on setup", "on teardown", "przed_bledem.bin"],
         "test_ostatni_w_module": ["on teardown", "modul.bin", "fixtura plik_modulu zasięgu module"],
         "test_z_parametrem[dwa]": ["on setup", "jeden.bin", "fixtura plik_parametru zasięgu module"],
         "test_jedyny_w_module": ["on teardown", "samotny.bin", "fixtura plik_samotnego zasięgu module"],
+        "test_teardown_skip": ["on teardown", "skip.bin", "fixtura plik_skip zasięgu module"],
+        "test_teardown_rzuca": ["on teardown", "rzuca.bin", "fixtura plik_rzuca zasięgu module"],
         "test_sasiad_zbiera_ostrzezenia": ["on teardown", "sesja.bin", "fixtura plik_sesji zasięgu session"],
-    }, done.stdout + done.stderr
+    }, {
+        "test_teardown_skip": ["sprzątanie bez zasobu", "direct cause"],
+        "test_teardown_rzuca": ["teardown fixtury pada", "direct cause"],
+    }), done.stdout + done.stderr
 
 
 def test_ostrzezenie_smiecia_spoza_nowych_plikow_idzie_dalej_a_obserwowanego_pliku_zastepuje_wynik(
