@@ -37,16 +37,6 @@ import odpalenia_ast_grep
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 
-# Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
-# w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
-_WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
-_THREAD_LINES = "tests/fixtures/linie_watkow.py"
-_THREAD_LINES_HELPER = (
-    "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
-    " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
-    " i timer pytest-timeout"
-)
-
 # Odpowiedź nawigacji karty odrzucona w ``src/``, jak ``page.goto(…)`` w 637b1ef25c i ``with page.expect_navigation(…):``
 # w 7ba1aaf8d1 (#808 r1 i r2: strona błędu serwera efenix wyglądała jak zmieniony efenix).
 _DROPPED_NAVIGATION = re.compile(
@@ -128,95 +118,6 @@ def _base() -> str | None:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
         return None
-
-
-def worker_threads(line: str) -> bool:
-    """Czy linia testu pyta o wątki procesu workera pytest z pominięciem ``linie_watkow``.
-
-    Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
-    podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
-    (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
-    potomnego. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
-    W kodzie ``threading.Thread.start`` i ``threading.active_count`` odrzuca wcześniej, także w CI, ruff (``TID251`` w
-    ``tests/ruff.toml``), ale nie na linii z ``# noqa: TID251`` ani w napisie, więc zapadka zostaje.
-    Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _WORKER_THREADS.search(line) is not None
-
-
-def worker_thread_counts(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza ``linie_watkow.py``, tym plikiem i ``test_zakazy_ruff.py`` (próbki zakazu ruff tych samych
-    form), które zmiana od ``base`` dodaje z ``worker_threads``."""
-
-    return [
-        f"{path}:{number}: {_THREAD_LINES_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
-        if path not in {_THREAD_LINES, "tests/test_zapadki.py", "tests/test_zakazy_ruff.py"} and worker_threads(line)
-    ]
-
-
-def test_watki_testu_tylko_przez_linie_watkow() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert worker_thread_counts(ROOT, base) == []
-
-
-def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (
-        _THREAD_LINES,
-        "tests/test_zapadki.py",
-        "tests/test_zakazy_ruff.py",
-        "tests/test_watkow.py",
-        "src/rozliczenia/watki.py",
-    ):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
-
-    found = worker_thread_counts(tmp_path, base)
-
-    assert found == [f"tests/test_watkow.py:2: {_THREAD_LINES_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    start = threading.Thread.start",
-        '    monkeypatch.setattr(threading.Thread, "start", counted)',
-        "    monkeypatch.setattr(threading.Thread, 'start', counted)",
-        "threading.Thread.start = counted",
-        "    assert threading.active_count() == before",
-        "        threading.Thread.start(thread)",
-    ],
-)
-def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
-    assert worker_threads(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    since = new_line()",
-        "    assert wait_for(lambda: threads_since(since) == [], seconds=10)",
-        "    with started_threads() as started:",
-        "        asking.start()",
-        "        super().start()",
-        "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
-        "    for index, thread in enumerate(threads):",
-        # Granice całej nazwy: inna nazwa, która zaczyna się od ``start`` albo kończy na ``active_count``.
-        "    began = threading.Thread.started_at",
-        "    threading.Thread.start_soon(work)",
-        "    assert pool._active_count() == 0",
-    ],
-)
-def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
-    assert not worker_threads(line)
 
 
 def dropped_navigation(line: str, previous: str) -> bool:
@@ -823,6 +724,7 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
 needs_ast_grep = pytest.mark.skipif(
@@ -1887,79 +1789,13 @@ def open_order(page: Page, url: str) -> None:
     ]
 """,
     },
-    "test_watki_testu_tylko_przez_linie_watkow": {
-        # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc zapadka na niej dałaby alarm na historii.
-        "threading.enumerate przed i po": """\
-import threading
 
-
-def test_bez_nowych_watkow() -> None:
-    before = set(threading.enumerate())
-    assert set(threading.enumerate()) == before
-""",
-        "sys._current_frames": """\
-import sys
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(sys._current_frames()) == 1
-""",
-        "threading._active": """\
-import threading
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(threading._active) == 1
-""",
-        "setattr z klasą wątku w zmiennej": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    thread_class = threading.Thread
-    monkeypatch.setattr(thread_class, "start", lambda self: None)
-""",
-        "podmiana Thread.run": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
-""",
-        "podmiana Thread.__init__": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
-""",
-        "setattr rozbity na kilka linii": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        threading.Thread,
-        "start",
-        lambda self: None,
-    )
-""",
-    },
 }
 
 # Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
 _ZAPADKI: Final = {
     "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
-    "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
 }
 
 
@@ -2386,3 +2222,186 @@ def test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ru
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_THREADS_RULE = "watki-workera"
+_IN_THREADS = "import threading\n\n\ndef test_watki(monkeypatch, thread, threads, pool, counted, before, work, asking):\n"
+# Tekst dodanego pliku ``tests/`` → linie, które reguła ``watki-workera`` zgłasza: wątki procesu workera poza
+# ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)`` z 0e304aec7, w każdej postaci, którą
+# reguła czyta (wyrażenie pośrednie przed przecinkiem, węzeł zaczynający się napisem po nim, odstępy i łamanie wokół
+# kropki), i pytania o wątki przez ``linie_watkow`` albo o inne nazwy, które przepuszcza.
+_PROBKI_WATKOW: Final[list[tuple[str, list[int]]]] = [
+    (f"{_IN_THREADS}    start = threading.Thread.start\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start", counted)\n', [5]),
+    (f"{_IN_THREADS}    monkeypatch.setattr(threading.Thread, 'start', counted)\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start = counted\n", [5]),
+    (f"{_IN_THREADS}    assert threading.active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start(thread)\n", [5]),
+    (f"{_IN_THREADS}    assert active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    Thread.start(thread)\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(\n        threading.Thread,\n        "start",\n        counted,\n    )\n', [7]),
+    # Para Thread i "start" w każdym ciągu wyrażeń, nie tylko w argumentach (korpus z node-types.json gramatyki).
+    (f'{_IN_THREADS}    monkeypatch.setattr(Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    targets = [(threading.Thread, "start")]\n', [5]),
+    (f'{_IN_THREADS}    patched = pool[threading.Thread, "start"]\n', [5]),
+    (f'{_IN_THREADS}    assert threading.Thread, "start"\n', [5]),
+    (f"{_IN_THREADS}    assert before  # threading.active_count() przed\n", [5]),
+    (f'{_IN_THREADS}    """Podmienia Thread.start na liczący."""\n', [5]),
+    (f"{_IN_THREADS}    code = \"monkeypatch.setattr(threading.Thread, 'start', f)\"\n", [5]),
+    # Węzeł dowolnego rodzaju przed przecinkiem, którego tekst kończy się słowem Thread (#1879 r1 W1).
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool or threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool if before else threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(cls := threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(lambda: threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool is threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(-threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    patches = {{pool: threading.Thread, "start": counted}}\n', [5]),
+    (f'{_IN_THREADS}    patched = pool[threading.Thread, "start":]\n', [5]),
+    # Węzeł po przecinku, który zaczyna się napisem start.
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start" "", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start".strip(), counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start"[:], counted)\n', [5]),
+    # Odstępy i łamanie wokół kropki, także na linii z noqa, którą ruff przepuszcza.
+    (f"{_IN_THREADS}    assert threading. active_count() == before  # noqa: TID251 - próbka\n", [5]),
+    (f"{_IN_THREADS}    start = threading. Thread.start  # noqa: TID251 - próbka\n", [5]),
+    (f"{_IN_THREADS}    start = (threading\n        .Thread.start)\n", [5]),
+    (f"{_IN_THREADS}    count = (threading\n        .active_count())\n", [5]),
+    (f"{_IN_THREADS}    since = new_line()\n", []),
+    (f"{_IN_THREADS}    assert wait_for(lambda: threads_since(since) == [], seconds=10)\n", []),
+    (f"{_IN_THREADS}    with started_threads() as started:\n        pass\n", []),
+    (f"{_IN_THREADS}    asking.start()\n", []),
+    (f"{_IN_THREADS}    super().start()\n", []),
+    (f"{_IN_THREADS}    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)\n", []),
+    (f"{_IN_THREADS}    for index, thread in enumerate(threads):\n        pass\n", []),
+    (f"{_IN_THREADS}    began = threading.Thread.started_at\n", []),
+    (f"{_IN_THREADS}    threading.Thread.start_soon(work)\n", []),
+    (f"{_IN_THREADS}    assert pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert threading.active_counts() == 0\n", []),
+    (f"{_IN_THREADS}    ModelThread.start(thread)\n", []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(MyThread, "start", counted)\n', []),
+    (f'{_IN_THREADS}    assert threading.Thread == "start"\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, r"start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool.MyThread, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(Threads, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool.Threads, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "started", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, prefix + "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(MyThread, "start".strip(), counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(Threads, "start".strip(), counted)\n', []),
+    (f"{_IN_THREADS}    restart = threading.Thread.restart\n", []),
+    (f"{_IN_THREADS}    start = threading.Threads.start\n", []),
+    (f"{_IN_THREADS}    def active_count(self):\n        return 0\n", []),
+    (f'{_IN_THREADS}    names = {{threading.Thread: "start"}}\n', []),
+    # Wzorzec case nie tworzy wartości, ale tekst ma postać pary; zgłasza go reguła, tak jak zapadka.
+    (f'{_IN_THREADS}    match pool:\n        case [threading.Thread, "start"]:\n            pass\n', [6]),
+    (f"{_IN_THREADS}    assert pool  # pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert pool  # Thread.started_at przed\n", []),
+    (f'{_IN_THREADS}    assert pool  # setattr(MyThread, "start", f)\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_WATKOW)
+def test_regula_watkow_zglasza_watki_workera_poza_linie_watkow_a_nie_linie_watkow_ani_inne_nazwy(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_watkow.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_watkow_zglasza_tylko_tests_poza_linie_watkow_i_probkami_zakazu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in (
+        "tests/fixtures/linie_watkow.py",
+        "tests/test_zapadki.py",
+        "tests/test_zakazy_ruff.py",
+        "tests/test_watkow.py",
+        "src/rozliczenia/watki.py",
+    ):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", 2)]
+
+
+# Znane luki reguły ``watki-workera`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``, który pyta
+# o wątki procesu workera poza ``linie_watkow``, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_WATKOW: Final[dict[str, str]] = {
+    # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc reguła na niej dałaby alarm na historii.
+    "threading.enumerate przed i po": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    before = set(threading.enumerate())
+    assert set(threading.enumerate()) == before
+""",
+    "sys._current_frames": """\
+import sys
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(sys._current_frames()) == 1
+""",
+    "threading._active": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(threading._active) == 1
+""",
+    "setattr z klasą wątku w zmiennej": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    thread_class = threading.Thread
+    monkeypatch.setattr(thread_class, "start", lambda self: None)
+""",
+    "podmiana Thread.run": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
+""",
+    "podmiana Thread.__init__": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``watki-workera`` czyta tekst węzłów, nie ich rodzaj: wywołanie, którego funkcja kończy się słowem
+    ``active_count``, atrybut ``start`` na wyrażeniu kończącym się słowem ``Thread``, napis ``start`` zaraz po przecinku
+    za węzłem kończącym się słowem ``Thread`` (sam albo jako początek węzła po przecinku) oraz ten sam tekst
+    w komentarzu i napisie; ``threading.enumerate``, ``sys._current_frames``, ``threading._active``, klasa wątku
+    w zmiennej i podmiana ``run`` albo ``__init__`` to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_WATKOW, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
