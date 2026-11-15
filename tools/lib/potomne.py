@@ -389,9 +389,8 @@ else:
                 raise
 
         def kill(self) -> None:
-            """SIGKILL dla całej grupy polecenia i czekanie tylko na jej lidera: pozostali członkowie grupy, już zabici,
-            mogą jeszcze przez chwilę po powrocie zamykać swoje pliki. Proces, który opuścił grupę (``setsid``,
-            ``setpgid``), jest poza zasięgiem."""
+            """SIGKILL dla całej grupy polecenia i czekanie tylko na jej lidera; co z tego wynika dla wołającego, mówi
+            docstring modułu."""
 
             _kill_group(self.process.pid)
             self.process.wait()

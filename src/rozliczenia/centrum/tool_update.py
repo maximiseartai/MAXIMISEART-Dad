@@ -27,11 +27,8 @@ commitem przed i po; treść Komunikatów należy do Centrum
 terminala, bez pomocnika logowania i bez okna konsoli w Windows. Każde kończy
 się w swoim limicie czasu, także gdy pomocnik Gita (np. ``git-remote-https``)
 zostaje po nim przy zerwanym połączeniu: wyjście idzie do plików tymczasowych,
-nie do potoków, a po limicie polecenie wraca po zabiciu procesów Gita: w Windows
-całego zadania, gdy każdy jego proces się skończył (inaczej ``OSError`` po
-``_KILL_TIMEOUT_S``), w POSIX, gdy cała grupa procesów Gita dostała SIGKILL, a sam
-Git się skończył (pomocnicy z tej grupy mogą jeszcze przez chwilę zamykać pliki,
-a pomocnik, który opuścił grupę, żyje dalej). Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
+nie do potoków, a po limicie polecenie wraca po zabiciu procesów Gita; co
+zabija i na co czeka w każdym systemie, mówi ``_run_tree``. Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
 konfiguracja Gita taty zostaje bez zmian. Adres repozytorium wstrzykuje się
 z zewnątrz; ``origin`` w klonie taty nie ma znaczenia.
 
@@ -737,9 +734,8 @@ class _Git:
     root: Path
 
     def run(self, *args: str, timeout_s: float = _LOCAL_TIMEOUT_S) -> subprocess.CompletedProcess[str]:
-        """Polecenie Gita z wyjściem i błędami jako tekst; po ``timeout_s`` ``subprocess.TimeoutExpired`` po zabiciu jego
-        drzewa (``_run_tree``: co to znaczy w każdym systemie), a w Windows ``OSError``, gdy zadanie nie powstanie albo
-        drzewo przeżyje ``_KILL_TIMEOUT_S``.
+        """Polecenie Gita z wyjściem i błędami jako tekst; ``subprocess.TimeoutExpired`` po ``timeout_s`` i ``OSError``
+        przychodzą z ``_run_tree``, którego docstring mówi, kiedy.
 
         Wyjście idzie do plików tymczasowych: potok, który pomocnik Gita trzyma
         otwarty po końcu Gita, wstrzymałby odczyt, a w Windows także po limicie czasu.
@@ -869,7 +865,8 @@ if sys.platform == "win32":
         """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to zadanie (Job Object).
 
         Po ``timeout_s`` zabija całe drzewo i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jego
-        procesów już nie żyje; ``OSError``, gdy zadanie nie powstanie albo przeżyje ``_KILL_TIMEOUT_S``.
+        procesów już nie żyje. ``OSError``, gdy zadanie nie powstanie, Git nie ruszy albo nie trafi do zadania (``Popen``,
+        ``_join``), zabicie zadania albo odczyt jego procesów się nie uda, albo drzewo przeżyje ``_KILL_TIMEOUT_S``.
 
         Git startuje wstrzymany i rusza dopiero w zadaniu: inaczej zdąży uruchomić pomocnika poza nim. Proces znika z
         zadania, zanim Windows uzna go za zakończony i puści jego uchwyty (I/O w toku), więc po zabiciu czeka na
