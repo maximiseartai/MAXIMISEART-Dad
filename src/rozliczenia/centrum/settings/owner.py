@@ -706,7 +706,7 @@ class CentrumSettings:
         value = edit(current)
         if isinstance(value, FieldProblem):
             return Refused(value)
-        new = file.dump(value).encode("utf-8")
+        new = file.dump(value)
         edited = self._checked(file, new, file.parse(new))
         if isinstance(edited, FieldProblem):
             return Refused(edited)
