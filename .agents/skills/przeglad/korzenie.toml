@@ -142,3 +142,7 @@ przyklad = 1698
 [R-WYNIK-BEZ-GALEZI]
 opis = "Jednoliniowy wynik dla człowieka przepisany z listy wyników cudzego narzędzia bez gałęzi, którą to narzędzie zgłasza obok wyniku, więc człowiek czytający tylko linię jej nie widzi."
 przyklad = 1875
+
+[R-TOZSAMOSC-Z-NAZWY]
+opis = "Rzecz (repo, projekt, plik) rozpoznawana po nazwie zamiast po tożsamości, którą system daje (origin gita, identyfikator), więc każda nowa zmiana nazwy wraca jako ciche przekłamanie, jak nakładka #1913 r3 rozpoznająca plik po nazwie."
+przyklad = 1914
