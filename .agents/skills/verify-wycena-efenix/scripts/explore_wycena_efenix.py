@@ -156,7 +156,7 @@ waits for in the same time limit as its answer, so an answer to it just before t
 one to any other request."""
 CALM_LIMIT_MS: Final = 15_000
 """The window's time limit in every other run: the run without a fault, second runs and faults whose run never waits
-for the limit. A stop on the time limit is a violation there whatever the limit (``check_first``), so a longer one
+for the limit. A stop on the time limit is a violation there whatever the limit (``allows``, ``limit_gaps``), so a longer one
 hides no answer or reload that never comes, and a case whose window waits for its limit on healthy code goes red instead
 of waiting 15 s; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than
 4 s stopped such a run on the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still
@@ -344,9 +344,9 @@ ALLOWED_PATHS: Final = frozenset(call.path for call, _role, _order in EXPECTED_C
 class Cause(enum.Enum):
     """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``WindowCause``."""
 
-    NETWORK = "błąd przeglądarki z nazwanym działaniem (sieć albo czas okna)"
-    TIMEOUT = "czas okna minął (TimeoutError z nazwanym działaniem)"
-    UNREACHABLE = "efenix nie otworzył się przy starcie (EfenixUnreachable)"
+    NETWORK = "błąd sieci przeglądarki z nazwanym działaniem"
+    TIMEOUT = "okno czekało do limitu (TimeoutError z nazwanym działaniem, także w EfenixUnreachable przy starcie)"
+    UNREACHABLE = "efenix nie otworzył się przy starcie (EfenixUnreachable z błędem sieci)"
     HTTP = "strona błędu HTTP (HttpStatus ze statusem awarii)"
     LOGIN = "wylogowanie (LoggedOut albo formularz logowania)"
     CLOSED = "zamknięte okno (WindowClosed)"
@@ -388,7 +388,9 @@ def expected(fault: Fault, call: Call, role: Role) -> Expect:
 
 def _expected(fault: Fault, call: Call, role: Role) -> Expect:
     """The domain table. Network faults and late answers name the network or the time limit, never a page shape, and
-    before the list opened may be ``EfenixUnreachable`` (``efenix_browser``: „Lista zleceń, której okno nie otworzyło
+    before the list opened may be ``EfenixUnreachable``; a stop on the window's time limit is allowed only where an entry
+    names ``Cause.TIMEOUT`` (a fault that cuts the network, an answer that comes late or never, a page file the window
+    waits for in vain), and this table alone says so (``meets_limit``, ``allows``) (``efenix_browser``: „Lista zleceń, której okno nie otworzyło
     przy starcie … to EfenixUnreachable”; „Czy to zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje”).
     An HTTP error page names its status (``HttpStatus``) and never a shape, because efenix did not change. A redirect
     elsewhere is a page efenix sent instead, which the docstring lets the window call a page in another shape. The
@@ -413,7 +415,7 @@ def _expected(fault: Fault, call: Call, role: Role) -> Expect:
     style = call.path.endswith(".css")
     match fault:
         case Fault.CUT | Fault.TORN:
-            return Expect(frozenset({Cause.NETWORK, *start}))
+            return Expect(frozenset({Cause.NETWORK, Cause.TIMEOUT, *start}))
         case Fault.STALLED | Fault.SLOW:
             return Expect(frozenset({Cause.TIMEOUT, *start}))
         case Fault.HUNG | Fault.LATE_AFTER:
@@ -517,17 +519,17 @@ def early_s(role: Role) -> float:
     return EARLY_S + (EFENIX_EMMETT_RELOAD_MS / 1000 if role in _RELOAD_WAIT else 0)
 
 
-_TIMED: Final = OUTAGES | {Fault.HUNG, Fault.LATE_BEFORE, Fault.LATE_AFTER}
-"""Faults whose answer the proxy places against the window's time limit or never sends whole: a network fault cuts every
-answer from its request on, so the window may wait for its time limit at it (``allows``: a browser failure with a named
-operation is the network or the time limit)."""
+_PLACED: Final = frozenset({Fault.LATE_BEFORE})
+"""Faults whose answer the proxy places just before the window's time limit: their run meets the limit also where the
+window may not stop on it (at „Załaduj do zlecenia”, ``early_s``)."""
 
 
 def meets_limit(case: Case) -> bool:
-    """Whether the run of ``case`` meets the window's time limit: its fault is timed, or the domain table lets it stop
-    on the time limit (a page file the window waits for in vain)."""
+    """Whether the run of ``case`` meets the window's time limit: the domain table lets it stop on the time limit
+    (``Cause.TIMEOUT``, the one source ``allows`` also reads), or its answer comes just before the limit (``_PLACED``).
+    ``limit_gaps`` reds a case where these differ from what ``allows`` lets a run stop on."""
 
-    return case.fault in _TIMED or Cause.TIMEOUT in _expected(case.fault, case.call, case.role).stops
+    return case.fault in _PLACED or Cause.TIMEOUT in _expected(case.fault, case.call, case.role).stops
 
 
 def plan_of(case: Case | None) -> Plan:
@@ -537,9 +539,18 @@ def plan_of(case: Case | None) -> Plan:
     return Plan(case.fault, case.call, limit_ms / 1000, early_s=early_s(case.role))
 
 
+def waited(facts: PricingStopped) -> bool:
+    """The window waited for its time limit: Playwright's ``TimeoutError`` is the browser failure of the Zatrzymanie,
+    whichever the window made of it (``EfenixUnreachable`` at the start and after two time limits of the login wait,
+    ``UnexpectedPage`` elsewhere), so its Komunikat does not decide it."""
+
+    return isinstance(facts.cause, BrowserFailure) and facts.cause.error_type.rpartition(".")[2] == "TimeoutError"
+
+
 def classify(facts: PricingStopped, code: str) -> Cause:
-    """Category of a Zatrzymanie from its facts; ``EfenixUnreachable`` carries a browser failure at the list like
-    ``UnexpectedPage`` does, so its Komunikat tells them apart."""
+    """Category of a Zatrzymanie from its facts. A wait for the time limit (``waited``) with a named operation is
+    ``Cause.TIMEOUT`` at every request, also at the start; ``EfenixUnreachable`` carries any other browser failure at the
+    list like ``UnexpectedPage`` does, so its Komunikat tells them apart."""
 
     match facts.cause:
         case LoginSign():
@@ -554,10 +565,10 @@ def classify(facts: PricingStopped, code: str) -> Cause:
             return Cause.NOT_LOADED
         case BrowserFailure(operation=None):
             return Cause.UNNAMED
+        case BrowserFailure() if waited(facts):
+            return Cause.TIMEOUT
         case BrowserFailure() if code == "EFENIX_NIEDOSTEPNY":
             return Cause.UNREACHABLE
-        case BrowserFailure(error_type=error_type) if error_type.rpartition(".")[2] == "TimeoutError":
-            return Cause.TIMEOUT
         case BrowserFailure():
             return Cause.NETWORK
         case _:
@@ -565,7 +576,10 @@ def classify(facts: PricingStopped, code: str) -> Cause:
 
 
 def allows(expect: Expect, cause: Cause) -> bool:
-    return cause in expect.stops or (cause is Cause.TIMEOUT and Cause.NETWORK in expect.stops)
+    """A Zatrzymanie of ``cause`` is one the domain table allows; a stop on the time limit only where the table names
+    ``Cause.TIMEOUT``, as ``meets_limit`` reads it."""
+
+    return cause in expect.stops
 
 
 def describe(facts: PricingStopped) -> str:
@@ -1216,10 +1230,7 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             return found
         cause = classify(facts, code)
         shown = f"Zatrzymanie {code} ({describe(facts)})"
-        if cause is Cause.TIMEOUT and not meets_limit(case):
-            add("PRZYCZYNA", "czas okna bez awarii, która go mierzy",
-                f"{shown}: okno czekało do limitu {CALM_LIMIT_MS / 1000:.0f} s, choć awaria nie mierzy limitu okna (meets_limit)")
-        elif not allows(expect, cause):
+        if not allows(expect, cause):
             allowed = [category.value for category in sorted(expect.stops, key=lambda item: item.name)]
             if expect.same:
                 allowed.append("przebieg jak bez awarii")
@@ -1443,8 +1454,23 @@ def known_gaps() -> list[str]:
     return [f"wpis {entry.name} nazywa przypadek spoza przestrzeni: {name}" for entry in entries for name in entry.after if name not in space]
 
 
+def limit_gaps() -> list[str]:
+    """Each case may stop on the window's time limit (``allows``) exactly when its run meets that limit (``meets_limit``),
+    but for an answer placed just before it (``_PLACED``): a case allowed to stop on a limit of 15 s would wait for it on
+    healthy code (#1906), and a run that waits 15 s for a forbidden stop hides no violation."""
+
+    gaps = []
+    for case in cases(list(AXES), None):
+        stops = allows(expected(case.fault, case.call, case.role), Cause.TIMEOUT)
+        if stops and not meets_limit(case):
+            gaps.append(f"{case.name}: Zatrzymanie na limicie dozwolone, a przebieg czeka limitu {CALM_LIMIT_MS / 1000:.0f} s")
+        elif not stops and meets_limit(case) and case.fault not in _PLACED:
+            gaps.append(f"{case.name}: Zatrzymanie na limicie zabronione, a przebieg mierzy limit {LIMIT_MS / 1000:.0f} s")
+    return gaps
+
+
 def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequence[str] | None, workers: int) -> Report:
-    report = Report(gaps=known_gaps())
+    report = Report(gaps=known_gaps() + limit_gaps())
     if report.gaps:
         return report
     started = time.monotonic()
