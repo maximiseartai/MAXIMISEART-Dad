@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass
 import imaplib
 import smtplib
@@ -24,6 +24,7 @@ from rozliczenia.centrum.log import CentrumLog
 from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.kwarantanna import KWARANTANNA
 from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
+from tests.fixtures.pliki_w_smieciach import left_to_gc, open_files
 
 # Testy skrzynki GitHub importują wprost skrypty skilla verify-github-skrzynki.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".agents/skills/verify-github-skrzynki/scripts"))
@@ -81,6 +82,29 @@ def pytest_terminal_summary(terminalreporter: TerminalReporter) -> None:
             text = f"… (początek ucięty, {len(text) - len(tail)} znaków)\n{tail}"
         terminalreporter.write_line(f"KWARANTANNA | {report.nodeid} padł ({report.when}), {reason}:")
         terminalreporter.write_line(text)
+
+
+_OPEN_BEFORE_TEST = pytest.StashKey[dict[int, str]]()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    item.stash[_OPEN_BEFORE_TEST] = open_files()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> Generator[None, object, object]:
+    """Test, którego plik po teardownie zwolnił dopiero ``gc``, kończy się błędem z jego ścieżką: inaczej
+    ``ResourceWarning`` tego pliku trafia do innego testu (#1923, ``tests/fixtures/pliki_w_smieciach.py``)."""
+
+    result = yield
+    before = item.stash[_OPEN_BEFORE_TEST]
+    left = left_to_gc(before)
+    assert left == [], (
+        f"Test zostawił otwarte pliki, które zamknął dopiero gc: {', '.join(left)}. Zamknij plik w teście przez with "
+        "albo try/finally z close(); skoroszyt openpyxl read_only=True trzyma plik do workbook.close()."
+    )
+    return result
 
 
 _TREE_AT_START = pytest.StashKey[frozenset[str]]()
