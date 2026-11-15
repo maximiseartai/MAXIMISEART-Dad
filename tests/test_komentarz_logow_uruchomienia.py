@@ -2919,8 +2919,8 @@ def _pamiec_komorek() -> ForbiddenValues:
 
 
 _OBCE_ZNAKI: Final = ("x", "7")
-"""Obcy znak przy tekście narzędzia: litera i cyfra, klasy znaku, którym zepsuta gramatyka może dołączyć do tekstu
-dopisek kończący się osobną komórką."""
+"""Obcy znak przy tekście narzędzia we wstawkach ``_komorki_w_tekscie``: litera ``x`` i cyfra ``7``, każdy ze spacją
+między nim a komórką; innego znaku przy tekście ani innego separatora za nim wstawki nie mają."""
 
 
 def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
@@ -2964,12 +2964,16 @@ def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str,
     """Zapamiętana komórka z ``_komorki_w_tekscie`` (pierwsza zapisana każdym separatorem strażnika spoza alfabetu
     pola: znakiem zwykłym, sterującym, cudzysłowem, ukośnikiem i pozostałymi; druga spacją), otoczona separatorem z
     przodu, w środku i z tyłu poprawnego tekstu narzędzia albo stojąca na samym początku lub końcu tekstu z separatorem
-    od strony tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``. Pada więc ``_kept``,
-    który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek (``match``), właściciel pola
-    w poddrzewie bez klasy, lista w poddrzewie bez gramatyki i gramatyka z dopiskiem przed tekstem albo po nim, który
-    zaczyna się przy tekście literą, cyfrą albo separatorem. Komórki sklejonej z tekstem narzędzia bez żadnego znaku
-    między nimi test nie wstawia: strażnik szuka wartości jako ciągu całych słów (ADR 0025), więc takiej komórki nie
-    maskuje też przy poprawnej gramatyce."""
+    od strony tekstu, a obie komórki spacją także za obcym znakiem ``x`` albo ``7`` (``_OBCE_ZNAKI``) przy końcu
+    tekstu i przed nim przy początku tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``.
+    Pada więc ``_kept``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
+    (``match``), właściciel pola w poddrzewie bez klasy, lista w poddrzewie bez gramatyki i gramatyka, która przyjmuje w
+    całości którykolwiek z tych tekstów. Nie pada gramatyka, która przyjmuje komórkę tylko za innym znakiem przy tekście
+    albo za innym separatorem po nim, np. po ``run_id`` dopisek zaczęty wielką literą (``[A-Z]``), literą szesnastkową
+    (``[a-f]``) albo literą i łącznikiem (``[A-Za-z]-``). Komórki sklejonej z tekstem bez żadnego znaku między nimi test
+    nie wstawia: przy ``run_id``, ``Tool.wydanie`` i ``Environment.python`` strażnik szuka wartości jako ciągu całych
+    słów (ADR 0025), więc takiej komórki nie maskuje też przy poprawnej gramatyce, a przy ``<module>`` w
+    ``CallFrame.function``, który zaczyna się ``<`` i kończy ``>``, maskuje ją."""
 
     pamiec = _pamiec_komorek()
 
@@ -2982,8 +2986,8 @@ def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str,
 def test_komorka_w_tekscie_narzedzia_nie_wychodzi_bez_maski_z_tool_text(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
     """Te same teksty z komórką (``_komorki_w_tekscie``) nie dają zapisu komórki w wyniku ``tool_text``. Pada więc
     ``tool_text``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
-    (``match``), i gramatyka z dopiskiem przed tekstem albo po nim, który zaczyna się przy tekście literą, cyfrą albo
-    separatorem."""
+    (``match``), i gramatyka, która przyjmuje w całości którykolwiek z tych tekstów. Granica jest ta sama co w teście
+    ``guard_logs``: komórka tylko za innym znakiem przy tekście albo za innym separatorem po nim nie ma wstawki."""
 
     for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
         assert zapis not in tool_text(pole, tekst), repr(tekst)
