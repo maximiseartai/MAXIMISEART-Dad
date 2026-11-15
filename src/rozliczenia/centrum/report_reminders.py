@@ -16,8 +16,9 @@ Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, kt�
 czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z Ustawień: zmiana pór otwiera porę na jedno
 nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane”. Nazwaną porę przypomnienia z
 „Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa): poranne wysłane o 8:05 zamyka
-poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego sprawdzenie w porze zapisuje przed wysyłką
-pory, przy których sprawdza, gdy różnią się od ostatnio zapisanych (``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
+poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego każdy czytelny odczyt z włączonymi
+przypomnieniami, w porze przed wysyłką i poza porą, zapisuje pory, gdy różnią się od ostatnio zapisanych
+(``REMINDERS_SCHEDULES``, ``SchedulesInEffect``).
 Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą pory z ADR 0030 (dzień Aktualizacji), a z
 plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Dopóki zapis pór się nie
 uda (``zapis-por``), sprawdzenie nie wysyła, a pora zostaje otwarta. Brak sieci
@@ -30,7 +31,7 @@ Plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. tr
 przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
 plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
 sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
-przed nim pory ostatniego sprawdzenia pracy z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
+przed nim ostatnie pory z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
 takie sprawdzenie nie pisze, bo nie wie, czy przypomnienia mają dzień wdrożenia.
 
 Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
@@ -244,10 +245,13 @@ class ReportReminders:
         now = self._now()
         snapshot = self._settings.snapshot()
         reminders = snapshot.reminders
+        in_effect: SchedulesInEffect | None = None
         if isinstance(reminders, UnreadableFile):
             schedule = self._unread_schedule()
         else:
             schedule = self._schedule = reminders.schedule
+            if reminders.sends is not None:
+                in_effect = self._checked(now, schedule)
         pora = reminder_pora(now, schedule)
         self._close_unread(now.date(), pora)
         if pora is None or self._settled == (now.date(), pora, schedule):
@@ -256,10 +260,9 @@ class ReportReminders:
             self._unread = _Unread(now.date(), pora, reminders.name)
             return
         self._unread = None
-        if reminders.sends is None:
+        if in_effect is None:
             return
         found = _Check()
-        in_effect = self._checked(now, schedule)
         if self._schedules.unavailable:
             found.failed = _Failed("zapis-por")
         else:
@@ -275,9 +278,11 @@ class ReportReminders:
 
     def _unread_schedule(self) -> ReminderSchedule:
         """Pory przy pliku Przypomnień bez odczytu: z ostatniego pliku przeczytanego w tej pracy Centrum, a przed nim
-        z ostatniego sprawdzenia pracy w ``REMINDERS_SCHEDULES``, bo plik zablokowany od startu Centrum nie mówi o porach
-        taty nic innego. Bez wpisu w tym pliku praca tej wersji jeszcze nie sprawdzała w porze, więc żadne pory taty nie
-        są znane i zostają pory z ADR 0030."""
+        z ostatnich pór w ``REMINDERS_SCHEDULES``, bo plik zablokowany od startu Centrum nie mówi o porach taty nic
+        innego. ``_checked`` zapisuje tam pory z każdego czytelnego odczytu przy włączonych przypomnieniach, także poza
+        porą, więc zmiana pór, po której tata zamknął Centrum przed następną porą, też tam jest. Bez wpisu w tym pliku
+        praca nie przeczytała pliku Przypomnień z włączonymi przypomnieniami ani razu (włączenie bez minuty pracy
+        Centrum przed blokadą), więc żadne pory taty nie są znane i zostają pory z ADR 0030: to granica, nie stan."""
 
         if self._schedule is not None:
             return self._schedule
@@ -294,8 +299,10 @@ class ReportReminders:
             self._unread = None
 
     def _checked(self, now: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
-        """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką, a zapis, który
-        czeka w ``StateFile``, ponawia. Dopóki zapis czeka, sprawdzenie nie wysyła: po ponownym starcie Centrum bez
+        """Pory, przy których sprawdzała praca, z porami tego odczytu; nowe zapisuje przy każdym czytelnym odczycie
+        z włączonymi przypomnieniami, w porze przed wysyłką i poza porą, a zapis, który czeka w ``StateFile``, ponawia.
+        Odczyt poza porą nie zmienia przypisania „Wysłanych”: między ostatnim sprawdzeniem przy starych porach a pierwszym
+        przy nowych nie idzie żaden mail. Dopóki zapis czeka, sprawdzenie nie wysyła: po ponownym starcie Centrum bez
         pliku pór wysłane liczyłyby pory z ADR 0030, a nie pory z chwili wysyłki."""
 
         before = self._in_effect if self._in_effect is not None else schedules_in_effect(self._schedules.path, schedule)

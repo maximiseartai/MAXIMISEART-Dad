@@ -4027,6 +4027,36 @@ def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatn
     assert (len(mailbox.sends), _failures_in_log(centrum)) == (yesterday, [f"przyczyna=plik-bez-odczytu plik={REMINDERS_FILE}"])
 
 
+def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_zmieniona_poza_pora(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa po zmianie pór poza porą: wczoraj praca sprawdzała w wieczornej porze z ADR 0030, o 22:30 tata
+    przesunął poranną porę na 6:00–7:30 i zamknął Centrum przed nią, a dziś OneDrive trzyma plik Przypomnień od startu
+    Centrum do końca tej pory. Pory z odczytu poza porą zna plik pór pracy, więc pierwsze sprawdzenie po 7:30 zostawia
+    w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 18, 30))
+    centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 22, 30))
+    form = _reminders_form(footer="Pozdrawiam\nTata\n", morning={"start": "06:00", "end": "07:30"}, first="06:00")
+    assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 22, 31))
+    centrum.rhythm.tick()
+    yesterday = len(mailbox.sends)
+    centrum.restart()
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        for moment in (datetime(2026, 11, 11, 6, 30), datetime(2026, 11, 11, 7, 30, 1)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert (len(mailbox.sends), _failures_in_log(centrum)) == (yesterday, [f"przyczyna=plik-bez-odczytu plik={REMINDERS_FILE}"])
+
+
 def test_przypomnienia_wylaczone_w_tej_samej_porze_po_pliku_bez_odczytu_nie_zostawiaja_wpisu(tmp_path: Path) -> None:
     """Plik Przypomnień bez odczytu w porze, a potem w tej samej porze tata wyłącza przypomnienia: wyłączone są
     wyłączone, a nie zepsute, więc po końcu pory dziennik Centrum nie dostaje wpisu o pliku bez odczytu."""
