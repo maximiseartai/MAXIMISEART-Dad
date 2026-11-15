@@ -23,8 +23,8 @@ CI runs `explore_wycena_efenix.py` (the `ci:` key) in Mutation checks whenever a
 of the cases (`--lista` prints them), with the second runs of its own stops and kills. The whole space (468 cases since
 #908 added `REFUSED_NO_PROPOSAL`, 35 of them kills checked on the reference's states, and 68 distinct second runs) took
 517 s on Maks's Mac, and the 8 parts took 63 to 85 s each, so `ci-czesci` stays 8 (2026-11-05, PR #916, Evidence).
-No accepted risk (none since #960) and no known finding is left (`scripts/explore_wycena_efenix.py:701`), so first
-runs that left the same state share one second run (`_resumes`, `scripts/explore_wycena_efenix.py:1508`). The whole
+No accepted risk (none since #960) and no known finding is left (`scripts/explore_wycena_efenix.py:720`), so first
+runs that left the same state share one second run (`_resumes`, `scripts/explore_wycena_efenix.py:1531`). The whole
 space in two parts gave 217 and 216 first runs and 34 and 36 states after a kill in 229 and 278 s, `WYCENA EFENIX OK`
 with no first run excused (2026-11-05, PR #965, Evidence). On Windows in CI the two parts of n=2 took 259 and 338 s (run
 41985714991), about as long as on the Mac, so a part of n=8 takes about 1 to 1.5 min there. A
@@ -106,8 +106,12 @@ No server to keep: each run starts its own Atrapa efenix (`tools/lib/atrapy/atra
 (`scripts/awarie_efenix.py`) on free ports of `127.0.0.1`, and each worker its own headless Chromium of Playwright.
 The scenario is two synthetic orders (`file_orders()`): order 1 (row 18) ends gotowe after the date, Emmett (with T one
 less than the file, like the S of #960) and two quantities, T over Emmett's and AG; order 2 (row 19) ends with an
-Ostrzeżenie Emmetta, because Emmett has more than the file in T. The window's time limit is 4 s (3 s and the 1 s reload after „Załaduj do zlecenia”, which it
-waits for in the same limit) and the login wait 4 s.
+Ostrzeżenie Emmetta, because Emmett has more than the file in T. The window's time limit is 4 s (`LIMIT_MS`: 3 s and the 1 s reload after „Załaduj do zlecenia”, which it
+waits for in the same limit) in a case whose fault meets that limit (`meets_limit`: a timed fault, or one the domain
+table lets stop on the time limit), and 15 s (`CALM_LIMIT_MS`) in the run without a fault, in second runs and in every
+other case, where a stop on the time limit is a violation, so a busy machine does not turn a late reload into one.
+A case whose window stopped before its faulted request runs again like a fault that did not take effect
+(`Run.injected`, `RETRIES`). The login wait is 4 s.
 The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does (`EFENIX_EMMETT_RELOAD_MS`), not after the
 200 ms of its tests.
 

@@ -78,9 +78,10 @@ from atrapy.efenix import Order, write_collective_file
 from atrapy.interlocutor import Tata
 
 VERDICT: Final = "KARTA EFENIX"
-LIMIT_MS: Final = 3_000 + EFENIX_EMMETT_RELOAD_MS
-"""The window's time limit in the checker, as in ``verify-wycena-efenix``: 3 s and the reload after „Załaduj do
-zlecenia”, which the window waits for in the same limit."""
+LIMIT_MS: Final = 15_000
+"""The window's time limit in the checker, the calm limit of ``verify-wycena-efenix`` (``CALM_LIMIT_MS``): no case here
+places an answer against the limit, so a longer one changes no verdict, and with 4 s a busy machine that reloads the
+page after „Załaduj do zlecenia” later than that stopped the run without Dad on the time limit."""
 
 # --- The scenario -----------------------------------------------------------------------------------------------------
 
