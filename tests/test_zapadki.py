@@ -1298,6 +1298,19 @@ _PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
     "moduł playwright z importu": (_start("return playwright.launch()", "import playwright\n"), [8]),
     "moduł playwright pod aliasem": (_start("return api.launch()", "import playwright.sync_api as api\n"), [8]),
     "moduł o nazwie playwright z innego pakietu": (_start("return playwright.launch()", "from narzedzia import playwright\n"), []),
+    "klasa przeglądarki z importu playwright.async_api": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.async_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł o nazwie zaczynającej się od playwright": (_start("return playwright_stealth.launch()", "import playwright_stealth\n"), []),
+    "moduł z from pakietu o nazwie zaczynającej się od playwright": (
+        _start("return stealth.launch()", "from playwright_stealth import stealth\n"),
+        [],
+    ),
+    "moduł z importu ścieżki z playwright w środku": (_start("return narzedzia.launch()", "import narzedzia.playwright\n"), []),
+    "moduł z from ścieżki z playwright w środku": (_start("return excel.launch()", "from narzedzia.playwright import excel\n"), []),
+    "** wywołania o nazwie zaczynającej się od launch_options": (_start("return p.chromium.launch(**launch_options_x(p))"), [7]),
+    "parametr typu o nazwie zaczynającej się od ModuleType": (_start("return excel.launch()", signature="excel: ModuleTypeX"), [7]),
     "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
     "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
     "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
@@ -1372,32 +1385,34 @@ WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, int]]] = {
 }
 
 
-@needs_ast_grep
-def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z_tabeli_wlascicieli(tmp_path: Path) -> None:
+def _owner_starts(root: Path, owners: list[tuple[str, ...]], tmp_path: Path) -> dict[tuple[str, ...], dict[str, int]]:
+    """Plik właściciela z ``owners`` w drzewie ``root`` → funkcja → liczba odwołań, które reguła
+    ``przegladarka-bez-launch-options`` zgłasza w nim poza zwolnieniem ``ignores:``. Kopia reguły leży w ``tmp_path``:
+    ast-grep czyta globy ``files:`` względem jej katalogu, gdy plik leży pod nim, więc dla drzewa w ``tmp_path``
+    katalog kopii to sam ``root``."""
+
     import ast
     import json
 
     import yaml
 
-    rule_file = ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml"
-    rule = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
-    assert sorted(rule.pop("ignores")) == sorted("/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI)
+    rule = yaml.safe_load((ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml").read_text(encoding="utf-8"))
+    rule.pop("ignores")
     unexempted = tmp_path / "bez-ignores.yml"
     unexempted.write_text(yaml.safe_dump(rule, allow_unicode=True), encoding="utf-8")
-    paths = ["/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI]
     scan = subprocess.run(
-        [str(AST_GREP), "scan", "--rule", str(unexempted), "--json=stream", "--", *paths],
-        cwd=ROOT,
+        [str(AST_GREP), "scan", "--rule", str(unexempted), "--json=stream", "--", *("/".join(parts) for parts in owners)],
+        cwd=root,
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=False,
     )
-    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in WLASCICIELE_PRZEGLADARKI}
+    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in owners}
     for match in map(json.loads, scan.stdout.splitlines()):
         parts = tuple(Path(match["file"]).parts)
         line = match["range"]["start"]["line"] + 1
-        tree = ast.parse((ROOT.joinpath(*parts)).read_text(encoding="utf-8"))
+        tree = ast.parse((root.joinpath(*parts)).read_text(encoding="utf-8"))
         functions = [
             node
             for node in ast.walk(tree)
@@ -1405,11 +1420,68 @@ def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z
         ]
         name = max(functions, key=lambda node: node.lineno).name if functions else "<moduł>"
         found[parts][name] = found[parts].get(name, 0) + 1
+    return found
+
+
+@needs_ast_grep
+def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z_tabeli_wlascicieli(tmp_path: Path) -> None:
+    import yaml
+
+    rule = yaml.safe_load((ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml").read_text(encoding="utf-8"))
+    assert sorted(rule["ignores"]) == sorted("/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI)
+
+    found = _owner_starts(ROOT, list(WLASCICIELE_PRZEGLADARKI), tmp_path)
 
     assert found == WLASCICIELE_PRZEGLADARKI, (
         "goły start przeglądarki w pliku z ignores: reguły przegladarka-bez-launch-options stoi tylko w funkcjach z "
         "WLASCICIELE_PRZEGLADARKI tyle razy, ile mówi tabela: podaj **launch_options(playwright) albo zmień tabelę"
     )
+
+
+# Znane luki tabeli ``WLASCICIELE_PRZEGLADARKI`` (tests/fixtures/znane_luki.py): „klasa: postać” → plik właściciela
+# z ``ignores:`` i jego tekst, którego start nie niesie argumentów, które ma nieść, a który mimo to przechodzi tabelę, bo
+# ta liczy starty na funkcję. Każda próbka mówi, który test tę postać łapie.
+_EFENIX_BROWSER: Final = ("src", "rozliczenia", "efenix_browser.py")
+_PRZEGLADARKA_TESTOW: Final = ("tests", "fixtures", "przegladarka.py")
+_SONDA = 'def _playwright_disabling(playwright: Playwright) -> object:\n    return playwright.chromium.launch(headless=True{})\n\n\n'
+_KONTEKST = 'def chrome(playwright: Playwright, profile: str) -> object:\n    return playwright.chromium.launch_persistent_context(profile{})\n'
+ZNANE_LUKI_WLASCICIELI_PRZEGLADARKI: Final[dict[str, tuple[tuple[str, ...], str]]] = {
+    "tabela liczy starty, nie ich argumenty: kontekst okna efenix bez **options (łapie "
+    "tests/test_centrum_logi_uruchomienia.py::test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta)": (
+        _EFENIX_BROWSER,
+        "from playwright.sync_api import Playwright\n\n\n"
+        + _SONDA.format(', args=["--enable-automation"]')
+        + _KONTEKST.format(", headless=True"),
+    ),
+    "tabela liczy starty, nie ich argumenty: sonda Playwrighta bez --enable-automation (łapie "
+    "tests/test_wycena_efenix.py::test_argumenty_okna_efenix_nie_zostawiaja_otwartej_przegladarki_z_ktorej_wziely_liste_playwrighta)": (
+        _EFENIX_BROWSER,
+        "from playwright.sync_api import Playwright\n\n\n"
+        + _SONDA.format(', ignore_default_args=["--enable-automation"]')
+        + _KONTEKST.format(", **options"),
+    ),
+    "tabela liczy starty, nie ich argumenty: wzorzec bez --enable-automation (łapie "
+    "tests/test_centrum_logi_uruchomienia.py::test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta)": (
+        _PRZEGLADARKA_TESTOW,
+        "from playwright.sync_api import Playwright\n\n\n"
+        "def plain_chromium(playwright: Playwright) -> object:\n    return playwright.chromium.launch(args=[])\n",
+    ),
+}
+
+
+@needs_ast_grep
+def test_znane_luki_tabeli_wlascicieli_przegladarki_przechodza_przez_tabele(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for number, (opis, (parts, text)) in enumerate(ZNANE_LUKI_WLASCICIELI_PRZEGLADARKI.items()):
+        root = tmp_path / str(number)
+        root.joinpath(*parts).parent.mkdir(parents=True)
+        root.joinpath(*parts).write_text(text, encoding="utf-8")
+        found = _owner_starts(root, [parts], root)
+        zgloszenia[opis] = [] if found[parts] == WLASCICIELE_PRZEGLADARKI[parts] else [f"tabela: {found[parts]}"]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_tabeli_wlascicieli_przegladarki_przechodza_przez_tabele")
 
 
 # Znane luki reguły ``przegladarka-bez-launch-options`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik
