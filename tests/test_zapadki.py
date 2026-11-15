@@ -567,7 +567,7 @@ def syntax_rule_findings(root: Path, base: str) -> list[str]:
 
 
 # Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły ast-grep (na liniach
-# dodanych i całego ``src/``) się pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza
+# dodanych i całego drzewa) się pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza
 # Windows brak ast-grep to porażka z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
 BEZ_DODATKU_DEV = sys.platform == "win32"
 windows_without_ast_grep = pytest.mark.skipif(
@@ -587,7 +587,14 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
-REGULY_CALEGO_DRZEWA: Final = ("historia-w-docstringu", "komentarz-w-src", "reczny-parser-pythona")
+REGULY_CALEGO_DRZEWA: Final = (
+    "historia-w-docstringu",
+    "komentarz-w-src",
+    "reczny-parser-pythona",
+    "stan-pliku-poza-file-state",
+    "watki-workera",
+    "wlasna-wyrocznia-numeru",
+)
 CALE_DRZEWO: Final = "."
 
 
@@ -2299,17 +2306,30 @@ def test_regula_parsera_zglasza_tylko_tests_tools_i_skrypty_skilli_poza_lista(tm
     assert _findings_of(_PARSER_RULE, tmp_path, base) == [(".agents/skills/s/scripts/nowy.py", 3), ("tests/test_nowy.py", 3), ("tools/nowy.py", 3)]
 
 
+# Reguła z zapadki → plik z jej ignores: (części ścieżki, nie napis z ``/``, z powodu jak przy ``_Z_LISTY``), nowa nazwa
+# w jej zakresie, tekst z jej formą i linia formy. Zapadka biegła w CI na całym ``tests/`` i ``src/`` od pustego drzewa
+# (``test_zapadki_nie_zglaszaja_zadnej_linii_testow``), więc reguła z niej biegnie na całym drzewie.
+_PRZENIESIENIA: Final[dict[str, tuple[tuple[str, ...], str, str, int]]] = {
+    _PARSER_RULE: (_Z_LISTY, "tests/test_nowy.py", _PARSER, 3),
+    "stan-pliku-poza-file-state": (("src", "rozliczenia", "file_state.py"), "src/rozliczenia/kopia.py", "def taken(path):\n    return path.exists()\n", 2),
+    "watki-workera": (("tests", "fixtures", "linie_watkow.py"), "tests/test_watkow.py", "import threading\nstart = threading.Thread.start\n", 2),
+    "wlasna-wyrocznia-numeru": (("tests", "test_zapadki.py"), "tests/test_numeru.py", 'import re\n\nNUMBER = re.compile(r"(?<![0-9])9401")\n', 3),
+}
+
+
 @windows_without_ast_grep
-def test_regula_parsera_na_calym_drzewie_zglasza_plik_z_listy_przeniesiony_pod_nowa_nazwe(tmp_path: Path) -> None:
-    """Plik z listy przeniesiony pod nową nazwę (``git mv``) nie ma linii dodanych, więc reguła na liniach dodanych go
-    nie widzi; reguła całego drzewa widzi plik z parserem spoza listy bez względu na to, jak tam trafił, a test
-    konfiguracji ``ignores:`` zgłasza stary wpis."""
+@pytest.mark.parametrize("rule", sorted(_PRZENIESIENIA))
+def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignores_a_linie_dodane_nie(tmp_path: Path, rule: str) -> None:
+    """Plik z ``ignores:`` reguły przeniesiony pod nową nazwę w jej zakresie (``git mv``) nie ma linii dodanych, więc
+    reguła na liniach dodanych go nie widzi; reguła całego drzewa widzi formę bez względu na to, jak trafiła do pliku,
+    a test konfiguracji ``ignores:`` zgłasza stary wpis."""
 
-    base = _committed(tmp_path, {"/".join(_Z_LISTY): _PARSER})
-    _git(tmp_path, "mv", "/".join(_Z_LISTY), "tests/test_nowy.py")
+    old, new, text, line = _PRZENIESIENIA[rule]
+    base = _committed(tmp_path, {"/".join(old): text})
+    _git(tmp_path, "mv", "/".join(old), new)
 
-    assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == _PARSER_RULE] == [("tests/test_nowy.py", 3)]
-    assert _findings_of(_PARSER_RULE, tmp_path, base) == []
+    assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
+    assert _findings_of(rule, tmp_path, base) == []
 
 
 # Znane luki reguły ``reczny-parser-pythona`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``

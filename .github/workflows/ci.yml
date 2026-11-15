@@ -101,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The ast-grep rules on added lines count them from HEAD^1; the rules of the whole src need no history.
+          # The ast-grep rules on added lines count them from HEAD^1; the rules of the whole tree need no history.
           fetch-depth: 2
           persist-credentials: false
 
@@ -124,7 +124,7 @@ jobs:
         run: python -m ruff check
 
       # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added ones.
-      - name: ast-grep rules of the whole src
+      - name: ast-grep rules of the whole tree
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: >-
           python -m pytest -q -rs -n 0 -p no:cacheprovider
