@@ -1963,6 +1963,8 @@ _PROBKI_STANU_PLIKU: Final[list[tuple[str, list[int]]]] = [
     (f"{_IN_TAKEN}    return myos.path.exists(path)\n", []),
     (f"{_IN_TAKEN}    return foo.myos.path.exists(path)\n", []),
     (f"{_IN_TAKEN}    return os.extras.exists(path)\n", []),
+    (f"{_IN_TAKEN}    return foo.file_exists()\n", []),
+    (f'{_IN_TAKEN}    return "myos.path.exists(p)"\n', []),
 ]
 
 
@@ -2261,6 +2263,8 @@ _PROBKI_WATKOW: Final[list[tuple[str, list[int]]]] = [
     (f'{_IN_THREADS}    assert threading.Thread == "start"\n', []),
     (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, r"start", counted)\n', []),
     (f'{_IN_THREADS}    monkeypatch.setattr(pool.MyThread, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(Threads, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool.Threads, "start", counted)\n', []),
     (f'{_IN_THREADS}    names = {{threading.Thread: "start"}}\n', []),
     (f'{_IN_THREADS}    match pool:\n        case [threading.Thread, "start"]:\n            pass\n', []),
     (f"{_IN_THREADS}    assert pool  # pool._active_count() == 0\n", []),
