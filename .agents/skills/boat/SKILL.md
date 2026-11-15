@@ -6,7 +6,8 @@ description: Gdzie biegnie ciężkie polecenie w tym repozytorium - na Macu albo
 # Boat
 
 Mac Maksa ma 16 rdzeni i dzieli je między równoległe wątki agentów.
-Box boat to kopia worktree: ten sam HEAD, ten sam `origin/main` i te same niezacommitowane pliki, więc narzędzia repo dają na nim ten sam wynik.
+Box boat to kopia worktree w tym, co widzi git: ten sam HEAD, ten sam `origin/main` i te same niezacommitowane pliki, więc narzędzia repo dają na nim ten sam wynik.
+Pliki ignorowane przez git (`node_modules`, `config/`) na box nie trafiają, a pliki, które polecenie zapisze na boxie, wracają do worktree tylko przez `boatbox get`.
 Edycja, git, `gh` i agenci zostają na Macu, a mechanikę (`run`, `auto`, `job`, `wait`, `log`, `fan`, `get`, `stop`) opisuje `boatbox help`.
 Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalnie.
 
