@@ -146,22 +146,23 @@ dowolny tekst (``str`` spoza jawnych wyjątków z powodem w teście, słownik, `
 którego test nie zna."""
 
 TOOL_TEXT_GRAMMAR: Final = {
-    "RunLog.run_id": re.compile(r"[0-9a-f]{32}"),
-    "RunLog.period": re.compile(rf"{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD}"),
-    "Tool.wydanie": re.compile(r"\d+\.\d+\.\d+"),
-    "Tool.commit": re.compile(r"[0-9a-f]{7,40}"),
-    "CallTrace.exception_type": re.compile(r"[A-Za-z_][\w.]*"),
-    "CallCause.exception_type": re.compile(r"[A-Za-z_][\w.]*"),
-    "CallFrame.file": re.compile(r"[\w.\-]+(?:/[\w.\-]+)*\.py"),
-    "CallFrame.function": re.compile(r"[A-Za-z_]\w*|<\w+>"),
-    "Environment.system": re.compile(r"[\w.\-]+"),
-    "Environment.python": re.compile(r"\d+\.\d+\.\d+\w*"),
+    "RunLog.run_id": re.compile(r"[0-9a-f]{32}", re.ASCII),
+    "RunLog.period": re.compile(rf"{PERIOD_TOKEN_PATTERN}|{UNKNOWN_PERIOD}", re.ASCII),
+    "Tool.wydanie": re.compile(r"\d+\.\d+\.\d+", re.ASCII),
+    "Tool.commit": re.compile(r"[0-9a-f]{7,40}", re.ASCII),
+    "CallTrace.exception_type": re.compile(r"[A-Za-z_][\w.]*", re.ASCII),
+    "CallCause.exception_type": re.compile(r"[A-Za-z_][\w.]*", re.ASCII),
+    "CallFrame.file": re.compile(r"[\w.\-]+(?:/[\w.\-]+)*\.py", re.ASCII),
+    "CallFrame.function": re.compile(r"[A-Za-z_]\w*|<\w+>", re.ASCII),
+    "Environment.system": re.compile(r"[\w.\-]+", re.ASCII),
+    "Environment.python": re.compile(r"\d+\.\d+\.\d+\w*", re.ASCII),
 }
 """Gramatyka tekstu narzędzia każdego pola z dowolnym tekstem w poddrzewach ``TOOL_FIELDS`` (pole jako ``Model.pole``).
 Strażnik zostawia taki tekst bez maski tylko wtedy, gdy pasuje do gramatyki swojego pola (``_kept``), a inny tekst maskuje
 jak każdy tekst Logów; nic nie odmawia, więc Logi ze starszych Wydań czytają się dalej. Identyfikator, okres, commit,
 Wydanie i wersja Pythona mają gramatykę, której tekst z komórki nie spełnia. Typ wyjątku, plik i funkcja ramki oraz
-system to identyfikatory, a do gramatyki identyfikatora pasuje też jedno słowo z komórki."""
+system to identyfikatory, a do gramatyki identyfikatora pasuje też jedno słowo z komórki. Każda gramatyka jest ASCII
+(``re.ASCII``): tekst narzędzia jest ASCII, a ``\\w`` i ``\\d`` bez tej flagi przyjmują też litery i cyfry spoza ASCII."""
 
 _OUTSIDE_TOOL: Final = "[poza-narzędziem]"
 """Maska tekstu spoza gramatyki pola narzędzia tam, gdzie nie ma pamięci strażnika (``tool_text``); bez spacji, bo
