@@ -99,9 +99,9 @@ def new_password(read: Read[InboxFile] | Unreadable, typed: str) -> str | FieldP
             return password
 
 
-def dump(inbox: InboxFile) -> str:
+def dump(inbox: InboxFile) -> bytes:
     lines = (inbox.address_line, inbox.password, *inbox.rest)
-    return ("\ufeff" if inbox.bom else "") + "".join(line + inbox.newline for line in lines)
+    return (("\ufeff" if inbox.bom else "") + "".join(line + inbox.newline for line in lines)).encode("utf-8")
 
 
 def diff(before: InboxFile, after: InboxFile) -> tuple[KeyChange, ...]:
