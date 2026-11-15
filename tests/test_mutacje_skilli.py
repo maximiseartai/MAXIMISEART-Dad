@@ -8,22 +8,21 @@ biegną w runie CI, sprawdza ``tests/test_zakres_runu.py``.
 
 from __future__ import annotations
 
-import contextlib
 import fnmatch
 import json
 from pathlib import Path
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
+import textwrap
 
 import pytest
 
 from tests.fixtures.git_repo import copy_files, git, with_imports
 from tests.fixtures.granice_ksztaltow import GAPS
-from tests.fixtures.potomne import beating, wait_for
+from tests.fixtures.potomne import beating, until_stopped, wait_for
 
 from jednostka import Klucz
 import kroki_skilli
@@ -295,12 +294,13 @@ def test_sciezka_bezwzgledna_spoza_repo_daje_nazwany_fail(tmp_path: Path) -> Non
 
 
 def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
-    ready, beats = tmp_path / "skrypt-gotowy", tmp_path / "skrypt-zyje"
+    """Skrypt mutacji bije tylko pod ``__main__``, jak prawdziwy: wykonanie importuje go, żeby policzyć ``MUTATIONS``, więc
+    pętla poza ``__main__`` biegłaby w samym runnerze, a test nie widziałby procesu skryptu."""
+
+    ready, beats, stop = tmp_path / "skrypt-gotowy", tmp_path / "skrypt-zyje", tmp_path / "skrypt-stop"
     beat = f"open({str(beats)!r}, 'a').write('.')"
-    script = (
-        f"import os, pathlib, time\n{beat}\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
-        f"while True:\n    {beat}\n    time.sleep(0.1)\n"
-    )
+    main = f"{beat}\npathlib.Path({str(ready)!r}).touch()\n{until_stopped(stop, each=beat)}"
+    script = f"import pathlib\n\nMUTATIONS = ()\n\nif __name__ == '__main__':\n{textwrap.indent(main, '    ')}"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
     runner = subprocess.Popen(_tool(tmp_path), cwd=tmp_path, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     try:
@@ -312,9 +312,7 @@ def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
     finally:
         runner.kill()
         runner.wait()
-        if ready.exists():
-            with contextlib.suppress(OSError):
-                os.kill(int(ready.read_text()), signal.SIGTERM)
+        stop.touch()
 
 
 def test_kazdy_glob_pilnuje_trafia_w_plik_repozytorium() -> None:
