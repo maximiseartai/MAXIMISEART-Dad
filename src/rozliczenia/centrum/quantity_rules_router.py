@@ -5,9 +5,10 @@ zmień, usuń składnik; ``device_forms``) i jej podpowiedzi z ostatnich okresó
 Reguły i Listę Urządzeń daje właściciel Ustawień (``CentrumSettings.quantity_rules``), te same, którymi liczy następne
 Uruchomienie. Trasy tylko parsują żądanie, wołają właściciela i tłumaczą jego wynik na HTTP. Formularz odmawia z polem
 tylko tego, czego sam nie wyrazi (``rule_forms``, ``device_forms``), a każdy zapis edytora i sekcji Urządzenia idzie
-zapisem taty właściciela (``CentrumSettings.change_with_used_keys``), który sprawdza parę Reguł ilości i Listy Urządzeń
-jako zmianę, tym samym zdaniem co „Cofnij” w Historii; odmowę zapisu u dwóch składników trasa stawia przy polu
-formularza z tym zapisem. Podgląd pyta właściciela o tę samą zmianę bez zapisu (``CentrumSettings.rules_after``).
+poleceniem formularza do właściciela (``CentrumSettings.change_rules``, ``change_devices``), który sam robi zmianę i
+sprawdza parę Reguł ilości i Listy Urządzeń jako zmianę, tym samym zdaniem co „Cofnij” w Historii; odmowę zapisu u dwóch
+składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta właściciela o to samo polecenie bez zapisu
+(``CentrumSettings.rules_after``).
 Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
@@ -30,25 +31,21 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum import device_forms
-from rozliczenia.centrum.device_forms import AddComponent, ChangeComponent, DeviceEdit, RemoveComponent, UnknownComponent
+from rozliczenia.centrum.device_forms import AddComponent, ChangeComponent, DeviceEdit, RemoveComponent
 from rozliczenia.centrum.device_suggestions import device_suggestions
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles, preview
-from rozliczenia.centrum.rule_forms import SCOPES, UnknownRule, component_field, edited, edited_id, form_of, form_problem
+from rozliczenia.centrum.rule_forms import SCOPES, component_field, edited_id, form_of
 from rozliczenia.centrum.rule_sentences import component_sentence, rule_sentence
-from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
+from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, QuantityRulesView, Refused, Saved
 from rozliczenia.centrum.settings.quantity_rules import (
-    DEVICES,
     DEVICES_SECTION,
-    RULES,
     RULES_SECTION,
     TakenSpelling,
     UnlistedComponent,
-    device_ids,
-    rule_ids,
 )
 from rozliczenia.collective_layout import QUANTITY_LETTERS
-from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, Component, QuantityRule, QuantityRules, RulesProblem
+from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
@@ -126,17 +123,11 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
     def proposed(edit: contract.RuleEdit) -> tuple[QuantityRules, QuantityRules, str | None]:
         """Reguły teraz i po zmianie ``edit`` oraz id reguły, którą zmiana dodaje albo zmienia; reguły po zmianie i
-        odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu.
-
-        Historia, której nie da się przeczytać, nie daje id do pominięcia: id nowej reguły w podglądzie może wtedy być
-        inne niż przy zapisie, ale zapis i tak się wtedy nie uda (``change_with_used_keys``).
-        """
+        odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu."""
 
         view = settings.quantity_rules()
         _known_rule(edit, view)
-        used = settings.used_keys(RULES)
-        keys = frozenset() if isinstance(used, Unreadable) else used
-        after = settings.rules_after(lambda current: _ruled(edit)(current, keys))
+        after = settings.rules_after(edit)
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(view.source_rules, after.rules)
@@ -146,7 +137,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         """Zapis zmiany przez właściciela Ustawień: na bieżącej wartości pliku reguł, z jego sprawdzeniem pary."""
 
         _known_rule(edit, settings.quantity_rules())
-        match settings.change_with_used_keys(RULES, _ruled(edit)):
+        match settings.change_rules(edit):
             case Saved(change=change):
                 return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
             case Refused(problem=problem):
@@ -178,11 +169,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in settings.quantity_rules().rules.devices.ids():
             raise refusal.device_component_unknown()
 
-        def applied(current: tuple[Component, ...], keys: frozenset[str]) -> tuple[Component, ...] | FieldProblem:
-            changed = device_forms.edited(current, edit, device_ids(keys))
-            return current if isinstance(changed, UnknownComponent) else changed
-
-        match settings.change_with_used_keys(DEVICES, applied):
+        match settings.change_devices(edit):
             case Saved(change=change):
                 return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
             case Refused(problem=TakenSpelling(spelling=spelling) as taken):
@@ -251,24 +238,6 @@ def _at_form_field(edit: contract.RuleEdit, problem: FieldProblem) -> FieldProbl
     if isinstance(problem, UnlistedComponent) and not isinstance(edit, contract.RemoveRule):
         return FieldProblem(component_field(edit.rule, problem.component), problem.sentence)
     return problem
-
-
-def _ruled(
-    edit: contract.RuleEdit,
-) -> Callable[[tuple[QuantityRule, ...], frozenset[str]], tuple[QuantityRule, ...] | FieldProblem]:
-    """Zmiana ``edit`` z edytora jako zmiana taty dla właściciela: bieżące reguły i klucze Historii → reguły po zmianie
-    albo odmowa formularza z polem (``rule_forms``); reguły, której już nie ma, nie rusza (404 daje ``_known_rule``)."""
-
-    def applied(current: tuple[QuantityRule, ...], keys: frozenset[str]) -> tuple[QuantityRule, ...] | FieldProblem:
-        changed = edited(current, edit, rule_ids(keys))
-        if isinstance(changed, UnknownRule):
-            return current
-        if isinstance(changed, FieldProblem):
-            return changed
-        rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(current, changed)
-        return form_problem(changed, rule_id) or changed
-
-    return applied
 
 
 def _rule(rule: QuantityRule, rules: QuantityRules, names: Mapping[str, str]) -> contract.QuantityRuleSentence:

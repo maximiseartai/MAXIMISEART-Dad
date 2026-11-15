@@ -89,6 +89,9 @@ jobs:
         shell: pwsh
         env:
           FEATURE: ${{ inputs.feature || 'all' }}
+          # Maks's Token do Zgłoszeń in the clone's config/, so Aktualność asks GitHub's API within this read-only
+          # token's limit instead of the runner address's 60 an hour (windows_tool.take_github_token).
+          CENTRUM_GITHUB_TOKEN: ${{ github.token }}
         run: |
           python .agents/skills/verify-centrum-na-windowsie/scripts/run_windows_verification.py --feature $env:FEATURE
           if ($LASTEXITCODE -ne 0) {

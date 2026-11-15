@@ -108,6 +108,13 @@ opens the `.lnk` with `os.startfile` like Explorer does for Dad:
   section Narzędzie of Ustawienia still ask the real GitHub API for the newest Wydanie, so the section's freshness
   depends on the network; `aktualizacja` needs it to read `Jest nowsza wersja` (see its Gotchas).
 
+`CENTRUM_GITHUB_TOKEN` (the workflow's read-only `github.token`) leaves the drive's environment before anything
+starts, and `instalacja` writes it as Maks's `config\zgloszenia-klucz.txt`: Centrum asks GitHub's API with it, within
+the token's limit, instead of sharing the runner address's 60 requests an hour. On GitHub the drive refuses to start
+without it; by hand on another Windows machine it runs without the file. The Skrzynka Zgłoszeń refuses this token (it has no
+access to the Zgłoszenia repository), so the section Zgłoszenia of Ustawienia reads `Token odrzucony`; no feature
+here sends a Zgłoszenie.
+
 Teardown is the runner's `finally`: it keeps the state in the evidence, then runs the cleanup.
 
 ## Doctor

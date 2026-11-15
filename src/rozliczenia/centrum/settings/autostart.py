@@ -35,12 +35,16 @@ def parse(data: bytes | None) -> bool | FieldProblem:
     return data == ON.encode("ascii")
 
 
-def dump(enabled: bool) -> str:
+def dump(enabled: bool) -> bytes:
+    return _state(enabled).encode("ascii")
+
+
+def _state(enabled: bool) -> str:
     return ON if enabled else OFF
 
 
 def diff(before: bool, after: bool) -> tuple[KeyChange, ...]:
-    return () if before == after else (KeyChange(KEY, dump(before), dump(after)),)
+    return () if before == after else (KeyChange(KEY, _state(before), _state(after)),)
 
 
 def restore(enabled: bool, changes: tuple[KeyChange, ...]) -> bool:
@@ -86,7 +90,7 @@ class AutostartPlace:
             state = self.autostart.state()
         except OSError as failure:
             return failure
-        return dump(state == "on").encode("ascii")
+        return dump(state == "on")
 
     def write(self, data: bytes | None) -> None:
         """Zakłada skrót dla treści ``wlaczony``, a dla każdej innej go usuwa; ``OSError``, gdy się nie udało."""

@@ -24,8 +24,9 @@ class DriveFailure(Exception):
 
 
 class Run:
-    def __init__(self, root: Path, evidence: Path) -> None:
+    def __init__(self, root: Path, evidence: Path, github_token: str | None = None) -> None:
         self.root = root
+        self.github_token = github_token
         self.evidence = evidence
         self.facts = windows_tool.load(root)
         self.tool = Path(self.facts["tool"])

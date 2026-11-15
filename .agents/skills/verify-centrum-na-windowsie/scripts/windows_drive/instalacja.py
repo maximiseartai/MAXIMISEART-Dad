@@ -12,6 +12,7 @@ import sys
 from windows_drive.common import Run, same_path
 import windows_desktop
 from windows_tool import REPO_ROOT
+from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.tool_files import REPOSITORY_URL
 
 FEATURE = "instalacja"
@@ -76,8 +77,14 @@ def drive(run: Run) -> None:
     run.step(FEATURE, "pliki-taty")
     for name in facts["dad_config"]:
         shutil.copy2(name, run.config / Path(name).name)
+    if run.github_token is not None:
+        (run.config / REPORT_KEY_FILE).write_text(run.github_token + "\n", encoding="utf-8")
+        run.harness(
+            f"Maks's {REPORT_KEY_FILE} is the run's read-only GitHub token, so Aktualność asks GitHub's API within "
+            "the token's limit, not the runner's 60 an hour"
+        )
     status = run.git("status", "--porcelain", "--untracked-files=all")
-    run.check(status == "", "Dad's Lista Wykonawców and Wzorce in config/ leave the clone clean for Git")
+    run.check(status == "", "Dad's files in config/ leave the clone clean for Git")
 
     run.step(FEATURE, "biblioteki")
     run.harness(f"README's {_PIP_LINE!r} runs with this Python, not with the py launcher")

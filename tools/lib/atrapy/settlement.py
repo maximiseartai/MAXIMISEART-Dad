@@ -60,7 +60,7 @@ def write_worker_list(path: Path, workers: WorkerList | None = None) -> Path:
     """Plik Listy Wykonawców ``wykonawcy.yaml`` w kształcie właściciela Ustawień Centrum (domyślnie ``worker_list()``)."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(WORKER_LIST_FILE.dump(worker_list() if workers is None else workers), encoding="utf-8")
+    path.write_bytes(WORKER_LIST_FILE.dump(worker_list() if workers is None else workers))
     return path
 
 
