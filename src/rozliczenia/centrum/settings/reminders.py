@@ -13,10 +13,10 @@ oprócz stopki, która ma imię i telefon taty: przy niej tylko, że się zmieni
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, time
 import re
-from typing import Final
+from typing import Final, assert_never
 
 import yaml
 
@@ -108,6 +108,40 @@ def settings_of(
         place, sentence = _PROBLEMS[built.kind]
         return FieldProblem(place, sentence())
     return built
+
+
+@dataclass(frozen=True)
+class SwitchReminders:
+    """Przełącznik Przypomnień o raporcie; ``today``: dzień taty, który pierwsze włączenie zapisuje jako dzień
+    wdrożenia."""
+
+    enabled: bool
+    today: date
+
+
+@dataclass(frozen=True)
+class ChangeReminders:
+    """Formularz Przypomnień przeczytany regułą pliku (``settings_of``); zapis bierze z niego tylko pola formularza."""
+
+    form: ReminderSettings
+
+
+RemindersEdit = SwitchReminders | ChangeReminders
+"""Zmiana taty Przypomnień o raporcie, którą zapisuje właściciel Ustawień (``dad_reminders``)."""
+
+
+def dad_reminders(current: ReminderSettings, edit: RemindersEdit) -> ReminderSettings:
+    """Przypomnienia po zmianie taty ``edit``. Pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia
+    dawny, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym; formularz zostawia przełącznik."""
+
+    match edit:
+        case SwitchReminders(enabled=enabled, today=today):
+            since = current.since or today if enabled else current.since
+            return replace(current, enabled=enabled, since=since)
+        case ChangeReminders(form=form):
+            return replace(current, schedule=form.schedule, text=form.text, footer=form.footer)
+        case _:
+            assert_never(edit)
 
 
 _PROBLEMS: Final[Mapping[ReminderProblemKind, tuple[FieldPath, Callable[[], str]]]] = {
