@@ -41,8 +41,8 @@ CONSTANTS
     AwariaGita,         \* git checkout HEAD -- (set_aside) z kodem różnym od 0: _NotSetAside; git diff (changed),
                         \* rev-parse HEAD i git reset --keep (_roll_back): GitFailed;
                         \* każde polecenie Gita także po limicie czasu albo z OSError z _run_tree (_Git.run:
-                        \* TimeoutExpired; OSError, gdy zadanie Windows nie powstanie albo drzewo przeżyje
-                        \* _KILL_TIMEOUT_S): git checkout HEAD --, git merge --ff-only, git diff (changed), rev-parse
+                        \* TimeoutExpired; OSError, gdy zadanie Windows nie powstanie albo drzewo, w POSIX sesja,
+                        \* przeżyje _KILL_TIMEOUT_S): git checkout HEAD --, git merge --ff-only, git diff (changed), rev-parse
                         \* HEAD i git reset --keep w _roll_back
     AwariaKopiowania,   \* OSError z dysku (dysk, antywirus, OneDrive): shutil.copy2 pliku taty, zapis stan.json (także
                         \* terminu opiekuna), zapis pliku wyniku (write_result) albo jego usunięcie, usunięcie pliku
@@ -316,8 +316,8 @@ KopiaPlikow ==
     /\ UNCHANGED <<head, plikTaty, biblioteki, nowa, centrum, klikniecia, ekran>>
 
 \* _DadFiles.set_aside: git checkout HEAD -- <plik taty>, w try. Kod wyjścia różny od 0 to _NotSetAside,
-\* po którym ToolClone.update usuwa dziennik. Limit czasu rzuca TimeoutExpired, a _run_tree w Windows także
-\* OSError (zadanie nie powstało, _join, drzewo przeżyło zabicie): finally wgrywa kopię, a wyjątek mija oba
+\* po którym ToolClone.update usuwa dziennik. Limit czasu rzuca TimeoutExpired, a _run_tree także OSError (w Windows
+\* zadanie nie powstało albo _join, w obu systemach drzewo przeżyło zabicie): finally wgrywa kopię, a wyjątek mija oba
 \* except w ToolClone.update, więc dziennik zostaje. Ubity checkout mógł już nadpisać plik taty albo jeszcze nie.
 CheckoutHead ==
     /\ pc = "checkout_head"
