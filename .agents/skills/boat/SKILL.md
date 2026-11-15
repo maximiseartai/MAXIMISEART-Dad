@@ -43,6 +43,7 @@ Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pli
 Plan za 20 USD ma dwa limity i oba się kończą: 200 startów boxa na dobę oraz godziny maszyn, z których na każdy dzień zostaje tylko część, a box `large` liczy się podwójnie.
 Start to każde utworzenie i wznowienie boxa oraz każda część `fan`.
 `boatbox status` pokazuje oba limity i tempo zużycia godzin, `boatbox auto` przy ich braku wybiera Maca, a `boatbox fan` przy braku startów uruchamia części po kolei na jednym boxie.
+Gdy `boatbox` ostrzega, że ostatnie 24 h zużyły więcej niż dzienne tempo planu, pełny pytest uruchamiaj lokalnie, a `fan` tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty co najmniej równe liczbie rdzeni w `uptime`).
 Zadanie kończ poleceniem `boatbox stop`.
 
 ## Dane
