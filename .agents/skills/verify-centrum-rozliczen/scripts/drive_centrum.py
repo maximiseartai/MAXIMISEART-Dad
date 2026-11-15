@@ -64,6 +64,7 @@ def drive(run: Run, page: Page, name: str, driven: list[str], options: dict[str,
         # never fires: the failure names the dead clock.
         check_clock_alarm(run)
         raise
+    run.refuse_text_settings()
     owners += [name] * (len(run.calls) - len(owners))
     driven.append(name)
 

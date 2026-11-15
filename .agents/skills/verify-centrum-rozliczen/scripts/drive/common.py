@@ -195,6 +195,7 @@ class Run:
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
     def api(self, path: str, name: str) -> dict[str, object]:
+        self.refuse_text_settings()
         with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=Budget.SCREEN.value) as response:
             body = json.load(response)
         (self.evidence / "api" / f"{name}.json").write_text(
@@ -252,6 +253,26 @@ class Run:
         feature gives back the file from before it."""
 
         put_bytes(Path(self.fixture["settings"]), data)
+
+    def refuse_text_settings(self) -> None:
+        """Fails when the settings file holds ``\\r``: Centrum writes it with ``\\n`` only and no drive step puts a
+        ``\\r`` in it, so a ``\\r`` is a text-mode write on Windows (#1585), whichever ``str`` and whichever path to
+        the file the write took, which ``put_settings`` taking ``bytes`` does not see.
+
+        Runs at each ``api`` and after each feature's drive (``drive_centrum.drive``), so the failure names the step
+        that wrote the file; Mutation checks drive every feature on Windows, where a text write gives ``\\r\\n``. A file
+        the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next check."""
+
+        try:
+            data = self.settings_bytes()
+        except PermissionError:
+            return
+        if data is not None and b"\r" in data:
+            raise DriveFailure(
+                f"the settings file {self.fixture['settings']} holds \\r: a drive step wrote it in text mode, which turns "
+                "\\n into \\r\\n on Windows; write bytes with run.put_settings (from run.settings_bytes or the "
+                "owner's settings_yaml)"
+            )
 
     def remembered(self, key: str) -> object:
         """One value of the settings file as Centrum wrote it (``folder_okresow``, ``rejestr_zlecen``, ``motyw``)."""

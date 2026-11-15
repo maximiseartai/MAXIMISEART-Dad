@@ -476,7 +476,7 @@ def _check_result_of_start(errors: list[str]) -> None:
             with tempfile.TemporaryDirectory() as scratch:
                 root = Path(scratch) / "run"
                 root.mkdir()
-                File.FIXTURE.write(root, "{}")
+                File.FIXTURE.write(root, json.dumps({"settings": str(root / "config" / "s.yaml")}))
                 run = Run(root, f"http://127.0.0.1:{server.server_port}/", Path(scratch) / "evidence")
                 with contextlib.redirect_stdout(io.StringIO()):
                     result: object = result_of_start(run, "powtorka", lambda: since_click.append(0))
@@ -489,6 +489,35 @@ def _check_result_of_start(errors: list[str]) -> None:
             errors.append(
                 f"result_of_start with the new Uruchomienie shown after {late} reads took another one for it: {result}"
             )
+
+
+def _check_text_settings_refused(errors: list[str]) -> None:
+    """``Run.refuse_text_settings`` fails on a settings file written in text mode as on Windows and passes the bytes of
+    ``put_settings`` and a run before Centrum wrote the file."""
+
+    import json
+    import tempfile
+
+    from drive.common import DriveFailure, Run
+
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch) / "run"
+        root.mkdir()
+        settings = config_dir(root) / SETTINGS_FILE
+        File.FIXTURE.write(root, json.dumps({"settings": str(settings)}))
+        run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
+        run.refuse_text_settings()
+        settings.parent.mkdir()
+        run.put_settings(b"schema_version: 1\nmotyw: dark\n")
+        run.refuse_text_settings()
+        settings.write_bytes(b"schema_version: 1\r\nmotyw: dark\r\n")  # a text write on Windows
+        try:
+            run.refuse_text_settings()
+        except DriveFailure as failure:
+            if "run.put_settings" not in str(failure):
+                errors.append(f"the refusal of a settings file written in text mode names no way out: {failure}")
+        else:
+            errors.append("Run.refuse_text_settings passes a settings file written in text mode on Windows")
 
 
 def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
@@ -541,7 +570,7 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
         logs.write_text(json.dumps({"run_id": "aaaaaaaa"}), encoding="utf-8")
         settings.parent.mkdir()
-        settings.write_text("rejestr_zlecen: INTERMAX.xlsx\n", encoding="utf-8")
+        settings.write_bytes(b"rejestr_zlecen: INTERMAX.xlsx\n")
 
         read = _read_while_put_in_place(logs, lambda: read_text(logs))
         if read != '{"run_id": "aaaaaaaa"}':
@@ -1140,6 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_drop_report_key(errors)
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
+    _check_text_settings_refused(errors)
     _check_box_reads_while_put_in_place(errors)
     _check_served_side_reads_harness(errors)
     _check_protocol_spelled_once(errors)
