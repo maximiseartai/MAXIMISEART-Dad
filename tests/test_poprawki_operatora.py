@@ -15,9 +15,11 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 
 import pytest
 
@@ -208,7 +210,8 @@ def test_tydzien_daje_tylko_wiadomosci_napisane_w_oknie_t3_w_watkach_repo(
     ]
     assert last == (
         f"POPRAWKI OPERATORA OK | tydzień {WEEK}: 3 wiadomości operatora w 2 wątkach z 10 wiadomości user | "
-        "/compact po powrocie 1, agent/mcp 3, agent/provider 1, agent/server 1, user/server 1"
+        "/compact po powrocie 1, agent/mcp 3, agent/provider 1, agent/server 1, user/server 1 | "
+        "inne projekty: inny-projekt [p-inny] 1 (brak katalogu)"
     )
 
 
@@ -322,7 +325,7 @@ def test_powod_odmowy_zgody_wpisany_w_oknie_jest_wiadomoscia_operatora_a_wznowie
 
     assert code == 0
     assert lines == [f"2026-11-03 11:00 | {COORDINATOR} | {_zdanie(30)}"]
-    assert last.endswith("z 2 wiadomości user | user/server 1")
+    assert last.endswith("z 2 wiadomości user | user/server 1 | inne projekty: brak")
 
 
 ZNANE_LUKI: dict[str, tuple[str, dict[str, object]]] = {
@@ -368,7 +371,8 @@ def test_znane_luki_nadawcy_operatora(
             "2026-11-03T10:00:00.000Z",
             "/home/inny/maximiseart-dad",
             True,
-            "żaden projekt T3 nie jest repo: katalog MAXIMISEART-Dad albo checkout z origin maximiseartai/maximiseart-dad",
+            "żaden projekt T3 nie jest repo: katalog MAXIMISEART-Dad albo checkout z origin github.com/maximiseartai/maximiseart-dad; "
+            "projekty: inny-projekt [p-inny] (brak katalogu), maximiseart-dad [p-repo] (brak katalogu)",
         ),
         (
             "2026-11-03T10:00:00.000Z",
@@ -421,7 +425,7 @@ def test_baza_z_ktorej_narzedzie_nie_przeczyta_tygodnia_konczy_sie_porazka_z_pow
                 _agent(CHILD, "2026-11-04T09:00:00.000Z", _zdanie(61), "mcp"),
             ],
             "/tmp/nowe-miejsce/MAXIMISEART-Dad-nowy",
-            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 2 wiadomości user | inne projekty T3 tej bazy: MAXIMISEART-Dad-nowy 2",
+            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 2 wiadomości user | inne projekty: MAXIMISEART-Dad-nowy [p-inny] 2 (brak katalogu)",
         ),
         (
             [
@@ -433,7 +437,7 @@ def test_baza_z_ktorej_narzedzie_nie_przeczyta_tygodnia_konczy_sie_porazka_z_pow
                 )
             ],
             OTHER,
-            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty T3 tej bazy: inny-projekt 2",
+            "0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty: inny-projekt [p-inny] 2 (brak katalogu)",
         ),
     ],
     ids=[
@@ -491,14 +495,16 @@ def test_tydzien_ktory_jeszcze_trwa_konczy_sie_porazka(
     assert " jeszcze trwa: kończy się " in lines[0]
 
 
-def _checkout(path: Path, origin: str) -> str:
-    """Katalog projektu T3, który jest checkoutem gita z ``origin``; nazwa katalogu jest dowolna."""
+def _checkout(path: Path, origin: str | None, remote: str = "origin") -> str:
+    """Katalog projektu T3, który jest checkoutem gita z remote ``remote`` pod adresem ``origin`` (``None``: bez
+    remote); nazwa katalogu jest dowolna."""
 
     path.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(path)], check=True)
-    subprocess.run(
-        ["git", "-C", str(path), "remote", "add", "origin", origin], check=True
-    )
+    if origin is not None:
+        subprocess.run(
+            ["git", "-C", str(path), "remote", "add", remote, origin], check=True
+        )
     return str(path)
 
 
@@ -613,7 +619,7 @@ def test_checkout_z_obcym_origin_nie_jest_repo(
     assert (code, lines) == (
         1,
         [
-            f"POPRAWKI OPERATORA FAIL | tydzień {WEEK}: 0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty T3 tej bazy: MAXIMISEART-Dad-fork 2"
+            f"POPRAWKI OPERATORA FAIL | tydzień {WEEK}: 0 wiadomości operatora w wątkach MAXIMISEART-Dad z 0 wiadomości user | inne projekty: MAXIMISEART-Dad-fork [p-inny] 2 (inny origin)"
         ],
     )
 
@@ -640,4 +646,161 @@ def test_git_dir_odziedziczony_z_hooka_nie_robi_obcego_katalogu_repo(
     code, lines = _run(base, capsys)
 
     assert code == 1
-    assert lines[0].endswith("inne projekty T3 tej bazy: zwykly-katalog 1")
+    assert lines[0].endswith("inne projekty: zwykly-katalog [p-inny] 1 (bez git)")
+
+
+REPO_ORIGINS = {
+    "https-z-git": "https://github.com/maximiseartai/MAXIMISEART-Dad.git",
+    "https-bez-git": "https://github.com/maximiseartai/MAXIMISEART-Dad",
+    "https-z-ukosnikiem": "https://github.com/maximiseartai/MAXIMISEART-Dad.git/",
+    "ssh-scp": "git@github.com:maximiseartai/MAXIMISEART-Dad.git",
+    "ssh-url-z-portem": "ssh://git@github.com:22/maximiseartai/MAXIMISEART-Dad.git",
+    "wielkie-litery": "https://GITHUB.COM/MAXIMISEARTAI/maximiseart-dad.git",
+    "https-z-tokenem": "https://x-access-token:wymyslony@github.com/maximiseartai/MAXIMISEART-Dad.git",
+}
+OTHER_ORIGINS = {
+    "wlasciciel-z-przedrostkiem": ("https://github.com/notmaximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "ssh-wlasciciel-z-przedrostkiem": ("git@github.com:notmaximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "repo-z-przedrostkiem": ("https://github.com/maximiseartai/x-MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "fork-innego-wlasciciela": ("https://github.com/ktos/MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "inny-host": ("https://gitlab.com/maximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "sciezka-lokalna": ("/srv/git/maximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
+    "tylko-upstream": ("https://github.com/maximiseartai/MAXIMISEART-Dad.git", "upstream", "bez origin"),
+}
+
+
+@pytest.mark.parametrize("origin", REPO_ORIGINS.values(), ids=REPO_ORIGINS.keys())
+def test_checkout_z_origin_repo_w_kazdym_zapisie_gita_liczy_sie_do_repo(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], origin: str
+) -> None:
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [*_week(COORDINATOR, (3,)), *_week(STRANGER, (4, 5))],
+        other=_checkout(tmp_path / "narzedzie-taty", origin),
+    )
+
+    code, (*lines, last) = _run(base, capsys)
+
+    assert (code, len(lines)) == (0, 3)
+    assert last.endswith("| inne projekty: brak")
+
+
+@pytest.mark.parametrize(
+    ("origin", "remote", "reason"), OTHER_ORIGINS.values(), ids=OTHER_ORIGINS.keys()
+)
+def test_checkout_bez_origin_dokladnie_repo_jest_w_linii_wyniku_z_powodem(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    origin: str,
+    remote: str,
+    reason: str,
+) -> None:
+    """D1 #1914 r6: origin repo innego właściciela, którego nazwa kończy się na właściciela repo, nie jest repo, a jego
+    wiadomości operatora nie znikają z linii ``OK``."""
+
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [*_week(COORDINATOR, (3,)), *_week(STRANGER, (4, 5))],
+        other=_checkout(tmp_path / "narzedzie-taty", origin, remote),
+    )
+
+    code, (*lines, last) = _run(base, capsys)
+
+    assert (code, len(lines)) == (0, 1)
+    assert last.endswith(f"| inne projekty: narzedzie-taty [p-inny] 2 ({reason})")
+
+
+@pytest.mark.parametrize(
+    ("to_checkout", "gone"),
+    [(False, "narzedzie [p-inny]"), (True, "narzedzie [p-repo]")],
+    ids=["przeniesienie-z-katalogu-ktorego-juz-nie-ma", "dwa-przeniesienia"],
+)
+def test_projekt_z_katalogu_ktorego_juz_nie_ma_jest_w_linii_ok_a_z_wymuszeniem_liczy_sie_w_calosci(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], to_checkout: bool, gone: str
+) -> None:
+    """W1 #1914 r6: w poniedziałek i wtorek operator pisze w projekcie T3, którego katalog był checkoutem repo, a od
+    czwartku w nowym projekcie; w dniu biegu starego katalogu już nie ma, więc narzędzie nie wie, czy był repo. Linia
+    ``OK`` pokazuje jego wiadomości z powodem, a ``--projekt`` z jego identyfikatorem daje pełną liczbę. Nowy projekt to
+    katalog nazwany ``REPO`` albo („dwa przeniesienia”) checkout repo pod inną nazwą."""
+
+    moved = str(tmp_path / "narzedzie")
+    if to_checkout:
+        new = _checkout(
+            tmp_path / "narzedzie-taty",
+            "git@github.com:maximiseartai/MAXIMISEART-Dad.git",
+        )
+        roots = {"repo": moved, "other": new}
+        old_thread, new_thread = COORDINATOR, STRANGER
+    else:
+        roots = {"repo": REPO, "other": moved}
+        old_thread, new_thread = STRANGER, COORDINATOR
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [*_week(old_thread, (2, 3, 3)), *_week(new_thread, (5, 6, 7))],
+        **roots,
+    )
+
+    code, (*lines, last) = _run(base, capsys)
+    forced = gone.removesuffix("]").split("[")[1]
+    full_code, (*full, full_last) = _run(base, capsys, "--projekt", forced)
+
+    assert (code, len(lines)) == (0, 3)
+    assert last.endswith(f"| inne projekty: {gone} 3 (brak katalogu)")
+    assert (full_code, len(full)) == (0, 6)
+    assert full_last.endswith("| inne projekty: brak")
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="prawo odczytu katalogu odbiera tylko chmod na POSIX bez roota",
+)
+def test_katalog_projektu_bez_prawa_odczytu_jest_w_linii_wyniku_z_powodem_zamiast_sladu_stosu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """W1 #1914 r6: katalog projektu, do którego narzędzie nie wejdzie, to wpis ``bez odczytu``, nie ``PermissionError``."""
+
+    closed = Path(
+        _checkout(
+            tmp_path / "zamkniety", "https://github.com/maximiseartai/MAXIMISEART-Dad.git"
+        )
+    )
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [*_week(COORDINATOR, (3,)), *_week(STRANGER, (4, 5))],
+        other=str(closed),
+    )
+    closed.chmod(0)
+    try:
+        code, (*_, last) = _run(base, capsys)
+    finally:
+        closed.chmod(0o700)
+
+    assert code == 0
+    assert last.endswith("| inne projekty: zamkniety [p-inny] 2 (bez odczytu)")
+
+
+def test_git_ktory_nie_odpowie_w_limicie_czasu_daje_wpis_z_powodem_zamiast_sladu_stosu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(poprawki_operatora, "GIT_S", 1e-9)
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [*_week(COORDINATOR, (3,)), *_week(STRANGER, (4, 5))],
+        other=_checkout(
+            tmp_path / "wolny", "https://github.com/maximiseartai/MAXIMISEART-Dad.git"
+        ),
+    )
+
+    code, (*_, last) = _run(base, capsys)
+
+    assert code == 0
+    assert last.endswith("| inne projekty: wolny [p-inny] 2 (limit czasu gita)")
+
+
+def test_projekt_spoza_bazy_konczy_sie_porazka(
+    week_base: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, lines = _run(week_base, capsys, "--projekt", "p-nieznany")
+
+    assert (code, len(lines)) == (1, 1)
+    assert lines[0].endswith(": --projekt spoza bazy: p-nieznany")

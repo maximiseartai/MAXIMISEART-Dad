@@ -26,11 +26,12 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
 
      ```bash
      .venv/bin/python tools/poprawki_operatora.py --tydzien <poniedziałek> > <bieg>/poprawki.txt
-     ssh og-box 'mkdir -p /tmp/polowanie/tools/lib' && scp tools/poprawki_operatora.py og-box:/tmp/polowanie/tools/ && scp tools/lib/tydzien_polski.py og-box:/tmp/polowanie/tools/lib/
+     ssh og-box 'mkdir -p /tmp/polowanie/tools/lib' && scp tools/poprawki_operatora.py og-box:/tmp/polowanie/tools/ && scp tools/lib/tydzien_polski.py tools/lib/repo.py og-box:/tmp/polowanie/tools/lib/
      ssh og-box 'python3 /tmp/polowanie/tools/poprawki_operatora.py --tydzien <poniedziałek>' > <bieg>/poprawki-og-box.txt
      ```
 
      Linia `POPRAWKI OPERATORA FAIL` znaczy „źródło poprawek operatora tej maszyny bez danych w tym tygodniu”: idź dalej z pozostałymi źródłami, a jej plik i linia wyniku z kroku 5 dostają zdanie „niedostępne: <powód z linii>”.
+     Gdy ostatnia linia wymienia `inne projekty:`, oceń każdy z nich (stary katalog po przeniesieniu albo klon pod inną nazwą to repo) i dla repo uruchom narzędzie ponownie z `--projekt <identyfikator z nawiasu kwadratowego>` na tym samym pliku wyniku, a dla pozostałych dopisz do `<bieg>/wystapienia.md` decyzję „<projekt>: nie repo, <powód>”.
 
    - Werdykty tygodnia: PR-y z werdyktem `FAIL`, potem werdykty każdego z nich.
      Wystąpienia z werdyktów utworzonych w tygodniu to Ważne z `Idiom: bez reguły`, Ważne z `Idiom: <id>` bez `jak` (ucieczka reguły) i PR z co najmniej 3 werdyktami `FAIL`, których Ważne w kolejnych rundach stoją na tej samej przesłance.
