@@ -59,7 +59,7 @@ Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–5 jako st
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
 ``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunek 5 liczy, jak merge, dopiero po
 warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły;
-mutacji dowodu typu albo testu nie uruchamia, bo uruchamiają kod PR (``--bez-kodu-pr``), więc liczy je merge.
+polecenia dowodu typu albo testu nie uruchamia, bo uruchamia ono kod PR (``--bez-kodu-pr``), więc liczy je merge.
 Jego dowód potrzebuje ast-grep i PyYAML, które workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
 z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR. Warunków 6 i 7 nie liczy, bo uruchamiają kod PR (ruff,
 mypy i pytest na scalonym drzewie), a status ustawia token z prawem zapisu statusów; scalenie z ruff i mypy pokazuje

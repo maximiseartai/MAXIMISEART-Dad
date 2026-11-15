@@ -2715,7 +2715,7 @@ def _idiom_refusal(head: str, proof: tuple[int, str]) -> str:
 
 
 def _status_proof(head: str) -> list[str]:
-    """Argumenty dowodu ze statusu, który nie uruchamia kodu PR: mutacje dowodu typu albo testu liczy merge."""
+    """Argumenty dowodu ze statusu, który nie uruchamia kodu PR: bieg polecenia dowodu typu albo testu liczy merge."""
 
     return [*_proof_arguments(head, "1/W1/r1", "1553/W1/r2"), "--bez-kodu-pr"]
 
@@ -2738,8 +2738,9 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
     """Status „Werdykt i bramka” wymaga reguły z pola ``Idiom:`` jak merge, więc merge z pominięciem ``tools/scal_pr.py``
     nie omija reguły ani postaci jej dowodu. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez
     rejestru korzeni to ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają. Token statusów nie uruchamia kodu
-    PR, więc dowód dostaje ``--bez-kodu-pr`` i mutacji dowodu typu albo testu nie uruchamia: mutację NIEWYKRYTĄ widzi
-    dopiero merge przez ``tools/scal_pr.py``, który ``--bez-kodu-pr`` nie dostaje (``_proof_arguments`` w testach merge'a)."""
+    PR, więc dowód dostaje ``--bez-kodu-pr`` i polecenia dowodu typu albo testu nie uruchamia: polecenie, które nie łapie
+    przeniesionej postaci, widzi dopiero merge przez ``tools/scal_pr.py``, który ``--bez-kodu-pr`` nie dostaje
+    (``_proof_arguments`` w testach merge'a)."""
 
     github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof or PROOF_OK, passed=passed)
     github.update(1, **fields)
