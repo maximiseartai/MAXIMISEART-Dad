@@ -1007,3 +1007,18 @@ def test_junit_daje_id_pytest_wynik_i_wlasnosci_kazdego_testu_takze_bez_konfigur
     assert niestabilne_testy.padniete(junit) is None
     wyniki_testow.bez_porazek(junit, [f"{plik}::{nazwa}" for nazwa in ("test_zly", "test_fixture", "test_opis[dwa i dwa]")])
     assert [(test.plik, test.id) for test in wyniki_testow.testy(junit) if test.wynik == "padł"] == [(modul, None)]
+
+
+def test_workery_pytestu_na_boxie_boat_biora_wszystkie_rdzenie_a_na_macu_agenta_cztery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Na boxie boat (zmienna ``BOATBOX`` od ``boatbox``) agent ma rdzenie dla siebie, a Mac dzielą równoległe wątki,
+    więc ``szybko.py`` i ``mutacje.py`` biorą na boxie liczbę rdzeni, a na Macu 4; jawna liczba wygrywa w obu miejscach."""
+
+    monkeypatch.setattr(os, "cpu_count", lambda: 13)
+    monkeypatch.delenv("PYTEST_XDIST_AUTO_NUM_WORKERS", raising=False)
+    monkeypatch.delenv("BOATBOX", raising=False)
+    na_macu = czasy_ci.workery_lokalne()
+    monkeypatch.setenv("BOATBOX", "1")
+    na_boxie = czasy_ci.workery_lokalne()
+    monkeypatch.setenv("PYTEST_XDIST_AUTO_NUM_WORKERS", "2")
+
+    assert (na_macu, na_boxie, czasy_ci.workery_lokalne()) == (4, 13, 2)

@@ -78,7 +78,7 @@ ODSWIEZ_S = 24 * 3600
 # limit testu scalenia ``tools/scal_pr.py``.
 TOR_LOKALNY = "linux-3.14"
 # Workery xdist pytestu na Macu agenta, chyba że ustawiono ``PYTEST_XDIST_AUTO_NUM_WORKERS``: gołe ``-n auto`` bierze
-# wszystkie rdzenie Maca, na którym pracuje naraz kilku agentów.
+# wszystkie rdzenie Maca, na którym pracuje naraz kilku agentów. Box boat ma rdzenie tylko dla jednego agenta.
 WORKERY_LOKALNE = 4
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
@@ -91,10 +91,11 @@ _BLEDY_POBRANIA = (OSError, subprocess.SubprocessError, RuntimeError, ValueError
 
 
 def workery_lokalne() -> int:
-    """Workery xdist kroku pytest na Macu agenta: ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a bez niej ``WORKERY_LOKALNE``.
+    """Workery xdist kroku pytest: ``PYTEST_XDIST_AUTO_NUM_WORKERS``, a bez niej na boxie boat (zmienna ``BOATBOX``, którą
+    ``boatbox`` ustawia każdemu poleceniu na boxie) liczba rdzeni, a na Macu agenta ``WORKERY_LOKALNE``.
     Wartość, która nie jest liczbą (np. ``auto``), daje jak w pytest-xdist liczbę rdzeni, a liczba mniejsza od 1 to 1."""
 
-    tekst = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS") or str(WORKERY_LOKALNE)
+    tekst = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS") or ("auto" if os.environ.get("BOATBOX") else str(WORKERY_LOKALNE))
     try:
         return max(1, int(tekst))
     except ValueError:

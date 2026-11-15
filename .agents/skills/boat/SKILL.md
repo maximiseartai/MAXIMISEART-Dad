@@ -22,9 +22,10 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 | Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty | Mac, jedno ciężkie polecenie naraz | bezpośrednio |
 | Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions | workflow `mutacje-nocne.yml` |
 
-`boatbox auto` wybiera Maca, gdy obciążenie z ostatniej minuty jest niższe niż liczba rdzeni albo gdy brakuje startów lub godzin boat, a w przeciwnym razie box.
+`boatbox auto` wybiera Maca, gdy obciążenie z ostatniej minuty jest niższe niż liczba rdzeni, gdy budżetu boat nie da się odczytać, gdy zostało mniej niż 30 startów albo gdy ostatnie 24 h zużyły co najmniej dzienne tempo godzin planu, a w przeciwnym razie box.
 Linia `boatbox: auto -> ...` na stderr mówi, gdzie polecenie pobiegło i dlaczego.
-`szybko.py` uruchamiaj tak: `boatbox auto 'PYTEST_XDIST_AUTO_NUM_WORKERS=8 .venv/bin/python tools/szybko.py'`, bo box ma 8 vCPU, a domyślne 4 workery są dobrane do Maca dzielonego z innymi wątkami.
+`szybko.py` uruchamiaj tak: `boatbox auto '.venv/bin/python tools/szybko.py'`.
+Liczbę workerów ustala `czasy_ci.workery_lokalne()`: na Macu 4, a na boxie wszystkie rdzenie, bo `boatbox` ustawia tam zmienną `BOATBOX`.
 
 Zestaw mutacji dziel po `polecenie` i uruchamiaj części naraz:
 
@@ -41,9 +42,10 @@ Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pli
 ## Budżet
 
 Plan za 20 USD ma dwa limity i oba się kończą: 200 startów boxa na dobę oraz godziny maszyn, z których na każdy dzień zostaje tylko część, a box `large` liczy się podwójnie.
-Start to każde utworzenie i wznowienie boxa oraz każda część `fan`.
+Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
 `boatbox status` pokazuje oba limity i tempo zużycia godzin, `boatbox auto` przy ich braku wybiera Maca, a `boatbox fan` przy braku startów uruchamia części po kolei na jednym boxie.
-Gdy `boatbox` ostrzega, że ostatnie 24 h zużyły więcej niż dzienne tempo planu, pełny pytest uruchamiaj lokalnie, a `fan` tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty co najmniej równe liczbie rdzeni w `uptime`).
+Przed pełnym pytestem i przed `fan` uruchom `boatbox status`.
+Gdy pokazuje linię `over pace:`, pełny pytest uruchamiaj lokalnie, a `fan` tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej równe liczbie rdzeni), bo `run`, `job` i `fan` przy przekroczonym tempie tylko ostrzegają i biegną dalej.
 Zadanie kończ poleceniem `boatbox stop`.
 
 ## Dane
