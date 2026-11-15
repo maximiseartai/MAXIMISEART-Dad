@@ -23,7 +23,7 @@ import pytest
 
 from tests.fixtures.git_repo import copy_files, git, with_imports
 from tests.fixtures.granice_ksztaltow import GAPS
-from tests.fixtures.potomne import beating, wait_for
+from tests.fixtures.potomne import alive, alive_code, wait_for
 
 from jednostka import Klucz
 import kroki_skilli
@@ -296,11 +296,7 @@ def test_sciezka_bezwzgledna_spoza_repo_daje_nazwany_fail(tmp_path: Path) -> Non
 
 def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
     ready, beats = tmp_path / "skrypt-gotowy", tmp_path / "skrypt-zyje"
-    beat = f"open({str(beats)!r}, 'a').write('.')"
-    script = (
-        f"import os, pathlib, time\n{beat}\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
-        f"while True:\n    {beat}\n    time.sleep(0.1)\n"
-    )
+    script = alive_code(beats, 0) + f"import os\npathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\ntime.sleep(600)\n"
     _skill(tmp_path, "verify-a", {"check_a_mutations.py": script})
     runner = subprocess.Popen(_tool(tmp_path), cwd=tmp_path, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     try:
@@ -308,7 +304,7 @@ def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
         runner.kill()
         runner.wait(timeout=30)
 
-        assert wait_for(lambda: not beating(beats), 5), "skrypt mutacji przeżył runner"
+        assert wait_for(lambda: not alive(beats), 5), "skrypt mutacji przeżył runner"
     finally:
         runner.kill()
         runner.wait()

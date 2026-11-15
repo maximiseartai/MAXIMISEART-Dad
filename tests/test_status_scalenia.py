@@ -16,7 +16,7 @@ import sys
 
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import git
-from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import alive, wait_for, with_grandchild, worktrees
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
@@ -220,9 +220,9 @@ def test_zabite_narzedzie_nie_zostawia_sprawdzen_ani_kopii_bazy(tmp_path: Path) 
 
         started.kill()
         started.wait(timeout=20)
-        wait_for(lambda: not beating(beats) and not any(copy.exists() for copy in copies), 20)
+        wait_for(lambda: not alive(beats) and not any(copy.exists() for copy in copies), 20)
 
-        assert not beating(beats)
+        assert not alive(beats)
         assert (len(copies), [copy for copy in copies if copy.exists()], len(worktrees(github.checkout))) == (1, [], 1)
     finally:
         started.kill()

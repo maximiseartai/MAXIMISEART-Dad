@@ -31,7 +31,7 @@ from rozliczenia.centrum.tool_update import (
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
-from tests.fixtures.potomne import beating
+from tests.fixtures.potomne import alive, alive_code, wait_for
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
     git_failing_on,
@@ -1025,13 +1025,13 @@ def test_gdy_git_nie_porowna_wymagan_klon_wraca_sprzed_klikniecia_bez_instalacji
 
 
 def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path:
-    """Git, którego pobranie stoi, a jego pomocnik dopisuje do ``heartbeat``, dopóki żyje (najwyżej pół minuty).
+    """Git, którego pobranie stoi, a jego pomocnik żyje pół minuty (``alive_code(heartbeat, 30)``).
 
     Pomocnika uruchamia proces, który zaraz się kończy, więc pomocnik nie ma żywego rodzica.
     Poza pobraniem odpowiada jak klon na `main` na commicie ``commit``.
     """
 
-    helper = f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
+    helper = alive_code(heartbeat, 30)
     middle = f"import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', {helper!r}])\n"
     return fake_cli(
         tmp_path,
@@ -1058,8 +1058,8 @@ def test_pobranie_ktore_stoi_po_limicie_czasu_konczy_sie_brakiem_polaczenia_bez_
     result = ToolClone(tmp_path, origin="https://example.invalid/narzedzie.git", find_git=lambda: git).update()
 
     assert result == UpdateResult("BRAK_POLACZENIA", before=commit, after=None)
-    assert heartbeat.read_text(encoding="utf-8")
-    assert not beating(heartbeat)
+    assert heartbeat.exists()
+    assert wait_for(lambda: not alive(heartbeat), 10)
 
 
 def test_klikniecie_w_trakcie_ponownego_startu_nie_zastepuje_dziennika_aktualizacji_nowsza_wersja(

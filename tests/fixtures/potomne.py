@@ -1,10 +1,9 @@
-"""Wnuk polecenia co 0,1 s dopisuje znak do pliku; plik, który przestał rosnąć, znaczy, że wnuk nie żyje.
+"""Żywy proces bez okna czasu: ``hold_lock`` trzyma blokadę pliku do końca życia procesu, a ``held`` pyta, czy ktoś ją
+trzyma. Blokadę zwalnia system, gdy proces ginie, także zabity, więc odpowiedź nie zależy od tego, czy proces dostał
+ostatnio procesor. ``alive_code`` to kod procesu, który tak trzyma blokadę pliku obok ``path`` i potem tworzy ``path``,
+a ``alive(path)`` pyta o tę blokadę; ``with_grandchild`` uruchamia takiego wnuka.
 
 Na Windows ``os.kill(pid, 0)`` nie sprawdza procesu, tylko wysyła mu Ctrl+C (``CTRL_C_EVENT`` to 0).
-
-Żywy proces bez okna czasu: ``hold_lock`` trzyma blokadę pliku do końca życia procesu, a ``held`` pyta, czy ktoś ją
-trzyma. Blokadę zwalnia system, gdy proces ginie, także zabity, więc odpowiedź nie zależy od tego, czy proces dostał
-ostatnio procesor (bicie z ``beating`` zależy).
 """
 
 from __future__ import annotations
@@ -18,29 +17,52 @@ from typing import IO, TypeVar
 from tests.fixtures.git_repo import git
 import potomne
 
-__all__ = ["beating", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["alive", "alive_code", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
 
-GRANDCHILD = "import sys, time\nwhile True:\n    open(sys.argv[1], 'a').write('.')\n    time.sleep(0.1)\n"
+# Korzeń repozytorium i biblioteki narzędzi: proces z ``alive_code`` importuje stąd ``hold_lock``.
+_PATHS = (str(Path(__file__).resolve().parents[2]), str(Path(potomne.__file__).resolve().parent))
 
 
-def with_grandchild(beats: Path, then: str) -> list[str]:
-    """``then`` biegnie, gdy wnuk już dopisuje do ``beats``; wnuk dziedziczy wyjście polecenia."""
+def _lock_of(path: Path) -> Path:
+    return path.with_name(path.name + ".blokada")
+
+
+def alive_code(path: Path, seconds: float = 600) -> str:
+    """Kod Pythona procesu, który bierze blokadę pliku obok ``path`` (``hold_lock``), potem tworzy ``path`` i żyje
+    ``seconds`` s: ``path`` istnieje więc dopiero wtedy, gdy blokada jest wzięta, a ``alive(path)`` mówi, czy proces
+    jeszcze żyje."""
+
+    return (
+        "import pathlib, sys, time\n"
+        f"sys.path[:0] = {list(_PATHS)!r}\n"
+        "from tests.fixtures.potomne import hold_lock\n"
+        f"lock = hold_lock(pathlib.Path({str(_lock_of(path))!r}))\n"
+        f"pathlib.Path({str(path)!r}).touch()\n"
+        f"time.sleep({seconds!r})\n"
+    )
+
+
+def alive(path: Path) -> bool:
+    """Czy proces z ``alive_code(path)`` jeszcze żyje (trzyma blokadę). Na Windows system zwalnia blokadę zabitego
+    procesu z opóźnieniem, więc po zabiciu pytaj ``wait_for(lambda: not alive(path), s)``."""
+
+    return held(_lock_of(path))
+
+
+def with_grandchild(alive_file: Path, then: str) -> list[str]:
+    """Polecenie, w którym ``then`` biegnie, gdy wnuk z ``alive_code(alive_file)`` już żyje (``alive_file`` istnieje);
+    wnuk dziedziczy wyjście polecenia."""
 
     code = (
         "import pathlib, subprocess, sys, time\n"
-        f"subprocess.Popen([sys.executable, '-c', {GRANDCHILD!r}, {str(beats)!r}])\n"
-        f"while not pathlib.Path({str(beats)!r}).exists():\n"
+        f"subprocess.Popen([sys.executable, '-c', {alive_code(alive_file)!r}])\n"
+        f"while not pathlib.Path({str(alive_file)!r}).exists():\n"
         "    time.sleep(0.05)\n"
         f"{then}\n"
     )
     return [sys.executable, "-c", code]
-
-
-def beating(beats: Path) -> bool:
-    before = beats.stat().st_size
-    return wait_for(lambda: beats.stat().st_size != before, 2)
 
 
 def hold_lock(path: Path) -> IO[bytes]:

@@ -28,7 +28,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import alive, wait_for, with_grandchild, worktrees
 import potomne
 import repo
 from tests.fixtures.skladnia import dotted, imports
@@ -58,7 +58,7 @@ def test_potomek_trzymajacy_wyjscie_ginie_z_koncem_polecenia_a_wynik_jest_pelny(
     )
 
     assert (done.returncode, done.stdout, done.stderr) == (3, "gotowe\n", "uwaga\n")
-    assert not beating(beats)
+    assert wait_for(lambda: not alive(beats), 10)
 
 
 def test_echo_drukuje_wyjscie_razem_z_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -77,7 +77,7 @@ def test_po_limicie_drzewo_ginie_a_run_rzuca_timeout_z_wyjsciem_wypisanym_przed_
         potomne.run(with_grandchild(beats, then), cwd=tmp_path, timeout=5)
 
     assert expired.value.printed == ("a\n", "b\n")
-    assert not beating(beats)
+    assert wait_for(lambda: not alive(beats), 10)
 
 
 def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drzewem(
@@ -100,7 +100,7 @@ def test_wnuk_uruchomiony_zanim_narzedzie_wroci_ze_startu_polecenia_ginie_z_drze
         potomne.run(with_grandchild(beats, "time.sleep(60)"), cwd=tmp_path, timeout=limit)
 
     assert time.monotonic() - returned[-1] < 2 * limit
-    assert not beating(beats)
+    assert wait_for(lambda: not alive(beats), 10)
 
 
 if sys.platform == "win32":
@@ -214,7 +214,7 @@ def test_stop_konczy_trwajace_polecenie_a_nowe_nie_biegnie(tmp_path: Path) -> No
     thread.join(timeout=10)
 
     assert raised == ["Stopped"]
-    assert not beating(beats)
+    assert wait_for(lambda: not alive(beats), 10)
     with pytest.raises(potomne.Stopped):
         potomne.run([sys.executable, "-c", f"open({str(marker)!r}, 'w')"], cwd=tmp_path, stop=stop)
     assert not wait_for(marker.exists, 1)
@@ -506,7 +506,7 @@ def test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii(tmp_path: Path, stop: st
         tool.wait(timeout=20)
         wait_for(lambda: not any(scratch.iterdir()), seconds=20)
 
-        assert not beating(beats)
+        assert wait_for(lambda: not alive(beats), 10)
         assert (list(scratch.iterdir()), len(worktrees(repo))) == ([], 1)
     finally:
         tool.kill()

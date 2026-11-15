@@ -23,7 +23,7 @@ import pytest
 from tests.fixtures.brama_typow import FAKE_GATE
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import beating, wait_for
+from tests.fixtures.potomne import alive, alive_code, wait_for
 import potomne
 
 import ciezkie_ci
@@ -445,12 +445,12 @@ def test_kopia_ma_sciezke_ktora_zmienila_typ(tmp_path: Path, before: dict[str, s
 
 
 def _hanging_repository(path: Path) -> tuple[Path, list[str], Path, Path]:
-    """Repozytorium, którego mutacja uruchamia wnuka i wisi; wnuk, póki żyje, dopisuje do pliku co 0,1 s."""
+    """Repozytorium, którego mutacja uruchamia wnuka i wisi; wnuk żyje, póki trzyma blokadę z ``alive_code``."""
 
     repo = repository(path / "repo", {"src/rozliczenia/__init__.py": "WISI = False\n"})
     commit(repo, "baza")
     started, beats = path / "wystartowal", path / "wnuk-zyje"
-    grandchild = f"import time\nwhile True:\n    open({str(beats)!r}, 'a').write('.')\n    time.sleep(0.1)\n"
+    grandchild = alive_code(beats)
     hangs = (
         "import pathlib, subprocess, sys, time, rozliczenia\n"
         "if rozliczenia.WISI:\n"
@@ -1028,7 +1028,7 @@ def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -
     tool.wait(timeout=20)
     wait_for(lambda: not any(scratch.iterdir()), 20, every=0.1)
 
-    assert (started.exists(), beating(beats)) == (True, False)
+    assert (started.exists(), wait_for(lambda: not alive(beats), 10)) == (True, True)
     assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
     assert list(scratch.iterdir()) == []
 
