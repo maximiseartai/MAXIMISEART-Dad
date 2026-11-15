@@ -29,7 +29,6 @@ from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.autostart import Unsupported
 from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import (
-    DEFAULT_THEME,
     ChangeFolders,
     ChangeTheme,
     ChoosePeriodsDirectory,
@@ -243,7 +242,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
                 order_register=unreadable,
                 periods_directory=unreadable,
                 periods_all_years=False,
-                theme=DEFAULT_THEME,
+                theme=None,
                 folders_problem=None,
                 workers=workers,
                 inbox=inbox_setting,

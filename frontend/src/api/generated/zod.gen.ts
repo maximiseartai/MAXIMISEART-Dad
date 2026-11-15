@@ -2459,7 +2459,8 @@ export const zWorkerListSetting = z.object({
  * Settings
  *
  * Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie
- * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
+ * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:
+ * strona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
  * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
  * widzi Foldery okresu wszystkich lat (``Załączniki``).
  */
@@ -2479,7 +2480,7 @@ export const zSettings = z.object({
         zReadyPath
     ]),
     periods_all_years: z.boolean(),
-    theme: z.enum(['dark', 'light']),
+    theme: z.enum(['dark', 'light']).nullable(),
     folders_problem: zSettingProblem.nullable(),
     workers: zWorkerListSetting,
     inbox: zInboxSetting,
