@@ -46,6 +46,8 @@ TOOL_FOLDER = Path("Users") / "Józef Kowalski" / "MAXIMISEART-Dad"
 # A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”): Dad finds Centrum by this name on his
 # desktop, so a change of shortcut.SHORTCUT_NAME must break the drive, not follow it.
 SHORTCUT = "Centrum rozliczeń.lnk"
+GITHUB_TOKEN_ENV = "CENTRUM_GITHUB_TOKEN"
+"""The workflow's read-only ``github.token`` (``contents: read``); ``instalacja`` writes it as Maks's Token do Zgłoszeń."""
 _NEW_REQUIREMENT_LINE = "# verify-centrum-na-windowsie: nowa wersja zmienia wymagania\n"
 _NOT_STARTING = 'raise ImportError("verify-centrum-na-windowsie: ta wersja Centrum nie startuje")\n'
 
@@ -140,6 +142,17 @@ def load(root: Path) -> dict[str, Any]:
     facts = json.loads((root / FACTS).read_text(encoding="utf-8"))
     assert isinstance(facts, dict)
     return facts
+
+
+def take_github_token() -> str | None:
+    """The run's GitHub token, taken out of the environment so that no process the drive starts inherits it.
+
+    Centrum asks GitHub's API for the newest Wydanie with Maks's Token do Zgłoszeń when ``config/`` has one
+    (``tool_freshness``); without it every question shares the runner's 60 an hour, which other jobs on the address may
+    have used up, and the section Narzędzie reads ``Nie sprawdzono``.
+    """
+
+    return os.environ.pop(GITHUB_TOKEN_ENV, "").strip() or None
 
 
 def boundaries(facts: dict[str, Any]) -> dict[str, str]:
