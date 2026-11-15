@@ -6,8 +6,7 @@ antywirus albo OneDrive (``PermissionError``), a pliku nie zmienia: ``stat``, li
 Tak samo widzi otwarcia do odczytu w folderze ``watched``, więc test wie, które pliki czyta krok, bez listy w kodzie.
 
 Haka nie da się zdjąć (PEP 578), więc instaluje się raz na proces i bez ``reading`` niczego nie robi.
-Granica: hak widzi tylko otwarcia z Pythona w procesie testu; plik otwarty przez proces potomny albo przez kod w C bez
-zdarzenia audytu (np. biblioteka, która sama woła ``fopen``) przechodzi bez odmowy i bez zapisu.
+Granicę haka pokazują próbki ``ZNANE_LUKI_ODCZYTU`` w ``tests/test_centrum_rozliczen.py``.
 """
 
 from __future__ import annotations
