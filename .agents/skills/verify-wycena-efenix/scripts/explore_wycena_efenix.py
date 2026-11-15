@@ -23,7 +23,8 @@ The invariants (``Rule``), each with the domain sentence it comes from:
   login is ``LoggedOut``, a closed tab is ``WindowClosed``, a „Załaduj do zlecenia” efenix answered with 2xx without
   loading Emmett is ``Shape.EMMETT_NOT_LOADED``; only a page efenix really sent in another shape may be a shape
   (``ElementCount``, ``OtherShape``). A run that does not stop ends like the reference, or leaves the faulted order to
-  Dad; it never makes another order gotowe than the reference does.
+  Dad; it never makes another order gotowe than the reference does. A run with ``CALM_LIMIT_MS`` never waits for that
+  limit, whatever the window makes of the wait (``QUIET_S``).
 - BEZ_ZMIANY_STATUSU: the window never changes an order's status and never clicks a button outside its list.
 - ZMIANA_ZE_SLADEM: every order that changed in efenix has the action that changed it in its trace in the result or the
   Zatrzymanie (and a ``begun`` entry in the dziennik), a Komunikat that says nothing changed is true, the Znaczniki
@@ -156,11 +157,16 @@ waits for in the same time limit as its answer, so an answer to it just before t
 one to any other request."""
 CALM_LIMIT_MS: Final = 15_000
 """The window's time limit in every other run: the run without a fault, second runs and faults whose run never waits
-for the limit. A stop on the time limit is a violation there whatever the limit (``allows``, ``limit_gaps``), so a longer one
-hides no answer or reload that never comes, and a case whose window waits for its limit on healthy code goes red instead
-of waiting 15 s; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than
-4 s stopped such a run on the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still
-ends within the run's limit."""
+for the limit. A wait for it is a violation there whatever the window made of it (``QUIET_S``), so a longer one hides no
+answer or reload that never comes, and a case whose window waits for it on healthy code goes red instead of costing 15 s;
+with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than 4 s stopped such a run on
+the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still ends within the run's
+limit."""
+QUIET_S: Final = (CALM_LIMIT_MS - LIMIT_MS) / 1000
+"""A window with ``CALM_LIMIT_MS`` that sent the proxy no request this long waited for that limit (``quiet``): such a wait
+is silent for the whole limit but the requests of its own step, which come within ``LIMIT_MS`` on healthy code, and no
+pause of a healthy run comes near it (the reload after „Załaduj do zlecenia”, ``EFENIX_EMMETT_RELOAD_MS``, and Dad's
+login wait between two questions about the session, ``efenix_browser.LOGIN_POLL_MS``)."""
 EARLY_S: Final = 0.6
 """How long before the end of the window's wait an answer ``Fault.LATE_BEFORE`` comes (``Plan.early_s``)."""
 RETRIES: Final = 3
@@ -345,8 +351,8 @@ class Cause(enum.Enum):
     """Domain category of a Zatrzymanie, from the docstrings of ``efenix_browser`` and ``WindowCause``."""
 
     NETWORK = "błąd sieci przeglądarki z nazwanym działaniem"
-    TIMEOUT = "okno czekało do limitu (TimeoutError z nazwanym działaniem, także w EfenixUnreachable przy starcie)"
-    UNREACHABLE = "efenix nie otworzył się przy starcie (EfenixUnreachable z błędem sieci)"
+    TIMEOUT = "czas okna minął (TimeoutError z nazwanym działaniem)"
+    UNREACHABLE = "efenix nie otworzył się przy starcie (EfenixUnreachable)"
     HTTP = "strona błędu HTTP (HttpStatus ze statusem awarii)"
     LOGIN = "wylogowanie (LoggedOut albo formularz logowania)"
     CLOSED = "zamknięte okno (WindowClosed)"
@@ -388,12 +394,12 @@ def expected(fault: Fault, call: Call, role: Role) -> Expect:
 
 def _expected(fault: Fault, call: Call, role: Role) -> Expect:
     """The domain table. Network faults and late answers name the network or the time limit, never a page shape, and
-    before the list opened may be ``EfenixUnreachable``; a stop on the window's time limit is allowed only where an entry
-    names ``Cause.TIMEOUT`` (a fault that cuts the network, an answer that comes late or never, a page file the window
-    waits for in vain), and this table alone says so (``meets_limit``, ``allows``) (``efenix_browser``: „Lista zleceń, której okno nie otworzyło
+    before the list opened may be ``EfenixUnreachable`` (``efenix_browser``: „Lista zleceń, której okno nie otworzyło
     przy starcie … to EfenixUnreachable”; „Czy to zerwane połączenie, wolny czy zmieniony efenix, okno nie zgaduje”).
-    An HTTP error page names its status (``HttpStatus``) and never a shape, because efenix did not change. A redirect
-    elsewhere is a page efenix sent instead, which the docstring lets the window call a page in another shape. The
+    A stop on the window's time limit is allowed only where an entry names ``Cause.TIMEOUT`` (a fault that cuts the
+    network, an answer that comes late or never, a page file the window waits for in vain), and this table alone says so
+    (``meets_limit``, ``allows``). An HTTP error page names its status (``HttpStatus``) and never a shape, because
+    efenix did not change. A redirect elsewhere is a page efenix sent instead, which the docstring lets the window call a page in another shape. The
     search the list sends by itself is not the window's, and a stylesheet does not carry the page, so one broken answer
     to them ends like the reference. A date that efenix did not save is an order error (``DateRefused.NOT_SAVED``).
     A login form under the address of the order page is a logout (``Shape.LOGIN_FORM``), and so is a login that never
@@ -539,18 +545,9 @@ def plan_of(case: Case | None) -> Plan:
     return Plan(case.fault, case.call, limit_ms / 1000, early_s=early_s(case.role))
 
 
-def waited(facts: PricingStopped) -> bool:
-    """The window waited for its time limit: Playwright's ``TimeoutError`` is the browser failure of the Zatrzymanie,
-    whichever the window made of it (``EfenixUnreachable`` at the start and after two time limits of the login wait,
-    ``UnexpectedPage`` elsewhere), so its Komunikat does not decide it."""
-
-    return isinstance(facts.cause, BrowserFailure) and facts.cause.error_type.rpartition(".")[2] == "TimeoutError"
-
-
 def classify(facts: PricingStopped, code: str) -> Cause:
-    """Category of a Zatrzymanie from its facts. A wait for the time limit (``waited``) with a named operation is
-    ``Cause.TIMEOUT`` at every request, also at the start; ``EfenixUnreachable`` carries any other browser failure at the
-    list like ``UnexpectedPage`` does, so its Komunikat tells them apart."""
+    """Category of a Zatrzymanie from its facts; ``EfenixUnreachable`` carries a browser failure at the list like
+    ``UnexpectedPage`` does, so its Komunikat tells them apart."""
 
     match facts.cause:
         case LoginSign():
@@ -565,10 +562,10 @@ def classify(facts: PricingStopped, code: str) -> Cause:
             return Cause.NOT_LOADED
         case BrowserFailure(operation=None):
             return Cause.UNNAMED
-        case BrowserFailure() if waited(facts):
-            return Cause.TIMEOUT
         case BrowserFailure() if code == "EFENIX_NIEDOSTEPNY":
             return Cause.UNREACHABLE
+        case BrowserFailure(error_type=error_type) if error_type.rpartition(".")[2] == "TimeoutError":
+            return Cause.TIMEOUT
         case BrowserFailure():
             return Cause.NETWORK
         case _:
@@ -791,6 +788,10 @@ class Run:
     „Załaduj do zlecenia” of ``REFUSED_NO_PROPOSAL``). Up to the first such request a run with a fault is the run
     without one, so a window that stopped before it (a step on a busy machine over ``LIMIT_MS``) checked nothing of the
     fault. A case whose fault did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
+    calm: bool = False
+    """The window ran with ``CALM_LIMIT_MS``, which it never waits for on healthy code."""
+    quiet_s: float = 0.0
+    """The longest time the window sent the proxy no request (``quiet``); 0 for a killed tool, which has no window."""
 
 
 @dataclass(frozen=True)
@@ -879,8 +880,9 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
             page = context.new_page()
             acted = _dad(page, plan, atrapa.log_in)
             outcome, error = None, None
+            closed: list[float] = []
             try:
-                outcome = _price(place, page, proxy.url, plan)
+                outcome = _price(place, page, proxy.url, plan, closed=lambda: closed.append(proxy.now()))
             except Exception as failure:  # noqa: BLE001 - BEZ_WYJATKU names any error that escapes run_process
                 error = "".join(traceback.format_exception_only(failure)).strip()
             finally:
@@ -913,7 +915,21 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
         error=error,
         snapshots=taken,
         injected=dad_acted if by_dad else plan.fault is None or bool(faulted),
+        calm=round(plan.limit_s * 1000) == CALM_LIMIT_MS,
+        quiet_s=quiet([entry.at for entry in seen], closed[-1]) if closed else 0.0,
     )
+
+
+def quiet(arrivals: Sequence[float], closed: float) -> float:
+    """The longest time the window sent the proxy no request: between two requests, or from its last one until the window
+    closed (seconds of ``Proxy.now``). A window that waits for its time limit sends nothing for the whole limit but the
+    requests of its own step, whatever it makes of the wait afterwards: a Zatrzymanie of any cause, also one without the
+    browser failure (``LoginExpired`` folded into ``LoggedOut``), or a run that goes on. It misses a wait during which the
+    window or a page script keeps sending requests; no page of the Atrapa sends one by itself while the window waits, but
+    the list's own search right after the list loads."""
+
+    moments = [moment for moment in arrivals if moment <= closed] + [closed]
+    return max((later - earlier for earlier, later in itertools.pairwise(moments)), default=0.0)
 
 
 def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
@@ -969,13 +985,18 @@ def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
     return acted
 
 
-def _price(place: Place, page: Page, url: str, plan: Plan) -> Outcome[PricingSummary]:
+def _price(place: Place, page: Page, url: str, plan: Plan, closed: Callable[[], None]) -> Outcome[PricingSummary]:
+    """The Uruchomienie; ``closed`` is called when its window closes, also on a Zatrzymanie."""
+
     timeout_ms = round(plan.limit_s * 1000)
 
     @contextmanager
     def open_efenix(login: Login) -> Iterator[Efenix]:
-        with efenix_browser.window(page, url, timeout_ms=timeout_ms, login=login, login_timeout_ms=LOGIN_LIMIT_MS) as efenix:
-            yield efenix
+        try:
+            with efenix_browser.window(page, url, timeout_ms=timeout_ms, login=login, login_timeout_ms=LOGIN_LIMIT_MS) as efenix:
+                yield efenix
+        finally:
+            closed()
 
     return run_process(
         efenix_process.PROCESS,
@@ -1102,13 +1123,18 @@ def _changes(before: Priced, after: Priced) -> set[WindowAction]:
 
 
 def common_checks(name: str, run: Run, before: Sequence[Priced], extra: Mapping[str, object]) -> list[Violation]:
-    """BEZ_ZMIANY_STATUSU, ZMIANA_ZE_SLADEM and BEZ_DANYCH of any run, with ``before`` the state it started from."""
+    """BEZ_ZMIANY_STATUSU, ZMIANA_ZE_SLADEM and BEZ_DANYCH of any run, with ``before`` the state it started from, and
+    PRZYCZYNA of a run with ``CALM_LIMIT_MS`` whose window waited for it (``QUIET_S``)."""
 
     found: list[Violation] = []
 
     def add(rule: str, tag: str, detail: str) -> None:
         found.append(Violation(rule, tag, name, detail, **extra))  # type: ignore[arg-type]
 
+    if run.calm and run.quiet_s >= QUIET_S:
+        add("PRZYCZYNA", "czekanie do limitu",
+            f"okno przez {run.quiet_s:.1f} s nie wysłało żądania, czyli czekało do limitu {CALM_LIMIT_MS / 1000:.0f} s, "
+            "którego ten przebieg na zdrowym kodzie nie czeka")
     after = run.after.state
     if run.status_changes or run.forbidden_clicks:
         add("BEZ_ZMIANY_STATUSU", "status", f"zmiany statusu {run.status_changes}, kliknięcia spoza listy {run.forbidden_clicks}")
