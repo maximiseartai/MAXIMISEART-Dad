@@ -1,11 +1,11 @@
-"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę, i reguły całego ``src/``.
+"""Zapadki: reguły, które w ``tools/szybko.py`` padają tylko na liniach dodanych przez zmianę, i reguły całego drzewa.
 
 W CI ``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py`` uruchamia każdą zapadkę
 poza regułami ast-grep z bazą w pustym drzewie, więc tam zapadka zakazuje swojej formy w całym ``tests/`` i ``src/``.
 Formę, która ma jeszcze stare wystąpienia, zapadka dostaje dopiero wtedy, gdy zmiana je usunie albo poprawi tamten test;
 reguła ast-grep dostaje ją od razu, bo zgłasza tylko linie dodane od prawdziwej bazy zmiany. Reguły ast-grep
-``REGULY_CALEGO_SRC`` zgłaszają każdą linię ``src/`` (``test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src``), bez bazy,
-w ``tools/szybko.py`` i w zadaniu CI „Ruff, mypy”.
+``REGULY_CALEGO_DRZEWA`` zgłaszają każdą linię swoich plików (``test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii``),
+bez bazy, w ``tools/szybko.py`` i w zadaniu CI „Ruff, mypy”.
 
 Bazę zmiany daje zmienna ``MAXIMISEART_ZAPADKA_BAZA`` (commit albo gałąź), a bez niej zapadka liczy od ``merge-base``
 HEAD z ``origin/main``. Dodane linie to ``git diff`` od bazy (z niezacommitowanymi zmianami) i całe pliki nieśledzone.
@@ -762,7 +762,7 @@ def syntax_rule_findings(root: Path, base: str) -> list[str]:
 
 
 # Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły ast-grep (na liniach
-# dodanych i całego ``src/``) się pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza
+# dodanych i całego drzewa) się pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza
 # Windows brak ast-grep to porażka z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
 BEZ_DODATKU_DEV = sys.platform == "win32"
 windows_without_ast_grep = pytest.mark.skipif(
@@ -780,34 +780,45 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     assert syntax_rule_findings(ROOT, base) == []
 
 
-# Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię ``src/``, a nie tylko linie dodane przez zmianę.
-REGULY_CALEGO_SRC: Final = ("historia-w-docstringu", "komentarz-w-src")
+# Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
+# linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
+REGULY_CALEGO_DRZEWA: Final = (
+    "historia-w-docstringu",
+    "komentarz-w-src",
+    "stan-pliku-poza-file-state",
+    "watki-workera",
+    "wlasna-wyrocznia-numeru",
+)
+CALE_DRZEWO: Final = "."
 
 
-def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
-    """Odpalenia reguł ``REGULY_CALEGO_SRC`` z ``config`` na każdej linii plików ``src/`` checkoutu ``root``: śledzonych,
-    także ignorowanych przez ``.gitignore``, i nieśledzonych bez ignorowanych (``odpalenia_ast_grep.on_added_lines`` od
-    pustego drzewa); linia odpalenia to pierwsza linia węzła."""
+def whole_tree_rules(
+    root: Path, rules: tuple[str, ...] = REGULY_CALEGO_DRZEWA, folder: str = CALE_DRZEWO, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP
+) -> list[odpalenia_ast_grep.Finding]:
+    """Odpalenia reguł ``rules`` z ``config`` na każdej linii plików ``folder`` checkoutu ``root``: śledzonych, także
+    ignorowanych przez ``.gitignore``, i nieśledzonych bez ignorowanych (``odpalenia_ast_grep.on_added_lines`` od
+    pustego drzewa); o tym, w których plikach reguła szuka, decydują jej ``files:`` i ``ignores:``, a linia odpalenia
+    to pierwsza linia węzła."""
 
-    rules = ("--config", str(config), "--filter", f"^(?:{'|'.join(REGULY_CALEGO_SRC)})$")
-    return odpalenia_ast_grep.on_added_lines(root, odpalenia_ast_grep.EMPTY_TREE, rules, ast_grep, "src")
+    arguments = ("--config", str(config), "--filter", f"^(?:{'|'.join(rules)})$")
+    return odpalenia_ast_grep.on_added_lines(root, odpalenia_ast_grep.EMPTY_TREE, arguments, ast_grep, folder)
 
 
 @windows_without_ast_grep
-def test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src() -> None:
-    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_src_rules(ROOT)] == []
+def test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii() -> None:
+    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_tree_rules(ROOT)] == []
 
 
-def test_kazda_regula_calego_src_jest_w_katalogu_regul() -> None:
+def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
     """``--filter`` z id, którego katalog reguł nie ma, obok id, które ma, gubi tę regułę bez błędu ast-grep."""
 
     ids = {str(rule["id"]) for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
-    assert set(REGULY_CALEGO_SRC) - ids == set(), f"popraw REGULY_CALEGO_SRC na id reguł z {AST_GREP_RULES}/"
+    assert set(REGULY_CALEGO_DRZEWA) - ids == set(), f"popraw REGULY_CALEGO_DRZEWA na id reguł z {AST_GREP_RULES}/"
 
 
 @windows_without_ast_grep
-def test_reguly_calego_src_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik_nowy(tmp_path: Path) -> None:
-    """Komentarz i docstring z numerem issue w pliku ``src/`` z commitu bazy zgłaszają reguły całego ``src/``, choć
+def test_reguly_calego_drzewa_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik_nowy(tmp_path: Path) -> None:
+    """Komentarz i docstring z numerem issue w pliku ``src/`` z commitu bazy zgłaszają reguły całego drzewa, choć
     zapadka linii dodanych ich nie widzi; nowy plik nieśledzony zgłaszają obie, a komentarz w ``tests/`` żadna."""
 
     base = _committed(
@@ -819,7 +830,7 @@ def test_reguly_calego_src_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_plik
     )
     (tmp_path / "src" / "rozliczenia" / "nowy.py").write_text("Y = 2  # nowy komentarz\n", encoding="utf-8")
 
-    assert [(finding.path, finding.line, finding.rule) for finding in whole_src_rules(tmp_path)] == [
+    assert [(finding.path, finding.line, finding.rule) for finding in whole_tree_rules(tmp_path)] == [
         ("src/rozliczenia/nowy.py", 1, "komentarz-w-src"),
         ("src/rozliczenia/stary.py", 1, "historia-w-docstringu"),
         ("src/rozliczenia/stary.py", 3, "komentarz-w-src"),
@@ -2694,3 +2705,28 @@ def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_pa
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+# Reguła z zapadki → plik z jej ignores: (części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest
+# zależnością testu w grafie wpływu zmiany, ``tools/lib/wplyw_zmiany.py``), nowa nazwa
+# w jej zakresie, tekst z jej formą i linia formy. Zapadka biegła w CI na całym ``tests/`` i ``src/`` od pustego drzewa
+# (``test_zapadki_nie_zglaszaja_zadnej_linii_testow``), więc reguła z niej biegnie na całym drzewie.
+_PRZENIESIENIA: Final[dict[str, tuple[tuple[str, ...], str, str, int]]] = {
+    "stan-pliku-poza-file-state": (("src", "rozliczenia", "file_state.py"), "src/rozliczenia/kopia.py", "def taken(path):\n    return path.exists()\n", 2),
+    "watki-workera": (("tests", "fixtures", "linie_watkow.py"), "tests/test_watkow.py", "import threading\nstart = threading.Thread.start\n", 2),
+    "wlasna-wyrocznia-numeru": (("tests", "test_zapadki.py"), "tests/test_numeru.py", 'import re\n\nNUMBER = re.compile(r"(?<![0-9])9401")\n', 3),
+}
+
+
+@windows_without_ast_grep
+@pytest.mark.parametrize("rule", sorted(_PRZENIESIENIA))
+def test_regula_z_zapadki_na_calym_drzewie_zglasza_plik_przeniesiony_spoza_ignores_a_linie_dodane_nie(tmp_path: Path, rule: str) -> None:
+    """Plik z ``ignores:`` reguły przeniesiony pod nową nazwę w jej zakresie (``git mv``) nie ma linii dodanych, więc
+    reguła na liniach dodanych go nie widzi; reguła całego drzewa widzi formę bez względu na to, jak trafiła do pliku."""
+
+    old, new, text, line = _PRZENIESIENIA[rule]
+    base = _committed(tmp_path, {"/".join(old): text})
+    _git(tmp_path, "mv", "/".join(old), new)
+
+    assert [(finding.path, finding.line) for finding in whole_tree_rules(tmp_path) if finding.rule == rule] == [(new, line)]
+    assert _findings_of(rule, tmp_path, base) == []

@@ -155,7 +155,7 @@ RULE_GUARDS = frozenset(
     tests/test_zapadki.py::test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona
     tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
     tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
-    tests/test_zapadki.py::test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src
+    tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
     """.split()
 )
 
