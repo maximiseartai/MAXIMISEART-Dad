@@ -1,13 +1,17 @@
 """Procesy potomne i kopie commitów narzędzia z ``tools/``, które giną razem z nim.
 
 ``run`` to ``subprocess.run`` z przechwyconym wyjściem, którego polecenie biegnie z całym drzewem swoich
-potomków (POSIX: własna sesja, Windows: Job Object). Drzewo nie przeżywa:
+potomków (POSIX: grupa procesów lidera własnej sesji; Windows: Job Object). ``run`` zabija drzewo:
 
-- końca polecenia: potomkowie, którzy je przeżyli, giną, a ``run`` nie czeka, aż zamkną jego wyjście;
-- limitu czasu (``subprocess.TimeoutExpired``) ani ustawienia ``stop`` przez inny wątek (``Stopped``);
-- wyjątku w narzędziu, także przerwania (Ctrl+C);
-- śmierci narzędzia bez sprzątania (SIGKILL, ``os._exit``): na POSIX zabija je strażnik narzędzia, na
-  Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE).
+- po końcu polecenia (potomków, którzy je przeżyli), i nie czeka, aż zamkną jego wyjście;
+- po limicie czasu (``subprocess.TimeoutExpired``) i po ustawieniu ``stop`` przez inny wątek (``Stopped``);
+- po wyjątku w narzędziu, także po przerwaniu (Ctrl+C).
+
+Na Windows ``run`` wraca, gdy każdy proces zadania już się skończył, a drzewo, które żyje jeszcze ``_KILL_S`` po
+zabiciu, nazywa na stderr i wraca jak zwykle. Na POSIX cała grupa dostaje SIGKILL, a ``run``
+czeka tylko na jej lidera, więc pozostałe procesy grupy, już zabite, mogą jeszcze przez chwilę po powrocie ``run``
+zamykać swoje pliki. Po śmierci narzędzia bez sprzątania (SIGKILL, ``os._exit``) drzewo zabija na POSIX strażnik
+narzędzia, a na Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE).
 
 ``commit_copy`` to odłączony worktree commitu w katalogu tymczasowym. Znika z blokiem ``with``, a po
 śmierci narzędzia usuwa go strażnik.
@@ -15,8 +19,7 @@ potomków (POSIX: własna sesja, Windows: Job Object). Drzewo nie przeżywa:
 Strażnik to ten plik uruchomiony ``python -I`` we własnej sesji. Po EOF na stdin, czyli po końcu
 narzędzia, zabija zgłoszone drzewa i usuwa zgłoszone kopie. Narzędzie uruchomione przez inne narzędzie
 ma własnego strażnika, więc śmierć zewnętrznego kończy kolejne poziomy po kolei. Gdy strażnik nie żyje,
-``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji. Na Windows
-zabite drzewo, które żyje jeszcze ``_KILL_S`` po zabiciu, ``run`` nazywa na stderr i wraca jak zwykle.
+``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji.
 
 Granice: na POSIX potomek, który sam założył sesję albo grupę procesów (``setsid``, ``setpgid``), jest poza
 drzewem i przeżywa; ``run`` czeka na resztę wyjścia najwyżej ``_DRAIN_S``. Na Windows narzędzie zabite razem z cudzym Job Object
@@ -63,11 +66,13 @@ _WORKTREES_LOCK = "potomne-worktree.lock"
 
 
 class Stopped(Exception):
-    """Wołający ustawił ``stop``: drzewo polecenia już nie żyje."""
+    """Wołający ustawił ``stop``: drzewo polecenia zabite jak po końcu ``run`` (co to znaczy na POSIX, mówi docstring
+    modułu)."""
 
 
 class TimeoutExpired(subprocess.TimeoutExpired):
-    """Limit czasu ``run``: drzewo polecenia już nie żyje, a ``printed`` to stdout i stderr, które zdążyło wypisać.
+    """Limit czasu ``run``: drzewo polecenia zabite jak po końcu ``run``, a ``printed`` to stdout i stderr, które zdążyło
+    wypisać.
 
     Nazwa jak w ``subprocess``, bo wywołujący pokazują nazwę klasy wyjątku (brama pre-push).
     """
@@ -91,7 +96,8 @@ def run(
     echo: bool = False,
     stop: threading.Event | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """``subprocess.run(capture_output=True, text=True)``, którego drzewo procesów nie przeżywa wyniku ani narzędzia.
+    """``subprocess.run(capture_output=True, text=True)``, którego drzewo procesów ginie z wynikiem i z narzędziem; co to
+    znaczy na POSIX i na Windows, mówi docstring modułu.
 
     Czeka na koniec polecenia, nie na zamknięcie jego wyjścia, i po nim zabija potomków, którzy je przeżyli.
     ``echo`` drukuje wyjście na bieżąco; stderr trafia wtedy do stdout. stdin to DEVNULL, tekst UTF-8 z
@@ -383,6 +389,9 @@ else:
                 raise
 
         def kill(self) -> None:
+            """SIGKILL dla całej grupy polecenia i czekanie tylko na jej lidera; co z tego wynika dla wołającego, mówi
+            docstring modułu."""
+
             _kill_group(self.process.pid)
             self.process.wait()
             with suppress(OSError):

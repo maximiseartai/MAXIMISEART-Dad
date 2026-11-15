@@ -27,8 +27,8 @@ commitem przed i po; treść Komunikatów należy do Centrum
 terminala, bez pomocnika logowania i bez okna konsoli w Windows. Każde kończy
 się w swoim limicie czasu, także gdy pomocnik Gita (np. ``git-remote-https``)
 zostaje po nim przy zerwanym połączeniu: wyjście idzie do plików tymczasowych,
-nie do potoków, a po limicie polecenie wraca, gdy całe drzewo procesów Gita
-nie żyje. Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
+nie do potoków, a po limicie polecenie wraca po zabiciu procesów Gita; co
+zabija i na co czeka w każdym systemie, mówi ``_run_tree``. Każde ufa klonowi tylko na czas wywołania (``safe.directory``), a
 konfiguracja Gita taty zostaje bez zmian. Adres repozytorium wstrzykuje się
 z zewnątrz; ``origin`` w klonie taty nie ma znaczenia.
 
@@ -734,8 +734,8 @@ class _Git:
     root: Path
 
     def run(self, *args: str, timeout_s: float = _LOCAL_TIMEOUT_S) -> subprocess.CompletedProcess[str]:
-        """Polecenie Gita z wyjściem i błędami jako tekst; po ``timeout_s`` ``subprocess.TimeoutExpired``, gdy jego drzewo
-        już nie żyje, albo ``OSError``, gdy przeżyje ``_KILL_TIMEOUT_S``.
+        """Polecenie Gita z wyjściem i błędami jako tekst; ``subprocess.TimeoutExpired`` po ``timeout_s`` i ``OSError``
+        przychodzą z ``_run_tree``, którego docstring mówi, kiedy.
 
         Wyjście idzie do plików tymczasowych: potok, który pomocnik Gita trzyma
         otwarty po końcu Gita, wstrzymałby odczyt, a w Windows także po limicie czasu.
@@ -865,7 +865,8 @@ if sys.platform == "win32":
         """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to zadanie (Job Object).
 
         Po ``timeout_s`` zabija całe drzewo i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jego
-        procesów już nie żyje; ``OSError``, gdy zadanie nie powstanie albo przeżyje ``_KILL_TIMEOUT_S``.
+        procesów już nie żyje. ``OSError``, gdy zadanie nie powstanie, Git nie ruszy albo nie trafi do zadania (``Popen``,
+        ``_join``), zabicie zadania albo odczyt jego procesów się nie uda, albo drzewo przeżyje ``_KILL_TIMEOUT_S``.
 
         Git startuje wstrzymany i rusza dopiero w zadaniu: inaczej zdąży uruchomić pomocnika poza nim. Proces znika z
         zadania, zanim Windows uzna go za zakończony i puści jego uchwyty (I/O w toku), więc po zabiciu czeka na
@@ -947,10 +948,13 @@ else:
     def _run_tree(
         command: list[str], *, env: Mapping[str, str], stdout: IO[bytes], stderr: IO[bytes], timeout_s: float
     ) -> int:
-        """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to sesja Gita.
+        """Uruchamia polecenie bez okna i bez stdin i oddaje jego kod wyjścia; drzewo jego procesów to grupa procesów Gita,
+        lidera nowej sesji.
 
-        Po ``timeout_s`` zabija całą sesję i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jej
-        procesów już nie żyje; sesji, której nie ma, bo Git i jego pomocnicy już się zakończyli, nie zabija.
+        Po ``timeout_s`` wysyła SIGKILL całej tej grupie i rzuca ``subprocess.TimeoutExpired``, gdy Git się skończył: na
+        pozostałe procesy grupy nie czeka, więc już zabite mogą jeszcze przez chwilę zamykać swoje pliki. Proces, który
+        opuścił grupę (``setsid``, ``setpgid``, także do innej grupy tej samej sesji), jest poza zasięgiem. Polecenia,
+        które skończyło się przed limitem, nie zabija, więc pomocnik, który przeżył Gita, żyje dalej.
         """
 
         process = subprocess.Popen(
