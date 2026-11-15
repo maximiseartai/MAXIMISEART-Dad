@@ -57,7 +57,8 @@ from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, R
 from rozliczenia.centrum.runs import RunHost, runs_router
 from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings.history import ReleaseOrigin
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, release_if_unreadable
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
@@ -245,7 +246,7 @@ def create_app(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
         files=lambda process, period, at_start: files_of_process(
-            process, period, settings=at(at_start).folders, configuration=configuration
+            process, period, settings=release_if_unreadable(at(at_start).folders, FOLDERS), configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
@@ -256,7 +257,7 @@ def create_app(
         lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=at(at_start).folders,
+            settings=release_if_unreadable(at(at_start).folders, FOLDERS),
             configuration=configuration,
             log=log,
             surroundings=surroundings,

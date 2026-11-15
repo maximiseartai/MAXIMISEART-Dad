@@ -30,7 +30,7 @@ from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
 from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
@@ -94,7 +94,8 @@ class Start:
     gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
-    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania. ``warnings``: ostrzeżenia startu na
+    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum u procesu, który nimi
+    nie liczy (``ProcessKind.quantity_rules``). ``warnings``: ostrzeżenia startu na
     kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
     maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ani ``warnings`` nie mają wartości
     domyślnej, więc każdy gospodarz mówi, skąd je ma.
@@ -106,11 +107,15 @@ class Start:
     pricing: runs_contract.Pricing | None = None
     settings: SettingsSnapshot | None = None
     workers: WorkerList | None = None
-    quantity_rules: QuantityRules = field(kw_only=True)
+    quantity_rules: QuantityRules | None = field(kw_only=True)
     warnings: tuple[Message, ...] = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
+
+    def counted_rules(self) -> QuantityRules:
+        assert self.quantity_rules is not None, "Catalog.prepared sprawdza Reguły ilości procesu, który nimi liczy"
+        return self.quantity_rules
 
     def worker_list(self) -> WorkerList:
         assert self.workers is not None, "Catalog.prepared sprawdza potrzebę workers"
@@ -132,13 +137,39 @@ def start_from_settings(
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
     Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości i ostrzeżenia startu. Ścieżki, okres i tryb wybiera gospodarz."""
+    ilości procesu, który nimi liczy (``Refusal``, gdy pliku pary nie da się teraz przeczytać), i ostrzeżenia startu.
+    Ścieżki, okres i tryb wybiera gospodarz."""
 
     return Start(
         paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
         workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=settings.quantity_rules, warnings=_start_warnings(settings, kind.needs),
+        quantity_rules=_rules_at_start(settings.quantity_rules) if kind.quantity_rules else None,
+        warnings=_start_warnings(settings, kind.needs),
     )
+
+
+def _rules_at_start(rules: QuantityRules | UnreadableFile) -> QuantityRules:
+    if isinstance(rules, UnreadableFile):
+        raise refusal.settings_file_unreadable(rules.name)
+    return rules
+
+
+def chosen_settings(
+    settings: SettingsSnapshot, needed: Sequence[NeededSetting], *, quantity_rules: bool
+) -> dict[SettingField, Path] | Refusal:
+    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu (``quantity_rules``: proces liczy Regułami ilości)
+    albo odmowa startu: plik Folderów albo pliku pary Reguł ilości i Listy Urządzeń, którego system nie daje teraz czytać,
+    a potem „Najpierw wskaż …” z nazwami niewskazanych ścieżek."""
+
+    folders = settings.folders
+    if isinstance(folders, UnreadableFile):
+        return refusal.settings_file_unreadable(folders.name)
+    if quantity_rules and isinstance(settings.quantity_rules, UnreadableFile):
+        return refusal.settings_file_unreadable(settings.quantity_rules.name)
+    missing = [setting.name for setting in needed if setting.chosen(folders) is None]
+    if missing:
+        return refusal.first_choose(missing)
+    return {setting.field: path for setting in needed if (path := setting.chosen(folders)) is not None}
 
 
 def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
@@ -384,23 +415,19 @@ class ProcessKind(Generic[InputsT, SummaryT]):
             register_name=self.view.register_name,
         )
 
-    def settings_blocker(self, settings: FolderSettings) -> str | None:
-        """„Najpierw wskaż …” z nazwami niewskazanych Ustawień procesu; ``None``, gdy wszystkie są wskazane."""
+    def settings_blocker(self, settings: SettingsSnapshot) -> str | None:
+        """Zdanie odmowy startu z Ustawień Centrum (``chosen_settings``) na kartę; ``None``, gdy proces może startować."""
 
-        unchosen = self._unchosen(settings)
-        return None if unchosen is None else unchosen.message
+        chosen = chosen_settings(settings, self.settings, quantity_rules=self.quantity_rules)
+        return chosen.message if isinstance(chosen, Refusal) else None
 
-    def _unchosen(self, settings: FolderSettings) -> Refusal | None:
-        missing = [setting.name for setting in self.settings if setting.chosen(settings) is None]
-        return refusal.first_choose(missing) if missing else None
+    def required_paths(self, settings: SettingsSnapshot) -> Mapping[SettingField, Path]:
+        """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy proces nie może startować."""
 
-    def required_paths(self, settings: FolderSettings) -> Mapping[SettingField, Path]:
-        """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy czegoś brakuje."""
-
-        unchosen = self._unchosen(settings)
-        if unchosen is not None:
-            raise unchosen
-        return {setting.field: path for setting in self.settings if (path := setting.chosen(settings)) is not None}
+        chosen = chosen_settings(settings, self.settings, quantity_rules=self.quantity_rules)
+        if isinstance(chosen, Refusal):
+            raise chosen
+        return chosen
 
 
 @dataclass(frozen=True, kw_only=True)

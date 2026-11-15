@@ -1458,6 +1458,9 @@ autostart_unreadable [zdanie]
 unavailable [zdanie]
   Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
 
+unreadable [zdanie]
+  Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie.
+
 rule_without_action [zdanie]
   Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą.
 

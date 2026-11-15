@@ -57,7 +57,8 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
 from rozliczenia.centrum.settings.files import usable
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, release_if_unreadable
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
@@ -346,7 +347,7 @@ def due_reminders(
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
-    settings = snapshot.folders
+    settings = release_if_unreadable(snapshot.folders, FOLDERS)
     reminders = snapshot.reminders
     rollout = reminders.sends
     if rollout is None:

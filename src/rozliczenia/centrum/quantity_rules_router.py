@@ -40,7 +40,14 @@ from rozliczenia.centrum.rule_forms import SCOPES, component_field, edited_id, f
 from rozliczenia.centrum.rule_sentences import component_sentence, rule_sentence
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, QuantityRulesView, Refused, Saved
+from rozliczenia.centrum.settings.owner import (
+    CentrumSettings,
+    NotSaved,
+    QuantityRulesView,
+    Refused,
+    Saved,
+    release_if_unreadable,
+)
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
     RULES,
@@ -210,7 +217,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``)."""
 
         rules = settings.quantity_rules().rules
-        directory = settings.snapshot().folders.periods_directory_to_read
+        directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
         if directory is None:
             return contract.DeviceSuggestions(suggestions=[], unread=[])
         return device_suggestions(rules, recent.read(directory))
