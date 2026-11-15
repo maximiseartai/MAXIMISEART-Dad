@@ -25,6 +25,7 @@ from collections import deque
 from collections.abc import Callable, Iterator
 import contextlib
 from contextlib import contextmanager
+from functools import partial
 import importlib
 import importlib.util
 import json
@@ -247,17 +248,18 @@ def test_znane_luki_czekania_until_przechodza_przez_until(common: ModuleType, tm
 
 # Znane luki nakładki ``Run.refusing_text_settings_writes`` (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z
 # ``zapis(path)``, który pisze plik Ustawień runu tekstem, a nakładka go przepuszcza. Nakładka odmawia tylko otwarcia
-# do zapisu tekstem przez ``io.open`` i ``os.open`` procesu napędu, pliku o nazwie pliku Ustawień albo jego ``.zapis``;
-# na Windows takie zapisy łapie potem ``Run.refuse_cr_in_settings``, o ile serwer nie nadpisze pliku przed nim.
+# do zapisu tekstem przez ``io.open`` i ``os.open`` procesu napędu pliku o tożsamości pliku Ustawień w chwili otwarcia
+# albo o nazwie jego czy jego ``.zapis`` w jego folderze; na Windows takie zapisy łapie potem
+# ``Run.refuse_cr_in_settings``, o ile serwer nie nadpisze pliku przed nim.
 ZNANE_LUKI_ZAPISU_TEKSTEM: Final = {
     "nakładka zna tylko plik, który się otwiera: tekst do innego pliku przeniesiony na plik Ustawień": "import os\n\n\n"
     + "def zapis(path):\n    obok = path.with_name('ustawienia.tmp')\n"
     + "    obok.write_text('schema_version: 1\\n', encoding='utf-8')\n    os.replace(obok, path)\n",
-    "nakładka zna tylko plik, który się otwiera: tekst na deskryptorze pliku Ustawień": "def zapis(path):\n"
-    + "    with open(path, 'wb') as bajty, open(bajty.fileno(), 'w', encoding='utf-8', closefd=False) as tekst:\n"
-    + "        tekst.write('schema_version: 1\\n')\n",
     "nakładka żyje w io.open i os.open procesu napędu: tekst owinięty na uchwyt bajtów": "import io\n\n\n"
     + "def zapis(path):\n    with open(path, 'wb') as bajty, io.TextIOWrapper(bajty, encoding='utf-8') as tekst:\n"
+    + "        tekst.write('schema_version: 1\\n')\n",
+    "nakładka żyje w io.open i os.open procesu napędu: _io.open, z którego io.open pochodzi": "import _io\n\n\n"
+    + "def zapis(path):\n    with _io.open(path, 'w', encoding='utf-8') as tekst:\n"
     + "        tekst.write('schema_version: 1\\n')\n",
     "nakładka żyje w io.open i os.open procesu napędu: proces potomny": "import subprocess\nimport sys\n\n\n"
     + "def zapis(path):\n    kod = 'import sys; open(sys.argv[1], \"w\", encoding=\"utf-8\").write(\"schema_version: 1\\\\n\")'\n"
@@ -281,6 +283,37 @@ def test_znane_luki_zapisu_tekstem_pliku_ustawien_przechodza_przez_nakladke_nape
                 assert settings.read_bytes() == f"schema_version: 1{os.linesep}".encode(), opis
 
     assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_ZAPISU_TEKSTEM)")
+
+
+@pytest.mark.parametrize("chwila", ["Run.api", "koniec funkcji"])
+def test_plik_ustawien_z_cr_konczy_naped_przy_run_api_i_po_funkcji(
+    common: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, chwila: str
+) -> None:
+    """Druga siatka ``Run.refuse_cr_in_settings`` biegnie przy każdym ``Run.api`` i po napędzie każdej funkcji
+    (``drive_centrum.drive``): plik Ustawień z ``\\r`` (zapis tekstem na Windows, którego nakładka nie widzi) kończy napęd
+    tam, zanim cokolwiek przeczyta plik albo odpowiedź serwera (przegląd #1913 r3, D1)."""
+
+    run = _run(common, tmp_path)
+    settings = Path(run.fixture["settings"])
+
+    def zapis_tekstem_na_windows(*argumenty: object) -> None:
+        settings.write_bytes(b"schema_version: 1\r\n")
+
+    spec = importlib.util.spec_from_file_location("drive_centrum", SCRIPTS / "drive_centrum.py")
+    assert spec is not None and spec.loader is not None
+    drive_centrum = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(drive_centrum)
+    monkeypatch.setitem(drive_centrum.MODULES, "ustawienia", SimpleNamespace(drive=zapis_tekstem_na_windows))
+    okna = SimpleNamespace(open=lambda run: contextlib.nullcontext(object()))
+    kroki: dict[str, Callable[[], object]] = {
+        "Run.api": partial(run.api, "/api/ustawienia", "ustawienia"),
+        "koniec funkcji": partial(drive_centrum.drive, run, okna, "ustawienia", [], {}, []),
+    }
+    if chwila == "Run.api":
+        zapis_tekstem_na_windows()
+
+    with pytest.raises(common.DriveFailure, match="holds \\\\r"):
+        kroki[chwila]()
 
 
 class _Dlugosc:

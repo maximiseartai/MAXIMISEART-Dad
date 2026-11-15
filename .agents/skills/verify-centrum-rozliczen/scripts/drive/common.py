@@ -276,6 +276,12 @@ class Run:
         ``\\n`` as ``\\r\\n`` on Windows (#1585), while the owner of the settings compares the file byte for byte with
         what it wrote, so the drive writes the file only through ``put_settings``.
 
+        It knows the file by its identity (``st_dev``, ``st_ino``), read before each open, not by the name the step
+        passes: a hard or symbolic link, a name in other case, a relative path and a descriptor of the file are the
+        file. The server puts the file in place anew at each write (``os.replace``), so the identity is the file's
+        now, not the one when the drive began. A file not there yet (the settings file before Centrum wrote it, a
+        ``.zapis``) is its folder's identity and its name in any case, also where the system tells case apart.
+
         ``drive_centrum.main`` holds it for the whole drive, so a text write fails in the step that makes it, also on
         Linux and macOS and when the server writes the file again before anything reads it. A run whose
         fixture names no settings file (the tests of the harness) has none to guard. The forms it lets through are
@@ -285,17 +291,41 @@ class Run:
             yield
             return
         settings = Path(self.fixture["settings"])
-        names = {os.path.normcase(settings.name), os.path.normcase(f"{settings.name}.zapis")}
-        guarded = {os.path.normcase(os.path.realpath(settings.parent / name)) for name in names}
+        names = {settings.name.casefold(), f"{settings.name}.zapis".casefold()}
 
-        def refuse(file: object, how: str) -> None:
-            if isinstance(file, str | bytes | os.PathLike):
-                path = os.fsdecode(file)
-                if os.path.normcase(os.path.basename(path)) in names and os.path.normcase(os.path.realpath(path)) in guarded:
-                    raise DriveFailure(
-                        f"a drive step opens the settings file {path} for writing {how}, which writes \\r\\n on Windows: "
-                        "write bytes with run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
-                    )
+        def identity(stat: Callable[[], os.stat_result]) -> tuple[int, int] | None:
+            try:
+                found = stat()
+            except (OSError, ValueError):
+                return None
+            return found.st_dev, found.st_ino
+
+        def is_settings(file: object, dir_fd: int | None) -> bool:
+            now = identity(settings.stat)
+            if isinstance(file, int):
+                descriptor = file
+                return now is not None and identity(lambda: os.fstat(descriptor)) == now
+            if not isinstance(file, str | bytes | os.PathLike):
+                return False
+            path = os.fsdecode(file)
+            if now is not None and identity(lambda: os.stat(path, dir_fd=dir_fd)) == now:
+                return True
+            if dir_fd is None:
+                path = os.path.realpath(path)
+            folder = identity(lambda: os.stat(os.path.dirname(path) or ".", dir_fd=dir_fd))
+            return (
+                folder is not None
+                and folder == identity(settings.parent.stat)
+                and os.path.basename(path).casefold() in names
+            )
+
+        def refuse(file: object, how: str, dir_fd: int | None = None) -> None:
+            if is_settings(file, dir_fd):
+                where = os.fsdecode(file) if isinstance(file, str | bytes | os.PathLike) else f"through descriptor {file}"
+                raise DriveFailure(
+                    f"a drive step opens the settings file {where} for writing {how}, which writes \\r\\n on Windows: "
+                    "write bytes with run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
+                )
 
         text_open, raw_open = io.open, os.open
 
@@ -304,10 +334,10 @@ class Run:
                 refuse(file, f"in text mode ({mode!r})")
             return text_open(file, mode, *args, **kwargs)
 
-        def guarded_os_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        def guarded_os_open(path: Any, flags: int, *args: Any, dir_fd: int | None = None, **kwargs: Any) -> int:
             if flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC):
-                refuse(path, "through os.open, in text mode on Windows without O_BINARY")
-            return raw_open(path, flags, *args, **kwargs)
+                refuse(path, "through os.open, in text mode on Windows without O_BINARY", dir_fd)
+            return raw_open(path, flags, *args, dir_fd=dir_fd, **kwargs)
 
         replaced = (
             (io, "open", text_open, guarded_open),

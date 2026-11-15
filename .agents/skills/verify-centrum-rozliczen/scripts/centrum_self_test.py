@@ -493,8 +493,9 @@ def _check_result_of_start(errors: list[str]) -> None:
 
 def _check_text_settings_refused(errors: list[str]) -> None:
     """While ``Run.refusing_text_settings_writes`` lasts, a text-mode write of the run's settings file or of its
-    ``.zapis`` fails at the write itself, before the server could write the file again, and ``put_settings``, a write of
-    bytes and a text read pass; afterwards ``open`` is Python's own again. ``Run.refuse_cr_in_settings`` fails on a file
+    ``.zapis`` fails at the write itself, before the server could write the file again, also under another name of the
+    same file (a hard or symbolic link, the name in other case) and through its descriptor, and ``put_settings``, a write
+    of bytes and a text read pass; afterwards ``open`` is Python's own again. ``Run.refuse_cr_in_settings`` fails on a file
     a text write on Windows left and passes the bytes of ``put_settings`` and a run before Centrum wrote the file."""
 
     import builtins
@@ -523,15 +524,36 @@ def _check_text_settings_refused(errors: list[str]) -> None:
             with os.fdopen(os.open(settings, os.O_WRONLY | os.O_TRUNC), "w", encoding="utf-8") as handle:
                 handle.write("motyw: light\n")
 
+        def read_and_write() -> None:
+            with open(settings, "r+", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        def descriptor() -> None:
+            with open(settings, "r+b") as data, open(data.fileno(), "w", encoding="utf-8", closefd=False) as handle:
+                handle.write("motyw: light\n")
+
+        other_case = settings.with_name(settings.name.swapcase())
+        hard_link = settings.with_name("ustawienia-alias.yaml")
+        symbolic_link = settings.with_name("ustawienia-dowiazanie.yaml")
         text_writes: dict[str, Callable[[], object]] = {
             "Path.write_text": lambda: settings.write_text(read_text(settings), encoding="utf-8"),
             "open in mode 'a'": append,
+            "open in mode 'r+'": read_and_write,
             "put_text through its .zapis": lambda: put_text(settings, "motyw: light\n"),
             "os.open with os.fdopen": fdopen,
+            "open of its descriptor": descriptor,
+            "Path.write_text of its name in other case": lambda: other_case.write_text("motyw: light\n", encoding="utf-8"),
+            "Path.write_text of a hard link": lambda: hard_link.write_text("motyw: light\n", encoding="utf-8"),
+            "Path.write_text of a symbolic link": lambda: symbolic_link.write_text("motyw: light\n", encoding="utf-8"),
         }
         python_open = (io.open, builtins.open, os.open)
         with run.refusing_text_settings_writes():
             run.put_settings(good)
+            os.link(settings, hard_link)
+            try:
+                symbolic_link.symlink_to(settings)
+            except OSError:  # Windows without the right to make symbolic links
+                del text_writes["Path.write_text of a symbolic link"]
             for form, write in text_writes.items():
                 try:
                     write()
