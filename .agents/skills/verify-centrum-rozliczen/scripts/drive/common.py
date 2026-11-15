@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from fnmatch import fnmatchcase
 import inspect
+import io
 import json
 import os
 from pathlib import Path
@@ -206,6 +208,7 @@ class Run:
         (self.evidence / "aria" / f"{name}.txt").write_text(snapshot + "\n", encoding="utf-8")
 
     def api(self, path: str, name: str) -> dict[str, object]:
+        self.refuse_cr_in_settings()
         with urllib.request.urlopen(self.url.rstrip("/") + path, timeout=Budget.SCREEN.value) as response:
             body = json.load(response)
         (self.evidence / "api" / f"{name}.json").write_text(
@@ -248,16 +251,134 @@ class Run:
             return []
         return [json.loads(line) for line in read_text(path).splitlines() if line]
 
-    def settings_text(self) -> str | None:
-        """The settings file as the server last put it in place (``read_text``), ``None`` before Centrum wrote it."""
+    def settings_bytes(self) -> bytes | None:
+        """The bytes of the settings file as the server last put it in place, ``None`` before Centrum wrote it.
+
+        The drive reads and writes the settings file only as bytes, here and in ``put_settings``: the owner of the
+        settings compares the file byte for byte with what it wrote, and a text write turns ``\\n`` into ``\\r\\n`` on
+        Windows (#1585)."""
 
         settings = Path(self.fixture["settings"])
-        return read_text(settings) if settings.exists() else None
+        return read_bytes(settings) if settings.exists() else None
+
+    def put_settings(self, data: bytes) -> None:
+        """Harness: put ``data`` in place as the settings file whole (``put_bytes``), as Maks edits it by hand or a
+        feature gives back the file from before it."""
+
+        put_bytes(Path(self.fixture["settings"]), data)
+
+    @contextmanager
+    def refusing_text_settings_writes(self) -> Iterator[None]:
+        """Harness: while it lasts, this process refuses to open the run's settings file (``run.fixture["settings"]``)
+        or its ``.zapis`` of ``put_bytes`` and ``put_text`` for writing in text mode, at the open itself and on every
+        system: ``open``, ``io.open``, ``Path.open`` and ``Path.write_text`` with a writing mode without ``b``, and
+        ``os.open`` for writing with any flags, which is text mode on Windows without ``O_BINARY``. Text mode writes
+        ``\\n`` as ``\\r\\n`` on Windows (#1585), while the owner of the settings compares the file byte for byte with
+        what it wrote, so the drive writes the file only through ``put_settings``.
+
+        It knows the file by its identity (``st_dev``, ``st_ino``), read before each open, not by the name the step
+        passes: a hard or symbolic link, a name in other case, a relative path and a descriptor of the file are the
+        file. The server puts the file in place anew at each write (``os.replace``), so the identity is the file's
+        now, not the one when the drive began. A file not there yet (the settings file before Centrum wrote it, a
+        ``.zapis``) is its folder's identity and its name in any case, also where the system tells case apart.
+
+        ``drive_centrum.main`` holds it for the whole drive, so a text write fails in the step that makes it, also on
+        Linux and macOS and when the server writes the file again before anything reads it. A run whose
+        fixture names no settings file (the tests of the harness) has none to guard. The forms it lets through are
+        ``ZNANE_LUKI_ZAPISU_TEKSTEM`` of ``tests/test_limit_drive_centrum.py``."""
+
+        if "settings" not in self.fixture:
+            yield
+            return
+        settings = Path(self.fixture["settings"])
+        names = {settings.name.casefold(), f"{settings.name}.zapis".casefold()}
+
+        def identity(stat: Callable[[], os.stat_result]) -> tuple[int, int] | None:
+            try:
+                found = stat()
+            except (OSError, ValueError):
+                return None
+            return found.st_dev, found.st_ino
+
+        def is_settings(file: object, dir_fd: int | None) -> bool:
+            now = identity(settings.stat)
+            if isinstance(file, int):
+                descriptor = file
+                return now is not None and identity(lambda: os.fstat(descriptor)) == now
+            if not isinstance(file, str | bytes | os.PathLike):
+                return False
+            path = os.fsdecode(file)
+            if now is not None and identity(lambda: os.stat(path, dir_fd=dir_fd)) == now:
+                return True
+            if dir_fd is None:
+                path = os.path.realpath(path)
+            folder = identity(lambda: os.stat(os.path.dirname(path) or ".", dir_fd=dir_fd))
+            return (
+                folder is not None
+                and folder == identity(settings.parent.stat)
+                and os.path.basename(path).casefold() in names
+            )
+
+        def refuse(file: object, how: str, dir_fd: int | None = None) -> None:
+            if is_settings(file, dir_fd):
+                where = os.fsdecode(file) if isinstance(file, str | bytes | os.PathLike) else f"through descriptor {file}"
+                raise DriveFailure(
+                    f"a drive step opens the settings file {where} for writing {how}, which writes \\r\\n on Windows: "
+                    "write bytes with run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
+                )
+
+        text_open, raw_open = io.open, os.open
+
+        def guarded_open(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            if isinstance(mode, str) and "b" not in mode and not set(mode).isdisjoint("wax+"):
+                refuse(file, f"in text mode ({mode!r})")
+            return text_open(file, mode, *args, **kwargs)
+
+        def guarded_os_open(path: Any, flags: int, *args: Any, dir_fd: int | None = None, **kwargs: Any) -> int:
+            if flags & (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC):
+                refuse(path, "through os.open, in text mode on Windows without O_BINARY", dir_fd)
+            return raw_open(path, flags, *args, dir_fd=dir_fd, **kwargs)
+
+        replaced = (
+            (io, "open", text_open, guarded_open),
+            (builtins, "open", text_open, guarded_open),
+            (os, "open", raw_open, guarded_os_open),
+        )
+        for owner, name, _, replacement in replaced:
+            setattr(owner, name, replacement)
+        try:
+            yield
+        finally:
+            for owner, name, original, _ in replaced:
+                setattr(owner, name, original)
+
+    def refuse_cr_in_settings(self) -> None:
+        """Fails when the settings file holds ``\\r``: Centrum writes it with ``\\n`` only and no drive step puts a
+        ``\\r`` in it, so a ``\\r`` is a text-mode write on Windows that ``refusing_text_settings_writes`` did not see
+        (another process, a file written under another name and moved in place, text wrapped around a binary handle).
+
+        Runs at each ``api`` and after each feature's drive (``drive_centrum.drive``); Mutation checks drive every
+        feature on Windows, where such a write gives ``\\r\\n``, unless the server writes the file again before the
+        check. A file the system still refuses to read after ``read_bytes`` waited (``unreadable``) waits for the next
+        check, and a run whose fixture names no settings file (the tests of the harness) has none to check."""
+
+        if "settings" not in self.fixture:
+            return
+        try:
+            data = self.settings_bytes()
+        except PermissionError:
+            return
+        if data is not None and b"\r" in data:
+            raise DriveFailure(
+                f"the settings file {self.fixture['settings']} holds \\r: a text-mode write that refusing_text_settings_writes "
+                "does not see (another process, a file moved in place) turned \\n into \\r\\n on Windows; write bytes with "
+                "run.put_settings (from run.settings_bytes or the owner's settings_yaml)"
+            )
 
     def remembered(self, key: str) -> object:
         """One value of the settings file as Centrum wrote it (``folder_okresow``, ``rejestr_zlecen``, ``motyw``)."""
 
-        document = yaml.safe_load(self.settings_text() or "") or {}
+        document = yaml.safe_load(self.settings_bytes() or b"") or {}
         assert isinstance(document, dict)
         return document.get(key)
 
@@ -465,6 +586,14 @@ def replace_file(source: Path, target: Path) -> None:
     reads ``target``."""
 
     while_open(lambda: os.replace(source, target))
+
+
+def put_bytes(path: Path, data: bytes) -> None:
+    """Harness: write ``data`` as ``path`` whole (``replace_file``), like ``put_text`` for a file kept as bytes."""
+
+    written = path.with_name(f"{path.name}.zapis")
+    written.write_bytes(data)
+    replace_file(written, path)
 
 
 def put_text(path: Path, text: str) -> None:

@@ -693,7 +693,7 @@ def drive(run: Run, page: Page) -> None:
     stranger = Path(fixture["stranger"])
     aside = run.root / "maile-odlozone" / stranger.name
     before_feature = run.remembered("rejestr_zlecen")
-    saved = run.settings_text()
+    saved = run.settings_bytes()
     logs_before = len(_entering_logs(run))
 
     run.step(FEATURE, "bez-karty-w-uruchomieniach")
@@ -903,7 +903,7 @@ def drive(run: Run, page: Page) -> None:
     print("  harness: the Rejestr zleceń from before this feature", flush=True)
     _to_reports(page)
     if before_feature is None:
-        Path(run.fixture["settings"]).write_text(saved or "", encoding="utf-8")
+        run.put_settings(saved or b"")
     else:
         _choose(run, page, str(before_feature))
     remove_tree(broken.parent)
