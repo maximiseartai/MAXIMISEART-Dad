@@ -8,10 +8,12 @@ import gc
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import threading
 from typing import IO, Final
 import warnings
+from xml.etree import ElementTree as ET
 import zipfile
 
 from openpyxl import Workbook, load_workbook
@@ -147,6 +149,149 @@ def test_plik_ktory_zywy_watek_puszcza_w_trakcie_przegladu_obiektow_nie_wywraca_
     assert (left, watek.is_alive()) == ([], False)
 
 
+_PLIK_W_CYKLU = """
+def plik_w_cyklu(path):
+    path.write_bytes(b"x")
+    cykl = [open(path, "rb")]  # bez close(): wyciek fixtury
+    cykl.append(cykl)
+    return cykl
+"""
+
+# Sondy r1 PR #1930: fixtura każdego zasięgu yielduje plik w cyklu bez close(); sąsiad na końcu sesji zbiera ostrzeżenia
+# gc jak test portu opiekuna w #1923. Fixtura sesji kończy się po ostatnim teście, czyli po sąsiedzie.
+_SONDY_FIXTUR: Final = {
+    "conftest.py": _PLIK_W_CYKLU
+    + """
+import pytest
+
+pytest_plugins = ["tests.fixtures.pliki_w_smieciach"]
+
+
+@pytest.fixture(scope="session")
+def plik_sesji(tmp_path_factory):
+    yield plik_w_cyklu(tmp_path_factory.mktemp("s") / "sesja.bin")
+""",
+    "test_a_sesja.py": """
+def test_otwiera_fixture_sesji(plik_sesji):
+    assert plik_sesji
+""",
+    "test_b_funkcja.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture
+def plik_funkcji(tmp_path):
+    yield plik_w_cyklu(tmp_path / "funkcja.bin")
+
+
+def test_z_fixtura_funkcji(plik_funkcji):
+    assert plik_funkcji
+""",
+    "test_c_modul.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture(scope="module")
+def plik_modulu(tmp_path_factory):
+    yield plik_w_cyklu(tmp_path_factory.mktemp("m") / "modul.bin")
+
+
+def test_pierwszy_w_module(plik_modulu):
+    assert plik_modulu
+
+
+def test_ostatni_w_module(plik_modulu):
+    assert plik_modulu
+""",
+    "test_d_sasiad.py": """
+import gc
+import warnings
+
+
+def test_sasiad_zbiera_ostrzezenia():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        gc.collect()
+    assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
+""",
+}
+
+
+def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_a_nie_sasiada(tmp_path: Path) -> None:
+    # Pytest trzyma wartości fixtur w item.funcargs aż po hakach teardown, a fixtura modułu i sesji żyje przez wiele
+    # testów, więc straż sprawdza je dopiero po ich końcu, w prawdziwym cyklu życia testu w osobnym procesie pytest.
+    for name, text in _SONDY_FIXTUR.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    report = tmp_path / "junit.xml"
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:xdist", f"--basetemp={tmp_path / 'tmp'}"]
+        + [f"--junitxml={report}", "-o", "junit_family=xunit1"],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=100,
+        check=False,
+    )
+
+    errors = {
+        case.attrib["name"]: " ".join(
+            element.get("message", "") for element in case if element.tag in ("error", "failure")
+        )
+        for case in ET.parse(report).iter("testcase")
+    }
+    owners = {
+        name: [
+            owner
+            for owner in (
+                "funkcja.bin",
+                "modul.bin",
+                "fixtura plik_modulu zasięgu module",
+                "sesja.bin",
+                "fixtura plik_sesji zasięgu session",
+            )
+            if owner in message
+        ]
+        for name, message in errors.items()
+        if message
+    }
+    assert owners == {
+        "test_z_fixtura_funkcji": ["funkcja.bin"],
+        "test_ostatni_w_module": ["modul.bin", "fixtura plik_modulu zasięgu module"],
+        "test_sasiad_zbiera_ostrzezenia": ["sesja.bin", "fixtura plik_sesji zasięgu session"],
+    }, done.stdout + done.stderr
+    assert all("on teardown" in errors[name] for name in owners), done.stdout
+
+
+def test_ostrzezenie_smiecia_spoza_nowych_plikow_idzie_dalej_a_obserwowanego_pliku_zastepuje_wynik(
+    tmp_path: Path,
+) -> None:
+    # gc.collect() straży zbiera też śmieć sprzed testu; jego ResourceWarning nie może zniknąć w straży (D1 r1 PR #1930).
+    stary, nowy = tmp_path / "stary.bin", tmp_path / "nowy.bin"
+    stary.write_bytes(b"x")
+    nowy.write_bytes(b"x")
+
+    with _bez_samoczynnego_gc(), warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cykl: list[object] = [stary.open("rb")]
+        cykl.append(cykl)
+        before = open_files()
+        cykl = [nowy.open("rb")]
+        cykl.append(cykl)
+        del cykl
+        left = left_to_gc(before)
+
+    unclosed = [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)]
+    # Plik w cyklu ostrzega z bufora albo z io.FileIO, zależnie od tego, który finalizer gc puści pierwszy.
+    assert (left, [(stary.name in message, nowy.name in message) for message in unclosed]) == (
+        [str(nowy.resolve())],
+        [(True, False)],
+    )
+
+
 def _zywy_obiekt(path: Path, trzymane: list[IO[bytes]], monkeypatch: pytest.MonkeyPatch) -> None:
     trzymane.append(path.open("rb"))
 
@@ -176,7 +321,9 @@ ZNANE_LUKI: Final[dict[str, Callable[[Path, list[IO[bytes]], pytest.MonkeyPatch]
 }
 
 
-def test_znane_luki_strazy_plikow_w_smieciach_przechodza_przez_nia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_znane_luki_strazy_plikow_w_smieciach_przechodza_przez_nia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = _skoroszyt(tmp_path)
     zgloszenia: dict[str, list[str]] = {}
 
