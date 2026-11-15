@@ -1,18 +1,20 @@
 // Reguły frontendu, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
 // 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/:
 //    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału. Pole
-//    odpowiedzi operacji GET (pierwszy poziom schematu 200, każdego wariantu unii i elementu tablicy) liczy się, gdy kontroler
-//    typów rozwiązuje dostęp albo destrukturyzację w src do deklaracji tego pola w zod.gen.ts albo types.gen.ts, wprost albo
-//    przez typ, do którego src podaje wartość z tym polem (argument, atrybut JSX, inicjalizator, wynik funkcji, przypisanie;
-//    typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`, wynik
-//    funkcji i `Promise`), a src czyta pole tej nazwy na samym tamtym typie. Ta sama nazwa w innej odpowiedzi go nie
-//    zastępuje (#1577 W2: `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje), także
-//    gdy typ celu powstał z innego schematu: `Pick<IntermaxSetup, "last">`, którego nikt nie czyta, nie liczy
-//    `ReportEnteringSetup.last`, choć `IntermaxSetup.last` czyta inna karta (#1932 W1 r1). Granica: przejście liczy pole
-//    celu czytane gdziekolwiek w src, nie tylko dla tej wartości, odczyt pola przez `Pick<X, "pole">` liczy też `X.pole`,
-//    a warianty unii źródła i celu łączy po nazwie pola każdy z każdym; wartość podana przez rozwinięcie (`{ ...x }`) albo
-//    rzutowanie (`as`) nie przechodzi, więc jej pole liczy się jako nieużyte; pola schematów zagnieżdżonych i ciał
-//    zapytań reguła zna tylko z nazwy.
+//    odpowiedzi operacji GET (pierwszy poziom schematu 200, każdego wariantu unii i elementu tablicy) liczy się, gdy src
+//    je odczytuje (`x.pole`, `x?.pole`, `x!.pole`, `x["pole"]`, `{ pole }`), a to, że odczyt dotyczy tego pola, mówi
+//    findReferences kompilatora: (a) odczyt przez typ tego schematu albo typ z niego (`Pick<S, …>`, alias, `T extends S`,
+//    `z.output`); (b) odczyt na wiązaniu (prop komponentu, parametr, zmienna), do którego src podaje wartość z tym polem
+//    w atrybucie JSX, argumencie albo inicjalizatorze, także przez kolejne wiązania, bez względu na typ wiązania;
+//    (c) odczyt pola zadeklarowanego w src w typie, który przyjmuje wynik funkcji podanej jako argument
+//    (`read: () => Promise<T>` z `T extends LiveFileView`). Ta sama nazwa w innym schemacie go nie zastępuje (#1577 W2:
+//    `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje), także gdy wartość trafia
+//    do typu z innego schematu, który pola nie czyta (`Pick<IntermaxSetup, "last">`, #1932 W1 r1). Granica: (a) liczy
+//    odczyt przez typ ze schematu S także dla wartości innego schematu (zna tożsamość deklaracji, nie wartości), a (c)
+//    odczyt pola typu z src także dla innej wartości tego typu; wartość w kontenerze (tablica, `Resource`) wchodząca do
+//    typu innego schematu, rozwinięcie (`{ ...x }`), rzutowanie (`as`), przypisanie po deklaracji, wartość zwrócona jako
+//    typ innego schematu i komponent bez deklaracji w src (biblioteka, `memo`) nie przenoszą odczytu, więc pole liczy się
+//    jako nieużyte; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`. Granica: reguła
 //    łapie tylko porównanie i `case`; `["settlement", "preparation"].includes(nazwa)`, odczyt z obiektu po nazwie
 //    (`({ settlement: 1 })[nazwa]`) i inne rozgałęzienia na nazwie procesu łapie tylko przegląd.
@@ -353,35 +355,100 @@ function declaredFields(files, wanted) {
   return fields
 }
 
-// Czy wyrażenie `node` src podaje dalej do miejsca z własnym typem: argument wywołania, atrybut JSX, inicjalizator
-// zmiennej i pola obiektu, wynik funkcji albo prawa strona przypisania.
-function flowsOn(node) {
-  const parent = node.parent
+// Węzeł pliku, w którym zaczyna się odniesienie findReferences (najgłębszy węzeł zawierający pozycję).
+function nodeAt(file, node, position) {
+  const child = node.getChildren(file).find((part) => part.getStart(file) <= position && position < part.getEnd())
+
+  return child === undefined ? node : nodeAt(file, child, position)
+}
+
+function isAssigned(access) {
+  const parent = access.parent
 
   return (
-    ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) && (parent.arguments ?? []).includes(node)) ||
-    (ts.isJsxExpression(parent) && parent.expression === node) ||
-    ((ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) && parent.initializer === node) ||
-    ts.isReturnStatement(parent) ||
-    (ts.isArrowFunction(parent) && parent.body === node) ||
-    (ts.isBinaryExpression(parent) && parent.right === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+    ts.isBinaryExpression(parent) &&
+    parent.left === access &&
+    parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+    parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment
   )
 }
 
-// Pole typu celu samo, z polem typu generycznego za jego wystąpieniem, bez źródeł za `Pick` i typem mapowanym:
-// `Pick<IntermaxSetup, "last">` dzieli z `IntermaxSetup` deklarację pola, ale nie jego odczyty (#1932 W1 r1).
-function instances(symbol) {
-  return symbol === undefined ? [] : [symbol, ...instances(symbol.links?.target)]
+// Odczyt pola w węźle jego nazwy: `x.pole` i `x["pole"]` poza lewą stroną przypisania, `{ pole } = x` i `{ pole: y } = x`.
+// Klucz w typie (`Pick<X, "pole">`), pole literału obiektu i atrybut JSX to dla findReferences też odniesienia, nie odczyty.
+function readsField(name) {
+  const parent = name.parent
+
+  if (ts.isBindingElement(parent)) {
+    return (parent.propertyName ?? parent.name) === name
+  }
+
+  const accessed =
+    (ts.isPropertyAccessExpression(parent) && parent.name === name) ||
+    (ts.isElementAccessExpression(parent) && parent.argumentExpression === name)
+
+  return accessed && !isAssigned(parent)
 }
 
-// Pola z `fields`, które src czyta przez kontroler typów: dostęp (`x.pole`) albo destrukturyzacja (`{ pole }`)
-// rozwiązuje się do deklaracji pola wprost albo przez typ, do którego src podaje wartość z tym polem (argument,
-// atrybut JSX, typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`,
-// także przez wynik funkcji i `Promise`), gdy src czyta to pole na samym tamtym typie, nie na schemacie, z którego powstał.
+function isOwn(fileName) {
+  return fileName.startsWith(source) && !fileName.startsWith(generated)
+}
+
+// Wiązanie, które przyjmuje wartość: nazwa (`run`, `props`) z drogą pól, które trzeba z niej jeszcze odczytać, albo wzorzec
+// destrukturyzacji; `undefined`, gdy wzorzec pomija pole z drogi.
+function binding(name, path) {
+  if (ts.isIdentifier(name)) {
+    return { name, path }
+  }
+
+  if (!ts.isObjectBindingPattern(name)) {
+    return undefined
+  }
+
+  if (path.length === 0) {
+    return { name, path }
+  }
+
+  const element = name.elements.find((part) => (part.propertyName ?? part.name).getText() === path[0] && !part.dotDotDotToken)
+  const rest = name.elements.find((part) => part.dotDotDotToken)
+
+  return element !== undefined ? binding(element.name, path.slice(1)) : rest && binding(rest.name, path)
+}
+
+function variants(type) {
+  return type.isUnion() ? type.types : [type]
+}
+
+// Pola z `fields` ("Schemat.pole"), które src czyta według reguły 1: tożsamość pola zawsze podaje findReferences
+// kompilatora, a reguła wskazuje tylko granicę, na której wartość wchodzi do nowej zmiennej (mechanizmy (a)–(c)).
 function readBySymbol(fields) {
-  const configPath = join(root, "tsconfig.app.json")
-  const config = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, ts.sys.readFile).config, ts.sys, root)
-  const program = ts.createProgram({ rootNames: config.fileNames, options: config.options })
+  const config = ts.parseJsonConfigFileContent(
+    ts.readConfigFile(join(root, "tsconfig.app.json"), ts.sys.readFile).config,
+    ts.sys,
+    root,
+  )
+
+  const service = ts.createLanguageService(
+    {
+      getScriptFileNames: () => config.fileNames,
+      getScriptVersion: () => "0",
+      getScriptSnapshot: (name) => {
+        const text = ts.sys.readFile(name)
+
+        return text === undefined ? undefined : ts.ScriptSnapshot.fromString(text)
+      },
+      getCurrentDirectory: () => root,
+      getCompilationSettings: () => config.options,
+      getDefaultLibFileName: ts.getDefaultLibFilePath,
+      fileExists: ts.sys.fileExists,
+      readFile: ts.sys.readFile,
+      readDirectory: ts.sys.readDirectory,
+      directoryExists: ts.sys.directoryExists,
+      getDirectories: ts.sys.getDirectories,
+    },
+    ts.createDocumentRegistry(),
+  )
+
+  const program = service.getProgram()
   const checker = program.getTypeChecker()
 
   const declared = declaredFields(
@@ -389,122 +456,170 @@ function readBySymbol(fields) {
     fields,
   )
 
-  // Symbole pól, które src czyta, z ich źródłami, i przejścia pola typu źródła do pola tej samej nazwy typu celu.
-  const read = new Set()
-  const passes = []
+  // Węzły nazw w src, które findReferences wiąże z deklaracją `name`, bez samej deklaracji.
+  function references(name) {
+    const file = name.getSourceFile()
 
-  // Symbol pola i jego źródła: alias importu, pole typu generycznego za jego wystąpieniem, pole za `Pick` i typem
-  // mapowanym (aż do deklaracji w zod.gen.ts albo types.gen.ts) i pola wariantów za polem unii.
-  function sources(symbol, seen = new Set()) {
-    if (symbol === undefined || seen.has(symbol)) {
+    return (service.findReferences(file.fileName, name.getStart(file)) ?? [])
+      .flatMap((symbol) => symbol.references)
+      .filter((reference) => !reference.isDefinition && isOwn(reference.fileName))
+      .map((reference) => {
+        const place = program.getSourceFile(reference.fileName)
+
+        return nodeAt(place, place, reference.textSpan.start)
+      })
+  }
+
+  // (a) Odczyt, który findReferences wiąże z deklaracją pola w generated/.
+  const read = new Set(
+    [...declared].flatMap(([property, key]) => (references(property.name).some(readsField) ? [key] : [])),
+  )
+
+  const waiting = new Map([...declared].filter(([, key]) => !read.has(key)))
+
+  // Pola z `waiting`, które niesie typ: jego właściwość (każdego wariantu unii) prowadzi do ich deklaracji.
+  function carried(type) {
+    return variants(type).flatMap((variant) =>
+      variant.getProperties().flatMap((property) =>
+        checker.getRootSymbols(property).flatMap((origin) => (origin.declarations ?? []).flatMap((node) => waiting.get(node) ?? [])),
+      ),
+    )
+  }
+
+  // Deklaracja funkcji albo komponentu, który wywołuje `call` (wywołanie, `new`, element JSX), gdy leży w src.
+  function calledDeclaration(call) {
+    const declaration = checker.getResolvedSignature(call)?.getDeclaration()
+
+    return declaration !== undefined && isOwn(declaration.getSourceFile().fileName) ? declaration : undefined
+  }
+
+  // Wiązania, do których wchodzi wartość wyrażenia `node` z drogą `path`: prop komponentu z atrybutu JSX, parametr
+  // wywołanej funkcji z argumentu, zmienna z inicjalizatora.
+  function receivers(node, path) {
+    const parent = node.parent
+
+    if (ts.isJsxExpression(parent) && ts.isJsxAttribute(parent.parent)) {
+      const attribute = parent.parent
+      const props = calledDeclaration(attribute.parent.parent)?.parameters[0]
+
+      return props === undefined ? [] : [binding(props.name, [attribute.name.getText(), ...path])]
+    }
+
+    if ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) && (parent.arguments ?? []).includes(node)) {
+      const parameter = calledDeclaration(parent)?.parameters[parent.arguments.indexOf(node)]
+
+      return parameter === undefined || parameter.dotDotDotToken ? [] : [binding(parameter.name, path)]
+    }
+
+    return ts.isVariableDeclaration(parent) && parent.initializer === node ? [binding(parent.name, path)] : []
+  }
+
+  // Czy wiązanie odczytuje `field`: wzorzec go wymienia, a nazwę findReferences wiąże z `.pole`, `?.pole`, `!.pole`,
+  // `["pole"]` albo z podaniem do następnego wiązania (najwyżej `depth` kroków).
+  function bindingReads(target, field, depth) {
+    if (target === undefined || depth < 0) {
+      return false
+    }
+
+    // Wzorzec czyta pole, gdy je wymienia; bez tego `...rest` niesie je dalej pod swoją nazwą.
+    if (!ts.isIdentifier(target.name)) {
+      const element = binding(target.name, [field])
+
+      return element !== undefined && (element.path.length === 0 || bindingReads({ name: element.name, path: [] }, field, depth))
+    }
+
+    return references(target.name).some((reference) => valueReads(reference, target.path, field, depth))
+  }
+
+  function valueReads(node, path, field, depth) {
+    const value = ts.isParenthesizedExpression(node.parent) || ts.isNonNullExpression(node.parent) ? node.parent : node
+
+    if (value !== node) {
+      return valueReads(value, path, field, depth)
+    }
+
+    const parent = value.parent
+    const access = ts.isPropertyAccessExpression(parent) && parent.expression === value ? parent.name : undefined
+
+    if (access !== undefined && path.length > 0) {
+      return access.text === path[0] && valueReads(parent, path.slice(1), field, depth)
+    }
+
+    if (access !== undefined) {
+      return access.text === field && readsField(access)
+    }
+
+    if (ts.isElementAccessExpression(parent) && parent.expression === value && path.length === 0) {
+      return ts.isStringLiteralLike(parent.argumentExpression) && parent.argumentExpression.text === field && !isAssigned(parent)
+    }
+
+    return receivers(value, path).some((target) => bindingReads(target, field, depth - 1))
+  }
+
+  // Warianty typu, który według deklaracji wywołanej funkcji przyjmuje wynik funkcji podanej jako argument `node`
+  // (po `Promise`; za parametrem typu jego ograniczenie).
+  function resultConstraint(node) {
+    const call = node.parent
+    const parameter = calledDeclaration(call)?.parameters[call.arguments.indexOf(node)]
+    const expected = parameter?.type === undefined ? undefined : checker.getTypeFromTypeNode(parameter.type).getCallSignatures()[0]
+
+    if (expected === undefined) {
       return []
     }
 
-    seen.add(symbol)
-    const links = symbol.links ?? {}
-    const aliased = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : undefined
+    const result = checker.getAwaitedType(expected.getReturnType()) ?? expected.getReturnType()
+    const target = result.flags & ts.TypeFlags.TypeParameter ? checker.getBaseConstraintOfType(result) : result
 
-    const variants =
-      (links.checkFlags ?? 0) & ts.CheckFlags.Synthetic
-        ? links.containingType.types.map((type) => type.getProperty(symbol.name))
-        : []
-
-    return [
-      symbol,
-      ...sources(aliased, seen),
-      ...sources(links.syntheticOrigin, seen),
-      ...sources(links.target, seen),
-      ...variants.flatMap((variant) => sources(variant, seen)),
-    ]
+    return target === undefined ? [] : variants(target)
   }
 
-  function pass(from, to, depth = 0) {
-    const target = to !== undefined && to.flags & ts.TypeFlags.TypeParameter ? checker.getBaseConstraintOfType(to) : to
-
-    if (target === undefined || from === target || depth > 4) {
-      return
-    }
-
-    for (const member of from.isUnion() ? from.types : [from]) {
-      for (const goal of target.isUnion() ? target.types : [target]) {
-        const [awaited, awaitedGoal] = [checker.getAwaitedType(member) ?? member, checker.getAwaitedType(goal) ?? goal]
-
-        if (awaited !== member || awaitedGoal !== goal) {
-          pass(awaited, awaitedGoal, depth + 1)
-          continue
-        }
-
-        for (const property of member.getProperties()) {
-          const counterpart = goal.getProperty(property.name)
-
-          if (counterpart !== undefined) {
-            passes.push([sources(property), instances(counterpart)])
-          }
-        }
-
-        const [call, goalCall] = [member.getCallSignatures()[0], goal.getCallSignatures()[0]]
-
-        if (call !== undefined && goalCall !== undefined) {
-          pass(call.getReturnType(), goalCall.getReturnType(), depth + 1)
-        }
-      }
-    }
+  function resultReads(node, field) {
+    return resultConstraint(node).some((variant) =>
+      (variant.getProperty(field)?.declarations ?? []).some(
+        (declaration) => isOwn(declaration.getSourceFile().fileName) && references(declaration.name).some(readsField),
+      ),
+    )
   }
 
-  // Typ parametru z deklaracji wywołanej funkcji, przed podstawieniem parametrów typu (`T extends LiveFileView`).
-  function declaredParameter(call, node) {
-    const parameters = checker.getResolvedSignature(call)?.getDeclaration()?.parameters ?? []
-    const index = call.arguments.indexOf(node)
-    const parameter = parameters[Math.min(index, parameters.length - 1)]
-
-    return parameter?.type === undefined ? undefined : checker.getTypeFromTypeNode(parameter.type)
-  }
-
-  for (const file of program.getSourceFiles()) {
-    if (file.isDeclarationFile || !file.fileName.startsWith(source) || file.fileName.startsWith(generated)) {
+  // (b) i (c) tylko dla pól bez (a): wyrażenie w atrybucie JSX, argumencie albo inicjalizatorze niesie pole wprost
+  // (wiązanie, które je przyjmuje) albo w wyniku funkcji podanej jako argument (typ, który ten wynik przyjmuje).
+  for (const file of waiting.size === 0 ? [] : program.getSourceFiles()) {
+    if (file.isDeclarationFile || !isOwn(file.fileName)) {
       continue
     }
 
     const visit = (node) => {
-      const symbol = ts.isPropertyAccessExpression(node)
-        ? checker.getSymbolAtLocation(node.name)
-        : ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)
-          ? checker.getTypeAtLocation(node.parent).getProperty((node.propertyName ?? node.name).getText(file))
-          : undefined
+      const parent = node.parent
+      const argument = (ts.isCallExpression(parent) || ts.isNewExpression(parent)) && (parent.arguments ?? []).includes(node)
 
-      for (const origin of sources(symbol)) {
-        read.add(origin)
-      }
-
-      if (node.parent !== undefined && flowsOn(node)) {
+      if (
+        argument ||
+        (ts.isJsxExpression(parent) && ts.isJsxAttribute(parent.parent)) ||
+        (ts.isVariableDeclaration(parent) && parent.initializer === node)
+      ) {
         const type = checker.getTypeAtLocation(node)
-        pass(type, checker.getContextualType(node))
+        const result = argument ? type.getCallSignatures()[0]?.getReturnType() : undefined
 
-        if (ts.isCallExpression(node.parent)) {
-          pass(type, declaredParameter(node.parent, node))
+        for (const key of carried(type)) {
+          if (!read.has(key) && receivers(node, []).some((target) => bindingReads(target, fieldName(key), 4))) {
+            read.add(key)
+          }
+        }
+
+        for (const key of result === undefined ? [] : carried(checker.getAwaitedType(result) ?? result)) {
+          if (!read.has(key) && resultReads(node, fieldName(key))) {
+            read.add(key)
+          }
         }
       }
 
       ts.forEachChild(node, visit)
     }
 
-    visit(file)
+    ts.forEachChild(file, visit)
   }
 
-  for (let grown = true; grown; ) {
-    grown = false
-
-    for (const [from, to] of passes) {
-      if (to.some((symbol) => read.has(symbol)) && from.some((symbol) => !read.has(symbol))) {
-        from.forEach((symbol) => read.add(symbol))
-        grown = true
-      }
-    }
-  }
-
-  const reached = new Set([...read].flatMap((symbol) => symbol.declarations ?? []))
-
-  return new Set([...declared].flatMap(([declaration, key]) => (reached.has(declaration) ? [key] : [])))
+  return read
 }
 
 const answered = responseFields(contract)
