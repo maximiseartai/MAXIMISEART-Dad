@@ -3858,6 +3858,21 @@ def test_usuniecie_wykonawcy_gdy_folderu_z_okresami_nie_da_sie_wylistowac_jest_o
     assert centrum_.tool.worker_list.read_bytes() == before
 
 
+def test_usuniecie_wykonawcy_gdy_pliku_folderow_nie_da_sie_przeczytac_to_odmowa_o_tym_pliku(tmp_path: Path) -> None:
+    """Usunięcie Wykonawcy szuka jego loginów w okresach z Rejestru zleceń i folderu okresów z pliku Folderów; plik,
+    którego system nie daje teraz czytać, to zdanie o tym pliku, a nie „nie udało się zapisać Ustawień” ani „najpierw
+    wskaż Rejestr zleceń”, a lista zostaje."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    before = centrum_.tool.worker_list.read_bytes()
+
+    with without_reading(centrum_.tool.settings):
+        refused_ = centrum_.client.delete(f"{WORKERS_API}/kamil.syntetyczny")
+
+    assert (refused_.status_code, refused_.json()) == (409, {"message": refusal.settings_file_unreadable(SETTINGS_FILE).message})
+    assert centrum_.tool.worker_list.read_bytes() == before
+
+
 def _without_kamil(_inputs: ReleaseInputs[WorkerList]) -> Edit[WorkerList]:
     return Edit(lambda current: replace(current, workers=tuple(w for w in current.workers if "kamil.syntetyczny" not in w.logins)))
 
@@ -5433,6 +5448,33 @@ def test_folder_okresow_od_korzenia_ukladu_listuje_sie_poza_blokada_ustawien(
     assert read_while_listing and all(read_while_listing), read_while_listing
 
 
+def test_zapis_sekcji_foldery_z_folderem_okresow_bez_zmiany_nie_listuje_ukladu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sekcja Foldery odsyła obie ścieżki naraz, więc zmiana samego Rejestru zleceń odsyła też folder okresów bez zmiany:
+    zapisuje się taki, jaki był, bez szukania korzenia układu, które listuje każdy rok i miesiąc w OneDrive taty (opis
+    okna Ustawień po zapisie listuje go osobno, dla ``periods_all_years``)."""
+
+    root = dad_layout(tmp_path)
+    register = tmp_path / "Rejestr.xlsx"
+    register.touch()
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/folders", json={"order_register": None, "periods_directory": str(root)}).status_code == 200
+    listed: list[Path] = []
+    periods_directory_root = folders_module.periods_directory_root
+
+    def listing(path: Path) -> Path:
+        listed.append(path)
+        return periods_directory_root(path)
+
+    monkeypatch.setattr(folders_module, "periods_directory_root", listing)
+    saved = app.client.put("/api/settings/folders", json={"order_register": str(register), "periods_directory": str(root)})
+
+    assert saved.status_code == 200, saved.text
+    settings = saved.json()["settings"]
+    assert (settings["order_register"]["path"], settings["periods_directory"]["path"], listed) == (str(register), str(root), [])
+
+
 def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
     """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
 
@@ -6142,6 +6184,45 @@ def test_plik_ustawien_bez_odczytu_to_odmowa_o_tym_pliku_a_nie_odpowiedz_jak_prz
     assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
     assert (app.platform.opened, _config_files(app.tool.config)) == (opened, before)
     assert opened == ([register] if operation == "openRegister" else [])
+
+
+@pytest.mark.parametrize(
+    ("unreadable", "operation"),
+    [
+        (RULES_FILE, "removeDevice"),
+        (RULES_FILE, "undoSettingsChange"),
+        (DEVICES_FILE, "changeQuantityRule"),
+        (DEVICES_FILE, "previewQuantityRules"),
+    ],
+)
+def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdzenie_trescia_z_wydania(
+    tmp_path: Path, unreadable: str, operation: str
+) -> None:
+    """Sonda przeglądu #1909 r3: tata ma własne reguły, składnik „ont y” i regułę z nim. Zmiana Listy Urządzeń sprawdza
+    się Regułami ilości, a zmiana reguły Listą Urządzeń; drugi plik pary, którego system nie daje teraz czytać, nie
+    znaczy treści z Wydania, która puściłaby usunięcie składnika potrzebnego regule taty. Usunięcie składnika, „Cofnij”
+    jego dodania, zmiana i podgląd reguły mówią tacie, którego pliku nie da się przeczytać, i niczego nie zapisują."""
+
+    app = centrum(tmp_path)
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    [add_row] = [row for row in history_rows(app) if row["file"] == DEVICES_FILE]
+    assert app.client.post(QUANTITY_RULES_URL, json=_rule_with(own)).status_code == 200
+    preview = {"kind": "change", "rule_id": "nokia", "rule": _nokia_rule(app, 3)}
+    method, url, body = {
+        "removeDevice": ("DELETE", f"{DEVICES_URL}/{own}", None),
+        "undoSettingsChange": ("POST", f"/api/settings/history/{add_row['id']}/undo", None),
+        "changeQuantityRule": ("PUT", f"{QUANTITY_RULES_URL}/nokia", _nokia_rule(app, 3)),
+        "previewQuantityRules": ("POST", f"{QUANTITY_RULES_URL}/preview", preview),
+    }[operation]
+    before = _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / unreadable):
+        response = app.client.request(method, url, json=body)
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
+    assert _config_files(app.tool.config) == before
 
 
 def _config_files(config: Path) -> dict[str, bytes]:

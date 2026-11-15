@@ -132,8 +132,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         view = settings.quantity_rules()
         source_rules = _known_rule(edit, view)
         after = settings.rules_after(edit)
-        if isinstance(after, Unreadable):
-            raise refusal.settings_file_unreadable(RULES.name)
+        if isinstance(after, NotSaved):
+            raise refusal.settings_not_saved() if after.unreadable is None else refusal.settings_file_unreadable(after.unreadable)
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(source_rules, after.rules)
@@ -148,6 +148,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
                 return contract.QuantityRulesSaved(quantity_rules=described(), change=change)
             case Refused(problem=problem):
                 raise refusal.setting_refused(_at_form_field(edit, problem))
+            case NotSaved(unreadable=str(file)):
+                raise refusal.settings_file_unreadable(file)
             case NotSaved():
                 raise refusal.settings_not_saved()
 
@@ -182,6 +184,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
                 raise refusal.setting_refused(FieldProblem(device_forms.field_of(edit, spelling), taken.sentence))
             case Refused(problem=problem):
                 raise refusal.setting_refused(problem)
+            case NotSaved(unreadable=str(file)):
+                raise refusal.settings_file_unreadable(file)
             case NotSaved():
                 raise refusal.settings_not_saved()
 
