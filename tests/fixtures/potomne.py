@@ -92,6 +92,8 @@ def _killed(pid: int) -> bool:
     sygnałów czekających całego procesu (``ShdPnd``) do jego pogrzebania, a jądro dokłada go też wątkom (``SigPnd``);
     zombie (``Z``, ``X``) pliki już zamknął."""
 
+    if sys.platform == "win32":
+        raise AssertionError("/proc i SIGKILL są tylko na POSIX")
     try:
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
     except FileNotFoundError:
