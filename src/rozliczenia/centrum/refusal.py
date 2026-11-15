@@ -204,6 +204,17 @@ def settings_change_not_undoable() -> Refusal:
     return _refused(404, "Tej zmiany nie da się cofnąć.")
 
 
+def settings_file_unreadable(file: str) -> Refusal:
+    """Plik Ustawień ``file`` (nazwa w ``config``) jest, ale system nie daje go teraz czytać, więc odpowiedź z niego
+    byłaby zgadywaniem (np. „najpierw wybierz Rejestr zleceń” przy Rejestrze wybranym w nieczytelnym pliku)."""
+
+    return _refused(
+        409,
+        f"Pliku {file} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i "
+        "spróbuj ponownie.",
+    )
+
+
 def settings_history_unreadable() -> Refusal:
     """Plik Historii Ustawień jest, ale system nie daje go teraz czytać (np. trzyma go OneDrive)."""
 

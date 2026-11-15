@@ -1526,6 +1526,9 @@ register_not_chosen [HTTP 409]
 register_unavailable [HTTP 409]
   Rejestr zleceń ZLECENIA INTERMAX OD 08_11_2021.xlsx jest teraz niedostępny. Sprawdź, czy jego folder otwiera się w Eksploratorze plików i czy OneDrive działa, potem spróbuj ponownie.
 
+settings_file_unreadable [HTTP 409]
+  Pliku centrum-ustawienia.yaml w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie.
+
 register_missing [HTTP 404]
   Nie ma Rejestru zleceń ZLECENIA INTERMAX OD 08_11_2021.xlsx. Wybierz właściwy plik w Ustawieniach.
 

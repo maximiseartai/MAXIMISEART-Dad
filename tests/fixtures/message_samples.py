@@ -31,6 +31,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
 from rozliczenia.efenix_window import ForwardRefusal, PagePart
@@ -429,6 +430,7 @@ REFUSALS: RefusalSamples = {
     ],
     "register_not_chosen": [refusal.register_not_chosen],
     "register_unavailable": [partial(refusal.register_unavailable, REGISTER.name)],
+    "settings_file_unreadable": [partial(refusal.settings_file_unreadable, SETTINGS_FILE)],
     "register_missing": [partial(refusal.register_missing, REGISTER.name)],
     "settings_not_saved": [refusal.settings_not_saved],
     "setting_refused": [
