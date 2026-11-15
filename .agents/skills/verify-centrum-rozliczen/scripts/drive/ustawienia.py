@@ -30,6 +30,8 @@ from drive.common import (
     settings_title,
     settings_window,
     settle,
+    shown_theme,
+    switch_theme,
     unreadable,
 )
 from drive.waiting import Budget, answer_late, quiet_for, until
@@ -201,6 +203,8 @@ def drive(run: Run, page: Page) -> None:
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
 
     run.step(feature, "ustawienia-nieczytelny-plik")
+    switched = switch_theme(page, "jasny")
+    open_settings(page, "Foldery")
     with unreadable(Path(run.fixture["settings"])):
         page.reload()
         for row in (register, periods):
@@ -210,9 +214,17 @@ def drive(run: Run, page: Page) -> None:
             settings["order_register"] == settings["periods_directory"] == {"state": "unreadable"},
             "a settings file that cannot be read now is reported as unreadable, not as nothing chosen",
         )
+        run.check(
+            (settings["theme"], shown_theme(page)) == (None, "jasny"),
+            f"the theme of an unreadable settings file is unknown, and the page keeps the light theme it remembers "
+            f"(theme={settings['theme']}, shown {shown_theme(page)})",
+        )
         run.capture(page, "275-ustawienia-nieczytelny-plik")
     page.reload()
     expect(register.get_by_text(register_name, exact=True)).to_be_visible()
+    if switched:
+        switch_theme(page, "ciemny")
+        open_settings(page, "Foldery")
 
     run.step(feature, "ustawienia-niedostepna-sciezka")
     with _without_access(run, page) as (register_path, periods_path):
