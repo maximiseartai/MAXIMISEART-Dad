@@ -513,6 +513,24 @@ def test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii(tmp_path: Path, stop: st
         tool.wait()
 
 
+
+@POSIX_ONLY
+def test_ctrl_c_dochodzi_do_narzedzia_z_testow_uruchomionych_z_ignorowanym_sigint(tmp_path: Path) -> None:
+    """``boatbox job`` (``nohup`` i ``&``) uruchamia pytest z ignorowanym SIGINT, który przez ``exec`` dziedziczy
+    narzędzie uruchomione z testu, więc Ctrl+C z testu do niego nie dochodził (7 z 7 biegów). Przypadek ``Ctrl+C`` w
+    pytest uruchomionym z ignorowanym SIGINT przechodzi tak samo jak bez niego (``ctrl_c_reaches_children`` w
+    ``pytest_configure``)."""
+
+    ignoring = "import os, signal, sys\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
+    node = f"{__file__}::test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii[Ctrl+C]"
+    inner = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "bt"), node]
+
+    done = subprocess.run(
+        [sys.executable, "-c", ignoring, *inner], cwd=TOOLS.parent, capture_output=True, text=True, timeout=120, check=False
+    )
+
+    assert done.returncode == 0, done.stdout[-3000:]
+
 @POSIX_ONLY
 def test_bez_straznika_narzedzie_przerywa_zamiast_dzialac_bez_sprzatania(tmp_path: Path) -> None:
     code = (
