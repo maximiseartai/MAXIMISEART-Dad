@@ -6139,7 +6139,8 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
 # fikstura pisała ``write_text(WORKERS.dump(...))``, na Windows CRLF, i krok ``wykonawcy-usuniecie-i-powrot`` czekał na
 # bajty, których serwer nie pisze). Z ``bytes`` zapis tekstowy, doklejenie napisu, ponowne kodowanie, porównanie z
 # tekstem pliku i kodek tekstu w ``SettingsFile`` nie przechodzą mypy, a ``write_text`` bajtów rzuca ``TypeError`` w biegu na
-# każdym systemie. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` pokazują postacie, które mypy i ruff przepuszczają, a nazwa próbki mówi ich klasę.
+# każdym systemie. Krok drive czyta plik tylko przez ``Run.settings_bytes`` i pisze tylko przez ``Run.put_settings``,
+# oba na ``bytes``. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` („klasa: postać”) pokazują postacie, które mypy i ruff przepuszczają.
 _GLOWA_BAJTOW: Final = """from pathlib import Path
 
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
@@ -6188,12 +6189,18 @@ from rozliczenia.centrum.settings.workers import WORKERS
 
 """
 
+_STR_Z_INNEGO_ZRODLA: Final = "typ bytes niosą tylko SettingsFile.dump i Run.settings_bytes, więc str z innego źródła przechodzi"
+
 ZNANE_LUKI_BAJTOW_USTAWIEN: Final = {
-    "zdekodowane bajty pliku Ustawień w zapisie tekstowym: str z bytes.decode niesie treść bez typu pliku": _GLOWA_LISTY_WYKONAWCOW
+    f"{_STR_Z_INNEGO_ZRODLA}: bytes.decode bajtów pliku Ustawień w zapisie tekstowym": _GLOWA_LISTY_WYKONAWCOW
     + 'def zapis(path: Path) -> None:\n    path.write_text(WORKERS.dump(WORKERS.default).decode("utf-8"), encoding="utf-8")\n',
-    "plik Ustawień z literału w zapisie tekstowym: typ nie zna treści literału (#1568 W2 r1)": "from pathlib import Path\n\n\n"
+    f"{_STR_Z_INNEGO_ZRODLA}: literał w zapisie tekstowym pliku Ustawień (#1568 W2 r1)": "from pathlib import Path\n\n\n"
     + 'def zapis(path: Path) -> None:\n    path.write_text("schema_version: 1\\nwykonawcy: []\\n", encoding="utf-8")\n',
-    "treść pliku Logów w zapisie tekstowym: RunLog.text to str, choć Centrum pisze plik Logów z newline=''": """from pathlib import Path
+    f"{_STR_Z_INNEGO_ZRODLA}: yaml.safe_dump w zapisie tekstowym pliku Ustawień (#1905 r1 D1)": "from pathlib import Path\n\nimport yaml\n\n\n"
+    + 'def zapis(path: Path) -> None:\n    path.write_text(yaml.safe_dump({"folder_okresow": "INEA"}), encoding="utf-8")\n',
+    f"{_STR_Z_INNEGO_ZRODLA}: read_text pliku Ustawień w zapisie tekstowym (#1905 r1 D1)": "from pathlib import Path\n\n\n"
+    + 'def zapis(path: Path) -> None:\n    path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")\n',
+    f"{_STR_Z_INNEGO_ZRODLA}: RunLog.text w zapisie tekstowym pliku Logów, który Centrum pisze z newline=''": """from pathlib import Path
 
 from rozliczenia.centrum.run_logs import RunLog
 

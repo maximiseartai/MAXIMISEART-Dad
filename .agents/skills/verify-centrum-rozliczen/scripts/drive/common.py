@@ -237,16 +237,26 @@ class Run:
             return []
         return [json.loads(line) for line in read_text(path).splitlines() if line]
 
-    def settings_text(self) -> str | None:
-        """The settings file as the server last put it in place (``read_text``), ``None`` before Centrum wrote it."""
+    def settings_bytes(self) -> bytes | None:
+        """The bytes of the settings file as the server last put it in place, ``None`` before Centrum wrote it.
+
+        The drive reads and writes the settings file only as bytes, here and in ``put_settings``: the owner of the
+        settings compares the file byte for byte with what it wrote, and a text write turns ``\\n`` into ``\\r\\n`` on
+        Windows (#1585)."""
 
         settings = Path(self.fixture["settings"])
-        return read_text(settings) if settings.exists() else None
+        return read_bytes(settings) if settings.exists() else None
+
+    def put_settings(self, data: bytes) -> None:
+        """Harness: put ``data`` in place as the settings file whole (``put_bytes``), as Maks edits it by hand or a
+        feature gives back the file from before it."""
+
+        put_bytes(Path(self.fixture["settings"]), data)
 
     def remembered(self, key: str) -> object:
         """One value of the settings file as Centrum wrote it (``folder_okresow``, ``rejestr_zlecen``, ``motyw``)."""
 
-        document = yaml.safe_load(self.settings_text() or "") or {}
+        document = yaml.safe_load(self.settings_bytes() or b"") or {}
         assert isinstance(document, dict)
         return document.get(key)
 
@@ -454,6 +464,14 @@ def replace_file(source: Path, target: Path) -> None:
     reads ``target``."""
 
     while_open(lambda: os.replace(source, target))
+
+
+def put_bytes(path: Path, data: bytes) -> None:
+    """Harness: write ``data`` as ``path`` whole (``replace_file``), like ``put_text`` for a file kept as bytes."""
+
+    written = path.with_name(f"{path.name}.zapis")
+    written.write_bytes(data)
+    replace_file(written, path)
 
 
 def put_text(path: Path, text: str) -> None:
