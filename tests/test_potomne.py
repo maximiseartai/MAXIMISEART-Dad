@@ -513,13 +513,14 @@ def test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii(tmp_path: Path, stop: st
 
 
 
-# Proces z ignorowanym SIGINT, jak pytest pod ``boatbox job`` (``nohup`` i ``&``), który uruchamia Pythona z argumentami.
+# Proces z ignorowanym SIGINT, jak pytest uruchomiony przez ``nohup`` i ``&`` z nieinteraktywnej powłoki, który uruchamia
+# Pythona z argumentami.
 _IGNORING_SIGINT = "import os, signal, sys\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
 
 
 @POSIX_ONLY
 def test_ctrl_c_dochodzi_do_narzedzia_z_testow_uruchomionych_z_ignorowanym_sigint(tmp_path: Path) -> None:
-    """``boatbox job`` (``nohup`` i ``&``) uruchamia pytest z ignorowanym SIGINT, który przez ``exec`` dziedziczy
+    """``nohup`` i ``&`` z nieinteraktywnej powłoki uruchamiają pytest z ignorowanym SIGINT, który przez ``exec`` dziedziczy
     narzędzie uruchomione z testu, więc Ctrl+C z testu do niego nie dochodził (7 z 7 biegów). Przypadek ``Ctrl+C`` w
     pytest uruchomionym z ignorowanym SIGINT przechodzi tak samo jak bez niego (``ctrl_c_reaches_children`` w
     ``pytest_configure``)."""

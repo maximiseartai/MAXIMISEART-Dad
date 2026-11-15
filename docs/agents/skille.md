@@ -20,7 +20,7 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   Główny checkout i inne worktree należą do innych wątków.
 - Skill procesów idzie pierwszy.
   Centrum uruchamia te same procesy (ADR 0010), więc dryf procesu znaleziony w nim tłumaczy porażkę Centrum, zanim weźmiesz ją za dryf ekranu.
-- Przebieg na żywo skillu procesów: `run_verification.py --variant all` na boxie (skill `boat-offload`).
+- Przebieg na żywo skillu procesów: `run_verification.py --variant all` na boxie (skill [`boat`](../../.agents/skills/boat/SKILL.md)).
   Warianty z prawdziwymi Wzorcami biegną tylko na Macu, bo Wzorce z `config/` nie opuszczają Maca.
   Ich `VERIFY SKIP` to `verified-unreachable` z warunkiem „Wzorce w `config/`”.
 - Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo procesor Maca dzielą wszystkie wątki; bieg innego wątku pokazuje `tools/quiet_machine.py --status` (`drive_centrum.py`), a wtedy czekasz na jego koniec.

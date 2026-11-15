@@ -72,7 +72,7 @@ def drive(run: Run, page: Page) -> None:
     sources = [Path(source) for source in fixture["copies"]]
     oldest, middle, newest = (source.name for source in sources)
     settings = Path(run.fixture["settings"])
-    saved = run.settings_text()
+    saved = run.settings_bytes()
     kopie_before = _kopie(folder)
     original = read_bytes(register)
     run.step(FEATURE, "lista")
@@ -93,7 +93,7 @@ def drive(run: Run, page: Page) -> None:
         if saved is None:
             remove(settings, missing_ok=True)
         else:
-            settings.write_text(saved, encoding="utf-8")
+            run.put_settings(saved)
 
 
 def _drive(

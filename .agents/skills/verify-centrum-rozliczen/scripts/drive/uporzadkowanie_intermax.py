@@ -26,6 +26,7 @@ from drive.common import (
 from drive.waiting import Budget, until
 from atrapy.workbooks import excel_lock
 from harness import Log
+from rozliczenia.centrum.settings.files import settings_yaml
 
 FEATURE = "uporzadkowanie-intermax"
 CARD = "Uporządkuj INTERMAX"
@@ -101,11 +102,11 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "bez-intermax")
     settings = Path(run.fixture["settings"])
-    saved = run.settings_text()
-    without = {key: value for key, value in (yaml.safe_load(saved or "") or {}).items() if key != "rejestr_zlecen"}
+    saved = run.settings_bytes()
+    without = {key: value for key, value in (yaml.safe_load(saved or b"") or {}).items() if key != "rejestr_zlecen"}
     print("  harness: the settings file without the Rejestr zleceń, as before Dad points to it", flush=True)
     settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text(yaml.safe_dump(without, allow_unicode=True), encoding="utf-8")
+    run.put_settings(settings_yaml(without))
     _to_card(run, page)
     setup = run.api("/api/intermax", "intermax-bez-intermax")
     expect(_card(page).get_by_text(NOT_SET, exact=True)).to_be_visible()
@@ -114,7 +115,7 @@ def drive(run: Run, page: Page) -> None:
     run.check(setup["blocker"] == NOT_SET, "without INTERMAX the card says what to set and its button is disabled")
     run.capture(page, "230-intermax-bez-intermax")
     if saved is not None:
-        settings.write_text(saved, encoding="utf-8")
+        run.put_settings(saved)
 
     run.step(FEATURE, "wskazanie")
     page.reload()
@@ -251,7 +252,7 @@ def drive(run: Run, page: Page) -> None:
     print("  harness: the Rejestr zleceń from before this feature", flush=True)
     _to_card(run, page)
     if before_feature is None:
-        settings.write_text(saved or "", encoding="utf-8")
+        run.put_settings(saved or b"")
     else:
         _choose(run, page, str(before_feature))
 

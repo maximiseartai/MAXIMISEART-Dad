@@ -945,3 +945,27 @@ def test_zamkniecie_okna_dialogowego_przed_koncem_animacji_jego_modal_dialog_nic
         )
 
     assert shown == ["block", "block", "none"]
+
+
+def test_kazde_okno_dialogowe_strony_zlecenia_stoi_nad_strona_w_oknie_przegladarki_jak_modal_bootstrapa(browser: Browser) -> None:
+    """Jak ``.modal`` bootstrapa 4 efenix, każde okno dialogowe strony zlecenia pokazuje się w oknie przeglądarki nad
+    stroną, a nie na jej końcu, więc okno efenix klika jego przyciski bez przewijania strony. Strona zlecenia jest dłuższa
+    niż okno przeglądarki: okno dialogowe na jej końcu kazało przewijać przed kliknięciem, a pod obciążeniem klik po
+    przewinięciu nie dochodził do zamknięcia okna informacji (#1507)."""
+
+    order = AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", forward_refusal=ForwardRefusal.NO_LENGTH.value)
+    with atrapa_efenix([order]) as atrapa, page_of(browser) as page:
+        page.goto(f"{atrapa.url.removesuffix(LIST_PAGE)}{ORDER_PAGE}?id=901")
+        longer = page.evaluate("document.documentElement.scrollHeight > innerHeight")
+        placed = page.evaluate(
+            """() => [...document.querySelectorAll('.modal')].map((dialog) => {
+              dialog.style.display = 'block';
+              const buttons = [...dialog.querySelectorAll('button')].map((button) => button.getBoundingClientRect());
+              dialog.style.display = 'none';
+              return [dialog.id, buttons.every((box) => box.top >= 0 && box.bottom <= innerHeight)];
+            })"""
+        )
+
+    assert longer
+    assert {dialog for dialog, _ in placed} >= {"dialog_info", "dialog_forward_yes_no"}, placed
+    assert placed == [[dialog, True] for dialog, _ in placed]

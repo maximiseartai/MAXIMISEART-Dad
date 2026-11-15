@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
-from typing import Final, Literal
+from typing import Final, Literal, assert_never
 
 import yaml
 
@@ -87,6 +87,59 @@ def periods_directory_root(path: Path) -> Path:
         return layout_root(path).directory
     except PeriodFolderInaccessible:
         return path
+
+
+@dataclass(frozen=True)
+class ChangeFolders:
+    """Sekcja Foldery odsyła obie ścieżki naraz (``None``: niewskazana)."""
+
+    register: Path | None
+    periods_directory: Path | None
+
+
+@dataclass(frozen=True)
+class ChooseRegister:
+    register: Path
+
+
+@dataclass(frozen=True)
+class ChoosePeriodsDirectory:
+    chosen: Path
+
+
+@dataclass(frozen=True)
+class ChangeTheme:
+    theme: Theme
+
+
+FoldersEdit = ChangeFolders | ChooseRegister | ChoosePeriodsDirectory | ChangeTheme
+"""Zmiana taty pliku Folderów i motywu, którą zapisuje właściciel Ustawień (``dad_folders``)."""
+
+
+def dad_folders(edit: FoldersEdit) -> Callable[[FolderSettings], FolderSettings]:
+    """Zmiana taty ``edit`` jako Foldery po niej z bieżących. Wskazany na nowo folder okresów zapisuje się od korzenia
+    układu (``periods_directory_root``), który listuje folder okresów, każdy rok i miesiąc w OneDrive taty, więc liczy
+    się tu, w wywołaniu, a nie w zwróconej zmianie, którą właściciel woła pod blokadą. Folder, który sekcja odesłała bez
+    zmiany, zostaje, jaki jest (np. tydzień, do którego tata cofnął zmianę z Wydania)."""
+
+    match edit:
+        case ChangeFolders(register=register, periods_directory=periods_directory):
+            root = None if periods_directory is None else periods_directory_root(periods_directory)
+
+            def folders(current: FolderSettings) -> FolderSettings:
+                kept = periods_directory is None or periods_directory == current.periods_directory
+                return replace(current, register=register, periods_directory=periods_directory if kept else root)
+
+            return folders
+        case ChooseRegister(register=register):
+            return lambda current: replace(current, register=register)
+        case ChoosePeriodsDirectory(chosen=chosen):
+            chosen_root = periods_directory_root(chosen)
+            return lambda current: replace(current, periods_directory=chosen_root)
+        case ChangeTheme(theme=theme):
+            return lambda current: replace(current, theme=theme)
+        case _:
+            assert_never(edit)
 
 
 _TO_READ: tuple[SettingState, ...] = ("present", "inaccessible")

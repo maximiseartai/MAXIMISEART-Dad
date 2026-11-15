@@ -10,7 +10,7 @@ import sys
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
@@ -356,8 +356,9 @@ def test_bez_zoltego_wiersza_dzien_staje_10_pustych_wierszy_pod_ostatnim_uporzad
     rows = order_rows(path, layout.last_ordered + 1, layout.last_ordered + 11)
     assert rows[:10] == [None] * 10
     assert rows[10] == _expected(layout.raw[1])
-    sheet = load_workbook(path, read_only=True).worksheets[1]
-    assert sheet.max_row == layout.last_ordered + 10 + 6 + 2, "<dimension> obejmuje dłuższy dzień"
+    with closing(load_workbook(path, read_only=True)) as workbook:
+        max_row = workbook.worksheets[1].max_row
+    assert max_row == layout.last_ordered + 10 + 6 + 2, "<dimension> obejmuje dłuższy dzień"
 
 
 def test_pierwszy_wiersz_na_miejscu_nie_jest_przesuwany(tmp_path: Path) -> None:
@@ -1113,8 +1114,8 @@ def test_uruchomienie_ma_okres_dzisiejszej_daty_z_zegara_procesu(tmp_path: Path,
 def _first_day_row(path: Path, layout: Layout, order: Order) -> int:
     """Wiersz arkusza zleceń, w którym stoi zlecenie ``order`` (po ``NUMER ZL.``)."""
 
-    sheet = load_workbook(path, read_only=True)[ORDER_SHEET]
-    numbers = [row[NUMBER - 1].value for row in sheet.iter_rows(min_row=1, max_col=NUMBER)]
+    with closing(load_workbook(path, read_only=True)) as workbook:
+        numbers = [row[NUMBER - 1].value for row in workbook[ORDER_SHEET].iter_rows(min_row=1, max_col=NUMBER)]
     return numbers.index(f"ZL-{order.number}") + 1
 
 

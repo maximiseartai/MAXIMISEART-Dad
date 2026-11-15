@@ -41,6 +41,10 @@ BY_CHANGE_ONLY = {
         "sprawdza granicę typu SettingsFile.dump na próbkach w pliku tymczasowym, a mypy biegnie w zadaniu „Ruff, mypy” "
         "każdego runu; graf wybiera jego plik przy zmianie modułów ustawień, które importuje"
     ),
+    "tests/test_limit_drive_centrum.py::test_znane_luki_zapisu_tekstem_pliku_ustawien_przechodza_przez_nakladke_napedu": (
+        "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
+        "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
+    ),
     "tests/test_mutacje_zmiany.py": "sprawdza narzędzie na repozytoriach testu; graf wybiera go przy zmianie narzędzia i modułów, które importuje",
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",

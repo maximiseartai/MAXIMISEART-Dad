@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 from collections import Counter
@@ -35,9 +36,9 @@ import pytest
 
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
-from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible
+from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, layout_root
 from rozliczenia import efenix_process, intermax_messages
-from rozliczenia.centrum import app, diagnosis_messages
+from rozliczenia.centrum import app, diagnosis_messages, refusal
 from rozliczenia.centrum.app import STATIC_DIRECTORY
 from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.centrum.contract.common import Message
@@ -51,6 +52,7 @@ from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
+from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
@@ -5395,6 +5397,42 @@ def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_
     assert (settings["order_register"]["path"], settings["periods_directory"]["path"]) == (str(register), str(week))
 
 
+def test_folder_okresow_od_korzenia_ukladu_listuje_sie_poza_blokada_ustawien(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Folder okresów wskazany w sekcji Foldery zapisuje się od korzenia układu, którego szukanie listuje folder okresów,
+    każdy rok i miesiąc w OneDrive taty; inne żądania Ustawień (tu odczyt okna Ustawień) w tym czasie nie czekają na
+    blokadę właściciela."""
+
+    root = dad_layout(tmp_path)
+    week = inea(root, "11_Listopad_2026") / "27_02_11_2026"
+    week.mkdir()
+    app = centrum(tmp_path)
+    owners: list[CentrumSettings] = []
+    change_folders = CentrumSettings.change_folders
+
+    def captured(settings: CentrumSettings, edit: folders_module.FoldersEdit) -> Any:
+        owners.append(settings)
+        return change_folders(settings, edit)
+
+    read_while_listing: list[bool] = []
+
+    def listing(path: Path) -> Any:
+        reader = threading.Thread(target=owners[0].view, daemon=True)
+        reader.start()
+        reader.join(timeout=5)
+        read_while_listing.append(not reader.is_alive())
+        return layout_root(path)
+
+    monkeypatch.setattr(CentrumSettings, "change_folders", captured)
+    monkeypatch.setattr(folders_module, "layout_root", listing)
+    saved = app.client.put("/api/settings/folders", json={"order_register": None, "periods_directory": str(week)})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["settings"]["periods_directory"]["path"] == str(root)
+    assert read_while_listing and all(read_while_listing), read_while_listing
+
+
 def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
     """Plik Ustawień Centrum zapisany przed Wydaniem, np. z folderem okresów wskazanym w środku układu."""
 
@@ -6078,6 +6116,38 @@ def test_rejestr_w_folderze_bez_dostepu_jest_niedostepny_a_nie_uszkodzony(tmp_pa
     assert app.platform.opened == []
 
 
+@pytest.mark.parametrize(
+    ("unreadable", "operation"),
+    [(SETTINGS_FILE, "openRegister"), (SETTINGS_FILE, "previewQuantityRules"), (RULES_FILE, "previewQuantityRules")],
+)
+def test_plik_ustawien_bez_odczytu_to_odmowa_o_tym_pliku_a_nie_odpowiedz_jak_przy_niewskazanym_ustawieniu(
+    tmp_path: Path, unreadable: str, operation: str
+) -> None:
+    """Plik Ustawień, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie jest plikiem bez ustawień:
+    otwarcie Rejestru zleceń i podgląd zmiany reguły mówią tacie, którego pliku nie da się przeczytać, zamiast „najpierw
+    wybierz Rejestr zleceń”, „brak folderu okresów” albo „tej reguły już nie ma”, i niczego nie zapisują. Przy czytelnym
+    pliku ta sama operacja wchodzi, więc odmowa pochodzi z odebranego odczytu."""
+
+    app, register = with_register(tmp_path)
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    preview = {"kind": "change", "rule_id": "nokia", "rule": _nokia_rule(app, 3)}
+    url, body = ("/api/settings/register/open", None) if operation == "openRegister" else (f"{QUANTITY_RULES_URL}/preview", preview)
+    readable = app.client.post(url, json=body)
+    assert readable.status_code == 200, readable.text
+    opened, before = list(app.platform.opened), _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / unreadable):
+        response = app.client.post(url, json=body)
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
+    assert (app.platform.opened, _config_files(app.tool.config)) == (opened, before)
+    assert opened == ([register] if operation == "openRegister" else [])
+
+
+def _config_files(config: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(config)): path.read_bytes() for path in sorted(config.rglob("*")) if path.is_file()}
+
+
 def test_rozliczenie_pracownika_otwiera_sie_po_nazwie_wykonawcy(tmp_path: Path) -> None:
     app, periods = with_periods_directory(tmp_path)
     worker_folder = write_worker_settlements(
@@ -6167,7 +6237,9 @@ def test_nieoczekiwany_wyjatek_daje_bezpieczny_komunikat_i_wpis_bez_tekstu_wyjat
 # fikstura pisała ``write_text(WORKERS.dump(...))``, na Windows CRLF, i krok ``wykonawcy-usuniecie-i-powrot`` czekał na
 # bajty, których serwer nie pisze). Z ``bytes`` zapis tekstowy, doklejenie napisu, ponowne kodowanie, porównanie z
 # tekstem pliku i kodek tekstu w ``SettingsFile`` nie przechodzą mypy, a ``write_text`` bajtów rzuca ``TypeError`` w biegu na
-# każdym systemie. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` pokazują postacie, które mypy i ruff przepuszczają, a nazwa próbki mówi ich klasę.
+# każdym systemie. Krok drive czyta plik tylko przez ``Run.settings_bytes`` i pisze tylko przez ``Run.put_settings``,
+# oba na ``bytes``. Próbki ``ZNANE_LUKI_BAJTOW_USTAWIEN`` („klasa: postać”) pokazują postacie, które mypy i ruff przepuszczają;
+# w napędzie zapis tekstem pliku Ustawień runu odrzuca w chwili otwarcia ``Run.refusing_text_settings_writes``.
 _GLOWA_BAJTOW: Final = """from pathlib import Path
 
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
@@ -6216,12 +6288,18 @@ from rozliczenia.centrum.settings.workers import WORKERS
 
 """
 
+_STR_Z_INNEGO_ZRODLA: Final = "typ bytes niosą tylko SettingsFile.dump i Run.settings_bytes, więc str z innego źródła przechodzi"
+
 ZNANE_LUKI_BAJTOW_USTAWIEN: Final = {
-    "zdekodowane bajty pliku Ustawień w zapisie tekstowym: str z bytes.decode niesie treść bez typu pliku": _GLOWA_LISTY_WYKONAWCOW
+    f"{_STR_Z_INNEGO_ZRODLA}: bytes.decode bajtów pliku Ustawień w zapisie tekstowym": _GLOWA_LISTY_WYKONAWCOW
     + 'def zapis(path: Path) -> None:\n    path.write_text(WORKERS.dump(WORKERS.default).decode("utf-8"), encoding="utf-8")\n',
-    "plik Ustawień z literału w zapisie tekstowym: typ nie zna treści literału (#1568 W2 r1)": "from pathlib import Path\n\n\n"
+    f"{_STR_Z_INNEGO_ZRODLA}: literał w zapisie tekstowym pliku Ustawień (#1568 W2 r1)": "from pathlib import Path\n\n\n"
     + 'def zapis(path: Path) -> None:\n    path.write_text("schema_version: 1\\nwykonawcy: []\\n", encoding="utf-8")\n',
-    "treść pliku Logów w zapisie tekstowym: RunLog.text to str, choć Centrum pisze plik Logów z newline=''": """from pathlib import Path
+    f"{_STR_Z_INNEGO_ZRODLA}: yaml.safe_dump w zapisie tekstowym pliku Ustawień (#1905 r1 D1)": "from pathlib import Path\n\nimport yaml\n\n\n"
+    + 'def zapis(path: Path) -> None:\n    path.write_text(yaml.safe_dump({"folder_okresow": "INEA"}), encoding="utf-8")\n',
+    f"{_STR_Z_INNEGO_ZRODLA}: read_text pliku Ustawień w zapisie tekstowym (#1905 r1 D1)": "from pathlib import Path\n\n\n"
+    + 'def zapis(path: Path) -> None:\n    path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")\n',
+    f"{_STR_Z_INNEGO_ZRODLA}: RunLog.text w zapisie tekstowym pliku Logów, który Centrum pisze z newline=''": """from pathlib import Path
 
 from rozliczenia.centrum.run_logs import RunLog
 

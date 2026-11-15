@@ -9,7 +9,9 @@ poleceniem formularza do właściciela (``CentrumSettings.change_rules``, ``chan
 sprawdza parę Reguł ilości i Listy Urządzeń jako zmianę, tym samym zdaniem co „Cofnij” w Historii; odmowę zapisu u dwóch
 składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta właściciela o to samo polecenie bez zapisu
 (``CentrumSettings.rules_after``).
-Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404.
+Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404. Podgląd, zmiana i usunięcie reguły przy pliku
+reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``),
+nie „tej reguły już nie ma” ani „brak folderu okresów”.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
 Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt, podgląd i podpowiedzi niczego nie
@@ -36,10 +38,12 @@ from rozliczenia.centrum.device_suggestions import device_suggestions
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles, preview
 from rozliczenia.centrum.rule_forms import SCOPES, component_field, edited_id, form_of
 from rozliczenia.centrum.rule_sentences import component_sentence, rule_sentence
-from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
+from rozliczenia.centrum.settings.folders import FOLDERS
 from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, QuantityRulesView, Refused, Saved
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
+    RULES,
     RULES_SECTION,
     TakenSpelling,
     UnlistedComponent,
@@ -126,11 +130,13 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu."""
 
         view = settings.quantity_rules()
-        _known_rule(edit, view)
+        source_rules = _known_rule(edit, view)
         after = settings.rules_after(edit)
+        if isinstance(after, Unreadable):
+            raise refusal.settings_file_unreadable(RULES.name)
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
-        rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(view.source_rules, after.rules)
+        rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(source_rules, after.rules)
         return view.rules, after, rule_id
 
     def saved(edit: contract.RuleEdit) -> contract.QuantityRulesSaved:
@@ -213,7 +219,10 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
         rule = next((rule for rule in after.rules if rule.id == rule_id), None)
         shown = None if rule is None else sentence(rule)
-        directory = settings.snapshot().folders.periods_directory_to_read
+        folders = settings.folders()
+        if isinstance(folders, Unreadable):
+            raise refusal.settings_file_unreadable(FOLDERS.name)
+        directory = folders.periods_directory_to_read
         if directory is None:
             return contract.PreviewWithoutFiles(state="no_periods_directory", sentence=shown)
         found = recent.read(directory)
@@ -224,11 +233,16 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
     return router
 
 
-def _known_rule(edit: contract.RuleEdit, view: QuantityRulesView) -> None:
-    """404, gdy zmiana albo usunięcie dotyczy reguły, której już nie ma w regułach, z których liczy Centrum."""
+def _known_rule(edit: contract.RuleEdit, view: QuantityRulesView) -> tuple[QuantityRule, ...]:
+    """Reguły, z których liczy Centrum; 404, gdy zmiana albo usunięcie dotyczy reguły, której już w nich nie ma, a 409,
+    gdy system nie daje teraz czytać pliku reguł, więc nie wiadomo, czy ją ma."""
 
-    if isinstance(edit, contract.ChangeRule | contract.RemoveRule) and edit.rule_id not in {rule.id for rule in view.source_rules}:
+    source_rules = view.source_rules
+    if isinstance(source_rules, Unreadable):
+        raise refusal.settings_file_unreadable(RULES.name)
+    if isinstance(edit, contract.ChangeRule | contract.RemoveRule) and edit.rule_id not in {rule.id for rule in source_rules}:
         raise refusal.quantity_rule_unknown()
+    return source_rules
 
 
 def _at_form_field(edit: contract.RuleEdit, problem: FieldProblem) -> FieldProblem:

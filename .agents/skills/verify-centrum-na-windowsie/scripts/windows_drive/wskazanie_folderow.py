@@ -26,7 +26,7 @@ REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 
 def _settings(run: Run) -> dict[str, object]:
     path = run.settings
-    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else None
+    document = yaml.safe_load(path.read_bytes()) if path.is_file() else None
     return document if isinstance(document, dict) else {}
 
 
