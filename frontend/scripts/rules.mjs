@@ -368,6 +368,12 @@ function flowsOn(node) {
   )
 }
 
+// Pole typu celu samo, z polem typu generycznego za jego wystąpieniem, bez źródeł za `Pick` i typem mapowanym:
+// `Pick<IntermaxSetup, "last">` dzieli z `IntermaxSetup` deklarację pola, ale nie jego odczyty (#1932 W1 r1).
+function instances(symbol) {
+  return symbol === undefined ? [] : [symbol, ...instances(symbol.links?.target)]
+}
+
 // Pola z `fields`, które src czyta przez kontroler typów: dostęp (`x.pole`) albo destrukturyzacja (`{ pole }`)
 // rozwiązuje się do deklaracji pola wprost albo przez typ, do którego src podaje wartość z tym polem (argument,
 // atrybut JSX, typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`,
@@ -397,6 +403,7 @@ function readBySymbol(fields) {
     seen.add(symbol)
     const links = symbol.links ?? {}
     const aliased = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : undefined
+
     const variants =
       (links.checkFlags ?? 0) & ts.CheckFlags.Synthetic
         ? links.containingType.types.map((type) => type.getProperty(symbol.name))
@@ -409,12 +416,6 @@ function readBySymbol(fields) {
       ...sources(links.target, seen),
       ...variants.flatMap((variant) => sources(variant, seen)),
     ]
-  }
-
-  // Pole typu celu samo, z polem typu generycznego za jego wystąpieniem, bez źródeł za `Pick` i typem mapowanym:
-  // `Pick<IntermaxSetup, "last">` dzieli z `IntermaxSetup` deklarację pola, ale nie jego odczyty (#1932 W1 r1).
-  function instances(symbol) {
-    return symbol === undefined ? [] : [symbol, ...instances(symbol.links?.target)]
   }
 
   function pass(from, to, depth = 0) {
@@ -471,8 +472,8 @@ function readBySymbol(fields) {
           ? checker.getTypeAtLocation(node.parent).getProperty((node.propertyName ?? node.name).getText(file))
           : undefined
 
-      for (const source of sources(symbol)) {
-        read.add(source)
+      for (const origin of sources(symbol)) {
+        read.add(origin)
       }
 
       if (node.parent !== undefined && flowsOn(node)) {
