@@ -156,8 +156,9 @@ waits for in the same time limit as its answer, so an answer to it just before t
 one to any other request."""
 CALM_LIMIT_MS: Final = 15_000
 """The window's time limit in every other run: the run without a fault, second runs and faults whose run never waits
-for the limit. A stop on the time limit is a violation there whatever the limit, so a longer one hides no answer or
-reload that never comes; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than
+for the limit. A stop on the time limit is a violation there whatever the limit (``check_first``), so a longer one
+hides no answer or reload that never comes, and a case whose window waits for its limit on healthy code goes red instead
+of waiting 15 s; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than
 4 s stopped such a run on the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still
 ends within the run's limit."""
 EARLY_S: Final = 0.6
@@ -516,8 +517,10 @@ def early_s(role: Role) -> float:
     return EARLY_S + (EFENIX_EMMETT_RELOAD_MS / 1000 if role in _RELOAD_WAIT else 0)
 
 
-_TIMED: Final = frozenset({Fault.STALLED, Fault.SLOW, Fault.HUNG, Fault.LATE_BEFORE, Fault.LATE_AFTER})
-"""Faults whose answer the proxy places against the window's time limit or never sends."""
+_TIMED: Final = OUTAGES | {Fault.HUNG, Fault.LATE_BEFORE, Fault.LATE_AFTER}
+"""Faults whose answer the proxy places against the window's time limit or never sends whole: a network fault cuts every
+answer from its request on, so the window may wait for its time limit at it (``allows``: a browser failure with a named
+operation is the network or the time limit)."""
 
 
 def meets_limit(case: Case) -> bool:
@@ -1213,7 +1216,10 @@ def check_first(case: Case, run: Run) -> list[Violation]:
             return found
         cause = classify(facts, code)
         shown = f"Zatrzymanie {code} ({describe(facts)})"
-        if not allows(expect, cause):
+        if cause is Cause.TIMEOUT and not meets_limit(case):
+            add("PRZYCZYNA", "czas okna bez awarii, która go mierzy",
+                f"{shown}: okno czekało do limitu {CALM_LIMIT_MS / 1000:.0f} s, choć awaria nie mierzy limitu okna (meets_limit)")
+        elif not allows(expect, cause):
             allowed = [category.value for category in sorted(expect.stops, key=lambda item: item.name)]
             if expect.same:
                 allowed.append("przebieg jak bez awarii")
