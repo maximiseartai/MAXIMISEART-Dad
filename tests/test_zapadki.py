@@ -37,16 +37,6 @@ import odpalenia_ast_grep
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "origin/main"
 
-# Wątki procesu workera pytest poza ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)``
-# w 0e304aec7 (#633, czerwony main: wątki innych testów policzone jako wątki sprawdzenia).
-_WORKER_THREADS = re.compile(r"\bactive_count\(|\bThread\.start\b|\bThread,\s*[\"']start[\"']")
-_THREAD_LINES = "tests/fixtures/linie_watkow.py"
-_THREAD_LINES_HELPER = (
-    "wątki procesu workera pytest poza linią testu: zapytaj tests/fixtures/linie_watkow.py (new_line i threads_since o"
-    " wątki, które żyją, started_threads o wątki uruchomione w bloku), bo w workerze żyją też wątki wcześniejszych testów"
-    " i timer pytest-timeout"
-)
-
 # Odpowiedź nawigacji karty odrzucona w ``src/``, jak ``page.goto(…)`` w 637b1ef25c i ``with page.expect_navigation(…):``
 # w 7ba1aaf8d1 (#808 r1 i r2: strona błędu serwera efenix wyglądała jak zmieniony efenix).
 _DROPPED_NAVIGATION = re.compile(
@@ -128,95 +118,6 @@ def _base() -> str | None:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
         return None
-
-
-def worker_threads(line: str) -> bool:
-    """Czy linia testu pyta o wątki procesu workera pytest z pominięciem ``linie_watkow``.
-
-    Łapie tylko ``active_count(`` (także ``threading.active_count(``), ``Thread.start`` jako całą nazwę (odczyt,
-    podmiana i wywołanie ``threading.Thread.start``) oraz ``Thread,`` i napis ``"start"`` albo ``'start'``
-    (``monkeypatch.setattr(threading.Thread, "start", …)``), także w komentarzu, docstringu i napisie z kodem procesu
-    potomnego. Postacie, których nie łapie ani zapadka, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
-    W kodzie ``threading.Thread.start`` i ``threading.active_count`` odrzuca wcześniej, także w CI, ruff (``TID251`` w
-    ``tests/ruff.toml``), ale nie na linii z ``# noqa: TID251`` ani w napisie, więc zapadka zostaje.
-    Żadna forma nie trafia w dzisiejsze ``tests/``, gdy każda jego linia jest dodana
-    (``test_zapadki_nie_zglaszaja_zadnej_linii_testow`` w ``tests/test_struktura_testow.py``).
-    """
-
-    return _WORKER_THREADS.search(line) is not None
-
-
-def worker_thread_counts(root: Path, base: str) -> list[str]:
-    """Linie ``tests/`` poza ``linie_watkow.py``, tym plikiem i ``test_zakazy_ruff.py`` (próbki zakazu ruff tych samych
-    form), które zmiana od ``base`` dodaje z ``worker_threads``."""
-
-    return [
-        f"{path}:{number}: {_THREAD_LINES_HELPER}"
-        for path, number, line in odpalenia_ast_grep.added_lines(root, base, "tests")
-        if path not in {_THREAD_LINES, "tests/test_zapadki.py", "tests/test_zakazy_ruff.py"} and worker_threads(line)
-    ]
-
-
-def test_watki_testu_tylko_przez_linie_watkow() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert worker_thread_counts(ROOT, base) == []
-
-
-def test_zapadka_watkow_widzi_tylko_tests_poza_linie_watkow(tmp_path: Path) -> None:
-    author = ("-c", "user.name=zapadka", "-c", "user.email=zapadka@localhost")
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, *author, "commit", "-q", "--allow-empty", "-m", "baza")
-    base = _git(tmp_path, "rev-parse", "HEAD").strip()
-    for path in (
-        _THREAD_LINES,
-        "tests/test_zapadki.py",
-        "tests/test_zakazy_ruff.py",
-        "tests/test_watkow.py",
-        "src/rozliczenia/watki.py",
-    ):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
-
-    found = worker_thread_counts(tmp_path, base)
-
-    assert found == [f"tests/test_watkow.py:2: {_THREAD_LINES_HELPER}"]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    start = threading.Thread.start",
-        '    monkeypatch.setattr(threading.Thread, "start", counted)',
-        "    monkeypatch.setattr(threading.Thread, 'start', counted)",
-        "threading.Thread.start = counted",
-        "    assert threading.active_count() == before",
-        "        threading.Thread.start(thread)",
-    ],
-)
-def test_zapadka_lapie_watki_workera_poza_linie_watkow(line: str) -> None:
-    assert worker_threads(line)
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "    since = new_line()",
-        "    assert wait_for(lambda: threads_since(since) == [], seconds=10)",
-        "    with started_threads() as started:",
-        "        asking.start()",
-        "        super().start()",
-        "    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)",
-        "    for index, thread in enumerate(threads):",
-        # Granice całej nazwy: inna nazwa, która zaczyna się od ``start`` albo kończy na ``active_count``.
-        "    began = threading.Thread.started_at",
-        "    threading.Thread.start_soon(work)",
-        "    assert pool._active_count() == 0",
-    ],
-)
-def test_zapadka_przepuszcza_linie_watkow_i_inne_watki(line: str) -> None:
-    assert not worker_threads(line)
 
 
 def dropped_navigation(line: str, previous: str) -> bool:
@@ -821,8 +722,10 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
+    "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
     "wlasna-wyrocznia-numeru": "sprawdź tekst przez zawiera_wartosc",
 }
 needs_ast_grep = pytest.mark.skipif(
@@ -1336,6 +1239,291 @@ def test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff(
 
     assert_znane_luki(
         zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_historia_w_docstringu_przechodza_przez_regule_i_ruff"
+    )
+
+
+# Reguła ``przegladarka-bez-launch-options`` (#1871): odwołanie do metody startu przeglądarki Playwrighta poza wywołaniem
+# z argumentami jej właściciela.
+_PRZEGLADARKA = "przegladarka-bez-launch-options"
+
+
+def _start(text: str, prefix: str = "", signature: str = "p: Playwright") -> str:
+    """Nowy plik ``src/`` z ``prefix`` i funkcją, której ciało to ``text``: pierwsza linia ciała to linia 7 bez ``prefix``."""
+
+    return (
+        f"{prefix}from playwright.sync_api import Playwright\n\nfrom rozliczenia.efenix_browser import launch_options\n\n\n"
+        f"def start({signature}) -> object:\n    {text}\n"
+    )
+
+
+_IMPORT_EXCEL = "import excel\n"
+# Tekst nowego pliku ``src/`` → linie, które reguła zgłasza. Odwołanie do metody ``launch`` albo
+# ``launch_persistent_context`` w każdym miejscu drzewa (wywołanie, argument, przypisanie, dekorator, ``partial``,
+# ``to_thread``, atrybut odwołania) jest zgłoszone, chyba że to wołana funkcja wywołania z ``**launch_options(…)``, albo
+# obiekt to nazwa z importu w tym pliku albo parametr z typem ``ModuleType``. Pełny korpus par gramatyki (rodzaj węzła,
+# pole) z miejscem na węzeł ``attribute`` stoi w komentarzu PR #1877.
+_PROBKI_PRZEGLADARKI: Final[dict[str, tuple[str, list[int]]]] = {
+    "bez argumentów": (_start("return p.chromium.launch()"), [7]),
+    "argument nazwany": (_start("return p.chromium.launch(headless=False)"), [7]),
+    "inna przeglądarka": (_start("return p.firefox.launch()"), [7]),
+    "kontekst z profilem": (_start('return p.chromium.launch_persistent_context("profil")'), [7]),
+    "** słownika": (_start('return p.chromium.launch(**{"args": []})'), [7]),
+    "** innego wywołania": (_start("return p.chromium.launch(**dict(args=[]))"), [7]),
+    "** nazwy launch_options bez wywołania": (_start("return p.chromium.launch(**launch_options)"), [7]),
+    "** wywołania o nazwie kończącej się na launch_options": (_start("return p.chromium.launch(**my_launch_options(p))"), [7]),
+    "** launch_options w nawiasach": (_start("return p.chromium.launch(**(launch_options(p)))"), [7]),
+    "launch_options w argumentach wywołania, które metodę dostaje": (
+        _start("return g(p.chromium.launch, **launch_options(p))"),
+        [7],
+    ),
+    "metoda w nawiasach": (_start("return (p.chromium.launch)()"), [7]),
+    "obiekt w nawiasach": (_start("return (p.chromium).launch()"), [7]),
+    "obiekt przez nazwę pośrednią": (_start("browser_type = p.chromium\n    return browser_type.launch()"), [8]),
+    "wywołanie w kilku liniach": (_start("return p.chromium.launch(\n        headless=True,\n    )"), [7]),
+    "metoda w partial bez argumentów": (_start("return functools.partial(p.chromium.launch)()", "import functools\n"), [8]),
+    "metoda w partial z argumentem": (_start("return functools.partial(p.chromium.launch, headless=True)()", "import functools\n"), [8]),
+    "metoda w asyncio.to_thread": (_start("return asyncio.to_thread(p.chromium.launch, headless=True)", "import asyncio\n"), [8]),
+    "metoda zapisana pod nazwą": (_start("launch = p.chromium.launch\n    return launch()"), [7]),
+    "metoda przez __call__": (_start("return p.chromium.launch.__call__()"), [7]),
+    "metoda jako dekorator": (_start("@p.chromium.launch\n    def g() -> None:\n        pass\n\n    return g"), [7]),
+    "obiekt o nazwie modułu bez importu": (_start("excel = p.chromium\n    return excel.launch()"), [8]),
+    "obiekt o nazwie ścieżki modułu z from": (_start("return excel.launch()", "from excel import zgoda\n"), [8]),
+    "obiekt o nazwie dalszej części ścieżki importu": (_start("return excel.launch()", "import narzedzia.excel\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu": (_start("return excel.launch()", "import excel as xl\n"), [8]),
+    "obiekt o nazwie modułu sprzed aliasu w from": (_start("return excel.launch()", "from narzedzia import excel as xl\n"), [8]),
+    "klasa przeglądarki z importu playwright": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.sync_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł playwright z importu": (_start("return playwright.launch()", "import playwright\n"), [8]),
+    "moduł playwright pod aliasem": (_start("return api.launch()", "import playwright.sync_api as api\n"), [8]),
+    "moduł o nazwie playwright z innego pakietu": (_start("return playwright.launch()", "from narzedzia import playwright\n"), []),
+    "klasa przeglądarki z importu playwright.async_api": (
+        _start("return BrowserType.launch(p.chromium)", "from playwright.async_api import BrowserType\n"),
+        [8],
+    ),
+    "moduł o nazwie zaczynającej się od playwright": (_start("return playwright_stealth.launch()", "import playwright_stealth\n"), []),
+    "moduł z from pakietu o nazwie zaczynającej się od playwright": (
+        _start("return stealth.launch()", "from playwright_stealth import stealth\n"),
+        [],
+    ),
+    "moduł z importu ścieżki z playwright w środku": (_start("return narzedzia.launch()", "import narzedzia.playwright\n"), []),
+    "moduł z from ścieżki z playwright w środku": (_start("return excel.launch()", "from narzedzia.playwright import excel\n"), []),
+    "** wywołania o nazwie zaczynającej się od launch_options": (_start("return p.chromium.launch(**launch_options_x(p))"), [7]),
+    "parametr typu o nazwie zaczynającej się od ModuleType": (_start("return excel.launch()", signature="excel: ModuleTypeX"), [7]),
+    "parametr bez typu ModuleType": (_start("return excel.launch()", signature="excel: object"), [7]),
+    "parametr typu o nazwie kończącej się na ModuleType": (_start("return excel.launch()", signature="excel: MyModuleType"), [7]),
+    "inny parametr z typem ModuleType": (_start("return p.chromium.launch()", "from types import ModuleType\n", "p: Playwright, m: ModuleType"), [8]),
+    "z launch_options": (_start("return p.chromium.launch(**launch_options(p))"), []),
+    "z launch_options i innymi argumentami": (_start('return p.chromium.launch(headless=True, **launch_options(p, arguments=["--x"]))'), []),
+    "z launch_options modułu": (_start("return p.chromium.launch(**efenix_browser.launch_options(p))"), []),
+    "kontekst z profilem i launch_options": (_start('return p.chromium.launch_persistent_context("profil", **launch_options(p))'), []),
+    "metoda w nawiasach z launch_options": (_start("return (p.chromium.launch)(**launch_options(p))"), []),
+    "connect_over_cdp": (_start('return p.chromium.connect_over_cdp("http://127.0.0.1:9222")'), []),
+    "metoda z launch w środku nazwy": (_start("return p.relaunch()"), []),
+    "metoda z launch na początku nazwy": (_start("return p.chromium.launched()"), []),
+    "funkcja modułu z importu": (_start("return excel.launch(timeout=20)", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w nawiasach": (_start("return (excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu przekazana dalej": (_start("return retry(excel.launch)()", _IMPORT_EXCEL), []),
+    "funkcja modułu z importu w funkcji": (_start("import excel\n\n    return excel.launch()"), []),
+    "funkcja modułu z importu kilku modułów": (_start("return excel.launch()", "import os, excel\n"), []),
+    "funkcja modułu pod aliasem": (_start("return xl.launch()", "import excel as xl\n"), []),
+    "funkcja modułu z from i kilku nazw": (
+        _start("return restart_guardian.launch(a, b)", "from rozliczenia.centrum import launcher, restart_guardian\n"),
+        [],
+    ),
+    "funkcja modułu z from pod aliasem": (_start("return excel.launch()", "from narzedzia import zgoda, xl as excel\n"), []),
+    "funkcja modułu z parametru ModuleType": (_start("return excel.launch()", signature="excel: ModuleType"), []),
+    "funkcja modułu z parametru types.ModuleType": (_start("return excel.launch()", signature="excel: types.ModuleType"), []),
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_PRZEGLADARKI.values(), ids=_PROBKI_PRZEGLADARKI.keys())
+def test_przegladarka_bez_launch_options_zglasza_odwolanie_do_startu_poza_wywolaniem_z_argumentami_wlasciciela(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _src_sample(tmp_path, text)
+
+    assert [finding.line for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA] == lines
+
+
+# Pliki reguły ``przegladarka-bez-launch-options`` jako części ścieżki, bo napis ścieżki w pliku testu jest zależnością
+# testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``): zakres ``files:`` i dwaj właściciele z ``ignores:``.
+_ZAKRES_PRZEGLADARKI: Final = (
+    ("src", "rozliczenia", "okno.py"),
+    ("tools", "narzedzie.py"),
+    ("tests", "test_okna.py"),
+    (".agents", "skills", "verify-x", "scripts", "naped.py"),
+)
+_WLASCICIELE_PRZEGLADARKI: Final = (
+    ("src", "rozliczenia", "efenix_browser.py"),
+    ("tests", "fixtures", "przegladarka.py"),
+    ("frontend", "skrypt.py"),
+)
+
+
+@needs_ast_grep
+def test_przegladarka_bez_launch_options_czyta_src_tools_tests_i_skrypty_skilli_poza_wlascicielami(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for parts in (*_ZAKRES_PRZEGLADARKI, *_WLASCICIELE_PRZEGLADARKI):
+        tmp_path.joinpath(*parts).parent.mkdir(parents=True, exist_ok=True)
+        tmp_path.joinpath(*parts).write_text("def start(p: object) -> object:\n    return p.chromium.launch()\n", encoding="utf-8")
+
+    assert sorted(finding.path for finding in syntax_rules(tmp_path, base) if finding.rule == _PRZEGLADARKA) == sorted(
+        "/".join(parts) for parts in _ZAKRES_PRZEGLADARKI
+    )
+
+
+# Prawo właściciela reguły ``przegladarka-bez-launch-options`` (``ignores:``): plik → funkcja → liczba odwołań do metody
+# startu bez ``**launch_options(…)`` w tym samym wywołaniu. Reguła zwalnia cały plik, więc ta tabela trzyma resztę
+# zakazu: plik właściciela poza zwolnieniem zgłasza dokładnie tyle w tych funkcjach. Ścieżka jako części, jak
+# w ``_ZAKRES_PRZEGLADARKI``.
+WLASCICIELE_PRZEGLADARKI: Final[dict[tuple[str, ...], dict[str, int]]] = {
+    ("src", "rozliczenia", "efenix_browser.py"): {"_playwright_disabling": 1, "chrome": 1},
+    ("tests", "fixtures", "przegladarka.py"): {"plain_chromium": 1},
+}
+
+
+def _owner_starts(root: Path, owners: list[tuple[str, ...]], tmp_path: Path) -> dict[tuple[str, ...], dict[str, int]]:
+    """Plik właściciela z ``owners`` w drzewie ``root`` → funkcja → liczba odwołań, które reguła
+    ``przegladarka-bez-launch-options`` zgłasza w nim poza zwolnieniem ``ignores:``. Kopia reguły leży w ``tmp_path``:
+    ast-grep czyta globy ``files:`` względem jej katalogu, gdy plik leży pod nim, więc dla drzewa w ``tmp_path``
+    katalog kopii to sam ``root``."""
+
+    import ast
+    import json
+
+    import yaml
+
+    rule = yaml.safe_load((ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml").read_text(encoding="utf-8"))
+    rule.pop("ignores")
+    unexempted = tmp_path / "bez-ignores.yml"
+    unexempted.write_text(yaml.safe_dump(rule, allow_unicode=True), encoding="utf-8")
+    scan = subprocess.run(
+        [str(AST_GREP), "scan", "--rule", str(unexempted), "--json=stream", "--", *("/".join(parts) for parts in owners)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in owners}
+    for match in map(json.loads, scan.stdout.splitlines()):
+        parts = tuple(Path(match["file"]).parts)
+        line = match["range"]["start"]["line"] + 1
+        tree = ast.parse((root.joinpath(*parts)).read_text(encoding="utf-8"))
+        functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= line <= (node.end_lineno or 0)
+        ]
+        name = max(functions, key=lambda node: node.lineno).name if functions else "<moduł>"
+        found[parts][name] = found[parts].get(name, 0) + 1
+    return found
+
+
+@needs_ast_grep
+def test_wlasciciel_przegladarki_startuje_bez_launch_options_tylko_w_funkcjach_z_tabeli_wlascicieli(tmp_path: Path) -> None:
+    import yaml
+
+    rule = yaml.safe_load((ROOT / AST_GREP_RULES / f"{_PRZEGLADARKA}.yml").read_text(encoding="utf-8"))
+    assert sorted(rule["ignores"]) == sorted("/".join(parts) for parts in WLASCICIELE_PRZEGLADARKI)
+
+    found = _owner_starts(ROOT, list(WLASCICIELE_PRZEGLADARKI), tmp_path)
+
+    assert found == WLASCICIELE_PRZEGLADARKI, (
+        "goły start przeglądarki w pliku z ignores: reguły przegladarka-bez-launch-options stoi tylko w funkcjach z "
+        "WLASCICIELE_PRZEGLADARKI tyle razy, ile mówi tabela: podaj **launch_options(playwright) albo zmień tabelę"
+    )
+
+
+# Znane luki tabeli ``WLASCICIELE_PRZEGLADARKI`` (tests/fixtures/znane_luki.py): „klasa: postać” → plik właściciela
+# z ``ignores:`` i jego tekst, którego start nie niesie argumentów, które ma nieść, a który mimo to przechodzi tabelę, bo
+# ta liczy starty na funkcję. Każda próbka mówi, który test tę postać łapie.
+_EFENIX_BROWSER: Final = ("src", "rozliczenia", "efenix_browser.py")
+_PRZEGLADARKA_TESTOW: Final = ("tests", "fixtures", "przegladarka.py")
+_SONDA = 'def _playwright_disabling(playwright: Playwright) -> object:\n    return playwright.chromium.launch(headless=True{})\n\n\n'
+_KONTEKST = 'def chrome(playwright: Playwright, profile: str) -> object:\n    return playwright.chromium.launch_persistent_context(profile{})\n'
+ZNANE_LUKI_WLASCICIELI_PRZEGLADARKI: Final[dict[str, tuple[tuple[str, ...], str]]] = {
+    "tabela liczy starty, nie ich argumenty: kontekst okna efenix bez **options (łapie "
+    "tests/test_centrum_logi_uruchomienia.py::test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta)": (
+        _EFENIX_BROWSER,
+        "from playwright.sync_api import Playwright\n\n\n"
+        + _SONDA.format(', args=["--enable-automation"]')
+        + _KONTEKST.format(", headless=True"),
+    ),
+    "tabela liczy starty, nie ich argumenty: sonda Playwrighta bez --enable-automation (łapie "
+    "tests/test_wycena_efenix.py::test_argumenty_okna_efenix_nie_zostawiaja_otwartej_przegladarki_z_ktorej_wziely_liste_playwrighta)": (
+        _EFENIX_BROWSER,
+        "from playwright.sync_api import Playwright\n\n\n"
+        + _SONDA.format(', ignore_default_args=["--enable-automation"]')
+        + _KONTEKST.format(", **options"),
+    ),
+    "tabela liczy starty, nie ich argumenty: wzorzec bez --enable-automation (łapie "
+    "tests/test_centrum_logi_uruchomienia.py::test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta)": (
+        _PRZEGLADARKA_TESTOW,
+        "from playwright.sync_api import Playwright\n\n\n"
+        "def plain_chromium(playwright: Playwright) -> object:\n    return playwright.chromium.launch(args=[])\n",
+    ),
+}
+
+
+@needs_ast_grep
+def test_znane_luki_tabeli_wlascicieli_przegladarki_przechodza_przez_tabele(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for number, (opis, (parts, text)) in enumerate(ZNANE_LUKI_WLASCICIELI_PRZEGLADARKI.items()):
+        root = tmp_path / str(number)
+        root.joinpath(*parts).parent.mkdir(parents=True)
+        root.joinpath(*parts).write_text(text, encoding="utf-8")
+        found = _owner_starts(root, [parts], root)
+        zgloszenia[opis] = [] if found[parts] == WLASCICIELE_PRZEGLADARKI[parts] else [f"tabela: {found[parts]}"]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_tabeli_wlascicieli_przegladarki_przechodza_przez_tabele")
+
+
+# Znane luki reguły ``przegladarka-bez-launch-options`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik
+# ``src/`` ze startem przeglądarki bez argumentów właściciela, który przechodzi przez regułę i ruff.
+_LUKA_PRZEGLADARKI = "from playwright.sync_api import Browser, Playwright\n\n\ndef start(p: Playwright) -> Browser:\n"
+ZNANE_LUKI_PRZEGLADARKI: Final = {
+    "drzewo nie zna nazwy z napisu: metoda po nazwie z getattr": (
+        f'{_LUKA_PRZEGLADARKI}    name = "launch"\n    return getattr(p.chromium, name)()\n'
+    ),
+    "drzewo nie czyta napisów: start w skrypcie dla procesu potomnego": (
+        'SKRYPT = "from playwright.sync_api import sync_playwright\\nsync_playwright().start().chromium.launch()\\n"\n'
+    ),
+    "zna tylko API Playwrighta: przeglądarka uruchomiona jako proces": (
+        "import subprocess\n\n\ndef chrome(binary: str) -> None:\n    subprocess.run([binary, \"--headless=new\", \"about:blank\"], check=True)\n"
+    ),
+    "zna tylko nazwę launch_options: funkcja innego obiektu o tej nazwie": (
+        "from types import SimpleNamespace\n\n"
+        f"{_LUKA_PRZEGLADARKI}    helpers = SimpleNamespace(launch_options=lambda playwright: {{}})\n"
+        "    return p.chromium.launch(**helpers.launch_options(p))\n"
+    ),
+    "nazwa z importu to dla reguły moduł: obiekt przeglądarki zaimportowany pod nazwą": (
+        "from playwright.sync_api import Browser\n\nfrom narzedzia.przegladarki import chromium\n\n\n"
+        "def start() -> Browser:\n    return chromium.launch()\n"
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_przegladarki_bez_launch_options_przechodza_przez_regule_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (tmp_path / "src" / "rozliczenia").mkdir(parents=True)
+    pliki = zapisz(ZNANE_LUKI_PRZEGLADARKI, tmp_path / "src" / "rozliczenia")
+    zgloszenia = ruff(pliki, sonda=ROOT / "src" / "rozliczenia" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(
+        zgloszenia, "tests/test_zapadki.py::test_znane_luki_przegladarki_bez_launch_options_przechodza_przez_regule_i_ruff"
     )
 
 
@@ -1890,79 +2078,13 @@ def open_order(page: Page, url: str) -> None:
     ]
 """,
     },
-    "test_watki_testu_tylko_przez_linie_watkow": {
-        # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc zapadka na niej dałaby alarm na historii.
-        "threading.enumerate przed i po": """\
-import threading
 
-
-def test_bez_nowych_watkow() -> None:
-    before = set(threading.enumerate())
-    assert set(threading.enumerate()) == before
-""",
-        "sys._current_frames": """\
-import sys
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(sys._current_frames()) == 1
-""",
-        "threading._active": """\
-import threading
-
-
-def test_bez_nowych_watkow() -> None:
-    assert len(threading._active) == 1
-""",
-        "setattr z klasą wątku w zmiennej": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    thread_class = threading.Thread
-    monkeypatch.setattr(thread_class, "start", lambda self: None)
-""",
-        "podmiana Thread.run": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
-""",
-        "podmiana Thread.__init__": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
-""",
-        "setattr rozbity na kilka linii": """\
-import threading
-
-import pytest
-
-
-def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        threading.Thread,
-        "start",
-        lambda self: None,
-    )
-""",
-    },
 }
 
 # Test zapadki → folder repozytorium, w którym zapadka szuka, i jej sprawdzenie dodanych linii.
 _ZAPADKI: Final = {
     "test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo": ("src/rozliczenia", syntax_rule_findings),
     "test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona": ("src/rozliczenia", navigation_drops),
-    "test_watki_testu_tylko_przez_linie_watkow": ("tests", worker_thread_counts),
 }
 
 
@@ -2389,3 +2511,186 @@ def test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ru
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_wyroczni_numeru_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_THREADS_RULE = "watki-workera"
+_IN_THREADS = "import threading\n\n\ndef test_watki(monkeypatch, thread, threads, pool, counted, before, work, asking):\n"
+# Tekst dodanego pliku ``tests/`` → linie, które reguła ``watki-workera`` zgłasza: wątki procesu workera poza
+# ``linie_watkow``, jak ``monkeypatch.setattr(threading.Thread, "start", counted)`` z 0e304aec7, w każdej postaci, którą
+# reguła czyta (wyrażenie pośrednie przed przecinkiem, węzeł zaczynający się napisem po nim, odstępy i łamanie wokół
+# kropki), i pytania o wątki przez ``linie_watkow`` albo o inne nazwy, które przepuszcza.
+_PROBKI_WATKOW: Final[list[tuple[str, list[int]]]] = [
+    (f"{_IN_THREADS}    start = threading.Thread.start\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start", counted)\n', [5]),
+    (f"{_IN_THREADS}    monkeypatch.setattr(threading.Thread, 'start', counted)\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start = counted\n", [5]),
+    (f"{_IN_THREADS}    assert threading.active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    threading.Thread.start(thread)\n", [5]),
+    (f"{_IN_THREADS}    assert active_count() == before\n", [5]),
+    (f"{_IN_THREADS}    Thread.start(thread)\n", [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(\n        threading.Thread,\n        "start",\n        counted,\n    )\n', [7]),
+    # Para Thread i "start" w każdym ciągu wyrażeń, nie tylko w argumentach (korpus z node-types.json gramatyki).
+    (f'{_IN_THREADS}    monkeypatch.setattr(Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    targets = [(threading.Thread, "start")]\n', [5]),
+    (f'{_IN_THREADS}    patched = pool[threading.Thread, "start"]\n', [5]),
+    (f'{_IN_THREADS}    assert threading.Thread, "start"\n', [5]),
+    (f"{_IN_THREADS}    assert before  # threading.active_count() przed\n", [5]),
+    (f'{_IN_THREADS}    """Podmienia Thread.start na liczący."""\n', [5]),
+    (f"{_IN_THREADS}    code = \"monkeypatch.setattr(threading.Thread, 'start', f)\"\n", [5]),
+    # Węzeł dowolnego rodzaju przed przecinkiem, którego tekst kończy się słowem Thread (#1879 r1 W1).
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool or threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool if before else threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(cls := threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(lambda: threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool is threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(-threading.Thread, "start", counted)\n', [5]),
+    (f'{_IN_THREADS}    patches = {{pool: threading.Thread, "start": counted}}\n', [5]),
+    (f'{_IN_THREADS}    patched = pool[threading.Thread, "start":]\n', [5]),
+    # Węzeł po przecinku, który zaczyna się napisem start.
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start" "", counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start".strip(), counted)\n', [5]),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "start"[:], counted)\n', [5]),
+    # Odstępy i łamanie wokół kropki, także na linii z noqa, którą ruff przepuszcza.
+    (f"{_IN_THREADS}    assert threading. active_count() == before  # noqa: TID251 - próbka\n", [5]),
+    (f"{_IN_THREADS}    start = threading. Thread.start  # noqa: TID251 - próbka\n", [5]),
+    (f"{_IN_THREADS}    start = (threading\n        .Thread.start)\n", [5]),
+    (f"{_IN_THREADS}    count = (threading\n        .active_count())\n", [5]),
+    (f"{_IN_THREADS}    since = new_line()\n", []),
+    (f"{_IN_THREADS}    assert wait_for(lambda: threads_since(since) == [], seconds=10)\n", []),
+    (f"{_IN_THREADS}    with started_threads() as started:\n        pass\n", []),
+    (f"{_IN_THREADS}    asking.start()\n", []),
+    (f"{_IN_THREADS}    super().start()\n", []),
+    (f"{_IN_THREADS}    thread_started: bool = False  # through ``threads.Thread`` of ``RunHost`` (``ModelThread.start``)\n", []),
+    (f"{_IN_THREADS}    for index, thread in enumerate(threads):\n        pass\n", []),
+    (f"{_IN_THREADS}    began = threading.Thread.started_at\n", []),
+    (f"{_IN_THREADS}    threading.Thread.start_soon(work)\n", []),
+    (f"{_IN_THREADS}    assert pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert threading.active_counts() == 0\n", []),
+    (f"{_IN_THREADS}    ModelThread.start(thread)\n", []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(MyThread, "start", counted)\n', []),
+    (f'{_IN_THREADS}    assert threading.Thread == "start"\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, r"start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool.MyThread, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(Threads, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(pool.Threads, "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, "started", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(threading.Thread, prefix + "start", counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(MyThread, "start".strip(), counted)\n', []),
+    (f'{_IN_THREADS}    monkeypatch.setattr(Threads, "start".strip(), counted)\n', []),
+    (f"{_IN_THREADS}    restart = threading.Thread.restart\n", []),
+    (f"{_IN_THREADS}    start = threading.Threads.start\n", []),
+    (f"{_IN_THREADS}    def active_count(self):\n        return 0\n", []),
+    (f'{_IN_THREADS}    names = {{threading.Thread: "start"}}\n', []),
+    # Wzorzec case nie tworzy wartości, ale tekst ma postać pary; zgłasza go reguła, tak jak zapadka.
+    (f'{_IN_THREADS}    match pool:\n        case [threading.Thread, "start"]:\n            pass\n', [6]),
+    (f"{_IN_THREADS}    assert pool  # pool._active_count() == 0\n", []),
+    (f"{_IN_THREADS}    assert pool  # Thread.started_at przed\n", []),
+    (f'{_IN_THREADS}    assert pool  # setattr(MyThread, "start", f)\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_WATKOW)
+def test_regula_watkow_zglasza_watki_workera_poza_linie_watkow_a_nie_linie_watkow_ani_inne_nazwy(
+    tmp_path: Path, text: str, lines: list[int]
+) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_watkow.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_watkow_zglasza_tylko_tests_poza_linie_watkow_i_probkami_zakazu(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for path in (
+        "tests/fixtures/linie_watkow.py",
+        "tests/test_zapadki.py",
+        "tests/test_zakazy_ruff.py",
+        "tests/test_watkow.py",
+        "src/rozliczenia/watki.py",
+    ):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("import threading\nstart = threading.Thread.start\n", encoding="utf-8")
+
+    assert _findings_of(_THREADS_RULE, tmp_path, base) == [("tests/test_watkow.py", 2)]
+
+
+# Znane luki reguły ``watki-workera`` (tests/fixtures/znane_luki.py): „postać” → dodany plik ``tests/``, który pyta
+# o wątki procesu workera poza ``linie_watkow``, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_WATKOW: Final[dict[str, str]] = {
+    # #1297 i #1308 dodały tę postać w scalonych PR-ach bez rundy FAIL, więc reguła na niej dałaby alarm na historii.
+    "threading.enumerate przed i po": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    before = set(threading.enumerate())
+    assert set(threading.enumerate()) == before
+""",
+    "sys._current_frames": """\
+import sys
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(sys._current_frames()) == 1
+""",
+    "threading._active": """\
+import threading
+
+
+def test_bez_nowych_watkow() -> None:
+    assert len(threading._active) == 1
+""",
+    "setattr z klasą wątku w zmiennej": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    thread_class = threading.Thread
+    monkeypatch.setattr(thread_class, "start", lambda self: None)
+""",
+    "podmiana Thread.run": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "run", lambda self: None)
+""",
+    "podmiana Thread.__init__": """\
+import threading
+
+import pytest
+
+
+def test_liczy_starty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(threading.Thread, "__init__", lambda self, *args, **kwargs: None)
+""",
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    """Reguła ``watki-workera`` czyta tekst węzłów, nie ich rodzaj: wywołanie, którego funkcja kończy się słowem
+    ``active_count``, atrybut ``start`` na wyrażeniu kończącym się słowem ``Thread``, napis ``start`` zaraz po przecinku
+    za węzłem kończącym się słowem ``Thread`` (sam albo jako początek węzła po przecinku) oraz ten sam tekst
+    w komentarzu i napisie; ``threading.enumerate``, ``sys._current_frames``, ``threading._active``, klasa wątku
+    w zmiennej i podmiana ``run`` albo ``__init__`` to znane luki."""
+
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tests").mkdir()
+    pliki = zapisz(ZNANE_LUKI_WATKOW, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tests" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
