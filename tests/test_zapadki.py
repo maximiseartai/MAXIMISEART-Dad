@@ -921,6 +921,18 @@ def syntax_rule_findings(root: Path, base: str) -> list[str]:
     return [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in syntax_rules(root, base)]
 
 
+# Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły ast-grep (na liniach
+# dodanych i całego ``src/``) się pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza
+# Windows brak ast-grep to porażka z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
+BEZ_DODATKU_DEV = sys.platform == "win32"
+windows_without_ast_grep = pytest.mark.skipif(
+    AST_GREP is None and BEZ_DODATKU_DEV,
+    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły ast-grep biegną"
+    " w zadaniach pytest na Linuksie, w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
+)
+
+
+@windows_without_ast_grep
 def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     base = _base()
     if base is None:
@@ -930,15 +942,6 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię ``src/``, a nie tylko linie dodane przez zmianę.
 REGULY_CALEGO_SRC: Final = ("historia-w-docstringu", "komentarz-w-src")
-# Zadania pytest na Windows instalują tylko requirements.txt, bez dodatku dev, więc tam reguły całego ``src/`` się
-# pomijają, a biegną w zadaniach pytest na Linuksie i w zadaniu „Ruff, mypy”; poza Windows brak ast-grep to porażka
-# z poleceniem instalacji (``odpalenia_ast_grep.INSTALL``), a nie ciche pominięcie.
-BEZ_DODATKU_DEV = sys.platform == "win32"
-windows_without_ast_grep = pytest.mark.skipif(
-    AST_GREP is None and BEZ_DODATKU_DEV,
-    reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt; reguły całego src biegną"
-    " w zadaniach pytest na Linuksie, w zadaniu CI „Ruff, mypy” i w tools/szybko.py",
-)
 
 
 def whole_src_rules(root: Path, config: Path = AST_GREP_CONFIG, ast_grep: str | None = AST_GREP) -> list[odpalenia_ast_grep.Finding]:
