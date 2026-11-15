@@ -146,7 +146,6 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
     history = centrum.client.get("/api/metrics").json()
 
     assert setup == {
-        "title": "Wpisanie raportów",
         "reminder": "Zapisz i zamknij INTERMAX w Excelu",
         "blocker": None,
         "open_in_excel": [],

@@ -5,11 +5,14 @@
 //    typów rozwiązuje dostęp albo destrukturyzację w src do deklaracji tego pola w zod.gen.ts albo types.gen.ts, wprost albo
 //    przez typ, do którego src podaje wartość z tym polem (argument, atrybut JSX, inicjalizator, wynik funkcji, przypisanie;
 //    typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`, wynik
-//    funkcji i `Promise`), a tamten typ ma czytane pole tej nazwy. Ta sama nazwa w innej odpowiedzi go nie zastępuje
-//    (#1577 W2: `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje). Granica: przejście
-//    liczy pole celu czytane gdziekolwiek w src, nie tylko dla tej wartości, a warianty unii źródła i celu łączy po nazwie
-//    pola każdy z każdym; wartość podana przez rozwinięcie (`{ ...x }`) albo rzutowanie (`as`) nie przechodzi, więc jej
-//    pole liczy się jako nieużyte; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
+//    funkcji i `Promise`), a src czyta pole tej nazwy na samym tamtym typie. Ta sama nazwa w innej odpowiedzi go nie
+//    zastępuje (#1577 W2: `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje), także
+//    gdy typ celu powstał z innego schematu: `Pick<IntermaxSetup, "last">`, którego nikt nie czyta, nie liczy
+//    `ReportEnteringSetup.last`, choć `IntermaxSetup.last` czyta inna karta (#1932 W1 r1). Granica: przejście liczy pole
+//    celu czytane gdziekolwiek w src, nie tylko dla tej wartości, odczyt pola przez `Pick<X, "pole">` liczy też `X.pole`,
+//    a warianty unii źródła i celu łączy po nazwie pola każdy z każdym; wartość podana przez rozwinięcie (`{ ...x }`) albo
+//    rzutowanie (`as`) nie przechodzi, więc jej pole liczy się jako nieużyte; pola schematów zagnieżdżonych i ciał
+//    zapytań reguła zna tylko z nazwy.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`. Granica: reguła
 //    łapie tylko porównanie i `case`; `["settlement", "preparation"].includes(nazwa)`, odczyt z obiektu po nazwie
 //    (`({ settlement: 1 })[nazwa]`) i inne rozgałęzienia na nazwie procesu łapie tylko przegląd.
@@ -368,7 +371,7 @@ function flowsOn(node) {
 // Pola z `fields`, które src czyta przez kontroler typów: dostęp (`x.pole`) albo destrukturyzacja (`{ pole }`)
 // rozwiązuje się do deklaracji pola wprost albo przez typ, do którego src podaje wartość z tym polem (argument,
 // atrybut JSX, typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`,
-// także przez wynik funkcji i `Promise`), gdy to pole tamtego typu jest czytane.
+// także przez wynik funkcji i `Promise`), gdy src czyta to pole na samym tamtym typie, nie na schemacie, z którego powstał.
 function readBySymbol(fields) {
   const configPath = join(root, "tsconfig.app.json")
   const config = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, ts.sys.readFile).config, ts.sys, root)
@@ -380,11 +383,13 @@ function readBySymbol(fields) {
     fields,
   )
 
-  // Deklaracje pól, do których src sięga odczytem, i przejścia pola typu źródła do pola tej samej nazwy typu celu.
-  const reached = new Set()
+  // Symbole pól, które src czyta, z ich źródłami, i przejścia pola typu źródła do pola tej samej nazwy typu celu.
+  const read = new Set()
   const passes = []
 
-  function origins(symbol, seen = new Set()) {
+  // Symbol pola i jego źródła: alias importu, pole typu generycznego za jego wystąpieniem, pole za `Pick` i typem
+  // mapowanym (aż do deklaracji w zod.gen.ts albo types.gen.ts) i pola wariantów za polem unii.
+  function sources(symbol, seen = new Set()) {
     if (symbol === undefined || seen.has(symbol)) {
       return []
     }
@@ -392,13 +397,24 @@ function readBySymbol(fields) {
     seen.add(symbol)
     const links = symbol.links ?? {}
     const aliased = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : undefined
+    const variants =
+      (links.checkFlags ?? 0) & ts.CheckFlags.Synthetic
+        ? links.containingType.types.map((type) => type.getProperty(symbol.name))
+        : []
 
     return [
-      ...(symbol.declarations ?? []),
-      ...origins(aliased, seen),
-      ...origins(links.syntheticOrigin, seen),
-      ...origins(links.target, seen),
+      symbol,
+      ...sources(aliased, seen),
+      ...sources(links.syntheticOrigin, seen),
+      ...sources(links.target, seen),
+      ...variants.flatMap((variant) => sources(variant, seen)),
     ]
+  }
+
+  // Pole typu celu samo, z polem typu generycznego za jego wystąpieniem, bez źródeł za `Pick` i typem mapowanym:
+  // `Pick<IntermaxSetup, "last">` dzieli z `IntermaxSetup` deklarację pola, ale nie jego odczyty (#1932 W1 r1).
+  function instances(symbol) {
+    return symbol === undefined ? [] : [symbol, ...instances(symbol.links?.target)]
   }
 
   function pass(from, to, depth = 0) {
@@ -421,7 +437,7 @@ function readBySymbol(fields) {
           const counterpart = goal.getProperty(property.name)
 
           if (counterpart !== undefined) {
-            passes.push([origins(property), origins(counterpart)])
+            passes.push([sources(property), instances(counterpart)])
           }
         }
 
@@ -455,8 +471,8 @@ function readBySymbol(fields) {
           ? checker.getTypeAtLocation(node.parent).getProperty((node.propertyName ?? node.name).getText(file))
           : undefined
 
-      for (const declaration of origins(symbol)) {
-        reached.add(declaration)
+      for (const source of sources(symbol)) {
+        read.add(source)
       }
 
       if (node.parent !== undefined && flowsOn(node)) {
@@ -478,12 +494,14 @@ function readBySymbol(fields) {
     grown = false
 
     for (const [from, to] of passes) {
-      if (to.some((declaration) => reached.has(declaration)) && from.some((declaration) => !reached.has(declaration))) {
-        from.forEach((declaration) => reached.add(declaration))
+      if (to.some((symbol) => read.has(symbol)) && from.some((symbol) => !read.has(symbol))) {
+        from.forEach((symbol) => read.add(symbol))
         grown = true
       }
     }
   }
+
+  const reached = new Set([...read].flatMap((symbol) => symbol.declarations ?? []))
 
   return new Set([...declared].flatMap(([declaration, key]) => (reached.has(declaration) ? [key] : [])))
 }
