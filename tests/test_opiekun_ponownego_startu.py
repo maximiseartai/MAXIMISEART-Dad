@@ -7,6 +7,7 @@ uruchamia go Centrum po udanej Aktualizacji narzędzia.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import json
 import os
@@ -74,18 +75,15 @@ def _close(port: int) -> None:
 
 
 def _close_if_running(port: int) -> None:
-    try:
-        _close(port)
-    except OSError:
-        return
-    def stopped() -> bool:
-        try:
-            _get(port, "/api/health")
-        except OSError:
-            return True
-        return False
+    """Zamyka Centrum na porcie, jeśli działa, i czeka, aż zwolni port: wpis ``stop`` stoi wtedy już w dzienniku.
 
-    wait_for(stopped, 30, every=0.1)
+    Brak odpowiedzi ``health`` nie znaczy, że Centrum skończyło: na obciążonym runnerze Windows pytanie trafia w limit
+    czasu, zanim Centrum zapisze ``stop`` (#1485).
+    """
+
+    with contextlib.suppress(OSError):
+        _close(port)
+    wait_for(lambda: tool_files.port_free(port), 30, every=0.1)
 
 
 def _log_lines(clone: Path) -> list[str]:

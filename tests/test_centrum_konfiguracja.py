@@ -17,6 +17,7 @@ from rozliczenia.centrum import tool_freshness
 from rozliczenia.centrum.settings import messages as settings_messages
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.tool_freshness import AnswerSource, KeySource
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import Problem, WorkbookError
@@ -419,8 +420,6 @@ def test_narzedzie_poza_klonem_gita_ma_nieznana_wersje(tmp_path: Path) -> None:
     assert (configuration["version"], configuration["freshness"]) == (None, "not_checked")
 
 
-# Prawdziwe ``github_releases`` z chwili importu: autouse ``bez_githuba`` (``tests/conftest.py``) podmienia je w module.
-GITHUB_RELEASES = tool_freshness.github_releases
 NEWER_RELEASE = "2222222222222222222222222222222222222222"
 
 
@@ -439,11 +438,12 @@ NEWER_RELEASE = "2222222222222222222222222222222222222222"
 def test_konfiguracja_pyta_github_o_wydania_z_tokenem_do_zgloszen_tylko_gdy_jest_plik_klucza(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    prawdziwe_wydania_githuba: Callable[[KeySource, str], AnswerSource],
     key: str | None,
     refused_token: int | None,
     authorizations: set[str | None],
 ) -> None:
-    monkeypatch.setattr(tool_freshness, "github_releases", GITHUB_RELEASES)
+    monkeypatch.setattr(tool_freshness, "github_releases", prawdziwe_wydania_githuba)
     tool = ToolDirectory(tmp_path)
     write_configuration(tool)
     if key is not None:
