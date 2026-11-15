@@ -210,7 +210,7 @@ def test_pierwsza_strona_pomocy_ma_przepis_z_plikiem_json_ktory_narzedzie_przyjm
     start, end = page.index("    ["), page.index("    ]")
     example = tmp_path / "mutacje.json"
     example.write_text("\n".join(page[start : end + 1]), encoding="utf-8")
-    parsed = mutacje.from_file(example, ("-c", ""))
+    parsed = mutacje._from_file(example, ("-c", ""))
     text = " ".join(" ".join(page).split())
     assert [(mutation.name, len(mutation.edits), mutation.expected is not None) for mutation in parsed] == [("bez limitu", 1, False), ("dwa miejsca", 2, True)]
     assert "--zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\ -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu" in text

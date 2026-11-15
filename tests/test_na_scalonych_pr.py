@@ -196,23 +196,14 @@ def _merge(github: FakeGitHub, number: int, *versions: dict[str, str]) -> list[s
     return made
 
 
-def _proof(
-    tmp_path: Path,
-    failed: str,
-    clean: dict[str, str],
-    start: dict[str, str] | None = None,
-    where: str = WHERE,
-    rule: str = RULE,
-    chosen: tuple[str, ...] = ("--regula", "regula.yml"),
-) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Bieg dowodu reguły wybranej argumentami ``chosen`` (domyślnie plik ``regula.yml`` z treścią ``rule``) na ``main``
-    z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami: PR #5, którego werdykt FAIL z polem
-    ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6 z plikami ``clean``."""
+def _history(tmp_path: Path, failed: str, start: dict[str, str] | None, where: str, rule: str, fixed: str = CLEAN) -> tuple[FakeGitHub, str]:
+    """``main`` z plikami ``start``, dawnym odpaleniem w ``stare.py``, plikiem ``regula.yml`` z treścią ``rule`` i scalonym
+    PR #5, którego werdykt FAIL z polem ``where`` ma ``kod/inne.py`` w postaci ``failed``, a poprawka zostawia ``fixed``;
+    atrapa ``gh`` oddaje ten werdykt. Zwraca atrapę GitHuba i SHA werdyktu."""
 
     files = {"stare.py": OLD.format("obiekt"), "regula.yml": rule, **(start or {})}
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
-    sha = _merge(github, 5, {"kod/inne.py": failed}, {"kod/inne.py": CLEAN})[0]
-    _merge(github, 6, clean)
+    sha = _merge(github, 5, {"kod/inne.py": failed}, {"kod/inne.py": fixed})[0]
     findings = werdykty_szablonu.WERDYKTY["wazne"]
     verdict = f"WERDYKT: FAIL {sha}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)
     # Pole bez znaków Markdownu renderer GitHuba oddaje bez zmian, więc inne ``where`` to ta sama podmiana w HTML.
@@ -224,6 +215,23 @@ def _proof(
         **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
+    return github, sha
+
+
+def _proof(
+    tmp_path: Path,
+    failed: str,
+    clean: dict[str, str],
+    start: dict[str, str] | None = None,
+    where: str = WHERE,
+    rule: str = RULE,
+    chosen: tuple[str, ...] = ("--regula", "regula.yml"),
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Bieg dowodu reguły wybranej argumentami ``chosen`` (domyślnie plik ``regula.yml`` z treścią ``rule``) na historii
+    ``_history`` (poprawka PR #5 usuwa ``kod/inne.py``) z drugim merge'em, PR #6 z plikami ``clean``."""
+
+    github, sha = _history(tmp_path, failed, start, where, rule)
+    _merge(github, 6, clean)
     return github.run(*chosen, "--wazne", "5/W1/r1", "--ostatnie", "2"), sha
 
 
@@ -342,165 +350,189 @@ def test_dowod_reguly_o_id_odmawia_reguly_ktorej_konfiguracja_ast_grep_nie_laduj
 
 
 # Dowód typu albo testu (plik ``dowody-idiomow/<id>.json`` na HEAD, ``--help`` narzędzia): Ważne W1 PR-u #5 nadpisuje
-# stałą w ``kod/inne.py:1``, a HEAD zamyka tę postać typem ``Final``, testem wartości albo niczym. Małe repozytorium
-# ma własny ``pyproject.toml``, więc mypy sprawdza samo ``kod/``, a nie skopiowane narzędzia.
+# w ``ustaw`` stałą modułu ``kod/stala.py`` (``kod/inne.py:5``), jego poprawka zostawia sam odczyt, a otwarty PR #6
+# zamyka tę postać typem ``Final``, testem albo niczym. Małe repozytorium ma własny ``pyproject.toml``, więc mypy
+# sprawdza samo ``kod/``, a nie skopiowane narzędzia.
 LIMIT_ID = "stala-limitu"
-OVERWRITE = "LIMIT = 2\n"
-TYPED = "from typing import Final\n\nLIMIT: Final = 1\n"
-UNTYPED = "LIMIT = 1\n"
-LIMIT_TEST = "from kod import inne\n\n\ndef test_limit_to_jeden() -> None:\n    assert inne.LIMIT == 1\n\n\ndef test_modul_ma_limit() -> None:\n    assert hasattr(inne, 'LIMIT')\n"
+READ = "from kod import stala\n\n\ndef ustaw() -> int:\n    return stala.LIMIT\n"
+OVERWRITE = "from kod import stala\n\n\ndef ustaw() -> int:\n    stala.LIMIT = 2\n    return stala.LIMIT\n"
+AT_OVERWRITE = "Gdzie: kod/inne.py:5"
+FINAL = {"kod/stala.py": "from typing import Final\n\nLIMIT: Final = 1\n"}
+LIMIT_TEST = {"tests/test_inne.py": "from kod import inne, stala\n\n\ndef test_ustaw_nie_zmienia_limitu() -> None:\n    inne.ustaw()\n    assert stala.LIMIT == 1\n"}
 SMALL_REPO = {
     "pyproject.toml": '[tool.mypy]\nstrict = true\nfiles = ["kod"]\n\n[tool.pytest.ini_options]\npythonpath = [".", "src"]\n',
     "src/rozliczenia/__init__.py": "",
     "kod/__init__.py": "",
-    "tests/test_inne.py": LIMIT_TEST,
+    "kod/stala.py": "LIMIT = 1\n",
+    "kod/inne.py": READ,
     "tests/test_inny.py": "def test_inny() -> None:\n    assert True\n",
 }
 MYPY = ["-m", "mypy"]
-NODE = ["-m", "pytest", "-q", "-n", "0", "tests/test_inne.py::test_limit_to_jeden"]
-# Węzeł, który pada tylko, gdy ``LIMIT`` znika albo moduł się nie importuje, a nie przy złej postaci ``LIMIT = 2``.
-HAS_LIMIT = [*NODE[:-1], "tests/test_inne.py::test_modul_ma_limit"]
-ON_TYPED = [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 2\n"]]
-ON_UNTYPED = [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\n"]]
+NODE = ["-m", "pytest", "-q", "-n", "0", "tests/test_inne.py::test_ustaw_nie_zmienia_limitu"]
 needs_mypy = pytest.mark.skipif(importlib.util.find_spec("mypy") is None, reason="dowód typu uruchamia mypy z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
 
 
 def _mutation_proof(
     tmp_path: Path,
-    head: str,
-    changes: list[list[str]],
-    command: list[str],
+    pull: dict[str, str],
+    command: list[str] | str,
     *flags: str,
-    files: dict[str, str] | None = None,
     failed: str = OVERWRITE,
-    more: dict[str, str] | None = None,
-) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Dowód id ``LIMIT_ID`` na HEAD z ``kod/inne.py`` w postaci ``head`` (w werdykcie ``failed``), plikami ``files``
-    i jednym wpisem pliku dowodu (``changes``, ``command`` i klucze ``more``), uruchomiony jak przez ``tools/scal_pr.py``
-    z ``flags``."""
+    where: str = AT_OVERWRITE,
+    fixed: str = READ,
+    start: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], str, str]:
+    """Dowód id ``LIMIT_ID`` na HEAD otwartego PR #6 z plikami ``pull`` i plikiem dowodu z poleceniem ``command`` (tekst
+    pliku, gdy to napis) po historii ``_history`` na ``main`` z plikami ``SMALL_REPO`` i ``start``, z werdyktem ``failed``,
+    polem ``where`` i poprawką ``fixed``, uruchomiony jak przez ``tools/scal_pr.py`` z ``flags``. Zwraca bieg, SHA
+    werdyktu i bazę PR #6."""
 
-    entry = {"nazwa": "nadpisanie stałej, jak w #5 W1 r1", "zmiany": changes, "polecenie": command, **(more or {})}
-    clean = {"kod/inne.py": head, f"dowody-idiomow/{LIMIT_ID}.json": json.dumps([entry]), **(files or {})}
-    return _proof(tmp_path, failed, clean, start=SMALL_REPO, chosen=("--regula-id", LIMIT_ID, "--z-commita", "HEAD", *flags))
+    github, sha = _history(tmp_path, failed, {**SMALL_REPO, **(start or {})}, where, RULE, fixed=fixed)
+    base = git(github.checkout, "rev-parse", "main").strip()
+    proof = command if isinstance(command, str) else json.dumps({"polecenie": command})
+    head = github.commit_on("main", {f"dowody-idiomow/{LIMIT_ID}.json": proof, **pull}, "PR 6")
+    return github.run("--regula-id", LIMIT_ID, "--z-commita", head, *flags, "--wazne", "5/W1/r1"), sha, base
+
+
+# Zakres z werdyktu z odczytem stałej, której ``main`` już nie ma: mypy pada na nim także na bazie, bez mechanizmu.
+DRIFT = OVERWRITE.replace("return stala.LIMIT", "return stala.STARY")
+# Nadpisanie w funkcji wewnętrznej z lokalną zmienną ``ustaw``: baza ma jeszcze ``wpisz`` bez tej zmiennej, a HEAD
+# już nie ma ``wpisz``, więc dowód przenosi całe ``ustaw``, najmniejszy zakres, który mają oba.
+NESTED = "from kod import stala\n\n\ndef ustaw() -> int:\n    nowy = 2\n\n    def wpisz() -> None:\n        stala.LIMIT = nowy\n\n    wpisz()\n    return stala.LIMIT\n"
+NESTED_FIXED = "from kod import stala\n\n\ndef ustaw() -> int:\n    def wpisz() -> None:\n        print(stala.LIMIT)\n\n    wpisz()\n    return stala.LIMIT\n"
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
-    ("head", "command"), [pytest.param(TYPED, MYPY, id="typ-final-w-mypy", marks=needs_mypy), pytest.param(TYPED, NODE, id="test-wartosci-w-pytest")]
+    ("pull", "command", "failed", "where", "fixed"),
+    [
+        pytest.param(FINAL, MYPY, OVERWRITE, AT_OVERWRITE, READ, id="typ-final-w-mypy", marks=needs_mypy),
+        pytest.param(LIMIT_TEST, NODE, OVERWRITE, AT_OVERWRITE, READ, id="test-w-pytest-ktorego-baza-nie-ma"),
+        pytest.param(FINAL, MYPY, DRIFT, AT_OVERWRITE, READ, id="typ-final-obok-bledu-ktory-daje-baza", marks=needs_mypy),
+        pytest.param({**FINAL, "kod/inne.py": READ}, MYPY, NESTED, "Gdzie: kod/inne.py:8", NESTED_FIXED, id="zakres-wewnetrzny-ktorego-head-nie-ma", marks=needs_mypy),
+    ],
 )
-def test_dowod_typu_albo_testu_wpisuje_postac_z_gdzie_na_head_i_polecenie_required_ci_ja_wykrywa(tmp_path: Path, head: str, command: list[str]) -> None:
-    done, sha = _mutation_proof(tmp_path, head, ON_TYPED, command)
+def test_dowod_typu_albo_testu_bierze_zla_postac_z_werdyktu_i_wykrywa_ja_na_head_a_nie_na_bazie(
+    tmp_path: Path, pull: dict[str, str], command: list[str], failed: str, where: str, fixed: str
+) -> None:
+    """Autor nie pisze mutacji: dowód wstawia zakres z werdyktu wokół ``Gdzie`` w miejsce tego z HEAD i z bazy PR, a
+    polecenie Required CI pada na HEAD ze znaleziskiem, którego baza nie daje, także gdy ten zakres ma błąd, który daje
+    i baza."""
+
+    done, sha, base = _mutation_proof(tmp_path, pull, command, failed=failed, where=where, fixed=fixed)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines() == [f"#5 W1 r1 | {sha[:8]} | pokryte | {WHERE}", f"DOWÓD OK | {LIMIT_ID} | przypadki 1/1 | mutacje 1/1 wykryte"], done.stdout
+    assert done.stdout.splitlines() == [
+        f"#5 W1 r1 | {sha[:8]} | miejsca 1/1 | {where}",
+        f"DOWÓD OK | {LIMIT_ID} | przypadki 1/1 | 1 wykryte na HEAD bez tego samego na bazie {base[:8]}",
+    ], done.stdout
 
 
-NAME = "nadpisanie stałej, jak w #5 W1 r1"
-NOT_COVERED = "#5 W1 r1: żadna mutacja nie dopisuje jako kod całej pierwszej linii jego miejsca, zmieniając tylko pliki z Gdzie"
+SHAPE = 'dowody-idiomow/stala-limitu.json to {{"polecenie": [argumenty Pythona]}}, bo złą postać bierze dowód z werdyktu'
+NOT_MOVED = "#5 W1 r1: żadnego miejsca z Gdzie nie da się przenieść z werdyktu na HEAD i bazę {base}: kod/inne.py:{line}: {cause}"
+NOT_CAUGHT = "#5 W1 r1: żadne przeniesienie nie pada na HEAD bez tego samego na bazie {base}: kod/inne.py HEAD: {head}, baza: {old}"
+CLEAN_MYPY = "Success: no issues found in 3 source files"
+DRIFT_MYPY = "Found 2 errors in 1 file (checked 3 source files)"
+HELPER = "from kod import stala\n\n\ndef pomoc() -> int:\n    return 2\n\n\ndef ustaw() -> int:\n    stala.LIMIT = pomoc()\n    return stala.LIMIT\n"
+# Pierwsza postać pliku dowodu (r1–r2 #1912): mutacja autora, która może wpisać złą postać tam, gdzie pada przez siebie.
+AUTHOR_MUTATION = json.dumps([{"nazwa": "nadpisanie", "zmiany": [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\n"]], "polecenie": MYPY}])
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
-    ("head", "changes", "command", "more", "summary"),
+    ("pull", "command", "failed", "where", "summary"),
     [
+        pytest.param(FINAL, AUTHOR_MUTATION, OVERWRITE, AT_OVERWRITE, SHAPE, id="mutacja-autora-w-pliku-dowodu"),
+        pytest.param({"kod/inne.py": OVERWRITE}, MYPY, OVERWRITE, AT_OVERWRITE, NOT_MOVED.format(base="{base}", line=5, cause="postać z werdyktu stoi już na HEAD"), id="postac-na-head"),
+        pytest.param(FINAL, MYPY, HELPER, "Gdzie: kod/inne.py:10", NOT_MOVED.format(base="{base}", line=10, cause="zakres ustaw z werdyktu bierze pomoc, a tu tego nie ma"), id="nazwa-spoza-importow-werdyktu"),
+        pytest.param({}, MYPY, OVERWRITE, AT_OVERWRITE, NOT_CAUGHT.format(base="{base}", head=CLEAN_MYPY, old=CLEAN_MYPY), id="mechanizm-nie-lapie", marks=needs_mypy),
         pytest.param(
-            UNTYPED + OVERWRITE, ON_TYPED, MYPY, {}, f"{NAME}: NIEAKTUALNA → kotwicy nie ma dokładnie raz w kod/inne.py: 'LIMIT: Final = 1'", id="postac-na-head-bez-mechanizmu"
+            {"kod/inne.py": "from kod.stala import LIMIT\n\n\ndef ustaw() -> int:\n    return LIMIT\n"}, MYPY, OVERWRITE, AT_OVERWRITE,
+            NOT_CAUGHT.format(base="{base}", head=CLEAN_MYPY, old=CLEAN_MYPY), id="head-bez-importu-z-werdyktu-i-bez-mechanizmu", marks=needs_mypy,
+        ),
+        # HEAD przesuwa linie pliku, więc to samo znalezisko ma na HEAD inny numer linii niż na bazie.
+        pytest.param(
+            {"kod/inne.py": '"""Odczyt stałej."""\n\n' + READ}, MYPY, DRIFT, AT_OVERWRITE, NOT_CAUGHT.format(base="{base}", head=DRIFT_MYPY, old=DRIFT_MYPY), id="blad-zakresu-takze-na-bazie", marks=needs_mypy
         ),
         pytest.param(
-            TYPED + OVERWRITE, ON_TYPED, MYPY, {}, "podstawa -m mypy bez mutacji: Found 1 error in 1 file (checked 2 source files)", id="postac-na-head-z-mechanizmem", marks=needs_mypy
+            {**FINAL, "kod/zly.py": "X: int = 'tekst'\n"}, MYPY, OVERWRITE, AT_OVERWRITE, "podstawa -m mypy bez przeniesienia: Found 1 error in 1 file (checked 4 source files)", id="podstawa-czerwona", marks=needs_mypy
         ),
-        pytest.param(UNTYPED, ON_UNTYPED, MYPY, {}, f"{NAME}: NIEWYKRYTA → Success: no issues found in 2 source files", id="mechanizm-nie-lapie", marks=needs_mypy),
+        pytest.param(FINAL, ["-m", "mypy", "kod"], OVERWRITE, AT_OVERWRITE, "polecenie -m mypy kod to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="mypy-spoza-krokow-ci"),
         pytest.param(
-            TYPED, ON_TYPED, ["-m", "mypy", "kod"], {}, f"{NAME}: polecenie -m mypy kod bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="mypy-spoza-krokow-ci"
+            LIMIT_TEST, [*NODE[:-1], "tests/test_inny.py::test_inny"], OVERWRITE, AT_OVERWRITE, "zakres runu pull requestu przy zmianie kod/inne.py nie uruchamia tests/test_inny.py::test_inny", id="test-spoza-zakresu-runu-pr"
         ),
-        pytest.param(
-            TYPED, ON_TYPED, MYPY, {"oczekiwane": "Found 1 error"}, f"{NAME}: polecenie -m mypy bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo -m pytest -q -n 0 tests/<plik>::<test>", id="polecenie-z-oczekiwana-linia"
-        ),
-        pytest.param(
-            TYPED, ON_TYPED, [*NODE[:-1], "tests/test_inny.py::test_inny"], {}, f"{NAME}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia tests/test_inny.py::test_inny", id="test-spoza-zakresu-runu-pr"
-        ),
-        pytest.param(TYPED, [*ON_TYPED, ["tests/test_inne.py", "== 1\n", "== 3\n"]], MYPY, {}, NOT_COVERED, id="plik-spoza-gdzie"),
-        pytest.param(TYPED, [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 3\n"]], MYPY, {}, NOT_COVERED, id="zamiana-bez-linii-gdzie"),
-        # Linia z Gdzie, która nie stoi w pliku jako kod, a polecenie pada przez błąd składni albo usuniętą kotwicę (#1912 r1 W2).
-        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\n    LIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-ze-zlym-wcieciem"),
-        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "# LIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-komentarzu"),
-        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "XLIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-dluzszej-linii"),
-        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", 'X = """\nLIMIT = 2\n"""\n']], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-tekscie"),
     ],
 )
-def test_dowod_typu_albo_testu_odmawia_falszywego_dowodu(
-    tmp_path: Path, head: str, changes: list[list[str]], command: list[str], more: dict[str, str], summary: str
+def test_dowod_typu_albo_testu_odmawia_bez_wykrycia_ktorego_nie_daje_baza(
+    tmp_path: Path, pull: dict[str, str], command: list[str] | str, failed: str, where: str, summary: str
 ) -> None:
-    """Postać obecna już na HEAD daje kotwicę NIEAKTUALNĄ albo czerwoną podstawę, mechanizm, który jej nie łapie,
-    NIEWYKRYTĄ, a polecenie spoza Required CI i mutacja spoza plików z ``Gdzie`` albo bez jego linii jako kodu odmowę
-    przed biegiem."""
+    """Plik dowodu z mutacją autora, postać z werdyktu już na HEAD, zakres z nazwą, której HEAD nie ma, polecenie, które
+    tak samo pada albo przechodzi na bazie, czerwona podstawa i polecenie spoza Required CI to odmowa."""
 
-    done, _ = _mutation_proof(tmp_path, head, changes, command, more=more)
+    done, _, base = _mutation_proof(tmp_path, pull, command, failed=failed, where=where)
 
     assert done.returncode == 1, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | {LIMIT_ID} | {summary}", done.stdout
+    assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | {LIMIT_ID} | {summary.format(base=base[:8])}", done.stdout
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
-def test_dowod_typu_albo_testu_odmawia_linii_gdzie_w_srodku_f_tekstu_choc_jej_pole_jest_wezlem(tmp_path: Path) -> None:
-    """Linia z ``Gdzie`` z polem f-tekstu wpisana do środka f-tekstu ma węzeł ``ast`` swojego pola, ale nie w swoim
-    wcięciu, więc nie stoi w pliku jako kod."""
+@needs_mypy
+def test_dowod_typu_albo_testu_na_bazie_z_dowodem_tego_id_wymaga_przypadku_wykrytego_tylko_na_head(tmp_path: Path) -> None:
+    """Baza z plikiem dowodu tego id i z mechanizmem łapie już przypadek z historii, więc pada on na obu bez odmowy
+    przypadku, ale dowód bez żadnego przypadku, który łapie dopiero HEAD, to odmowa: PR nie wnosi mechanizmu."""
 
-    inside = [["kod/inne.py", "LIMIT = 1\n", 'X = f"""\nLIMIT = f"{LIMIT}"\n"""\n']]
+    proven = {**FINAL, f"dowody-idiomow/{LIMIT_ID}.json": json.dumps({"polecenie": MYPY})}
 
-    done, _ = _mutation_proof(tmp_path, UNTYPED, inside, HAS_LIMIT, failed='LIMIT = f"{LIMIT}"\n')
+    done, _, base = _mutation_proof(tmp_path, {"kod/nowy.py": ""}, MYPY, start=proven)
 
     assert done.returncode == 1, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | {LIMIT_ID} | {NOT_COVERED}", done.stdout
+    assert done.stdout.splitlines()[-1] == (
+        f"DOWÓD ODMOWA | {LIMIT_ID} | żaden przypadek nie pada na HEAD bez tego samego na bazie {base[:8]}, choć baza ma już dowód {LIMIT_ID}"
+    ), done.stdout
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
-    ("changes", "code", "summary"),
+    ("pull", "code", "summary"),
     [
-        (ON_UNTYPED, 0, f"DOWÓD OK | {LIMIT_ID} | przypadki 1/1 | mutacje 1/1 bez biegu (--bez-kodu-pr)"),
-        ([["kod/inne.py", "LIMIT = 1\n", "LIMIT = 3\n"]], 1, f"DOWÓD ODMOWA | {LIMIT_ID} | {NOT_COVERED}"),
+        ({}, 0, f"DOWÓD OK | {LIMIT_ID} | przypadki 1/1 | bez biegu (--bez-kodu-pr)"),
+        ({"kod/inne.py": OVERWRITE}, 1, f"DOWÓD ODMOWA | {LIMIT_ID} | " + NOT_MOVED.format(base="{base}", line=5, cause="postać z werdyktu stoi już na HEAD")),
     ],
-    ids=["mutacja-niewykryta-bez-biegu", "zamiana-bez-linii-gdzie"],
+    ids=["mechanizm-nie-lapie-bez-biegu", "postac-na-head"],
 )
-def test_dowod_typu_albo_testu_bez_kodu_pr_nie_wykonuje_niczego_z_head_a_sprawdza_gdzie(tmp_path: Path, changes: list[list[str]], code: int, summary: str) -> None:
+def test_dowod_typu_albo_testu_bez_kodu_pr_nie_wykonuje_niczego_z_head_a_sprawdza_przeniesienie(tmp_path: Path, pull: dict[str, str], code: int, summary: str) -> None:
     """Status „Werdykt i bramka” ma token do statusów, więc nie wykonuje żadnego pliku HEAD PR: ani skryptu mutacji
     skilla, który pełny zakres runu wykonuje przy skanie kroków skilli (#1912 r1 W1), ani ``conftest.py`` polecenia
-    pytest. Mutacji, której mechanizm HEAD nie łapie, więc nie widzi; widzi mutację spoza ``Gdzie``. Mutacje liczy merge."""
+    pytest. Mechanizmu, który nie łapie postaci, więc nie widzi; widzi postać, której nie da się przenieść."""
 
     marker = tmp_path / "wykonany-plik-head"
     trap = f"import pathlib\npathlib.Path({str(marker)!r}).write_text(__file__)\nMUTATIONS = []\n"
-    traps = {".agents/skills/obcy/scripts/check_obcy_mutations.py": trap, "tests/conftest.py": trap}
+    traps = {".agents/skills/obcy/scripts/check_obcy_mutations.py": trap, "tests/conftest.py": trap, **LIMIT_TEST}
 
-    done, _ = _mutation_proof(tmp_path, UNTYPED, changes, HAS_LIMIT, "--bez-kodu-pr", files=traps)
+    done, _, base = _mutation_proof(tmp_path, {**traps, **pull}, NODE, "--bez-kodu-pr")
 
     assert done.returncode == code, done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == summary, done.stdout
+    assert done.stdout.splitlines()[-1] == summary.format(base=base[:8]), done.stdout
     assert not marker.exists(), marker.read_text(encoding="utf-8")
 
 
-# Znane luki dowodu typu albo testu (tests/fixtures/znane_luki.py): klasa → HEAD ``kod/inne.py``, zmiany mutacji
-# i polecenie. Dowód sprawdza, że mutacja dopisuje linię z ``Gdzie`` jako kod i że polecenie pada, a nie że pada przez
-# tę linię, więc mutacja, która obok niej psuje typ albo test inaczej, przechodzi; ocenia ją recenzent, który powtarza dowód.
+# Znane luki dowodu typu albo testu (tests/fixtures/znane_luki.py): klasa → pliki otwartego PR #6 i polecenie. Kontrola
+# na bazie odróżnia błąd, który przyniósł PR, od błędu, który zakres z werdyktu daje już na bazie, ale nie mówi, czy pada
+# przez złą postać: PR, który zmienia nazwę atrybutu, którego ten zakres używa, przechodzi bez mechanizmu.
 ZNANE_LUKI = {
-    "wynik całego polecenia, nie linii z Gdzie: mypy pada na innej linii zamiany": (
-        UNTYPED,
-        [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\nZLE: int = 'tekst'\n"]],
+    "kontrola porównuje znaleziska z bazą, nie ich przyczynę: PR zmienia nazwę atrybutu, którego używa zakres z werdyktu": (
+        {"kod/stala.py": "LIMIT2 = 1\n", "kod/inne.py": READ.replace("LIMIT", "LIMIT2")},
         MYPY,
-    ),
-    "wynik całego polecenia, nie linii z Gdzie: test pada na wyjątku z innej linii zamiany": (
-        UNTYPED,
-        [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\nraise RuntimeError('obok linii z Gdzie')\n"]],
-        [*NODE[:-1], "tests/test_inne.py::test_modul_ma_limit"],
     ),
 }
 
 
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @needs_mypy
 def test_znane_luki_dowodu_typu_albo_testu_przechodza_przez_dowod(tmp_path: Path) -> None:
     zgloszenia: dict[str, list[str]] = {}
-    for numer, (opis, (head, changes, command)) in enumerate(ZNANE_LUKI.items()):
-        done, _ = _mutation_proof(tmp_path / str(numer), head, changes, command)
+    for numer, (opis, (pull, command)) in enumerate(ZNANE_LUKI.items()):
+        done, _, _ = _mutation_proof(tmp_path / str(numer), pull, command)
         zgloszenia[opis] = [] if done.returncode == 0 else [done.stdout.splitlines()[-1] if done.stdout else done.stderr]
 
     assert_znane_luki(zgloszenia, "tests/test_na_scalonych_pr.py")

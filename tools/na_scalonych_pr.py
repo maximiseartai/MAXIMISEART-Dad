@@ -56,23 +56,29 @@ werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD O
 ``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
 z polem ``Idiom:`` (``bramka_idiomu``).
 
-Dowód typu albo testu: gdy commit ``--z-commita`` ma plik ``dowody-idiomow/<ID>.json`` w postaci ``tools/mutacje.py --plik``,
-``--regula-id`` dowodzi mutacjami złej postaci z ``Gdzie`` zamiast reguły ast-grep. Każde ``--wazne`` ma mutację, która
-zmienia tylko pliki jego ``Gdzie`` i dopisuje jako kod całą pierwszą linię jednego z jego miejsc w SHA werdyktu: po
-mutacji plik ma więcej linii równych jej bez wcięcia, a w pliku ``.py`` liczy się tylko linia, na której parser ``ast``
-zaczyna węzeł w jej wcięciu, więc nie komentarz, nie tekst i nie plik, który się nie parsuje. Polecenie każdej, bez
-``oczekiwane``, biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
-tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie plików mutacji; bez mutacji przechodzi, a z nią
-jest WYKRYTA na kopii commitu (silnik z tego checkoutu). Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
-CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka” z tokenem do statusów) czyta kopię commitu tylko jako dane:
-plik dowodu, graf importów (``zakres_runu.pliki_pytest``) i tekst plików mutacji; bieg poleceń, który wykonuje kod
-commitu, liczy merge. Granicę tego dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
+Dowód typu albo testu: gdy commit ``--z-commita`` ma plik ``dowody-idiomow/<ID>.json`` w postaci ``{"polecenie":
+[argumenty Pythona]}``, ``--regula-id`` dowodzi zamiast reguły ast-grep, że polecenie łapie złą postać z werdyktu
+każdego ``--wazne``, a nie łapie jej baza PR (``merge-base`` z ``origin/main``). Mutacji nie pisze autor: dla każdego
+miejsca ``Gdzie`` w pliku ``.py`` dowód bierze z SHA werdyktu najmniejszy zakres wokół niego (``def``, ``class``,
+a w module i klasie przypisanie, po nazwie i kolejności), który mają HEAD i baza, i wstawia jego wersję z werdyktu
+w miejsce tamtego, z importami z modułu werdyktu nazw, których plik nie wiąże; nazwa wolna spoza tych importów,
+postać, która stoi już na HEAD, i miejsce bez takiego zakresu pomijają miejsce, a Ważne bez żadnego miejsca to odmowa.
+Polecenie biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
+tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie przeniesionych plików. Bez przeniesienia
+przechodzi na HEAD, a przypadek jest wykryty, gdy któreś jego przeniesienie pada na HEAD z linią znaleziska
+(``plik:linia: …``, bez cyfr), której to samo przeniesienie na bazie nie daje, albo baza przechodzi. Błąd, który dawny
+zakres daje już na bazie (nazwa zmieniona w ``main`` od werdyktu), nie jest więc wykryciem. Gdy baza ma już plik dowodu
+tego id, przypadek, który pada i na niej, przechodzi bez nowego znaleziska, ale co najmniej jeden musi być wykryty. Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
+CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka” z tokenem do statusów) czyta commit tylko jako dane: plik
+dowodu, przeniesienia (``git``, ``ast``) i graf importów (``zakres_runu.pliki_pytest``); bieg polecenia, który wykonuje
+kod commitu, liczy merge. Granicę tego dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
@@ -83,7 +89,6 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-import tempfile
 import time
 
 import yaml
@@ -92,15 +97,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 import github
-from kroki_lokalne import static_steps
-import mutacje
+from kroki_lokalne import environment, static_steps
 import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
 from repo import REMOTE, ROOT
 import repo
 import silnik_mutacji
-from silnik_mutacji import Mutation, Verdict
 import szablon_werdyktu
 import werdykt_pr
 import zakres_runu
@@ -119,6 +122,9 @@ NOT_LOADED = ("Error: Rule not found", "Error: Cannot read rule directory", "Err
 Rule = tuple[str, ...]  # argumenty ``ast-grep scan`` wybierające regułę: ``--rule PLIK`` albo ``--config`` z ``--filter``
 PROOFS = "dowody-idiomow"
 PYTEST = ("-m", "pytest", "-q", "-n", "0")
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+# Linia znaleziska ruff, mypy i tracebacku pytest: ``plik:linia[:kolumna]: …``.
+FINDING = re.compile(r"[^\s:][^:]*:\d+(?::\d+)?: ")
 
 
 @dataclass(frozen=True)
@@ -295,88 +301,217 @@ def caught(rule: Rule, repository: str, number: int, label: str, round_: int) ->
     return bool(inside)
 
 
-def covers(mutation: Mutation, texts: dict[str, tuple[str, str]], commit: str, where: str) -> bool:
-    """Czy mutacja zmienia tylko pliki miejsc pola ``Gdzie`` i dopisuje jako kod całą pierwszą linię któregoś z nich
-    w ``commit``; ``texts`` to jej pliki przed nią i po niej (``mutated``)."""
+@dataclass(frozen=True)
+class Transplant:
+    """Zła postać z werdyktu w miejscu z ``Gdzie``: plik i jego tekst w HEAD i w bazie PR po przeniesieniu (``moved``)."""
 
-    found = szablon_werdyktu.places(where)
-    lines = {"".join(repo.git(ROOT, "show", f"{commit}:{path}").splitlines()[first - 1 : first]).strip() for path, first, _ in found} - {""}
-    named = set(texts) <= {path for path, _, _ in found}
-    return named and any(_as_code(after, path, lines) > _as_code(before, path, lines) for path, (before, after) in texts.items())
-
-
-def _as_code(text: str, path: str, lines: set[str]) -> int:
-    """Ile linii ``text`` z pliku ``path`` to bez wcięcia linia z ``lines``; w pliku ``.py`` tylko tych, na których parser
-    ``ast`` zaczyna węzeł w ich wcięciu, a plik, który się nie parsuje, nie ma żadnej."""
-
-    rows = re.split(r"\r\n|\r|\n", text)
-    if not path.endswith(".py"):
-        return sum(row.strip() in lines for row in rows)
-    try:
-        starts = {(getattr(node, "lineno", 0), getattr(node, "col_offset", -1)) for node in ast.walk(ast.parse(text))}
-    except (SyntaxError, ValueError, RecursionError):
-        return 0
-    return sum(row.strip() in lines and (number, len(row) - len(row.lstrip())) in starts for number, row in enumerate(rows, 1))
+    path: str
+    head: str
+    base: str
 
 
-def mutated(mutation: Mutation, copy: Path) -> dict[str, tuple[str, str]]:
-    """Tekst każdego pliku mutacji w kopii ``copy`` przed nią i po niej, zmieniony przez silnik mutacji bez uruchamiania
-    polecenia; kotwica, której nie ma dokładnie raz, to ``ValueError`` z werdyktem NIEAKTUALNA."""
+def _scopes(node: ast.AST) -> dict[tuple[str, int], ast.stmt]:
+    """Zakresy, których najbliższym zakresem jest ``node``, po kluczu (nazwa, numer kolejny tej nazwy): ``def`` i ``class``,
+    a w ciele modułu i klasy też przypisania, po nazwach celów."""
 
-    names = sorted({edit.file.as_posix() for edit in mutation.edits})
-    with tempfile.TemporaryDirectory() as folder:
-        scratch = Path(folder)
-        for name in names:
-            if (copy / name).is_file():
-                (scratch / name).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(copy / name, scratch / name)
-        if stale := silnik_mutacji.apply(scratch, mutation.edits):
-            raise ValueError(f"{mutation.name}: {Verdict.STALE} → {stale}")
-        return {name: (_text(copy / name), _text(scratch / name)) for name in names}
-
-
-def _text(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+    found: dict[tuple[str, int], ast.stmt] = {}
+    seen: dict[str, int] = {}
+    stack = list(ast.iter_child_nodes(node))
+    while stack:
+        child = stack.pop(0)
+        if isinstance(child, SCOPES) or (isinstance(child, ast.Assign | ast.AnnAssign) and child in getattr(node, "body", ()) and not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)):
+            name = child.name if isinstance(child, SCOPES) else "=" + ",".join(map(ast.unparse, child.targets if isinstance(child, ast.Assign) else [child.target]))
+            found[name, seen.setdefault(name, 0)] = child
+            seen[name] += 1
+        elif not isinstance(child, ast.expr):
+            stack.extend(ast.iter_child_nodes(child))
+    return found
 
 
-def outside_ci(mutation: Mutation, copy: Path) -> str | None:
-    """Przyczyna, gdy polecenie mutacji nie biegnie w Required CI przy zmianie jej plików w kopii ``copy``."""
+def _start(node: ast.stmt) -> int:
+    """Pierwsza linia zakresu ``node`` z jego dekoratorami."""
 
-    if mutation.expected is None and mutation.command in {step.command[1:] for step in static_steps(copy)}:
+    return min([node.lineno, *(decorator.lineno for decorator in node.decorator_list)]) if isinstance(node, SCOPES) else node.lineno
+
+
+def _chain(tree: ast.Module, first: int, last: int) -> list[tuple[tuple[str, int], ast.stmt]]:
+    """Zakresy wokół linii ``first``–``last`` od zewnętrznego, z kluczem ``_scopes``."""
+
+    found: list[tuple[tuple[str, int], ast.stmt]] = []
+    node: ast.AST = tree
+    while inner := next(((key, one) for key, one in _scopes(node).items() if _start(one) <= first and last <= (one.end_lineno or 0)), None):
+        found.append(inner)
+        node = inner[1]
+    return found
+
+
+def _matched(tree: ast.Module, keys: Iterable[tuple[str, int]]) -> list[ast.stmt]:
+    """Zakresy ``tree`` o kolejnych kluczach łańcucha ``keys``, do pierwszego, którego ``tree`` nie ma."""
+
+    found: list[ast.stmt] = []
+    node: ast.AST = tree
+    for key in keys:
+        if (inner := _scopes(node).get(key)) is None:
+            break
+        found.append(inner)
+        node = inner
+    return found
+
+
+def _bound(node: ast.AST, *, nested: bool) -> set[str]:
+    """Nazwy, które ``node`` wiąże (parametry, przypisania, importy, ``def``, ``class``, ``as``, wzorce ``match``); z
+    ``nested`` także w zakresach w nim."""
+
+    names = {one.arg for one in ast.walk(node.args) if isinstance(one, ast.arg)} if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) else set()
+    stack = list(ast.iter_child_nodes(node))
+    while stack:
+        child = stack.pop()
+        if isinstance(child, SCOPES):
+            names.add(child.name)
+        if isinstance(child, ast.Import | ast.ImportFrom):
+            names |= {alias.asname or alias.name.partition(".")[0] for alias in child.names}
+        elif isinstance(child, ast.Name) and not isinstance(child.ctx, ast.Load):
+            names.add(child.id)
+        elif isinstance(child, ast.arg | ast.ExceptHandler | ast.MatchAs | ast.MatchStar | ast.MatchMapping):
+            names |= {name for name in (getattr(child, "arg", None), getattr(child, "name", None), getattr(child, "rest", None)) if name}
+        if nested or not isinstance(child, (*SCOPES, ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(child))
+    return names
+
+
+def _imports(tree: ast.Module) -> dict[str, str]:
+    """Nazwa wiązana importem z ciała modułu ``tree`` → ten import dla niej samej."""
+
+    return {
+        alias.asname or alias.name.partition(".")[0]: ast.unparse(ast.ImportFrom(node.module, [alias], node.level) if isinstance(node, ast.ImportFrom) else ast.Import([alias]))
+        for node in tree.body
+        if isinstance(node, ast.Import | ast.ImportFrom)
+        for alias in node.names
+    }
+
+
+def moved(old: str, new: str, keys: list[tuple[str, int]]) -> str:
+    """Tekst ``new`` z ostatnim zakresem łańcucha ``keys`` w wersji z ``old`` i importami z modułu ``old`` nazw, które ten
+    zakres bierze, a których ``new`` w nim nie wiąże; nazwa spoza tych importów to ``ValueError``."""
+
+    old_tree, new_tree = ast.parse(old), ast.parse(new)
+    source, (*around, target) = _matched(old_tree, keys)[-1], _matched(new_tree, keys)
+    used = {one.id for one in ast.walk(source) if isinstance(one, ast.Name) and isinstance(one.ctx, ast.Load)}
+    known = _bound(new_tree, nested=False).union(*(_bound(scope, nested=False) for scope in around))
+    missing = sorted(used - _bound(source, nested=True) - known - set(dir(builtins)))
+    imports = _imports(old_tree)
+    if lost := [name for name in missing if name not in imports]:
+        raise ValueError(f"zakres {keys[-1][0]} z werdyktu bierze {', '.join(lost)}, a tu tego nie ma")
+    shift = target.col_offset - source.col_offset
+    piece = [(" " * shift + line if shift > 0 else line[-shift:]) if line.strip() else line for line in old.splitlines(keepends=True)[_start(source) - 1 : source.end_lineno]]
+    piece[-1] = piece[-1].rstrip("\r\n") + "\n"
+    lines = new.splitlines(keepends=True)
+    after = max((node.end_lineno or 0 for node in new_tree.body if isinstance(node, ast.Import | ast.ImportFrom) and (node.end_lineno or 0) < _start(target)), default=0)
+    return "".join([*lines[:after], *(f"{imports[name]}\n" for name in missing), *lines[after : _start(target) - 1], *piece, *lines[target.end_lineno :]])
+
+
+def transplants(verdict: str, where: str, head: str, base: str) -> tuple[list[Transplant], list[str]]:
+    """Zła postać z werdyktu ``verdict`` w każdym miejscu ``Gdzie`` w pliku ``.py``: najmniejszy zakres wokół niego,
+    który mają też ``head`` i ``base``, w swojej wersji z werdyktu; obok przyczyny pominięcia innych miejsc."""
+
+    found: list[Transplant] = []
+    skipped: list[str] = []
+    for path, first, last in szablon_werdyktu.places(where):
+        texts = [(repo.blob(ROOT, rev, path) or b"").decode("utf-8") if path.endswith(".py") else "" for rev in (verdict, head, base)]
+        try:
+            keys = [key for key, _ in _chain(ast.parse(texts[0]), first, last)]
+            depth = min(len(_matched(ast.parse(text), keys)) for text in texts[1:])
+            pair = Transplant(path, *(moved(texts[0], text, keys[:depth]) for text in texts[1:])) if depth else None
+        except (SyntaxError, ValueError) as error:
+            skipped.append(f"{path}:{first}: {error}")
+            continue
+        if pair is None or pair.head == texts[1]:
+            skipped.append(f"{path}:{first}: " + ("postać z werdyktu stoi już na HEAD" if pair else "HEAD i baza nie mają zakresu .py z tym miejscem"))
+        elif pair not in found:
+            found.append(pair)
+    return found, skipped
+
+
+def _ran(commit: str, files: dict[str, str], command: tuple[str, ...]) -> tuple[bool, frozenset[str], str]:
+    """Czy ``command`` pada na kopii ``commit`` z tekstami ``files``, jego linie znalezisk bez cyfr i ostatnia linia."""
+
+    with silnik_mutacji.checkout_copy(commit) as copy:
+        for path, text in files.items():
+            (copy / path).write_text(text, encoding="utf-8")
+        done = potomne.run([sys.executable, *command], cwd=copy, env=environment(copy), timeout=silnik_mutacji.TIMEOUT)
+    output = f"{done.stdout}\n{done.stderr}"
+    found = frozenset(re.sub(r"\d+", "#", line) for line in output.splitlines() if FINDING.match(line))
+    return done.returncode != 0, found, (output.strip().splitlines() or [f"kod {done.returncode}"])[-1]
+
+
+def off_ci(command: tuple[str, ...], copy: Path, paths: frozenset[str]) -> str | None:
+    """Przyczyna, gdy ``command`` nie biegnie w Required CI pull requestu, który zmienia ``paths`` w kopii ``copy``."""
+
+    if command in {step.command[1:] for step in static_steps(copy)}:
         return None
-    nodes = mutation.command[len(PYTEST) :]
-    if mutation.expected is not None or mutation.command[: len(PYTEST)] != PYTEST or not nodes or not all(node.startswith("tests/") for node in nodes):
-        return f"{mutation.name}: polecenie {' '.join(mutation.command)} bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
-    chosen = set(zakres_runu.pliki_pytest(zakres_runu.Zdarzenie.PULL_REQUEST, frozenset(edit.file.as_posix() for edit in mutation.edits), copy))
+    nodes = command[len(PYTEST) :]
+    if command[: len(PYTEST)] != PYTEST or not nodes or not all(node.startswith("tests/") for node in nodes):
+        return f"polecenie {' '.join(command)} to ruff albo mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
+    chosen = set(zakres_runu.pliki_pytest(zakres_runu.Zdarzenie.PULL_REQUEST, paths, copy))
     missing = [node for node in nodes if not {node.partition("::")[0], node.partition("[")[0]} & chosen]
-    return f"{mutation.name}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia {', '.join(missing)}" if missing else None
+    return f"zakres runu pull requestu przy zmianie {', '.join(sorted(paths))} nie uruchamia {', '.join(missing)}" if missing else None
 
 
 def mutation_proof(commit: str, rule: str, majors: list[tuple[int, str, int]], *, replay: bool) -> int:
-    """Dowód typu albo testu z ``PROOFS/<rule>.json`` kopii ``commit`` (``--help``); kod 0 tylko z ``DOWÓD OK``. Kopię
-    ``commit`` czyta tylko jako dane, a kod commitu wykonuje dopiero bieg poleceń z ``replay``."""
+    """Dowód typu albo testu z ``PROOFS/<rule>.json`` commitu ``commit`` (``--help``); kod 0 tylko z ``DOWÓD OK``.
+    Commit czyta tylko jako dane, a jego kod wykonuje dopiero bieg polecenia z ``replay``."""
 
+    cases: list[tuple[str, list[Transplant]]] = []
     try:
-        with potomne.commit_copy(ROOT, commit) as copy:
-            mutations = mutacje.from_file(copy / PROOFS / f"{rule}.json", ())
-            problems = [problem for mutation in mutations if (problem := outside_ci(mutation, copy))]
-            texts = [mutated(mutation, copy) for mutation in mutations]
+        base = repo.merge_base(ROOT, f"{REMOTE}/main", commit)
+        document = json.loads(repo.git(ROOT, "show", f"{commit}:{PROOFS}/{rule}.json"))
+        command = tuple(document["polecenie"]) if isinstance(document, dict) and list(document) == ["polecenie"] and isinstance(document["polecenie"], list) else ()
+        if not command or not all(isinstance(part, str) for part in command):
+            raise ValueError(f'{PROOFS}/{rule}.json to {{"polecenie": [argumenty Pythona]}}, bo złą postać bierze dowód z werdyktu')
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         for number, label, round_ in majors:
             sha, where, _ = finding(repository, number, label, round_)
-            covered = any(covers(mutation, files, sha, where) for mutation, files in zip(mutations, texts, strict=True))
-            print(f"#{number} {label} r{round_} | {sha[:8]} | {'pokryte' if covered else 'nie'} | {where}", flush=True)
-            problems += [] if covered else [f"#{number} {label} r{round_}: żadna mutacja nie dopisuje jako kod całej pierwszej linii jego miejsca, zmieniając tylko pliki z Gdzie"]
+            found, skipped = transplants(sha, where, commit, base)
+            print(f"#{number} {label} r{round_} | {sha[:8]} | miejsca {len(found)}/{len(found) + len(skipped)} | {where}", flush=True)
+            cases.append((f"#{number} {label} r{round_}", found))
+            if not found:
+                raise ValueError(f"#{number} {label} r{round_}: żadnego miejsca z Gdzie nie da się przenieść z werdyktu na HEAD i bazę {base[:8]}: {'; '.join(skipped)}")
+        with potomne.commit_copy(ROOT, commit) as copy:
+            if problem := off_ci(command, copy, frozenset(one.path for _, found in cases for one in found)):
+                raise ValueError(problem)
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {rule} | {error}")
         return 1
-    if replay and not problems:
-        commands = sorted({mutation.command for mutation in mutations})
-        base = zip(commands, silnik_mutacji.verdicts([Mutation("podstawa", (), command) for command in commands], workers=1, commit=commit), strict=True)
-        problems += [f"podstawa {' '.join(command)} bez mutacji: {last}" for command, (verdict, last) in base if verdict is not Verdict.SURVIVED]
-        found = [] if problems else zip(mutations, silnik_mutacji.verdicts(mutations, workers=1, commit=commit), strict=True)
-        problems += [f"{mutation.name}: {verdict} → {last}" for mutation, (verdict, last) in found if not silnik_mutacji.in_ci(verdict, last)[0]]
-    done = f"przypadki {len(majors)}/{len(majors)} | mutacje {len(mutations)}/{len(mutations)} {'wykryte' if replay else 'bez biegu (--bez-kodu-pr)'}"
+    if not replay:
+        print(f"DOWÓD OK | {rule} | przypadki {len(cases)}/{len(cases)} | bez biegu (--bez-kodu-pr)")
+        return 0
+    try:
+        return _replayed(commit, base, rule, command, cases)
+    except (subprocess.SubprocessError, RuntimeError) as error:
+        print(f"DOWÓD ODMOWA | {rule} | bieg {' '.join(command)}: {error}")
+        return 1
+
+
+def _replayed(commit: str, base: str, rule: str, command: tuple[str, ...], cases: list[tuple[str, list[Transplant]]]) -> int:
+    """Bieg ``command`` na HEAD ``commit`` i na bazie ``base`` z każdym przeniesieniem z ``cases``: przypadek przypisany
+    HEAD, gdy któreś przeniesienie pada na HEAD ze znaleziskiem, którego baza z tym samym przeniesieniem nie ma."""
+
+    clean, _, last = _ran(commit, {}, command)
+    if clean:
+        print(f"DOWÓD ODMOWA | {rule} | podstawa {' '.join(command)} bez przeniesienia: {last}")
+        return 1
+    proven = repo.run_git(ROOT, "cat-file", "-e", f"{base}:{PROOFS}/{rule}.json").returncode == 0
+    problems, attributed = [], 0
+    for name, found in cases:
+        runs = [(one, _ran(commit, {one.path: one.head}, command), _ran(base, {one.path: one.base}, command)) for one in found]
+        new = [one for one, (failed, head, _), (red, old, _) in runs if failed and (not red or head - old)]
+        attributed += bool(new)
+        if not new and not (proven and any(failed for _, (failed, _, _), _ in runs)):
+            shown = "; ".join(f"{one.path} HEAD: {head[2]}, baza: {old[2]}" for one, head, old in runs)
+            problems.append(f"{name}: żadne przeniesienie nie pada na HEAD bez tego samego na bazie {base[:8]}: {shown}")
+    if not problems and not attributed:
+        problems.append(f"żaden przypadek nie pada na HEAD bez tego samego na bazie {base[:8]}, choć baza ma już dowód {rule}")
+    done = f"przypadki {len(cases)}/{len(cases)} | {attributed} wykryte na HEAD bez tego samego na bazie {base[:8]}"
     print(f"DOWÓD {'ODMOWA' if problems else 'OK'} | {rule} | {'; '.join(problems) or done}")
     return 1 if problems else 0
 
@@ -467,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula-id", metavar="ID", help="Dowód o tym id na --z-commita: plik dowody-idiomow/ID.json albo reguła ast-grep, którą ładuje sgconfig.yml.")
     parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
-    parser.add_argument("--bez-kodu-pr", action="store_true", help="Dowód typu albo testu bez podstawy i mutacji, czyli bez kodu z --z-commita.")
+    parser.add_argument("--bez-kodu-pr", action="store_true", help="Dowód typu albo testu bez biegu polecenia, czyli bez kodu z --z-commita.")
     args = parser.parse_args(arguments[:split])
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
