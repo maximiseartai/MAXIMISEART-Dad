@@ -51,7 +51,6 @@ from rozliczenia.centrum.quantity_rules_preview import Recent, RecentCollectiveF
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
 from rozliczenia.centrum.settings.quantity_exceptions import (
-    EXCEPTIONS,
     SECTION,
     QuantityException,
     entry_of,
@@ -154,11 +153,7 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
         )
         if exception is None:
             raise refusal.quantity_difference_unknown()
-
-        def added(current: tuple[QuantityException, ...]) -> tuple[QuantityException, ...]:
-            return current if any(known.id == exception.id for known in current) else (*current, exception)
-
-        match settings.change(EXCEPTIONS, added):
+        match settings.change_exceptions(exception):
             case Saved(change=change):
                 return contract.ExceptionSaved(differences=listed()[0], change=change)
             case Refused(problem=problem):
