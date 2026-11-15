@@ -11,8 +11,9 @@ nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot
 wartościach.
 Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z pamięci, nigdy wyjątek ani błąd startu.
 Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie wartości domyślne (``_usable``): trasa okna
-Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), odmawia
-wtedy zdaniem o tym pliku, a procesy liczą treścią z Wydania (``_or_release``), jak mówi zdanie pliku w oknie Ustawień.
+Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), i zapis taty,
+który sprawdza nim zmianę (``NotSaved.unreadable``), odmawiają wtedy zdaniem o tym pliku, a procesy liczą treścią z
+Wydania (``_or_release``), jak mówi zdanie pliku w oknie Ustawień.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -224,7 +225,12 @@ class Refused:
 
 @dataclass(frozen=True)
 class NotSaved:
-    """Pliku albo Historii nie dało się przeczytać lub zapisać, więc nic się nie zmieniło."""
+    """Pliku albo Historii nie dało się przeczytać lub zapisać, więc nic się nie zmieniło. ``unreadable``: plik Ustawień
+    (nazwa w ``config``), którym zapis sprawdza zmianę taty (Foldery przy usuwaniu loginu, drugi plik pary Reguł ilości i
+    Listy Urządzeń), a którego system nie daje teraz czytać: treść z Wydania w jego miejscu sprawdziłaby zmianę nie tym,
+    co tata ma."""
+
+    unreadable: str | None = None
 
 
 @dataclass(frozen=True)
@@ -357,9 +363,12 @@ class CentrumSettings:
 
     def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty sekcji Foldery albo motywu (``dad_folders``). Folder okresów od korzenia układu, który listuje
-        folder okresów w OneDrive taty, liczy się przed blokadą, więc inne żądania Ustawień na niego nie czekają."""
+        folder okresów w OneDrive taty, liczy się przed blokadą, więc inne żądania Ustawień na niego nie czekają, i
+        tylko przy folderze innym niż bieżący."""
 
-        return self._by_dad(FOLDERS, dad_folders(edit), undoes=None)
+        current = self.folders()
+        before = None if isinstance(current, Unreadable) else current.periods_directory
+        return self._by_dad(FOLDERS, dad_folders(edit, before), undoes=None)
 
     def change_autostart(self, enabled: bool) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty przełącznika startu razem z Windows."""
@@ -418,15 +427,15 @@ class CentrumSettings:
                 return NotSaved()
             return self._dad_change(file, lambda current: edit(current, keys), undoes=None, checked=frozenset())
 
-    def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem | Unreadable:
+    def rules_after(self, edit: RuleEdit) -> QuantityRules | FieldProblem | NotSaved:
         """Reguły ilości z Listą Urządzeń, które da zapis taty polecenia ``edit`` (``change_rules``), albo jego odmowa,
         bez zapisu: podgląd zmiany reguły sprawdza tym to samo, co sprawdzi zapis (``_dad_rules``). Id nowej reguły spoza
         kluczy Historii nadaje dopiero zapis; podgląd go nie pokazuje, a żadna odmowa reguł nie zależy od niego, więc
-        Historii nie czyta. Plik reguł, którego system nie daje teraz czytać, to ``Unreadable``: zapis by go odmówił."""
+        Historii nie czyta. Plik pary, którego system nie daje teraz czytać, to ``NotSaved`` z jego nazwą, jak w zapisie."""
 
         with self._lock:
             paired = self._rules_after(lambda current: rule_forms.dad_rules(current, edit, frozenset()))
-            if isinstance(paired, FieldProblem | Unreadable):
+            if isinstance(paired, FieldProblem | NotSaved):
                 return paired
             return QuantityRules(paired[0], DeviceList(paired[1]))
 
@@ -648,7 +657,7 @@ class CentrumSettings:
             folders = _usable(self._observe(FOLDERS), FOLDERS)
             if isinstance(folders, Unreadable):
                 self._log.settings_unreadable(cause="dostep")
-                return NotSaved()
+                return NotSaved(FOLDERS.name)
         presence = self._periods.find(removed.logins, folders.register, folders.periods_directory)
         if not isinstance(presence, NotInPeriods):
             return KeptInPeriods(presence, removed.what)
@@ -672,9 +681,13 @@ class CentrumSettings:
 
     def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
         """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z
-        Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``)."""
+        Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``). Reguły z Wydania w miejscu pliku
+        reguł, którego system nie daje teraz czytać, puściłyby usunięcie składnika, którego potrzebuje reguła taty."""
 
-        rules = _or_release(self._observe(RULES), RULES)
+        rules = _usable(self._observe(RULES), RULES)
+        if isinstance(rules, Unreadable):
+            self._log.settings_unreadable(cause="dostep")
+            return NotSaved(RULES.name)
         changed = dad_devices_edit(edit, rules, self._column_names, release=self._release())
         return self._change(DEVICES, changed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
@@ -686,9 +699,9 @@ class CentrumSettings:
         paired = self._rules_after(edit)
         if isinstance(paired, FieldProblem):
             return Refused(paired)
-        if isinstance(paired, Unreadable):
+        if isinstance(paired, NotSaved):
             self._log.settings_unreadable(cause="dostep")
-            return NotSaved()
+            return paired
         _, devices = paired
         if devices != _or_release(self._observe(DEVICES), DEVICES):
             listed = self._change(DEVICES, lambda _: devices, undoes=None, source=ByDad(), undoable=True, checked=checked)
@@ -698,20 +711,22 @@ class CentrumSettings:
 
     def _rules_after(
         self, edit: _RulesEdit
-    ) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem | Unreadable:
+    ) -> tuple[tuple[QuantityRule, ...], tuple[Component, ...]] | FieldProblem | NotSaved:
         """Reguły po zmianie taty ``edit`` z Listą Urządzeń, z którą się zapiszą, albo odmowa zdaniem o tej zmianie: przy
         Regułach ilości z Wydania lista dostaje składniki z Wydania, których reguły potrzebują, albo zmiana czeka na
         zapis, który tata musi zwolnić (``devices_for_dad_rules``); reguła bez składnika na liście to jej zdanie ze
-        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``). Pliku reguł, którego system nie daje teraz
-        czytać, zmiana nie zna (``Unreadable``)."""
+        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``). Pliku pary, którego system nie daje teraz
+        czytać, zmiana nie zna (``NotSaved`` z jego nazwą): lista z Wydania sprawdziłaby regułę nie listą taty."""
 
         current = _usable(self._observe(RULES), RULES)
         if isinstance(current, Unreadable):
-            return current
+            return NotSaved(RULES.name)
         rules = edit(current)
         if isinstance(rules, FieldProblem):
             return rules
-        devices = _or_release(self._observe(DEVICES), DEVICES)
+        devices = _usable(self._observe(DEVICES), DEVICES)
+        if isinstance(devices, Unreadable):
+            return NotSaved(DEVICES.name)
         if self._release():
             needed = devices_for_dad_rules(devices, rules, current)
             if isinstance(needed, FieldProblem):
