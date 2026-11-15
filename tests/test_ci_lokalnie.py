@@ -20,7 +20,7 @@ import yaml
 from tests.fixtures.ci_workflow import action
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import alive, wait_for, with_grandchild, worktrees
+from tests.fixtures.potomne import dead, wait_for, with_grandchild, worktrees
 
 import ci_lokalnie
 from kroki_lokalne import Step
@@ -211,9 +211,9 @@ def test_przerwane_ci_lokalnie_nie_zostawia_krokow_ani_kopii_commitow(tmp_path: 
 
         started.kill()
         started.wait(timeout=20)
-        wait_for(lambda: not alive(beats) and not any(copy.exists() for copy in copies), 20)
+        wait_for(lambda: not any(copy.exists() for copy in copies), 20)
 
-        assert not alive(beats)
+        assert dead(beats)
         assert (len(copies), [copy for copy in copies if copy.exists()], len(worktrees(repo))) == (1, [], 1)
     finally:
         started.kill()

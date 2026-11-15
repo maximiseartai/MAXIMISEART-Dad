@@ -1,7 +1,8 @@
 """Żywy proces bez okna czasu: ``hold_lock`` trzyma blokadę pliku do końca życia procesu, a ``held`` pyta, czy ktoś ją
 trzyma. Blokadę zwalnia system, gdy proces ginie, także zabity, więc odpowiedź nie zależy od tego, czy proces dostał
 ostatnio procesor. ``alive_code`` to kod procesu, który tak trzyma blokadę pliku obok ``path`` i potem tworzy ``path``,
-a ``alive(path)`` pyta o tę blokadę; ``with_grandchild`` uruchamia takiego wnuka.
+``alive(path)`` pyta o tę blokadę, a ``dead(path)`` odpowiada, czy proces zginął razem ze swoim drzewem;
+``with_grandchild`` uruchamia takiego wnuka.
 
 Na Windows ``os.kill(pid, 0)`` nie sprawdza procesu, tylko wysyła mu Ctrl+C (``CTRL_C_EVENT`` to 0).
 """
@@ -18,12 +19,14 @@ from typing import IO, TypeVar
 from tests.fixtures.git_repo import git
 import potomne
 
-__all__ = ["alive", "alive_code", "ctrl_c_reaches_children", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
+__all__ = ["alive", "alive_code", "ctrl_c_reaches_children", "dead", "held", "hold_lock", "wait_for", "wait_for_value", "with_grandchild", "worktrees"]
 
 T = TypeVar("T")
 
 # Korzeń repozytorium i biblioteki narzędzi: proces z ``alive_code`` importuje stąd ``hold_lock``.
 _PATHS = (str(Path(__file__).resolve().parents[2]), str(Path(potomne.__file__).resolve().parent))
+# Na POSIX tyle ``dead(..., after_guard=True)`` czeka na strażnika narzędzia zabitego SIGKILL.
+_GUARD_S = 5.0
 
 
 def _lock_of(path: Path) -> Path:
@@ -46,10 +49,35 @@ def alive_code(path: Path, seconds: float = 600) -> str:
 
 
 def alive(path: Path) -> bool:
-    """Czy proces z ``alive_code(path)`` jeszcze żyje (trzyma blokadę). Na Windows system zwalnia blokadę zabitego
-    procesu z opóźnieniem, więc po zabiciu pytaj ``wait_for(lambda: not alive(path), s)``."""
+    """Czy proces z ``alive_code(path)`` jeszcze żyje (trzyma blokadę). Po zabiciu jego drzewa pytaj ``dead(path)``."""
 
     return held(_lock_of(path))
+
+
+def dead(path: Path, *, after_guard: bool = False) -> bool:
+    """Czy proces z ``alive_code(path)`` już nie żyje, pytane zaraz po końcu, który zabija jego drzewo: powrocie
+    ``potomne.run`` (albo innego zabijania, które czeka na koniec polecenia) albo sprzątaniu strażnika, które widać po
+    zniknięciu jego kopii (strażnik zabija drzewa przed usuwaniem kopii).
+
+    Na POSIX odpowiada od razu: zabijanie wysyła SIGKILL całej grupie, zanim doczeka się końca jej lidera, a zabity
+    proces zamyka pliki, więc i blokadę ``flock``, bez powrotu do Pythona; drzewo, które żyje po powrocie ``run``, to
+    błąd. Tylko ``after_guard`` czeka najwyżej ``_GUARD_S`` na strażnika narzędzia zabitego SIGKILL, gdy test nie
+    widzi końca jego sprzątania (narzędzie bez kopii). Znana luka: strażnik spóźniony mniej niż ``_GUARD_S``.
+
+    Na Windows czeka najwyżej ``potomne._RELEASE_S`` na zwolnienie blokady przez system. ``TerminateJobObject`` i
+    zabicie przy zamknięciu uchwytu zadania (KILL_ON_JOB_CLOSE, gdy ginie narzędzie) tylko zaczynają kończenie
+    procesów, a dokumentacja ``LockFileEx`` mówi, że blokady zakończonego procesu system zwalnia w czasie zależnym od
+    dostępnych zasobów, i nie wiąże tego z sygnałem końca procesu, na który czeka ``_Tree.kill``. Zdarzenie zamiast
+    terminu (PID zapisany przez wnuka i czekanie na uchwyt jego procesu) też wymaga terminu: spóźnione zabicie opóźnia
+    ten sam koniec procesu, a od wolnego kończenia odróżnia je tylko czas. Znana luka: drzewo zabite na Windows
+    później, ale przed terminem, przechodzi; spóźnienie w kodzie wspólnym obu systemów łapie strona POSIX.
+    """
+
+    if sys.platform == "win32":
+        return wait_for(lambda: not alive(path), potomne._RELEASE_S)
+    if after_guard:
+        return wait_for(lambda: not alive(path), _GUARD_S)
+    return not alive(path)
 
 
 def with_grandchild(alive_file: Path, then: str) -> list[str]:
@@ -88,8 +116,8 @@ def hold_lock(path: Path) -> IO[bytes]:
 
 
 def held(path: Path) -> bool:
-    """Czy blokadę pliku ``path`` (``hold_lock``) trzyma żywy proces. Na Windows system zwalnia blokadę zabitego
-    procesu z opóźnieniem zależnym od zasobów, więc po zabiciu pytaj ``wait_for(lambda: not held(path), s)``."""
+    """Czy blokadę pliku ``path`` (``hold_lock``) trzyma żywy proces; po zabiciu procesu z ``alive_code`` pytaj
+    ``dead``, które zna opóźnienie zwolnienia blokady na Windows."""
 
     if not path.exists():
         return False

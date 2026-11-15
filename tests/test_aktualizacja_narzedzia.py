@@ -31,7 +31,7 @@ from rozliczenia.centrum.tool_update import (
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
-from tests.fixtures.potomne import alive, alive_code, wait_for
+from tests.fixtures.potomne import alive_code, dead
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
     git_failing_on,
@@ -1059,7 +1059,7 @@ def test_pobranie_ktore_stoi_po_limicie_czasu_konczy_sie_brakiem_polaczenia_bez_
 
     assert result == UpdateResult("BRAK_POLACZENIA", before=commit, after=None)
     assert heartbeat.exists()
-    assert wait_for(lambda: not alive(heartbeat), 10)
+    assert dead(heartbeat)
 
 
 def test_klikniecie_w_trakcie_ponownego_startu_nie_zastepuje_dziennika_aktualizacji_nowsza_wersja(

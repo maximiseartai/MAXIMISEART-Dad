@@ -23,7 +23,7 @@ import pytest
 
 from tests.fixtures.git_repo import copy_files, git, with_imports
 from tests.fixtures.granice_ksztaltow import GAPS
-from tests.fixtures.potomne import alive, alive_code, wait_for
+from tests.fixtures.potomne import alive_code, dead, wait_for
 
 from jednostka import Klucz
 import kroki_skilli
@@ -304,7 +304,7 @@ def test_zabity_runner_nie_zostawia_skryptu_mutacji(tmp_path: Path) -> None:
         runner.kill()
         runner.wait(timeout=30)
 
-        assert wait_for(lambda: not alive(beats), 5), "skrypt mutacji przeżył runner"
+        assert dead(beats, after_guard=True), "skrypt mutacji przeżył runner"
     finally:
         runner.kill()
         runner.wait()

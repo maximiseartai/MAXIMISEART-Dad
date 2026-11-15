@@ -23,7 +23,7 @@ import pytest
 from tests.fixtures.brama_typow import FAKE_GATE
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, git, repository
-from tests.fixtures.potomne import alive, alive_code, wait_for
+from tests.fixtures.potomne import alive_code, dead, wait_for
 import potomne
 
 import ciezkie_ci
@@ -1028,7 +1028,7 @@ def test_przerwane_narzedzie_konczy_trwajace_mutacje_i_sprzata(tmp_path: Path) -
     tool.wait(timeout=20)
     wait_for(lambda: not any(scratch.iterdir()), 20, every=0.1)
 
-    assert (started.exists(), wait_for(lambda: not alive(beats), 10)) == (True, True)
+    assert (started.exists(), dead(beats)) == (True, True)
     assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
     assert list(scratch.iterdir()) == []
 
