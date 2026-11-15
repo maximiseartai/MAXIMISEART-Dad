@@ -723,10 +723,6 @@ export type DifferencesReady = {
      */
     state: 'ready';
     /**
-     * Files
-     */
-    files: Array<PreviewFile>;
-    /**
      * Unread
      */
     unread: Array<string>;
@@ -1923,6 +1919,7 @@ export type PhaseProgress = {
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
  *
  * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ * ``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton.
  */
 export type PinnableRun = {
     /**
@@ -1942,14 +1939,6 @@ export type PinnableRun = {
      * Period
      */
     period: string;
-    /**
-     * Result
-     */
-    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
-    /**
-     * Stop Kind
-     */
-    stop_kind: 'for_tata' | 'for_maks' | null;
     /**
      * Mode Word
      *
@@ -2886,13 +2875,10 @@ export type ReportDraft = {
  * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
- * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * raportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się
+ * odczytać).
  */
 export type ReportEnteringSetup = {
-    /**
-     * Title
-     */
-    title: string;
     /**
      * Reminder
      */
@@ -4516,6 +4502,7 @@ export type MetricsWritable = {
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
  *
  * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ * ``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton.
  */
 export type PinnableRunWritable = {
     /**
@@ -4535,14 +4522,6 @@ export type PinnableRunWritable = {
      * Period
      */
     period: string;
-    /**
-     * Result
-     */
-    result: 'OK' | 'WYMAGA_SPRAWDZENIA' | 'BLAD_KRYTYCZNY';
-    /**
-     * Stop Kind
-     */
-    stop_kind: 'for_tata' | 'for_maks' | null;
 };
 
 /**
@@ -4609,13 +4588,10 @@ export type ProcessRunWritable = {
  * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
- * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * raportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się
+ * odczytać).
  */
 export type ReportEnteringSetupWritable = {
-    /**
-     * Title
-     */
-    title: string;
     /**
      * Reminder
      */

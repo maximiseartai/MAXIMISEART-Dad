@@ -1,6 +1,15 @@
 // Reguły frontendu, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
 // 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/:
-//    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału.
+//    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału. Pole
+//    odpowiedzi operacji GET (pierwszy poziom schematu 200, każdego wariantu unii i elementu tablicy) liczy się, gdy kontroler
+//    typów rozwiązuje dostęp albo destrukturyzację w src do deklaracji tego pola w zod.gen.ts albo types.gen.ts, wprost albo
+//    przez typ, do którego src podaje wartość z tym polem (argument, atrybut JSX, inicjalizator, wynik funkcji, przypisanie;
+//    typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`, wynik
+//    funkcji i `Promise`), a tamten typ ma czytane pole tej nazwy. Ta sama nazwa w innej odpowiedzi go nie zastępuje
+//    (#1577 W2: `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje). Granica: przejście
+//    liczy pole celu czytane gdziekolwiek w src, nie tylko dla tej wartości, a warianty unii źródła i celu łączy po nazwie
+//    pola każdy z każdym; wartość podana przez rozwinięcie (`{ ...x }`) albo rzutowanie (`as`) nie przechodzi, więc jej
+//    pole liczy się jako nieużyte; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`. Granica: reguła
 //    łapie tylko porównanie i `case`; `["settlement", "preparation"].includes(nazwa)`, odczyt z obiektu po nazwie
 //    (`({ settlement: 1 })[nazwa]`) i inne rozgałęzienia na nazwie procesu łapie tylko przegląd.
@@ -276,9 +285,220 @@ for (const path of sourceFiles(source)) {
   }
 }
 
-const unused = contractFields(contract).filter((key) => !FIELDS_OUTSIDE_UI.has(key) && !used.has(fieldName(key)))
+// Schematy odpowiedzi: `$ref`, każdy wariant unii (`oneOf`, `anyOf`) i element tablicy (`items`).
+function responseSchemas(schema) {
+  if (schema === undefined) {
+    return []
+  }
 
-const staleExceptions = [...FIELDS_OUTSIDE_UI.keys()].filter((key) => used.has(fieldName(key)))
+  if (schema.$ref !== undefined) {
+    return [schema.$ref.split("/").pop()]
+  }
+
+  return [...(schema.oneOf ?? []), ...(schema.anyOf ?? []), ...(schema.items ? [schema.items] : [])].flatMap(responseSchemas)
+}
+
+// Pola pierwszego poziomu schematów odpowiedzi 200 operacji GET (każdego wariantu unii): "Schemat.pole".
+function responseFields(api) {
+  const schemas = new Set(
+    Object.values(api.paths).flatMap((methods) =>
+      responseSchemas(methods.get?.responses?.["200"]?.content?.["application/json"]?.schema),
+    ),
+  )
+
+  return new Set(
+    [...schemas].flatMap((schema) =>
+      Object.keys(api.components.schemas[schema].properties ?? {}).map((field) => `${schema}.${field}`),
+    ),
+  )
+}
+
+// Deklaracje pól pierwszego poziomu schematu → "Schemat.pole": `pole: …` w `export const zSchemat = z.object({ … })`
+// pliku zod.gen.ts i w `export type Schemat = { … }` pliku types.gen.ts (odpowiedź bywa typowana jednym albo drugim).
+function declaredFields(files, wanted) {
+  const fields = new Map()
+
+  for (const file of files) {
+    for (const statement of file.statements) {
+      const declarations = ts.isVariableStatement(statement)
+        ? statement.declarationList.declarations.map((declaration) => [declaration.name, declaration.initializer])
+        : ts.isTypeAliasDeclaration(statement)
+          ? [[statement.name, statement.type]]
+          : []
+
+      for (const [name, value] of declarations) {
+        const schema = ts.isVariableStatement(statement) ? name.getText(file).replace(/^z/, "") : name.getText(file)
+
+        const members =
+          value !== undefined && ts.isCallExpression(value) ? value.arguments[0] : value
+
+        if (members === undefined || !(ts.isObjectLiteralExpression(members) || ts.isTypeLiteralNode(members))) {
+          continue
+        }
+
+        for (const property of ts.isTypeLiteralNode(members) ? members.members : members.properties) {
+          const key = `${schema}.${property.name?.getText(file)}`
+
+          if (wanted.has(key)) {
+            fields.set(property, key)
+          }
+        }
+      }
+    }
+  }
+
+  return fields
+}
+
+// Czy wyrażenie `node` src podaje dalej do miejsca z własnym typem: argument wywołania, atrybut JSX, inicjalizator
+// zmiennej i pola obiektu, wynik funkcji albo prawa strona przypisania.
+function flowsOn(node) {
+  const parent = node.parent
+
+  return (
+    ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) && (parent.arguments ?? []).includes(node)) ||
+    (ts.isJsxExpression(parent) && parent.expression === node) ||
+    ((ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) && parent.initializer === node) ||
+    ts.isReturnStatement(parent) ||
+    (ts.isArrowFunction(parent) && parent.body === node) ||
+    (ts.isBinaryExpression(parent) && parent.right === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+  )
+}
+
+// Pola z `fields`, które src czyta przez kontroler typów: dostęp (`x.pole`) albo destrukturyzacja (`{ pole }`)
+// rozwiązuje się do deklaracji pola wprost albo przez typ, do którego src podaje wartość z tym polem (argument,
+// atrybut JSX, typ strukturalny jak `Pick<ProcessRun, "tone">`, ograniczenie parametru typu jak `T extends LiveFileView`,
+// także przez wynik funkcji i `Promise`), gdy to pole tamtego typu jest czytane.
+function readBySymbol(fields) {
+  const configPath = join(root, "tsconfig.app.json")
+  const config = ts.parseJsonConfigFileContent(ts.readConfigFile(configPath, ts.sys.readFile).config, ts.sys, root)
+  const program = ts.createProgram({ rootNames: config.fileNames, options: config.options })
+  const checker = program.getTypeChecker()
+
+  const declared = declaredFields(
+    ["zod.gen.ts", "types.gen.ts"].map((name) => program.getSourceFile(join(generated, name))),
+    fields,
+  )
+
+  // Deklaracje pól, do których src sięga odczytem, i przejścia pola typu źródła do pola tej samej nazwy typu celu.
+  const reached = new Set()
+  const passes = []
+
+  function origins(symbol, seen = new Set()) {
+    if (symbol === undefined || seen.has(symbol)) {
+      return []
+    }
+
+    seen.add(symbol)
+    const links = symbol.links ?? {}
+    const aliased = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : undefined
+
+    return [
+      ...(symbol.declarations ?? []),
+      ...origins(aliased, seen),
+      ...origins(links.syntheticOrigin, seen),
+      ...origins(links.target, seen),
+    ]
+  }
+
+  function pass(from, to, depth = 0) {
+    const target = to !== undefined && to.flags & ts.TypeFlags.TypeParameter ? checker.getBaseConstraintOfType(to) : to
+
+    if (target === undefined || from === target || depth > 4) {
+      return
+    }
+
+    for (const member of from.isUnion() ? from.types : [from]) {
+      for (const goal of target.isUnion() ? target.types : [target]) {
+        const [awaited, awaitedGoal] = [checker.getAwaitedType(member) ?? member, checker.getAwaitedType(goal) ?? goal]
+
+        if (awaited !== member || awaitedGoal !== goal) {
+          pass(awaited, awaitedGoal, depth + 1)
+          continue
+        }
+
+        for (const property of member.getProperties()) {
+          const counterpart = goal.getProperty(property.name)
+
+          if (counterpart !== undefined) {
+            passes.push([origins(property), origins(counterpart)])
+          }
+        }
+
+        const [call, goalCall] = [member.getCallSignatures()[0], goal.getCallSignatures()[0]]
+
+        if (call !== undefined && goalCall !== undefined) {
+          pass(call.getReturnType(), goalCall.getReturnType(), depth + 1)
+        }
+      }
+    }
+  }
+
+  // Typ parametru z deklaracji wywołanej funkcji, przed podstawieniem parametrów typu (`T extends LiveFileView`).
+  function declaredParameter(call, node) {
+    const parameters = checker.getResolvedSignature(call)?.getDeclaration()?.parameters ?? []
+    const index = call.arguments.indexOf(node)
+    const parameter = parameters[Math.min(index, parameters.length - 1)]
+
+    return parameter?.type === undefined ? undefined : checker.getTypeFromTypeNode(parameter.type)
+  }
+
+  for (const file of program.getSourceFiles()) {
+    if (file.isDeclarationFile || !file.fileName.startsWith(source) || file.fileName.startsWith(generated)) {
+      continue
+    }
+
+    const visit = (node) => {
+      const symbol = ts.isPropertyAccessExpression(node)
+        ? checker.getSymbolAtLocation(node.name)
+        : ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)
+          ? checker.getTypeAtLocation(node.parent).getProperty((node.propertyName ?? node.name).getText(file))
+          : undefined
+
+      for (const declaration of origins(symbol)) {
+        reached.add(declaration)
+      }
+
+      if (node.parent !== undefined && flowsOn(node)) {
+        const type = checker.getTypeAtLocation(node)
+        pass(type, checker.getContextualType(node))
+
+        if (ts.isCallExpression(node.parent)) {
+          pass(type, declaredParameter(node.parent, node))
+        }
+      }
+
+      ts.forEachChild(node, visit)
+    }
+
+    visit(file)
+  }
+
+  for (let grown = true; grown; ) {
+    grown = false
+
+    for (const [from, to] of passes) {
+      if (to.some((declaration) => reached.has(declaration)) && from.some((declaration) => !reached.has(declaration))) {
+        from.forEach((declaration) => reached.add(declaration))
+        grown = true
+      }
+    }
+  }
+
+  return new Set([...declared].flatMap(([declaration, key]) => (reached.has(declaration) ? [key] : [])))
+}
+
+const answered = responseFields(contract)
+
+const readFields = readBySymbol(answered)
+
+function isUsed(key) {
+  return answered.has(key) ? readFields.has(key) : used.has(fieldName(key))
+}
+
+const unused = contractFields(contract).filter((key) => !FIELDS_OUTSIDE_UI.has(key) && !isUsed(key))
+
+const staleExceptions = [...FIELDS_OUTSIDE_UI.keys()].filter((key) => isUsed(key))
 
 const staleNetworkFiles = [...NETWORK_FILES.keys()].filter((key) => !connectedFiles.has(key))
 
@@ -287,7 +507,12 @@ const timed = timedOperations(contract)
 const called = new Set(operationCalls.map(({ operation }) => operation))
 
 const problems = [
-  ...unused.map((key) => `Pole kontraktu ${key} nie jest użyte w src: pokaż je w UI albo usuń z kontraktu.`),
+  ...unused.map((key) =>
+    answered.has(key)
+      ? `Pole odpowiedzi ${key} nie jest czytane w src przez swój typ (ta sama nazwa w innym schemacie się nie liczy): ` +
+        `pokaż je w UI tam, gdzie przychodzi ta odpowiedź, albo usuń z kontraktu.`
+      : `Pole kontraktu ${key} nie jest użyte w src: pokaż je w UI albo usuń z kontraktu.`,
+  ),
   ...staleExceptions.map((key) => `Wyjątek ${key} jest zbędny: pole jest już użyte w src.`),
   ...comparisons.map(
     (place) =>

@@ -15,10 +15,10 @@ class ReportEnteringSetup(Model):
     ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
     ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
     obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
-    raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+    raportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się
+    odczytać).
     """
 
-    title: str
     reminder: str
     blocker: str | None
     open_in_excel: list[str]

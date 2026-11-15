@@ -97,7 +97,6 @@ class ReportEnteringEntry:
         settings = snapshot.folders
         register = settings.register
         return report_entering_contract.ReportEnteringSetup(
-            title=_KIND.title,
             reminder=_VIEW.reminder,
             blocker=_blocker(_unchosen(settings)) or self._not_set_up() or _no_addresses(snapshot.workers) or _conflict(register),
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
