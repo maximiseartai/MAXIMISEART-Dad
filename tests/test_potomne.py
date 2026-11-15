@@ -514,6 +514,10 @@ def test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii(tmp_path: Path, stop: st
 
 
 
+# Proces z ignorowanym SIGINT, jak pytest pod ``boatbox job`` (``nohup`` i ``&``), który uruchamia Pythona z argumentami.
+_IGNORING_SIGINT = "import os, signal, sys\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
+
+
 @POSIX_ONLY
 def test_ctrl_c_dochodzi_do_narzedzia_z_testow_uruchomionych_z_ignorowanym_sigint(tmp_path: Path) -> None:
     """``boatbox job`` (``nohup`` i ``&``) uruchamia pytest z ignorowanym SIGINT, który przez ``exec`` dziedziczy
@@ -521,15 +525,41 @@ def test_ctrl_c_dochodzi_do_narzedzia_z_testow_uruchomionych_z_ignorowanym_sigin
     pytest uruchomionym z ignorowanym SIGINT przechodzi tak samo jak bez niego (``ctrl_c_reaches_children`` w
     ``pytest_configure``)."""
 
-    ignoring = "import os, signal, sys\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nos.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
     node = f"{__file__}::test_zabite_narzedzie_nie_zostawia_drzewa_ani_kopii[Ctrl+C]"
     inner = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "bt"), node]
 
     done = subprocess.run(
-        [sys.executable, "-c", ignoring, *inner], cwd=TOOLS.parent, capture_output=True, text=True, timeout=120, check=False
+        [sys.executable, "-c", _IGNORING_SIGINT, *inner], cwd=TOOLS.parent, capture_output=True, text=True, timeout=120, check=False
     )
 
     assert done.returncode == 0, done.stdout[-3000:]
+
+
+@POSIX_ONLY
+def test_ctrl_c_w_pytest_z_ignorowanym_sigint_konczy_sesje_przez_keyboardinterrupt_z_koncem_sesji(tmp_path: Path) -> None:
+    """Obsługa, którą ``ctrl_c_reaches_children`` daje procesowi testów z ignorowanym SIGINT, to obsługa Pythona, a nie
+    ``SIG_DFL``: Ctrl+C kończy sesję przez ``KeyboardInterrupt`` z kodem 2 i z ``pytest_sessionfinish`` (sprzątanie i
+    strażnik drzewa repozytorium), a nie śmiercią procesu od sygnału. Wtyczka z ``tmp_path`` wysyła Ctrl+C procesowi
+    pytest w pierwszym teście i zapisuje kod sesji w ``pytest_sessionfinish``."""
+
+    finished = tmp_path / "koniec-sesji"
+    (tmp_path / "wtyczka_ctrl_c.py").write_text(
+        "import os, signal\nfrom pathlib import Path\n\n\n"
+        "def pytest_runtest_call(item):\n    os.kill(os.getpid(), signal.SIGINT)\n\n\n"
+        f"def pytest_sessionfinish(session, exitstatus):\n    Path({str(finished)!r}).write_text(str(int(exitstatus)))\n",
+        encoding="utf-8",
+    )
+    node = f"{__file__}::test_echo_drukuje_wyjscie_razem_z_stderr"
+    inner = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "-p", "wtyczka_ctrl_c", "--basetemp", str(tmp_path / "bt"), node]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(tmp_path), os.environ.get("PYTHONPATH")]))}
+
+    done = subprocess.run(
+        [sys.executable, "-c", _IGNORING_SIGINT, *inner], cwd=TOOLS.parent, env=env, capture_output=True, text=True, timeout=120, check=False
+    )
+
+    session = finished.read_text(encoding="utf-8") if finished.exists() else None
+    assert (done.returncode, session) == (2, "2"), done.stdout[-3000:]
+
 
 @POSIX_ONLY
 def test_bez_straznika_narzedzie_przerywa_zamiast_dzialac_bez_sprzatania(tmp_path: Path) -> None:
