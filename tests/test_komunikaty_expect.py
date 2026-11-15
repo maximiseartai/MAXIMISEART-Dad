@@ -188,6 +188,7 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
+            "unreadable": [partial(settings_messages.unreadable, RULES_FILE)],
             "rule_without_action": [settings_messages.rule_without_action],
             "rule_hour": [settings_messages.rule_hour],
             "needed_by_rules": [partial(settings_messages.needed_by_rules, DEVICES_FILE, "instalacja ręczna")],

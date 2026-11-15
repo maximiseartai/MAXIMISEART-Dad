@@ -44,6 +44,8 @@ from rozliczenia.centrum.process_kind import (
     NeededSetting,
     PathNeed,
     PreparedRun,
+    SettingField,
+    chosen_settings,
     start_from_settings,
 )
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
@@ -51,8 +53,7 @@ from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings.files import Good, Read, Unreadable, usable
-from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
@@ -94,27 +95,25 @@ class ReportEnteringEntry:
         """Stan przycisku na ekranie Raporty przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
 
         snapshot = self.settings.snapshot()
-        settings = snapshot.folders
-        register = settings.register
+        chosen = _chosen(snapshot)
+        register = None if isinstance(chosen, refusal.Refusal) else chosen["register"]
         return report_entering_contract.ReportEnteringSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
-            blocker=_blocker(_unchosen(settings)) or self._not_set_up() or _no_addresses(snapshot.workers) or _conflict(register),
+            blocker=_blocker(chosen) or self._not_set_up() or _no_addresses(snapshot.workers) or _conflict(register),
             open_in_excel=[] if register is None else open_in_excel([InputWorkbook(_VIEW.register_name, register, "data_file")]),
             last=last,
         )
 
     def prepare(self) -> PreparedRun[Any, Any]:
         """Wejście procesu z Ustawień Centrum i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
-        wskazany."""
+        wskazany albo pliku Folderów nie da się teraz przeczytać."""
 
         snapshot = self.settings.snapshot()
-        settings = snapshot.folders
-        if (unchosen := _unchosen(settings)) is not None:
-            raise unchosen
-        paths: dict[PathNeed, Path] = {
-            setting.field: path for setting in _SETTINGS if (path := setting.chosen(settings)) is not None
-        }
+        chosen = _chosen(snapshot)
+        if isinstance(chosen, refusal.Refusal):
+            raise chosen
+        paths: dict[PathNeed, Path] = {field: path for field, path in chosen.items()}
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
@@ -162,11 +161,10 @@ class ReportEnteringEntry:
         return refusal.report_entering_not_set_up(missing).message if missing else None
 
 
-def _unchosen(settings: FolderSettings) -> refusal.Refusal | None:
-    """„Najpierw wskaż …” z nazwami niewskazanych Ustawień kliknięcia; ``None``, gdy wszystkie są wskazane."""
+def _chosen(snapshot: SettingsSnapshot) -> dict[SettingField, Path] | refusal.Refusal:
+    """Ścieżki kliknięcia z Ustawień Centrum albo odmowa startu (``chosen_settings``)."""
 
-    missing = [setting.name for setting in _SETTINGS if setting.chosen(settings) is None]
-    return refusal.first_choose(missing) if missing else None
+    return chosen_settings(snapshot, _SETTINGS, quantity_rules=_KIND.quantity_rules)
 
 
 def _no_addresses(workers: Read[WorkerList] | Unreadable) -> str | None:
@@ -177,8 +175,8 @@ def _no_addresses(workers: Read[WorkerList] | Unreadable) -> str | None:
     return None
 
 
-def _blocker(unchosen: refusal.Refusal | None) -> str | None:
-    return None if unchosen is None else unchosen.message
+def _blocker(chosen: dict[SettingField, Path] | refusal.Refusal) -> str | None:
+    return chosen.message if isinstance(chosen, refusal.Refusal) else None
 
 
 def _conflict(register: Path | None) -> str | None:

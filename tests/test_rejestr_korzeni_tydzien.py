@@ -27,6 +27,7 @@ import rejestr_korzeni
 from rejestr_korzeni import Occurrence
 import rejestr_korzeni_tydzien as tydzien
 import szablon_werdyktu
+import tydzien_polski
 import werdykt_pr
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,7 +115,7 @@ def test_historia_ma_najwyzej_26_ostatnich_tygodni_od_tygodnia_wdrozenia() -> No
     ids=["poniedzialek-6-00-czasu-zimowego", "poniedzialek-0-30-czasu-polskiego-a-niedziela-w-utc", "niedziela-23-30-czasu-polskiego", "poniedzialek-0-30-czasu-letniego"],
 )
 def test_bez_tygodnia_pomiar_bierze_ostatni_pelny_tydzien_czasu_polskiego(now: str, week: str) -> None:
-    assert tydzien.last_full_week(_at(now)).isoformat() == week
+    assert tydzien_polski.last_full_week(_at(now)).isoformat() == week
 
 
 @pytest.mark.parametrize(

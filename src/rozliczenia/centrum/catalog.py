@@ -103,6 +103,8 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje okresu")
         if "workers" in kind.needs and start.workers is None:
             raise ValueError(f"{kind.title} potrzebuje Listy Wykonawców, a start jej nie ma")
+        if kind.quantity_rules and start.quantity_rules is None:
+            raise ValueError(f"{kind.title} liczy Regułami ilości, a start ich nie ma")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
         if "worker_report_inbox" in kind.needs and parts.reports is None:

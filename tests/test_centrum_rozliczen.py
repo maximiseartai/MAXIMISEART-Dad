@@ -818,7 +818,7 @@ def test_lista_urzadzen_bez_skladnika_regul_ilosci_to_zle_ustawienie_listy_a_pro
     )
     assert "instalacja-reczna" in [device["id"] for device in response["devices"]]
     assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz 2 × liczbę „nokia” w Z."
-    tools_see = read_snapshot(app.tool.config).quantity_rules
+    tools_see = _tools_rules(app.tool.config)
     assert (tools_see.devices, tools_see.rules == DEFAULT_QUANTITY_RULES.rules) == (DEFAULT_QUANTITY_RULES.devices, False)
     assert [(row["file"], row["refused"]) for row in history_rows(app)] == [(DEVICES_FILE, True)]
 
@@ -907,7 +907,7 @@ def test_nowy_skladnik_z_grupa_staje_na_koncu_listy_urzadzen_a_historia_mowi_dod
     assert [(change["key"], change["before"], _text(change["after"])) for change in row["rules"]] == [
         ("urzadzenia.ont-x", None, "Składnik „ont x”, też „ont-x2”, grupa extender.")
     ]
-    assert "ont-x" in [component.id for component in read_snapshot(app.tool.config).quantity_rules.devices.components]
+    assert "ont-x" in [component.id for component in _tools_rules(app.tool.config).devices.components]
 
 
 @pytest.mark.parametrize(
@@ -1231,7 +1231,7 @@ def test_wydanie_z_regulami_potrzebujacymi_skladnika_spoza_listy_taty_zostawia_l
     )
     shown = {device["id"]: device["other_spellings"] for device in response["devices"]}
     assert (shown["nokia"], shown["instalacja-reczna"], list(shown)[-1]) == (["ont nokia"], ["wizja"], "instalacja-reczna")
-    tools_see = read_snapshot(app.tool.config).quantity_rules
+    tools_see = _tools_rules(app.tool.config)
     assert tools_see.rules == DEFAULT_QUANTITY_RULES.rules
     assert [component.spellings for component in tools_see.devices.components if component.id in ("nokia", "instalacja-reczna")] == [
         ("nokia", "ont nokia"),
@@ -1284,7 +1284,7 @@ def test_skladnik_wydania_zmieniony_w_sekcji_przed_zapisaniem_na_liscie_taty_zap
     assert saved.status_code == 200, saved.text
     dad_list = _dad_list(app)
     assert dad_list is not None and Component("instalacja-reczna", ("instalacja ręczna", "wizja", "ont x")) in dad_list
-    assert [component.id for component, _ in read_snapshot(app.tool.config).quantity_rules.devices.find(["ont", "x"])[0]] == [
+    assert [component.id for component, _ in _tools_rules(app.tool.config).devices.find(["ont", "x"])[0]] == [
         "instalacja-reczna"
     ]
 
@@ -1344,7 +1344,7 @@ def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_byl
 
     release_without_manual_installation()
     shown = app.client.get(QUANTITY_RULES_URL).json()
-    counted = read_snapshot(app.tool.config).quantity_rules
+    counted = _tools_rules(app.tool.config)
 
     assert [device["id"] for device in shown["devices"]] == [component.id for component in dad_list]
     assert shown["devices_problem"] == {
@@ -1359,7 +1359,7 @@ def test_skladnik_wydania_bez_zapisu_spoza_listy_taty_liczy_sie_jakby_go_nie_byl
     freed = app.client.put(f"{DEVICES_URL}/{own}", json={"name": "wizja", "other_spellings": [], "group": None})
     assert (freed.status_code, freed.json()["quantity_rules"]["devices_problem"]) == (200, None), freed.text
     assert device_form(app, "instalacja-reczna") == {"name": "instalacja ręczna", "other_spellings": [], "group": None}
-    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+    assert _tools_rules(app.tool.config).rules == DEFAULT_QUANTITY_RULES.rules
 
 
 def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_ma_tylko_jej_zapisy(
@@ -1376,7 +1376,7 @@ def test_narzedzia_licza_lista_taty_zmieniona_poza_centrum_gdy_skladnik_wydania_
     assert isinstance(dad_list, tuple)
     path.write_bytes(DEVICES.dump((*dad_list, Component("ont-x", ("ont x",)))))
 
-    assert "ont-x" in read_snapshot(app.tool.config).quantity_rules.devices.ids()
+    assert "ont-x" in _tools_rules(app.tool.config).devices.ids()
 
 
 def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_centrum(tmp_path: Path) -> None:
@@ -1394,7 +1394,7 @@ def test_narzedzia_licza_regulami_z_wydania_gdy_plik_regul_taty_zniknal_poza_cen
     assert (accepted["rules_problem"], accepted["devices_problem"], len(accepted["rules"])) == (None, None, len(rules))
     (app.tool.config / RULES_FILE).unlink()
 
-    counted = read_snapshot(app.tool.config).quantity_rules
+    counted = _tools_rules(app.tool.config)
 
     assert counted.rules == DEFAULT_QUANTITY_RULES.rules
     assert "instalacja-reczna" in counted.devices.ids()
@@ -1418,14 +1418,14 @@ def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centru
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     rules = write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
     rule_sentences(app)
-    accepted = read_snapshot(app.tool.config).quantity_rules
+    accepted = _tools_rules(app.tool.config)
     assert "nowy" in accepted.devices.ids()
     path = {DEVICES_FILE: devices, RULES_FILE: rules}[changed]
     text = path.read_text(encoding="utf-8")
     assert old in text
     path.write_text(text.replace(old, new), encoding="utf-8")
 
-    assert read_snapshot(app.tool.config).quantity_rules == accepted
+    assert _tools_rules(app.tool.config) == accepted
 
 
 @pytest.mark.parametrize("others", [["wizja"], []], ids=["oba-zapisy-u-taty", "jeden-zapis-u-taty"])
@@ -1449,7 +1449,7 @@ def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skl
     assert dad_list is not None and [component.spellings for component in dad_list if "instalacja ręczna" in component.spellings] == [
         ("instalacja ręczna", "wizja")
     ]
-    counted = read_snapshot(app.tool.config).quantity_rules
+    counted = _tools_rules(app.tool.config)
     assert counted.devices.find(["instalacja", "ręczna"]) == ([(Component("instalacja-reczna", ("instalacja ręczna", "wizja")), 1)], True)
     assert counted.rules == DEFAULT_QUANTITY_RULES.rules
 
@@ -1587,7 +1587,7 @@ def _proposed(app: Centrum, message: str) -> tuple[str, str, dict[str, Any] | No
 def _holds_dad_spellings(app: Centrum, context: object) -> None:
     """Każdy zapis listy taty należy w procesach do składnika, któremu dał go tata: nigdy cała para z Wydania."""
 
-    counted = read_snapshot(app.tool.config).quantity_rules
+    counted = _tools_rules(app.tool.config)
     for component in _dad_list(app) or ():
         for spelling in component.spellings:
             assert counted.devices.find(spelling.split()) == ([(component, 1)], True), (context, spelling)
@@ -1690,7 +1690,7 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
             return
 
         _released(monkeypatch, DEFAULT_QUANTITY_RULES)
-        counted = read_snapshot(app.tool.config).quantity_rules
+        counted = _tools_rules(app.tool.config)
         shown = [device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]]
 
         assert shown == [component.id for component in counted.devices.components], steps
@@ -1710,7 +1710,7 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
                 assert response.status_code == 200, (steps, undos, problem, response.text)
                 assert response.json()["change"] is not None, (steps, undos, problem)
             assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None, (steps, undos)
-            assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules, (steps, undos)
+            assert _tools_rules(app.tool.config).rules == DEFAULT_QUANTITY_RULES.rules, (steps, undos)
 
     list_holds()
 
@@ -2042,14 +2042,14 @@ def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty
     app = centrum(tmp_path)
     rules = _rules_changed_under_damaged_dad_list(app)
 
-    tools_see = read_snapshot(app.tool.config).quantity_rules
+    tools_see = _tools_rules(app.tool.config)
 
     assert tools_see.rules == RULES.parse(rules.read_bytes())
     assert "nowy" in [component.id for component in tools_see.devices.components]
 
 
 @NO_ACCESS_ON_WINDOWS
-def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_procesy_licza_regulami_z_wydania(
+def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_okno_pokazuje_liste_z_wydania(
     tmp_path: Path,
 ) -> None:
     app = centrum(tmp_path)
@@ -2062,7 +2062,7 @@ def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_proce
 
     assert (response["rules_problem"]["message"], response["devices_problem"]["message"]) == (
         f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
-        f"Pliku {DEVICES_FILE} w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.",
+        refusal.settings_file_unreadable(DEVICES_FILE).message,
     )
     assert [device["id"] for device in response["devices"]] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
 
@@ -2153,7 +2153,7 @@ def test_regula_ilosci_zmieniona_poza_centrum_dziala_od_razu_ma_wiersz_historii_
     )
     assert undone.status_code == 200, undone.text
     assert rule_sentences(app)["nokia"] == "Jeśli URZĄDZENIA zawierają „nokia”, to wpisz liczbę „nokia” w Z."
-    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+    assert _tools_rules(app.tool.config).rules == DEFAULT_QUANTITY_RULES.rules
 
 
 def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(tmp_path: Path) -> None:
@@ -2201,7 +2201,7 @@ def test_regula_dodana_w_edytorze_ma_zdanie_wiersz_historii_ze_zdaniem_a_cofniec
     ]
     assert undone.status_code == 200, undone.text
     assert "regula-1" not in rule_sentences(app)
-    assert read_snapshot(app.tool.config).quantity_rules.rules == DEFAULT_QUANTITY_RULES.rules
+    assert _tools_rules(app.tool.config).rules == DEFAULT_QUANTITY_RULES.rules
 
 
 def _text(parts: list[dict[str, Any]] | None) -> str | None:
@@ -2611,7 +2611,8 @@ def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folde
     app, periods = with_periods_directory(tmp_path)
     app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
 
-    assert read_snapshot(app.tool.config).folders.periods_directory == periods
+    folders = read_snapshot(app.tool.config).folders
+    assert isinstance(folders, FolderSettings) and folders.periods_directory == periods
 
 
 def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
@@ -7139,6 +7140,110 @@ def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdz
 
     assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
     assert _config_files(app.tool.config) == before
+
+
+UNREADABLE_PERIOD = "22_28_09_2026"
+
+
+def _with_folders_and_rules(tmp_path: Path) -> tuple[Centrum, Path]:
+    """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów z Folderem okresu ``UNREADABLE_PERIOD`` oraz ma
+    własne pliki Reguł ilości i Listy Urządzeń."""
+
+    app, _register = with_register(tmp_path)
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    write_period_files(periods, UNREADABLE_PERIOD)
+    app.platform.chosen_folders.append(periods)
+    assert app.client.post("/api/settings/periods-directory/choose").status_code == 200
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    assert app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None}).status_code == 200
+    return app, periods
+
+
+def _start_blockers(app: Centrum) -> dict[str, str | None]:
+    """Zdanie blokady karty startu każdego procesu, który tata uruchamia z Centrum."""
+
+    tiles = {tile["process"]: tile["blocker"] for tile in app.client.get("/api/runs/setup").json()["processes"]}
+    return {
+        **tiles,
+        "intermax": app.client.get("/api/intermax").json()["blocker"],
+        "report_entering": app.client.get("/api/report-entering").json()["blocker"],
+    }
+
+
+START_REQUESTS: dict[str, tuple[str, object]] = {
+    "preparation": ("/api/runs", {"process": "preparation", "period": UNREADABLE_PERIOD, "mode": "DRY-RUN"}),
+    "settlement": ("/api/runs", {"process": "settlement", "period": UNREADABLE_PERIOD, "mode": "DRY-RUN"}),
+    "efenix": ("/api/runs", {"process": "efenix", "period": UNREADABLE_PERIOD, "mode": "RUN"}),
+    "intermax": ("/api/intermax/run", None),
+    "report_entering": ("/api/report-entering/run", None),
+    "intermax_restore": ("/api/intermax/copies/restore", {"name": "kopia.xlsx"}),
+}
+"""Start każdego procesu z karty oraz przywrócenie Kopii INTERMAX, które bierze INTERMAX z Folderów."""
+
+
+def _starts(app: Centrum, processes: Sequence[str]) -> dict[str, tuple[int, object]]:
+    starts = {}
+    for process in processes:
+        url, body = START_REQUESTS[process]
+        response = app.client.post(url, json=body)
+        starts[process] = response.status_code, response.json()
+    return starts
+
+
+def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem_o_tym_pliku(tmp_path: Path) -> None:
+    """Decyzja 1A Maksa: plik Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie znaczy
+    Rejestru zleceń i folderu okresów niewskazanych. Karta każdego procesu i jego start mówią tacie, którego pliku nie
+    da się przeczytać, zamiast „Najpierw wskaż …”; Uruchomienie się nie zaczyna, a plik w ``config`` zostaje bez
+    zmian. Przy czytelnym pliku karty nie mają tego zdania, więc pochodzi ono z odebranego odczytu."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    sentence = refusal.settings_file_unreadable(SETTINGS_FILE).message
+    assert sentence not in _start_blockers(app).values()
+    before = _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / SETTINGS_FILE):
+        blockers = _start_blockers(app)
+        starts = _starts(app, list(START_REQUESTS))
+
+    expected_starts = dict.fromkeys(START_REQUESTS, (409, {"message": sentence}))
+    assert (blockers, starts) == (dict.fromkeys(blockers, sentence), expected_starts)
+    assert app.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
+    assert _config_files(app.tool.config) == before
+
+
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim(
+    tmp_path: Path, unreadable: str
+) -> None:
+    """Decyzja 2A Maksa: plik Reguł ilości albo Listy Urządzeń, którego system nie daje teraz czytać, nie znaczy reguł
+    z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez reguł taty. Karta i start Przygotowania i
+    Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; procesy bez Reguł ilości (Wycena w efenix,
+    Uporządkowanie INTERMAX, Wpisanie raportów) nie mają tej blokady."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    sentence = refusal.settings_file_unreadable(unreadable).message
+    counted = ("preparation", "settlement")
+    readable = _start_blockers(app)
+    assert sentence not in readable.values()
+    before = _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / unreadable):
+        blockers = _start_blockers(app)
+        starts = _starts(app, counted)
+
+    assert blockers == {process: sentence if process in counted else readable[process] for process in readable}
+    assert starts == dict.fromkeys(counted, (409, {"message": sentence}))
+    assert app.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
+    assert _config_files(app.tool.config) == before
+
+
+def _tools_rules(config: Path) -> QuantityRules:
+    """Reguły ilości, którymi liczą narzędzia Maksa (``read_snapshot``)."""
+
+    rules = read_snapshot(config).quantity_rules
+    assert isinstance(rules, QuantityRules), rules
+    return rules
 
 
 def _config_files(config: Path) -> dict[str, bytes]:

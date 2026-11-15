@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Final, Literal, assert_never, final
 
 from rozliczenia.centrum.contract.common import Problem
+from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem, RemovedWhat
 from rozliczenia.message import explorer_check, refer_if
 from rozliczenia.period_folder import PeriodFolderLookupError, PeriodPlace, month_folder_label, period_place_label
@@ -208,11 +209,7 @@ def settings_file_unreadable(file: str) -> Refusal:
     """Plik Ustawień ``file`` (nazwa w ``config``) jest, ale system nie daje go teraz czytać, więc odpowiedź z niego
     byłaby zgadywaniem (np. „najpierw wybierz Rejestr zleceń” przy Rejestrze wybranym w nieczytelnym pliku)."""
 
-    return _refused(
-        409,
-        f"Pliku {file} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i "
-        "spróbuj ponownie.",
-    )
+    return _refused(409, settings_messages.unreadable(file))
 
 
 def settings_history_unreadable() -> Refusal:

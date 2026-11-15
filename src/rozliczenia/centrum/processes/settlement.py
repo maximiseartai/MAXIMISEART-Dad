@@ -86,7 +86,7 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
         dry_run=start.dry_run,
         workers=start.worker_list(),
         worker_template_path=start.path("worker_template"),
-        quantity_rules=start.quantity_rules,
+        quantity_rules=start.counted_rules(),
     )
 
 

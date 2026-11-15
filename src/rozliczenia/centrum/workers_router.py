@@ -22,7 +22,8 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
 from rozliczenia.centrum.settings.files import FieldProblem, usable
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.folders import FOLDERS
+from rozliczenia.centrum.settings.owner import CentrumSettings, release_if_unreadable
 from rozliczenia.centrum.settings.workers import AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
@@ -59,7 +60,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         if isinstance(trial, FieldProblem):
             raise refusal.setting_refused(trial)
         if not edit.rename_confirmed:
-            old = old_name_periods(worker.name, edit.name, settings.snapshot().folders.periods_directory)
+            old = old_name_periods(worker.name, edit.name, release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory)
             if old:
                 return settings_contract.WorkerSaved(
                     settings=describe(settings.view()), rename_warning=messages.worker_rename_old_files(old)
@@ -75,7 +76,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
 
         snapshot = settings.snapshot()
         listed = usable(snapshot.workers) or WorkerList(())
-        return worker_suggestions(listed, snapshot.folders.register, files, today())
+        return worker_suggestions(listed, release_if_unreadable(snapshot.folders, FOLDERS).register, files, today())
 
     @router.post("/{login}/addresses", operation_id="assignWorkerAddress", responses=_REFUSED)
     def assign_address(login: str, assigned: contract.WorkerAddress) -> settings_contract.Choice:

@@ -19,6 +19,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
+from tests.fixtures.bez_dostepu import without_reading
 from tests.fixtures.centrum import FakeOneDrive, finished_view
 from tests.fixtures.centrum_processes import (
     FILLING_DEVICES,
@@ -395,6 +396,36 @@ def test_okres_bez_folderu_okresu_daje_komunikat_o_braku_pliku_zbiorczego(tmp_pa
 
     assert (view["state"], view["collective_file_exists"]) == ("problem", False)
     assert view["message"]["what"] == "Nie ma Pliku zbiorczego tego okresu."
+
+
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+def test_plik_regul_ilosci_albo_listy_urzadzen_bez_odczytu_to_odmowa_uzupelnienia_a_nie_reguly_z_wydania(
+    tmp_path: Path, unreadable: str
+) -> None:
+    """Decyzja 2A Maksa: plik pary Reguł ilości i Listy Urządzeń, którego system nie daje teraz czytać (np. trzyma go
+    OneDrive), nie znaczy reguł z Wydania. Strona Uzupełnienia i strona rodzaju mówią tacie, którego pliku nie da się
+    przeczytać, a okno „Uruchomić z zapisem?” nie liczy wierszy bez ilości (start Przebiegu rozliczeń odmawia tym samym
+    zdaniem). Przy czytelnym pliku te same strony liczą regułami taty."""
+
+    centrum = _prepared(tmp_path)
+    write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
+    write_dad_quantity_rules(
+        centrum.tool,
+        RULES_FILE,
+        "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n",
+        "",
+    )
+    window_url = f"/api/periods/{PERIOD}/without-quantity"
+    assert (centrum.view(URL)["state"], centrum.view(window_url)["state"]) == ("ready", "read")
+    sentence = {"message": f"Pliku {unreadable} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."}
+
+    with without_reading(tool_files.config_dir(tmp_path) / unreadable):
+        summary = centrum.client.get(URL)
+        table = centrum.client.get(f"{URL}/without_rule")
+        window = centrum.client.get(window_url)
+
+    assert (summary.status_code, summary.json(), table.status_code, table.json()) == (409, sentence, 409, sentence)
+    assert window.json() == {"state": "unread"}
 
 
 def test_zly_token_okresu_i_brak_folderu_okresow_sa_odmowa(tmp_path: Path) -> None:

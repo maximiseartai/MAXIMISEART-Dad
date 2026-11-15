@@ -327,3 +327,10 @@ def needed_by_rules(file: str, component: str) -> str:
 
 def unavailable(file: str) -> str:
     return f"Pliku {file} w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania."
+
+
+def unreadable(file: str) -> str:
+    """Plik ``file``, bez którego treści Centrum odmawia, zamiast brać treść z Wydania: odmowa
+    ``refusal.settings_file_unreadable`` i zdanie pliku w oknie Ustawień."""
+
+    return f"Pliku {file} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."
