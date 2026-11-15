@@ -17,11 +17,12 @@ import sys
 import time
 import unicodedata
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Final, Literal, get_args
 import imaplib
 
@@ -56,7 +57,7 @@ from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, settings_bytes
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.rule_forms import form_of
@@ -2999,10 +3000,13 @@ def test_zmiana_ustawien_z_wydania_bez_cofniecia_nie_ma_cofnij(tmp_path: Path) -
 # na czytelnych plikach i zapisuje, które pliki katalogu narzędzia czyta (``tests/fixtures/odczyt_bez_dostepu.py``),
 # a potem raz na każdy z nich, gdy system nie daje go czytać. Wynik ma być jednym z dwóch, które nie gubią danych taty
 # (ADR 0032): taki sam jak przy czytelnym pliku albo nic. Nowa operacja i nowa zmiana z Wydania wchodzą do testu same.
+# Odebrany odczyt sprawdza coś tylko na pliku, który w świecie próbki coś znaczy, więc operacja biegnie też raz bez
+# każdego pliku, który czyta przed swoim zapisem, a bieg bez niego ma dać inny wynik niż czytelny (``_meaningless``).
 
 _ROW_ID = re.compile(r"\b[0-9a-f]{32}\b")
 _MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?")
 _COMMIT_FIELD = re.compile(r'"commit": ?"[0-9a-f]{7,40}"')
+_REJECTED_MOMENT = re.compile(r"\.\d{8}-\d{6}$")
 
 
 def _without_run_differences(text: str, root: Path) -> str:
@@ -3029,14 +3033,21 @@ def _file_text(path: Path) -> str:
 
 
 def _tool_files(tool: ToolDirectory) -> dict[str, str]:
-    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu."""
+    """Stan katalogu narzędzia poza Logami: ścieżka → treść bez różnic przebiegu, także bez chwili w nazwie kopii złej
+    treści (``odrzucone/<plik>.RRRRMMDD-GGMMSS``). Wiersze Historii Ustawień stoją posortowane: wiersz zmiany spoza
+    Centrum, który bieg przy pliku bez odczytu odłożył, następny odczyt (``_next_reading``) dopisuje po wierszu operacji,
+    a czytelny bieg przed nim."""
 
     logs = tool.log_path.parent
-    return {
-        str(path.relative_to(tool.root)): _without_run_differences(_file_text(path), tool.root)
-        for path in sorted(tool.root.rglob("*"))
-        if path.is_file() and not path.is_relative_to(logs)
-    }
+    files: dict[str, str] = {}
+    for path in sorted(tool.root.rglob("*")):
+        if not path.is_file() or path.is_relative_to(logs):
+            continue
+        text = _without_run_differences(_file_text(path), tool.root)
+        if path.name == HISTORY_FILE:
+            text = "\n".join(sorted(text.splitlines()))
+        files[_REJECTED_MOMENT.sub(".<czas>", str(path.relative_to(tool.root)))] = text
+    return files
 
 
 def _settings_write_operations() -> set[str]:
@@ -3055,8 +3066,9 @@ SIGNED_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "footer": "Pozdrawi
 @dataclass(frozen=True)
 class SettingsWorld:
     """Centrum po krokach taty, w których każdy plik Ustawień ma znaczenie: usunięta reguła, składnik i Wykonawca w
-    Historii (nowy wpis nie może dostać ich id) i wpisy, które operacja zmienia. Systemowe okno wyboru ma w kolejce
-    folder ``INEA`` i plik ``Rejestr.xlsx``, inne niż wybrane w świecie."""
+    Historii (nowy wpis nie może dostać ich id), wpisy, które operacja zmienia, i zmiana każdego pliku poza Centrum
+    (``_dad_changed_every_file_outside_centrum``). Systemowe okno wyboru ma w kolejce folder ``INEA`` i plik
+    ``Rejestr.xlsx``, inne niż wybrane w świecie."""
 
     client: CentrumClient
     tool: ToolDirectory
@@ -3086,11 +3098,29 @@ def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[
     return rule, device
 
 
+def _dad_changed_every_file_outside_centrum(tool: ToolDirectory) -> None:
+    """Tata zmienił każdy plik Ustawień poza Centrum, odkąd Centrum go ostatnio widziało: pamięć każdego pliku ma stan
+    sprzed tej zmiany (plik z pustym wierszem na końcu, który tata usunął; przy sekrecie inny odcisk). Pamięć ma wtedy
+    znaczenie: z nią zapis albo odczyt pliku dopisuje wiersz zmiany spoza Centrum, a bez niej nie."""
+
+    for path in sorted((tool.config / MEMORY_DIRECTORY).glob("*.json")):
+        if path.name == APPLIED_FILE:
+            continue
+        remembered = Remembered.model_validate_json(path.read_bytes())
+        earlier = Remembered(
+            seen=b"\n" if remembered.seen is None else remembered.seen + b"\n",
+            good=None if remembered.good is None else remembered.good + b"\n",
+        )
+        path.write_bytes(earlier.model_dump_json(by_alias=True).encode("utf-8"))
+
+
 def _settings_world(tmp_path: Path, name: str) -> SettingsWorld:
     """Świat próbek: Rejestr zleceń i folder okresów bez loginów z Listy Wykonawców (więc usunięcie Wykonawcy przechodzi
-    sprawdzenie okresów), pliki taty i Maksa (``_files_of_dad_and_maks``) i wyjątek Kontroli ilości. Katalog narzędzia to
-    ``tmp_path / name``, a Rejestr, plik taty, a nie Ustawień, leży poza nim, jeden dla wszystkich światów testu. Wątki
-    Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
+    sprawdzenie okresów), pliki taty i Maksa (``_files_of_dad_and_maks``), wyjątek Kontroli ilości, plik przypomnień,
+    który tata właśnie poprawia (zła treść, a pamięć ma ostatnią dobrą, więc zapis odkłada złą do ``odrzucone``, a bez
+    pamięci zapisałby wartości domyślne), i zmiana każdego pliku poza Centrum (``_dad_changed_every_file_outside_centrum``).
+    Katalog narzędzia to ``tmp_path / name``, a Rejestr, plik taty, a nie Ustawień, leży poza nim, jeden dla wszystkich
+    światów testu. Wątki Centrum w tle kończą się przed powrotem, więc nie czytają ani nie piszą w czasie próbki."""
 
     register = tmp_path / "Rejestr" / REGISTER_NAME
     if not register.exists():
@@ -3120,6 +3150,9 @@ def _settings_world(tmp_path: Path, name: str) -> SettingsWorld:
     app.platform.chosen_folders.append(root / "INEA")
     app.platform.chosen_files.append(root / "Rejestr.xlsx")
     client.stop()
+    reminders = app.tool.config / REMINDERS_FILE
+    reminders.write_bytes(reminders.read_bytes() + b"nieznany_klucz: 1\n")
+    _dad_changed_every_file_outside_centrum(app.tool)
     return SettingsWorld(client, app.tool, rule, device, "jan.zostaje", undo)
 
 
@@ -3132,7 +3165,8 @@ DIFFERENCE_ROWS: list[dict[str, CellValue]] = [
 
 def _differences_world(tmp_path: Path, name: str) -> SettingsWorld:
     """Świat „To był wyjątek”: okres po Przebiegu rozliczeń z dwiema różnicami Kontroli ilości, z których tata jedną już
-    oznaczył (plik wyjątków jest przed próbką), i pliki taty i Maksa (``_files_of_dad_and_maks``)."""
+    oznaczył (plik wyjątków jest przed próbką), pliki taty i Maksa (``_files_of_dad_and_maks``) i zmiana każdego pliku
+    poza Centrum (``_dad_changed_every_file_outside_centrum``)."""
 
     settling = settling_centrum(tmp_path / name)
     write_quantity_source(settling.collective_file, DIFFERENCE_ROWS)
@@ -3142,6 +3176,7 @@ def _differences_world(tmp_path: Path, name: str) -> SettingsWorld:
     first, second = client.get(f"{QUANTITY_RULES_URL}/differences").json()["differences"]
     assert client.post(f"{QUANTITY_RULES_URL}/differences/{first['id']}/exception").status_code == 200
     client.stop()
+    _dad_changed_every_file_outside_centrum(settling.tool)
     return SettingsWorld(client, settling.tool, difference=second["id"])
 
 
@@ -3215,34 +3250,143 @@ def _writes_change(operation: str) -> bool:
 
 
 @dataclass(frozen=True)
-class WriteOutcome:
-    """Wynik zapytania: status, odpowiedź i skutek w katalogu narzędzia poza Logami (ścieżka → treść po zapytaniu, ``None``
-    dla usuniętego pliku) bez różnic przebiegu, więc pliki świata sprzed zapytania (np. z Przebiegu) go nie zmieniają."""
+class Outcome:
+    """Wynik zapytania: status, odpowiedź i skutek w katalogu narzędzia poza Logami po następnym odczycie przy czytelnych
+    plikach (ścieżka → treść po nim, ``None`` dla usuniętego pliku) bez różnic przebiegu (``_tool_files``), więc pliki
+    świata sprzed zapytania (np. z Przebiegu) go nie zmieniają."""
 
     status: int
     body: str
     changed: dict[str, str | None]
 
 
-def _send_without_reading(
-    world: SettingsWorld, request: SettingsRequest, denied: frozenset[Path] = frozenset()
-) -> tuple[WriteOutcome, list[Path]]:
-    """Zapytanie ``request`` w świecie ``world``, gdy system nie daje czytać plików ``denied``: wynik i pliki katalogu
-    narzędzia poza Logami, które operacja otwierała do odczytu."""
+@dataclass(frozen=True)
+class Trial:
+    """Bieg zapytania: wynik i pliki katalogu narzędzia poza Logami, które zapytanie otwierało do odczytu (``read``), te z
+    nich, które czytało przed swoim ostatnim zapisem (``read_before_write``), i te, których przed nim nie było."""
 
-    method, url, body = request(world)
-    tool = world.tool
+    outcome: Outcome
+    read: tuple[Path, ...]
+    read_before_write: tuple[Path, ...]
+    absent: tuple[Path, ...]
+
+
+def _changed(before: Mapping[str, str], after: Mapping[str, str]) -> dict[str, str | None]:
+    return {name: after.get(name) for name in {*before, *after} if before.get(name) != after.get(name)}
+
+
+def _trial(
+    tool: ToolDirectory,
+    ask: Callable[[], tuple[int, str]],
+    settle: Callable[[], None],
+    *,
+    denied: Path | None = None,
+    missing: Path | None = None,
+) -> Trial:
+    """Bieg zapytania ``ask`` (status, odpowiedź) w katalogu ``tool``, gdy system nie daje czytać pliku ``denied`` albo gdy
+    pliku ``missing`` nie ma, a po nim następny odczyt przy czytelnych plikach (``settle``). Plik ``missing``, którego
+    zapytanie nie zapisało, wraca przed ``settle``: nieczytelny plik wzięty za brak pliku zostaje na dysku."""
+
+    root = tool.root
     before = _tool_files(tool)
-    with reading(tool.root, frozenset(tool.root / path for path in denied)) as seen:
+    kept = None if missing is None else (root / missing, (root / missing).read_bytes())
+    if kept is not None:
+        kept[0].unlink()
+    with reading(root, frozenset() if denied is None else frozenset({root / denied})) as reads:
+        status, body = ask()
+    if kept is not None and not kept[0].exists():
+        kept[0].write_bytes(kept[1])
+    settle()
+    logs = tool.log_path.parent
+
+    def own(paths: Iterable[Path]) -> tuple[Path, ...]:
+        return tuple(sorted(path.relative_to(root) for path in paths if not path.is_relative_to(logs)))
+
+    read = own(reads.seen)
+    outcome = Outcome(status, _without_run_differences(body, root), _changed(before, _tool_files(tool)))
+    absent = tuple(path for path in read if str(path) not in before)
+    return Trial(outcome, read, own(reads.before_last_write(outside=logs)), absent)
+
+
+def _settings_reads() -> list[str]:
+    return sorted(
+        path
+        for path, methods in _committed_contract()["paths"].items()
+        if path.startswith("/api/settings") and "get" in methods and "{" not in path
+    )
+
+
+def _next_reading(client: CentrumClient) -> None:
+    """Następny odczyt Ustawień przy czytelnych plikach, jak okno Ustawień taty po zapisie: każdy odczyt (GET) Ustawień
+    z kontraktu bez parametru w ścieżce. Zapisuje wiersz zmiany spoza Centrum, który bieg przy pliku bez odczytu odłożył."""
+
+    for path in _settings_reads():
+        response = client.get(path)
+        assert response.status_code == 200, f"{path}: {response.status_code} {response.text[:200]}"
+    client.stop()
+
+
+def _send(
+    world: SettingsWorld, request: SettingsRequest, *, denied: Path | None = None, missing: Path | None = None
+) -> Trial:
+    """Bieg zapytania ``request`` w świecie ``world`` (``_trial``) z następnym odczytem Ustawień (``_next_reading``)."""
+
+    def ask() -> tuple[int, str]:
+        method, url, body = request(world)
         response = world.client.request(method, url, json=body)
         world.client.stop()
-    after = _tool_files(tool)
-    changed = {name: after.get(name) for name in {*before, *after} if before.get(name) != after.get(name)}
-    logs = tool.log_path.parent
-    read = sorted(path.relative_to(tool.root) for path in seen if not path.is_relative_to(logs))
-    absent = [str(path) for path in read if str(path) not in before]
-    assert not absent, f"{method} {url} czyta pliki, których świat próbki nie ma przed zapytaniem: {absent}"
-    return WriteOutcome(response.status_code, _without_run_differences(response.text, tool.root), changed), read
+        return response.status_code, response.text
+
+    return _trial(world.tool, ask, lambda: _next_reading(world.client), denied=denied, missing=missing)
+
+
+def _untouched(world: SettingsWorld) -> dict[str, str | None]:
+    """Skutek samego następnego odczytu Ustawień w świecie ``world``, bez zapytania: skutek odmowy, która nic nie gubi."""
+
+    before = _tool_files(world.tool)
+    _next_reading(world.client)
+    return _changed(before, _tool_files(world.tool))
+
+
+def _meaningless(readable: Trial, without: Callable[[Path], Outcome]) -> list[Path]:
+    """Pliki, które zapytanie czyta przed swoim ostatnim zapisem, a bieg bez pliku (``without``) daje ten sam status i
+    skutek co czytelny bieg, poza samym plikiem: produkt, który nieczytelny plik bierze za brak pliku, daje wtedy wynik
+    jak przy czytelnym, więc odebrany odczyt takiego pliku niczego nie sprawdza. Odczyt po ostatnim zapisie (widok w
+    odpowiedzi) nie zmienia niczego, co zapytanie zapisało, więc warunek go nie obejmuje."""
+
+    def apart_from(changed: Mapping[str, str | None], path: Path) -> dict[str, str | None]:
+        return {name: text for name, text in changed.items() if name != str(path)}
+
+    found: list[Path] = []
+    for path in readable.read_before_write:
+        missing = without(path)
+        same = apart_from(missing.changed, path) == apart_from(readable.outcome.changed, path)
+        if missing.status == readable.outcome.status and same:
+            found.append(path)
+    return found
+
+
+def _kept_data(locked: Outcome, readable: Outcome, untouched: Mapping[str, str | None]) -> bool:
+    """Wynik przy pliku bez odczytu, który nie gubi danych taty (ADR 0032): odmowa ze zdaniem, po której skutek jest jak
+    bez zapytania, albo status i skutek jak przy czytelnym pliku. Skutek liczy się po następnym odczycie, bo produkt
+    odkłada wiersz zmiany spoza Centrum w pliku, którego teraz nie czyta, do odczytu, który go przeczyta."""
+
+    if locked.status >= 400:
+        return '"message"' in locked.body and locked.changed == untouched
+    return (locked.status, locked.changed) == (readable.status, readable.changed)
+
+
+_USED_KEYS_ONLY_FOR_NEW_ENTRY = (
+    "klucze z Historii dostaje tylko nowy wpis (``_with_used_keys`` czyta Historię dla każdej zmiany sekcji Urządzenia "
+    "i edytora reguł), a zmiana i usunięcie nowego wpisu nie tworzą, więc treść Historii nie zmienia ich zapisu w żadnym "
+    "świecie; odebrana Historia daje odmowę"
+)
+READ_WITHOUT_EFFECT: Final[dict[tuple[str, Path], str]] = {
+    (operation, Path("config") / HISTORY_FILE): _USED_KEYS_ONLY_FOR_NEW_ENTRY
+    for operation in ("changeDevice", "removeDevice", "changeQuantityRule", "removeQuantityRule")
+}
+"""Plik, który operacja czyta przed zapisem, ale którego treść nie zmienia jej zapisu w żadnym świecie, z powodem: warunek
+znaczenia (``_meaningless``) go nie zgłasza, a test pada, gdy plik zaczyna coś znaczyć."""
 
 
 @pytest.mark.parametrize("operation", sorted(set(SETTINGS_WRITES) & _settings_write_operations()))
@@ -3251,37 +3395,51 @@ def test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_w
 ) -> None:
     """Plik, którego system nie daje czytać, nie jest ani brakiem pliku, ani pustym plikiem: operacja taty odmawia ze
     zdaniem i niczego nie zmienia albo zapisuje dokładnie to, co przy czytelnym pliku (widok w odpowiedzi może wtedy
-    pokazać sekcję tego pliku jako nieczytelną).
+    pokazać sekcję tego pliku jako nieczytelną); skutek liczy się po następnym odczycie Ustawień (``_kept_data``).
 
     Próbka sprawdza coś tylko wtedy, gdy przy czytelnych plikach operacja wchodzi, operacja zapisu (odpowiedź z polem
-    ``change`` w kontrakcie) zapisuje zmianę z wierszem Historii, a każdy plik, który operacja czyta, jest w świecie przed
-    nią: odebrany odczyt pliku, którego nie ma, to dla produktu brak pliku tak samo jak przy czytelnym biegu. Podgląd i
-    otwarcie Rejestru niczego nie zapisują, więc test sprawdza u nich tylko status i to, że nic nie zapisują.
-    Odczyt spoza Pythona w procesie testu to próbki ``ZNANE_LUKI_ODCZYTU``.
+    ``change`` w kontrakcie) zapisuje zmianę z wierszem Historii, każdy plik, który operacja czyta, jest w świecie przed
+    nią, a każdy, który czyta przed swoim zapisem, coś w świecie znaczy (``_meaningless``, poza ``READ_WITHOUT_EFFECT``).
+    Podgląd i otwarcie Rejestru niczego nie zapisują, więc test sprawdza u nich status i skutek po następnym odczycie.
+    Granicę pokazują próbki ``ZNANE_LUKI_ODCZYTU`` (odczyt spoza haka audytu) i ``ZNANE_LUKI_ZNACZENIA`` (warunek
+    znaczenia i porównanie wyniku).
     """
 
     request = SETTINGS_WRITES[operation]
     world_of = OWN_WORLDS.get(operation, _settings_world)
-    readable, read = _send_without_reading(world_of(tmp_path, "czytelne"), request)
-    assert readable.status < 400, f"{operation} przy czytelnych plikach ma wejść: {readable.status} {readable.body[:300]}"
+    worlds = (world_of(tmp_path, f"swiat-{index}") for index in itertools.count())
+    readable = _send(next(worlds), request)
+    untouched = _untouched(next(worlds))
+    shown = f"{readable.outcome.status} {readable.outcome.body[:300]}"
+    assert readable.outcome.status < 400, f"{operation} przy czytelnych plikach ma wejść: {shown}"
+    assert not readable.absent, f"{operation} czyta pliki, których świat próbki nie ma przed nią: {readable.absent}"
     if _writes_change(operation):
-        assert json.loads(readable.body)["change"] is not None and readable.changed, (
-            f"{operation} przy czytelnych plikach ma zapisać zmianę z wierszem Historii: {readable.body[:300]}"
+        assert json.loads(readable.outcome.body)["change"] is not None and readable.outcome.changed != untouched, (
+            f"{operation} przy czytelnych plikach ma zapisać zmianę z wierszem Historii: {shown}"
         )
+    meaningless = set(_meaningless(readable, lambda path: _send(next(worlds), request, missing=path).outcome))
+    without_effect = {path for (name, path) in READ_WITHOUT_EFFECT if name == operation}
+    assert meaningless <= without_effect, "\n".join(
+        [
+            *(f"plik {path} nic nie znaczy w świecie próbki operacji {operation}" for path in sorted(meaningless - without_effect)),
+            "Bieg bez pliku daje ten sam wynik co przy czytelnym, więc odebrany odczyt niczego nie sprawdza: daj światowi "
+            "próbki stan, w którym treść pliku zmienia wynik operacji.",
+        ]
+    )
+    assert without_effect <= meaningless, (
+        f"Pliki {sorted(map(str, without_effect - meaningless))} coś znaczą w świecie operacji {operation} albo nie są "
+        "czytane przed zapisem: usuń je z READ_WITHOUT_EFFECT."
+    )
     wrong: list[str] = []
-    for index, locked in enumerate(read):
-        outcome, _ = _send_without_reading(world_of(tmp_path, f"bez-odczytu-{index}"), request, frozenset({locked}))
-        refused = outcome.status >= 400 and '"message"' in outcome.body and not outcome.changed
-        if not refused and (outcome.status, outcome.changed) != (readable.status, readable.changed):
-            changed = sorted(
-                name
-                for name in {*outcome.changed, *readable.changed}
-                if outcome.changed.get(name, "") != readable.changed.get(name, "")
-            )
-            wrong.append(f"{locked}: {outcome.status}, inne pliki {changed}: {outcome.body[:200]}")
+    for locked in readable.read:
+        outcome = _send(next(worlds), request, denied=locked).outcome
+        if not _kept_data(outcome, readable.outcome, untouched):
+            expected = untouched if outcome.status >= 400 else readable.outcome.changed
+            other = sorted(n for n in {*outcome.changed, *expected} if outcome.changed.get(n) != expected.get(n))
+            wrong.append(f"{locked}: {outcome.status}, inne pliki {other}: {outcome.body[:200]}")
     assert not wrong, (
         f"{operation} przy pliku bez odczytu ani nie odmówiła bez zmiany plików, ani nie dała wyniku jak przy czytelnym "
-        f"pliku ({readable.status} {readable.body[:200]}):\n" + "\n".join(wrong)
+        f"pliku ({shown[:200]}):\n" + "\n".join(wrong)
     )
 
 
@@ -3318,15 +3476,88 @@ def test_znane_luki_odczytu_bez_dostepu_przechodza_przez_hak_audytu(tmp_path: Pa
         baza.execute("insert into t values ('tata')")
     zgloszenia: dict[str, list[str]] = {}
     for opis, czytaj in czytania.items():
-        with reading(plik.parent, frozenset({plik})) as seen:
+        with reading(plik.parent, frozenset({plik})) as reads:
             try:
                 czytaj(plik)
             except PermissionError as odmowa:
                 zgloszenia[opis] = [f"hak odmawia: {odmowa}"]
                 continue
-        zgloszenia[opis] = [f"hak widzi odczyt {plik.name}"] if seen else []
+        zgloszenia[opis] = [f"hak widzi odczyt {plik.name}"] if reads.seen else []
 
     assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ODCZYTU)")
+
+
+ZNANE_LUKI_ZNACZENIA: Final = {
+    "warunek usuwa plik, a nie zmienia jego treści: plik, który znaczy samym istnieniem, przechodzi z treścią bez znaczenia": (
+        "from pathlib import Path\n\n\n"
+        "def swiat(katalog: Path) -> None:\n"
+        "    (katalog / 'ustawienie.txt').write_text('stopka taty', encoding='utf-8')\n\n\n"
+        "def zapytanie(katalog: Path) -> tuple[int, str]:\n"
+        "    plik = katalog / 'ustawienie.txt'\n"
+        "    if not plik.exists():\n"
+        "        return 404, ''\n"
+        "    try:\n"
+        "        stare = plik.read_text(encoding='utf-8')\n"
+        "    except PermissionError:\n"
+        "        stare = ''\n"
+        "    if 'zakaz' in stare:\n"
+        "        return 409, ''\n"
+        "    (katalog / 'zapis.txt').write_text('nowe', encoding='utf-8')\n"
+        "    return 200, ''\n"
+    ),
+    "odczyt po ostatnim zapisie: warunek go pomija, a porównanie wyniku nie czyta odpowiedzi": (
+        "from pathlib import Path\n\n\n"
+        "def swiat(katalog: Path) -> None:\n"
+        "    (katalog / 'ustawienie.txt').write_text('stopka taty', encoding='utf-8')\n\n\n"
+        "def zapytanie(katalog: Path) -> tuple[int, str]:\n"
+        "    (katalog / 'zapis.txt').write_text('nowe', encoding='utf-8')\n"
+        "    try:\n"
+        "        widok = (katalog / 'ustawienie.txt').read_text(encoding='utf-8')\n"
+        "    except PermissionError:\n"
+        "        widok = 'Pozdrawiam'\n"
+        "    return 200, widok\n"
+    ),
+}
+"""Plik bez odczytu, który zapytanie bierze za pusty albo domyślny, a ani warunek znaczenia (``_meaningless``), ani
+porównanie wyniku (``_kept_data``) tego nie zgłaszają: każda próbka to moduł ze ``swiat(katalog)`` i
+``zapytanie(katalog) -> (status, odpowiedź)`` na plikach w katalogu narzędzia."""
+
+
+def _sample_trial(root: Path, sample: ModuleType, **trial: Path) -> Trial:
+    """Bieg próbki ``sample`` w nowym katalogu narzędzia ``root`` (``_trial``), bez następnego odczytu."""
+
+    root.mkdir(parents=True)
+    sample.swiat(root)
+    return _trial(ToolDirectory(root), lambda: sample.zapytanie(root), lambda: None, **trial)
+
+
+def _sample_reports(root: Path, sample: ModuleType) -> list[str]:
+    """Zgłoszenia warunku znaczenia i porównania wyniku dla próbki ``sample`` w katalogach pod ``root``; bez zapytania
+    próbka niczego nie zmienia."""
+
+    roots = (root / str(index) for index in itertools.count())
+    readable = _sample_trial(next(roots), sample)
+    untouched: dict[str, str | None] = {}
+    reports = [
+        f"plik {path} nic nie znaczy"
+        for path in _meaningless(readable, lambda path: _sample_trial(next(roots), sample, missing=path).outcome)
+    ]
+    for locked in readable.read:
+        outcome = _sample_trial(next(roots), sample, denied=locked).outcome
+        if not _kept_data(outcome, readable.outcome, untouched):
+            reports.append(f"{locked} bez odczytu: {outcome.status}, inny wynik niż czytelny")
+    return reports
+
+
+def test_znane_luki_znaczenia_pliku_przechodza_przez_warunek_i_porownanie_wyniku(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    zgloszenia = {
+        opis: _sample_reports(tmp_path / f"probka-{numer}", modul(plik))
+        for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_ZNACZENIA, probki).items())
+    }
+
+    assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ZNACZENIA)")
 
 
 def _old_worker_files(tool: ToolDirectory) -> None:
@@ -3412,12 +3643,12 @@ def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czy
 
     readable_tool = _release_world(tmp_path / "czytelne", change)
     untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
-    with reading(readable_tool.root) as seen:
+    with reading(readable_tool.root) as reads:
         started(readable_tool, RELEASE_CHANGES).stop()
     readable = _release_effect(readable_tool, change)
     assert readable.remembered == "zastosowano", f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"
     logs = readable_tool.log_path.parent
-    read = sorted(path.relative_to(readable_tool.root) for path in seen if not path.is_relative_to(logs))
+    read = sorted(path.relative_to(readable_tool.root) for path in reads.seen if not path.is_relative_to(logs))
 
     wrong: list[str] = []
     for index, locked in enumerate(read):
