@@ -152,13 +152,8 @@ WERDYKTY = {
     "wazne-idiom-ucieczka": _text(*_MAJOR, "Idiom: zakazane-wywolanie", "## Sprawdzone", "- diff"),
     "wazne-idiom-bez-reguly": _text(*_MAJOR, "Idiom: bez reguły brak-testu jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "wazne-idiom-innej-reguly": _text(*_MAJOR, "Idiom: inna-regula jak #1553 W2 r1", "## Sprawdzone", "- diff"),
-    # Klasa zamknięta typem albo testem (ADR 0036): bramka jej nie dowodzi, a dowód mutacji podaje PASS rundy po poprawce.
     "wazne-idiom-typ": _text(*_MAJOR, "Idiom: bez reguły typ jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "wazne-idiom-test-klasy": _text(*_MAJOR, "Idiom: bez reguły test-klasy jak #1553 W1 r2", "## Sprawdzone", "- diff"),
-    "sprawdzone-mutacja": _text(
-        "## Sprawdzone",
-        "- W1 r1 typ: tools/mutacje.py --zmiana kod/inne.py 'INNE: Final = 1' 'INNE = 1' -- -m mypy kod → WYKRYTA: kod/inne.py → Cannot assign to final name; MUTACJE OK",
-    ),
     "proza": "Wszystko dobrze, bez uwag.",
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }

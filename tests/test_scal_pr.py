@@ -2430,14 +2430,13 @@ def _idiom_gate(
 
 def _idiom_pull(
     tmp_path: Path,
-    verdict: str,
-    *more: str,
+    *verdicts: str,
     registry: list[dict[str, object]] | None = None,
     proof: tuple[int, str] = PROOF_OK,
     passed: bool = True,
     gate: str = GATE_BEFORE_VERDICTS,
 ) -> tuple[MergeGitHub, str]:
-    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdict`` i ``more`` na starszym commicie,
+    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdicts`` na starszym commicie,
     sekcją ``## Korzeń`` i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, rejestr podaje
     PR-y ``registry``, a dowód kończy się ``proof``."""
 
@@ -2449,7 +2448,7 @@ def _idiom_pull(
     github.graphql = registry or []
     github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
-    for body in (verdict, *more):
+    for body in verdicts:
         github.comment(1, body.format(commit=OLD))
     if passed:
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
@@ -2532,15 +2531,20 @@ def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_z
 
 
 @pytest.mark.parametrize("klass", ["typ", "test-klasy"])
-def test_pole_idiom_klasy_typu_albo_testu_scala_sie_bez_reguly_z_dowodem_mutacji_w_pass(tmp_path: Path, klass: str) -> None:
-    """Klasę zamkniętą typem albo testem dowodzi recenzent mutacją w „## Sprawdzone” PASS (ADR 0036), a bramka nie
-    uruchamia dowodu reguły i nie żąda reguły ast-grep."""
+def test_pole_idiom_klasy_typu_albo_testu_trafia_na_pr_a_scalenie_po_poprawce_nie_zada_reguly(tmp_path: Path, klass: str) -> None:
+    """Ważne z klasą ``typ`` albo ``test-klasy`` (ADR 0036, „Idiom bez reguły”) ``--werdykt`` publikuje, a bramka po
+    ``PASS`` poprawki nie uruchamia dowodu reguły."""
 
-    github, head = _idiom_pull(tmp_path, _idiom_verdict(klass), passed=False)
-    github.comment(1, "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n{body}\n".format(head=head, body=werdykty_szablonu.WERDYKTY["sprawdzone-mutacja"]))
+    github, first = _idiom_pull(tmp_path, passed=False)
+    path = tmp_path / "runda-1.md"
+    path.write_text(_idiom_verdict(klass).format(commit=first) + "\n", encoding="utf-8")
+    published = github.run("1", "--werdykt", str(path))
+    head = github.push_pull(1, {"kod/inne.py": "INNE: Final = 1\n"})
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
 
     answered = github.run("1", "--bez-merge")
 
+    assert published.returncode == 0, published.stdout + published.stderr
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
     assert _proofs(github) == []
 

@@ -3,10 +3,7 @@ reguły”): PR z Ważnym z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n>
 PR stoi reguła ast-grep o tym id, a jej dowód przechodzi.
 
 Ważne z polem to Ważne werdyktów ``FAIL`` tego PR (``szablon_werdyktu.findings``, każda runda). Postać ``Idiom: bez
-reguły <klasa> jak #N W<n> r<k>`` niczego od bramki nie wymaga. Klasy ``typ`` i ``test-klasy`` (idiom zamyka mypy albo
-test klasy) dowodzi recenzent rundy po poprawce, a nie bramka: punkt jego „## Sprawdzone” podaje polecenie
-``tools/mutacje.py``, które przywraca na HEAD złą postać z ``Gdzie``, z linią ``WYKRYTA`` i ostatnią ``MUTACJE OK`` (ADR 0036,
-„Klasa zamknięta typem albo testem”).
+reguły <klasa> jak #N W<n> r<k>`` niczego nie wymaga.
 
 Dowód to ``tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>`` z kodu bazy PR (``tools/scal_pr.py``
 biegnie z kopii bazy, linia ``SĘDZIA``), tym samym Pythonem: regułę wybiera sam ast-grep z ``sgconfig.yml`` na HEAD PR

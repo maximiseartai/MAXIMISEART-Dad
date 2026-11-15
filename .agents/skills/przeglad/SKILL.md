@@ -87,12 +87,11 @@ Drugie wystąpienie idiomu ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.m
 - Pole `Idiom:` pisze recenzent, nie autor, w Ważnym po polu `Szczebel:`, w jednej z trzech postaci:
   - `Idiom: <id> jak #N W<n> r<k>`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
-  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy żaden mechanizm z definicji chwastu nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`, `typ`, `test-klasy`).
+  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy idiom nie dostaje reguły, a `<klasa>` spełnia swój warunek z tabeli punktu „Idiom bez reguły” ADR 0036.
 - PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N W<n> r<k>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` i gdy jej dowód przechodzi.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły; wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
   Dowód to `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>` z każdym przypadkiem tej reguły z historii jej pól `Idiom:`, a `tools/scal_pr.py` uruchamia go z kodu bazy przy merge'u; dziś umie tylko reguły ast-grep.
-- Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
-  Klasa `typ` albo `test-klasy` znaczy, że idiom zamyka mypy albo test klasy, a dowodzi tego recenzent rundy po poprawce, nie bramka: w „## Sprawdzone” podaje polecenie `tools/mutacje.py`, które przywraca na HEAD złą postać z `Gdzie`, z linią `WYKRYTA` i ostatnią linią `MUTACJE OK`; brak tego punktu albo nieprawdziwy dowód to Ważne.
+- Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a; to, co sprawdza recenzent następnej rundy (regułę albo dowód mutacji), podaje dla każdej klasy ta sama tabela ADR 0036.
 - Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela; do merge'a PR kroku ukryć ticketu #1676 to Ważne z sekcji „Co jest porażką”.
 
 ## Dowody

@@ -48,7 +48,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 - **Pole werdyktu.** Pole pisze recenzent, nie autor. Ma jedną z trzech postaci:
   - `Idiom: <id> jak #N Wn rk`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
-  - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy żaden mechanizm z sekcji „Jednostka chwastu” nie wyrazi idiomu, a `<klasa>` pochodzi z zamkniętej listy (`brak-testu`, `stan-kroku`, `typ`, `test-klasy`).
+  - `Idiom: bez reguły <klasa> jak #N Wn rk`, gdy idiom nie dostaje reguły, a `<klasa>` pochodzi z zamkniętej listy w punkcie „Idiom bez reguły”, który podaje też warunek każdej klasy.
   Powód: jawne oznaczenie daje deterministyczne źródło klastra, a grupowanie modelem zależałoby od zgodności oceniających, której nikt nie zmierzył. Autor nie wybiera postaci, więc nie może wybrać tańszej.
 - **Warunek merge'a.** PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N Wn rk` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` (pole `id` reguły ast-grep, klucz `banned-api` albo nazwa kontraktu import-linter) i gdy jej dowód (niżej) przechodzi na przypadku z tego Ważnego.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły. Wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
@@ -59,12 +59,20 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Powód: cztery rundy przeglądu tego ADR znalazły cztery formy ukrycia w prozie, w tym zwolnienie całego `TID251` dla 16 plików właścicieli, które istnieje już na `main`. Granicę mechanizmu da się sprawdzić tylko na kodzie z testem.
 - **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
-- **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a. Klasa `brak-testu` zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)), a każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
-  To jedyne miejsce osądu w pętli. Pisze je niezależny recenzent, a recenzent następnej rundy daje Ważne, gdy pokaże regułę, która ten idiom wyraża.
-  Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
+- **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a bramka niczego w nim nie sprawdza; każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
+  To jedyne miejsce osądu w pętli: klasę wybiera niezależny recenzent według warunku z tabeli, a recenzent następnej rundy daje Ważne, gdy sprawdzenie z kolumny „Następna runda” się nie zgadza.
 
-- **Klasa zamknięta typem albo testem.** Klasę `typ` albo `test-klasy` recenzent pisze, gdy idiom zamyka mypy albo test klasy (szczebel (b) albo (c)). Bramka jej nie sprawdza: recenzent rundy po poprawce podaje w „## Sprawdzone” mutację `tools/mutacje.py`, która przywraca na HEAD złą postać z `Gdzie`, z poleceniem, linią `WYKRYTA` i ostatnią linią `MUTACJE OK`, a brak tego dowodu albo dowód nieprawdziwy to Ważne następnej rundy.
-  Powód: bramka, która przyjmowała tylko regułę ast-grep, popychała autora na szczebel (d), choć wyższy działał, a automatyczny dowód typu i testu po czterech rundach przeglądu dało się obejść przez tekst wyjścia narzędzi; Maks 15.11.2026 wybrał recenzenta jako bramkę ([#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)), jak w [#1888](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1888#issuecomment-6902408070).
+  | Klasa | Recenzent pisze ją, gdy | Następna runda |
+  |---|---|---|
+  | `brak-testu` | brakuje testu, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokazuje regułę, która idiom wyraża, albo nie ma Ważnego; brak testu zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)) |
+  | `stan-kroku` | błąd to stan po wykonaniu kroku, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokazuje regułę, która idiom wyraża, albo nie ma Ważnego |
+  | `typ` | idiom zamyka typ, z którym zła postać nie przechodzi mypy (szczebel (b)), także gdy regułą też da się go wyrazić | podaje dowód mutacji, a reguły nie żąda |
+  | `test-klasy` | idiom zamyka test zachowania, który łapie całą klasę (szczebel (c)), także gdy regułą też da się go wyrazić | podaje dowód mutacji, a reguły nie żąda |
+
+  Dowód mutacji to punkt „## Sprawdzone” recenzenta rundy po poprawce: polecenie `tools/mutacje.py`, które przywraca na HEAD złą postać z `Gdzie`, z linią `WYKRYTA` i ostatnią linią `MUTACJE OK`; brak tego punktu albo nieprawdziwy dowód to Ważne.
+  Luka: gdy runda po poprawce kończy się `PASS` bez punktu dowodu, PR scala się bez dowodu, bo następnej rundy nie ma, a bramka tego nie sprawdza; ślad zostaje tylko w poniedziałkowym raporcie.
+  Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
+  Powód klas `typ` i `test-klasy`: bramka, która przyjmowała tylko regułę ast-grep, popychała autora na szczebel (d), choć wyższy działał, a automatyczny dowód typu i testu po czterech rundach przeglądu dało się obejść przez tekst wyjścia narzędzi; Maks 15.11.2026 wybrał recenzenta jako bramkę ([#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)), jak w [#1888](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1888#issuecomment-6902408070), i przyjął tę lukę zamiast maszynerii dowodu.
 
 ### Issues „Chwast”
 
@@ -124,7 +132,7 @@ Pozostałe wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` ni
 - Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5); od merge'a PR bramki do merge'a PR kroku ukryć łapie to tylko przegląd (reguła przejściowa).
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
-- Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły`, którą raport liczy co tydzień.
+- Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły` i dowód mutacji klas `typ` i `test-klasy`, a raport liczy tę postać co tydzień.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
 - Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie od merge'a jego wykonawcy z tabeli „Wdrożenie”.
 - Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).

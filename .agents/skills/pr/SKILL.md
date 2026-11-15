@@ -88,7 +88,7 @@ Dowód: <polecenie i wynik>
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
 - A Ważne with the field `Idiom: <id>` or `Idiom: <id> jak #N W<n> r<k>`, which the reviewer writes, merges only when an ast-grep rule with that id stands on HEAD and its proof passes on every case of that id from the history of `Idiom:` fields ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)); a `ZNANE_LUKI` sample never replaces the rule.
   `tools/scal_pr.py` runs the proof from the base code, and its block's `Dowód:` is the last line `DOWÓD OK` of `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`.
-  A Ważne with `Idiom: bez reguły <klasa> jak #N W<n> r<k>` needs no rule; for the class `typ` or `test-klasy` the reviewer of the next round proves the type or class test with a `tools/mutacje.py` mutation in the verdict.
+  A Ważne with `Idiom: bez reguły <klasa> jak #N W<n> r<k>` needs no rule.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
 ## Language and length
