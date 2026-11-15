@@ -3619,10 +3619,44 @@ def _release_effect(tool: ToolDirectory, change: ReleaseChange[Any]) -> ReleaseE
 
 
 def _release_world(tmp_path: Path, change: ReleaseChange[Any]) -> ToolDirectory:
-    tool = ToolDirectory(tmp_path)
+    return _in_world(tmp_path, RELEASE_CHANGE_WORLDS[change.id])
+
+
+def _in_world(root: Path, world: Callable[[ToolDirectory], None]) -> ToolDirectory:
+    tool = ToolDirectory(root)
     tool.config.mkdir(parents=True)
-    RELEASE_CHANGE_WORLDS[change.id](tool)
+    world(tool)
     return tool
+
+
+def _release_reports(
+    root: Path, change: ReleaseChange[Any], world: Callable[[ToolDirectory], None], changes: tuple[ReleaseChange[Any], ...]
+) -> list[str]:
+    """Zgłoszenia próby pliku bez odczytu dla zmiany ``change`` z Wydania niosącego ``changes``, w katalogach pod
+    ``root`` ze światem ``world``: start na czytelnych plikach zapisuje, które pliki czyta, a potem jeden start na każdy
+    z nich bez odczytu i następny start z odczytem."""
+
+    readable_tool = _in_world(root / "czytelne", world)
+    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
+    with reading(readable_tool.root) as reads:
+        started(readable_tool, changes).stop()
+    readable = _release_effect(readable_tool, change)
+    if readable.remembered != "zastosowano":
+        return [f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"]
+    logs = readable_tool.log_path.parent
+    read = sorted(path.relative_to(readable_tool.root) for path in reads.seen if not path.is_relative_to(logs))
+
+    wrong: list[str] = []
+    for index, locked in enumerate(read):
+        tool = _in_world(root / f"bez-odczytu-{index}", world)
+        with reading(tool.root, frozenset({tool.root / locked})):
+            started(tool, changes).stop()
+        held = _release_effect(tool, change)
+        started(tool, changes).stop()
+        again = _release_effect(tool, change)
+        if held not in (readable, untouched) or again != readable:
+            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
+    return [f"przy czytelnych plikach {readable}", *wrong] if wrong else []
 
 
 @pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
@@ -3632,31 +3666,63 @@ def test_zmiana_z_wydania_przy_pliku_bez_odczytu_czeka_albo_wchodzi_jak_przy_czy
     """Plik, którego system przy starcie nie daje czytać (stary plik migracji, plik zmiany, Historia, pamięć), nie jest
     ani złym plikiem, ani brakiem pliku: zmiana z Wydania wchodzi tak jak przy czytelnym pliku albo czeka bez wiersza
     i bez pamięci i wchodzi przy następnym starcie; odmowa zapamiętana na zawsze zostawiłaby tatę bez danych.
+    Granicę pokazują próbki ``ZNANE_LUKI_ZMIAN_Z_WYDANIA``."""
 
-    Granica: warunku znaczenia (``_meaningless``) ten test nie ma. Świat zmiany ma tylko jej stare pliki albo plik do
-    poprawy, a pamięci, Historii i plików startu spoza Ustawień w nim nie ma, więc odebrany odczyt tych plików niczego
-    tu nie sprawdza."""
+    reports = _release_reports(tmp_path, change, RELEASE_CHANGE_WORLDS[change.id], RELEASE_CHANGES)
 
-    readable_tool = _release_world(tmp_path / "czytelne", change)
-    untouched = ReleaseEffect((), None, _release_effect(readable_tool, change).file)
-    with reading(readable_tool.root) as reads:
-        started(readable_tool, RELEASE_CHANGES).stop()
-    readable = _release_effect(readable_tool, change)
-    assert readable.remembered == "zastosowano", f"Świat {change.id} ma dać zmianę, która wchodzi: {readable}"
-    logs = readable_tool.log_path.parent
-    read = sorted(path.relative_to(readable_tool.root) for path in reads.seen if not path.is_relative_to(logs))
+    assert not reports, f"{change.id}:\n" + "\n".join(reports)
 
-    wrong: list[str] = []
-    for index, locked in enumerate(read):
-        tool = _release_world(tmp_path / f"bez-odczytu-{index}", change)
-        with reading(tool.root, frozenset({tool.root / locked})):
-            started(tool, RELEASE_CHANGES).stop()
-        held = _release_effect(tool, change)
-        started(tool, RELEASE_CHANGES).stop()
-        again = _release_effect(tool, change)
-        if held not in (readable, untouched) or again != readable:
-            wrong.append(f"{locked}: przy starcie bez odczytu {held}, przy następnym {again}")
-    assert not wrong, f"{change.id} (przy czytelnych plikach {readable}):\n" + "\n".join(wrong)
+
+ZNANE_LUKI_ZMIAN_Z_WYDANIA: Final = {
+    "świat zmiany nie ma pliku, który zmiana czyta (brak asercji absent): nieczytelny plik jak brak pliku (forma C2 r3)": (
+        "from dataclasses import replace\n"
+        "from typing import Any\n\n"
+        "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
+        "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
+        "def swiat(tool: Any) -> None:\n"
+        "    pass\n\n\n"
+        "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    try:\n"
+        "        stopka: str | None = (inputs.config / 'stopka.txt').read_text(encoding='utf-8')\n"
+        "    except OSError:\n"
+        "        stopka = None\n"
+        "    if stopka is not None and 'ciemny' in stopka:\n"
+        "        return Nothing()\n"
+        "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-stopka', FOLDERS, propose)\n"
+    ),
+    "plik czytany przy starcie bez warunku znaczenia: nieczytelny plik, którego treść w świecie nie zmienia zmiany, jak "
+    "pusty (forma B1 r3, Historia przy starcie jak pusta)": (
+        "from dataclasses import replace\n"
+        "from typing import Any\n\n"
+        "from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings\n"
+        "from rozliczenia.centrum.settings.proposal import Edit, Nothing, Proposal, ReleaseChange, ReleaseInputs\n\n\n"
+        "def swiat(tool: Any) -> None:\n"
+        "    (tool.config / 'wiersze.txt').write_text('inna zmiana\\n', encoding='utf-8')\n\n\n"
+        "def propose(inputs: ReleaseInputs[FolderSettings]) -> Proposal[FolderSettings]:\n"
+        "    try:\n"
+        "        wiersze = (inputs.config / 'wiersze.txt').read_text(encoding='utf-8')\n"
+        "    except OSError:\n"
+        "        wiersze = ''\n"
+        "    if '2026-11-znana-luka-wiersze' in wiersze:\n"
+        "        return Nothing()\n"
+        "    return Edit(lambda current: replace(current, theme='light'))\n\n\n"
+        "zmiana = ReleaseChange('2026-11-znana-luka-wiersze', FOLDERS, propose)\n"
+    ),
+}
+"""Zmiana z Wydania, która bierze plik bez odczytu za brak pliku albo pusty, a próba pliku bez odczytu
+(``_release_reports``) tego nie zgłasza: każda próbka to moduł ze ``swiat(katalog_narzedzia)`` i zmianą ``zmiana``."""
+
+
+def test_znane_luki_zmian_z_wydania_przechodza_przez_probe_pliku_bez_odczytu(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, plik) in enumerate(zapisz(ZNANE_LUKI_ZMIAN_Z_WYDANIA, probki).items()):
+        probka = modul(plik)
+        zgloszenia[opis] = _release_reports(tmp_path / f"probka-{numer}", probka.zmiana, probka.swiat, (probka.zmiana,))
+
+    assert_znane_luki(zgloszenia, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_ZMIAN_Z_WYDANIA)")
 
 
 @pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
