@@ -48,6 +48,10 @@ BY_CHANGE_ONLY = {
     "tests/test_mutacje_zmiany.py": "sprawdza narzędzie na repozytoriach testu; graf wybiera go przy zmianie narzędzia i modułów, które importuje",
     "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
     "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
+    "tests/test_pliki_w_smieciach.py": (
+        "sprawdza straż na plikach tymczasowych testu, a nie całe repozytorium: samą straż plugin z conftest stawia przy "
+        "każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/pliki_w_smieciach.py, który importuje"
+    ),
     "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
         "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
