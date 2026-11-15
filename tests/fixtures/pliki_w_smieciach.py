@@ -5,12 +5,17 @@ Obiekt pliku trzymany tylko przez cykl referencji (skoroszyt openpyxl ``read_onl
 łapie własne ostrzeżenia: w #1923 test portu opiekuna dostał plik INTERMAX z ``tests/test_uporzadkowanie_intermax.py``,
 gdy zmiana podziału plików postawiła oba pliki testów w jednym zadaniu CI.
 
-Plugin (``pytest_plugins`` w ``tests/conftest.py``) bierze zwykłe pliki procesu przed setupem testu (``open_files``) i po
-pełnym teardownie wywraca test, którego plik zwolnił dopiero ``gc`` (``left_to_gc``). Pełny teardown to także wartości
-fixtur: pytest trzyma je w ``item.funcargs`` aż po hakach teardown, więc plugin puszcza je przed sprawdzeniem, a plik
-fixtury zasięgu modułu, klasy, pakietu albo sesji sprawdza w teście, po którym ta fixtura skończyła się, względem plików
-sprzed jej setupu i z jej nazwą. Lista deskryptorów kosztuje ułamek milisekundy, a przegląd obiektów i ``gc.collect()``
-biegną tylko wtedy, gdy po teście nowy plik jest jeszcze otwarty. Plik trzymany przez żywy obiekt (wątek kolejki
+Plugin (``pytest_plugins`` w ``tests/conftest.py``) sprawdza plik w chwili, w której jego właściciel puszcza ostatnią
+referencję, a nie w umówionej chwili po nim: samoczynny ``gc`` stoi od tego zdarzenia do sprawdzenia (``_hold_gc``),
+więc ``ResourceWarning`` nie ma okna, w którym trafiłby do innego testu. Zdarzenia to koniec ciała testu (sprawdzenie po
+pełnym teardownie, także po puszczeniu wartości fixtur, które pytest trzyma w ``item.funcargs`` aż po hakach teardown) i
+początek końca fixtury zasięgu modułu, klasy, pakietu albo sesji: jej finalizer straży biegnie pierwszy w
+``FixtureDef.finish``, a sprawdzenie w najbliższym haku po nim, czyli w setupie nowej instancji, gdy fixtura z
+``params`` zmienia parametr w setupie następnego testu, albo w teardownie testu. Przed zdarzeniem plik trzyma silna
+referencja, więc ``gc`` go nie zbierze; śmieć z ciała testu albo setupu fixtury, który ``gc`` zbierze od razu, ostrzega
+w tym samym teście. Test, którego plik zwolnił dopiero ``gc`` (``left_to_gc``), kończy się błędem z jego ścieżką, a plik
+fixtury szerszego zasięgu także z jej nazwą. Lista deskryptorów kosztuje ułamek milisekundy, a przegląd obiektów i
+``gc.collect()`` biegną tylko wtedy, gdy nowy plik jest jeszcze otwarty. Plik trzymany przez żywy obiekt (wątek kolejki
 Zgłoszeń, który kończy przejście już po teście) nie wywraca testu, także gdy wątek zamyka go w trakcie ``gc.collect()``.
 """
 
@@ -32,36 +37,83 @@ import weakref
 import pytest
 
 _STANDARD_STREAMS: Final = frozenset({0, 1, 2})
-_OPEN_BEFORE_TEST: Final = pytest.StashKey[dict[int, str]]()
+
+
+@dataclass(frozen=True)
+class _Fixture:
+    name: str
+    scope: str
 
 
 @dataclass(frozen=True)
 class _EndedFixture:
-    name: str
-    scope: str
+    fixture: _Fixture
     open_before_setup: dict[int, str]
 
 
-# Pliki przed setupem żywych fixtur zasięgu szerszego niż test i fixtury skończone od ostrzeżenia ostatniego testu; stan
-# procesu, bo pod xdist każdy worker ma własne fixtury.
+# Stan procesu, bo pod xdist każdy worker ma własne testy i fixtury: pliki przed setupem bieżącego testu, przed setupem
+# żywych fixtur zasięgu szerszego niż test, pliki otwarte przez setup takiej fixtury, fixtury skończone od ostatniego
+# sprawdzenia i stan samoczynnego gc sprzed jego wstrzymania.
+_open_before_test: dict[int, str] = {}
 _open_at_fixture_setup: dict[pytest.FixtureDef[object], dict[int, str]] = {}
+_opened_in_setup: dict[str, _Fixture] = {}
 _ended_fixtures: list[_EndedFixture] = []
+_held_gc_was_enabled: list[bool] = []
+
+
+def _hold_gc() -> None:
+    """Wstrzymuje samoczynny ``gc`` do najbliższego sprawdzenia: inaczej zebrałby puszczony plik przed nim."""
+
+    if not _held_gc_was_enabled:
+        _held_gc_was_enabled.append(gc.isenabled())
+        gc.disable()
+
+
+def _release_gc() -> None:
+    # Test, który sam wyłączył gc, zostaje z wyłączonym.
+    if _held_gc_was_enabled and _held_gc_was_enabled.pop():
+        gc.enable()
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    item.stash[_OPEN_BEFORE_TEST] = open_files()
+    _open_before_test.clear()
+    _open_before_test.update(open_files())
 
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_fixture_setup(fixturedef: pytest.FixtureDef[object], request: pytest.FixtureRequest) -> None:
-    if fixturedef.scope != "function":
-        _open_at_fixture_setup[fixturedef] = open_files()
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
+    try:
+        return (yield)
+    finally:
+        _hold_gc()  # ramka testu puściła swoje obiekty; śmieci czekają na sprawdzenie po teardownie
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_fixture_setup(
+    fixturedef: pytest.FixtureDef[object], request: pytest.FixtureRequest
+) -> Generator[None, object, object]:
+    if _ended_fixtures:  # pytest skończył instancję fixtury z params w setupie następnego testu (FixtureDef.execute)
+        try:
+            _check("przed setupem tego testu")
+        finally:
+            _release_gc()
+    if fixturedef.scope == "function":
+        return (yield)
+    before = _open_at_fixture_setup[fixturedef] = open_files()
+    result = yield
+    fixture = _Fixture(fixturedef.argname, fixturedef.scope)
+    for path in set(open_files().values()) - set(before.values()):
+        _opened_in_setup[path] = fixture
+    # Finalizery biegną od ostatniego (LIFO), więc ten biegnie pierwszy w finish: gc stoi przez teardown fixtury i
+    # puszczenie cached_result aż do sprawdzenia.
+    fixturedef.addfinalizer(_hold_gc)
+    return result
 
 
 def pytest_fixture_post_finalizer(fixturedef: pytest.FixtureDef[object], request: pytest.FixtureRequest) -> None:
     if (before := _open_at_fixture_setup.pop(fixturedef, None)) is not None:
-        _ended_fixtures.append(_EndedFixture(fixturedef.argname, fixturedef.scope, before))
+        _ended_fixtures.append(_EndedFixture(_Fixture(fixturedef.argname, fixturedef.scope), before))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -69,43 +121,59 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
     """Test, którego plik po pełnym teardownie zwolnił dopiero ``gc``, kończy się błędem z jego ścieżką, a plik fixtury
     szerszego zasięgu także z jej nazwą: inaczej ``ResourceWarning`` tego pliku trafia do innego testu (#1923)."""
 
-    result = yield
-    test_before = item.stash[_OPEN_BEFORE_TEST]
+    _hold_gc()  # także po setupie, który padł przed ciałem testu
+    try:
+        result = yield
+        if isinstance(item, pytest.Function):
+            # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
+            item.funcargs = {}
+        _check("po tym teście")
+    except BaseException:
+        _ended_fixtures.clear()
+        raise
+    finally:
+        _release_gc()
+    return result
+
+
+def _check(when: str) -> None:
     ended = list(_ended_fixtures)
     _ended_fixtures.clear()
     before = {
         descriptor: path
-        for descriptor, path in test_before.items()
+        for descriptor, path in _open_before_test.items()
         if all(fixture.open_before_setup.get(descriptor) == path for fixture in ended)
     }
-    automatic = gc.isenabled()
-    gc.disable()  # samoczynny gc zebrałby puszczoną wartość fixtury przed sprawdzeniem
-    try:
-        if isinstance(item, pytest.Function):
-            # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
-            item.funcargs = {}
-        left = left_to_gc(before)
-    finally:
-        if automatic:
-            gc.enable()
+    left = left_to_gc(before)
     assert left == [], (
-        "Test zostawił otwarte pliki, które zamknął dopiero gc: "
-        + ", ".join(_owner(path, test_before, ended) for path in left)
+        "Pliki otwarte w teście albo w fixturze zamknął dopiero gc: "
+        + ", ".join(_owner(path, ended, when) for path in left)
         + ". Zamknij plik w teście albo w fixturze przez with albo try/finally z close(); skoroszyt openpyxl "
         "read_only=True trzyma plik do workbook.close()."
     )
-    return result
 
 
-def _owner(path: str, test_before: Mapping[int, str], ended: list[_EndedFixture]) -> str:
-    if path not in test_before.values():
+def _owner(path: str, ended: list[_EndedFixture], when: str) -> str:
+    """Ścieżka z fixturą, która otworzyła plik w setupie albo skończyła się od jego otwarcia; plik otwarty w tym teście
+    poza setupem fixtury szerszego zasięgu należy do testu albo jego fixtury zasięgu funkcji."""
+
+    ended_now = [record.fixture for record in ended]
+    if (opener := _opened_in_setup.get(path)) is not None:
+        fixtures = [opener]
+    elif path in _open_before_test.values():
+        fixtures = [record.fixture for record in ended if path not in record.open_before_setup.values()]
+    else:
         return path
-    fixtures = [
-        f"fixtura {fixture.name} zasięgu {fixture.scope}, która skończyła się po tym teście"
-        for fixture in ended
-        if path not in fixture.open_before_setup.values()
-    ]
-    return f"{path} ({', '.join(fixtures)})"
+    return (
+        path
+        + " ("
+        + ", ".join(
+            f"fixtura {fixture.name} zasięgu {fixture.scope}, "
+            + (f"która skończyła się {when}" if fixture in ended_now else "która otworzyła go w setupie")
+            for fixture in fixtures
+        )
+        + ")"
+    )
 
 
 def open_files() -> dict[int, str]:

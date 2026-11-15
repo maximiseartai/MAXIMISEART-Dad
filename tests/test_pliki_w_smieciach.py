@@ -157,8 +157,12 @@ def plik_w_cyklu(path):
     return cykl
 """
 
-# Sondy r1 PR #1930: fixtura każdego zasięgu yielduje plik w cyklu bez close(); sąsiad na końcu sesji zbiera ostrzeżenia
-# gc jak test portu opiekuna w #1923. Fixtura sesji kończy się po ostatnim teście, czyli po sąsiedzie.
+# Sondy r1 i r2 PR #1930: fixtura każdego zasięgu yielduje plik w cyklu bez close(); sąsiad na końcu sesji zbiera
+# ostrzeżenia gc jak test portu opiekuna w #1923. Fixturę z params pytest kończy w setupie następnego testu, a jej
+# teardown robi zwykłą pracę, w której samoczynny gc zebrałby puszczony plik przed sprawdzeniem. Fixtura modułu z jednym
+# testem ma setup i koniec w tym samym teście. Ciało testu zostawia plik w śmieciach, a raport testu robi zwykłą pracę
+# przed teardownem. Setup, który pada, pomija ciało testu, a teardown fixtury funkcji puszcza plik i robi zwykłą pracę.
+# Fixtura sesji kończy się po ostatnim teście, czyli po sąsiedzie.
 _SONDY_FIXTUR: Final = {
     "conftest.py": _PLIK_W_CYKLU
     + """
@@ -170,6 +174,15 @@ pytest_plugins = ["tests.fixtures.pliki_w_smieciach"]
 @pytest.fixture(scope="session")
 def plik_sesji(tmp_path_factory):
     yield plik_w_cyklu(tmp_path_factory.mktemp("s") / "sesja.bin")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    if item.name == "test_cialo_zostawia_plik" and call.when == "call":
+        zywe = [[i] for i in range(1_000_000)]
+        del zywe
+    return report
 """,
     "test_a_sesja.py": """
 def test_otwiera_fixture_sesji(plik_sesji):
@@ -188,6 +201,35 @@ def plik_funkcji(tmp_path):
 def test_z_fixtura_funkcji(plik_funkcji):
     assert plik_funkcji
 """,
+    "test_b_cialo.py": """
+from conftest import plik_w_cyklu
+
+
+def test_cialo_zostawia_plik(tmp_path):
+    plik_w_cyklu(tmp_path / "cialo.bin")
+""",
+    "test_b_setup_pada.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture
+def plik_przed_bledem(tmp_path):
+    stan = [plik_w_cyklu(tmp_path / "przed_bledem.bin")]
+    yield
+    stan.clear()
+    zywe = [[i] for i in range(1_000_000)]
+    del zywe
+
+
+@pytest.fixture
+def blad():
+    raise RuntimeError("setup pada")
+
+
+def test_setup_pada(plik_przed_bledem, blad):
+    pass
+""",
     "test_c_modul.py": """
 import pytest
 from conftest import plik_w_cyklu
@@ -205,6 +247,36 @@ def test_pierwszy_w_module(plik_modulu):
 def test_ostatni_w_module(plik_modulu):
     assert plik_modulu
 """,
+    "test_c_parametr.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture(scope="module", params=["jeden", "dwa"])
+def plik_parametru(request, tmp_path_factory):
+    stan = [plik_w_cyklu(tmp_path_factory.mktemp(request.param) / f"{request.param}.bin")]
+    yield request.param
+    stan.clear()
+    zywe = [[i] for i in range(1_000_000)]
+    del zywe
+
+
+def test_z_parametrem(plik_parametru):
+    assert plik_parametru
+""",
+    "test_c_samotny.py": """
+import pytest
+from conftest import plik_w_cyklu
+
+
+@pytest.fixture(scope="module")
+def plik_samotnego(tmp_path_factory):
+    yield plik_w_cyklu(tmp_path_factory.mktemp("j") / "samotny.bin")
+
+
+def test_jedyny_w_module(plik_samotnego):
+    assert plik_samotnego
+""",
     "test_d_sasiad.py": """
 import gc
 import warnings
@@ -220,14 +292,15 @@ def test_sasiad_zbiera_ostrzezenia():
 
 
 def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_a_nie_sasiada(tmp_path: Path) -> None:
-    # Pytest trzyma wartości fixtur w item.funcargs aż po hakach teardown, a fixtura modułu i sesji żyje przez wiele
-    # testów, więc straż sprawdza je dopiero po ich końcu, w prawdziwym cyklu życia testu w osobnym procesie pytest.
+    # Pytest trzyma wartości fixtur w item.funcargs aż po hakach teardown, fixtura modułu i sesji żyje przez wiele
+    # testów, a fixturę z params kończy w setupie następnego testu, więc straż sprawdza każdą w chwili jej końca, w
+    # prawdziwym cyklu życia testu w osobnym procesie pytest.
     for name, text in _SONDY_FIXTUR.items():
         (tmp_path / name).write_text(text, encoding="utf-8")
     report = tmp_path / "junit.xml"
     done = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:xdist", f"--basetemp={tmp_path / 'tmp'}"]
-        + [f"--junitxml={report}", "-o", "junit_family=xunit1"],
+        + ["-p", "no:randomly", f"--junitxml={report}", "-o", "junit_family=xunit1"],
         cwd=tmp_path,
         env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
         capture_output=True,
@@ -247,9 +320,18 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
         name: [
             owner
             for owner in (
+                "on setup",
+                "on teardown",
                 "funkcja.bin",
+                "cialo.bin",
+                "przed_bledem.bin",
                 "modul.bin",
                 "fixtura plik_modulu zasięgu module",
+                "jeden.bin",
+                "dwa.bin",
+                "fixtura plik_parametru zasięgu module",
+                "samotny.bin",
+                "fixtura plik_samotnego zasięgu module",
                 "sesja.bin",
                 "fixtura plik_sesji zasięgu session",
             )
@@ -259,11 +341,14 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
         if message
     }
     assert owners == {
-        "test_z_fixtura_funkcji": ["funkcja.bin"],
-        "test_ostatni_w_module": ["modul.bin", "fixtura plik_modulu zasięgu module"],
-        "test_sasiad_zbiera_ostrzezenia": ["sesja.bin", "fixtura plik_sesji zasięgu session"],
+        "test_z_fixtura_funkcji": ["on teardown", "funkcja.bin"],
+        "test_cialo_zostawia_plik": ["on teardown", "cialo.bin"],
+        "test_setup_pada": ["on setup", "on teardown", "przed_bledem.bin"],
+        "test_ostatni_w_module": ["on teardown", "modul.bin", "fixtura plik_modulu zasięgu module"],
+        "test_z_parametrem[dwa]": ["on setup", "jeden.bin", "fixtura plik_parametru zasięgu module"],
+        "test_jedyny_w_module": ["on teardown", "samotny.bin", "fixtura plik_samotnego zasięgu module"],
+        "test_sasiad_zbiera_ostrzezenia": ["on teardown", "sesja.bin", "fixtura plik_sesji zasięgu session"],
     }, done.stdout + done.stderr
-    assert all("on teardown" in errors[name] for name in owners), done.stdout
 
 
 def test_ostrzezenie_smiecia_spoza_nowych_plikow_idzie_dalej_a_obserwowanego_pliku_zastepuje_wynik(
