@@ -22,7 +22,7 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 - `ustawienia-motyw-bez-odczytu`: switching the theme over Uruchomienia does not read the start again (… reads).
 - `ustawienia-anulowanie`: a cancelled picker leaves the settings file unchanged.
 - `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone is reported as missing.
-- `ustawienia-nieczytelny-plik`: a settings file that cannot be read now is reported as unreadable, not as nothing chosen.
+- `ustawienia-nieczytelny-plik`: a settings file that cannot be read now is reported as unreadable, not as nothing chosen; the theme of an unreadable settings file is unknown, and the page keeps the light theme it remembers (theme=…, shown …).
 - `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder without access read „Nie da się teraz odczytać”, not „Nie ma już”.
 - `ustawienia-motyw`: after a reload the page reads the light theme from the settings file and drops the dark class.
 - `ustawienia-zapisano-cofnij`: the switch shows „Zapisano · Cofnij” (… px).
