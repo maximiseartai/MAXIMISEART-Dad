@@ -331,6 +331,8 @@ def drive_centrum(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Atrapa przeglądarki nie ma linii poleceń, z której launch_options bierze listę funkcji wyłączonych przez Playwright.
+    monkeypatch.setattr(module, "launch_options", lambda playwright: {})
     yield module
     for name in set(sys.modules) - before:
         del sys.modules[name]

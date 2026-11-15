@@ -26,7 +26,7 @@ Printed by `scripts/sub_features.py --feature start-i-zamykanie` from the drive'
 - `karty-w-tle`: in the background the drive's tab gives its stream back (tabs hidden by the harness); each of … more tabs shows Uruchomienia from the API and the stream; back in front, the drive's tab connects to the stream again.
 - `zamykanie-karta`: closing a tab leaves Centrum running.
 - `zamykanie-potwierdzenie`: Anuluj leaves Centrum running.
-- `zamykanie`.
+- `zamykanie`: „Zamknij Centrum” closes Centrum once: the log has exactly one closing more than before.
 
 ## How to get to it (user POV)
 

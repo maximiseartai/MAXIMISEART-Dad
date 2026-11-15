@@ -23,8 +23,8 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 - `ustawienia-anulowanie`: a cancelled picker leaves the settings file unchanged.
 - `ustawienia-nieistniejaca-sciezka`: a remembered Rejestr zleceń that is gone is reported as missing.
 - `ustawienia-nieczytelny-plik`: a settings file that cannot be read now is reported as unreadable, not as nothing chosen.
-- `ustawienia-niedostepna-sciezka`.
-- `ustawienia-motyw`.
+- `ustawienia-niedostepna-sciezka`: a Rejestr zleceń and a folder okresów in a folder without access read „Nie da się teraz odczytać”, not „Nie ma już”.
+- `ustawienia-motyw`: after a reload the page reads the light theme from the settings file and drops the dark class.
 - `ustawienia-zapisano-cofnij`: the switch shows „Zapisano · Cofnij” (… px).
 - `ustawienia-blad-w-oknie`: after the failed save the page is back in the theme of the settings file, without a reload; the failed save left the theme as it was.
 - `ustawienia-blad-po-zamknieciu`: the save of Motyw waits for its answer (… requests, held); a save that fails after the window Ustawienia closed is a notification over the page; the save that failed after the window closed left the theme as it was.

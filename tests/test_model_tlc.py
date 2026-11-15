@@ -765,14 +765,25 @@ def test_zawieszenie_czeka_na_zrzut_konczacy_sie_po_smierci_drzewa_a_kazde_polec
     assert przebieg.jcmd_limits == [4.0, 4.0]
 
 
-def test_przebieg_tlc_w_limicie_konczy_watek_zrzutu_bez_wolania_jcmd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Przebieg, który skończył się przed limitem, kończy też czekanie na zawieszenie: po powrocie ``tlc`` wątek zrzutu
-    już nie żyje i nie zawołał jcmd, zamiast czekać limit i zrzucać wątki przebiegu, który już nie istnieje."""
+def test_przebieg_tlc_w_limicie_konczy_czekanie_na_zawieszenie_i_wraca_przed_czasem_na_zrzut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Przebieg, który skończył się przed limitem, kończy też czekanie na zawieszenie: ``tlc`` wraca, zanim minie
+    ``zrzut_s``, wątek zrzutu już nie żyje i nie zawołał jcmd.
+
+    ``tlc``, które nie kończy czekania wątku zrzutu, zanim na niego zaczeka (``done.set()`` za ``watcher.join``, brak
+    ``done.set()``, wątek, który nie słucha ``done``), wraca z konstrukcji nie wcześniej niż po ``zrzut_s``, bo tyle
+    czeka ``watcher.join(zrzut_s)``. Asercja porównuje więc czas powrotu z parametrem, który sam jest przedmiotem tej
+    własności, a nie z oknem dobranym do runnera: dobry kod wraca po samej atrapie przebiegu, w ułamku sekundy przy
+    każdym ``zrzut_s``, i przekroczyłby 20 s tylko wtedy, gdyby proces testu nie dostał procesora przez cały ten czas."""
 
     przebieg = _Przebieg(lambda przebieg, command, timeout: subprocess.CompletedProcess(command, 0, PASSED, ""))
     before = set(threading.enumerate())
+    zrzut_s = 20.0
+    started = time.perf_counter()
 
-    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=600, zrzut_s=1) == PASSED
+    assert _tlc_z_atrapa(tmp_path, monkeypatch, przebieg, limit_s=600, zrzut_s=zrzut_s) == PASSED
+    assert time.perf_counter() - started < zrzut_s
     assert [thread for thread in threading.enumerate() if thread not in before] == []
     assert przebieg.jcmd_limits == []
 
