@@ -545,8 +545,9 @@ Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, wię
 wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej
 V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste
 `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym
-wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności. To
-miejsca zostawione tacie, nie błędy.
+wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności (poza
+`tak`, `nie` i znakami interpunkcji) albo mają kod z liczbą spoza przedziałów.
+To miejsca zostawione tacie, nie błędy.
 _Avoid_: błędy, braki, cyfry do wpisania
 
 ## Zlecenie ze zdjęciami
@@ -567,8 +568,8 @@ _Avoid_: uzupełnienie Excela, poprawki
 
 ## Wyróżnienie
 
-Wygląd komórki, którym tata, jego pracownik albo Uporządkowanie INTERMAX
-(Kolor operatora) zaznacza zlecenie: kolor wypełnienia, kolor
+Wygląd komórki, którym tata, jego pracownik, Uporządkowanie INTERMAX
+(Kolor operatora) albo Legenda czynności zaznacza zlecenie: kolor wypełnienia, kolor
 czcionki, pogrubienie i kursywa. Przechodzi razem z wartością z Rejestru zleceń
 do plików okresu, a z Pliku zbiorczego do Rozliczeń pracowników. Wyróżnienia
 zastępują wygląd komórki wzorca w całości: komórka bez Wyróżnień daje komórkę
