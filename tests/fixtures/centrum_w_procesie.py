@@ -65,7 +65,9 @@ class CentrumProcess:
             return False
 
     def kill(self) -> None:
-        """Centrum gaśnie nagle razem z oknem efenix; wraca, gdy drzewo procesów już nie żyje."""
+        """Centrum gaśnie nagle razem z oknem efenix; wraca po zabiciu drzewa przez ``potomne.run`` ze ``stop``: na Windows
+        po końcu każdego procesu zadania (najwyżej ``potomne._KILL_S``), na POSIX po SIGKILL grupy i końcu jej lidera, więc
+        reszta grupy (przeglądarka okna efenix) może jeszcze przez chwilę się kończyć."""
 
         self._stop.set()
         self._thread.join()

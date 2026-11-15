@@ -1,13 +1,14 @@
 """Procesy potomne i kopie commitów narzędzia z ``tools/``, które giną razem z nim.
 
 ``run`` to ``subprocess.run`` z przechwyconym wyjściem, którego polecenie biegnie z całym drzewem swoich
-potomków (POSIX: własna sesja, czyli grupa procesów; Windows: Job Object). ``run`` zabija drzewo:
+potomków (POSIX: grupa procesów lidera własnej sesji; Windows: Job Object). ``run`` zabija drzewo:
 
 - po końcu polecenia (potomków, którzy je przeżyli), i nie czeka, aż zamkną jego wyjście;
 - po limicie czasu (``subprocess.TimeoutExpired``) i po ustawieniu ``stop`` przez inny wątek (``Stopped``);
 - po wyjątku w narzędziu, także po przerwaniu (Ctrl+C).
 
-Na Windows ``run`` wraca, gdy każdy proces zadania już się skończył. Na POSIX cała grupa dostaje SIGKILL, a ``run``
+Na Windows ``run`` wraca, gdy każdy proces zadania już się skończył, a drzewo, które żyje jeszcze ``_KILL_S`` po
+zabiciu, nazywa na stderr i wraca jak zwykle. Na POSIX cała grupa dostaje SIGKILL, a ``run``
 czeka tylko na jej lidera, więc pozostałe procesy grupy, już zabite, mogą jeszcze przez chwilę po powrocie ``run``
 zamykać swoje pliki. Po śmierci narzędzia bez sprzątania (SIGKILL, ``os._exit``) drzewo zabija na POSIX strażnik
 narzędzia, a na Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE).
@@ -18,8 +19,7 @@ narzędzia, a na Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE
 Strażnik to ten plik uruchomiony ``python -I`` we własnej sesji. Po EOF na stdin, czyli po końcu
 narzędzia, zabija zgłoszone drzewa i usuwa zgłoszone kopie. Narzędzie uruchomione przez inne narzędzie
 ma własnego strażnika, więc śmierć zewnętrznego kończy kolejne poziomy po kolei. Gdy strażnik nie żyje,
-``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji. Na Windows
-zabite drzewo, które żyje jeszcze ``_KILL_S`` po zabiciu, ``run`` nazywa na stderr i wraca jak zwykle.
+``commit_copy``, a na POSIX także ``run``, rzucają ``OSError``, zamiast działać bez tej gwarancji.
 
 Granice: na POSIX potomek, który sam założył sesję albo grupę procesów (``setsid``, ``setpgid``), jest poza
 drzewem i przeżywa; ``run`` czeka na resztę wyjścia najwyżej ``_DRAIN_S``. Na Windows narzędzie zabite razem z cudzym Job Object
