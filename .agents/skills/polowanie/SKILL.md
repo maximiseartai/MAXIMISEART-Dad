@@ -16,17 +16,18 @@ Uruchamia je stałe zadanie T3 w poniedziałek o 8:00 dla tygodnia, który wła�
 - **Zdrowie reguły** chwastu to jej odpalenia, fałszywe alarmy i obejścia w tygodniu.
 
 Polowanie biegnie na Macu Maksa we własnym worktree z `origin/main` (`git worktree add --detach ~/.t3/worktrees/MAXIMISEART-Dad/polowanie-<poniedziałek> origin/main`, potem `python3 tools/setup_worktree.py` w nim), a pliki biegu trzyma w `~/.t3/notes/polowanie/<poniedziałek>/` (dalej `<bieg>`), gdzie `<poniedziałek>` i `<niedziela>` to pierwszy i ostatni dzień tygodnia polowania.
-Treść transkryptów (wiadomości Maksa, nazwiska i adresy wykonawców, nazwy sesji i katalogów) zostaje w `<bieg>`: na box, do repozytorium, PR i issue idzie tylko klasa opisana własnymi słowami z linkiem do PR, werdyktu albo issue, a test i jego fikstura mają tekst wymyślony.
+Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikatory wątków, nazwy sesji i katalogów) zostaje w `<bieg>`: na box, do repozytorium, PR i issue idzie tylko klasa opisana własnymi słowami z linkiem do PR, werdyktu albo issue, a test i jego fikstura mają tekst wymyślony.
 
 ## Kroki
 
 1. Zbierz wystąpienia ze źródeł, każde do swojego pliku w `<bieg>`.
-   - Poprawki Maksa w wątkach agentów: skopiuj transkrypty z og-box, potem wypisz wiadomości operatora.
+   - Poprawki Maksa w wątkach agentów: wypisz wiadomości operatora z bazy T3 tego Maca i z bazy T3 og-box, każdą na maszynie, która ją trzyma, bo baza ma też sesje logowania T3.
      Wystąpienie to wiadomość, w której Maks poprawia to, co agent zrobił albo pominął; pytanie, zgoda, nowe zadanie i prośba o stan nim nie są.
 
      ```bash
-     rsync -a --exclude='subagents/' --include='*/' --include='*.jsonl' --exclude='*' 'og-box:~/.claude/projects/-home-maks-MAXIMISEART-Dad*' <bieg>/og-box/
-     .venv/bin/python tools/poprawki_operatora.py --tydzien <poniedziałek> --katalog ~/.claude/projects --katalog <bieg>/og-box > <bieg>/poprawki.txt
+     .venv/bin/python tools/poprawki_operatora.py --tydzien <poniedziałek> > <bieg>/poprawki.txt
+     ssh og-box 'mkdir -p /tmp/polowanie/tools/lib' && scp tools/poprawki_operatora.py og-box:/tmp/polowanie/tools/ && scp tools/lib/tydzien_polski.py og-box:/tmp/polowanie/tools/lib/
+     ssh og-box 'python3 /tmp/polowanie/tools/poprawki_operatora.py --tydzien <poniedziałek>' > <bieg>/poprawki-og-box.txt
      ```
 
    - Werdykty tygodnia: PR-y z werdyktem `FAIL`, potem werdykty każdego z nich.
@@ -51,7 +52,7 @@ Treść transkryptów (wiadomości Maksa, nazwiska i adresy wykonawców, nazwy s
      ```
 
    Wyszukiwarkę GitHuba wołaj tylko w tych poleceniach, nie w pętli po issues, bo ma osobny limit 30 zapytań na minutę.
-   Krok kończy się, gdy każde źródło ma plik w `<bieg>` z wynikiem polecenia albo zdanie „niedostępne: <przyczyna>”, a `<bieg>/wystapienia.md` ma wiersz na każde wystąpienie: źródło, link (`#PR W<n> r<k>`, issue albo `<czas> <wątek>` z `poprawki.txt`) i jedno zdanie o mechanizmie błędu.
+   Krok kończy się, gdy każde źródło ma plik w `<bieg>` z wynikiem polecenia albo zdanie „niedostępne: <przyczyna>”, a `<bieg>/wystapienia.md` ma wiersz na każde wystąpienie: źródło, link (`#PR W<n> r<k>`, issue albo `<czas> <wątek>` z `poprawki.txt` i `poprawki-og-box.txt`) i jedno zdanie o mechanizmie błędu.
 2. Złóż wystąpienia w klasy.
    Weź też sekcję `## Pojedyncze` z `~/.t3/notes/polowanie/*/klasy.md` wcześniejszych polowań, bo wystąpienie z innego tygodnia liczy się do klasy.
    Dla każdej klasy znajdź mechanizm, który ją już pilnuje: regułę w `reguly-ast-grep/`, klucz `banned-api` w konfiguracji ruff, kontrakt w `.importlinter`, wiersz tabel „Reguły i co ich pilnuje” w `CODING_STANDARDS.md`, `docs/agents/pr-i-ci.md` i `docs/agents/skille.md` albo punkt skilla.
@@ -66,7 +67,7 @@ Treść transkryptów (wiadomości Maksa, nazwiska i adresy wykonawców, nazwy s
 4. Daj mechanizm każdej klasie bez mechanizmu i każdej regule ponad progiem, od klasy z największą liczbą wystąpień, z najwyżej dwoma otwartymi PR-ami polowania naraz, licząc otwarte PR-y z `klasy.md` wcześniejszych polowań.
    Na każdą klasę zleć osobnego agenta z jej wierszem z `klasy.md` i tą metodą:
    - prototyp na najwyższym szczeblu drabiny (a)–(e), który działa, ze zdaniem przy każdym wyższym, czemu nie działa;
-   - dowód na prawdziwym commicie z werdyktu, issue albo transkryptu: mechanizm pada dokładnie w miejscu z `Gdzie` (`tools/na_scalonych_pr.py --commit <SHA>` dla sprawdzenia, mypy albo test dla typu i testu), a przypadek z transkryptu wchodzi do testu przepisany na tekst wymyślony;
+   - dowód na prawdziwym commicie z werdyktu, issue albo wątku: mechanizm pada dokładnie w miejscu z `Gdzie` (`tools/na_scalonych_pr.py --commit <SHA>` dla sprawdzenia, mypy albo test dla typu i testu), a przypadek z wątku wchodzi do testu przepisany na tekst wymyślony;
    - fałszywe alarmy na liniach dodanych 20 ostatnich scalonych PR-ów (`tools/na_scalonych_pr.py --ostatnie 20`), najwyżej 10%;
    - raport `<bieg>/klasa-<nazwa>.md` z sekcjami: Wynik w skrócie (mechanizm, szczebel, dowód, fałszywe alarmy, koszt migracji, gałąź), Prawdziwy kształt klasy, Szczebel i czemu nie inny, Dług i koszt migracji, Prototyp, Dowody (polecenie i ostatnia linia), Fałszywe alarmy, Złapane z historii, Kolizje, Ograniczenia;
    - PR zwykłą drogą (skill [`pr`](../pr/SKILL.md) z linią `Polowanie <poniedziałek>: klasa <nazwa>` w opisie, przegląd według [`przeglad`](../przeglad/SKILL.md), merge przez `tools/scal_pr.py`).

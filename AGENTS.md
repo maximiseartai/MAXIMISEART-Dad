@@ -33,7 +33,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/pomiar_ci.py`: Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
 - `tools/pomiar_regul_ilosci.py`: Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości.
 - `tools/ponow_ci.py`: Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
-- `tools/poprawki_operatora.py`: Wypisuje wiadomości operatora z transkryptów Claude Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
+- `tools/poprawki_operatora.py`: Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
 - `tools/porownanie_rozliczen.py`: Porównuje znaczeniowo dwa Foldery rozliczeń pracowników (spec #141); użyj jako bramki, gdy zmiana silnika ma dać te same rozliczenia.
 - `tools/praca_w_toku.py`: Pokazuje pracę innych checkoutów i otwartych PR-ów oraz pliki wspólne z bieżącym; użyj przed startem issue i przed aktualizacją z main.
 - `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
