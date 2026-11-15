@@ -385,13 +385,11 @@ else:
 
         def kill(self) -> None:
             """SIGKILL dochodzi do procesów grupy, gdy ``killpg`` już wrócił, a każdy kończy się dopiero, gdy dostanie
-            procesor, więc czeka na lidera i potem na koniec grupy, najwyżej ``_KILL_S``. Po tym terminie nie wywraca
-            wołającego, tylko nazywa grupę na stderr."""
+            procesor, więc wraca dopiero po końcu całej grupy (``_kill_and_wait``), najwyżej ``_KILL_S``. Po tym
+            terminie nie wywraca wołającego, tylko nazywa grupę na stderr."""
 
             started = time.monotonic()
-            _kill_group(self.process.pid)
-            self.process.wait()
-            if not _group_ended(self.process.pid, started + _KILL_S):
+            if not _kill_and_wait(self.process, started + _KILL_S):
                 took = time.monotonic() - started
                 print(f"potomne: po zabiciu po {took:.1f} s żyje grupa procesów {self.process.pid}", file=sys.stderr, flush=True)
             with suppress(OSError):
@@ -403,21 +401,72 @@ else:
         with suppress(ProcessLookupError, PermissionError):
             os.killpg(group, signal.SIGKILL)
 
-    def _group_ended(group: int, deadline: float) -> bool:
-        """Czy grupa procesów ``group`` zniknęła przed ``deadline`` (``time.monotonic``). Grupa znika, gdy rodzic albo
-        init pogrzebie jej ostatni proces (ESRCH); macOS odpowiada EPERM, gdy zostały same zombie, a te pliki już
-        zamknęły. Pyta coraz rzadziej: zabity proces kończy się zwykle w milisekundy."""
+    if sys.platform == "darwin":
+        import ctypes
+        import select
 
-        pause = 0.001
-        while True:
+        _libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        _libproc.proc_listpgrppids.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+
+        def _kill_and_wait(process: subprocess.Popen[str], deadline: float) -> bool:
+            """Zabija grupę lidera ``process`` i czeka, aż każdy jej proces zamknie pliki, do ``deadline``
+            (``time.monotonic``); ``False`` po terminie.
+
+            macOS przestaje widzieć proces w ``killpg`` i ``proc_listpgrppids``, gdy ten zaczyna wychodzić, a jego
+            pliki zamyka później (proces z dużą pamięcią o milisekundy), a NOTE_EXIT z kqueue przychodzi już po ich
+            zamknięciu. Dlatego koło obserwuje członków grupy przed SIGKILL i czeka na NOTE_EXIT każdego; zombie
+            kqueue nie obserwuje (ESRCH), bo pliki już zamknął. Członka, który powstał po liście, łapie następne koło,
+            a kończy koło, które nie ma kogo obserwować.
+            """
+
+            queue = select.kqueue()
             try:
-                os.killpg(group, 0)
-            except (ProcessLookupError, PermissionError):
-                return True
-            if time.monotonic() >= deadline:
-                return False
-            time.sleep(pause)
-            pause = min(2 * pause, _POLL_S)
+                while True:
+                    watched = 0
+                    for pid in _members(process.pid):
+                        with suppress(ProcessLookupError):
+                            exit_of = select.kevent(pid, select.KQ_FILTER_PROC, select.KQ_EV_ADD | select.KQ_EV_ONESHOT, select.KQ_NOTE_EXIT)
+                            queue.control([exit_of], 0)
+                            watched += 1
+                    _kill_group(process.pid)
+                    if not watched:
+                        process.wait()
+                        return True
+                    while watched:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            return False
+                        watched -= len(queue.control(None, watched, remaining))
+            finally:
+                queue.close()
+
+        def _members(group: int) -> list[int]:
+            """PID-y procesów grupy ``group``, najwyżej 1024; resztę łapie następne koło ``_kill_and_wait``."""
+
+            ids = (ctypes.c_int * 1024)()
+            count = _libproc.proc_listpgrppids(group, ids, ctypes.sizeof(ids))
+            return [pid for pid in ids[: max(count, 0)] if pid]
+
+    else:
+
+        def _kill_and_wait(process: subprocess.Popen[str], deadline: float) -> bool:
+            """Zabija grupę lidera ``process`` i czeka, aż grupa zniknie, do ``deadline`` (``time.monotonic``); ``False``
+            po terminie. Linux widzi proces w grupie (``killpg(g, 0)``), aż rodzic albo init go pogrzebie, czyli i po
+            zamknięciu plików; EPERM daje proces innego użytkownika, którego i tak nie da się zabić. Pyta coraz
+            rzadziej: zabity proces kończy się zwykle w milisekundy."""
+
+            _kill_group(process.pid)
+            process.wait()
+            pause = 0.001
+            while True:
+                try:
+                    os.killpg(process.pid, 0)
+                except (ProcessLookupError, PermissionError):
+                    return True
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(pause)
+                pause = min(2 * pause, _POLL_S)
 
 
 class _Guard:

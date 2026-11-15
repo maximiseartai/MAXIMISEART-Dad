@@ -47,13 +47,15 @@ def _lock_of(path: Path) -> Path:
     return path.with_name(path.name + ".blokada")
 
 
-def alive_code(path: Path, seconds: float = 600) -> str:
+def alive_code(path: Path, seconds: float = 600, *, memory_mb: int = 0) -> str:
     """Kod Pythona procesu, który bierze blokadę pliku obok ``path`` (``hold_lock``), potem tworzy ``path`` i żyje
     ``seconds`` s: ``path`` istnieje więc dopiero wtedy, gdy blokada jest wzięta, a ``alive(path)`` mówi, czy proces
-    jeszcze żyje."""
+    jeszcze żyje. ``memory_mb`` MB zapisanej pamięci system zwalnia zabitemu procesowi przed zamknięciem jego plików,
+    więc taki proces kończy się o milisekundy później niż proces bez niej."""
 
     return (
         "import pathlib, sys, time\n"
+        f"memory = bytes([1]) * ({memory_mb} << 20)\n"
         f"sys.path[:0] = {list(_PATHS)!r}\n"
         "from tests.fixtures.potomne import hold_lock\n"
         f"lock = hold_lock(pathlib.Path({str(_lock_of(path))!r}))\n"

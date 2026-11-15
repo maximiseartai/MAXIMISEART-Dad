@@ -66,12 +66,13 @@ def test_potomek_trzymajacy_wyjscie_ginie_z_koncem_polecenia_a_wynik_jest_pelny(
 @pytest.mark.parametrize("then", ["pass", "time.sleep(60)"], ids=["koniec polecenia", "limit czasu"])
 def test_run_wraca_dopiero_gdy_drzewo_nie_zyje_takze_wnuk_bez_wspolnego_wyjscia(tmp_path: Path, then: str) -> None:
     """Wnuk nie dziedziczy wyjścia polecenia, więc ``run`` nie czeka na jego EOF: blokadę wnuka zwalnia tylko jego
-    koniec, a ``run`` ma wrócić dopiero po nim."""
+    koniec, a ``run`` ma wrócić dopiero po nim. Pamięć wnuka opóźnia jego koniec za końcem lidera."""
 
     beats = tmp_path / "wnuk-zyje"
+    grandchild = alive_code(beats, memory_mb=64)
     code = (
         "import pathlib, subprocess, sys, time\n"
-        f"subprocess.Popen([sys.executable, '-c', {alive_code(beats)!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        f"subprocess.Popen([sys.executable, '-c', {grandchild!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
         f"while not pathlib.Path({str(beats)!r}).exists():\n"
         "    time.sleep(0.01)\n"
         f"{then}\n"

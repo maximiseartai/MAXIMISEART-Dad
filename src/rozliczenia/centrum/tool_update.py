@@ -952,7 +952,7 @@ else:
         Po ``timeout_s`` zabija całą sesję i rzuca ``subprocess.TimeoutExpired`` dopiero wtedy, gdy żaden z jej
         procesów już nie żyje; ``OSError``, gdy sesja przeżyje ``_KILL_TIMEOUT_S``. Sesji, której nie ma, bo Git i
         jego pomocnicy już się zakończyli, nie zabija. SIGKILL dochodzi do procesów sesji, gdy ``killpg`` już wrócił,
-        więc po końcu Gita czeka, aż sesja zniknie (``_session_ended``).
+        więc czeka, aż każdy jej proces się skończy (``_kill_session``).
         """
 
         process = subprocess.Popen(
@@ -961,30 +961,82 @@ else:
         try:
             return process.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            deadline = time.monotonic() + _KILL_TIMEOUT_S
-            with suppress(OSError):
-                os.killpg(process.pid, signal.SIGKILL)
-            process.kill()
-            process.wait()
-            if not _session_ended(process.pid, deadline):
+            if not _kill_session(process, time.monotonic() + _KILL_TIMEOUT_S):
                 raise OSError("drzewo procesów Gita przeżyło zabicie") from None
             raise
 
-    def _session_ended(session: int, deadline: float) -> bool:
-        """Czy grupa procesów sesji ``session`` zniknęła przed ``deadline`` (``time.monotonic``). Grupa znika, gdy rodzic
-        albo init pogrzebie jej ostatni proces (ESRCH); macOS odpowiada EPERM, gdy zostały same zombie, a te pliki już
-        zamknęły. Pyta coraz rzadziej: zabity proces kończy się zwykle w milisekundy."""
+    def _kill_group(group: int) -> None:
+        """macOS odpowiada EPERM, gdy w grupie zostały same zombie."""
 
-        pause = 0.001
-        while True:
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signal.SIGKILL)
+
+    if sys.platform == "darwin":
+        import ctypes
+        import select
+
+        _libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        _libproc.proc_listpgrppids.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+
+        def _kill_session(process: subprocess.Popen[bytes], deadline: float) -> bool:
+            """Zabija sesję Gita (grupę lidera ``process``) i czeka, aż każdy jej proces zamknie pliki, do ``deadline``
+            (``time.monotonic``); ``False`` po terminie.
+
+            macOS przestaje widzieć proces w ``killpg`` i ``proc_listpgrppids``, gdy ten zaczyna wychodzić, a jego
+            pliki zamyka później, a NOTE_EXIT z kqueue przychodzi już po ich zamknięciu. Dlatego koło obserwuje
+            procesy sesji przed SIGKILL i czeka na NOTE_EXIT każdego; zombie kqueue nie obserwuje (ESRCH), bo pliki już
+            zamknął. Proces, który powstał po liście, łapie następne koło, a kończy koło, które nie ma kogo obserwować.
+            Ten sam mechanizm ma ``tools/lib/potomne.py``, którego ``src`` nie importuje.
+            """
+
+            queue = select.kqueue()
             try:
-                os.killpg(session, 0)
-            except (ProcessLookupError, PermissionError):
-                return True
-            if time.monotonic() >= deadline:
-                return False
-            time.sleep(pause)
-            pause = min(2 * pause, 0.1)
+                while True:
+                    watched = 0
+                    for pid in _members(process.pid):
+                        with suppress(ProcessLookupError):
+                            exit_of = select.kevent(pid, select.KQ_FILTER_PROC, select.KQ_EV_ADD | select.KQ_EV_ONESHOT, select.KQ_NOTE_EXIT)
+                            queue.control([exit_of], 0)
+                            watched += 1
+                    _kill_group(process.pid)
+                    if not watched:
+                        process.wait()
+                        return True
+                    while watched:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            return False
+                        watched -= len(queue.control(None, watched, remaining))
+            finally:
+                queue.close()
+
+        def _members(group: int) -> list[int]:
+            """PID-y procesów grupy ``group``, najwyżej 1024; resztę łapie następne koło ``_kill_session``."""
+
+            ids = (ctypes.c_int * 1024)()
+            count = _libproc.proc_listpgrppids(group, ids, ctypes.sizeof(ids))
+            return [pid for pid in ids[: max(count, 0)] if pid]
+
+    else:
+
+        def _kill_session(process: subprocess.Popen[bytes], deadline: float) -> bool:
+            """Zabija sesję Gita (grupę lidera ``process``) i czeka, aż grupa zniknie, do ``deadline`` (``time.monotonic``);
+            ``False`` po terminie. Linux widzi proces w grupie (``killpg(g, 0)``), aż rodzic albo init go pogrzebie,
+            czyli i po zamknięciu plików; EPERM daje proces innego użytkownika, którego i tak nie da się zabić.
+            Ten sam mechanizm ma ``tools/lib/potomne.py``, którego ``src`` nie importuje."""
+
+            _kill_group(process.pid)
+            process.wait()
+            pause = 0.001
+            while True:
+                try:
+                    os.killpg(process.pid, 0)
+                except (ProcessLookupError, PermissionError):
+                    return True
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(pause)
+                pause = min(2 * pause, 0.1)
 
 
 def _quiet_environment() -> dict[str, str]:

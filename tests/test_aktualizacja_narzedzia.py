@@ -1068,14 +1068,18 @@ def test_pobranie_ktore_stoi_po_limicie_czasu_konczy_sie_brakiem_polaczenia_bez_
 def test_pobranie_po_limicie_czasu_wraca_dopiero_gdy_pomocnik_gita_nie_zyje(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``fetch_main_line`` rzuca zaraz po pobraniu, więc między limitem a pytaniem o pomocnika nie ma innej pracy.
+    Pamięć pomocnika opóźnia jego koniec za końcem Gita, którego SIGKILL dosięga w tej samej chwili."""
+
     monkeypatch.setattr(tool_update, "_FETCH_TIMEOUT_S", 2.0)
-    commit = "1" * 40
     helper = tmp_path / "pomocnik-zyje"
-    git = git_whose_fetch_stalls(tmp_path, commit, helper, helper=alive_code(helper, 30))
+    git = git_whose_fetch_stalls(tmp_path, "1" * 40, helper, helper=alive_code(helper, 30, memory_mb=64))
+    monkeypatch.setattr(tool_update, "find_git", lambda: git)
 
-    result = ToolClone(tmp_path, origin="https://example.invalid/narzedzie.git", find_git=lambda: git).update()
+    with pytest.raises(GitFailed) as failed:
+        tool_update.fetch_main_line(tmp_path, "https://example.invalid/narzedzie.git")
 
-    assert (result.code, helper.exists(), alive(helper)) == ("BRAK_POLACZENIA", True, False)
+    assert (str(failed.value), helper.exists(), alive(helper)) == ("BRAK_POLACZENIA", True, False)
 
 
 def test_klikniecie_w_trakcie_ponownego_startu_nie_zastepuje_dziennika_aktualizacji_nowsza_wersja(
