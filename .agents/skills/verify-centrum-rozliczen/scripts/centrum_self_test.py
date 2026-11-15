@@ -491,6 +491,93 @@ def _check_result_of_start(errors: list[str]) -> None:
             )
 
 
+def _check_text_settings_refused(errors: list[str]) -> None:
+    """While ``Run.refusing_text_settings_writes`` lasts, a text-mode write of the run's settings file or of its
+    ``.zapis`` fails at the write itself, before the server could write the file again, also under another name of the
+    same file (a hard or symbolic link, the name in other case) and through its descriptor, and ``put_settings``, a write
+    of bytes and a text read pass; afterwards ``open`` is Python's own again. ``Run.refuse_cr_in_settings`` fails on a file
+    a text write on Windows left and passes the bytes of ``put_settings`` and a run before Centrum wrote the file."""
+
+    import builtins
+    import io
+    import json
+    import os
+    import tempfile
+
+    from drive.common import DriveFailure, Run, put_text, read_bytes, read_text
+
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch) / "run"
+        root.mkdir()
+        settings = config_dir(root) / SETTINGS_FILE
+        File.FIXTURE.write(root, json.dumps({"settings": str(settings)}))
+        run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
+        run.refuse_cr_in_settings()
+        settings.parent.mkdir()
+        good = b"schema_version: 1\nmotyw: dark\n"
+
+        def append() -> None:
+            with open(settings, "a", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        def fdopen() -> None:
+            with os.fdopen(os.open(settings, os.O_WRONLY | os.O_TRUNC), "w", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        def read_and_write() -> None:
+            with open(settings, "r+", encoding="utf-8") as handle:
+                handle.write("motyw: light\n")
+
+        def descriptor() -> None:
+            with open(settings, "r+b") as data, open(data.fileno(), "w", encoding="utf-8", closefd=False) as handle:
+                handle.write("motyw: light\n")
+
+        other_case = settings.with_name(settings.name.swapcase())
+        hard_link = settings.with_name("ustawienia-alias.yaml")
+        symbolic_link = settings.with_name("ustawienia-dowiazanie.yaml")
+        text_writes: dict[str, Callable[[], object]] = {
+            "Path.write_text": lambda: settings.write_text(read_text(settings), encoding="utf-8"),
+            "open in mode 'a'": append,
+            "open in mode 'r+'": read_and_write,
+            "put_text through its .zapis": lambda: put_text(settings, "motyw: light\n"),
+            "os.open with os.fdopen": fdopen,
+            "open of its descriptor": descriptor,
+            "Path.write_text of its name in other case": lambda: other_case.write_text("motyw: light\n", encoding="utf-8"),
+            "Path.write_text of a hard link": lambda: hard_link.write_text("motyw: light\n", encoding="utf-8"),
+            "Path.write_text of a symbolic link": lambda: symbolic_link.write_text("motyw: light\n", encoding="utf-8"),
+        }
+        python_open = (io.open, builtins.open, os.open)
+        with run.refusing_text_settings_writes():
+            run.put_settings(good)
+            os.link(settings, hard_link)
+            try:
+                symbolic_link.symlink_to(settings)
+            except OSError:  # Windows without the right to make symbolic links
+                del text_writes["Path.write_text of a symbolic link"]
+            for form, write in text_writes.items():
+                try:
+                    write()
+                except DriveFailure as failure:
+                    if "run.put_settings" not in str(failure):
+                        errors.append(f"the refusal of a text-mode write of the settings file names no way out: {failure}")
+                else:
+                    errors.append(f"Run.refusing_text_settings_writes passes a text-mode write of the settings file: {form}")
+            if read_bytes(settings) != good:
+                errors.append("a text-mode write changed the settings file while Run.refusing_text_settings_writes lasted")
+        if (io.open, builtins.open, os.open) != python_open:
+            errors.append("Run.refusing_text_settings_writes leaves its open in place after the drive")
+
+        run.refuse_cr_in_settings()
+        settings.write_bytes(b"schema_version: 1\r\nmotyw: dark\r\n")  # a text write on Windows
+        try:
+            run.refuse_cr_in_settings()
+        except DriveFailure as failure:
+            if "run.put_settings" not in str(failure):
+                errors.append(f"the refusal of a settings file written in text mode names no way out: {failure}")
+        else:
+            errors.append("Run.refuse_cr_in_settings passes a settings file written in text mode on Windows")
+
+
 def _read_while_put_in_place(path: Path, read: Callable[[], object]) -> object:
     """What ``read`` gives, or the refusal it raises, while another thread puts ``path`` in place: the system refuses
     to read it for 0.3 s (``unreadable``), as Windows does while a file is put in place (#1087)."""
@@ -541,7 +628,7 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
         logs.write_text(json.dumps({"run_id": "aaaaaaaa"}), encoding="utf-8")
         settings.parent.mkdir()
-        settings.write_text("rejestr_zlecen: INTERMAX.xlsx\n", encoding="utf-8")
+        settings.write_bytes(b"rejestr_zlecen: INTERMAX.xlsx\n")
 
         read = _read_while_put_in_place(logs, lambda: read_text(logs))
         if read != '{"run_id": "aaaaaaaa"}':
@@ -1140,6 +1227,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_drop_report_key(errors)
     _check_result_of_start(errors)
     _check_read_while_put_in_place(errors)
+    _check_text_settings_refused(errors)
     _check_box_reads_while_put_in_place(errors)
     _check_served_side_reads_harness(errors)
     _check_protocol_spelled_once(errors)

@@ -22,7 +22,6 @@ from drive.common import (
     error_toasts,
     move,
     open_settings,
-    put_text,
     read_bytes,
     read_text,
     remove,
@@ -67,7 +66,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(feature, "ustawienia-jedno-okno-wyboru")
     dialogs = len(run.lines(Log.DIALOGS))
-    before = run.settings_text()
+    before = run.settings_bytes()
     pickers = ("Wskaż Rejestr zleceń", "Wskaż Folder okresów")
     page.get_by_role("link", name="Ustaw w Ustawieniach", exact=True).click()
     folder_picker = window.get_by_role("button", name="Wskaż Folder okresów", exact=True)
@@ -99,7 +98,7 @@ def drive(run: Run, page: Page) -> None:
     until(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "Dad closed the one picker (cancel)")
     for name in pickers:
         expect(window.get_by_role("button", name=name, exact=True)).to_be_enabled()
-    run.check(run.settings_text() == before, "after the cancelled picker every picker button works again, nothing set")
+    run.check(run.settings_bytes() == before, "after the cancelled picker every picker button works again, nothing set")
     close_settings(page)
     page.get_by_role("link", name="Okresy", exact=True).click()
 
@@ -176,13 +175,13 @@ def drive(run: Run, page: Page) -> None:
     page.get_by_role("link", name="Okresy", exact=True).click()
 
     run.step(feature, "ustawienia-anulowanie")
-    before = run.settings_text()
+    before = run.settings_bytes()
     dialogs = len(run.lines(Log.DIALOGS))
     open_settings(page, "Foldery").get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
     until(lambda: len(run.lines(Log.DIALOGS)) == dialogs + 1, "the cancelled picker was shown")
     expect(window.get_by_role("button", name="Zmień Rejestr zleceń", exact=True)).to_be_enabled()
     expect(register.get_by_text(register_name)).to_be_visible()
-    run.check(run.settings_text() == before, "a cancelled picker leaves the settings file unchanged")
+    run.check(run.settings_bytes() == before, "a cancelled picker leaves the settings file unchanged")
 
     run.step(feature, "ustawienia-nieistniejaca-sciezka")
     moved = Path(run.fixture["order_register"] + ".przeniesiony")
@@ -409,7 +408,7 @@ def _history(run: Run, page: Page) -> None:
     periods = run.fixture["periods_directory"]
     attachments = run.root / "Załączniki"
     # Harness: Maks changes the folder okresów in the settings file by hand, outside Centrum.
-    put_text(settings, (run.settings_text() or "").replace(periods, str(attachments)))
+    run.put_settings((run.settings_bytes() or b"").replace(periods.encode(), str(attachments).encode()))
     window = open_settings(page, "Historia")
     rows = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
     outside = rows.first
@@ -496,7 +495,7 @@ def _refusal_at_field(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "ustawienia-odmowa-przy-polu")
     sentence = "Rejestr zleceń to plik Excel .xlsx podany pełną ścieżką. Wybierz go oknem wyboru."
-    before = run.settings_text()
+    before = run.settings_bytes()
     for viewport, capture in ((DAD_VIEWPORT, "310-ustawienia-odmowa-przy-polu"), (NARROW, "311-ustawienia-odmowa-waska")):
         window = open_settings(page, "Foldery")
         page.set_viewport_size(viewport)
@@ -508,7 +507,7 @@ def _refusal_at_field(run: Run, page: Page) -> None:
             typed.press("Enter")
             expect(register.get_by_role("alert")).to_have_text(sentence)
             expect(typed).to_have_attribute("aria-invalid", "true")
-            run.check(run.settings_text() == before, f"a wrong typed path is not saved ({viewport['width']} px)")
+            run.check(run.settings_bytes() == before, f"a wrong typed path is not saved ({viewport['width']} px)")
             run.capture(page, capture, full_page=False)
             typed.press("Escape")
             expect(typed).to_have_count(0)
@@ -523,7 +522,7 @@ def _refusal_at_field(run: Run, page: Page) -> None:
     run.answer_picker(str(run.root / "ZLECENIA.txt"))
     register.get_by_role("button", name="Zmień Rejestr zleceń", exact=True).click()
     expect(register.get_by_role("alert")).to_have_text(sentence)
-    run.check(run.settings_text() == before, "a wrong file from the picker is refused under its field, not saved")
+    run.check(run.settings_bytes() == before, "a wrong file from the picker is refused under its field, not saved")
 
     close_settings(page)
 
@@ -556,14 +555,13 @@ def _bad_settings_file(run: Run, page: Page) -> None:
     Foldery for the whole file; Historia shows each such content without „Cofnij”, and the good file comes back."""
 
     run.step(FEATURE, "ustawienia-zle-ustawienie")
-    settings = Path(run.fixture["settings"])
-    good = run.settings_text() or ""
+    good = run.settings_bytes() or b""
     window = open_settings(page, "Foldery")
     folders = window.get_by_role("list", name="Foldery")
     register = folders.get_by_role("listitem", name="Rejestr zleceń")
     periods = folders.get_by_role("listitem", name="Folder okresów")
     # Harness: Maks writes a relative folder okresów into the settings file by hand.
-    put_text(settings, good.replace(run.fixture["periods_directory"], "INEA"))
+    run.put_settings(good.replace(run.fixture["periods_directory"].encode(), b"INEA"))
     page.reload()
     problem = run.api("/api/settings", "ustawienia-zle-pole")["folders_problem"]
     assert isinstance(problem, dict)
@@ -574,7 +572,7 @@ def _bad_settings_file(run: Run, page: Page) -> None:
     run.capture(page, "312-ustawienia-zle-pole", full_page=False)
 
     # Harness: the settings file loses its end (a copy cut off), so no field is to blame.
-    put_text(settings, "schema_version: [\n")
+    run.put_settings(b"schema_version: [\n")
     page.reload()
     problem = run.api("/api/settings", "ustawienia-zly-plik")["folders_problem"]
     assert isinstance(problem, dict)
@@ -606,7 +604,7 @@ def _bad_settings_file(run: Run, page: Page) -> None:
     run.check(True, "a row of Historia that cannot be undone has no „Cofnij”, while a change of Dad's has")
     run.capture(page, "314-ustawienia-historia-bez-cofniecia", full_page=False)
 
-    put_text(settings, good)
+    run.put_settings(good)
     window.get_by_role("link", name="Foldery", exact=True).click()
     page.reload()
     expect(register.get_by_text(Path(run.fixture["order_register"]).name, exact=True)).to_be_visible()
