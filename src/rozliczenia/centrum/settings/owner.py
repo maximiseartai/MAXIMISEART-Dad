@@ -13,10 +13,10 @@ Zła treść pliku to złe ustawienie (``Bad``) z ostatnią dobrą wartością z
 Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie wartości domyślne (``_usable``): trasa okna
 Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), i zapis taty,
 który sprawdza nim zmianę (``NotSaved.unreadable``), odmawiają wtedy zdaniem o tym pliku. Migawka dla procesu ma w miejscu
-nieczytelnego pliku Folderów albo pliku pary Reguł ilości i Listy Urządzeń ``UnreadableFile`` z jego nazwą, więc start
-procesu odmawia tym samym zdaniem, a miejsca, które go jeszcze nie mówią, biorą treść z Wydania
-(``release_if_unreadable``); Przypomnienia o raporcie liczą treścią z Wydania (``_or_release``), jak mówi zdanie pliku w
-oknie Ustawień.
+nieczytelnego pliku Folderów, Przypomnień o raporcie albo pliku pary Reguł ilości i Listy Urządzeń ``UnreadableFile`` z
+jego nazwą, więc start procesu odmawia tym samym zdaniem, Logi Urwanego Uruchomienia i praca Przypomnień o raporcie
+mówią, którego pliku nie dało się przeczytać, a odczyty okna Centrum, które go jeszcze nie mówią, biorą treść z Wydania
+(``release_if_unreadable``).
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -179,14 +179,13 @@ class UnreadableFile:
 @dataclass(frozen=True)
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
-    dobre albo domyślne; Foldery przy pliku, którego system nie daje teraz czytać, to ``UnreadableFile``, a Przypomnienia
-    o raporcie treść z Wydania (``_or_release``). Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej
-    listy nie startuje (odmowa ``refusal.workers_unusable``)."""
+    dobre albo domyślne; przy pliku, którego system nie daje teraz czytać, ``UnreadableFile``. Lista Wykonawców ze złym
+    ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa ``refusal.workers_unusable``)."""
 
     folders: FolderSettings | UnreadableFile
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
-    reminders: ReminderSettings
+    reminders: ReminderSettings | UnreadableFile
     quantity_rules: QuantityRules | UnreadableFile
     """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
     drugiego, ostatnia dobra para, a przy pliku pary, którego system nie daje teraz czytać, ``UnreadableFile``."""
@@ -342,13 +341,13 @@ class CentrumSettings:
         """Wartości dla procesu: raz na start Uruchomienia, który kończy na nich bez względu na późniejsze zmiany."""
 
         with self._lock:
-            folders = self._observe(FOLDERS)
+            folders = _or_unreadable(self._observe(FOLDERS), FOLDERS)
             workers = self._observe(WORKERS)
             inbox_state = inbox.state(self._observe(INBOX))
-            reminders = _or_release(self._observe(REMINDERS), REMINDERS)
+            reminders = _or_unreadable(self._observe(REMINDERS), REMINDERS)
             rules = self._quantity_rules()
             return SettingsSnapshot(
-                folders=UnreadableFile(FOLDERS.name) if isinstance(folders, Unreadable) else _value(folders, FOLDERS),
+                folders=folders,
                 workers=workers,
                 inbox=inbox_state,
                 reminders=reminders,
@@ -961,7 +960,8 @@ _SECTION: Final = re.compile(r"[.\[]")
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla prób skrzynki i Przypomnień (``tools/proba_*``): plik, przy złej treści ostatnia dobra z
-    pamięci właściciela; nie dopisuje Historii ani pamięci."""
+    pamięci właściciela, a Foldery i Przypomnienia o raporcie przy pliku bez odczytu ``UnreadableFile``; nie dopisuje
+    Historii ani pamięci."""
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
@@ -972,11 +972,13 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
         DEVICES,
         {DEVICES.name: lambda value: devices_problem(value, rules, _last_good_devices(remembered_devices), release=release)},
     )
+    folders = _or_unreadable(_read_only_view(config, FOLDERS), FOLDERS)
+    reminders = _or_unreadable(_read_only_view(config, REMINDERS), REMINDERS)
     return SettingsSnapshot(
-        folders=_read_only(config, FOLDERS),
+        folders=folders,
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
-        reminders=_read_only(config, REMINDERS),
+        reminders=reminders,
         quantity_rules=quantity_rules(rules, devices),
     )
 
@@ -1110,6 +1112,13 @@ def _value(read: Read[T], file: SettingsFile[T]) -> T:
             return file.default if usable is None else usable
 
 
+def _or_unreadable(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T | UnreadableFile:
+    """Wartość dla migawki procesu (``_value``), a plik, którego system nie daje teraz czytać, ``UnreadableFile`` z jego
+    nazwą."""
+
+    return UnreadableFile(file.name) if isinstance(observed, Unreadable) else _value(observed, file)
+
+
 def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
     """Wartość, którą liczą procesy (``_value``): plik, którego system nie daje teraz czytać, ma treść z Wydania, jak mówi
     jego zdanie w oknie Ustawień (``messages.unavailable``)."""
@@ -1119,8 +1128,7 @@ def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
 
 def release_if_unreadable(value: T | UnreadableFile, file: SettingsFile[T]) -> T:
     """Wartość z migawki, a w miejscu pliku, którego system nie daje teraz czytać, treść z Wydania, jak u taty bez
-    własnego pliku: Logi i Diagnoza Urwanego Uruchomienia, Przypomnienia o raporcie i odczyty okna Centrum, które jeszcze
-    nie mówią zdania o tym pliku."""
+    własnego pliku: odczyty okna Centrum, które jeszcze nie mówią zdania o tym pliku."""
 
     return file.default if isinstance(value, UnreadableFile) else value
 

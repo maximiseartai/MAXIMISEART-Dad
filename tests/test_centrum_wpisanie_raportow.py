@@ -43,7 +43,9 @@ from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_list import WorkerEntry, WorkerList
@@ -78,7 +80,7 @@ from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
-from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
@@ -3961,6 +3963,41 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
     log = centrum.tool.log_path.read_text(encoding="utf-8")
     for secret in (JAN, ANNA, SKRZYNKA, HASLO):
         assert secret not in log, secret
+
+
+@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE])
+@pytest.mark.parametrize("back", [True, False], ids=["wraca-w-porze", "nie-wraca-do-konca-pory"])
+def test_plik_przypomnien_albo_folderow_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
+    tmp_path: Path, file: str, back: bool
+) -> None:
+    """Decyzja 4A Maksa: plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive),
+    to nie wyłączone przypomnienia ani niewskazany INTERMAX. Następna minuta tej samej pory próbuje znowu, więc plik,
+    który wraca w porze, daje przypomnienia bez wpisu w dzienniku Centrum; plik, który nie wraca do końca pory, nie daje
+    żadnego maila, a pierwsze sprawdzenie po porze zostawia w dzienniku Centrum jeden wpis z nazwą tego pliku."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / file):
+        for moment in (REMINDER_MORNING, datetime(2026, 11, 10, 8, 31)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+        unread = (list(mailbox.sends), _failures_in_log(centrum))
+        if not back:
+            centrum.moment.append(datetime(2026, 11, 10, 16, 59))
+            centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 8, 32) if back else datetime(2026, 11, 10, 17, 1))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert unread == ([], []), "w porze plik bez odczytu tylko czeka na następną minutę"
+    reminded = sorted(reminder.worker for reminder, _ in mailbox.sends)
+    if back:
+        assert (reminded, _failures_in_log(centrum)) == (["anna.kowalska", "jan.testowy"], [])
+    else:
+        assert (reminded, _failures_in_log(centrum)) == ([], [f"przyczyna=plik-bez-odczytu plik={file}"])
 
 
 def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie_wysylki(tmp_path: Path) -> None:

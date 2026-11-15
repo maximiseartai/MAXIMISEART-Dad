@@ -233,6 +233,9 @@ class Environment(_Record):
     python: str
     files: list[LoggedFile] | None
     """``None``: plików procesu nie dało się wyliczyć (np. Folder okresu niedostępny)."""
+    unreadable_settings: str | None = None
+    """Plik Ustawień Centrum (nazwa w ``config``), którego nie dało się przeczytać, więc plików procesu nie wyliczono
+    (``files`` ``None``); ``None``: każdy plik Ustawień przeczytany i pliki sprzed tego pola."""
 
 
 class Explanation(_Record):

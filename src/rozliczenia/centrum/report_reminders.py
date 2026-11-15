@@ -26,6 +26,13 @@ już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłos
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
 nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty.
 
+Plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive), to nie wyłączone
+przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
+plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
+sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
+przed nim pory z ADR 0030; wyniku dla widoku Raporty takie sprawdzenie nie pisze, bo nie wie, czy przypomnienia mają dzień
+wdrożenia.
+
 Praca nie jest Uruchomieniem procesu: nie przechodzi przez ``RunHost``, więc nie blokuje innych Uruchomień i ich nie
 czeka, nie bierze INTERMAX na wyłączność i nie pisze Kopii wejścia ani Logów Uruchomienia. Każda wysyłka i każda
 porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili (ADR 0028); tę samą porażkę dziennik
@@ -57,8 +64,7 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
 from rozliczenia.centrum.settings.files import usable
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, release_if_unreadable
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
@@ -75,6 +81,7 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
 )
 from rozliczenia.worker_reports import (
+    DEFAULT_REMINDERS,
     OLD_VERSION_SCHEDULES,
     Pora,
     Reminder,
@@ -128,6 +135,16 @@ class _Failed:
     cause: ReminderFailure
     failure: str | None = None
     retry: bool = True
+    file: str | None = None
+
+
+@dataclass(frozen=True)
+class _Unread:
+    """Plik Ustawień ``file`` bez odczytu w porze ``pora`` dnia ``day``: wpis w dzienniku Centrum czeka do końca pory."""
+
+    day: date
+    pora: Pora
+    file: str
 
 
 @dataclass
@@ -191,6 +208,8 @@ class ReportReminders:
         self._in_effect: SchedulesInEffect | None = None
         self._settled: tuple[date, Pora, ReminderSchedule] | None = None
         self._last_failure: _Failed | None = None
+        self._schedule = DEFAULT_REMINDERS.schedule
+        self._unread: _Unread | None = None
 
     def check(self) -> None:
         """Jedno sprawdzenie; nieoczekiwany wyjątek trafia do dziennika Centrum, a następna minuta próbuje znowu."""
@@ -224,23 +243,43 @@ class ReportReminders:
 
         now = self._now()
         snapshot = self._settings.snapshot()
-        schedule = snapshot.reminders.schedule
+        reminders = snapshot.reminders
+        if not isinstance(reminders, UnreadableFile):
+            self._schedule = reminders.schedule
+        schedule = self._schedule
         pora = reminder_pora(now, schedule)
-        if pora is None or snapshot.reminders.sends is None or self._settled == (now.date(), pora, schedule):
+        self._close_unread(now.date(), pora)
+        if pora is None or self._settled == (now.date(), pora, schedule):
+            return
+        if isinstance(reminders, UnreadableFile):
+            self._unread = _Unread(now.date(), pora, reminders.name)
+            return
+        self._unread = None
+        if reminders.sends is None:
             return
         found = _Check()
         in_effect = self._checked(now, schedule)
         if self._schedules.unavailable:
             found.failed = _Failed("zapis-por")
         else:
-            self._send(now, snapshot, in_effect, found)
+            self._send(now, snapshot, schedule, in_effect, found)
         failed = found.failed
         if failed is None or not failed.retry:
             self._settled = (now.date(), pora, schedule)
-        if failed is not None and failed != self._last_failure:
+        self._unread = None if failed is None or failed.file is None else _Unread(now.date(), pora, failed.file)
+        if failed is not None and failed.file is None and failed != self._last_failure:
             self._log.reminders_failed(cause=failed.cause, failure=failed.failure)
         self._last_failure = failed
         self._write(now, pora, found)
+
+    def _close_unread(self, day: date, pora: Pora | None) -> None:
+        """Wpis w dzienniku Centrum o pliku Ustawień, który do końca swojej pory nie dał się przeczytać: pierwsze
+        sprawdzenie poza tą porą go zapisuje."""
+
+        unread = self._unread
+        if unread is not None and (unread.day, unread.pora) != (day, pora):
+            self._log.reminders_failed(cause="plik-bez-odczytu", file=unread.file)
+            self._unread = None
 
     def _checked(self, now: datetime, schedule: ReminderSchedule) -> SchedulesInEffect:
         """Pory, przy których sprawdzała praca, z porami tego sprawdzenia; nowe zapisuje przed wysyłką, a zapis, który
@@ -255,12 +294,13 @@ class ReportReminders:
             self._schedules.retry()
         return self._in_effect
 
-    def _send(self, now: datetime, snapshot: SettingsSnapshot, in_effect: SchedulesInEffect, found: _Check) -> None:
-        schedule = snapshot.reminders.schedule
+    def _send(
+        self, now: datetime, snapshot: SettingsSnapshot, schedule: ReminderSchedule, in_effect: SchedulesInEffect, found: _Check
+    ) -> None:
         read = due_reminders(now, snapshot, self._mailbox, self._files, in_effect)
         match read:
             case NotRead():
-                found.failed = _Failed(read.cause, read.failure)
+                found.failed = _Failed(read.cause, read.failure, file=read.file)
                 return
             case PasswordRejected() | InboxUnreachable():
                 self._failed(read, found)
@@ -310,7 +350,7 @@ class ReportReminders:
         self._result.write(json.dumps(document, ensure_ascii=False, indent=2) + "\n")
 
 
-NotReadCause = Literal["bez-wdrozenia", "bez-ustawien", "bez-dostepu", "bez-adresow", "okresy", "intermax"]
+NotReadCause = Literal["bez-wdrozenia", "plik-bez-odczytu", "bez-ustawien", "bez-dostepu", "bez-adresow", "okresy", "intermax"]
 """Przyczyny ``ReminderFailure``, przy których sprawdzenie nie doszło do skrzynki albo do rdzenia."""
 
 
@@ -327,10 +367,12 @@ class DueReminders:
 
 @dataclass(frozen=True)
 class NotRead:
-    """Sprawdzenie nie doszło do przypomnień przez plik, Ustawienia albo INTERMAX: przyczyna i nazwa typu wyjątku."""
+    """Sprawdzenie nie doszło do przypomnień przez plik, Ustawienia albo INTERMAX: przyczyna, nazwa typu wyjątku i nazwa
+    pliku Ustawień bez odczytu (``plik-bez-odczytu``)."""
 
     cause: NotReadCause
     failure: str | None = None
+    file: str | None = None
 
 
 def due_reminders(
@@ -347,11 +389,15 @@ def due_reminders(
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
-    settings = release_if_unreadable(snapshot.folders, FOLDERS)
     reminders = snapshot.reminders
+    if isinstance(reminders, UnreadableFile):
+        return NotRead("plik-bez-odczytu", file=reminders.name)
     rollout = reminders.sends
     if rollout is None:
         return NotRead("bez-wdrozenia")
+    settings = snapshot.folders
+    if isinstance(settings, UnreadableFile):
+        return NotRead("plik-bez-odczytu", file=settings.name)
     if settings.register is None or settings.periods_directory is None:
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
