@@ -88,7 +88,8 @@ _PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
 _NEW_PARSER = (
     "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
     " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md; plik, który mimo to"
-    " parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w opisie PR"
+    " parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w opisie PR, który mówi, dlaczego reguła ruff albo"
+    " ast-grep ani test zachowania nie wystarczą, a recenzent sprawdza, czy ten powód jest prawdziwy (#1888)"
 )
 _GONE_PARSER = "plik zniknął: usuń go z PARSERS w tests/test_zapadki.py"
 
@@ -633,6 +634,16 @@ def test_zapadka_parsera_lapie_plik_spoza_wpisu_z_recznym_parserem(tmp_path: Pat
     (tmp_path / path).write_text(text, encoding="utf-8")
 
     assert parsers_off_entry(tmp_path, base) == [f"{path}: {_NEW_PARSER}"]
+
+
+def test_zapadka_parsera_zada_powodu_dla_ktorego_regula_ani_test_zachowania_nie_wystarcza(tmp_path: Path) -> None:
+    base = _repo_with_parser(tmp_path)
+    (tmp_path / "tests" / "test_nowy.py").write_text("tree = ast.parse(source)\n", encoding="utf-8")
+
+    [finding] = parsers_off_entry(tmp_path, base)
+
+    assert "dopisz do PARSERS" in finding
+    assert "w opisie PR, który mówi, dlaczego reguła ruff albo ast-grep ani test zachowania nie wystarczą" in finding
 
 
 def test_zapadka_parsera_widzi_nowy_plik_oznaczony_git_add_n(tmp_path: Path) -> None:
