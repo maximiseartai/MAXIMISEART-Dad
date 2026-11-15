@@ -99,7 +99,7 @@ def _entry_problem(entry: object) -> str | None:
     return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
 
 
-def _from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
+def from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
     """Mutacje z pliku JSON; plik innej postaci niż ``FILE_SHAPE`` to ``ValueError``, która ją podaje."""
 
     entries = json.loads(path.read_text(encoding="utf-8"))
@@ -383,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     if jak_ci and command:
         parser.error("--jak-ci składa polecenie samo, więc nie podawaj go po --")
     try:
-        mutations = _from_file(args.plik, command) if args.plik else []
+        mutations = from_file(args.plik, command) if args.plik else []
         if args.zmiana:
             edits = tuple(Edit(Path(file), anchor, replacement) for file, anchor, replacement in args.zmiana)
             mutations.append(Mutation("mutacja", edits, command))

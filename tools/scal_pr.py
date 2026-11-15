@@ -17,8 +17,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
    ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej);
 5. każde Ważne werdyktu ``FAIL`` z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` ma na HEAD PR regułę
-   ast-grep o tym id, a jej dowód ``tools/na_scalonych_pr.py --regula`` przechodzi na każdym przypadku tego id z historii
-   pól ``Idiom:`` (``bramka_idiomu``, niżej);
+   ast-grep albo dowód typu albo testu o tym id, a dowód ``tools/na_scalonych_pr.py --regula-id`` przechodzi na każdym
+   przypadku tego id z historii pól ``Idiom:`` (``bramka_idiomu``, niżej);
 6. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 7. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
@@ -58,7 +58,8 @@ uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomi
 Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–5 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
 ``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunek 5 liczy, jak merge, dopiero po
-warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły.
+warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły;
+mutacji dowodu typu albo testu nie uruchamia, bo uruchamiają kod PR (``--bez-kodu-pr``), więc liczy je merge.
 Jego dowód potrzebuje ast-grep i PyYAML, które workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
 z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR. Warunków 6 i 7 nie liczy, bo uruchamiają kod PR (ruff,
 mypy i pytest na scalonym drzewie), a status ustawia token z prawem zapisu statusów; scalenie z ruff i mypy pokazuje
@@ -183,7 +184,7 @@ def _check(pull: Pull, base: str) -> str:
     checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
     if problems := _problems(pull):
         raise _Refused("; ".join(problems))
-    if problems := bramka_idiomu.problems(pull):
+    if problems := bramka_idiomu.problems(pull, runs_pull_code=True):
         raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
     print(f"== #{pull.number} {pull.head[:7]} na {where}", flush=True)
@@ -258,7 +259,7 @@ def _publish_status(pull: Pull) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     problems = _problems(pull)
     if all(isinstance(problem, stan_pr.Waiting) for problem in problems):
-        problems += bramka_idiomu.problems(pull)
+        problems += bramka_idiomu.problems(pull, runs_pull_code=False)
     reasons = "; ".join(problems)
     if not problems:
         state, description = "success", "warunki 1–5 tools/scal_pr.py spełnione"

@@ -55,6 +55,15 @@ niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.u
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
 ``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
 z polem ``Idiom:`` (``bramka_idiomu``).
+
+Dowód typu albo testu: gdy commit ``--z-commita`` ma plik ``dowody-idiomow/<ID>.json`` w postaci ``tools/mutacje.py --plik``,
+``--regula-id`` dowodzi mutacjami złej postaci z ``Gdzie`` zamiast reguły ast-grep. Każde ``--wazne`` ma mutację, która
+zmienia tylko pliki jego ``Gdzie`` i wpisuje (bez wcięcia) pierwszą linię jednego z jego miejsc w SHA werdyktu; polecenie
+każdej, bez ``oczekiwane``, biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
+tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie plików mutacji; bez mutacji przechodzi, a z nią
+jest WYKRYTA na kopii commitu (silnik z tego checkoutu). Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
+CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka”) pomija bieg poleceń, który liczy merge. Granica: reguł
+``npm run rules`` dowód nie ma, a mutację, która obok linii z ``Gdzie`` psuje typ albo test inaczej, łapie tylko recenzent.
 """
 
 from __future__ import annotations
@@ -78,13 +87,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 import github
+from kroki_lokalne import static_steps
+import mutacje
 import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
 from repo import REMOTE, ROOT
 import repo
+import silnik_mutacji
+from silnik_mutacji import Mutation, Verdict
 import szablon_werdyktu
 import werdykt_pr
+import zakres_runu
 
 AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 MAJOR = re.compile(r"#?(\d+)/(W\d+)/r(\d+)")
@@ -98,6 +112,8 @@ CONFIG = "sgconfig.yml"
 # ``ruleDirs`` i brak pliku konfiguracji.
 NOT_LOADED = ("Error: Rule not found", "Error: Cannot read rule directory", "Error: Cannot read configuration")
 Rule = tuple[str, ...]  # argumenty ``ast-grep scan`` wybierające regułę: ``--rule PLIK`` albo ``--config`` z ``--filter``
+PROOFS = "dowody-idiomow"
+PYTEST = ("-m", "pytest", "-q", "-n", "0")
 
 
 @dataclass(frozen=True)
@@ -245,8 +261,8 @@ def major(text: str) -> tuple[int, str, int]:
     return int(found[1]), found[2], int(found[3])
 
 
-def caught(rule: Rule, repository: str, number: int, label: str, round_: int) -> bool:
-    """Drukuje linię Ważnego ``label`` rundy ``round_`` PR-u ``number`` i mówi, czy reguła je złapała."""
+def finding(repository: str, number: int, label: str, round_: int) -> tuple[str, str, str]:
+    """SHA werdyktu ``FAIL`` rundy ``round_`` PR-u ``number`` (pobrany), pole ``Gdzie`` jego Ważnego ``label`` i baza PR-u."""
 
     pull = rejestr_korzeni.pull(repository, number)
     verdict = next((one.verdict for one in werdykt_pr.rounds(pull, werdykt_pr.from_graphql) if one.number == round_ and one.verdict.decision == "FAIL"), None)
@@ -259,12 +275,68 @@ def caught(rule: Rule, repository: str, number: int, label: str, round_: int) ->
         raise ValueError(f"#{number} {label} r{round_}: brak pola {WHERE}")
     if problem := fetched(verdict.commit):
         raise ValueError(problem)
-    found = fired(rule, _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit)
-    targets = places(where, verdict.commit)
+    return verdict.commit, where, pull.base
+
+
+def caught(rule: Rule, repository: str, number: int, label: str, round_: int) -> bool:
+    """Drukuje linię Ważnego ``label`` rundy ``round_`` PR-u ``number`` i mówi, czy reguła je złapała."""
+
+    commit, where, base = finding(repository, number, label, round_)
+    found = fired(rule, _fork(f"{REMOTE}/{base}", commit), commit)
+    targets = places(where, commit)
     inside = [hit for hit in found if any(hit[0] == path and first <= hit[1] <= last for path, first, last in targets)]
     state = "złapane" if inside else "obok" if found else "nie"
-    print(f"#{number} {label} r{round_} | {verdict.commit[:8]} | {state} | odpalenia {_shown(found)} | {where}", flush=True)
+    print(f"#{number} {label} r{round_} | {commit[:8]} | {state} | odpalenia {_shown(found)} | {where}", flush=True)
     return bool(inside)
+
+
+def covers(mutation: Mutation, commit: str, where: str) -> bool:
+    """Czy mutacja zmienia tylko pliki miejsc pola ``Gdzie`` i wpisuje pierwszą linię któregoś z nich w ``commit``."""
+
+    found = szablon_werdyktu.places(where)
+    lines = {"".join(repo.git(ROOT, "show", f"{commit}:{path}").splitlines()[first - 1 : first]).strip() for path, first, _ in found}
+    named = {edit.file.as_posix() for edit in mutation.edits} <= {path for path, _, _ in found}
+    return named and any(line and line in edit.replacement for line in lines for edit in mutation.edits)
+
+
+def outside_ci(mutation: Mutation, copy: Path) -> str | None:
+    """Przyczyna, gdy polecenie mutacji nie biegnie w Required CI przy zmianie jej plików w kopii ``copy``."""
+
+    if mutation.expected is None and mutation.command in {step.command[1:] for step in static_steps(copy)}:
+        return None
+    nodes = mutation.command[len(PYTEST) :]
+    if mutation.expected is not None or mutation.command[: len(PYTEST)] != PYTEST or not nodes or not all(node.startswith("tests/") for node in nodes):
+        return f"{mutation.name}: polecenie {' '.join(mutation.command)} bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
+    chosen = set(zakres_runu.zakres(zakres_runu.Zdarzenie.PULL_REQUEST, frozenset(edit.file.as_posix() for edit in mutation.edits), copy).pliki)
+    missing = [node for node in nodes if not {node.partition("::")[0], node.partition("[")[0]} & chosen]
+    return f"{mutation.name}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia {', '.join(missing)}" if missing else None
+
+
+def mutation_proof(commit: str, rule: str, majors: list[tuple[int, str, int]], *, replay: bool) -> int:
+    """Dowód typu albo testu z ``PROOFS/<rule>.json`` kopii ``commit`` (``--help``); kod 0 tylko z ``DOWÓD OK``."""
+
+    try:
+        with potomne.commit_copy(ROOT, commit) as copy:
+            mutations = mutacje.from_file(copy / PROOFS / f"{rule}.json", ())
+            problems = [problem for mutation in mutations if (problem := outside_ci(mutation, copy))]
+        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+        for number, label, round_ in majors:
+            sha, where, _ = finding(repository, number, label, round_)
+            covered = any(covers(mutation, sha, where) for mutation in mutations)
+            print(f"#{number} {label} r{round_} | {sha[:8]} | {'pokryte' if covered else 'nie'} | {where}", flush=True)
+            problems += [] if covered else [f"#{number} {label} r{round_}: żadna mutacja nie zmienia samych plików z Gdzie i nie wpisuje pierwszej linii jego miejsca"]
+    except (ValueError, subprocess.CalledProcessError) as error:
+        print(f"DOWÓD ODMOWA | {rule} | {error}")
+        return 1
+    if replay and not problems:
+        commands = sorted({mutation.command for mutation in mutations})
+        base = zip(commands, silnik_mutacji.verdicts([Mutation("podstawa", (), command) for command in commands], workers=1, commit=commit), strict=True)
+        problems += [f"podstawa {' '.join(command)} bez mutacji: {last}" for command, (verdict, last) in base if verdict is not Verdict.SURVIVED]
+        found = [] if problems else zip(mutations, silnik_mutacji.verdicts(mutations, workers=1, commit=commit), strict=True)
+        problems += [f"{mutation.name}: {verdict} → {last}" for mutation, (verdict, last) in found if not silnik_mutacji.in_ci(verdict, last)[0]]
+    done =f"przypadki {len(majors)}/{len(majors)} | mutacje {len(mutations)}/{len(mutations)} {'wykryte' if replay else 'bez biegu (--bez-kodu-pr)'}"
+    print(f"DOWÓD {'ODMOWA' if problems else 'OK'} | {rule} | {'; '.join(problems) or done}")
+    return 1 if problems else 0
 
 
 def _fork(base: str, commit: str) -> str:
@@ -275,13 +347,16 @@ def _fork(base: str, commit: str) -> str:
     return repo.merge_base(ROOT, f"{merges[-1]}^1" if merges else base, commit)
 
 
-def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
+def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int, *, replay: bool) -> int:
     """Dowód reguły o id ``rule``, którą ładuje konfiguracja ``CONFIG`` kopii ``commit`` (``--config`` z ``--filter``,
-    jak zapadka), jak ``proof``; reguły, której ta konfiguracja nie ładuje, odmawia."""
+    jak zapadka), jak ``proof``; reguły, której ta konfiguracja nie ładuje, odmawia. Commit z plikiem ``PROOFS/<rule>.json``
+    dostaje dowód typu albo testu (``mutation_proof``)."""
 
     if problem := fetched(commit):
         print(f"DOWÓD ODMOWA | {rule} | {problem}")
         return 1
+    if repo.run_git(ROOT, "cat-file", "-e", f"{commit}:{PROOFS}/{rule}.json").returncode == 0:
+        return mutation_proof(commit, rule, majors, replay=replay)
     if AST_GREP is None:
         print(f"DOWÓD ODMOWA | {rule} | {odpalenia_ast_grep.INSTALL}")
         return 1
@@ -350,13 +425,14 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
+    parser.add_argument("--bez-kodu-pr", action="store_true", help="Dowód typu albo testu bez podstawy i mutacji, czyli bez kodu z --z-commita.")
     args = parser.parse_args(arguments[:split])
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
             parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")
         last = args.ostatnie or (0 if args.pr else 20)
         if args.regula_id is not None:
-            return proof_on(commit_of(args.z_commita), args.regula_id, args.wazne, args.pr, last)
+            return proof_on(commit_of(args.z_commita), args.regula_id, args.wazne, args.pr, last, replay=not args.bez_kodu_pr)
         return proof(args.regula, args.wazne, args.pr, last)
     if not command or not (args.pr or args.ostatnie or args.commit):
         parser.error("podaj PR-y (--pr, --ostatnie albo --commit) i polecenie po --, np. -- tools/mutacje_zmiany.py --baza HEAD^1")

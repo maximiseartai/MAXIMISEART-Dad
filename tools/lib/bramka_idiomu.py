@@ -1,6 +1,6 @@
 """Warunek merge'a z polem ``Idiom:`` ([ADR 0036](../../docs/adr/0036-chwast-to-regula.md), „Warunek merge'a” i „Dowód
 reguły”): PR z Ważnym z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` scala się tylko wtedy, gdy na HEAD
-PR stoi reguła ast-grep o tym id, a jej dowód przechodzi.
+PR stoi reguła ast-grep albo dowód typu albo testu o tym id, a jego dowód przechodzi.
 
 Ważne z polem to Ważne werdyktów ``FAIL`` tego PR (``szablon_werdyktu.findings``, każda runda). Postać ``Idiom: bez
 reguły <klasa> jak #N W<n> r<k>`` niczego nie wymaga.
@@ -14,9 +14,9 @@ od wdrożenia szablonu werdyktu z frazą ``"Idiom: <id>"`` (``rejestr_korzeni.id
 przypadku i ma najwyżej 10% PR-ów z fałszywym alarmem na 20 ostatnich scalonych, a regułę bez pola ``files:`` w ``reguly-ast-grep/``
 zatrzymuje zapadka ``ast_grep_rules_without_scope`` w Required CI HEAD PR.
 
-Granica: dowód umie dziś tylko ast-grep, więc ``<id>``, które jest kluczem ``banned-api`` ruff albo kontraktem
-import-linter, to odmowa, dopóki na HEAD nie stanie reguła ast-grep o tym id. Przypadek ``jak #N W<n> r<k>`` sprzed
-szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
+Dowód typu albo testu (plik ``dowody-idiomow/<id>.json`` z mutacjami złej postaci, ``tools/na_scalonych_pr.py --help``)
+uruchamia kod HEAD PR, więc status „Werdykt i bramka” podaje dowodowi ``--bez-kodu-pr``, a mutacje liczy merge.
+Przypadek ``jak #N W<n> r<k>`` sprzed szablonu werdyktu (bez pola ``Gdzie``) dowód odrzuca, więc i on daje odmowę. Rejestr czyta bramka tylko wtedy, gdy PR
 ma Ważne z polem z id reguły, a błąd GitHuba, Gita albo dowodu to odmowa z przyczyną. Przyczyna, przy której dowód
 nie ma jeszcze danych (GitHub nie wyrenderował werdyktów albo nie podał rejestru), to ``stan_pr.Waiting``, bo mija
 przy następnym runie bez zmiany w PR; odmowa dowodu i jego przekroczony czas wymagają reguły albo poprawki autora.
@@ -50,10 +50,10 @@ FIELD = "Idiom:"
 PROOF_TIMEOUT_S = 300
 
 
-def problems(pull: Pull) -> list[str]:
+def problems(pull: Pull, *, runs_pull_code: bool) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z warunku pola ``Idiom:``; HEAD i baza PR są już pobrane z ``origin``. Wątek
     bez szablonu werdyktu (``werdykt_pr.rule_applies``) i PR bez słowa ``Idiom:`` w żadnym werdykcie bramka pomija bez
-    pytania GitHuba."""
+    pytania GitHuba. Bez ``runs_pull_code`` dowód nie uruchamia kodu PR (``--bez-kodu-pr``)."""
 
     deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
     if not any(FIELD in str(verdict.get("body") or "") for verdict in pull.verdicts) or not werdykt_pr.rule_applies(pull, deployed):
@@ -74,7 +74,7 @@ def problems(pull: Pull) -> list[str]:
     found = []
     for rule in wanted:
         every = [*own, *(case for case in history[rule] if case.pull != pull.number)]
-        found.extend(_proved(pull, rule, _cases(every, rule), deadline - time.monotonic()))
+        found.extend(_proved(pull, rule, _cases(every, rule), deadline - time.monotonic(), runs_pull_code))
     return found
 
 
@@ -90,10 +90,10 @@ def _cases(every: Sequence[IdiomCase], rule: str) -> list[str]:
     return [f"{number}/{label}/r{round_}" for number, label, round_ in sorted(found)]
 
 
-def _proved(pull: Pull, rule: str, cases: Sequence[str], left: float) -> list[str]:
+def _proved(pull: Pull, rule: str, cases: Sequence[str], left: float, runs_pull_code: bool) -> list[str]:
     """Przyczyna odmowy z dowodu reguły ``rule`` na przypadkach ``cases``, który ma ``left`` sekund z ``PROOF_TIMEOUT_S``."""
 
-    arguments = ["--regula-id", rule, "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case))]
+    arguments = ["--regula-id", rule, "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *([] if runs_pull_code else ["--bez-kodu-pr"])]
     late = f"idiom: {rule}: dowody reguł tego PR nie skończyły się w {PROOF_TIMEOUT_S} s, uruchom ponownie"
     if left <= 0:
         return [late]
@@ -107,5 +107,5 @@ def _proved(pull: Pull, rule: str, cases: Sequence[str], left: float) -> list[st
         return []
     return [
         f"idiom: {rule}: Ważne {', '.join(cases)} ma pole Idiom: {rule}, a dowód reguły nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; "
-        f"dodaj albo popraw regułę ast-grep o id {rule} i sprawdź ją poleceniem tools/na_scalonych_pr.py {' '.join(arguments)}"
+        f"dodaj albo popraw regułę ast-grep o id {rule} albo dowód typu albo testu (tools/na_scalonych_pr.py --help) i sprawdź go poleceniem tools/na_scalonych_pr.py {' '.join(arguments)}"
     ]
