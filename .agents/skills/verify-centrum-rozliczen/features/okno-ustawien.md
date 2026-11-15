@@ -5,8 +5,8 @@ over the blurred Centrum, like the settings of T3 Code (ADR 0032): sections in g
 `Ustawienia / <sekcja>` and ✕ on top. Esc, ✕ and a click on the backdrop close it, and the page under it stays. The
 address `#/ustawienia/<sekcja>` opens the window on that section over the current page, and the old address of
 Konfiguracja, `#/konfiguracja`, opens Ustawienia. On a narrow browser window it fills the screen and the sections
-are a combobox. Okresy, Uruchomienia and Raporty choose no file any more: an unset one is the link
-`Ustaw w Ustawieniach` to the section Foldery.
+are a combobox. Okresy, Uruchomienia and Raporty choose no file any more: one that is not set, is gone or
+cannot be read now has the link `Ustaw w Ustawieniach` to the section Foldery.
 
 ## Sub-features
 

@@ -25,7 +25,7 @@ narzędzia nie wystartowała.” under the title of whichever page it lands on; 
 shortcut, shows it on Okresy too, until Dad clicks `Zaktualizuj narzędzie` again.
 When the old version finds „ok” in the guardian's result file (the disk refused
 the guardian both the removal of „ok” and the write of the failure), it shows
-the Komunikat of an unexpected failure, not „Narzędzie zaktualizowane”, because
+the Komunikat of an unexpected failure, not „Zaktualizowano”, because
 the commit it runs is not the one „ok” names (#490). A result the Centrum log
 already has does not come back on a later start (#491). A failure in the
 result file whose commit before the update is not the commit Centrum runs is

@@ -22,6 +22,9 @@ leaves. Centrum asks the skrzynka Zgłoszeń about Dad's open cases at start and
 at most once per 10 minutes of its clock, one question per kind of case (label);
 no network passes silently with the last known state.
 
+A finished Wycena w efenix is a Powiadomienie too, with the tag `Wycena w efenix`; `wycena-w-efenix.md` describes it
+and drives it (`powiadomienie`).
+
 Every Wydanie among the last 30 published (GitHub Releases, no drafts or
 pre-releases) up to the newest one on `main` is a
 Powiadomienie o nowej wersji `Nowa wersja 0.x.y` with the green tag `Nowa

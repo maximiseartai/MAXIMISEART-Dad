@@ -4,7 +4,7 @@ Centrum measures its own speed on Dad's computer without Dad seeing anything:
 every API answer carries `Server-Timing` with the handling time only, and after
 every ready view (the cold start of a page, a menu click, a click on the header bell) the browser sends one
 measurement that the server appends to the Centrum log as a `pomiar` entry. The
-entry holds the page id (`PageId`, the five pages of the menu, Powiadomienia and the Uzupełnienie page `#/uzupelnienie/<okres>`, which this feature does not drive:
+entry holds the page id (`PageId`, the four pages of the menu, the window Ustawienia, Powiadomienia and the Uzupełnienie page `#/uzupelnienie/<okres>`, which this feature does not drive:
 `tests/test_centrum_uzupelnienie_tabela.py::test_po_odczycie_strony_rodzaju_teksty_wierszy_nie_wychodza_z_komputera`
 sends its measurement and checks that the request reaches the Centrum log while no row text reaches the log, a
 Zgłoszenie or the Logi), the times in milliseconds, and for each

@@ -34,3 +34,6 @@ from the repository root (Windows: `py -3`). The proof is in the evidence folder
 - Run it after `uporzadkowanie-intermax` in `all`: that feature counts exactly one Kopia in the folder of Kopie, and
   its own Kopia (`… 2026-10-19 …`) is then the newest on this list.
 - Two restores in one second would collide on the name of the Kopia of the current state; the feature restores once.
+  The second one is refused with „Przed chwilą przywrócono już kopię INTERMAX, więc ta kopia nie została przywrócona.”
+  and changes neither INTERMAX nor the Kopie
+  (`tests/test_centrum_przywracanie_kopii_intermax.py::test_drugie_przywrocenie_w_tej_samej_sekundzie_mowi_ze_kopie_przywrocono_przed_chwila`).

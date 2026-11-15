@@ -20,7 +20,7 @@ opens a new issue.
 
 Printed by `scripts/sub_features.py --feature kontrola-ilosci` from the drive's steps and checks; refresh the section with it.
 
-- `kontrola-w-kolejce`: the RUN of … left its Kontrola ilości in config/zgloszenia/kolejka; the Centrum log says the Kontrola ilości of the RUN went into the queue; without a key the Centrum log says the queue waits (one line per pass, naming its first file), with no content; no Zgłoszenie file for Dad next to the queue: the Kontrola is not an unsent Zgłoszenie; Dad's tab says nothing about the skrzynka Zgłoszeń.
+- `kontrola-w-kolejce`: the RUN of … left its Kontrola ilości in config/zgloszenia/kolejka; the Centrum log says the Kontrola ilości of the RUN went into the queue; without a key the Centrum log says the queue waits for a key, with no content; no Zgłoszenie file for Dad next to the queue: the Kontrola is not an unsent Zgłoszenie; Dad's tab says nothing about the skrzynka Zgłoszeń.
 - `kontrola-bez-sieci-po-starcie`: the Kontrola file stays after another failure; nothing reached the skrzynka.
 - `kontrola-wyslana-po-starcie`: Okresy is shown … s after the start, before the skrzynka took the Kontrola; the skrzynka got exactly one Kontrola ilości; the issue is the period's Kontrola ilości, labelled kontrola-ilosci; it is the Kontrola of the RUN from the queue; the Centrum log has neither the key nor workbook content; the key is not in the Kontrola.
 

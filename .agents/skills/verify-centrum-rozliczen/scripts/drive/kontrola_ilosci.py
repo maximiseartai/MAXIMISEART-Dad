@@ -62,7 +62,7 @@ def drive(run: Run, page: Page) -> None:
     )
     run.check(
         any(" skrzynka-czeka " in line and line.endswith(" przyczyna=brak-klucza") for line in run.log().splitlines()),
-        "without a key the Centrum log says the queue waits (one line per pass, naming its first file), with no content",
+        "without a key the Centrum log says the queue waits for a key, with no content",
     )
     run.check(
         sorted(path.name for path in run.queue.parent.iterdir()) == [run.queue.name],
