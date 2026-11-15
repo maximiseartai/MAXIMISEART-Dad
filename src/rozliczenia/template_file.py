@@ -30,7 +30,16 @@ from .highlights import PLAIN
 from .register_columns import TARGET_HEADERS
 from .row_look import GENERAL, RowLook, wraps
 from .template_copy import InvalidValue, Package, Recalculation, Row, SheetLayout, TemplateCopy
-from .collective_layout import DATA_ROW_COLUMNS, FIRST_DATA_ROW, HEADER_ROW, INPUT_COLUMNS, LOOK_COLUMNS, QUANTITY_COLUMNS
+from .collective_layout import (
+    DATA_ROW_COLUMNS,
+    FIRST_DATA_ROW,
+    HEADER_ROW,
+    INPUT_COLUMNS,
+    LOOK_COLUMNS,
+    QUANTITY_COLUMNS,
+    REMARKS_AMOUNT,
+    letter,
+)
 from .workbook_files import (
     DataRow,
     MergedCells,
@@ -404,12 +413,13 @@ class TemplateFile:
 def _ensure_unmerged(
     path: Path, sheet: str, merged_ranges: Sequence[CellRange], layout: SheetLayout, columns: Collection[int], row_count: int
 ) -> None:
-    """Zły układ z ``MergedCells``, gdy komórki ``row_count`` zapisanych Wierszy danych są scalone."""
+    """Zły układ z ``MergedCells``, gdy komórki ``row_count`` zapisanych Wierszy danych są scalone; we Wzorcu z
+    kolumnami Ilości usług do kolumny ``AS``, w którą Przygotowanie wpisuje kwotę Legendy czynności."""
 
     if row_count == 0:
         return
     first_row, last_row = layout.first_data_row, layout.first_data_row + row_count - 1
-    last_column = max(_last_written_column(layout, columns), layout.quantity_columns.stop - 1)
+    last_column = max(_last_written_column(layout, columns), REMARKS_AMOUNT if layout.quantity_columns else 0)
     for merged in merged_ranges:
         if merged.min_row <= last_row and merged.max_row >= first_row and merged.min_col <= last_column:
             raise WorkbookError(path, Problem.LAYOUT, MergedCells(sheet, merged.coord))
@@ -419,18 +429,24 @@ def _last_written_column(layout: SheetLayout, columns: Collection[int]) -> int:
     return max(layout.look_columns, *columns)
 
 
-_NO_QUANTITIES: MappingProxyType[str, Never] = MappingProxyType({})
+_NO_NUMBERS: MappingProxyType[str, Never] = MappingProxyType({})
+_NO_FILLS: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 def _in_columns(rows: Sequence[DataRow] | Sequence[RegisterRow], target_columns: Mapping[str, int]) -> list[Row]:
-    """Komórka Wiersza danych Pliku zbiorczego w swojej kolumnie, a komórka wiersza Rejestru pod nagłówkiem docelowym."""
+    """Komórka Wiersza danych Pliku zbiorczego w swojej kolumnie, a komórka wiersza Rejestru pod nagłówkiem docelowym,
+    z Ilościami usług, kwotą w ``AS`` i wypełnieniami z Przygotowania."""
 
     return [
-        Row(dict(enumerate(row.cells, start=1)), _NO_QUANTITIES)
+        Row(dict(enumerate(row.cells, start=1)), _NO_NUMBERS, _NO_FILLS)
         if isinstance(row, DataRow)
-        else Row({target_columns[header]: cell for header, cell in row.cells.items()}, row.quantities)
+        else Row({target_columns[header]: cell for header, cell in row.cells.items()}, _numbers(row), row.fills)
         for row in rows
     ]
+
+
+def _numbers(row: RegisterRow) -> Mapping[str, int]:
+    return {**row.quantities, letter(REMARKS_AMOUNT): row.amount} if row.amount else row.quantities
 
 
 def _write_rows(sheet: Worksheet, layout: SheetLayout, rows: Sequence[Row], columns: Collection[int]) -> None:
@@ -465,8 +481,10 @@ def _write_rows(sheet: Worksheet, layout: SheetLayout, rows: Sequence[Row], colu
             else:
                 cell.font = highlights.font_over(cast(Font, cell.font))
                 cell.fill = highlights.fill_over(cast(Fill, copy(cell.fill)))
-        for letter, quantity in row.quantities.items():
-            sheet.cell(number, column_index_from_string(letter)).value = quantity
+        for written, value in row.numbers.items():
+            sheet.cell(number, column_index_from_string(written)).value = value
+        for written, fill in row.fills.items():
+            sheet.cell(number, column_index_from_string(written)).fill = copy(fill)
     if layout.period_file:
         _set_autofilter(sheet, layout.header_row, len(rows))
 

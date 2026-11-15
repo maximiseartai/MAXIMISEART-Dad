@@ -223,8 +223,12 @@ class Row:
 
     cells: Mapping[int, DataCell]
     """Kolumna od 1 → komórka z wartością, Wyróżnieniami, formatem liczby i Hiperłączem; każda kolumna Wiersza danych."""
-    quantities: Mapping[str, int]
-    """Litera kolumny → liczba wpisana w komórkę Wzorca z jej stylem; tylko w ``SheetLayout.quantity_columns``."""
+    numbers: Mapping[str, int]
+    """Litera kolumny → liczba wpisana w komórkę Wzorca z jej stylem: Ilości usług (``SheetLayout.quantity_columns``) i
+    kwota w ``AS``."""
+    fills: Mapping[str, Fill]
+    """Litera kolumny → wypełnienie w miejscu wypełnienia stylu komórki Wzorca; komórka bez liczby zostaje z treścią
+    Wzorca."""
 
 
 class Recalculation(Enum):
@@ -722,7 +726,10 @@ class _Sheet:
         tail_start = self._boundaries[chunk]
         links_at = self._links_at
         last_column = max(
-            [self._layout.data_columns, *(column_index_from_string(letter) for row in rows for letter in row.quantities)]
+            [
+                self._layout.data_columns,
+                *(column_index_from_string(letter) for row in rows for letter in (*row.numbers, *row.fills)),
+            ]
         )
         head = b"".join([self._prefix(last_row if rows else None, last_column), *patched, xml[region_end:tail_start]])
         if self._chunks is None:
@@ -790,10 +797,14 @@ class _Sheet:
             existing = cells.get(column)
             style = styles.look_style(_cell_style(existing), look.cell(column, PLAIN, GENERAL, wrapped=False))
             written[column] = _restyled(reference, existing, style)
-        for letter, quantity in data.quantities.items():
+        for letter in dict.fromkeys((*data.numbers, *data.fills)):
             column = column_index_from_string(letter)
             reference = self._letters[column - 1] + suffix
-            written[column] = _cell_xml(reference, _cell_style(cells.get(column)), *_value_xml(quantity))
+            existing = cells.get(column)
+            fill = data.fills.get(letter)
+            style = _cell_style(existing) if fill is None else styles.fill_style(_cell_style(existing), fill)
+            amount = data.numbers.get(letter)
+            written[column] = _restyled(reference, existing, style) if amount is None else _cell_xml(reference, style, *_value_xml(amount))
         return start_tag + b"".join(cell for _, cell in sorted(written.items())) + b"</row>"
 
     def _cell(
@@ -1304,6 +1315,7 @@ class _StyleAdditions:
         self.borders: list[Border] = []
         self._added: dict[tuple[int | None, str | None, Highlights], int | None] = {}
         self._looks: dict[tuple[int | None, CellLook], int | None] = {}
+        self._filled: dict[tuple[int | None, Fill], int | None] = {}
         self._xf_ids: dict[bytes, int] = {}
 
     def number_format(self, style: int | None) -> str:
@@ -1335,6 +1347,19 @@ class _StyleAdditions:
         self.xfs.append(xf)
         return len(self._styles.xfs) + len(self.xfs) - 1
 
+    def fill_style(self, style: int | None, fill: Fill) -> int | None:
+        """Styl komórki Wzorca ``style`` z wypełnieniem ``fill``; reszta stylu zostaje z Wzorca."""
+
+        key = (style, fill)
+        if key not in self._filled:
+            styles = self._styles
+            base = styles.xf(style)
+            xf = base
+            if _item(styles.fills, _xf_id(xf, _FILL_ID)) != fill:
+                xf = with_style_attribute(xf, b"fillId", _id(styles.fill_ids, len(styles.fills), self.fills, fill), b"applyFill")
+            self._filled[key] = style if xf is base else self._xf_id(xf)
+        return self._filled[key]
+
     def look_style(self, style: int | None, look: CellLook) -> int | None:
         """Styl komórki Wzorca ``style`` z wyglądem ``look``; ochrona, styl nazwany i reszta stylu zostają z Wzorca."""
 
@@ -1360,6 +1385,12 @@ class _StyleAdditions:
             xf = _with_alignment(xf, ElementTree.tostring(look.alignment.to_tree()))
         if xf is base:
             return style
+        return self._xf_id(xf)
+
+    def _xf_id(self, xf: bytes) -> int:
+        """Numer stylu ``xf``: stylu Wzorca, a gdy go tam nie ma, dopisanego raz za nimi."""
+
+        styles = self._styles
         if xf in styles.xf_ids:
             return styles.xf_ids[xf]
         if xf not in self._xf_ids:

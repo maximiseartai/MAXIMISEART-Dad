@@ -80,6 +80,13 @@ PLAIN = Highlights()
 """Komórka bez Wyróżnień."""
 
 
+def solid_fill(argb: str) -> PatternFill:
+    """Jednolite wypełnienie koloru ``argb`` (np. ``FF92D050``) tak, jak je zapisuje Excel tacie: kolor w ``fgColor``,
+    a ``bgColor`` automatyczny."""
+
+    return PatternFill(patternType="solid", fgColor=Color(rgb=argb), bgColor=Color(indexed=64))
+
+
 Face = tuple[str | None, float | None]
 """Krój i rozmiar czcionki komórki; ``(None, None)``: brakująca komórka."""
 

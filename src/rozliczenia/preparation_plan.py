@@ -1,4 +1,5 @@
-"""Wybór zleceń okresu, reguły zleceń i Reguły ilości w Przygotowaniu pliku zbiorczego (etap Planowanie).
+"""Wybór zleceń okresu, reguły zleceń, Reguły ilości i Legenda czynności w Przygotowaniu pliku zbiorczego (etap
+Planowanie).
 
 Zakres okresu w Rejestrze to wiersze od pierwszego do ostatniego zlecenia
 okresu w arkuszu ze zleceniami. W tym zakresie wiersz z danymi bez poprawnej
@@ -18,7 +19,8 @@ from . import preparation_messages as messages
 from .message import StopError
 from .preparation_register import cell_value
 from .register_file import RegisterSheet
-from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
+from .activity_legend import ActivityLegend, CodesRead
+from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
 from .quantity_engine import OrderContent, QuantityRules, RuleResult, evaluate
 from .settlement_period import SettlementPeriod
 from .workbook_files import RegisterRow, cell_datetime, is_blank
@@ -47,18 +49,21 @@ class PeriodOrder:
 
 @dataclass(frozen=True)
 class CollectiveRow:
-    """Wiersz danych Pliku zbiorczego: Zlecenie skuteczne i wynik Reguł ilości dla jego treści."""
+    """Wiersz danych Pliku zbiorczego: Zlecenie skuteczne, wynik Reguł ilości dla jego treści i wynik Legendy czynności
+    dla jego ``CZYNNOŚCI ZREALIZOWANE``."""
 
     order: PeriodOrder
     rule_result: RuleResult
+    codes: CodesRead
 
     @classmethod
-    def of(cls, order: PeriodOrder, rules: QuantityRules) -> CollectiveRow:
+    def of(cls, order: PeriodOrder, rules: QuantityRules, legend: ActivityLegend) -> CollectiveRow:
         row = order.register_row
         content = OrderContent.of(
             cell_value(row, CONTRACT), cell_value(row, DEVICES), cell_value(row, ACTIVITIES), order.started
         )
-        return cls(order, evaluate(rules, content))
+        completed = cell_value(row, COMPLETED)
+        return cls(order, evaluate(rules, content), legend.read("" if completed is None else str(completed)))
 
 
 @dataclass(frozen=True)
@@ -103,8 +108,10 @@ def plan_period_orders(
     period: SettlementPeriod,
     worker_mapping: Mapping[str, str],
     rules: QuantityRules,
+    legend: ActivityLegend,
 ) -> Plan:
-    """Wybiera zlecenia okresu po dacie, w kolejności Rejestru, sprawdza reguły zleceń i stosuje Reguły ilości ``rules``."""
+    """Wybiera zlecenia okresu po dacie, w kolejności Rejestru, sprawdza reguły zleceń i stosuje Reguły ilości ``rules``
+    oraz Legendę czynności ``legend``."""
 
     register = _period_sheet(register_path, sheets, period)
     orders: list[PeriodOrder] = []
@@ -126,7 +133,7 @@ def plan_period_orders(
     if unknown_workers:
         raise StopError(messages.unknown_workers(register_path, register.name, unknown_workers))
     skipped_empty_rows = sum(1 for row in register.empty_rows if first_row < row < last_row)
-    collective_rows = [CollectiveRow.of(order, rules) for order in orders if order.is_successful]
+    collective_rows = [CollectiveRow.of(order, rules, legend) for order in orders if order.is_successful]
     return Plan(period, register.name, orders, collective_rows, skipped_empty_rows)
 
 

@@ -70,6 +70,8 @@ from rozliczenia.efenix_window import (
     WindowAction,
     WindowCause,
 )
+from rozliczenia.activity_legend import ActivityLegend, LegendProblem
+from rozliczenia.activity_legend_file import dump_activity_legend, parse_activity_legend
 from rozliczenia.efenix_trace import TraceStep
 from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
@@ -509,6 +511,27 @@ class LoggedQuantityRules(_Record):
         return found if isinstance(found, RulesProblem) else parse_quantity_rules(rules, found)
 
 
+class LoggedActivityLegend(_Record):
+    """Legenda czynności ze startu Uruchomienia (migawka Ustawień Centrum): dokument pliku ``legenda-czynnosci.yaml``
+    (``activity_legend_file``) jako tekst JSON, z tego samego powodu co ``LoggedQuantityRules``. Liczy nią Przygotowanie
+    pliku zbiorczego, a odtworzenie z Logów liczy nią zamiast legendy z Wydania."""
+
+    legend: str
+
+    @classmethod
+    def of(cls, legend: ActivityLegend) -> LoggedActivityLegend:
+        return cls(legend=_json_text(dump_activity_legend(legend)))
+
+    def value(self) -> ActivityLegend | LegendProblem:
+        """Legenda czynności z Logów tym samym parserem co plik Ustawień; problem, gdy jej nie da się odczytać."""
+
+        try:
+            document = json.loads(self.legend)
+        except ValueError:
+            return LegendProblem("plik", "Legenda czynności w Logach nie jest tekstem JSON.")
+        return parse_activity_legend(document)
+
+
 def _json_text(document: dict[str, object]) -> str:
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
 
@@ -694,6 +717,9 @@ class RunLog(StartFacts):
     quantity_rules: LoggedQuantityRules | None = None
     """Reguły ilości ze startu Uruchomienia (``LoggedQuantityRules``). ``None``: Logi Urwanego Uruchomienia i pliki sprzed
     tego pola."""
+    activity_legend: LoggedActivityLegend | None = None
+    """Legenda czynności ze startu Uruchomienia (``LoggedActivityLegend``). ``None``: Logi Urwanego Uruchomienia, procesu,
+    który nią nie liczy, i pliki sprzed tego pola."""
 
     @model_serializer(mode="wrap")
     def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

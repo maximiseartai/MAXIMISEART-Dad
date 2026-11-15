@@ -5,7 +5,8 @@ Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``)
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
 razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, pliki Reguł
-ilości i Listy Urządzeń (``quantity_rules``) oraz wyjątki Kontroli ilości (``quantity_exceptions``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
+ilości i Listy Urządzeń (``quantity_rules``), wyjątki Kontroli ilości (``quantity_exceptions``) i Legendę czynności
+(``activity_legend``). Każde ustawienie ma swoje miejsce (``_Place``), z którego właściciel
 czyta stan i do którego go zapisuje, a reszta drogi jest wspólna. ``CentrumSettings`` czyta je przy każdym odczycie od
 nowa, więc zmiana działa od razu, a proces dostaje jedną migawkę (``snapshot``) na start Uruchomienia i kończy na jej
 wartościach.
@@ -101,6 +102,7 @@ from rozliczenia.centrum.contract.quantity_rules import RuleEdit
 from rozliczenia.centrum.device_forms import DeviceEdit
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.settings.activity_legend import LEGEND, activity_legend
 from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
 from rozliczenia.centrum.settings.files import (
     Bad,
@@ -149,6 +151,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
 from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
+from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
@@ -190,6 +193,9 @@ class SettingsSnapshot:
     quantity_rules: QuantityRules | UnreadableFile
     """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
     drugiego, ostatnia dobra para, a przy pliku pary, którego system nie daje teraz czytać, ``UnreadableFile``."""
+    activity_legend: ActivityLegend | UnreadableFile
+    """Legenda czynności, którą liczy Uruchomienie: przy złym pliku ostatnia dobra, a przy pliku, którego system nie
+    daje teraz czytać, ``UnreadableFile``."""
 
 
 @dataclass(frozen=True)
@@ -336,6 +342,7 @@ class CentrumSettings:
             DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
             RULES.name: _ConfigFile(config / RULES.name, pause),
             EXCEPTIONS.name: _ConfigFile(config / EXCEPTIONS.name, pause),
+            LEGEND.name: _ConfigFile(config / LEGEND.name, pause),
         }
 
     def snapshot(self) -> SettingsSnapshot:
@@ -347,12 +354,14 @@ class CentrumSettings:
             inbox_state = inbox.state(self._observe(INBOX))
             reminders = _or_release(self._observe(REMINDERS), REMINDERS)
             rules = self._quantity_rules()
+            legend = self._observe(LEGEND)
             return SettingsSnapshot(
                 folders=UnreadableFile(FOLDERS.name) if isinstance(folders, Unreadable) else _value(folders, FOLDERS),
                 workers=workers,
                 inbox=inbox_state,
                 reminders=reminders,
                 quantity_rules=rules.rules if rules.unreadable is None else UnreadableFile(rules.unreadable),
+                activity_legend=UnreadableFile(LEGEND.name) if isinstance(legend, Unreadable) else activity_legend(_value(legend, LEGEND)),
             )
 
     def folders(self) -> FolderSettings | Unreadable:
@@ -950,6 +959,7 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     DEVICES.name: DEVICES,
     RULES.name: RULES,
     EXCEPTIONS.name: EXCEPTIONS,
+    LEGEND.name: LEGEND,
 }
 """Pliki, których wiersze Historii da się cofnąć: każdy plik bez sekretu. Każdy plik ma własny typ wartości (stąd
 ``Any``), a właściciel oddaje wartość tylko temu plikowi, z którego ją wziął."""
@@ -978,6 +988,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
         inbox=inbox.state(_read_only_view(config, INBOX)),
         reminders=_read_only(config, REMINDERS),
         quantity_rules=quantity_rules(rules, devices),
+        activity_legend=activity_legend(_read_only(config, LEGEND)),
     )
 
 

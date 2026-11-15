@@ -19,6 +19,8 @@ from pathlib import Path
 from types import MappingProxyType
 
 from . import input_checks, preparation_files, preparation_plan, preparation_register
+from .activity_legend import ActivityLegend
+from .activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from . import preparation_messages as messages
 from .decision import Decision, Declined
 from .domain import ProgressPhase
@@ -45,7 +47,9 @@ __all__ = [
 class PreparationInputs:
     """Wejście procesu Przygotowania pliku zbiorczego, gotowe przed startem silnika.
 
-    ``quantity_rules``: Reguły ilości tego Uruchomienia, z których Przygotowanie liczy Ilości usług.
+    ``quantity_rules``: Reguły ilości tego Uruchomienia, z których Przygotowanie liczy Ilości usług, a
+    ``activity_legend``: Legenda czynności, z której liczy do nich Ilości usług, kwotę w ``AS`` i Wyróżnienia z
+    ``CZYNNOŚCI ZREALIZOWANE``.
     """
 
     register_path: Path
@@ -56,6 +60,7 @@ class PreparationInputs:
     collective_template_path: Path
     dry_run: bool = False
     quantity_rules: QuantityRules = DEFAULT_QUANTITY_RULES
+    activity_legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND
 
 
 @dataclass
@@ -179,7 +184,7 @@ def prepare_collective_file(inputs: PreparationInputs, context: RunContext) -> P
 
     def plan_orders() -> tuple[Plan, CollectiveFilePlan, list[Message]]:
         plan = preparation_plan.plan_period_orders(
-            register_path, sheets, folder.period, worker_mapping, inputs.quantity_rules
+            register_path, sheets, folder.period, worker_mapping, inputs.quantity_rules, inputs.activity_legend
         )
         collective = preparation_files.plan_period_files(files, len(plan.orders), plan.collective_rows)
         return plan, collective, _plan_warnings(register_path, files, plan, collective)
