@@ -2918,10 +2918,17 @@ def _pamiec_komorek() -> ForbiddenValues:
     return pamiec
 
 
+_OBCE_ZNAKI: Final = ("x", "7")
+"""Obcy znak przy tekście narzędzia: litera i cyfra, klasy znaku, którym zepsuta gramatyka może dołączyć do tekstu
+dopisek kończący się osobną komórką."""
+
+
 def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
     """Tekst narzędzia z zapamiętaną komórką i zapis komórki w nim: pierwsza komórka ``_KOMORKI`` zapisana każdym
     separatorem strażnika spoza alfabetu pola, druga spacją; komórka otoczona separatorem z przodu, w środku i z tyłu
-    tekstu oraz komórka na samym początku albo na samym końcu tekstu z separatorem tylko od strony tekstu."""
+    tekstu, komórka na samym początku albo na samym końcu tekstu z separatorem tylko od strony tekstu oraz (obie
+    komórki, spacją) komórka za obcym znakiem (``_OBCE_ZNAKI``), który przylega do początku albo końca tekstu, z
+    separatorem między nim a komórką i bez separatora albo z nim po drugiej stronie komórki."""
 
     separatory = [znak for znak in _separatory_straznika() if znak not in ALFABETY[pole]]
     assert " " in separatory
@@ -2932,6 +2939,10 @@ def _komorki_w_tekscie(pole: str, narzedzia: str) -> Iterator[tuple[str, str]]:
                 yield f"{narzedzia[:miejsce]}{znak}{zapis}{znak}{narzedzia[miejsce:]}", zapis
             yield f"{zapis}{znak}{narzedzia}", zapis
             yield f"{narzedzia}{znak}{zapis}", zapis
+            for obcy in _OBCE_ZNAKI if znak == " " else ():
+                for kraniec in ("", znak):
+                    yield f"{narzedzia}{obcy}{znak}{zapis}{kraniec}", zapis
+                    yield f"{kraniec}{zapis}{znak}{obcy}{narzedzia}", zapis
 
 
 def _napisy(wartosc: object) -> Iterator[str]:
@@ -2955,8 +2966,10 @@ def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str,
     przodu, w środku i z tyłu poprawnego tekstu narzędzia albo stojąca na samym początku lub końcu tekstu z separatorem
     od strony tekstu, nie stoi w żadnym napisie ani kluczu zdekodowanych Logów po ``guard_logs``. Pada więc ``_kept``,
     który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek (``match``), właściciel pola
-    w poddrzewie bez klasy i lista w poddrzewie bez gramatyki. Komórki sklejonej z tekstem narzędzia bez separatora test
-    nie wstawia; przy znaku słowa strażnik nie rozpoznaje sklejonego słowa komórki (ADR 0025)."""
+    w poddrzewie bez klasy, lista w poddrzewie bez gramatyki i gramatyka z dopiskiem przed tekstem albo po nim, który
+    zaczyna się przy tekście literą, cyfrą albo separatorem. Komórki sklejonej z tekstem narzędzia bez żadnego znaku
+    między nimi test nie wstawia: strażnik szuka wartości jako ciągu całych słów (ADR 0025), więc takiej komórki nie
+    maskuje też przy poprawnej gramatyce."""
 
     pamiec = _pamiec_komorek()
 
@@ -2969,7 +2982,8 @@ def test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs(pole: str,
 def test_komorka_w_tekscie_narzedzia_nie_wychodzi_bez_maski_z_tool_text(pole: str, sciezka: _Sciezka, narzedzia: str) -> None:
     """Te same teksty z komórką (``_komorki_w_tekscie``) nie dają zapisu komórki w wyniku ``tool_text``. Pada więc
     ``tool_text``, który bierze gramatykę tylko do któregokolwiek z tych separatorów albo tylko jej początek
-    (``match``)."""
+    (``match``), i gramatyka z dopiskiem przed tekstem albo po nim, który zaczyna się przy tekście literą, cyfrą albo
+    separatorem."""
 
     for tekst, zapis in _komorki_w_tekscie(pole, narzedzia):
         assert zapis not in tool_text(pole, tekst), repr(tekst)
