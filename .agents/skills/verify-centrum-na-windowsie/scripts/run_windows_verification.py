@@ -59,13 +59,18 @@ def _teed(path: Path) -> Iterator[None]:
             sys.stdout = stdout
 
 
-def _preflight(port: int) -> str | None:
+def _preflight(port: int, github_token: str | None) -> str | None:
     if sys.platform != "win32":
         return "this skill drives Windows only; from macOS use run_on_github.py"
     if not STATIC.is_file():
         return f"no built frontend at {STATIC}; run npm ci and npm run build in frontend/"
     if not Path(sys.executable).with_name("pythonw.exe").is_file():
         return f"{sys.executable} has no pythonw.exe beside it (a uv or venv Python is not Dad's)"
+    if os.environ.get("GITHUB_ACTIONS") == "true" and github_token is None:
+        return (
+            f"the workflow gives the drive no {windows_tool.GITHUB_TOKEN_ENV}: without it Aktualność shares the runner's "
+            "60 GitHub API requests an hour and aktualizacja fails on `Nie sprawdzono`"
+        )
     owner = windows_desktop.port_owner(port)
     if owner is not None:
         return f"port {port} is held by pid {owner}: Dad's port must be free; never drive a Centrum this run did not start"
@@ -120,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_run_dir()
     parser.add_argument("--feature", choices=("all", *FEATURES), default="all")
     args = parser.parse_args(argv)
+    github_token = windows_tool.take_github_token()
     # The harness's own output is UTF-8 whatever the code page; Centrum keeps the machine's.
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -129,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     prepared, verified = _plan(args.feature)
     failure: str | None = None
     with _teed(evidence / "drive.txt"):
-        problem = _preflight(windows_tool.PORT)
+        problem = _preflight(windows_tool.PORT, github_token)
         if problem is not None:
             print(f"VERIFY FAIL | preflight | {problem} | evidence={evidence}", flush=True)
             return 1
@@ -137,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             facts = windows_tool.prepare(root)
             print(f"PREPARED | root={root} | tool={facts['tool']} | versions={facts['versions']}", flush=True)
             os.environ.update(windows_tool.boundaries(facts))
-            run = Run(root, evidence)
+            run = Run(root, evidence, github_token)
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(**launch_options(playwright))
                 context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="pl-PL")

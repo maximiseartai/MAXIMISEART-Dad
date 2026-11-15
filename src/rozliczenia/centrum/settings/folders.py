@@ -143,7 +143,7 @@ def _path(
     return Path(value)
 
 
-def dump(settings: FolderSettings) -> str:
+def dump(settings: FolderSettings) -> bytes:
     document = {"schema_version": _SCHEMA_VERSION, **_values(settings)}
     return settings_yaml(document)
 

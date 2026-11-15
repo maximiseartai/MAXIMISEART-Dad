@@ -159,7 +159,7 @@ def _range_document(found: TimeRange) -> dict[str, str]:
     return {START: _shown_time(found.start), END: _shown_time(found.end)}
 
 
-def dump(settings: ReminderSettings) -> str:
+def dump(settings: ReminderSettings) -> bytes:
     schedule = settings.schedule
     document = {
         "schema_version": _SCHEMA_VERSION,
