@@ -623,6 +623,51 @@ def test_znane_luki_miejsca_zlego_ustawienia_przechodza_przez_mypy_i_ruff(tmp_pa
     assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_FIELD_PATH)")
 
 
+ZNANE_LUKI_POLECENIA_PARY: Final = {
+    "trasa zmienia treść polecenia przed zapisem (typ widzi polecenie, nie jego treść)": """\
+from rozliczenia.centrum.contract.quantity_rules import ComponentForm
+from rozliczenia.centrum.device_forms import AddComponent
+from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
+
+
+def dodaj(settings: CentrumSettings, form: ComponentForm) -> Saved | Refused | NotSaved:
+    uzupelniony = form.model_copy(update={"other_spellings": [*form.other_spellings, "wizja"]})
+    return settings.change_devices(AddComponent(uzupelniony))
+""",
+    "funkcja z trasy dla pliku bez pary (zna tylko typ wartości pliku)": """\
+from dataclasses import replace
+
+from rozliczenia.centrum.settings import workers
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
+
+
+def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotSaved | KeptInPeriods:
+    uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
+    return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
+""",
+    "plik pary przez cast na Any": """\
+from typing import Any, cast
+
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.quantity_rules import DEVICES
+
+
+def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change(cast(Any, DEVICES), lambda current: current)
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_polecenia_pary_przechodza_przez_mypy_i_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_POLECENIA_PARY, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_komunikaty_expect.py (ZNANE_LUKI_POLECENIA_PARY)")
+
+
 def _refusal_as_value(module: ModuleType) -> bool:
     """Moduł odwołuje się do ``Refusal`` poza typem (``test_odmowe_api_centrum_tworzy_tylko_katalog_odmow``)."""
 
