@@ -1961,12 +1961,14 @@ EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "v
 EXPLORER_LIMIT_S = 200
 
 
-def _explorer_in_own_process(*arguments: str, environment: dict[str, str] | None = None) -> tuple[int | None, list[str]]:
+def _explorer_in_own_process(
+    *arguments: str, environment: dict[str, str] | None = None, program: tuple[str, ...] = (str(EXPLORER),)
+) -> tuple[int | None, list[str]]:
     import subprocess
 
     try:
         done = subprocess.run(
-            [sys.executable, "-X", "utf8", "-u", str(EXPLORER), *arguments],
+            [sys.executable, "-X", "utf8", "-u", *program, *arguments],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=EXPLORER_LIMIT_S,
@@ -1999,6 +2001,48 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
     # Kontrprzykład ma tylko przypadek z naruszeniem, znanym ustaleniem albo przyjętym ryzykiem, a tu nie ma żadnego.
     assert not (evidence / "kontrprzyklady").exists()
     assert list((tmp_path / "runs").iterdir()) == []
+
+
+# Sprawdzenie na zajętej maszynie: Atrapa przeładowuje stronę po „Załaduj do zlecenia” później niż limit okna przypadków,
+# które go mierzą (LIMIT_MS), jak runner Windows w CI pod obciążeniem.
+SLOW_RELOAD = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import explore_wycena_efenix as explorer\n"
+    "explorer.EFENIX_EMMETT_RELOAD_MS = explorer.LIMIT_MS + 1_000\n"
+    "raise SystemExit(explorer.main(sys.argv[2:]))\n"
+)
+
+
+@pytest.mark.dlugi
+@pytest.mark.timeout(EXPLORER_LIMIT_S + 40)
+def test_przeladowanie_po_zaladuj_do_zlecenia_dluzsze_niz_limit_okna_nie_daje_naruszenia_a_awaria_przed_ktora_okno_stanelo_jest_luka(
+    tmp_path: Path,
+) -> None:
+    """Przebieg bez awarii, ponowne uruchomienia i awarie, przy których okno nie czeka do limitu (odmowa „Załaduj do
+    zlecenia” z ``result: nok``), kończą się jak w domenie także przy przeładowaniu dłuższym niż 4 s. Awaria zawieszonej
+    odpowiedzi przy drugim zleceniu mierzy limit 4 s, więc okno staje już na przeładowaniu pierwszego zlecenia, zanim
+    awaria zadziała: to luka modelu (``Run.injected``), nie naruszenie przyczyny ani przejście."""
+
+    code, lines = _explorer_in_own_process(
+        "--run-dir",
+        str(tmp_path),
+        "--variant",
+        "odpowiedzi",
+        "--rola",
+        "zaladuj-do-zlecenia",
+        "--rownolegle",
+        "4",
+        program=("-c", SLOW_RELOAD, str(EXPLORER.parent)),
+    )
+
+    output = "\n".join(lines)
+    # Werdykt luki modelu kończy sprawdzenie kodem 2, a nowego naruszenia kodem 1 (``eksplorator.verdict``).
+    assert code == 2, output
+    assert [line for line in lines if line.startswith(("NOWE NARUSZENIE", "LUKA MODELU"))] == [
+        "LUKA MODELU: awaria nie zadziałała w 4 próbach: HUNG przy POST action_load_emmett.php #2 [zaladuj-do-zlecenia]"
+    ], output
+    assert lines[-1] == "WYCENA EFENIX: LUKA MODELU (1)", output
 
 
 def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypadek_raz() -> None:

@@ -20,10 +20,4 @@ class Kwarantanna:
     do: date  # ostatni dzień kwarantanny, najwyżej 7 dni od dziś
 
 
-KWARANTANNA: dict[str, Kwarantanna] = {
-    # Windows: przebieg bez awarii eksploratora Wyceny w efenix zatrzymał się między „Załaduj do zlecenia” a pierwszą
-    # ilością; przyczyna nieustalona, a BEZ_AWARII nazywa odtąd Zatrzymanie i ostatnie żądanie (#1008). Od #1009 dalej
-    # pada na Windows (7 z 430 przebiegów na `main` do 11.11), a powód pokaże dopiero linia KWARANTANNA | w logu zadania.
-    "tests/test_centrum_logi_uruchomienia.py::test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich"
-    "_trzymaja_niezmienniki_bez_znanych_ustalen": Kwarantanna(1008, date(2026, 11, 18)),
-}
+KWARANTANNA: dict[str, Kwarantanna] = {}

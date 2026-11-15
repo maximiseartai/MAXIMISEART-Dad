@@ -150,13 +150,20 @@ START: Final = StartFacts(
 """The start of every run as Centrum writes it in the first line of the dziennik; fixed, so the dziennik differs between
 runs only in its entries and their moments."""
 LIMIT_MS: Final = 3_000 + EFENIX_EMMETT_RELOAD_MS
-"""The window's time limit in the checker: the 3 s of the sweep of ``tests/test_wycena_efenix.py`` and the reload the
-efenix script makes after „Załaduj do zlecenia”, which the window waits for in the same time limit as its answer, so an
-answer to it just before the limit (``early_s``) comes as late as one to any other request."""
+"""The window's time limit in a run whose fault meets that limit (``meets_limit``): the 3 s of the sweep of
+``tests/test_wycena_efenix.py`` and the reload the efenix script makes after „Załaduj do zlecenia”, which the window
+waits for in the same time limit as its answer, so an answer to it just before the limit (``early_s``) comes as late as
+one to any other request."""
+CALM_LIMIT_MS: Final = 15_000
+"""The window's time limit in every other run: the run without a fault, second runs and faults whose run never waits
+for the limit. A stop on the time limit is a violation there whatever the limit, so a longer one hides no answer or
+reload that never comes; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than
+4 s stopped such a run on the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still
+ends within the run's limit."""
 EARLY_S: Final = 0.6
 """How long before the end of the window's wait an answer ``Fault.LATE_BEFORE`` comes (``Plan.early_s``)."""
 RETRIES: Final = 3
-"""Runs again a case whose fault the browser side did not inject (``Run.injected``) at most this many times."""
+"""Runs again a case whose fault did not take effect (``Run.injected``) at most this many times."""
 CLOSE_WAIT_MS: Final = 5_000
 """How long the checker waits after a run for the tab Dad closed to be closed."""
 LOGIN_LIMIT_MS: Final = 4_000
@@ -509,10 +516,22 @@ def early_s(role: Role) -> float:
     return EARLY_S + (EFENIX_EMMETT_RELOAD_MS / 1000 if role in _RELOAD_WAIT else 0)
 
 
+_TIMED: Final = frozenset({Fault.STALLED, Fault.SLOW, Fault.HUNG, Fault.LATE_BEFORE, Fault.LATE_AFTER})
+"""Faults whose answer the proxy places against the window's time limit or never sends."""
+
+
+def meets_limit(case: Case) -> bool:
+    """Whether the run of ``case`` meets the window's time limit: its fault is timed, or the domain table lets it stop
+    on the time limit (a page file the window waits for in vain)."""
+
+    return case.fault in _TIMED or Cause.TIMEOUT in _expected(case.fault, case.call, case.role).stops
+
+
 def plan_of(case: Case | None) -> Plan:
     if case is None:
-        return Plan(limit_s=LIMIT_MS / 1000, early_s=EARLY_S)
-    return Plan(case.fault, case.call, LIMIT_MS / 1000, early_s=early_s(case.role))
+        return Plan(limit_s=CALM_LIMIT_MS / 1000, early_s=EARLY_S)
+    limit_ms = LIMIT_MS if meets_limit(case) else CALM_LIMIT_MS
+    return Plan(case.fault, case.call, limit_ms / 1000, early_s=early_s(case.role))
 
 
 def classify(facts: PricingStopped, code: str) -> Cause:
@@ -750,8 +769,11 @@ class Run:
     error: str | None = None
     snapshots: dict[str, Disk] = field(default_factory=dict)
     injected: bool = True
-    """The browser side did what the fault asks before the run ended (``TAB_CLOSED``, ``LOGIN_*``); a case whose fault
-    did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
+    """The fault took effect before the run ended: the browser side did what it asks (``TAB_CLOSED``, ``LOGIN_*``), or
+    the proxy gave any request a fault (``faulted``, which ``Proxy`` decides, also the failed proposal before the refused
+    „Załaduj do zlecenia” of ``REFUSED_NO_PROPOSAL``). Up to the first such request a run with a fault is the run
+    without one, so a window that stopped before it (a step on a busy machine over ``LIMIT_MS``) checked nothing of the
+    fault. A case whose fault did not take effect in ``RETRIES`` more tries is ``LUKA MODELU``, never a pass."""
 
 
 @dataclass(frozen=True)
@@ -841,7 +863,7 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
             acted = _dad(page, plan, atrapa.log_in)
             outcome, error = None, None
             try:
-                outcome = _price(place, page, proxy.url)
+                outcome = _price(place, page, proxy.url, plan)
             except Exception as failure:  # noqa: BLE001 - BEZ_WYJATKU names any error that escapes run_process
                 error = "".join(traceback.format_exception_only(failure)).strip()
             finally:
@@ -850,9 +872,7 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
                     # The window may stop on the navigation error before Playwright reports the tab closed.
                     with suppress(PlaywrightError):
                         page.wait_for_event("close", timeout=CLOSE_WAIT_MS)
-                injected = (plan.fault is not Fault.TAB_CLOSED and plan.fault not in DAD_LOGINS) or (
-                    acted.is_set() and (page.is_closed() or not closing)
-                )
+                dad_acted = acted.is_set() and (page.is_closed() or not closing)
                 # The tab goes first: a held answer closed under an open tab makes Chromium send the request again.
                 context.close()
                 proxy.release()
@@ -860,12 +880,14 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
             seen = list(proxy.seen)
             status_changes, clicks = atrapa.status_changes(), proxy.forbidden_clicks
     after = place.disk(orders_after)
+    faulted = {entry.call: entry.action for entry in seen if entry.action}
+    by_dad = plan.fault is Fault.TAB_CLOSED or plan.fault in DAD_LOGINS
     return Run(
         outcome=outcome,
         before=before,
         after=after,
         calls=[entry.call for entry in seen],
-        faulted={entry.call: entry.action for entry in seen if entry.action},
+        faulted=faulted,
         actions=[f"{entry.at:7.2f} s  {entry.call}{'  ← ' + entry.action if entry.action else ''}" for entry in seen],
         status_changes=status_changes,
         forbidden_clicks=clicks,
@@ -873,7 +895,7 @@ def run_once(browser: Browser, place: Place, orders: Sequence[AtrapaOrder], plan
         logs=logs_text(outcome, after.journal),
         error=error,
         snapshots=taken,
-        injected=injected,
+        injected=dad_acted if by_dad else plan.fault is None or bool(faulted),
     )
 
 
@@ -930,10 +952,12 @@ def _dad(page: Page, plan: Plan, log_in: Callable[[], None]) -> threading.Event:
     return acted
 
 
-def _price(place: Place, page: Page, url: str) -> Outcome[PricingSummary]:
+def _price(place: Place, page: Page, url: str, plan: Plan) -> Outcome[PricingSummary]:
+    timeout_ms = round(plan.limit_s * 1000)
+
     @contextmanager
     def open_efenix(login: Login) -> Iterator[Efenix]:
-        with efenix_browser.window(page, url, timeout_ms=LIMIT_MS, login=login, login_timeout_ms=LOGIN_LIMIT_MS) as efenix:
+        with efenix_browser.window(page, url, timeout_ms=timeout_ms, login=login, login_timeout_ms=LOGIN_LIMIT_MS) as efenix:
             yield efenix
 
     return run_process(
