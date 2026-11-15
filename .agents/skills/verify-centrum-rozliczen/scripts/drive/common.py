@@ -22,7 +22,18 @@ import urllib.request
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from playwright.sync_api import Browser, BrowserContext, ConsoleMessage, FloatRect, Locator, Page, Request, Response, ViewportSize
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    ConsoleMessage,
+    FloatRect,
+    Locator,
+    Page,
+    Request,
+    Response,
+    StorageState,
+    ViewportSize,
+)
 import yaml
 
 from drive import feature
@@ -322,9 +333,9 @@ def settings_section(page: Page) -> Locator:
 def open_settings(page: Page, section: str) -> Locator:
     """Dad opens Ustawienia with the gear in the menu's footer, unless open, and goes to ``section`` (its title).
 
-    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier feature
-    left open is closing, still visible while it fades out, so the gear waits until it is gone: no feature depends on how
-    the one before it ended (#1589).
+    The window's address opens it (``#/ustawienia/<section>``). On any other address a window that an earlier step of
+    the feature left open is closing, still visible while it fades out, so the gear waits until it is gone; a window of
+    an earlier feature ends with its browser window (``drive_centrum.FeatureWindows``).
     """
 
     window = settings_window(page)
@@ -786,12 +797,20 @@ def _address(url: str) -> str:
 page_requests = PageRequests()
 
 
-def dad_context(browser: Browser, *, viewport: ViewportSize = DAD_VIEWPORT, touch: bool = False) -> BrowserContext:
-    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``; in the
-    mode „wolny runner” its pages run animations slowly and send writes late. Its pages write what they lost to
-    ``page_requests``."""
+def dad_context(
+    browser: Browser,
+    *,
+    viewport: ViewportSize = DAD_VIEWPORT,
+    touch: bool = False,
+    storage_state: StorageState | None = None,
+) -> BrowserContext:
+    """A browser window like Dad's: Polish, on Polish time, ``viewport`` large, with a touch screen when ``touch``, with
+    the cookies and ``localStorage`` of ``storage_state``; in the mode „wolny runner” its pages run animations slowly and
+    send writes late. Its pages write what they lost to ``page_requests``."""
 
-    context = browser.new_context(viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch)
+    context = browser.new_context(
+        viewport=viewport, locale="pl-PL", timezone_id=DAD_TIME_ZONE.key, has_touch=touch, storage_state=storage_state
+    )
     page_requests.watch(context)
     if SLOW_RUNNER in os.environ:
         # A late write in the page, not in context.route: a handler of the sync client that sleeps holds the drive too.

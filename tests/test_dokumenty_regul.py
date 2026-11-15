@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", ".agents/skills/przeglad/SKILL.md", "docs/agents/skille.md")
+DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/boat/SKILL.md", "docs/agents/skille.md")
 FENCE = "```"
 NOT_PROSE = re.compile(r"\s*(?:#+\s|\||```)")
 LIST_ITEM = re.compile(r"\s*(?:-|\d+\.)\s")

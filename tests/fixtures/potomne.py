@@ -71,7 +71,7 @@ def beating(beats: Path) -> bool:
 
 def ctrl_c_reaches_children() -> None:
     """Ctrl+C (SIGINT), który test wysyła procesowi potomnemu, dochodzi do niego także wtedy, gdy proces testów odziedziczył
-    SIGINT ignorowany (``nohup`` i ``&`` w ``boatbox job``): sygnał ignorowany przechodzi przez ``exec`` do potomka, a
+    SIGINT ignorowany (``nohup`` i ``&`` z nieinteraktywnej powłoki): sygnał ignorowany przechodzi przez ``exec`` do potomka, a
     obsługiwany wraca w nim do domyślnego, więc proces testów, który go ignoruje, dostaje obsługę Pythona
     (``KeyboardInterrupt``). Obsługi, którą ustawił ktoś inny, nie zmienia; woła ją ``pytest_configure`` w
     ``tests/conftest.py`` w każdym procesie testów, przed startem workerów xdist."""
