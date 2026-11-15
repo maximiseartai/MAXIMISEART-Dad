@@ -19,7 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    # Reguły ast-grep z sgconfig.yml: na dodanych liniach repozytorium, a reguły REGULY_CALEGO_SRC na każdej linii src/
+    # Reguły ast-grep z sgconfig.yml: na dodanych liniach repozytorium, a reguły REGULY_CALEGO_DRZEWA na każdej linii
+    # swoich plików
     # (tests/test_zapadki.py, ADR 0034).
     "ast-grep-cli==0.51.0",
     "fastapi==0.146.0",

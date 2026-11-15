@@ -123,13 +123,13 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m ruff check
 
-      # The rules of REGULY_CALEGO_SRC in tests/test_zapadki.py report every line of src/, not only the added ones.
+      # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added ones.
       - name: ast-grep rules of the whole src
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: >-
           python -m pytest -q -rs -n 0 -p no:cacheprovider
-          tests/test_zapadki.py::test_reguly_calego_src_nie_zglaszaja_zadnej_linii_src
-          tests/test_zapadki.py::test_kazda_regula_calego_src_jest_w_katalogu_regul
+          tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
+          tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
 
       - name: Typecheck Python code (Windows)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
