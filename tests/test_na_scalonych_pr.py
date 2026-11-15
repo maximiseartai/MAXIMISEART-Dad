@@ -14,7 +14,7 @@ import pytest
 import na_scalonych_pr
 from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
-from tests.fixtures.fake_cli import FakeGitHub
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 from tests.fixtures.znane_luki import assert_znane_luki
 
@@ -358,20 +358,33 @@ SMALL_REPO = {
 }
 MYPY = ["-m", "mypy"]
 NODE = ["-m", "pytest", "-q", "-n", "0", "tests/test_inne.py::test_limit_to_jeden"]
+# Węzeł, który pada tylko, gdy ``LIMIT`` znika albo moduł się nie importuje, a nie przy złej postaci ``LIMIT = 2``.
+HAS_LIMIT = [*NODE[:-1], "tests/test_inne.py::test_modul_ma_limit"]
 ON_TYPED = [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 2\n"]]
 ON_UNTYPED = [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\nLIMIT = 2\n"]]
 needs_mypy = pytest.mark.skipif(importlib.util.find_spec("mypy") is None, reason="dowód typu uruchamia mypy z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
 
 
-def _mutation_proof(tmp_path: Path, head: str, changes: list[list[str]], command: list[str], *flags: str, **more: str) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Dowód id ``LIMIT_ID`` na HEAD z ``kod/inne.py`` w postaci ``head`` i jednym wpisem pliku dowodu (``changes``,
-    ``command`` i klucze ``more``), uruchomiony jak przez ``tools/scal_pr.py`` z ``flags``."""
+def _mutation_proof(
+    tmp_path: Path,
+    head: str,
+    changes: list[list[str]],
+    command: list[str],
+    *flags: str,
+    files: dict[str, str] | None = None,
+    failed: str = OVERWRITE,
+    more: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Dowód id ``LIMIT_ID`` na HEAD z ``kod/inne.py`` w postaci ``head`` (w werdykcie ``failed``), plikami ``files``
+    i jednym wpisem pliku dowodu (``changes``, ``command`` i klucze ``more``), uruchomiony jak przez ``tools/scal_pr.py``
+    z ``flags``."""
 
-    entry = {"nazwa": "nadpisanie stałej, jak w #5 W1 r1", "zmiany": changes, "polecenie": command, **more}
-    clean = {"kod/inne.py": head, f"dowody-idiomow/{LIMIT_ID}.json": json.dumps([entry])}
-    return _proof(tmp_path, OVERWRITE, clean, start=SMALL_REPO, chosen=("--regula-id", LIMIT_ID, "--z-commita", "HEAD", *flags))
+    entry = {"nazwa": "nadpisanie stałej, jak w #5 W1 r1", "zmiany": changes, "polecenie": command, **(more or {})}
+    clean = {"kod/inne.py": head, f"dowody-idiomow/{LIMIT_ID}.json": json.dumps([entry]), **(files or {})}
+    return _proof(tmp_path, failed, clean, start=SMALL_REPO, chosen=("--regula-id", LIMIT_ID, "--z-commita", "HEAD", *flags))
 
 
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
     ("head", "command"), [pytest.param(TYPED, MYPY, id="typ-final-w-mypy", marks=needs_mypy), pytest.param(TYPED, NODE, id="test-wartosci-w-pytest")]
 )
@@ -383,14 +396,15 @@ def test_dowod_typu_albo_testu_wpisuje_postac_z_gdzie_na_head_i_polecenie_requir
 
 
 NAME = "nadpisanie stałej, jak w #5 W1 r1"
-NOT_COVERED = "#5 W1 r1: żadna mutacja nie zmienia samych plików z Gdzie i nie wpisuje pierwszej linii jego miejsca"
+NOT_COVERED = "#5 W1 r1: żadna mutacja nie dopisuje jako kod całej pierwszej linii jego miejsca, zmieniając tylko pliki z Gdzie"
 
 
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
     ("head", "changes", "command", "more", "summary"),
     [
         pytest.param(
-            UNTYPED + OVERWRITE, ON_TYPED, MYPY, {}, f"{NAME}: NIEAKTUALNA → kotwicy nie ma dokładnie raz w kod/inne.py: 'LIMIT: Final = 1'", id="postac-na-head-bez-mechanizmu", marks=needs_mypy
+            UNTYPED + OVERWRITE, ON_TYPED, MYPY, {}, f"{NAME}: NIEAKTUALNA → kotwicy nie ma dokładnie raz w kod/inne.py: 'LIMIT: Final = 1'", id="postac-na-head-bez-mechanizmu"
         ),
         pytest.param(
             TYPED + OVERWRITE, ON_TYPED, MYPY, {}, "podstawa -m mypy bez mutacji: Found 1 error in 1 file (checked 2 source files)", id="postac-na-head-z-mechanizmem", marks=needs_mypy
@@ -407,20 +421,40 @@ NOT_COVERED = "#5 W1 r1: żadna mutacja nie zmienia samych plików z Gdzie i nie
         ),
         pytest.param(TYPED, [*ON_TYPED, ["tests/test_inne.py", "== 1\n", "== 3\n"]], MYPY, {}, NOT_COVERED, id="plik-spoza-gdzie"),
         pytest.param(TYPED, [["kod/inne.py", "LIMIT: Final = 1\n", "LIMIT: Final = 1\nLIMIT = 3\n"]], MYPY, {}, NOT_COVERED, id="zamiana-bez-linii-gdzie"),
+        # Linia z Gdzie, która nie stoi w pliku jako kod, a polecenie pada przez błąd składni albo usuniętą kotwicę (#1912 r1 W2).
+        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "LIMIT = 1\n    LIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-ze-zlym-wcieciem"),
+        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "# LIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-komentarzu"),
+        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", "XLIMIT = 2\n"]], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-dluzszej-linii"),
+        pytest.param(UNTYPED, [["kod/inne.py", "LIMIT = 1\n", 'X = """\nLIMIT = 2\n"""\n']], HAS_LIMIT, {}, NOT_COVERED, id="linia-gdzie-w-tekscie"),
     ],
 )
 def test_dowod_typu_albo_testu_odmawia_falszywego_dowodu(
     tmp_path: Path, head: str, changes: list[list[str]], command: list[str], more: dict[str, str], summary: str
 ) -> None:
     """Postać obecna już na HEAD daje kotwicę NIEAKTUALNĄ albo czerwoną podstawę, mechanizm, który jej nie łapie,
-    NIEWYKRYTĄ, a polecenie spoza Required CI i mutacja spoza plików albo linii z ``Gdzie`` odmowę przed biegiem."""
+    NIEWYKRYTĄ, a polecenie spoza Required CI i mutacja spoza plików z ``Gdzie`` albo bez jego linii jako kodu odmowę
+    przed biegiem."""
 
-    done, _ = _mutation_proof(tmp_path, head, changes, command, **more)
+    done, _ = _mutation_proof(tmp_path, head, changes, command, more=more)
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | {LIMIT_ID} | {summary}", done.stdout
 
 
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_dowod_typu_albo_testu_odmawia_linii_gdzie_w_srodku_f_tekstu_choc_jej_pole_jest_wezlem(tmp_path: Path) -> None:
+    """Linia z ``Gdzie`` z polem f-tekstu wpisana do środka f-tekstu ma węzeł ``ast`` swojego pola, ale nie w swoim
+    wcięciu, więc nie stoi w pliku jako kod."""
+
+    inside = [["kod/inne.py", "LIMIT = 1\n", 'X = f"""\nLIMIT = f"{LIMIT}"\n"""\n']]
+
+    done, _ = _mutation_proof(tmp_path, UNTYPED, inside, HAS_LIMIT, failed='LIMIT = f"{LIMIT}"\n')
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == f"DOWÓD ODMOWA | {LIMIT_ID} | {NOT_COVERED}", done.stdout
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
 @pytest.mark.parametrize(
     ("changes", "code", "summary"),
     [
@@ -429,19 +463,25 @@ def test_dowod_typu_albo_testu_odmawia_falszywego_dowodu(
     ],
     ids=["mutacja-niewykryta-bez-biegu", "zamiana-bez-linii-gdzie"],
 )
-def test_dowod_typu_albo_testu_bez_kodu_pr_nie_uruchamia_polecen_a_sprawdza_gdzie(tmp_path: Path, changes: list[list[str]], code: int, summary: str) -> None:
-    """Status „Werdykt i bramka” nie uruchamia kodu PR, więc mutacji, której mechanizm HEAD nie łapie, nie widzi; widzi
-    mutację spoza ``Gdzie``. Mutacje liczy merge."""
+def test_dowod_typu_albo_testu_bez_kodu_pr_nie_wykonuje_niczego_z_head_a_sprawdza_gdzie(tmp_path: Path, changes: list[list[str]], code: int, summary: str) -> None:
+    """Status „Werdykt i bramka” ma token do statusów, więc nie wykonuje żadnego pliku HEAD PR: ani skryptu mutacji
+    skilla, który pełny zakres runu wykonuje przy skanie kroków skilli (#1912 r1 W1), ani ``conftest.py`` polecenia
+    pytest. Mutacji, której mechanizm HEAD nie łapie, więc nie widzi; widzi mutację spoza ``Gdzie``. Mutacje liczy merge."""
 
-    done, _ = _mutation_proof(tmp_path, UNTYPED, changes, MYPY, "--bez-kodu-pr")
+    marker = tmp_path / "wykonany-plik-head"
+    trap = f"import pathlib\npathlib.Path({str(marker)!r}).write_text(__file__)\nMUTATIONS = []\n"
+    traps = {".agents/skills/obcy/scripts/check_obcy_mutations.py": trap, "tests/conftest.py": trap}
+
+    done, _ = _mutation_proof(tmp_path, UNTYPED, changes, HAS_LIMIT, "--bez-kodu-pr", files=traps)
 
     assert done.returncode == code, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == summary, done.stdout
+    assert not marker.exists(), marker.read_text(encoding="utf-8")
 
 
 # Znane luki dowodu typu albo testu (tests/fixtures/znane_luki.py): klasa → HEAD ``kod/inne.py``, zmiany mutacji
-# i polecenie. Dowód sprawdza, że zamiana zawiera linię z ``Gdzie`` i że polecenie pada, a nie że pada przez tę linię,
-# więc mutacja, która obok niej psuje typ albo test inaczej, przechodzi; ocenia ją recenzent, który powtarza dowód.
+# i polecenie. Dowód sprawdza, że mutacja dopisuje linię z ``Gdzie`` jako kod i że polecenie pada, a nie że pada przez
+# tę linię, więc mutacja, która obok niej psuje typ albo test inaczej, przechodzi; ocenia ją recenzent, który powtarza dowód.
 ZNANE_LUKI = {
     "wynik całego polecenia, nie linii z Gdzie: mypy pada na innej linii zamiany": (
         UNTYPED,

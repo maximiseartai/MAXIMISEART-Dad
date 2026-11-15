@@ -390,7 +390,7 @@ def test_nazwy_mutacji_w_tabeli_kazdego_skryptu_skilla_sa_rozne() -> None:
 def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path: Path) -> None:
     """Skrypty mutacji skilli poza modelem nie biegną na pull request, więc zmiana kodu, po której mutacja jest NIEAKTUALNA, czerwieni
     dopiero ``main`` (#667 i #669 zmieniły warunek budzenia w ``outbox.py``). Test nanosi zmiany każdej mutacji tym samym
-    ``_apply`` co silnik mutacji (``tools/lib/silnik_mutacji.py``), na kopii plików, które ona zmienia, bez uruchamiania jej polecenia."""
+    ``apply`` co silnik mutacji (``tools/lib/silnik_mutacji.py``), na kopii plików, które ona zmienia, bez uruchamiania jej polecenia."""
 
     scripts = sorted((ROOT / ".agents" / "skills").glob(f"*/scripts/{kroki_skilli.PATTERN}"))
     stale = []
@@ -401,7 +401,7 @@ def test_kotwica_kazdej_mutacji_skilla_trafia_w_swoj_plik_dokladnie_raz(tmp_path
                 if (ROOT / edit.file).is_file() and not (copy / edit.file).exists():
                     (copy / edit.file).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(ROOT / edit.file, copy / edit.file)
-            if found := silnik_mutacji._apply(copy, mutation.edits):
+            if found := silnik_mutacji.apply(copy, mutation.edits):
                 stale.append(f"{script.relative_to(ROOT).as_posix()}: {mutation.name} → {found}")
 
     assert scripts

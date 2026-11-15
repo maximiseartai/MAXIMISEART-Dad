@@ -58,17 +58,21 @@ z polem ``Idiom:`` (``bramka_idiomu``).
 
 Dowód typu albo testu: gdy commit ``--z-commita`` ma plik ``dowody-idiomow/<ID>.json`` w postaci ``tools/mutacje.py --plik``,
 ``--regula-id`` dowodzi mutacjami złej postaci z ``Gdzie`` zamiast reguły ast-grep. Każde ``--wazne`` ma mutację, która
-zmienia tylko pliki jego ``Gdzie`` i wpisuje (bez wcięcia) pierwszą linię jednego z jego miejsc w SHA werdyktu; polecenie
-każdej, bez ``oczekiwane``, biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
+zmienia tylko pliki jego ``Gdzie`` i dopisuje jako kod całą pierwszą linię jednego z jego miejsc w SHA werdyktu: po
+mutacji plik ma więcej linii równych jej bez wcięcia, a w pliku ``.py`` liczy się tylko linia, na której parser ``ast``
+zaczyna węzeł w jej wcięciu, więc nie komentarz, nie tekst i nie plik, który się nie parsuje. Polecenie każdej, bez
+``oczekiwane``, biegnie w Required CI: ruff albo mypy z ``kroki_lokalne.static_steps`` albo ``-m pytest -q -n 0
 tests/<plik>::<test>``, które zakres runu pull requestu wybiera przy zmianie plików mutacji; bez mutacji przechodzi, a z nią
 jest WYKRYTA na kopii commitu (silnik z tego checkoutu). Progu fałszywych alarmów nie ma, bo polecenie biegnie w Required
-CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka”) pomija bieg poleceń, który liczy merge. Granicę tego
-dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
+CI każdego PR. ``--bez-kodu-pr`` (status „Werdykt i bramka” z tokenem do statusów) czyta kopię commitu tylko jako dane:
+plik dowodu, graf importów (``zakres_runu.pliki_pytest``) i tekst plików mutacji; bieg poleceń, który wykonuje kod
+commitu, liczy merge. Granicę tego dowodu pokazują próbki ``ZNANE_LUKI`` w ``tests/test_na_scalonych_pr.py``.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
@@ -79,6 +83,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 import time
 
 import yaml
@@ -290,13 +295,48 @@ def caught(rule: Rule, repository: str, number: int, label: str, round_: int) ->
     return bool(inside)
 
 
-def covers(mutation: Mutation, commit: str, where: str) -> bool:
-    """Czy mutacja zmienia tylko pliki miejsc pola ``Gdzie`` i wpisuje pierwszą linię któregoś z nich w ``commit``."""
+def covers(mutation: Mutation, texts: dict[str, tuple[str, str]], commit: str, where: str) -> bool:
+    """Czy mutacja zmienia tylko pliki miejsc pola ``Gdzie`` i dopisuje jako kod całą pierwszą linię któregoś z nich
+    w ``commit``; ``texts`` to jej pliki przed nią i po niej (``mutated``)."""
 
     found = szablon_werdyktu.places(where)
-    lines = {"".join(repo.git(ROOT, "show", f"{commit}:{path}").splitlines()[first - 1 : first]).strip() for path, first, _ in found}
-    named = {edit.file.as_posix() for edit in mutation.edits} <= {path for path, _, _ in found}
-    return named and any(line and line in edit.replacement for line in lines for edit in mutation.edits)
+    lines = {"".join(repo.git(ROOT, "show", f"{commit}:{path}").splitlines()[first - 1 : first]).strip() for path, first, _ in found} - {""}
+    named = set(texts) <= {path for path, _, _ in found}
+    return named and any(_as_code(after, path, lines) > _as_code(before, path, lines) for path, (before, after) in texts.items())
+
+
+def _as_code(text: str, path: str, lines: set[str]) -> int:
+    """Ile linii ``text`` z pliku ``path`` to bez wcięcia linia z ``lines``; w pliku ``.py`` tylko tych, na których parser
+    ``ast`` zaczyna węzeł w ich wcięciu, a plik, który się nie parsuje, nie ma żadnej."""
+
+    rows = re.split(r"\r\n|\r|\n", text)
+    if not path.endswith(".py"):
+        return sum(row.strip() in lines for row in rows)
+    try:
+        starts = {(getattr(node, "lineno", 0), getattr(node, "col_offset", -1)) for node in ast.walk(ast.parse(text))}
+    except (SyntaxError, ValueError, RecursionError):
+        return 0
+    return sum(row.strip() in lines and (number, len(row) - len(row.lstrip())) in starts for number, row in enumerate(rows, 1))
+
+
+def mutated(mutation: Mutation, copy: Path) -> dict[str, tuple[str, str]]:
+    """Tekst każdego pliku mutacji w kopii ``copy`` przed nią i po niej, zmieniony przez silnik mutacji bez uruchamiania
+    polecenia; kotwica, której nie ma dokładnie raz, to ``ValueError`` z werdyktem NIEAKTUALNA."""
+
+    names = sorted({edit.file.as_posix() for edit in mutation.edits})
+    with tempfile.TemporaryDirectory() as folder:
+        scratch = Path(folder)
+        for name in names:
+            if (copy / name).is_file():
+                (scratch / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(copy / name, scratch / name)
+        if stale := silnik_mutacji.apply(scratch, mutation.edits):
+            raise ValueError(f"{mutation.name}: {Verdict.STALE} → {stale}")
+        return {name: (_text(copy / name), _text(scratch / name)) for name in names}
+
+
+def _text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def outside_ci(mutation: Mutation, copy: Path) -> str | None:
@@ -307,24 +347,26 @@ def outside_ci(mutation: Mutation, copy: Path) -> str | None:
     nodes = mutation.command[len(PYTEST) :]
     if mutation.expected is not None or mutation.command[: len(PYTEST)] != PYTEST or not nodes or not all(node.startswith("tests/") for node in nodes):
         return f"{mutation.name}: polecenie {' '.join(mutation.command)} bez „oczekiwane” to ruff albo mypy zadania „Ruff, mypy” albo {' '.join(PYTEST)} tests/<plik>::<test>"
-    chosen = set(zakres_runu.zakres(zakres_runu.Zdarzenie.PULL_REQUEST, frozenset(edit.file.as_posix() for edit in mutation.edits), copy).pliki)
+    chosen = set(zakres_runu.pliki_pytest(zakres_runu.Zdarzenie.PULL_REQUEST, frozenset(edit.file.as_posix() for edit in mutation.edits), copy))
     missing = [node for node in nodes if not {node.partition("::")[0], node.partition("[")[0]} & chosen]
     return f"{mutation.name}: zakres runu pull requestu przy zmianie plików mutacji nie uruchamia {', '.join(missing)}" if missing else None
 
 
 def mutation_proof(commit: str, rule: str, majors: list[tuple[int, str, int]], *, replay: bool) -> int:
-    """Dowód typu albo testu z ``PROOFS/<rule>.json`` kopii ``commit`` (``--help``); kod 0 tylko z ``DOWÓD OK``."""
+    """Dowód typu albo testu z ``PROOFS/<rule>.json`` kopii ``commit`` (``--help``); kod 0 tylko z ``DOWÓD OK``. Kopię
+    ``commit`` czyta tylko jako dane, a kod commitu wykonuje dopiero bieg poleceń z ``replay``."""
 
     try:
         with potomne.commit_copy(ROOT, commit) as copy:
             mutations = mutacje.from_file(copy / PROOFS / f"{rule}.json", ())
             problems = [problem for mutation in mutations if (problem := outside_ci(mutation, copy))]
+            texts = [mutated(mutation, copy) for mutation in mutations]
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         for number, label, round_ in majors:
             sha, where, _ = finding(repository, number, label, round_)
-            covered = any(covers(mutation, sha, where) for mutation in mutations)
+            covered = any(covers(mutation, files, sha, where) for mutation, files in zip(mutations, texts, strict=True))
             print(f"#{number} {label} r{round_} | {sha[:8]} | {'pokryte' if covered else 'nie'} | {where}", flush=True)
-            problems += [] if covered else [f"#{number} {label} r{round_}: żadna mutacja nie zmienia samych plików z Gdzie i nie wpisuje pierwszej linii jego miejsca"]
+            problems += [] if covered else [f"#{number} {label} r{round_}: żadna mutacja nie dopisuje jako kod całej pierwszej linii jego miejsca, zmieniając tylko pliki z Gdzie"]
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {rule} | {error}")
         return 1

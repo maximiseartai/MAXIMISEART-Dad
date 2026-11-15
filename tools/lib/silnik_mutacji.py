@@ -227,7 +227,7 @@ def _remove(copy: Path, path: Path) -> None:
         parent.rmdir()
 
 
-def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
+def apply(copy: Path, edits: Sequence[Edit]) -> str | None:
     """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz."""
 
     for edit in edits:
@@ -313,7 +313,7 @@ def _verdict(
     if left <= 0:
         return Verdict.NO_VERDICT, "czas minął, zanim się zaczęła", None
     with checkout_copy(commit) as copy:
-        stale = _apply(copy, mutation.edits)
+        stale = apply(copy, mutation.edits)
         if stale:
             return Verdict.STALE, stale, None
         ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent)
@@ -545,7 +545,7 @@ def _gated(
     if _left(limit_s, deadline) <= 0:
         return Verdict.NO_VERDICT, "czas minął przed bramą typów"
     with checkout_copy() as copy:
-        stale = _apply(copy, mutation.edits)
+        stale = apply(copy, mutation.edits)
         if stale:
             return Verdict.STALE, stale
         if cache.is_dir():
