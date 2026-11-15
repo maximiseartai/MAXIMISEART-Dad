@@ -1069,9 +1069,10 @@ def test_pobranie_po_limicie_czasu_wraca_dopiero_gdy_pomocnik_gita_nie_zyje(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``fetch_main_line`` rzuca zaraz po pobraniu, więc między limitem a pytaniem o pomocnika nie ma innej pracy.
-    Pamięć pomocnika opóźnia jego koniec za końcem Gita, którego SIGKILL dosięga w tej samej chwili."""
+    Pamięć pomocnika opóźnia jego koniec za końcem Gita, którego SIGKILL dosięga w tej samej chwili. Limit mieści start
+    trzech procesów Pythona także na obciążonej maszynie."""
 
-    monkeypatch.setattr(tool_update, "_FETCH_TIMEOUT_S", 2.0)
+    monkeypatch.setattr(tool_update, "_FETCH_TIMEOUT_S", 5.0)
     helper = tmp_path / "pomocnik-zyje"
     git = git_whose_fetch_stalls(tmp_path, "1" * 40, helper, helper=alive_code(helper, 30, memory_mb=64))
     monkeypatch.setattr(tool_update, "find_git", lambda: git)
