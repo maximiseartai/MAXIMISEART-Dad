@@ -125,6 +125,9 @@ $link.Save()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Krok instalacji skrótów. Po porażce zapisu daje tacie jeden Komunikat, a na stderr przyczynę techniczną jak
+    w Logach, sam typ wyjątku (``ShortcutNotWritten`` i podklasy), bez treści i ścieżek, bo krok nie ma Logów."""
+
     parser = argparse.ArgumentParser(description="Tworzy skrót „Centrum rozliczeń” na pulpicie i w Autostarcie (Windows).")
     parser.add_argument("--folder", type=Path, help="Folder skrótu z pulpitu; domyślnie pulpit.")
     parser.add_argument(
@@ -154,7 +157,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Gdzie: {_WHERE[shortcut.folder]}\n"
                 f"Co zrobić: Uruchom ten krok ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż go')}"
             )
-            # Krok instalacji nie ma Logów: przyczyna techniczna jak w Logach, sam typ wyjątku, bez treści i ścieżek.
             print(f"Przyczyna techniczna: {exception_type(failure)}", file=sys.stderr)
             return 1
         print(f"{_CREATED[shortcut.folder]}: {path}")
