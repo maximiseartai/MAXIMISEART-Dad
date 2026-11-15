@@ -35,7 +35,7 @@ class Case:
     completed: str
     values: dict[str, int]
     """Ilości usług i kwota w ``AS`` poza wartościami Wzorca, razem z wartością Reguł ilości."""
-    fills: dict[str, str] = field(default_factory=dict)
+    fills: dict[str, str | None] = field(default_factory=dict)
     devices: str = "dekoder"
 
 

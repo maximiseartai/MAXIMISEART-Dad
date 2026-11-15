@@ -103,7 +103,7 @@ _FIRST_LETTERS = frozenset(spelling[0] for code in DEFAULT_ACTIVITY_LEGEND.codes
 _WITHOUT_CODES = st.text(
     alphabet=st.characters(
         blacklist_characters="".join(_FIRST_LETTERS | {letter.upper() for letter in _FIRST_LETTERS}),
-        blacklist_categories=("Cs",),
+        blacklist_categories=["Cs"],
     ),
     max_size=60,
 ).filter(lambda text: not any(letter in text.casefold() for letter in _FIRST_LETTERS))
