@@ -8,6 +8,7 @@ pomiaru zostaje. ``tools/pomiar_ci.py`` liczy z API zadań runów czas push → 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
@@ -15,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import socket
 import subprocess
 import sys
 import threading
@@ -28,6 +30,8 @@ import pytest
 from tests.fixtures.ci_workflow import jobs
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git
+from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.sen import sleep_in_test_thread
 
 import czasy_ci
@@ -122,6 +126,8 @@ class _Api:
         self.earlier: list[str] = []
         self.body = json.dumps(_api(PYTEST_STEPS))
         self.requests: list[tuple[str, str | None]] = []
+        # Koniec bloku serwera zwalnia odpowiedź, która jeszcze czeka ``delay_s``, a ta wraca bez zapisu.
+        self.closing = threading.Event()
 
     def steps(self, *readings: list[dict[str, str | None]]) -> None:
         """Kolejne odczyty dostają kolejne listy kroków, a ostatnia zostaje na dalsze odczyty."""
@@ -129,14 +135,27 @@ class _Api:
         *self.earlier, self.body = (json.dumps(_api(steps)) for steps in readings)
 
 
-@pytest.fixture
-def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
+class _ApiServer(ThreadingHTTPServer):
+    """Wątki obsługi nie są demonami, więc ``server_close`` czeka na ich koniec (``block_on_close``)."""
+
+    daemon_threads = False
+
+
+@contextmanager
+def _api_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
+    """API zadań runu czynne w bloku pod ``GITHUB_API_URL``.
+
+    Po bloku nie żyje żaden jego wątek obsługi, a odpowiedź spóźniona o ``delay_s`` wraca bez zapisu. Wątek, który pisze
+    po bloku do połączenia porzuconego przez klienta, drukuje na Linuksie ślad stosu ``socketserver`` do stderr testu,
+    który akurat biegnie w tym workerze (test pomiaru CI porównuje stderr dokładnie)."""
+
     state = _Api()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             state.requests.append((self.path, self.headers.get("Authorization")))
-            threading.Event().wait(state.delay_s)
+            if state.closing.wait(state.delay_s):
+                return
             body = (state.earlier.pop(0) if state.earlier else state.body).encode("utf-8")
             self.send_response(state.status)
             self.send_header("Content-Length", str(len(body)))
@@ -146,15 +165,41 @@ def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
         def log_message(self, *_: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = _ApiServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     for name, value in {**ENV, "GITHUB_API_URL": f"http://127.0.0.1:{server.server_port}", "NO_PROXY": "127.0.0.1"}.items():
         monkeypatch.setenv(name, value)
-    yield state
-    server.shutdown()
-    server.server_close()
-    thread.join()
+    try:
+        yield state
+    finally:
+        state.closing.set()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@pytest.fixture
+def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
+    with _api_server(monkeypatch) as state:
+        yield state
+
+
+def test_po_bloku_serwera_api_nie_zyje_jego_watek_obslugi_a_spozniona_odpowiedz_nie_trafia_do_klienta(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Klient porzuca połączenie przed odpowiedzią spóźnioną o ``delay_s`` (jak test limitu API). Po bloku serwera nie
+    żyje żaden wątek, który blok uruchomił, a połączenie dostaje koniec bez bajtów odpowiedzi: nic z serwera tego
+    testu nie pisze później do stderr testu, który biegnie po nim w tym samym workerze."""
+
+    since = new_line()
+    with _api_server(monkeypatch) as api:
+        api.delay_s = 10.0
+        client = socket.create_connection(("127.0.0.1", int(os.environ["GITHUB_API_URL"].rpartition(":")[2])), timeout=10)
+        client.sendall(b"GET /repos/x/actions/runs/1/jobs HTTP/1.0\r\n\r\n")
+        assert wait_for(lambda: api.requests != [], seconds=10)
+
+    alive = threads_since(since)
+    with client:
+        assert (alive, client.recv(1024)) == ([], b"")
 
 
 def _inputs(folder: Path) -> dict[str, Path]:
