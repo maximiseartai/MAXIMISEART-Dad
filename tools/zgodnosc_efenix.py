@@ -77,7 +77,8 @@ miejsca tekstu, przy czym kolejne takie same węzły to jeden (liczba pozycji pr
 ``RÓŻNICA`` z oboma drzewami z maską. ``NIESPRAWDZONE`` z powodem, nigdy zgodna, jest propozycja bez Enter, bez karty
 strony zlecenia efenix (także strona zlecenia w ramce innej strony), z oknem Emmetta zamkniętym w każdej karcie (zamknięte
 przed odczytem, strona przeładowana, odpowiedź jeszcze nie przyszła), otwartym w kilku kartach, z kartą, której odczyt
-padł (karta zmieniła stronę w trakcie odczytu), i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
+padł (karta zmieniła stronę w trakcie odczytu; karty zamkniętej przed odczytem albo w jego trakcie narzędzie nie liczy),
+i z propozycją, która nic nie pokazuje (pusta albo same białe znaki: Emmett
 nic nie zaproponował albo propozycja padła, a tego narzędzie nie rozróżni). Karta, w której widać okno Emmetta, a jej
 strona po skryptach nie ma dokładnie jednego ``#dialog_emmett`` (widocznego albo nie) albo potem dokładnie jednego
 ``#dialog_emmett #emmett-propozycja``, to ``RÓŻNICA``: rozstrzyga to ta sama reguła okna Emmetta co w Wycenie
@@ -131,7 +132,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -140,7 +141,7 @@ from pathlib import Path
 import re
 import socket
 import sys
-from typing import Final, TypedDict, cast
+from typing import Final, TypedDict, TypeVar, cast
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from openpyxl.utils import column_index_from_string
@@ -299,7 +300,7 @@ NO_ORDER_TAB: Final = (
     " kliknij w niej przycisk Emmetta i uruchom narzędzie jeszcze raz"
 )
 READ_FAILED: Final = (
-    "odczyt karty strony zlecenia efenix padł (karta zmieniła stronę albo zamknęła się w trakcie odczytu): kliknij"
+    "odczyt karty strony zlecenia efenix padł (karta zmieniła stronę w trakcie odczytu): kliknij"
     " Emmetta jeszcze raz i uruchom narzędzie jeszcze raz"
 )
 SHOWS_NOTHING: Final = (
@@ -867,12 +868,12 @@ def order_tab(url: str, efenix_url: str) -> bool:
 def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Window | None:
     """Okno Emmetta jedynej karty strony zlecenia efenix, w której jest widoczne; inaczej powód ``NIESPRAWDZONE``."""
 
-    orders = [tab for tab in tabs if order_tab(tab.url, efenix_url)]
     try:
-        windows = [window for tab in orders if (window := _window(tab)) is not None]
+        orders = read_open([tab for tab in tabs if order_tab(tab.url, efenix_url)], _window)
     except (PlaywrightError, _PageChanged):
         report.unchecked.append((Part.PROPOSAL, READ_FAILED))
         return None
+    windows = [window for window in orders if window is not None]
     if len(windows) == 1:
         return windows[0]
     if not orders:
@@ -890,6 +891,30 @@ def _efenix_window(tabs: Sequence[Page], efenix_url: str, report: Report) -> _Wi
             (Part.PROPOSAL, f"okno Emmetta jest otwarte w {len(windows)} kartach: zostaw je otwarte w jednej i uruchom narzędzie jeszcze raz")
         )
     return None
+
+
+_Read = TypeVar("_Read")
+
+
+def read_open(tabs: Sequence[Page], read: Callable[[Page], _Read]) -> list[_Read]:
+    """``read`` każdej karty z ``tabs``, która jest jeszcze otwarta, w kolejności ``tabs``.
+
+    Lista kart połączenia przez zdalne debugowanie (``BrowserContext.pages``) dowiaduje się o karcie, którą zamknął Maks
+    albo inne połączenie z jego Chrome, dopiero z wiadomości, które Playwright odbiera przy następnym pytaniu do
+    przeglądarki, więc może jeszcze mieć kartę, której w Chrome już nie ma: narzędzie bierze listę po Enter, a na Enter
+    czeka bez żadnego pytania. Pytanie w zamkniętej karcie kończy się błędem Playwrighta, który przychodzi po wiadomości
+    o jej zamknięciu, więc po nim ``Page.is_closed`` już je zna: zamkniętą kartę pomija, bo nie pokazuje Maksowi
+    niczego, a błąd karty, która jest otwarta, przepuszcza.
+    """
+
+    read_tabs: list[_Read] = []
+    for tab in tabs:
+        try:
+            read_tabs.append(read(tab))
+        except PlaywrightError:
+            if not tab.is_closed():
+                raise
+    return read_tabs
 
 
 def _window(tab: Page) -> _Window | None:

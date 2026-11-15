@@ -33,6 +33,7 @@ from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
+from functools import partial
 import http.client
 import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,7 +50,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from openpyxl import Workbook
-from playwright.sync_api import APIRequest, Browser, Page, sync_playwright
+from playwright.sync_api import APIRequest, Browser, Page, Route, sync_playwright
 import pytest
 import zgodnosc_efenix
 
@@ -1026,9 +1027,15 @@ def _close_new(browser: Browser, before: Sequence[Page]) -> None:
 
 
 def _tabs(browser: Browser, before: Sequence[Page]) -> list[tuple[str, list[bool]]]:
-    """Adres każdej karty Maksa (poza ``before``) i czy jest w niej widoczne każde okno Emmetta na stronie."""
+    """Adres każdej otwartej karty Maksa (poza ``before``) i czy jest w niej widoczne każde okno Emmetta na stronie.
 
-    return [(tab.url, [dialog.is_visible() for dialog in tab.locator(DIALOG).all()]) for tab in browser.contexts[0].pages if tab not in before]
+    Kartę, którą proces narzędzia otworzył i zamknął, lista kart połączenia testu może jeszcze mieć, gdy proces już się
+    skończył, więc karty czyta jak narzędzie, ``zgodnosc_efenix.read_open``, które zamkniętą kartę pomija."""
+
+    return zgodnosc_efenix.read_open(
+        [tab for tab in browser.contexts[0].pages if tab not in before],
+        lambda tab: (tab.url, [dialog.is_visible() for dialog in tab.locator(DIALOG).all()]),
+    )
 
 
 def test_bez_sesji_taty_narzedzie_konczy_sie_bledem_bez_wyniku(chrome: str, tmp_path: Path) -> None:
@@ -1142,6 +1149,57 @@ def test_karta_zlecenia_zmieniona_miedzy_odczytami_okna_emmetta_daje_niesprawdzo
 
     assert (report.differences, report.unchecked) == ([], [(zgodnosc_efenix.Part.PROPOSAL, zgodnosc_efenix.READ_FAILED)])
     assert capsys.readouterr().err.splitlines() == [zgodnosc_efenix.ASK_EMMETT]
+
+
+def test_karta_zlecenia_zamknieta_przez_maksa_przed_enter_nie_psuje_odczytu_okna_emmetta_z_drugiej_karty(
+    chrome: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Maks ma dwie karty strony zlecenia, okno Emmetta w drugiej, a pierwszą zamyka, gdy narzędzie czeka na Enter. Karta
+    # znika w Chrome (zamknięcie przez zdalne debugowanie), zanim narzędzie o cokolwiek zapyta, więc jego lista kart ma ją
+    # jeszcze; narzędzie ma ją pominąć i przeczytać okno z drugiej karty, a nie dać niesprawdzonej propozycji.
+    efenix_url = f"http://efenix.test/{LIST_PAGE}"
+    without_window = "<!doctype html><body><p>zlecenie</p></body>"
+    with_window = '<!doctype html><body><div id="dialog_emmett"><div id="emmett-propozycja"><ul><li>INDEKS_012_078: 3</li></ul></div></div></body>'
+
+    @dataclass(frozen=True)
+    class EnterAfterClosing:
+        """Wejście, na którym Maks zamyka kartę ``target`` i wciska Enter, gdy Chrome już jej nie ma."""
+
+        target: str
+
+        def readline(self) -> str:
+            urlopen(f"{chrome}/json/close/{self.target}", timeout=10).close()
+            deadline = time.monotonic() + 10
+            while self.target in _targets(chrome) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            return "\n"
+
+    report = zgodnosc_efenix.Report()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(chrome)
+        closed, shown = browser.contexts[0].new_page(), browser.contexts[0].new_page()
+        try:
+            for tab, body in ((closed, without_window), (shown, with_window)):
+                tab.route("http://efenix.test/**", partial(Route.fulfill, content_type="text/html", body=body))
+                tab.goto(urljoin(efenix_url, f"{ORDER_PAGE}?id=7"))
+            session = browser.contexts[0].new_cdp_session(closed)
+            target = session.send("Target.getTargetInfo")["targetInfo"]["targetId"]
+            session.detach()
+            monkeypatch.setattr(sys, "stdin", EnterAfterClosing(target))
+            zgodnosc_efenix.measure_proposal(browser, efenix_url, report, timeout_ms=10_000)
+        finally:
+            closed.close()
+            shown.close()
+
+    assert (report.unchecked, report.checked) == ([], {"okno Emmetta": 1}), report
+    assert capsys.readouterr().err.splitlines() == [zgodnosc_efenix.ASK_EMMETT, zgodnosc_efenix.CLOSE_EMMETT]
+
+
+def _targets(endpoint: str) -> set[str]:
+    """Identyfikatory kart Chrome (lista celów zdalnego debugowania)."""
+
+    with urlopen(f"{endpoint}/json/list", timeout=10) as answer:
+        return {target["id"] for target in json.load(answer) if target["type"] == "page"}
 
 
 def test_lista_dozwolonych_zadan_ma_tylko_odczyty() -> None:
