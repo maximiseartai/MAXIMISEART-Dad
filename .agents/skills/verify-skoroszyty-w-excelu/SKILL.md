@@ -1,6 +1,6 @@
 ---
 name: verify-skoroszyty-w-excelu
-description: Verify in real Microsoft Excel for Mac (AppleScript) that the files of MAXIMISEART-Dad's processes open without a dialog, keep their external link, formulas, Wyróżnienia and Wygląd Wiersza danych (row heights Excel auto-fits, DATA as in the Plik zbiorczy), and that a Gotowość typed and saved in Excel reaches the Rozliczenia pracowników; use after changes to how workbooks are written or read, external links, Wyróżnienia, the Wzorce, or Gotowość. Local only, because it needs this Mac's Excel.
+description: Verify in real Microsoft Excel for Mac (AppleScript) that the files of MAXIMISEART-Dad's processes open without a dialog, keep their external link, formulas, Wyróżnienia and Wygląd Wiersza danych, and that a Gotowość typed and saved in Excel reaches the Rozliczenia pracowników. Local only, because it needs this Mac's Excel. Use when `tools/skille_dla_zmiany.py` lists it, when its cleanup mutations are red, or when asked what Dad sees of a workbook in Excel.
 pilnuje:
   - src/rozliczenia/collective_layout.py
   - src/rozliczenia/workbook_files.py
@@ -55,7 +55,7 @@ CI on `main` and nightly on `main` (`mutacje-nocne.yml`). Everything else needs 
 
 ## Launch
 
-From the repository root, after `tools/setup_worktree.py` in a worktree:
+From the repository root:
 
 ```bash
 .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py
@@ -165,15 +165,11 @@ ends the run with `VERIFY FAIL | <reason>`; the reason names the file, row and
 column, never a value. `features/README.md` holds the feature map and its
 conventions.
 
-Drive Excel only through `scripts/excel.py`; it encodes the traps below.
+Drive Excel only through `scripts/excel.py`; it encodes the traps below and those of `gotowosc-w-excelu.md` (Gotchas).
 
-- `tell wb to save` saves; `save wb` returns without error and saves nothing.
 - AppleScript gives numbers in the system locale (`305,75`) and a formula
   error as an empty text: find errors with `special cells … value errors`
   (`excel.error_cells`), never by reading values.
-- Every entry recalculates the whole workbook (some 50 000 formulas in Dad's
-  Wzorce), so type one row per call (`excel.type_row`); typed cell by cell,
-  the first row of the synthetic Wzorce ran past the 60 s call limit.
 - While a dialog is up, Excel lists its workbooks as `missing value`
   (`excel.open_paths`) or fails a call with `-1708`, and both raise
   `ExcelDialog`; `excel.dialogs()` lists its untitled windows on screen,
@@ -253,10 +249,8 @@ the Plik zbiorczy open left it and its desk; the next run reported
 workbook of the user open and unchanged. An Excel started with no workbook
 ended `excel_quit=true`. Excel started by `open` (also `excel.launch`) holds
 its blank `Zeszyt1`, which it replaces by the first workbook opened, so
-`excel_workbooks_before=1` after such a start is no workbook of the user. This path (a dialog left in an Excel that ran before the run, e.g.
-`--kontrola-naprawy` not answered in 10 minutes) is proven by
-`tests/test_sprzatanie_excela.py` only, not in Excel yet: prove it at the next
-`--kontrola-naprawy` with Maks at the Mac.
+`excel_workbooks_before=1` after such a start is no workbook of the user.
+A dialog left in an Excel that ran before the run is proven without Excel only (`okno-naprawy.md`, Gotchas).
 
 To clean up by hand without a run:
 
