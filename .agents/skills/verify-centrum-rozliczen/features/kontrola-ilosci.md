@@ -11,8 +11,9 @@ by itself a minute after a pass that stopped for no network or key, skipped an
 unreadable file, or found another Centrum's pass on the folder (`RETRY_S`). The
 queue sends its files oldest first, so the Logi of the same RUN, queued before
 it, go first. A failure that every later file would meet (no key, no network,
-refused key) stops the pass; content the skrzynka rejects stays in the queue,
-and the pass goes on to the next file. Each period has one Kontrola issue:
+refused key) stops the pass; content the skrzynka rejects stays in the queue
+until the next start of Centrum, which sends it again (`zgloszenie-odrzucone-po-starcie` of `zgloszenie`), and the
+pass goes on to the next file. Each period has one Kontrola issue:
 a later RUN comments on the open one, and after Maks closes it the next one
 opens a new issue.
 

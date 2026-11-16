@@ -501,6 +501,22 @@ ENTRIES: dict[str, Entry] = {
     "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
     "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
     "getActivityLegend": _route("getActivityLegend", "GET", "/api/settings/activity-legend"),
+    "addActivityCode": _route(
+        "addActivityCode",
+        "POST",
+        "/api/settings/activity-legend",
+        {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": []},
+    ),
+    "changeActivityCode": _route(
+        "changeActivityCode",
+        "PUT",
+        "/api/settings/activity-legend/spawez",
+        {"spellings": ["spawez"], "column": {"kind": "fixed", "column": "AC"}, "value": 1, "amount": None, "fills": []},
+    ),
+    "removeActivityCode": _route("removeActivityCode", "DELETE", "/api/settings/activity-legend/spawez"),
+    "previewActivityLegend": _route(
+        "previewActivityLegend", "POST", "/api/settings/activity-legend/preview", {"kind": "remove", "code_id": "spawez"}
+    ),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -606,6 +622,10 @@ READS: dict[str, set[str]] = {
     "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "getDeviceSuggestions": _WINDOW,
     "getActivityLegend": {"wzorzec_zbiorczy"},
+    "addActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "changeActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "removeActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "previewActivityLegend": _FOLDERS | {"ustawienia", "plik_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,

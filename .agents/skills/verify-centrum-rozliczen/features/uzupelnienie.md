@@ -17,8 +17,8 @@ the saved Plik zbiorczy on every read, also while Excel holds it, and never
 changes it. Each kind with rows opens its own page at
 `#/uzupelnienie/<token>/<kind>`: a read-only table like Excel with only that
 kind's rows, the row number and WYKONAWCA, URZĄDZENIA, CZYNNOŚCI and CZYNNOŚCI
-ZREALIZOWANE pinned on the left, all 29 columns N:AP scrolling sideways under
-their letter and price-list name, the tool's values grey, a row to fill yellow,
+ZREALIZOWANE pinned on the left, the 29 columns N:AP and `AS` (Uwagi - kwota,
+where the Legenda czynności writes) scrolling sideways under their letter and price-list name, the tool's values grey, a row to fill yellow,
 and Dad's value green in a green row. A Plik zbiorczy it cannot read is a calm
 three-part Komunikat. The summary and the kind pages are live (#419): while
 visible they ask every 3 s for the saved version
@@ -85,6 +85,11 @@ runs one and checks that the rows without Dad's entry are „bez ilości” on e
 - `Uzupełnij` has role `button`, not `link`: it is a Base UI `Button` rendered as `<a>`, like the bell.
 - Headless Chromium reports the tab as visible, so the page keeps asking for the saved version during the whole drive; a step that counts requests counts only its own.
 - The rows without quantity are the listed kinds' rows not done (bez reguły and z opisu), never a row the Reguły ilości cover; an unreadable Plik zbiorczy makes them `unread`. The dialog reads them for its period when the card shows it, never the setup, because one read takes Dad's laptop over a second.
+- The fixture's CZYNNOŚCI ZREALIZOWANE hold no Kod czynności, so the drive does not reach what the Legenda czynności changes on these pages:
+  `tests/test_centrum_uzupelnienie_tabela.py::test_wiersz_z_opisu_z_samych_kodow_nie_czeka_na_tate_a_kod_obok_opisu_czeka`
+  checks that a row from the description with only codes is not among the rows to fill, that a code beside a description is, and that the summary counts the rows the legend filled and the rows left to Dad (`description_rows`);
+  `tests/test_centrum_uzupelnienie_tabela.py::test_kolumny_legendy_sa_kolumnami_narzedzia_takze_kwota_w_as`
+  checks that the legend's columns, the amount in `AS` too, are the tool's values.
 - The preview in `uzupelnienie-gotowe-po-podgladzie` adds one DRY-RUN of Przebieg rozliczeń to the week before `przebieg-rozliczen`; that feature counts its records from its own start.
 - Delete the lock file in `finally`; a leftover `~$…` keeps `Uruchom` of Przebieg rozliczeń off, with the start card naming the Plik zbiorczy as open in Excel (`przebieg-plik-zbiorczy-otwarty-w-excelu` of `przebieg-rozliczen`).
 - Remove the harness's `Rozliczenie pracowników 06_12_10_2026` in `finally`: a leftover folder closes the period, and `przebieg-rozliczen` would stop with Nienadpisywanie instead of settling it.

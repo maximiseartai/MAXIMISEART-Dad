@@ -2,6 +2,9 @@ import type * as React from "react"
 import { cn } from "cn"
 import { CircleAlertIcon } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
+
 /** Karta sekcji Ustawień: wiersze jeden pod drugim, oddzielone cienką linią (wzór: ustawienia T3 Code). */
 export function SettingsPanel({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
@@ -53,5 +56,53 @@ export function FieldSentence({ id, children }: { id?: string; children: React.R
       <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span>{children}</span>
     </p>
+  )
+}
+
+/** Pole formularza w wierszu sekcji: etykieta po lewej (pusta przy kolejnym polu tej samej listy) i pole po prawej. */
+export function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
+      <span aria-hidden className="min-w-0 basis-28 text-sm text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex min-w-0 flex-1 basis-56 items-center">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * Przyciski formularza w wierszu sekcji: przycisk usunięcia wpisu po lewej (`children`, przy nowym wpisie brak), „Anuluj”
+ * i „Zapisz” po prawej. W czasie zapisu (`saving`) „Zapisz” czeka, a bez zmiany jest nieaktywne. Formularz, który pyta
+ * o usunięcie (`removing`), ma w ich miejscu „Nie usuwaj” i „Usuń”.
+ */
+export function FormActions({
+  cancel,
+  save,
+  dirty,
+  saving,
+  removing = false,
+  children,
+}: {
+  cancel: () => void
+  save: () => void
+  dirty: boolean
+  saving: boolean
+  removing?: boolean
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {children}
+      <div className="ml-auto flex gap-2">
+        <Button variant="ghost" onClick={cancel}>
+          {removing ? <>Nie usuwaj</> : <>Anuluj</>}
+        </Button>
+        <Button variant={removing ? "destructive" : "default"} disabled={!dirty || saving} onClick={save}>
+          {saving ? <Spinner data-icon="inline-start" /> : null}
+          {removing ? <>Usuń</> : <>Zapisz</>}
+        </Button>
+      </div>
+    </div>
   )
 }

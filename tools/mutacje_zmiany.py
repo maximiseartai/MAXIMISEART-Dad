@@ -28,8 +28,12 @@ robi mutacje, które przeglądy PR-ów robiły ręcznie i które przeżywały te
 Biegnie każde cofnięcie fragmentu i najwyżej jedna inna mutacja na linię (``selected``): ta z najgłębszego węzła
 drzewa składni linii, czyli ostatnia, którą daje przejście drzewa wszerz (``ast.walk``), a z kilku na tym samym węźle
 ostatnia z nich. Psuje ona najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii;
-ogólny skutek fragmentu sprawdza już jego cofnięcie. Predykat napisu biegnie tylko na linii bez innej mutacji: przy
-zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
+ogólny skutek fragmentu sprawdza już jego cofnięcie. Samo cofnięcie fragmentu (``Revert.HUNK``) biegnie po innych
+mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``) tylko wtedy, gdy każda zmieniona
+linia kodu fragmentu (bez pustych i samych komentarzy według tokenów Pythona, więc linia napisu to kod) ma własną
+mutację, która biegła w tej części, a każdą taką mutację wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama
+brama typów). Predykat napisu biegnie tylko na linii
+bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
@@ -141,6 +145,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 import datetime
 import difflib
+import enum
 import hashlib
 import io
 import itertools
@@ -201,6 +206,14 @@ Node = ast.expr | ast.stmt
 _HUNK = re.compile(r"^@@ -(?P<old>\d+)(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:,(?P<new_count>\d+))? @@")
 
 
+class Revert(enum.Enum):
+    """Czy mutacja przywraca bazę fragmentu zmiany; takiej mutacji brama typów nie sprawdza."""
+
+    NONE = enum.auto()
+    MERGED = enum.auto()  # kod innej mutacji, który cofa też fragment: biegnie zawsze, pod jej opisem
+    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie po innych mutacjach części, chyba że jest ``_dominated``
+
+
 @dataclass(frozen=True)
 class Mutant:
     path: str
@@ -210,7 +223,7 @@ class Mutant:
     source: str  # cały plik po mutacji
     other_system: bool = False  # kod gałęzi innego systemu niż ten, na którym biegną testy
     shared_state: bool = False  # kod funkcji z ``@cache``: wynik pierwszego wywołania dostają następne testy
-    revert: bool = False  # cofnięcie fragmentu zmiany do bazy
+    revert: Revert = Revert.NONE
     last_resort: bool = False  # predykat napisu: biegnie tylko na linii bez innej mutacji
 
 
@@ -252,12 +265,14 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
     # Linie spoza UTF-8 mogą mieć tylko pliki, które ``_code`` odsiewa (plik ``.py`` czyta ``read_text`` w UTF-8),
     # więc zastąpienie ich znaków nie zmienia fragmentów.
     # Usunięty plik nie ma linii do zepsucia, więc każdy nagłówek ``+++`` to ``b/<ścieżka>``.
+    # Linia bazy pliku z końcami ``\r\n`` przychodzi z ``\r``, którego nie ma w tekście z ``read_text``: bez niego
+    # cofnięcie fragmentu jest tym samym kodem co w pliku z końcami ``\n``, więc łączy się z równą mu inną mutacją.
     for line in repo.git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork).split("\n"):
         if old_left and line.startswith("-"):
             old_left -= 1
             if current is not None:
                 hunk = found[current][-1]
-                found[current][-1] = Hunk(hunk.start, hunk.count, (*hunk.old, line[1:]))
+                found[current][-1] = Hunk(hunk.start, hunk.count, (*hunk.old, line[1:].removesuffix("\r")))
         elif new_left and line.startswith("+"):
             new_left -= 1
         elif line.startswith("+++ "):
@@ -292,6 +307,18 @@ def _rows(text: str) -> list[str]:
     rows = [f"{row}\n" for row in text.split("\n")]
     rows[-1] = rows[-1][:-1]
     return rows if rows[-1] else rows[:-1]
+
+
+LAYOUT = frozenset({tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER})
+
+
+def _code_lines(text: str) -> frozenset[int]:
+    """Linie kodu pliku o treści ``text`` według tokenów Pythona: linia z tokenem spoza ``LAYOUT``, więc każda linia
+    napisu wielowierszowego, także pusta albo zaczęta od ``#``; sam komentarz i pusta linia nie biegną na żadnym systemie.
+    """
+
+    tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+    return frozenset(line for token in tokens if token.type not in LAYOUT for line in range(token.start[0], token.end[0] + 1))
 
 
 def changed_lines(hunks: Sequence[Hunk]) -> frozenset[int]:
@@ -635,11 +662,11 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
     meaning = _meaning(text)
 
     def add(
-        lines: frozenset[int], line: int, description: str, mutated: str, *, other_system: bool, revert: bool = False, last_resort: bool = False
+        lines: frozenset[int], line: int, description: str, mutated: str, *, other_system: bool, revert: Revert = Revert.NONE, last_resort: bool = False
     ) -> None:
-        if revert and mutated in found:
+        if revert is Revert.HUNK and mutated in found:
             # Cofnięcie, które daje kod innej mutacji, to ta mutacja: biegnie jako cofnięcie.
-            found[mutated] = replace(found[mutated], revert=True)
+            found[mutated] = replace(found[mutated], revert=Revert.MERGED)
             return
         if mutated == text or mutated in found:
             return
@@ -661,6 +688,7 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
                     other_system = id(broken) in other or id(node) in other
                     add(lines, broken.lineno, description, mutated, other_system=other_system, last_resort=last_resort)
     rows = _rows(text)
+    code_lines = _code_lines(text)
     for hunk in hunks:
         if not hunk.count or (not hunk.old and hunk.count == len(rows)):
             continue  # samo usunięcie nie ma linii do testu, a nowy plik nie ma bazy
@@ -669,15 +697,17 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
         last = hunk.start + hunk.count - 1
         span = f"{hunk.start}" if hunk.count == 1 else f"{hunk.start}–{last}"
         lines = changed_lines([hunk])
-        # Komentarz i pusta linia nie biegną na żadnym systemie, więc nie decydują, czyj jest fragment.
-        code = {line for line in lines if line <= len(rows) and rows[line - 1].strip() and not rows[line - 1].lstrip().startswith("#")}
-        add(lines, hunk.start, f"zmiana linii {span} cofnięta do bazy", mutated, other_system=bool(code) and code <= other_lines, revert=True)
+        code = lines & code_lines  # komentarz i pusta linia nie decydują, czyj jest fragment
+        add(lines, hunk.start, f"zmiana linii {span} cofnięta do bazy", mutated, other_system=bool(code) and code <= other_lines, revert=Revert.HUNK)
     # Sortowanie stabilne: w linii zostaje kolejność przejścia drzewa wszerz, z której wybiera ``selected``.
     return sorted(found.values(), key=lambda mutant: mutant.line)
 
 
 def selected(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:
     """Mutacje, które biegną w CI i liczy plan: każde cofnięcie fragmentu i ostatnia inna mutacja każdej linii.
+
+    Samo cofnięcie fragmentu plan liczy zawsze, choć ``_mutate`` go nie uruchamia, gdy każda zmieniona linia kodu
+    fragmentu ma własną mutację wykrytą już testem (``_dominated``).
 
     Predykat napisu biegnie tylko na linii bez innej mutacji: ``x in y`` → ``y.startswith(x)`` przy ``y`` będącym
     zbiorem albo słownikiem tylko rzuca ``AttributeError``, a wypierał ``bez członu`` i stały warunek (#486
@@ -687,9 +717,9 @@ def selected(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pl
     found = mutants(path, text, hunks, platform)
     last: dict[int, Mutant] = {}
     for mutant in found:
-        if not mutant.revert and (mutant.line not in last or not mutant.last_resort or last[mutant.line].last_resort):
+        if mutant.revert is Revert.NONE and (mutant.line not in last or not mutant.last_resort or last[mutant.line].last_resort):
             last[mutant.line] = mutant
-    return [mutant for mutant in found if mutant.revert or last[mutant.line] is mutant]
+    return [mutant for mutant in found if mutant.revert is not Revert.NONE or last[mutant.line] is mutant]
 
 
 def fingerprint(mutant: Mutant, text: str) -> str:
@@ -830,6 +860,19 @@ def _allowance(allowed: Mapping[int, Allowance], mutant: Mutant, today: datetime
 
     allowance = allowed.get(mutant.line)
     return allowance if allowance is not None and allowance.until >= today else None
+
+
+def _dominated(revert: Mutant, text: str, ran: Iterable[Mutant], killed: set[Mutant]) -> bool:
+    """Czy samo cofnięcie fragmentu pliku o treści ``text`` nic nie dowiedzie: każda zmieniona linia kodu fragmentu ma
+    własną mutację (``Mutant.line``) tego pliku spośród ``ran``, które biegły w tej części, a każdą z nich wykrył test.
+
+    Linię bez takiej mutacji (bez innej mutacji, z mutacją pod wyjątkiem albo innego systemu, z mutacją w innej części)
+    sprawdza tylko cofnięcie, więc ono biegnie.
+    """
+
+    code = revert.lines & _code_lines(text)
+    own = [mutant for mutant in ran if mutant.path == revert.path and mutant.line in code]
+    return bool(code) and {mutant.line for mutant in own} == code and all(mutant in killed for mutant in own)
 
 
 def _part(text: str) -> Czesc:
@@ -1072,50 +1115,76 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     # Pokrycie tylko przyspiesza: mutacja, która przeżyła testy swoich linii, biegnie z coraz większym zbiorem testów.
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
     # takich mutacji jest kilka, więc biegną po jednej, każda z workerami xdist.
-    wide: list[tuple[Mutant, silnik_mutacji.Mutation]] = []
-    middle = 0
-    queued, label = narrow, ""
-    while queued:
-        verdicts = silnik_mutacji.verdicts([m for _, m, _ in queued], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline)
-        further: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
-        for (mutant, mutation, remaining), (verdict, shown) in zip(queued, verdicts, strict=True):
-            # ZAWIESZENIE (pytest-timeout) czerwieni CI, więc kończy mutację jak WYKRYTA, bez szerszych testów.
+    # Samo cofnięcie fragmentu biegnie po innych mutacjach części, bo dopiero ich werdykty testów mówią, czy jest
+    # ``_dominated`` (ADR 0021: takie cofnięcia w 12 nocach dały tylko szum, a kosztowały 6,2% czasu mutacji).
+    others = [entry for entry in narrow if entry[0].revert is not Revert.HUNK]
+    reverts = [entry for entry in narrow if entry[0].revert is Revert.HUNK]
+    killed: set[Mutant] = set()  # wykryte przez test, nie przez bramę typów
+    ran: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
+    middle = wide_count = dominated = 0
+    narrow_s = wide_s = 0.0
+    for second in (False, True):
+        queued = others
+        if second:
+            queued = []
+            for mutant, mutation, later in reverts:
+                if _dominated(mutant, texts[mutant.path], [other for other, _, _ in others], killed):
+                    dominated += 1
+                    print(f"ZDOMINOWANA: {mutation.name} → każda linia kodu fragmentu ma własną mutację, którą wykrył test", flush=True)
+                else:
+                    queued.append((mutant, mutation, later))
+        ran += queued
+        started = time.monotonic()
+        wide: list[tuple[Mutant, silnik_mutacji.Mutation]] = []
+        label = ""
+        while queued:
+            verdicts = silnik_mutacji.verdicts([m for _, m, _ in queued], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline)
+            further: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
+            for (mutant, mutation, remaining), (verdict, shown) in zip(queued, verdicts, strict=True):
+                # ZAWIESZENIE (pytest-timeout) czerwieni CI, więc kończy mutację jak WYKRYTA, bez szerszych testów.
+                caught, last = silnik_mutacji.in_ci(verdict, shown)
+                if caught:
+                    killed.add(mutant)
+                if verdict == silnik_mutacji.Verdict.NO_VERDICT:
+                    unchecked.append((mutant, texts[mutant.path]))
+                elif not caught and not remaining:
+                    passed.append((mutant, mutation, verdict, shown, label))
+                    continue
+                if caught or verdict == silnik_mutacji.Verdict.NO_VERDICT or not remaining:
+                    print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
+                    continue
+                if verdict == silnik_mutacji.Verdict.OVER_LIMIT:
+                    print(f"{verdict}: {mutation.name} → {last}{label or ' (testy linii)'}, biegnie dalej z szerszymi testami", flush=True)
+                if remaining[1:]:
+                    further.append((mutant, replace(mutation, command=_command(remaining[0], coverage)), remaining[1:]))
+                else:
+                    wide.append((mutant, replace(mutation, command=_command(remaining[0], coverage, args.rownolegle))))
+            middle += len(further)
+            queued, label = further, " (testy kodu pliku)"
+        between = time.monotonic()
+        for (mutant, mutation), (verdict, shown) in zip(wide, silnik_mutacji.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
             caught, last = silnik_mutacji.in_ci(verdict, shown)
+            if caught:
+                killed.add(mutant)
+            if not caught and verdict != silnik_mutacji.Verdict.NO_VERDICT:
+                passed.append((mutant, mutation, verdict, shown, " (testy pliku)"))
+                continue
             if verdict == silnik_mutacji.Verdict.NO_VERDICT:
                 unchecked.append((mutant, texts[mutant.path]))
-            elif not caught and not remaining:
-                passed.append((mutant, mutation, verdict, shown, label))
-                continue
-            if caught or verdict == silnik_mutacji.Verdict.NO_VERDICT or not remaining:
-                print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
-                continue
-            if verdict == silnik_mutacji.Verdict.OVER_LIMIT:
-                print(f"{verdict}: {mutation.name} → {last}{label or ' (testy linii)'}, biegnie dalej z szerszymi testami", flush=True)
-            if remaining[1:]:
-                further.append((mutant, replace(mutation, command=_command(remaining[0], coverage)), remaining[1:]))
-            else:
-                wide.append((mutant, replace(mutation, command=_command(remaining[0], coverage, args.rownolegle))))
-        middle += len(further)
-        queued, label = further, " (testy kodu pliku)"
-    clock.append(time.monotonic())
-    for (mutant, mutation), (verdict, shown) in zip(wide, silnik_mutacji.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
-        caught, last = silnik_mutacji.in_ci(verdict, shown)
-        if not caught and verdict != silnik_mutacji.Verdict.NO_VERDICT:
-            passed.append((mutant, mutation, verdict, shown, " (testy pliku)"))
-            continue
-        if verdict == silnik_mutacji.Verdict.NO_VERDICT:
-            unchecked.append((mutant, texts[mutant.path]))
-        print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
+            print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
+        narrow_s += between - started
+        wide_s += time.monotonic() - between
+        wide_count += len(wide)
     clock.append(time.monotonic())
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
-    checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if not mutant.revert]
+    checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if mutant.revert is Revert.NONE]
     gated = iter(
         silnik_mutacji.type_gate(
             [mutation for mutation, _ in checked], [found for _, found in checked], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline, gate=gate
         )
     )
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
-        verdict, shown = (tests_verdict, tests_shown) if mutant.revert else next(gated)
+        verdict, shown = next(gated) if mutant.revert is Revert.NONE else (tests_verdict, tests_shown)
         caught, last = silnik_mutacji.in_ci(verdict, shown)
         if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
@@ -1126,11 +1195,11 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             survived.append((mutant, texts[mutant.path]))
         print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
     clock.append(time.monotonic())
-    uncovered = sum(not later for _, _, later in narrow)
-    coverage_s, narrow_s, wide_s, gate_s = (later - earlier for earlier, later in itertools.pairwise(clock))
+    uncovered = sum(not later for _, _, later in ran)
+    coverage_s, _, gate_s = (later - earlier for earlier, later in itertools.pairwise(clock))
     print(
-        f"CZAS | pokrycie {coverage_s:.0f} s | testy linii {narrow_s:.0f} s ({len(narrow)} mutacji, w tym {uncovered} bez drugiego"
-        f" i {middle} z testami kodu pliku) | testy pliku {wide_s:.0f} s ({len(wide)} mutacji)"
+        f"CZAS | pokrycie {coverage_s:.0f} s | testy linii {narrow_s:.0f} s ({len(ran)} mutacji, w tym {uncovered} bez drugiego"
+        f" i {middle} z testami kodu pliku) | testy pliku {wide_s:.0f} s ({wide_count} mutacji) | cofnięcia zdominowane {dominated}"
         f" | brama typów {gate_s:.0f} s ({len(checked)} mutacji)",
         flush=True,
     )

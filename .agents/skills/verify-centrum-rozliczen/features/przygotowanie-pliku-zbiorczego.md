@@ -51,8 +51,11 @@ Its proof adds `api/przygotowanie-*.json`.
 - The preview of `06_12_10_2026` carries five warnings: the incomplete period, the rows without zeros (the Wzorzec
   pliku zbiorczego has none), `wiersze 18, 20` with an unknown device, `wiersz 19` settled from the description, and
   the reminder of columns Y, AB, AD, AJ, AK, AL and AM.
-- Count metrics records through `/api/metrics`, not by lines: the metrics store cuts off the invalid record that ends
-  the fixture's Przygotowanie file on the next append.
+- Count metrics records through `/api/metrics`, not by lines: the fixture's Przygotowanie file ends with a full
+  record the reader skips (it carries the counters of Przebieg rozliczeń), and the next append keeps it:
+  `tests/test_plik_metryk.py::test_plik_metryk_zachowuje_pelny_rekord_innej_wersji_narzedzia` checks that an append
+  keeps a full record of another version of the tool. Only a torn last line, as in the fixture's Przebieg rozliczeń
+  file, is cut off.
 - The start card reads `/api/runs/setup` again on `focus` and `visibilitychange`, after an Uruchomienie ends and after
   `Nowe Uruchomienie procesu`, never by itself; after changing a lock file, fire `focus` or the card keeps the old
   answer.
