@@ -23,6 +23,7 @@ import type {
   RunInfo,
   RunOutcome,
   PreviewQuantityRulesData,
+  ActivityCodeForm,
   ComponentForm,
   RuleForm,
   RunRequest,
@@ -205,9 +206,23 @@ export function getQuantityRules() {
   return call("getQuantityRules")
 }
 
-/** Legenda czynności jako zdania, którą liczy następne Przygotowanie pliku zbiorczego. */
+/** Legenda czynności jako zdania i formularze, którą liczy następne Przygotowanie pliku zbiorczego. */
 export function getActivityLegend() {
   return call("getActivityLegend")
+}
+
+/** Nowy Kod czynności; zły kod to odmowa z polem formularza (`zapisy[1]`, `przedzialy[0].kolumna`, `kwota`). */
+export function addActivityCode(code: ActivityCodeForm) {
+  return call("addActivityCode", { body: code })
+}
+
+/** Zmieniony Kod czynności; zostaje na swoim miejscu w legendzie. */
+export function changeActivityCode(id: string, code: ActivityCodeForm) {
+  return call("changeActivityCode", { path: { code_id: id }, body: code })
+}
+
+export function removeActivityCode(id: string) {
+  return call("removeActivityCode", { path: { code_id: id } })
 }
 
 /** Nowa Reguła ilości z edytora; zła reguła to odmowa z polem formularza (`jesli[0].tekst`, `to.wpisy[1].kolumna`). */

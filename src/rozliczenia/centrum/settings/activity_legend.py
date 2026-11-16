@@ -86,6 +86,25 @@ def activity_legend(codes: tuple[ActivityCode, ...]) -> ActivityLegend:
 Codes = tuple[ActivityCode, ...]
 
 
+def code_ids(keys: frozenset[str]) -> frozenset[str]:
+    """Id kodów z kluczy Historii Ustawień legendy (``kody.<id>``)."""
+
+    return _ENTRIES.ids(keys)
+
+
+def legend_refusal(codes: Codes | FieldProblem) -> Codes | FieldProblem:
+    """Zmiana taty legendy (formularz kodu albo „Cofnij”) z odmową zdaniem silnika o legendzie po zmianie, bez pola i bez
+    zdania o złym pliku, które da ``parse``: cofnięty kod może mieć zapis, który ma już kod dodany później."""
+
+    if isinstance(codes, FieldProblem):
+        return codes
+    try:
+        ActivityLegend(codes)
+    except LegendRefused as refused:
+        return FieldProblem(None, refused.problem.message)
+    return codes
+
+
 def set_codes(*codes: ActivityCode) -> Callable[[ReleaseInputs[Codes]], Proposal[Codes]]:
     """Zmiana Legendy czynności z Wydania: każdy kod z ``codes`` zastępuje w legendzie taty kod o tym samym ``id`` na jego
     miejscu, a kod, którego tata nie ma, dochodzi na koniec. Edycja jest deklaratywna („ustaw”), więc powtórzona po

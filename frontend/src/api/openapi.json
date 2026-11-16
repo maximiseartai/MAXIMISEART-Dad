@@ -1735,6 +1735,187 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Add",
+        "operationId": "addActivityCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityCodeForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLegendSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zły Kod czynności z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pliku Legendy czynności nie da się teraz przeczytać",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/activity-legend/{code_id}": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change",
+        "operationId": "changeActivityCode",
+        "parameters": [
+          {
+            "name": "code_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityCodeForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLegendSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zły Kod czynności z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pliku Legendy czynności nie da się teraz przeczytać",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Remove",
+        "operationId": "removeActivityCode",
+        "parameters": [
+          {
+            "name": "code_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLegendSaved"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Zły Kod czynności z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pliku Legendy czynności nie da się teraz przeczytać",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/settings/autostart": {
@@ -3289,6 +3470,75 @@
         ],
         "title": "ActivitiesCondition"
       },
+      "ActivityCodeForm": {
+        "properties": {
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Spellings"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FixedColumnForm"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RangesForm"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "fixed": "#/components/schemas/FixedColumnForm",
+                    "ranges": "#/components/schemas/RangesForm"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "fills": {
+            "items": {
+              "$ref": "#/components/schemas/FillForm"
+            },
+            "type": "array",
+            "title": "Fills"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "spellings",
+          "column",
+          "value",
+          "amount",
+          "fills"
+        ],
+        "title": "ActivityCodeForm",
+        "description": "Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością\nza jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie\nliczy."
+      },
       "ActivityCodeSentence": {
         "properties": {
           "id": {
@@ -3319,6 +3569,9 @@
             },
             "type": "array",
             "title": "Sentence"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ActivityCodeForm"
           }
         },
         "additionalProperties": false,
@@ -3326,10 +3579,37 @@
         "required": [
           "id",
           "spellings",
-          "sentence"
+          "sentence",
+          "code"
         ],
         "title": "ActivityCodeSentence",
-        "description": "Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne\npo „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika."
+        "description": "Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne\npo „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika; ``code`` to ten sam kod jako formularz."
+      },
+      "ActivityLegendSaved": {
+        "properties": {
+          "activity_legend": {
+            "$ref": "#/components/schemas/ActivityLegendSettings"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activity_legend",
+          "change"
+        ],
+        "title": "ActivityLegendSaved",
+        "description": "Legenda czynności po zapisie formularza kodu; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”),\n``None``: zapis niczego nie zmienił."
       },
       "ActivityLegendSettings": {
         "properties": {
@@ -3349,16 +3629,36 @@
                 "type": "null"
               }
             ]
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/LegendColumn"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "amount_column": {
+            "$ref": "#/components/schemas/LegendColumn"
+          },
+          "fill_columns": {
+            "items": {
+              "$ref": "#/components/schemas/LegendColumn"
+            },
+            "type": "array",
+            "title": "Fill Columns"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "codes",
-          "problem"
+          "problem",
+          "columns",
+          "amount_column",
+          "fill_columns"
         ],
         "title": "ActivityLegendSettings",
-        "description": "Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe\nustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania)."
+        "description": "Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe\nustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).\n``columns``: kolumny, w które kod wpisuje Ilość usług, ``amount_column``: kolumna kwoty (``AS``), a ``fill_columns``:\nkolumny, które kod wypełnia kolorem."
       },
       "AddRule": {
         "properties": {
@@ -3436,6 +3736,9 @@
               "removeDevice",
               "getDeviceSuggestions",
               "getActivityLegend",
+              "addActivityCode",
+              "changeActivityCode",
+              "removeActivityCode",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -4665,6 +4968,29 @@
         ],
         "title": "FillAction"
       },
+      "FillForm": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "colour": {
+            "type": "string",
+            "enum": [
+              "zielony",
+              "czerwony"
+            ],
+            "title": "Colour"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "column",
+          "colour"
+        ],
+        "title": "FillForm"
+      },
       "FillKind": {
         "type": "string",
         "enum": [
@@ -4703,6 +5029,27 @@
         ],
         "title": "FillStep",
         "description": "Uzupełnienie w Excelu: tata robi je w Excelu, Centrum prowadzi na podsumowanie Uzupełnienia pliku zbiorczego;\n``then`` to krok po nim, Wycena w efenix."
+      },
+      "FixedColumnForm": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fixed",
+            "title": "Kind"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "column"
+        ],
+        "title": "FixedColumnForm",
+        "description": "Kod wpisuje w jedną kolumnę, a liczba w zapisie nie ma znaczenia."
       },
       "FoldersChange": {
         "properties": {
@@ -5636,6 +5983,33 @@
         ],
         "title": "LeaveEmptyAction",
         "description": "Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA)."
+      },
+      "LegendColumn": {
+        "properties": {
+          "letter": {
+            "type": "string",
+            "title": "Letter"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "letter",
+          "name"
+        ],
+        "title": "LegendColumn",
+        "description": "Kolumna do wyboru w formularzu kodu z nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego (``None``: Wzorca\nnie da się przeczytać albo komórka jest pusta)."
       },
       "ListedWorker": {
         "properties": {
@@ -7732,6 +8106,55 @@
         ],
         "title": "Queued",
         "description": "Wysyłka taty czeka w Kolejce wysyłki na tym komputerze i wyjdzie sama, także po następnym starcie, gdy będzie\nto, na co czeka."
+      },
+      "RangeForm": {
+        "properties": {
+          "low": {
+            "type": "integer",
+            "title": "Low"
+          },
+          "high": {
+            "type": "integer",
+            "title": "High"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "low",
+          "high",
+          "column"
+        ],
+        "title": "RangeForm",
+        "description": "Liczba z zapisu od ``low`` do ``high`` włącznie wybiera kolumnę ``column``."
+      },
+      "RangesForm": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ranges",
+            "title": "Kind"
+          },
+          "ranges": {
+            "items": {
+              "$ref": "#/components/schemas/RangeForm"
+            },
+            "type": "array",
+            "title": "Ranges"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "ranges"
+        ],
+        "title": "RangesForm",
+        "description": "Kod wybiera kolumnę liczbą z zapisu, przedziałami („1–15 → AL, 16–30 → AJ”)."
       },
       "ReadByMaks": {
         "properties": {
