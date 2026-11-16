@@ -81,7 +81,7 @@ PLAIN = Highlights()
 
 
 def solid_fill(argb: str) -> PatternFill:
-    """Jednolite wypełnienie koloru ``argb`` (np. ``FF92D050``) tak, jak je zapisuje Excel tacie: kolor w ``fgColor``,
+    """Jednolite wypełnienie koloru ``argb`` (``FillColour.argb``) tak, jak je zapisuje Excel tacie: kolor w ``fgColor``,
     a ``bgColor`` automatyczny."""
 
     return PatternFill(patternType="solid", fgColor=Color(rgb=argb), bgColor=Color(indexed=64))

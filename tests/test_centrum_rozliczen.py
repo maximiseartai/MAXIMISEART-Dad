@@ -3091,11 +3091,12 @@ EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
 
 
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
-    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, przypomnienia ze stopką taty, usunięta reguła
-    i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, Legenda czynności taty bez pierwszego kodu z
+    Wydania, przypomnienia ze stopką taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
     usuniętego składnika."""
 
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    (tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes[1:]))
     client.put("/api/settings/reminders", json=SIGNED_REMINDERS | {"footer": "Tata"})
     rule = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
     client.delete(f"{QUANTITY_RULES_URL}/{rule}")
