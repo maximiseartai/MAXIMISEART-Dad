@@ -144,7 +144,15 @@ PREPARATION_SAMPLES: Samples = {
         lambda: messages.rows_from_description(SOURCE.name, [20]),
         lambda: messages.rows_from_description(SOURCE.name, [20, 21, 23]),
     ],
-    "columns_from_description": [lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS)],
+    "codes_out_of_range": [
+        lambda: messages.codes_out_of_range(SOURCE.name, [(20, ["instutp40m"])]),
+        lambda: messages.codes_out_of_range(SOURCE.name, [(20, ["instutp40m", "instutp0m"]), (23, ["instwewrg631m"])]),
+    ],
+    "columns_from_description": [
+        lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS, closed=0, for_tata=12),
+        lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS, closed=3, for_tata=1),
+        lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS, closed=22, for_tata=5),
+    ],
     "incomplete_period": [
         lambda: messages.incomplete_period(REGISTER, SHEET, PERIOD, date(2026, 9, 12), date(2026, 9, 14))
     ],

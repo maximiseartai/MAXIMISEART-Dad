@@ -2,7 +2,7 @@ import { cn } from "cn"
 import { ChevronRightIcon, CircleCheckIcon, CircleDashedIcon, CircleMinusIcon } from "lucide-react"
 
 import { getQuantitiesToFill, type QuantitiesToFill } from "@/api/centrum"
-import type { DescriptionColumn, KindToFill, QuantitiesToFillReady, RowState } from "@/api/generated"
+import type { DescriptionColumn, DescriptionRows, KindToFill, QuantitiesToFillReady, RowState } from "@/api/generated"
 import { zFillKind } from "@/api/generated/zod.gen"
 import { LoadFailure } from "@/components/load-failure"
 import { ThreePartMessage } from "@/components/three-part-message"
@@ -111,7 +111,7 @@ export function FillingSummary({ token, found }: { token: string; found: Quantit
         {found.kinds.map((kind) => (
           <KindSection key={kind.kind} token={token} kind={kind} settled={found.settled} />
         ))}
-        <DescriptionColumns columns={found.description_columns} />
+        <DescriptionColumns waiting={found.description_rows} columns={found.description_columns} />
       </CardContent>
     </Card>
   )
@@ -167,13 +167,16 @@ function KindSection({ token, kind, settled }: { token: string; kind: KindToFill
   )
 }
 
-/** Przypomnienie o kolumnach z opisu technika: bez stanu „zrobione”, tylko w ilu wierszach coś wpisano. */
-function DescriptionColumns({ columns }: { columns: ReadonlyArray<DescriptionColumn> }) {
+/**
+ * Przypomnienie o kolumnach z opisu technika: bez stanu „zrobione”, tylko ile wierszy wypełniła Legenda czynności, ile
+ * zostało i w ilu wierszach coś wpisano.
+ */
+function DescriptionColumns({ waiting, columns }: { waiting: DescriptionRows; columns: ReadonlyArray<DescriptionColumn> }) {
   return (
     <section aria-label="Kolumny z opisu technika" className="flex flex-col gap-3 px-6 py-5 pl-14">
       <div className="flex flex-col gap-0.5">
         <h2 className="font-medium">Kolumny z opisu technika</h2>
-        <p className="text-sm text-muted-foreground">W każdym wierszu według CZYNNOŚCI ZREALIZOWANE.</p>
+        <p className="text-sm text-muted-foreground">{descriptionRowsHint(waiting)}</p>
       </div>
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {columns.map(({ column, rows }) => (
@@ -185,6 +188,20 @@ function DescriptionColumns({ columns }: { columns: ReadonlyArray<DescriptionCol
       </dl>
     </section>
   )
+}
+
+function descriptionRowsHint({ by_legend, for_tata }: DescriptionRows): string {
+  if (by_legend === 0) {
+    return "W każdym wierszu według CZYNNOŚCI ZREALIZOWANE."
+  }
+
+  const closed = `Legenda czynności wypełniła ${by_legend} ${plural(by_legend, { one: "wiersz", few: "wiersze", many: "wierszy" })} z samych kodów.`
+
+  if (for_tata === 0) {
+    return closed
+  }
+
+  return `${closed} W ${for_tata} ${plural(for_tata, { one: "wierszu", few: "wierszach", many: "wierszach" })} według CZYNNOŚCI ZREALIZOWANE.`
 }
 
 export function FillingSkeleton() {

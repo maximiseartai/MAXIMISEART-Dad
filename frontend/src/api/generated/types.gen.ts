@@ -557,7 +557,7 @@ export type DecisionAnswer = {
 /**
  * DescriptionColumn
  *
- * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał.
+ * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał poza kolumnami narzędzia.
  */
 export type DescriptionColumn = {
     /**
@@ -568,6 +568,23 @@ export type DescriptionColumn = {
      * Rows
      */
     rows: number;
+};
+
+/**
+ * DescriptionRows
+ *
+ * Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła
+ * Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe.
+ */
+export type DescriptionRows = {
+    /**
+     * By Legend
+     */
+    by_legend: number;
+    /**
+     * For Tata
+     */
+    for_tata: number;
 };
 
 /**
@@ -1283,7 +1300,8 @@ export type KeptCell = {
 /**
  * KindTableCell
  *
- * Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0).
+ * Komórka N:AP albo ``AS`` wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia (Reguły ilości albo
+ * Legenda czynności), wpis taty albo nic (0).
  */
 export type KindTableCell = {
     source: CellSource;
@@ -1296,7 +1314,7 @@ export type KindTableCell = {
 /**
  * KindTableReady
  *
- * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+ * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP i ``AS`` po kolei, a
  * ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
  *
  * ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
@@ -2135,7 +2153,7 @@ export type PreviewWithoutFiles = {
 /**
  * PriceListItem
  *
- * Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
+ * Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
  */
 export type PriceListItem = {
     /**
@@ -2488,6 +2506,7 @@ export type QuantitiesToFillReady = {
      * Kinds
      */
     kinds: Array<KindToFill>;
+    description_rows: DescriptionRows;
     /**
      * Description Columns
      */

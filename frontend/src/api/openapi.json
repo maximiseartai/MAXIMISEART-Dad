@@ -4190,7 +4190,27 @@
           "rows"
         ],
         "title": "DescriptionColumn",
-        "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał."
+        "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał poza kolumnami narzędzia."
+      },
+      "DescriptionRows": {
+        "properties": {
+          "by_legend": {
+            "type": "integer",
+            "title": "By Legend"
+          },
+          "for_tata": {
+            "type": "integer",
+            "title": "For Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "by_legend",
+          "for_tata"
+        ],
+        "title": "DescriptionRows",
+        "description": "Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła\nLegenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."
       },
       "DeviceComponent": {
         "properties": {
@@ -5397,7 +5417,7 @@
           "value"
         ],
         "title": "KindTableCell",
-        "description": "Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0)."
+        "description": "Komórka N:AP albo ``AS`` wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia (Reguły ilości albo\nLegenda czynności), wpis taty albo nic (0)."
       },
       "KindTableReady": {
         "properties": {
@@ -5451,7 +5471,7 @@
           "rows"
         ],
         "title": "KindTableReady",
-        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a\n``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``."
+        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP i ``AS`` po kolei, a\n``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``."
       },
       "KindTableRow": {
         "properties": {
@@ -6813,7 +6833,7 @@
           "name"
         ],
         "title": "PriceListItem",
-        "description": "Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
+        "description": "Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
       },
       "PricingNotification": {
         "properties": {
@@ -7383,6 +7403,9 @@
             "type": "array",
             "title": "Kinds"
           },
+          "description_rows": {
+            "$ref": "#/components/schemas/DescriptionRows"
+          },
           "description_columns": {
             "items": {
               "$ref": "#/components/schemas/DescriptionColumn"
@@ -7398,6 +7421,7 @@
           "read",
           "settled",
           "kinds",
+          "description_rows",
           "description_columns"
         ],
         "title": "QuantitiesToFillReady",

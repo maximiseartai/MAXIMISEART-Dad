@@ -330,11 +330,22 @@ export const zDecisionAnswer = z.object({
 /**
  * DescriptionColumn
  *
- * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał.
+ * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał poza kolumnami narzędzia.
  */
 export const zDescriptionColumn = z.object({
     column: z.string(),
     rows: z.int()
+});
+
+/**
+ * DescriptionRows
+ *
+ * Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła
+ * Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe.
+ */
+export const zDescriptionRows = z.object({
+    by_legend: z.int(),
+    for_tata: z.int()
 });
 
 /**
@@ -566,7 +577,8 @@ export const zKeptCell = z.object({
 /**
  * KindTableCell
  *
- * Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0).
+ * Komórka N:AP albo ``AS`` wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia (Reguły ilości albo
+ * Legenda czynności), wpis taty albo nic (0).
  */
 export const zKindTableCell = z.object({
     source: zCellSource,
@@ -880,7 +892,7 @@ export const zPreviewFile = z.object({
 /**
  * PriceListItem
  *
- * Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
+ * Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
  */
 export const zPriceListItem = z.object({
     column: z.string(),
@@ -1387,7 +1399,7 @@ export const zKindTableRow = z.object({
 /**
  * KindTableReady
  *
- * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+ * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP i ``AS`` po kolei, a
  * ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
  *
  * ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
@@ -1439,6 +1451,7 @@ export const zQuantitiesToFillReady = z.object({
     read: zCollectiveFileRead,
     settled: z.boolean(),
     kinds: z.array(zKindToFill),
+    description_rows: zDescriptionRows,
     description_columns: z.array(zDescriptionColumn)
 });
 

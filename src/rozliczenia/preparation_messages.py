@@ -539,13 +539,14 @@ def unknown_devices(collective_filename: str, row_numbers: Sequence[int]) -> Mes
 
 
 def rows_from_description(collective_filename: str, row_numbers: Sequence[int]) -> Message:
-    """Ostrzeżenie: wiersze rozliczane z opisu (prewencja, niedostępność usług, puste ``URZĄDZENIA``) bez ilości."""
+    """Ostrzeżenie: wiersze rozliczane z opisu (prewencja, niedostępność usług, puste ``URZĄDZENIA``) bez ilości z Reguł
+    ilości, których ``CZYNNOŚCI ZREALIZOWANE`` nie są samymi Kodami czynności."""
 
     return Message(
         code="WIERSZE_Z_OPISU",
         what=(
             "Te wiersze Pliku zbiorczego rozlicza się z opisu technika (prewencja, niedostępność usług albo puste "
-            "URZĄDZENIA), więc narzędzie nie wpisało w nich żadnych ilości."
+            "URZĄDZENIA), więc Reguły ilości nie wpisały w nich żadnych ilości."
         ),
         where=f"plik {collective_filename}, {_rows_label(row_numbers)}",
         action=(
@@ -555,16 +556,50 @@ def rows_from_description(collective_filename: str, row_numbers: Sequence[int]) 
     )
 
 
-def columns_from_description(collective_filename: str, columns: Sequence[str]) -> Message:
-    """Ostrzeżenie zawsze po Planowaniu: kolumn z opisu technika (``columns``) Reguły ilości nie wypełniają."""
+def codes_out_of_range(collective_filename: str, rows: Sequence[tuple[int, Sequence[str]]]) -> Message:
+    """Ostrzeżenie: Kod czynności z liczbą spoza przedziałów Legendy czynności niczego nie wpisał (ADR 0038).
 
+    ``rows``: numer wiersza Pliku zbiorczego i kody z liczbą spoza przedziałów, jak w tekście (``instutp40m``).
+    """
+
+    listed = "; ".join(f"wiersz {number}: {', '.join(codes)}" for number, codes in rows[:_LISTED_ROWS])
+    rest = len(rows) - _LISTED_ROWS
+    return Message(
+        code="KODY_SPOZA_PRZEDZIALOW",
+        what=(
+            "Liczba w Kodzie czynności jest spoza przedziałów Legendy czynności, więc kod niczego nie wpisał "
+            f"({listed}{f' i {rest} kolejnych' if rest > 0 else ''})."
+        ),
+        where=f"plik {collective_filename}, {_rows_label([number for number, _codes in rows])}",
+        action=(
+            "Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. "
+            f"{refer_if('Jeśli taka liczba będzie wracać', request='powiedz o niej')}"
+        ),
+    )
+
+
+def columns_from_description(collective_filename: str, columns: Sequence[str], *, closed: int, for_tata: int) -> Message:
+    """Ostrzeżenie po Planowaniu, gdy choć jeden wiersz czeka na tatę w kolumnach z opisu technika (``columns``):
+    ``closed`` wierszy zamknęła Legenda czynności (same Kody czynności), a ``for_tata`` zostało tacie."""
+
+    left = f"Do uzupełnienia: {for_tata} {plural(for_tata, 'wiersz', 'wiersze', 'wierszy')}."
+    by_legend = (
+        f"Legenda czynności wpisała ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) w {closed} "
+        f"{plural(closed, 'wierszu', 'wierszach', 'wierszach')} z samych Kodów czynności. {left}"
+        if closed
+        else (
+            "Żaden opis technika (CZYNNOŚCI ZREALIZOWANE) nie jest z samych Kodów czynności, więc ilości z opisu "
+            f"narzędzie zostawia do uzupełnienia. {left}"
+        )
+    )
     return Message(
         code="KOLUMNY_Z_OPISU",
-        what="Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia.",
+        what=by_legend,
         where=f"plik {collective_filename}, kolumny {', '.join(columns[:-1])} i {columns[-1]}",
         action=(
-            "Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed "
-            "Przebiegiem rozliczeń."
+            f"Przejrzyj opis technika w {'pozostałych wierszach' if closed else 'każdym wierszu'} Pliku zbiorczego "
+            "i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już "
+            "wpisała."
         ),
     )
 

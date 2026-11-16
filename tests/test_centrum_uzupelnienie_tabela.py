@@ -22,6 +22,8 @@ N_AP = (
     *("N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"),
     *("AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI", "AJ", "AK", "AL", "AM", "AN", "AO", "AP"),
 )
+CELL_COLUMNS = (*N_AP, "AS")
+"""Kolumny komórek wiersza: Ilości usług N:AP i ``AS`` (Uwagi - kwota), w którą wpisuje Legenda czynności."""
 WORKER = "adrian.testowy"
 
 
@@ -57,10 +59,10 @@ def _write(centrum: PreparingCentrum, cells: dict[str, int | str | None]) -> Non
 def _shown(row: dict[str, Any]) -> dict[str, tuple[str, int | str]]:
     """Komórki wiersza, które coś pokazują: litera kolumny → (czyja wartość, wartość)."""
 
-    assert len(row["cells"]) == len(N_AP)
+    assert len(row["cells"]) == len(CELL_COLUMNS)
     return {
         column: (cell["source"], cell["value"])
-        for column, cell in zip(N_AP, row["cells"], strict=True)
+        for column, cell in zip(CELL_COLUMNS, row["cells"], strict=True)
         if cell != {"source": "empty", "value": 0}
     }
 
@@ -82,16 +84,16 @@ def test_tabela_wierszy_bez_reguly_ma_teksty_wierszy_i_szare_wartosci_narzedzia(
     assert _shown(first) == {"N": ("tool", 0), "T": ("tool", 1), "V": ("tool", 1)}
 
 
-def test_naglowek_ma_kazda_kolumne_n_ap_z_nazwa_pozycji_cennika_z_wiersza_17(tmp_path: Path) -> None:
+def test_naglowek_ma_kazda_kolumne_n_ap_i_as_z_nazwa_pozycji_cennika_z_wiersza_17(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(centrum, {"O17": "  Instalacja i aktywacja   Internet "})
 
     columns = _table(centrum, "from_description")["columns"]
 
     names = {column["column"]: column["name"] for column in columns}
-    assert [column["column"] for column in columns] == list(N_AP)
+    assert [column["column"] for column in columns] == list(CELL_COLUMNS)
     # Syntetyczny Wzorzec ma nazwy tylko w N i AP; O dopisał tata.
-    assert names == dict.fromkeys(N_AP, "") | {
+    assert names == dict.fromkeys(CELL_COLUMNS, "") | {
         "N": "instalacja",
         "O": "Instalacja i aktywacja Internet",
         "AP": "demontaż",

@@ -1,11 +1,11 @@
 """Uzupełnienie pliku zbiorczego w Centrum: Ilości do uzupełnienia okresu jako zasób tylko do odczytu (ADR 0016).
 
 Każde żądanie czyta zapisany Plik zbiorczy jedynym odczytem skoroszytu, także gdy trzyma go Excel, i przelicza
-Ilości do uzupełnienia w silniku (``quantities_to_fill``) bieżącymi Regułami ilości z Ustawień Centrum, nie tymi, z
-których plik powstał (ADR 0013: przelicza, niczego nie przechowuje); Centrum nigdy nie zmienia pliku. Pliku Reguł ilości
-albo Listy Urządzeń, którego system nie daje teraz czytać, strona nie zastępuje regułami z Wydania: odmawia zdaniem o tym
-pliku, zanim przeczyta Plik zbiorczy, a okno „Uruchomić z zapisem?” dostaje wiersze nieprzeczytane, bo start Przebiegu
-rozliczeń odmawia wtedy tym samym zdaniem. Na żywo: tani znacznik
+Ilości do uzupełnienia w silniku (``quantities_to_fill``) bieżącymi Regułami ilości i Legendą czynności z Ustawień
+Centrum, nie tymi, z których plik powstał (ADR 0013: przelicza, niczego nie przechowuje); Centrum nigdy nie zmienia
+pliku. Pliku Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać, strona nie
+zastępuje plikiem z Wydania: odmawia zdaniem o tym pliku, zanim przeczyta Plik zbiorczy, a okno „Uruchomić z zapisem?”
+dostaje wiersze nieprzeczytane, bo start Przebiegu rozliczeń odmawia wtedy tym samym zdaniem. Na żywo: tani znacznik
 zapisu i ostatni dobry odczyt (``live_file``, ``FillingReads``).
 Podsumowanie dostaje tylko numery wierszy, stan „zrobione” i liczniki kolumn, a strona rodzaju też teksty
 wiersza, komórki N:AP i nazwy pozycji cennika, nigdy adres, numer zlecenia ani UMOWA. Nieudany odczyt to
@@ -22,6 +22,7 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from rozliczenia import collective_file
+from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.centrum import fill_messages, refusal
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import filling as filling_contract
@@ -92,23 +93,25 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def quantities(token: str) -> filling_contract.QuantitiesToFill:
         folder = requested_folder(settings, token)
-        rules = _counted_rules(settings)
+        rules, legend = _counted_settings(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
-        return _ready(found, rules, settled=folder.observe().settled)
+        return _ready(found, rules, legend, settled=folder.observe().settled)
 
     @router.get(
         "/{token}/quantities-to-fill/{kind}", operation_id="getKindTable", responses=NOT_FOUND_OR_CONFLICT
     )
     def kind_table(token: str, kind: FillKind) -> filling_contract.KindTable:
         folder = requested_folder(settings, token)
-        rules = _counted_rules(settings)
+        rules, legend = _counted_settings(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
         settled = folder.observe().settled
-        [listed] = (listed for listed in quantities_to_fill(found.value.rows, rules, settled=settled).kinds if listed.kind is kind)
+        [listed] = (
+            listed for listed in quantities_to_fill(found.value.rows, rules, legend, settled=settled).kinds if listed.kind is kind
+        )
         return _table(listed, found, rules, settled=settled)
 
     @router.get(
@@ -130,21 +133,26 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         """
 
         folder = requested_folder(settings, token)
-        rules = settings.snapshot().quantity_rules
-        if isinstance(rules, UnreadableFile):
+        snapshot = settings.snapshot()
+        rules, legend = snapshot.quantity_rules, snapshot.activity_legend
+        if isinstance(rules, UnreadableFile) or isinstance(legend, UnreadableFile):
             return filling_contract.WithoutQuantityUnread(state="unread")
-        return _without_quantity(folder, filling.files, rules)
+        return _without_quantity(folder, filling.files, rules, legend)
 
     return router
 
 
-def _counted_rules(settings: CentrumSettings) -> QuantityRules:
-    """Reguły ilości, którymi liczy następne Uruchomienie; ``Refusal``, gdy pliku pary nie da się teraz przeczytać."""
+def _counted_settings(settings: CentrumSettings) -> tuple[QuantityRules, ActivityLegend]:
+    """Reguły ilości i Legenda czynności, którymi liczy następne Uruchomienie; ``Refusal``, gdy któregoś pliku nie da się
+    teraz przeczytać."""
 
-    rules = settings.snapshot().quantity_rules
+    snapshot = settings.snapshot()
+    rules, legend = snapshot.quantity_rules, snapshot.activity_legend
     if isinstance(rules, UnreadableFile):
         raise refusal.settings_file_unreadable(rules.name)
-    return rules
+    if isinstance(legend, UnreadableFile):
+        raise refusal.settings_file_unreadable(legend.name)
+    return rules, legend
 
 
 def without_quantity_sentence(rows: Sequence[int]) -> str | None:
@@ -156,19 +164,23 @@ def without_quantity_sentence(rows: Sequence[int]) -> str | None:
     return f"{count} {plural(count, 'wiersz', 'wiersze', 'wierszy')} bez ilości: {', '.join(map(str, rows))}"
 
 
-def _without_quantity(folder: PeriodFolder, files: DadFiles, rules: QuantityRules) -> filling_contract.WithoutQuantity:
+def _without_quantity(
+    folder: PeriodFolder, files: DadFiles, rules: QuantityRules, legend: ActivityLegend
+) -> filling_contract.WithoutQuantity:
     try:
         found = collective_file.read_numbered_orders(folder.collective_file, files)
     except WorkbookError:
         return filling_contract.WithoutQuantityUnread(state="unread")
     if isinstance(found, MissingHeaders):
         return filling_contract.WithoutQuantityUnread(state="unread")
-    rows = list(quantities_to_fill(found.rows, rules, settled=folder.observe().settled).without_quantity)
+    rows = list(quantities_to_fill(found.rows, rules, legend, settled=folder.observe().settled).without_quantity)
     return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
 
 
-def _ready(read: GoodRead[NumberedOrders], rules: QuantityRules, *, settled: bool) -> filling_contract.QuantitiesToFillReady:
-    found = quantities_to_fill(read.value.rows, rules, settled=settled)
+def _ready(
+    read: GoodRead[NumberedOrders], rules: QuantityRules, legend: ActivityLegend, *, settled: bool
+) -> filling_contract.QuantitiesToFillReady:
+    found = quantities_to_fill(read.value.rows, rules, legend, settled=settled)
     return filling_contract.QuantitiesToFillReady(
         state="ready",
         read=_stamp(read),
@@ -182,6 +194,9 @@ def _ready(read: GoodRead[NumberedOrders], rules: QuantityRules, *, settled: boo
             )
             for kind in found.kinds
         ],
+        description_rows=filling_contract.DescriptionRows(
+            by_legend=found.description_rows.by_legend, for_tata=found.description_rows.for_tata
+        ),
         description_columns=[
             filling_contract.DescriptionColumn(column=column, rows=rows) for column, rows in found.description_filled.items()
         ],
