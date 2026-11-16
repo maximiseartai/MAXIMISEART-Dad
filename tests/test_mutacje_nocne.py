@@ -59,6 +59,8 @@ TERAZ = datetime(2026, 10, 29, 1, 30, tzinfo=UTC)
 RUN = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/7"
 NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
 START_NOCY = ROOT / ".github" / "workflows" / "mutacje-nocne-start.yml"
+# Id artefaktu części w atrapie GitHuba: id runu razy ta liczba plus numer części, a id artefaktu zakresu to id runu.
+ID_CZESCI = 1000
 URUCHOMIENIE_NOCY = ("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main", "inputs": {"start": "auto"}})
 
 
@@ -73,6 +75,7 @@ class GitHubWPamieci:
         zakresy: dict[int, bytes | None] | None = None,
         urwane: frozenset[int] = frozenset(),
         utworzone: list[dict[str, Any]] | None = None,
+        zapisy_czesci: dict[int, dict[int, bytes]] | None = None,
     ) -> None:
         self.issues = issues or []
         self.pr_commitow = pr_commitow or {}
@@ -81,8 +84,11 @@ class GitHubWPamieci:
         self.zakresy = zakresy or {}
         # Runy, których archiwum artefaktu ``zakres-nocy`` przychodzi urwane w połowie.
         self.urwane = urwane
-        # Runy nocy na main każdym zdarzeniem i stanem, z ``created_at``, które API filtruje parametrem ``created``.
+        # Runy nocy na main każdym zdarzeniem i stanem, z ``created_at``, które API filtruje parametrem ``created``, a
+        # ``conclusion`` parametrem ``status``.
         self.utworzone = utworzone or []
+        # Zapis ``czesc.json`` każdej części runu, która wgrała artefakt ``mutacje-nocne-<k>``.
+        self.zapisy_czesci = zapisy_czesci or {}
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
     def json(self, sciezka: str) -> Any:
@@ -91,11 +97,19 @@ class GitHubWPamieci:
         if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?name=zakres-nocy", sciezka):
             id_runu = int(run[1])
             return {"artifacts": [{"id": id_runu, "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []}
+        if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?per_page=100", sciezka):
+            return {"artifacts": self._artefakty(int(run[1]))}
         adres, _, zapytanie = sciezka.partition("?")
         parametry = dict(urllib.parse.parse_qsl(zapytanie))
         if adres == f"{REPO}/actions/workflows/mutacje-nocne.yml/runs" and parametry.get("branch") == "main" and "created" in parametry:
             od = datetime.fromisoformat(parametry["created"].removeprefix(">="))
-            return {"workflow_runs": [run for run in self.utworzone if datetime.fromisoformat(run["created_at"]) >= od]}
+            return {
+                "workflow_runs": [
+                    run
+                    for run in self.utworzone
+                    if datetime.fromisoformat(run["created_at"]) >= od and parametry.get("status", run["conclusion"]) == run["conclusion"]
+                ]
+            }
         if commit := re.fullmatch(rf"{re.escape(REPO)}/commits/(\w+)/pulls", adres):
             return self.pr_commitow.get(commit[1], [])
         if adres == f"{REPO}/issues" and parametry.pop("labels") == "przezyte-mutacje" and parametry.pop("state") == "all":
@@ -104,17 +118,29 @@ class GitHubWPamieci:
             return self._strona(self._issue(int(numer[1]))["comments"], parametry)
         raise KeyError(sciezka)
 
+    def _artefakty(self, id_runu: int) -> list[dict[str, Any]]:
+        """Artefakt ``zakres-nocy`` runu ma id runu, a ``mutacje-nocne-<k>`` id ``ID_CZESCI`` razy run plus ``k``."""
+
+        zakres = [{"id": id_runu, "name": "zakres-nocy", "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []
+        czesci = [{"id": id_runu * ID_CZESCI + numer, "name": f"mutacje-nocne-{numer}", "expired": False} for numer in self.zapisy_czesci.get(id_runu, {})]
+        return zakres + czesci
+
     def bajty(self, sciezka: str) -> bytes:
         artefakt = re.fullmatch(rf"{re.escape(REPO)}/actions/artifacts/(\d+)/zip", sciezka)
-        id_runu = int(artefakt[1]) if artefakt else None
-        tresc = self.zakresy.get(id_runu) if id_runu is not None else None
+        if artefakt is None:
+            raise KeyError(sciezka)
+        id_artefaktu = int(artefakt[1])
+        if id_artefaktu < ID_CZESCI:
+            plik, tresc = "zakres.json", self.zakresy.get(id_artefaktu)
+        else:
+            plik, tresc = "czesc.json", self.zapisy_czesci.get(id_artefaktu // ID_CZESCI, {}).get(id_artefaktu % ID_CZESCI)
         if tresc is None:
             raise KeyError(sciezka)
         archiwum = io.BytesIO()
         with zipfile.ZipFile(archiwum, "w") as zip_:
-            zip_.writestr("zakres.json", tresc)
+            zip_.writestr(plik, tresc)
         zip_bajty = archiwum.getvalue()
-        return zip_bajty[: len(zip_bajty) // 2] if id_runu in self.urwane else zip_bajty
+        return zip_bajty[: len(zip_bajty) // 2] if id_artefaktu in self.urwane else zip_bajty
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         self.wyslane.append((metoda, sciezka, tresc))
@@ -961,22 +987,29 @@ def _plan_nocy(
     wyzwolenie: mutacje_nocne.Wyzwolenie = mutacje_nocne.RECZNE,
     teraz: datetime | None = None,
 ) -> dict[str, str]:
-    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy ``repo`` (z ``od`` ręcznego runu), ``linia`` planu oraz
-    ``zakres``, plik artefaktu ``zakres-nocy``."""
+    """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy ``repo`` (z ``od`` ręcznego runu), ``linia`` planu,
+    ``log`` planu, ``zakres``, plik artefaktu ``zakres-nocy``, i ``osadzone``, plik artefaktu ``osadzone-nocy``."""
 
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{noc}"))
-    zakres = tmp_path / f"zakres-{noc}.json"
-    assert mutacje_nocne.zaplanuj(github, repo, od, zakres, wyzwolenie=wyzwolenie, teraz=teraz, na_czesc=na_czesc, czesci_na_noc=czesci_na_noc) == 0
-    plan = capsys.readouterr().out.splitlines()[-1]
+    zakres, osadzone = tmp_path / f"zakres-{noc}.json", tmp_path / f"osadzone-{noc}.json"
+    assert (
+        mutacje_nocne.zaplanuj(
+            github, repo, od, zakres, osadzone_plik=osadzone, wyzwolenie=wyzwolenie, teraz=teraz, na_czesc=na_czesc, czesci_na_noc=czesci_na_noc
+        )
+        == 0
+    )
+    log = capsys.readouterr().out
+    plan = log.splitlines()[-1]
     output = dict(linia.split("=", 1) for linia in (tmp_path / f"output-{noc}").read_text(encoding="utf-8").splitlines())
-    return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres), "linia": plan}
+    return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres), "osadzone": str(osadzone), "linia": plan, "log": log}
 
 
 def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_do_head_takze_po_czerwonej(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Zaległość 5 PR-ów po 2 mutacje przy limicie nocy 4 (2 części po 2), a każdej nocy po pierwszej dochodzi PR.
-    Noc 2 jest czerwona, więc noc 3 zaczyna od tej samej bazy z tym samym limitem, zamiast dostać jej pracę do swojej."""
+    Noc 2 jest czerwona bez zapisu żadnej części, więc noc 3 zaczyna od tej samej bazy z tym samym limitem, zamiast dostać
+    jej pracę do swojej."""
 
     repo, baza = _main_z_zalegloscia(tmp_path, 8)
     pr = {numer: _dopisz(repo, numer) for numer in range(1, 6)}
@@ -1067,11 +1100,16 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
 CZAS_CZESCI_S = 20
 
 
-def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path) -> subprocess.CompletedProcess[str]:
+def _czesc(repo: Path, plan: dict[str, str], numer: int, zapisy: Path, *dalsze: str) -> subprocess.CompletedProcess[str]:
+    """Część ``numer`` planu jak krok zadania części w mutacje-nocne.yml, z zapisem w ``zapisy`` i argumentami ``dalsze``."""
+
     zapis = zapisy / f"{mutacje_nocne.ARTEFAKT}{numer}" / mutacje_nocne.ZAPIS
-    polecenie = ["--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--limit-czesci-s", str(CZAS_CZESCI_S), "--zapis", str(zapis)]
+    return _mutacje_zmiany(repo, "--baza", plan["baza"], "--do", plan["do"], "--czesc", f"{numer}/{plan['liczba']}", "--zapis", str(zapis), *dalsze)
+
+
+def _mutacje_zmiany(repo: Path, *argumenty: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "tools/mutacje_zmiany.py", *polecenie],
+        [sys.executable, "tools/mutacje_zmiany.py", "--limit-czesci-s", str(CZAS_CZESCI_S), *argumenty],
         cwd=repo,
         # Narzędzie biegnie jak w zadaniu CI, bo poza nim odmawia startu (tools/lib/ciezkie_ci.py).
         env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": "1", "GITHUB_ACTIONS": "true"},
@@ -1131,6 +1169,143 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     commit(repo, "Dopisz b (#3)")
     nastepna = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2)
     assert (nastepna["baza"], nastepna["mutacje"]) == (plan["do"], "2")
+
+
+# Limit czasu części i zadania pokrycia w testach czerwonej nocy: tylko po to, żeby skończyły się przed limitem procesu.
+CZAS_PRZEBIEGU_S = "100"
+# Mutacje PR-u, który zmienia granicę ``x > 1`` na ``x > 2`` w swoim pliku (``_trzy_pr_z_testami``), z werdyktem części.
+MUTACJE_PR = ("WYKRYTA: {plik}:2 granica `x > 2` → `>=`", "ZDOMINOWANA: {plik}:2 zmiana linii 2 cofnięta do bazy")
+
+
+def _trzy_pr_z_testami(tmp_path: Path, *, przezywa: bool = False) -> tuple[Path, str, list[str]]:
+    """``main`` z bazą i squash PR-ami #1–#3: PR zmienia granicę w swoim pliku ``a``, ``b`` albo ``c``, a jego plik testów
+    ją sprawdza, więc obie mutacje PR-u (``MUTACJE_PR``) mają werdykt. Z ``przezywa`` test ``a`` nie sprawdza granicy,
+    więc obie mutacje PR #1 przeżywają. Zwraca repozytorium, bazę i commity PR-ów."""
+
+    pliki = {".gitignore": "__pycache__/\n", "src/rozliczenia/__init__.py": ""}
+    for nazwa in "abc":
+        granica = 0 if przezywa and nazwa == "a" else 2
+        pliki[f"src/rozliczenia/{nazwa}.py"] = FUNKCJA.replace("def a", f"def {nazwa}")
+        pliki[f"tests/test_{nazwa}.py"] = f"from rozliczenia.{nazwa} import {nazwa}\n\n\ndef test_{nazwa}() -> None:\n    assert {nazwa}(3) is True\n    assert {nazwa}({granica}) is False\n"
+    repo = mutation_repository(tmp_path / "repo", pliki)
+    copy_files(repo, with_imports(MUTACJE_ZMIANY))
+    git(repo, "checkout", "--quiet", "-b", "main")
+    baza = commit(repo, "baza")
+    commity = []
+    for numer, nazwa in enumerate("abc", start=1):
+        sciezka = repo / "src" / "rozliczenia" / f"{nazwa}.py"
+        sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
+        commity.append(commit(repo, f"Zmień {nazwa} (#{numer})"))
+    return repo, baza, commity
+
+
+def _czerwona_noc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, przezywa: bool = False
+) -> tuple[Path, GitHubWPamieci, dict[str, str], list[str]]:
+    """Run 2 planuje PR #1 i #2 w dwóch częściach po 2 mutacje (limit nocy 4), a PR #3 zostaje w zaległości. Część 1
+    (PR #1) biegnie naprawdę i wgrywa zapis, a część 2 (PR #2) pada bez zapisu, więc run jest czerwony i nie przesuwa
+    bazy. Z ``przezywa`` obie mutacje części 1 przeżywają (``_trzy_pr_z_testami``). Zwraca repozytorium, GitHub z tym
+    runem, jego plan i commity PR-ów."""
+
+    repo, baza, commity = _trzy_pr_z_testami(tmp_path, przezywa=przezywa)
+    github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2, czesci_na_noc=2)
+    zapisy = tmp_path / "zapisy-2"
+    czesc = _czesc(repo, plan, 1, zapisy, "--limit-czesci-s", CZAS_PRZEBIEGU_S)
+    assert (plan["do"], plan["mutacje"], czesc.returncode) == (commity[1], "4", int(przezywa)), czesc.stdout + czesc.stderr
+    github.utworzone.append(_run_doby(2, datetime.now(UTC).isoformat(), "failure"))
+    github.zakresy[2] = Path(plan["zakres"]).read_bytes()
+    github.zapisy_czesci[2] = {1: (zapisy / f"{mutacje_nocne.ARTEFAKT}1" / mutacje_nocne.ZAPIS).read_bytes()}
+    return repo, github, plan, commity
+
+
+def _werdykty(czesc: subprocess.CompletedProcess[str]) -> list[str]:
+    """Werdykt i nazwa każdej mutacji części, bez ostatniej linii testów po ``→``."""
+
+    return sorted(linia.rpartition(" → ")[0] for linia in czesc.stdout.splitlines() if linia.startswith(("WYKRYTA", "NIEWYKRYTA", "ZDOMINOWANA")))
+
+
+def test_noc_po_czerwonej_mutuje_tylko_to_czego_jej_czesci_nie_osadzily_i_siega_dalej_tak_samo_w_planie_pokryciu_i_czesciach(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Noc 3 zaczyna od bazy czerwonego runu 2, ale bez mutacji PR #1, którym jego część 1 dała werdykt. Mutacje PR #2
+    z części 2, która padła bez zapisu, biegną znowu, a w zwolnionym limicie nocy noc bierze PR #3, więc ``do`` idzie
+    dalej. Zadanie pokrycia i części nocy 3 dostają tożsamości z pliku planu (artefakt ``osadzone-nocy``) i liczą tę samą
+    listę: pokrycie plików testów PR #2 i #3, część 1 mutacje PR #2, część 2 mutacje PR #3."""
+
+    repo, github, czerwona, commity = _czerwona_noc(tmp_path, monkeypatch, capsys)
+
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2, czesci_na_noc=2)
+    pokrycie = tmp_path / "pokrycie-3" / "pokrycie.json"
+    zakres = ["--baza", plan["baza"], "--do", plan["do"], "--osadzone", plan["osadzone"], "--limit-czesci-s", CZAS_PRZEBIEGU_S]
+    zadanie_pokrycia = _mutacje_zmiany(repo, *zakres, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(pokrycie))
+    czesci = [
+        _czesc(repo, plan, numer, tmp_path / "zapisy-3", "--pokrycie", str(pokrycie.parent), "--osadzone", plan["osadzone"], "--limit-czesci-s", CZAS_PRZEBIEGU_S)
+        for numer in (1, 2)
+    ]
+
+    assert (plan["baza"], plan["do"], plan["mutacje"], plan["liczba"]) == (czerwona["baza"], commity[2], "4", "2")
+    assert "MUTACJE NOCNE | czerwone runy tej bazy 2: noc pomija 2 mutacji, którym dały werdykt bez issue" in plan["log"].splitlines(), plan["log"]
+    assert zadanie_pokrycia.returncode == 0, zadanie_pokrycia.stdout + zadanie_pokrycia.stderr
+    assert json.loads(pokrycie.read_text(encoding="utf-8"))["pliki_testow"] == ["tests/test_b.py", "tests/test_c.py"]
+    assert [czesc.returncode for czesc in czesci] == [0, 0], [czesc.stdout + czesc.stderr for czesc in czesci]
+    assert [_werdykty(czesc) for czesc in czesci] == [[linia.format(plik=f"src/rozliczenia/{nazwa}.py") for linia in MUTACJE_PR] for nazwa in "bc"]
+
+
+def test_przezyte_mutacje_czerwonego_runu_ktorego_zgloszenie_padlo_trafiaja_do_issue_w_nocy_po_nim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Część 1 czerwonego runu 2 zapisała dwie przeżyte mutacje PR #1, a zgłoszenie runu padło na API przed ich issue.
+    Noc 3 od tej samej bazy mutuje je znowu i zakłada issue PR #1 z obiema, bo to, czy przeżyta ma issue, rozstrzygają
+    tylko klucze w issue, a nie zapis czerwonego runu."""
+
+    repo, github, czerwona, _ = _czerwona_noc(tmp_path, monkeypatch, capsys, przezywa=True)
+
+    def api_502(metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        raise RuntimeError("gh: HTTP 502")
+
+    with monkeypatch.context() as api:
+        api.setattr(github, "wyslij", api_502)
+        with pytest.raises(RuntimeError, match="HTTP 502"):
+            mutacje_nocne.zglos(github, repo, czerwona["baza"], tmp_path / "zapisy-2", int(czerwona["liczba"]), RUN)
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2, czesci_na_noc=2)
+    zapisy = tmp_path / "zapisy-3"
+    czesci = [_czesc(repo, plan, numer, zapisy, "--osadzone", plan["osadzone"], "--limit-czesci-s", CZAS_PRZEBIEGU_S) for numer in (1, 2)]
+    kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
+
+    assert (plan["baza"], plan["do"], plan["mutacje"]) == (czerwona["baza"], czerwona["do"], "4"), plan["log"]
+    assert [czesc.returncode for czesc in czesci] == [1, 0], [czesc.stdout + czesc.stderr for czesc in czesci]
+    assert kod == 0, capsys.readouterr().out
+    assert {issue["title"]: sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.startswith("MUTACJA")) for issue in github.issues} == {
+        "Przeżyte mutacje z #1": ["MUTACJA src/rozliczenia/a.py:2 granica `x > 2` → `>=`", "MUTACJA src/rozliczenia/a.py:2 zmiana linii 2 cofnięta do bazy"]
+    }
+
+
+@pytest.mark.parametrize(
+    ("zakres", "linie"),
+    [
+        ("inna baza", []),
+        ("urwany", ["MUTACJE NOCNE | czerwony run 2 bez tożsamości osądzonych mutacji (BadZipFile('File is not a zip file')): noc sprawdzi je znowu"]),
+    ],
+    ids=["inna-baza", "urwany-zakres"],
+)
+def test_czerwony_run_od_innej_bazy_albo_bez_zakresu_do_przeczytania_nie_zmienia_nocy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], zakres: str, linie: list[str]
+) -> None:
+    """Czerwony run, który planował od innej bazy (ręczny run z ``od``), osądził mutacje innego zakresu, a zmiana cofnięcia
+    fragmentu zależy od bazy. Run, którego zakresu plan nie przeczyta, nie mówi, od jakiej bazy liczył. Noc po każdym z
+    nich liczy więc tę samą listę co czerwona noc 2: od jej bazy, do PR #2, 4 mutacje, a zakres bez odczytu ma linię."""
+
+    repo, github, czerwona, commity = _czerwona_noc(tmp_path, monkeypatch, capsys)
+    if zakres == "inna baza":
+        github.zakresy[2] = json.dumps({"baza": commity[0], "do": czerwona["do"]}).encode()
+    else:
+        github.urwane = frozenset({2})
+
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2, czesci_na_noc=2)
+
+    assert (plan["baza"], plan["do"], plan["mutacje"]) == (czerwona["baza"], czerwona["do"], "4")
+    assert [linia for linia in plan["log"].splitlines() if linia.startswith("MUTACJE NOCNE | czerwon")] == linie, plan["log"]
 
 
 def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mutacje_co_jej_czesci(
@@ -1428,7 +1603,7 @@ def test_pokrycie_nocy_biegnie_raz_przed_czesciami_a_kazda_czesc_czyta_zapisy_ws
     krok, polecenie = _polecenie_narzedzia(pokrycie)
     zapis = polecenie[polecenie.index("--zapis-pokrycia") + 1]
     (wgranie,) = [krok for krok in pokrycie["steps"] if krok.get("with", {}).get("path") == zapis]
-    (pobranie,) = [krok for krok in czesc["steps"] if "download-artifact" in krok.get("uses", "")]
+    (pobranie,) = [krok for krok in czesc["steps"] if "download-artifact" in krok.get("uses", "") and "pattern" in krok["with"]]
     _, polecenie_czesci = _polecenie_narzedzia(czesc)
 
     assert pokrycie["needs"] == "plan" and "pokrycie" in czesc["needs"]
@@ -1462,6 +1637,25 @@ def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
     assert plan["outputs"]["do"] == "${{ steps.plan.outputs.do }}"
     # Następna noc czyta artefakt przez API runu.
     assert plan["permissions"]["actions"] == "read"
+
+
+def test_zadania_pokrycia_i_czesci_pomijaja_mutacje_osadzone_z_pliku_planu() -> None:
+    """Plan wgrywa tożsamości mutacji osądzonych przez czerwone runy tej bazy (``--osadzone``) jako artefakt ``osadzone-nocy``,
+    a zadania pokrycia i części pobierają go przed narzędziem i podają ten plik w ``--osadzone``. Pobranie nie ma
+    ``continue-on-error``: zadanie bez pliku pada, zamiast podzielić inną listę mutacji niż plan."""
+
+    zadania = _nocne()["jobs"]
+    polecenie_planu = shlex.split(next(krok["run"] for krok in zadania["plan"]["steps"] if "tools/mutacje_nocne.py plan" in krok.get("run", "")))
+    plik = Path(polecenie_planu[polecenie_planu.index("--osadzone") + 1])
+    (wgranie,) = [krok for krok in zadania["plan"]["steps"] if krok.get("with", {}).get("name") == mutacje_nocne.ARTEFAKT_OSADZONYCH]
+
+    assert Path(wgranie["with"]["path"]) == plik
+    for nazwa in ("pokrycie", "change-mutations"):
+        kroki = zadania[nazwa]["steps"]
+        (pobranie,) = [krok for krok in kroki if krok.get("with", {}).get("name") == mutacje_nocne.ARTEFAKT_OSADZONYCH]
+        krok, polecenie = _polecenie_narzedzia(zadania[nazwa])
+        assert Path(polecenie[polecenie.index("--osadzone") + 1]) == Path(pobranie["with"]["path"]) / plik.name, nazwa
+        assert kroki.index(pobranie) < kroki.index(krok) and "continue-on-error" not in pobranie, nazwa
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="krok biegnie w bashu runnera Linuksa")

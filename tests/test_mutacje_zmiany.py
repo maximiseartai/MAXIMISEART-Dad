@@ -21,7 +21,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Coverage, Hunk, Mutant, Revert, ZakresMutacji, ZapisPokrycia, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Coverage, Hunk, Mutant, Revert, ZakresMutacji, ZapisPokrycia, exceptions, fingerprint, mutants, selected, zapisz_osadzone
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -261,6 +261,46 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 1 mutacji | "), written["wynik"]
     assert [_named(entry) for entry in written["bez_werdyktu"]] == [late]
     assert late not in [_named(entry) for entry in written["przezyte"]]
+
+
+def test_czesc_z_tozsamosciami_osadzonymi_przez_poprzednia_mutuje_znowu_tylko_przezyte_i_mutacje_bez_werdyktu(tmp_path: Path) -> None:
+    """Zapis części (``osadzone``) ma tożsamość każdej mutacji, której werdykt nie potrzebuje issue: wykrytej testem,
+    zdominowanego cofnięcia, wykrytej bramą typów, pod wyjątkiem i innego systemu. Ta sama część z nimi w
+    ``--osadzone``, jak noc po czerwonej (ADR 0021), mutuje znowu przeżytą, bo to, czy ma issue, rozstrzygają klucze w
+    issue, i mutację, której brama typów nie dała wyniku w czasie (``# brama gdy None: ruff późno``)."""
+
+    # Linie bez zmiany między fragmentami, żeby cofnięcie nowych funkcji było osobnym fragmentem, który przeżywa.
+    one = "\n\ndef jeden() -> int:\n    return 1\n"
+    branch = "if sys.platform == 'win32':" if sys.platform != "win32" else "if sys.platform != 'win32':"
+    system = f"\n\nimport sys\n\n{branch}\n    SYSTEM = 'stary'\nKONIEC = 1\n"
+    added = (
+        "\n\ndef zapas() -> int:\n    return 1  # brama gdy None: ruff późno\n\n\ndef druga() -> int:\n    return 2  # brama gdy None: mypy return-value\n"
+        "\n\ndef wyjatek() -> int:\n    return 3  # mutacje-zmiany: tylko na próbę | do 2999-01-01 | zgoda Maks\n"
+    )
+    survivor = "NIEWYKRYTA: src/rozliczenia/warunek.py:14 zmiana linii 14–25 cofnięta do bazy"
+    repo = _repo(tmp_path / "repo", ALL_CASES, CHANGED + one + system.replace("'stary'", "'inny'") + added, BASE + one + system)
+    record, judged = tmp_path / "zapis" / "czesc.json", tmp_path / "osadzone.json"
+
+    first = _run(repo, "--zapis", str(record), fake_gate=True)
+    zapisz_osadzone(judged, json.loads(record.read_text(encoding="utf-8"))["osadzone"])
+    second = _run(repo, "--osadzone", str(judged), fake_gate=True)
+
+    assert first.returncode == 3, first.stdout + first.stderr
+    assert _verdicts(first) == [
+        survivor,
+        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:21 `return 2` → `return None`",
+        "WYKRYTA: src/rozliczenia/warunek.py:2 bez `b` w `and`",
+        "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
+    ], first.stdout
+    assert {
+        "WYJĄTEK: src/rozliczenia/warunek.py:25 `return 3` → `return None` (tylko na próbę, do 2999-01-01, zgoda Maks)",
+        f"POMINIĘTA: src/rozliczenia/warunek.py:12 zmiana linii 12 cofnięta do bazy → kod innego systemu niż {sys.platform}",
+    } <= set(first.stdout.splitlines()), first.stdout
+    assert second.returncode == 3, second.stdout + second.stderr
+    assert sorted(line.rpartition(" → ")[0] for line in second.stdout.splitlines() if line.startswith(MUTATION_LINES)) == [
+        "BEZ WERDYKTU: src/rozliczenia/warunek.py:17 `return 1` → `return None`",
+        survivor,
+    ], second.stdout
 
 
 # Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez
@@ -653,6 +693,48 @@ def test_mutacje_linii_ktora_blame_przypisuje_commitowi_sprzed_bazy_licza_sie_do
     koniec = caly.najdalszy_koniec(len(sprzed_bazy))
 
     assert (koniec, caly.do(koniec).mutanty) == (przed_trzecim, tuple(sprzed_bazy))
+
+
+# Linie opisu, który PR dopisuje na początku pliku: więcej niż linii pliku za cofnięciem fragmentu ``jeden``.
+OPIS_LINII = 30
+
+
+def test_noc_po_czerwonej_pomija_tylko_mutacje_osadzone_takze_po_przesunieciu_ich_linii_a_ich_blizniaki_zostaja(tmp_path: Path) -> None:
+    """Bliźniak to ta sama zmiana tego samego kodu w innym miejscu pliku, więc ma ten sam klucz issue (``fingerprint``).
+    PR #1 dodaje ``jeden`` i ``dwa`` z tym samym ``return x + 1``, a PR #2 ``trzy`` z nim też. Czerwony run mutował do
+    PR #1 w dwóch częściach: część 1 osądziła mutacje ``jeden``, a część 2 z mutacjami ``dwa`` padła bez zapisu. PR #3
+    dopisuje potem opis na początku pliku i funkcję na końcu, więc linie obu PR-ów się przesuwają, a opis jest dłuższy
+    niż reszta pliku za cofnięciem ``jeden``, więc ``difflib`` w ``fingerprint`` dopasowuje puste linie tego cofnięcia
+    inaczej niż w czerwonym runie. Noc po czerwonej bez osądzonych (``bez_osadzonych`` z tożsamościami części 1) traci
+    tylko mutacje ``jeden``: bliźniak z części bez zapisu, bliźniak spoza ``do`` i reszta mutacji zostają."""
+
+    plik = "src/pakiet/liczby.py"
+    jeden, dwa, trzy = (f"\n\ndef {nazwa}(x: int) -> int:\n    return x + 1\n" for nazwa in ("jeden", "dwa", "trzy"))
+    zero, srodek = "def zero() -> int:\n    return 0\n", "\n\ndef srodek() -> int:\n    return 5\n"
+    repo = mutation_repository(tmp_path / "repo", {plik: zero + srodek})
+    base = commit(repo, "baza")
+    (repo / plik).write_text(zero + jeden + srodek + dwa, encoding="utf-8")
+    pr1 = commit(repo, "jeden i dwa (#1)")
+    (repo / plik).write_text(zero + jeden + srodek + dwa + srodek.replace("srodek", "koniec") + trzy, encoding="utf-8")
+    commit(repo, "trzy (#2)")
+    czerwony = ZakresMutacji.od(base, repo).do(pr1)
+    osadzone = frozenset(czerwony.tozsamosci(czerwony.czesc(Czesc(1, 2))))
+    tekst = (repo / plik).read_text(encoding="utf-8")
+    opis = "".join(f"# opis {numer}\n" for numer in range(OPIS_LINII))
+    (repo / plik).write_text(f"{opis}{tekst}\n\ndef plus(x: int) -> int:\n    return +x\n", encoding="utf-8")
+    commit(repo, "opis i plus (#3)")
+
+    caly = ZakresMutacji.od(base, repo)
+    noc = caly.bez_osadzonych(osadzone)
+
+    osadzone_po_przesunieciu = caly.do(pr1).czesc(Czesc(1, 2))
+    linia = "`return x + 1` → `return None`"
+    assert [mutant.line for mutant in caly.do(pr1).mutanty] == [mutant.line + OPIS_LINII for mutant in czerwony.mutanty]
+    assert [(mutant.description, fingerprint(mutant, caly.teksty[plik])) for mutant in caly.mutanty if mutant.description == linia] == [
+        (linia, fingerprint(czerwony.czesc(Czesc(1, 2))[-1], czerwony.teksty[plik]))
+    ] * 3
+    assert noc.mutanty == tuple(mutant for mutant in caly.mutanty if mutant not in osadzone_po_przesunieciu)
+    assert [mutant.description for mutant in osadzone_po_przesunieciu] == ["zmiana linii 35–38 cofnięta do bazy", linia]
 
 
 @pytest.mark.parametrize(("comment", "parts"), [("# mutacje-zmiany: bez terminu", 1),("# mutacje-zmiany: na próbę | do 2999-01-01 | zgoda Maks", 0)])
@@ -1306,6 +1388,10 @@ def test_mutacje_sprawdza_flaky_test_ktory_w_pierwszym_przebiegu_padl_przed_kode
     assert done.returncode == 0, done.stdout + done.stderr
     assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_oba_niestabilny" in done.stdout.splitlines()
     assert (_caught(done), _caught(done, "ZDOMINOWANA")) == (["src/rozliczenia/warunek.py:2 bez `b` w `and`"], ["src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"])
+
+
+# Początki linii części o jednej mutacji: werdykt testów albo bramy, ``WYJĄTEK`` i ``POMINIĘTA``.
+MUTATION_LINES = ("WYKRYTA", "NIEWYKRYTA", "ZDOMINOWANA", "BEZ WERDYKTU", "PRZEKROCZONY CZAS", "ZAWIESZENIE", "WYJĄTEK", "POMINIĘTA")
 
 
 def _verdicts(done: subprocess.CompletedProcess[str]) -> list[str]:

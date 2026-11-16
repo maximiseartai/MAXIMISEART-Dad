@@ -118,7 +118,12 @@ W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py`
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
 nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
-``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
+``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie. Zapis ma też tożsamości (``Tozsamosc``)
+mutacji, których werdykt nie potrzebuje issue (``osadzone``: wykrytych testem, także ``ZAWIESZENIE``, albo bramą typów,
+``ZDOMINOWANA``, ``WYJĄTEK`` i ``POMINIĘTA``). Przeżytych, bez werdyktu, z przekroczonym czasem i ``NIEAKTUALNA`` w nim
+nie ma, bo to, czy przeżyta ma już issue, rozstrzygają tylko klucze w issue. Plan nocy po czerwonej, która nie
+przesunęła bazy, zbiera je z zapisów jej części, a zadania pokrycia i części dostają je w ``--osadzone PLIK`` i ich nie
+mutują (``ZakresMutacji.bez_osadzonych``).
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
 wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i jednostkami ``przepuszcza`` w ``tools/``
@@ -142,9 +147,9 @@ CI dzieli mutacje bez listy w workflow, a każde ma testy tylko swoich kilku pli
 Z ``--do <commit>`` lista ma tylko mutacje, z których linii co najmniej jedną ostatni zmienił (``git blame
 --first-parent``) commit, który ``<commit>`` zawiera: noc z zaległością mutuje zmiany ``main`` tylko do tego commitu
 (``tools/mutacje_nocne.py``).
-Listę mutacji od bazy, jej przycięcie do ``--do`` i kawałek części liczy ``ZakresMutacji``, o który pyta też plan nocy
-w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a zadania pokrycia liczą z niej pliki testów
-nocy.
+Listę mutacji od bazy, jej przycięcie do ``--do``, bez mutacji z ``--osadzone``, i kawałek części liczy
+``ZakresMutacji``, o który pyta też plan nocy w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a
+zadania pokrycia liczą z niej pliki testów nocy.
 """
 
 from __future__ import annotations
@@ -170,6 +175,7 @@ import sys
 import tempfile
 import time
 import tokenize
+from typing import NewType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
@@ -203,6 +209,15 @@ SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
 PRZEZYTE = "przezyte"
 BEZ_WERDYKTU = "bez_werdyktu"
 PRZEKROCZONY_CZAS = "przekroczony_czas"
+# Lista zapisu ``--zapis`` z tożsamościami (``Tozsamosc``) mutacji, których werdykt części nie potrzebuje issue:
+# wykrytych testem (także ``ZAWIESZENIE``) albo bramą typów, ``ZDOMINOWANA``, ``WYJĄTEK`` i ``POMINIĘTA``. Noc po
+# czerwonej ich nie powtarza (``ZakresMutacji.bez_osadzonych``). Przeżyte i mutacje z przekroczonym czasem biegną znowu,
+# a issue nie przyjmuje ich klucza drugi raz, więc zgłoszenie, które padło przed ich issue, nie gubi ich.
+OSADZONE = "osadzone"
+# Tożsamość mutacji w zapisie ``OSADZONE`` (``ZakresMutacji.tozsamosci``), inna niż klucz issue (``fingerprint``).
+Tozsamosc = NewType("Tozsamosc", str)
+# Commit linii niezacommitowanej w ``git blame``.
+UNCOMMITTED = "0" * 40
 # Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi albo z przekroczonym
 # czasem testów, 3 z mutacjami bez werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
 KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
@@ -962,6 +977,7 @@ def _shard(args: argparse.Namespace) -> int:
         return 2
     if args.do:
         zakres = zakres.do(args.do)
+    zakres = zakres.bez_osadzonych(args.osadzone)
     tests = czesc.co_nta(zakres.pliki_testow(wplyw_zmiany.Repository.scan(ROOT)))
     paths = {mutant.path for mutant in zakres.mutanty}
     lines = {path: changed_lines(zakres.fragmenty[path]) for path in paths}
@@ -1038,6 +1054,13 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
         "--pokrycie-czesc", metavar="K/N", type=_part, help="Zamiast mutacji: pokrycie K-tej z N części plików testów nocy do --zapis-pokrycia."
     )
     parser.add_argument("--zapis-pokrycia", type=Path, help="Plik JSON zapisu pokrycia z --pokrycie-czesc (artefakt CI).")
+    parser.add_argument(
+        "--osadzone",
+        metavar="PLIK",
+        type=_judged_file,
+        default=frozenset(),
+        help="Plik tożsamości mutacji osądzonych bez issue przez czerwone runy tej bazy (artefakt planu nocy): część i zadanie pokrycia ich nie liczą.",
+    )
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
     if (args.pokrycie_czesc is None) != (args.zapis_pokrycia is None):
@@ -1059,6 +1082,7 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
             PRZEZYTE: [entry(mutant, text) for mutant, text in outcome.survived],
             BEZ_WERDYKTU: [entry(mutant, text) for mutant, text in outcome.unchecked],
             PRZEKROCZONY_CZAS: [entry(mutant, text) for mutant, text in outcome.over_limit],
+            OSADZONE: sorted(set(outcome.judged)),
         }
         args.zapis.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     return code
@@ -1070,11 +1094,13 @@ def _name(mutant: Mutant) -> str:
 
 @dataclass
 class Outcome:
-    """Mutacje części, które zgłasza noc, każda z treścią swojego pliku przed mutacją."""
+    """Mutacje części, które zgłasza noc, każda z treścią swojego pliku przed mutacją, i tożsamości tych, których noc po
+    czerwonej nie powtarza."""
 
     survived: list[tuple[Mutant, str]] = field(default_factory=list)  # nie wykrył ich ani test, ani brama typów
     unchecked: list[tuple[Mutant, str]] = field(default_factory=list)  # bez werdyktu po limicie czasu części
     over_limit: list[tuple[Mutant, str]] = field(default_factory=list)  # ostatni przebieg testów to PRZEKROCZONY CZAS
+    judged: list[Tozsamosc] = field(default_factory=list)  # werdykt bez issue: ``OSADZONE``
 
 
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
@@ -1084,16 +1110,33 @@ def entry(mutant: Mutant, text: str) -> dict[str, object]:
     return {"plik": mutant.path, "linia": mutant.line, "opis": mutant.description, "linie": sorted(mutant.lines), "klucz": fingerprint(mutant, text)}
 
 
-def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:
-    """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` w checkoucie
-    (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną zera).
-    Wiersze blame dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden wiersz."""
+def _origins(every: Sequence[Mutant], root: Path) -> list[frozenset[tuple[str, int]]]:
+    """Pochodzenie linii każdej mutacji z ``every`` w checkoucie: commit linii pierwszych rodziców, który ostatni ją
+    zmienił (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną
+    zera, także w pliku nieśledzonym, którego blame nie zna), i jej numer w pliku tego commitu. Pochodzenie linii
+    nie zmienia się, gdy późniejszy commit przesuwa ją linią dopisaną albo usuniętą wyżej, a dwie linie o tej samej
+    treści mają różne.
+    Wiersze ``--porcelain`` dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden
+    wiersz, a nagłówek linii stoi zaraz po treści poprzedniej (``\\t``)."""
 
-    blamed = {
-        path: [row.split(maxsplit=1)[0].lstrip("^") for row in _rows(repo.git(root, "blame", "--first-parent", "-l", "-s", "--", path, timeout=None))]
-        for path in dict.fromkeys(mutant.path for mutant in every)
-    }
-    return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
+    paths = dict.fromkeys(mutant.path for mutant in every)
+    untracked = set(repo.git(root, "ls-files", "-z", "--others", "--exclude-standard", "--", *paths).split("\0"))
+    blamed: dict[str, list[tuple[str, int]]] = {}
+    for path in paths.keys() - untracked:
+        lines = blamed[path] = []
+        header = True
+        for row in _rows(repo.git(root, "blame", "--first-parent", "--porcelain", "--", path, timeout=None)):
+            if header:
+                commit, original, *_ = row.split()
+                lines.append((commit, int(original)))
+            header = row.startswith("\t")
+    return [frozenset(blamed[mutant.path][line - 1] if mutant.path in blamed else (UNCOMMITTED, line) for line in mutant.lines) for mutant in every]
+
+
+def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:
+    """Commity linii pierwszych rodziców, które ostatnie zmieniły linie każdej mutacji z ``every`` (``_origins``)."""
+
+    return [frozenset(commit for commit, _ in origin) for origin in _origins(every, root)]
 
 
 def tests_of(repository: wplyw_zmiany.Repository, paths: Iterable[str]) -> dict[str, list[str]]:
@@ -1108,7 +1151,8 @@ class ZakresMutacji:
     w pliku po liniach.
 
     Jedyne źródło listy mutacji planu nocy i części (ADR 0021): plan pyta o koniec zakresu nocy, liczbę części i
-    mutacje każdej z nich, a część o swoje mutacje, więc obie dostają tę samą listę, bo składa ją tylko ta klasa.
+    mutacje każdej z nich, a część o swoje mutacje, więc obie dostają tę samą listę, bo składa ją (także bez mutacji
+    osądzonych przez czerwone runy, ``bez_osadzonych``) tylko ta klasa.
     """
 
     root: Path
@@ -1144,6 +1188,21 @@ class ZakresMutacji:
         contained = set(repo.git(self.root, "rev-list", "--first-parent", commit).split())
         commits = _last_changes(self.mutanty, self.root)
         return replace(self, mutanty=tuple(mutant for mutant, last in zip(self.mutanty, commits, strict=True) if last & contained))
+
+    def tozsamosci(self, mutanty: Sequence[Mutant]) -> list[Tozsamosc]:
+        """Tożsamość każdej z ``mutanty`` tego zakresu (``_tozsamosc``). Jedyne źródło tożsamości: zapis części
+        (``OSADZONE``) i ``bez_osadzonych`` pytają tę metodę."""
+
+        return [_tozsamosc(mutant, self.teksty[mutant.path], origin) for mutant, origin in zip(mutanty, _origins(mutanty, self.root), strict=True)]
+
+    def bez_osadzonych(self, osadzone: frozenset[Tozsamosc]) -> ZakresMutacji:
+        """Bez mutacji, których tożsamość (``tozsamosci``) jest w ``osadzone``: tych, którym części czerwonych runów tej
+        samej bazy dały werdykt, który nie potrzebuje issue (``OSADZONE``). Czerwony run nie przesuwa bazy, więc plan,
+        zadania pokrycia i części z tymi samymi tożsamościami dzielą tę samą resztę listy, a noc sięga dalej
+        (``najdalszy_koniec``)."""
+
+        tozsamosci = self.tozsamosci(self.mutanty)
+        return replace(self, mutanty=tuple(mutant for mutant, tozsamosc in zip(self.mutanty, tozsamosci, strict=True) if tozsamosc not in osadzone))
 
     def najdalszy_koniec(self, limit: int) -> str:
         """Commit, do którego noc mutuje zmiany: HEAD, gdy mutacji jest najwyżej ``limit``, a inaczej najdalszy commit
@@ -1185,10 +1244,48 @@ class ZakresMutacji:
         return czesc.kawalek(self.mutanty)
 
 
-def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gate) -> tuple[int, str]:
-    """Kod wyjścia i ostatnia linia; mutacje, które zgłasza noc, dopisuje do ``outcome``."""
+def _tozsamosc(mutant: Mutant, text: str, origin: frozenset[tuple[str, int]]) -> Tozsamosc:
+    """Tożsamość mutacji pliku o treści ``text``: plik, pochodzenie linii, które psuje (``_origins``), i jej zmiana, czyli
+    linie pliku i mutacji między ich wspólnym początkiem a wspólnym końcem, a wspólny początek liczy się pierwszy.
 
-    survived, unchecked, over_limit = outcome.survived, outcome.unchecked, outcome.over_limit
+    Klucz issue (``fingerprint``) to nie jest: scala bliźniaki, czyli tę samą zmianę tego samego kodu w dwóch miejscach
+    pliku, a ``difflib`` dopasowuje w nim puste linie cofnięcia fragmentu raz tak, raz inaczej, zależnie od reszty
+    pliku. Pochodzenie linii rozróżnia bliźniaki, a ani ono, ani zmiana liczona od wspólnego początku nie zmieniają się,
+    gdy późniejszy commit przesuwa linie mutacji, więc ta sama mutacja ma tę samą tożsamość w czerwonym runie i w nocy
+    po nim."""
+
+    old, new = text.split("\n"), mutant.source.split("\n")
+    shorter = min(len(old), len(new))
+    start = next((number for number in range(shorter) if old[number] != new[number]), shorter)
+    end = next((number for number in range(shorter - start) if old[-1 - number] != new[-1 - number]), shorter - start)
+    parts = [mutant.path, *map(str, sorted(origin)), *old[start : len(old) - end], "\0", *new[start : len(new) - end]]
+    return Tozsamosc(hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16])
+
+
+def zapisz_osadzone(plik: Path, osadzone: Iterable[Tozsamosc]) -> None:
+    """Plik ``--osadzone``: posortowana lista JSON tożsamości, który plan nocy wgrywa dla zadań pokrycia i części."""
+
+    plik.parent.mkdir(parents=True, exist_ok=True)
+    plik.write_text(json.dumps(sorted(osadzone)), encoding="utf-8")
+
+
+def wczytaj_osadzone(lista: Iterable[str]) -> frozenset[Tozsamosc]:
+    """Tożsamości z listy JSON: ``OSADZONE`` zapisu części albo plik ``zapisz_osadzone``."""
+
+    return frozenset(map(Tozsamosc, lista))
+
+
+def _judged_file(text: str) -> frozenset[Tozsamosc]:
+    """Tożsamości z pliku ``zapisz_osadzone``, który pisze plan nocy; zadanie bez artefaktu pada już na jego pobraniu."""
+
+    return wczytaj_osadzone(json.loads(Path(text).read_text(encoding="utf-8")))
+
+
+def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gate) -> tuple[int, str]:
+    """Kod wyjścia i ostatnia linia; mutacje, które zgłasza noc, i tożsamości mutacji z werdyktem bez issue dopisuje do
+    ``outcome``."""
+
+    survived, unchecked, over_limit, judged = outcome.survived, outcome.unchecked, outcome.over_limit, outcome.judged
     deadline = time.monotonic() + args.limit_czesci_s
     out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_czesci_s:g} s minął"
     czesc: Czesc = args.czesc
@@ -1202,11 +1299,13 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         return 2, f"MUTACJE ZMIANY FAIL | {zakres.zly_wyjatek}"
     if args.do:
         zakres = zakres.do(args.do)
+    zakres = zakres.bez_osadzonych(args.osadzone)
     texts, hunks, allowed = zakres.teksty, zakres.fragmenty, zakres.wyjatki
     found = zakres.czesc(czesc)
     if not found:
         where = f" w części {czesc}" if zakres.mutanty else ""
         return 0, f"{OK} | brak mutacji zmienionych linii src/ i jednostek przepuszcza od {args.baza}{where}"
+    identity = dict(zip(found, zakres.tozsamosci(found), strict=True))
     paths = {mutant.path for mutant in found}
     repository = wplyw_zmiany.Repository.scan(ROOT)
     by_file = tests_of(repository, paths)
@@ -1248,10 +1347,12 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         allowance = _allowance(allowed[mutant.path], mutant, today)
         if allowance is not None:
             excused += 1
+            judged.append(identity[mutant])
             print(f"WYJĄTEK: {name} ({allowance.reason}, do {allowance.until}, zgoda {allowance.who})")
             continue
         if mutant.other_system:
             other_system += 1
+            judged.append(identity[mutant])
             print(f"POMINIĘTA: {name} → kod innego systemu niż {sys.platform}")
             continue
         edit = silnik_mutacji.Edit(Path(mutant.path), texts[mutant.path], mutant.source)
@@ -1287,6 +1388,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             for mutant, mutation, later in reverts:
                 if _dominated(mutant, texts[mutant.path], [other for other, _, _ in others], killed):
                     dominated += 1
+                    judged.append(identity[mutant])
                     print(f"ZDOMINOWANA: {mutation.name} → każda linia kodu fragmentu ma własną mutację, którą wykrył test", flush=True)
                 else:
                     queued.append((mutant, mutation, later))
@@ -1333,6 +1435,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         wide_s += time.monotonic() - between
         wide_count += len(wide)
     clock.append(time.monotonic())
+    judged += [identity[mutant] for mutant in found if mutant in killed]
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
     checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if mutant.revert is Revert.NONE]
     gated = iter(
@@ -1343,6 +1446,8 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
         verdict, shown = next(gated) if mutant.revert is Revert.NONE else (tests_verdict, tests_shown)
         caught, last = silnik_mutacji.in_ci(verdict, shown)
+        if caught:
+            judged.append(identity[mutant])
         if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         elif verdict == silnik_mutacji.Verdict.OVER_LIMIT:

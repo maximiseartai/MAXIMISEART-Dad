@@ -17,6 +17,7 @@ Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym 
 Zmieniona 14.11 (pomiar nocnych mutacji skilli, decyzja koordynatora w trybie auto Maksa, kod bez zmian): skryptów skilli `verify-*` z podtabeli `przepuszcza` noc nie mutuje (sekcja Decyzja).
 Zmieniona 14.11 (#1625, historia 60 specyfikacji #1597, oznaczenia z audytów #1623 i #1624 zatwierdzonych przez Maksa 14.11): z `tools/` noc mutuje tylko jednostki, których fałszywe „OK” przepuszcza zły kod produktu, a błąd reszty narzędzi wychodzi w przeglądzie albo w użyciu (sekcja Decyzja).
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zajmować mniej godzin runnera i kończyć się wcześniej bez utraty pokrycia i jakości): pokrycie testów bez mutacji liczą raz na noc zadania pokrycia, a części czytają ich zapisy (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 16.11 (cel Maksa 16.11: noc ma zużywać godziny runnera na nową pracę, a nie powtarzać starej): noc po czerwonej z tą samą bazą nie mutuje drugi raz mutacji, którym części czerwonego runu dały werdykt bez issue (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 
 ## Kontekst
 
@@ -90,8 +91,19 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Takie cofnięcie trafia do issue jak przed bramą, a gdy zmiana była tylko typów (#671, #674), agent odpowiada `nie warto`.
   Ręczne zamiany `check_all` skryptów mutacji skilli brama sprawdza tak samo jak mutacje operatorów.
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
-- Część, która nie dała wyniku (test jej plików testów padł w pokryciu nocy także po ponowieniu, żaden zapis pokrycia nie ma jej pliku testów, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
+- Część, która nie dała wyniku (test jej plików testów padł w pokryciu nocy także po ponowieniu, żaden zapis pokrycia nie ma jej pliku testów, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji.
   Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
+- Noc po czerwonej nie mutuje drugi raz tego, co czerwony run już osądził, a werdykt nie potrzebuje issue.
+  Zapis części ma tożsamości (`osadzone` w `tools/mutacje_zmiany.py`) mutacji wykrytych testem, także `ZAWIESZENIE`, albo bramą typów, zdominowanych cofnięć, mutacji pod ważnym wyjątkiem i kodu innego systemu.
+  Wyjątek sprawdza się raz, gdy mutacja jest w zakresie nocy, także w zielonej nocy, więc wyjątek, który wygasa między czerwoną nocą a następną, jest jak wyjątek wygasły po zielonej.
+  Przeżytych, bez werdyktu, z przekroczonym czasem i `NIEAKTUALNA` w nim nie ma, więc biegną znowu, a część, która padła bez zapisu, nie daje żadnej tożsamości, więc wszystkie jej mutacje biegną znowu.
+  To, czy przeżyta ma już issue, rozstrzygają tylko klucze w issue: zgłoszenie czerwonego runu mogło paść na API albo limicie czasu przed jej issue, a gdy je założyło, noc po czerwonej zgłasza ją jako „nic nowego”.
+  Plan zbiera te tożsamości z zapisów części każdego czerwonego runu na `main` z tą samą bazą (`baza` jego `zakres-nocy`) i liczy listę mutacji bez nich (`ZakresMutacji.bez_osadzonych`) przed końcem zakresu i podziałem na części, więc noc bierze tylko mutacje bez takiego werdyktu, a w zwolnionym limicie sięga dalej (`do`).
+  Tożsamości idą w artefakcie `osadzone-nocy` do zadań pokrycia i części, które liczą tę samą listę przez tę samą metodę.
+  Tożsamość to nie klucz issue (`fingerprint`), bo klucz scala bliźniaki, czyli tę samą zmianę tego samego kodu w dwóch miejscach pliku (16.11, zakres od `origin/main~60` liczony `ZakresMutacji.od`: 62 z 1240 mutacji ma klucz wspólny z inną, a tożsamość wspólną żadna), a bliźniak poza `do` czerwonego runu albo w części bez zapisu nie ma werdyktu.
+  Tożsamość ma plik, pochodzenie linii mutacji (commit linii pierwszych rodziców z `git blame --first-parent` i numer linii w tym commicie) i zmianę liczoną od wspólnego początku pliku i mutacji, więc nie zmienia się, gdy następny PR przesuwa linie, a bliźniaki mają różne (`ZakresMutacji.tozsamosci`).
+  Tożsamość porównuje się tylko w obrębie jednej bazy, bo cofnięcie fragmentu zależy od fragmentu względem bazy.
+  W 12 nocach 4–15.11 (pomiar z API Actions i artefaktów `zakres-nocy`, cel Maksa 16.11) 5 nocy było czerwonych, a każda następna mutowała od tej samej bazy cały zakres, ok. 35 h runnera, także gdy padła 1 z 40 części: noc 4.11 (826 mutacji) powtórzyła się bez zmian 5.11, a noce 6–8.11 zaczynały od tej samej bazy ab0d8e0b, więc ok. 42% godzin runnera okna poszło na powtórki.
 - Test, który bez mutacji padł w zadaniu pokrycia nocy (punkt niżej), nie czerwieni od razu: testy, które padły, biegną raz jeszcze, tym samym `niestabilne_testy.ponow` co w bramce PR (ADR 0020): najwyżej 5 testów, każdy z id, które da się zgłosić w issue, z zapisem pokrycia jak w pierwszym przebiegu.
   Gdy każdy przejdzie, części mutują dalej (druga porażka trafia do zapisu pokrycia, a każda część, której pliki testów go mają, jest bez wyniku z punktu wyżej), a testy trafiają do artefaktu `flaky-testy-pokrycie-<zadanie>`, z którego `zgloszenia.yml` po runie nocy zakłada albo komentuje issue `Flaky test: <test>`, tak jak po runie CI.
   W nocach 3–8.11 (runy 41601085650, 41793945765, 42185360488, 42351341369, 42459531620) 6 części padło w przebiegu bez mutacji, każda na jednym teście, który okazał się flaky testem albo testem losowo czerwonym (wyścig, termin, uuid4 z numerem, pomiar czasu na wolnym runnerze).
@@ -142,11 +154,13 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Część z drogimi mutacjami trzyma runner do 3 h zamiast 1 h, a zwykła część kończy się jak dotąd w kilka minut do godziny (31.10: 4–51 min).
 - Mutacja bez werdyktu w issue to praca dla agenta PR-u, choć test może ją już wykrywać: zgłoszona raz, nie wraca do następnej nocy.
   Limit części jest ponad 2 razy dłuższy od najdłuższej części pierwszej nocy liczonej na zmierzonych czasach, więc taka linia wychodzi rzadko.
-- Dzień z więcej niż 960 mutacjami, czerwona noc i noc, która nie wystartowała, zostawiają zaległość, którą przerabiają kolejne noce po 960, więc luka w testach PR-u z takiego dnia wychodzi później niż następnego dnia.
+- Dzień z więcej niż 960 mutacjami, czerwona noc (z mutacjami, którym jej części nie dały werdyktu) i noc, która nie wystartowała, zostawiają zaległość, którą przerabiają kolejne noce po 960, więc luka w testach PR-u z takiego dnia wychodzi później niż następnego dnia.
   Zaległość spada, gdy dzień ma mniej mutacji niż 960; ręczne uruchomienie workflow bez `od` przerabia następne 960 od razu.
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
 - Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
-- Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc powtarza jego zakres.
+- Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc dostaje jego zakres bez mutacji, którym jego części dały werdykt.
+- Plan nocy po czerwonej pobiera przez API GitHuba zapis każdej części każdego czerwonego runu tej bazy, do 40 artefaktów na run.
+  Run, którego artefaktów plan nie przeczyta, nie daje tożsamości, więc noc tylko powtarza jego pracę, a nie gubi mutacji.
 - Prawdziwa porażka, która przechodzi za drugim razem, nie czerwieni nocy, tylko daje issue `Flaky test:`; pilnuje jej dalej pełne CI `main`, które Wydanie wymaga zielonego.
   Flaky test zostaje w testach mutacji części, więc jego porażka po mutacji może policzyć mutację jako wykrytą i schować lukę w testach do następnej zmiany tej linii.
 
@@ -166,6 +180,10 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Mniejsze części, np. po 8 mutacji, które mieszczą się w 3300 s przy każdej mutacji po 900 s (3.11). Noc miałaby 320 mutacji przy 40 częściach, mniej niż daje dzień, więc zaległość by rosła, a większość części, z mutacjami po kilka sekund, biegłaby głównie pokrycie.
 - Jedno zadanie pokrycia na noc (16.11). Pokrycie wszystkich 157 plików testów nocy 43692461864 trwało na boxie z 8 vCPU i 4 workerami 1686 s, a części czekałyby na nie całe; każde z 4 zadań płaci za to na boxie 142–212 s poza samym pokryciem (instalacja, lista mutacji nocy, wybór testów).
 - Podział plików testów między zadania pokrycia według pracy testów na `main` z `czasy-ci` (16.11). Dla nocy 43692461864 najdroższe z 4 zadań miałoby 1133 s tej pracy zamiast 1588 s przy co 4. pliku, ale zadanie pokrycia musiałoby dostać czasy z planu, a zmierzone zadania co 4. pliku liczyły pokrycie najwyżej 316 s.
+- Tożsamości osądzonych mutacji tylko z czerwonych runów utworzonych po ostatnim udanym (16.11). Spóźniony run crona po czerwonej nocy doby kończy się na zielono bez pracy i nie przesuwa bazy, więc byłby ostatnim udanym, a czerwony run przed nim by się nie liczył; plan szuka więc czerwonych runów od czasu commitu bazy, bo run z tą bazą powstał po nim.
+- Przeżyte mutacje w osądzonych (runda 1 przeglądu #1991). Zgłoszenie, które padło przed ich issue, zostawiało je bez issue na zawsze, bo noc po czerwonej ich nie mutowała, a gdy zgłoszenie się udało, mutowanie ich znowu kosztuje tylko ich testy.
+- Klucz issue (`fingerprint`) jako tożsamość albo klucz z numerem kolejnego wystąpienia w funkcji (runda 1 przeglądu #1991). Klucz scala bliźniaki, a numer wystąpienia przesuwa PR, który dopisuje albo usuwa bliźniaka wyżej w tej samej funkcji; pochodzenie linii z `git blame` tego nie ma.
+- Baza czerwonej nocy przesunięta do jej `do`, a ponowione tylko mutacje części, które padły (16.11). Mutacje tych części liczy się od starej bazy (cofnięcie fragmentu zależy od niej), więc noc musiałaby mutować dwie listy od dwóch baz, a przypisanie do PR-u liczy linie od jednej.
 - Change mutations na PR, ale bez czekania na nie w `tools/scal_pr.py`. Każdy PR dalej zajmowałby trzy runnery po 15 min, a wynik po merge'u i tak musiałby trafić do issue.
 - Mutacje tylko PR-ów z etykietą albo powyżej rozmiaru zmiany. Luki w testach są w małych zmianach tak samo, a wybór PR-ów to osąd, którego nic nie sprawdza.
 - Każdy skrypt mutacji skilla na PR, który zmienia folder skilla (#701). Skrypty mutacji kodu produktu trwają do 13 min, a błąd z #667, który przeszedł bramkę i przegląd, był zmianą modelu TLA+, której nie widzą podstawa skilla ani pytest.
