@@ -1016,6 +1016,7 @@ TWO_LINES_BASE = "def oba(a: bool, b: bool, c: bool) -> bool:\n    x = a\n    re
 TWO_LINES_CHANGED = "def oba(a: bool, b: bool, c: bool) -> bool:\n    x = a and b\n    # bez c wynik jest za szeroki\n    return x and c\n"
 TWO_LINES_TEST = "from rozliczenia.warunek import oba\n\n\ndef test_oba() -> None:\n    assert oba(True, True, True) is True\n    assert oba(True, False, True) is False\n"
 CONSTANT_BASE = 'def f(a: bool, b: bool) -> str:\n    prog = "stary"\n    return prog if a and b else ""\n'
+STRING_BASE = 'def f(a: bool, b: bool) -> str:\n    tekst = """\n# stary\n""" if a and b else ""\n    return tekst\n'
 
 
 @pytest.mark.parametrize(
@@ -1030,20 +1031,33 @@ CONSTANT_BASE = 'def f(a: bool, b: bool) -> str:\n    prog = "stary"\n    return
             "NIEWYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2–3",
         ),
         (
+            'from rozliczenia.warunek import f\n\n\ndef test_f() -> None:\n    assert f(True, True)\n    assert f(True, False) == ""\n',
+            STRING_BASE.replace("# stary", "# nowy").replace("if a and b", "if (a and b)"),
+            STRING_BASE,
+            "NIEWYKRYTA: src/rozliczenia/warunek.py:3 zmiana linii 3–4",
+        ),
+        (
             "from rozliczenia.warunek import TEKST\n\n\ndef test_tekst() -> None:\n    assert TEKST\n",
             'TEKST = """\n# nowy\n"""\n',
             'TEKST = """\n# stary\n"""\n',
             "NIEWYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2",
         ),
     ],
-    ids=["kazda-linia-kodu-ma-wykryta-mutacje", "mutacja-jednej-linii-przezyla", "linia-bez-wlasnej-mutacji", "tylko-linia-napisu-jak-komentarz"],
+    ids=[
+        "kazda-linia-kodu-ma-wykryta-mutacje",
+        "mutacja-jednej-linii-przezyla",
+        "linia-bez-wlasnej-mutacji",
+        "linia-napisu-jak-komentarz-obok-linii-z-wykryta-mutacja",
+        "tylko-linia-napisu-jak-komentarz",
+    ],
 )
 def test_samo_cofniecie_fragmentu_kilku_linii_nie_biegnie_tylko_gdy_kazda_jego_linia_kodu_ma_wlasna_mutacje_wykryta_testem(
     tmp_path: Path, test: str, changed: str, base: str, verdict: str
 ) -> None:
     # Przegląd #1975 r3 W2: zmiany stałej ``prog`` w linii bez własnej mutacji nie sprawdza nic poza cofnięciem, choć test
-    # wykrywa ``bez `b` w `and` `` w drugiej linii fragmentu. Komentarz w środku fragmentu nie potrzebuje mutacji, a fragment
-    # bez żadnej linii kodu (linia napisu, która wygląda jak komentarz) zostaje z cofnięciem.
+    # wykrywa ``bez `b` w `and` `` w drugiej linii fragmentu. Komentarz w środku fragmentu nie potrzebuje mutacji, a linia
+    # napisu wielowierszowego, która wygląda jak komentarz, to linia kodu bez własnej mutacji (r4 W1), więc fragment z nią
+    # zostaje z cofnięciem, także obok linii z wykrytą mutacją.
     done = _run(_repo(tmp_path, test, changed, base))
 
     assert [line.partition(" cofnięta do bazy")[0] for line in done.stdout.splitlines() if " cofnięta do bazy" in line] == [verdict], done.stdout

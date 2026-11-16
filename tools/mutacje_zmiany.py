@@ -30,8 +30,9 @@ drzewa składni linii, czyli ostatnia, którą daje przejście drzewa wszerz (``
 ostatnia z nich. Psuje ona najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii;
 ogólny skutek fragmentu sprawdza już jego cofnięcie. Samo cofnięcie fragmentu (``Revert.HUNK``) biegnie po innych
 mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``) tylko wtedy, gdy każda zmieniona
-linia kodu fragmentu (bez pustych i samych komentarzy) ma własną mutację, która biegła w tej części, a każdą taką
-mutację wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama brama typów). Predykat napisu biegnie tylko na linii
+linia kodu fragmentu (bez pustych i samych komentarzy według tokenów Pythona, więc linia napisu to kod) ma własną
+mutację, która biegła w tej części, a każdą taką mutację wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama
+brama typów). Predykat napisu biegnie tylko na linii
 bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
@@ -301,10 +302,16 @@ def _rows(text: str) -> list[str]:
     return rows if rows[-1] else rows[:-1]
 
 
-def _code_lines(rows: Sequence[str], lines: Iterable[int]) -> frozenset[int]:
-    """Linie ``lines`` pliku o liniach ``rows`` z kodem: komentarz i pusta linia nie biegną na żadnym systemie."""
+LAYOUT = frozenset({tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER})
 
-    return frozenset(line for line in lines if line <= len(rows) and rows[line - 1].strip() and not rows[line - 1].lstrip().startswith("#"))
+
+def _code_lines(text: str) -> frozenset[int]:
+    """Linie kodu pliku o treści ``text`` według tokenów Pythona: linia z tokenem spoza ``LAYOUT``, więc każda linia
+    napisu wielowierszowego, także pusta albo zaczęta od ``#``; sam komentarz i pusta linia nie biegną na żadnym systemie.
+    """
+
+    tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+    return frozenset(line for token in tokens if token.type not in LAYOUT for line in range(token.start[0], token.end[0] + 1))
 
 
 def changed_lines(hunks: Sequence[Hunk]) -> frozenset[int]:
@@ -674,6 +681,7 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
                     other_system = id(broken) in other or id(node) in other
                     add(lines, broken.lineno, description, mutated, other_system=other_system, last_resort=last_resort)
     rows = _rows(text)
+    code_lines = _code_lines(text)
     for hunk in hunks:
         if not hunk.count or (not hunk.old and hunk.count == len(rows)):
             continue  # samo usunięcie nie ma linii do testu, a nowy plik nie ma bazy
@@ -682,7 +690,7 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
         last = hunk.start + hunk.count - 1
         span = f"{hunk.start}" if hunk.count == 1 else f"{hunk.start}–{last}"
         lines = changed_lines([hunk])
-        code = _code_lines(rows, lines)  # komentarz i pusta linia nie decydują, czyj jest fragment
+        code = lines & code_lines  # komentarz i pusta linia nie decydują, czyj jest fragment
         add(lines, hunk.start, f"zmiana linii {span} cofnięta do bazy", mutated, other_system=bool(code) and code <= other_lines, revert=Revert.HUNK)
     # Sortowanie stabilne: w linii zostaje kolejność przejścia drzewa wszerz, z której wybiera ``selected``.
     return sorted(found.values(), key=lambda mutant: mutant.line)
@@ -824,7 +832,7 @@ def _dominated(revert: Mutant, text: str, ran: Iterable[Mutant], killed: set[Mut
     sprawdza tylko cofnięcie, więc ono biegnie.
     """
 
-    code = _code_lines(_rows(text), revert.lines)
+    code = revert.lines & _code_lines(text)
     own = [mutant for mutant in ran if mutant.path == revert.path and mutant.line in code]
     return bool(code) and {mutant.line for mutant in own} == code and all(mutant in killed for mutant in own)
 
