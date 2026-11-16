@@ -557,7 +557,7 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów (CentrumSettings.folders), a nie całą migawkę.
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów i parę Reguł ilości (settings_reads), a nie całą migawkę.
 _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
@@ -578,10 +578,10 @@ READS: dict[str, set[str]] = {
     "changeTheme": _SETTINGS | {"dziennik_centrum"},
     "getPeriodBoard": _WINDOW,
     "openPeriodPath": _WINDOW,
-    "getQuantitiesToFill": _BOARD,
+    "getQuantitiesToFill": _WINDOW,
     "getCollectiveFileVersion": _WINDOW,
     "getWithoutQuantity": _BOARD,
-    "getKindTable": _BOARD,
+    "getKindTable": _WINDOW,
     "openWorkerSettlement": _FOLDERS | {"ustawienia"},
     "getRunSetup": _BOARD
     | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},

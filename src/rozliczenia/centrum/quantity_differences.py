@@ -160,8 +160,6 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
                 return contract.ExceptionSaved(differences=listed()[0], change=change)
             case Refused(problem=problem):
                 raise refusal.setting_refused(problem)
-            case NotSaved(unreadable=str(file)):
-                raise refusal.settings_file_unreadable(file)
             case NotSaved():
                 raise refusal.settings_not_saved()
             case KeptInPeriods(presence=presence, what=what):

@@ -1,7 +1,8 @@
 """Ustawienia dla odczytu okna Centrum, który odpowiada z nich tacie (Tablica okresów, ścieżki okresu, Uzupełnienie,
-różnice Kontroli ilości): plik Ustawień, którego system nie daje teraz czytać, to odmowa 409 o tym pliku
-(``refusal.settings_file_unreadable``), a nie treść z Wydania, którą tata wziąłby za niewskazany folder okresów albo
-za swoje Reguły ilości. Odczyt niczego nie zapisuje, więc odmowa nie jest regułą przyjęcia zmiany właściciela Ustawień.
+różnice Kontroli ilości, otwarcie Rejestru zleceń, podgląd zmiany reguły): plik Ustawień, którego system nie daje
+teraz czytać, to odmowa 409 o tym pliku (``refusal.settings_file_unreadable``), a nie treść z Wydania, którą tata
+wziąłby za niewskazany folder okresów albo za swoje Reguły ilości. Jedyne miejsce tej odmowy w odczytach okna. Odczyt
+niczego nie zapisuje, więc odmowa nie jest regułą przyjęcia zmiany właściciela Ustawień.
 """
 
 from __future__ import annotations
