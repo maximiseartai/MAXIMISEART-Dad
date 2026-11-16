@@ -377,7 +377,7 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 ## Legenda czynności
 
 Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w Pliku zbiorczym.
-Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` mają co najmniej jeden Kod czynności.
+Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` są samymi Kodami czynności, bez Błędu opisu.
 _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
@@ -389,7 +389,7 @@ _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu
 
-`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów albo kolumna Ilości usług trafiona drugi raz.
+`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona dwoma kolorami (jeden kod robi z niej Czerwone pole, a drugi Zielone pole).
 Opis pusty albo z samym `tak`/`nie` nie jest Błędem opisu.
 Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` liczy się dla Przypomnień o raporcie jako niewysłany (ADR 0039).
 _Avoid_: zły kod, literówka

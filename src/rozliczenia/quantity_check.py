@@ -16,8 +16,8 @@ oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to 
 (decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
 
 Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli, w
-podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z Kodem czynności (także
-tylko spoza przedziałów) porównuje z tatą:
+podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z samych Kodów czynności
+(``CodesOnly``) porównuje z tatą:
 
 - kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem, tak jak wpisuje
   je Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy legenda wpisała w nią coś w tym wierszu, i wtedy
@@ -26,9 +26,11 @@ tylko spoza przedziałów) porównuje z tatą:
 - kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
   legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
 
-W wierszu bez kodu liczy wpis taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Opis
+W wierszu bez kodów i w wierszu z Błędem opisu legenda nic nie wpisała, więc nie porównuje, tylko liczy wpis taty:
+kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Błędy opisu liczy według powodu. Opis
 technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
-bez kodu, przy wpisie taty, więc tylko taki opis trafia do treści Kontroli, a w niej przez strażnika reguły danych.
+gdy legenda nic nie wpisała, przy wpisie taty, więc tylko taki opis trafia do treści Kontroli, a w niej przez
+strażnika reguły danych.
 """
 
 from __future__ import annotations
@@ -38,7 +40,17 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
-from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead, ColumnByNumber, FillColour, FixedColumn
+from .activity_legend import (
+    AMOUNT_COLUMN,
+    ActivityLegend,
+    CodesOnly,
+    ColumnByNumber,
+    DescriptionError,
+    DescriptionRead,
+    FillColour,
+    FixedColumn,
+    problem_text,
+)
 from .text import WEEKDAY_LABELS, plural
 from .collective_layout import HEADER_ROW, QUANTITY_LETTERS
 from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataValue
@@ -93,15 +105,19 @@ class QuantityCheck:
     description_filled: Counter[str] = field(default_factory=Counter)
     other_filled: Counter[str] = field(default_factory=Counter)
     coded: int = 0
-    """Wiersze danych z Kodem czynności."""
+    """Wiersze danych z samych Kodów czynności."""
     coded_matching: int = 0
-    """Wiersze z Kodem czynności bez różnicy legendy."""
+    """Wiersze z samych Kodów czynności bez różnicy legendy."""
     legend_differences: dict[tuple[str, ...], LegendGroup] = field(default_factory=lambda: defaultdict(LegendGroup))
     """Identyfikatory kodów wiersza → różnice legendy wierszy z tymi kodami."""
-    uncoded_entries: Counter[tuple[str, tuple[tuple[str, TataValue], ...]]] = field(default_factory=Counter)
-    """(opis technika, wpis taty) → wiersze bez kodu z tym wpisem."""
-    out_of_range: Counter[tuple[str, int]] = field(default_factory=Counter)
-    """(kod, liczba z zapisu spoza przedziałów) → wiersze."""
+    uncoded_entries: Counter[tuple[str, Entry]] = field(default_factory=Counter)
+    """(opis technika, wpis taty) → wiersze bez kodów z tym wpisem."""
+    description_error_rows: int = 0
+    """Wiersze z Błędem opisu."""
+    description_errors: Counter[str] = field(default_factory=Counter)
+    """Powód Błędu opisu (``problem_text``, bez tekstu technika) → wiersze z tym powodem."""
+    faulty_entries: Counter[tuple[tuple[str, ...], str, Entry]] = field(default_factory=Counter)
+    """(powody, opis technika, wpis taty) → wiersze z Błędem opisu z wpisem taty."""
 
     @property
     def legend_difference_count(self) -> int:
@@ -181,32 +197,32 @@ class FillDifference:
 
 
 LegendDifference = ValueDifference | FillDifference
+Entry = tuple[tuple[str, TataValue], ...]
+"""Wpis taty w wierszu, w którym legenda nic nie wpisała: kolumna → wartość różna od 0."""
 
 
 @dataclass(frozen=True)
 class LegendRowCheck:
     """Legenda czynności w Kontroli ilości jednego Wiersza danych.
 
-    ``codes``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
-    legendy w wierszu z kodem, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu bez kodu (kolumna
-    → wartość). ``description``: opis technika, tylko w wierszu z różnicą legendy albo bez kodu z wpisem taty.
+    ``read``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
+    legendy w wierszu z samych kodów, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu bez kodów
+    albo z Błędem opisu. ``description``: opis technika, tylko w wierszu z różnicą legendy albo, bez kodów i z Błędem
+    opisu, z wpisem taty.
     """
 
-    codes: CodesRead
+    read: DescriptionRead
     rules: RowCheck
     differences: tuple[LegendDifference, ...]
-    entry: tuple[tuple[str, TataValue], ...]
+    entry: Entry
     description: str | None
-
-    @property
-    def coded(self) -> bool:
-        return bool(self.codes.found or self.codes.out_of_range)
 
     @property
     def rule_differences(self) -> tuple[str, ...]:
         """Różnice Reguł ilości bez kolumn, które w tym wierszu wpisała też legenda: te porównuje legenda, z sumą."""
 
-        return tuple(column for column in self.rules.differences if column not in self.codes.quantities)
+        written = self.read.quantities if isinstance(self.read, CodesOnly) else {}
+        return tuple(column for column in self.rules.differences if column not in written)
 
 
 def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRules) -> LegendRowCheck:
@@ -215,7 +231,7 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
 
     ruled = row_check(row, rules)
     codes = legend.read(row.completed)
-    if not (codes.found or codes.out_of_range):
+    if not isinstance(codes, CodesOnly):
         entry = tuple(
             (column, row.quantity(column))
             for column in DESCRIPTION_COLUMNS
@@ -289,16 +305,24 @@ def check(orders: CollectiveOrders, rules: QuantityRules, legend: ActivityLegend
 
 
 def _add_legend(result: QuantityCheck, coded: LegendRowCheck) -> None:
-    result.out_of_range.update({(found.code, found.number) for found in coded.codes.out_of_range if found.number is not None})
-    if not coded.coded:
-        if coded.description is not None:
-            result.uncoded_entries[coded.description, coded.entry] += 1
-        return
+    match coded.read:
+        case DescriptionError(problems=problems):
+            reasons = tuple(dict.fromkeys(problem_text(problem) for problem in problems))
+            result.description_error_rows += 1
+            result.description_errors.update(reasons)
+            if coded.description is not None:
+                result.faulty_entries[reasons, coded.description, coded.entry] += 1
+            return
+        case CodesOnly(found=found):
+            ids = tuple(dict.fromkeys(code.code for code in found))
+        case _:
+            if coded.description is not None:
+                result.uncoded_entries[coded.description, coded.entry] += 1
+            return
     result.coded += 1
     if not coded.differences:
         result.coded_matching += 1
         return
-    ids = tuple(dict.fromkeys(found.code for found in (*coded.codes.found, *coded.codes.out_of_range)))
     group = result.legend_differences[ids]
     group.rows.update(coded.differences)
     for difference in coded.differences:
@@ -398,13 +422,13 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         f"- Wiersze danych: {result.rows} (porównane {result.compared}, rozliczane z opisu "
         f"{result.from_description}, bez reguły {result.unruled_rows}, bez daty i godziny w DATA {result.undated})\n"
         f"- Różnice w kolumnach Reguł ilości: {result.difference_count}\n"
-        f"- Wiersze z Kodem czynności: {result.coded} (zgodne z legendą {result.coded_matching}), "
-        f"różnice legendy: {result.legend_difference_count}\n",
+        f"- Wiersze z samych Kodów czynności: {result.coded} (zgodne z legendą {result.coded_matching}), "
+        f"różnice legendy: {result.legend_difference_count}, wiersze z Błędem opisu: {result.description_error_rows}\n",
         *_difference_blocks(result.differences),
         *_unruled_blocks(result.unruled),
         *_legend_blocks(result.legend_differences),
+        *_description_error_blocks(result.description_errors, result.faulty_entries),
         *_uncoded_blocks(result.uncoded_entries),
-        *_out_of_range_blocks(result.out_of_range),
         "\n## Kolumny z opisu technika: wiersze wypełnione przez tatę\n\n",
         _count_table(DESCRIPTION_COLUMNS, result.description_filled),
         "\n## Pozostałe kolumny N:AP: wiersze wypełnione przez tatę\n\n",
@@ -463,28 +487,38 @@ def _legend_blocks(groups: Mapping[tuple[str, ...], LegendGroup]) -> list[str]:
     return found
 
 
-def _uncoded_blocks(entries: Counter[tuple[str, tuple[tuple[str, TataValue], ...]]]) -> list[str]:
+def _uncoded_blocks(entries: Counter[tuple[str, Entry]]) -> list[str]:
     if not entries:
         return []
     return [
         "\n## Wiersze bez kodu z wpisem taty\n\n| Opis | Wpis taty | Wiersze |\n| --- | --- | --- |\n",
         *(
-            f"| {_code(description)} | {', '.join(f'{column} {value}' for column, value in entry)} | {count} |\n"
+            f"| {_code(description)} | {_entry(entry)} | {count} |\n"
             for (description, entry), count in sorted(entries.items(), key=lambda item: (_text_order(item[0][0]), str(item[0][1])))
         ),
     ]
 
 
-def _out_of_range_blocks(codes: Counter[tuple[str, int]]) -> list[str]:
-    if not codes:
+def _description_error_blocks(reasons: Counter[str], entries: Counter[tuple[tuple[str, ...], str, Entry]]) -> list[str]:
+    """Błędy opisu według powodu, po tekście powodu, a wiersze z Błędem opisu z wpisem taty z opisem technika, po opisie."""
+
+    if not reasons:
         return []
-    return [
-        "\n## Kody spoza przedziałów\n\n| Kod | Liczba | Wiersze |\n| --- | --- | --- |\n",
-        *(
-            f"| {_code(code)} | {number} | {count} |\n"
-            for (code, number), count in sorted(codes.items(), key=lambda item: (_text_order(item[0][0]), item[0][1]))
-        ),
+    found = [
+        "\n## Błędy opisu\n\n| Powód | Wiersze |\n| --- | --- |\n",
+        *(f"| {reason} | {reasons[reason]} |\n" for reason in sorted(reasons, key=_text_order)),
     ]
+    if entries:
+        found.append("\n### Błędy opisu z wpisem taty\n\n| Opis | Powód | Wpis taty | Wiersze |\n| --- | --- | --- | --- |\n")
+        found.extend(
+            f"| {_code(description)} | {'; '.join(shown)} | {_entry(entry)} | {count} |\n"
+            for (shown, description, entry), count in sorted(entries.items(), key=lambda item: (_text_order(item[0][1]), str(item[0][2])))
+        )
+    return found
+
+
+def _entry(entry: Entry) -> str:
+    return ", ".join(f"{column} {value}" for column, value in entry)
 
 
 def _legend_column(difference: LegendDifference) -> str:

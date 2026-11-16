@@ -6274,6 +6274,14 @@
             "type": "integer",
             "title": "Differences After"
           },
+          "errors_before": {
+            "type": "integer",
+            "title": "Errors Before"
+          },
+          "errors_after": {
+            "type": "integer",
+            "title": "Errors After"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/LegendPreviewRow"
@@ -6296,11 +6304,13 @@
           "changed_as_tata",
           "differences_before",
           "differences_after",
+          "errors_before",
+          "errors_after",
           "rows",
           "more"
         ],
         "title": "LegendPreviewReady",
-        "description": "Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym\nrachunkiem wiersza co Kontrola ilości.\n\n``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze\nco innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.\n``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.\n``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta."
+        "description": "Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym\nrachunkiem wiersza co Kontrola ilości.\n\n``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze\nco innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.\n``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie, a\n``errors_before`` i ``errors_after``: wiersze z Błędem opisu teraz i po zmianie. ``rows``: zmienione wiersze z różnicą\nod taty albo z Błędem opisu, najwyżej ``SHOWN_ROWS``, a ``more`` reszta."
       },
       "LegendPreviewRow": {
         "properties": {
@@ -6322,6 +6332,13 @@
             },
             "type": "array",
             "title": "Codes"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
           },
           "cells": {
             "items": {
@@ -6352,10 +6369,11 @@
           "row",
           "description",
           "codes",
+          "problems",
           "cells"
         ],
         "title": "LegendPreviewRow",
-        "description": "Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis\ntechnika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez\nadresu, numeru zlecenia i daty dziennej."
+        "description": "Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis\ntechnika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu\nopisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej."
       },
       "LegendPreviewValue": {
         "properties": {

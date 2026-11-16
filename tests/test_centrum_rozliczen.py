@@ -2524,7 +2524,7 @@ LEGEND_URL = "/api/settings/activity-legend"
 
 MAIL_SENTENCES = [
     "inst#m: 1 w Y.",
-    "instmdik (też instmdic): 1 w Y.",
+    "instmdik: 1 w Y.",
     "instutp#m: # od 1 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
     "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
     "instwew#m: AF na zielono.",
@@ -2535,8 +2535,8 @@ MAIL_SENTENCES = [
     "spawez: 1 w AB.",
     "spawmufakan: 1 w AB, 70 w Uwagi - kwota (AS).",
     "spawmufaziem: 1 w AC.",
-    "dzielnik1/2 (też dzielnika1/2): 50 w Uwagi - kwota (AS).",
-    "pz20m: 480 w Uwagi - kwota (AS).",
+    "dzielnik1/2: 50 w Uwagi - kwota (AS).",
+    "pz#m: 480 w Uwagi - kwota (AS).",
 ]
 """Legenda z Wydania bez Wzorca: kolumna Ilości usług to sama litera, a kwota stoi w ``AS`` nazwanej „Uwagi - kwota”."""
 
@@ -2678,7 +2678,7 @@ def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path
     assert rows == []
 
 
-RELEASE_LEGEND_SHA256 = "38173dfd0ab518995bccda5bf4152c19c0a3955cf5ddba370b84454f53afae46"
+RELEASE_LEGEND_SHA256 = "a89bfa2741cf95ba917a5931afdf351f2af3036605d6e6c5017cd39b7ada6e44"
 """Skrót Legendy czynności z Wydania w zapisie pliku taty: same kody, bez komentarzy i końców linii pliku."""
 
 
@@ -2748,12 +2748,12 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
     ),
     "zmiana kodu z „/” w id": (
         lambda client: client.put(code_url("dzielnik1/2"), json=shown_form(client, "dzielnik1/2") | {"amount": 60}),
-        "dzielnik1/2 (też dzielnika1/2): 50 w Uwagi - kwota (AS).",
-        "dzielnik1/2 (też dzielnika1/2): 60 w Uwagi - kwota (AS).",
+        "dzielnik1/2: 50 w Uwagi - kwota (AS).",
+        "dzielnik1/2: 60 w Uwagi - kwota (AS).",
     ),
     "usunięcie kodu": (
-        lambda client: client.delete(code_url("pz20m")),
-        "pz20m: 480 w Uwagi - kwota (AS).",
+        lambda client: client.delete(code_url("pz")),
+        "pz#m: 480 w Uwagi - kwota (AS).",
         None,
     ),
     "dopisanie zapisu pracowników": (
@@ -2763,10 +2763,10 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
         "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
         "instwewrg6#m (też instrg6#m): # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
     ),
-    "usunięcie zapisu": (
-        lambda client: client.put(code_url("instmdik"), json=shown_form(client, "instmdik") | {"spellings": ["instmdik"]}),
-        "instmdik (też instmdic): 1 w Y.",
+    "zamiana zapisu": (
+        lambda client: client.put(code_url("instmdik"), json=shown_form(client, "instmdik") | {"spellings": ["mdik"]}),
         "instmdik: 1 w Y.",
+        "mdik: 1 w Y.",
     ),
 }
 """Zmiana Legendy czynności z sekcji: zapytanie, zdanie kodu przed (``None``: nowy kod) i po (``None``: usunięty)."""

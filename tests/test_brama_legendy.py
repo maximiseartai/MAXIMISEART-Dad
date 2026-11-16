@@ -1,8 +1,9 @@
-"""Brama Legendy czynności na Pliku zbiorczym wypełnionym przez tatę: zgodność wierszy z kodem, same liczby i kody.
+"""Brama Legendy czynności na Pliku zbiorczym wypełnionym przez tatę: zgodność wierszy z kodem, Błędy opisu według
+powodu, same liczby i kody.
 
 Plik zbiorczy powstaje z Przygotowania pliku zbiorczego z legendą z Wydania na syntetycznym Rejestrze i Wzorcach w
 kształcie Wzorców taty, a potem „tata” zmienia w nim kilka komórek. Oczekiwane wartości legendy pochodzą z maila taty z
-15.11.2026 (ADR 0038), a plik Logów Wyceny w efenix z prawdziwej Kopii wejścia tego Pliku zbiorczego.
+15.11.2026 (ADR 0038) i z ADR 0039, a plik Logów Wyceny w efenix z prawdziwej Kopii wejścia tego Pliku zbiorczego.
 """
 
 from __future__ import annotations
@@ -40,13 +41,14 @@ TOOL = ROOT / "tools" / "brama_legendy.py"
 ORDERS = [
     ("inst20m", "dekoder"),
     ("spawpg", "dekoder"),
-    ("technicolor: instwewrg65m", "technicolor"),
+    ("instwewrg65m", "technicolor"),
     ("rt2", "dekoder"),
-    ("20 m patchcord dzielnik 1/2", "dekoder"),
+    ("20 m patchcord dzielnik1/2", "dekoder"),
     ("instutp40m", "dekoder"),
     ("kabel SYN-OPIS 15 m", "dekoder"),
     ("instmdik dzielnik1/2", "dekoder"),
     ("", "technicolor"),
+    ("instmdik inst20m", "dekoder"),
 ]
 """``CZYNNOŚCI ZREALIZOWANE`` i ``URZĄDZENIA`` zleceń; ``dekoder`` daje z Reguł ilości z Wydania tylko V, a
 ``technicolor`` także 1 w AK, do którego legenda dodaje swoje 1 z ``instwewrg65m``, a bez kodu to 1 nie jest wpisem
@@ -114,39 +116,40 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
     lines = _gate(collective, logs, "--opisy", described)
 
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
+    errors = [
+        "-- Błędy opisu (powód → wiersze): słowo inne niż zapis kodu=2 | kod z liczbą spoza przedziałów=1 | kolumna Ilości usług trafiona drugi raz=1",
+        "-- powody z kodami (powód → wiersze): kod z liczbą spoza przedziałów (instutp40m)→1 | kolumna Ilości usług trafiona drugi raz (Y: instmdik, inst)→1",
+    ]
     assert lines[disk + 1 : disk + 11] == [
-        "wiersze danych: 9 | z kodem: 7 | z samych kodów: 4 | kod obok opisu: 3 | DATA nie jest datą: 0",
-        "zgodne z tatą wiersze z kodem: 3/7 (42.9%) | z samych kodów: 2/4 (50.0%) | kod obok opisu: 1/3 (33.3%)",
-        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instutp=1 instmdik=1",
-        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 4 klas",
-        "1 | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1",
-        "1 | kod obok opisu | instutp | AJ: legenda 0, tata 1",
-        "1 | z samych kodów | instmdik, dzielnik1/2 | AS: legenda 50, tata 100",
-        "1 | z samych kodów | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0;"
-        " kolor AF: legenda zielony, tata brak; kolor AM: legenda czerwony, tata brak",
-        "-- kody spoza przedziałów (kod liczba → wiersze): instutp 40→1",
-        "-- wiersze bez kodu z wpisem taty: 1 | Y=1 AS=1",
+        "wiersze danych: 10 | z kodem: 5 | z Błędem opisu: 4 | bez kodów: 1 | DATA nie jest datą: 0",
+        "zgodne z tatą wiersze z kodem: 3/5 (60.0%)",
+        "kody (wiersze): inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1 dzielnik1/2=1",
+        "-- różnice (wiersze | kody | kolumna: legenda, tata): 2 klas",
+        "1 | instmdik, dzielnik1/2 | AS: legenda 50, tata 100",
+        "1 | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0; kolor AF: legenda zielony, tata brak; kolor AM: legenda czerwony, tata brak",
+        *errors,
+        "-- Błędy opisu z wpisem taty: 3 | Y=2 AJ=1 AS=1",
+        "-- wiersze bez kodów z wpisem taty: 0 | brak",
     ]
     copied = lines.index(f"== {collective.name} (Logi {logs.name}) | porównane: Y AB AC AD AJ AK AL AM (Logi: bez AS i kolorów)")
     assert lines[copied + 2 : copied + 11] == [
-        "zgodne z tatą wiersze z kodem: 4/7 (57.1%) | z samych kodów: 3/4 (75.0%) | kod obok opisu: 1/3 (33.3%)",
-        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instutp=1 instmdik=1",
-        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 3 klas",
-        "1 | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1",
-        "1 | kod obok opisu | instutp | AJ: legenda 0, tata 1",
-        "1 | z samych kodów | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0",
-        "-- kody spoza przedziałów (kod liczba → wiersze): instutp 40→1",
-        "-- wiersze bez kodu z wpisem taty: 1 | Y=1",
+        "zgodne z tatą wiersze z kodem: 4/5 (80.0%)",
+        "kody (wiersze): inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1 dzielnik1/2=1",
+        "-- różnice (wiersze | kody | kolumna: legenda, tata): 1 klas",
+        "1 | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0",
+        *errors,
+        "-- Błędy opisu z wpisem taty: 3 | Y=2 AJ=1",
+        "-- wiersze bez kodów z wpisem taty: 0 | brak",
         "== razem: 2 plików",
     ]
-    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/14 (50.0%) | z samych kodów: 5/8 (62.5%) | kod obok opisu: 2/6 (33.3%)"
+    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/10 (70.0%)"
     assert "SYN" not in "\n".join(lines)
     assert "patchcord" not in "\n".join(lines)
     notes = described.read_text(encoding="utf-8")
-    assert f"{collective.name} | wiersz 22 | różnica | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1 | 20 m patchcord dzielnik 1/2" in notes
-    assert f"{collective.name} | wiersz 24 | bez kodu z wpisem taty | Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
-    assert f"{collective.name} | wiersz 23 | różnica | kod obok opisu | instutp | AJ: legenda 0, tata 1 | instutp40m" in notes
-    assert f"{collective.name} | wiersz 23 | spoza przedziałów | instutp 40 | instutp40m" in notes
+    assert f"{collective.name} | wiersz 21 | różnica | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0;" in notes
+    assert f"{collective.name} | wiersz 22 | Błąd opisu | „20”; „m”; „patchcord” | wpis taty Y=1 | 20 m patchcord dzielnik1/2" in notes
+    assert f"{collective.name} | wiersz 23 | Błąd opisu | kod z liczbą spoza przedziałów (instutp40m) | wpis taty AJ=1 | instutp40m" in notes
+    assert f"{collective.name} | wiersz 24 | Błąd opisu | „kabel”; „SYN”; „OPIS”; „15”; „m” | wpis taty Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
 
 
 def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzorca_taty(tmp_path: Path) -> None:
@@ -178,10 +181,10 @@ def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzo
 
     assert background == ("solid", "theme"), "warunek: wiersz bez koloru legendy w X ma tło Wzorca taty"
     assert isinstance(checked, quantity_check.QuantityCheck)
-    assert (checked.coded_matching, checked.coded) == (2, 7)
+    assert (checked.coded_matching, checked.coded) == (2, 5)
     assert lines[3].startswith(f"zgodne z tatą wiersze z kodem: {checked.coded_matching}/{checked.coded} ")
     assert quantity_check.FillDifference("X", FillColour.GREEN, None) in checked.legend_differences["spawpg",].rows
-    assert "1 | z samych kodów | spawpg | kolor X: legenda zielony, tata brak" in lines
+    assert "1 | spawpg | kolor X: legenda zielony, tata brak" in lines
 
 
 def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp_path: Path) -> None:
@@ -194,8 +197,8 @@ def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp
     assert lines[0] == f"Legenda czynności: {LEGEND_FILE} | Reguły ilości: z Wydania"
     assert lines[1].endswith("| porównane: AK, AS, kolory brak")
     assert lines[2:4] == [
-        "wiersze danych: 9 | z kodem: 1 | z samych kodów: 1 | kod obok opisu: 0 | DATA nie jest datą: 0",
-        "zgodne z tatą wiersze z kodem: 1/1 (100.0%) | z samych kodów: 1/1 (100.0%) | kod obok opisu: 0/0",
+        "wiersze danych: 10 | z kodem: 1 | z Błędem opisu: 8 | bez kodów: 1 | DATA nie jest datą: 0",
+        "zgodne z tatą wiersze z kodem: 1/1 (100.0%)",
     ]
     inside = ROOT / "opisy-brama.txt"
     refused = subprocess.run(

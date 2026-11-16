@@ -113,6 +113,7 @@ from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.praca_centrum import centrum_work
 from atrapy.pliki_taty import COLLECTIVE_HEADERS, REGISTER_NAME
 from atrapy.preparation import (
+    COMPLETED_WITHOUT_CODES,
     OLD_REGISTER_HEADERS,
     PERIOD,
     RAW_ORDER_FONT,
@@ -3660,7 +3661,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
             "I": f"ZL-SYN-{order:03d}",
             "J": worker,
             "L": successful,
-            "M": "montaż",
+            "M": COMPLETED_WITHOUT_CODES,
         }, number
     assert {5, 7, 8, 10} <= set(sheet["empty_rows"]), "puste wiersze między zleceniami okresu"
 

@@ -770,7 +770,7 @@ def test_przygotowanie_liczy_legenda_z_chwili_startu_a_zapis_dopisany_w_sekcji_w
             assert saved.status_code == 200, saved.text
 
     # Pracownik pisze instrg6 zamiast instwewrg6: 12 m to w legendzie z Wydania 1 w AL.
-    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "CZYNNOŚCI ZREALIZOWANE": "instrg6 12m"}]
+    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "CZYNNOŚCI ZREALIZOWANE": "instrg612m"}]
     centrum = preparing_centrum(tmp_path, rows, surroundings=Surroundings(source=on_register_read(tata_adds_spelling)))
 
     run_to_end(centrum, dry_run=False)

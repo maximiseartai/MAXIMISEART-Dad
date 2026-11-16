@@ -5,16 +5,17 @@ Pliki to te same ostatnie Pliki zbiorcze co w podglądzie zmiany Reguł ilości 
 przeczytane jego odczytem; plik, którego nie da się przeczytać, podgląd pomija i nazywa jego okres. Jedyny rachunek
 wiersza to ``quantity_check.legend_row_check`` na treści wiersza po filtrze prywatności (``OrderFacts``), dla legendy
 teraz i po zmianie, z Regułami ilości, którymi liczy następne Uruchomienie. ``differences_after`` to suma jego różnic na
-każdym pliku, więc liczba różnic legendy, którą Kontrola ilości dałaby tym plikom po zmianie. Wiersz zmienia się, gdy
-legenda wpisze w nim co innego: inne Ilości usług, kwotę w ``AS`` albo kolory (``CodesRead`` rachunku). Będzie tak, jak
-wpisał tata, gdy rachunek po zmianie nie oddaje opisu technika: wiersz nie ma różnicy legendy ani, bez kodu, wpisu taty
-w kolumnie z opisu technika albo w ``AS``. Wiersz bez kodu z wpisem taty pokazuje ten wpis jako komórki, w które legenda
-nic nie wpisze.
+każdym pliku, więc liczba różnic legendy, którą Kontrola ilości dałaby tym plikom po zmianie; ``errors_before`` i
+``errors_after`` liczą osobno wiersze z Błędem opisu. Wiersz zmienia się, gdy legenda wpisze w nim co innego: inne
+Ilości usług, kwotę w ``AS`` albo kolory (``CodesOnly`` rachunku; wiersz bez kodów i z Błędem opisu nie dostaje nic).
+Będzie tak, jak wpisał tata, gdy rachunek po zmianie nie oddaje opisu technika: wiersz nie ma różnicy legendy ani
+Błędu opisu, a bez kodów wpisu taty w kolumnie z opisu technika albo w ``AS``. Wiersz bez kodów albo z Błędem opisu
+pokazuje wpis taty jako komórki, w które legenda nic nie wpisze, a wiersz z Błędem opisu także jego powody.
 
-Odpowiedź idzie do przeglądarki taty, więc ma tylko numer wiersza, Kody czynności, komórki i opis technika, który
-rachunek oddaje tylko w wierszu z różnicą; opis przechodzi przez strażnika reguły danych (ADR 0025) z pamięcią pracy
-Centrum, która zna każdą wartość ``ADRES`` i numer Orange przeczytanych plików. Nigdy adresu, numeru zlecenia ani daty
-dziennej.
+Odpowiedź idzie do przeglądarki taty, więc ma tylko numer wiersza, Kody czynności, komórki, powody Błędu opisu bez
+tekstu technika (``problem_text``) i opis technika, który rachunek oddaje tylko w wierszu z różnicą albo z Błędem opisu;
+opis przechodzi przez strażnika reguły danych (ADR 0025) z pamięcią pracy Centrum, która zna każdą wartość ``ADRES`` i
+numer Orange przeczytanych plików. Nigdy adresu, numeru zlecenia ani daty dziennej.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final
 
-from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead, FillColour
+from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesOnly, DescriptionError, DescriptionRead, FillColour, problem_text
 from rozliczenia.centrum.contract import activity_legend as contract
 from rozliczenia.centrum.contract.quantity_rules import PreviewFile
 from rozliczenia.centrum.legend_forms import colour_name
@@ -46,14 +47,16 @@ def legend_preview(
     """Skutek zmiany legendy ``before`` → ``after`` na plikach ``recent`` z Regułami ilości ``rules``; ``names``: litera
     kolumny → nazwa pozycji cennika."""
 
-    changed = changed_as_tata = differences_before = differences_after = more = 0
+    changed = changed_as_tata = differences_before = differences_after = errors_before = errors_after = more = 0
     rows: list[contract.LegendPreviewRow] = []
     for file in recent.files:
         for numbered in file.orders.rows:
             old, new = legend_row_check(numbered.order, before, rules), legend_row_check(numbered.order, after, rules)
             differences_before += len(old.differences)
             differences_after += len(new.differences)
-            if _written(old.codes) == _written(new.codes):
+            errors_before += isinstance(old.read, DescriptionError)
+            errors_after += isinstance(new.read, DescriptionError)
+            if _written(old.read) == _written(new.read):
                 continue
             changed += 1
             if new.description is None:
@@ -70,26 +73,32 @@ def legend_preview(
         changed_as_tata=changed_as_tata,
         differences_before=differences_before,
         differences_after=differences_after,
+        errors_before=errors_before,
+        errors_after=errors_after,
         rows=rows,
         more=more,
     )
 
 
-def _written(codes: CodesRead) -> object:
+def _written(read: DescriptionRead) -> object:
     """To, co legenda wpisze w wierszu Pliku zbiorczego: Ilości usług, kwota w ``AS`` i kolory."""
 
-    return (dict(codes.quantities), codes.amount, dict(codes.fills))
+    if not isinstance(read, CodesOnly):
+        return ({}, 0, {})
+    return (dict(read.quantities), read.amount, dict(read.fills))
 
 
 def _row(
     period: str, number: int, checked: LegendRowCheck, names: Mapping[str, str], forbidden: ForbiddenValues
 ) -> contract.LegendPreviewRow:
     assert checked.description is not None, "wiersz z różnicą legendy ma opis technika"
+    read = checked.read
     return contract.LegendPreviewRow(
         period=period,
         row=number,
         description=guarded(forbidden, checked.description, _PLACE).text,
-        codes=list(dict.fromkeys(found.code for found in (*checked.codes.found, *checked.codes.out_of_range))),
+        codes=list(dict.fromkeys(found.code for found in read.found)) if isinstance(read, CodesOnly) else [],
+        problems=list(dict.fromkeys(problem_text(problem) for problem in read.problems)) if isinstance(read, DescriptionError) else [],
         cells=[
             *(_cell(difference, names) for difference in checked.differences),
             *(_cell(ValueDifference(column, 0, tata), names) for column, tata in checked.entry),
