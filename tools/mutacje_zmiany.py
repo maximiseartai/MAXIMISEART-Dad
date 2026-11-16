@@ -29,9 +29,10 @@ Biegnie każde cofnięcie fragmentu i najwyżej jedna inna mutacja na linię (``
 drzewa składni linii, czyli ostatnia, którą daje przejście drzewa wszerz (``ast.walk``), a z kilku na tym samym węźle
 ostatnia z nich. Psuje ona najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii;
 ogólny skutek fragmentu sprawdza już jego cofnięcie. Samo cofnięcie fragmentu (``Revert.HUNK``) biegnie po innych
-mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``), gdy każdą inną mutację części,
-która psuje jego linię, wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama brama typów). Predykat napisu biegnie
-tylko na linii bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
+mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``) tylko wtedy, gdy każda zmieniona
+linia kodu fragmentu (bez pustych i samych komentarzy) ma własną mutację, która biegła w tej części, a każdą taką
+mutację wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama brama typów). Predykat napisu biegnie tylko na linii
+bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
@@ -202,7 +203,7 @@ class Revert(enum.Enum):
 
     NONE = enum.auto()
     MERGED = enum.auto()  # kod innej mutacji, który cofa też fragment: biegnie zawsze, pod jej opisem
-    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie po innych mutacjach części, gdy nie jest ``_dominated``
+    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie po innych mutacjach części, chyba że jest ``_dominated``
 
 
 @dataclass(frozen=True)
@@ -298,6 +299,12 @@ def _rows(text: str) -> list[str]:
     rows = [f"{row}\n" for row in text.split("\n")]
     rows[-1] = rows[-1][:-1]
     return rows if rows[-1] else rows[:-1]
+
+
+def _code_lines(rows: Sequence[str], lines: Iterable[int]) -> frozenset[int]:
+    """Linie ``lines`` pliku o liniach ``rows`` z kodem: komentarz i pusta linia nie biegną na żadnym systemie."""
+
+    return frozenset(line for line in lines if line <= len(rows) and rows[line - 1].strip() and not rows[line - 1].lstrip().startswith("#"))
 
 
 def changed_lines(hunks: Sequence[Hunk]) -> frozenset[int]:
@@ -675,8 +682,7 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
         last = hunk.start + hunk.count - 1
         span = f"{hunk.start}" if hunk.count == 1 else f"{hunk.start}–{last}"
         lines = changed_lines([hunk])
-        # Komentarz i pusta linia nie biegną na żadnym systemie, więc nie decydują, czyj jest fragment.
-        code = {line for line in lines if line <= len(rows) and rows[line - 1].strip() and not rows[line - 1].lstrip().startswith("#")}
+        code = _code_lines(rows, lines)  # komentarz i pusta linia nie decydują, czyj jest fragment
         add(lines, hunk.start, f"zmiana linii {span} cofnięta do bazy", mutated, other_system=bool(code) and code <= other_lines, revert=Revert.HUNK)
     # Sortowanie stabilne: w linii zostaje kolejność przejścia drzewa wszerz, z której wybiera ``selected``.
     return sorted(found.values(), key=lambda mutant: mutant.line)
@@ -685,8 +691,8 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
 def selected(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:
     """Mutacje, które biegną w CI i liczy plan: każde cofnięcie fragmentu i ostatnia inna mutacja każdej linii.
 
-    Samo cofnięcie fragmentu plan liczy zawsze, choć ``_mutate`` go nie uruchamia, gdy każdą inną mutację jego linii
-    wykrył już test (``_dominated``).
+    Samo cofnięcie fragmentu plan liczy zawsze, choć ``_mutate`` go nie uruchamia, gdy każda zmieniona linia kodu
+    fragmentu ma własną mutację wykrytą już testem (``_dominated``).
 
     Predykat napisu biegnie tylko na linii bez innej mutacji: ``x in y`` → ``y.startswith(x)`` przy ``y`` będącym
     zbiorem albo słownikiem tylko rzuca ``AttributeError``, a wypierał ``bez członu`` i stały warunek (#486
@@ -810,12 +816,17 @@ def _allowance(allowed: Mapping[int, Allowance], mutant: Mutant, today: datetime
     return allowance if allowance is not None and allowance.until >= today else None
 
 
-def _dominated(revert: Mutant, found: Iterable[Mutant], killed: set[Mutant]) -> bool:
-    """Czy samo cofnięcie fragmentu nic nie dowiedzie: każdą inną mutację części, która psuje jego linię, wykrył test.
-    Bez takiej mutacji w części (także gdy reszta fragmentu leży w innej części) cofnięcie biegnie."""
+def _dominated(revert: Mutant, text: str, ran: Iterable[Mutant], killed: set[Mutant]) -> bool:
+    """Czy samo cofnięcie fragmentu pliku o treści ``text`` nic nie dowiedzie: każda zmieniona linia kodu fragmentu ma
+    własną mutację (``Mutant.line``) tego pliku spośród ``ran``, które biegły w tej części, a każdą z nich wykrył test.
 
-    breaking = [mutant for mutant in found if mutant.revert is not Revert.HUNK and mutant.path == revert.path and mutant.lines & revert.lines]
-    return bool(breaking) and all(mutant in killed for mutant in breaking)
+    Linię bez takiej mutacji (bez innej mutacji, z mutacją pod wyjątkiem albo innego systemu, z mutacją w innej części)
+    sprawdza tylko cofnięcie, więc ono biegnie.
+    """
+
+    code = _code_lines(_rows(text), revert.lines)
+    own = [mutant for mutant in ran if mutant.path == revert.path and mutant.line in code]
+    return bool(code) and {mutant.line for mutant in own} == code and all(mutant in killed for mutant in own)
 
 
 def _part(text: str) -> Czesc:
@@ -1059,7 +1070,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
     # takich mutacji jest kilka, więc biegną po jednej, każda z workerami xdist.
     # Samo cofnięcie fragmentu biegnie po innych mutacjach części, bo dopiero ich werdykty testów mówią, czy jest
-    # ``_dominated`` (ADR 0021: 1219 takich cofnięć w 12 nocach dało tylko szum, a kosztowało 8,6% czasu mutacji).
+    # ``_dominated`` (ADR 0021: takie cofnięcia w 12 nocach dały tylko szum, a kosztowały 6,2% czasu mutacji).
     others = [entry for entry in narrow if entry[0].revert is not Revert.HUNK]
     reverts = [entry for entry in narrow if entry[0].revert is Revert.HUNK]
     killed: set[Mutant] = set()  # wykryte przez test, nie przez bramę typów
@@ -1071,9 +1082,9 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         if second:
             queued = []
             for mutant, mutation, later in reverts:
-                if _dominated(mutant, found, killed):
+                if _dominated(mutant, texts[mutant.path], [other for other, _, _ in others], killed):
                     dominated += 1
-                    print(f"ZDOMINOWANA: {mutation.name} → każdą inną mutację jej linii wykrył test", flush=True)
+                    print(f"ZDOMINOWANA: {mutation.name} → każda linia kodu fragmentu ma własną mutację, którą wykrył test", flush=True)
                 else:
                     queued.append((mutant, mutation, later))
         ran += queued

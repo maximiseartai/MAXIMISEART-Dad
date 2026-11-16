@@ -265,7 +265,7 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
 
 # Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez
 # niej. Cofnięcie fragmentu z użyciem zostawiłoby nieużyty import (ruff F401), ale nie biegnie, bo test wykrywa
-# ``return None`` w jego linii, a ``return wynik`` → ``return None`` zostawia nieużytą zmienną (F841) i przeżywa jak przed
+# ``return None`` w jedynej linii kodu fragmentu, a ``return wynik`` → ``return None`` zostawia nieużytą zmienną (F841) i przeżywa jak przed
 # bramą (#703, runda 1 przeglądu #721).
 GATE_BASE = MATCH_BASE + "\n\ndef wciety(tekst: str) -> str:\n    return tekst\n\n\ndef pierwszy(teksty: list[str]) -> str | None:\n    return None\n"
 GATE_CHANGED = (
@@ -282,9 +282,9 @@ GATE_TEST = MATCH_TEST.replace("import Kolor, nazwa", "import Kolor, nazwa, pier
 def test_brama_typow_z_ruff_i_mypy_liczy_blad_mutacji_operatora_a_cofniecie_do_bazy_przezywa(tmp_path: Path) -> None:
     """Jedyny test z prawdziwymi ruff i mypy: ich JSON i kody, które brama liczy (``silnik_mutacji.wrong``).
 
-    Cofnięcie, na którym brama by padła (F821 jak #671), przeżywa, bo brama go nie sprawdza, a cofnięć ``exhaustive-match``
-    jak #674 i F401 nie ma, bo inną mutację ich linii wykrył test; ``return JEDEN`` → ``return None`` w funkcji ``-> int``,
-    której nie sprawdza test, łapie tylko mypy.
+    Cofnięcia, na których brama by padła (F821 jak #671, ``exhaustive-match`` jak #674), przeżywają, bo brama ich nie
+    sprawdza, a cofnięcia F401 nie ma, bo jedyna linia kodu jego fragmentu ma własną mutację wykrytą testem;
+    ``return JEDEN`` → ``return None`` w funkcji ``-> int``, której nie sprawdza test, łapie tylko mypy.
     """
 
     record = tmp_path / "zapis" / "czesc.json"
@@ -302,6 +302,7 @@ def test_brama_typow_z_ruff_i_mypy_liczy_blad_mutacji_operatora_a_cofniecie_do_b
     survived = [_named(entry) for entry in json.loads(record.read_text(encoding="utf-8"))["przezyte"]]
     assert {
         "src/rozliczenia/inny.py:1 zmiana linii 1–3 cofnięta do bazy",
+        "src/rozliczenia/warunek.py:16 zmiana linii 16–17 cofnięta do bazy",
         "src/rozliczenia/warunek.py:26 `return wynik` → `return None`",
     } <= set(survived), done.stdout
 
@@ -356,7 +357,7 @@ def test_mutacja_ktora_wiesza_test_do_limitu_pytest_timeout_jest_wykryta_a_nie_p
     hang = "→ Failed: Timeout (>3.0s) from pytest-timeout. (liczona jako wykryta: pytest-timeout czerwieni test w CI)"
     assert [line for line in done.stdout.splitlines() if " → " in line] == [
         f"ZAWIESZENIE: src/rozliczenia/warunek.py:2 bez `b` w `and` {hang}",
-        "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → każdą inną mutację jej linii wykrył test",
+        "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → każda linia kodu fragmentu ma własną mutację, którą wykrył test",
     ], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert (written["kod"], written["wynik"], written["przezyte"]) == (0, "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0", [])
@@ -935,7 +936,7 @@ def test_cofniecie_fragmentu_pliku_crlf_rowne_innej_mutacji_biegnie_jako_ta_muta
 
     zakres = ZakresMutacji.od(start, repo)
 
-    assert sorted((mutant.description, mutant.revert) for mutant in zakres.mutanty) == [("krotka bez `b`", False), ("krotka bez `c`", True)]
+    assert sorted((mutant.description, mutant.revert) for mutant in zakres.mutanty) == [("krotka bez `b`", Revert.NONE), ("krotka bez `c`", Revert.MERGED)]
 
 
 def test_plik_kodu_z_polska_litera_w_nazwie_dostaje_fragmenty_zacommitowany_i_niesledzony(tmp_path: Path) -> None:
@@ -990,8 +991,8 @@ REVERT = "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"
 def test_cofniecie_fragmentu_nie_biegnie_gdy_kazda_inna_mutacje_jego_linii_w_czesci_wykryl_test(
     tmp_path: Path, part: str, verdict: str, dominated: int
 ) -> None:
-    # 12 nocy 9–15.11: przy każdej innej mutacji linii wykrytej testem samo cofnięcie przeżyło 102 razy na 1219, zawsze przy
-    # zmianie, która nic nie zmieniała. Część 2/2 ma samo cofnięcie, bez mutacji ``and``, więc cofnięcie biegnie.
+    # Linia 2 ma własną mutację ``and``, którą test wykrywa. Część 2/2 ma samo cofnięcie, bez tej mutacji, więc cofnięcie
+    # biegnie.
     done = _run(_repo(tmp_path, ALL_CASES), "--czesc", part)
 
     assert done.returncode == 0, done.stdout + done.stderr
@@ -1009,6 +1010,43 @@ def test_cofniecie_fragmentu_biegnie_choc_ta_sama_linia_innego_pliku_ma_mutacje_
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert (_caught(done, "ZDOMINOWANA"), _caught(done, "NIEWYKRYTA")) == ([REVERT], ["src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy"]), done.stdout
+
+
+TWO_LINES_BASE = "def oba(a: bool, b: bool, c: bool) -> bool:\n    x = a\n    return x\n"
+TWO_LINES_CHANGED = "def oba(a: bool, b: bool, c: bool) -> bool:\n    x = a and b\n    # bez c wynik jest za szeroki\n    return x and c\n"
+TWO_LINES_TEST = "from rozliczenia.warunek import oba\n\n\ndef test_oba() -> None:\n    assert oba(True, True, True) is True\n    assert oba(True, False, True) is False\n"
+CONSTANT_BASE = 'def f(a: bool, b: bool) -> str:\n    prog = "stary"\n    return prog if a and b else ""\n'
+
+
+@pytest.mark.parametrize(
+    ("test", "changed", "base", "verdict"),
+    [
+        (TWO_LINES_TEST + "    assert oba(True, True, False) is False\n", TWO_LINES_CHANGED, TWO_LINES_BASE, "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2–4"),
+        (TWO_LINES_TEST, TWO_LINES_CHANGED, TWO_LINES_BASE, "WYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2–4"),
+        (
+            'from rozliczenia.warunek import f\n\n\ndef test_f() -> None:\n    assert f(True, True)\n    assert f(True, False) == ""\n',
+            CONSTANT_BASE.replace('"stary"', '"nowy"').replace("if a and b", "if (a and b)"),
+            CONSTANT_BASE,
+            "NIEWYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2–3",
+        ),
+        (
+            "from rozliczenia.warunek import TEKST\n\n\ndef test_tekst() -> None:\n    assert TEKST\n",
+            'TEKST = """\n# nowy\n"""\n',
+            'TEKST = """\n# stary\n"""\n',
+            "NIEWYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2",
+        ),
+    ],
+    ids=["kazda-linia-kodu-ma-wykryta-mutacje", "mutacja-jednej-linii-przezyla", "linia-bez-wlasnej-mutacji", "tylko-linia-napisu-jak-komentarz"],
+)
+def test_samo_cofniecie_fragmentu_kilku_linii_nie_biegnie_tylko_gdy_kazda_jego_linia_kodu_ma_wlasna_mutacje_wykryta_testem(
+    tmp_path: Path, test: str, changed: str, base: str, verdict: str
+) -> None:
+    # Przegląd #1975 r3 W2: zmiany stałej ``prog`` w linii bez własnej mutacji nie sprawdza nic poza cofnięciem, choć test
+    # wykrywa ``bez `b` w `and` `` w drugiej linii fragmentu. Komentarz w środku fragmentu nie potrzebuje mutacji, a fragment
+    # bez żadnej linii kodu (linia napisu, która wygląda jak komentarz) zostaje z cofnięciem.
+    done = _run(_repo(tmp_path, test, changed, base))
+
+    assert [line.partition(" cofnięta do bazy")[0] for line in done.stdout.splitlines() if " cofnięta do bazy" in line] == [verdict], done.stdout
 
 
 TYPE_GATE_ONLY_BASE = (
