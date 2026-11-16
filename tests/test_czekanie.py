@@ -393,7 +393,13 @@ def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
 
 def _configured_timeout() -> float:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    (timeout,) = [hook["timeout"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    (timeout,) = [
+        hook["timeout"]
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "czekanie.py" in hook["command"]
+    ]
     return float(timeout)
 
 
@@ -499,7 +505,13 @@ def test_hook_bez_stdin_przechodzi() -> None:
 
 def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    commands = [hook["command"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    commands = [
+        hook["command"]
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "czekanie.py" in hook["command"]
+    ]
     tool_input = {"command": PGREP_LOOPS[0], "run_in_background": False}
     return [
         subprocess.run(
