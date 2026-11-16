@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import codecs
 import copy
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta, timezone
 import email
 from email.message import EmailMessage, Message
@@ -869,12 +869,18 @@ ROZLICZENIE = "Rozliczenie 03_09_11_2026 - Paweł Łączyński.xlsx"
 XLSX = b"PK\x03\x04 syntetyczny skoroszyt"
 
 
-def z_zalacznikiem(uid: int, nazwa: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE_O, *, centrum: bool = False) -> AtrapaMail:
-    """Mail w „Wysłanych” z treścią i plikiem ``nazwa`` (RFC 2231), ze znakiem Centrum albo bez (tata wysłał go sam)."""
+def z_zalacznikiem(
+    uid: int, nazwa: str, do: str = WYKONAWCA, kiedy: datetime = WYSLANE_O, *, centrum: bool = False, kopie: Sequence[tuple[str, str]] = ()
+) -> AtrapaMail:
+    """Mail w „Wysłanych” z treścią i plikiem ``nazwa`` (RFC 2231), ze znakiem Centrum albo bez (tata wysłał go sam), z
+    nagłówkami kopii ``kopie`` (nazwa, adresaci); ``do`` pusty: mail bez ``To``."""
 
     message = EmailMessage()
     message["From"] = SKRZYNKA
-    message["To"] = do
+    if do:
+        message["To"] = do
+    for naglowek, adresaci in kopie:
+        message[naglowek] = adresaci
     message["Subject"] = "Rozliczenie za 3–9 listopada 2026"
     message["Date"] = format_datetime(kiedy)
     if centrum:
@@ -915,6 +921,24 @@ def test_zalaczniki_z_wyslanych_czyta_tylko_z_naglowkow_bez_tresci_i_bez_zmiany_
     assert "BODYSTRUCTURE" in fetched and "BODY.PEEK[2.MIME]" in fetched
     assert not re.search(r"BODY\.PEEK\[(?:\d+|TEXT)?\]", fetched), "treści i bajtów załącznika port nie pobiera"
     assert atrapa.flags == {101: set(), 102: set(), 103: set(), 104: set()}
+
+
+def test_zalacznik_wyslany_w_kopii_albo_ukrytej_kopii_ma_tez_tych_adresatow(tmp_path: Path) -> None:
+    """Tata wysyła rozliczenie ręcznie także w ``Cc`` albo ``Bcc`` (Gmail zostawia ``Bcc`` w kopii w „Wysłanych”), więc
+    adresaci pliku to ``To``, ``Cc`` i ``Bcc`` razem; inaczej plik zostałby „do wysłania” i poszedł drugi raz (#2029 D1)."""
+
+    sent = [
+        z_zalacznikiem(101, ROZLICZENIE, do="biuro@przyklad.invalid", kopie=[("Cc", f"Paweł <{WYKONAWCA}>")]),
+        z_zalacznikiem(102, ROZLICZENIE, do="", kopie=[("Bcc", f"{WYKONAWCA}, ewa@przyklad.invalid")]),
+    ]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, sent=sent) as atrapa:
+        outcome = port(dostep(tmp_path), atrapa).sent_attachments(date(2026, 11, 8))
+
+    assert isinstance(outcome, SentAttachments)
+    assert [attachment.recipients for attachment in outcome.attachments] == [
+        frozenset({SenderAddress("biuro@przyklad.invalid"), SenderAddress(WYKONAWCA)}),
+        frozenset({SenderAddress(WYKONAWCA), SenderAddress("ewa@przyklad.invalid")}),
+    ]
 
 
 def test_mail_z_rozliczeniem_idzie_przez_smtp_z_plikiem_xlsx_i_znakiem_centrum_i_wraca_z_wyslanych(tmp_path: Path) -> None:

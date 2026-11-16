@@ -171,7 +171,7 @@ class SentReminders:
 
 @dataclass(frozen=True)
 class SentAttachment:
-    """Plik załączony do maila z folderu „Wysłane”: nazwa pliku, adresaci z ``To``, chwila przyjęcia przez Gmaila ze
+    """Plik załączony do maila z folderu „Wysłane”: nazwa pliku, adresaci z ``To``, ``Cc`` i ``Bcc``, chwila przyjęcia przez Gmaila ze
     strefą i to, czy mail ma znak Centrum (``CENTRUM_MARK``); ``False``: tata wysłał go sam z tej skrzynki."""
 
     name: str
@@ -697,6 +697,11 @@ def _internal_moment(prefix: bytes) -> datetime:
     return datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
 
 
+_SENT_TO: Final = ("To", "Cc", "Bcc")
+"""Nagłówki adresatów maila z „Wysłanych”, którym poszedł jego plik: tata wysyła rozliczenie ręcznie także w kopii albo
+w ukrytej kopii, a Gmail zostawia ``Bcc`` w kopii maila w „Wysłanych”."""
+
+
 def _attachments(response: Mapping[bytes, FetchValue], names: tuple[str, ...], sent_at: datetime) -> list[SentAttachment]:
     """Załączniki jednego maila z jego nagłówka (``HEADER``) i nagłówków części (``filename`` z
     ``Content-Disposition``, a bez niego ``name`` z ``Content-Type``, po RFC 2231 i RFC 2047); część bez nazwy pliku
@@ -707,7 +712,7 @@ def _attachments(response: Mapping[bytes, FetchValue], names: tuple[str, ...], s
     parts = [response.get(f"BODY[{name}]".encode("ascii")) for name in names[1:]]
     try:
         message = email.message_from_bytes(header if isinstance(header, bytes) else b"", policy=email.policy.default)
-        pairs = getaddresses([str(value) for value in message.get_all("To", [])])
+        pairs = getaddresses([str(value) for field in _SENT_TO for value in message.get_all(field, [])])
         marked = str(message.get(CENTRUM_MARK[0]) or "").strip() == CENTRUM_MARK[1]
         file_names = [
             email.message_from_bytes(part, policy=email.policy.default).get_filename() if isinstance(part, bytes) else None
