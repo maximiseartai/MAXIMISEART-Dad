@@ -413,6 +413,112 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
     }), errors
 
 
+# Fixtura modułu zmienia w setupie każdy rodzaj stanu procesu. Czysta sprząta go na końcu, więc nie wywraca żadnego
+# testu, także gdy zmienia katalog roboczy; brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a
+# plugin przywraca katalog i środowisko, zanim zacznie się sąsiad. Wątek testu, który zamyka plik zaraz po teście, nie
+# zostawia stanu.
+_RODZAJ_FIXTURY: Final = """
+import os
+import subprocess
+import sys
+import threading
+
+import pytest
+
+TRZYMANE = []
+
+
+def zmienia_kazdy_rodzaj(katalog, nazwa):
+    plik = open(katalog / f"{nazwa}.bin", "wb")
+    potomek = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+    stop = threading.Event()
+    watek = threading.Thread(target=stop.wait, name=f"watek-{nazwa}", daemon=True)
+    watek.start()
+    return plik, potomek, stop, watek
+"""
+_RODZAJE_FIXTUR: Final = {
+    "test_a_czysta.py": _RODZAJ_FIXTURY
+    + """
+
+@pytest.fixture(scope="module")
+def czysta_modulu(tmp_path_factory):
+    katalog = tmp_path_factory.mktemp("czysta")
+    plik, potomek, stop, watek = zmienia_kazdy_rodzaj(katalog, "czysta")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.chdir(katalog)
+        patch.setenv("ZMIENNA_CZYSTEJ", "1")
+        yield
+    stop.set()
+    watek.join()
+    potomek.stdin.close()
+    potomek.wait()
+    plik.close()
+
+
+def test_pierwszy_z_czysta(czysta_modulu):
+    assert os.environ["ZMIENNA_CZYSTEJ"] == "1"
+
+
+def test_drugi_z_czysta(czysta_modulu):
+    assert os.getcwd().endswith("czysta0")
+
+
+def test_watek_zamyka_plik_zaraz_po_tescie(tmp_path):
+    plik = open(tmp_path / "krotki.bin", "wb")
+    zamknij = threading.Event()
+
+    def zamyka():
+        zamknij.wait(0.3)
+        plik.close()
+
+    threading.Thread(target=zamyka, daemon=True).start()
+""",
+    "test_b_brudna.py": _RODZAJ_FIXTURY
+    + """
+
+@pytest.fixture(scope="module")
+def brudna_modulu(tmp_path_factory):
+    katalog = tmp_path_factory.mktemp("brudna")
+    TRZYMANE.append(zmienia_kazdy_rodzaj(katalog, "brudna"))
+    os.chdir(katalog)
+    os.environ["ZMIENNA_BRUDNEJ"] = "1"
+    yield
+
+
+def test_pierwszy_z_brudna(brudna_modulu):
+    pass
+
+
+def test_drugi_z_brudna(brudna_modulu):
+    pass
+""",
+    "test_c_sasiad.py": """
+import os
+
+
+def test_sasiad_ma_katalog_i_srodowisko_sprzed_fixtury(request):
+    assert (os.getcwd(), os.environ.get("ZMIENNA_BRUDNEJ")) == (str(request.config.invocation_params.dir), None)
+""",
+}
+
+
+def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(tmp_path: Path) -> None:
+    errors = _sesja(tmp_path, _RODZAJE_FIXTUR)
+    dirty = _zostawione(errors.pop("test_drugi_z_brudna"))
+    kinds = (
+        *(("brudna.bin otwarty po teście", "potok", "proces potomny") if sys.platform != "win32" else ()),
+        "wątek watek-brudna żyje 1 s po teście",
+        "katalog roboczy",
+        "zmienna środowiska ZMIENNA_BRUDNEJ zmieniona",
+    )
+
+    assert (errors, [kind for kind in kinds if kind in dirty], dirty.count("fixtura brudna_modulu zasięgu module")) == (
+        {name: "" for name in errors},
+        list(kinds),
+        len(kinds),
+    ), dirty
+
+
 _LUKI_CONFTEST: Final = _CONFTEST + """
 
 import threading
@@ -447,6 +553,14 @@ ZNANE_LUKI: Final = {
     "proces potomny zakończony, na który nikt nie czekał (zombie)": """
     import subprocess, sys
     TRZYMANE.append(subprocess.Popen([sys.executable, "-c", ""]))
+""",
+    "maska uprawnień nowych plików (umask) zmieniona bez przywrócenia": """
+    import os
+    os.umask(0o077)
+""",
+    "dyspozycja sygnału zmieniona bez przywrócenia": """
+    import signal
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 """,
     "plik w katalogu roboczym procesu, czyli w drzewie repozytorium (stan wspólny workerów porównuje sesja)": """
     from pathlib import Path

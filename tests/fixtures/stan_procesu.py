@@ -1,10 +1,10 @@
 """Stan procesu workera, który test zostawił następnemu testowi w tym samym workerze (#1923, #1783).
 
 Pod xdist testy jednego workera dzielą proces, więc to, co test zostawi w procesie, działa potem w oknie innego testu:
-plik w śmieciach zamyka finalizer ``gc``, a jego ``ResourceWarning`` wywraca sąsiada, który łapie ostrzeżenia (#1923),
-a wątek zegara śpi w podmianie snu sąsiada (#1783). Który test jest sąsiadem, zmienia każdy nowy podział plików na
-zadania CI, więc plugin (``pytest_plugins`` w ``tests/conftest.py``) nie czeka na sąsiada: porównuje stan procesu po
-pełnym teardownie testu ze stanem sprzed jego setupu, a test, po którym się różni, kończy się błędem z tym, co zostawił.
+plik w śmieciach zamyka finalizer ``gc``, a jego ``ResourceWarning`` wywraca sąsiada, który łapie ostrzeżenia (#1923), a
+wątek zegara śpi w podmianie snu sąsiada (#1783). Który test jest sąsiadem, zmienia każdy nowy podział plików na zadania
+CI, więc plugin (``pytest_plugins`` w ``tests/conftest.py``) nie czeka na sąsiada: porównuje stan procesu po pełnym
+teardownie testu ze stanem sprzed jego setupu, a test, po którym się różni, kończy się błędem z tym, co zostawił.
 
 Stan to to, co proces trzyma poza stertą Pythona, czyli to, czym działa dalej bez kodu testu:
 
@@ -13,28 +13,28 @@ Stan to to, co proces trzyma poza stertą Pythona, czyli to, czym działa dalej 
 - procesy potomne, które żyją jeszcze ``POTOMEK_S`` po teardownie;
 - katalog roboczy i zmienne środowiska.
 
-Zasób, który powstał w setupie fixtury zasięgu modułu, klasy, pakietu albo sesji, należy do niej, a nie do testu: plugin
-sprawdza go w chwili jej końca, czyli w teardownie testu, po którym się skończyła, albo w setupie następnego, gdy
-fixtura z ``params`` zmienia parametr, a błąd ma nazwę fixtury. Od końca ciała testu i od początku końca takiej fixtury
-do sprawdzenia samoczynny ``gc`` stoi (``_hold_gc``), więc plik w śmieciach nie zamyka się w oknie innego testu i nie
-znika przed sprawdzeniem. Zasób na całe życie procesu workera (``_ZASOBY_PROCESU``) startuje przed pierwszym testem,
-więc jest w stanie sprzed każdego testu.
+Każdy rodzaj stanu idzie jedną drogą różnicy (``_roznica``): zasób, który przybył, albo wartość (katalog roboczy,
+zmienna środowiska) inna niż oczekiwana. Zasób i wartość, które zmienił setup fixtury zasięgu modułu, klasy, pakietu
+albo sesji, należą do niej, a nie do testu: plugin sprawdza je w chwili jej końca wobec stanu sprzed jej setupu, czyli w
+teardownie testu, po którym się skończyła, albo w setupie następnego, gdy fixtura z ``params`` zmienia parametr, a błąd
+ma nazwę fixtury. Od końca ciała testu i od początku końca takiej fixtury do sprawdzenia samoczynny ``gc`` stoi
+(``_hold_gc``), więc plik w śmieciach nie zamyka się w oknie innego testu i nie znika przed sprawdzeniem. Zasób na całe
+życie procesu workera (``_ZASOBY_PROCESU``) startuje przed pierwszym testem, więc jest w stanie sprzed każdego testu.
 
-Po błędzie plugin przywraca katalog roboczy i środowisko, więc błąd ma sprawca, a nie każdy następny test workera.
+Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
 Granica porównania to stan poza stertą: zmienna modułu, atrybut podmieniony bez ``monkeypatch``, pamięć podręczna,
-``sys.modules`` i filtry ostrzeżeń zostają dla sąsiada niewidoczne dla pluginu, tak jak zmiana stanu zasobu starszego
-od testu (zadanie w pętli fixtury sesji). Wątek, który uruchomił wątek starszy od testu, nie należy do linii testu, a
-wątek i potomek, które kończą się w ciągu ``WATEK_S`` i ``POTOMEK_S``, nie wywracają testu; deskryptor, który wątek
-starszy od testu otworzył w trakcie testu i trzyma po nim, liczy się do testu. Gniazdo na macOS nie ma numeru węzła,
-więc gniazdo zamknięte i otwarte znów pod tym samym numerem deskryptora wygląda jak to samo. Na Windows nie ma taniej
-listy deskryptorów ani potomków procesu, więc tam plugin porównuje tylko wątki, katalog roboczy i środowisko. Stan
-wspólny wszystkich workerów, czyli pliki w drzewie repozytorium, porównuje sesja w ``tests/conftest.py``
-(``tests/fixtures/drzewo_repo.py``), bo plik w drzewie mógł zapisać każdy worker. Próbki granicy to ``ZNANE_LUKI`` w
-``tests/test_stan_procesu.py``.
-"""
+``sys.modules``, filtry ostrzeżeń, a poza stertą maska ``umask`` i dyspozycje sygnałów zostają dla sąsiada niewidoczne
+dla pluginu, tak jak zmiana stanu zasobu starszego od testu (zadanie w pętli fixtury sesji). Wątek, który uruchomił
+wątek starszy od testu, nie należy do linii testu, a wątek i potomek, które kończą się w ciągu ``WATEK_S`` i
+``POTOMEK_S``, nie wywracają testu; deskryptor, który wątek starszy od testu otworzył w trakcie testu i trzyma po nim,
+liczy się do testu. Gniazdo na macOS nie ma numeru węzła, więc gniazdo zamknięte i otwarte znów pod tym samym numerem
+deskryptora wygląda jak to samo. Na Windows nie ma taniej listy deskryptorów ani potomków procesu, więc tam plugin
+porównuje tylko wątki, katalog roboczy i środowisko. Stan wspólny wszystkich workerów, czyli pliki w drzewie
+repozytorium, porównuje sesja w ``tests/conftest.py`` (``tests/fixtures/drzewo_repo.py``), bo plik w drzewie mógł
+zapisać każdy worker. Próbki granicy to ``ZNANE_LUKI`` w ``tests/test_stan_procesu.py``."""
 
 from __future__ import annotations
 
@@ -95,13 +95,25 @@ class _Deskryptor:
 
 
 @dataclass(frozen=True)
-class Stan:
-    """Stan procesu w jednej chwili; ``linia`` to numer, od którego ``threads_since`` liczy wątki uruchomione potem."""
+class _Potomek:
+    pid: int
 
-    deskryptory: frozenset[_Deskryptor]
-    potomki: frozenset[int]
-    katalog: str
-    srodowisko: frozenset[tuple[str, str]]
+
+_Zasob = _Deskryptor | _Potomek | threading.Thread
+"""Zasób procesu: zostawiony, gdy jest po teście, a nie było go przed nim."""
+
+_KATALOG: Final = ("katalog", "")
+"""Klucz wartości katalogu roboczego; klucz zmiennej środowiska to ``("zmienna", nazwa)``."""
+_Klucz = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class Stan:
+    """Stan procesu w jednej chwili: zasoby, które są, i wartości (katalog roboczy, zmienne środowiska) pod kluczami;
+    ``linia`` to numer, od którego ``threads_since`` liczy wątki uruchomione potem."""
+
+    zasoby: frozenset[_Zasob]
+    wartosci: frozenset[tuple[_Klucz, str]]
     linia: int
 
 
@@ -113,41 +125,31 @@ class _Fixture:
 
 @dataclass
 class _Wlasne:
-    """Zasoby, które powstały w setupie fixtury szerszego zasięgu: od ``przed`` do ``po``."""
+    """Stan, który zmienił setup fixtury szerszego zasięgu, od ``przed`` do ``po``: nowe zasoby i zmienione klucze."""
 
     fixture: _Fixture
     przed: Stan
     po: Stan
 
-    def deskryptory(self) -> frozenset[_Deskryptor]:
-        return self.po.deskryptory - self.przed.deskryptory
+    def zasoby(self) -> frozenset[_Zasob]:
+        return self.po.zasoby - self.przed.zasoby
 
-    def potomki(self) -> frozenset[int]:
-        return self.po.potomki - self.przed.potomki
-
-    def zmienne(self) -> frozenset[str]:
-        return frozenset(name for name, _ in self.po.srodowisko ^ self.przed.srodowisko)
-
-    def watki(self) -> list[threading.Thread]:
-        pozniejsze = set(threads_since(self.po.linia))
-        return [thread for thread in threads_since(self.przed.linia) if thread not in pozniejsze]
+    def klucze(self) -> frozenset[_Klucz]:
+        return frozenset(klucz for klucz, _ in self.po.wartosci ^ self.przed.wartosci)
 
 
 @dataclass
 class Zostawione:
-    """Różnica stanu procesu: to, co test albo fixtura zostawiły po sobie."""
+    """Różnica stanu procesu: zasoby, które test albo fixtura zostawiły, i klucze z wartością inną niż oczekiwana."""
 
-    deskryptory: set[_Deskryptor] = field(default_factory=set)
-    watki: list[threading.Thread] = field(default_factory=list)
-    potomki: set[int] = field(default_factory=set)
-    katalog: tuple[str, str] | None = None
-    zmienne: set[str] = field(default_factory=set)
+    zasoby: set[_Zasob] = field(default_factory=set)
+    klucze: set[_Klucz] = field(default_factory=set)
 
     def __bool__(self) -> bool:
-        return bool(self.deskryptory or self.watki or self.potomki or self.katalog or self.zmienne)
+        return bool(self.zasoby or self.klucze)
 
 
-# Stan procesu, bo pod xdist każdy worker ma własne testy i fixtury: stan przed setupem bieżącego testu, zasoby żywych
+# Stan procesu, bo pod xdist każdy worker ma własne testy i fixtury: stan przed setupem bieżącego testu, zmiany żywych
 # fixtur szerszego zasięgu, fixtury skończone od ostatniego sprawdzenia i stan samoczynnego gc sprzed jego wstrzymania.
 _przed_testem: list[Stan] = []
 _wlasne: dict[pytest.FixtureDef[object], _Wlasne] = {}
@@ -243,23 +245,27 @@ def _check(kiedy: str) -> None:
     skonczone = list(_skonczone)
     _skonczone.clear()
     przed = _przed_testem[0] if _przed_testem else stan()
-    zostawione, wlasciciele = _roznica(przed, list(_wlasne.values()), skonczone)
+    teraz = stan()
+    oczekiwane = _oczekiwane(przed, skonczone)
+    zostawione, wlasciciele = _roznica(przed, teraz, oczekiwane, list(_wlasne.values()), skonczone)
     if not zostawione:
         return
-    nazwy = {deskryptor: _opis_deskryptora(deskryptor) for deskryptor in zostawione.deskryptory}  # przed gc
+    nazwy = {zasob: _opis_zasobu(zasob) for zasob in zostawione.zasoby}  # przed gc, który zamyka deskryptor
     zebrane = _po_czekaniu_i_gc(zostawione)
     if not zostawione:
         return
-    opisy = _opisy(zostawione, zebrane, nazwy, wlasciciele, kiedy)
-    # Katalog i środowisko wracają, więc błąd ma tylko sprawca, a nie każdy następny test workera.
-    if zostawione.katalog is not None:
-        os.chdir(zostawione.katalog[0])
-    oczekiwane = _oczekiwane_srodowisko(przed, skonczone)
-    for name in zostawione.zmienne:
-        if (value := oczekiwane.get(name)) is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = value
+    teraz_wartosci = dict(teraz.wartosci)
+    opisy = [
+        nazwy[zasob] + _stan_zasobu(zasob, zebrane) + _czyj(wlasciciele.get(zasob), kiedy)
+        for zasob in sorted(zostawione.zasoby, key=_kolejnosc)
+    ]
+    opisy += [
+        _opis_klucza(klucz, oczekiwane.get(klucz), teraz_wartosci.get(klucz)) + _czyj(wlasciciele.get(klucz), kiedy)
+        for klucz in sorted(zostawione.klucze)
+    ]
+    # Wartości wracają, więc błąd ma tylko sprawca, a nie każdy następny test workera.
+    for klucz in zostawione.klucze:
+        _ustaw(klucz, oczekiwane.get(klucz))
     raise AssertionError(
         "Test albo jego fixtura zostawiły procesowi workera stan, który działa w oknie następnego testu: "
         + "; ".join(opisy)
@@ -269,106 +275,128 @@ def _check(kiedy: str) -> None:
     )
 
 
-def _roznica(
-    przed: Stan, zywe: Iterable[_Wlasne], skonczone: list[_Wlasne]
-) -> tuple[Zostawione, dict[object, _Fixture]]:
-    """To, co od ``przed`` przybyło poza zasobami żywych fixtur szerszego zasięgu, i zasoby ``skonczone`` fixtur, które
-    jeszcze są, każdy z fixturą, do której należy."""
+def _oczekiwane(przed: Stan, skonczone: list[_Wlasne]) -> dict[_Klucz, str]:
+    """Wartości sprzed testu, a klucz fixtury, która się skończyła, z wartością sprzed jej setupu (brak klucza: brak
+    wartości, np. zmiennej środowiska)."""
 
-    teraz = stan()
-    wlasciciele: dict[object, _Fixture] = {}
-    zwolnione_deskryptory: set[_Deskryptor] = set()
-    zwolnione_potomki: set[int] = set()
-    zwolnione_zmienne: set[str] = set()
-    zwolnione_watki: set[threading.Thread] = set()
-    kandydaci = threads_since(przed.linia)
-    for wlasne in zywe:
-        zwolnione_deskryptory |= wlasne.deskryptory()
-        zwolnione_potomki |= wlasne.potomki()
-        zwolnione_zmienne |= wlasne.zmienne()
-        if kandydaci:
-            zwolnione_watki.update(wlasne.watki())
+    oczekiwane = dict(przed.wartosci)
     for wlasne in skonczone:
-        for zasob in (*wlasne.deskryptory(), *wlasne.potomki(), *wlasne.zmienne(), *wlasne.watki()):
-            wlasciciele[zasob] = wlasne.fixture
-    deskryptory = {d for d in teraz.deskryptory - przed.deskryptory if d not in zwolnione_deskryptory}
-    deskryptory |= {d for d in teraz.deskryptory if d in wlasciciele}
-    potomki = {p for p in teraz.potomki - przed.potomki if p not in zwolnione_potomki}
-    potomki |= {p for p in teraz.potomki if p in wlasciciele}
-    oczekiwane = _oczekiwane_srodowisko(przed, skonczone)
-    srodowisko = dict(teraz.srodowisko)
-    zmienne = {
-        name
-        for name in {*oczekiwane, *srodowisko}
-        if name not in _ZMIENNE_PYTEST
-        and srodowisko.get(name) != oczekiwane.get(name)
-        and (name not in zwolnione_zmienne or name in wlasciciele)
-    }
-    watki = [t for t in kandydaci if t not in zwolnione_watki or t in wlasciciele]
-    watki += [t for t in wlasciciele if isinstance(t, threading.Thread) and t.is_alive() and t not in watki]
-    katalog = (przed.katalog, teraz.katalog) if teraz.katalog != przed.katalog else None
-    return Zostawione(deskryptory, watki, potomki, katalog, zmienne), wlasciciele
-
-
-def _oczekiwane_srodowisko(przed: Stan, skonczone: list[_Wlasne]) -> dict[str, str | None]:
-    """Środowisko sprzed testu, a zmienna fixtury, która się skończyła, z wartością sprzed jej setupu."""
-
-    oczekiwane: dict[str, str | None] = dict(przed.srodowisko)
-    for wlasne in skonczone:
-        sprzed_fixtury = dict(wlasne.przed.srodowisko)
-        oczekiwane.update({name: sprzed_fixtury.get(name) for name in wlasne.zmienne()})
+        sprzed_fixtury = dict(wlasne.przed.wartosci)
+        for klucz in wlasne.klucze():
+            if klucz in sprzed_fixtury:
+                oczekiwane[klucz] = sprzed_fixtury[klucz]
+            else:
+                oczekiwane.pop(klucz, None)
     return oczekiwane
 
 
-def _po_czekaniu_i_gc(zostawione: Zostawione) -> set[_Deskryptor]:
+def _roznica(
+    przed: Stan, teraz: Stan, oczekiwane: dict[_Klucz, str], zywe: Iterable[_Wlasne], skonczone: list[_Wlasne]
+) -> tuple[Zostawione, dict[object, _Fixture]]:
+    """Jedna droga dla każdego rodzaju stanu: zasób, który przybył od ``przed``, i klucz z wartością inną niż
+    ``oczekiwane``, poza zmianami żywych fixtur szerszego zasięgu, oraz zmiany ``skonczone`` fixtur, które jeszcze są,
+    każda z fixturą, do której należy. Wątek liczy się tylko z linii testu: wątek, który uruchomił wątek starszy od
+    testu, do testu nie należy."""
+
+    zywe_zasoby: set[_Zasob] = set()
+    zywe_klucze: set[_Klucz] = set()
+    for wlasne in zywe:
+        zywe_zasoby |= wlasne.zasoby()
+        zywe_klucze |= wlasne.klucze()
+    wlasciciele: dict[object, _Fixture] = {}
+    for wlasne in skonczone:
+        for zmiana in (*wlasne.zasoby(), *wlasne.klucze()):
+            wlasciciele[zmiana] = wlasne.fixture
+    nowe = teraz.zasoby - przed.zasoby
+    linia_testu = set(threads_since(przed.linia)) if any(isinstance(z, threading.Thread) for z in nowe) else set()
+    zasoby = {
+        zasob
+        for zasob in nowe
+        if zasob not in zywe_zasoby and (not isinstance(zasob, threading.Thread) or zasob in linia_testu)
+    }
+    zasoby |= {zasob for zasob in teraz.zasoby if zasob in wlasciciele}
+    wartosci = dict(teraz.wartosci)
+    klucze = {
+        klucz
+        for klucz in {*oczekiwane, *wartosci}
+        if wartosci.get(klucz) != oczekiwane.get(klucz) and (klucz not in zywe_klucze or klucz in wlasciciele)
+    }
+    return Zostawione(zasoby, klucze), wlasciciele
+
+
+def _po_czekaniu_i_gc(zostawione: Zostawione) -> set[_Zasob]:
     """Czeka na koniec wątków i potomków, potem zbiera śmieci; zostawia w ``zostawione`` to, co wciąż jest, i zwraca
     deskryptory, które zamknął dopiero ``gc`` (te zostają w ``zostawione``)."""
 
     termin = time.monotonic() + WATEK_S
-    for thread in zostawione.watki:
-        thread.join(max(termin - time.monotonic(), 0))
-    zostawione.watki = [thread for thread in zostawione.watki if thread.is_alive()]
-    wait_for(lambda: not (zostawione.potomki & children()), POTOMEK_S)
-    zostawione.potomki &= children()
-    zostawione.deskryptory &= descriptors()  # zamknięte przez wątek, który właśnie się skończył, nie należą do gc
-    if not zostawione.deskryptory:
+    for zasob in zostawione.zasoby:
+        if isinstance(zasob, threading.Thread):
+            zasob.join(max(termin - time.monotonic(), 0))
+    potomki = {zasob for zasob in zostawione.zasoby if isinstance(zasob, _Potomek)}
+    wait_for(lambda: not potomki & {_Potomek(pid) for pid in children()}, POTOMEK_S)
+    # Deskryptor zamknięty przez wątek, który właśnie się skończył, nie należy do gc.
+    zostawione.zasoby &= _zasoby_procesu()
+    deskryptory = {zasob for zasob in zostawione.zasoby if isinstance(zasob, _Deskryptor)}
+    if not deskryptory:
         return set()
-    zebrane = left_to_gc(zostawione.deskryptory)
-    zostawione.deskryptory &= descriptors() | zebrane
+    zebrane: set[_Zasob] = set(left_to_gc(deskryptory))
+    zostawione.zasoby &= _zasoby_procesu() | zebrane
     return zebrane
 
 
-def _opisy(
-    zostawione: Zostawione,
-    zebrane: set[_Deskryptor],
-    nazwy: dict[_Deskryptor, str],
-    wlasciciele: dict[object, _Fixture],
-    kiedy: str,
-) -> list[str]:
-    def czyj(zasob: object) -> str:
-        if (fixture := wlasciciele.get(zasob)) is None:
-            return ""
-        return f" (fixtura {fixture.name} zasięgu {fixture.scope}, która skończyła się {kiedy})"
+def _kolejnosc(zasob: _Zasob) -> tuple[int, int]:
+    if isinstance(zasob, _Deskryptor):
+        return (0, zasob.numer)
+    if isinstance(zasob, threading.Thread):
+        return (1, 0)
+    return (2, zasob.pid)
 
-    opisy = [
-        f"{nazwy[d]} {'zamknął dopiero gc' if d in zebrane else 'otwarty po teście'}{czyj(d)}"
-        for d in sorted(zostawione.deskryptory, key=lambda d: d.numer)
-    ]
-    opisy += [f"wątek {thread.name} żyje {WATEK_S:g} s po teście{czyj(thread)}" for thread in zostawione.watki]
-    opisy += [f"proces potomny {pid} żyje {POTOMEK_S:g} s po teście{czyj(pid)}" for pid in sorted(zostawione.potomki)]
-    if zostawione.katalog is not None:
-        opisy.append(f"katalog roboczy {zostawione.katalog[0]} → {zostawione.katalog[1]}")
-    opisy += [f"zmienna środowiska {name} zmieniona{czyj(name)}" for name in sorted(zostawione.zmienne)]
-    return opisy
+
+def _opis_zasobu(zasob: _Zasob) -> str:
+    if isinstance(zasob, _Deskryptor):
+        return _opis_deskryptora(zasob)
+    if isinstance(zasob, threading.Thread):
+        return f"wątek {zasob.name}"
+    return f"proces potomny {zasob.pid}"
+
+
+def _stan_zasobu(zasob: _Zasob, zebrane: set[_Zasob]) -> str:
+    if isinstance(zasob, _Deskryptor):
+        return " zamknął dopiero gc" if zasob in zebrane else " otwarty po teście"
+    return f" żyje {WATEK_S if isinstance(zasob, threading.Thread) else POTOMEK_S:g} s po teście"
+
+
+def _opis_klucza(klucz: _Klucz, oczekiwana: str | None, teraz: str | None) -> str:
+    if klucz == _KATALOG:
+        return f"katalog roboczy {oczekiwana} → {teraz}"
+    return f"zmienna środowiska {klucz[1]} zmieniona"
+
+
+def _czyj(fixture: _Fixture | None, kiedy: str) -> str:
+    if fixture is None:
+        return ""
+    return f" (fixtura {fixture.name} zasięgu {fixture.scope}, która skończyła się {kiedy})"
+
+
+def _ustaw(klucz: _Klucz, wartosc: str | None) -> None:
+    if klucz == _KATALOG:
+        if wartosc is not None:
+            os.chdir(wartosc)
+    elif wartosc is None:
+        os.environ.pop(klucz[1], None)
+    else:
+        os.environ[klucz[1]] = wartosc
 
 
 def stan() -> Stan:
-    return Stan(
-        descriptors(),
-        children(),
-        os.getcwd(),
-        frozenset(os.environ.items()),
-        new_line(),
+    wartosci = {("zmienna", name): value for name, value in os.environ.items() if name not in _ZMIENNE_PYTEST}
+    wartosci[_KATALOG] = os.getcwd()
+    return Stan(_zasoby_procesu(), frozenset(wartosci.items()), new_line())
+
+
+def _zasoby_procesu() -> frozenset[_Zasob]:
+    return frozenset(
+        {*descriptors(), *(_Potomek(pid) for pid in children()), *(t for t in threads_since(0) if t.is_alive())}
     )
 
 
