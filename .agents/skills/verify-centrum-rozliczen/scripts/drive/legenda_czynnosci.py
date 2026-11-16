@@ -55,6 +55,15 @@ def _choose(page: Page, form: Locator, field: str, option: str) -> None:
     page.get_by_role("option", name=option, exact=True).click()
 
 
+def _close_saved(page: Page) -> None:
+    """Dad closes the toast „Zapisano · Cofnij”, which stands over the last rows of the list in the window's corner."""
+
+    saved = page.locator("[data-slot=toast]:not([data-ending-style])").filter(has=page.get_by_text("Zapisano", exact=True))
+    expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
+    saved.locator("[data-slot=toast-close]").click()
+    expect(saved).to_have_count(0)
+
+
 def _spellings(run: Run, name: str) -> dict[str, str]:
     codes = run.api(URL, name)["codes"]
     assert isinstance(codes, list)
@@ -159,6 +168,7 @@ def drive(run: Run, page: Page) -> None:
         "a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend",
     )
     run.capture(page, "427-legenda-czynnosci-nowy-kod", full_page=False)
+    _close_saved(page)
 
     run.step(FEATURE, "legenda-usuniecie-cofnij")
     _edit(window, "listwa#m").get_by_role("button", name="Usuń kod", exact=True).click()
@@ -167,10 +177,10 @@ def drive(run: Run, page: Page) -> None:
     window = open_settings(page, "Historia")
     changes = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
     expect(changes.first).to_contain_text("Legenda czynności")
-    expect(changes.first).to_contain_text("Przed: listwa#m")
+    expect(changes.first).to_contain_text("Usunięto: listwa#m")
     run.capture(page, "428-legenda-czynnosci-historia-edytora", full_page=False)
     changes.first.get_by_role("button", name="Cofnij: Legenda czynności", exact=True).click()
-    expect(changes.first).to_contain_text("Po: listwa#m")
+    expect(changes.first).to_contain_text("Dodano: listwa#m")
     run.check(
         "listwa" in _spellings(run, "legenda-czynnosci-po-cofnieciu"),
         "removing a code is a row of Historia, and its „Cofnij” brings the code back",
