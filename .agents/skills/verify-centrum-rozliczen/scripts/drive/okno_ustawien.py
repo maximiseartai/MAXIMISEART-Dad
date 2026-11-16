@@ -20,6 +20,7 @@ SECTIONS = (
     "Przypomnienia",
     "Reguły ilości",
     "Urządzenia",
+    "Legenda czynności",
     "Wzorce",
     "Kopie INTERMAX",
     "Skrzynka raportów",

@@ -1860,10 +1860,12 @@ export const zSentenceText = z.object({
 /**
  * ActivityCodeSentence
  *
- * Kod czynności jako jedno zdanie: zapisy i to, co wyznacza, z kolumnami nazwanymi z cennika.
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
  */
 export const zActivityCodeSentence = z.object({
     id: z.string(),
+    spellings: z.string(),
     sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
 });
 

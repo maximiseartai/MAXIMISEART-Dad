@@ -8,9 +8,11 @@ from rozliczenia.centrum.contract.settings_workers import SettingProblem
 
 
 class ActivityCodeSentence(Model):
-    """Kod czynności jako jedno zdanie: zapisy i to, co wyznacza, z kolumnami nazwanymi z cennika."""
+    """Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+    po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika."""
 
     id: str
+    spellings: str
     sentence: list[SentencePart]
 
 

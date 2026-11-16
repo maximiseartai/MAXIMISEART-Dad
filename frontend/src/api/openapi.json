@@ -3295,6 +3295,10 @@
             "type": "string",
             "title": "Id"
           },
+          "spellings": {
+            "type": "string",
+            "title": "Spellings"
+          },
           "sentence": {
             "items": {
               "oneOf": [
@@ -3321,10 +3325,11 @@
         "type": "object",
         "required": [
           "id",
+          "spellings",
           "sentence"
         ],
         "title": "ActivityCodeSentence",
-        "description": "Kod czynności jako jedno zdanie: zapisy i to, co wyznacza, z kolumnami nazwanymi z cennika."
+        "description": "Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne\npo „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika."
       },
       "ActivityLegendSettings": {
         "properties": {

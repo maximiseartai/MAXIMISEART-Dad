@@ -22,10 +22,23 @@ SHOWN_NUMBER: Final = "#"
 
 
 def code_sentence(code: ActivityCode, names: Mapping[str, str]) -> list[SentencePart]:
-    """Zdanie kodu ``code``; ``names``: litera kolumny → nazwa pozycji cennika (brak albo ``""``: sama litera)."""
+    """Zdanie kodu ``code`` (np. w Historii Ustawień): jego zapisy (``code_spellings``) i to, co wyznacza
+    (``code_effects``)."""
 
-    first, *others = (shown_spelling(spelling) for spelling in code.spellings)
-    head = f"{first} (też {', '.join(others)}): " if others else f"{first}: "
+    return _merged([_text(f"{code_spellings(code)}: "), *code_effects(code, names)])
+
+
+def code_spellings(code: ActivityCode) -> str:
+    """Zapisy kodu dla taty: pierwszy, a inne w nawiasie po „też”."""
+
+    first, *others = (spelling.replace(NUMBER, SHOWN_NUMBER) for spelling in code.spellings)
+    return f"{first} (też {', '.join(others)})" if others else first
+
+
+def code_effects(code: ActivityCode, names: Mapping[str, str]) -> list[SentencePart]:
+    """Co kod wyznacza, od małej litery z kropką na końcu; ``names``: litera kolumny → nazwa pozycji cennika (brak albo
+    ``""``: sama litera)."""
+
     effects: list[list[SentencePart]] = []
     match code.column:
         case FixedColumn(column=column):
@@ -45,17 +58,13 @@ def code_sentence(code: ActivityCode, names: Mapping[str, str]) -> list[Sentence
         [SentenceColumn(kind="column", letter=fill.column, name=None), _text(f" na {_COLOURS[fill.colour]}")]
         for fill in code.fills
     )
-    parts: list[SentencePart] = [_text(head)]
+    parts: list[SentencePart] = []
     for index, effect in enumerate(effects):
         if index:
             parts.append(_text(", "))
         parts.extend(effect)
     parts.append(_text("."))
     return _merged(parts)
-
-
-def shown_spelling(spelling: str) -> str:
-    return spelling.replace(NUMBER, SHOWN_NUMBER)
 
 
 _COLOURS: Final[Mapping[FillColour, str]] = {FillColour.GREEN: "zielono", FillColour.RED: "czerwono"}

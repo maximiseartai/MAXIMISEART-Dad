@@ -2527,12 +2527,12 @@ def plain(parts: list[dict[str, Any]]) -> str:
 
 
 def legend_sentences(client: CentrumClient) -> tuple[dict[str, str], dict[str, Any] | None]:
-    """Zdanie każdego kodu sekcji po id i problem pliku."""
+    """Zdanie każdego kodu sekcji po id („zapisy: co wyznacza.”) i problem pliku."""
 
     response = client.get(LEGEND_URL)
     assert response.status_code == 200, response.text
     read = response.json()
-    return {code["id"]: plain(code["sentence"]) for code in read["codes"]}, read["problem"]
+    return {code["id"]: f"{code['spellings']}: {plain(code['sentence'])}" for code in read["codes"]}, read["problem"]
 
 
 def legend_history(client: CentrumClient) -> list[dict[str, Any]]:

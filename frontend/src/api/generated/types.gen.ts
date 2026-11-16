@@ -25,13 +25,18 @@ export type ActivitiesCondition = {
 /**
  * ActivityCodeSentence
  *
- * Kod czynności jako jedno zdanie: zapisy i to, co wyznacza, z kolumnami nazwanymi z cennika.
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
  */
 export type ActivityCodeSentence = {
     /**
      * Id
      */
     id: string;
+    /**
+     * Spellings
+     */
+    spellings: string;
     /**
      * Sentence
      */

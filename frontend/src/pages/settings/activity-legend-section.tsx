@@ -29,6 +29,8 @@ function CodeList({ legend }: { legend: ActivityLegendSettings }) {
         {legend.codes.map((code) => (
           <div key={code.id} role="listitem" className="px-4 py-3">
             <p className="min-w-0 text-sm leading-7 text-pretty">
+              <span className="font-mono font-medium">{code.spellings}</span>
+              {": "}
               <Sentence parts={code.sentence} />
             </p>
           </div>

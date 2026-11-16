@@ -18,7 +18,7 @@ from rozliczenia.activity_legend_file import parse_code
 from rozliczenia.centrum.contract import activity_legend as contract
 from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
-from rozliczenia.centrum.legend_sentences import code_sentence
+from rozliczenia.centrum.legend_sentences import code_effects, code_sentence, code_spellings
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
 from rozliczenia.centrum.settings.activity_legend import LEGEND_SECTION
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -32,7 +32,10 @@ def activity_legend_router(settings: CentrumSettings, price_list: PriceList) -> 
         view = settings.activity_legend()
         names = price_list.names()
         return contract.ActivityLegendSettings(
-            codes=[contract.ActivityCodeSentence(id=code.id, sentence=code_sentence(code, names)) for code in view.legend.codes],
+            codes=[
+                contract.ActivityCodeSentence(id=code.id, spellings=code_spellings(code), sentence=code_effects(code, names))
+                for code in view.legend.codes
+            ],
             problem=None if view.problem is None else SettingProblem(field=view.problem.place, message=view.problem.sentence),
         )
 
