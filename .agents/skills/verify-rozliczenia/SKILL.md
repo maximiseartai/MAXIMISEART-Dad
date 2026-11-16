@@ -1,6 +1,6 @@
 ---
 name: verify-rozliczenia
-description: Verify MAXIMISEART-Dad's processes (Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX) through the machine script `tools/uruchom_proces.py`, each alone and chained from Rejestr zleceń to Rozliczenia pracowników, with synthetic Excel files, workbook side-effect checks, and retained evidence; use after process, workbook, or safety-rule changes.
+description: Verify MAXIMISEART-Dad's processes (Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX) through the machine script `tools/uruchom_proces.py`, each alone and chained from Rejestr zleceń to Rozliczenia pracowników, with synthetic Excel files, workbook side-effect checks, and retained evidence. Use when `tools/skille_dla_zmiany.py` lists it, its E2E or Mutation checks step is red, or someone asks to verify a process.
 pilnuje:
   - src/rozliczenia/__init__.py
   - src/rozliczenia/activity_legend*.py
@@ -95,13 +95,13 @@ written out in each `assert_*` script.
 
 ## What CI runs and what stays local
 
-CI runs `run_verification.py --variant all` in the E2E step of pytest on Windows, and
+CI runs `run_verification.py --variant all` in the E2E step of pytest on Windows (Python 3.13, tata's Python), and
 `quantity_rules_conformance.py` (the `ci:` key) in Mutation checks, and
 `check_quantity_rules_mutations.py` in full CI on `main` and nightly on `main` (`mutacje-nocne.yml`). Run
 them locally only to reproduce a red CI step or the night's issue, or the one variant you work on. What stays
 with you on the Mac, in the background with a wait for their end in the same turn: `preparation-real-templates` and `chain-real-templates`
-on the real Wzorce in `config/` after changes to formatting or template handling, because CI has no
-real Wzorce.
+on the real Wzorce in `config/` after changes to formatting or template handling, because the Wzorce are
+git-ignored and CI has none.
 
 ## Launch
 
@@ -143,9 +143,7 @@ py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant pr
 both period files, including the Rejestr Hiperłącze of every written `NUMER ZL.` cell.
 Its steps are in `features/prepare-collective-file.md`, its counts in `assert_preparation.py`.
 
-When `config/` holds the real Wzorce, also run the local variant on the Mac, in the
-background with a wait for its end in the same turn, after changes to formatting or template handling in
-Przygotowanie pliku zbiorczego:
+When `config/` holds the real Wzorce, run the local variant as „What CI runs and what stays local” says:
 
 ```powershell
 py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant preparation-real-templates
@@ -156,9 +154,8 @@ checks that the copies stay byte-identical, that every written Wiersz danych
 has the Wygląd Wiersza danych in A:M (Rozliczenie wewnętrzne) and A:L (Plik
 zbiorczy): its header's font face and size, left and centre alignment,
 wrapping only for text with a line break, a thin automatic border and no
-stored row height, that every written ADRES has the fill of that order's ADRES in the Rejestr, that every Wzorzec cell value outside the written rows is unchanged, and that `xl/externalLinks/*` stay byte-identical. The
-Wzorce are git-ignored, so CI and `--variant all` leave this variant out. In a
-worktree whose own `config/` holds no Wzorzec the runner reads the main
+stored row height, that every written ADRES has the fill of that order's ADRES in the Rejestr, that every Wzorzec cell value outside the written rows is unchanged, and that `xl/externalLinks/*` stay byte-identical.
+In a worktree whose own `config/` holds no Wzorzec the runner reads the main
 checkout's `config/` itself;
 `--templates-dir` overrides that. Without both Wzorce the runner prints
 `VERIFY SKIP` and exits `3`; report that as a skip, never as a proof.
@@ -208,8 +205,7 @@ pasted day ordered by Wykonawca and hour and the earlier days unchanged, and
 the metrics record. Route and counts are in `features/order-intermax.md`.
 How the write survives Excel, OneDrive and failures is `verify-zapis-intermax`.
 
-CI runs every CI variant in one command in its E2E step on Windows (Python 3.13,
-tata's Python), so run it locally only to reproduce a red E2E step:
+To reproduce a red E2E step, run every CI variant in one command, as CI does:
 
 ```powershell
 py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant all
@@ -218,12 +214,7 @@ py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant al
 On macOS or Linux, replace `py -3` with `.venv/bin/python`; README.md covers
 the `.venv` setup.
 
-In a worktree, create its own `.venv` with `tools/setup_worktree.py` first:
-the main checkout's `.venv` is an editable install of the main checkout's
-`src`, so ad-hoc `python -c` there silently imports `main`'s code.
-
-There is no server, port, login, seed database, or persistent instance. The
-runner's subprocess timeout is 120 seconds; a timed-out child is terminated by
+The runner's subprocess timeout is 120 seconds; a timed-out child is terminated by
 the process handle and the scratch cleanup still runs.
 
 ## Doctor
@@ -251,11 +242,11 @@ py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot"
 ```
 
 The doctor reads only; it does not start the app, alter a workbook, or write
-metrics. Never drive a fixture that this run did not create.
+metrics.
 
 ## Drive
 
-Use `run_verification.py` as the harness entry point. It launches
+`run_verification.py` launches
 `tools/uruchom_proces.py` as a separate process with the same Python
 interpreter as the harness; it never imports `rozliczenia`, uses test-only
 helpers, or calls the settlement engine directly. Every input path is passed
@@ -278,8 +269,7 @@ explicitly, so no run reads `config/`. Its ordered stages are:
 6. Invoke cleanup in `finally`, then run the mechanical self-test against the
    retained evidence.
 7. Compare the steps that ran with the variant's plan (`plan` in `run_verification.py`: the same workflow with every
-   step recorded instead of run) and print `VERIFY FAIL` on a difference; `scripts/workflow_sub_features.py` prints
-   that plan as the `## Sub-features` section of a feature file.
+   step recorded instead of run) and print `VERIFY FAIL` on a difference.
 
 The `preparation` variant follows the same stages with its own primitives:
 `create_preparation_fixture.py`, `preparation_doctor.py`,
@@ -328,23 +318,11 @@ Mutation checks step or the night's issue, or after you rewrite a mutation:
 py -3 .agents\skills\verify-rozliczenia\scripts\check_quantity_rules_mutations.py
 ```
 
-It must end with `MUTACJE OK`. Each mutation breaks one rule of Dad's
-instruction where it lives (a rule or a component in the YAML files, reading
-the cells, P, Q and S in the engine) on a copy of the checkout, and
-`quantity_rules_conformance.py` must
-fail on it: TV devices in Z instead of Q and P once per router, the 45 zł
-surcharge (its amount, the 17:00 threshold, its days, only for a usterka),
-S not as the number of router, TV and extender devices, single components, a known name (`usterka hurt`,
-`wizja`) becoming unknown, pieces from `CZYNNOŚCI`, T from the first word of
-`UMOWA`, `prewencja` without quantities, O from `akt int` in `CZYNNOŚCI`
-only for `nokia` without a router, once per order,
-in any letter case and outside S, spelling
-variants (`XG`, spaces around `*` and before `szt`), and rows without a rule. The check first runs
-unbroken, so a red baseline fails the script instead of counting as detection.
-It took 19 s on a busy Mac for 34 mutations (13.11.2026). CI runs it in the `mutations` job. A mutation
-reported as `NIEAKTUALNA` no longer matches its file: rewrite its
-anchor and replacement so it breaks the same rule in the new code. A new rule
-gets a case in the test and a mutation here.
+It must end with `MUTACJE OK`; its `--help` says where a mutation breaks a rule, and its table which rule each one breaks.
+The check first runs unbroken, so a red baseline fails the script instead of counting as detection.
+It took 19 s on a busy Mac for 34 mutations (13.11.2026).
+A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor and replacement so it breaks the same rule in the new code.
+A new rule gets a case in the test and a mutation here.
 
 ## Evidence
 
@@ -375,8 +353,7 @@ exactly one `DRY-RUN` and one `RUN` record.
 The `intermax` variant leaves `fixture.txt`, `run.json`, `run-metrics.jsonl`
 with one `RUN` record, `assert-run.txt`, `cleanup.txt` and `self-test.txt`.
 
-The proof pairs every JSON result with the filesystem side effects. The
-dry-run still reads workbooks and writes local metrics, so those effects are
+The dry-run still reads workbooks and writes local metrics, so those effects are
 asserted instead of inferred from the mode name. Mocks are not used.
 
 ## Self-test
@@ -414,67 +391,43 @@ already performs both checks and prints `scratch_removed=true`.
 
 ## Helpers
 
+Each helper prints its parameters with `--help`.
+
 - `scripts/run_verification.py` is the one-command orchestrator. Invocation:
   `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py`.
 - `scripts/create_fixture.py` creates the isolated synthetic workbooks.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_fixture.py --root "$runRoot"`.
 - `scripts/doctor.py` performs the read-only fixture check.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\doctor.py --root "$runRoot"`.
-- `scripts/assert_results.py` checks the JSON result of a Przebieg rozliczeń
-  step (`--result`) and workbook state after either mode; `--expected-stop`
-  names the stop's Komunikat code for `no-publish` and `existing-output`, and
-  `--expected-what` text its "Co się stało" must contain.
+- `scripts/assert_results.py` checks the JSON result of a Przebieg rozliczeń step and workbook state after either mode.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_results.py --root "$runRoot" --expect run --result "$evidenceRoot\run.json"`.
-- `scripts/create_preparation_fixture.py` creates the synthetic Rejestr zleceń,
-  both Wzorce, and the mapping for the `preparation` variant;
-  `--with-worker-template` adds the Wzorzec rozliczenia pracownika for `chain`, and
-  `--templates-from "$templatesDir"` copies the real Wzorce instead.
+- `scripts/create_preparation_fixture.py` creates the synthetic Rejestr zleceń, both Wzorce, and the mapping for the `preparation` variant.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_preparation_fixture.py --root "$runRoot"`.
-- `scripts/preparation_doctor.py` performs the read-only preflight for that fixture;
-  `--with-worker-template` also validates the Wzorzec rozliczenia pracownika.
+- `scripts/preparation_doctor.py` performs the read-only preflight for that fixture.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\preparation_doctor.py --root "$runRoot"`.
-- `scripts/assert_preparation.py` checks the Folder okresu, both period files,
-  their Hiperłącza, external links, inputs, the JSON result, and metrics; `--templates config` swaps
-  the synthetic Wzorzec checks for the generic real-Wzorzec checks, and
-  `--metrics` reads a history other than `<root>\metrics.jsonl`.
+- `scripts/assert_preparation.py` checks the Folder okresu, both period files, their Hiperłącza, external links, inputs, the JSON result, and metrics.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_preparation.py --root "$runRoot" --expect run --result "$evidenceRoot\run.json"`.
-- `scripts/fill_readiness.py` is the Gotowość step of `chain`: it fills `N:AT`
-  in three Wiersze danych of the Plik zbiorczy, keeps every other cell and the
-  external links, and records the period files' hashes for `assert_chain.py`.
+- `scripts/fill_readiness.py` is the Gotowość step of `chain`; it also records the period files' hashes for `assert_chain.py`.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\fill_readiness.py --root "$runRoot"`.
-- `scripts/assert_chain.py` checks the Przebieg rozliczeń of `chain` against
-  the Plik zbiorczy it read: worker routing and order, `A:AT` equality of values apart from the empty Ilości tylko dla INEA,
-  Wyróżnienia and Hiperłącza, the number format and Wygląd Wiersza danych in A:L, the Rejestr Hiperłącze in `NUMER ZL.`, Gotowość entries, no Zlecenie nieskuteczne, the preserved Wzorzec rozliczenia
-  pracownika, unchanged inputs and period files, the JSON result, and metrics.
+- `scripts/assert_chain.py` checks the Przebieg rozliczeń of `chain` as Launch says, plus no Zlecenie nieskuteczne, the preserved Wzorzec rozliczenia pracownika, unchanged inputs and period files, the JSON result, and metrics.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_chain.py --root "$runRoot" --expect run --result "$evidenceRoot\settlement-run.json"`.
-- `scripts/wynik_uruchomienia.py` is what the three `assert_*.py` share: it
-  loads a step's JSON result as `ProcessResult` and holds the metrics,
-  Hiperłącza, and external-link readers. Alone it checks one evidence file and
-  names the fields that do not match the contract, never their values.
+- `scripts/wynik_uruchomienia.py` is what the three `assert_*.py` share (Drive): it also holds the metrics, Hiperłącza, and external-link readers.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\wynik_uruchomienia.py --result "$evidenceRoot\run.json"`.
-- `scripts/create_intermax_fixture.py` creates the synthetic INTERMAX with one
-  pasted day of Surowe zlecenia and the empty `Kopie INTERMAX` folder for the
-  `intermax` variant.
+- `scripts/create_intermax_fixture.py` creates the synthetic INTERMAX of the `intermax` variant.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\create_intermax_fixture.py --root "$runRoot"`.
-- `scripts/assert_intermax.py` checks the Uporządkowanie INTERMAX of that
-  variant: the JSON result (`summary.intermax_copy`, `Zlecenia`, `Wykonawcy`,
-  the ordered day, progress), the one Kopia INTERMAX, the ordered INTERMAX, and
-  metrics.
+- `scripts/assert_intermax.py` checks the Uporządkowanie INTERMAX of that variant as Launch says, and its progress.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\assert_intermax.py --root "$runRoot" --result "$evidenceRoot\run.json"`.
 - `scripts/cleanup.py` removes only a run root that a fixture created.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\cleanup.py --root "$runRoot"`.
 - `scripts/self_test.py` checks the skill package and evidence hygiene.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\self_test.py --evidence-root "$evidenceRoot"`.
-- `scripts/quantity_rules_conformance.py` runs the test of every line of Dad's
-  instruction in `tests/test_ilosci_uslug.py` and ends with `ILOŚCI USŁUG OK`.
+- `scripts/quantity_rules_conformance.py` runs the test of every line of Dad's instruction in `tests/test_ilosci_uslug.py` and ends with `ILOŚCI USŁUG OK`.
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\quantity_rules_conformance.py`.
-- `scripts/workflow_sub_features.py` prints the `## Sub-features` section of a feature file from the plan of the
-  variants of its process (`features/README.md`, Feature entry contract).
+- `scripts/workflow_sub_features.py` prints the `## Sub-features` section of a feature file (`features/README.md`, Feature entry contract).
   Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\workflow_sub_features.py --feature order-intermax`.
-- `scripts/check_quantity_rules_mutations.py` is the mutation table of Reguły
-  ilości (see that section). Invocation:
-  `py -3 .agents\skills\verify-rozliczenia\scripts\check_quantity_rules_mutations.py`.
+- `scripts/check_quantity_rules_mutations.py` is the mutation table of Reguły ilości (see that section).
+  Invocation: `py -3 .agents\skills\verify-rozliczenia\scripts\check_quantity_rules_mutations.py`.
 
 Read `features/README.md` before choosing a feature. Keep the feature map
 updated when routes, script parameters, contract fields, or workbook rules
-change. Use `/maintain-verification-skill` for the maintenance loop.
+change. Use `/pstack:maintain-verification-skill` for the maintenance loop.

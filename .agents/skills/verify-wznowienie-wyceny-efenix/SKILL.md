@@ -1,6 +1,6 @@
 ---
 name: verify-wznowienie-wyceny-efenix
-description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards (ADR 0026), never loads Wycena Emmetta over an order that has quantities, never lowers or clears a quantity in efenix, ends an order Dad changed with an Ostrzeżenie Emmetta exactly when it holds more than the file, puts a Znacznik efenix only beside an order priced as in the file and a Znacznik przekazania only beside such an order that is „Do akceptacji”, forwards to acceptance only a gotowe order and only in the mode with Przekazanie (ADR 0027), never changes an order „Do akceptacji”, and leaves Dad an error or an Ostrzeżenie Emmetta only for an order he changed, under every order of window Zatrzymania, Centrum switching off, efenix refusing a Przekazanie, both modes and Dad's own changes in efenix between Uruchomienia. Use when a change touches `save`, `_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed`, `_mark` or `_efenix_stops` in `src/rozliczenia/efenix_pricing.py`, `listing` in `src/rozliczenia/efenix_checks.py`, `Mark.replaces` in `src/rozliczenia/efenix_mark.py`, `completion` or `same_amount` in `src/rozliczenia/efenix_positions.py`, or `load_emmett`, `_came_whole`, `enter_quantity`, `forward_to_accept`, `_refusal`, `_status_answer`, `_go`, `_reloaded` in `src/rozliczenia/efenix_browser.py`, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix or forwarded an order that was not gotowe.
+description: Model-check with TLA+ (TLC) that Wycena w efenix, across the Uruchomienia of one period, completes every order to the Plik zbiorczy only upwards and keeps its seven promises (no Wycena Emmetta over quantities, no quantity lowered, Znaczniki and Przekazanie only for an order priced as in the file, errors only for orders Dad changed) under every order of Zatrzymania, switch-offs, refused Przekazania and Dad's changes in efenix. Use when `tools/skille_dla_zmiany.py` names it, when `sprawdz_wznowienie_wyceny.py` or `tests/test_model_wznowienia_wyceny.py` fail, or when a resumed Wycena w efenix lowered, cleared or wiped a quantity in efenix or forwarded an order that was not gotowe.
 pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_positions.py
@@ -95,15 +95,8 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, efenix stays, no Znaczniki |
 | `Tata` | none: Dad changes a quantity of an order „Do wyceny” in efenix by hand while no Uruchomienie runs (`StanEfenix.edit` in the tests) |
 
-The script compares these definitions with their digests (`model/definicje.json`, a name is a path from the module):
-`price_orders.save`, `_mark`, `_efenix_stops`,
-`_outcome`, `_priced_outcome`, `_forwarded`, `_priced`, `_emmett`, `_dated`, `_completed` in
-`src/rozliczenia/efenix_pricing.py`; `listing` in `src/rozliczenia/efenix_checks.py`; `Mark.replaces` in
-`src/rozliczenia/efenix_mark.py`; `completion`, `same_amount` in `src/rozliczenia/efenix_positions.py`;
-`BrowserEfenix.load_emmett`, `_came_whole`, `BrowserEfenix.enter_quantity`, `BrowserEfenix._finished`,
-`BrowserEfenix._until` (the wait of `_finished` and `_status_answer`),
-`BrowserEfenix.forward_to_accept`, `BrowserEfenix._refusal`,
-`BrowserEfenix._status_answer`, `BrowserEfenix._go`, `BrowserEfenix._reloaded` in `src/rozliczenia/efenix_browser.py`. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
+The script compares the definitions in `model/definicje.json` (a name is a path from the module; `BrowserEfenix._until`
+is the wait of `_finished` and `_status_answer`) with their digests there. A change elsewhere in these files (Sprawdzanie, Odczyt danych, Logi, the window's
 classification of other failures) does not move the model. A change that makes another function write in efenix or
 decide whether an order is finished does, though no definition above changes: add it to the table and to
 `model/definicje.json`.
@@ -124,7 +117,7 @@ src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`.
 py -3 .agents\skills\verify-wznowienie-wyceny-efenix\scripts\sprawdz_wznowienie_wyceny.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
+The run of TLC, the verdict and the
 known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and `tla2tools.jar` come
 from `tools/lib/narzedzia_tlc.py` (pinned `jdk4py` and the jar in `.verification/` on first use; `TLC_JAVA` and
 `TLC_JAR` override them). The whole check took 3.5 s on Maks's Mac (2026-11-05).
@@ -157,14 +150,8 @@ the window after a server write. A path that does not happen on the code means t
 
 ## Configurations
 
-| Configuration | What can happen | Expected |
-| --- | --- | --- |
-| `zwykle` | two orders, three Uruchomienia in either mode, one change by Dad, no failures | passes |
-| `przerwania` | two orders, three Uruchomienia, Zatrzymanie and switch-off at every step, no change by Dad | passes |
-| `tata-po-przerwaniu` | one order, three Uruchomienia, Zatrzymanie and switch-off, one change by Dad | passes |
-| `wszystko` | everything above at once, a page after Emmett without a position, efenix refusing a Przekazanie | known `brak-pozycji-po-emmetcie`, `odmowa-przekazania` |
-
-Every configuration lets Dad pick either mode at each Uruchomienie (`MozePrzekazac = TRUE`).
+Each configuration in `model/konfiguracje.json` has what can happen (`opis`), its constants and its known findings
+(`znane`); a configuration without `znane` passes.
 Each order has three positions; the Plik zbiorczy has 1 in A and C and 2 in B. Emmett gives A as the file and B one less
 than the file and leaves C empty, so the tool enters B over Emmett's quantity and C. Only Dad puts more than the file
 into efenix (2 in A or C).
@@ -174,15 +161,9 @@ into efenix (2 in A or C).
 Each finding is forgiven only for its promise and only when its cause happened in the same order before the event
 that breaks it (the variable `slady`, one set per order); any other path is a new violation.
 
-1. **`brak-pozycji-po-emmetcie`, BladTylkoPoZmianieTaty.** A page after „Załaduj do zlecenia” without a position that
-   has a quantity in the file ends the order with an error (`EFENIX_BRAK_POZYCJI`), so Emmett stays in efenix. In the
-   code the next Uruchomienie stops at the same check when it opens the order, and finishes the order to the file once
-   the position is back. Nothing in efenix is lowered; Dad prices such an order himself.
-2. **`odmowa-przekazania`, BladTylkoPoZmianieTaty and ZmianaTatyZostaje.** efenix refuses the green „Zapisz” of a gotowe
-   order in its information dialog (no photos, no length of the connection, no pricing or no execution date, page script
-   from the reconnaissance), so the order ends with an error (`EFENIX_ODMOWA_PRZEKAZANIA`) without a Znacznik, also an
-   order Dad did not change. Nothing reaches efenix; the next Uruchomienie with Przekazanie tries again. Accepted by the
-   coordinator's decision of 7.11.2026: Dad fills in what efenix lacks.
+The findings, each with its promise, cause (`przyczyna`) and story (`znalezisko`), are `znane` of the configuration
+`wszystko`: `brak-pozycji-po-emmetcie` and `odmowa-przekazania` (the texts of efenix's refusal come from the page script
+of the reconnaissance).
 
 ## Bring the model in line
 
@@ -244,11 +225,6 @@ Left out, each a reason the check can pass while the code is wrong:
 
 ## Files
 
-- `model/WznowienieWyceny.tla`: the model, with the code each action describes.
-- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
-  `.cfg` with `TypeOK` and every promise).
-- `model/definicje.json`: the definitions of the code the model describes.
-- `scripts/sprawdz_wznowienie_wyceny.py`: runs TLC on every configuration and tells each counterexample.
 - `scripts/check_model_wznowienia_mutations.py`: proves the check fails when the model loses a guard the code has;
   run it through `.venv/bin/python .agents/skills/verify-wznowienie-wyceny-efenix/scripts/check_model_wznowienia_mutations.py`
   only to reproduce a red Mutation checks step or while you change the model.

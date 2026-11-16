@@ -37,10 +37,8 @@ Dad clicks the desktop shortcut „Centrum rozliczeń” to start Centrum or to 
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature start-i-zamykanie`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP start-i-zamykanie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/start-health.json`, `api/start-*.txt` and `state/centrum-rozliczen.log`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature start-i-zamykanie`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/start-health.json`, `api/start-*.txt` and `state/centrum-rozliczen.log`.
 
 ## Gotchas
 

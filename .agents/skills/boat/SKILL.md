@@ -56,9 +56,8 @@ Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pli
 
 Plan boat liczy starty boxa w oknach minuty, godziny i doby (`boat limits --json`) oraz godziny maszyn, z których na każdy dzień przypada tylko część, a box `large` zużywa je podwójnie.
 Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
-`boatbox status` pokazuje starty na dobę i godzinę oraz tempo godzin, a co `auto` i `fan` robią przy ich braku, mówi `boatbox help`.
-Przed pełnym pytestem i przed `fan` uruchom `boatbox status`.
-Gdy pokazuje linię `over pace:`, pełny pytest zostaw CI, a `fan` uruchamiaj tylko wtedy, gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej 16, liczba jego rdzeni), bo `run`, `job` i `fan` przy przekroczonym tempie tylko ostrzegają i biegną dalej.
+Gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej 16, liczba jego rdzeni), ciężkie polecenie biegnie na boxie także po przekroczeniu tempa godzin (linia `over pace:` w `boatbox status`), bo zatkany Mac kosztuje wątki agentów więcej niż godziny planu (decyzja Maksa 16.11.2026).
+`boatbox auto` wybiera wtedy box sam, a na Macu zostawia polecenie tylko przy wolnych rdzeniach albo gdy żaden box nie wystartuje; te przypadki i zachowanie `fan` przy małej liczbie startów opisuje `boatbox help`.
 
 ## Dane
 

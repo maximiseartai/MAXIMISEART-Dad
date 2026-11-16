@@ -410,7 +410,7 @@ def test_krok_czesci_przechodzi_dokladnie_z_kodami_wyjscia_ktorych_zapis_niesie_
 
     zadanie = _nocne()["jobs"]["change-mutations"]
     krok = next(krok for krok in zadanie["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))
-    przepuszczone = {int(kod) for kod in re.findall(r"\$\? -eq ([0-9]+)", krok["run"].partition("||")[2])}
+    przepuszczone = {int(kod) for kod in re.findall(r'"\$kod" -eq ([0-9]+)', krok["run"])}
 
     assert {0, *przepuszczone} == mutacje_zmiany.KODY_Z_WYNIKIEM
 
@@ -1275,15 +1275,19 @@ def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="krok biegnie w bashu runnera Linuksa")
 @pytest.mark.parametrize(
-    ("kod_narzedzia", "czesc_przechodzi"), [(0, True), (1, True), (2, False), (3, True)], ids=["ok", "przezyly-mutacje", "awaria", "bez-werdyktu"]
+    ("kod_narzedzia", "zapis", "czesc_przechodzi"),
+    [(0, True, True), (1, True, True), (2, True, False), (3, True, True), (1, False, False)],
+    ids=["ok", "przezyly-mutacje", "awaria", "bez-werdyktu", "traceback-bez-zapisu"],
 )
-def test_czesc_pada_tylko_przy_awarii_a_przezyte_mutacje_zostawia_zgloszeniu(tmp_path: Path, kod_narzedzia: int, czesc_przechodzi: bool) -> None:
+def test_czesc_pada_tylko_przy_awarii_a_przezyte_mutacje_zostawia_zgloszeniu(tmp_path: Path, kod_narzedzia: int, zapis: bool, czesc_przechodzi: bool) -> None:
     """Kod 1 to przeżyte mutacje, a kod 3 mutacje bez werdyktu po limicie czasu części: oba zgłasza ostatnie zadanie.
     Inna porażka czerwieni część, więc ``--odtwarzam``
-    (``tools/lib/ciezkie_ci.py`` chce zadania ``failure``) ma co odtworzyć."""
+    (``tools/lib/ciezkie_ci.py`` chce zadania ``failure``) ma co odtworzyć. Traceback też kończy się kodem 1, ale
+    bez zapisu (run 43572533066, część 30/40)."""
 
     krok = next(krok for krok in _nocne()["jobs"]["change-mutations"]["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))
-    atrapa = fake_cli(tmp_path / "bin", "python", f"import sys\nsys.exit({kod_narzedzia})\n")
+    zapisuje = "zapis = pathlib.Path(sys.argv[sys.argv.index('--zapis') + 1])\nzapis.parent.mkdir(parents=True)\nzapis.write_text('{}')\n"
+    atrapa = fake_cli(tmp_path / "bin", "python", f"import pathlib\nimport sys\n{zapisuje if zapis else ''}sys.exit({kod_narzedzia})\n")
     env = {**os.environ, "PATH": f"{atrapa.parent}{os.pathsep}{os.environ['PATH']}", "BAZA": "baza", "CZESC": "1/1"}
 
     # Domyślna powłoka kroku Actions na Linuksie: ``bash -e {0}``.

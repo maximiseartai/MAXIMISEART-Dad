@@ -48,10 +48,8 @@ or `Diagnoza`, and `Otwórz Rejestr zleceń` when the fix is in the Rejestr zlec
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature diagnoza`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP diagnoza` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
-`api/diagnoza-*.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature diagnoza`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/diagnoza-*.json`.
 
 ## Gotchas
 

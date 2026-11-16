@@ -1,6 +1,6 @@
 ---
 name: verify-github-skrzynki
-description: Verify Centrum's two GitHub clients against the real GitHub - Skrzynka Zgłoszeń (`GitHubReportBox` and `KeyedBox` - issues, comments, edits, labelled lists with paging and `include_closed`, bad key, deleted issue, content limits) on the private empty trial repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba`, the Archiwum Logów okresu (`archive`, `open_archive`, `upload`, `remove` and `archive_url` - a Release with files over a page, a tag or file of the same name, the replaced file, the download link) on the trial repository with a commit `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia-proba-archiwum`, and Aktualność narzędzia (`tool_freshness` - tags with paging, the newest Wydanie on `main`, GitHub Releases, compare and the first-parent line) by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use after a change to `github.py`, `report_box.py`, `keyed_box.py`, `tool_freshness.py`, their test fakes, or when a review asks what GitHub really answers.
+description: Verify Centrum's two GitHub clients against the real GitHub - the Skrzynka Zgłoszeń and the Archiwum Logów okresu on two private trial repositories, and Aktualność narzędzia by reading the public tool repository - with every exchange recorded, a verdict on outcomes expected from the domain, an offline replay of the recordings, and a check that the test fakes answer like the recorded GitHub. Use when `tools/skille_dla_zmiany.py` lists it, when its replay is red, or when a review asks what GitHub really answers.
 pilnuje:
   - src/rozliczenia/centrum/github.py
   - src/rozliczenia/centrum/opener.py
@@ -162,14 +162,8 @@ Run it locally only to reproduce a red Mutation checks step or the night's issue
 .venv/bin/python .agents/skills/verify-github-skrzynki/scripts/check_github_skrzynki_mutations.py
 ```
 
-It must end with `MUTACJE OK`: 401 taken as Rejected, 404 not a refusal, 422 not a rejection, the second page of a
-list lost, `include_closed` ignored, the close reason read from `state`, a refused list that does not refuse the key,
-the second page of the Archiwum's files lost, `remove` of another file, the first Release taken as the Archiwum of the
-tag, a file that arrived read as cut off, the Kolejka packing another text than the Logi file, the file's label lost, the download link without `/download/`, `Link`
-without its next page, a 404 of compare taken as no answer, any merged PR taken as the tip of `main`, a fake of the
-deleted issue that answers 410 and a fake of a file of the same name that answers 400 all end the replay in `VERIFY
-FAIL`. A mutation reported as `NIEAKTUALNA`
-no longer matches its file: rewrite its anchor against the new code so it breaks the same behaviour again.
+It must end with `MUTACJE OK`: every mutation of its table, a broken client or fake, ends the replay in `VERIFY FAIL`.
+A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor against the new code so it breaks the same behaviour again.
 
 ## Helpers
 

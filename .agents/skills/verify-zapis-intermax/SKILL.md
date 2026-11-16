@@ -1,6 +1,6 @@
 ---
 name: verify-zapis-intermax
-description: Exhaustively check that Uporządkowanie INTERMAX (`order_register` in `src/rozliczenia/intermax_ordering.py`) and Przywracanie Kopii INTERMAX (`restore` in `src/rozliczenia/intermax_restore.py`), which both replace through `replace_register` in `src/rozliczenia/intermax_replace.py`, and Wpisanie raportów (`write_cells` in `src/rozliczenia/intermax_cells.py`), which replaces through `replace_without_copy` in the same sequence without a Kopia, replace the Rejestr zleceń only over the bytes they read, keep a Kopia INTERMAX with exactly the bytes they replaced and the 10 newest Kopie of both names with the earlier ones byte for byte, put exactly the chosen Kopia into INTERMAX, put exactly the written cells into INTERMAX and leave the Kopie alone in Wpisanie raportów, and leave INTERMAX, its folder and the Kopie as they were when they stop, under every order of a worker's change arriving through OneDrive, Dad opening INTERMAX in Excel, OneDrive refusing the replace, failed file steps, a failed write check and a killed process. Use when a change touches `intermax_replace` (`replace_register`, `replace_without_copy`, their one sequence `_replacement` with its retried replace, `Disk`, `Waiting`, the Kopia and its cleanup), the save phase of `order_register`, `intermax_restore.restore`, `intermax_cells.write_cells`, `intermax_copies.named`, `listed` or `outdated`, `register_file.read`, `intermax_file.check` or `intermax_file.check_cells`, `workbook_save.write_atomically`, `workbook_files` reading or the Excel lock, adds another writer of INTERMAX or of the Kopie folder, or when `explore_intermax.py` fails.
+description: Exhaustively check that Uporządkowanie INTERMAX, Przywracanie Kopii INTERMAX and Wpisanie raportów replace the Rejestr zleceń only over the bytes they read, keep the right Kopie INTERMAX (none in Wpisanie raportów), write exactly what they should, and leave INTERMAX, its folder and the Kopie as they were when they stop, under every order of a worker's change through OneDrive, Dad opening INTERMAX in Excel, OneDrive refusing the replace, failed file steps and a killed process. Use when `tools/skille_dla_zmiany.py` names it, when `explore_intermax.py` fails, or when a change adds another writer of INTERMAX or of the Kopie folder.
 pilnuje:
   - src/rozliczenia/intermax_replace.py
   - src/rozliczenia/intermax_ordering.py
@@ -114,16 +114,7 @@ INTERMAX: OneDrive then keeps a conflict copy beside it, which the checker
 leaves out), Dad may open INTERMAX in Excel (the `~$` lock file), the step may
 fail, or the process may die.
 
-Covered files: `src/rozliczenia/intermax_replace.py` (`replace_register`, `replace_without_copy`, `_replacement`,
-`Disk`, `LOCAL_DISK`, `Waiting`), `src/rozliczenia/intermax_ordering.py` (`order_register`),
-`src/rozliczenia/intermax_restore.py` (`restore`), `src/rozliczenia/intermax_cells.py` (`write_cells`),
-`src/rozliczenia/intermax_copies.py` (`named`, `listed`, `outdated`),
-`src/rozliczenia/register_file.py` (`read`) and `src/rozliczenia/dad_files.py` (`DadFiles.read`),
-`src/rozliczenia/intermax_file.py` (`check`, `check_cells`),
-`src/rozliczenia/workbook_save.py` (`write_atomically`), and
-`src/rozliczenia/workbook_files.py` (`workbook_content`, `ensure_available`,
-`is_open_in_excel`, `excel_lock_file`) and `src/rozliczenia/file_state.py` (`file_state`, `path_state`, `_ABSENT`: missing
-versus inaccessible behind `ensure_available`).
+`src/rozliczenia/file_state.py` is covered for missing versus inaccessible behind `ensure_available`.
 
 The steps the points stand for have digests in `model/definicje.json`: `intermax_replace.py` and
 `intermax_copies.py` whole, and the read, the save phase of `order_register`, `restore`, `write_cells` and the Excel
@@ -153,10 +144,8 @@ When `tools/szybko.py` names a changed definition of `model/definicje.json`:
 .venv/bin/python .agents/skills/verify-zapis-intermax/scripts/explore_intermax.py
 ```
 
-On Windows use `py -3` instead of `.venv/bin/python`. In a worktree, create its
-`.venv` first (`python3 tools/setup_worktree.py`). It needs nothing beyond the
+On Windows use `py -3` instead of `.venv/bin/python`. It needs nothing beyond the
 repo's Python, writes only into a temporary directory, and takes a few seconds.
-`--strict` counts known findings as violations too.
 
 The last line is the verdict:
 
@@ -319,51 +308,15 @@ CI proves the check can still fail. The night on `main` runs
 `.agents/skills/verify-zapis-intermax/scripts/check_intermax_mutations.py`
 after a change of this skill's folder. It applies each broken variant to a
 temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with
-`MUTACJE OK`. Each of these gives `INTERMAX: NOWE NARUSZENIE`:
-
-- a replace without a Kopia;
-- a Kopia of other bytes than those read;
-- a Kopia left after a failed replace (Excel, OneDrive or any other failure,
-  in both processes, since #716 one cleanup);
-- a Kopia of a name that was taken removed after its write fails, so the
-  second restore in the same second removes the Kopia of the first;
-- an `OSError` from checking the Kopia's name that escapes;
-- an `OSError` from removing older Kopie that escapes;
-- a temporary file left after a failed replace;
-- older Kopie sorted the wrong way round;
-- one Kopia kept instead of 10;
-- a failed replace that removes every Kopia;
-- a retried replace that does not read INTERMAX again after the pause;
-- a retried replace that reads INTERMAX again before the pause instead of
-  after it (`BOUNDARIES`: outside `came_before` of both findings);
-- a retried replace that compares INTERMAX read after the pause with the bytes
-  read right after OneDrive's refusal instead of those the run read
-  (`BOUNDARIES`: outside `refusals_after` of both findings);
-- a replace that, when INTERMAX changed after the read, first writes the run's
-  new file over it and puts it back if the replace fails (`BOUNDARIES`: outside
-  `lost` of both findings);
-- a Kopia of the run's new file when INTERMAX changed before the Kopia
-  (`BOUNDARIES`: outside `copy` of KOPIA_ZASTAPIONEGO);
-- Kopie sorted by name instead of by the moment in their name;
-- a Kopia that overwrites a Kopia of the same name (no `O_EXCL`): the second
-  restore in the same second overwrites the Kopia of the first, and then stops
-  with it rewritten (ZATRZYMANIE_BEZ_SLADU) or, after its replace, fails on
-  `made[0]` with no Kopia of its own (BEZ_WYJATKU), so it never returns a
-  summary;
-- the same with a taken name that does not stop the run: the second restore in
-  the same second returns a summary over the rewritten Kopia of the first
-  (KOPIE_NAJNOWSZE);
-- a restore that replaces INTERMAX with the bytes it read instead of the
-  chosen Kopia;
-- Wpisanie raportów without the write check (`check_cells`): a torn write of the
-  temporary file replaces INTERMAX (DOKLADNIE_WPISANE).
-
-Before #716 each process had its own copy of the Kopia and its cleanup, so
-„a restore without the Kopia of the current state” and „the Kopia of the
-current state left after a failed restore” were mutations of their own; now the
-first two mutations above break both processes at once. „The Kopia made before
-the write check” left the list with them: the one cleanup removes such a Kopia
-after a mismatch, so only `tests/test_podmiana_intermax.py` sees the order.
+`MUTACJE OK`. Each variant in `MUTATIONS` of the script names the defect it brings back (`name`, `harm`) and gives
+`INTERMAX: NOWE NARUSZENIE`; those in `BOUNDARIES` stand just outside a part of a known finding's shape.
+Three of them break a rule their `harm` does not name: with a Kopia that overwrites one of the same name (no `O_EXCL`), the restore that overwrites the Kopia of the first one in the
+same second stops with it rewritten (ZATRZYMANIE_BEZ_SLADU) or, after its replace, fails on `made[0]` (BEZ_WYJATKU); the
+same with a taken name that does not stop the run breaks KOPIE_NAJNOWSZE; Wpisanie raportów without `check_cells`
+breaks DOKLADNIE_WPISANE.
+Since #716 both processes share one Kopia and one cleanup, so the first two mutations break both at once, and „a restore without the Kopia of the current
+state” and „the Kopia of the current state left after a failed restore” are no longer mutations of their own; „the Kopia made before the write check” is not a mutation either, because the one
+cleanup removes such a Kopia after a mismatch and only `tests/test_podmiana_intermax.py` sees the order.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its
 `anchor` and `replacement` against the new code so that it breaks the same
