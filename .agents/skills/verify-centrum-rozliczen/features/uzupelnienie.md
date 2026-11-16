@@ -70,10 +70,8 @@ Printed by `scripts/sub_features.py --feature uzupelnienie` from the drive's ste
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uzupelnienie`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP uzupelnienie` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
-`api/uzupelnienie-*.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uzupelnienie`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/uzupelnienie-*.json`.
 
 The run does not wait a minute for the Komunikat after a failed read:
 `tests/test_centrum_uzupelnienie_na_zywo.py::test_nieudany_odczyt_przez_minute_pokazuje_ostatni_dobry_stan_potem_komunikat`

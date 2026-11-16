@@ -1,6 +1,6 @@
 ---
 name: verify-status-okresu
-description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu reads one Folder okresu the same way, for every state of its files (each period file present or not; the Plik zbiorczy, the Folder rozliczeń pracowników and the Folder okresu itself readable or not) - Tablica okresów and its steps, the start cards of Przygotowanie, Przebieg rozliczeń and Wycena w efenix, Uzupełnienie (`settled`), the preview of a Reguły ilości change and the list of Kontrola ilości differences, Wpisanie raportów (`report_entering.closed_periods`) and the Sprawdzanie of Przygotowanie and Przebieg rozliczeń (`ensure_period_files_absent`, `ensure_worker_settlements_absent`). Use when a change touches `PeriodFolderObservation` or `PeriodFolder.observe` in `src/rozliczenia/period_folder.py`, `closed_periods` in `report_entering.py`, `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `listed` in `centrum/quantity_differences.py`, `quantities_to_fill.py`, `_steps` or `read_board` in `centrum/period_board.py`, the choosers in `centrum/period_start.py` or `centrum/processes/`, `check_preparation` or `check_settlement` in `input_checks.py`, the two guards, or when `explore_status_okresu.py` fails.
+description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu (Tablica okresów, start cards, Uzupełnienie, Reguły ilości preview and Kontrola ilości differences, Wpisanie raportów, the Sprawdzanie of Przygotowanie and Przebieg rozliczeń) names the same Status and acts on a period only when it allows, for every state of the Folder okresu (each period file present or not, readable or not). Use when `tools/skille_dla_zmiany.py` names it, when a change adds a new consumer of the Status okresu, or when `explore_status_okresu.py` fails.
 pilnuje:
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/file_state.py
@@ -60,9 +60,8 @@ says.
   should not happen (Rozliczenia pracowników without a Plik zbiorczy, the Rozliczenie wewnętrzne left by ADR 0005).
   Harm: two screens of Centrum tell Dad two different stages of the same period.
 
-The reference Status okresu is the checker's own (`reference` in `explore_status_okresu.py`), from what it built and
-`GLOSSARY.md`: a Folder rozliczeń pracowników makes „Rozliczenia pracowników gotowe” and the period closed, else a Plik
-zbiorczy makes „Plik zbiorczy przygotowany”, else „Brak plików okresu”. `GLOSSARY.md` names Rozliczenia pracowników
+The reference Status okresu is the checker's own (`reference` in `explore_status_okresu.py`; its module docstring
+states it), from what it built and `GLOSSARY.md`. `GLOSSARY.md` names Rozliczenia pracowników
 without a Plik zbiorczy twice in „Status okresu” (no Plik zbiorczy, and a Folder rozliczeń pracowników); „Droga okresu”
 settles it („Okres z Rozliczeniami pracowników jest zamknięty”), and `PeriodFolderObservation.status` decides the same.
 
@@ -110,8 +109,6 @@ py -3 .agents\skills\verify-status-okresu\scripts\explore_status_okresu.py
 On macOS or Linux use `.venv/bin/python` instead of `py -3`.
 It takes about 2 s on a Mac and needs nothing beyond the repo's `.venv`.
 In a worktree the script checks the worktree's own `src`.
-`--scope czytelne` or `--scope niedostepne` runs one scope; `--strict` counts known findings and accepted risks as
-violations too.
 
 The last line is the verdict:
 
@@ -163,8 +160,7 @@ own refusals after a choice (`PeriodStarts.prepare`), and anything after Sprawdz
 
 ## Known findings
 
-A known finding is a real defect in the current code. It is printed on every run until the code is fixed; when a code
-change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`: delete its entry from `KNOWN_FINDINGS` and from this list.
+A known finding is a real defect in the current code.
 
 1. **Wpisanie raportów w zamkniętym okresie** (OTWARCIE). The Folder okresu has a Folder rozliczeń pracowników and no
    Plik zbiorczy: Dad moved, renamed or deleted the Plik zbiorczy after Przebieg rozliczeń, or OneDrive renamed it in a
@@ -201,12 +197,10 @@ change fixes it, the check ends with `ZNALEZISKO ZNIKNĘŁO`: delete its entry f
    known is Maks's decision.
 
 An entry lives in `KNOWN_FINDINGS` of `explore_status_okresu.py` as an `Excuse` of `tools/lib/eksplorator.py` with its
-shape (`StateShape`): the folder states exactly (`states`), the consumers (`consumers`), what they do (`acts`) and the
-systems (`systems`); the last two narrow only the Windows entries.
+shape (`StateShape`, whose docstring names its parts and their `BOUNDARIES`); `acts` and `systems` narrow only the
+Windows entries.
 An entry that shows only on Windows names its scope with the system in `after` (`niedostepne na Windows`), so it does
 not give `ZNALEZISKO ZNIKNĘŁO` on macOS or Linux.
-Each part has a broken variant just outside it in `BOUNDARIES` of `check_status_okresu_mutations.py`, which must give a
-new violation; `tests/test_mutacje_skilli.py` reds an entry with a part without one.
 
 ## Accepted risks
 
@@ -236,7 +230,7 @@ Never narrow a rule, the reference or a scope to make a real counterexample disa
 
 ## After changing the checker or an intended change to the consumers
 
-CI proves the check can still fail: the night on `main` runs the script below after a change of this skill's folder.
+The script below proves the check can still fail.
 Run it locally only to reproduce a red Mutation checks step or the night's issue, or after you rewrite a mutation.
 It applies the broken variants to a temporary copy of the checkout (`tools/lib/silnik_mutacji.py`), never to the
 checkout:

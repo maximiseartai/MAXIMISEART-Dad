@@ -30,10 +30,8 @@ Printed by `scripts/sub_features.py --feature pomiar-u-taty` from the drive's st
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature pomiar-u-taty`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP pomiar-u-taty` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/pomiar-*.{json,txt}` and `state/centrum-rozliczen.log`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature pomiar-u-taty`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/pomiar-*.{json,txt}` and `state/centrum-rozliczen.log`.
 
 ## Gotchas
 

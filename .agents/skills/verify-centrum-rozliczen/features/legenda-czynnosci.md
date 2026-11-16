@@ -32,12 +32,9 @@ of `#/ustawienia/legenda-czynnosci` opens the section too.
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP legenda-czynnosci` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
-`api/legenda-czynnosci*.json`. The harness writes Dad's file of the legend in the run's `config` (first good, then bad)
-and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it
-after `legenda-usuniecie-cofnij`, so the features after this one find the legend of the Release.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/legenda-czynnosci*.json`.
+The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij`, so the features after this one find the legend of the Release.
 
 ## Gotchas
 

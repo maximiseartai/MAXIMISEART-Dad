@@ -1,6 +1,6 @@
 ---
 name: verify-wpisanie-raportow
-description: Model-check with TLA+ (TLC) one report cell of Wpisanie raportów z maili (ADR 0028, spec #1224) across Dad's click „Wpisz raporty z maili” (`enter_from_mail` in `src/rozliczenia/report_entering.py`), the cell rules (`reconcile` in `src/rozliczenia/worker_reports/_cells.py`), the three files in `config/` (memory of own entries `wpisanie-raportow-stan.json`, the result for the Raporty view `wpisanie-raportow-wynik.json` and the „Zostaw moją” decisions `wpisanie-raportow-decyzje.json`, written through `FileReportState` and `_TextFile` in `src/rozliczenia/centrum/report_entering_state.py` on `StateFile` in `atomic_file.py`, whose failed write waits in memory), „Zostaw moją” from another tab (`ReportEnteringEntry.keep` in `report_entering_run.py`, `FileReportState.keep` under `_deciding`), Dad or his worker changing the cell in Excel, a new mail, a Plik zbiorczy that closes and reopens the period, an OneDrive conflict copy, a refused INTERMAX write and Centrum switching off at any step. It checks that the tool never overwrites a value Dad typed, that „Zostaw moją” keeps the difference out of the view, that the tool's own entry never shows as a manual difference, and that a conflict copy stops the click. Use when a change touches `reconcile`, `enter_reports`, `Window.of` or `Window.opens`, `OwnEntries` or `Kept`, `enter_from_mail` (the order of `write_cells`, `save_memory`, `save_result` and the conflict checks), `closed_periods`, `SavedState`, `write_cells` (what it returns), `_TextFile`, `FileReportState` (`load`, `save_memory`, `save_result`, `shown`, `kept`, `keep`, `of_work`), `ReportEnteringEntry.keep` or `view`, `_view`, `StateFile`, the assignment `report_files` in `create_app`, `RunHost.start`, or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) one report cell of Wpisanie raportów z maili (ADR 0028, spec #1224) across Dad's click „Wpisz raporty z maili”, the cell rules, the three files in `config/` (memory of own entries, the result for the Raporty view and the „Zostaw moją” decisions, whose failed write waits in memory), „Zostaw moją” from another tab, Dad or his worker changing the cell in Excel, a new mail, a Plik zbiorczy that closes and reopens the period, an OneDrive conflict copy, a refused INTERMAX write and Centrum switching off at any step. It checks that the tool never overwrites a value Dad typed, that „Zostaw moją” keeps the difference out of the view, that the tool's own entry never shows as a manual difference, and that a conflict copy stops the click. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a writer of one of the three files, a caller of `reconcile` or `keep`, or a step between `write_cells` and `save_memory`, or when `sprawdz_wpisanie_raportow.py` fails.
 pilnuje:
   - src/rozliczenia/worker_reports/_cells.py
   - src/rozliczenia/worker_reports/_model.py
@@ -25,12 +25,11 @@ ci: .agents/skills/verify-wpisanie-raportow/scripts/sprawdz_wpisanie_raportow.py
 CI runs `sprawdz_wpisanie_raportow.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
 step.
-In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
-`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
+CI and `tools/szybko.py` catch drift: covered code that differs from its digests in `model/definicje.json`
+(`ROZJAZD MODELU Z KODEM | <skill>: …`); they cannot tell whether your change to the model is right.
 `check_model_wpisania_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
 `sprawdz_wpisanie_raportow.py`, and in full CI and nightly on `main` after a change of this skill's folder.
-What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
-change the model, break the new path in it, replay each new counterexample on the code, and recompute the digests.
+What stays with you on every change to the covered code is „Bring the model in line”.
 A change whose model nobody brought in line is not verified, whatever CI says.
 
 ## The promises
@@ -39,7 +38,7 @@ Dad clicks „Wpisz raporty z maili” when his worker is not in INTERMAX. Each 
 open days again and writes `tak`/`nie` and the activities into `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE`. ADR 0028:
 „Pamięta tylko to, co samo wpisało, bo bez tego nie odróżni własnego wpisu od ręcznego” and „pisze tylko do pustej
 komórki albo do własnego wcześniejszego wpisu, którego nikt potem nie zmienił”. Three files in `config/` carry the
-state between clicks, each with one writer, each written atomically, and a write that fails waits in the memory of
+state between clicks (the docstring of `centrum/report_entering_state.py` names them), each with one writer, each written atomically, and a write that fails waits in the memory of
 this Centrum work (`StateFile`, `_TextFile`) until a later write or read retries it. The model checks, over every
 order of steps:
 
@@ -91,14 +90,9 @@ otherwise):
 | `ZostawZapisz` | still under `_deciding`: `decisions.write` of the old decisions with the new one; `keep` ignores its result, so Dad gets the view without the difference also when the decision only waits in memory |
 | `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again; the Uruchomienie, the requests and every waiting text are gone, files on disk and INTERMAX stay (`replace_atomically` is atomic) |
 
-The script compares these definitions with their digests (`model/definicje.json`: file → name → digest): `reconcile` in
-`worker_reports/_cells.py`; `Window.of`, `Window.opens`, `OwnEntries`, `Kept` in `worker_reports/_model.py`;
-`enter_reports` in `worker_reports/__init__.py`; `enter_from_mail`, `closed_periods`, `SavedState` in `report_entering.py`;
-`write_cells` in `intermax_cells.py`; `_TextFile`, `FileReportState.of_work`, `load`, `save_memory`, `save_result`,
-`shown`, `kept`, `keep` in `centrum/report_entering_state.py`; `ReportEnteringEntry.keep`, `ReportEnteringEntry.view`,
-`_view` in `centrum/report_entering_run.py`; `StateFile` in `centrum/atomic_file.py`; the assignment
+The script compares the definitions in `model/definicje.json` with their digests; among them is the assignment
 `create_app.report_files` in `centrum/app.py` (one `FileReportState` for the process and the view, so the waiting text
-is shared); `RunHost.start` in `centrum/runs.py`. Every code name in the table is one of them, except
+is shared). Every code name in the table is one of them, except
 `onedrive_conflicts.beside` (the model needs only where `enter_from_mail` calls it) and `register_file.read` and the
 bytes of the write (`verify-zapis-intermax`). Look in the diff also for a new writer of one of the three files, a new
 caller of `reconcile` or `keep`, and a step between `write_cells` and `save_memory`; add such code to the table and to
@@ -114,8 +108,7 @@ The digests in `model/definicje.json` were taken when every row of the table was
 py -3 .agents\skills\verify-wpisanie-raportow\scripts\sprawdz_wpisanie_raportow.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
-known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
+The run of TLC, the verdict and the known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
 check took 54 s on Maks's Mac on 2026-11-12 (six configurations, 15 known findings in 21 TLC runs, about 9.6 million
 states in the six full runs) under a load average of 19 from other runs.
 
@@ -310,11 +303,3 @@ over-approximates. The rollout day (it only moves the start of the window later,
 of the mailbox and its problems other than `ManualDifference`, `Rejected` and `UnsupportedShape` (the same Zatrzymanie as a
 `Refusal`), a Kopia INTERMAX restored by Dad, the text of the view and of the Komunikaty, and the result file's failed
 write (Configurations).
-
-## Files
-
-- `model/WpisanieRaportow.tla`: the model, with the code each action describes.
-- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
-  `.cfg` with `TypeOK` and every promise), `model/definicje.json`: the definitions of the code the model describes.
-- `scripts/sprawdz_wpisanie_raportow.py`: runs TLC on every configuration and tells each counterexample.
-- `scripts/check_model_wpisania_mutations.py`: proves the check fails when the model loses a guard the code has.

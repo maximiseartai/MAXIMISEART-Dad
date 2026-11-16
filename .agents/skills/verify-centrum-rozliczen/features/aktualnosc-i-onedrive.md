@@ -30,10 +30,8 @@ the `Zatrzymanie` banner. The explanation, the note `Propozycja aktualizacji` wh
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualnosc-i-onedrive`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP aktualnosc-i-onedrive` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/aktualnosc-*.json` and `api/onedrive-*.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualnosc-i-onedrive`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/aktualnosc-*.json` and `api/onedrive-*.json`.
 
 ## Gotchas
 
