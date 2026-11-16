@@ -15,6 +15,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.styles.colors import Color
+from openpyxl.styles.proxy import StyleProxy
 from openpyxl.utils import get_column_letter
 import pytest
 
@@ -112,7 +113,7 @@ def _cells(path: Path) -> dict[str, tuple[object, str | None, str | None]]:
         workbook.close()
 
 
-def _colour(fill: PatternFill) -> str | None:
+def _colour(fill: StyleProxy) -> str | None:
     if fill.patternType is None:
         return None
     colour = fill.fgColor

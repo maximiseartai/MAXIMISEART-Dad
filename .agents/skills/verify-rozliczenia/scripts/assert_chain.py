@@ -108,7 +108,7 @@ INPUTS = (
 Row = tuple[object, ...]
 Looks = tuple[tuple[object, ...], ...]
 PLAIN_LOOK = (None, None, None, False, False)
-COLOURED_FIELDS = {
+COLOURED_FIELDS: dict[object, dict[int, int | None]] = {
     order_number(number): {column_index_from_string(letter) - 1: value for letter, value in cells.items()}
     for number, cells in WORKER_COLOURED_FIELDS.items()
 }
