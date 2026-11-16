@@ -20,7 +20,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Hunk, Revert, ZakresMutacji, exceptions, fingerprint, mutants, selected
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -488,9 +488,9 @@ def test_porazka_bez_wyniku_mutacji_ma_inny_kod_niz_przezyte_mutacje(tmp_path: P
 
 def test_klucz_mutacji_nie_zalezy_od_jej_linii_a_rozroznia_mutacje() -> None:
     changed = CHANGED + NAZWA_CHANGED
-    found = selected(MODULE, changed, [Hunk(2, 1, ("    return a",)), Hunk(5, 1, ('NAZWA = "stara"',))])
+    found = selected(MODULE, changed, [Hunk(2, 1, ("    return a",)), Hunk(5, 1, ('NAZWA = "stara"',))], {})
     shifted = "# opis\n\n" + changed
-    moved = selected(MODULE, shifted, [Hunk(4, 1, ("    return a",)), Hunk(7, 1, ('NAZWA = "stara"',))])
+    moved = selected(MODULE, shifted, [Hunk(4, 1, ("    return a",)), Hunk(7, 1, ('NAZWA = "stara"',))], {})
 
     assert [mutant.line for mutant in moved] == [mutant.line + 2 for mutant in found]
     keys = [fingerprint(mutant, changed) for mutant in found]
@@ -950,23 +950,23 @@ def test_plik_bez_zaleznych_testow_konczy_sie_fail(tmp_path: Path) -> None:
 
 
 def test_wyjatek_nad_fragmentem_obejmuje_jego_cofniecie(tmp_path: Path) -> None:
-    comment = "# mutacje-zmiany: tylko na próbę | do 2999-01-01 | zgoda Maks\n"
-    changed = BASE + NAZWA_CHANGED.replace("NAZWA", comment + "NAZWA")
+    comment = "    # mutacje-zmiany: tylko na próbę | do 2999-01-01 | zgoda Maks\n"
+    changed = CHANGED.replace("    return a and b\n", comment + "    return a and b\n")
 
-    done = _run(_repo(tmp_path, ONE_CASE, changed, BASE + NAZWA_BASE))
+    done = _run(_repo(tmp_path, ONE_CASE, changed))
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "WYJĄTEK: src/rozliczenia/warunek.py:5 zmiana linii 5–6 cofnięta do bazy" in done.stdout
+    assert "WYJĄTEK: src/rozliczenia/warunek.py:2 zmiana linii 2–3 cofnięta do bazy" in done.stdout
 
 
 def test_wyjatek_w_srodku_fragmentu_nie_obejmuje_cofniecia_calego_fragmentu(tmp_path: Path) -> None:
-    base = BASE + '\n\nPIERWSZA = "stara"\nDRUGA = "stara"\n'
-    changed = BASE + '\n\nPIERWSZA = "nowa"\nDRUGA = "nowa"  # mutacje-zmiany: tylko na próbę | do 2999-01-01 | zgoda Maks\n'
+    base = "def oba(a, b):\n    return a\n"
+    changed = CHANGED.replace("a and b\n", "a and b  # mutacje-zmiany: tylko na próbę | do 2999-01-01 | zgoda Maks\n")
 
     done = _run(_repo(tmp_path, ONE_CASE, changed, base))
 
     assert done.returncode == 1, done.stdout + done.stderr
-    assert "NIEWYKRYTA: src/rozliczenia/warunek.py:5 zmiana linii 5–6 cofnięta do bazy" in done.stdout
+    assert "NIEWYKRYTA: src/rozliczenia/warunek.py:1 zmiana linii 1–2 cofnięta do bazy" in done.stdout
 
 
 def test_nowy_niesledzony_plik_dostaje_mutacje(tmp_path: Path) -> None:
@@ -1173,7 +1173,7 @@ def test_z_predykatu_napisu_biegnie_in_na_startswith() -> None:
     # #460 r1: ``word in text`` → ``text.endswith(word)`` wykrył test, a przeżyło ``text.startswith(word)``.
     code = "def f(a, t):\n    x = a in t\n    y = t.startswith(a)\n    z = t.endswith(a)\n"
 
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, [Hunk(2, 3, ())]) if not mutant.revert]
+    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, [Hunk(2, 3, ())], {}) if mutant.revert is Revert.NONE]
 
     assert chosen == [
         (2, "`a in t` → `t.startswith(a)`"),
@@ -1188,14 +1188,14 @@ def test_predykat_napisu_biegnie_tylko_na_linii_bez_innej_mutacji() -> None:
     code = 'GLOBS = frozenset({"glob", "rglob"})\n\n\ndef f(node, name, t):\n    if isinstance(node, str) and name in GLOBS:\n        return t\n'
     hunks = [Hunk(5, 1, ())]
 
-    chosen = [mutant.description for mutant in selected("m.py", code, hunks) if not mutant.revert]
+    chosen = [mutant.description for mutant in selected("m.py", code, hunks, {}) if mutant.revert is Revert.NONE]
 
     assert "`name in GLOBS` → `GLOBS.startswith(name)`" in {mutant.description for mutant in mutants("m.py", code, hunks)}
     assert chosen == ["bez `name in GLOBS` w `and`"]
 
 
 def test_mutacja_glebiej_niz_predykat_napisu_wygrywa_z_nim() -> None:
-    chosen = [mutant.description for mutant in selected("m.py", "x = a in (b if c else d)\n", [Hunk(1, 1, ())]) if not mutant.revert]
+    chosen = [mutant.description for mutant in selected("m.py", "x = a in (b if c else d)\n", [Hunk(1, 1, ())], {}) if mutant.revert is Revert.NONE]
 
     assert chosen == ["`b if c else d` zawsze `d`"]
 
@@ -1260,11 +1260,11 @@ def test_biegnie_jedna_mutacja_linii_z_jej_najglebszego_wezla() -> None:
     hunks = [Hunk(2, 2, ("    if a:", "        return c")), Hunk(5, 1, ("    return a",))]
 
     every = mutants("m.py", code, hunks)
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks)]
+    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks, {})]
 
     assert chosen == [(2, "bez `b` w `and`"), (3, "granica `c > 1` → `>=`"), (5, "krotka bez `b`")]
     assert len(every) > len(chosen)
-    assert {mutant.line for mutant in every if not mutant.revert} == {line for line, _ in chosen}
+    assert {mutant.line for mutant in every if mutant.revert is Revert.NONE} == {line for line, _ in chosen}
 
 
 def test_cofniecie_fragmentu_biegnie_tylko_gdy_zadna_inna_mutacja_nie_psuje_jego_linii() -> None:
@@ -1274,23 +1274,44 @@ def test_cofniecie_fragmentu_biegnie_tylko_gdy_zadna_inna_mutacja_nie_psuje_jego
     code = 'def f(a, b):\n    napis = "nowy"\n    return a and b\n\n\nNAZWA = "nowa"\n'
     hunks = [Hunk(2, 2, ('    napis = "stary"', "    return a")), Hunk(6, 1, ('NAZWA = "stara"',))]
 
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks)]
+    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks, {})]
 
     assert "zmiana linii 2–3 cofnięta do bazy" in {mutant.description for mutant in mutants("m.py", code, hunks)}
     assert chosen == [(3, "bez `b` w `and`"), (6, "zmiana linii 6 cofnięta do bazy")]
 
 
-def test_cofniecie_rowne_innej_mutacji_biegnie_pod_jej_opisem_tylko_na_linii_bez_innej_mutacji() -> None:
-    # #523, src/rozliczenia/intermax_file.py:476: dodany element krotki, a jej cofnięcie to „krotka bez” tego elementu,
-    # obok której linię psuje też „krotka bez” innego elementu.
-    tuple_code = "def xf(number_format, font, fill_id, border):\n    return FORMAT % (number_format, font, fill_id, border)\n"
-    flag_code, flag_base = "ZAMKNIETE = False\n", "ZAMKNIETE = True\n"
+def test_biegnie_cofniecie_rowne_innej_mutacji_linii() -> None:
+    # #523, src/rozliczenia/intermax_file.py:476: dodany element krotki, a jej cofnięcie to „krotka bez” tego elementu.
+    code = "def xf(number_format, font, fill_id, border):\n    return FORMAT % (number_format, font, fill_id, border)\n"
+    base = "def xf(number_format, font, fill_id, border):\n    return FORMAT % (number_format, font, border)\n"
 
-    in_tuple = selected("m.py", tuple_code, [Hunk(2, 1, ("    return FORMAT % (number_format, font, border)",))])
-    flag = selected("m.py", flag_code, [Hunk(1, 1, ("ZAMKNIETE = True",))])
+    chosen = selected("m.py", code, [Hunk(2, 1, ("    return FORMAT % (number_format, font, border)",))], {})
 
-    assert [(mutant.description, mutant.revert) for mutant in in_tuple] == [("krotka bez `border`", False)]
-    assert [(mutant.description, mutant.revert, mutant.source == flag_base) for mutant in flag] == [("`False` → `True`", True, True)]
+    assert [(mutant.description, mutant.revert, mutant.source == base) for mutant in chosen] == [
+        ("krotka bez `fill_id`", Revert.MERGED, True),
+        ("krotka bez `border`", Revert.NONE, False),
+    ]
+
+
+@pytest.mark.parametrize("until", ["2999-01-01", "2000-01-01"])
+def test_mutacja_wylaczona_wyjatkiem_takze_po_terminie_nie_zdejmuje_cofniecia_fragmentu(until: str) -> None:
+    code = f'def f(a, b):\n    napis = "nowy"\n    return a and b  # mutacje-zmiany: tylko na próbę | do {until} | zgoda Maks\n'
+    hunks = [Hunk(2, 2, ('    napis = "stary"', "    return a"))]
+
+    chosen = [mutant.description for mutant in selected("m.py", code, hunks, exceptions(code, "m.py"))]
+
+    assert chosen == ["zmiana linii 2–3 cofnięta do bazy", "bez `b` w `and`"]
+
+
+def test_mutacja_kodu_innego_systemu_nie_zdejmuje_cofniecia_fragmentu() -> None:
+    code = "import sys\n\nPROG = 'nowy'\nif sys.platform == 'win32':\n    x = a or b\n"
+    hunks = [Hunk(3, 3, ("PROG = 'stary'", "if sys.platform == 'win32':", "    x = a"))]
+
+    def reverts(platform: str) -> list[str]:
+        return [mutant.description for mutant in selected("m.py", code, hunks, {}, platform) if mutant.revert is Revert.HUNK]
+
+    assert reverts("linux") == ["zmiana linii 3–5 cofnięta do bazy"]
+    assert reverts("win32") == []
 
 
 def test_niezmieniona_linia_nie_dostaje_mutacji() -> None:
