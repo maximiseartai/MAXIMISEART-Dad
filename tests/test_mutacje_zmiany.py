@@ -21,7 +21,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Coverage, Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Coverage, Hunk, Mutant, ZakresMutacji, ZapisPokrycia, exceptions, fingerprint, mutants, selected
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -1139,6 +1139,96 @@ def test_mutacje_sprawdza_flaky_test_ktory_w_pierwszym_przebiegu_padl_przed_kode
     assert done.returncode == 0, done.stdout + done.stderr
     assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_oba_niestabilny" in done.stdout.splitlines()
     assert sorted(_caught(done)) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
+
+
+def _verdicts(done: subprocess.CompletedProcess[str]) -> list[str]:
+    """Werdykt i nazwa każdej mutacji z linii ``WYKRYTA``/``NIEWYKRYTA`` części, bez ostatniej linii testów."""
+
+    return sorted(line.rpartition(" → ")[0] for line in done.stdout.splitlines() if line.startswith(("WYKRYTA", "NIEWYKRYTA")))
+
+
+def test_czesc_z_pokryciem_nocy_daje_kazdej_mutacji_ten_sam_werdykt_co_z_wlasnym_pokryciem(tmp_path: Path) -> None:
+    """Zadanie pokrycia nocy liczy pokrycie testów zmiany raz, a część z ``--pokrycie`` bierze je z jego zapisu zamiast
+    uruchamiać testy bez mutacji. ``oba`` sprawdza test jej linii, a ``jeden`` test, który cofnięcia nie widzi."""
+
+    tests = ALL_CASES.replace("import oba", "import jeden, oba") + "\n\ndef test_jeden() -> None:\n    assert jeden() > 0\n"
+    repo = _repo(tmp_path / "repo", tests, CHANGED + "\n\ndef jeden() -> int:\n    return 2\n", BASE + "\n\ndef jeden() -> int:\n    return 1\n")
+    record = tmp_path / "pokrycie" / "pokrycie-nocy-1" / "pokrycie.json"
+
+    shard = _run(repo, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(record))
+    own, shared = _run(repo), _run(repo, "--pokrycie", str(tmp_path / "pokrycie"))
+
+    assert shard.returncode == 0, shard.stdout + shard.stderr
+    assert shard.stdout.splitlines()[-1].startswith("POKRYCIE NOCY 1/1 | plików testów 1 |")
+    assert (shared.returncode, _verdicts(shared)) == (own.returncode, _verdicts(own)) == (1, [
+        "NIEWYKRYTA: src/rozliczenia/warunek.py:6 zmiana linii 6 cofnięta do bazy",
+        "WYKRYTA: src/rozliczenia/warunek.py:2 bez `b` w `and`",
+        "WYKRYTA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
+        "WYKRYTA: src/rozliczenia/warunek.py:6 `return 2` → `return None`",
+    ]), shared.stdout + shared.stderr
+
+
+def test_zapis_pokrycia_kilku_zadan_wraca_jako_jedno_pokrycie_z_czasami_testow(tmp_path: Path) -> None:
+    """Części biorą pokrycie z zapisów wszystkich zadań pokrycia nocy, także czasy, od których zależy kolejność testów
+    mutacji (``Coverage.fastest_first``)."""
+
+    first = Coverage(
+        lines={"tests/test_a.py::test_a": {"src/a.py": {1, 2}}},
+        files={"tests/test_a.py::test_a": {"src/a.py"}},
+        shared={"src/a.py": {1}},
+        spawners={"tests/test_a.py::test_a"},
+        seconds={"tests/test_a.py::test_a": 2.5},
+    )
+    second = Coverage(lines={"tests/test_b.py::test_b": {"src/a.py": {2}}}, files={"tests/test_b.py::test_b": {"src/a.py"}}, shared={"src/a.py": {3}}, seconds={"tests/test_b.py::test_b": 0.5})
+    for name, coverage, failed in (("1", first, frozenset({"tests/test_a.py::test_c"})), ("2", second, frozenset[str]())):
+        tests = frozenset(test.split("::")[0] for test in coverage.seconds)
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "pokrycie.json").write_text(ZapisPokrycia(tests, coverage, failed).json(), encoding="utf-8")
+
+    merged = ZapisPokrycia.z_katalogu(tmp_path)
+
+    assert merged.pliki_testow == {"tests/test_a.py", "tests/test_b.py"}
+    assert merged.padniete == {"tests/test_a.py::test_c"}
+    assert merged.pokrycie == Coverage(
+        lines={"tests/test_a.py::test_a": {"src/a.py": {1, 2}}, "tests/test_b.py::test_b": {"src/a.py": {2}}},
+        files={"tests/test_a.py::test_a": {"src/a.py"}, "tests/test_b.py::test_b": {"src/a.py"}},
+        shared={"src/a.py": {1, 3}},
+        spawners={"tests/test_a.py::test_a"},
+        seconds={"tests/test_a.py::test_a": 2.5, "tests/test_b.py::test_b": 0.5},
+    )
+    assert merged.pokrycie.fastest_first(["tests/test_a.py::test_a", "tests/test_b.py::test_b"]) == ["tests/test_b.py::test_b", "tests/test_a.py::test_a"]
+    # Część z testami samego ``test_b.py`` widzi pokrycie, jakby biegły tylko one.
+    own = merged.pokrycie.of_files(["tests/test_b.py"])
+    assert (own.covering(Mutant("src/a.py", 2, frozenset({2}), "opis", "")), own.touching("src/a.py", frozenset({"tests/test_a.py"})), own.seconds) == (
+        ["tests/test_b.py::test_b"],
+        ["tests/test_b.py::test_b"],
+        {"tests/test_b.py::test_b": 0.5},
+    )
+
+
+@pytest.mark.parametrize(
+    ("record", "codes"),
+    [(True, [0, 2]), (False, [2, 2])],
+    ids=["test-pada-po-ponowieniu", "brak-zapisu-pokrycia"],
+)
+def test_test_ktory_pada_w_pokryciu_nocy_konczy_kodem_2_tylko_czesci_ktorych_testy_go_maja(tmp_path: Path, record: bool, codes: list[int]) -> None:
+    """``warunek.py`` ma test, który pada zawsze, a ``inny.py`` własny plik testów, więc część 1/2 (``inny.py``, pierwszy po
+    nazwie) mutuje dalej, a część 2/2 kończy się kodem 2. Bez zapisu pokrycia żadna część nie ma pokrycia swoich testów."""
+
+    repo = _repo(tmp_path / "repo", ALL_CASES + "\n\ndef test_zawsze_pada() -> None:\n    assert False\n", other="def inny() -> int:\n    return 1\n")
+    (repo / "tests" / "test_inny.py").write_text("from rozliczenia.inny import inny\n\n\ndef test_inny() -> None:\n    assert inny() == 2\n", encoding="utf-8")
+    commit(repo, "test innego")
+    (repo / "src" / "rozliczenia" / "inny.py").write_text("def inny() -> int:\n    return 2\n", encoding="utf-8")
+    if record:
+        assert _run(repo, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(tmp_path / "pokrycie" / "pokrycie.json")).returncode == 0
+
+    parts = [_run(repo, "--czesc", f"{number}/2", "--pokrycie", str(tmp_path / "pokrycie")) for number in (1, 2)]
+
+    assert [done.returncode for done in parts] == codes, [done.stdout + done.stderr for done in parts]
+    assert all(done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY FAIL") for done, code in zip(parts, codes, strict=True) if code == 2)
+    if record:
+        assert "PADŁ W POKRYCIU NOCY: tests/test_warunek.py::test_zawsze_pada" in parts[1].stdout.splitlines()
+        assert parts[0].stdout.splitlines()[-1].startswith("MUTACJE ZMIANY OK | mutacje=2")
 
 
 def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:
