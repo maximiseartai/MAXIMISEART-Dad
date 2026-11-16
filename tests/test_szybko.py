@@ -45,9 +45,6 @@ BY_CHANGE_ONLY = {
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
     ),
-    "tests/test_mutacje_zmiany.py": "sprawdza narzędzie na repozytoriach testu; graf wybiera go przy zmianie narzędzia i modułów, które importuje",
-    "tests/test_plan_ci.py": "sprawdza plan na repozytoriach testu i atrapach czasów; graf wybiera go przy zmianie planu i ci.yml",
-    "tests/test_scal_pr.py": "sprawdza narzędzie na atrapie gh i repozytoriach testu, a nie całe repozytorium",
     "tests/test_pliki_w_smieciach.py": (
         "sprawdza straż na plikach tymczasowych testu, a nie całe repozytorium: samą straż plugin z conftest stawia przy "
         "każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/pliki_w_smieciach.py, który importuje"
@@ -68,7 +65,6 @@ BY_CHANGE_ONLY = {
     "tests/test_import_dynamiczny.py": (
         "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
     ),
-    "tests/test_zakres_runu.py": "sprawdza zakres runu na repozytoriach testu, a ci.yml i mutacje-nocne.yml czyta ścieżką, którą graf widzi",
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (
         "graf wybiera jego plik przy zmianie outbox.py, client_data.py i tests/fixtures/plik_kolejki.py, które plik "
@@ -102,9 +98,6 @@ BY_CHANGE_ONLY = {
     "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki": (
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
-    ),
-    "tests/test_zgloszenia_ci.py::test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_z_odtworzeniem": (
-        "sprawdza tools/ponow_ci.py na atrapie GitHuba; graf wybiera go przy zmianie narzędzia i niestabilne_testy.py"
     ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "

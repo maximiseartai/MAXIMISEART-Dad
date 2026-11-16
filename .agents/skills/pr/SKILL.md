@@ -99,7 +99,7 @@ Dowód: <polecenie i wynik>
   After a review round, rewrite the sections that changed instead of adding a section about what changed after the review: the history lives in the verdicts and comments.
 - The repository is public: no client address, order or contract number, Wykonawca, row content of Dad's files, and nothing copied from a Zgłoszenie or a Kontrola ilości.
   A log with Dad's data or a Zgłoszenie's content stays off GitHub, not in the body, a PR comment, an issue or a CI run log: the body gives its shortened result without that data and names what the evidence covers.
-  Refer to a Zgłoszenie by number only (`Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`, `docs/agents/issue-tracker.md`).
+  Refer to a Zgłoszenie by number only (`Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`, `docs/agents/skrzynka-zgloszen.md`).
 
 ## Why
 
