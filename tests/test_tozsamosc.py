@@ -27,6 +27,7 @@ from types import ModuleType
 import pytest
 
 from tests.fixtures.git_config import computer_git_config
+from tests.fixtures.potomne import wait_for
 from tests.fixtures.znane_luki import assert_znane_luki
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -388,8 +389,7 @@ def test_hook_czeka_na_rejestr_trzymany_przez_hook_innego_agenta(repo: Repo) -> 
         assert waiting.stdin is not None
         waiting.stdin.write(json.dumps(data))
         waiting.stdin.close()
-        time.sleep(0.5)
-        blocked = waiting.poll() is None
+        blocked = not wait_for(lambda: waiting.poll() is not None, 0.5)
     waiting.wait(timeout=10)
     _bash(repo, "git config user.name r")
 
