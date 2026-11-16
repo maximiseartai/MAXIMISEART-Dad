@@ -34,6 +34,10 @@ PERIOD = "08_14_09_2026"
 INTERNAL_SETTLEMENT_NAME = pliki_taty.internal_settlement_name(PERIOD)
 COLLECTIVE_FILE_NAME = pliki_taty.collective_file_name(PERIOD)
 
+# CZYNNOŚCI ZREALIZOWANE zlecenia atrap Rejestru, które nie sprawdzają Legendy czynności: bez Kodu czynności i bez
+# Błędu opisu (ADR 0039), więc legenda nic w wierszu nie wpisuje, a wiersz czeka na tatę w kolumnach z opisu technika.
+# Jedyny właściciel tego opisu: Rejestr Przygotowania i scenariusz skilli (scenariusz_rozliczen) biorą go stąd.
+COMPLETED_WITHOUT_CODES = "tak"
 # Nowy Rejestr taty od B (``pliki_taty.REGISTER_HEADERS``): kolumny są przesunięte względem wzorców.
 REGISTER_HEADERS: tuple[str, ...] = ("", *pliki_taty.REGISTER_HEADERS)
 # Starsza kopia Rejestru: inna kolejność, stare zapisy nagłówków, bez AKCJE, ZWROT i UWAGI,
@@ -136,7 +140,7 @@ def register_order(
         "WYKONAWCA": worker,
         "NUMER UMOWY": f"OR-SYN-{number:03d}",
         "SKUTECZNE": successful,
-        "CZYNNOŚCI ZREALIZOWANE": "tak",
+        "CZYNNOŚCI ZREALIZOWANE": COMPLETED_WITHOUT_CODES,
         "ZWROT": f"{NOT_TRANSFERRED_PREFIXES['ZWROT']}{number:03d}",
         "UWAGI": f"{NOT_TRANSFERRED_PREFIXES['UWAGI']}{number:03d}",
     }
@@ -475,7 +479,7 @@ def collective_row(number: int, started: datetime, successful: str, worker: str)
         worker,
         f"OR-SYN-{number:03d}",
         successful,
-        "tak",
+        COMPLETED_WITHOUT_CODES,
     )
 
 

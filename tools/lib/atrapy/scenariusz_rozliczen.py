@@ -2,9 +2,9 @@
 
 Generatory skilla verify-rozliczenia (``create_fixture.py``, ``create_preparation_fixture.py``) budują z tych danych pliki, a wyrocznie obu skilli (``assert_*.py``,
 ``fill_readiness.py``, ``self_test.py``, ``run_excel_verification.py``, ``excel_doctor.py``) biorą stąd te same
-wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nagłówki Wzorców biorą z atrap plików taty, gdzie już są
-(``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tools/lib/atrapy/settlement.py``, ``INTERNAL_SETTLEMENT_NAME`` i
-``COLLECTIVE_FILE_NAME`` z ``tools/lib/atrapy/preparation.py``), a nazwy Rejestru, Wzorców, folderu ``config`` i
+wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu, nagłówki Wzorców i opis zlecenia bez Kodu czynności
+biorą z atrap plików taty, gdzie już są (``PERIOD``, ``SOURCE_NAME`` i ``WORKERS`` z ``tools/lib/atrapy/settlement.py``,
+``INTERNAL_SETTLEMENT_NAME``, ``COLLECTIVE_FILE_NAME`` i ``COMPLETED_WITHOUT_CODES`` z ``tools/lib/atrapy/preparation.py``), a nazwy Rejestru, Wzorców, folderu ``config`` i
 plików okresu oraz nagłówki Wzorców z kopii świata taty w ``tools/lib/atrapy/pliki_taty.py``.
 
 Tu stoją fakty wejścia i cztery oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
@@ -23,6 +23,7 @@ from datetime import datetime
 
 from atrapy import pliki_taty
 from atrapy.pliki_taty import REGISTER_NAME as REGISTER_NAME
+from atrapy.preparation import COMPLETED_WITHOUT_CODES
 from atrapy.settlement import PERIOD
 
 PERIODS_DIRECTORY = "INEA"
@@ -121,14 +122,16 @@ def order_devices(number: int) -> str:
 
 # Numer zlecenia -> CZYNNOŚCI ZREALIZOWANE z samych Kodów czynności Legendy czynności z Wydania (ADR 0038), więc
 # Przygotowanie wpisuje ich Ilości usług, kwotę w AS i wypełnienia: spawpg daje AB, 70 w AS i czerwone AS, a rt2 daje AM
-# z czerwonym AM i zielone AF bez wartości.
+# z czerwonym AM i zielone AF bez wartości. Każde inne zlecenie ma opis atrap Rejestru bez kodu i bez Błędu opisu
+# (COMPLETED_WITHOUT_CODES), więc czeka na tatę w kolumnach z opisu technika.
 ACTIVITY_CODES: dict[int, str] = {8: "spawpg rt2"}
 
 
 def completed_activities(number: int) -> str:
     """CZYNNOŚCI ZREALIZOWANE; order 2 has two lines, so its Wiersz danych wraps and Excel makes it taller."""
 
-    return ACTIVITY_CODES.get(number, "montaż\ndemontaż" if number == 2 else "montaż")
+    without_codes = f"{COMPLETED_WITHOUT_CODES}\n{COMPLETED_WITHOUT_CODES}" if number == 2 else COMPLETED_WITHOUT_CODES
+    return ACTIVITY_CODES.get(number, without_codes)
 
 
 # The only order of the hidden ARCHIWUM sheet, a year before the period.

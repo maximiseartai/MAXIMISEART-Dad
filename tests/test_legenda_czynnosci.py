@@ -9,6 +9,10 @@ przykładów).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from itertools import product
+import re
+
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
@@ -27,6 +31,7 @@ from rozliczenia.activity_legend import (
     FillColour,
     FixedColumn,
     LegendProblem,
+    LegendRefused,
     NotACode,
     NumberOutOfRange,
     NumberRange,
@@ -158,19 +163,28 @@ def test_rozne_kody_w_roznych_kolumnach_wyznaczaja_kazdy_swoje() -> None:
     assert [found.code for found in read.found] == ["spawpg", "dzielnik1/2", "inst", "instutp", "rt2"]
 
 
-_COLOURED = ActivityLegend(
-    (
-        ActivityCode("zielony", ("zielony",), fills=(CellFill("AF", FillColour.GREEN),)),
-        ActivityCode("czerwony", ("czerwony",), fills=(CellFill("AF", FillColour.RED),)),
-        ActivityCode("tez-zielony", ("tezzielony",), fills=(CellFill("AF", FillColour.GREEN),)),
+def _coloured(column: str) -> ActivityLegend:
+    """Trzy kody, które wypełniają kolumnę ``column``: zielony, czerwony i drugi zielony."""
+
+    return ActivityLegend(
+        (
+            ActivityCode("zielony", ("zielony",), fills=(CellFill(column, FillColour.GREEN),)),
+            ActivityCode("czerwony", ("czerwony",), fills=(CellFill(column, FillColour.RED),)),
+            ActivityCode("tez-zielony", ("tezzielony",), fills=(CellFill(column, FillColour.GREEN),)),
+        )
     )
-)
 
 
-def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_razy_nie() -> None:
-    assert _problems("zielony czerwony zielony", _COLOURED) == (TwoColours("AF", ("zielony", "czerwony", "zielony")),)
-    read = _COLOURED.read("zielony tezzielony")
-    assert isinstance(read, CodesOnly) and dict(read.fills) == {"AF": FillColour.GREEN}
+@pytest.mark.parametrize("column", ["AF", "AS"])
+def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_razy_nie(column: str) -> None:
+    legend = _coloured(column)
+
+    assert _problems("zielony czerwony zielony", legend) == (TwoColours(column, ("zielony", "czerwony", "zielony")),)
+    read = legend.read("zielony tezzielony")
+    assert isinstance(read, CodesOnly) and dict(read.fills) == {column: FillColour.GREEN}
+
+
+def test_dwa_kody_z_tym_samym_kolorem_w_af_z_legendy_z_wydania_nie_sa_bledem() -> None:
     assert dict(_codes("rt2 instwew15m").fills)["AF"] is FillColour.GREEN
 
 
@@ -182,18 +196,89 @@ def test_powody_bledu_ida_najpierw_slowami_w_kolejnosci_z_opisu_potem_kolumnami_
     )
 
 
-def test_slowo_pasujace_do_zapisow_dwoch_kodow_nalezy_do_pierwszego_w_legendzie() -> None:
-    legend = ActivityLegend(
+_ONLY_ONE = "a słowo w opisie może pasować tylko do jednego zapisu."
+
+
+@pytest.mark.parametrize(
+    ("codes", "field", "message"),
+    [
         (
-            ActivityCode("rt2", ("rt2",), FixedColumn("AM")),
-            ActivityCode("rt", ("rt{n}",), FixedColumn("AK")),
-        )
-    )
+            (ActivityCode("inst", ("inst{n}m",), FixedColumn("Y")), ActivityCode("inst20", ("inst20m",), FixedColumn("AA"))),
+            "kody[inst20].zapisy[0]",
+            f"Zapis „inst20m” i zapis „inst#m” kodu „inst#m” pasują do tego samego słowa „inst20m”, {_ONLY_ONE}",
+        ),
+        (
+            (ActivityCode("rt2", ("rt2",), FixedColumn("AM")), ActivityCode("rt", ("rt{n}",), FixedColumn("AK"))),
+            "kody[rt].zapisy[0]",
+            f"Zapis „rt#” i zapis „rt2” kodu „rt2” pasują do tego samego słowa „rt2”, {_ONLY_ONE}",
+        ),
+        (
+            (ActivityCode("utp", ("utp{n}m", "utp1{n}m"), ColumnByNumber((NumberRange(1, 15, "AL"), NumberRange(16, 30, "AJ")))),),
+            "kody[utp].zapisy[1]",
+            f"Zapis „utp1#m” i zapis „utp#m” tego kodu pasują do tego samego słowa „utp11m”, {_ONLY_ONE}",
+        ),
+        (
+            (ActivityCode("spawpg", ("spawpg", "spawpg"), FixedColumn("AB")),),
+            "kody[spawpg].zapisy[1]",
+            "Zapis „spawpg” jest w tym kodzie dwa razy.",
+        ),
+        (
+            (ActivityCode("spawpg", ("spawpg",), FixedColumn("AB")), ActivityCode("spawez", ("spawez", "spawpg"), FixedColumn("AB"))),
+            "kody[spawez].zapisy[1]",
+            "Zapis „spawpg” ma już kod „spawpg”.",
+        ),
+    ],
+)
+def test_legenda_z_dwoma_zapisami_do_tego_samego_slowa_nie_powstaje_a_zdanie_podaje_to_slowo(
+    codes: tuple[ActivityCode, ...], field: str, message: str
+) -> None:
+    with pytest.raises(LegendRefused) as refused:
+        ActivityLegend(codes)
 
-    read = legend.read("rt2 rt3")
+    assert refused.value.problem == LegendProblem(field, message)
 
-    assert isinstance(read, CodesOnly)
-    assert [(found.code, found.column) for found in read.found] == [("rt2", "AM"), ("rt", "AK")]
+
+# Zapisy z małego alfabetu, żeby dwa z nich często pasowały do tego samego słowa: od „a”, z „a”, „b”, „1” i „2” i
+# najwyżej jednym miejscem na liczbę.
+_SMALL_SPELLING = st.builds(
+    lambda head, number, tail: f"a{head}{NUMBER if number else ''}{tail}",
+    st.text(alphabet="ab12", max_size=2),
+    st.booleans(),
+    st.text(alphabet="ab12", max_size=2),
+)
+
+
+def _words(spelling: str, other: str) -> Iterator[str]:
+    """Słowa zapisu ``spelling``, wśród których jest każde słowo wspólne z zapisem ``other``, jeśli jakieś istnieje: liczba
+    z cyfr 0, 1 i 2 o najwyżej tylu cyfrach, ile cyfr ma ``other`` poza liczbą, i jednej więcej (cyfrę liczby ``other``
+    zastępuje jedna cyfra)."""
+
+    if NUMBER not in spelling:
+        yield spelling
+        return
+    longest = sum(char.isdigit() for char in other.replace(NUMBER, "")) + 1
+    for size in range(1, longest + 1):
+        for digits in product("012", repeat=size):
+            yield spelling.replace(NUMBER, "".join(digits))
+
+
+def _matches(spelling: str, word: str) -> bool:
+    return re.fullmatch("[0-9]+".join(re.escape(part) for part in spelling.split(NUMBER)), word) is not None
+
+
+@PROPERTY
+@given(first=_SMALL_SPELLING, second=_SMALL_SPELLING)
+def test_legenda_odmawia_dokladnie_wtedy_gdy_jakies_slowo_pasuje_do_obu_zapisow(first: str, second: str) -> None:
+    common = [word for word in _words(first, second) if _matches(second, word)]
+    codes = (ActivityCode("a", (first,), FixedColumn("Y")), ActivityCode("b", (second,), FixedColumn("AB")))
+
+    try:
+        ActivityLegend(codes)
+    except LegendRefused as refused:
+        assert common, refused.problem
+        assert refused.problem.field == "kody[b].zapisy[0]"
+    else:
+        assert common == []
 
 
 _SPELLINGS = tuple(spelling for code in DEFAULT_ACTIVITY_LEGEND.codes for spelling in code.spellings)
