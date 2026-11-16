@@ -33,7 +33,7 @@ from atrapy.workbooks import active_worksheet, hyperlinks, marked_for_copy, refu
 RED, GREEN = "FFFF0000", "FF92D050"
 """Kolory Czerwonego pola i Zielonego pola z GLOSSARY: czerwony i jasnozielony ze standardowych kolorów Excela."""
 DARK_RED, OTHER_GREEN = "FFC00000", "FF99FF66"
-LINK = "https://przyklad.invalid/pole"
+LINK, GREEN_LINK = "https://przyklad.invalid/pole", "https://przyklad.invalid/zielone"
 ORDERS = [("spawpg rt2", "dekoder"), ("inst20m", "gniazdo"), ("montaż", "technicolor"), ("montaż", "dekoder")]
 """``CZYNNOŚCI ZREALIZOWANE`` i ``URZĄDZENIA`` zleceń w wierszach 18–21: ``spawpg rt2`` daje z legendy 1 w AB, 70 w
 czerwonym AS, 1 w czerwonym AM i zielone AF; ``gniazdo`` daje z Reguł ilości 1 w AP, a ``technicolor`` 1 w AK, oba
@@ -51,6 +51,7 @@ BY_HAND: dict[str, tuple[str | int | None, PatternFill]] = {
     "D21": ("dekoder", PatternFill("solid", fgColor=RED)),
     "AT21": ("uwaga taty", PatternFill("solid", fgColor=RED)),
     "AR21": (40, PatternFill("solid", fgColor=GREEN)),
+    "AC21": (3, PatternFill("solid", fgColor=GREEN)),
 }
 """Pola pokolorowane przez tatę: komórka → (wartość, wypełnienie). Indeks 2 palety Excela to ten sam czerwony."""
 FOR_WORKER = {
@@ -63,9 +64,11 @@ FOR_WORKER = {
     "P20": None,
     "AO20": 1,
     "AN21": None,
+    "AC21": 1,
 }
 """Czerwone pole i Zielone pole → wartość w Rozliczeniu pracownika: Zielone pole AP przy ``gniazdo`` ma 1, choć Reguła
-ilości zostawia tę komórkę pustą, bo zielony kolor taty mówi, że Wykonawca dostaje tę pozycję w tym zleceniu."""
+ilości zostawia tę komórkę pustą, bo zielony kolor taty mówi, że Wykonawca dostaje tę pozycję w tym zleceniu, a Zielone
+pole AC z 3 ma 1, bo tata „wstawia cyfrę 1”."""
 KEPT_FILLS = {"AL21": DARK_RED, "AJ21": OTHER_GREEN, "B21": RED, "D21": RED, "AT21": RED, "AR21": GREEN}
 
 
@@ -91,6 +94,7 @@ def _collective_file(tmp_path: Path) -> tuple[Path, Path]:
             sheet[reference].fill = fill
         sheet["P20"].font = Font(bold=True)
         sheet["P20"].hyperlink = LINK
+        sheet["AC21"].hyperlink = GREEN_LINK
         workbook.save(fixture.collective_file_path)
     finally:
         workbook.close()
@@ -133,9 +137,10 @@ def test_czerwone_pole_jest_puste_a_zielone_ma_1_i_oba_sa_biale_w_rozliczeniu_pr
     source = _cells(collective)
     assert {key: source[key][2] for key in FOR_WORKER} == {
         "AS18": RED, "AM18": RED, "AF18": GREEN, "Y19": GREEN, "AP19": GREEN, "AK20": RED, "P20": RED, "AO20": GREEN,
-        "AN21": "indeks 2",
+        "AN21": "indeks 2", "AC21": GREEN,
     }, "warunek: kolory legendy z Przygotowania i kolory taty"
     assert (source["AB18"][0], source["AS18"][0], source["AM18"][0], source["AP19"][0], source["AK20"][0]) == (1, 70, 1, 1, 1)
+    assert source["AC21"][0] == 3
     assert source["N21"][2] == "theme", "warunek: tło Wzorca pliku zbiorczego taty w N"
 
     summary = run_settlements(SettlementInputs(collective, worker_list(), worker_template), RunContext())
@@ -154,7 +159,9 @@ def test_czerwone_pole_jest_puste_a_zielone_ma_1_i_oba_sa_biale_w_rozliczeniu_pr
         assert active_worksheet(workbook)["P20"].font.b, "pogrubienie taty zostaje"
     finally:
         workbook.close()
-    assert "P20" not in hyperlinks(written)
+    links = hyperlinks(written)
+    assert ("P20" in links, links.get("AC21")) == (False, GREEN_LINK), "Czerwone pole bez Hiperłącza, Zielone z nim"
+    assert dict(summary.inea_only_cleared) == {"AK": 1, "AP": 0}, "zielone AP przy gniazdo ma 1, więc się nie liczy"
     assert collective.read_bytes() == before
     assert isinstance(summary.orders, tuple)
     first, *_ = summary.orders

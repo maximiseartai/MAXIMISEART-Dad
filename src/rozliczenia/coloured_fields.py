@@ -30,10 +30,17 @@ def for_worker(rows: Sequence[DataRow]) -> list[DataRow]:
     """Wiersze danych, w których Czerwone pole jest puste i bez Hiperłącza, a Zielone pole ma 1, oba bez wypełnienia.
 
     Pole zmienia się bez względu na to, co w nim stoi (liczba, 0, tekst, formuła); kolor czcionki, pogrubienie i
-    kursywa pola zostają.
+    kursywa pola zostają, a Hiperłącze zostaje przy wartości 1 Zielonego pola, jak przy każdej wartości (GLOSSARY
+    „Hiperłącze”).
     """
 
     return [_for_worker(row) for row in rows]
+
+
+def is_green(cell: DataCell, column: int) -> bool:
+    """Czy komórka w kolumnie ``column`` (od 0) Wiersza danych jest Zielonym polem."""
+
+    return column in _COLUMNS and legend_colour(cell.highlights.fill) is FillColour.GREEN
 
 
 def _for_worker(row: DataRow) -> DataRow:

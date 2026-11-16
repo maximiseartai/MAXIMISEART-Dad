@@ -5,8 +5,8 @@ na Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 (``period_folder``). Z tego samego odczytu każdy Wiersz danych, także bez
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
 Wykonawcą stracą Znacznik efenix (``efenix_mark``) i Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018), a po
-nich ich Czerwone pole i Zielone pole dostaną wartość dla Wykonawcy (``coloured_fields``, ADR 0039): Zielone pole, które
-Reguła ilości zostawia puste, ma więc 1.
+nich ich Czerwone pole i Zielone pole dostaną wartość dla Wykonawcy (``coloured_fields``, ADR 0039): Zielone pole nie jest
+Ilością tylko dla INEA, więc ma 1 także tam, gdzie Reguła ilości zostawia komórkę pustą.
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza, kwotę w ``AS`` i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
 Plik czyta uchwyt plików taty (zob. ``dad_files.DadFiles``).
@@ -41,7 +41,8 @@ class CollectiveRows:
     orders: CollectiveOrders
     """Dozwolona treść każdego Wiersza danych odczytu, z Ilościami tylko dla INEA."""
     inea_only: Cleared
-    """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA."""
+    """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA (bez Zielonych
+    pól, które mają 1)."""
 
 
 def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> CollectiveRows:
