@@ -6,21 +6,26 @@ utknie albo T3 go nie obudzi po końcu dziecka, a nikt tego nie widzi do rana. S
 stawiał dotąd sam koordynator, ze skryptu kopiowanego z biegu do biegu, więc stawiał go dopiero na prośbę Maksa,
 choć instrukcja kazała bez niej. Tu strażnika stawia hook, bez osądu agenta, czy jest koordynatorem i czy praca potrwa.
 
-Hook ``PostToolUse`` narzędzia ``DELEGATE`` (``.claude/settings.json``) bierze z jego odpowiedzi identyfikator wątku
-dziecka (pole ``CHILD_KEY``), dopisuje go do stanu wątku i uruchamia strażnika, gdy żaden nie trzyma blokady wątku.
-Tylko ``delegate_task`` jest delegacją, po której końcu T3 budzi rodzica; ``t3_thread_launch`` i ``create_threads``
-zakładają wątki najwyższego poziomu, na które nikt nie czeka, więc hook pomija każde inne narzędzie. Hook ``SessionStart`` (wznowienie sesji, także po restarcie T3 albo Maca, po którym strażnika
-może już nie być) uruchamia go ponownie, gdy wątek ma stan. Wątek to ``T3CODE_THREAD_ID``, a
-program T3 to ``T3CODE_CLI_PATH``, oba ze środowiska, które T3 daje sesji: bez nich (Claude Code poza T3, komputer
-taty) i na Windows hook nic nie robi. Stan, blokada i dziennik leżą w ``~/.cache/maximiseart/straznik/`` (``STATE``),
-plik na wątek nazwany skrótem jego identyfikatora.
+Hook ``PostToolUse`` narzędzia ``DELEGATE`` (``.claude/settings.json``) dopisuje identyfikator wątku dziecka z
+odpowiedzi (pole ``CHILD_KEY``) z chwilą zlecenia do pliku ``.dzieci`` wątku i za każdym razem uruchamia proces
+strażnika (``pilnuj <wątek>``, ``potomne.detach``, więc koniec Claude Code go nie kończy); ``SessionStart`` (wznowienie
+sesji, także po restarcie T3 albo Maca) uruchamia go, gdy plik jest. Tylko ``delegate_task`` jest delegacją, po której
+końcu T3 budzi rodzica; ``t3_thread_launch`` i ``create_threads`` zakładają wątki najwyższego poziomu, na które nikt nie
+czeka, więc hook pomija każde inne narzędzie. Wątek to ``T3CODE_THREAD_ID``, a program T3 to ``T3CODE_CLI_PATH``, oba ze
+środowiska, które T3 daje sesji: bez nich (Claude Code poza T3, komputer taty) i na Windows hook nic nie robi. Pliki
+wątku leżą w ``~/.cache/maximiseart/straznik/`` (``STATE``), nazwane skrótem jego identyfikatora.
 
-Strażnik (``pilnuj <wątek>``) to proces z ``potomne.detach``, więc koniec Claude Code go nie kończy. Żyje najwyżej
-``MAX_LIFE_S`` od swojego startu albo od ostatniego ``delegate_task`` wątku (czas zmiany pliku ``.dzieci``), cokolwiek
-odpowiada T3 i jakkolwiek wolno: to warunek jego pętli (``alive``), a nowe życie daje tylko nowe ``delegate_task`` albo
-``SessionStart`` po zabitym strażniku. Co ``STEP_S`` sekund pyta ``t3 thread show`` o wątek i każde dziecko; ``Seen``
-niesie ``updatedAt`` z T3 (chwilę ostatniego ruchu wątku), a każdy wiek liczy się z jednego ``now`` pytania, więc
-czas samego odpytania niczego nie przesuwa:
+Cykl życia nie ma stanu, który ktoś usuwa albo przepisuje: plik ``.dzieci`` jest tylko dopisywany (jedna linia na
+zlecenie, atomowo przez ``O_APPEND``), a wpis traci znaczenie ``MAX_LIFE_S`` po swoim zleceniu. O tym, który proces
+pilnuje, rozstrzygają dwie blokady ``flock``, które system zwalnia ze śmiercią procesu: blokada życia (``.zycie``)
+należy do jedynego pilnującego, a blokada kolejki (``.kolejka``) do najwyżej jednego czekającego. Proces bierze kolejkę
+bez czekania (zajęta: kończy się, bo czekający jeszcze nie czytał pliku i przeczyta dopisane dziecko), potem czeka na
+życie, oddaje kolejkę i dopiero wtedy czyta plik. Każde dopisanie poprzedza więc uruchomienie procesu, który plik
+przeczyta po dopisaniu, w każdej kolejności kroków hooka i kończącego się strażnika (``serve``).
+
+Pilnujący co ``STEP_S`` sekund czyta plik od zera, pyta ``t3 thread show`` o wątek i każde dziecko z wpisów młodszych
+niż ``MAX_LIFE_S``, a kończy się, gdy od najmłodszego wpisu minęło ``MAX_LIFE_S`` (``alive``), cokolwiek i jakkolwiek
+wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się z jednego ``now`` pytania:
 
 - ``decide`` budzi wątek (``t3 thread send``), gdy wątek skończył turę (status z ``FINISHED``, także ``failed`` i
   ``interrupted``), a dziecko trwa bez ruchu dłużej niż ``CHILD_STALE_S`` albo skończyło się ponad ``WAKE_S`` temu, a
@@ -30,12 +35,13 @@ czas samego odpytania niczego nie przesuwa:
   czeka na jego następną turę;
 - kończy się wcześniej, gdy nie ma już czego pilnować (``pending``: żadne dziecko nie trwa, a po każdym końcu dziecka
   wątek ruszył albo dostał budzenie; dziecko, którego ``t3 thread show`` nie pokazuje dłużej niż ``LOST_S``, przestaje
-  się liczyć); każdy koniec poza usunięciem pliku ``.dzieci`` usuwa ten plik.
+  się liczyć).
 
 Granica: dzieci to tylko wątki z ``childThreadId`` w odpowiedzi ``delegate_task``; dziecko w innym środowisku (og-box)
 ma ``childThreadId`` null, a jego identyfikator należy do tamtego środowiska, więc strażnik go nie pilnuje; podagent
-narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażnik go nie widzi. Koordynator stojący przy gotowym PR bez żywego dziecka nie
-dostaje budzenia. T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury, przesunie ruch rodzica i
+narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażnik go nie widzi. Koordynator stojący przy
+gotowym PR bez żywego dziecka nie dostaje budzenia. Plik ``.dzieci`` rośnie o linię na zlecenie i nikt go nie
+skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający proces. T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury, przesunie ruch rodzica i
 ukryje brak budzenia. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
 """
@@ -66,6 +72,8 @@ STATE = Path(".cache") / "maximiseart" / "straznik"
 # Odstęp pytań strażnika; test podaje krótszy, żeby strażnik skończył się w kilka sekund.
 STEP_ENV = "MAXIMISEART_STRAZNIK_ODSTEP_S"
 STEP_S = 300.0
+# Limit życia wpisu; test procesu podaje krótszy, żeby strażnik, którego test nie zakończył, skończył się sam.
+LIFE_ENV = "MAXIMISEART_STRAZNIK_ZYCIE_S"
 CHILD_STALE_S = 45 * 60
 WAKE_S = 15 * 60
 PAUSE_S = 30 * 60
@@ -74,7 +82,6 @@ LOST_S = 30 * 60
 MAX_LIFE_S = 12 * 60 * 60
 # Status wątku T3 po końcu tury; każdy inny (running, waiting na odpowiedź, preparing, nieznany) znaczy, że wątek trwa.
 FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
-NO_STATE = "bez stanu"
 NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
 
@@ -162,11 +169,29 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
     return False
 
 
-def alive(started: float, armed: float, now: float) -> bool:
-    """Czy strażnik może jeszcze żyć: od jego startu albo od ostatniego ``delegate_task`` (``armed``) minęło najwyżej
-    ``MAX_LIFE_S``."""
+def alive(newest: float | None, now: float, life: float) -> bool:
+    """Czy strażnik może jeszcze żyć: od najmłodszego wpisu ``.dzieci`` (``None``: brak wpisu) minęło najwyżej ``life``."""
 
-    return now - max(started, armed) <= MAX_LIFE_S
+    return newest is not None and now - newest <= life
+
+
+def entries(text: str, now: float, life: float) -> tuple[list[str], float | None]:
+    """Dzieci z wpisów pliku ``.dzieci`` młodszych niż ``life`` (bez powtórzeń, w kolejności zleceń) i chwila
+    najmłodszego wpisu; linia, która nie ma postaci ``<chwila> <dziecko>``, nic nie znaczy."""
+
+    children: list[str] = []
+    newest = None
+    for line in text.splitlines():
+        moment, _, child = line.partition(" ")
+        try:
+            when = float(moment)
+        except ValueError:
+            continue
+        if child and now - when <= life:
+            newest = when if newest is None else max(newest, when)
+            if child not in children:
+                children.append(child)
+    return children, newest
 
 
 def message(reasons: list[str]) -> str:
@@ -197,10 +222,18 @@ def children_in(response: object) -> list[str]:
     return found
 
 
-def _files(thread: str) -> tuple[Path, Path, Path]:
+@dataclass(frozen=True)
+class Files:
+    kids: Path
+    life: Path
+    queue: Path
+    log: Path
+
+
+def _files(thread: str) -> Files:
     base = Path.home() / STATE
     name = hashlib.sha256(thread.encode("utf-8")).hexdigest()[:16]
-    return base / f"{name}.dzieci", base / f"{name}.blokada", base / f"{name}.jsonl"
+    return Files(base / f"{name}.dzieci", base / f"{name}.zycie", base / f"{name}.kolejka", base / f"{name}.jsonl")
 
 
 def _log(path: Path, **row: object) -> None:
@@ -213,42 +246,33 @@ def _log(path: Path, **row: object) -> None:
         print(f"straznik_koordynatora: dziennik {path} niedostępny: {error!r}", file=sys.stderr)
 
 
-def _taken(handle: IO[str]) -> bool:
-    """Bierze blokadę pliku ``handle`` bez czekania; ``fcntl`` jest tylko na POSIX, a hook na Windows nic nie robi."""
+def _taken(handle: IO[str], *, wait: bool) -> bool:
+    """Bierze blokadę pliku ``handle`` (z ``wait`` czekając na nią); ``fcntl`` jest tylko na POSIX, a hook na Windows
+    nic nie robi."""
 
     if sys.platform == "win32":
         return False
     import fcntl
 
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(handle, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return False
     return True
 
 
-def _guarded(lock: Path) -> bool:
-    """Czy żywy strażnik trzyma blokadę wątku (blokadę zwalnia zamknięcie pliku)."""
+def record(files: Files, children: list[str], now: float) -> None:
+    """Dopisuje dzieci z chwilą zlecenia; jeden zapis w trybie dopisywania, więc linie dwóch hooków się nie mieszają."""
 
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    with lock.open("a") as handle:
-        return not _taken(handle)
+    files.kids.parent.mkdir(parents=True, exist_ok=True)
+    with files.kids.open("a", encoding="utf-8") as handle:
+        handle.write("".join(f"{now!r} {child}\n" for child in children))
 
 
-def arm(thread: str, new_children: list[str]) -> str:
-    """Dopisuje dzieci do stanu wątku i uruchamia strażnika, gdy żaden nie żyje; zwraca, co zrobił, do dziennika."""
-
-    kids, lock, log = _files(thread)
-    kids.parent.mkdir(parents=True, exist_ok=True)
-    if new_children:
-        with kids.open("a", encoding="utf-8") as handle:
-            handle.write("".join(f"{child}\n" for child in new_children))
-    elif not kids.exists():
-        return NO_STATE
-    if _guarded(lock):
-        return "strażnik żyje"
-    pid = potomne.detach([sys.executable, str(Path(__file__).resolve()), "pilnuj", thread], cwd=Path.home(), stderr=log)
-    return f"strażnik uruchomiony (PID {pid})"
+def _start(thread: str, files: Files) -> int:
+    return potomne.detach(
+        [sys.executable, str(Path(__file__).resolve()), "pilnuj", thread], cwd=Path.home(), stderr=files.log
+    )
 
 
 def _show(cli: str, thread: str) -> Seen | None:
@@ -264,48 +288,56 @@ def _show(cli: str, thread: str) -> Seen | None:
         return None
 
 
-def watch(thread: str, cli: str) -> int:
-    """Pętla strażnika wątku ``thread``; trzyma blokadę wątku do końca, więc drugi strażnik kończy się od razu."""
+def _send(cli: str, thread: str, text: str) -> int:
+    return potomne.run([cli, "thread", "send", thread, text], cwd=Path.home(), timeout=60).returncode
 
-    kids, lock, log = _files(thread)
-    with lock.open("a") as handle:
-        if not _taken(handle):
-            return 0
-        _log(log, zdarzenie="start", pid=os.getpid())
-        step = float(os.environ.get(STEP_ENV) or STEP_S)
-        memory, started = Memory(), time.time()
-        while True:
-            try:
-                names = list(dict.fromkeys(kids.read_text(encoding="utf-8").split()))
-                armed = kids.stat().st_mtime
-            except FileNotFoundError:
-                _log(log, zdarzenie="koniec", powod="stan wątku usunięty")
+
+def serve(thread: str, cli: str) -> int:
+    """Proces strażnika: kolejka bez czekania, potem życie z czekaniem, oddanie kolejki i dopiero wtedy pętla ``watch``
+    (kolejność kroków i czemu, mówi docstring modułu)."""
+
+    files = _files(thread)
+    files.kids.parent.mkdir(parents=True, exist_ok=True)
+    with files.life.open("a") as life:
+        with files.queue.open("a") as queue:
+            if not _taken(queue, wait=False):
                 return 0
-            if not alive(started, armed, time.time()):
-                return _finish(kids, log, f"limit życia: {int(MAX_LIFE_S // 3600)} h od startu i od ostatniego delegate_task")
-            parent = _show(cli, thread)
-            children = {name: _show(cli, name) for name in names} if parent is not None else {}
-            now = time.time()
-            if parent is not None:
-                if parent.status == "running" and parent.age(now) > STUCK_S and "zastój" not in memory.told:
-                    memory.told.add("zastój")
-                    _log(log, zdarzenie="zastój", szczegoly=f"wątek running bez ruchu od {int(parent.age(now) // 60)} min")
-                reasons = decide(parent, children, now, memory)
-                if reasons:
-                    sent = potomne.run([cli, "thread", "send", thread, message(reasons)], cwd=Path.home(), timeout=60)
-                    _log(log, zdarzenie="budzenie", powody=reasons, kod=sent.returncode)
-                elif not pending(parent, children, now, memory):
-                    return _finish(kids, log, "nie ma czego pilnować: nic nie trwa ani nie czeka na budzenie")
-            time.sleep(max(0.0, min(step, max(started, armed) + MAX_LIFE_S - time.time())))
+            if not _taken(life, wait=True):
+                return 0
+        return watch(thread, cli, files)
 
 
-def _finish(kids: Path, log: Path, reason: str) -> int:
-    """Koniec strażnika z usunięciem stanu wątku, żeby wznowiona sesja nie postawiła strażnika na stare dzieci."""
+def watch(thread: str, cli: str, files: Files) -> int:
+    """Pętla pilnującego, który trzyma blokadę życia; każdy przebieg czyta plik ``.dzieci`` od zera."""
 
-    with contextlib.suppress(FileNotFoundError):
-        kids.unlink()
-    _log(log, zdarzenie="koniec", powod=reason)
-    return 0
+    _log(files.log, zdarzenie="start", pid=os.getpid())
+    step = float(os.environ.get(STEP_ENV) or STEP_S)
+    life = float(os.environ.get(LIFE_ENV) or MAX_LIFE_S)
+    memory = Memory()
+    while True:
+        try:
+            text = files.kids.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            text = ""
+        names, newest = entries(text, time.time(), life)
+        if not alive(newest, time.time(), life):
+            _log(files.log, zdarzenie="koniec", powod="limit życia: brak zlecenia młodszego niż limit")
+            return 0
+        parent = _show(cli, thread)
+        children = {name: _show(cli, name) for name in names} if parent is not None else {}
+        now = time.time()
+        if parent is not None:
+            if parent.status == "running" and parent.age(now) > STUCK_S and "zastój" not in memory.told:
+                memory.told.add("zastój")
+                _log(files.log, zdarzenie="zastój", szczegoly=f"wątek running bez ruchu od {int(parent.age(now) // 60)} min")
+            reasons = decide(parent, children, now, memory)
+            if reasons:
+                _log(files.log, zdarzenie="budzenie", powody=reasons, kod=_send(cli, thread, message(reasons)))
+            elif not pending(parent, children, now, memory):
+                _log(files.log, zdarzenie="koniec", powod="nie ma czego pilnować: nic nie trwa ani nie czeka na budzenie")
+                return 0
+        assert newest is not None
+        time.sleep(max(0.0, min(step, newest + life - time.time())))
 
 
 def main(argv: list[str]) -> int:
@@ -313,7 +345,7 @@ def main(argv: list[str]) -> int:
     if sys.platform == "win32" or not thread or not cli:
         return 0
     if argv[:1] == ["pilnuj"] and len(argv) == 2:
-        return watch(argv[1], cli)
+        return serve(argv[1], cli)
     try:
         event: object = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except (ValueError, RecursionError):
@@ -322,14 +354,17 @@ def main(argv: list[str]) -> int:
     if fields.get("hook_event_name") == "PostToolUse" and fields.get("tool_name") != DELEGATE:
         return 0
     new = [child for child in children_in(fields.get("tool_response")) if child != thread]
+    files = _files(thread)
+    if not new and not files.kids.exists():
+        return 0
     try:
-        done = arm(thread, new)
+        if new:
+            record(files, new, time.time())
+        done = f"strażnik uruchomiony (PID {_start(thread, files)})"
     except OSError as error:
         done = f"błąd: {error!r}"
-    if done != NO_STATE:
-        _log(_files(thread)[2], zdarzenie=fields.get("hook_event_name"), dzieci=new, wynik=done)
+    _log(files.log, zdarzenie=fields.get("hook_event_name"), dzieci=new, wynik=done)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

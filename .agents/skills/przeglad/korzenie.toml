@@ -150,3 +150,7 @@ przyklad = 1914
 [R-ZEGAR-POMIARU]
 opis = "Zmiana stanu zewnętrznego liczona z wartości przeliczonej na własnym zegarze w chwili pomiaru (teraz minus wiek) zamiast z pola, które system daje (updatedAt), więc czas samego pomiaru udaje zmianę."
 przyklad = 1992
+
+[R-WYSCIG-STANU]
+opis = "Dwa procesy dzielą plik stanu, a jeden usuwa go albo przepisuje według treści przeczytanej wcześniej, bez blokady, pod którą drugi pisze, więc zapis z okna między odczytem a usunięciem ginie po cichu."
+przyklad = 1992

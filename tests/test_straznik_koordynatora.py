@@ -11,7 +11,7 @@ zapisu sesji T3.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
@@ -19,6 +19,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from types import ModuleType
 from typing import NamedTuple
 
@@ -246,15 +248,28 @@ def test_dziecko_chwilowo_niewidoczne_ktore_wraca_dalej_jest_pilnowane() -> None
     assert "bez ruchu od 46 min" in reason
 
 
-def test_limit_zycia_liczy_sie_od_startu_albo_od_ostatniego_delegate_task() -> None:
-    life = straznik.MAX_LIFE_S
+def test_dwa_hooki_dopisuja_obu_dzieci_do_stanu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    files = straznik._files(PARENT)
 
-    assert straznik.alive(0.0, 0.0, life)
-    assert not straznik.alive(0.0, 0.0, life + 1)
-    assert straznik.alive(0.0, 100.0, life + 100)
-    # Strażnik ze startu sesji po zabitym poprzedniku żyje od swojego startu, choć stan jest starszy.
-    assert straznik.alive(100.0, 0.0, life + 50)
-    assert not straznik.alive(100.0, 0.0, life + 101)
+    straznik.record(files, [CHILD], 10.0)
+    straznik.record(files, ["dziecko-2"], 20.0)
+
+    assert straznik.entries(files.kids.read_text(encoding="utf-8"), 30.0, 60) == ([CHILD, "dziecko-2"], 20.0)
+
+
+def test_limit_zycia_liczy_sie_od_najmlodszego_zlecenia() -> None:
+    assert straznik.alive(100.0, 100.0 + 60, 60)
+    assert not straznik.alive(100.0, 100.0 + 61, 60)
+    assert not straznik.alive(None, 0.0, 60)
+
+
+def test_wpis_dzieci_traci_znaczenie_po_limicie_a_linia_innej_postaci_nic_nie_znaczy() -> None:
+    text = f"10.0 {CHILD}\n50.0 dziecko-2\nzepsuta linia\n70.0 {CHILD}\n80.0\n"
+
+    assert straznik.entries(text, 100.0, 60) == (["dziecko-2", CHILD], 70.0)
+    assert straznik.entries(text, 115.0, 60) == ([CHILD], 70.0)
+    assert straznik.entries(text, 131.0, 60) == ([], None)
 
 
 def test_ustawienia_wpinaja_hook_po_delegate_task_i_na_starcie_sesji() -> None:
@@ -318,13 +333,12 @@ def t3(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str]]]:
         "T3CODE_THREAD_ID": PARENT,
         "T3CODE_CLI_PATH": str(program),
         straznik.STEP_ENV: "0.1",
+        straznik.LIFE_ENV: "5",
     }
     yield tmp_path, env
-    # Strażnik żyje po hooku z założenia; kończy go usunięty stan wątku, także takiego, który dopiero startuje.
+    # Strażnik żyje po hooku z założenia; ten, którego test nie zakończył, kończy krótki limit życia.
     folder = home / straznik.STATE
-    for kids in folder.glob("*.dzieci"):
-        kids.unlink()
-    assert wait_for(lambda: not any(held(lock) for lock in folder.glob("*.blokada")), 10)
+    assert wait_for(lambda: not any(held(lock) for lock in folder.glob("*.zycie")), 15)
 
 
 def _rows(home: Path) -> list[dict[str, object]]:
@@ -353,11 +367,12 @@ def test_koordynator_ktory_zlecil_prace_i_skonczyl_ture_bez_strażnika_dostaje_g
     (sent,) = (folder / "bin" / "wyslane.txt").read_text(encoding="utf-8").splitlines()
     assert sent.startswith(f"{PARENT} {straznik.NUDGE} dziecko {CHILD} (running) bez ruchu od 50 min")
     events = [row["zdarzenie"] for row in _rows(home)]
-    assert events.count("start") == 1 and events.count("budzenie") == 1
-    # Stan wątku znika z końcem strażnika, więc wznowiona sesja nie stawia go znów na stare dzieci.
-    assert list((home / straznik.STATE).glob("*.dzieci")) == []
+    # Drugi hook uruchamia drugi proces, który zostaje czekającym i nie budzi drugi raz.
+    assert events.count("budzenie") == 1
+    # Wznowiona sesja stawia strażnika na te same dzieci, ale nie ma już czego pilnować.
     assert _hook(env, {"hook_event_name": "SessionStart", "source": "resume"}).returncode == 0
-    assert [row["zdarzenie"] for row in _rows(home)].count("start") == 1
+    assert wait_for(lambda: [row.get("zdarzenie") for row in _rows(home)].count("koniec") == 2, 30)
+    assert len((folder / "bin" / "wyslane.txt").read_text(encoding="utf-8").splitlines()) == 1
 
 
 @POSIX_ONLY
@@ -367,9 +382,8 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
     # Restart Maca zabił strażnika, zanim skończył; zostawił stan wątku, a T3 wznawia sesję koordynatora.
     folder, env = t3
     monkeypatch.setenv("HOME", env["HOME"])
-    kids, _, _ = straznik._files(PARENT)
-    kids.parent.mkdir(parents=True)
-    kids.write_text(f"{CHILD}\n", encoding="utf-8")
+    files = straznik._files(PARENT)
+    straznik.record(files, [CHILD], time.time())
 
     assert _hook(env, {"hook_event_name": "SessionStart", "source": "resume"}).returncode == 0
 
@@ -470,14 +484,145 @@ def test_strażnik_konczy_sie_w_limicie_zycia_w_kazdym_stanie_dziecka_i_przy_zmi
     (tmp_path / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path / "dom"))
     monkeypatch.setenv(straznik.STEP_ENV, "0.1")
-    monkeypatch.setattr(straznik, "MAX_LIFE_S", 2.0)
+    monkeypatch.setenv(straznik.LIFE_ENV, "2")
     monkeypatch.setattr(straznik, "LOST_S", 3600.0)
-    kids, _, log = straznik._files(PARENT)
-    kids.parent.mkdir(parents=True)
-    kids.write_text(f"{CHILD}\n", encoding="utf-8")
+    files = straznik._files(PARENT)
+    straznik.record(files, [CHILD], time.time())
 
-    assert straznik.watch(PARENT, str(program)) == 0
+    assert straznik.serve(PARENT, str(program)) == 0
 
-    (end,) = [row for row in map(json.loads, log.read_text(encoding="utf-8").splitlines()) if row["zdarzenie"] == "koniec"]
+    rows = map(json.loads, files.log.read_text(encoding="utf-8").splitlines())
+    (end,) = [row for row in rows if row["zdarzenie"] == "koniec"]
     assert str(end["powod"]).startswith(("limit życia", "nie ma czego pilnować"))
-    assert not kids.exists()
+
+
+NEW = "thread:delegated-task:dziecko-wymyslone-2"
+
+
+class _T3InProcess:
+    """T3 w pamięci dla przeplotów: koordynator ruszył po końcu pierwszego dziecka, nowe dziecko stoi od 50 min, a
+    budzenie kończy nowe dziecko i rusza koordynatora; ``inject`` robi krok hooka w wybranym miejscu pętli strażnika."""
+
+    def __init__(self, now: float) -> None:
+        self.lock = threading.Lock()
+        self.threads = {
+            PARENT: straznik.Seen("completed", now - 10 * MIN),
+            CHILD: straznik.Seen("completed", now - 30 * MIN),
+            NEW: straznik.Seen("running", now - 50 * MIN),
+        }
+        self.sent: list[str] = []
+        self.inject: tuple[str, Callable[[], None]] | None = None
+        self.gate = threading.Event()
+
+    def show(self, cli: str, thread: str) -> object:
+        assert self.gate.wait(10)
+        self._fire("show")
+        with self.lock:
+            return self.threads[thread]
+
+    def send(self, cli: str, thread: str, text: str) -> int:
+        with self.lock:
+            self.sent.append(text)
+            moved = time.time()
+            self.threads = {**self.threads, NEW: straznik.Seen("completed", moved - 1), PARENT: straznik.Seen("completed", moved)}
+        return 0
+
+    def _fire(self, point: str) -> None:
+        action, self.inject = (self.inject, None) if self.inject and self.inject[0] == point else (None, self.inject)
+        if action:
+            action[1]()
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("point", "waiting"),
+    [
+        ("show", False),
+        ("koniec", False),
+        ("po", False),
+        ("show", True),
+        ("koniec", True),
+    ],
+    ids=[
+        "w-trakcie-odpytania",
+        "po-decyzji-przed-oddaniem-zycia",
+        "po-koncu-strażnika",
+        "w-trakcie-odpytania-przy-czekajacym",
+        "po-decyzji-przy-czekajacym",
+    ],
+)
+def test_dziecko_zlecone_w_kazdej_chwili_konca_strażnika_ma_strażnika(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, point: str, waiting: bool
+) -> None:
+    # Koordynator zleca nowe dziecko w chwili, gdy strażnik pierwszego dziecka się kończy (krok hooka: dopisanie, potem
+    # uruchomienie procesu), a nowe dziecko staje.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(straznik.STEP_ENV, "0.01")
+    monkeypatch.setenv(straznik.LIFE_ENV, "10")
+    t3 = _T3InProcess(time.time())
+    monkeypatch.setattr(straznik, "_show", t3.show)
+    monkeypatch.setattr(straznik, "_send", t3.send)
+    files = straznik._files(PARENT)
+    straznik.record(files, [CHILD], time.time())
+    started: list[threading.Thread] = []
+
+    def hook() -> None:
+        straznik.record(files, [NEW], time.time())
+        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3")))
+        started[-1].start()
+
+    log = straznik._log
+
+    def log_then_inject(path: Path, **row: object) -> None:
+        log(path, **row)
+        if row.get("zdarzenie") == "koniec":
+            t3._fire("koniec")
+
+    monkeypatch.setattr(straznik, "_log", log_then_inject)
+    t3.inject = (point, hook)
+    # Strażnik pierwszego dziecka bierze życie i czeka na T3; czekający (gdy jest) staje w kolejce.
+    first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
+    first.start()
+    assert wait_for(lambda: held(files.life), 5)
+    if waiting:
+        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3")))
+        started[-1].start()
+        assert wait_for(lambda: held(files.queue), 5)
+    t3.gate.set()
+    first.join(15)
+    assert not first.is_alive()
+    if point == "po":
+        hook()
+
+    for thread in started:
+        thread.join(15)
+    assert [thread.is_alive() for thread in started] == [False] * len(started)
+    assert [NEW in text for text in t3.sent] == [True]
+
+
+@POSIX_ONLY
+def test_dziecko_zlecone_w_trakcie_pilnowania_dostaje_budzenie_od_pilnujacego(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Pierwsze dziecko dalej pracuje, więc strażnik się nie kończy; nowe dziecko zlecone w trakcie staje.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(straznik.STEP_ENV, "0.01")
+    monkeypatch.setenv(straznik.LIFE_ENV, "5")
+    t3 = _T3InProcess(time.time())
+    t3.threads[CHILD] = straznik.Seen("running", time.time())
+    monkeypatch.setattr(straznik, "_show", t3.show)
+    monkeypatch.setattr(straznik, "_send", t3.send)
+    files = straznik._files(PARENT)
+    straznik.record(files, [CHILD], time.time())
+    first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
+    first.start()
+    assert wait_for(lambda: held(files.life), 5)
+    t3.gate.set()
+
+    straznik.record(files, [NEW], time.time())
+
+    # Pilnujący czyta plik w każdym przebiegu, więc budzi, zanim minie jego limit życia.
+    assert wait_for(lambda: bool(t3.sent), 2)
+    assert NEW in t3.sent[0]
+    first.join(15)
+    assert not first.is_alive()
