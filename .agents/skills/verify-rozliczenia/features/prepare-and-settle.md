@@ -52,10 +52,8 @@ then runs Przebieg rozliczeń for the same period in Centrum.
 
 Run `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant chain` from the repository root
 (macOS: `.venv/bin/python`). The proof is in the evidence folder that `VERIFY OK` names: `readiness.txt`, the
-`preparation-*` and `settlement-*` `.json` and `-metrics.jsonl`, and `assert-*.txt`. `--variant chain-real-templates`
-runs the same plan on byte copies of the three real Wzorce in `config/` (or `--templates-dir`), only locally; it takes
-under a minute, as the real Wzorce have about 10 000 rows each, and without them it prints `VERIFY SKIP`, which is a
-skip.
+`preparation-*` and `settlement-*` `.json` and `-metrics.jsonl`, and `assert-*.txt`.
+`--variant chain-real-templates` runs the same plan on byte copies of the three real Wzorce in `config/` (or `--templates-dir`), as `SKILL.md`, Launch, says; it takes under a minute, as the real Wzorce have about 10 000 rows each.
 
 ## Gotchas
 
