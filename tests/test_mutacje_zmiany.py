@@ -21,7 +21,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Coverage, Hunk, Mutant, Revert, ZakresMutacji, ZapisPokrycia, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Coverage, Hunk, Mutant, Revert, ZakresMutacji, ZapisPokrycia, exceptions, fingerprint, mutants, selected, zapisz_osadzone
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -261,6 +261,33 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 1 mutacji | "), written["wynik"]
     assert [_named(entry) for entry in written["bez_werdyktu"]] == [late]
     assert late not in [_named(entry) for entry in written["przezyte"]]
+
+
+def test_czesc_z_kluczami_osadzonymi_przez_poprzednia_mutuje_tylko_mutacje_bez_werdyktu(tmp_path: Path) -> None:
+    """Zapis części (``osadzone``) ma klucz każdej mutacji, której dała werdykt: wykrytej testem, zdominowanego cofnięcia,
+    wykrytej bramą typów i przeżytej. Ta sama część z tymi kluczami w ``--osadzone``, jak noc po czerwonej (ADR 0021),
+    mutuje już tylko mutację, której brama typów nie dała wyniku w czasie (``# brama gdy None: ruff późno``)."""
+
+    # Funkcja bez zmiany między fragmentami, żeby cofnięcie nowych funkcji było osobnym fragmentem, który przeżywa.
+    one = "\n\ndef jeden() -> int:\n    return 1\n"
+    added = "\n\ndef zapas() -> int:\n    return 1  # brama gdy None: ruff późno\n\n\ndef druga() -> int:\n    return 2  # brama gdy None: mypy return-value\n"
+    late = "src/rozliczenia/warunek.py:10 `return 1` → `return None`"
+    repo = _repo(tmp_path / "repo", ALL_CASES, CHANGED + one + added, BASE + one)
+    record, judged = tmp_path / "zapis" / "czesc.json", tmp_path / "osadzone.json"
+
+    first = _run(repo, "--zapis", str(record), fake_gate=True)
+    zapisz_osadzone(judged, json.loads(record.read_text(encoding="utf-8"))["osadzone"])
+    second = _run(repo, "--osadzone", str(judged), fake_gate=True)
+
+    assert first.returncode == 3, first.stdout + first.stderr
+    assert _verdicts(first) == [
+        "NIEWYKRYTA: src/rozliczenia/warunek.py:7 zmiana linii 7–14 cofnięta do bazy",
+        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:14 `return 2` → `return None`",
+        "WYKRYTA: src/rozliczenia/warunek.py:2 bez `b` w `and`",
+        "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
+    ], first.stdout
+    assert second.returncode == 3, second.stdout + second.stderr
+    assert [line for line in second.stdout.splitlines() if " → " in line] == [f"BEZ WERDYKTU: {late} → brama typów, ruff: brak wyniku po 1 s"], second.stdout
 
 
 # Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez

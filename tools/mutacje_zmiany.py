@@ -118,7 +118,11 @@ W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py`
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
 nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
-``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie.
+``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie. Zapis ma też klucze wszystkich mutacji,
+którym część dała werdykt (``osadzone``: wykrytych testem, także ``ZAWIESZENIE``, albo bramą typów, przeżytych i
+``ZDOMINOWANA``, a nie bez werdyktu, z przekroczonym czasem ani ``NIEAKTUALNA``). Plan nocy po czerwonej, która nie
+przesunęła bazy, zbiera je z zapisów jej części, a zadania pokrycia i części dostają je w ``--osadzone PLIK`` i ich nie
+mutują (``ZakresMutacji.bez_osadzonych``).
 
 Granica: nie zastępuje mutacji z opisu PR. Obietnicę, której żadna z tych mutacji nie psuje (inny klucz
 wyszukiwania, kolejność kroków), samo usunięcie linii, dekoratory, argument pozycyjny, kod poza ``src/`` i jednostkami ``przepuszcza`` w ``tools/``
@@ -142,9 +146,9 @@ CI dzieli mutacje bez listy w workflow, a każde ma testy tylko swoich kilku pli
 Z ``--do <commit>`` lista ma tylko mutacje, z których linii co najmniej jedną ostatni zmienił (``git blame
 --first-parent``) commit, który ``<commit>`` zawiera: noc z zaległością mutuje zmiany ``main`` tylko do tego commitu
 (``tools/mutacje_nocne.py``).
-Listę mutacji od bazy, jej przycięcie do ``--do`` i kawałek części liczy ``ZakresMutacji``, o który pyta też plan nocy
-w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a zadania pokrycia liczą z niej pliki testów
-nocy.
+Listę mutacji od bazy, jej przycięcie do ``--do``, bez mutacji z ``--osadzone``, i kawałek części liczy
+``ZakresMutacji``, o który pyta też plan nocy w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a
+zadania pokrycia liczą z niej pliki testów nocy.
 """
 
 from __future__ import annotations
@@ -203,6 +207,10 @@ SURVIVED = "MUTACJE ZMIANY FAIL | przeżyło"
 PRZEZYTE = "przezyte"
 BEZ_WERDYKTU = "bez_werdyktu"
 PRZEKROCZONY_CZAS = "przekroczony_czas"
+# Lista zapisu ``--zapis`` z kluczami (``fingerprint``) mutacji, którym część dała werdykt: wykrytych testem (także
+# ``ZAWIESZENIE``) albo bramą typów, przeżytych i ``ZDOMINOWANA``. Noc po czerwonej ich nie powtarza
+# (``ZakresMutacji.bez_osadzonych``), a mutacji bez werdyktu, z przekroczonym czasem i ``NIEAKTUALNA`` tu nie ma.
+OSADZONE = "osadzone"
 # Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi albo z przekroczonym
 # czasem testów, 3 z mutacjami bez werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
 KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
@@ -962,6 +970,7 @@ def _shard(args: argparse.Namespace) -> int:
         return 2
     if args.do:
         zakres = zakres.do(args.do)
+    zakres = zakres.bez_osadzonych(args.osadzone)
     tests = czesc.co_nta(zakres.pliki_testow(wplyw_zmiany.Repository.scan(ROOT)))
     paths = {mutant.path for mutant in zakres.mutanty}
     lines = {path: changed_lines(zakres.fragmenty[path]) for path in paths}
@@ -1038,6 +1047,13 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
         "--pokrycie-czesc", metavar="K/N", type=_part, help="Zamiast mutacji: pokrycie K-tej z N części plików testów nocy do --zapis-pokrycia."
     )
     parser.add_argument("--zapis-pokrycia", type=Path, help="Plik JSON zapisu pokrycia z --pokrycie-czesc (artefakt CI).")
+    parser.add_argument(
+        "--osadzone",
+        metavar="PLIK",
+        type=_judged_file,
+        default=frozenset(),
+        help="Plik kluczy mutacji osądzonych przez czerwone runy tej bazy (artefakt planu nocy): część i zadanie pokrycia ich nie liczą.",
+    )
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
     if (args.pokrycie_czesc is None) != (args.zapis_pokrycia is None):
@@ -1059,6 +1075,7 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
             PRZEZYTE: [entry(mutant, text) for mutant, text in outcome.survived],
             BEZ_WERDYKTU: [entry(mutant, text) for mutant, text in outcome.unchecked],
             PRZEKROCZONY_CZAS: [entry(mutant, text) for mutant, text in outcome.over_limit],
+            OSADZONE: sorted({fingerprint(mutant, text) for mutant, text in outcome.judged}),
         }
         args.zapis.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     return code
@@ -1070,11 +1087,13 @@ def _name(mutant: Mutant) -> str:
 
 @dataclass
 class Outcome:
-    """Mutacje części, które zgłasza noc, każda z treścią swojego pliku przed mutacją."""
+    """Mutacje części, które zgłasza noc albo których noc po czerwonej nie powtarza, każda z treścią swojego pliku przed
+    mutacją."""
 
     survived: list[tuple[Mutant, str]] = field(default_factory=list)  # nie wykrył ich ani test, ani brama typów
     unchecked: list[tuple[Mutant, str]] = field(default_factory=list)  # bez werdyktu po limicie czasu części
     over_limit: list[tuple[Mutant, str]] = field(default_factory=list)  # ostatni przebieg testów to PRZEKROCZONY CZAS
+    judged: list[tuple[Mutant, str]] = field(default_factory=list)  # wykryte, przeżyte i ZDOMINOWANA: ``OSADZONE``
 
 
 def entry(mutant: Mutant, text: str) -> dict[str, object]:
@@ -1108,7 +1127,8 @@ class ZakresMutacji:
     w pliku po liniach.
 
     Jedyne źródło listy mutacji planu nocy i części (ADR 0021): plan pyta o koniec zakresu nocy, liczbę części i
-    mutacje każdej z nich, a część o swoje mutacje, więc obie dostają tę samą listę, bo składa ją tylko ta klasa.
+    mutacje każdej z nich, a część o swoje mutacje, więc obie dostają tę samą listę, bo składa ją (także bez mutacji
+    osądzonych przez czerwone runy, ``bez_osadzonych``) tylko ta klasa.
     """
 
     root: Path
@@ -1144,6 +1164,13 @@ class ZakresMutacji:
         contained = set(repo.git(self.root, "rev-list", "--first-parent", commit).split())
         commits = _last_changes(self.mutanty, self.root)
         return replace(self, mutanty=tuple(mutant for mutant, last in zip(self.mutanty, commits, strict=True) if last & contained))
+
+    def bez_osadzonych(self, klucze: frozenset[str]) -> ZakresMutacji:
+        """Bez mutacji, których klucz (``fingerprint``) jest w ``klucze``: tych, którym werdykt dały części czerwonych runów
+        tej samej bazy (``OSADZONE``). Czerwony run nie przesuwa bazy, więc plan, zadania pokrycia i części z tymi samymi
+        kluczami dzielą tę samą resztę listy, a noc sięga dalej (``najdalszy_koniec``)."""
+
+        return replace(self, mutanty=tuple(mutant for mutant in self.mutanty if fingerprint(mutant, self.teksty[mutant.path]) not in klucze))
 
     def najdalszy_koniec(self, limit: int) -> str:
         """Commit, do którego noc mutuje zmiany: HEAD, gdy mutacji jest najwyżej ``limit``, a inaczej najdalszy commit
@@ -1185,10 +1212,23 @@ class ZakresMutacji:
         return czesc.kawalek(self.mutanty)
 
 
+def zapisz_osadzone(plik: Path, klucze: Iterable[str]) -> None:
+    """Plik ``--osadzone``: posortowana lista JSON kluczy, który plan nocy wgrywa dla zadań pokrycia i części."""
+
+    plik.parent.mkdir(parents=True, exist_ok=True)
+    plik.write_text(json.dumps(sorted(klucze)), encoding="utf-8")
+
+
+def _judged_file(text: str) -> frozenset[str]:
+    """Klucze z pliku ``zapisz_osadzone``, który pisze plan nocy; zadanie bez artefaktu pada już na jego pobraniu."""
+
+    return frozenset(json.loads(Path(text).read_text(encoding="utf-8")))
+
+
 def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gate) -> tuple[int, str]:
     """Kod wyjścia i ostatnia linia; mutacje, które zgłasza noc, dopisuje do ``outcome``."""
 
-    survived, unchecked, over_limit = outcome.survived, outcome.unchecked, outcome.over_limit
+    survived, unchecked, over_limit, judged = outcome.survived, outcome.unchecked, outcome.over_limit, outcome.judged
     deadline = time.monotonic() + args.limit_czesci_s
     out_of_time = f"MUTACJE ZMIANY FAIL | limit czasu części {args.limit_czesci_s:g} s minął"
     czesc: Czesc = args.czesc
@@ -1202,6 +1242,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         return 2, f"MUTACJE ZMIANY FAIL | {zakres.zly_wyjatek}"
     if args.do:
         zakres = zakres.do(args.do)
+    zakres = zakres.bez_osadzonych(args.osadzone)
     texts, hunks, allowed = zakres.teksty, zakres.fragmenty, zakres.wyjatki
     found = zakres.czesc(czesc)
     if not found:
@@ -1287,6 +1328,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             for mutant, mutation, later in reverts:
                 if _dominated(mutant, texts[mutant.path], [other for other, _, _ in others], killed):
                     dominated += 1
+                    judged.append((mutant, texts[mutant.path]))
                     print(f"ZDOMINOWANA: {mutation.name} → każda linia kodu fragmentu ma własną mutację, którą wykrył test", flush=True)
                 else:
                     queued.append((mutant, mutation, later))
@@ -1333,6 +1375,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         wide_s += time.monotonic() - between
         wide_count += len(wide)
     clock.append(time.monotonic())
+    judged += [(mutant, texts[mutant.path]) for mutant in found if mutant in killed]
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
     checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if mutant.revert is Revert.NONE]
     gated = iter(
@@ -1343,6 +1386,8 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
         verdict, shown = next(gated) if mutant.revert is Revert.NONE else (tests_verdict, tests_shown)
         caught, last = silnik_mutacji.in_ci(verdict, shown)
+        if caught or verdict == silnik_mutacji.Verdict.SURVIVED:
+            judged.append((mutant, texts[mutant.path]))
         if verdict == silnik_mutacji.Verdict.NO_VERDICT:
             unchecked.append((mutant, texts[mutant.path]))
         elif verdict == silnik_mutacji.Verdict.OVER_LIMIT:

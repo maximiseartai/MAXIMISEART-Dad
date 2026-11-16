@@ -8,9 +8,12 @@ name: Mutacje nocne
 # without a verdict, goes to the issue "Przeżyte mutacje z #N" of the PR that last changed its line, and each failed
 # mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
 # ADR 0021). The parts do not run their own coverage pass: the shards of the job pokrycie run it once for the whole
-# night, and each part reads their records. Pull requests neither run nor wait for it. The night starts from the first
-# push to main after 01:30 UTC (mutacje-nocne-start.yml dispatches it with start: auto), and the cron run that comes
-# hours late does no second night.
+# night, and each part reads their records. A red night does not move the base, so the next night gets its range again,
+# but without the mutations its parts judged (caught, survived or dominated): the plan reads their keys from the part
+# records of the red runs with the same base, and the shards and parts skip the same keys (artifact osadzone-nocy), so
+# the night takes only what no part judged and reaches further. Pull requests neither run nor wait for it. The night
+# starts from the first push to main after 01:30 UTC (mutacje-nocne-start.yml dispatches it with start: auto), and the
+# cron run that comes hours late does no second night.
 on:
   schedule:
     - cron: '30 1 * * *'
@@ -65,14 +68,25 @@ jobs:
           OD: ${{ inputs.od }}
           ZDARZENIE: ${{ github.event_name }}
           START: ${{ inputs.start }}
-        run: python3 tools/mutacje_nocne.py plan --od "$OD" --zdarzenie "$ZDARZENIE" --start "$START" --zakres .ci-plan/zakres.json --czasy .ci-plan/czasy
+        run: python3 tools/mutacje_nocne.py plan --od "$OD" --zdarzenie "$ZDARZENIE" --start "$START" --zakres .ci-plan/zakres.json --osadzone .ci-plan/osadzone.json --czasy .ci-plan/czasy
 
-      # The next night reads "do" from the last successful run's artifact: its base, so the backlog is not skipped.
+      # The next night reads "do" from the last successful run's artifact: its base, so the backlog is not skipped. A
+      # night after a red one with the same base reads "baza" from it to take the judged mutations of the red run.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zakres-nocy
           path: .ci-plan/zakres.json
           retention-days: 90
+          include-hidden-files: true
+          overwrite: true
+
+      # The keys of the mutations the red runs with the same base judged: the coverage shards and the parts skip them
+      # as the plan did, so all three split the same list.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: osadzone-nocy
+          path: .ci-plan/osadzone.json
+          retention-days: 1
           include-hidden-files: true
           overwrite: true
 
@@ -137,13 +151,18 @@ jobs:
         if: ${{ matrix.przegladarka }}
         uses: ./.github/actions/chromium
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: osadzone-nocy
+          path: .ci-plan
+
       # A test that fails twice goes into the record, so only the parts whose tests it touches end with code 2.
       - name: Run the coverage pass of the shard's test files
         env:
           BAZA: ${{ needs.plan.outputs.baza }}
           DO: ${{ needs.plan.outputs.do }}
           CZESC: ${{ matrix.czesc }}/${{ strategy.job-total }}
-        run: python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --pokrycie-czesc "$CZESC" --zapis-pokrycia .ci-pokrycie/pokrycie.json --limit-czesci-s 3300
+        run: python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --osadzone .ci-plan/osadzone.json --pokrycie-czesc "$CZESC" --zapis-pokrycia .ci-pokrycie/pokrycie.json --limit-czesci-s 3300
 
       - name: Upload the coverage record
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -221,6 +240,12 @@ jobs:
           pattern: pokrycie-nocy-*
           path: .ci-pokrycie
 
+      # Without it the part would split another list than the plan.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: osadzone-nocy
+          path: .ci-plan
+
       # Code 1 is surviving mutations and code 3 mutations the part's time limit left without a verdict: results the
       # last job files, so the part stays green. Any other failure (code 2: a test of the part failed twice in the
       # coverage shard, no record has the part's test files, a bad exception) turns the part red, and
@@ -232,7 +257,7 @@ jobs:
           DO: ${{ needs.plan.outputs.do }}
           CZESC: ${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}
         run: |
-          python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --czesc "$CZESC" --pokrycie .ci-pokrycie --zapis .ci-mutacje/czesc.json && exit 0 || kod=$?
+          python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --osadzone .ci-plan/osadzone.json --czesc "$CZESC" --pokrycie .ci-pokrycie --zapis .ci-mutacje/czesc.json && exit 0 || kod=$?
           test -f .ci-mutacje/czesc.json && { test "$kod" -eq 1 || test "$kod" -eq 3; }
 
       - name: Upload the surviving mutations
