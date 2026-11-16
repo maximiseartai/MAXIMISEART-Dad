@@ -38,9 +38,10 @@ from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, open
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.
 POWOD_ZNAKOW = 10_000
-# Kod eksploratora przeplotów skilla w procesie pytest wywraca test, a test, który zostawił procesowi workera stan
-# (deskryptor, wątek, proces potomny, katalog roboczy, środowisko), pada z tym stanem (docstringi pluginów).
-pytest_plugins = ["tests.fixtures.eksplorator_w_procesie", "tests.fixtures.stan_procesu"]
+# Kod eksploratora przeplotów skilla w procesie pytest wywraca test, test, który zostawił procesowi workera stan
+# (deskryptor, wątek, proces potomny, katalog roboczy, środowisko), pada z tym stanem, a test po limicie pytest-timeout
+# w workerze xdist zostawia w logu limit i stosy (docstringi pluginów).
+pytest_plugins = ["tests.fixtures.eksplorator_w_procesie", "tests.fixtures.stan_procesu", "tests.fixtures.limit_testu_w_workerze"]
 
 
 def pytest_configure(config: pytest.Config) -> None:
