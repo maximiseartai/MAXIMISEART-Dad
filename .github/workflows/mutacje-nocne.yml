@@ -7,8 +7,10 @@ name: Mutacje nocne
 # of main, and the next night starts there. Each surviving mutation, and each mutation its part's time limit left
 # without a verdict, goes to the issue "Przeżyte mutacje z #N" of the PR that last changed its line, and each failed
 # mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
-# ADR 0021). Pull requests neither run nor wait for it. The night starts from the first push to main after 01:30 UTC
-# (mutacje-nocne-start.yml dispatches it with start: auto), and the cron run that comes hours late does no second night.
+# ADR 0021). The parts do not run their own coverage pass: the shards of the job pokrycie run it once for the whole
+# night, and each part reads their records. Pull requests neither run nor wait for it. The night starts from the first
+# push to main after 01:30 UTC (mutacje-nocne-start.yml dispatches it with start: auto), and the cron run that comes
+# hours late does no second night.
 on:
   schedule:
     - cron: '30 1 * * *'
@@ -45,6 +47,7 @@ jobs:
       do: ${{ steps.plan.outputs.do }}
       czesci: ${{ steps.plan.outputs.czesci }}
       liczba: ${{ steps.plan.outputs.liczba }}
+      pokrycie: ${{ steps.plan.outputs.pokrycie }}
       # A run that does no second night skips the skill planner, and its jobs get no matrix.
       skille: ${{ steps.skille.outputs.mutations || '[]' }}
     steps:
@@ -92,10 +95,83 @@ jobs:
           include-hidden-files: true
           overwrite: true
 
+  # The coverage pass of the parts, once a night: each shard runs its share of the test files touched by the night's
+  # files with all changed lines of the night (tools/mutacje_zmiany.py --pokrycie-czesc), and the parts read the
+  # records instead of running it themselves. In night 43692461864 the 38 parts ran 157 distinct test files 3028 times
+  # in their coverage passes (8.6 runner-hours). The plan gives at most CZESCI_POKRYCIA shards (tools/mutacje_nocne.py).
+  pokrycie:
+    name: Pokrycie nocy (${{ matrix.czesc }}/${{ strategy.job-total }})
+    needs: plan
+    if: ${{ needs.plan.outputs.czesci != '[]' && needs.plan.outputs.pokrycie != '[]' }}
+    runs-on: ubuntu-latest
+    # The shard writes its record within --limit-czesci-s, with its test files counted as failed after the limit.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      # Before the parts start, so with the 3 skill jobs the night takes at most 7 jobs at once in this phase.
+      max-parallel: 4
+      matrix:
+        # Each entry is a shard number and przegladarka: some of its test files reach Atrapa efenix.
+        include: ${{ fromJSON(needs.plan.outputs.pokrycie) }}
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+
+      - name: Chromium
+        if: ${{ matrix.przegladarka }}
+        uses: ./.github/actions/chromium
+
+      # A test that fails twice goes into the record, so only the parts whose tests it touches end with code 2.
+      - name: Run the coverage pass of the shard's test files
+        env:
+          BAZA: ${{ needs.plan.outputs.baza }}
+          DO: ${{ needs.plan.outputs.do }}
+          CZESC: ${{ matrix.czesc }}/${{ strategy.job-total }}
+        run: python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --pokrycie-czesc "$CZESC" --zapis-pokrycia .ci-pokrycie/pokrycie.json --limit-czesci-s 3300
+
+      - name: Upload the coverage record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pokrycie-nocy-${{ matrix.czesc }}
+          path: .ci-pokrycie/pokrycie.json
+          retention-days: 1
+          include-hidden-files: true
+          overwrite: true
+
+      # The workflow Zgłoszenia CI files an issue "Flaky test: <test>" for each test of these records, as for a CI run.
+      - name: Upload the flaky tests
+        if: ${{ !cancelled() && hashFiles('.ci-niestabilne/flaky-testy.json') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flaky-testy-pokrycie-${{ matrix.czesc }}
+          path: .ci-niestabilne/flaky-testy.json
+          retention-days: 30
+          include-hidden-files: true
+          overwrite: true
+
   change-mutations:
     name: Change mutations (${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }})
-    needs: plan
-    if: ${{ needs.plan.outputs.czesci != '[]' }}
+    needs:
+      - plan
+      - pokrycie
+    # Also after a failed shard: a part whose test files no record has ends with code 2, the others mutate.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.czesci != '[]' }}
     runs-on: ubuntu-latest
     # A part of NA_CZESC mutations ends in PART_LIMIT_S of tools/mutacje_zmiany.py even with the costliest mutations of
     # the measured nights in every test pass: line tests, file code tests and file tests (tools/mutacje_nocne.py).
@@ -133,23 +209,30 @@ jobs:
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
       # As in the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser, and the part runs them
-      # before it mutates (tools/mutacje_nocne.py marks such a part).
+      # with its mutations (tools/mutacje_nocne.py marks such a part).
       - name: Chromium
         if: ${{ matrix.przegladarka }}
         uses: ./.github/actions/chromium
 
+      # A missing record is the part's to judge: it ends with code 2 when no record has its test files.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: pokrycie-nocy-*
+          path: .ci-pokrycie
+
       # Code 1 is surviving mutations and code 3 mutations the part's time limit left without a verdict: results the
-      # last job files, so the part stays green. A test that fails without mutations runs once more, as in the CI of a
-      # pull request, and one that passes then is a flaky test, not a failure. Any other failure (code 2: the tests fail
-      # twice or hang without mutations, a bad exception) turns the part red, and tools/mutacje_zmiany.py --odtwarzam
-      # reproduces it. A traceback exits with code 1 too, but writes no record (run 43572533066, part 30/40).
+      # last job files, so the part stays green. Any other failure (code 2: a test of the part failed twice in the
+      # coverage shard, no record has the part's test files, a bad exception) turns the part red, and
+      # tools/mutacje_zmiany.py --odtwarzam reproduces it with its own coverage pass. A traceback exits with code 1 too,
+      # but writes no record (run 43572533066, part 30/40).
       - name: Mutate the part's changed lines of src/ and tools/
         env:
           BAZA: ${{ needs.plan.outputs.baza }}
           DO: ${{ needs.plan.outputs.do }}
           CZESC: ${{ matrix.czesc }}/${{ needs.plan.outputs.liczba }}
         run: |
-          python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --czesc "$CZESC" --zapis .ci-mutacje/czesc.json && exit 0 || kod=$?
+          python tools/mutacje_zmiany.py --baza "$BAZA" --do "$DO" --czesc "$CZESC" --pokrycie .ci-pokrycie --zapis .ci-mutacje/czesc.json && exit 0 || kod=$?
           test -f .ci-mutacje/czesc.json && { test "$kod" -eq 1 || test "$kod" -eq 3; }
 
       - name: Upload the surviving mutations
@@ -160,17 +243,6 @@ jobs:
           path: .ci-mutacje/czesc.json
           retention-days: 30
           if-no-files-found: warn
-          include-hidden-files: true
-          overwrite: true
-
-      # The workflow Zgłoszenia CI files an issue "Flaky test: <test>" for each test of these records, as for a CI run.
-      - name: Upload the flaky tests
-        if: ${{ !cancelled() && hashFiles('.ci-niestabilne/flaky-testy.json') != '' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: flaky-testy-mutacje-${{ matrix.czesc }}
-          path: .ci-niestabilne/flaky-testy.json
-          retention-days: 30
           include-hidden-files: true
           overwrite: true
 

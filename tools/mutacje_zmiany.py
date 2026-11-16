@@ -53,6 +53,14 @@ Testy, które padły, biegną raz jeszcze, z tym samym zapisem pokrycia, jak w b
 gdy każdy przejdzie, mutacje biegną dalej, a testy trafiają do zapisu flaky testów (``.ci-niestabilne/flaky-testy.json``),
 z którego ``tools/ci/zgloszenia_ci.py`` zakłada issue ``Flaky test: …`` (ADR 0021, Z4 13.11).
 
+Noc liczy to pokrycie raz, a nie w każdej części. Z ``--pokrycie-czesc K/N --zapis-pokrycia PLIK`` narzędzie nie mutuje,
+tylko uruchamia tak, z tym samym ponowieniem, K-tą z N części (``Czesc.co_nta``) plików testów dotkniętych plikami
+mutacji nocy (``ZakresMutacji.pliki_testow``) ze wszystkimi zmienionymi liniami nocy i zapisuje ``ZapisPokrycia``:
+pokrycie, czasy testów z junit i testy, które padły także po ponowieniu albo nie skończyły się w ``--limit-czesci-s``
+(kod 0, gdy zapis powstał). Część z ``--pokrycie KATALOG`` bierze pokrycie swoich plików testów z zapisów w katalogu
+(``Coverage.of_files``) i nie uruchamia testów bez mutacji: kończy się kodem 2, gdy któryś jej test padł w zapisie
+albo żaden zapis nie ma któregoś jej pliku testów, a inne części mutują dalej.
+
 Potem każda mutacja biegnie przez silnik ``tools/lib/silnik_mutacji.py`` (własna kopia checkoutu), najpierw z testami, które
 wykonały jej linie. W każdym przebiegu testy biegną od najkrótszego według czasów z junit pokrycia i jego ponowienia
 (``Coverage.fastest_first``), więc ``-x`` kończy polecenie na pierwszym szybkim teście, który mutację wykrywa. Testy
@@ -102,10 +110,11 @@ następnej zmianie jego pliku, a komentarz ``mutacje-zmiany:`` w innej postaci k
 Kończy się ``MUTACJE ZMIANY OK | …`` (kod 0) albo ``MUTACJE ZMIANY FAIL | …``: kodem 1, gdy przeżyły mutacje albo
 testy mutacji przekroczyły ``--limit-s`` w ostatnim przebiegu (``przekroczony czas <liczba>`` po liczbie przeżytych),
 kodem 2, gdy wynik mutacji nic nie mówi (nieznana baza, zły wyjątek, testy padają także po ponowieniu albo nie kończą
-się w limicie czasu części bez mutacji, odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części
+się w limicie czasu części bez mutacji, zapisy ``--pokrycie`` bez pliku testów części albo z jej testem, który padł,
+odmowa ``tools/lib/ciezkie_ci.py``), a kodem 3, gdy limit czasu części
 (``--limit-czesci-s``) minął po pokryciu, przed werdyktem którejś mutacji. Po limicie żadne polecenie już nie biegnie, a mutacje bez wyniku dostają
 linię ``BEZ WERDYKTU``, więc część kończy się zapisem przed limitem czasu zadania CI.
-W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w częściach
+W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py``, w zadaniach pokrycia i w częściach
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
 nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
@@ -127,13 +136,15 @@ nocny odtwarza się na jego commicie, z bazą i częścią z jego planu:
     git checkout --detach <headSha runu>
     .venv/bin/python tools/mutacje_zmiany.py --baza <baza z planu> --do <do z planu> --czesc K/N --odtwarzam <id albo URL runu>
 
+Odtworzenie bez ``--pokrycie`` liczy pokrycie części samo, na testach jej plików.
 Z ``--czesc K/N`` biegnie K-ty z N kolejnych kawałków listy mutacji, posortowanej po plikach i liniach, więc N zadań
-CI dzieli mutacje bez listy w workflow, a każde liczy pokrycie tylko na testach swoich kilku plików.
+CI dzieli mutacje bez listy w workflow, a każde ma testy tylko swoich kilku plików.
 Z ``--do <commit>`` lista ma tylko mutacje, z których linii co najmniej jedną ostatni zmienił (``git blame
 --first-parent``) commit, który ``<commit>`` zawiera: noc z zaległością mutuje zmiany ``main`` tylko do tego commitu
 (``tools/mutacje_nocne.py``).
 Listę mutacji od bazy, jej przycięcie do ``--do`` i kawałek części liczy ``ZakresMutacji``, o który pyta też plan nocy
-w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę.
+w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a zadania pokrycia liczą z niej pliki testów
+nocy.
 """
 
 from __future__ import annotations
@@ -798,6 +809,72 @@ class Coverage:
 
         return [test for group in sorted(grouped.values(), key=total) for test in sorted(group, key=duration)]
 
+    def of_files(self, files: Iterable[str]) -> Coverage:
+        """Pokrycie tylko testów z plików testów ``files``, jakby biegły same; linie wykonane dla wielu testów zostają
+        wszystkie, bo zapis nie wie, który test je wykonał."""
+
+        kept = frozenset(files)
+
+        def ours(test: str) -> bool:
+            return test.split("::")[0] in kept
+
+        return Coverage(
+            defaultdict(lambda: defaultdict(set), {test: files for test, files in self.lines.items() if ours(test)}),
+            defaultdict(set, {test: paths for test, paths in self.files.items() if ours(test)}),
+            self.shared,
+            {test for test in self.spawners if ours(test)},
+            {test: seconds for test, seconds in self.seconds.items() if ours(test)},
+        )
+
+
+@dataclass(frozen=True)
+class ZapisPokrycia:
+    """Zapis zadania ``pokrycie`` nocy (``--pokrycie-czesc``): pokrycie jego plików testów ze wszystkimi zmienionymi
+    liniami nocy i testy, które padły także po ponowieniu. Części nocy dostają katalog zapisów (``--pokrycie``) i nie
+    liczą pokrycia same. Postać JSON zapisu zna tylko ta klasa."""
+
+    pliki_testow: frozenset[str]  # pliki testów, których pokrycie zapis niesie
+    pokrycie: Coverage
+    padniete: frozenset[str]  # testy, a gdy junit nie mówi które, pliki testów, które padły także po ponowieniu
+
+    def json(self) -> str:
+        coverage = self.pokrycie
+        return json.dumps(
+            {
+                "pliki_testow": sorted(self.pliki_testow),
+                "padniete": sorted(self.padniete),
+                "linie": {test: {path: sorted(lines) for path, lines in files.items()} for test, files in coverage.lines.items()},
+                "pliki": {test: sorted(paths) for test, paths in coverage.files.items()},
+                "wspolne": {path: sorted(lines) for path, lines in coverage.shared.items()},
+                "procesy": sorted(coverage.spawners),
+                "sekundy": coverage.seconds,
+            },
+            ensure_ascii=False,
+        )
+
+    @classmethod
+    def z_katalogu(cls, katalog: Path) -> ZapisPokrycia:
+        """Jeden zapis ze wszystkich plików ``*.json`` w ``katalog`` i jego podkatalogach (artefakty zadań ``pokrycie``);
+        brak katalogu to zapis bez plików testów. Zły zapis rzuca ``ValueError``, ``KeyError`` albo ``TypeError``."""
+
+        pliki: set[str] = set()
+        padniete: set[str] = set()
+        coverage = Coverage()
+        for plik in sorted(katalog.rglob("*.json")):
+            zapis = json.loads(plik.read_text(encoding="utf-8"))
+            pliki.update(zapis["pliki_testow"])
+            padniete.update(zapis["padniete"])
+            for test, files in zapis["linie"].items():
+                for path, lines in files.items():
+                    coverage.lines[test][path].update(lines)
+            for test, paths in zapis["pliki"].items():
+                coverage.files[test].update(paths)
+            for path, lines in zapis["wspolne"].items():
+                coverage.shared[path].update(lines)
+            coverage.spawners.update(zapis["procesy"])
+            coverage.seconds.update({test: float(seconds) for test, seconds in zapis["sekundy"].items()})
+        return cls(frozenset(pliki), coverage, frozenset(padniete))
+
 
 def _coverage(
     tests: Sequence[str], lines: dict[str, frozenset[int]], timeout: float, junit: Path, coverage: Coverage
@@ -845,6 +922,63 @@ def _coverage(
                 coverage.shared[relative(absolute)].update(numbers)
             coverage.spawners.update(recorded["procesy"])
     return done
+
+
+def _measured(tests: Sequence[str], lines: dict[str, frozenset[int]], deadline: float, job: str) -> tuple[Coverage, frozenset[str]]:
+    """Pokrycie plików testów ``tests`` i testy, które padły także po jednym ponowieniu (``niestabilne_testy.ponow`` z
+    zadaniem ``job``): wszystkie, które padły w pierwszym przebiegu, a gdy junit nie mówi które, wszystkie ``tests``.
+
+    Po ``deadline`` (``time.monotonic``) rzuca ``subprocess.TimeoutExpired``.
+    """
+
+    coverage = Coverage()
+
+    def again(failed: tuple[str, ...]) -> bool:
+        return _coverage(failed, lines, deadline - time.monotonic(), RETRY_JUNIT, coverage).returncode == 0
+
+    done = _coverage(tests, lines, deadline - time.monotonic(), JUNIT, coverage)
+    if done.returncode == 0:
+        return coverage, frozenset()
+    print("\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:]))
+    # ``ponow`` po udanym ponowieniu usuwa porażki z junit, więc lista porażek powstaje przed nim.
+    failed = niestabilne_testy.padniete(JUNIT)
+    if niestabilne_testy.ponow(JUNIT, RETRY_JUNIT, job, again):
+        return coverage, frozenset()
+    return coverage, frozenset(failed or tests)
+
+
+def _shard(args: argparse.Namespace) -> int:
+    """Zadanie ``pokrycie`` nocy: pokrycie jego części plików testów nocy (``Czesc.co_nta`` listy
+    ``ZakresMutacji.pliki_testow``) ze wszystkimi zmienionymi liniami nocy, zapisane jako ``ZapisPokrycia``. Testy,
+    które padają także po ponowieniu albo nie kończą się w ``--limit-czesci-s``, trafiają do zapisu, a nie do kodu
+    wyjścia: kodem 2 kończy się każda część nocy, której testy dotyka taki test."""
+
+    deadline = time.monotonic() + args.limit_czesci_s
+    czesc: Czesc = args.pokrycie_czesc
+    try:
+        zakres = ZakresMutacji.od(args.baza, ROOT)
+    except subprocess.CalledProcessError:
+        print(f"POKRYCIE NOCY FAIL | nieznana baza {args.baza}")
+        return 2
+    if args.do:
+        zakres = zakres.do(args.do)
+    tests = czesc.co_nta(zakres.pliki_testow(wplyw_zmiany.Repository.scan(ROOT)))
+    paths = {mutant.path for mutant in zakres.mutanty}
+    lines = {path: changed_lines(zakres.fragmenty[path]) for path in paths}
+    print(f"Pokrycie nocy {czesc}: {len(tests)} plików testów, zmienione linie {len(paths)} plików.", flush=True)
+    started = time.monotonic()
+    coverage, failed = Coverage(), frozenset[str]()
+    if tests:
+        try:
+            coverage, failed = _measured(tests, lines, deadline, f"Pokrycie nocy ({czesc})")
+        except subprocess.TimeoutExpired:
+            print(f"POKRYCIE NOCY | limit czasu {args.limit_czesci_s:g} s minął, więc każdy plik testów tej części liczy się jako padnięty")
+            failed = frozenset(tests)
+    args.zapis_pokrycia.parent.mkdir(parents=True, exist_ok=True)
+    args.zapis_pokrycia.write_text(ZapisPokrycia(frozenset(tests), coverage, failed).json(), encoding="utf-8")
+    print(f"CZAS | pokrycie nocy {time.monotonic() - started:.0f} s ({len(tests)} plików testów)", flush=True)
+    print(f"POKRYCIE NOCY {czesc} | plików testów {len(tests)} | testów z liniami {len(coverage.lines)} | padniętych {len(failed)}")
+    return 0
 
 
 def _command(tests: Sequence[str], coverage: Coverage, workers: int = 0) -> tuple[str, ...]:
@@ -897,11 +1031,22 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
     )
     parser.add_argument("--czesc", metavar="K/N", type=_part, default=Czesc(1, 1), help="Tylko K-ty z N kolejnych kawałków listy mutacji.")
     parser.add_argument("--zapis", type=Path, help="Plik JSON z ostatnią linią i nazwami przeżytych mutacji (artefakt CI).")
+    parser.add_argument(
+        "--pokrycie", type=Path, metavar="KATALOG", help="Katalog zapisów zadań pokrycia nocy: część bierze z nich pokrycie zamiast liczyć je sama."
+    )
+    parser.add_argument(
+        "--pokrycie-czesc", metavar="K/N", type=_part, help="Zamiast mutacji: pokrycie K-tej z N części plików testów nocy do --zapis-pokrycia."
+    )
+    parser.add_argument("--zapis-pokrycia", type=Path, help="Plik JSON zapisu pokrycia z --pokrycie-czesc (artefakt CI).")
     ciezkie_ci.argument(parser)
     args = parser.parse_args(argv)
+    if (args.pokrycie_czesc is None) != (args.zapis_pokrycia is None):
+        parser.error("--pokrycie-czesc i --zapis-pokrycia idą razem")
     if refusal := ciezkie_ci.refusal({"change-mutations"}, args.odtwarzam, root=ROOT):
         print(refusal)
         return 2
+    if args.pokrycie_czesc is not None:
+        return _shard(args)
     outcome = Outcome()
     code, result = _mutate(args, outcome, gate)
     print(result)
@@ -1026,6 +1171,11 @@ class ZakresMutacji:
 
         return max(len(self.mutanty), 1) if self.zly_wyjatek is not None else len(self.mutanty)
 
+    def pliki_testow(self, repository: wplyw_zmiany.Repository) -> list[str]:
+        """Posortowane pliki testów dotknięte plikami mutacji zakresu: zadania pokrycia nocy dzielą je między siebie."""
+
+        return sorted({test for tests in tests_of(repository, {mutant.path for mutant in self.mutanty}).values() for test in tests})
+
     def liczba_czesci(self, na_czesc: int) -> int:
         return math.ceil(self.liczba_mutacji / na_czesc)
 
@@ -1067,20 +1217,27 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     clock = [time.monotonic()]
     coverage = Coverage()
     if tests:
-        lines = {path: changed_lines(hunks[path]) for path in paths}
-
-        def again(failed: tuple[str, ...]) -> bool:
-            return _coverage(failed, lines, deadline - time.monotonic(), RETRY_JUNIT, coverage).returncode == 0
-
-        try:
-            done = _coverage(tests, lines, deadline - time.monotonic(), JUNIT, coverage)
-            if done.returncode != 0:
-                print("\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:]))
-                if not niestabilne_testy.ponow(JUNIT, RETRY_JUNIT, f"Change mutations ({czesc})", again):
-                    return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
-        except subprocess.TimeoutExpired:
-            return 2, f"{out_of_time} w pokryciu, przed werdyktem {len(found)} mutacji"
-        print(f"Pokrycie: {len(coverage.lines)} testów wykonało zmienione linie, {len(coverage.spawners)} uruchomiło proces.", flush=True)
+        if args.pokrycie is None:
+            try:
+                coverage, failed = _measured(tests, {path: changed_lines(hunks[path]) for path in paths}, deadline, f"Change mutations ({czesc})")
+            except subprocess.TimeoutExpired:
+                return 2, f"{out_of_time} w pokryciu, przed werdyktem {len(found)} mutacji"
+        else:
+            try:
+                night = ZapisPokrycia.z_katalogu(args.pokrycie)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                return 2, f"MUTACJE ZMIANY FAIL | zły zapis pokrycia nocy w {args.pokrycie}: {error!r}"
+            if missing := sorted(set(tests) - night.pliki_testow):
+                return 2, f"MUTACJE ZMIANY FAIL | zapisy pokrycia nocy nie mają {len(missing)} plików testów części, np. {missing[0]}"
+            ours = frozenset(tests)
+            coverage, failed = night.pokrycie.of_files(ours), frozenset(test for test in night.padniete if test.split("::")[0] in ours)
+            for test in sorted(failed):
+                print(f"PADŁ W POKRYCIU NOCY: {test}")
+        if failed:
+            return 2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą"
+        # Zapis pokrycia nocy ma też zmienione linie plików innych części.
+        executed = sum(bool(files.keys() & paths) for files in coverage.lines.values())
+        print(f"Pokrycie: {executed} testów wykonało zmienione linie, {len(coverage.spawners)} uruchomiło proces.", flush=True)
     today = datetime.datetime.now(datetime.UTC).date()
     narrow: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []  # i testy dalszych przebiegów, gdy pierwszy przeżyje
     # Mutacje, które przeżyły testy, z werdyktem, jego linią i dopiskiem przebiegu; sprawdza je jeszcze brama typów.

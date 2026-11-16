@@ -16,6 +16,7 @@ Zmieniona 13.11 (Z4, zgoda Maksa): test, który w części pada bez mutacji, bie
 Zmieniona 13.11 (Z1, zgoda Maksa): skrypty mutacji skilli nie biegną w pełnym CI `main`, tylko nocą, a noc uruchamia skrypt także przy zmianie modułu, który importuje sprawdzenie jego mutacji, i pliku, który psuje jego mutacja (sekcje Kontekst, Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 14.11 (pomiar nocnych mutacji skilli, decyzja koordynatora w trybie auto Maksa, kod bez zmian): skryptów skilli `verify-*` z podtabeli `przepuszcza` noc nie mutuje (sekcja Decyzja).
 Zmieniona 14.11 (#1625, historia 60 specyfikacji #1597, oznaczenia z audytów #1623 i #1624 zatwierdzonych przez Maksa 14.11): z `tools/` noc mutuje tylko jednostki, których fałszywe „OK” przepuszcza zły kod produktu, a błąd reszty narzędzi wychodzi w przeglądzie albo w użyciu (sekcja Decyzja).
+Zmieniona 16.11 (cel Maksa 16.11: noc ma zajmować mniej godzin runnera i kończyć się wcześniej bez utraty pokrycia i jakości): pokrycie testów bez mutacji liczą raz na noc zadania pokrycia, a części czytają ich zapisy (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 
 ## Kontekst
 
@@ -44,7 +45,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Skrypty mutacji skilli (`check_*_mutations.py`) biegną nocą bez zmian.
   Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
   Ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od` (`git merge-base`), od którego liczy też każda część, więc plan i części mutują te same zmiany, a cofnięcie zmian gałęzi `od` nie wchodzi do nocy; `od` bez wspólnego przodka z HEAD kończy plan błędem.
-- Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby każda część liczyła pokrycie tylko dla kilku plików.
+- Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby mutacje każdej części biegły z testami tylko kilku plików.
   Część ma 6 pełnych kolejek po 4 mutacje naraz, czyli 24 mutacje (`NA_CZESC` w `tools/mutacje_nocne.py`), a jej limit czasu to 175 min w zadaniu 180 min.
   Koszt mutacji zależy od pliku o dwa rzędy wielkości, a przed pokryciem plan go nie zna.
   W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, 2892 mutacje) mediana mutacji pliku wynosiła 1–210 s, ale 34 mutacje trwały pełne 900 s, 16 z nich w `tools/mutacje.py`.
@@ -89,12 +90,19 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Takie cofnięcie trafia do issue jak przed bramą, a gdy zmiana była tylko typów (#671, #674), agent odpowiada `nie warto`.
   Ręczne zamiany `check_all` skryptów mutacji skilli brama sprawdza tak samo jak mutacje operatorów.
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
-- Część, która nie dała wyniku (testy padają albo nie kończą się w limicie części bez mutacji, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
+- Część, która nie dała wyniku (test jej plików testów padł w pokryciu nocy także po ponowieniu, żaden zapis pokrycia nie ma jej pliku testów, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc sprawdza te linie jeszcze raz, z tym samym limitem mutacji.
   Przeżyte mutacje i mutacje bez werdyktu po limicie części to wynik, więc zostawiają część zieloną.
-- Test, który w części padł bez mutacji, nie czerwieni jej od razu: testy, które padły, biegną raz jeszcze, tym samym `niestabilne_testy.ponow` co w bramce PR (ADR 0020): najwyżej 5 testów, każdy z id, które da się zgłosić w issue, z zapisem pokrycia jak w pierwszym przebiegu.
-  Gdy każdy przejdzie, część mutuje dalej (druga porażka to część bez wyniku z punktu wyżej), a testy trafiają do artefaktu `flaky-testy-mutacje-<część>`, z którego `zgloszenia.yml` po runie nocy zakłada albo komentuje issue `Flaky test: <test>`, tak jak po runie CI.
+- Test, który bez mutacji padł w zadaniu pokrycia nocy (punkt niżej), nie czerwieni od razu: testy, które padły, biegną raz jeszcze, tym samym `niestabilne_testy.ponow` co w bramce PR (ADR 0020): najwyżej 5 testów, każdy z id, które da się zgłosić w issue, z zapisem pokrycia jak w pierwszym przebiegu.
+  Gdy każdy przejdzie, części mutują dalej (druga porażka trafia do zapisu pokrycia, a każda część, której pliki testów go mają, jest bez wyniku z punktu wyżej), a testy trafiają do artefaktu `flaky-testy-pokrycie-<zadanie>`, z którego `zgloszenia.yml` po runie nocy zakłada albo komentuje issue `Flaky test: <test>`, tak jak po runie CI.
   W nocach 3–8.11 (runy 41601085650, 41793945765, 42185360488, 42351341369, 42459531620) 6 części padło w przebiegu bez mutacji, każda na jednym teście, który okazał się flaky testem albo testem losowo czerwonym (wyścig, termin, uuid4 z numerem, pomiar czasu na wolnym runnerze).
   Każdą z nich ponowienie by objęło, więc noce 4, 6, 7 i 8.11 byłyby zielone, o ile ten test za drugim razem przeszedł; 3.11 zostałaby czerwona przez 16 części na limicie czasu części.
+- Pokrycie testów bez mutacji liczy raz na noc zadanie `pokrycie` workflow, przed częściami, w najwyżej 4 zadaniach (`CZESCI_POKRYCIA` w `tools/mutacje_nocne.py`).
+  Zadanie k uruchamia k-ty, a potem co 4. z posortowanych plików testów dotkniętych plikami mutacji nocy (`ZakresMutacji.pliki_testow`, ta sama lista mutacji co plan i części), ze wszystkimi zmienionymi liniami nocy, i wgrywa zapis pokrycia (`ZapisPokrycia` w `tools/mutacje_zmiany.py`): pokrycie, czasy testów z junit i testy, które padły także po ponowieniu.
+  Każda część pobiera zapisy wszystkich zadań i bierze z nich pokrycie swoich plików testów, jakby biegły same, więc testów bez mutacji nie uruchamia.
+  W nocy 43692461864 38 części uruchomiło w swoich pokryciach pliki testów 3028 razy, ale tylko 157 różnych, a pokrycia trwały razem 30 832 s (8,6 h runnera), 20–25% czasu mutacji każdej nocy.
+  Na HEAD tej nocy 4 zadania pokrycia na boxie boat z 4 vCPU, jak runner, liczyły pokrycie 161–316 s, razem 821 s, a części 10/38 i 36/38 z ich zapisami dały każdej mutacji ten sam werdykt co z własnym pokryciem.
+  Test, który padł w pokryciu także po ponowieniu, czerwieni tylko części, których pliki testów go mają, a zadanie pokrycia, które nie wgrało zapisu, tylko części, których pliku testów nie ma żaden zapis; pozostałe części mutują.
+  Odtworzenie części na Macu (`--odtwarzam`) liczy pokrycie samo, na testach jej plików.
 - Skrypty mutacji skilli też nie biegną na PR: Mutation checks na PR to same podstawy `ci:` skilli, których `pilnuje:` albo folder trafia zmiana.
   Ta sama noc uruchamia skrypty skilli, których folder, runner mutacji, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja (`Edit.file` z tabeli skryptu), zmienił się od jej bazy, w zadaniach planu `tools/plan_ci.py plan --zdarzenie noc`.
   Pełne CI `main` od 13.11 (Z1) nie uruchamia żadnego skryptu mutacji skilla, tylko każdą podstawę `ci:`, także tę, którą skrypt uruchamia bez mutacji.
@@ -129,7 +137,8 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Noc widzi go, gdy zmienia folder skilla, sprawdzenie, moduł, który sprawdzenie importuje, albo plik, który psuje mutacja; zmianę innego pliku, który sprawdzenie czyta bez importu, pokaże dopiero noc, którą uruchomi inna zmiana.
   Wydanie nie czeka na noc: commit z zielonym pełnym CI `main` jest do wydania, choć skrypt mutacji skilla na nim pada, bo taki skrypt mierzy jakość sprawdzenia, a nie produkt, który dostaje tata.
   Wyjątkiem jest zmiana modelu TLA+ skilla ze skryptem mutacji modelu: ta dostaje czerwone Mutation checks na PR.
-- Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie na testach wielu plików; części po plikach trzymają je w limicie czasu części.
+- Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie raz na testach wszystkich plików nocy, a części startują dopiero po najwolniejszym zadaniu pokrycia.
+  Rozmiar części (`NA_CZESC`) liczy dalej z pokryciem części 1006 s, więc część ma tyle zapasu w limicie czasu części.
 - Część z drogimi mutacjami trzyma runner do 3 h zamiast 1 h, a zwykła część kończy się jak dotąd w kilka minut do godziny (31.10: 4–51 min).
 - Mutacja bez werdyktu w issue to praca dla agenta PR-u, choć test może ją już wykrywać: zgłoszona raz, nie wraca do następnej nocy.
   Limit części jest ponad 2 razy dłuższy od najdłuższej części pierwszej nocy liczonej na zmierzonych czasach, więc taka linia wychodzi rzadko.
@@ -155,6 +164,8 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Druga próba mutacji z `PRZEKROCZONY CZAS` w testach pliku, z dłuższym limitem albo z węższym zbiorem testów (12.11, #1339). Dłuższy limit dokłada do części kolejny przebieg testów pliku po jednej mutacji naraz, którego nie liczy rozmiar części (`NA_CZESC`), a węższy zbiór już przeszedł we wcześniejszych przebiegach, więc nie da werdyktu.
 - Części po 28 mutacji, 1120 na noc (3.11, przegląd #815). Z najgorszymi czasami każdego przebiegu część po 28 trwa ok. 10 800 s, ponad limit części, więc mutacje z jej końca zostawałyby bez werdyktu.
 - Mniejsze części, np. po 8 mutacji, które mieszczą się w 3300 s przy każdej mutacji po 900 s (3.11). Noc miałaby 320 mutacji przy 40 częściach, mniej niż daje dzień, więc zaległość by rosła, a większość części, z mutacjami po kilka sekund, biegłaby głównie pokrycie.
+- Jedno zadanie pokrycia na noc (16.11). Pokrycie wszystkich 157 plików testów nocy 43692461864 trwało na boxie z 8 vCPU i 4 workerami 1686 s, a części czekałyby na nie całe; każde z 4 zadań płaci za to na boxie 142–212 s poza samym pokryciem (instalacja, lista mutacji nocy, wybór testów).
+- Podział plików testów między zadania pokrycia według pracy testów na `main` z `czasy-ci` (16.11). Dla nocy 43692461864 najdroższe z 4 zadań miałoby 1133 s tej pracy zamiast 1588 s przy co 4. pliku, ale zadanie pokrycia musiałoby dostać czasy z planu, a zmierzone zadania co 4. pliku liczyły pokrycie najwyżej 316 s.
 - Change mutations na PR, ale bez czekania na nie w `tools/scal_pr.py`. Każdy PR dalej zajmowałby trzy runnery po 15 min, a wynik po merge'u i tak musiałby trafić do issue.
 - Mutacje tylko PR-ów z etykietą albo powyżej rozmiaru zmiany. Luki w testach są w małych zmianach tak samo, a wybór PR-ów to osąd, którego nic nie sprawdza.
 - Każdy skrypt mutacji skilla na PR, który zmienia folder skilla (#701). Skrypty mutacji kodu produktu trwają do 13 min, a błąd z #667, który przeszedł bramkę i przegląd, był zmianą modelu TLA+, której nie widzą podstawa skilla ani pytest.

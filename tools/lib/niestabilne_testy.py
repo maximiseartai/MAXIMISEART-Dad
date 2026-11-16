@@ -2,11 +2,11 @@
 
 Zadanie pytest (``tools/ci/wykonaj_zadanie.py``) zapisuje dwa pliki, a dwa narzędzia je czytają z artefaktów runu:
 
-- ``FlakyTest``: test, który w zadaniu pytest bramki albo w przebiegu bez mutacji części nocy
+- ``FlakyTest``: test, który w zadaniu pytest bramki albo w pokryciu nocy, czyli przebiegu bez mutacji
   (``tools/mutacje_zmiany.py``) padł, a po jednym ponowieniu (``ponow``) przeszedł. W bramce PR test z pliku testów,
   który zmienił ten PR (``plan_runu.Plan.zmienione_pliki_testow``), ponowienia nie dostaje: jego porażka zostaje
   porażką (Z7). Lista trafia do ``FLAKY_TESTY``
-  (artefakt ``flaky-testy-<zadanie>-<próba>`` runu CI albo ``flaky-testy-mutacje-<część>`` runu Mutacji nocnych), a
+  (artefakt ``flaky-testy-<zadanie>-<próba>`` runu CI albo ``flaky-testy-pokrycie-<zadanie>`` runu Mutacji nocnych), a
   ``tools/ci/zgloszenia_ci.py`` zakłada z niej issue ``Flaky test: <test>``.
 - ``ZapisKwarantanny``: wynik każdego testu z kwarantanny, który biegł w zadaniu (artefakt ``kwarantanna-<zadanie>-<próba>``
   na pushu do `main`). Test z kwarantanny ma w junit własność ``WLASNOSC`` (``tests/conftest.py``). ``stan_kwarantanny``

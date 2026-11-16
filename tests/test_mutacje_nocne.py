@@ -14,6 +14,7 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime
 import hashlib
 import functools
+import itertools
 import io
 import json
 import math
@@ -426,12 +427,13 @@ def test_krok_czesci_przechodzi_dokladnie_z_kodami_wyjscia_ktorych_zapis_niesie_
     assert {0, *przepuszczone} == mutacje_zmiany.KODY_Z_WYNIKIEM
 
 
-def test_flaky_test_z_bazy_czesci_trafia_do_artefaktu_ktory_zgloszenia_ci_czytaja_po_runie_nocy() -> None:
-    """Część zapisuje test, który bez mutacji przeszedł dopiero po ponowieniu, w ``niestabilne_testy.FLAKY_TESTY``
-    (``tools/mutacje_zmiany.py``), a issue ``Flaky test`` zakłada ``zgloszenia.yml`` po runie nocy, jak po runie CI."""
+def test_flaky_test_z_pokrycia_nocy_trafia_do_artefaktu_ktory_zgloszenia_ci_czytaja_po_runie_nocy() -> None:
+    """Zadanie pokrycia nocy zapisuje test, który bez mutacji przeszedł dopiero po ponowieniu, w
+    ``niestabilne_testy.FLAKY_TESTY`` (``tools/mutacje_zmiany.py``), a issue ``Flaky test`` zakłada ``zgloszenia.yml`` po
+    runie nocy, jak po runie CI."""
 
     nocne = _nocne()
-    (wgranie,) = [krok for krok in nocne["jobs"]["change-mutations"]["steps"] if krok.get("with", {}).get("path") == niestabilne_testy.FLAKY_TESTY.as_posix()]
+    (wgranie,) = [krok for krok in nocne["jobs"]["pokrycie"]["steps"] if krok.get("with", {}).get("path") == niestabilne_testy.FLAKY_TESTY.as_posix()]
     zgloszenia = yaml.safe_load((ROOT / ".github" / "workflows" / "zgloszenia.yml").read_text(encoding="utf-8"))
 
     assert wgranie["with"]["name"].startswith(niestabilne_testy.ARTEFAKT_FLAKY_TESTOW)
@@ -691,7 +693,7 @@ def test_noc_doby_po_wczesniejszym_runie_doby_nic_nie_mutuje_a_zakres_zostawia_b
     output = _wyjscie_planu(tmp_path / "output")
     assert kod == 0
     if pominieta:
-        assert output == {"baza": baza, "do": baza, "czesci": "[]", "liczba": "0", "pominieta": "true"}
+        assert output == {"baza": baza, "do": baza, "czesci": "[]", "liczba": "0", "pokrycie": "[]", "pominieta": "true"}
     else:
         assert (output["do"], output["liczba"], "pominieta" in output) == (head, "1", False)
     assert json.loads(zakres.read_text(encoding="utf-8")) == {"baza": baza, "do": baza if pominieta else head}
@@ -736,7 +738,7 @@ def test_plan_dzieli_mutacje_od_bazy_na_czesci_dla_macierzy_workflow(
     assert (f"MUTACJE NOCNE | {ZLY_WYJATEK}; część mutacji to zgłosi" in wyjscie) == (mutacje == 1)
     output = dict(linia.split("=", 1) for linia in (tmp_path / "output").read_text(encoding="utf-8").splitlines())
     macierz = [{"czesc": czesc, "przegladarka": False} for czesc in czesci]
-    assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci))}
+    assert output == {"baza": baza, "do": head, "czesci": json.dumps(macierz), "liczba": str(len(czesci)), "pokrycie": "[]"}
 
 
 # Lista dwóch szop w kształcie ``tools/lib/szopa.toml``: w podtabeli ``przepuszcza`` bramka merge'a (plik), silnik
@@ -808,10 +810,14 @@ def _wyjscie_planu(sciezka: Path) -> dict[str, str]:
     return dict(linia.split("=", 1) for linia in sciezka.read_text(encoding="utf-8").splitlines())
 
 
-def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_inna_nie(
+def test_czesc_i_zadanie_pokrycia_ktorych_testy_siegaja_atrapy_efenix_dostaja_chromium_a_inne_nie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Zadanie pokrycia ``k`` z ``n`` uruchamia ``k``-ty, potem co ``n``-ty z posortowanych plików testów nocy, więc
+    drugie z dwóch dostaje ``tests/test_okno.py``."""
+
     repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
+    monkeypatch.setattr(mutacje_nocne, "CZESCI_POKRYCIA", 2)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
     kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2)
@@ -819,6 +825,7 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     output = _wyjscie_planu(tmp_path / "output")
     assert (kod, capsys.readouterr().out.splitlines()[-1].rpartition(" | ")[2]) == (0, "z Chromium 1")
     assert json.loads(output["czesci"]) == [{"czesc": 1, "przegladarka": False}, {"czesc": 2, "przegladarka": True}]
+    assert json.loads(output["pokrycie"]) == [{"czesc": 1, "przegladarka": False}, {"czesc": 2, "przegladarka": True}]
 
 
 @pytest.mark.parametrize(
@@ -1329,6 +1336,14 @@ def test_noc_biegnie_raz_na_dobe_i_recznie_z_opcjonalnym_od_a_dwa_przebiegi_nie_
     assert workflow["concurrency"]["cancel-in-progress"] is False
 
 
+def _poprzednicy(zadania: dict[str, Any], nazwa: str) -> set[str]:
+    """Zadania, na które zadanie ``nazwa`` czeka, wprost albo przez inne (``needs``)."""
+
+    potrzebne = zadania[nazwa].get("needs", [])
+    wprost = {potrzebne} if isinstance(potrzebne, str) else set(potrzebne)
+    return wprost.union(*(_poprzednicy(zadania, inne) for inne in wprost))
+
+
 def test_kazdy_push_na_main_uruchamia_start_nocy_z_prawem_do_uruchomienia_workflow() -> None:
     workflow = yaml.safe_load(START_NOCY.read_text(encoding="utf-8"))
     (zadanie,) = workflow["jobs"].values()
@@ -1356,13 +1371,20 @@ def test_plan_nocy_dostaje_zdarzenie_i_wejscie_start_a_run_bez_pracy_nie_planuje
 
 def test_noc_zajmuje_najwyzej_20_zadan_organizacji_naraz() -> None:
     """Organizacja ma 60 zadań naraz, wspólnych z runami CI PR-ów, a noc dostaje z nich najwyżej 20 (ADR 0021): każda
-    macierz nocy ma ``max-parallel``, a ich suma mieści się w 20."""
+    macierz nocy ma ``max-parallel``, a suma macierzy, które mogą biec naraz (żadna nie czeka na inną), mieści się w 20."""
 
     zadania = _nocne()["jobs"]
     naraz = {nazwa: zadanie["strategy"].get("max-parallel") for nazwa, zadanie in zadania.items() if "matrix" in zadanie.get("strategy", {})}
+    rownolegle = [
+        grupa
+        for liczba in range(1, len(naraz) + 1)
+        for grupa in itertools.combinations(naraz, liczba)
+        if not any(inne in _poprzednicy(zadania, nazwa) for nazwa in grupa for inne in grupa)
+    ]
 
     assert None not in naraz.values(), naraz
-    assert sum(naraz.values()) <= 20, naraz
+    assert {"pokrycie", "change-mutations"} <= naraz.keys()
+    assert max(sum(naraz[nazwa] for nazwa in grupa) for grupa in rownolegle) <= 20, naraz
 
 
 def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_zgloszenie() -> None:
@@ -1376,7 +1398,7 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     pobranie = next(krok for krok in zgloszenie["steps"] if "download-artifact" in krok.get("uses", ""))
     polecenie_zgloszenia = shlex.split(next(krok["run"] for krok in zgloszenie["steps"] if "zglos" in krok.get("run", "")))
 
-    assert (czesc["needs"], czesc["strategy"]["matrix"]) == ("plan", {"include": "${{ fromJSON(needs.plan.outputs.czesci) }}"})
+    assert (czesc["needs"], czesc["strategy"]["matrix"]) == (["plan", "pokrycie"], {"include": "${{ fromJSON(needs.plan.outputs.czesci) }}"})
     assert krok["env"] == {
         "BAZA": "${{ needs.plan.outputs.baza }}",
         "DO": "${{ needs.plan.outputs.do }}",
@@ -1389,6 +1411,45 @@ def test_kazda_czesc_mutuje_od_bazy_planu_i_wgrywa_zapis_pod_nazwa_ktora_czyta_z
     # Zgłoszenie biegnie też po części, która padła, i ma prawo zakładać issue.
     assert zgloszenie["if"].startswith("${{ !cancelled() && needs.plan.result == 'success'")
     assert zgloszenie["permissions"]["issues"] == "write"
+
+
+def _polecenie_narzedzia(zadanie: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    krok = next(krok for krok in zadanie["steps"] if "tools/mutacje_zmiany.py" in krok.get("run", ""))
+    return krok, shlex.split(krok["run"])
+
+
+def test_pokrycie_nocy_biegnie_raz_przed_czesciami_a_kazda_czesc_czyta_zapisy_wszystkich_jego_zadan() -> None:
+    """Zadanie ``pokrycie`` liczy pokrycie nocy w częściach plików testów (``--pokrycie-czesc K/N`` z N zadań macierzy) od
+    bazy i do końca zakresu z planu, a część nocy czeka na nie, pobiera każdy ich zapis i podaje katalog w ``--pokrycie``.
+    Część biegnie też po zadaniu pokrycia, które padło: kodem 2 kończy się wtedy tylko część bez zapisu swoich testów."""
+
+    zadania = _nocne()["jobs"]
+    pokrycie, czesc = zadania["pokrycie"], zadania["change-mutations"]
+    krok, polecenie = _polecenie_narzedzia(pokrycie)
+    zapis = polecenie[polecenie.index("--zapis-pokrycia") + 1]
+    (wgranie,) = [krok for krok in pokrycie["steps"] if krok.get("with", {}).get("path") == zapis]
+    (pobranie,) = [krok for krok in czesc["steps"] if "download-artifact" in krok.get("uses", "")]
+    _, polecenie_czesci = _polecenie_narzedzia(czesc)
+
+    assert pokrycie["needs"] == "plan" and "pokrycie" in czesc["needs"]
+    assert krok["env"] == {"BAZA": "${{ needs.plan.outputs.baza }}", "DO": "${{ needs.plan.outputs.do }}", "CZESC": "${{ matrix.czesc }}/${{ strategy.job-total }}"}
+    assert [polecenie[polecenie.index(argument) + 1] for argument in ("--baza", "--do", "--pokrycie-czesc")] == ["$BAZA", "$DO", "$CZESC"]
+    assert pokrycie["strategy"]["matrix"] == {"include": "${{ fromJSON(needs.plan.outputs.pokrycie) }}"}
+    assert pokrycie["strategy"]["max-parallel"] == mutacje_nocne.CZESCI_POKRYCIA
+    assert pobranie["with"]["pattern"] == wgranie["with"]["name"].replace("${{ matrix.czesc }}", "*")
+    assert polecenie_czesci[polecenie_czesci.index("--pokrycie") + 1] == pobranie["with"]["path"]
+    assert pobranie["continue-on-error"] is True
+    assert czesc["if"].startswith("${{ !cancelled() && needs.plan.result == 'success'")
+
+
+def test_pokrycie_nocy_konczy_sie_zapisem_przed_limitem_zadania_ci() -> None:
+    """Po ``--limit-czesci-s`` zadanie pokrycia zapisuje swoje pliki testów jako padnięte, zanim GitHub anuluje je bez
+    zapisu; instalacja przed krokiem i wgranie po nim trwają kilka minut."""
+
+    zadanie = _nocne()["jobs"]["pokrycie"]
+    _, polecenie = _polecenie_narzedzia(zadanie)
+
+    assert zadanie["timeout-minutes"] * 60 - float(polecenie[polecenie.index("--limit-czesci-s") + 1]) >= 300
 
 
 def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
@@ -1430,14 +1491,15 @@ def _instalacje_na_linuksie(zadanie: dict[str, Any]) -> list[str]:
     return [krok["run"] for krok in zadanie["steps"] if "uv pip install" in krok.get("run", "") and "'Windows'" not in krok.get("if", "")]
 
 
-def test_czesc_instaluje_to_samo_co_czesci_pytest_na_linuksie() -> None:
-    # Część uruchamia testy dotknięte zmianą, a testy tools/scal_pr.py i tools/ci/status_scalenia.py wołają ruff i mypy.
-    assert _instalacje_na_linuksie(_nocne()["jobs"]["change-mutations"]) == _instalacje_na_linuksie(jobs()["pytest"])
+@pytest.mark.parametrize("zadanie", ["pokrycie", "change-mutations"])
+def test_czesc_i_pokrycie_nocy_instaluja_to_samo_co_czesci_pytest_na_linuksie(zadanie: str) -> None:
+    # Oba uruchamiają testy dotknięte zmianą, a testy tools/scal_pr.py i tools/ci/status_scalenia.py wołają ruff i mypy.
+    assert _instalacje_na_linuksie(_nocne()["jobs"][zadanie]) == _instalacje_na_linuksie(jobs()["pytest"])
 
 
 def test_czesc_oznaczona_przez_plan_instaluje_chromium_tym_samym_krokiem_co_zadanie_pytest() -> None:
-    """Część przed mutacjami uruchamia testy dotknięte zmianą, a test, który sięga Atrapy efenix, bez Chromium pada,
-    zanim cokolwiek sprawdzi; wtedy część kończy się kodem 2 i czerwieni noc."""
+    """Część uruchamia testy dotknięte zmianą z mutacjami, a test, który sięga Atrapy efenix, bez Chromium pada, więc
+    mutacja wyglądałaby na wykrytą."""
 
     czesc = _nocne()["jobs"]["change-mutations"]
     [krok] = chromium(czesc)
