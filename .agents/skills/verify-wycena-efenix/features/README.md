@@ -6,8 +6,7 @@ axis and a request role (`--rola`) to check one place while you work on it; CI r
 
 ## Baseline preconditions
 
-- `.venv` of the checkout with the `dev` extra and Playwright's Chromium (`python -m playwright install chromium`).
-- `explore_wycena_efenix.py --doctor` prints `DOCTOR OK`.
+- `.venv` of the checkout with the `dev` extra, and the Doctor of `SKILL.md` prints `DOCTOR OK`.
 - No real efenix and no Dad's files: the Plik zbiorczy and the orders are synthetic (`tools/lib/atrapy/efenix.py`).
 
 ## Driving conventions
@@ -16,16 +15,11 @@ axis and a request role (`--rola`) to check one place while you work on it; CI r
   counts clicks on buttons the window must never use.
 - A request is named by method, path, kind of search and occurrence (`POST action_save_index.php #2`), and its role by
   `Role` in the explorer; `EXPECTED_CALLS` lists them for one run without a fault.
-- Every expected outcome comes from the table in `expected()`, written from the docstrings and `GLOSSARY.md`, never
-  from a run.
 
 ## Proof and skip reporting
 
-- The last line is the verdict: `WYCENA EFENIX OK` (also with `, ZNANE USTALENIA: n` or `, ZAAKCEPTOWANE RYZYKA: m`),
-  `WYCENA EFENIX: NOWE NARUSZENIE (n)`, `WYCENA EFENIX: LUKA MODELU (n)` or `WYCENA EFENIX: ZNALEZISKO ZNIKNĘŁO (n)`.
-- Evidence stays in `<run dir>/evidence/<id>/`: `raport.txt`, `przebieg-bez-awarii.txt` and one JSON per
-  counterexample in `kontrprzyklady/` (requests with the fault marked, efenix before and after, Znaczniki, Logi).
-- A run with `--variant` or `--rola` narrowed, or one part of `MUTACJE_CZESC`, does not report a vanished finding.
+- The verdict, the evidence and when a vanished finding is reported: `SKILL.md`, sections Drive, Evidence and Known
+  findings.
 
 ## Features
 
