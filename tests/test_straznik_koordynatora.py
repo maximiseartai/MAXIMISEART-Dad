@@ -270,32 +270,40 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
 
 
 @pytest.mark.parametrize(
-    ("reply", "about", "running"),
+    ("reply", "about", "ended"),
     [
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "working"}, CHILD, True),
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed", "workState": "result_available"}, CHILD, False),
-        ({"taskId": SENT, "status": "cancel_requested"}, CHILD, False),
-        ({"threadId": CHILD, "status": "interrupted"}, CHILD, False),
-        ({"thread": {"threadId": CHILD, "status": "running"}}, CHILD, True),
-        ({"thread": {"threadId": CHILD, "status": "completed"}}, CHILD, False),
-        ({"threads": [{"threadId": CHILD, "status": "running"}]}, None, False),
-        ({"taskId": "node:inne", "status": "cancel_requested"}, None, False),
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "working"}, CHILD, False),
+        # Dziecko czeka na własne dzieci: bieg trwa, choć workState nie jest working.
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "waiting_for_children"}, CHILD, False),
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed", "workState": "result_available"}, CHILD, True),
+        ({"taskId": SENT, "status": "cancel_requested"}, CHILD, True),
+        ({"threadId": CHILD, "status": "interrupted"}, CHILD, True),
+        ({"thread": {"threadId": CHILD, "status": "running"}}, CHILD, False),
+        ({"thread": {"threadId": CHILD, "status": "waiting"}}, CHILD, False),
+        ({"thread": {"threadId": CHILD, "status": "completed"}}, CHILD, True),
+        # Odczyt wątku mówi o wątku: status zadania na wierzchu odpowiedzi go nie zastępuje.
+        ({"thread": {"threadId": CHILD, "status": "running"}, "status": "completed"}, CHILD, False),
+        ({"taskId": SENT, "state": "done"}, CHILD, False),
+        ({"threads": [{"threadId": CHILD, "status": "completed"}]}, None, False),
+        ({"taskId": "node:inne", "status": "cancel_requested"}, None, True),
     ],
     ids=[
         "task-status-w-toku",
+        "czeka-na-dzieci",
         "task-status-po-koncu",
         "anulowanie",
         "przerwanie-watku",
         "odczyt-watku-w-toku",
+        "odczyt-watku-czeka",
         "odczyt-watku-po-koncu",
+        "odczyt-watku-pierwszenstwo",
+        "nieznany-ksztalt",
         "lista-watkow",
         "inny-bieg",
     ],
 )
-def test_odpowiedz_o_biegu_mowi_kogo_dotyczy_i_czy_bieg_trwa(
-    reply: dict[str, object], about: str | None, running: bool
-) -> None:
-    assert (straznik._subject(reply, {CHILD: SENT}), straznik._running(reply)) == (about, running)
+def test_koniec_biegu_tylko_ze_statusu_z_zamknietego_zbioru(reply: dict[str, object], about: str | None, ended: bool) -> None:
+    assert (straznik._subject(reply, {CHILD: SENT}), straznik._ended(reply)) == (about, ended)
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -536,12 +544,13 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
 @POSIX_ONLY
 @pytest.mark.parametrize(
     ("delivered", "old_session"),
-    [(False, False), (True, False), (True, True), ("anulowanie", False)],
+    [(False, False), (True, False), (True, True), ("anulowanie", False), ("czeka", False)],
     ids=[
         "powiadomienie-zgubione",
         "powiadomienie-przed-przesunietym-koncem",
         "powiadomienie-w-starej-sesji",
         "dziecko-anulowane-przez-koordynatora",
+        "odczyt-dziecka-czekajacego-na-dzieci-potem-zgubione",
     ],
 )
 def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_dziecka(
@@ -562,8 +571,11 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     notice = "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
     # Koordynator sam anuluje przegląd (nowy HEAD), a T3 kończy dziecko bez powiadomienia.
     cancel = {"taskId": "node:delegated-task:dziecko-wymyslone-1", "status": "cancel_requested"}
+    # Koordynator odczytał dziecko czekające na własne dzieci; potem bieg się skończył, a powiadomienie zginęło.
+    waiting = {"taskId": cancel["taskId"], "childThreadId": CHILD, "status": "running", "workState": "waiting_for_children"}
     ending = {
         True: [_row("user", _ago(32), notice)],
+        "czeka": [_call("mcp__t3-code__task_status", "toolu_status", _ago(30), waiting, {"taskId": cancel["taskId"]})],
         "anulowanie": [_call("mcp__t3-code__task_cancel", "toolu_cancel", _ago(32), cancel, {"taskId": cancel["taskId"]})],
     }
     lines = [_delegated_at(CHILD, _ago(40)), *ending.get(delivered, []), _row("user", _ago(2), "scal PR po poprawce")]
@@ -582,7 +594,7 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(home)), 30)
     sent = folder / "bin" / "wyslane.txt"
     nudges = sent.read_text(encoding="utf-8").splitlines() if sent.exists() else []
-    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([] if delivered else [True])
+    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([True] if delivered in (False, "czeka") else [])
 
 
 @POSIX_ONLY

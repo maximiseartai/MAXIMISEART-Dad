@@ -35,13 +35,13 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
   (``delegate_task`` i ``t3_thread_send``, rozpoznanej po ``tool_use_id`` wywołania), który T3 nadaje w każdej postaci
   węzła (``delegate-task``, ``thread-send``, ``provider-continuation``). Kontaktem jest powiadomienie T3 (wiadomość
   ``user`` z tekstem, nie wynik narzędzia, z linią od ``notice``; ``queue-operation`` to jeszcze kolejka) i odpowiedź
-  na dowolne własne wywołanie koordynatora, której przedmiotem jest ten bieg (``_subject``). Odpowiedź startu i
-  odpowiedź, która sama mówi, że bieg trwa (``_running``: ``thread.status`` spoza ``FINISHED`` jak dla
-  ``t3 thread show`` albo ``WORK_KEY`` równe ``WORKING``), znaczą „trwa”; powiadomienie i każda inna odpowiedź o biegu
-  (anulowanie, przerwanie, odczyt skończonego) znaczą „wie o końcu”, więc nieznane oznaczenie biegu w toku daje ciszę,
-  jak przed tą regułą, a nie fałszywe budzenie. Kolejność, nie chwila, bo T3 przesuwa ``updatedAt`` skończonego
-  dziecka po powiadomieniu (rozliczenie dzieci przy końcu rodzeństwa, restart), więc nowy pilnujący widziałby
-  powiadomienie „przed końcem”. Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path``
+  na dowolne własne wywołanie koordynatora, której przedmiotem jest ten bieg (``_subject``). „Wie o końcu” daje tylko
+  zamknięty zbiór znaczników końca: powiadomienie i odpowiedź ze statusem biegu z ``FINISHED`` (``_ended``; ten sam
+  zbiór co dla ``t3 thread show``, z ``cancel_requested`` odpowiedzi ``task_cancel``). Odpowiedź startu i każda inna
+  odpowiedź o biegu, także ze stanem, którego zbiór nie zna (``waiting_for_children``), albo bez statusu, znaczą
+  „trwa”, więc nieznany kształt kosztuje najwyżej jedno zbędne budzenie, a nigdy zgubione powiadomienie. Kolejność,
+  nie chwila, bo T3 przesuwa ``updatedAt`` skończonego dziecka po powiadomieniu (rozliczenie dzieci przy końcu
+  rodzeństwa, restart), więc nowy pilnujący widziałby powiadomienie „przed końcem”. Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path``
   wejścia; strażnik czyta każdy transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w
   starej sesji ma tam swój start i powiadomienie. Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi
   rusza się także wtedy, gdy T3 powiadomienie zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę);
@@ -62,7 +62,8 @@ proces. Bieg rozpoznaje ``taskId``, nie tytuł, więc powiadomienie o rodzeństw
 czekania. Bieg, który T3 wznowi samo (bez ``t3_thread_send``), nie ma startu w transkrypcie, więc ostatni kontakt z
 poprzednim biegiem ukrywa brak jego powiadomienia; koordynator, który dowiedział się o końcu poza T3 (werdykt na
 GitHubie), a powiadomienie nie przyszło, dostaje jedno budzenie; inny początek powiadomienia w przyszłym T3 dałby jedno
-budzenie na każde dziecko, a odpowiedź o biegu w toku bez obu oznaczeń ``_running`` ukrywa zgubione powiadomienie.
+budzenie na każde dziecko; odczyt wątku ze statusem ``completed`` przed powiadomieniem jego biegu (T3 pokazuje koniec
+tury dziecka, a bieg czeka) liczy się jako koniec.
 Bez transkryptu brak powiadomienia ukrywa też T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w
 ``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
@@ -103,16 +104,14 @@ PAUSE_S = 30 * 60
 STUCK_S = 60 * 60
 LOST_S = 30 * 60
 MAX_LIFE_S = 12 * 60 * 60
-# Status wątku T3 po końcu tury; każdy inny (running, waiting na odpowiedź, preparing, nieznany) znaczy, że wątek trwa.
-FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
+# Status wątku albo biegu T3 po końcu (``cancel_requested`` daje odpowiedź task_cancel koordynatora); każdy inny
+# (running, waiting na odpowiedź, preparing, nieznany, brak) znaczy, że wątek albo bieg trwa.
+FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled", "cancel_requested"})
 # Narzędzia, których odpowiedź to start biegu dziecka (zlecenie i wiadomość do dziecka), i pola tej odpowiedzi:
 # wątek dziecka (``CHILD_KEY`` po zleceniu, ``SEND_KEY`` po wiadomości) i węzeł biegu, który niesie jego powiadomienie.
 STARTS = frozenset({DELEGATE, "mcp__t3-code__t3_thread_send"})
 SEND_KEY = "threadId"
 TASK_KEY = "taskId"
-# Pole odpowiedzi o zadaniu T3 (task_status) i jego wartość, dopóki bieg trwa.
-WORK_KEY = "workState"
-WORKING = "working"
 NOTICE = "Delegated task "
 NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
@@ -187,14 +186,13 @@ def _subject(reply: dict[str, object], runs: Mapping[str, str]) -> str | None:
     return next((child for child, run in runs.items() if task == run), None)
 
 
-def _running(reply: dict[str, object]) -> bool:
-    """Czy odpowiedź sama mówi, że bieg trwa: ``thread.status`` spoza ``FINISHED`` (ta sama reguła co dla
-    ``t3 thread show``) albo ``WORK_KEY`` równe ``WORKING`` w odpowiedzi o zadaniu."""
+def _ended(reply: dict[str, object]) -> bool:
+    """Czy odpowiedź mówi, że bieg się skończył: jego status (``thread.status`` w odczycie wątku, ``status`` w
+    odpowiedzi o zadaniu) należy do ``FINISHED``; każdy inny status, brak statusu i inny kształt znaczą, że trwa."""
 
     thread = reply.get("thread")
-    if isinstance(thread, dict):
-        return thread.get("status") not in FINISHED
-    return reply.get(WORK_KEY) == WORKING
+    shown = thread if isinstance(thread, dict) else reply
+    return shown.get("status") in FINISHED
 
 
 def _text(entry: dict[str, object]) -> str:
@@ -254,7 +252,7 @@ def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> in
                     continue
                 about = _subject(reply, runs)
                 if about is not None:
-                    heard[about] = not _running(reply)
+                    heard[about] = _ended(reply)
         said = _text(entry).splitlines()
         for child, task in runs.items():
             if any(text.startswith(notice(task)) for text in said):
