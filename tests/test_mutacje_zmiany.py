@@ -1472,6 +1472,7 @@ def test_pokrycie_workera_xdist_przetrwa_zamkniecie_workera_zaraz_po_koncu_sesji
     assert [part["linie"] for part in recorded if part["linie"]] == [{"test_modul.py::test_w_tescie": {str(module): [2]}}]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows nie otwiera pliku w trakcie podmiany jego nazwy, a noc czyta zapisy pokrycia na Linuksie")
 def test_zapis_pokrycia_procesu_w_toku_nie_daje_czesci_niepelnego_pliku(tmp_path: Path) -> None:
     """Proces potomny testu pisze swój zapis, gdy część już czyta katalog wyników (run 43572533066, część 30/40)."""
 
