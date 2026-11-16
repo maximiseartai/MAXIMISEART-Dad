@@ -558,6 +558,8 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         ([("comment", PASS_HEAD), ("COMMENTED", FAIL_HEAD)], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "")], OBJECTION_HEAD),
+        # Reguły ``--werdykt`` sądzą tylko PASS dla HEAD: prośba o zmiany z PASS starszego commitu to sprzeciw, nie zły PASS.
+        ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", f"WERDYKT: PASS {OLD}\nZnaleziska: 0")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: dwa Ważne, brak testu")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: 1 (Ważne 0, Drobne 1)")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"WERDYKT: FAIL {OLD}")], None),
@@ -614,6 +616,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         "sprzeciw-recenzja",
         "sprzeciw-prosba-o-zmiany",
         "sprzeciw-prosba-o-zmiany-bez-tresci",
+        "sprzeciw-prosba-o-zmiany-z-pass-starszego-commitu",
         "sprzeciw-fail-z-proza-w-drugiej-linii-jak-532",
         "sprzeciw-fail-bez-waznych-poza-regulami-werdyktu",
         "fail-dla-starszego-commitu",
