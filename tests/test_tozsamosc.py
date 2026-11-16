@@ -364,15 +364,26 @@ def test_zmiane_sprzed_pre_przywraca_hook_polecenia_ktore_ja_objelo(repo: Repo) 
     assert repo.git("config", "user.name").stdout == "Maks\n"
 
 
+def _hold(descriptor: int) -> None:
+    """Wyłączna blokada pliku dla tego procesu, tym mechanizmem co blokada rejestru hooka."""
+
+    if sys.platform == "win32":
+        import msvcrt
+
+        msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+
+
 def test_hook_czeka_na_rejestr_trzymany_przez_hook_innego_agenta(repo: Repo) -> None:
     # Rejestr czyta i pisze naraz kilkanaście sesji: bez blokady PreToolUse jednej gubi polecenie w toku drugiej.
-    import fcntl
-
     state = Path(repo.env["TOZSAMOSC_STAN"])
     state.mkdir()
     data = {"hook_event_name": "PreToolUse", "session_id": "sesja", "tool_use_id": "A", "cwd": str(repo.worktree)}
     with (state / "zamek").open("w") as held:
-        fcntl.flock(held, fcntl.LOCK_EX)
+        _hold(held.fileno())
         waiting = subprocess.Popen([sys.executable, str(HOOK)], stdin=subprocess.PIPE, env=repo.env, text=True)
         assert waiting.stdin is not None
         waiting.stdin.write(json.dumps(data))
