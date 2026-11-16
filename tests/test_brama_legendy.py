@@ -117,8 +117,8 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
     errors = [
-        "-- Błędy opisu (powód → wiersze): słowo spoza legendy=2 | liczba spoza przedziałów=1 | kolumna więcej niż raz=1",
-        "-- powody z kodami (powód → wiersze): kolumna więcej niż raz (Y: instmdik, inst)→1 | liczba spoza przedziałów (instutp40m)→1",
+        "-- Błędy opisu (powód → wiersze): słowo inne niż zapis kodu=2 | kod z liczbą spoza przedziałów=1 | kolumna Ilości usług trafiona drugi raz=1",
+        "-- powody z kodami (powód → wiersze): kod z liczbą spoza przedziałów (instutp40m)→1 | kolumna Ilości usług trafiona drugi raz (Y: instmdik, inst)→1",
     ]
     assert lines[disk + 1 : disk + 11] == [
         "wiersze danych: 10 | z kodem: 5 | z Błędem opisu: 4 | bez kodów: 1 | DATA nie jest datą: 0",
@@ -148,7 +148,7 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
     notes = described.read_text(encoding="utf-8")
     assert f"{collective.name} | wiersz 21 | różnica | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0;" in notes
     assert f"{collective.name} | wiersz 22 | Błąd opisu | „20”; „m”; „patchcord” | wpis taty Y=1 | 20 m patchcord dzielnik1/2" in notes
-    assert f"{collective.name} | wiersz 23 | Błąd opisu | liczba spoza przedziałów (instutp40m) | wpis taty AJ=1 | instutp40m" in notes
+    assert f"{collective.name} | wiersz 23 | Błąd opisu | kod z liczbą spoza przedziałów (instutp40m) | wpis taty AJ=1 | instutp40m" in notes
     assert f"{collective.name} | wiersz 24 | Błąd opisu | „kabel”; „SYN”; „OPIS”; „15”; „m” | wpis taty Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
 
 

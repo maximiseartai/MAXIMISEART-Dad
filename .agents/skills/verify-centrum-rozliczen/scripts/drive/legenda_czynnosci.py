@@ -68,7 +68,7 @@ SPAWPG_ROW = 19
 # Removing inst makes inst20m of row 18 a word outside the legend, so the row has a Błąd opisu, with Dad's 1 in Y, which
 # the legend no longer writes.
 INST_ROW = 18
-WORD_OUTSIDE = "słowo spoza legendy"
+WORD_OUTSIDE = "słowo inne niż zapis kodu"
 
 
 def _codes(window: Locator) -> Locator:

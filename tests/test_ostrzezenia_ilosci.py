@@ -47,7 +47,7 @@ def _legend_period() -> list[RegisterRow]:
         _described(2, "nokia zte", "20 m patchcord dzielnik1/2"),  # 19: kod obok słów spoza legendy
         _described(3, "prewencja", "INSTMDIK"),  # 20: z opisu, same kody
         _described(4, "prewencja", "spawpg i wymiana gniazda"),  # 21: z opisu, kod obok opisu
-        _described(5, "nokia zte", "montaż instutp40m instmdik inst20m"),  # 22: słowo, liczba spoza przedziałów, dwa kody w Y
+        _described(5, "nokia zte", "montaż instutp40m instmdik inst20m"),  # 22: słowo, kod z liczbą spoza przedziałów, dwa kody w Y
         _described(6, "fut", "montaż ONT", started=MONDAY),  # 23: bez kodu, ze słowami spoza legendy
     ]
 
@@ -171,8 +171,8 @@ def test_ostrzezenia_licza_wiersze_zamkniete_legenda_i_wskazuja_wiersze_z_bledem
     errors = next(warning for warning in summary.warnings if warning.code == "BLEDY_OPISU")
     assert errors.what == (
         "Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc "
-        "Legenda czynności nic w nich nie wpisała: słowo spoza legendy (wiersze 19, 21, 22, 23); liczba spoza "
-        "przedziałów (wiersz 22); kolumna więcej niż raz (wiersz 22)."
+        "Legenda czynności nic w nich nie wpisała: słowo inne niż zapis kodu (wiersze 19, 21, 22, 23); kod z liczbą "
+        "spoza przedziałów (wiersz 22); kolumna Ilości usług trafiona drugi raz (wiersz 22)."
     )
     assert errors.where == f"plik {COLLECTIVE_FILE_NAME}, wiersze 19, 21, 22, 23"
     assert [warning.code for warning in summary.warnings] == ["WIERSZE_Z_OPISU", "BLEDY_OPISU", "KOLUMNY_Z_OPISU"]

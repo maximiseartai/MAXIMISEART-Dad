@@ -224,12 +224,12 @@ rows_from_description #2 [WIERSZE_Z_OPISU]
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika w CZYNNOŚCI ZREALIZOWANE przed Przebiegiem rozliczeń.
 
 description_errors #1 [BLEDY_OPISU]
-  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: liczba spoza przedziałów (wiersz 20).
+  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: kod z liczbą spoza przedziałów (wiersz 20).
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersz 20
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 
 description_errors #2 [BLEDY_OPISU]
-  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: słowo spoza legendy (wiersz 20); liczba spoza przedziałów (wiersz 20); kolumna więcej niż raz (wiersz 23); kolumna w dwóch kolorach (wiersz 24).
+  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: słowo inne niż zapis kodu (wiersz 20); kod z liczbą spoza przedziałów (wiersz 20); kolumna Ilości usług trafiona drugi raz (wiersz 23); kolumna wypełniona dwoma kolorami (wiersz 24).
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 20, 23, 24
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 

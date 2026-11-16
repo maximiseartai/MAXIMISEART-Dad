@@ -421,7 +421,7 @@ LEGEND_ROWS: list[dict[str, CellValue]] = [
     # rt2 dwa razy: tata wpisał AK zamiast AM i dał tylko zielone AF
     {**RULED, "K": "rt2", "AK": 1},
     {**RULED, "K": "rt2", "AK": 1},
-    # Błędy opisu: liczba spoza przedziałów instutp z wpisem taty AJ, kod obok słowa bez wpisu taty: opis nie wychodzi
+    # Błędy opisu: kod z liczbą spoza przedziałów instutp z wpisem taty AJ, kod obok słowa bez wpisu taty: opis nie wychodzi
     {**RULED, "K": "instutp40m", "AJ": 1},
     {**RULED, "K": "spawpg montaż"},
     # Błędy opisu bez kodu: z kwotą taty w AS
@@ -477,13 +477,13 @@ def test_kontrola_ilosci_grupuje_roznice_legendy_po_kodzie_z_opisem_technika_kwo
         "| AS kolor | czerwony | brak | 1 | `spawpg` |\n"
         "\n## Błędy opisu\n\n"
         "| Powód | Wiersze |\n| --- | --- |\n"
-        "| liczba spoza przedziałów (instutp40m) | 1 |\n"
-        "| słowo spoza legendy | 4 |\n"
+        "| kod z liczbą spoza przedziałów (instutp40m) | 1 |\n"
+        "| słowo inne niż zapis kodu | 4 |\n"
         "\n### Błędy opisu z wpisem taty\n\n"
         "| Opis | Powód | Wpis taty | Wiersze |\n| --- | --- | --- | --- |\n"
-        "| `instutp40m` | liczba spoza przedziałów (instutp40m) | AJ 1 | 1 |\n"
-        "| `kwota tekstem` | słowo spoza legendy | AS nieliczbowa | 1 |\n"
-        "| `listwy` | słowo spoza legendy | AS 220 | 1 |\n"
+        "| `instutp40m` | kod z liczbą spoza przedziałów (instutp40m) | AJ 1 | 1 |\n"
+        "| `kwota tekstem` | słowo inne niż zapis kodu | AS nieliczbowa | 1 |\n"
+        "| `listwy` | słowo inne niż zapis kodu | AS 220 | 1 |\n"
         "\n## Wiersze bez kodu z wpisem taty\n\n"
         "| Opis | Wpis taty | Wiersze |\n| --- | --- | --- |\n"
         "| `tak` | Y 1 | 1 |\n"
@@ -530,7 +530,7 @@ def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowa
     issue = sent_check(centrum)
     sent = issue.title + issue.body + "".join(issue.comments)
     assert [value for value in (address, orange, "600-123-456", "Kwiatowa") if value in sent] == []
-    assert "| `rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]` | słowo spoza legendy | Y 1 | 1 |\n" in sent
+    assert "| `rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]` | słowo inne niż zapis kodu | Y 1 | 1 |\n" in sent
     assert sent.endswith(
         "## Uwagi techniczne\n\n"
         "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Kontroli ilości.\n"
@@ -985,7 +985,7 @@ def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_ma
     preview = legend_previewed(centrum, {"kind": "remove", "code_id": "inst"})
 
     assert (preview["changed"], preview["changed_as_tata"]) == (1, 0)
-    assert shown_legend_rows(preview) == [(18, "Inst20m tak", [], ["słowo spoza legendy"], [("value", "Y", 0, 1)])]
+    assert shown_legend_rows(preview) == [(18, "Inst20m tak", [], ["słowo inne niż zapis kodu"], [("value", "Y", 0, 1)])]
 
 
 def test_podglad_legendy_pokazuje_wiersz_ktory_po_zmianie_ma_blad_opisu_z_powodem_i_wpisem_taty(tmp_path: Path) -> None:
@@ -998,7 +998,7 @@ def test_podglad_legendy_pokazuje_wiersz_ktory_po_zmianie_ma_blad_opisu_z_powode
 
     assert (preview["errors_before"], preview["errors_after"], preview["changed"], preview["changed_as_tata"]) == (0, 1, 1, 0)
     assert shown_legend_rows(preview) == [
-        (18, "inst20m bypas5m", [], ["kolumna więcej niż raz (Y: inst, bypas)"], [("value", "Y", 0, 1), ("value", "AM", 0, 1)])
+        (18, "inst20m bypas5m", [], ["kolumna Ilości usług trafiona drugi raz (Y: inst, bypas)"], [("value", "Y", 0, 1), ("value", "AM", 0, 1)])
     ]
 
 

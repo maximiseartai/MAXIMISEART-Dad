@@ -15,7 +15,7 @@ to Błąd opisu, także opis bez żadnego kodu. Rachunek tekstu:
    Gdy pasują zapisy dwóch kodów, słowo należy do pierwszego w legendzie. Słowa ``tak`` i ``nie`` nie są niczym.
    Każde inne słowo to Błąd opisu (``NotACode``): zwykły opis, własny zapis pracownika (``utp18m``, ``instmdic``), kod
    ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w dłuższym słowie (``xinst20m``).
-3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a liczba spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
+3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a kod z liczbą spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
    Kod bez przedziałów liczby nie czyta.
 4. W kolumnę Ilości usług wpisuje najwyżej jeden kod: drugi, także ten sam kod drugi raz, to Błąd opisu
    (``ColumnTwice``). Kwoty w ``AS`` się sumują. Kolumna, którą kody wypełniają dwoma różnymi kolorami, to Błąd opisu
@@ -240,7 +240,7 @@ class NotACode:
     """Słowo opisu, które nie jest zapisem żadnego Kodu czynności ani ``tak`` czy ``nie``, tak jak w opisie."""
 
     word: str
-    reason: ClassVar[str] = "słowo spoza legendy"
+    reason: ClassVar[str] = "słowo inne niż zapis kodu"
 
 
 @dataclass(frozen=True)
@@ -250,7 +250,7 @@ class NumberOutOfRange:
     code: str
     spelling: str
     number: int
-    reason: ClassVar[str] = "liczba spoza przedziałów"
+    reason: ClassVar[str] = "kod z liczbą spoza przedziałów"
 
     @property
     def detail(self) -> str:
@@ -265,7 +265,7 @@ class ColumnTwice:
 
     column: str
     codes: tuple[str, ...]
-    reason: ClassVar[str] = "kolumna więcej niż raz"
+    reason: ClassVar[str] = "kolumna Ilości usług trafiona drugi raz"
 
     @property
     def detail(self) -> str:
@@ -278,7 +278,7 @@ class TwoColours:
 
     column: str
     codes: tuple[str, ...]
-    reason: ClassVar[str] = "kolumna w dwóch kolorach"
+    reason: ClassVar[str] = "kolumna wypełniona dwoma kolorami"
 
     @property
     def detail(self) -> str:
@@ -307,8 +307,8 @@ NO_CODES: Final = NoCodes()
 
 
 def problem_text(problem: DescriptionProblem) -> str:
-    """Powód Błędu opisu słowami, ten sam dla taty i Maksa (``liczba spoza przedziałów (instutp40m)``), bez tekstu
-    technika: słowo spoza legendy to sam rodzaj powodu. Słowo osobno ominęłoby strażnika reguły danych, który maskuje
+    """Powód Błędu opisu słowami, ten sam dla taty i Maksa (``kod z liczbą spoza przedziałów (instutp40m)``), bez tekstu
+    technika: słowo inne niż zapis kodu to sam rodzaj powodu. Słowo osobno ominęłoby strażnika reguły danych, który maskuje
     wartość tylko z jej słowami po kolei, więc pokazuje je opis technika obok powodu."""
 
     match problem:

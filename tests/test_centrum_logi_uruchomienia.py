@@ -3660,7 +3660,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
             "I": f"ZL-SYN-{order:03d}",
             "J": worker,
             "L": successful,
-            "M": "montaż",
+            "M": "tak",
         }, number
     assert {5, 7, 8, 10} <= set(sheet["empty_rows"]), "puste wiersze między zleceniami okresu"
 

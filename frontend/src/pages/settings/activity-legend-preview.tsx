@@ -68,7 +68,7 @@ function Row({ row }: { row: LegendPreviewRow }) {
 
 function rowCodes(row: LegendPreviewRow) {
   if (row.problems.length > 0) {
-    return " · Błąd opisu"
+    return null
   }
 
   return row.codes.length === 0 ? " · bez kodu" : ` · ${row.codes.join(", ")}`
