@@ -58,6 +58,7 @@ export const zApiTiming = z.object({
         'changeDevice',
         'removeDevice',
         'getDeviceSuggestions',
+        'getActivityLegend',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -1870,6 +1871,18 @@ export const zSentenceText = z.object({
 });
 
 /**
+ * ActivityCodeSentence
+ *
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ */
+export const zActivityCodeSentence = z.object({
+    id: z.string(),
+    spellings: z.string(),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
  * HistoryRuleChange
  *
  * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
@@ -1947,6 +1960,17 @@ export const zQuantityRuleSentence = z.object({
 export const zSettingProblem = z.object({
     field: z.string().nullable(),
     message: z.string()
+});
+
+/**
+ * ActivityLegendSettings
+ *
+ * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
+ * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ */
+export const zActivityLegendSettings = z.object({
+    codes: z.array(zActivityCodeSentence),
+    problem: zSettingProblem.nullable()
 });
 
 /**
@@ -3463,6 +3487,11 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  * Successful Response
  */
 export const zGetSettingsResponse = zSettings;
+
+/**
+ * Successful Response
+ */
+export const zGetActivityLegendResponse = zActivityLegendSettings;
 
 export const zChangeAutostartBody = zAutostartChange;
 

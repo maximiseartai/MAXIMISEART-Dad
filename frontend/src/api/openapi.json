@@ -1716,6 +1716,27 @@
         }
       }
     },
+    "/api/settings/activity-legend": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getActivityLegend",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLegendSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/autostart": {
       "put": {
         "tags": [
@@ -3268,6 +3289,77 @@
         ],
         "title": "ActivitiesCondition"
       },
+      "ActivityCodeSentence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "spellings": {
+            "type": "string",
+            "title": "Spellings"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "spellings",
+          "sentence"
+        ],
+        "title": "ActivityCodeSentence",
+        "description": "Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne\npo „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika."
+      },
+      "ActivityLegendSettings": {
+        "properties": {
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityCodeSentence"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codes",
+          "problem"
+        ],
+        "title": "ActivityLegendSettings",
+        "description": "Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe\nustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania)."
+      },
       "AddRule": {
         "properties": {
           "kind": {
@@ -3343,6 +3435,7 @@
               "changeDevice",
               "removeDevice",
               "getDeviceSuggestions",
+              "getActivityLegend",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",

@@ -20,6 +20,7 @@ import uuid
 from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
+from rozliczenia.centrum.activity_legend_router import activity_legend_router, with_legend_sentences
 from rozliczenia.centrum.catalog import CATALOG, Catalog
 from rozliczenia.centrum.clock import SYSTEM_CLOCK, Clock
 from rozliczenia.centrum.cloud_files import CloudFiles
@@ -203,7 +204,7 @@ def create_app(
         release_origin=release_origin,
     )
     inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
-    sentences = with_exception_sentences(history_sentences(settings, price_list), price_list)
+    sentences = with_legend_sentences(with_exception_sentences(history_sentences(settings, price_list), price_list), price_list)
     app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
     app.include_router(order_register_router(settings, platform))
     app.include_router(periods_router(settings, platform, today, catalog))
@@ -220,6 +221,7 @@ def create_app(
     app.include_router(workers_router(settings, files, today))
     recent = RecentCollectiveFiles(files)
     app.include_router(quantity_rules_router(settings, price_list, recent))
+    app.include_router(activity_legend_router(settings, price_list))
     app.include_router(quantity_differences_router(settings, price_list, recent))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))

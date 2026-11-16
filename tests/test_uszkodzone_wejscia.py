@@ -500,6 +500,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
     "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
+    "getActivityLegend": _route("getActivityLegend", "GET", "/api/settings/activity-legend"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -604,6 +605,7 @@ READS: dict[str, set[str]] = {
     "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "getDeviceSuggestions": _WINDOW,
+    "getActivityLegend": {"wzorzec_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
