@@ -14,6 +14,10 @@ ADR:
   wysyła też `CZYNNOŚCI ZREALIZOWANE` z maskowaniem z [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md), ale tylko
   w wierszach opisanych niżej.
 
+[ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md) zmienia po odpowiedziach taty zdania o pierwszym zestawie, spacjach i
+zapisach kodu, liczbie spoza przedziałów, sumie wystąpień, tekście obok kodu i zwykłym opisie, `AS` i kolorach u
+pracownika oraz legendzie w Przypomnieniu o raporcie.
+
 ## Kontekst
 
 Kolumny Pliku zbiorczego z opisu technika (`Y`, `AB`, `AD`, `AJ`–`AM`) tata wypełnia ręcznie w każdym okresie: około
