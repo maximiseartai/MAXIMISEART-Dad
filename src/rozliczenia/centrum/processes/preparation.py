@@ -97,6 +97,7 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
         *TAIL,
     ),
     quantity_rules=True,
+    activity_legend=True,
 )
 """Przygotowanie pliku zbiorczego w Centrum. Sprawdzenie OneDrive (``files_in_onedrive``) idzie przed sprawdzeniami,
 które otwierają Rejestr zleceń, Wzorce i pliki okresu: plik tylko w chmurze może się nie otworzyć, a wtedy przyczyną

@@ -23,6 +23,8 @@ import smtplib
 import pytest
 import proba_przypomnien
 
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -31,6 +33,7 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from tests.fixtures.bez_dostepu import without_reading
 
 from atrapy.intermax import NUMBER, Intermax, Order
+from atrapy.preparation import COMPLETED_WITHOUT_CODES
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp
 
@@ -73,7 +76,7 @@ def _raport_anny() -> AtrapaMail:
     message["To"] = SKRZYNKA
     message["Subject"] = "Raport 09.11.2026"
     message["Message-ID"] = "<1@przyklad.invalid>"
-    message.set_content("40000003 tak montaż")
+    message.set_content(f"40000003 tak {COMPLETED_WITHOUT_CODES}")
     return AtrapaMail(1, datetime(2026, 11, 9, 19, 0).astimezone(), message.as_bytes())
 
 
@@ -345,14 +348,17 @@ def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     assert serwer.received == []
 
 
-@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE])
+@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE, LEGEND_FILE])
 def test_plik_ustawien_bez_odczytu_ma_wlasna_linie_z_jego_nazwa_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], plik: str
 ) -> None:
-    """Plik Przypomnień albo Folderów, którego system nie daje teraz czytać, to nie wyłączone przypomnienia ani brak
-    INTERMAX: próba nazywa ten plik i nic nie wysyła."""
+    """Plik Przypomnień, Folderów albo Legendy czynności, którego system nie daje teraz czytać, to nie wyłączone
+    przypomnienia ani brak INTERMAX: próba nazywa ten plik i nic nie wysyła, bo bez legendy nie wie, który Wpis ``tak``
+    ma Błąd opisu (ADR 0039)."""
 
     klon = _klon(tmp_path)
+    if plik == LEGEND_FILE:
+        (klon.config / plik).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     with without_reading(klon.config / plik), _gmail() as (imap, serwer):
         code, line = _proba(capsys, klon, imap, serwer)
 

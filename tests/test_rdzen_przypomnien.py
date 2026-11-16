@@ -17,6 +17,8 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 
+from rozliczenia.activity_legend import ActivityCode, ActivityLegend, CellFill, CodesOnly, FillColour, FixedColumn
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.report_cells import OrderRow
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_list import WorkerEntry, WorkerList
@@ -98,6 +100,7 @@ def _due(
     workers: WorkerList | None = None,
     settings: ReminderSettings | None = None,
     in_effect: SchedulesInEffect | None = None,
+    legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
 ) -> tuple[Reminder, ...]:
     listed = workers or _workers()
     return reminders_due(
@@ -110,6 +113,7 @@ def _due(
             addresses=listed.addresses(),
             reminded=listed.reminded(),
             settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
+            legend=legend,
             in_effect=in_effect or SchedulesInEffect(),
         )
     )
@@ -248,9 +252,9 @@ def test_pierwsze_zdanie_taty_ma_dzien_w_kazdym_miejscu_pola_a_wzor_i_przyklad_z
         "",
         "Raport proszę wysłać według tego wzoru:",
         "Temat maila: Raport 09.11.2026",
-        "Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności",
+        "Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód",
         "PRZYKŁAD:",
-        "12345678 tak montaż ONT",
+        "12345678 tak inst20m spawpg",
         "12345679 nie brak klienta",
         "",
         "Tata",
@@ -328,15 +332,15 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
 @pytest.mark.parametrize(
     ("mail", "ends"),
     [
-        pytest.param(_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż"), True, id="pelny"),
+        pytest.param(_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m"), True, id="pelny"),
         pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), True, id="niepelny-bez-wpisu"),
         pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", ""), True, id="drugi-adres-krotka-data"),
-        pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak montaż"), True, id="literowka-w-roku"),
-        pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak montaż"), False, id="nieczytelny-bez-roku"),
-        pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak montaż"), False, id="nieczytelny-bez-daty"),
-        pytest.param(_mail(JAN, "Re: Raport 09.11.2026", "40000001 tak montaż"), False, id="odpowiedz"),
-        pytest.param(_mail(JAN, "Raport 08.11.2026", "40000001 tak montaż"), False, id="inny-dzien"),
-        pytest.param(_mail(EWA, "Raport 09.11.2026", "40000001 tak montaż"), False, id="inny-wykonawca"),
+        pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m"), True, id="literowka-w-roku"),
+        pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), False, id="nieczytelny-bez-roku"),
+        pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), False, id="nieczytelny-bez-daty"),
+        pytest.param(_mail(JAN, "Re: Raport 09.11.2026", "40000001 tak inst20m"), False, id="odpowiedz"),
+        pytest.param(_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m"), False, id="inny-dzien"),
+        pytest.param(_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m"), False, id="inny-wykonawca"),
         pytest.param(_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak"), False, id="adres-spoza-listy"),
     ],
 )
@@ -383,9 +387,9 @@ EXPECTED_TEXT = """Poproszę o wysłanie raportu za dzień 05.11.2026.
 
 Raport proszę wysłać według tego wzoru:
 Temat maila: Raport 05.11.2026
-Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności
+Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód
 PRZYKŁAD:
-12345678 tak montaż ONT
+12345678 tak inst20m spawpg
 12345679 nie brak klienta
 """
 
@@ -434,3 +438,148 @@ def test_dzien_z_tematu_przypomnienia_czyta_tylko_postac_ktora_pisze_centrum(sub
 @settings(derandomize=True, database=None)
 def test_temat_przypomnienia_czyta_sie_z_powrotem_jako_jego_dzien(day: date) -> None:
     assert reminder_day(reminder_subject(day)) == day
+
+
+# --- Błąd opisu we Wpisie ``tak``: raport niewysłany (ADR 0039, odpowiedź taty 9) ---
+
+FAULTS = "W raporcie za ten dzień opis zlecenia ma być z samych kodów czynności. Proszę wysłać jeszcze raz te zlecenia:"
+NOT_A_CODE = "słowo inne niż kod czynności"
+
+
+def _faults(reminder: Reminder) -> list[str]:
+    """Linie zleceń z Błędem opisu w treści przypomnienia, między akapitem o Błędzie opisu a pustą linią."""
+
+    lines = reminder.text.splitlines()
+    if FAULTS not in lines:
+        return []
+    start = lines.index(FAULTS) + 1
+    return lines[start : lines.index("", start)]
+
+
+@pytest.mark.parametrize(
+    ("text", "faults"),
+    [
+        pytest.param("40000001 tak montaż ONT", [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."], id="zwykly-opis"),
+        pytest.param("40000001 tak utp18m", [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."], id="wlasny-zapis"),
+        pytest.param("40000001 tak inst20m, klient zadowolony", [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."], id="kod-obok-opisu"),
+        pytest.param(
+            "40000001 tak instutp40m",
+            ["Zlecenie 40000001 ma w opisie kod z liczbą spoza zakresu (instutp40m)."],
+            id="liczba-spoza-przedzialow",
+        ),
+        pytest.param(
+            "40000001 tak instmdik inst20m", ["Zlecenie 40000001 ma w opisie dwa kody tej samej usługi."], id="kolumna-drugi-raz"
+        ),
+        pytest.param(
+            "40000001 tak montaż instutp0m",
+            [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE} i kod z liczbą spoza zakresu (instutp0m)."],
+            id="dwa-powody",
+        ),
+        pytest.param("40000001 tak inst20m spawpg", None, id="same-kody"),
+        pytest.param("40000001 TAK Inst20m, spawpg.", None, id="kody-wielka-litera-i-interpunkcja"),
+        pytest.param("40000001 tak", None, id="bez-opisu"),
+        pytest.param("40000001 nie montaż się nie udał", None, id="nie-z-powodem"),
+        pytest.param("40000001 t montaż", None, id="litera-zamiast-tak"),
+        pytest.param("40000009 tak montaż", None, id="numer-spoza-intermax"),
+        pytest.param("40000001 tak montaż\n40000001 nie brak klienta", None, id="przeciwny-zamiar"),
+    ],
+)
+def test_raport_z_wpisem_tak_z_bledem_opisu_liczy_sie_jako_niewyslany_a_przypomnienie_mowi_ktore_zlecenie_i_dlaczego(
+    text: str, faults: list[str] | None
+) -> None:
+    """ADR 0039: Raport wykonawcy za dzień X, którego wygrywający Wpis ``tak`` ma Błąd opisu (słowo inne niż zapis kodu,
+    także kod obok zwykłego opisu, liczba spoza przedziałów, kolumna Ilości usług drugi raz), liczy się dla Przypomnień
+    jako niewysłany, a przypomnienie mówi, w którym zleceniu jest błąd i jaki, bez słów z opisu Wykonawcy. Wielkość
+    liter i interpunkcja między kodami nie są błędem. Opis Wpisu ``nie`` to powód, a Wpis bez ``tak``, numer spoza
+    INTERMAX i Wpisy o przeciwnym zamiarze nie wpisują opisu, więc raport kończy przypomnienia jak dotąd."""
+
+    found = _due(NEXT_MORNING, mails=[_mail(JAN, "Raport 09.11.2026", text)])
+
+    if faults is None:
+        assert found == ()
+    else:
+        [reminder] = found
+        assert (reminder.worker, reminder.day) == ("jan.testowy", DAY)
+        assert _faults(reminder) == faults
+        assert "montaż" not in reminder.text and "utp18m" not in reminder.text and "zadowolony" not in reminder.text
+
+
+@pytest.mark.parametrize(
+    ("later", "faults"),
+    [
+        pytest.param([(JAN, "40000001 tak inst20m")], None, id="poprawny-wpis-zlecenia"),
+        pytest.param([(JAN, "40000002 tak inst25m")], [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."], id="poprawka-innego-zlecenia"),
+        pytest.param([(EWA, "40000001 tak inst20m")], None, id="poprawny-wpis-innego-wykonawcy"),
+        pytest.param(
+            [(JAN, "40000001 tak inst20m"), (JAN, "40000002 tak instutp40m")],
+            ["Zlecenie 40000002 ma w opisie kod z liczbą spoza zakresu (instutp40m)."],
+            id="blad-w-pozniejszym-mailu",
+        ),
+        pytest.param(
+            [(JAN, "40000002 tak montaż")],
+            [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}.", f"Zlecenie 40000002 ma w opisie {NOT_A_CODE}."],
+            id="dwa-zlecenia-z-bledem",
+        ),
+    ],
+)
+def test_dzien_liczy_sie_jako_wyslany_gdy_kazde_zlecenie_ma_wygrywajacy_wpis_tak_bez_bledu_opisu(
+    later: list[tuple[str, str]], faults: list[str] | None
+) -> None:
+    """ADR 0039: dzień liczy się jako wysłany, gdy żaden wygrywający Wpis ``tak`` tego dnia nie ma Błędu opisu, więc
+    Wykonawca może przysłać sam poprawiony Wpis. Wygrywa Wpis najpóźniejszego Raportu wykonawcy z numerem, także od
+    innego Wykonawcy, jak we Wpisaniu raportów, a poprawka innego zlecenia zostawia błąd pierwszego."""
+
+    first = _mail(JAN, "Raport 09.11.2026", "40000001 tak montaż\n40000002 tak spawpg", _at(DAY, 19))
+    mails = [first, *(_mail(sender, "Raport 09.11.2026", text, _at(DAY, 20, index)) for index, (sender, text) in enumerate(later))]
+
+    found = _due(NEXT_MORNING, (_order(), _order(number=40000002, row=121)), mails=mails)
+
+    if faults is None:
+        assert found == ()
+    else:
+        [reminder] = found
+        assert (reminder.worker, _faults(reminder)) == ("jan.testowy", faults)
+
+
+def test_blad_opisu_raportu_przyslanego_nastepnego_dnia_zostawia_niewyslany_dzien_z_tematu() -> None:
+    """ADR 0039: Raport wykonawcy za dzień X, który przychodzi rano dnia X+1 z Błędem opisu, liczy się jako niewysłany
+    za dzień X z tematu, nie za dzień przyjścia maila, więc przypomnienie idzie za X i mówi, które zlecenie ma błąd."""
+
+    late = _mail(JAN, "Raport 09.11.2026", "40000001 tak montaż", _at(DAY + timedelta(days=1), 7))
+
+    [reminder] = _due(NEXT_MORNING, mails=[late])
+
+    assert (reminder.worker, reminder.day, _faults(reminder)) == ("jan.testowy", DAY, [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."])
+
+
+def test_przypomnienie_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydania() -> None:
+    """Legenda czynności to Ustawienie Centrum taty: kod z jego legendy nie jest Błędem opisu, choć legenda z Wydania go
+    nie zna, a dwa jego kody, które wypełniają tę samą kolumnę różnymi kolorami, to błąd z własnym powodem."""
+
+    legend = ActivityLegend(
+        (
+            ActivityCode("montaz", ("montaż",), FixedColumn("Y")),
+            ActivityCode("zielony", ("kodzielony",), fills=(CellFill("AF", FillColour.GREEN),)),
+            ActivityCode("czerwony", ("kodczerwony",), fills=(CellFill("AF", FillColour.RED),)),
+        )
+    )
+    taty = [_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż")]
+    colours = [_mail(JAN, "Raport 09.11.2026", "40000001 tak kodzielony kodczerwony")]
+
+    assert _due(NEXT_MORNING, mails=taty, legend=legend) == ()
+    assert _days(_due(NEXT_MORNING, mails=taty)) == [("jan.testowy", DAY)]
+    [reminder] = _due(NEXT_MORNING, mails=colours, legend=legend)
+    assert _faults(reminder) == ["Zlecenie 40000001 ma w opisie kody, których nie można łączyć."]
+
+
+def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_i_wpis_nie_z_powodem() -> None:
+    """ADR 0039: wzór treści i przykład pokazują kody, więc Wykonawca, który przepisze przykład, nie dostanie Błędu
+    opisu przy legendzie z Wydania."""
+
+    [reminder] = _due(NEXT_MORNING)
+    lines = reminder.text.splitlines()
+    example = lines.index("PRZYKŁAD:")
+    yes, no = (line.split(maxsplit=2) for line in lines[example + 1 : example + 3])
+
+    assert yes[1] == "tak" and isinstance(DEFAULT_ACTIVITY_LEGEND.read(yes[2]), CodesOnly)
+    assert no[1:] == ["nie", "brak klienta"]

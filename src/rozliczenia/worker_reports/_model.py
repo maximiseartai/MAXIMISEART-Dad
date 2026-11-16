@@ -14,6 +14,7 @@ import hashlib
 from types import MappingProxyType
 from typing import ClassVar, Final, NewType, assert_never
 
+from ..activity_legend import ActivityLegend, DescriptionProblem, problem_text
 from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
@@ -438,7 +439,10 @@ class ReportInputs:
     INTERMAX ma numer, więc numeru z niego rdzeń nigdy nie dopisuje, i tylko ``present`` mówi, czy numer stoi w
     kilku wierszach, więc zlecenia takiego numeru rdzeń nie przenosi; ``orders`` mówią, które z tych wierszy są
     zleceniami, a okno, do których z nich wolno pisać. Pole nie ma wartości domyślnej, bo bez niego rdzeń
-    dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy."""
+    dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy.
+
+    ``legend``: Legenda czynności Ustawień Centrum, ta sama, którą liczy Przygotowanie pliku zbiorczego; z niej rdzeń
+    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``)."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -447,6 +451,7 @@ class ReportInputs:
     memory: OwnEntries
     kept: frozenset[Kept]
     present: Sequence[ReadNumber]
+    legend: ActivityLegend
     ordered_days: frozenset[OrderedDay] = frozenset()
 
 
@@ -711,6 +716,18 @@ class ManualDifference:
     reported: str
 
 
+@dataclass(frozen=True)
+class FaultyDescription:
+    """Wpis ``tak`` zlecenia ``number`` od Wykonawcy ``worker`` z dnia ``day`` ma Błąd opisu (ADR 0039): jego czynności
+    nie są samymi Kodami czynności, z powodami ``problems`` (``ActivityLegend.read``). Wpis jest wpisany, a dzień
+    Wykonawcy liczy się dla Przypomnień o raporcie jako niewysłany, dopóki zlecenie nie dostanie poprawnego Wpisu."""
+
+    worker: Login
+    day: date
+    number: OrderNumber
+    problems: tuple[DescriptionProblem, ...]
+
+
 ReportProblem = (
     UnreadableSubject
     | UnknownSender
@@ -721,11 +738,13 @@ ReportProblem = (
     | RepeatedNumber
     | RefusedMove
     | ManualDifference
+    | FaultyDescription
 )
 """Problem, który tata widzi z powodem (``reasons.reason``): nierozpoznany temat, nieznany nadawca, brak ``tak``/``nie``,
 przeciwny zamiar Wpisów jednego zlecenia w jednym mailu, nieznany numer, którego Centrum nie dopisało, ten sam numer
 dwa razy w dniu u nadawcy, numer w kilku zleceniach INTERMAX bez jednego zlecenia nadawcy w dniu z tematu, Przeniesienie
-skąd albo dokąd nie wolno (także jedyne zlecenie numeru w dniu po dziś) i różnica z ręczną wartością."""
+skąd albo dokąd nie wolno (także jedyne zlecenie numeru w dniu po dziś), różnica z ręczną wartością i wpisany Wpis
+``tak`` z Błędem opisu."""
 
 
 @dataclass(frozen=True)
@@ -905,5 +924,7 @@ def problem_order(
             return problem.shown, problem.worker, problem.number, kind, (*days, bar.name)
         case ManualDifference(key=key, column=column, manual=manual, reported=reported):
             return key.day, key.worker, key.number, kind, (column.value, manual, reported)
+        case FaultyDescription(problems=problems):
+            return problem.day, problem.worker, problem.number, kind, tuple(map(problem_text, problems))
         case _:
             assert_never(problem)

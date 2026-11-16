@@ -16,7 +16,7 @@ Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu te
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence, Sized
 import copy
 import dataclasses
 from dataclasses import dataclass, fields, is_dataclass
@@ -2260,6 +2260,7 @@ _FULL_STEP: Final[dict[str, Any]] = {
     "results": [{"same_number": True, "status": "Status syntetyczny", "realizator": "realizator.testowy", "address": ["lokal"]}],
     "status": "Status otwarty",
     "realizator": "otwierajacy.testowy",
+    "refusal": "NO_PHOTOS",
 }
 # Pełne Logi: każde pole schematu ma wartość, a każda wartość jest jedna w Logach. Tekst spoza zamkniętych list i pól
 # narzędzia to syntetyczna treść plików taty i strony efenix.
@@ -2341,6 +2342,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
         "system": "Windows-11-10.0.26100-SP0",
         "python": "3.12.10",
         "files": [{"name": "Rejestr syntetyczny.xlsx", "size": 2048, "online_only": False}],
+        "unreadable_settings": "Ustawienia syntetyczne.yaml",
     },
     "trace": {
         "exception_type": "rozliczenia.efenix_pricing.PricingStopped",
@@ -2368,6 +2370,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
         "today": "2026-11-09",
         "rollout_before": "2026-11-02",
         "rollout": "2026-11-02",
+        "closed": ["26_10_01_11_2026"],
         "skipped": 1,
         "mails": [
             {
@@ -2384,6 +2387,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "arrived": "2026-11-09T17:10:00.200000Z",
                 "worker": "wykonawca.syntetyczny",
                 "fault": "no_year",
+                "numbers": ["40000010"],
             },
             {"kind": "stranger", "mail": "cdefghijklmnopab", "arrived": "2026-11-09T17:20:00.300000Z", "day": "2026-11-08"},
         ],
@@ -2405,6 +2409,41 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "fault": "not_a_day",
             },
             {"kind": "unknown_sender", "mail": "cdefghijklmnopab", "day": "2026-11-08"},
+            {"kind": "missing_verdict", "worker": "wykonawca.syntetyczny", "day": "2026-11-09", "number": "40000011", "fault": "letter_no"},
+            {"kind": "unknown_number", "worker": "wykonawca.syntetyczny", "day": "2026-11-09", "number": "40000012", "bar": "mistaken_subject"},
+            {"kind": "foreign_order", "worker": "wykonawca.syntetyczny", "day": "2026-11-09", "number": "40000013", "owner": "wykonawca.obcy"},
+            {"kind": "repeated_order", "worker": "wykonawca.syntetyczny", "day": "2026-11-09", "number": "40000014"},
+            {
+                "kind": "repeated_number",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "number": "40000015",
+                "places": [{"day": "2026-11-03", "worker": "wykonawca.trzeci"}],
+            },
+            {
+                "kind": "refused_move",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "number": "40000016",
+                "order_days": ["2026-11-04"],
+                "bar": "closed_target",
+            },
+            {
+                "kind": "conflicting_verdicts",
+                "mail": "defghijklmnopabc",
+                "arrived": "2026-11-09T17:30:00.400000Z",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "number": "40000017",
+                "entries": [{"number": "40000017", "verdict": "nie", "fault": None, "activities": "Powód syntetyczny"}],
+            },
+            {
+                "kind": "faulty_description",
+                "worker": "wykonawca.syntetyczny",
+                "day": "2026-11-09",
+                "number": "40000018",
+                "reasons": ["Powód syntetyczny Błędu opisu"],
+            },
             {
                 "kind": "manual_difference",
                 "cell": {
@@ -2425,6 +2464,15 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "worker": "wykonawca.syntetyczny",
                 "column": "SKUTECZNE",
                 "value": "nie",
+            }
+        ],
+        "kept": [
+            {
+                "number": 40000009,
+                "day": "2026-11-04",
+                "worker": "wykonawca.syntetyczny",
+                "column": "CZYNNOŚCI ZREALIZOWANE",
+                "value": "Wpis zostawiony syntetyczny",
             }
         ],
         "moves": [{"sheet": "Arkusz zleceń syntetyczny", "row": 31, "day": "2026-11-05", "worker": "wykonawca.drugi"}],
@@ -2449,7 +2497,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "completed": "Czynność dopisana syntetyczna",
             }
         ],
-        "orderless": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008}],
+        "orderless": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008, "day": "2026-11-03"}],
         "written": 1,
     },
     "input_copy": [
@@ -2609,19 +2657,66 @@ def _schema_words() -> tuple[set[str], set[str]]:
     return names, closed
 
 
+def _bez_probki(logs: RunLog) -> list[str]:
+    """Pola rekordów schematu Logów bez wartości w Logach ``logs`` (``Rekord.pole``; ``None`` i wartość bez elementów, czyli
+    pusta lista, krotka, słownik albo tekst, to brak wartości, choć pole z domyślną ma w JSON-ie klucz) i rodzaje rekordów unii z polem rodzaju bez rekordu tego rodzaju
+    (``Rekord.pole=rodzaj``), także rodzaj, którego pola mają już wartości w rekordzie innego rodzaju."""
+
+    schema = RunLog.model_json_schema()
+    wanted = {
+        f"{record}.{field}"
+        for record, node in {**schema["$defs"], RunLog.__name__: schema}.items()
+        for field in node.get("properties", {})
+    }
+
+    def kinds(node: object) -> None:
+        if isinstance(node, dict):
+            if "discriminator" in node:
+                field = node["discriminator"]["propertyName"]
+                wanted.update(f"{ref.rsplit('/', 1)[1]}.{field}={kind}" for kind, ref in node["discriminator"]["mapping"].items())
+            for entry in node.values():
+                kinds(entry)
+        elif isinstance(node, list):
+            for entry in node:
+                kinds(entry)
+
+    found: set[str] = set()
+
+    def sampled(value: object) -> None:
+        if isinstance(value, BaseModel) or (is_dataclass(value) and not isinstance(value, type)):
+            names = type(value).model_fields if isinstance(value, BaseModel) else [item.name for item in fields(value)]
+            for name in names:
+                entry = getattr(value, name)
+                if not (entry is None or (isinstance(entry, Sized) and len(entry) == 0)):
+                    found.add(f"{type(value).__name__}.{name}")
+                if isinstance(entry, (str, Enum)):
+                    found.add(f"{type(value).__name__}.{name}={entry.value if isinstance(entry, Enum) else entry}")
+                sampled(entry)
+        elif isinstance(value, Mapping):
+            for entry in value.values():
+                sampled(entry)
+        elif isinstance(value, (list, tuple)):
+            for entry in value:
+                sampled(entry)
+
+    kinds(schema)
+    sampled(logs)
+    return sorted(wanted - found)
+
+
 def test_kazda_wartosc_pelnych_logow_jako_adres_z_pliku_taty_daje_logi_bez_niej_poza_slowami_narzedzia() -> None:
     """Przemiatanie kształtów pól (#936): każda wartość skalarna pełnych Logów (tekst, chwila, kwota, liczba, także
     liczba z komórki pliku taty) i każdy klucz po kolei jako wartość kolumny ``ADRES`` z pliku taty. Pełne Logi mają
-    wartość w każdym polu ``RunLog``, a Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej
-    listy, wartość pola narzędzia albo liczba, którą policzyło narzędzie, a pola narzędzia mają wartość z rekordu.
+    wartość w każdym polu każdego rekordu schematu i rekord każdego rodzaju (problem Wpisania raportów, mail, działanie
+    taty), a Logi powstają za każdym razem, także gdy to nazwa pola schematu, słowo zamkniętej listy, wartość pola
+    narzędzia albo liczba, którą policzyło narzędzie, a pola narzędzia mają wartość z rekordu.
     Wartość spoza słów narzędzia nie zostaje nigdzie w tekście Logów, a nazwa pola, której nie ma w żadnym tekście, nie
     zmienia Logów wcale."""
 
-    assert set(RunLog.model_fields) <= set(FULL_LOGS), "pełne Logi mają wartość w każdym polu Logów"
     logs = full_logs()
+    assert _bez_probki(logs) == [], "pełne Logi mają wartość w każdym polu każdego rekordu i rekord każdego rodzaju"
     scalars = list(_scalars(logs.model_dump(mode="json")))
     names, closed = _schema_words()
-    assert names <= {value for value, key in scalars if key}, "pełne Logi mają każde pole schematu"
     numbers = list(_numbers(logs))
     assert [number for number, read in numbers if read and len(shown(number)) >= MIN_VALUE], "liczba z komórki w Logach"
     texts = "\n".join(value for value, key in scalars if isinstance(value, str) and not key)

@@ -16,8 +16,9 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   uporządkowane (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
-- Planowanie: rdzeń raportów, z pamięcią z pliku sprzed wersji 4 zamienioną przy odczytanych zleceniach
-  (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko ``OwnEntries``;
+- Planowanie: rdzeń raportów z Legendą czynności ze startu (``EnteringInputs.legend``), z pamięcią z pliku sprzed
+  wersji 4 zamienioną przy odczytanych zleceniach (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko
+  ``OwnEntries``;
 - Zapisywanie: komórki, Przeniesienia zleceń i Zlecenia dopisane z raportu bez Kopii INTERMAX
   (``intermax_cells.write_cells``), a po udanym zapisie
   pamięć własnych wpisów
@@ -51,6 +52,7 @@ from typing import Protocol, assert_never
 
 from . import intermax_messages, onedrive_conflicts, raw_orders, register_file, workbook_files
 from . import report_entering_messages as messages
+from .activity_legend import ActivityLegend
 from .domain import ProgressPhase
 from .intermax_cells import CellsWritten, Rejected, write_cells
 from .intermax_ordering import paste_areas
@@ -186,7 +188,7 @@ class ReportEnteringParts:
 
 @dataclass(frozen=True)
 class EnteringInputs:
-    """Wejście Wpisania raportów: INTERMAX, folder okresów i Lista Wykonawców z Ustawień Centrum,
+    """Wejście Wpisania raportów: INTERMAX, folder okresów, Lista Wykonawców i Legenda czynności z Ustawień Centrum,
     zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie
     (ADR 0019)."""
 
@@ -194,6 +196,7 @@ class EnteringInputs:
     periods_directory: Path
     workers: WorkerList
     parts: ReportEnteringParts
+    legend: ActivityLegend
     now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
@@ -354,6 +357,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 kept=saved.kept,
                 ordered_days=ordered_days,
                 present=tuple(read for _, read in present),
+                legend=inputs.legend,
             )
         )
         reported = {

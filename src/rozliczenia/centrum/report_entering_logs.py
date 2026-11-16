@@ -18,12 +18,14 @@ from typing import Annotated, Final, Literal, assert_never
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from rozliczenia.activity_legend import problem_text
 from rozliczenia.client_data import MASKS
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, EnteringSummary, SavedState
 from rozliczenia.worker_reports import (
     AddBar,
     ConflictingVerdicts,
+    FaultyDescription,
     Kept,
     Login,
     MailId,
@@ -220,6 +222,18 @@ class LoggedConflictProblem(_Record):
     entries: list[LoggedReportEntry]
 
 
+class LoggedDescriptionProblem(_Record):
+    """Wpisany Wpis ``tak`` z Błędem opisu (ADR 0039): Wykonawca, dzień z tematu, numer (pod strażnikiem jak w
+    ``LoggedReportEntry``) i powody słowami (``activity_legend.problem_text``, każdy raz), bez słów opisu technika,
+    które Logi mają tylko w samym Wpisie pod strażnikiem."""
+
+    kind: Literal["faulty_description"]
+    worker: str
+    day: date
+    number: str
+    reasons: list[str]
+
+
 class LoggedSubjectProblem(_Record):
     kind: Literal["unreadable_subject"]
     mail: str
@@ -262,7 +276,12 @@ class LoggedManualProblem(_Record):
 
 
 LoggedProblem = Annotated[
-    LoggedOrderProblem | LoggedConflictProblem | LoggedSubjectProblem | LoggedSenderProblem | LoggedManualProblem,
+    LoggedOrderProblem
+    | LoggedConflictProblem
+    | LoggedDescriptionProblem
+    | LoggedSubjectProblem
+    | LoggedSenderProblem
+    | LoggedManualProblem,
     Field(discriminator="kind"),
 ]
 
@@ -327,6 +346,14 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
         case ManualDifference():
             cell = LoggedOwnEntry.of(problem.key, problem.column, problem.reported)
             return LoggedManualProblem(kind="manual_difference", cell=cell, manual=problem.manual)
+        case FaultyDescription():
+            return LoggedDescriptionProblem(
+                kind="faulty_description",
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                reasons=list(dict.fromkeys(map(problem_text, problem.problems))),
+            )
         case _:
             assert_never(problem)
 
