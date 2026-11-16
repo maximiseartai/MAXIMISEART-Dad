@@ -30,7 +30,9 @@ Its proof adds `api/wysylka-*.json`; the mails the atrapa SMTP took lie in `<roo
 ## Gotchas
 
 - The served Centrum sends through `AtrapaSmtp` of `serve_centrum.py`, which logs in with the run's access file; the
-  drive writes that file for the feature and puts back what it found, so `ustawienia` and `wpisanie-raportow` see their
-  own.
+  drive writes that file for the feature and puts back what it found (`drive.common.atrapa_inbox_access`), so
+  `ustawienia` and `wpisanie-raportow` see their own. The block ends with one read of Centrum, because Centrum writes
+  the Historia row of a file changed outside it only at its next read: without it the next feature (`aktualizacja` in
+  `--feature all` and in part 2/4 of CI) finds `config` changed after its start (#2029 W2 r1).
 - The fixture's Rozliczenia pracowników have no header `WYKONAWCA`, so Centrum cannot tell an empty Szablon from them
   and offers every one; the state „Bez zleceń” is proved by `tests/test_centrum_rozliczen.py`.

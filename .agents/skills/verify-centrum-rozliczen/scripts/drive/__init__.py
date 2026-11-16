@@ -162,7 +162,8 @@ FEATURES = (
         ),
     ),
     # Sends the settled period's Rozliczenia pracowników through the atrapa SMTP, so it runs before any feature that counts
-    # „Wysłane”; it leaves the access file of the skrzynka raportów as it found it and saves its own subject.
+    # „Wysłane”; it leaves the access file of the skrzynka raportów as it found it, read by Centrum before it ends
+    # (``atrapa_inbox_access``), and saves its own subject.
     Feature(
         "wysylka-rozliczen",
         (

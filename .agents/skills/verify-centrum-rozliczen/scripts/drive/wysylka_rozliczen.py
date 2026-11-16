@@ -12,9 +12,9 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, expect
 
-from drive.common import Run, close_settings, ensure_files_set, open_settings, put_bytes, read_bytes, remove
+from drive.common import Run, atrapa_inbox_access, close_settings, ensure_files_set, open_settings, read_bytes
 from drive.waiting import until
-from harness import INBOX_ADDRESS, INBOX_PASSWORD, File
+from harness import File
 
 FEATURE = "wysylka-rozliczen"
 READY_PERIOD = "22_28_09_2026"
@@ -54,18 +54,9 @@ def _row(table: Locator, worker: str) -> Locator:
 def drive(run: Run, page: Page) -> None:
     page.goto(run.url + "#/okresy")
     ensure_files_set(run, page)
-    access = run.config / "skrzynka-raportow.txt"
-    before_access = read_bytes(access) if access.exists() else None
-    # Harness: Maks's access file to the served atrapa skrzynka raportów, never Dad's Gmail.
-    put_bytes(access, f"{INBOX_ADDRESS}\r\n{INBOX_PASSWORD}\r\n".encode("utf-8-sig"))
-    try:
+    with atrapa_inbox_access(run, "wysylka-skrzynka-po"):
         _send(run, page)
         _settings(run, page)
-    finally:
-        if before_access is None:
-            remove(access)
-        else:
-            put_bytes(access, before_access)
 
 
 def _settled_before_today(run: Run) -> Path:
