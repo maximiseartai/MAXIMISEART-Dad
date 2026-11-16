@@ -17,7 +17,8 @@ to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżąceg
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
 najwyżej trzy, a w wątku z szablonem treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``:
 Ważne z polami ``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``,
-a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej). Czy reguła wątku obowiązuje w PR, rozstrzyga jedna
+a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej), a werdykt HEAD, który ma już werdykt, także punkt
+``Ponowny przegląd:`` (``ponowny_przeglad``). Czy reguła wątku obowiązuje w PR, rozstrzyga jedna
 funkcja, ``rule_applies``, dla szablonu przy publikacji i przy zgodzie na merge i dla bramki korzenia przy merge'u
 (ADR 0031, decyzja Q20): reguła obowiązuje, gdy jest wdrożona na bazie PR (``deployment``), a najstarszy werdykt PR,
 dowolnego commitu, nie powstał przed chwilą jej wdrożenia (``createdAt`` komentarza albo ``submittedAt`` recenzji
@@ -51,6 +52,7 @@ import re
 from typing import Literal
 
 import github
+import ponowny_przeglad
 from repo import REMOTE, ROOT
 import repo
 from stan_pr import Pull, Waiting
@@ -115,15 +117,16 @@ def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
 
     head = pull.head
     publish = f"tools/scal_pr.py {pull.number} --werdykt PLIK"
-    latest = None
-    for verdict in pull.verdicts:
+    latest, position = None, 0
+    for index, verdict in enumerate(pull.verdicts):
         found = read(verdict, head)
-        latest = found if found is not None and found.stance is not None else latest
+        if found is not None and found.stance is not None:
+            latest, position = found, index
     if latest is None:
         return Waiting(f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}")
     problems = list(latest.problems)
     if latest.stance is Stance.CONSENT and rule_applies(pull, deployed):
-        problems = _template_problems(latest.body, pull)
+        problems = _template_problems(latest.body, pull, repeat=_repeats(pull, position))
     if problems:
         return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
     return None if latest.stance is Stance.CONSENT else f"werdykt: FAIL dla {head[:7]} bez nowszego „WERDYKT: PASS {head}”"
@@ -179,7 +182,17 @@ def publish_problems(text: str, pull: Pull, deployed: datetime | None) -> list[s
     (``rule_applies`` z chwilą wdrożenia szablonu ``deployed``, ``deployment`` z ``szablon_werdyktu.ADR``) także treść według ``szablon_werdyktu``."""
 
     problems = file_problems(text, pull.head)
-    return [*problems, *_template_problems(text, pull)] if rule_applies(pull, deployed) else problems
+    return [*problems, *_template_problems(text, pull, repeat=_repeats(pull, len(pull.verdicts)))] if rule_applies(pull, deployed) else problems
+
+
+def _repeats(pull: Pull, before: int) -> bool:
+    """Czy werdykt po pierwszych ``before`` komentarzach i recenzjach ``pull.verdicts`` to ponowny przegląd HEAD PR
+    (``ponowny_przeglad``): wśród nich jest werdykt dla HEAD, a reguła obowiązuje w wątku."""
+
+    earlier = (read(verdict, pull.head) for verdict in pull.verdicts[:before])
+    if not any(verdict is not None and verdict.decision is not None and verdict.commit == pull.head for verdict in earlier):
+        return False
+    return rule_applies(pull, deployment(pull.base, ponowny_przeglad.MARKER))
 
 
 def deployment(base: str, marker: str) -> datetime | None:
@@ -227,15 +240,18 @@ def _html(rest: str, pull: Pull) -> str:
     return github.html_markdownu(rest, pull.repository) if rest.strip() else ""
 
 
-def _template_problems(text: str, pull: Pull) -> list[str]:
-    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje GitHub."""
+def _template_problems(text: str, pull: Pull, *, repeat: bool) -> list[str]:
+    """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje
+    GitHub, a z ``repeat`` (``_repeats``) także przyczyna ``ponowny_przeglad``."""
 
     rest, declared = _content(text)
     try:
         html = _html(rest, pull)
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
         return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
-    return szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))
+    missing = ponowny_przeglad.problem(szablon_werdyktu.items(html)) if repeat else None
+    found = szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))
+    return [missing, *found] if missing else found
 
 
 @dataclass(frozen=True)

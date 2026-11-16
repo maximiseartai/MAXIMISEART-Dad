@@ -1,7 +1,8 @@
 """Treści werdyktów pod dwiema pierwszymi liniami i ich HTML z renderera GitHuba dla testów szablonu werdyktu (ADR 0031).
 
 ``PRZECHODZA`` to treści w szablonie, ``ODMOWY`` treści poza nim z liczbami z linii ``Znaleziska:`` i fragmentem
-przyczyny odmowy, a ``WERDYKTY`` treści testów przepływu ``tools/scal_pr.py``. Wymagania bierzemy z docstringu
+przyczyny odmowy, ``WERDYKTY`` treści testów przepływu ``tools/scal_pr.py``, a ``PONOWNE`` treści werdyktu ponownego
+przeglądu z punktem ``Ponowny przegląd:`` i bez niego. Wymagania bierzemy z docstringu
 ``szablon_werdyktu`` i ze skilla ``przeglad``: pola liczą się tylko poza blokami kodu, które wyznacza GitHub
 (ogrodzone ``` i ~~~ oraz wcięte o cztery spacje), Dowód ma najwyżej 5 linii po najwyżej 300 znaków.
 
@@ -158,6 +159,21 @@ WERDYKTY = {
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }
 
+# Treść werdyktu ponownego przeglądu tego samego HEAD i czy ma punkt „Ponowny przegląd: <zdanie>” w „## Sprawdzone”
+# (``ponowny_przeglad``), punkt w bloku kodu Dowodu się nie liczy.
+PONOWNE: dict[str, tuple[str, bool]] = {
+    "z-punktem": (_text("## Sprawdzone", "- Ponowny przegląd: zlecenie kazało sprawdzić, czy pole Uwagi nie daje wycieku.", "- diff"), True),
+    "punkt-z-gwiazdka": (_text("## Sprawdzone", "* diff", "* Ponowny przegląd: autor zakwestionował W1 bez pushu."), True),
+    "bez-punktu": (WERDYKTY["sprawdzone"], False),
+    "punkt-bez-zdania": (_text("## Sprawdzone", "- Ponowny przegląd:", "- diff"), False),
+    "punkt-w-srodku-zdania": (_text("## Sprawdzone", "- diff, a Ponowny przegląd: zlecenie bez punktów."), False),
+    "punkt-w-bloku-kodu-dowodu": (
+        _text(*_MAJOR[:2], "Dowód: cytat:", "```", "Ponowny przegląd: cytat z innego werdyktu.", "```", *_MAJOR[3:], "## Sprawdzone", "- diff"),
+        False,
+    ),
+    "wazne-z-punktem": (_text(*_MAJOR, "## Sprawdzone", "- Ponowny przegląd: zlecenie kazało sprawdzić, czy pole Uwagi nie daje wycieku."), True),
+}
+
 
 @functools.cache
 def _saved() -> dict[str, str]:
@@ -180,7 +196,7 @@ def html(text: str) -> str:
 def bodies() -> list[str]:
     """Treści, których HTML muszą mieć testy."""
 
-    return [*PRZECHODZA.values(), *(text for text, _, _ in ODMOWY.values()), *WERDYKTY.values()]
+    return [*PRZECHODZA.values(), *(text for text, _, _ in ODMOWY.values()), *WERDYKTY.values(), *(text for text, _ in PONOWNE.values())]
 
 
 def _refresh() -> None:
