@@ -1231,6 +1231,20 @@ def test_test_ktory_pada_w_pokryciu_nocy_konczy_kodem_2_tylko_czesci_ktorych_tes
         assert parts[0].stdout.splitlines()[-1].startswith("MUTACJE ZMIANY OK | mutacje=2")
 
 
+def test_pokrycie_nocy_po_swoim_limicie_czasu_liczy_kazdy_plik_testow_jako_padniety(tmp_path: Path) -> None:
+    """Zadanie pokrycia, którego testy nie skończyły się w ``--limit-czesci-s``, i tak zapisuje swoje pliki testów, zanim
+    GitHub anuluje je bez zapisu, a części z tymi plikami kończą się kodem 2 zamiast mutować bez pokrycia."""
+
+    repo = _repo(tmp_path / "repo", "import time\n\n" + ALL_CASES + "    time.sleep(30)\n")
+    record = tmp_path / "pokrycie" / "pokrycie.json"
+
+    shard = _run(repo, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(record), "--limit-czesci-s", "3")
+    part = _run(repo, "--pokrycie", str(tmp_path / "pokrycie"))
+
+    assert (shard.returncode, ZapisPokrycia.z_katalogu(record.parent).padniete) == (0, frozenset({"tests/test_warunek.py"})), shard.stdout + shard.stderr
+    assert (part.returncode, part.stdout.splitlines()[-1]) == (2, "MUTACJE ZMIANY FAIL | testy dotknięte zmianą padają bez mutacji, więc mutacje niczego nie dowiodą")
+
+
 def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:
     repo = _repo(tmp_path, ONE_CASE, BASE)
     (repo / "tools" / "inne.py").write_text(
