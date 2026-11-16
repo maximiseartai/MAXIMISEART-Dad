@@ -17,9 +17,11 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 import pytest
 
 from rozliczenia.activity_legend import FillColour
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.highlights import Highlights
 from rozliczenia.order_facts import NON_NUMERIC, OTHER_COLOUR, MissingHeaders, OrderFacts, collective_orders, tata_value
+from rozliczenia.quantity_check import legend_row_check
 from rozliczenia.quantity_engine import OrderContent, WeekTime
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.collective_file import read_data_rows
@@ -217,3 +219,33 @@ def test_bez_naglowka_czynnosci_zrealizowane_opis_technika_jest_pusty() -> None:
     header = {name: column for name, column in HEADER.items() if name != "czynności zrealizowane"}
 
     assert _filtered(header, _marked_row()).completed == ""
+
+
+# Kolumny z opisu technika w wierszu: kolumna → wpis taty; Reguły ilości z Wydania nie dają tu nic poza V (bez reguły).
+@pytest.mark.parametrize(
+    ("completed", "cells", "sent"),
+    [
+        ("inst20m", {"Y": 1}, False),
+        ("inst20m", {}, True),
+        ("spawpg", {"AB": 1, "AS": 70}, True),
+        ("instutp40m", {}, False),
+        ("instutp40m", {"AJ": 1}, True),
+        ("listwy 11 metrów", {}, False),
+        ("listwy 11 metrów", {"AS": 220}, True),
+        ("listwy 11 metrów", {"Y": 1}, True),
+        ("listwy 11 metrów", {"AE": 1}, False),
+    ],
+    ids=repr,
+)
+def test_opis_technika_wychodzi_tylko_w_wierszu_z_roznica_legendy_albo_bez_kodu_z_wpisem_taty(
+    completed: str, cells: dict[str, int], sent: bool
+) -> None:
+    # spawpg bez czerwonego AS to różnica koloru; AE nie jest kolumną z opisu technika.
+    row: list[object] = [None] * 46
+    row[3], row[6], row[10] = "przeniesienie", STARTED, completed
+    for letter, value in cells.items():
+        row[column_index_from_string(letter) - 1] = value
+
+    checked = legend_row_check(_filtered(HEADER, row), DEFAULT_ACTIVITY_LEGEND, DEFAULT_QUANTITY_RULES)
+
+    assert checked.description == (completed if sent else None)
