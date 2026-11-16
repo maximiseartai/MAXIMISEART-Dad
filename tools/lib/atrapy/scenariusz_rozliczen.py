@@ -7,10 +7,11 @@ wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nag�
 ``COLLECTIVE_FILE_NAME`` z ``tools/lib/atrapy/preparation.py``), a nazwy Rejestru, Wzorców, folderu ``config`` i
 plików okresu oraz nagłówki Wzorców z kopii świata taty w ``tools/lib/atrapy/pliki_taty.py``.
 
-Tu stoją fakty wejścia i trzy oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
+Tu stoją fakty wejścia i cztery oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
 wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``), wynik Legendy czynności z Wydania
-(``CODE_QUANTITIES``, ``CODE_AMOUNTS``, ``CODE_FILLS``) i Wiersze danych Rozliczenia pracownika
-każdego Wykonawcy w ich kolejności (``WORKER_ORDERS``); generatory ich nie czytają. To, które zlecenia trafiają do
+(``CODE_QUANTITIES``, ``CODE_AMOUNTS``, ``CODE_FILLS``), Czerwone pole i Zielone pole w Rozliczeniu pracownika
+(``WORKER_COLOURED_FIELDS``) i Wiersze danych Rozliczenia pracownika każdego Wykonawcy w ich kolejności
+(``WORKER_ORDERS``); generatory ich nie czytają. To, które zlecenia trafiają do
 Rozliczenia wewnętrznego i Pliku zbiorczego i w jakiej kolejności, wyrocznie piszą jawnie same, żeby błąd procesu w
 wyborze albo kolejności nie przeszedł razem z danymi.
 """
@@ -168,6 +169,9 @@ QUANTITIES: dict[int, dict[str, int]] = {
 CODE_QUANTITIES: dict[int, dict[str, int]] = {8: {"AB": 1, "AM": 1}}
 CODE_AMOUNTS: dict[int, int] = {8: 70}
 CODE_FILLS: dict[int, dict[str, str]] = {8: {"AF": "FF92D050", "AM": "FFFF0000", "AS": "FFFF0000"}}
+# Czerwone pole i Zielone pole (ADR 0039) w Rozliczeniu pracownika: zlecenie -> kolumna -> wartość. Czerwone AM i AS z
+# CODE_FILLS są tam puste, a zielone AF ma 1; wszystkie trzy są bez wypełnienia, czyli białe.
+WORKER_COLOURED_FIELDS: dict[int, dict[str, int | None]] = {8: {"AF": 1, "AM": None, "AS": None}}
 
 
 def written_quantities(number: int) -> dict[str, int]:

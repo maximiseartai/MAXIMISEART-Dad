@@ -4,7 +4,9 @@ Skoroszyt czyta moduł skoroszytu (``workbook_files``); jego ``WorkbookError`` p
 na Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 (``period_folder``). Z tego samego odczytu każdy Wiersz danych, także bez
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
-Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
+Wykonawcą stracą Znacznik efenix (``efenix_mark``) i Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018), a po
+nich ich Czerwone pole i Zielone pole dostaną wartość dla Wykonawcy (``coloured_fields``, ADR 0039): Zielone pole nie jest
+Ilością tylko dla INEA, więc ma 1 także tam, gdzie Reguła ilości zostawia komórkę pustą.
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza, kwotę w ``AS`` i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
 Plik czyta uchwyt plików taty (zob. ``dad_files.DadFiles``).
@@ -16,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import workbook_files
+from . import coloured_fields, workbook_files
 from .collective_layout import REMARKS_AMOUNT, letter
 from .dad_files import DadFiles
 from .efenix_mark import without_efenix_mark
@@ -32,13 +34,15 @@ from .text import normalize_text
 @dataclass(frozen=True)
 class CollectiveRows:
     rows: list[DataRow]
-    """Wiersze danych z Wykonawcą w kolejności z pliku, bez Ilości tylko dla INEA i bez Znacznika efenix."""
+    """Wiersze danych z Wykonawcą w kolejności z pliku, bez Ilości tylko dla INEA, bez Znacznika efenix i z Czerwonym
+    polem i Zielonym polem dla Wykonawcy."""
     without_worker: list[int]
     """Numery Wierszy danych bez Wykonawcy w kolejności z pliku."""
     orders: CollectiveOrders
     """Dozwolona treść każdego Wiersza danych odczytu, z Ilościami tylko dla INEA."""
     inea_only: Cleared
-    """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA."""
+    """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA (bez Zielonych
+    pól, które mają 1)."""
 
 
 def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> CollectiveRows:
@@ -53,7 +57,7 @@ def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> Collect
             continue
         rows.append(row)
     rows, inea_only = without_inea_only(read.header, without_efenix_mark(read.header, rows), rules)
-    return CollectiveRows(rows, without_worker, collective_orders(read.header, read.rows), inea_only)
+    return CollectiveRows(coloured_fields.for_worker(rows), without_worker, collective_orders(read.header, read.rows), inea_only)
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,8 @@
 The Plik zbiorczy was written by Przygotowanie pliku zbiorczego and then filled by
 the Gotowość step, so its Wiersze danych carry values in all of ``A:AT``, and the
 Wyróżnienia and NUMER ZL. Hiperłącza Przygotowanie carried over from the Rejestr. A Rozliczenie pracownika
-holds those rows without the Ilości tylko dla INEA (ADR 0018). The checks are generic over the Wzorce, so the
+holds those rows without the Ilości tylko dla INEA (ADR 0018), with the Czerwone pole empty and the Zielone pole 1,
+both without a fill (ADR 0039, ``WORKER_COLOURED_FIELDS``). The checks are generic over the Wzorce, so the
 same helper serves both the synthetic and the real Wzorce. Messages name workers, rows, and columns, never a cell value.
 """
 
@@ -46,6 +47,7 @@ from atrapy.scenariusz_rozliczen import (
     REGISTER_NAME,
     ROW_MARKER,
     TEMPLATES_DIRECTORY,
+    WORKER_COLOURED_FIELDS,
     WORKER_SETTLEMENTS_DIRECTORY,
     WORKER_ORDERS,
     WORKER_TEMPLATE_NAME,
@@ -106,6 +108,10 @@ INPUTS = (
 Row = tuple[object, ...]
 Looks = tuple[tuple[object, ...], ...]
 PLAIN_LOOK = (None, None, None, False, False)
+COLOURED_FIELDS: dict[object, dict[int, int | None]] = {
+    order_number(number): {column_index_from_string(letter) - 1: value for letter, value in cells.items()}
+    for number, cells in WORKER_COLOURED_FIELDS.items()
+}
 
 
 def _sheet(workbook: Workbook) -> Worksheet:
@@ -223,6 +229,22 @@ def _looks(sheet: Worksheet, in_file: set[tuple[int, int]], number: int) -> Look
     return tuple(looks)
 
 
+def _for_worker(values: Row, order_index: int) -> Row:
+    """The Plik zbiorczy row as its Rozliczenie pracownika holds it: the values of ``WORKER_COLOURED_FIELDS``."""
+
+    fields = COLOURED_FIELDS.get(values[order_index], {})
+    return tuple(fields[index] if index in fields else value for index, value in enumerate(values))
+
+
+def _looks_for_worker(looks: Looks, order: object) -> Looks:
+    """The Wyróżnienia of a Plik zbiorczy row as its Rozliczenie pracownika holds them; of a coloured field only its
+    fill, which is none: an emptied field whose font is the Wzorzec's is not written, so it reads as a cell without
+    Wyróżnienia, and Excel shows both the same."""
+
+    fields = COLOURED_FIELDS.get(order, {})
+    return tuple((None, None) if index in fields else look for index, look in enumerate(looks))
+
+
 def _row_links(links: dict[tuple[int, int], Link], number: int) -> dict[int, Link]:
     return {column: link for (row, column), link in links.items() if row == number and column <= COPIED_COLUMNS}
 
@@ -285,7 +307,11 @@ def _check_worker_file(
             ]
             if differing:
                 errors.append(f"{name}: row {number} differs from the Plik zbiorczy in {', '.join(differing[:8])}")
-            unlike = [get_column_letter(index + 1) for index, look in enumerate(_looks(sheet, in_file, number)) if look != looks[index]]
+            unlike = [
+                get_column_letter(index + 1)
+                for index, look in enumerate(_looks(sheet, in_file, number))
+                if look[: len(looks[index])] != looks[index]
+            ]
             if unlike:
                 errors.append(
                     f"{name}: row {number} lacks the Wyróżnienia or number format of the Plik zbiorczy in {', '.join(unlike[:8])}"
@@ -351,6 +377,14 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
     ]
     if valueless:
         errors.append(f"Plik zbiorczy has no Ilość tylko dla INEA in {', '.join(valueless)}, so its emptying proves nothing")
+    uncoloured = [
+        f"{get_column_letter(index + 1)}{number}"
+        for (number, values), looks in zip(numbered_rows, collective_looks, strict=True)
+        for index in COLOURED_FIELDS.get(values[order_index], {})
+        if looks[index][0] != "solid"
+    ]
+    if set(COLOURED_FIELDS) - {values[order_index] for values in collective_rows} or uncoloured:
+        errors.append(f"Plik zbiorczy lacks the fill of a Czerwone pole or Zielone pole in {', '.join(uncoloured) or 'a row'}, so their check proves nothing")
     if UNSUCCESSFUL_ORDER in {values[order_index] for values in collective_rows}:
         errors.append("Plik zbiorczy holds a Zlecenie nieskuteczne")
     filled = [values for values in collective_rows if values[order_index] in readiness_orders]
@@ -364,12 +398,14 @@ def _check_worker_files(root: Path, period_directory: Path, target_directory: Pa
     template = load_workbook(template_path, data_only=False, keep_links=True)
     try:
         for name, orders in EXPECTED_WORKER_ORDERS.items():
-            expected_rows = [values for values in collective_rows if values[order_index] in orders]
+            expected_rows = [_for_worker(values, order_index) for values in collective_rows if values[order_index] in orders]
             expected_empty = [
                 empty for values, empty in zip(collective_rows, inea_only, strict=True) if values[order_index] in orders
             ]
             expected_looks = [
-                looks for values, looks in zip(collective_rows, collective_looks, strict=True) if values[order_index] in orders
+                _looks_for_worker(looks, values[order_index])
+                for values, looks in zip(collective_rows, collective_looks, strict=True)
+                if values[order_index] in orders
             ]
             expected_links = [
                 links for values, links in zip(collective_rows, collective_links, strict=True) if values[order_index] in orders
@@ -436,7 +472,8 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
     return finish(
         errors,
         f"ASSERT OK | process=przebieg | source=przygotowanie | mode=run | workbooks_checked={len(expected_files)} | "
-        f"rows_equal_plik_zbiorczy=A:AT | inea_only_empty={inea_only} | highlights_equal_plik_zbiorczy=A:AT | number_formats_equal_plik_zbiorczy=A:L | "
+        f"rows_equal_plik_zbiorczy=A:AT | inea_only_empty={inea_only} | coloured_fields_for_worker={sum(map(len, COLOURED_FIELDS.values()))} | "
+        "highlights_equal_plik_zbiorczy=A:AT | number_formats_equal_plik_zbiorczy=A:L | "
         "row_look=A:L | hyperlinks_equal_plik_zbiorczy=A:AT | "
         "hyperlinks_from_rejestr=NUMER ZL. | "
         "readiness_carried=true | unsuccessful_absent=true | "

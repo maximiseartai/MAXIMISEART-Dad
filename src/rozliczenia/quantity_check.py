@@ -24,7 +24,7 @@ podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.
   ta kolumna nie jest różnicą Reguł ilości;
 - kwotę w ``AS``;
 - kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
-  legendy, np. tło z Wzorca, to brak, zob. ``order_facts._colour``).
+  legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
 
 W wierszu bez kodów i w wierszu z Błędem opisu legenda nic nie wpisała, więc nie porównuje, tylko liczy wpis taty:
 kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Błędy opisu liczy według powodu. Opis
