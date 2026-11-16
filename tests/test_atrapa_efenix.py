@@ -947,6 +947,33 @@ def test_zamkniecie_okna_dialogowego_przed_koncem_animacji_jego_modal_dialog_nic
     assert shown == ["block", "block", "none"]
 
 
+def test_okno_informacji_z_innymi_animacjami_ma_po_przekazaniu_animacje_bez_konca_skonczona_na_etykiecie_i_wstrzymana(
+    browser: Browser,
+) -> None:
+    """Przy ``Changed.OTHER_ANIMATIONS_IN_INFO`` okno informacji po kliknięciu Przekazania ma w ``getAnimations`` spinner,
+    którego animacja kręci się bez końca, etykietę, której animacja skończyła się i zostaje na niej, i ikonę, której
+    animacja stoi wstrzymana: tylko wtedy test Wyceny z tą budową sprawdza, że okno nie czeka na takie animacje."""
+
+    order = AtrapaOrder("901", "9301", "adrian.testowy", "Miasto ul.Testowa 1", forward_refusal=ForwardRefusal.NO_LENGTH.value)
+    with atrapa_efenix([order], changed=Changed.OTHER_ANIMATIONS_IN_INFO) as atrapa, page_of(browser) as page:
+        page.goto(f"{atrapa.url.removesuffix(LIST_PAGE)}{ORDER_PAGE}?id=901")
+        animations = page.evaluate(
+            """async () => {
+              document.getElementById('button_forward_to_accept').click();
+              const body = document.querySelector('#dialog_info .modal-body');
+              const of = (selector) => [...body.querySelectorAll(selector)].flatMap((element) => element.getAnimations());
+              await Promise.all(of('label').map((animation) => animation.finished));
+              return {
+                spinner: of('.spinner-border').map((animation) => [animation.playState, animation.effect.getTiming().iterations === Infinity]),
+                label: of('label').map((animation) => animation.playState),
+                icon: of('i').map((animation) => animation.playState),
+              };
+            }"""
+        )
+
+    assert animations == {"spinner": [["running", True]], "label": ["finished"], "icon": ["paused"]}
+
+
 def test_kazde_okno_dialogowe_strony_zlecenia_stoi_nad_strona_w_oknie_przegladarki_jak_modal_bootstrapa(browser: Browser) -> None:
     """Jak ``.modal`` bootstrapa 4 efenix, każde okno dialogowe strony zlecenia pokazuje się w oknie przeglądarki nad
     stroną, a nie na jej końcu, więc okno efenix klika jego przyciski bez przewijania strony. Strona zlecenia jest dłuższa
