@@ -51,10 +51,11 @@ z którego ``tools/ci/zgloszenia_ci.py`` zakłada issue ``Flaky test: …`` (ADR
 
 Potem każda mutacja biegnie przez silnik ``tools/lib/silnik_mutacji.py`` (własna kopia checkoutu), najpierw z testami, które
 wykonały jej linie. W każdym przebiegu testy biegną od najkrótszego według czasów z junit pokrycia i jego ponowienia
-(``Coverage.fastest_first``), więc ``-x`` kończy polecenie na pierwszym szybkim teście, który mutację wykrywa: plik
-testów, który polecenie podaje zamiast listy testów dłuższej niż ``COMMAND_LIMIT``, trwa sumę czasów swoich testów, a
-test albo plik bez czasu w junit biegnie po nich, po nazwie. Pod xdist (``--dist worksteal``) każdy worker bierze ciągły
-kawałek tej listy i biegnie go po kolei, a test ``@pytest.mark.dlugi`` zaczyna kawałek (``tests/conftest.py``).
+(``Coverage.fastest_first``), więc ``-x`` kończy polecenie na pierwszym szybkim teście, który mutację wykrywa. Testy
+jednego pliku biegną razem, żeby fixture modułu startowała raz: pliki od najmniejszej sumy czasów testów, które polecenie
+z nich uruchamia, a w pliku testy od najkrótszego. Plik testów, który polecenie podaje zamiast listy testów dłuższej niż
+``COMMAND_LIMIT``, trwa sumę czasów swoich testów. Test bez czasu w junit biegnie na końcu swojego pliku, a plik bez
+czasu po plikach z czasem, po nazwie. Pod xdist (``--dist worksteal``) każdy worker bierze ciągły kawałek tej listy i biegnie go po kolei, a test ``@pytest.mark.dlugi`` zaczyna kawałek (``tests/conftest.py``).
 Pokrycie tylko przyspiesza wykrycie: mutacja, która je przeżyła, biegnie drugi raz, po jednej
 naraz z ``--rownolegle`` workerami xdist, i dopiero ta porażka daje ``NIEWYKRYTA``. Drugi raz biegną testy, które
 wykonały jakikolwiek kod jej pliku albo uruchomiły proces i dochodzą do pliku importem albo nazwą pliku, katalogu
@@ -745,18 +746,27 @@ class Coverage:
         return sorted(executed | {test for test in self.spawners if test.split("::")[0] in runners})
 
     def fastest_first(self, tests: Iterable[str]) -> list[str]:
-        """Testy albo pliki testów od najkrótszego: plik trwa sumę czasów swoich testów, a test albo plik bez czasu
-        biegnie po nich. Sortowanie jest stabilne, a każda lista testów mutacji przychodzi posortowana po nazwie, więc
-        testy o tym samym czasie i bez czasu biegną po nazwie."""
+        """Testy albo pliki testów plikami od najkrótszego, a w pliku testy od najkrótszego. Plik trwa sumę czasów
+        testów, które polecenie z niego uruchamia (podany sam plik: wszystkich jego testów). Test bez czasu biegnie na
+        końcu swojego pliku, a plik bez czasu po plikach z czasem. Testy pliku biegną razem, bo fixture ``scope="module"`` (Chromium testów efenix) startuje przy
+        każdym powrocie do modułu. Sortowanie jest stabilne, a każda lista testów mutacji przychodzi posortowana po
+        nazwie, więc testy i pliki o tym samym czasie i bez czasu biegną po nazwie."""
 
         files: dict[str, float] = defaultdict(float)
         for test, seconds in self.seconds.items():
             files[test.split("::")[0]] += seconds
+        grouped: dict[str, list[str]] = defaultdict(list)
+        for test in tests:
+            grouped[test.split("::")[0]].append(test)
 
         def duration(test: str) -> float:
             return self.seconds.get(test, files.get(test, math.inf))
 
-        return sorted(tests, key=duration)
+        def total(group: list[str]) -> float:
+            timed = [seconds for seconds in map(duration, group) if seconds < math.inf]
+            return sum(timed) if timed else math.inf
+
+        return [test for group in sorted(grouped.values(), key=total) for test in sorted(group, key=duration)]
 
 
 def _coverage(

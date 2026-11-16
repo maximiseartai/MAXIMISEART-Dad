@@ -21,7 +21,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Coverage, Hunk, ZakresMutacji, exceptions, fingerprint, mutants, selected
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -891,6 +891,51 @@ def test_mutacje_wykrywa_najpierw_szybki_test_a_wolny_ktory_tez_ja_wykrywa_nie_b
 
     assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
     assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines() == ["szybki"] * caught
+
+
+def test_mutacje_wykrywa_najpierw_test_szybki_w_ponowieniu_pokrycia_choc_w_pierwszym_przebiegu_byl_wolny(tmp_path: Path) -> None:
+    # Flaky test w pierwszym przebiegu pokrycia czeka sekundę i pada, a w ponowieniu przechodzi od razu. Liczy się czas
+    # z ponowienia, więc biegnie przed stałym testem (0,3 s), choć jego plik ma nazwę po pliku stałego testu.
+    check = "warunek.oba(True, False) is False"
+    counter = tmp_path / "przebiegi"
+    first_run_slow = (
+        f"    licznik = Path({str(counter)!r})\n    przebieg = int(licznik.read_text()) if licznik.exists() else 0\n"
+        "    licznik.write_text(str(przebieg + 1))\n    time.sleep(0 if przebieg else 1)\n    assert przebieg\n"
+    )
+    repo = _repo(tmp_path / "repo", KILLER.format(name="staly", sleep=0.3, check=check))
+    flaky = KILLER.format(name="niestabilny", sleep=0, check=check).replace("    time.sleep(0)\n", first_run_slow)
+    (repo / "tests" / "test_z_niestabilny.py").write_text(flaky, encoding="utf-8")
+    commit(repo, "flaky test")
+
+    done = _run(repo, log=tmp_path / "log.txt")
+
+    assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
+    assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines() == ["niestabilny"] * 2
+
+
+@pytest.mark.parametrize(
+    ("tests", "order"),
+    [
+        (
+            ["tests/test_a.py::test_1", "tests/test_a.py::test_2", "tests/test_a.py::test_3", "tests/test_b.py::test_1", "tests/test_b.py::test_2", "tests/test_c.py::test_1"],
+            ["tests/test_b.py::test_2", "tests/test_b.py::test_1", "tests/test_a.py::test_2", "tests/test_a.py::test_1", "tests/test_a.py::test_3", "tests/test_c.py::test_1"],
+        ),
+        (
+            ["tests/test_a.py::test_2", "tests/test_b.py::test_1", "tests/test_b.py::test_2"],
+            ["tests/test_a.py::test_2", "tests/test_b.py::test_2", "tests/test_b.py::test_1"],
+        ),
+        (["tests/test_a.py", "tests/test_b.py", "tests/test_c.py"], ["tests/test_b.py", "tests/test_a.py", "tests/test_c.py"]),
+    ],
+    ids=["testy-plikow", "czesc-testow-pliku", "pliki"],
+)
+def test_testy_mutacji_biegna_plikami_od_najkrotszej_sumy_a_test_i_plik_bez_czasu_z_junit_po_testach_z_czasem(
+    tests: list[str], order: list[str]
+) -> None:
+    # Testy pliku biegną razem, bo fixture modułu startuje przy każdym powrocie do niego: Chromium testów efenix
+    # startował 57 razy zamiast 3 przy testach od najkrótszego bez względu na plik.
+    seconds = {"tests/test_a.py::test_1": 3.0, "tests/test_a.py::test_2": 0.1, "tests/test_b.py::test_1": 2.0, "tests/test_b.py::test_2": 0.5}
+
+    assert Coverage(seconds=seconds).fastest_first(tests) == order
 
 
 def test_cofniecie_przywraca_usunieta_linie_zaczynajaca_sie_od_dwoch_minusow(tmp_path: Path) -> None:
