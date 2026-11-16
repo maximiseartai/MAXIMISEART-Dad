@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -171,7 +172,7 @@ def test_czekanie_na_centrum_bez_odpowiedzi_mowi_po_kolei_kiedy_port_milczal_a_k
     closing = threading.Timer(1.5, silent.close)
     closing.start()
 
-    with pytest.raises(OSError) as failure:
+    with pytest.raises(urllib.error.URLError) as failure:
         centrum_health(port, timeout_s=3)
     closing.join()
 
