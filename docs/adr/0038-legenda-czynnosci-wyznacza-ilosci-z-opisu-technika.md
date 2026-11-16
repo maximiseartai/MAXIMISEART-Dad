@@ -14,8 +14,9 @@ ADR:
   wysyła też `CZYNNOŚCI ZREALIZOWANE` z maskowaniem z [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md), ale tylko
   w wierszach opisanych niżej.
 
-[ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md) zmienia po odpowiedziach taty zdania o spacjach i zapisach kodu, liczbie
-spoza przedziałów, tekście obok kodu, sumie w `Y`, `AS` i kolorach u pracownika oraz legendzie w Przypomnieniu o raporcie.
+[ADR 0039](0039-opis-z-kodem-czynnosci-to-same-kody.md) zmienia po odpowiedziach taty zdania o pierwszym zestawie, spacjach i
+zapisach kodu, liczbie spoza przedziałów, sumie wystąpień, tekście obok kodu, opisie w Kontroli ilości, `AS` i kolorach u
+pracownika oraz legendzie w Przypomnieniu o raporcie.
 
 ## Kontekst
 
