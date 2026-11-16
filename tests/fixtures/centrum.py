@@ -798,15 +798,18 @@ def dad_cases(config: Path, kind: str) -> list[dict[str, Any]]:
     return [entry for entry in document["sprawy"] if entry["kind"] == kind]
 
 
-def centrum(tmp_path: Path, *, today: date = TODAY) -> Centrum:
-    """Centrum na syntetycznym folderze; zegar stoi, dopóki test go nie przesunie, więc nie zostawia budzików."""
+def centrum(tmp_path: Path, *, today: date = TODAY, pause: Callable[[float], None] | None = None) -> Centrum:
+    """Centrum na syntetycznym folderze; zegar stoi, dopóki test go nie przesunie, więc nie zostawia budzików.
+    ``pause``: przerwa przed ponowieniem odczytu albo zapisu pliku, który system trzyma (``centrum_app``)."""
 
     tool = ToolDirectory(tmp_path)
     platform = FakePlatform()
     autostart = FakeAutostart(tmp_path / "autostart")
     clock = ManualClock()
     report_box = FakeReportBox(background=RUN_LOGS_IN_BACKGROUND)
-    app = centrum_app(tool, platform=platform, autostart=autostart, today=today, report_box=report_box, clock=clock)
+    app = centrum_app(
+        tool, platform=platform, autostart=autostart, today=today, report_box=report_box, clock=clock, pause=pause
+    )
     return Centrum(CentrumClient(app), platform, tool, report_box, clock, autostart)
 
 

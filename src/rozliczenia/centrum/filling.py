@@ -23,7 +23,7 @@ from fastapi import APIRouter
 
 from rozliczenia import collective_file
 from rozliczenia.activity_legend import ActivityLegend
-from rozliczenia.centrum import fill_messages, refusal
+from rozliczenia.centrum import fill_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import filling as filling_contract
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
@@ -41,6 +41,7 @@ from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import TEXT_COLUMNS, FillKind, KindToFill, fill_hint, quantities_to_fill
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
+from rozliczenia.centrum.settings_reads import readable_activity_legend, readable_quantity_rules
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
@@ -93,7 +94,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def quantities(token: str) -> filling_contract.QuantitiesToFill:
         folder = requested_folder(settings, token)
-        rules, legend = _counted_settings(settings)
+        rules, legend = readable_quantity_rules(settings).rules, readable_activity_legend(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
@@ -104,7 +105,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def kind_table(token: str, kind: FillKind) -> filling_contract.KindTable:
         folder = requested_folder(settings, token)
-        rules, legend = _counted_settings(settings)
+        rules, legend = readable_quantity_rules(settings).rules, readable_activity_legend(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
@@ -128,8 +129,10 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     def rows_without_quantity(token: str) -> filling_contract.WithoutQuantity:
         """Wiersze bez ilości dla okna „Uruchomić z zapisem?” Przebiegu rozliczeń tego okresu.
 
-        Tylko na żądanie wybranego okresu, bo odczyt trwa u taty ponad sekundę. Nieudany odczyt nie blokuje startu;
-        Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.
+        Tylko na żądanie wybranego okresu, bo odczyt trwa u taty ponad sekundę. Nieudany odczyt Pliku zbiorczego nie
+        blokuje startu; Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.
+        Plik pary Reguł ilości albo Legendy czynności bez odczytu to też wiersze nieprzeczytane, a start odmawia wtedy
+        zdaniem o tym pliku.
         """
 
         folder = requested_folder(settings, token)
@@ -140,19 +143,6 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         return _without_quantity(folder, filling.files, rules, legend)
 
     return router
-
-
-def _counted_settings(settings: CentrumSettings) -> tuple[QuantityRules, ActivityLegend]:
-    """Reguły ilości i Legenda czynności, którymi liczy następne Uruchomienie; ``Refusal``, gdy któregoś pliku nie da się
-    teraz przeczytać."""
-
-    snapshot = settings.snapshot()
-    rules, legend = snapshot.quantity_rules, snapshot.activity_legend
-    if isinstance(rules, UnreadableFile):
-        raise refusal.settings_file_unreadable(rules.name)
-    if isinstance(legend, UnreadableFile):
-        raise refusal.settings_file_unreadable(legend.name)
-    return rules, legend
 
 
 def without_quantity_sentence(rows: Sequence[int]) -> str | None:
