@@ -158,8 +158,8 @@ def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik
 
 def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dostaje_budzenie() -> None:
     # Przegląd PR skończył się w 19. minucie, T3 zgubiło powiadomienie, a koordynator pracował dalej przy innych
-    # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający; w transkrypcie nie ma wpisu o dziecku po starcie.
-    memory = straznik.Memory(heard={})
+    # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający; w transkrypcie jest tylko start dziecka.
+    memory = straznik.Memory(heard={CHILD: False})
     decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
     # Strażnik dalej pilnuje, choć koordynator ruszył po końcu dziecka.
@@ -168,6 +168,18 @@ def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dos
     (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
 
     assert CHILD in reason and "nie dotarło" in reason
+
+
+def test_dziecko_bez_startu_w_transkryptach_czeka_jak_bez_transkryptu_na_ruch_watku() -> None:
+    # Transkrypt jest, ale nie ma w nim odpowiedzi startu tego dziecka (zlecenie z sesji sprzed hooka).
+    def reasons(parent_min: float) -> list[str]:
+        memory = straznik.Memory(heard={SIBLING: True})
+        decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+        return decide(Seen("completed", parent_min * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
+
+    assert reasons(2) == []
+    assert len(reasons(17)) == 1
 
 
 def _stamp(minute: float) -> str:
@@ -202,7 +214,9 @@ def _started(child: str, minute: float) -> str:
 
 
 SIBLING = "thread:delegated-task:dziecko-wymyslone-2"
-RUN = "0b1e2c3d-4a5b-4c6d-8e9f-a0b1c2d3e4f5"
+# Węzeł biegu po t3_thread_send w postaci provider-continuation: identyfikator dziecka podwójnie zakodowany.
+CONTINUED = "node:delegated-task:provider-continuation%3Athread%253Adelegated-task%253Adziecko-wymyslone-1%3Aordinal%3A1%3Aaa"
+SENT = "node:delegated-task:command%3Amcp%3Awymyslone%3Athread-send%3A0b1e2c3d"
 
 
 def test_powiadomienie_po_starcie_dziecka_liczy_sie_choc_t3_przesunelo_potem_jego_koniec(tmp_path: Path) -> None:
@@ -218,23 +232,23 @@ def test_powiadomienie_po_starcie_dziecka_liczy_sie_choc_t3_przesunelo_potem_jeg
     assert not pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 50 * MIN, memory)
 
 
-def test_transkrypt_czytany_od_miejsca_konca_rozroznia_start_i_powiadomienie_kazdego_biegu(tmp_path: Path) -> None:
+def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu(tmp_path: Path) -> None:
     transcript = tmp_path / "sesja.jsonl"
-    send = {"threadId": CHILD, "messageId": f"message:mcp:wymyslone:thread-send:{RUN}"}
-    running = {"taskId": f"node:wymyslone%3Athread-send%3A{RUN}", "childThreadId": CHILD, "status": "running", "workState": "working"}
-    sibling_notice = "Delegated task node:delegated-task:dziecko-wymyslone-2 (Przegląd wymyślonego PR runda 2) [completed]: OK"
     first = [
         _started(CHILD, 0),
         _started(SIBLING, 1),
         _entry("user", 5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR runda 1) [completed]: FAIL"),
-        # Treść odpowiedzi t3_thread_send z „Delegated task” w tytule wątku nie robi z niej powiadomienia.
-        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(6), {**send, "link": "[Delegated task 2]"}),
-        _call("mcp__t3-code__task_status", "toolu_status", _stamp(6.7), running),
+        # Wznowienie: T3 nazywa nowy bieg węzłem, który nie zawiera identyfikatora dziecka w postaci z odpowiedzi.
+        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(6), {"threadId": CHILD, "taskId": CONTINUED, "link": "[Delegated task 2]"}),
+        # Odczyt dziecka w toku bez pola workState i link w tekście koordynatora nie są powiadomieniem.
+        _call("mcp__t3-code__t3_thread_read", "toolu_read", _stamp(6.7), {"thread": {"threadId": CHILD, "status": "running"}}, {"threadId": CHILD}),
         _entry("assistant", 6.8, f"Runda 2 trwa: [Przegląd wymyślonego PR runda 1](t3-thread://x/{CHILD})"),
-        _entry("user", 7, sibling_notice),
-        # Rodzeństwo wznowione i skończone; koordynator sam odczytał wynik, bez powiadomienia.
-        _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING}),
-        _call("mcp__t3-code__t3_thread_read", "toolu_read", _stamp(8), {"thread": {"threadId": SIBLING}}, {"threadId": SIBLING}),
+        _entry("user", 7, "Delegated task node:delegated-task:dziecko-wymyslone-2 (Przegląd wymyślonego PR runda 2) [completed]: OK"),
+        # Rodzeństwo wznowione i skończone; koordynator sam odczytał wynik, a powiadomienie nie przyszło.
+        _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING, "taskId": SENT}),
+        _call("mcp__t3-code__t3_thread_read", "toolu_read2", _stamp(8), {"thread": {"threadId": SIBLING, "status": "completed"}}, {"threadId": SIBLING}),
+        # Powiadomienie w kolejce T3 (queue-operation) to jeszcze nie wpis user, który dotarł do koordynatora.
+        json.dumps({"type": "queue-operation", "timestamp": _stamp(8.5), "content": f"Delegated task {CONTINUED} (Przegląd) [completed]"}),
         "nie JSON z " + CHILD,
     ]
     transcript.write_text("\n".join(first) + "\n" + _entry("user", 9, "x")[:20], encoding="utf-8")
@@ -242,13 +256,28 @@ def test_transkrypt_czytany_od_miejsca_konca_rozroznia_start_i_powiadomienie_kaz
 
     offset = straznik.hear(transcript, 0, [CHILD, SIBLING], memory)
 
-    # Drugi bieg dziecka ruszył po t3_thread_send, a powiadomienie o rodzeństwie o tym samym początku tytułu go nie kończy.
-    assert (memory.heard, memory.runs) == ({CHILD: False, SIBLING: True}, {CHILD: {RUN}})
-    rest = f"Delegated task node:wymyslone%3Athread-send%3A{RUN} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
+    assert (memory.heard, memory.runs) == ({CHILD: False, SIBLING: True}, {CHILD: CONTINUED, SIBLING: SENT})
+    rest = f"Delegated task {CONTINUED} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
     with transcript.open("a", encoding="utf-8") as handle:
         handle.write(_entry("user", 9, rest)[20:] + "\n")
     assert straznik.hear(transcript, offset, [CHILD, SIBLING], memory) == transcript.stat().st_size
     assert memory.heard == {CHILD: True, SIBLING: True}
+
+
+@pytest.mark.parametrize(
+    ("reply", "child"),
+    [
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed"}, CHILD),
+        ({"thread": {"threadId": CHILD, "status": "failed"}}, CHILD),
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "running"}, None),
+        ({"thread": {"threadId": CHILD, "status": "running"}}, None),
+        ({"threadId": CHILD, "status": "completed"}, None),
+        ({"threads": [{"threadId": CHILD, "status": "completed"}]}, None),
+    ],
+    ids=["task-status-po-koncu", "odczyt-watku-po-koncu", "task-status-w-toku", "odczyt-watku-w-toku", "inny-ksztalt", "lista-watkow"],
+)
+def test_odczyt_koordynatora_konczy_czekanie_tylko_przy_skonczonym_biegu(reply: dict[str, object], child: str | None) -> None:
+    assert straznik._finished(reply) == child
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -501,7 +530,11 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     monkeypatch.setenv("HOME", env["HOME"])
     # Wpis .dzieci z chwilą teraz: krótki limit życia strażnika w teście liczy się od niego.
     straznik.record(straznik._files(PARENT), [CHILD], time.time())
-    threads = {PARENT: {"status": "completed", "updatedAt": _ago(1)}, CHILD: {"status": "completed", "updatedAt": _ago(17)}}
+    # Przy starej sesji koordynator nie ruszył po końcu dziecka, więc reguła bez transkryptu starej sesji by budziła.
+    threads = {
+        PARENT: {"status": "completed", "updatedAt": _ago(20 if old_session else 1)},
+        CHILD: {"status": "completed", "updatedAt": _ago(17)},
+    }
     (folder / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
     notice = "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
     lines = [
