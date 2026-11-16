@@ -25,13 +25,13 @@ robi mutacje, które przeglądy PR-ów robiły ręcznie i które przeżywały te
 - bez jednego elementu krotki, która nie jest samymi stałymi;
 - fragment zmiany (hunk) cofnięty do bazy: test poprawki, który przechodzi bez niej, tu przeżywa.
 
-Biegnie każde cofnięcie fragmentu i najwyżej jedna inna mutacja na linię (``selected``): ta z najgłębszego węzła
-drzewa składni linii, czyli ostatnia, którą daje przejście drzewa wszerz (``ast.walk``), a z kilku na tym samym węźle
-ostatnia z nich. Psuje ona najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii;
-ogólny skutek fragmentu sprawdza już jego cofnięcie. Predykat napisu biegnie tylko na linii bez innej mutacji: przy
-zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
-inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
-jej wyjątku (``Mutant.line``).
+Biegnie najwyżej jedna inna mutacja na linię (``selected``): ta z najgłębszego węzła drzewa składni linii, czyli
+ostatnia, którą daje przejście drzewa wszerz (``ast.walk``), a z kilku na tym samym węźle ostatnia z nich. Psuje ona
+najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii. Cofnięcie fragmentu biegnie
+tylko wtedy, gdy żadna z tych mutacji nie psuje jego linii: przy takiej mutacji przeżywało tylko cofnięcie zmiany, która
+nic nie zmieniała (``selected``). Predykat napisu biegnie tylko na linii bez innej mutacji: przy zbiorze albo słowniku
+po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co inna mutacja (bez elementu
+krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia jej wyjątku (``Mutant.line``).
 
 Mutacja, która zmienia tylko docstringi, komentarze, adnotacje argumentów i wyników funkcji, importy albo aliasy
 typów (``Nazwa = Callable[...]``, ``A | B`` czytane tylko w adnotacjach), nie zmienia zachowania, więc jej nie ma.
@@ -670,7 +670,12 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
 
 
 def selected(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:
-    """Mutacje, które biegną w CI i liczy plan: każde cofnięcie fragmentu i ostatnia inna mutacja każdej linii.
+    """Mutacje, które biegną w CI i liczy plan: ostatnia inna mutacja każdej linii i cofnięcie fragmentu, którego linii
+    żadna z nich nie psuje.
+
+    Cofnięcie fragmentu, w którym inna mutacja psuje linię, przeżyło 12 nocy 9–15.11 tylko wtedy, gdy zmiana nic nie
+    zmieniała (adnotacja, ``__all__``, refaktor): z 1219 takich cofnięć ani jedno nie dało policzonego testu, a kosztowały
+    8,6% czasu mutacji nocy.
 
     Predykat napisu biegnie tylko na linii bez innej mutacji: ``x in y`` → ``y.startswith(x)`` przy ``y`` będącym
     zbiorem albo słownikiem tylko rzuca ``AttributeError``, a wypierał ``bez członu`` i stały warunek (#486
@@ -682,7 +687,8 @@ def selected(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pl
     for mutant in found:
         if not mutant.revert and (mutant.line not in last or not mutant.last_resort or last[mutant.line].last_resort):
             last[mutant.line] = mutant
-    return [mutant for mutant in found if mutant.revert or last[mutant.line] is mutant]
+    broken = frozenset(line for mutant in last.values() for line in mutant.lines)
+    return [mutant for mutant in found if (mutant.revert and not mutant.lines & broken) or (not mutant.revert and last[mutant.line] is mutant)]
 
 
 def fingerprint(mutant: Mutant, text: str) -> str:
