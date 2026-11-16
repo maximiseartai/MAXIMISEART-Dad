@@ -1591,6 +1591,7 @@ export const zModeStatistics = z.object({
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
  *
  * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ * ``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton.
  */
 export const zPinnableRun = z.object({
     run_id: z.string(),
@@ -1598,12 +1599,6 @@ export const zPinnableRun = z.object({
     started_at: z.iso.datetime(),
     mode: zRunMode,
     period: z.string(),
-    result: z.enum([
-        'OK',
-        'WYMAGA_SPRAWDZENIA',
-        'BLAD_KRYTYCZNY'
-    ]),
-    stop_kind: z.enum(['for_tata', 'for_maks']).nullable(),
     mode_word: z.string().readonly(),
     tone: z.enum([
         'ok',
@@ -1953,7 +1948,6 @@ export const zSettingProblem = z.object({
  */
 export const zDifferencesReady = z.object({
     state: z.literal('ready'),
-    files: z.array(zPreviewFile),
     unread: z.array(z.string()),
     differences: z.array(zQuantityDifference),
     more: z.int(),
@@ -2738,10 +2732,10 @@ export const zIntermaxSetup = z.object({
  * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
- * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * raportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się
+ * odczytać).
  */
 export const zReportEnteringSetup = z.object({
-    title: z.string(),
     reminder: z.string(),
     blocker: z.string().nullable(),
     open_in_excel: z.array(z.string()),
@@ -2883,19 +2877,14 @@ export const zLoggedOutcomeWritable = z.object({
  * Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
  *
  * Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+ * ``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton.
  */
 export const zPinnableRunWritable = z.object({
     run_id: z.string(),
     process_label: z.string(),
     started_at: z.iso.datetime(),
     mode: zRunMode,
-    period: z.string(),
-    result: z.enum([
-        'OK',
-        'WYMAGA_SPRAWDZENIA',
-        'BLAD_KRYTYCZNY'
-    ]),
-    stop_kind: z.enum(['for_tata', 'for_maks']).nullable()
+    period: z.string()
 });
 
 /**
@@ -3064,10 +3053,10 @@ export const zIntermaxSetupWritable = z.object({
  * ``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w
  * ``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży
  * obok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania
- * raportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać).
+ * raportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się
+ * odczytać).
  */
 export const zReportEnteringSetupWritable = z.object({
-    title: z.string(),
     reminder: z.string(),
     blocker: z.string().nullable(),
     open_in_excel: z.array(z.string()),

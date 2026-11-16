@@ -709,9 +709,7 @@ def _note_runs(run: Run, selected: str | None, name: str) -> list[dict[str, Any]
 
 
 def _result_word(entry: dict[str, Any]) -> str:
-    if entry["result"] == "BLAD_KRYTYCZNY":
-        return "Błąd" if entry["stop_kind"] == "for_maks" else "Zatrzymano"
-    return {"OK": "OK", "WYMAGA_SPRAWDZENIA": "Do sprawdzenia"}[entry["result"]]
+    return {"ok": "OK", "needs_review": "Do sprawdzenia", "stopped": "Zatrzymano", "failed": "Błąd"}[entry["tone"]]
 
 
 def _offers(run: Run, choices: Locator, offered: list[dict[str, Any]], checked: str) -> None:

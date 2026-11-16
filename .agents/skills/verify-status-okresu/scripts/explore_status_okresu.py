@@ -589,7 +589,11 @@ def ask_rules_preview(client: TestClient) -> Answer:
 
 def ask_differences(client: TestClient) -> Answer:
     """Whether the list of Kontrola ilości differences in the Reguły ilości section takes the period: only a period
-    after Przebieg rozliczeń, like the preview; a Plik zbiorczy it takes but cannot read it names among ``unread``."""
+    after Przebieg rozliczeń, like the preview; a Plik zbiorczy it takes but cannot read it names among ``unread``.
+
+    The response does not name the files it counted, so the differences say it: the Plik zbiorczy of ``Inputs`` breaks
+    the Reguły ilości in its marked row, and the list counts only that file exactly when it shows differences, each
+    once, and every one names the period."""
 
     response = client.get("/api/settings/quantity-rules/differences")
     if (unreadable := _unreadable_refusal(response)) is not None:
@@ -603,9 +607,10 @@ def ask_differences(client: TestClient) -> Answer:
         raise Unexpected(f"lista różnic: stan {found['state']!r}")
     if PERIOD.token in found["unread"]:
         return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="bierze okres, a Pliku zbiorczego nie dało się przeczytać")
-    if [file["period"] for file in found["files"]] == [PERIOD.token]:
+    counted = [(difference["period"], difference["id"]) for difference in found["differences"]]
+    if counted and {period for period, _ in counted} == {PERIOD.token} and len(set(counted)) == len(counted):
         return Answer(Consumer.LISTA_ROZNIC, Act.DZIALA, detail="liczy różnice na Pliku zbiorczym okresu")
-    raise Unexpected(f"lista różnic: pliki {found['files']}, nieprzeczytane {found['unread']}")
+    raise Unexpected(f"lista różnic: różnice (okres, id) {counted}, nieprzeczytane {found['unread']}")
 
 
 def ask_entering(inputs: Inputs, periods: Path) -> Answer:

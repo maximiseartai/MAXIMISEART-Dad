@@ -806,7 +806,7 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
 
     assert shown(found) == TATA_DIFFERENCES
     assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
-    assert (found["files"], found["unread"], found["more"], found["exceptions"]) == ([{"period": PERIOD, "rows": 14}], [], 0, 0)
+    assert (found["unread"], found["more"], found["exceptions"]) == ([], 0, 0)
 
 
 def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
@@ -1052,7 +1052,7 @@ def test_lista_roznic_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazyw
 
     found = differences(centrum)
 
-    assert (found["files"], found["unread"]) == ([{"period": NEWER, "rows": 14}], [PERIOD])
+    assert found["unread"] == [PERIOD]
     assert shown(found) == [(NEWER, *difference[1:]) for difference in TATA_DIFFERENCES]
 
 
