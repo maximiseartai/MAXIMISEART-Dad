@@ -32,8 +32,10 @@ import limit_rund
 import naprawia
 import ponowny_przeglad
 import rejestr_korzeni
+import scal_pr
 import stan_pr
 import szablon_werdyktu
+import testy_scalenia
 import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
@@ -219,11 +221,13 @@ OBJECTION = "werdykt: FAIL dla {short} bez nowszego „WERDYKT: PASS {head}”"
 
 
 def _verdict(kind: str, body: str, association: str = "OWNER", *, when: str) -> dict[str, object]:
-    """Komentarz (``kind`` to ``comment``) albo recenzja w stanie ``kind`` w polach ``gh pr view --json``."""
+    """Komentarz (``kind`` to ``comment``) albo recenzja w stanie ``kind`` w polach ``gh pr view --json``; nieopublikowana
+    recenzja (``PENDING``) ma, jak na GitHubie, ``submittedAt`` równe ``null``."""
 
     if kind == "comment":
         return {"body": body, "authorAssociation": association, "createdAt": when, "author": {"login": "recenzent"}}
-    return {"body": body, "authorAssociation": association, "state": kind, "submittedAt": when, "author": {"login": "recenzent"}}
+    submitted = None if kind == "PENDING" else when
+    return {"body": body, "authorAssociation": association, "state": kind, "submittedAt": submitted, "author": {"login": "recenzent"}}
 
 
 def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
@@ -438,6 +442,19 @@ def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:0
     git(github.checkout, "push", "--quiet", "origin", "main")
 
 
+def test_pomoc_podaje_zasady_testu_scalenia_werdyktu_i_limitu_rund_z_przykladami_polecen(capsys: pytest.CaptureFixture[str]) -> None:
+    """``AGENTS.md`` odsyła agenta po warunki scalenia i postać werdyktów do ``--help``, a te zasady żyją w modułach
+    bramek, nie w docstringu narzędzia."""
+
+    with pytest.raises(SystemExit):
+        scal_pr.main(["--help"])
+
+    shown = " ".join(capsys.readouterr().out.split())
+    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__):
+        assert " ".join(str(rules).split()) in shown
+    assert "tools/scal_pr.py 336 --werdykt" in shown
+
+
 def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
@@ -544,6 +561,8 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         ([("comment", PASS_HEAD), ("COMMENTED", FAIL_HEAD)], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", "")], OBJECTION_HEAD),
+        # Reguły ``--werdykt`` sądzą tylko PASS dla HEAD: prośba o zmiany z PASS starszego commitu to sprzeciw, nie zły PASS.
+        ([("comment", PASS_HEAD), ("CHANGES_REQUESTED", f"WERDYKT: PASS {OLD}\nZnaleziska: 0")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: dwa Ważne, brak testu")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"{FAIL_HEAD}\nZnaleziska: 1 (Ważne 0, Drobne 1)")], OBJECTION_HEAD),
         ([("comment", PASS_HEAD), ("comment", f"WERDYKT: FAIL {OLD}")], None),
@@ -570,6 +589,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
             [("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 1 (Ważne 1, Drobne 0)")],
             _broken("PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         ),
+        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 3 (Ważne 0, Drobne 3)")], None),
         ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 4 (Ważne 0, Drobne 4)")], _broken("Drobne 4: podaj najwyżej 3, najważniejsze")),
         ([("COMMENTED", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
         ([("comment", PASS_HEAD), ("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
@@ -599,6 +619,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         "sprzeciw-recenzja",
         "sprzeciw-prosba-o-zmiany",
         "sprzeciw-prosba-o-zmiany-bez-tresci",
+        "sprzeciw-prosba-o-zmiany-z-pass-starszego-commitu",
         "sprzeciw-fail-z-proza-w-drugiej-linii-jak-532",
         "sprzeciw-fail-bez-waznych-poza-regulami-werdyktu",
         "fail-dla-starszego-commitu",
@@ -622,6 +643,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         "pass-poza-regulami-drobne-bez-waznych-jak-1004",
         "pass-poza-regulami-bez-drugiej-linii",
         "pass-poza-regulami-z-waznym",
+        "pass-z-najwyzej-trzema-drobnymi",
         "pass-poza-regulami-za-duzo-drobnych",
         "pass-poza-regulami-w-recenzji",
         "pass-poza-regulami-po-pass-w-postaci-werdyktu",
@@ -952,8 +974,18 @@ def test_test_ktory_pada_juz_na_samym_main_nie_blokuje_merge_pr_i_stoi_w_linii_s
             # Nazwę programu w błędzie argparse daje wersja Pythona: ``__main__.py`` do 3.13, ``python -m pytest`` od 3.14.
             "pada: pytest kod 4: {prog}: error: unrecognized arguments: --nieznana-opcja",
         ),
+        # Plik testów bez testu: pytest kończy się kodem 5, a przyczynę mówi tylko jego stdout (stderr jest pusty).
+        ({NEGATIVE_TEST_FILE: "from kod import suma\n\nSUMA = suma\n"}, ABS_SUM, None, "pada: pytest kod 5: no tests ran in {prog}"),
     ],
-    ids=["test-pada", "test-pada-a-inny-pada-juz-na-main", "test-z-parametrem-ze-spacja-pada", "blad-kolekcji", "test-ponad-limit-czasu", "pytest-nie-startuje"],
+    ids=[
+        "test-pada",
+        "test-pada-a-inny-pada-juz-na-main",
+        "test-z-parametrem-ze-spacja-pada",
+        "blad-kolekcji",
+        "test-ponad-limit-czasu",
+        "pytest-nie-startuje",
+        "plik-testow-bez-testu",
+    ],
 )
 def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_scalany(
     tmp_path: Path, pull_files: dict[str, str], main_sum: str, replaced: tuple[str, str] | None, reason: str
@@ -1007,6 +1039,21 @@ def test_test_scalenia_nie_biegnie_bez_wspolnego_testu_ponad_limit_czasu_ci_i_pr
     shown = _last_line(answered) if ci_seconds is not None else _last_line(answered)[: len(line)]
     assert shown == line
     assert "== test scalenia" not in answered.stdout
+
+
+def test_pr_na_niezmienionym_main_jest_bez_testu_scalenia_takze_gdy_zmienia_regule_wyboru_testow(tmp_path: Path) -> None:
+    """Baza bez zmian od merge-base PR nie wnosi do scalenia niczego, czego CI PR nie sprawdziło, więc linia ``SCAL OK``
+    nie mówi o teście scalenia ani o jego pominięciu."""
+
+    github = MergeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, SUM_TEST_FILE: SUM_TEST})
+    head = github.open_pull(1, {"pyproject.toml": WITH_PYTEST + "# reguła wyboru testów\n"})
+    github.comment(1, PASS.format(head=head))
+    main = git(github.origin, "rev-parse", "refs/heads/main")
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main {main[:7]}, bez merge'a (--bez-merge)"
 
 
 def test_main_przesuniety_w_trakcie_sprawdzania_zatrzymuje_merge(tmp_path: Path) -> None:
