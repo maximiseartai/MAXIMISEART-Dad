@@ -20,6 +20,7 @@ import pytest
 import yaml
 
 from rozliczenia import collective_file, quantity_check, tool_files
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.collective_layout import QUANTITY_COLUMNS, QUANTITY_LETTERS
 from rozliczenia.collective_preparation import PreparationInputs, prepare_collective_file
 from rozliczenia.dad_files import DadFiles
@@ -563,7 +564,7 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
     check = quantity_check.check(settlement.orders, settlement.quantity_rules)
     read = collective_file.read_numbered_orders(preparation.collective_file, DadFiles())
     assert not isinstance(read, MissingHeaders)
-    to_fill = quantities_to_fill(read.rows, OWN_RULES, settled=False)
+    to_fill = quantities_to_fill(read.rows, OWN_RULES, DEFAULT_ACTIVITY_LEGEND, settled=False)
 
     assert prepared == [{"Q": 1, "S": 1, "AA": 7}, {"T": 1}, {"T": 1}], "prewencja nie jest tu z opisu"
     [worker_file] = (result.output_file for result in settlement.results if result.rows)

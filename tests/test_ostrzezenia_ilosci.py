@@ -1,7 +1,9 @@
-"""Ostrzeżenia o Ilościach usług „do uzupełnienia” po Przygotowaniu pliku zbiorczego (#271).
+"""Ostrzeżenia o Ilościach usług „do uzupełnienia” po Przygotowaniu pliku zbiorczego (#271, #1940).
 
 Numery wierszy w ostrzeżeniach to numery wierszy Pliku zbiorczego, bo tata poprawia Plik zbiorczy: Zlecenia
-skuteczne leżą w nim od wiersza 18, bez pustych wierszy i zleceń nieskutecznych z Rejestru zleceń.
+skuteczne leżą w nim od wiersza 18, bez pustych wierszy i zleceń nieskutecznych z Rejestru zleceń. Wiersz, którego
+``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności z Legendy czynności z Wydania, nie czeka na tatę w kolumnach z opisu
+technika (ADR 0038).
 """
 
 from __future__ import annotations
@@ -9,7 +11,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from rozliczenia import preparation_messages as messages
 from rozliczenia.message import Message
+from rozliczenia.quantity_engine import DESCRIPTION_COLUMNS
 
 from tests.fixtures.centrum import finished_view
 from tests.fixtures.centrum_processes import preparing_centrum
@@ -30,6 +34,22 @@ REMINDER = ("KOLUMNY_Z_OPISU", f"plik {COLLECTIVE_FILE_NAME}, kolumny Y, AB, AD,
 def _order(number: int, devices: str | None, *, started: datetime | None = None, successful: str = "tak") -> RegisterRow:
     started = started or TUESDAY + timedelta(hours=number)
     return register_order(number, started, successful=successful) | {"URZĄDZENIA": devices}
+
+
+def _described(number: int, devices: str, completed: str, *, started: datetime | None = None) -> RegisterRow:
+    started = started or TUESDAY + timedelta(hours=number)
+    return register_order(number, started) | {"URZĄDZENIA": devices, "CZYNNOŚCI ZREALIZOWANE": completed}
+
+
+def _legend_period() -> list[RegisterRow]:
+    return [
+        _described(1, "nokia zte", "tak inst15m, dzielnik 1/2."),  # Plik zbiorczy 18: same kody
+        _described(2, "nokia zte", "20 m patchcord dzielnik 1/2"),  # 19: kod obok opisu
+        _described(3, "prewencja", "INSTMDIC"),  # 20: z opisu, same kody
+        _described(4, "prewencja", "spawpg i wymiana gniazda"),  # 21: z opisu, kod obok opisu
+        _described(5, "nokia zte", "instutp40m"),  # 22: liczba spoza przedziałów
+        _described(6, "fut", "montaż", started=MONDAY),  # 23: bez kodu
+    ]
 
 
 def _mixed_period() -> list[RegisterRow]:
@@ -140,3 +160,27 @@ def test_w_centrum_zapis_okresu_tylko_ze_znanymi_urzadzeniami_wymaga_sprawdzenia
 
     assert (preview["result"], written["result"]) == ("OK", "WYMAGA_SPRAWDZENIA")
     assert [warning["where"] for warning in written["warnings"]] == [REMINDER[1]]
+
+
+def test_ostrzezenia_licza_wiersze_zamkniete_legenda_i_wskazuja_kod_spoza_przedzialow(tmp_path: Path) -> None:
+    fixture = make_preparation_fixture(tmp_path, _legend_period())
+
+    preview = run_preparation(fixture, dry_run=True)
+    summary = run_preparation(fixture)
+
+    assert summary.warnings == [
+        messages.rows_from_description(COLLECTIVE_FILE_NAME, [21]),
+        messages.codes_out_of_range(COLLECTIVE_FILE_NAME, [(22, ["instutp40m"])]),
+        messages.columns_from_description(COLLECTIVE_FILE_NAME, DESCRIPTION_COLUMNS, closed=2, for_tata=4),
+    ]
+    assert preview.warnings == summary.warnings
+
+
+def test_okres_z_samych_kodow_nie_przypomina_o_kolumnach_z_opisu(tmp_path: Path) -> None:
+    fixture = make_preparation_fixture(
+        tmp_path, [_described(1, "nokia zte", "inst20m"), _described(2, "prewencja", "tak, spawgnd", started=MONDAY)]
+    )
+
+    summary = run_preparation(fixture)
+
+    assert summary.warnings == []

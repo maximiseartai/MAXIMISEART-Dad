@@ -15,8 +15,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 - Skille: przeczytaj [`docs/agents/skille.md`](docs/agents/skille.md) przed utworzeniem albo zmianą skilla.
 - Wydajność i środowisko taty: przy pomiarach wydajności albo decyzjach zależnych od jego sprzętu lub OneDrive przeczytaj [`docs/agents/komputer-taty.md`](docs/agents/komputer-taty.md).
 - Uruchamianie narzędzia przez człowieka: użyj [`README.md`](README.md).
-- Issues i specyfikacje: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
-- Triage: użyj [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
+- Issues, specyfikacje i triage: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md); role triage to etykiety o tych samych nazwach.
 
 ## Narzędzia
 
@@ -36,7 +35,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/ponow_ci.py`: Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
 - `tools/poprawki_operatora.py`: Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
 - `tools/porownanie_rozliczen.py`: Porównuje znaczeniowo dwa Foldery rozliczeń pracowników (spec #141); użyj jako bramki, gdy zmiana silnika ma dać te same rozliczenia.
-- `tools/praca_w_toku.py`: Pokazuje pracę innych checkoutów i otwartych PR-ów oraz pliki wspólne z bieżącym; użyj przed startem issue i przed aktualizacją z main.
+- `tools/praca_w_toku.py`: Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
 - `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
 - `tools/proba_skrzynki_raportow.py`: Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przed Wydaniem z Wpisaniem raportów.
 - `tools/przesun_model.py`: Przelicza skróty kodu w model/definicje.json skilla verify-*; użyj, gdy model albo eksplorator skilla znów opisuje zmieniony kod.
@@ -68,10 +67,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 Przy poprawce operatora, Ważnym z przeglądu i czerwonym `main` z prawdziwej zmiany nazwij korzeń i wyrwij go na najwyższym szczeblu, który działa, według sekcji „Korzeń i chwast” skilla [`przeglad`](.agents/skills/przeglad/SKILL.md).
 Ważne z polem `Idiom: <id>`, które pisze recenzent, scala się tylko z regułą chwastu o tym id na HEAD PR i jej dowodem, a odpalenia reguły chwastu nie ukrywa ani tłumienie, ani zwolnienie poza prawem właściciela ([ADR 0036](docs/adr/0036-chwast-to-regula.md)).
-Regułę i drogę naprawy mówi komunikat strażnika (asercja testu, `msg` w `banned-api`, odmowa hooka albo narzędzia), a wiersz tabeli dopisz tylko z nowym strażnikiem, którego komunikat nie mówi już tej reguły albo który nie łapie każdej jej formy, w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
-Granicę nowego i zmienianego strażnika pokazują próbki `ZNANE_LUKI` w jego teście: próbka to kod postaci, którą strażnik przepuszcza, nazwany klasą mechanizmu, który ją przepuszcza (np. „zna tylko nazwę z importu”), a `tests/fixtures/znane_luki.py` puszcza ją przez prawdziwe mechanizmy strażnika i każe ją usunąć, gdy strażnik zaczyna ją łapać; próbki to luki znane, nie pełna lista postaci ani klas, więc nowo znaleziona luka staje się nową próbką albo zamyka ją konstrukcja (typ, zakaz ruff, odmowa w biegu), a wiersz tabeli wskazuje ten test; wiersz strażnika, który trzyma granicę jeszcze prozą, podaje jej miejsce po `boundary:` (wypisuje je `grep -n "(boundary[:]" CODING_STANDARDS.md`), strażnik bez wiersza w tabelach `CODING_STANDARDS.md` trzyma granicę w docstringu do swojej najbliższej zmiany, a reguły `npm run rules` w komentarzu `frontend/scripts/rules.mjs`, bo zadania pytest nie instalują zależności frontendu.
-Prawo właściciela, czyli stałe użycie zakazanego API przez moduł, do którego komunikat zakazu kieruje resztę kodu, zapisz w konfiguracji reguły (dla `TID251`: `per-file-ignores` w `pyproject.toml` i `OWNERS` w `tests/test_zakazy_ruff.py`).
-Wyjątek tymczasowy zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
+Strażnik reguły (nowy albo zmieniany), jego wiersz w tabeli reguł, prawo właściciela i wyjątek tymczasowy: zanim je zapiszesz, przeczytaj wstęp [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 
 ## Stałe prośby Maksa
 
