@@ -45,11 +45,7 @@ version shows no failure of the try before after two refusals of the disk, and
 `test_wynik_aktualizacji_trafia_na_karte_gdy_dziennika_nie_da_sie_przeczytac` that the result reaches the card when
 the log cannot be read.
 The read of the configuration keeps GitHub's answer about the newest Wydanie (one answer shared with
-Powiadomienia) for 10 minutes of Centrum's clock, so each harness change of the Wydanie also moves that clock on. In this run the tool
-is the fixture's synthetic clone with a local "origin", and its Centrum is the
-run's scripted Centrum, so the restarted Centrum keeps the run-local
-boundaries; the verification never touches the checkout it runs from and never
-reaches GitHub.
+Powiadomienia) for 10 minutes of Centrum's clock, so each harness change of the Wydanie also moves that clock on.
 
 ## Sub-features
 
@@ -76,10 +72,8 @@ Printed by `scripts/sub_features.py --feature aktualizacja` from the drive's ste
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualizacja`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP aktualizacja` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py` and
-`api/aktualizacja-*.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature aktualizacja`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/aktualizacja-*.json`.
 
 ## Gotchas
 
