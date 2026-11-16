@@ -39,14 +39,16 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
   zamknięty zbiór znaczników końca: powiadomienie i odpowiedź ze statusem biegu z ``FINISHED`` (``_ended``; ten sam
   zbiór co dla ``t3 thread show``, z ``cancel_requested`` odpowiedzi ``task_cancel``). Odpowiedź startu i każda inna
   odpowiedź o biegu, także ze stanem, którego zbiór nie zna (``waiting_for_children``), albo bez statusu, znaczą
-  „trwa”, więc nieznany kształt kosztuje najwyżej jedno zbędne budzenie, a nigdy zgubione powiadomienie. Kolejność,
+  „trwa”, więc nieznany kształt odpowiedzi kosztuje zbędne budzenie, a nie ciche zgubienie powiadomienia. Kolejność,
   nie chwila, bo T3 przesuwa ``updatedAt`` skończonego dziecka po powiadomieniu (rozliczenie dzieci przy końcu
   rodzeństwa, restart), więc nowy pilnujący widziałby powiadomienie „przed końcem”. Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path``
   wejścia; strażnik czyta każdy transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w
   starej sesji ma tam swój start i powiadomienie. Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi
   rusza się także wtedy, gdy T3 powiadomienie zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę);
   bez transkryptu i dla dziecka bez startu w transkryptach dotarciem jest, jak dotąd, ruch wątku po końcu dziecka;
-- tego samego powodu (dziecko i rodzaj powodu) nie powtarza, a dwa budzenia dzieli ``PAUSE_S``;
+- tego samego powodu (bieg dziecka z ``run_of`` i rodzaj powodu, przy „nie dotarło” także chwila końca) nie
+  powtarza, a dwa budzenia dzieli ``PAUSE_S``; widoczność dziecka (``unseen``) i koniec (``ended``) należą do wątku
+  dziecka, bo ``t3 thread show`` mówi o wątku, a nowy bieg i tak zdejmuje stary koniec;
 - wątek ``running`` bez ruchu dłużej niż ``STUCK_S`` tylko zapisuje w dzienniku, bo wiadomość do zajętego wątku
   czeka na jego następną turę;
 - kończy się wcześniej, gdy nie ma już czego pilnować (``pending``: żadne dziecko nie trwa, a po każdym końcu dziecka
@@ -63,7 +65,12 @@ czekania. Bieg, który T3 wznowi samo (bez ``t3_thread_send``), nie ma startu w 
 poprzednim biegiem ukrywa brak jego powiadomienia; koordynator, który dowiedział się o końcu poza T3 (werdykt na
 GitHubie), a powiadomienie nie przyszło, dostaje jedno budzenie; inny początek powiadomienia w przyszłym T3 dałby jedno
 budzenie na każde dziecko; odczyt wątku ze statusem ``completed`` przed powiadomieniem jego biegu (T3 pokazuje koniec
-tury dziecka, a bieg czeka) liczy się jako koniec.
+tury dziecka, a bieg czeka) liczy się jako koniec. T3 z 24–29.10.2026 pokazywał w ``t3 thread show`` wątek dziecka,
+które po turze czekało na pracę w tle, jako ``completed``, choć bieg trwał (``task_status`` ``running``,
+``waiting_for_children``): strażnik uznawał wtedy dziecko za skończone i budził raz zbędnie, a gdy wznowiona tura
+dziecka zmieściła się między dwoma pytaniami strażnika, jej koniec miał ten sam klucz i zgubione powiadomienie tego
+końca się ukrywało. Dzisiejszy T3 pokazuje taki wątek jako ``waiting`` (z ``pendingBackgroundTasks``), spoza
+``FINISHED``, więc strażnik nie uznaje go za skończone.
 Bez transkryptu brak powiadomienia ukrywa też T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w
 ``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
@@ -277,8 +284,22 @@ def observe(children: dict[str, Seen | None], now: float, memory: Memory) -> Non
             memory.ended[name] = state.updated
 
 
+def run_of(child: str, memory: Memory) -> str:
+    """Tożsamość bieżącego biegu dziecka, jedyny klucz stanu strażnika o biegu: ``taskId`` z odpowiedzi startu
+    (``runs``), a bez startu w transkryptach sam wątek dziecka."""
+
+    return memory.runs.get(child) or child
+
+
+def _unheard_key(child: str, memory: Memory) -> str:
+    """Klucz powodu „nie dotarło”: bieg i zapisana chwila jego końca, więc nowy bieg (``t3_thread_send``) i nowy koniec
+    tego samego biegu (dziecko znów trwało) dają nowy powód, a jeden koniec jedno budzenie."""
+
+    return f"{run_of(child, memory)}@{memory.ended[child]!r} bez budzenia"
+
+
 def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: Memory) -> dict[str, str]:
-    """Powody budzenia wątku ``parent`` po kluczu (dziecko i rodzaj powodu), bez względu na to, czy wątek biegnie."""
+    """Powody budzenia wątku ``parent`` po kluczu (bieg dziecka i rodzaj powodu), bez względu na to, czy wątek biegnie."""
 
     reasons = {}
     for child, state in children.items():
@@ -286,9 +307,9 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
         if state is None:
             continue
         if state.status not in FINISHED and state.age(now) > CHILD_STALE_S:
-            reasons[f"{child} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age(now) // 60)} min"
+            reasons[f"{run_of(child, memory)} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age(now) // 60)} min"
         elif ended is not None and WAKE_S < now - ended and unheard(child, parent, memory):
-            reasons[f"{child} bez budzenia"] = (
+            reasons[_unheard_key(child, memory)] = (
                 f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, a "
                 "powiadomienie o jego końcu do tego wątku nie dotarło"
             )
@@ -317,7 +338,7 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
                 return True
         elif state.status not in FINISHED:
             return True
-        elif child in memory.ended and unheard(child, parent, memory) and f"{child} bez budzenia" not in memory.told:
+        elif child in memory.ended and unheard(child, parent, memory) and _unheard_key(child, memory) not in memory.told:
             return True
     return False
 
