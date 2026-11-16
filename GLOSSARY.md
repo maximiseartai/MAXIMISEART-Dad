@@ -210,8 +210,8 @@ _Avoid_: nowe zlecenie, brakujące zlecenie
 
 ## Przypomnienie o raporcie
 
-Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień.
-Prosi o raport za ten dzień, podaje wzór tematu i treści i kończy się stopką taty.
+Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień albo któryś jego wygrywający Wpis `tak` ma Błąd opisu.
+Prosi o raport za ten dzień (a po Błędzie opisu mówi, w którym zleceniu jest błąd), podaje wzór tematu i treści i kończy się stopką taty.
 Idzie w porannej i wieczornej porze z Ustawień Centrum (domyślne pory i nadrabianie pominiętej: [ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)), pierwsze od godziny pierwszego przypomnienia następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia przypomnień.
 Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
@@ -369,10 +369,17 @@ _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
 
-Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast opisu, np. `inst20m` albo `spawpg`, bez względu na wielkość liter i spacje, w jednym z jego zapisów (np. `instmdik` i `instmdic`).
-Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz, a każde jego wystąpienie się dodaje.
-Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`); liczba spoza przedziałów niczego nie wyznacza.
+Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast opisu, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
+Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz; kwoty kilku kodów w zleceniu się sumują.
+Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`).
 _Avoid_: skrót, kod (bez dopowiedzenia)
+
+## Błąd opisu
+
+`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów albo kolumna Ilości usług trafiona drugi raz.
+Opis pusty albo z samym `tak`/`nie` nie jest Błędem opisu.
+Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` liczy się dla Przypomnień o raporcie jako niewysłany (ADR 0039).
+_Avoid_: zły kod, literówka
 
 ## Lista Urządzeń
 
@@ -383,8 +390,8 @@ _Avoid_: słownik, aliasy
 
 ## Ilości do uzupełnienia
 
-Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, więc wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności (poza `tak`, `nie` i znakami interpunkcji) albo mają kod z liczbą spoza przedziałów.
-To miejsca zostawione tacie, nie błędy.
+Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, więc wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności (poza `tak`, `nie` i znakami interpunkcji) albo mają Błąd opisu.
+To miejsca zostawione tacie, nie błędy taty.
 _Avoid_: błędy, braki, cyfry do wpisania
 
 ## Zlecenie ze zdjęciami
@@ -403,7 +410,7 @@ _Avoid_: uzupełnienie Excela, poprawki
 ## Wyróżnienie
 
 Wygląd komórki, którym tata, jego pracownik, Uporządkowanie INTERMAX (Kolor operatora) albo Legenda czynności zaznacza zlecenie: kolor wypełnienia, kolor czcionki, pogrubienie i kursywa.
-Przechodzi razem z wartością z Rejestru zleceń do plików okresu, a z Pliku zbiorczego do Rozliczeń pracowników.
+Przechodzi razem z wartością z Rejestru zleceń do plików okresu, a z Pliku zbiorczego do Rozliczeń pracowników, poza czerwonym i zielonym wypełnieniem, które w Rozliczeniu pracownika staje się białe (ADR 0039).
 Wyróżnienia zastępują wygląd komórki wzorca w całości: komórka bez Wyróżnień daje komórkę bez wypełnienia, z kolorem automatycznym, bez pogrubienia i bez kursywy.
 Krój i rozmiar czcionki nie są Wyróżnieniem i pochodzą z wzorca (Wygląd Wiersza danych).
 _Avoid_: formatowanie (szersze: obejmuje też krój, obramowania i formaty liczb)
@@ -636,7 +643,7 @@ _Avoid_: Wydanie, release Logów, załącznik
 
 Porównanie Ilości usług, które dają Reguły ilości i Legenda czynności (ta także kwotę w `AS` i kolory), z tym, co stoi w Pliku zbiorczym, z którego tata uruchomił Przebieg rozliczeń.
 Pokazuje, co tata musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę ilości, której tata nie wysyła.
-Różnica legendy i wpis taty w wierszu bez Kodu czynności idą tam z opisem technika.
+Różnica legendy i wpis taty w wierszu bez Kodu czynności idą tam z opisem technika, a wiersze z Błędem opisu jako liczby według powodu.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Wyjątek Kontroli ilości
