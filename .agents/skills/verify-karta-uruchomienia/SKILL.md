@@ -30,7 +30,8 @@ ci: .agents/skills/verify-karta-uruchomienia/scripts/sprawdz_karte_uruchomienia.
 CI runs `sprawdz_karte_uruchomienia.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
 `pilnuje:` or folder, and `scripts/check_model_karty_mutations.py` on a pull request that changes a file in `model/`,
 the script itself or `sprawdz_karte_uruchomienia.py`, and in full CI and nightly on `main` after a change of this
-skill's folder. Run them locally only while you bring the model in line or to reproduce a red Mutation checks step.
+skill's folder. Run them locally only while you bring the model in line or to reproduce a red Mutation checks step;
+the mutation script runs as `.venv/bin/python .agents/skills/verify-karta-uruchomienia/scripts/check_model_karty_mutations.py`.
 CI and `tools/szybko.py` catch drift: covered code that differs from its digests in `model/definicje.json`
 (`ROZJAZD MODELU Z KODEM | <skill>: …`); they cannot tell whether your change to the model is right.
 What stays with you on every change to the covered code is „Bring the model in line”. A change whose model nobody
