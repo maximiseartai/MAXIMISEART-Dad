@@ -54,6 +54,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_actions import ButtonPressed, DadActions, StoredRunMode
+from rozliczenia.centrum.logged_input_copy import LoggedInputFile
 from rozliczenia.centrum.report_entering_logs import LoggedReports
 from rozliczenia.client_data import READ_VALUES
 from rozliczenia.domain import ProgressPhase, WorkerStatus
@@ -71,8 +72,9 @@ from rozliczenia.efenix_window import (
     WindowAction,
     WindowCause,
 )
+from rozliczenia.activity_legend import ActivityLegend, LegendProblem
+from rozliczenia.activity_legend_file import dump_activity_legend, parse_activity_legend
 from rozliczenia.efenix_trace import TraceStep
-from rozliczenia.input_copy import CellValue, CopiedFile, CopiedSheet, Typed, TypedKind
 from rozliczenia.intermax_ordering import OrderingSummary
 from rozliczenia.message import Message, SettingsSection
 from rozliczenia.process_run import RunResult, StopEnding
@@ -513,6 +515,27 @@ class LoggedQuantityRules(_Record):
         return found if isinstance(found, RulesProblem) else parse_quantity_rules(rules, found)
 
 
+class LoggedActivityLegend(_Record):
+    """Legenda czynności ze startu Uruchomienia (migawka Ustawień Centrum): dokument pliku ``legenda-czynnosci.yaml``
+    (``activity_legend_file``) jako tekst JSON, z tego samego powodu co ``LoggedQuantityRules``. Liczy nią Przygotowanie
+    pliku zbiorczego, a odtworzenie z Logów liczy nią zamiast legendy z Wydania."""
+
+    legend: str
+
+    @classmethod
+    def of(cls, legend: ActivityLegend) -> LoggedActivityLegend:
+        return cls(legend=_json_text(dump_activity_legend(legend)))
+
+    def value(self) -> ActivityLegend | LegendProblem:
+        """Legenda czynności z Logów tym samym parserem co plik Ustawień; problem, gdy jej nie da się odczytać."""
+
+        try:
+            document = json.loads(self.legend)
+        except ValueError:
+            return LegendProblem("plik", "Legenda czynności w Logach nie jest tekstem JSON.")
+        return parse_activity_legend(document)
+
+
 def _json_text(document: dict[str, object]) -> str:
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
 
@@ -529,104 +552,6 @@ class LoggedInterruption(_Record):
     place: int | None
     total: int | None
     omitted: int
-
-
-class LoggedTyped(_Record):
-    """Wartość komórki, której JSON nie odróżnia od tekstu (``input_copy.Typed``): rodzaj i zapis."""
-
-    type: TypedKind
-    text: str
-
-
-LoggedCell = bool | int | float | str | LoggedTyped
-"""Wartość niepustej komórki w Kopii wejścia."""
-
-
-def _cell(value: CellValue) -> LoggedCell:
-    return LoggedTyped(type=value.kind, text=value.text) if isinstance(value, Typed) else value
-
-
-class LoggedRow(_Record):
-    """Przeczytany wiersz: numer w arkuszu i niepuste komórki po literze kolumny."""
-
-    row: int
-    cells: Annotated[dict[str, LoggedCell], READ_VALUES]
-
-
-class LoggedSheet(_Record):
-    """Przeczytany arkusz: wiersz nagłówka, nagłówki po literze kolumny (bez zakazanych kolumn), wiersze i puste wiersze
-    z odczytanego zakresu, które proces liczy (Rejestr zleceń).
-
-    Fakty wklejenia INTERMAX (``input_copy.PasteFacts``) poza wierszami ze śladem przesunięcia, które idą do uwag
-    (``RunLog.input_copy_notes``), stoją płasko w arkuszu. ``shifted_row``: przesunięty pierwszy wiersz wklejenia
-    INTERMAX, którego komórki Uporządkowanie czyta w pliku dwie kolumny na lewo od nagłówka, a tu stoją pod nim;
-    ``None``: bez niego i pliki, które tego pola jeszcze nie miały. ``uncertain_rows``: wiersze wklejenia bez pewnego
-    położenia, które mają tylko komórki dozwolone w każdym ich możliwym położeniu. ``last_ordered_row`` i
-    ``yellow_row``: ostatni uporządkowany i żółty wiersz nad wklejeniem INTERMAX, od których Planowanie liczy wiersz
-    dnia, bez treści; ``None``: bez takiego wiersza, inne pliki i pliki, które tych pól jeszcze nie miały.
-    """
-
-    sheet: str
-    header_row: int
-    columns: dict[str, str]
-    rows: list[LoggedRow]
-    empty_rows: list[int]
-    shifted_row: int | None = None
-    uncertain_rows: list[int] = []
-    last_ordered_row: int | None = None
-    yellow_row: int | None = None
-
-    @classmethod
-    def of(cls, sheet: CopiedSheet) -> LoggedSheet:
-        paste = sheet.paste
-        return cls(
-            sheet=sheet.name,
-            header_row=sheet.header_row,
-            columns=dict(sheet.columns),
-            rows=[
-                LoggedRow(row=row.number, cells={letter: _cell(value) for letter, value in row.cells.items()})
-                for row in sheet.rows
-            ],
-            empty_rows=list(sheet.empty_rows),
-            shifted_row=paste.shifted_row,
-            uncertain_rows=list(paste.uncertain_rows),
-            last_ordered_row=paste.last_ordered_row,
-            yellow_row=paste.yellow_row,
-        )
-
-
-class LoggedFingerprint(_Record):
-    """Odcisk pliku: rozmiar i skrót SHA-256 przeczytanych bajtów, chwila zmiany pliku tuż przed odczytem (UTC; ``None``,
-    gdy system jej nie oddał)."""
-
-    size: int
-    modified_at: datetime | None
-    sha256: str
-
-
-class LoggedInputFile(_Record):
-    """Plik taty w Kopii wejścia (``input_copy``): sama nazwa, odcisk i przeczytane arkusze.
-
-    ``folders``: nazwy folderu nad folderem pliku i folderu pliku (``input_copy.CopiedFile.folders``; Komunikaty
-    INTERMAX pokazują tylko folder pliku); pusta lista w plikach, które tego pola jeszcze nie miały.
-    """
-
-    name: str
-    fingerprint: LoggedFingerprint
-    sheets: list[LoggedSheet]
-    folders: list[str] = []
-
-    @classmethod
-    def of(cls, copied: CopiedFile) -> LoggedInputFile:
-        fingerprint = copied.fingerprint
-        return cls(
-            name=copied.name,
-            fingerprint=LoggedFingerprint(
-                size=fingerprint.size, modified_at=fingerprint.modified_at, sha256=fingerprint.sha256
-            ),
-            sheets=[LoggedSheet.of(sheet) for sheet in copied.sheets],
-            folders=list(copied.folders),
-        )
 
 
 class Tool(_Record):
@@ -698,6 +623,9 @@ class RunLog(StartFacts):
     quantity_rules: LoggedQuantityRules | None = None
     """Reguły ilości ze startu Uruchomienia (``LoggedQuantityRules``). ``None``: Logi Urwanego Uruchomienia i pliki sprzed
     tego pola."""
+    activity_legend: LoggedActivityLegend | None = None
+    """Legenda czynności ze startu Uruchomienia (``LoggedActivityLegend``). ``None``: Logi Urwanego Uruchomienia, procesu,
+    który nią nie liczy, i pliki sprzed tego pola."""
 
     @model_serializer(mode="wrap")
     def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

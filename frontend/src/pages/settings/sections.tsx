@@ -2,6 +2,7 @@ import type * as React from "react"
 import {
   ArchiveRestoreIcon,
   BellIcon,
+  BookTextIcon,
   FileSpreadsheetIcon,
   FolderIcon,
   HistoryIcon,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { FOLDERS_SECTION } from "@/components/setting-path"
+import { ActivityLegendSection } from "@/pages/settings/activity-legend-section"
 import { AppearanceSection } from "@/pages/settings/appearance-section"
 import { DevicesSection } from "@/pages/settings/devices-section"
 import { FoldersSection } from "@/pages/settings/folders-section"
@@ -44,6 +46,7 @@ export const SETTINGS_SECTIONS = [
   { id: REMINDERS_SECTION, title: "Przypomnienia", group: "Praca", icon: BellIcon, Content: RemindersSection },
   { id: "reguly-ilosci", title: "Reguły ilości", group: "Ilości", icon: ListChecksIcon, Content: QuantityRulesSection },
   { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },
+  { id: "legenda-czynnosci", title: "Legenda czynności", group: "Ilości", icon: BookTextIcon, Content: ActivityLegendSection },
   { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection },
   { id: "kopie-intermax", title: "Kopie INTERMAX", group: "Pliki", icon: ArchiveRestoreIcon, Content: IntermaxCopiesSection },
   { id: "skrzynka-raportow", title: "Skrzynka raportów", group: "Połączenia", icon: MailIcon, Content: InboxSection },

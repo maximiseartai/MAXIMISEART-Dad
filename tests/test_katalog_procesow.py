@@ -34,6 +34,7 @@ from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import empty_memory
 from rozliczenia.efenix_pricing import PricingMode
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
@@ -183,7 +184,7 @@ def _silnik(*_: object, **__: object) -> Any:
 
 def _z_katalogu() -> PreparedRun[Any, Any]:
     paths = {need: Path(f"{need}.xlsx") for need in CATALOG.kind("preparation").path_needs}
-    start = Start(paths, period=PERIOD, dry_run=False, workers=WorkerList(()), quantity_rules=DEFAULT_QUANTITY_RULES, warnings=())
+    start = Start(paths, period=PERIOD, dry_run=False, workers=WorkerList(()), quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=())
     return CATALOG.with_engine(_silnik).prepared("preparation", start, HostParts(), RunContext())
 
 
@@ -357,6 +358,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 dry_run=False,
                 workers=WorkerList(()),
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                activity_legend=DEFAULT_ACTIVITY_LEGEND,
                 warnings=(),
             ),
             HostParts(),
@@ -364,7 +366,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
         ),
         (
             "settlement",
-            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()),
+            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()),
             HostParts(),
             "potrzebuje Listy Wykonawców",
         ),
@@ -380,13 +382,14 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 period=None,
                 dry_run=True,
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                activity_legend=DEFAULT_ACTIVITY_LEGEND,
                 warnings=(),
             ),
             HostParts(),
             "potrzebuje okresu",
         ),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()), HostParts(), "potrzebuje okna efenix"),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES, warnings=()), _ATRAPA, "nie ma Podglądu bez zapisu"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()), HostParts(), "potrzebuje okna efenix"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()), _ATRAPA, "nie ma Podglądu bez zapisu"),
         (
             "settlement",
             Start(
@@ -396,6 +399,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 pricing="z Przekazaniem",
                 workers=WorkerList(()),
                 quantity_rules=DEFAULT_QUANTITY_RULES,
+                activity_legend=DEFAULT_ACTIVITY_LEGEND,
                 warnings=(),
             ),
             HostParts(),
@@ -427,6 +431,7 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
         dry_run=False,
         pricing=chosen,
         quantity_rules=DEFAULT_QUANTITY_RULES,
+        activity_legend=DEFAULT_ACTIVITY_LEGEND,
         warnings=(),
     )
 

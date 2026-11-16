@@ -59,6 +59,7 @@ def _inputs(start: Start, _parts: HostParts) -> PreparationInputs:
         internal_template_path=start.path("internal_template"),
         collective_template_path=start.path("collective_template"),
         quantity_rules=start.counted_rules(),
+        activity_legend=start.counted_legend(),
     )
 
 

@@ -14,6 +14,7 @@ Wzorzec's formulas calculating the amounts, and the Rejestr's Wyróżnienia.
 - `hiperlacza`: each Wiersz danych has in the file Przebieg wrote the `A:AT` Hiperłącza of its row in the Plik zbiorczy Excel saved.
 - `formuly`: every Wiersz danych has the R1C1 formulas of `AU18:AY18` of the Wzorzec rozliczenia pracownika, `AU:AX` shows no error, and the rows Dad filled show a positive amount in `AU`.
 - `wyroznienia`: each file shows the Plik zbiorczy's Wyróżnienia of its own orders: Adrian Testowy the yellow ADRES with bold dark red text of `PREP-SYN-ZL-2` and the plain ADRES of `-7` (`cells=2`), Kamil Syntetyczny the blue ADRES and italic WYKONAWCA of `-4` (`cells=2`), Darek Fikcyjny the plain ADRES of `-6` (`cells=1`).
+- `kody-czynnosci`: Darek Fikcyjny's row of `PREP-SYN-ZL-8` shows the Plik zbiorczy's 70 in `AS` and the fills of its Kody czynności, a red `AS` and `AM` and a green `AF` (`cells=4`); the other files have no order with Kody czynności (`cells=0`).
 - `wyglad-wiersza`: rows with one line are the sheet's standard height and Adrian Testowy's two-line `PREP-SYN-ZL-2` is taller; DATA shows the same text as in the Plik zbiorczy (its number format, not the Wzorzec's).
 
 ## How to get to it (user POV)
@@ -31,6 +32,7 @@ Preconditions: `gotowosc-w-excelu` passed and Przebieg rozliczeń ended `OK` wit
 - **Hiperłącza.** openpyxl reads `A:AT` hyperlinks of each row in the Folder okresu's file; they equal those `gotowosc-w-excelu` read from Excel's save.
 - **Formulas.** As in `otwarcie-plikow-okresu`, against the worker Wzorzec's reference; `AU` above zero in the filled rows.
 - **Wyróżnienia.** `excel.fill` as in `otwarcie-plikow-okresu`, for the cells whose order is in this file.
+- **Kody czynności.** `AS` and fills as in `otwarcie-plikow-okresu`, for the orders with Kody czynności in this file. `STEP … kody-czynnosci | <Wykonawca> | cells=…`.
 - **Wygląd Wiersza danych.** Heights as in `otwarcie-plikow-okresu`; `excel.shown_text` of DATA equals the Plik zbiorczy's. `STEP … wyglad-wiersza | <Wykonawca> | one_line_pt=… | data_as_plik_zbiorczy=true`.
 - **Close.** `excel.close` in `finally`, also after a failed check.
 

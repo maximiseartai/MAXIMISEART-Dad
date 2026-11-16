@@ -46,6 +46,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
+from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.wall_clock import utc_now
 
@@ -128,6 +129,8 @@ class EndedRun:
     """Reguły ilości ze startu Uruchomienia (``PreparedRun.quantity_rules``), które Logi zapisują dla odtworzenia."""
     start_warnings: tuple[Message, ...] = ()
     """Ostrzeżenia ze startu (``Start.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
+    activity_legend: ActivityLegend | None = None
+    """Legenda czynności ze startu Uruchomienia (``PreparedRun.activity_legend``), którą Logi zapisują dla odtworzenia."""
 
     @classmethod
     def of(
@@ -142,7 +145,7 @@ class EndedRun:
     ) -> EndedRun:
         return cls(
             info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings,
-            prepared.quantity_rules, prepared.warnings
+            prepared.quantity_rules, prepared.warnings, prepared.activity_legend
         )
 
     @property

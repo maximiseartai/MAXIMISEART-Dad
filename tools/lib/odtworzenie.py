@@ -25,8 +25,9 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   INTERMAX Wpisania raportów krój uporządkowanych wierszy, bo Kopia ma tylko uporządkowane wiersze. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
   których żaden plik taty nie ma. Wzorce i Listę Wykonawców (``wykonawcy.yaml``) daje folder ``configuration``, bo Logi
-  mają z nich tylko nazwę i rozmiar. Reguły ilości ze startu Uruchomienia są w Logach (``RunLog.quantity_rules``), a
-  Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą Regułami ilości z Wydania tego drzewa (zastrzeżenie).
+  mają z nich tylko nazwę i rozmiar. Reguły ilości i Legenda czynności ze startu Uruchomienia są w Logach
+  (``RunLog.quantity_rules``, ``RunLog.activity_legend``), a Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą
+  Regułami ilości i Legendą czynności z Wydania tego drzewa (zastrzeżenie).
 - Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
   katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
@@ -84,7 +85,8 @@ from rozliczenia.centrum.process_kind import (
     startable,
 )
 from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
-from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
+from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped
+from rozliczenia.centrum.run_logs import Environment, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
@@ -108,6 +110,8 @@ from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.process_run import Finished
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
 from rozliczenia.quantity_engine import QuantityRules, RulesProblem
+from rozliczenia.activity_legend import ActivityLegend, LegendProblem
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
 from rozliczenia import report_entering_messages
@@ -316,6 +320,7 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
         *_typed_limits(copied),
         *_masked_limits(record),
         *_rules_limits(record, kind),
+        *_legend_limits(record, kind),
         *rebuild.limits(record),
     ]
     names = _from_configuration(kind, rebuild)
@@ -382,6 +387,36 @@ def _rules_limits(record: RunLog, kind: ProcessKind[Any, Any]) -> list[Limit]:
     value = logged.value()
     if isinstance(value, RulesProblem):
         return [Limit(f"Reguł ilości z Logów nie da się odczytać ({value.field}: {value.message})", blocking=True)]
+    return []
+
+
+def _legend_limits(record: RunLog, kind: ProcessKind[Any, Any]) -> list[Limit]:
+    """Legenda czynności ze startu z Logów, tak jak Reguły ilości (``_rules_limits``): bez niej odtworzenie liczy
+    Legendą czynności z Wydania tego drzewa, a legenda, której nie da się odczytać albo która ma maskę strażnika reguły
+    danych, kończy odtworzenie."""
+
+    logged = record.activity_legend
+    if not kind.quantity_rules:
+        return []
+    if logged is None:
+        return [
+            Limit(
+                "Logi nie mają Legendy czynności Uruchomienia (Logi sprzed jej zapisu), więc odtworzenie liczy Legendą "
+                "czynności z Wydania tego drzewa: legenda taty z Ustawień mogła dać inne ilości"
+            )
+        ]
+    masked = sorted({mask for mask in MASKS if mask in logged.legend})
+    if masked:
+        return [
+            Limit(
+                f"Legenda czynności w Logach ma maski strażnika reguły danych ({', '.join(masked)}), więc odtworzenie nie "
+                "zna legendy Uruchomienia",
+                blocking=True,
+            )
+        ]
+    value = logged.value()
+    if isinstance(value, LegendProblem):
+        return [Limit(f"Legendy czynności z Logów nie da się odczytać ({value.field}: {value.message})", blocking=True)]
     return []
 
 
@@ -968,6 +1003,7 @@ def _prepared(
         pricing=record.pricing,
         workers=workers,
         quantity_rules=_quantity_rules(record),
+        activity_legend=_activity_legend(record),
         warnings=record.start_warnings(),
     )
     metrics = work.path("metryki.jsonl")
@@ -982,6 +1018,17 @@ def _quantity_rules(record: RunLog) -> QuantityRules:
         return DEFAULT_QUANTITY_RULES
     value = record.quantity_rules.value()
     assert isinstance(value, QuantityRules), "reguły, których nie da się odczytać, to granica blokująca"
+    return value
+
+
+def _activity_legend(record: RunLog) -> ActivityLegend:
+    """Legenda czynności ze startu Uruchomienia z Logów, a z Logów sprzed jej zapisu legenda z Wydania tego drzewa;
+    legenda, której nie da się odczytać, zatrzymuje odtworzenie wcześniej (``_legend_limits``)."""
+
+    if record.activity_legend is None:
+        return DEFAULT_ACTIVITY_LEGEND
+    value = record.activity_legend.value()
+    assert isinstance(value, ActivityLegend), "legenda, której nie da się odczytać, to granica blokująca"
     return value
 
 
@@ -1133,11 +1180,12 @@ NOT_COMPARED: Final = frozenset(
         "interruption",
         "input_copy_notes",
         "quantity_rules",
+        "activity_legend",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
-kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie, uwagi o Kopii wejścia i Reguły
-ilości ze startu. Każde inne
+kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie, uwagi o Kopii wejścia, Reguły
+ilości i Legenda czynności ze startu. Każde inne
 pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 

@@ -43,6 +43,7 @@ from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.tool_update import RESULT_FILE
+from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
@@ -499,6 +500,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
     "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
+    "getActivityLegend": _route("getActivityLegend", "GET", "/api/settings/activity-legend"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -556,7 +558,9 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-_BOARD = _FOLDERS | _OWNER | {"plik_zbiorczy"}
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów i parę Reguł ilości (settings_reads), a nie całą migawkę.
+_WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
+_BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
 _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
@@ -573,13 +577,13 @@ READS: dict[str, set[str]] = {
     "choosePeriodsDirectory": _SETTINGS,
     "openRegister": {"ustawienia", "rejestr"},
     "changeTheme": _SETTINGS | {"dziennik_centrum"},
-    "getPeriodBoard": _BOARD,
-    "openPeriodPath": _BOARD,
-    "getQuantitiesToFill": _BOARD,
-    "getCollectiveFileVersion": _BOARD,
+    "getPeriodBoard": _WINDOW,
+    "openPeriodPath": _WINDOW,
+    "getQuantitiesToFill": _WINDOW,
+    "getCollectiveFileVersion": _WINDOW,
     "getWithoutQuantity": _BOARD,
-    "getKindTable": _BOARD,
-    "openWorkerSettlement": _FOLDERS | _OWNER,
+    "getKindTable": _WINDOW,
+    "openWorkerSettlement": _FOLDERS | {"ustawienia"},
     "getRunSetup": _BOARD
     | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getIntermaxSetup": _OWNER | {"rejestr", "logi_uruchomien"},
@@ -590,7 +594,7 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
-    "getQuantityDifferences": _BOARD,
+    "getQuantityDifferences": _WINDOW,
     "getQuantityRules": {"wzorzec_zbiorczy"},
     "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
@@ -599,7 +603,8 @@ READS: dict[str, set[str]] = {
     "addDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
-    "getDeviceSuggestions": _BOARD,
+    "getDeviceSuggestions": _WINDOW,
+    "getActivityLegend": {"wzorzec_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
@@ -829,6 +834,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
         "wyjatki_kontroli_ilosci": TOOL.config / EXCEPTIONS_FILE,
+        "legenda_czynnosci": TOOL.config / LEGEND_FILE,
     }
 
     assert state | {name: path.as_posix() for name, path in others.items()} == {
@@ -850,6 +856,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",
         "wyjatki_kontroli_ilosci": "config/wyjatki-ilosci.yaml",
+        "legenda_czynnosci": "config/legenda-czynnosci.yaml",
     }
 
 

@@ -10,8 +10,8 @@ sprawdza parę Reguł ilości i Listy Urządzeń jako zmianę, tym samym zdaniem
 składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta właściciela o to samo polecenie bez zapisu
 (``CentrumSettings.rules_after``).
 Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404. Podgląd, zmiana i usunięcie reguły przy pliku
-reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``),
-nie „tej reguły już nie ma” ani „brak folderu okresów”.
+reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``,
+Foldery przez ``settings_reads.readable_folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
 Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt, podgląd i podpowiedzi niczego nie
@@ -39,14 +39,12 @@ from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles, pr
 from rozliczenia.centrum.rule_forms import SCOPES, component_field, edited_id, form_of
 from rozliczenia.centrum.rule_sentences import component_sentence, rule_sentence
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
-from rozliczenia.centrum.settings.folders import FOLDERS
 from rozliczenia.centrum.settings.owner import (
     CentrumSettings,
     NotSaved,
     QuantityRulesView,
     Refused,
     Saved,
-    release_if_unreadable,
 )
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
@@ -55,6 +53,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
     TakenSpelling,
     UnlistedComponent,
 )
+from rozliczenia.centrum.settings_reads import readable_folders
 from rozliczenia.collective_layout import QUANTITY_LETTERS
 from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
@@ -214,10 +213,12 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
     @router.get("/devices/suggestions", operation_id="getDeviceSuggestions")
     def suggestions() -> contract.DeviceSuggestions:
-        """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``)."""
+        """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik
+        Folderów bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż."""
 
         rules = settings.quantity_rules().rules
-        directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
+        folders = settings.folders()
+        directory = None if isinstance(folders, Unreadable) else folders.periods_directory_to_read
         if directory is None:
             return contract.DeviceSuggestions(suggestions=[], unread=[])
         return device_suggestions(rules, recent.read(directory))
@@ -234,10 +235,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
         rule = next((rule for rule in after.rules if rule.id == rule_id), None)
         shown = None if rule is None else sentence(rule)
-        folders = settings.folders()
-        if isinstance(folders, Unreadable):
-            raise refusal.settings_file_unreadable(FOLDERS.name)
-        directory = folders.periods_directory_to_read
+        directory = readable_folders(settings).periods_directory_to_read
         if directory is None:
             return contract.PreviewWithoutFiles(state="no_periods_directory", sentence=shown)
         found = recent.read(directory)

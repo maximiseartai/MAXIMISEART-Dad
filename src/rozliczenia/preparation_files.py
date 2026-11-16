@@ -19,7 +19,9 @@ from typing import Final
 
 from . import preparation_messages as messages
 from . import staged_publication
+from .collective_layout import QUANTITY_LETTERS
 from .file_state import path_taken
+from .highlights import solid_fill
 from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
@@ -204,7 +206,17 @@ def _write_period_file(
 
 
 def _with_quantities(row: CollectiveRow) -> RegisterRow:
-    return replace(row.order.register_row, quantities=row.rule_result.quantities)
+    """Wiersz Rejestru z Ilościami usług Reguł ilości i Legendy czynności zsumowanymi w każdej kolumnie, kwotą w ``AS``
+    i wypełnieniami z legendy."""
+
+    rules, codes = row.rule_result.quantities, row.codes
+    quantities = {
+        column: rules.get(column, 0) + codes.quantities.get(column, 0)
+        for column in QUANTITY_LETTERS
+        if column in rules or column in codes.quantities
+    }
+    fills = {column: solid_fill(colour.argb) for column, colour in codes.fills.items()}
+    return replace(row.order.register_row, quantities=quantities, amount=codes.amount, fills=fills)
 
 
 def _publish(staged_directory: Path, files: PeriodFiles) -> None:

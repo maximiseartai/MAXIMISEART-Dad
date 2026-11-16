@@ -36,7 +36,7 @@ from hypothesis import strategies as st
 import yaml
 import pytest
 
-from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.settlement_period import last_complete_period, parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, layout_root
 from rozliczenia import efenix_process, intermax_messages
@@ -85,10 +85,29 @@ from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, set_codes
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
-from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
+from rozliczenia.quantity_engine import (
+    Component,
+    ContainsComponent,
+    DeviceList,
+    Fill,
+    QuantityRule,
+    QuantityRules,
+    QuantityRulesRefused,
+    RulesProblem,
+)
+from rozliczenia.activity_legend import ActivityCode, FixedColumn
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
-from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
+from tests.fixtures.bez_dostepu import (
+    NO_ACCESS_ON_WINDOWS,
+    PATH_CHECKS,
+    allow_reading,
+    deny_reading,
+    without_access,
+    without_reading,
+)
 from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -98,6 +117,7 @@ from tests.fixtures.centrum import (
     CentrumClient,
     FakePlatform,
     ROOT,
+    TODAY,
     ToolDirectory,
     centrum,
     centrum_app,
@@ -123,7 +143,7 @@ from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wym
 from atrapy.pliki_taty import REGISTER_NAME
 from atrapy.settlement import PERIOD, CellValue, worker_list, write_quantity_source, write_source, write_worker_list
 from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
-from atrapy.workbooks import rewrite_parts
+from atrapy.workbooks import active_worksheet, rewrite_parts
 from atrapy.skrzynka_raportow import AtrapaImap
 from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
@@ -2051,9 +2071,13 @@ def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty
 
 
 @NO_ACCESS_ON_WINDOWS
-def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_okno_pokazuje_liste_z_wydania(
+def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_czekaja_ze_sprawdzeniem_a_okno_pokazuje_liste_z_wydania(
     tmp_path: Path,
 ) -> None:
+    """Reguły ze składnikiem z listy taty przy liście, której system nie daje teraz czytać, nie są złe wobec Listy
+    Urządzeń z Wydania: sekcja Reguły ilości mówi, którego pliku nie da się przeczytać, tym samym zdaniem co sekcja
+    Urządzenia (przegląd #1927 r1, P1)."""
+
     app = centrum(tmp_path)
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
@@ -2063,7 +2087,7 @@ def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_okno_
         response = app.client.get(QUANTITY_RULES_URL).json()
 
     assert (response["rules_problem"]["message"], response["devices_problem"]["message"]) == (
-        f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+        refusal.settings_file_unreadable(DEVICES_FILE).message,
         refusal.settings_file_unreadable(DEVICES_FILE).message,
     )
     assert [device["id"] for device in response["devices"]] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
@@ -2493,6 +2517,179 @@ def test_kolumny_edytora_to_n_ap_z_nazwa_cennika_a_p_q_i_s_regula_tylko_zostawia
     n_to_ap = range(column_index_from_string("N"), column_index_from_string("AP") + 1)
     assert [column["letter"] for column in columns] == [get_column_letter(index) for index in n_to_ap]
     assert [column["letter"] for column in columns if not column["writable"]] == ["P", "Q", "S"]
+
+
+LEGEND_URL = "/api/settings/activity-legend"
+
+MAIL_SENTENCES = [
+    "inst#m: 1 w Y.",
+    "instmdik (też instmdic): 1 w Y.",
+    "instutp#m: # od 1 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+    "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+    "instwew#m: AF na zielono.",
+    "rt2: 1 w AM, AM na czerwono, AF na zielono.",
+    "bypas#m: 1 w AM.",
+    "spawgnd: 1 w AD.",
+    "spawpg: 1 w AB, 70 w Uwagi - kwota (AS), AS na czerwono.",
+    "spawez: 1 w AB.",
+    "spawmufakan: 1 w AB, 70 w Uwagi - kwota (AS).",
+    "spawmufaziem: 1 w AC.",
+    "dzielnik1/2 (też dzielnika1/2): 50 w Uwagi - kwota (AS).",
+    "pz20m: 480 w Uwagi - kwota (AS).",
+]
+"""Legenda z Wydania bez Wzorca: kolumna Ilości usług to sama litera, a kwota stoi w ``AS`` nazwanej „Uwagi - kwota”."""
+
+
+def plain(parts: list[dict[str, Any]]) -> str:
+    return "".join(
+        part["text"] if part["kind"] == "text" else part["letter"] if part["name"] is None else f"{part['name']} ({part['letter']})"
+        for part in parts
+    )
+
+
+def legend_sentences(client: CentrumClient) -> tuple[dict[str, str], dict[str, Any] | None]:
+    """Zdanie każdego kodu sekcji po id („zapisy: co wyznacza.”) i problem pliku."""
+
+    response = client.get(LEGEND_URL)
+    assert response.status_code == 200, response.text
+    read = response.json()
+    return {code["id"]: f"{code['spellings']}: {plain(code['sentence'])}" for code in read["codes"]}, read["problem"]
+
+
+def legend_history(client: CentrumClient) -> list[dict[str, Any]]:
+    """Wiersze Historii Ustawień o Legendzie czynności, od najnowszego."""
+
+    return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == LEGEND_FILE]
+
+
+def own_code(identifier: str, **changes: Any) -> ActivityCode:
+    """Kod legendy z Wydania o id ``identifier`` ze zmienionymi polami."""
+
+    return replace(next(code for code in DEFAULT_ACTIVITY_LEGEND.codes if code.id == identifier), **changes)
+
+
+def with_own(*codes: ActivityCode) -> bytes:
+    """Plik Legendy czynności taty: legenda z Wydania z kodami ``codes`` w miejscu kodów o tym samym id."""
+
+    by_id = {code.id: code for code in codes}
+    return LEGEND.dump(tuple(by_id.get(code.id, code) for code in DEFAULT_ACTIVITY_LEGEND.codes))
+
+
+def test_kazdy_kod_legendy_z_wydania_jest_w_ustawieniach_jednym_zdaniem_a_bez_wzorca_kolumna_to_litera(tmp_path: Path) -> None:
+    sentences, problem = legend_sentences(centrum(tmp_path).client)
+
+    assert list(sentences.values()) == MAIL_SENTENCES
+    assert problem is None
+
+
+def test_kolumna_kodu_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = active_worksheet(workbook)
+    sheet["AB17"], sheet["AL17"] = "Spawanie\nw mufie", "UTP do 15 m"
+    workbook.save(template)
+
+    sentences, _ = legend_sentences(app.client)
+
+    assert sentences["spawpg"] == "spawpg: 1 w Spawanie w mufie (AB), 70 w Uwagi - kwota (AS), AS na czerwono."
+    assert sentences["instutp"].startswith("instutp#m: # od 1 do 15 → 1 w UTP do 15 m (AL), # od 16 do 30 → 1 w ")
+
+
+def test_legenda_zmieniona_poza_centrum_jest_w_historii_jako_zmiana_spoza_centrum_ze_zdaniem_i_da_sie_ja_cofnac(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    legend_sentences(app.client)
+    (app.tool.config / LEGEND_FILE).write_bytes(with_own(own_code("inst", column=FixedColumn("AA"), value=2)))
+
+    changed, _ = legend_sentences(app.client)
+    [row] = legend_history(app.client)
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert changed["inst"] == "inst#m: 2 w AA."
+    assert (row["source"], row["file"], row["section"], row["undoable"]) == ("outside", LEGEND_FILE, "kody", True)
+    assert [(plain(change["before"]), plain(change["after"])) for change in row["rules"]] == [("inst#m: 1 w Y.", "inst#m: 2 w AA.")]
+    assert undone.status_code == 200, undone.text
+    assert list(legend_sentences(app.client)[0].values()) == MAIL_SENTENCES
+
+
+def test_zla_legenda_to_zle_ustawienie_z_jednym_zdaniem_a_przygotowanie_liczy_ostatnia_dobra(tmp_path: Path) -> None:
+    preparing = preparing_centrum(tmp_path, [{**register_order(1, PERIOD_MONDAY), "CZYNNOŚCI ZREALIZOWANE": "inst20m"}])
+    path = ToolDirectory(tmp_path).config / LEGEND_FILE
+    path.write_bytes(with_own(own_code("inst", column=FixedColumn("AA"), value=2)))
+    legend_sentences(preparing.client)
+    path.write_bytes(with_own(own_code("inst", column=FixedColumn("AA"), value=2), own_code("spawez", spellings=("spawpg",))))
+
+    sentences, problem = legend_sentences(preparing.client)
+    run_to_end(preparing, dry_run=False)
+
+    assert problem == {
+        "field": None,
+        "message": f"Plik {LEGEND_FILE} w folderze config: Zapis „spawpg” ma już kod „spawpg”.",
+    }
+    assert sentences["inst"] == "inst#m: 2 w AA."
+    sheet = active_worksheet(load_workbook(preparing.fixture.collective_file_path))
+    assert (sheet["AA18"].value, sheet["Y18"].value) == (2, 0), "Przygotowanie liczyło ostatnią dobrą legendą"
+    assert [(row["source"], row["refused"]) for row in legend_history(preparing.client)] == [("outside", True)]
+
+
+RT2_IN_AK = ReleaseChange("2026-12-rt2-w-ak", LEGEND, set_codes(own_code("rt2", column=FixedColumn("AK"))))
+"""Jawna zmiana legendy w Wydaniu, np. po odpowiedzi taty, że ``rt2`` daje ``AK``."""
+
+
+def test_jawna_zmiana_legendy_w_wydaniu_wchodzi_raz_jest_w_historii_z_cofnij_i_po_cofnieciu_nie_wraca(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    first = started(tool, (RT2_IN_AK,))
+    applied, _ = legend_sentences(first)
+    [row] = legend_history(first)
+    undone = first.post(f"/api/settings/history/{row['id']}/undo")
+    first.stop()
+    again = started(tool, (RT2_IN_AK,))
+    after_restart, _ = legend_sentences(again)
+    rows = legend_history(again)
+    again.stop()
+
+    assert applied["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
+    assert (row["source"], row["file"], row["undoable"]) == ("release", LEGEND_FILE, True)
+    assert [(plain(change["before"]), plain(change["after"])) for change in row["rules"]] == [
+        ("rt2: 1 w AM, AM na czerwono, AF na zielono.", "rt2: 1 w AK, AM na czerwono, AF na zielono.")
+    ]
+    assert undone.status_code == 200, undone.text
+    assert after_restart["rt2"] == "rt2: 1 w AM, AM na czerwono, AF na zielono."
+    assert [row["source"] for row in rows] == ["tata", "release"]
+
+
+def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    own = with_own(own_code("rt2", column=FixedColumn("AK")))
+    (tool.config / LEGEND_FILE).write_bytes(own)
+
+    client = started(tool, RELEASE_CHANGES)
+    sentences, _ = legend_sentences(client)
+    rows = legend_history(client)
+    client.stop()
+
+    assert sentences["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
+    assert (tool.config / LEGEND_FILE).read_bytes() == own
+    assert rows == []
+
+
+RELEASE_LEGEND_SHA256 = "38173dfd0ab518995bccda5bf4152c19c0a3955cf5ddba370b84454f53afae46"
+"""Skrót Legendy czynności z Wydania w zapisie pliku taty: same kody, bez komentarzy i końców linii pliku."""
+
+
+def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
+    """Tata bez własnego pliku legendy liczy legendą z Wydania, więc jej zmiana weszłaby u niego bez wiersza Historii i
+    bez „Cofnij” (ADR 0032)."""
+
+    assert hashlib.sha256(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes)).hexdigest() == RELEASE_LEGEND_SHA256, (
+        "Legendę czynności taty zmienia w Wydaniu tylko wpis ReleaseChange(<id>, LEGEND, set_codes(...)) w "
+        "RELEASE_CHANGES (centrum/settings/release_changes.py), nie zmiana legenda_czynnosci_domyslna.yaml. Skrót zmień "
+        "tylko wtedy, gdy żadne Wydanie (tag v*) nie niosło jeszcze tej legendy: git tag --contains <commit pliku>."
+    )
 
 
 @pytest.mark.parametrize(
@@ -3089,11 +3286,12 @@ EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
 
 
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
-    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, przypomnienia ze stopką taty, usunięta reguła
-    i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, Legenda czynności taty bez pierwszego kodu z
+    Wydania, przypomnienia ze stopką taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
     usuniętego składnika."""
 
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
+    (tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes[1:]))
     client.put("/api/settings/reminders", json=SIGNED_REMINDERS | {"footer": "Tata"})
     rule = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
     client.delete(f"{QUANTITY_RULES_URL}/{rule}")
@@ -7144,6 +7342,114 @@ def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdz
     assert _config_files(app.tool.config) == before
 
 
+def _own_pair(app: Centrum) -> str:
+    """Tata ma własne reguły, składnik „ont y” i regułę z nim; id składnika."""
+
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own: str = added.json()["quantity_rules"]["devices"][-1]["id"]
+    assert app.client.post(QUANTITY_RULES_URL, json=_rule_with(own)).status_code == 200
+    return own
+
+
+HAND_EDITS: dict[str, tuple[str, str]] = {
+    RULES_FILE: ("wartosc: 2", "wartosc: 5"),
+    DEVICES_FILE: ("- id: ont-y\n  zapisy:\n  - ont y\n", "- id: ont-y\n  zapisy:\n  - ont y\n  - onty\n"),
+}
+"""Ręczna zmiana pliku pary, która pasuje do drugiego pliku taty: wartość reguły „nokia” i drugi zapis „ont y”."""
+
+
+@pytest.mark.parametrize(("edited", "unreadable"), [(RULES_FILE, DEVICES_FILE), (DEVICES_FILE, RULES_FILE)])
+def test_reczna_zmiana_pliku_pary_przy_drugim_pliku_bez_odczytu_czeka_z_wierszem_historii_na_odczyt_obu(
+    tmp_path: Path, edited: str, unreadable: str
+) -> None:
+    """Przegląd #1927 r1 (P1): ręczna zmiana pliku pary, która pasuje do drugiego pliku taty, przy drugim pliku, którego
+    system nie daje teraz czytać, nie dostaje w Historii wiersza „odrzucono” ze sprawdzenia treścią z Wydania (reguła
+    taty ze składnikiem „ont y” nie pasuje do Listy Urządzeń z Wydania). Werdykt czeka: odczyty bez drugiego pliku nie
+    dopisują wiersza, a pierwszy odczyt z oboma plikami dopisuje jeden wiersz „zapisano” spoza Centrum."""
+
+    app = centrum(tmp_path)
+    _own_pair(app)
+    known = len(history_rows(app))
+    path = app.tool.config / edited
+    old, new = HAND_EDITS[edited]
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+    with without_reading(app.tool.config / unreadable):
+        section = app.client.get(QUANTITY_RULES_URL)
+        waiting = history_rows(app)
+    rows = history_rows(app)
+
+    assert section.status_code == 200
+    assert len(waiting) == known
+    assert [(row["source"], row["file"], row["refused"]) for row in rows[: len(rows) - known]] == [("outside", edited, False)]
+
+
+def _without_nokia(_inputs: ReleaseInputs[tuple[QuantityRule, ...]]) -> Edit[tuple[QuantityRule, ...]]:
+    return Edit(lambda current: tuple(rule for rule in current if rule.id != "nokia"))
+
+
+def test_zmiana_regul_z_wydania_przy_liscie_bez_odczytu_czeka_na_nastepny_start_zamiast_odrzucenia(tmp_path: Path) -> None:
+    """Zmiana Maksa z Wydania w Regułach ilości taty przy Liście Urządzeń, której system nie daje teraz czytać, nie jest
+    odrzucona sprawdzeniem z Listą Urządzeń z Wydania (reguła taty ze składnikiem „ont y”), bo odrzucona nie wraca:
+    nie wchodzi przy tym starcie i wchodzi przy następnym, z czytelną listą, z jednym wierszem Historii."""
+
+    app = centrum(tmp_path)
+    _own_pair(app)
+    app.client.stop()
+    change = ReleaseChange("2026-11-bez-nokii", RULES, _without_nokia)
+    rules = app.tool.config / RULES_FILE
+    before = rules.read_bytes()
+
+    with without_reading(app.tool.config / DEVICES_FILE):
+        started(app.tool, (change,)).stop()
+    kept = rules.read_bytes()
+    released = started(app.tool, (change,))
+    rows = [row for row in released.get("/api/settings/history").json()["rows"] if row["file"] == RULES_FILE]
+    released.stop()
+
+    assert kept == before
+    assert "- id: nokia\n" not in rules.read_text(encoding="utf-8")
+    assert [(row["source"], row["refused"]) for row in rows if row["source"] != "tata"] == [("release", False)]
+
+
+@pytest.mark.parametrize(("blocked", "operation"), [(RULES_FILE, "addDevice"), (DEVICES_FILE, "changeQuantityRule")])
+def test_zmiana_pary_przeczekuje_chwilowa_blokade_drugiego_pliku_jak_pliku_zapisywanego(
+    tmp_path: Path, blocked: str, operation: str
+) -> None:
+    """Przegląd #1927 r1 (D3): drugi plik pary, który system trzyma tylko chwilę (np. OneDrive), zapis taty czyta
+    ponownie po przerwie, jak plik zapisywany, zamiast odmówić 409 „spróbuj ponownie”. Dodanie składnika przy chwilowo
+    trzymanych Regułach ilości i zmiana reguły przy chwilowo trzymanej Liście Urządzeń zapisują się po jednej przerwie."""
+
+    pauses: list[float] = []
+    held = ToolDirectory(tmp_path).config / blocked
+
+    def access_back(seconds: float) -> None:
+        pauses.append(seconds)
+        allow_reading(held)
+
+    app = centrum(tmp_path, pause=access_back)
+    _own_pair(app)
+    method, url, body = {
+        "addDevice": ("POST", DEVICES_URL, {"name": "ont z", "other_spellings": [], "group": None}),
+        "changeQuantityRule": ("PUT", f"{QUANTITY_RULES_URL}/nokia", _nokia_rule(app, 3)),
+    }[operation]
+    changed = DEVICES_FILE if operation == "addDevice" else RULES_FILE
+    before = (app.tool.config / changed).read_bytes()
+
+    deny_reading(held)
+    try:
+        response = app.client.request(method, url, json=body)
+    finally:
+        allow_reading(held)
+
+    assert response.status_code == 200, response.text
+    assert len(pauses) == 1
+    assert (app.tool.config / changed).read_bytes() != before
+
+
 UNREADABLE_PERIOD = "22_28_09_2026"
 
 
@@ -7214,16 +7520,38 @@ def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem
     assert _config_files(app.tool.config) == before
 
 
-@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+def test_kafelek_procesu_przy_pliku_folderow_bez_odczytu_nie_ma_okresow_do_wyboru_i_zaznacza_ostatni_pelny_okres(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1931 r1 (D2): przy pliku Folderów, którego system nie daje teraz czytać, nikt nie zna folderu okresów,
+    więc kafelek żadnego procesu nie podaje okresów do wyboru, ani z folderu okresów taty, ani z Folderów z Wydania
+    (ostatnie tygodnie Przygotowania pliku zbiorczego), a zaznaczony jest ostatni pełny okres. Przy czytelnym pliku
+    kafelki mają okresy, więc ich brak pochodzi z odebranego odczytu."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    readable = app.client.get("/api/runs/setup").json()["processes"]
+    assert all(tile["periods"] for tile in readable)
+
+    with without_reading(app.tool.config / SETTINGS_FILE):
+        tiles = app.client.get("/api/runs/setup").json()["processes"]
+
+    last = last_complete_period(TODAY).token
+    assert [(tile["process"], tile["periods"], tile["preselected_period"]) for tile in tiles] == [
+        (tile["process"], [], last) for tile in readable
+    ]
+
+
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE, LEGEND_FILE])
 def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Decyzja 2A Maksa: plik Reguł ilości albo Listy Urządzeń, którego system nie daje teraz czytać, nie znaczy reguł
-    z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez reguł taty. Karta i start Przygotowania i
-    Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; procesy bez Reguł ilości (Wycena w efenix,
-    Uporządkowanie INTERMAX, Wpisanie raportów) nie mają tej blokady."""
+    """Decyzja 2A Maksa: plik Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać,
+    nie znaczy reguł ani legendy z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez ustawień taty.
+    Karta i start Przygotowania i Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; procesy bez
+    Reguł ilości (Wycena w efenix, Uporządkowanie INTERMAX, Wpisanie raportów) nie mają tej blokady."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
+    (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     sentence = refusal.settings_file_unreadable(unreadable).message
     counted = ("preparation", "settlement")
     readable = _start_blockers(app)
@@ -7237,6 +7565,61 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
     assert blockers == {process: sentence if process in counted else readable[process] for process in readable}
     assert starts == dict.fromkeys(counted, (409, {"message": sentence}))
     assert app.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
+    assert _config_files(app.tool.config) == before
+
+
+WINDOW_READS: dict[str, tuple[str, str, object]] = {
+    "getPeriodBoard": ("GET", "/api/periods", None),
+    "openPeriodPath": ("POST", f"/api/periods/{UNREADABLE_PERIOD}/open", {"target": "collective_file"}),
+    "openWorkerSettlement": ("POST", f"/api/periods/{UNREADABLE_PERIOD}/worker-settlements/open", {"worker": "Anna Testowa"}),
+    "getQuantitiesToFill": ("GET", f"/api/periods/{UNREADABLE_PERIOD}/quantities-to-fill", None),
+    "getQuantityDifferences": ("GET", f"{QUANTITY_RULES_URL}/differences", None),
+    "markQuantityException": ("POST", f"{QUANTITY_RULES_URL}/differences/nie-ma-takiej/exception", None),
+}
+"""Odczyty okna Centrum, które odpowiadają tacie z pliku Folderów albo pary Reguł ilości i Listy Urządzeń."""
+
+
+def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
+    answers: dict[str, tuple[int, object]] = {}
+    for operation, (method, url, body) in WINDOW_READS.items():
+        response = app.client.request(method, url, json=body)
+        answers[operation] = (response.status_code, response.json())
+    answers["getWorkerSuggestions"] = (200, app.client.get("/api/settings/workers/suggestions").json())
+    return answers
+
+
+@pytest.mark.parametrize(
+    ("unreadable", "refusing"),
+    [
+        (SETTINGS_FILE, tuple(WINDOW_READS)),
+        (RULES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+        (DEVICES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+    ],
+)
+def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim(
+    tmp_path: Path, unreadable: str, refusing: tuple[str, ...]
+) -> None:
+    """Plik Ustawień, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie znaczy treści z Wydania:
+    Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
+    wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
+    liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
+    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
+    pliki w ``config`` zostają bez zmian."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    sentence = refusal.settings_file_unreadable(unreadable).message
+    readable = _window_reads(app)
+    assert all(answer != {"message": sentence} for _status, answer in readable.values())
+    opened, before = list(app.platform.opened), _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / unreadable):
+        answers = _window_reads(app)
+
+    expected = {operation: (409, {"message": sentence}) if operation in refusing else readable[operation] for operation in readable}
+    if unreadable == SETTINGS_FILE:
+        expected["getWorkerSuggestions"] = (200, {"state": "unreadable", "suggestions": [], "message": sentence})
+    assert answers == expected
+    assert app.platform.opened[len(opened) :] == ([] if "openPeriodPath" in refusing else opened)
     assert _config_files(app.tool.config) == before
 
 

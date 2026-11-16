@@ -23,6 +23,41 @@ export type ActivitiesCondition = {
 };
 
 /**
+ * ActivityCodeSentence
+ *
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ */
+export type ActivityCodeSentence = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Spellings
+     */
+    spellings: string;
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn>;
+};
+
+/**
+ * ActivityLegendSettings
+ *
+ * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
+ * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ */
+export type ActivityLegendSettings = {
+    /**
+     * Codes
+     */
+    codes: Array<ActivityCodeSentence>;
+    problem: SettingProblem | null;
+};
+
+/**
  * AddRule
  */
 export type AddRule = {
@@ -58,7 +93,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -4150,7 +4185,8 @@ export type WithoutQuantityRead = {
 /**
  * WithoutQuantityUnread
  *
- * Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy.
+ * Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo
+ * pliku Reguł ilości lub Listy Urządzeń nie da się teraz przeczytać (start odmawia zdaniem o tym pliku).
  */
 export type WithoutQuantityUnread = {
     /**
@@ -4316,8 +4352,9 @@ export type WorkerSuggestion = {
  * WorkerSuggestions
  *
  * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
- * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
- * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru albo pliku Folderów w ``config`` nie da się
+ * teraz przeczytać albo w Rejestrze nie ma obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i
+ * ``unreadable``.
  */
 export type WorkerSuggestions = {
     /**
@@ -5151,6 +5188,15 @@ export type GetPeriodBoardData = {
     url: '/api/periods';
 };
 
+export type GetPeriodBoardErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type GetPeriodBoardError = GetPeriodBoardErrors[keyof GetPeriodBoardErrors];
+
 export type GetPeriodBoardResponses = {
     /**
      * Response Getperiodboard
@@ -5823,6 +5869,22 @@ export type GetSettingsResponses = {
 
 export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
 
+export type GetActivityLegendData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/activity-legend';
+};
+
+export type GetActivityLegendResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityLegendSettings;
+};
+
+export type GetActivityLegendResponse = GetActivityLegendResponses[keyof GetActivityLegendResponses];
+
 export type ChangeAutostartData = {
     body: AutostartChange;
     path?: never;
@@ -6125,6 +6187,15 @@ export type GetQuantityDifferencesData = {
     url: '/api/settings/quantity-rules/differences';
 };
 
+export type GetQuantityDifferencesErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type GetQuantityDifferencesError = GetQuantityDifferencesErrors[keyof GetQuantityDifferencesErrors];
+
 export type GetQuantityDifferencesResponses = {
     /**
      * Response Getquantitydifferences
@@ -6157,6 +6228,10 @@ export type MarkQuantityExceptionErrors = {
      * Not Found
      */
     404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
     /**
      * Validation Error
      */

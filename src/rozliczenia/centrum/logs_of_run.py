@@ -14,15 +14,16 @@ from datetime import datetime
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import Diagnosis
+from rozliczenia.centrum.logged_input_copy import LoggedInputFile
 from rozliczenia.centrum.run_logs import (
     SCHEMA_VERSION,
     Environment,
     Explanation,
     LoggedCheck,
     LoggedDiagnosis,
-    LoggedInputFile,
     LoggedMessage,
     LoggedPhase,
+    LoggedActivityLegend,
     LoggedQuantityRules,
     LoggedTemplate,
     RunLog,
@@ -78,6 +79,7 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
         input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
         quantity_rules=None if run.quantity_rules is None else LoggedQuantityRules.of(run.quantity_rules),
+        activity_legend=None if run.activity_legend is None else LoggedActivityLegend.of(run.activity_legend),
     )
 
 

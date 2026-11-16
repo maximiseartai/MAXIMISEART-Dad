@@ -23,6 +23,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tools/<nazwa>.py`), a jego `--help` mówi, jak go użyć.
 <!-- spis narzędzi: generuje tests/test_spis_narzedzi.py z ZAPISZ_EXPECT=1, nie edytuj ręcznie -->
 - `tools/benchmark_przebiegu.py`: Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
+- `tools/brama_legendy.py`: Brama Legendy czynności: liczy, w ilu wierszach z kodem legenda daje to, co wpisał tata; tylko na Macu Maksa, przed Wydaniem z legendą.
 - `tools/ci_lokalnie.py`: Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 - `tools/mutacje.py`: Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
 - `tools/mutacje_nocne.py`: Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.

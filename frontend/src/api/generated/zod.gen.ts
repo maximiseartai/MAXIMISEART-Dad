@@ -58,6 +58,7 @@ export const zApiTiming = z.object({
         'changeDevice',
         'removeDevice',
         'getDeviceSuggestions',
+        'getActivityLegend',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -1857,6 +1858,18 @@ export const zSentenceText = z.object({
 });
 
 /**
+ * ActivityCodeSentence
+ *
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ */
+export const zActivityCodeSentence = z.object({
+    id: z.string(),
+    spellings: z.string(),
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+});
+
+/**
  * HistoryRuleChange
  *
  * Zmiana reguły ilości (klucz ``reguly.<id>``) jako zdanie „jeśli … to …” albo wyjątku Kontroli ilości (klucz
@@ -1934,6 +1947,17 @@ export const zQuantityRuleSentence = z.object({
 export const zSettingProblem = z.object({
     field: z.string().nullable(),
     message: z.string()
+});
+
+/**
+ * ActivityLegendSettings
+ *
+ * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
+ * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ */
+export const zActivityLegendSettings = z.object({
+    codes: z.array(zActivityCodeSentence),
+    problem: zSettingProblem.nullable()
 });
 
 /**
@@ -2397,7 +2421,8 @@ export const zWithoutQuantityRead = z.object({
 /**
  * WithoutQuantityUnread
  *
- * Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy.
+ * Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo
+ * pliku Reguł ilości lub Listy Urządzeń nie da się teraz przeczytać (start odmawia zdaniem o tym pliku).
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
@@ -2798,8 +2823,9 @@ export const zWorkerSuggestion = z.object({
  * WorkerSuggestions
  *
  * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
- * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
- * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru albo pliku Folderów w ``config`` nie da się
+ * teraz przeczytać albo w Rejestrze nie ma obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i
+ * ``unreadable``.
  */
 export const zWorkerSuggestions = z.object({
     state: z.enum([
@@ -3447,6 +3473,11 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
  * Successful Response
  */
 export const zGetSettingsResponse = zSettings;
+
+/**
+ * Successful Response
+ */
+export const zGetActivityLegendResponse = zActivityLegendSettings;
 
 export const zChangeAutostartBody = zAutostartChange;
 

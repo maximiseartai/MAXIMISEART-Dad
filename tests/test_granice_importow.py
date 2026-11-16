@@ -962,7 +962,7 @@ def test_sprawdzenie_katalogu_przepuszcza_kopie_innych_wartosci(code: str) -> No
 _GOTOWE: typing.Final = "def kopia(gotowe: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:\n"
 _POLA: typing.Final = (
     "gotowe.kind, gotowe.period, gotowe.inputs, gotowe.context, gotowe.metrics, gotowe.pricing, gotowe.engine, {dowod}, "
-    "gotowe.settings, gotowe.warnings, gotowe.quantity_rules"
+    "gotowe.settings, gotowe.warnings, gotowe.quantity_rules, gotowe.activity_legend"
 )
 _KATALOG: typing.Final = (
     "from typing import Any\n\nfrom rozliczenia.centrum import process_kind\nfrom rozliczenia.centrum.process_kind import PreparedRun\n\n"

@@ -29,6 +29,7 @@ from xml.parsers.expat import ExpatError
 
 from openpyxl import load_workbook
 from openpyxl.cell.rich_text import CellRichText
+from openpyxl.styles.fills import Fill
 from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.workbook.workbook import Workbook
@@ -177,6 +178,7 @@ _WORKER_LABEL = "WYKONAWCA"
 
 
 _NO_QUANTITIES: MappingProxyType[str, Never] = MappingProxyType({})
+_NO_FILLS: MappingProxyType[str, Never] = MappingProxyType({})
 
 
 class DataCell(NamedTuple):
@@ -227,6 +229,11 @@ class RegisterRow:
 
     Trafiają do komórki Wzorca z jej wyglądem, bez Wyróżnień; reszta kolumn ilości zostaje jak we Wzorcu.
     """
+    amount: int = 0
+    """Kwota w ``AS`` (Uwagi - kwota) z Legendy czynności; 0: komórka zostaje jak we Wzorcu."""
+    fills: Mapping[str, Fill] = field(default_factory=lambda: _NO_FILLS)
+    """Wypełnienia z Legendy czynności: litera kolumny → wypełnienie, które zastępuje wypełnienie komórki Wzorca, także
+    bez liczby w komórce; reszta wyglądu komórki zostaje z Wzorca."""
 
 
 def excel_lock_file(path: Path) -> Path:
