@@ -28,6 +28,8 @@ from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
+from tests.fixtures.bez_dostepu import without_reading
+
 from atrapy.intermax import NUMBER, Intermax, Order
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp
@@ -340,6 +342,21 @@ def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
         code, line = _proba(capsys, klon, imap, serwer)
 
     assert (code, line) == (1, f"PROBA PRZYPOMNIEN FAIL | {powod}")
+    assert serwer.received == []
+
+
+@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE])
+def test_plik_ustawien_bez_odczytu_ma_wlasna_linie_z_jego_nazwa_bez_wysylki(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], plik: str
+) -> None:
+    """Plik Przypomnień albo Folderów, którego system nie daje teraz czytać, to nie wyłączone przypomnienia ani brak
+    INTERMAX: próba nazywa ten plik i nic nie wysyła."""
+
+    klon = _klon(tmp_path)
+    with without_reading(klon.config / plik), _gmail() as (imap, serwer):
+        code, line = _proba(capsys, klon, imap, serwer)
+
+    assert (code, line) == (1, f"PROBA PRZYPOMNIEN FAIL | pliku config/{plik} nie da sie teraz przeczytac")
     assert serwer.received == []
 
 

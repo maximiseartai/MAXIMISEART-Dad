@@ -44,6 +44,7 @@ ReminderFailure = Literal[
     "haslo-odrzucone",
     "odmowa-wysylki",
     "zapis-por",
+    "plik-bez-odczytu",
 ]
 """Dlaczego sprawdzenie Przypomnień o raporcie (``report_reminders``) nie wysłało wszystkiego, co się należało."""
 SettingsUnreadableCause = Literal["dostep", "historia"]
@@ -288,10 +289,11 @@ class CentrumLog:
 
         self._write("przypomnienie-wyslane", dzien=day, pora=pora)
 
-    def reminders_failed(self, *, cause: ReminderFailure, failure: str | None = None) -> None:
-        """Sprawdzenie Przypomnień o raporcie nie wysłało wszystkiego: przyczyna i nazwa typu wyjątku, gdy jest."""
+    def reminders_failed(self, *, cause: ReminderFailure, failure: str | None = None, file: str | None = None) -> None:
+        """Sprawdzenie Przypomnień o raporcie nie wysłało wszystkiego: przyczyna, nazwa typu wyjątku, gdy jest, i nazwa
+        pliku Ustawień w ``config``, którego nie dało się przeczytać, gdy to on."""
 
-        named = {} if failure is None else {"typ": failure}
+        named = ({} if failure is None else {"typ": failure}) | ({} if file is None else {"plik": file})
         self._write("przypomnienia-porazka", przyczyna=cause, **named)
 
     def view_timed(

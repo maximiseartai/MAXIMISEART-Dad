@@ -103,7 +103,7 @@ from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
 from rozliczenia.centrum.run_logs import Environment, LoggedFile, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
@@ -124,10 +124,9 @@ _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 
 T = TypeVar("T")
 
-ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path]]
+ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path] | UnreadableFile]
 """Pliki procesu dla tokenu okresu z migawką Ustawień Centrum ze startu Uruchomienia (``None``: bez migawki, z
-bieżącymi)."""
-"""Pliki taty Uruchomienia procesu dla tokenu okresu, z Ustawieniami Centrum z chwili końca Uruchomienia."""
+bieżącymi), a przy pliku Folderów bez odczytu ten plik."""
 
 
 class CommentQueue(Protocol):
@@ -197,15 +196,21 @@ class RecordMaker:
         self, process: common_contract.ProcessKey, period: str, settings: SettingsSnapshot | None
     ) -> Environment:
         """Środowisko Uruchomienia do Logów. Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek, więc
-        Logi mają wtedy pliki ``None``, bez wpisu w dzienniku, który Diagnoza by zgłosiła."""
+        Logi mają wtedy pliki ``None``, bez wpisu w dzienniku, który Diagnoza by zgłosiła. Plik Folderów bez odczytu
+        też: Logi mają wtedy pliki ``None`` i nazwę tego pliku, a nie pliki Folderów z Wydania."""
 
+        unreadable: str | None = None
+        files: list[LoggedFile] | None = None
         try:
             paths = self._files(process, period, settings)
         except (OSError, PeriodFolderInaccessible):
-            files = None
+            pass
         else:
-            files = [self._file(path) for path in paths]
-        return Environment(system=_system(), python=platform.python_version(), files=files)
+            if isinstance(paths, UnreadableFile):
+                unreadable = paths.name
+            else:
+                files = [self._file(path) for path in paths]
+        return Environment(system=_system(), python=platform.python_version(), files=files, unreadable_settings=unreadable)
 
     def _file(self, path: Path) -> LoggedFile:
         try:
