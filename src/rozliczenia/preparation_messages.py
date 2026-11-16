@@ -584,12 +584,12 @@ def columns_from_description(collective_filename: str, columns: Sequence[str], *
 
     left = f"Do uzupełnienia: {for_tata} {plural(for_tata, 'wiersz', 'wiersze', 'wierszy')}."
     by_legend = (
-        f"Legenda czynności wpisała ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) w {closed} "
+        f"Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w {closed} "
         f"{plural(closed, 'wierszu', 'wierszach', 'wierszach')} z samych Kodów czynności. {left}"
         if closed
         else (
-            "Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia: "
-            f"żaden opis nie jest z samych Kodów czynności. {left}"
+            "Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest "
+            f"z samych Kodów czynności. {left}"
         )
     )
     return Message(

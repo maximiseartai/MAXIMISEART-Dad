@@ -234,17 +234,17 @@ codes_out_of_range #2 [KODY_SPOZA_PRZEDZIALOW]
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie.
 
 columns_from_description #1 [KOLUMNY_Z_OPISU]
-  Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 12 wierszy.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 12 wierszy.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 
 columns_from_description #2 [KOLUMNY_Z_OPISU]
-  Co się stało: Legenda czynności wpisała ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) w 3 wierszach z samych Kodów czynności. Do uzupełnienia: 1 wiersz.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 3 wierszach z samych Kodów czynności. Do uzupełnienia: 1 wiersz.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w pozostałych wierszach Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 
 columns_from_description #3 [KOLUMNY_Z_OPISU]
-  Co się stało: Legenda czynności wpisała ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) w 22 wierszach z samych Kodów czynności. Do uzupełnienia: 5 wierszy.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 22 wierszach z samych Kodów czynności. Do uzupełnienia: 5 wierszy.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w pozostałych wierszach Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 
