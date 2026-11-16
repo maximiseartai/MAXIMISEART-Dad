@@ -366,6 +366,7 @@ _Avoid_: kolor INEA, czerwona komórka
 
 Komórka Ilości usług albo `AS` Wiersza danych Pliku zbiorczego z jednolitym zielonym wypełnieniem (`FF92D050`), które kładzie Legenda czynności albo tata, zwykle bez liczby: pozycja, którą dostaje Wykonawca, a INEA za nią nie płaci, np. `AF` przy `rt2`.
 W Rozliczeniu pracownika ma 1 zamiast tego, co w nim stoi, i jest bez wypełnienia, więc białe, także gdy Reguła ilości zostawia tę komórkę pustą; Hiperłącze zostaje przy wartości. Plik zbiorczy zostaje bez zmian.
+Zielone wypełnienie w innych kolumnach, np. znacznik taty w `ADRES`, nie jest Zielonym polem i przechodzi jak każde Wyróżnienie.
 _Avoid_: kolor pracownika, zielona komórka
 
 ## Reguły ilości

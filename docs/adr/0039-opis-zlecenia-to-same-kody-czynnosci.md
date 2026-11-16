@@ -75,10 +75,11 @@ Wykonawców przez tatę (15), takich Wpisów `tak` było 116 z 213, w tym 104 be
 - **Czerwone i zielone pole w Rozliczeniu pracownika** (5). Przebieg rozliczeń kasuje liczbę z pola z czerwonym
   wypełnieniem i wpisuje 1 w pole z zielonym, a oba robi białymi. Dotyczy to pól w kolumnach Ilości usług `N:AP` i w
   `AS`, także pokolorowanych przez tatę ręcznie, i czerwonego pola bez liczby (decyzja koordynatora: kolor znika i
-  tak). Czerwone wypełnienie w innych kolumnach przechodzi bez zmian (decyzja koordynatora: tata zaznacza na czerwono
-  także `ADRES`, `URZĄDZENIA`, `UMOWA` i inne kolumny tekstowe, a „liczba” tam to np. numer domu w adresie, którego
-  skasowanie zepsułoby Rozliczenie pracownika; liczbę w odpowiedzi 5 czytamy jako ilość albo kwotę). Plik zbiorczy
-  zostaje bez zmian, bo jest podstawą rozliczenia z INEA.
+  tak). Czerwone i zielone wypełnienie w innych kolumnach przechodzi bez zmian, choć tata pisze o wszystkich polach
+  zakolorowanych na czerwono i na zielono (decyzja koordynatora: tata zaznacza kolorem także `ADRES`, `URZĄDZENIA`,
+  `UMOWA` i inne kolumny tekstowe, a „liczba” tam to np. numer domu w adresie, którego skasowanie, tak samo jak 1 w
+  miejscu adresu, zepsułoby Rozliczenie pracownika; liczbę i 1 w odpowiedzi 5 czytamy jako ilość albo kwotę). Plik
+  zbiorczy zostaje bez zmian, bo jest podstawą rozliczenia z INEA.
 - **Dane legendy z Wydania**: `pz#m` daje 480 w `AS` przy każdej liczbie metrów (6). Legenda nie ma dodatkowych zapisów
   (`instmdic`, `dzielnika1/2`), bo dodaliśmy je sami (9). Każde `rt2` daje `AM` (1, 2; decyzja koordynatora: „nie
   uwzględniamy usterek” czytamy jako „bez osobnej reguły dla usterek”, a gdy tata miał na myśli, że w usterce `rt2` się
