@@ -153,7 +153,75 @@ def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik
 
     (reason,) = decide(Seen("completed", 37 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 35 * MIN, memory)
 
-    assert CHILD in reason and "16 min temu" in reason and "nie ruszył" in reason
+    assert CHILD in reason and "16 min temu" in reason and "nie dotarło" in reason
+
+
+def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dostaje_budzenie() -> None:
+    # Przegląd PR skończył się w 19. minucie, T3 zgubiło powiadomienie, a koordynator pracował dalej przy innych
+    # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający.
+    memory = straznik.Memory(heard={})
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+    # Strażnik dalej pilnuje, choć koordynator ruszył po końcu dziecka.
+    assert pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 11 * MIN)}, 30 * MIN, memory)
+
+    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
+
+    assert CHILD in reason and "nie dotarło" in reason
+
+
+def test_powiadomienie_o_koncu_dziecka_w_transkrypcie_konczy_pilnowanie_bez_budzenia() -> None:
+    memory = straznik.Memory(heard={})
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+    assert memory.heard is not None
+    # Wpis z powiadomieniem przyszedł w 19,5. minucie, pół minuty po końcu dziecka, a koordynator potem nie ruszył.
+    memory.heard[CHILD] = 19.5 * MIN
+    done = {CHILD: Seen("completed", 16 * MIN)}
+
+    assert decide(Seen("completed", 15 * MIN), done, 35 * MIN, memory) == []
+    assert not pending(Seen("completed", 15 * MIN), done, 35 * MIN, memory)
+
+
+def test_znaki_dziecka_to_identyfikator_bez_przedrostka_i_poczatek_tytulu() -> None:
+    title = "Przegląd wymyślonego PR runda 1 (granica kolejki)"
+
+    assert straznik.marks(CHILD, title) == (
+        "delegated-task:dziecko-wymyslone-1",
+        "(Przegląd wymyślonego PR runda ",
+        "(Przegl\\u0105d wymy\\u015blonego PR runda ",
+    )
+    assert straznik.marks(CHILD, "Bieg 7") == ("delegated-task:dziecko-wymyslone-1", "(Bieg 7")
+    assert straznik.marks("dziecko-2", "") == ("dziecko-2",)
+
+
+def _entry(kind: str, minute: float, text: str) -> str:
+    moment = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc) + timedelta(minutes=minute)
+    stamp = moment.isoformat().replace("+00:00", "Z")
+    return json.dumps({"type": kind, "timestamp": stamp, "message": {"role": kind, "content": text}}, ensure_ascii=False)
+
+
+def test_transkrypt_czytany_od_miejsca_konca_liczy_tylko_wpisy_user_ze_znakiem_dziecka(tmp_path: Path) -> None:
+    signs = {CHILD: straznik.marks(CHILD, "Przegląd A"), "dziecko-2": straznik.marks("dziecko-2", "Bieg B wymyślony")}
+    transcript = tmp_path / "sesja.jsonl"
+    lines = [
+        _entry("assistant", 4, f"Przegląd trwa: [Przegląd A](t3-thread://x/{CHILD})"),
+        _entry("user", 2, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd A) [completed]: PASS"),
+        _entry("user", 3, "Delegated task node:inne (Bieg B wymyślony) [completed]: gotowe"),
+        "nie JSON z dziecko-2",
+    ]
+    transcript.write_text("\n".join(lines) + "\n" + _entry("user", 9, "dziecko-2")[:20], encoding="utf-8")
+    heard: dict[str, float] = {}
+
+    offset = straznik.hear(transcript, 0, signs, heard)
+
+    start = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc).timestamp()
+    assert heard == {CHILD: start + 2 * MIN, "dziecko-2": start + 3 * MIN}
+    # Niepełna ostatnia linia czeka na swój koniec, a następny odczyt zaczyna się od niej.
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write(_entry("user", 9, "odczyt task_status: dziecko-2")[20:] + "\n")
+    assert straznik.hear(transcript, offset, signs, heard) == transcript.stat().st_size
+    assert heard == {CHILD: start + 2 * MIN, "dziecko-2": start + 9 * MIN}
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -389,6 +457,40 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
 
     assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(Path(env["HOME"]))), 30)
     assert len((folder / "bin" / "wyslane.txt").read_text(encoding="utf-8").splitlines()) == 1
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("delivered", [False, True], ids=["powiadomienie-zgubione", "powiadomienie-dotarlo"])
+def test_koordynator_ruszajacy_sie_po_koncu_dziecka_dostaje_budzenie_tylko_bez_powiadomienia_w_transkrypcie(
+    t3: tuple[Path, dict[str, str]], delivered: bool
+) -> None:
+    # Przegląd skończył się 20 min temu, a koordynator pracował przy innych dzieciach jeszcze 5 min temu.
+    folder, env = t3
+    threads = {
+        PARENT: {"status": "completed", "updatedAt": _ago(5)},
+        CHILD: {"status": "completed", "updatedAt": _ago(20), "title": "Przegląd wymyślonego PR r1"},
+    }
+    (folder / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
+    transcript = folder / "sesja-koordynatora.jsonl"
+    notice = "Delegated task node:inne-zlecenie (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
+    lines = [{"type": "user", "timestamp": _ago(25), "message": {"role": "user", "content": f"zlecone {CHILD}"}}]
+    if delivered:
+        lines.append({"type": "user", "timestamp": _ago(19), "message": {"role": "user", "content": notice}})
+    transcript.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+    event = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": straznik.DELEGATE,
+        "tool_response": _delegated(CHILD),
+        "transcript_path": str(transcript),
+    }
+
+    assert _hook(env, event).returncode == 0
+
+    home = Path(env["HOME"])
+    assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(home)), 30)
+    sent = folder / "bin" / "wyslane.txt"
+    nudges = sent.read_text(encoding="utf-8").splitlines() if sent.exists() else []
+    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([] if delivered else [True])
 
 
 @POSIX_ONLY

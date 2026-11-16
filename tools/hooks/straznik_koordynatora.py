@@ -29,25 +29,34 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
 
 - ``decide`` budzi wątek (``t3 thread send``), gdy wątek skończył turę (status z ``FINISHED``, także ``failed`` i
   ``interrupted``), a dziecko trwa bez ruchu dłużej niż ``CHILD_STALE_S`` albo skończyło się ponad ``WAKE_S`` temu, a
-  wątek od tego czasu nie ruszył, czyli T3 go nie obudził (``stalled``; koniec dziecka zapisuje ``observe``);
+  powiadomienie o jego końcu do wątku nie dotarło (``stalled``; koniec dziecka zapisuje ``observe``);
+- powiadomienie dotarło, gdy po końcu dziecka transkrypt wątku ma wpis ``user`` ze znakiem dziecka (``marks``:
+  identyfikator bez przedrostka ``thread:``, który mają powiadomienie ``Delegated task`` i odpowiedź ``task_status``,
+  albo ``(`` z początkiem tytułu, który ma powiadomienie po ``t3_thread_send``); czyta go ``hear`` od miejsca, w którym
+  skończył, a ścieżkę daje ostatnia linia pliku ``.transkrypt``, którą hook dopisuje z ``transcript_path`` wejścia.
+  Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi rusza się także wtedy, gdy T3 powiadomienie
+  zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę); bez transkryptu dotarciem jest ruch wątku;
 - tego samego powodu (dziecko i rodzaj powodu) nie powtarza, a dwa budzenia dzieli ``PAUSE_S``;
 - wątek ``running`` bez ruchu dłużej niż ``STUCK_S`` tylko zapisuje w dzienniku, bo wiadomość do zajętego wątku
   czeka na jego następną turę;
 - kończy się wcześniej, gdy nie ma już czego pilnować (``pending``: żadne dziecko nie trwa, a po każdym końcu dziecka
-  wątek ruszył albo dostał budzenie; dziecko, którego ``t3 thread show`` nie pokazuje dłużej niż ``LOST_S``, przestaje
-  się liczyć).
+  powiadomienie dotarło albo wątek dostał budzenie; dziecko, którego ``t3 thread show`` nie pokazuje dłużej niż
+  ``LOST_S``, przestaje się liczyć).
 
 Granica: dzieci to tylko wątki z ``childThreadId`` w odpowiedzi ``delegate_task``; dziecko w innym środowisku (og-box)
 ma ``childThreadId`` null, a jego identyfikator należy do tamtego środowiska, więc strażnik go nie pilnuje; podagent
 narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażnik go nie widzi. Koordynator stojący przy
-gotowym PR bez żywego dziecka nie dostaje budzenia. Plik ``.dzieci`` rośnie o linię na zlecenie i nikt go nie
-skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający proces. T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury, przesunie ruch rodzica i
-ukryje brak budzenia. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
+gotowym PR bez żywego dziecka nie dostaje budzenia. Pliki ``.dzieci`` i ``.transkrypt`` rosną o linię na zlecenie i
+nikt ich nie skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający proces. Wpis ``user``, który ma znak
+dziecka z innego powodu (odczyt wątku, który je cytuje), uznaje powiadomienie za dotarłe i ukrywa jego brak, a bez
+transkryptu to samo robi T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury. Uruchamia go
+systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w ``pyproject.toml``),
+a plik importuje tylko bibliotekę standardową i ``potomne``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -82,15 +91,18 @@ LOST_S = 30 * 60
 MAX_LIFE_S = 12 * 60 * 60
 # Status wątku T3 po końcu tury; każdy inny (running, waiting na odpowiedź, preparing, nieznany) znaczy, że wątek trwa.
 FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
+# Tyle znaków tytułu dziecka niesie znak ``(`` z tytułem; T3 skraca długi tytuł w powiadomieniu dopiero za nimi.
+TITLE_CHARS = 30
 NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
 
 @dataclass(frozen=True)
 class Seen:
-    """Stan wątku z ``t3 thread show``: status i ``updatedAt`` w sekundach epoki Uniksa."""
+    """Stan wątku z ``t3 thread show``: status, ``updatedAt`` w sekundach epoki Uniksa i tytuł."""
 
     status: str
     updated: float
+    title: str = ""
 
     def age(self, now: float) -> float:
         return now - self.updated
@@ -99,12 +111,59 @@ class Seen:
 @dataclass
 class Memory:
     """Co strażnik pamięta między pytaniami: koniec każdego dziecka (``updatedAt``), od kiedy dziecka nie widać, klucze
-    powodów, z którymi już budził, i chwilę ostatniego budzenia."""
+    powodów, z którymi już budził, chwilę ostatniego budzenia i ostatni wpis transkryptu wątku ze znakiem każdego
+    dziecka (``heard``; ``None``: transkryptu nie ma, więc dotarciem powiadomienia jest ruch wątku)."""
 
     ended: dict[str, float] = field(default_factory=dict)
     unseen: dict[str, float] = field(default_factory=dict)
     told: set[str] = field(default_factory=set)
     last_nudge: float = float("-inf")
+    heard: dict[str, float] | None = None
+
+
+def unheard(child: str, parent: Seen, memory: Memory) -> bool:
+    """Czy po zapisanym końcu dziecka powiadomienie o nim nie dotarło do wątku ``parent``."""
+
+    ended = memory.ended[child]
+    last = parent.updated if memory.heard is None else memory.heard.get(child, float("-inf"))
+    return last < ended
+
+
+def marks(child: str, title: str) -> tuple[str, ...]:
+    """Znaki dziecka we wpisie transkryptu rodzica: identyfikator bez przedrostka rodzaju i ``(`` z początkiem tytułu,
+    ten drugi także w postaci, w której JSON zapisuje litery spoza ASCII jako ``\\u…``."""
+
+    kind, _, rest = child.partition(":")
+    found = [rest if kind == "thread" and rest else child]
+    if title:
+        sign = "(" + title[:TITLE_CHARS]
+        found += dict.fromkeys([sign, json.dumps(sign)[1:-1]])
+    return tuple(found)
+
+
+def hear(path: Path, offset: int, signs: Mapping[str, tuple[str, ...]], heard: dict[str, float]) -> int:
+    """Czyta transkrypt od bajtu ``offset`` do ostatniej pełnej linii i zapisuje w ``heard`` chwilę każdego wpisu
+    ``user`` ze znakiem dziecka; zwraca miejsce, od którego czytać następnym razem."""
+
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        data = handle.read()
+    complete = data[: data.rfind(b"\n") + 1]
+    for raw in complete.splitlines():
+        line = raw.decode("utf-8", errors="replace")
+        found = [child for child, signs_of in signs.items() if any(sign in line for sign in signs_of)]
+        if not found:
+            continue
+        try:
+            entry = json.loads(line)
+            moment = datetime.fromisoformat(str(entry["timestamp"]).replace("Z", "+00:00")).timestamp()
+        except (ValueError, KeyError, TypeError, RecursionError):
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "user":
+            continue
+        for child in found:
+            heard[child] = max(heard.get(child, moment), moment)
+    return offset + len(complete)
 
 
 def observe(children: dict[str, Seen | None], now: float, memory: Memory) -> None:
@@ -134,10 +193,10 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
             continue
         if state.status not in FINISHED and state.age(now) > CHILD_STALE_S:
             reasons[f"{child} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age(now) // 60)} min"
-        elif ended is not None and WAKE_S < now - ended and parent.updated < ended:
+        elif ended is not None and WAKE_S < now - ended and unheard(child, parent, memory):
             reasons[f"{child} bez budzenia"] = (
-                f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, a ten "
-                "wątek od tego czasu nie ruszył"
+                f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, a "
+                "powiadomienie o jego końcu do tego wątku nie dotarło"
             )
     return reasons
 
@@ -164,7 +223,7 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
                 return True
         elif state.status not in FINISHED:
             return True
-        elif child in memory.ended and parent.updated <= memory.ended[child] and f"{child} bez budzenia" not in memory.told:
+        elif child in memory.ended and unheard(child, parent, memory) and f"{child} bez budzenia" not in memory.told:
             return True
     return False
 
@@ -228,12 +287,14 @@ class Files:
     life: Path
     queue: Path
     log: Path
+    transcript: Path
 
 
 def _files(thread: str) -> Files:
     base = Path.home() / STATE
     name = hashlib.sha256(thread.encode("utf-8")).hexdigest()[:16]
-    return Files(base / f"{name}.dzieci", base / f"{name}.zycie", base / f"{name}.kolejka", base / f"{name}.jsonl")
+    kids, life, queue, log, transcript = (base / f"{name}.{kind}" for kind in ("dzieci", "zycie", "kolejka", "jsonl", "transkrypt"))
+    return Files(kids, life, queue, log, transcript)
 
 
 def _log(path: Path, **row: object) -> None:
@@ -282,10 +343,20 @@ def _show(cli: str, thread: str) -> Seen | None:
             raise ValueError(f"kod {shown.returncode}: {shown.stderr.strip()}")
         state = json.loads(shown.stdout)["thread"]
         moved = datetime.fromisoformat(str(state["updatedAt"]).replace("Z", "+00:00"))
-        return Seen(str(state["status"]), moved.timestamp())
+        return Seen(str(state["status"]), moved.timestamp(), str(state.get("title") or ""))
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
         print(f"straznik_koordynatora: t3 thread show {thread}: {error!r}", file=sys.stderr)
         return None
+
+
+def _transcript(files: Files) -> Path | None:
+    """Transkrypt wątku z ostatniej linii pliku ``.transkrypt`` (``None``: hook go nie podał)."""
+
+    try:
+        lines = files.transcript.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    return Path(lines[-1]) if lines and lines[-1] else None
 
 
 def _send(cli: str, thread: str, text: str) -> int:
@@ -314,6 +385,7 @@ def watch(thread: str, cli: str, files: Files) -> int:
     step = float(os.environ.get(STEP_ENV) or STEP_S)
     life = float(os.environ.get(LIFE_ENV) or MAX_LIFE_S)
     memory = Memory()
+    transcript, offset, titles = None, 0, {}
     while True:
         try:
             text = files.kids.read_text(encoding="utf-8")
@@ -325,6 +397,18 @@ def watch(thread: str, cli: str, files: Files) -> int:
             return 0
         parent = _show(cli, thread)
         children = {name: _show(cli, name) for name in names} if parent is not None else {}
+        latest = _transcript(files)
+        if latest is not None and latest != transcript:
+            # Nowa sesja wątku pisze nowy transkrypt; to, co dotarło do starego, dalej dotarło.
+            transcript, offset = latest, 0
+            memory.heard = {} if memory.heard is None else memory.heard
+        titles.update({name: state.title for name, state in children.items() if state is not None and state.title})
+        if transcript is not None and memory.heard is not None:
+            signs = {name: marks(name, titles.get(name, "")) for name in names}
+            try:
+                offset = hear(transcript, offset, signs, memory.heard)
+            except OSError as error:
+                print(f"straznik_koordynatora: transkrypt {transcript}: {error!r}", file=sys.stderr)
         now = time.time()
         if parent is not None:
             if parent.status == "running" and parent.age(now) > STUCK_S and "zastój" not in memory.told:
@@ -360,6 +444,10 @@ def main(argv: list[str]) -> int:
     try:
         if new:
             record(files, new, time.time())
+        transcript = fields.get("transcript_path")
+        if isinstance(transcript, str) and transcript and _transcript(files) != Path(transcript):
+            with files.transcript.open("a", encoding="utf-8") as handle:
+                handle.write(transcript + "\n")
         done = f"strażnik uruchomiony (PID {_start(thread, files)})"
     except OSError as error:
         done = f"błąd: {error!r}"
