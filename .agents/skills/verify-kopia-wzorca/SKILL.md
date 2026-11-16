@@ -171,7 +171,7 @@ pracownika is written by the real `TemplateFile.create()` and, separately, by th
 
 | Wzorzec | Shape | Wiersze danych per Rozliczenie pracownika |
 | --- | --- | --- |
-| `syntetyczny` | Dad's Wzorzec in small, from `tools/lib/atrapy/wzorce.py` with 200 Wiersze danych: Excel-written XML, shared formulas every 64 rows, `calcChain`, external link, `sharedStrings`, a comment in H17 with Dad's sheet relationships (`rId1` VML drawing, `rId2` comments, `<legacyDrawing>` after `pageMargins`, so new ids must start at `rId3`), rows of zeros in N:V and X, date formats, the first Wiersz danych without a cell in A in row 139 (Dad: 609) | 0–260, so writes reach past the last formatted row and the trailing row 269; compression chunks start at rows 18, 82, 146, 210 |
+| `syntetyczny` | Dad's Wzorzec in small, from `tools/lib/atrapy/wzorce.py` with 200 Wiersze danych: Excel-written XML, shared formulas every 64 rows, `calcChain`, external link, `sharedStrings`, a comment in H17 with Dad's sheet relationships (`rId1` VML drawing, `rId2` comments, `<legacyDrawing>` after `pageMargins`, so new ids must start at `rId3`), rows of zeros in N:V and X with Dad's theme background (theme 0 with tint in N:V and X, theme 2 in AI), date formats, the first Wiersz danych without a cell in A in row 139 (Dad: 609) | 0–260, so writes reach past the last formatted row and the trailing row 269; compression chunks start at rows 18, 82, 146, 210 |
 | `maly` | openpyxl-written workbook with two formatted Wiersze danych, a second sheet, an external link, namespace prefixes in `workbook.xml`, no sheet relationships (a copy with Hiperłącza adds the part) | 0–80 |
 | `wzorzec-taty` (only with `--wzorzec`, then the only one) | Dad's real Wzorzec | 0–700, chunks from rows 18, 82, …, 658 |
 

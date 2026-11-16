@@ -8,6 +8,8 @@ from dataclasses import replace
 
 from atrapy.preparation import PERIOD, PreparationFixture
 from atrapy.settlement import worker_list
+from rozliczenia.activity_legend import ActivityLegend
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.collective_preparation import (
     PreparationInputs,
     PreparationSummary,
@@ -39,9 +41,10 @@ def run_preparation(
     observer: ProgressObserver | None = None,
     conversation: Conversation = UNASKED,
     files: DadFiles | None = None,
+    legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
 ) -> PreparationSummary:
-    """Przygotowanie ``fixture`` w okresie ``period``; ``files``: uchwyt plików taty z Kopią wejścia (``None``: bez
-    Kopii)."""
+    """Przygotowanie ``fixture`` w okresie ``period`` z Legendą czynności ``legend``; ``files``: uchwyt plików taty z
+    Kopią wejścia (``None``: bez Kopii)."""
 
     inputs = PreparationInputs(
         fixture.register_path,
@@ -51,6 +54,7 @@ def run_preparation(
         fixture.internal_template_path,
         fixture.collective_template_path,
         dry_run,
+        activity_legend=legend,
     )
     context = RunContext(observer=observer, conversation=conversation)
     return prepare_collective_file(inputs, context if files is None else replace(context, files=files))

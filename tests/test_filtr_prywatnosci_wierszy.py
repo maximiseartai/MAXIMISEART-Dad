@@ -20,7 +20,7 @@ from rozliczenia.activity_legend import FillColour
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.highlights import Highlights
-from rozliczenia.order_facts import NON_NUMERIC, OTHER_COLOUR, MissingHeaders, OrderFacts, collective_orders, tata_value
+from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, collective_orders, tata_value
 from rozliczenia.quantity_check import legend_row_check
 from rozliczenia.quantity_engine import OrderContent, WeekTime
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
@@ -177,7 +177,7 @@ def _solid(color: Color) -> PatternFill:
     return PatternFill(patternType="solid", fgColor=color)
 
 
-def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_inny_kolor_albo_brak() -> None:
+def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_a_kazde_inne_wypelnienie_to_brak() -> None:
     row: list[object] = [None] * 46
     row[6] = STARTED
     fills: dict[str, Fill] = {
@@ -185,6 +185,7 @@ def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_inny_kolor_albo_brak(
         "AS": _solid(Color(indexed=10)),
         "AB": _solid(Color(rgb="FFFFFF00")),
         "AC": _solid(Color(theme=9)),
+        "X": _solid(Color(theme=0)),
         "AD": PatternFill(patternType="lightGray", fgColor=Color(rgb="FFFF0000")),
         "AE": GradientFill(),
         "P": _solid(Color(rgb="FF92D050")),
@@ -195,12 +196,8 @@ def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_inny_kolor_albo_brak(
 
     assert dict(facts.fills) == {
         "Y": FillColour.GREEN,
-        "AB": OTHER_COLOUR,
-        "AC": OTHER_COLOUR,
-        "AD": OTHER_COLOUR,
-        "AE": OTHER_COLOUR,
         "AS": FillColour.RED,
-    }, "P liczy narzędzie, a AQ nie jest kolumną legendy"
+    }, "żółty, kolor motywu, wzór i gradient legenda nie wpisuje, P liczy narzędzie, a AQ nie jest kolumną legendy"
 
 
 @pytest.mark.parametrize(

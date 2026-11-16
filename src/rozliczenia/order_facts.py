@@ -3,8 +3,8 @@ ADR 0038).
 
 To jedyny typ z treścią komórek Pliku zbiorczego, który przeżywa silnik Przebiegu rozliczeń, i jedyne miejsce,
 które wylicza dozwolone kolumny: UMOWA, URZĄDZENIA, CZYNNOŚCI i CZYNNOŚCI ZREALIZOWANE (po nagłówku z wiersza 17, pod
-którym zapisuje je Przygotowanie), dzień tygodnia i godzina z DATA, N:AP i ``AS`` (po literze kolumny) oraz kolory
-wypełnienia kolumn, które może wypełnić Legenda czynności. Treść zlecenia
+którym zapisuje je Przygotowanie), dzień tygodnia i godzina z DATA, N:AP i ``AS`` (po literze kolumny) oraz kolor
+legendy w wypełnieniu kolumn, które może wypełnić Legenda czynności. Treść zlecenia
 robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu; tę samą treść,
 także bez daty w DATA, czytają Ilości tylko dla INEA Przebiegu (``order_contents``). Adres, numery
 zlecenia i umowy, Wykonawca, data dzienna i reszta A:AT nie mają pola, więc nie da się ich wysłać przez ten typ. Tekst
@@ -36,13 +36,8 @@ NON_NUMERIC: Final = "nieliczbowa"
 TataValue = int | Literal["nieliczbowa"]
 """Ilość taty: liczba (pusta komórka, 0 i ``"0"`` to 0; ``"2"`` i ``2.0`` to 2) albo „nieliczbowa” (formuła, słowo, 1.5)."""
 
-OTHER_COLOUR: Final = "inny kolor"
-TataFill = FillColour | Literal["inny kolor"]
-"""Kolor wypełnienia komórki w Pliku zbiorczym: kolor Legendy czynności (zielony albo czerwony z plików taty) albo każdy
-inny."""
-
 _INPUTS: Final[tuple[Column, ...]] = (CONTRACT, DEVICES, ACTIVITIES, DATE)
-_NO_FILLS: Final[Mapping[str, TataFill]] = MappingProxyType({})
+_NO_FILLS: Final[Mapping[str, FillColour]] = MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -58,8 +53,9 @@ class OrderFacts:
     ``""``."""
     amount: TataValue = 0
     """Kwota taty w ``AS`` (Uwagi - kwota), czytana jak ilość taty."""
-    fills: Mapping[str, TataFill] = field(default=_NO_FILLS)
-    """Kolumna, którą może wypełnić Legenda czynności (``FILL_COLUMNS``) → kolor jej wypełnienia, tylko z wypełnieniem."""
+    fills: Mapping[str, FillColour] = field(default=_NO_FILLS)
+    """Kolumna, którą może wypełnić Legenda czynności (``FILL_COLUMNS``) → kolor legendy jej wypełnienia, tylko z
+    wypełnieniem w kolorze legendy (``_colour``)."""
 
     def quantity(self, column: str) -> TataValue:
         return self.quantities.get(column, 0)
@@ -163,21 +159,24 @@ def _completed(cell: object) -> str:
     return "" if is_blank(cell) else shown(cell)
 
 
-def _fills(row: DataRow) -> Mapping[str, TataFill]:
+def _fills(row: DataRow) -> Mapping[str, FillColour]:
     colours = {column: _colour(row.cells[column_index_from_string(column) - 1].highlights.fill) for column in FILL_COLUMNS}
     return MappingProxyType({column: colour for column, colour in colours.items() if colour is not None})
 
 
-def _colour(fill: Fill | None) -> TataFill | None:
-    """Kolor wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety) to ten kolor,
-    każde inne wypełnienie to „inny kolor”, a brak wypełnienia ``None``."""
+def _colour(fill: Fill | None) -> FillColour | None:
+    """Kolor legendy wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety);
+    każde inne wypełnienie i brak wypełnienia to ``None``.
 
-    if fill is None:
-        return None
+    To lustro zapisu: w kolumnach za danymi wejściowymi Przygotowanie zostawia wygląd komórki Wzorca i kładzie na nim
+    tylko wypełnienie legendy (``highlights.solid_fill``). Wypełnienie spoza palety legendy, np. białe tło motywu, które
+    Wzorzec pliku zbiorczego taty ma w N–V i X każdego Wiersza danych, albo ręczne zaznaczenie, nie jest kolorem, który
+    legenda mogłaby wpisać, więc Kontrola czyta je jak brak koloru."""
+
     if not isinstance(fill, PatternFill) or fill.patternType != "solid":
-        return OTHER_COLOUR
+        return None
     rgb = _rgb(fill.fgColor)
-    return next((colour for colour in FillColour if rgb is not None and rgb == colour.argb[-6:]), OTHER_COLOUR)
+    return next((colour for colour in FillColour if rgb is not None and rgb == colour.argb[-6:]), None)
 
 
 def _rgb(color: Color | None) -> str | None:

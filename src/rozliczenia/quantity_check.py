@@ -22,7 +22,8 @@ podglądzie zmiany legendy. W wierszu z Kodem czynności (także tylko spoza prz
   je Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy legenda wpisała w nią coś w tym wierszu, i wtedy
   ta kolumna nie jest różnicą Reguł ilości;
 - kwotę w ``AS``;
-- kolory kolumn, które może wypełnić którykolwiek kod legendy (jest albo nie ma, zielony, czerwony albo inny kolor).
+- kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
+  legendy, np. tło z Wzorca, to brak, zob. ``order_facts._colour``).
 
 W wierszu bez kodu liczy wpis taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Opis
 technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
@@ -39,7 +40,7 @@ from typing import Final
 from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead, ColumnByNumber, FillColour, FixedColumn
 from .text import WEEKDAY_LABELS, plural
 from .collective_layout import HEADER_ROW, QUANTITY_LETTERS
-from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataFill, TataValue
+from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataValue
 from .quantity_engine import (
     DESCRIPTION_COLUMNS,
     FromDescription,
@@ -171,11 +172,11 @@ class ValueDifference:
 
 @dataclass(frozen=True)
 class FillDifference:
-    """Kolor wypełnienia kolumny inny u taty niż według legendy; ``None``: bez wypełnienia."""
+    """Kolor wypełnienia kolumny inny u taty niż według legendy; ``None``: bez koloru legendy."""
 
     column: str
     legend: FillColour | None
-    tata: TataFill | None
+    tata: FillColour | None
 
 
 LegendDifference = ValueDifference | FillDifference
