@@ -33,7 +33,7 @@ rule:
   # middleware i funkcje pomocnicze sprawdzają regułę obok zapisu. Metody zapisu: publiczne CentrumSettings.change_<plik>
   # (change_folders, change_workers, change_devices, …), rules_after, undo, apply_release_changes, dawne change i
   # change_with_used_keys (nazywają je commity z werdyktów, na których biegnie dowód reguły) i prywatne, które zapisują
-  # albo sprawdzają regułę przyjęcia (_by_dad, _dad_change, _dad_devices, _dad_rules, _with_used_keys, _change, _checked,
+  # albo sprawdzają regułę przyjęcia (_by_dad, każde _dad_*, _rules_after, _with_used_keys, _change, _checked,
   # _apply, _apply_pending, _refuse, _put_back, _remember): wołanie prywatnej metody właściciela spoza niego to ten sam
   # zapis.
   # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
@@ -51,12 +51,12 @@ rule:
             - kind: attribute
               has:
                 field: attribute
-                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_[a-z_]+|_rules_after|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
             # Treść literału daje parser (string_content), więc przedrostek r/b/f i potrójny cudzysłów jej nie zmieniają.
             - kind: string
               has:
                 kind: string_content
-                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_change|_dad_devices|_dad_rules|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_[a-z_]+|_rules_after|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
     - any:
         - kind: call
           has:
