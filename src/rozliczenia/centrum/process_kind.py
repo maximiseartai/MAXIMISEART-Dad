@@ -137,21 +137,17 @@ def start_from_settings(
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
     Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości procesu, który nimi liczy (``Refusal``, gdy pliku pary nie da się teraz przeczytać), i ostrzeżenia startu.
-    Ścieżki, okres i tryb wybiera gospodarz."""
+    ilości procesu, który nimi liczy, i ostrzeżenia startu. Ścieżki, okres i tryb wybiera gospodarz. Plik pary Reguł
+    ilości bez odczytu to Reguły ``None``: odmowę dla taty daje wcześniej karta startu z tej samej migawki
+    (``ProcessKind.required_paths``), a start bez nich to błąd gospodarza w ``Catalog.prepared``."""
 
+    rules = settings.quantity_rules
     return Start(
         paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
         workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=_rules_at_start(settings.quantity_rules) if kind.quantity_rules else None,
+        quantity_rules=rules if kind.quantity_rules and isinstance(rules, QuantityRules) else None,
         warnings=_start_warnings(settings, kind.needs),
     )
-
-
-def _rules_at_start(rules: QuantityRules | UnreadableFile) -> QuantityRules:
-    if isinstance(rules, UnreadableFile):
-        raise refusal.settings_file_unreadable(rules.name)
-    return rules
 
 
 def chosen_settings(

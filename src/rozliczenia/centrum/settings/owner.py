@@ -23,7 +23,10 @@ nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy licz�
 Wydania (tata nie ma pliku reguł) są zawsze dobre, a lista, której brakuje ich składnika, jest zła i procesy biorą ten
 składnik z Listy Urządzeń z Wydania; składnik, którego każdy zapis ma lista taty, nie dochodzi, a lista bez niego jest
 dobra (``quantity_rules``). Plik, który zaczyna pasować dopiero po zmianie drugiego, ma wtedy wiersz ``spoza`` jak
-zmiana jego treści.
+zmiana jego treści. Pliku pary, którego drugiego pliku system nie daje teraz czytać, nikt nie sprawdzi
+(``UnreadableFile`` z ``_paired``): odczyt czeka z werdyktem, bez wiersza Historii i bez pamięci, do odczytu, w którym
+oba pliki są czytelne, a zapis to ``NotSaved`` z nazwą drugiego pliku. Treść z Wydania w miejscu drugiego pliku dałaby
+Historii wiersz ``odrzucono`` zmiany, która do pliku taty pasuje.
 Każdy zapis taty pary (formularz sekcji, „Dodaj” z podpowiedzi, „Popraw regułę”, „Cofnij”) idzie przez ``_dad_change``,
 które sprawdza go jako zmianę, zanim ``_checked`` zobaczy plik: odmowa mówi, co zmiana psuje (zapis u dwóch składników,
 składnik potrzebny regule, reguła bez składnika, zapis, który tata musi zwolnić dla składnika z Wydania), tym samym
@@ -161,8 +164,6 @@ REPORTED_CHANGES: Final = 20
 """Najwyżej tyle najnowszych wierszy Historii podaje Zgłoszenie."""
 HISTORY_UNREADABLE: Final = "- Historii Ustawień nie dało się przeczytać"
 """Linia Zgłoszenia zamiast zmian, gdy system nie daje czytać pliku Historii."""
-_PairCheck = Callable[[Any], FieldProblem | None]
-"""Problem dobrej wartości pliku pary Reguł ilości i Listy Urządzeń razem z drugim plikiem; ``None``: para pasuje."""
 _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | FieldProblem]
 """Zmiana taty Reguł ilości: bieżące reguły → reguły po zmianie albo problem, który jest odmową bez zapisu."""
 
@@ -174,6 +175,11 @@ class UnreadableFile:
     Wydania jak tata bez własnego pliku."""
 
     name: str
+
+
+_PairCheck = Callable[[Any], FieldProblem | UnreadableFile | None]
+"""Problem dobrej wartości pliku pary Reguł ilości i Listy Urządzeń razem z drugim plikiem; ``None``: para pasuje, a
+``UnreadableFile``: drugiego pliku system nie daje teraz czytać, więc nie wiadomo."""
 
 
 @dataclass(frozen=True)
@@ -637,9 +643,11 @@ class CentrumSettings:
             unreadable,
         )
 
-    def _checked(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem) -> T | FieldProblem:
+    def _checked(
+        self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem
+    ) -> T | FieldProblem | UnreadableFile:
         """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń (``_paired``) z bieżącymi
-        plikami i pamięcią właściciela."""
+        plikami i pamięcią właściciela; ``UnreadableFile``: drugiego pliku pary system nie daje teraz czytać."""
 
         together: Mapping[str, _PairCheck] = {
             RULES.name: self._rules_problem,
@@ -647,19 +655,22 @@ class CentrumSettings:
         }
         return _paired(file, data, parsed, together)
 
-    def _rules_problem(self, rules: tuple[QuantityRule, ...]) -> FieldProblem | None:
+    def _rules_problem(self, rules: tuple[QuantityRule, ...]) -> FieldProblem | UnreadableFile | None:
         """Reguły z bieżącą Listą Urządzeń albo z ostatnią dobrą; listy nie porównuje z pamięcią, bo jej przyjęcie
         zależy od przyjęcia reguł."""
 
         data = self._places[DEVICES.name].read()
         return _rules_problem(rules, data, self._memory.read(DEVICES.name))
 
-    def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | None:
+    def _devices_problem(self, devices: tuple[Component, ...]) -> FieldProblem | UnreadableFile | None:
         """Lista z regułami, którymi liczą procesy: reguły przyjmuje się pierwsze."""
 
+        rules = self._observe(RULES)
+        if isinstance(rules, Unreadable):
+            return UnreadableFile(RULES.name)
         return devices_problem(
             devices,
-            _or_release(self._observe(RULES), RULES),
+            _value(rules, RULES),
             _last_good_devices(self._memory.read(DEVICES.name)),
             release=self._release(),
         )
@@ -704,7 +715,7 @@ class CentrumSettings:
         Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``). Reguły z Wydania w miejscu pliku
         reguł, którego system nie daje teraz czytać, puściłyby usunięcie składnika, którego potrzebuje reguła taty."""
 
-        rules = _usable(self._observe(RULES), RULES)
+        rules = _usable(self._observe_for_change(RULES), RULES)
         if isinstance(rules, Unreadable):
             self._log.settings_unreadable(cause="dostep")
             return NotSaved(RULES.name)
@@ -735,16 +746,17 @@ class CentrumSettings:
         """Reguły po zmianie taty ``edit`` z Listą Urządzeń, z którą się zapiszą, albo odmowa zdaniem o tej zmianie: przy
         Regułach ilości z Wydania lista dostaje składniki z Wydania, których reguły potrzebują, albo zmiana czeka na
         zapis, który tata musi zwolnić (``devices_for_dad_rules``); reguła bez składnika na liście to jej zdanie ze
-        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``). Pliku pary, którego system nie daje teraz
-        czytać, zmiana nie zna (``NotSaved`` z jego nazwą): lista z Wydania sprawdziłaby regułę nie listą taty."""
+        składnikiem nazwanym jak ostatnio na liście (``dad_rules_problem``). Pliku pary, którego system nie daje czytać
+        także po ponowieniach (``_observe_for_change``), zmiana nie zna (``NotSaved`` z jego nazwą): lista z Wydania
+        sprawdziłaby regułę nie listą taty."""
 
-        current = _usable(self._observe(RULES), RULES)
+        current = _usable(self._observe_for_change(RULES), RULES)
         if isinstance(current, Unreadable):
             return NotSaved(RULES.name)
         rules = edit(current)
         if isinstance(rules, FieldProblem):
             return rules
-        devices = _usable(self._observe(DEVICES), DEVICES)
+        devices = _usable(self._observe_for_change(DEVICES), DEVICES)
         if isinstance(devices, Unreadable):
             return NotSaved(DEVICES.name)
         if self._release():
@@ -803,6 +815,9 @@ class CentrumSettings:
             return Refused(value)
         new = file.dump(value)
         edited = self._checked(file, new, file.parse(new))
+        if isinstance(edited, UnreadableFile):
+            self._log.settings_unreadable(cause="dostep")
+            return NotSaved(edited.name)
         if isinstance(edited, FieldProblem):
             return Refused(edited)
         if checked is not None and file.removed_logins is not None:
@@ -869,6 +884,13 @@ class CentrumSettings:
             return Unreadable()
         return self._observed(file, data)
 
+    def _observe_for_change(self, file: SettingsFile[T]) -> Read[T] | Unreadable:
+        """Plik pary, którym zapis taty sprawdza zmianę, z tymi samymi ponowieniami co plik zapisywany
+        (``_bytes_for_change``): chwilowa blokada (np. OneDrive) nie daje tacie odmowy, którą zapis by przeczekał."""
+
+        data = self._bytes_for_change(self._places[file.name])
+        return data if isinstance(data, Unreadable) else self._observed(file, data)
+
     def _observed(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
         """Wartość pliku w stanie ``data`` (``None``: brak pliku) po porównaniu z pamięcią: stan wyjściowy bez wiersza,
         ten sam stan bez niczego albo zmiana spoza Centrum z jednym wierszem. Zła treść ma ostatnią dobrą treść z pamięci,
@@ -882,9 +904,13 @@ class CentrumSettings:
         return _with_secret_value(file, compared, data)
 
     def _compared(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
+        """Porównanie z pamięcią (``_observed``). Plik pary, którego drugiego pliku system nie daje teraz czytać, czeka z
+        werdyktem bez wiersza i bez pamięci (``_pair_waits``), więc odczyt z czytelnym drugim plikiem da jeden wiersz."""
 
         parsed = self._checked(file, data, file.parse(data))
         remembered = self._memory.read(file.name)
+        if isinstance(parsed, UnreadableFile):
+            return _pair_waits(file, parsed, remembered.good if isinstance(remembered, Remembered) else None)
         if isinstance(remembered, Unreadable):
             return _read(parsed, None)
         if remembered is None:
@@ -997,25 +1023,35 @@ def _read_only_view(
     if isinstance(data, OSError):
         return Unreadable()
     parsed = _paired(file, data, file.parse(data), together or {})
-    if not isinstance(parsed, FieldProblem):
+    if not isinstance(parsed, FieldProblem | UnreadableFile):
         return Good(parsed)
     remembered = Memory(config, lambda _: None).read(file.name)
     good = remembered.good if isinstance(remembered, Remembered) else None
+    if isinstance(parsed, UnreadableFile):
+        return _pair_waits(file, parsed, good)
     return _with_secret_value(file, Bad(parsed, None if good is None else _good_value(good, file)), data)
 
 
 def _paired(
     file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem, together: Mapping[str, _PairCheck]
-) -> T | FieldProblem:
+) -> T | FieldProblem | UnreadableFile:
     """Wartość pliku w stanie ``data`` z niezmiennikiem pary Reguł ilości i Listy Urządzeń (``together``) dla
     właściciela i ``read_snapshot``; inne pliki mają tylko swój ``parse``. Reguły ilości z Wydania (brak pliku reguł)
-    pasować nie muszą: pasować musi do nich lista taty."""
+    pasować nie muszą: pasować musi do nich lista taty. ``UnreadableFile``: drugiego pliku system nie daje teraz
+    czytać, więc nie wiadomo, czy para pasuje."""
 
     if data is None and file.name == RULES.name:
         return parsed
     check = together.get(file.name)
     problem = None if check is None or isinstance(parsed, FieldProblem) else check(parsed)
     return parsed if problem is None else problem
+
+
+def _pair_waits(file: SettingsFile[T], partner: UnreadableFile, good: bytes | None) -> Bad[T]:
+    """Plik pary, którego drugiego pliku ``partner`` system nie daje teraz czytać: zdanie o tym pliku i ostatnia dobra
+    wartość z pamięci (``good``), bo nie wiadomo, czy nowa treść pasuje do pliku taty."""
+
+    return Bad(FieldProblem(None, messages.unreadable(partner.name)), None if good is None else _good_value(good, file))
 
 
 def _with_secret_value(file: SettingsFile[T], read: Read[T], data: bytes | None) -> Read[T]:
@@ -1037,12 +1073,12 @@ def _seen(file: SettingsFile[T], data: bytes | None) -> bytes | None:
 
 def _rules_problem(
     rules: tuple[QuantityRule, ...], devices: bytes | None | OSError, remembered: Remembered | None | Unreadable
-) -> FieldProblem | None:
-    """Reguły z bieżącą Listą Urządzeń (stan ``devices``) albo z jej ostatnią dobrą wartością z pamięci; listę, której
-    system nie daje czytać, procesy biorą z Wydania, więc reguły muszą pasować do niej."""
+) -> FieldProblem | UnreadableFile | None:
+    """Reguły z bieżącą Listą Urządzeń (stan ``devices``) albo z jej ostatnią dobrą wartością z pamięci; listy, której
+    system nie daje czytać, nikt nie zna (``UnreadableFile``), a procesy wtedy nie liczą."""
 
     if isinstance(devices, OSError):
-        return rules_problem(rules, None, DEVICES.default)
+        return UnreadableFile(DEVICES.name)
     now = DEVICES.parse(devices)
     return rules_problem(rules, None if isinstance(now, FieldProblem) else now, _last_good_devices(remembered))
 

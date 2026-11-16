@@ -36,7 +36,7 @@ from hypothesis import strategies as st
 import yaml
 import pytest
 
-from rozliczenia.settlement_period import parse_period_token
+from rozliczenia.settlement_period import last_complete_period, parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, layout_root
 from rozliczenia import efenix_process, intermax_messages
@@ -86,9 +86,25 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
-from rozliczenia.quantity_engine import Component, ContainsComponent, DeviceList, Fill, QuantityRules, QuantityRulesRefused, RulesProblem
+from rozliczenia.quantity_engine import (
+    Component,
+    ContainsComponent,
+    DeviceList,
+    Fill,
+    QuantityRule,
+    QuantityRules,
+    QuantityRulesRefused,
+    RulesProblem,
+)
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
-from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
+from tests.fixtures.bez_dostepu import (
+    NO_ACCESS_ON_WINDOWS,
+    PATH_CHECKS,
+    allow_reading,
+    deny_reading,
+    without_access,
+    without_reading,
+)
 from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
@@ -98,6 +114,7 @@ from tests.fixtures.centrum import (
     CentrumClient,
     FakePlatform,
     ROOT,
+    TODAY,
     ToolDirectory,
     centrum,
     centrum_app,
@@ -2051,9 +2068,13 @@ def test_narzedzia_licza_regula_pasujaca_do_ostatniej_dobrej_listy_urzadzen_taty
 
 
 @NO_ACCESS_ON_WINDOWS
-def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_okno_pokazuje_liste_z_wydania(
+def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_czekaja_ze_sprawdzeniem_a_okno_pokazuje_liste_z_wydania(
     tmp_path: Path,
 ) -> None:
+    """Reguły ze składnikiem z listy taty przy liście, której system nie daje teraz czytać, nie są złe wobec Listy
+    Urządzeń z Wydania: sekcja Reguły ilości mówi, którego pliku nie da się przeczytać, tym samym zdaniem co sekcja
+    Urządzenia (przegląd #1927 r1, P1)."""
+
     app = centrum(tmp_path)
     devices = write_dad_quantity_rules(app.tool, DEVICES_FILE, MANUAL_INSTALLATION, MANUAL_INSTALLATION + NEW_COMPONENT)
     write_dad_quantity_rules(app.tool, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("skladnik: nokia", "skladnik: nowy"))
@@ -2063,7 +2084,7 @@ def test_reguly_ze_skladnikiem_listy_ktorej_nie_da_sie_przeczytac_sa_zle_a_okno_
         response = app.client.get(QUANTITY_RULES_URL).json()
 
     assert (response["rules_problem"]["message"], response["devices_problem"]["message"]) == (
-        f"Plik {RULES_FILE} w folderze config: Składnika „nowy” nie ma na Liście Urządzeń.",
+        refusal.settings_file_unreadable(DEVICES_FILE).message,
         refusal.settings_file_unreadable(DEVICES_FILE).message,
     )
     assert [device["id"] for device in response["devices"]] == [component.id for component in DEFAULT_QUANTITY_RULES.devices.components]
@@ -7144,6 +7165,114 @@ def test_zmiana_pary_przy_drugim_pliku_bez_odczytu_to_odmowa_o_nim_a_nie_sprawdz
     assert _config_files(app.tool.config) == before
 
 
+def _own_pair(app: Centrum) -> str:
+    """Tata ma własne reguły, składnik „ont y” i regułę z nim; id składnika."""
+
+    assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2)).status_code == 200
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own: str = added.json()["quantity_rules"]["devices"][-1]["id"]
+    assert app.client.post(QUANTITY_RULES_URL, json=_rule_with(own)).status_code == 200
+    return own
+
+
+HAND_EDITS: dict[str, tuple[str, str]] = {
+    RULES_FILE: ("wartosc: 2", "wartosc: 5"),
+    DEVICES_FILE: ("- id: ont-y\n  zapisy:\n  - ont y\n", "- id: ont-y\n  zapisy:\n  - ont y\n  - onty\n"),
+}
+"""Ręczna zmiana pliku pary, która pasuje do drugiego pliku taty: wartość reguły „nokia” i drugi zapis „ont y”."""
+
+
+@pytest.mark.parametrize(("edited", "unreadable"), [(RULES_FILE, DEVICES_FILE), (DEVICES_FILE, RULES_FILE)])
+def test_reczna_zmiana_pliku_pary_przy_drugim_pliku_bez_odczytu_czeka_z_wierszem_historii_na_odczyt_obu(
+    tmp_path: Path, edited: str, unreadable: str
+) -> None:
+    """Przegląd #1927 r1 (P1): ręczna zmiana pliku pary, która pasuje do drugiego pliku taty, przy drugim pliku, którego
+    system nie daje teraz czytać, nie dostaje w Historii wiersza „odrzucono” ze sprawdzenia treścią z Wydania (reguła
+    taty ze składnikiem „ont y” nie pasuje do Listy Urządzeń z Wydania). Werdykt czeka: odczyty bez drugiego pliku nie
+    dopisują wiersza, a pierwszy odczyt z oboma plikami dopisuje jeden wiersz „zapisano” spoza Centrum."""
+
+    app = centrum(tmp_path)
+    _own_pair(app)
+    known = len(history_rows(app))
+    path = app.tool.config / edited
+    old, new = HAND_EDITS[edited]
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+    with without_reading(app.tool.config / unreadable):
+        section = app.client.get(QUANTITY_RULES_URL)
+        waiting = history_rows(app)
+    rows = history_rows(app)
+
+    assert section.status_code == 200
+    assert len(waiting) == known
+    assert [(row["source"], row["file"], row["refused"]) for row in rows[: len(rows) - known]] == [("outside", edited, False)]
+
+
+def _without_nokia(_inputs: ReleaseInputs[tuple[QuantityRule, ...]]) -> Edit[tuple[QuantityRule, ...]]:
+    return Edit(lambda current: tuple(rule for rule in current if rule.id != "nokia"))
+
+
+def test_zmiana_regul_z_wydania_przy_liscie_bez_odczytu_czeka_na_nastepny_start_zamiast_odrzucenia(tmp_path: Path) -> None:
+    """Zmiana Maksa z Wydania w Regułach ilości taty przy Liście Urządzeń, której system nie daje teraz czytać, nie jest
+    odrzucona sprawdzeniem z Listą Urządzeń z Wydania (reguła taty ze składnikiem „ont y”), bo odrzucona nie wraca:
+    nie wchodzi przy tym starcie i wchodzi przy następnym, z czytelną listą, z jednym wierszem Historii."""
+
+    app = centrum(tmp_path)
+    _own_pair(app)
+    app.client.stop()
+    change = ReleaseChange("2026-11-bez-nokii", RULES, _without_nokia)
+    rules = app.tool.config / RULES_FILE
+    before = rules.read_bytes()
+
+    with without_reading(app.tool.config / DEVICES_FILE):
+        started(app.tool, (change,)).stop()
+    kept = rules.read_bytes()
+    released = started(app.tool, (change,))
+    rows = [row for row in released.get("/api/settings/history").json()["rows"] if row["file"] == RULES_FILE]
+    released.stop()
+
+    assert kept == before
+    assert "- id: nokia\n" not in rules.read_text(encoding="utf-8")
+    assert [(row["source"], row["refused"]) for row in rows if row["source"] != "tata"] == [("release", False)]
+
+
+@pytest.mark.parametrize(("blocked", "operation"), [(RULES_FILE, "addDevice"), (DEVICES_FILE, "changeQuantityRule")])
+def test_zmiana_pary_przeczekuje_chwilowa_blokade_drugiego_pliku_jak_pliku_zapisywanego(
+    tmp_path: Path, blocked: str, operation: str
+) -> None:
+    """Przegląd #1927 r1 (D3): drugi plik pary, który system trzyma tylko chwilę (np. OneDrive), zapis taty czyta
+    ponownie po przerwie, jak plik zapisywany, zamiast odmówić 409 „spróbuj ponownie”. Dodanie składnika przy chwilowo
+    trzymanych Regułach ilości i zmiana reguły przy chwilowo trzymanej Liście Urządzeń zapisują się po jednej przerwie."""
+
+    pauses: list[float] = []
+    held = ToolDirectory(tmp_path).config / blocked
+
+    def access_back(seconds: float) -> None:
+        pauses.append(seconds)
+        allow_reading(held)
+
+    app = centrum(tmp_path, pause=access_back)
+    _own_pair(app)
+    method, url, body = {
+        "addDevice": ("POST", DEVICES_URL, {"name": "ont z", "other_spellings": [], "group": None}),
+        "changeQuantityRule": ("PUT", f"{QUANTITY_RULES_URL}/nokia", _nokia_rule(app, 3)),
+    }[operation]
+    changed = DEVICES_FILE if operation == "addDevice" else RULES_FILE
+    before = (app.tool.config / changed).read_bytes()
+
+    deny_reading(held)
+    try:
+        response = app.client.request(method, url, json=body)
+    finally:
+        allow_reading(held)
+
+    assert response.status_code == 200, response.text
+    assert len(pauses) == 1
+    assert (app.tool.config / changed).read_bytes() != before
+
+
 UNREADABLE_PERIOD = "22_28_09_2026"
 
 
@@ -7212,6 +7341,27 @@ def test_start_procesu_i_karta_przy_pliku_folderow_bez_odczytu_odmawiaja_zdaniem
     assert (blockers, starts) == (dict.fromkeys(blockers, sentence), expected_starts)
     assert app.client.get("/api/runs/current").json() == {"state": "idle", "previous": None}
     assert _config_files(app.tool.config) == before
+
+
+def test_kafelek_procesu_przy_pliku_folderow_bez_odczytu_nie_ma_okresow_do_wyboru_i_zaznacza_ostatni_pelny_okres(
+    tmp_path: Path,
+) -> None:
+    """Przegląd #1931 r1 (D2): przy pliku Folderów, którego system nie daje teraz czytać, nikt nie zna folderu okresów,
+    więc kafelek żadnego procesu nie podaje okresów do wyboru, ani z folderu okresów taty, ani z Folderów z Wydania
+    (ostatnie tygodnie Przygotowania pliku zbiorczego), a zaznaczony jest ostatni pełny okres. Przy czytelnym pliku
+    kafelki mają okresy, więc ich brak pochodzi z odebranego odczytu."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    readable = app.client.get("/api/runs/setup").json()["processes"]
+    assert all(tile["periods"] for tile in readable)
+
+    with without_reading(app.tool.config / SETTINGS_FILE):
+        tiles = app.client.get("/api/runs/setup").json()["processes"]
+
+    last = last_complete_period(TODAY).token
+    assert [(tile["process"], tile["periods"], tile["preselected_period"]) for tile in tiles] == [
+        (tile["process"], [], last) for tile in readable
+    ]
 
 
 @pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
