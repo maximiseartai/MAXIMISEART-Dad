@@ -146,3 +146,11 @@ przyklad = 1875
 [R-TOZSAMOSC-Z-NAZWY]
 opis = "Rzecz (repo, projekt, plik) rozpoznawana po nazwie zamiast po tożsamości, którą system daje (origin gita, identyfikator), więc każda nowa zmiana nazwy wraca jako ciche przekłamanie, jak nakładka #1913 r3 rozpoznająca plik po nazwie."
 przyklad = 1914
+
+[R-ZEGAR-POMIARU]
+opis = "Zmiana stanu zewnętrznego liczona z wartości przeliczonej na własnym zegarze w chwili pomiaru (teraz minus wiek) zamiast z pola, które system daje (updatedAt), więc czas samego pomiaru udaje zmianę."
+przyklad = 1992
+
+[R-WYSCIG-STANU]
+opis = "Dwa procesy dzielą plik stanu, a jeden usuwa go albo przepisuje według treści przeczytanej wcześniej, bez blokady, pod którą drugi pisze, więc zapis z okna między odczytem a usunięciem ginie po cichu."
+przyklad = 1992

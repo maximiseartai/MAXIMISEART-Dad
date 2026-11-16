@@ -13,6 +13,9 @@ czeka tylko na jej lidera, więc pozostałe procesy grupy, już zabite, mogą je
 zamykać swoje pliki. Po śmierci narzędzia bez sprzątania (SIGKILL, ``os._exit``) drzewo zabija na POSIX strażnik
 narzędzia, a na Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE).
 
+``detach`` uruchamia polecenie, które ma przeżyć narzędzie (proces pilnujący pracy agenta po końcu jego tury), we
+własnej sesji, bez strażnika i bez wejścia i wyjścia narzędzia; tylko na POSIX.
+
 ``commit_copy`` to odłączony worktree commitu w katalogu tymczasowym. Znika z blokiem ``with``, a po
 śmierci narzędzia usuwa go strażnik. ``is_commit_copy`` rozpoznaje taką kopię wśród worktree repozytorium.
 
@@ -136,6 +139,25 @@ def run(
     if expired is not None:
         raise TimeoutExpired(arguments, expired.timeout, stdout, stderr) from None
     return subprocess.CompletedProcess(arguments, tree.process.returncode, stdout, stderr)
+
+
+def detach(command: Sequence[str], *, cwd: Path, stderr: Path) -> int:
+    """Uruchamia ``command`` we własnej sesji, poza drzewem i strażnikiem narzędzia, więc przeżywa narzędzie i jego
+    drzewo; stdin i stdout to DEVNULL, a stderr dopisuje do pliku ``stderr``. Zwraca PID. Na Windows rzuca ``OSError``.
+    """
+
+    if sys.platform == "win32":
+        raise OSError("potomne.detach działa tylko na POSIX")
+    with stderr.open("a", encoding="utf-8") as errors:
+        return subprocess.Popen(
+            list(command),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=errors,
+            cwd=cwd,
+            start_new_session=True,
+            close_fds=True,
+        ).pid
 
 
 @contextmanager

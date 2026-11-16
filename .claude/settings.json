@@ -42,6 +42,29 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__t3-code__delegate_task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/straznik_koordynatora.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/straznik_koordynatora.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/straznik_koordynatora.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/straznik_koordynatora.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

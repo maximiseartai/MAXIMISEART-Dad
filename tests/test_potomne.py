@@ -245,6 +245,25 @@ def test_grupa_z_samymi_zombie_nie_wywraca_konca_polecenia(tmp_path: Path) -> No
 
 
 @POSIX_ONLY
+def test_polecenie_odlaczone_przez_detach_przezywa_drzewo_narzedzia_ktore_je_uruchomilo(tmp_path: Path) -> None:
+    beats, stop = tmp_path / "odlaczone-zyje", tmp_path / "odlaczone-stop"
+    child = until_stopped(stop, each=f"open({str(beats)!r}, 'a').write('.')", seconds=30)
+    code = (
+        f"import pathlib, sys\nsys.path.insert(0, {str(TOOLS / 'lib')!r})\nimport potomne\n"
+        f"potomne.detach([sys.executable, '-c', {child!r}], cwd=pathlib.Path({str(tmp_path)!r}), "
+        f"stderr=pathlib.Path({str(tmp_path / 'bledy.txt')!r}))\n"
+    )
+
+    try:
+        done = potomne.run([sys.executable, "-c", code], cwd=tmp_path, timeout=60)
+        assert (done.returncode, done.stderr) == (0, "")
+        assert wait_for(beats.exists, 10)
+        assert beating(beats)
+    finally:
+        stop.touch()
+
+
+@POSIX_ONLY
 def test_potomek_spoza_drzewa_z_otwartym_wyjsciem_nie_wstrzymuje_wyniku(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
